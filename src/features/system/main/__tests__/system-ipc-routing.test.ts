@@ -114,6 +114,58 @@ describe('sendToWorkspaceWindows routing', () => {
   });
 });
 
+describe('browser IPC broadcast adapter delivery acknowledgment', () => {
+  // The adapter is mocked at module scope for the routing tests above, so
+  // load the real implementation here.
+  async function realAdapter() {
+    return await vi.importActual<typeof import('../../../../main/browser-ipc-broadcast-adapter')>(
+      '../../../../main/browser-ipc-broadcast-adapter',
+    );
+  }
+
+  // Regression (intent-hq/monorepo#2602 review): a registered hook used to
+  // count as delivery merely by existing, so a stale/clientless bridge made
+  // zero-delivery detection report phantom success.
+  it('does not count a hook that fails to acknowledge delivery', async () => {
+    const adapter = await realAdapter();
+    const unregister = adapter.registerBrowserIpcBroadcast(() => {
+      // legacy void hook: no acknowledgment
+    });
+    try {
+      expect(adapter.broadcastToBrowserIpcClients('agent:status-changed', {}, 'ws-1')).toBe(false);
+    } finally {
+      unregister();
+    }
+  });
+
+  it('does not count a hook that explicitly reports no connected clients', async () => {
+    const adapter = await realAdapter();
+    const unregister = adapter.registerBrowserIpcBroadcast(() => false);
+    try {
+      expect(adapter.broadcastToBrowserIpcClients('agent:status-changed', {}, 'ws-1')).toBe(false);
+    } finally {
+      unregister();
+    }
+  });
+
+  it('counts delivery only when the hook acknowledges a connected client', async () => {
+    const adapter = await realAdapter();
+    const hook = vi.fn(() => true);
+    const unregister = adapter.registerBrowserIpcBroadcast(hook);
+    try {
+      expect(adapter.broadcastToBrowserIpcClients('agent:status-changed', {}, 'ws-1')).toBe(true);
+      expect(hook).toHaveBeenCalledWith('agent:status-changed', {}, 'ws-1');
+    } finally {
+      unregister();
+    }
+  });
+
+  it('reports no delivery when no hook is registered', async () => {
+    const adapter = await realAdapter();
+    expect(adapter.broadcastToBrowserIpcClients('agent:status-changed', {}, 'ws-1')).toBe(false);
+  });
+});
+
 describe('window close cleanup', () => {
   it('emits window-workspace-state-changed when a window closes so open-workspace listeners reconcile', () => {
     // system.ipc.ts registers this at module scope.

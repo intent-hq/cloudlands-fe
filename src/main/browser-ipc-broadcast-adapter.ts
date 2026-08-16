@@ -7,11 +7,18 @@
  * remains only so older bridge call sites continue to work during migration.
  */
 
+/**
+ * Broadcast hook contract. A hook must return `true` to acknowledge that at
+ * least one connected client actually received the message; any other return
+ * value (including the legacy `void`) is treated as "not delivered", so a
+ * registered-but-clientless bridge can never fake delivery
+ * (intent-hq/monorepo#2602).
+ */
 export type BrowserIpcBroadcastFn = (
   channel: string,
   data: unknown,
   workspaceId?: string,
-) => void;
+) => boolean | void;
 
 type BrowserIpcGlobal = typeof globalThis & {
   __browserIpcBroadcast?: BrowserIpcBroadcastFn;
@@ -32,6 +39,11 @@ export function registerBrowserIpcBroadcast(fn: BrowserIpcBroadcastFn): () => vo
   };
 }
 
+/**
+ * Returns `true` only when a registered hook explicitly acknowledged delivery
+ * to at least one connected client. A missing hook, or a hook that returns
+ * anything other than `true`, counts as no delivery.
+ */
 export function broadcastToBrowserIpcClients(
   channel: string,
   data: unknown,
@@ -40,6 +52,5 @@ export function broadcastToBrowserIpcClients(
   const broadcast = getBrowserIpcGlobal().__browserIpcBroadcast;
   if (typeof broadcast !== 'function') return false;
 
-  broadcast(channel, data, workspaceId);
-  return true;
+  return broadcast(channel, data, workspaceId) === true;
 }
