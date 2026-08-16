@@ -1646,8 +1646,7 @@
     // 2. First message added (transition from empty to non-empty) - always scroll to show the new content
     const isFirstMessage = previousMessageCount === 0 && currentCount > 0;
     const hasNewMessages = currentCount > previousMessageCount;
-    const shouldScroll =
-      hasNewMessages && (isFirstMessage || shouldFollowBottom);
+    const shouldScroll = hasNewMessages && (isFirstMessage || shouldFollowBottom);
     if (hasNewMessages) {
       // Unread-marker entry: on the first transcript hydration with a latched
       // divider anchor, land at the "New messages" divider with follow
