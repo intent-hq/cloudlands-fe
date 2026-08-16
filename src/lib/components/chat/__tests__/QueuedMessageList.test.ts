@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { QueuedMessage } from '$shared/types';
@@ -11,6 +11,7 @@ vi.mock('../../ui/button/button.svelte', async () => ({
 }));
 
 import QueuedMessageList from '../QueuedMessageList.svelte';
+import QueuedMessageEditMotionHost from './QueuedMessageEditMotionHost.svelte';
 
 function queued(overrides: Partial<QueuedMessage>): QueuedMessage {
   return {
@@ -88,6 +89,174 @@ describe('QueuedMessageList', () => {
     await tick();
 
     expect(container.querySelector('textarea')).toBeNull();
+  });
+
+  describe('editing lifecycle', () => {
+    async function beginEdit(
+      props: Parameters<typeof render<typeof QueuedMessageList>>[1]['props'],
+    ) {
+      const view = render(QueuedMessageList, { props });
+      const row = view.container.querySelector<HTMLElement>('[data-testid="queued-message-row"]')!;
+      await fireEvent.click(
+        view.container.querySelector<HTMLElement>('[data-testid="queued-message-content"]')!,
+      );
+      const textarea = await waitFor(() => view.container.querySelector('textarea'));
+      return { ...view, row, textarea: textarea as HTMLTextAreaElement };
+    }
+
+    it('saves with Enter once and keeps Shift+Enter for a newline', async () => {
+      const onedit = vi.fn().mockResolvedValue({ success: true });
+      const { textarea } = await beginEdit({ messages: [queued({})], onedit });
+      await fireEvent.input(textarea, { target: { value: 'hello\nagain' } });
+      await fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true });
+      expect(onedit).toHaveBeenCalledTimes(1);
+      await fireEvent.keyDown(textarea, { key: 'Enter' });
+      await waitFor(() => expect(onedit).toHaveBeenCalledTimes(2));
+      expect(onedit).toHaveBeenLastCalledWith('q-1', 'hello\nagain', false);
+      expect(screen.queryByTestId('queued-message-edit-mode')).toBeNull();
+    });
+
+    it('cancels with Escape and releases the daemon hold with original content', async () => {
+      const onedit = vi.fn().mockResolvedValue({ success: true });
+      const { textarea } = await beginEdit({
+        messages: [queued({ content: 'original' })],
+        onedit,
+      });
+      await fireEvent.input(textarea, { target: { value: 'changed' } });
+      await fireEvent.keyDown(textarea, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByTestId('queued-message-edit-mode')).toBeNull());
+      expect(onedit).toHaveBeenLastCalledWith('q-1', 'original', false);
+    });
+
+    it('saves on blur without a second save from the save action', async () => {
+      const onedit = vi.fn().mockResolvedValue({ success: true });
+      const { textarea, container } = await beginEdit({ messages: [queued({})], onedit });
+      await fireEvent.input(textarea, { target: { value: 'blurred' } });
+      await fireEvent.blur(textarea);
+      await waitFor(() => expect(onedit).toHaveBeenCalledTimes(2));
+      const save = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.getAttribute('tooltip') === 'Save',
+      );
+      if (save) await fireEvent.click(save);
+      expect(onedit).toHaveBeenCalledTimes(2);
+    });
+
+    it('stays in edit mode when hold, save, or cancel release fails', async () => {
+      const holdFailure = vi.fn().mockResolvedValue({ success: false, error: 'gone' });
+      const first = await beginEdit({ messages: [queued({})], onedit: holdFailure });
+      await waitFor(() => expect(first.container.querySelector('textarea')).toBeNull());
+      first.unmount();
+
+      const saveFailure = vi
+        .fn()
+        .mockResolvedValueOnce({ success: true })
+        .mockResolvedValue({ success: false, error: 'offline' });
+      const second = await beginEdit({
+        messages: [queued({ id: 'q-2' })],
+        onedit: saveFailure,
+      });
+      await fireEvent.keyDown(second.textarea, { key: 'Enter' });
+      await waitFor(() => expect(second.container.querySelector('textarea')).toBe(second.textarea));
+      const cancel = Array.from(second.container.querySelectorAll('button')).find(
+        (button) => button.getAttribute('tooltip') === 'Cancel',
+      )!;
+      await fireEvent.pointerDown(cancel);
+      await fireEvent.click(cancel);
+      await waitFor(() => expect(saveFailure).toHaveBeenCalledTimes(3));
+      expect(second.container.querySelector('textarea')).toBe(second.textarea);
+    });
+
+    it('auto-resizes multiline content', async () => {
+      const { textarea } = await beginEdit({ messages: [queued({})] });
+      Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 84 });
+      await fireEvent.input(textarea, { target: { value: 'one\ntwo\nthree' } });
+      expect(textarea.style.height).toBe('84px');
+    });
+
+    it('keeps row, textarea, focus, and selection through refresh and reorder', async () => {
+      const messages = [
+        queued({ id: 'q-1', content: 'first', position: 0 }),
+        queued({ id: 'q-2', content: 'second', position: 1 }),
+      ];
+      const view = render(QueuedMessageList, { props: { messages } });
+      const rows = Array.from(view.container.querySelectorAll<HTMLElement>('[data-message-id]'));
+      await fireEvent.click(rows[0].querySelector('[data-testid="queued-message-content"]')!);
+      const textarea = await waitFor(() => view.container.querySelector('textarea'));
+      await waitFor(() => expect(document.activeElement).toBe(textarea));
+      textarea!.setSelectionRange(2, 4);
+
+      await view.rerender({ messages: [messages[1], { ...messages[0], editing: true }] });
+      await tick();
+      expect(view.container.querySelector('[data-message-id="q-1"]')).toBe(rows[0]);
+      expect(view.container.querySelector('textarea')).toBe(textarea);
+      await waitFor(() => expect(document.activeElement).toBe(textarea));
+      expect([textarea!.selectionStart, textarea!.selectionEnd]).toEqual([2, 4]);
+    });
+
+    it('removes an editing row without residual shell state', async () => {
+      const view = render(QueuedMessageList, { props: { messages: [queued({})] } });
+      await fireEvent.click(screen.getByTestId('queued-message-content'));
+      await waitFor(() => expect(view.container.querySelector('textarea')).toBeTruthy());
+      await view.rerender({ messages: [] });
+      await waitFor(() => expect(view.container.querySelector('[data-message-id]')).toBeNull());
+      expect(view.container.querySelector('[style*="height"]')).toBeNull();
+    });
+
+    it('rapidly reverses on Escape without remounting the row or overlapping modes', async () => {
+      const view = render(QueuedMessageList, { props: { messages: [queued({})] } });
+      const row = screen.getByTestId('queued-message-row');
+      await fireEvent.click(screen.getByTestId('queued-message-content'));
+      const textarea = await waitFor(() => view.container.querySelector('textarea'));
+      await fireEvent.keyDown(textarea!, { key: 'Escape' });
+      await waitFor(() => expect(view.container.querySelector('textarea')).toBeNull());
+      expect(screen.getByTestId('queued-message-row')).toBe(row);
+      expect(row.querySelectorAll('[data-mode="display"]')).toHaveLength(1);
+      expect(row.querySelectorAll('[data-testid="queued-message-edit-mode"]')).toHaveLength(0);
+    });
+
+    it('completes mode changes immediately for reduced motion', async () => {
+      const matchMedia = vi.spyOn(window, 'matchMedia').mockReturnValue({
+        matches: true,
+        media: '(prefers-reduced-motion: reduce)',
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      });
+      const { row } = await beginEdit({ messages: [queued({})] });
+      expect(row.style.height).toBe('');
+      expect(row.style.overflow).toBe('');
+      matchMedia.mockRestore();
+    });
+  });
+
+  it('lets the canonical follow authority pin bottom and preserve an unlocked viewport', async () => {
+    class ResizeObserverStub {
+      observe() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub);
+    const view = render(QueuedMessageEditMotionHost);
+    const transcript = screen.getByTestId('queued-edit-transcript');
+    let expandedHeight = 900;
+    Object.defineProperties(transcript, {
+      clientHeight: { configurable: true, value: 200 },
+      scrollHeight: { configurable: true, get: () => expandedHeight },
+    });
+    transcript.scrollTop = 700;
+    expandedHeight = 980;
+    await fireEvent.click(view.container.querySelector('[data-testid="queued-message-content"]')!);
+    await waitFor(() => expect(transcript.scrollTop).toBe(780));
+
+    await fireEvent.wheel(transcript, { deltaY: -20 });
+    transcript.scrollTop = 240;
+    expandedHeight = 1060;
+    await fireEvent.click(screen.getByTestId('queued-edit-refresh'));
+    await tick();
+    expect(transcript.scrollTop).toBe(240);
+    vi.unstubAllGlobals();
   });
 
   it('keeps the requeued-after-failure indicator on queued rows', () => {

@@ -18,7 +18,7 @@
     faCircleQuestion,
     faFile,
   } from '@fortawesome/free-solid-svg-icons';
-  import { fly } from 'svelte/transition';
+  import { tick } from 'svelte';
   import { safeSlide } from '$lib/utils/animations';
   import type { QueuedMessage } from '$shared/types';
   import Button from '../ui/button/button.svelte';
@@ -28,6 +28,11 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import {
+    cancelQueuedMessageRowMotion,
+    captureQueuedMessageRowMotion,
+    queuedMessageRowTransition,
+  } from './queued-message-row-motion';
 
   const QUEUE_ACTION_CLUSTER_CLASS =
     'pointer-events-none absolute top-1/2 right-2.5 z-10 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-[var(--motion-fast)] group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 motion-reduce:transition-none';
@@ -68,6 +73,62 @@
   let editContent = $state('');
   let editOriginalContent = $state('');
   let editStartedProgrammatically = $state(false);
+  let editOperationPending = $state(false);
+  let editTextarea = $state<HTMLTextAreaElement>();
+  const rowElements = new Map<string, HTMLElement>();
+
+  function registerRow(node: HTMLElement, messageId: string) {
+    rowElements.set(messageId, node);
+    return {
+      update(nextId: string) {
+        if (nextId === messageId) return;
+        rowElements.delete(messageId);
+        messageId = nextId;
+        rowElements.set(messageId, node);
+      },
+      destroy() {
+        if (rowElements.get(messageId) === node) rowElements.delete(messageId);
+        cancelQueuedMessageRowMotion(node);
+      },
+    };
+  }
+
+  function beginRowMotion(messageId: string | null): () => void {
+    const row = messageId ? rowElements.get(messageId) : undefined;
+    return row ? captureQueuedMessageRowMotion(row) : () => {};
+  }
+
+  async function animateRowMutation(messageId: string | null, mutate: () => void) {
+    const play = beginRowMotion(messageId);
+    mutate();
+    await tick();
+    play();
+  }
+
+  function clearEditState() {
+    editingId = null;
+    editContent = '';
+    editOriginalContent = '';
+    editStartedProgrammatically = false;
+    editOperationPending = false;
+  }
+
+  $effect(() => {
+    if (editingId && !messages.some((message) => message.id === editingId)) clearEditState();
+  });
+
+  $effect.pre(() => {
+    messages;
+    const textarea = editTextarea;
+    if (!textarea || document.activeElement !== textarea) return;
+    const selectionStart = textarea.selectionStart;
+    const selectionEnd = textarea.selectionEnd;
+    void tick().then(() => {
+      if (editTextarea !== textarea || document.activeElement === textarea) return;
+      textarea.focus({ preventScroll: true });
+      textarea.setSelectionRange(selectionStart, selectionEnd);
+    });
+  });
 
   // Lightbox state for queued image attachments
   let lightboxOpen = $state(false);
@@ -101,8 +162,10 @@
   // Auto-resize textarea to fit content
   function autoResize(node: HTMLTextAreaElement) {
     const resize = () => {
+      const play = beginRowMotion(editingId);
       node.style.height = 'auto';
       node.style.height = node.scrollHeight + 'px';
+      play();
     };
     resize();
     node.addEventListener('input', resize);
@@ -116,18 +179,23 @@
   // Action to autofocus textarea when it appears
   function autofocusAction(node: HTMLTextAreaElement) {
     // Use requestAnimationFrame to ensure the element is fully rendered
-    requestAnimationFrame(() => {
+    const frame = requestAnimationFrame(() => {
       node.focus({ preventScroll: true });
       // Move cursor to end
       node.selectionStart = node.selectionEnd = node.value.length;
     });
+    return { destroy: () => cancelAnimationFrame(frame) };
   }
 
-  async function startEdit(message: QueuedMessage) {
-    editStartedProgrammatically = false;
-    editingId = message.id;
-    editContent = message.content;
-    editOriginalContent = message.content;
+  async function startEdit(message: QueuedMessage, programmatic = false) {
+    if (editOperationPending || editingId === message.id) return;
+    editOperationPending = true;
+    await animateRowMutation(message.id, () => {
+      editStartedProgrammatically = programmatic;
+      editingId = message.id;
+      editContent = message.content;
+      editOriginalContent = message.content;
+    });
 
     // STAB-27: Engage hold immediately (editing:true) so the message isn't
     // dequeued mid-edit. If the message is already gone (race with drain),
@@ -139,24 +207,25 @@
           // Message was already dequeued - clear edit state
           // TODO STAB-27: Drop content into composer as draft instead of losing it
           console.warn('Failed to hold queued message for editing:', result.error);
-          editingId = null;
-          editContent = '';
-          editOriginalContent = '';
+          await animateRowMutation(message.id, clearEditState);
+          return;
         }
       } catch (error) {
         // IPC/network failure - clear edit state
         console.error('Exception while engaging hold for queued message edit:', error);
-        editingId = null;
-        editContent = '';
-        editOriginalContent = '';
+        await animateRowMutation(message.id, clearEditState);
+        return;
       }
     }
+    editOperationPending = false;
   }
 
   async function cancelEdit() {
+    if (editOperationPending) return;
     const wasProgrammatic = editStartedProgrammatically;
     const messageId = editingId;
     const originalContent = editOriginalContent;
+    editOperationPending = true;
 
     // STAB-27: Release hold with original content (editing:false) BEFORE clearing edit state
     // so if the release fails, we stay in edit mode and the user can retry
@@ -166,29 +235,30 @@
         if (!result.success) {
           // Release failed - stay in edit mode
           console.error('Failed to release queued message hold on cancel:', result.error);
+          editOperationPending = false;
           return;
         }
       } catch (error) {
         // IPC/network failure - stay in edit mode
         console.error('Exception while releasing queued message hold on cancel:', error);
+        editOperationPending = false;
         return;
       }
     }
 
     // Only clear edit state after successful release
-    editingId = null;
-    editContent = '';
-    editOriginalContent = '';
-    editStartedProgrammatically = false;
+    await animateRowMutation(messageId, clearEditState);
 
     if (wasProgrammatic) ondone?.();
   }
 
   async function saveEdit() {
+    if (editOperationPending) return;
     if (editingId && editContent.trim()) {
       const wasProgrammatic = editStartedProgrammatically;
       const messageId = editingId;
       const newContent = editContent.trim();
+      editOperationPending = true;
 
       // STAB-27: Save with edited content and release hold (editing:false triggers self-drain)
       // Do this BEFORE clearing edit state so if it fails, we stay in edit mode
@@ -198,20 +268,19 @@
           if (!result.success) {
             // Save failed - stay in edit mode
             console.error('Failed to save queued message edit:', result.error);
+            editOperationPending = false;
             return;
           }
         } catch (error) {
           // IPC/network failure - stay in edit mode
           console.error('Exception while saving queued message edit:', error);
+          editOperationPending = false;
           return;
         }
       }
 
       // Only clear edit state after successful save
-      editingId = null;
-      editContent = '';
-      editOriginalContent = '';
-      editStartedProgrammatically = false;
+      await animateRowMutation(messageId, clearEditState);
 
       if (wasProgrammatic) ondone?.();
     } else if (editingId) {
@@ -226,9 +295,10 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      saveEdit();
+      void saveEdit();
     } else if (e.key === 'Escape') {
-      cancelEdit();
+      e.preventDefault();
+      void cancelEdit();
     }
   }
 
@@ -240,8 +310,7 @@
   export function editLastMessage(): boolean {
     const last = messages[messages.length - 1];
     if (!last) return false;
-    startEdit(last);
-    editStartedProgrammatically = true;
+    void startEdit(last, true);
     return true;
   }
 </script>
@@ -333,16 +402,19 @@
             ? 'opacity-60'
             : ''}"
           data-testid="queued-message-row"
-          transition:fly={{ y: 10, duration: 200 }}
+          data-message-id={message.id}
+          use:registerRow={message.id}
+          transition:queuedMessageRowTransition
           title={message.editing ? m.chat_queuedMessages_heldForEditing_title() : undefined}
         >
           {#if editingId === message.id}
             <!-- Edit mode -->
             <div
               class="col-span-full row-span-full flex-1 flex gap-2 flex"
-              transition:safeSlide={{ axis: 'y', duration: 200 }}
+              data-testid="queued-message-edit-mode"
             >
               <textarea
+                bind:this={editTextarea}
                 bind:value={editContent}
                 onkeydown={handleKeydown}
                 use:autofocusAction
@@ -358,6 +430,7 @@
                 size="icon-xs"
                 class="-my-1"
                 onclick={saveEdit}
+                onpointerdown={(event) => event.preventDefault()}
                 tooltip={m.chat_queuedMessages_save_tooltip()}
               >
                 <Fa icon={faCheck} class="w-3 h-3" />
@@ -367,6 +440,7 @@
                 size="icon-xs"
                 class="-my-1"
                 onclick={cancelEdit}
+                onpointerdown={(event) => event.preventDefault()}
                 tooltip={m.chat_queuedMessages_cancel_tooltip()}
               >
                 <Fa icon={faTimes} class="w-3 h-3" />
@@ -391,7 +465,7 @@
               <button
                 class="flex-1 min-w-0 text-left cursor-pointer {QUEUE_THREE_ACTION_CONTENT_CLASS}"
                 data-testid="queued-message-content"
-                transition:safeSlide={{ axis: 'y', duration: 200 }}
+                data-mode="display"
                 onclick={() => startEdit(message)}
               >
                 <span class="block truncate" data-testid="queued-message-text">
