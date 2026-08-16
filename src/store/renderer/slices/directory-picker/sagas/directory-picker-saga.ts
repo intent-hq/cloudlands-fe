@@ -1,4 +1,4 @@
-import { call, put, takeLatest, takeLeading, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
@@ -119,7 +119,11 @@ function* createDirectoryWorker(action: ReturnType<typeof createDirectoryRequest
 }
 
 export function* directoryPickerSaga(): SagaGenerator<void> {
-  yield* takeLeading(loadDirectoryRequested, loadDirectoryWorker);
+  // takeLatest (not takeLeading) keeps the reducer's stale-guard sound: the
+  // newest request always has a live worker, so a click landing mid-flight
+  // cancels the superseded task (including an in-flight home fallback)
+  // instead of being dropped with `loading` stuck true (monorepo#2650).
+  yield* takeLatest(loadDirectoryRequested, loadDirectoryWorker);
   yield* takeLatest(navigateToPathRequested, navigateToPathWorker);
   yield* takeLatest(createDirectoryRequested, createDirectoryWorker);
 }
