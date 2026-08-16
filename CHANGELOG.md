@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.56.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.2...v2.56.3) (2026-08-16)
+
+
+### 🐛 Bug Fixes
+
+* let an exported NODE_OPTIONS heap cap override the renderer build default ([#1341](https://github.com/intent-hq/cloudlands-fe/issues/1341)) ([a6c08c8](https://github.com/intent-hq/cloudlands-fe/commit/a6c08c8b0ffe0b5a71d024f3bca9785fc94624c3))
+* reconcile tunnel forwards against workspace state on reconnect ([#1334](https://github.com/intent-hq/cloudlands-fe/issues/1334)) ([de5d079](https://github.com/intent-hq/cloudlands-fe/commit/de5d079258e7d47c56f3da93b3957356b3787a50))
+
 ## [2.56.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.1...v2.56.2) (2026-08-16)
 
 
