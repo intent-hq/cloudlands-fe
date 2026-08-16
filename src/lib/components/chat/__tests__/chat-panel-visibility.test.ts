@@ -8,6 +8,7 @@ import {
   shouldShowPendingAssistantStatus,
   shouldShowSetupCardOnly,
   shouldShowTranscriptSkeleton,
+  shouldShowTranscriptUtilityStack,
   shouldStopChatBeforeSending,
 } from '../chat-panel-visibility';
 
@@ -353,6 +354,59 @@ describe('shouldShowSetupCardOnly', () => {
     ).toBe(false);
     expect(
       shouldShowSetupCardOnly({ ...settledEmptyInitialAgent, hasOnboardingPrompt: true }),
+    ).toBe(false);
+  });
+});
+
+describe('shouldShowTranscriptUtilityStack', () => {
+  it('stays hidden while the first hydration is in flight', () => {
+    expect(
+      shouldShowTranscriptUtilityStack({
+        transcriptHydratedOnce: false,
+        hydrationSettled: false,
+      }),
+    ).toBe(false);
+  });
+
+  it('becomes visible once hydration settles', () => {
+    expect(
+      shouldShowTranscriptUtilityStack({
+        transcriptHydratedOnce: true,
+        hydrationSettled: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('stays visible through a refresh re-hydration (latch already true, status back to loading)', () => {
+    expect(
+      shouldShowTranscriptUtilityStack({
+        transcriptHydratedOnce: true,
+        hydrationSettled: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('re-hides on switch to a not-yet-hydrated agent (fresh per-agent state)', () => {
+    // Agent/workspace switches remount the card via {#key}; the gate then
+    // reads the NEW agent's per-agent hydration state, which starts unlatched
+    // and unsettled — so the card is hidden again until that agent's first
+    // hydration settles.
+    expect(
+      shouldShowTranscriptUtilityStack({
+        transcriptHydratedOnce: false,
+        hydrationSettled: false,
+      }),
+    ).toBe(false);
+  });
+
+  it('stays hidden when the first hydration fails into the error/retry surface', () => {
+    // hydration === 'error': neither latched nor settled — only a retry that
+    // settles reveals the card.
+    expect(
+      shouldShowTranscriptUtilityStack({
+        transcriptHydratedOnce: false,
+        hydrationSettled: false,
+      }),
     ).toBe(false);
   });
 });

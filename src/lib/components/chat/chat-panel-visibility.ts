@@ -154,6 +154,24 @@ export function shouldShowSetupCardOnly(state: SetupCardOnlyState): boolean {
   );
 }
 
+type TranscriptUtilityStackState = {
+  transcriptHydratedOnce: boolean;
+  hydrationSettled: boolean;
+};
+
+/**
+ * Utility stack gate (EventSubscriptionsCard: agent subscriptions, background
+ * hooks, monitored PRs). The card must never pop in ahead of (or during) the
+ * transcript skeleton, so it stays hidden until the current agent's FIRST
+ * transcript hydration has settled. Refresh re-hydrations (latch already true)
+ * keep it visible; a first hydration that fails into the error/retry surface
+ * keeps it hidden until a retry settles. Data prefetch is unaffected — only
+ * the render is gated.
+ */
+export function shouldShowTranscriptUtilityStack(state: TranscriptUtilityStackState): boolean {
+  return state.transcriptHydratedOnce || state.hydrationSettled;
+}
+
 type QueuedMessagesVisibilityState = {
   queueLength: number;
   hasPendingQuestions: boolean;
