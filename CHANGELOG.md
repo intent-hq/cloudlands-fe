@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.56.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.55.0...v2.56.0) (2026-08-16)
+
+
+### 🚀 Features
+
+* persist tunnel forwards for the app lifetime with workspace-scoped cleanup ([#1325](https://github.com/intent-hq/cloudlands-fe/issues/1325)) ([383e05d](https://github.com/intent-hq/cloudlands-fe/commit/383e05d08d585a80f1dcae1c4be1c1103db391ad))
+
 ## [2.55.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.54.1...v2.55.0) (2026-08-16)
 
 
