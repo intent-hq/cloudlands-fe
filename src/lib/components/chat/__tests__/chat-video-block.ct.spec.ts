@@ -13,12 +13,12 @@ for (const theme of ['light', 'dark'] as const) {
     });
     const scroll = component.getByTestId('transcript-scroll');
     await scroll.evaluate((node) => (node.scrollTop = node.scrollHeight));
-    const before = await scroll.evaluate((node) => node.scrollTop);
 
     const snapshot = component.getByRole('button', { name: 'Play demo.mp4' });
     await expect(snapshot.locator('video')).not.toHaveAttribute('controls', '');
     await expect(snapshot).toHaveClass(/aspect-video/);
     await snapshot.focus();
+    const keyboardBefore = await scroll.evaluate((node) => node.scrollTop);
     await snapshot.press('Enter');
 
     const dialog = page.getByRole('dialog', { name: 'Video preview: demo.mp4' });
@@ -33,7 +33,15 @@ for (const theme of ['light', 'dark'] as const) {
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     await expect(snapshot).toBeFocused();
-    expect(await scroll.evaluate((node) => node.scrollTop)).toBe(before);
+    expect(await scroll.evaluate((node) => node.scrollTop)).toBe(keyboardBefore);
+
+    const mouseBefore = await scroll.evaluate((node) => node.scrollTop);
+    await snapshot.click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Close video preview' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(snapshot).toBeFocused();
+    expect(await scroll.evaluate((node) => node.scrollTop)).toBe(mouseBefore);
     expect((await snapshot.boundingBox())?.width).toBeLessThanOrEqual(320);
   });
 }

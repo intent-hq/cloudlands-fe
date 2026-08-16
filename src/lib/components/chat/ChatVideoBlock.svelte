@@ -14,6 +14,7 @@
   let frameReady = $state(false);
   let frameUnavailable = $state(false);
   let playbackUnavailable = $state(false);
+  let triggerRef: HTMLButtonElement | null = $state(null);
 
   const videoUrl = $derived(
     source.kind === 'inline' ? `data:${source.mimeType};base64,${source.data}` : source.url,
@@ -33,11 +34,17 @@
     frameReady = true;
     frameUnavailable = false;
   }
+
+  function handleCloseAutoFocus(event: Event) {
+    event.preventDefault();
+    triggerRef?.focus({ preventScroll: true });
+  }
 </script>
 
 <div class="my-2 min-w-0 max-w-2xl" data-chat-video>
   <Dialog.Root bind:open>
     <Dialog.Trigger
+      bind:ref={triggerRef}
       class="group relative block aspect-video w-full max-w-full cursor-pointer overflow-hidden rounded-lg border border-border bg-muted/40 p-0 shadow-(--elevation-raised) focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 forced-colors:border"
       aria-label={m.chat_videoBlock_play_ariaLabel({ name })}
       data-testid="chat-video-snapshot"
@@ -80,7 +87,11 @@
       </span>
     </Dialog.Trigger>
 
-    <Dialog.Content class="max-w-4xl" closeLabel={m.chat_videoBlock_close_ariaLabel()}>
+    <Dialog.Content
+      class="max-w-4xl"
+      closeLabel={m.chat_videoBlock_close_ariaLabel()}
+      onCloseAutoFocus={handleCloseAutoFocus}
+    >
       <Dialog.Header class="sr-only">
         <Dialog.Title>{m.chat_videoBlock_dialog_title({ name })}</Dialog.Title>
         <Dialog.Description>{m.chat_videoBlock_dialog_description()}</Dialog.Description>
