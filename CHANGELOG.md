@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.53.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.53.0...v2.53.1) (2026-08-16)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.8 ([#1311](https://github.com/intent-hq/cloudlands-fe/issues/1311)) ([9003fe3](https://github.com/intent-hq/cloudlands-fe/commit/9003fe365806a6eb7de0e4377023de1b7a9b923a))
+* repo picker RECENT list — no open-time pre-fill filtering, include workspace-derived GitHub repos ([#1308](https://github.com/intent-hq/cloudlands-fe/issues/1308)) ([c696d28](https://github.com/intent-hq/cloudlands-fe/commit/c696d28645bad0d0408f5d2dae751795e204672b))
+* report browser.exec delivery and stop workspace-less tab broadcasts ([#1307](https://github.com/intent-hq/cloudlands-fe/issues/1307)) ([ab99a27](https://github.com/intent-hq/cloudlands-fe/commit/ab99a27aba27dc41661a938ba0ca10c6ca836490))
+
 ## [2.53.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.52.0...v2.53.0) (2026-08-16)
 
 
