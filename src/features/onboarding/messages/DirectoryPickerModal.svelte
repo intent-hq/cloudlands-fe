@@ -4,9 +4,8 @@
    * directory-picker read service; this component only dispatches intent.
    */
   import { untrack } from 'svelte';
-  import { fade, fly } from 'svelte/transition';
 
-  import Portal from '$lib/components/ui/Portal.svelte';
+  import * as Dialog from '$lib/components/ui/dialog';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -109,45 +108,59 @@
   $effect(() => {
     if (!open) return;
     return pushEscapeLayer((event) => {
-      if ((event.target as HTMLElement | null)?.tagName === 'INPUT') return false;
+      const target = event.target as HTMLElement | null;
+      if (target instanceof HTMLInputElement) {
+        // bits-ui's document-level EscapeLayer preventDefaults every Escape it
+        // sees (even with escapeKeydownBehavior="ignore"), which would stop
+        // DirectoryPickerView's window-level handler from clearing the search
+        // box. Clear it here and consume the event instead.
+        if (target.type === 'search') {
+          target.value = '';
+          target.dispatchEvent(new Event('input', { bubbles: true }));
+          return;
+        }
+        // Decline: the path / new-folder input's own handler cancels its edit.
+        return false;
+      }
       onClose();
     });
   });
 </script>
 
-{#if open}
-  <Portal target="body" zIndex={10000}>
-    <div
-      class="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-      transition:fade={{ duration: 120 }}
-      role="presentation"
-      onclick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-      onkeydown={() => {}}
-    >
-      <div class="mx-4 w-full max-w-3xl" transition:fly={{ y: 8, duration: 160 }}>
-        <DirectoryPickerView
-          {open}
-          title={resolvedTitle}
-          selectLabel={resolvedSelectLabel}
-          {mode}
-          {listing}
-          {loading}
-          {error}
-          {pathError}
-          {createError}
-          {favorites}
-          showFiles={mode === 'file'}
-          {onSelect}
-          {onClose}
-          onNavigate={requestDirectory}
-          onNavigateToPath={(path) => appStore.dispatch(navigateToPathRequested(path))}
-          onClearPathError={() => appStore.dispatch(clearPathNavigationError())}
-          onCreateDirectory={createDirectory}
-          onClearCreateError={() => appStore.dispatch(clearCreateDirectoryError())}
-        />
-      </div>
-    </div>
-  </Portal>
-{/if}
+<Dialog.Root
+  bind:open={
+    () => open,
+    (next) => {
+      if (!next) onClose();
+    }
+  }
+>
+  <Dialog.Content
+    showCloseButton={false}
+    escapeKeydownBehavior="ignore"
+    onOpenAutoFocus={(event) => event.preventDefault()}
+    class="max-w-3xl gap-0 border-0 bg-transparent p-0 shadow-none"
+  >
+    <Dialog.Title class="sr-only">{resolvedTitle}</Dialog.Title>
+    <DirectoryPickerView
+      {open}
+      title={resolvedTitle}
+      selectLabel={resolvedSelectLabel}
+      {mode}
+      {listing}
+      {loading}
+      {error}
+      {pathError}
+      {createError}
+      {favorites}
+      showFiles={mode === 'file'}
+      {onSelect}
+      {onClose}
+      onNavigate={requestDirectory}
+      onNavigateToPath={(path) => appStore.dispatch(navigateToPathRequested(path))}
+      onClearPathError={() => appStore.dispatch(clearPathNavigationError())}
+      onCreateDirectory={createDirectory}
+      onClearCreateError={() => appStore.dispatch(clearCreateDirectoryError())}
+    />
+  </Dialog.Content>
+</Dialog.Root>
