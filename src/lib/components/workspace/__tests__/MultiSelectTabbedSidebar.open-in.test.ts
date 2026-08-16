@@ -803,4 +803,31 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       }),
     );
   });
+
+  it('restores the selected tab across an unmount/remount cycle via the Redux round-trip', async () => {
+    // The selection lives in the sidebar-nav slice keyed by workspaceId, so an
+    // unmounted column keeps it. Mirror dispatched selections back into the
+    // mocked selector, exactly the reducer's setMultiSelectSidebarSelectedTabs
+    // semantics, so the mount → select → unmount → remount cycle is observable.
+    mocks.dispatch.mockImplementation((action) => {
+      if (action?.type === 'sidebarNav/setMultiSelectSidebarSelectedTabs') {
+        const [workspaceId, tabIds] = action.payload as [string, string[]];
+        if (workspaceId === 'ws-1') mocks.selectedTabs = tabIds;
+      }
+      return action;
+    });
+    mocks.agents = [makeAgent('agent-1')];
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    const first = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    expect(first.container.querySelector('.sidebar-expanded-card')).toBeNull();
+
+    await fireEvent.click(first.getByTestId('agent-panel-toggle'));
+    expect(mocks.selectedTabs).toEqual(['agents']);
+
+    first.unmount();
+    const second = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+
+    expect(second.container.querySelector('.sidebar-expanded-card')).not.toBeNull();
+    expect(second.container.querySelector('[data-expanded-agent="agent-1"]')).not.toBeNull();
+  });
 });
