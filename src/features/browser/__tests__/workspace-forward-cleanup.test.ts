@@ -543,4 +543,68 @@ describe('reconnect reconciliation (#2646)', () => {
 
     expect(closeForward).toHaveBeenCalledWith(3000);
   });
+
+  /** Deferred workspace.list: subscribe resolves immediately, list is held. */
+  function mockBackendDeferred(): Array<(response: unknown) => void> {
+    const resolvers: Array<(response: unknown) => void> = [];
+    requestSpy.mockImplementation(async (method: string) => {
+      if (method === 'events.subscribe') return { subscriptionId: SUB_ID };
+      return new Promise((resolve) => resolvers.push(resolve));
+    });
+    return resolvers;
+  }
+
+  it('coalesces triggers during an in-flight pass into one trailing workspace.list', async () => {
+    mockBackend([{ id: 'ws-a', archived: false, status: 'Active' }]);
+    const { registry, closeForward } = arm();
+    registry.record(3000, 'ws-a');
+    await flush();
+    closeForward.mockClear();
+    requestSpy.mockClear();
+    const resolvers = mockBackendDeferred();
+
+    reconnect();
+    await flush();
+    expect(workspaceListCalls()).toHaveLength(1); // pass in flight
+
+    // Three more triggers land while the list is in flight...
+    reconnect();
+    reconnect();
+    reconnect();
+    await flush();
+    expect(workspaceListCalls()).toHaveLength(1); // ...none starts a pass
+
+    resolvers[0]!({ workspaces: [{ id: 'ws-a', archived: false, status: 'Active' }] });
+    await flush();
+    // Exactly one trailing pass, not three.
+    expect(workspaceListCalls()).toHaveLength(2);
+
+    resolvers[1]!({ workspaces: [{ id: 'ws-a', archived: true, status: 'Archived' }] });
+    await flush();
+    expect(closeForward).toHaveBeenCalledWith(3000);
+  });
+
+  it('drops a stale workspace.list response that raced a reconnect', async () => {
+    mockBackend([{ id: 'ws-a', archived: false, status: 'Active' }]);
+    const { registry, closeForward } = arm();
+    registry.record(3000, 'ws-a');
+    await flush();
+    closeForward.mockClear();
+    const resolvers = mockBackendDeferred();
+
+    reconnect();
+    await flush(); // pass 1's workspace.list in flight
+    reconnect(); // bumps the epoch; queues the trailing pass
+
+    // The stale pre-reconnect response claims everything is archived — it
+    // must be dropped, not applied against the new connection.
+    resolvers[0]!({ workspaces: [{ id: 'ws-a', archived: true, status: 'Archived' }] });
+    await flush();
+    expect(closeForward).not.toHaveBeenCalled();
+
+    // The trailing (current-epoch) pass sees the live state and keeps it.
+    resolvers[1]!({ workspaces: [{ id: 'ws-a', archived: false, status: 'Active' }] });
+    await flush();
+    expect(closeForward).not.toHaveBeenCalled();
+  });
 });
