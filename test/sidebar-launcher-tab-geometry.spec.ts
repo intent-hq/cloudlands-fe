@@ -593,8 +593,8 @@ test('left-packed launchers preserve hover, focus, click, and open-panel markers
 
   const agents = page.locator('[data-sidebar-agent]');
   const notes = page.locator('[data-sidebar-context]');
-  await expect(agents).toHaveCount(3);
-  await expect(notes).toHaveCount(3);
+  await expect(agents).toHaveCount(6);
+  await expect(notes).toHaveCount(6);
   await expect(agents.nth(0).locator('[data-panel-open-marker]')).toHaveAttribute(
     'data-panel-open-state',
     'active',

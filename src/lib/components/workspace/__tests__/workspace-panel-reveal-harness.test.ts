@@ -32,12 +32,17 @@ describe('WorkspaceColumnsRevealHarness readiness contract', () => {
   });
 
   it('requires mounted readiness and surfaces initialization errors before geometry checks', () => {
+    expect(mountedTestSource).toContain('const host = component;');
+    expect(mountedTestSource).toContain(
+      'host.and(page.locator(\'[data-reveal-host][data-reveal-ready="true"]\'))',
+    );
+    expect(mountedTestSource).not.toContain("component.locator('[data-reveal-host]')");
     expect(mountedTestSource).toContain('await expect(host).toBeVisible();');
     expect(mountedTestSource).toContain(
       'await expect(ready.or(initializationError)).toBeAttached();',
     );
     expect(mountedTestSource).toContain('WorkspaceColumnsRevealHarness initialization failed:');
-    expect(mountedTestSource.indexOf('requireReadyHarness(component)')).toBeLessThan(
+    expect(mountedTestSource.indexOf('requireReadyHarness(component, page)')).toBeLessThan(
       mountedTestSource.indexOf('host.evaluate'),
     );
   });
