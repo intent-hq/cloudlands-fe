@@ -7,6 +7,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
+import { OPERATIONAL_SECONDARY_CLASS } from '../operational-disclosure-row';
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -35,9 +36,9 @@ describe('ThinkingBlock — tool-call presentation', () => {
     expect(row.className).toContain('type-body');
     expect(row.className).not.toContain('bg-muted');
     const icon = row.querySelector('[data-icon="brain"]');
-    expect(icon?.closest('[data-operational-icon-box]')?.className).toContain(
-      'text-muted-foreground/70',
-    );
+    const iconBox = icon?.closest('[data-operational-icon-box]');
+    expect(iconBox?.className).toContain(OPERATIONAL_SECONDARY_CLASS);
+    expect(iconBox?.className).not.toContain('text-muted-foreground/70');
     expect(icon?.className).not.toContain('opacity-30');
     expect(row.className).toContain('text-muted-foreground');
   });
