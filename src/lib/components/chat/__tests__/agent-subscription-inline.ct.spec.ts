@@ -297,9 +297,9 @@ test('keeps keyed waiting and finished rows stable through add, remove, reorder,
     ),
   ).toBe(focusedId);
 
-  await component.update({ props: { agentCount: 3, reverseAgents: true } });
-  await component.update({ props: { agentCount: 9, reverseAgents: false } });
-  await component.update({ props: { agentCount: 4, reverseAgents: true } });
+  await component.update({ props: { agentCount: 3, finishedCount: 0, reverseAgents: true } });
+  await component.update({ props: { agentCount: 9, finishedCount: 0, reverseAgents: false } });
+  await component.update({ props: { agentCount: 4, finishedCount: 0, reverseAgents: true } });
   await page.waitForTimeout(220);
 
   const rows = component.locator('[data-subscription-motion-row]');

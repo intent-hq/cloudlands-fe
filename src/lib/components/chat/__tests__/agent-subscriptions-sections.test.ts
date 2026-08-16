@@ -877,6 +877,47 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(control.closest('[data-agent-id]')?.getAttribute('data-agent-id')).toBe('agent-a');
   });
 
+  it('settles rapid isolated row reversals to the canonical final identities and order', async () => {
+    const agents = (count: number, reverse = false) => {
+      const rows = Array.from({ length: count }, (_, index) => ({
+        id: index === 0 ? 'agent-primary' : `agent-${index}`,
+        name: `Agent ${index}`,
+      }));
+      return reverse ? rows.reverse() : rows;
+    };
+    const { rerender } = render(AgentSubscriptions, {
+      props: {
+        workspaceId: 'ws-rapid-isolated',
+        agentId: PARENT,
+        isolatedPreview: { agents: agents(7), initiallyExpanded: true },
+        forceWaitingHeader: true,
+      },
+    });
+
+    await rerender({
+      workspaceId: 'ws-rapid-isolated',
+      agentId: PARENT,
+      isolatedPreview: { agents: agents(3, true), initiallyExpanded: true },
+      forceWaitingHeader: true,
+    });
+    await rerender({
+      workspaceId: 'ws-rapid-isolated',
+      agentId: PARENT,
+      isolatedPreview: { agents: agents(9), initiallyExpanded: true },
+      forceWaitingHeader: true,
+    });
+    await rerender({
+      workspaceId: 'ws-rapid-isolated',
+      agentId: PARENT,
+      isolatedPreview: { agents: agents(4, true), initiallyExpanded: true },
+      forceWaitingHeader: true,
+    });
+    await waitFor(() =>
+      expect(visibleAgentIds()).toEqual(['agent-3', 'agent-2', 'agent-1', 'agent-primary']),
+    );
+    expect(screen.getAllByTestId('agent-list-item')).toHaveLength(4);
+  });
+
   it('keeps per-agent stop and subscription-scoped cancel actions', async () => {
     const wsId = 'ws-waiting-actions-shot';
     await renderWithSnapshot(wsId, snapshot([oneShotSubscription('watch-a', wsId, ['agent-a'])]));
