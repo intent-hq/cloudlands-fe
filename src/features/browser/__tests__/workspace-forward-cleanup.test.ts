@@ -405,10 +405,9 @@ describe('reconnect reconciliation (#2646)', () => {
     expect(closeForward).not.toHaveBeenCalled();
 
     // ...then the late record() re-adds ownership for the archived workspace.
+    // The record itself triggers a reconciliation pass — no reconnect or
+    // later event is needed for the sweep.
     registry.record(3000, 'ws-a');
-
-    // The next reconciliation pass closes it.
-    reconnect();
     await flush();
     expect(closeForward).toHaveBeenCalledWith(3000);
   });
@@ -490,6 +489,27 @@ describe('reconnect reconciliation (#2646)', () => {
     expect(closeForward).toHaveBeenCalledWith(3000);
   });
 
+  it('retries a failed reconciliation on the next ensure call while still subscribed', async () => {
+    mockBackend([{ id: 'ws-a', archived: false, status: 'Active' }]);
+    const { registry, closeForward } = arm();
+    registry.record(3000, 'ws-a');
+    await flush();
+    closeForward.mockClear();
+
+    // A pass fails while the subscription is already up (record-triggered):
+    // no reconnect follows, so the retry has to ride the next ensure call —
+    // subscribeToWorkspaceEvents early-returns on an active subscription.
+    mockBackend(new Error('daemon down'));
+    registry.record(5000, 'ws-b');
+    await flush();
+    expect(closeForward).not.toHaveBeenCalled();
+
+    mockBackend([{ id: 'ws-a', archived: false, status: 'Active' }]);
+    ensureWorkspaceForwardCleanup({ registry, closeForward });
+    await flush();
+    expect(closeForward).toHaveBeenCalledWith(5000); // ws-b absent → deleted
+  });
+
   it('never treats a malformed workspace.list response as everything-deleted', async () => {
     mockBackend([{ id: 'ws-a', archived: false, status: 'Active' }]);
     const { registry, closeForward } = arm();
@@ -501,6 +521,13 @@ describe('reconnect reconciliation (#2646)', () => {
       if (method === 'events.subscribe') return { subscriptionId: SUB_ID };
       return {}; // workspace.list → no `workspaces` array
     });
+    reconnect();
+    await flush();
+    expect(closeForward).not.toHaveBeenCalled();
+
+    // An array carrying a malformed row (no string id) is equally suspect:
+    // aborting must win over classifying every owner as deleted.
+    mockBackend([{}]);
     reconnect();
     await flush();
     expect(closeForward).not.toHaveBeenCalled();

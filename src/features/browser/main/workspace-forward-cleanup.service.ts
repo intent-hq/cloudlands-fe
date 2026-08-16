@@ -18,10 +18,15 @@
  * Events alone are not enough (monorepo#2646): archive/delete events fired
  * while the client was disconnected (or before a subscribe resolved) are
  * lost, and a forward recorded after its owner's archive event slipped past
- * the event-driven cleanup. Every subscribe attempt therefore settles into a
- * reconciliation pass: fetch the daemon's current workspaces
- * (`workspace.list { includeArchived: true }`) and release owners that are
- * archived or gone, closing forwards left with no owner.
+ * the event-driven cleanup. A reconciliation pass — fetch the daemon's
+ * current workspaces (`workspace.list { includeArchived: true }`) and
+ * release owners that are archived or gone, closing forwards left with no
+ * owner — therefore runs after every subscribe attempt settles (initial
+ * ensure + reconnect resubscribe), whenever a new workspace owner is
+ * recorded (covering the record-after-archive race without waiting for a
+ * reconnect), and on the next ensure call after a failed pass. Passes are
+ * single-flight with trailing coalesce, so trigger bursts collapse into at
+ * most one follow-up `workspace.list`.
  */
 
 import { Logger } from '../../../shared/logger';
@@ -53,6 +58,10 @@ let subscribeInFlight = false;
 // while a pass is in flight collapse into at most one follow-up pass.
 let reconcileInFlight = false;
 let reconcileQueued = false;
+// Set when a pass aborted on a failed/malformed workspace.list so the next
+// ensureWorkspaceForwardCleanup call retries even while the subscription is
+// still active (subscribeToWorkspaceEvents early-returns in that case).
+let reconcileFailed = false;
 
 function cleanupWorkspace(workspaceId: string, reason: 'archived' | 'deleted'): void {
   if (!deps) return;
@@ -108,7 +117,10 @@ function handleBackendNotification(n: JsonRpcNotification): void {
 async function runReconcilePass(): Promise<void> {
   if (!deps) return;
   const ownedIds = deps.registry.ownedWorkspaceIds();
-  if (ownedIds.length === 0) return;
+  if (ownedIds.length === 0) {
+    reconcileFailed = false;
+    return;
+  }
   const epoch = subscribeEpoch;
   let workspaces: unknown[];
   try {
@@ -118,14 +130,16 @@ async function runReconcilePass(): Promise<void> {
     if (!Array.isArray(result?.workspaces)) {
       // Never treat a malformed response as everything-deleted.
       logger.warn('workspace.list for forward reconciliation returned no workspaces array');
+      reconcileFailed = true;
       return;
     }
     workspaces = result.workspaces;
   } catch (error) {
-    // Best-effort: retried on the next reconnect/subscribe attempt.
+    // Best-effort: retried on the next reconnect/ensure/record trigger.
     logger.warn('workspace.list for forward reconciliation failed', {
       error: (error as Error).message,
     });
+    reconcileFailed = true;
     return;
   }
   // A reconnect happened while the list was in flight: the response describes
@@ -135,9 +149,16 @@ async function runReconcilePass(): Promise<void> {
   const archivedById = new Map<string, boolean>();
   for (const raw of workspaces) {
     const row = raw as { id?: unknown; archived?: unknown; status?: unknown } | undefined;
-    if (typeof row?.id !== 'string') continue;
+    if (typeof row?.id !== 'string') {
+      // A row without a string id means the response shape is off — abort
+      // rather than misclassify the ids it should have carried as deleted.
+      logger.warn('workspace.list for forward reconciliation returned a malformed row');
+      reconcileFailed = true;
+      return;
+    }
     archivedById.set(row.id, row.archived === true || row.status === 'Archived');
   }
+  reconcileFailed = false;
   for (const workspaceId of ownedIds) {
     const archived = archivedById.get(workspaceId);
     if (archived === undefined) {
@@ -165,7 +186,13 @@ async function reconcileOwnedForwards(): Promise<void> {
 }
 
 async function subscribeToWorkspaceEvents(): Promise<void> {
-  if (subscriptionId !== undefined || subscribeInFlight) return;
+  if (subscriptionId !== undefined || subscribeInFlight) {
+    // Already subscribed (or a subscribe is settling, whose finally kicks a
+    // reconcile) — but a previously failed reconciliation still needs a
+    // retry path while the subscription stays active.
+    if (subscriptionId !== undefined && reconcileFailed) void reconcileOwnedForwards();
+    return;
+  }
   subscribeInFlight = true;
   const epoch = subscribeEpoch;
   try {
@@ -201,7 +228,17 @@ async function subscribeToWorkspaceEvents(): Promise<void> {
  * wins the deps) and re-attempts a failed/absent subscription on every call.
  */
 export function ensureWorkspaceForwardCleanup(cleanupDeps: WorkspaceForwardCleanupDeps): void {
-  if (!deps) deps = cleanupDeps;
+  if (!deps) {
+    deps = cleanupDeps;
+    // A workspace owner recorded after its archive/delete event already
+    // fired (the record-after-archive race, monorepo#2646) would otherwise
+    // sit unexamined until the next reconnect — sweep it with a
+    // reconciliation pass keyed off the record itself. Single-flight with
+    // trailing coalesce keeps a mint burst at one trailing workspace.list.
+    deps.registry.onWorkspaceOwnerRecorded = () => {
+      void reconcileOwnedForwards();
+    };
+  }
   if (!listenersAttached) {
     listenersAttached = true;
     onBackendNotification(handleBackendNotification);
@@ -226,4 +263,5 @@ export function __resetWorkspaceForwardCleanupForTesting(): void {
   subscribeInFlight = false;
   reconcileInFlight = false;
   reconcileQueued = false;
+  reconcileFailed = false;
 }
