@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import {
+  getMessageNavigationStartScrollTop,
   getPlainTextMessagePreview,
   getUserMessageNavigationItems,
 } from '../chat-message-navigation';
@@ -21,7 +24,51 @@ function message(
   } as AgentMessage;
 }
 
+function source(relativePath: string) {
+  return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8');
+}
+
 describe('chat user-message navigation', () => {
+  it('aligns start navigation to the rendered header edge at whole and fractional zoom geometry', () => {
+    expect(
+      getMessageNavigationStartScrollTop({
+        currentScrollTop: 400,
+        targetTop: 219,
+        containerTop: 120,
+        headerBottom: 120,
+      }),
+    ).toBe(499);
+    expect(
+      getMessageNavigationStartScrollTop({
+        currentScrollTop: 400,
+        targetTop: 219.5,
+        containerTop: 120,
+        headerBottom: 120.5,
+      }),
+    ).toBe(499);
+  });
+
+  it('does not place a selected target under a header that overlaps the scroll viewport', () => {
+    expect(
+      getMessageNavigationStartScrollTop({
+        currentScrollTop: 400,
+        targetTop: 219,
+        containerTop: 120,
+        headerBottom: 121,
+      }),
+    ).toBe(498);
+  });
+
+  it('uses rendered panel-header geometry for start-aligned message navigation', () => {
+    const panel = source('src/lib/components/chat/ChatPanel.svelte');
+
+    expect(panel).toContain("querySelectorAll<HTMLElement>('[data-panel-content-header]')");
+    expect(panel).toContain('headerBottom: getRenderedPanelHeaderBottom()');
+    expect(panel).not.toContain(
+      'scrollContainer.scrollTop + (elementRect.top - containerRect.top) + 1',
+    );
+  });
+
   it('extracts plain-text previews from user-authored text', () => {
     expect(getPlainTextMessagePreview(message('1', 'user', '# **Plan**\n\nUse `pnpm`'))).toBe(
       'Plan Use pnpm',

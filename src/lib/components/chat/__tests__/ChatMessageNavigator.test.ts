@@ -207,13 +207,38 @@ describe('ChatMessageNavigator', () => {
     expect(document.activeElement).toBe(downButton);
   });
 
-  it('reopens on genuine pointer movement after outside-focus dismissal', async () => {
+  it('reopens on later mouse hover intent but not stationary movement or touch', async () => {
     renderNavigator();
     const trigger = screen.getByTestId('chat-message-navigator-trigger');
     const downButton = screen.getByTestId('chat-scroll-to-bottom-button');
+    const pointerTrace: Array<{ type: string; pointerType: string; x: number; y: number }> = [];
+    for (const type of ['pointerover', 'pointerenter', 'pointermove']) {
+      trigger.addEventListener(type, (event) => {
+        const pointer = event as PointerEvent;
+        pointerTrace.push({
+          type,
+          pointerType: pointer.pointerType,
+          x: pointer.clientX,
+          y: pointer.clientY,
+        });
+      });
+    }
 
     trigger.focus();
     await screen.findByRole('combobox', { name: 'Filter user messages' });
+    await fireEvent.pointerOver(trigger, {
+      pointerType: 'mouse',
+      pointerId: 1,
+      clientX: 10,
+      clientY: 10,
+      relatedTarget: downButton,
+    });
+    await fireEvent.pointerEnter(trigger, {
+      pointerType: 'mouse',
+      pointerId: 1,
+      clientX: 10,
+      clientY: 10,
+    });
     await fireEvent.pointerMove(trigger, {
       pointerType: 'mouse',
       pointerId: 1,
@@ -223,6 +248,8 @@ describe('ChatMessageNavigator', () => {
     downButton.focus();
     await fireEvent.focusIn(downButton);
     await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    pointerTrace.length = 0;
 
     await fireEvent.pointerMove(trigger, {
       pointerType: 'mouse',
@@ -231,6 +258,19 @@ describe('ChatMessageNavigator', () => {
       clientY: 10,
     });
     expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull();
+    await fireEvent.pointerOver(trigger, {
+      pointerType: 'touch',
+      pointerId: 2,
+      clientX: 12,
+      clientY: 10,
+      relatedTarget: downButton,
+    });
+    await fireEvent.pointerEnter(trigger, {
+      pointerType: 'touch',
+      pointerId: 2,
+      clientX: 12,
+      clientY: 10,
+    });
     await fireEvent.pointerMove(trigger, {
       pointerType: 'touch',
       pointerId: 2,
@@ -238,14 +278,45 @@ describe('ChatMessageNavigator', () => {
       clientY: 10,
     });
     expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull();
+    await fireEvent.pointerOver(trigger, {
+      pointerType: 'mouse',
+      pointerId: 1,
+      clientX: 11,
+      clientY: 10,
+      relatedTarget: downButton,
+    });
+    const input = await screen.findByRole('combobox', { name: 'Filter user messages' });
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    expect(pointerTrace).toEqual([
+      { type: 'pointermove', pointerType: 'mouse', x: 10, y: 10 },
+      { type: 'pointerover', pointerType: 'touch', x: 12, y: 10 },
+      { type: 'pointerenter', pointerType: 'touch', x: 12, y: 10 },
+      { type: 'pointermove', pointerType: 'touch', x: 12, y: 10 },
+      { type: 'pointerover', pointerType: 'mouse', x: 11, y: 10 },
+    ]);
+
+    downButton.focus();
+    await fireEvent.focusIn(downButton);
+    await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
+    pointerTrace.length = 0;
     await fireEvent.pointerMove(trigger, {
       pointerType: 'mouse',
       pointerId: 1,
       clientX: 11,
       clientY: 10,
     });
-    const input = await screen.findByRole('combobox', { name: 'Filter user messages' });
-    await waitFor(() => expect(document.activeElement).toBe(input));
+    expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull();
+    await fireEvent.pointerMove(trigger, {
+      pointerType: 'mouse',
+      pointerId: 1,
+      clientX: 12,
+      clientY: 10,
+    });
+    await screen.findByRole('combobox', { name: 'Filter user messages' });
+    expect(pointerTrace).toEqual([
+      { type: 'pointermove', pointerType: 'mouse', x: 11, y: 10 },
+      { type: 'pointermove', pointerType: 'mouse', x: 12, y: 10 },
+    ]);
   });
 
   it('opens from the trigger and closes on Escape', async () => {

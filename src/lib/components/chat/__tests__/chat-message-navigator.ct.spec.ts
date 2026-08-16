@@ -57,6 +57,43 @@ async function pickerForTrigger(page: Page, trigger: Locator) {
   return picker;
 }
 
+async function startNavigatorPointerTrace(trigger: Locator) {
+  await trigger.evaluate((element) => {
+    const target = element as HTMLElement & {
+      __navigatorPointerTrace?: Array<{
+        type: string;
+        pointerType: string;
+        x: number;
+        y: number;
+        expanded: string | null;
+      }>;
+    };
+    target.__navigatorPointerTrace = [];
+    for (const type of ['pointerover', 'pointerenter', 'pointermove']) {
+      target.addEventListener(type, (event) => {
+        const pointer = event as PointerEvent;
+        target.__navigatorPointerTrace?.push({
+          type,
+          pointerType: pointer.pointerType,
+          x: pointer.clientX,
+          y: pointer.clientY,
+          expanded: target.getAttribute('aria-expanded'),
+        });
+      });
+    }
+  });
+}
+
+async function readNavigatorPointerState(trigger: Locator) {
+  return trigger.evaluate((element) => {
+    const target = element as HTMLElement & { __navigatorPointerTrace?: unknown[] };
+    return {
+      expanded: target.getAttribute('aria-expanded'),
+      trace: target.__navigatorPointerTrace ?? [],
+    };
+  });
+}
+
 async function classifyMessageIdentityNodes(page: Page, messageId: string) {
   return page
     .locator(`[data-message-id="${messageId}"], [data-navigation-message-id="${messageId}"]`)
@@ -347,7 +384,9 @@ test.describe('chat message navigator production path', () => {
     await outside.focus();
     await expect(dialog).toHaveCount(0);
 
+    await startNavigatorPointerTrace(trigger);
     await trigger.hover();
+    await expect.poll(() => readNavigatorPointerState(trigger)).toMatchObject({ expanded: 'true' });
     dialog = await pickerForTrigger(page, trigger);
     await dialog.hover();
     await page.waitForTimeout(200);

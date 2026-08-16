@@ -12,6 +12,23 @@ export interface ChatNavigationState {
   userMessages: UserMessageNavigationItem[];
 }
 
+export interface MessageNavigationStartGeometry {
+  currentScrollTop: number;
+  targetTop: number;
+  containerTop: number;
+  headerBottom?: number;
+}
+
+export function getMessageNavigationStartScrollTop({
+  currentScrollTop,
+  targetTop,
+  containerTop,
+  headerBottom,
+}: MessageNavigationStartGeometry): number {
+  const visibleStart = Math.max(containerTop, headerBottom ?? containerTop);
+  return currentScrollTop + targetTop - visibleStart;
+}
+
 const SYSTEM_NOTE_MARKER = '[SYSTEM NOTE]';
 
 export function stripSystemNoteSuffix(text: string): string {

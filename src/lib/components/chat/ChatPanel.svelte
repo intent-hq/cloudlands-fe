@@ -167,6 +167,7 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AttentionRequestBanner from './AttentionRequestBanner.svelte';
   import {
+    getMessageNavigationStartScrollTop,
     getUserMessageNavigationItems,
     type ChatNavigationState,
   } from './chat-message-navigation';
@@ -1995,6 +1996,15 @@
   // Message navigation state
   let currentMessageIndex = $state(-1); // -1 means at bottom (no selection)
 
+  function getRenderedPanelHeaderBottom(): number | undefined {
+    const ownerPanel = panelElement?.closest<HTMLElement>('[data-panel-id]');
+    if (!ownerPanel) return undefined;
+    const header = Array.from(
+      ownerPanel.querySelectorAll<HTMLElement>('[data-panel-content-header]'),
+    ).find((candidate) => candidate.closest('[data-panel-id]') === ownerPanel);
+    return header?.getBoundingClientRect().bottom;
+  }
+
   /**
    * Smoothly scroll an element into view with a custom duration.
    * Uses easeOutCubic for a natural feel.
@@ -2017,7 +2027,12 @@
         containerRect.height / 2 +
         elementRect.height / 2;
     } else if (block === 'start') {
-      targetScrollTop = scrollContainer.scrollTop + (elementRect.top - containerRect.top) + 1;
+      targetScrollTop = getMessageNavigationStartScrollTop({
+        currentScrollTop: scrollContainer.scrollTop,
+        targetTop: elementRect.top,
+        containerTop: containerRect.top,
+        headerBottom: getRenderedPanelHeaderBottom(),
+      });
     } else {
       targetScrollTop = scrollContainer.scrollTop + (elementRect.bottom - containerRect.bottom) + 1;
     }
