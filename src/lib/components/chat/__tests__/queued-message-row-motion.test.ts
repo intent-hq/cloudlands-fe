@@ -169,7 +169,7 @@ describe('queued message row motion', () => {
       dispatchEvent: vi.fn(),
     });
     const harness = motionNode(28, 76);
-    expect(queuedMessageRowTransition(harness.node).duration).toBe(0);
+    expect(queuedMessageRowTransition(harness.node)).toBeUndefined();
     captureQueuedMessageRowMotion(harness.node)();
     expect(harness.animate).not.toHaveBeenCalled();
     expect(harness.node.style.height).toBe('');

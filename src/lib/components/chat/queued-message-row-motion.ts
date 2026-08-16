@@ -3,6 +3,9 @@ import type { TransitionConfig } from 'svelte/transition';
 import { beforeFollowBottomMutation, type FollowBottomMutation } from '$lib/utils/smartScroll';
 
 const DURATION_MS = 180;
+// Svelte's runtime completes an absent transition config without creating a
+// Web Animation, although its generated component type excludes undefined.
+const NO_TRANSITION = undefined as unknown as TransitionConfig;
 interface ActiveMotion {
   animation: Animation;
   bottomMutation: FollowBottomMutation;
@@ -108,7 +111,7 @@ export function queuedMessageRowTransition(
   };
   if (reducedMotion()) {
     settleBottomMutation();
-    return { duration: 0 };
+    return NO_TRANSITION;
   }
   cancelQueuedMessageRowMotion(node);
   const style = getComputedStyle(node);
