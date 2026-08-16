@@ -16,17 +16,32 @@ function contrastRatio(first: Rgba, second: Rgba): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-for (const theme of ['light', 'dark'] as const) {
-  test(`keeps destructive text and icons readable on ${theme} production surfaces`, async ({
-    mount,
-  }) => {
-    const component = await mount(DestructiveContrastHost, { props: { theme } });
-    const targets = [
-      { name: 'failed attachment chip', selector: '[data-placement-status="failed"]', alpha: 0.1 },
-      { name: 'streaming error title', selector: '[data-testid="error-title"]', alpha: 0 },
-      { name: 'turn-failure alert', selector: '.turn-failure-notice', alpha: 0.1 },
-    ];
+test('keeps destructive and operational secondary text readable in both themes', async ({
+  mount,
+}) => {
+  const component = await mount(DestructiveContrastHost, { props: { theme: 'light' } });
+  const targets = [
+    { name: 'failed attachment chip', selector: '[data-placement-status="failed"]', alpha: 0.1 },
+    { name: 'streaming error title', selector: '[data-testid="error-title"]', alpha: 0 },
+    { name: 'turn-failure alert', selector: '.turn-failure-notice', alpha: 0.1 },
+    {
+      name: 'operational secondary',
+      selector: '[data-testid="operational-secondary-surface"] [data-operational-icon-box]',
+      alpha: 0,
+    },
+  ];
+  const resolvedColors: Record<
+    string,
+    Record<string, { foreground: string; background: string }>
+  > = {};
 
+  for (const theme of ['light', 'dark'] as const) {
+    await component.update({ props: { theme } });
+    await expect(component).toHaveAttribute('data-theme', theme);
+    await expect
+      .poll(() => component.evaluate(() => document.documentElement.className))
+      .toContain(theme);
+    resolvedColors[theme] = {};
     for (const target of targets) {
       const measurement = await component.locator(target.selector).evaluate((element) => {
         type Color = [number, number, number, number];
@@ -69,8 +84,23 @@ for (const theme of ['light', 'dark'] as const) {
       expect(measurement.surfaceAlpha, `${target.name} surface alpha`).toBeCloseTo(target.alpha, 2);
       expect(
         contrastRatio(measurement.effectiveForeground, measurement.effectiveBackground),
-        `${target.name}: ${JSON.stringify(measurement)}`,
+        `${theme} ${target.name}: ${JSON.stringify(measurement)}`,
       ).toBeGreaterThanOrEqual(4.5);
+      resolvedColors[theme][target.name] = {
+        foreground: measurement.foreground,
+        background: JSON.stringify(measurement.effectiveBackground),
+      };
     }
-  });
-}
+  }
+
+  for (const target of targets) {
+    expect(
+      resolvedColors.dark[target.name].foreground,
+      `${target.name} must resolve a dark foreground utility`,
+    ).not.toBe(resolvedColors.light[target.name].foreground);
+    expect(
+      resolvedColors.dark[target.name].background,
+      `${target.name} must resolve a dark background utility`,
+    ).not.toBe(resolvedColors.light[target.name].background);
+  }
+});
