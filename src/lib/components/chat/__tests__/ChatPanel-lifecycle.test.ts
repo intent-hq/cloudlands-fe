@@ -179,6 +179,7 @@ import {
   setCachedChatScroll,
 } from '../chat-scroll-cache';
 import { scrollToBottom as scrollToBottomUtil } from '$lib/utils/smartScroll';
+import { SCROLL_BUTTON_SHOW_SETTLE_MS } from '../scroll-bottom-button-visibility';
 
 type Frame = { id: number; callback: FrameRequestCallback };
 let frames: Frame[];
@@ -634,11 +635,17 @@ describe('ChatPanel mounted lifecycle', () => {
     const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
     flushFrame(); // bind the distance-from-bottom scroll tracker
 
-    // Scrolled up beyond the 30px at-bottom threshold → arrow appears.
+    // Scrolled up well past the at-bottom threshold → arrow appears once the
+    // distance has held there for the anti-jitter settle window.
     Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1000 });
     Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
     scrollContainer.scrollTop = 100; // 500px from the bottom
     await fireEvent.scroll(scrollContainer);
+    await tick();
+    expect(
+      view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]'),
+    ).toBeNull();
+    await vi.advanceTimersByTimeAsync(SCROLL_BUTTON_SHOW_SETTLE_MS);
     await tick();
     const arrowButton = view.container.querySelector(
       '[data-testid="chat-scroll-to-bottom-button"]',
@@ -671,11 +678,13 @@ describe('ChatPanel mounted lifecycle', () => {
     const selector = '[data-testid="chat-scroll-lock-confirmation"]';
     expect(view.container.querySelector(selector)).toBeNull();
 
-    // Scroll up past the threshold, then back to the bottom → re-lock flash.
+    // Scroll up past the threshold (and let the show settle so the button
+    // commits), then back to the bottom → re-lock flash.
     Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1000 });
     Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
     scrollContainer.scrollTop = 100; // 500px from the bottom
     await fireEvent.scroll(scrollContainer);
+    await vi.advanceTimersByTimeAsync(SCROLL_BUTTON_SHOW_SETTLE_MS);
     await tick();
     expect(view.container.querySelector(selector)).toBeNull();
 
@@ -694,6 +703,39 @@ describe('ChatPanel mounted lifecycle', () => {
     await vi.advanceTimersByTimeAsync(1500);
     await tick();
     expect(view.container.querySelector(selector)).toBeNull();
+  });
+
+  it('keeps the button and lock confirmation stable while the distance jitters across the threshold', async () => {
+    // Regression: transient scrollHeight changes (lazy-turn placeholder swaps,
+    // image loads) bounce distance-from-bottom across the 30px threshold every
+    // frame. The button must not strobe in and the decorative lock
+    // confirmation must not re-trigger from the same jitter.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([{ id: 'message-1' }]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    flushFrame(); // bind the distance-from-bottom scroll tracker
+
+    Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
+    scrollContainer.scrollTop = 600;
+    // Oscillate scrollHeight so the distance alternates 0px ↔ 300px per frame,
+    // crossing the at-bottom threshold in both directions every ~16ms.
+    for (let frame = 0; frame < 60; frame++) {
+      Object.defineProperty(scrollContainer, 'scrollHeight', {
+        configurable: true,
+        value: frame % 2 === 0 ? 1300 : 1000,
+      });
+      await fireEvent.scroll(scrollContainer);
+      await vi.advanceTimersByTimeAsync(16);
+    }
+    await tick();
+    expect(view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="chat-scroll-lock-confirmation"]'),
+    ).toBeNull();
   });
 
   it('sets up and tears down sticky scroll tracking and resize observation normally', async () => {
