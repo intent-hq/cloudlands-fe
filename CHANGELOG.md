@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.56.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.3...v2.56.4) (2026-08-16)
+
+
+### 🐛 Bug Fixes
+
+* drop the stateSnapshot existing-sessions exception from settings copy ([#1345](https://github.com/intent-hq/cloudlands-fe/issues/1345)) ([c72cc1f](https://github.com/intent-hq/cloudlands-fe/commit/c72cc1fd23207a59d18116a443247086abefec49))
+
 ## [2.56.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.2...v2.56.3) (2026-08-16)
 
 
