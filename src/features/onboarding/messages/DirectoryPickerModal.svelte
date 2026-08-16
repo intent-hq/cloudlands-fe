@@ -27,7 +27,7 @@
   } from '$store/renderer/slices/directory-picker/directory-picker-selectors';
 
   import DirectoryPickerView from './DirectoryPickerView.svelte';
-  import { favoritesFromHome } from './directory-picker-view';
+  import { directoryPickerFavorites } from './directory-picker-view';
 
   interface Props {
     open: boolean;
@@ -72,7 +72,7 @@
 
   let loadedFor = $state<string | null>(null);
   const favorites = $derived(
-    favoritesFromHome(listing?.home, {
+    directoryPickerFavorites(listing, {
       home: m.onboarding_dirPicker_home_label(),
       desktop: m.onboarding_dirPicker_desktop_label(),
       documents: m.onboarding_dirPicker_documents_label(),

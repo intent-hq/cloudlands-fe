@@ -15,9 +15,12 @@ vi.mock('$lib/utils/client-logger', () => ({
 import { m } from '$shared/paraglide/messages.js';
 import {
   createDirectoryRequested,
+  directoryPickerReducer,
+  initialState,
   loadDirectoryRequested,
   navigateToPathRequested,
   type DirectoryPickerListing,
+  type DirectoryPickerState,
 } from '../directory-picker-slice';
 import { directoryPickerSaga } from './directory-picker-saga';
 
@@ -35,6 +38,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+// Pre-7.0 daemon shape (no `favorites`); the FE keeps working against it.
 function listing(path: string): DirectoryPickerListing {
   return {
     path,
@@ -47,20 +51,41 @@ function listing(path: string): DirectoryPickerListing {
   };
 }
 
-function harness() {
+// PROTOCOL.md §5.14 (v7.0) shape: `favorites` is always present, existence
+// checked on the daemon host, `home` always leading.
+function listingWithFavorites(path: string): DirectoryPickerListing {
+  return {
+    ...listing(path),
+    favorites: [
+      { id: 'home', path: '/Users/me' },
+      { id: 'desktop', path: '/Users/me/Desktop' },
+      { id: 'downloads', path: '/Users/me/Downloads' },
+    ],
+  };
+}
+
+function harness(seed: Partial<DirectoryPickerState> = {}) {
   const channel = stdChannel();
   const dispatched: unknown[] = [];
+  let state: DirectoryPickerState = { ...initialState, ...seed };
+  // Mirrors production: every action (trigger or saga-dispatched) runs through
+  // the real reducer before the saga sees it, so `getState` stays faithful.
+  const send = (action: Parameters<typeof directoryPickerReducer>[1]) => {
+    state = directoryPickerReducer(state, action);
+    channel.put(action);
+  };
   const task = runSaga(
     {
       channel,
       dispatch: (action) => {
         dispatched.push(action);
-        channel.put(action);
+        send(action);
       },
+      getState: () => ({ directoryPicker: state }),
     },
     directoryPickerSaga,
   );
-  return { channel, dispatched, task };
+  return { send, dispatched, task, state: () => state };
 }
 
 describe('directoryPickerSaga', () => {
@@ -69,9 +94,9 @@ describe('directoryPickerSaga', () => {
   it('sends the exact path request and forwards the full listing', async () => {
     const response = listing('/Users/me/code');
     mocks.request.mockResolvedValue(response);
-    const { channel, dispatched, task } = harness();
+    const { send, dispatched, task } = harness();
 
-    channel.put(loadDirectoryRequested('/Users/me/code'));
+    send(loadDirectoryRequested('/Users/me/code'));
     await settle();
 
     expect(mocks.request.mock.calls).toEqual([['host.listDirectory', { path: '/Users/me/code' }]]);
@@ -85,12 +110,37 @@ describe('directoryPickerSaga', () => {
     await task.toPromise();
   });
 
+  it('stores the wire favorites field intact in slice state', async () => {
+    const response = listingWithFavorites('/Users/me/code');
+    mocks.request.mockResolvedValue(response);
+    const { send, dispatched, state, task } = harness();
+
+    send(loadDirectoryRequested('/Users/me/code'));
+    await settle();
+
+    expect(mocks.request.mock.calls).toEqual([['host.listDirectory', { path: '/Users/me/code' }]]);
+    expect(dispatched).toEqual([
+      {
+        type: 'directoryPicker/listingLoaded',
+        payload: ['/Users/me/code', response],
+      },
+    ]);
+    expect(state().listing).toEqual(response);
+    expect(state().listing?.favorites).toEqual([
+      { id: 'home', path: '/Users/me' },
+      { id: 'desktop', path: '/Users/me/Desktop' },
+      { id: 'downloads', path: '/Users/me/Downloads' },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('uses an empty params object for daemon-host home', async () => {
     const response = listing('/Users/me');
     mocks.request.mockResolvedValue(response);
-    const { channel, dispatched, task } = harness();
+    const { send, dispatched, task } = harness();
 
-    channel.put(loadDirectoryRequested());
+    send(loadDirectoryRequested());
     await settle();
 
     expect(mocks.request.mock.calls).toEqual([['host.listDirectory', {}]]);
@@ -103,9 +153,9 @@ describe('directoryPickerSaga', () => {
 
   it('dispatches the exact terminal error for a failed home load', async () => {
     mocks.request.mockRejectedValue('transport unavailable');
-    const { channel, dispatched, task } = harness();
+    const { send, dispatched, state, task } = harness();
 
-    channel.put(loadDirectoryRequested());
+    send(loadDirectoryRequested());
     await settle();
 
     expect(mocks.request.mock.calls).toEqual([['host.listDirectory', {}]]);
@@ -115,18 +165,19 @@ describe('directoryPickerSaga', () => {
         payload: [null, 'transport unavailable'],
       },
     ]);
+    expect(state().loading).toBe(false);
     task.cancel();
     await task.toPromise();
   });
 
-  it('falls back once from a missing initial path to daemon-host home', async () => {
+  it('falls back once from a missing initial path and applies the home listing', async () => {
     const home = listing('/Users/me');
     mocks.request
       .mockRejectedValueOnce(new Error('No such file or directory (os error 2)'))
       .mockResolvedValueOnce(home);
-    const { channel, dispatched, task } = harness();
+    const { send, dispatched, state, task } = harness();
 
-    channel.put(loadDirectoryRequested('/gone'));
+    send(loadDirectoryRequested('/gone'));
     await settle();
     await settle();
 
@@ -134,7 +185,87 @@ describe('directoryPickerSaga', () => {
       ['host.listDirectory', { path: '/gone' }],
       ['host.listDirectory', {}],
     ]);
-    expect(dispatched).toEqual([{ type: 'directoryPicker/listingLoaded', payload: [null, home] }]);
+    // The fallback echoes the recorded requestedPath so the reducer accepts
+    // the home listing instead of discarding it as stale.
+    expect(dispatched).toEqual([
+      { type: 'directoryPicker/listingLoaded', payload: ['/gone', home] },
+    ]);
+    expect(state().listing).toEqual(home);
+    expect(state().loading).toBe(false);
+    expect(state().error).toBeNull();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('reports a terminal error when the home fallback itself fails', async () => {
+    mocks.request
+      .mockRejectedValueOnce(new Error('No such file or directory (os error 2)'))
+      .mockRejectedValueOnce(new Error('transport unavailable'));
+    const { send, dispatched, state, task } = harness();
+
+    send(loadDirectoryRequested('/gone'));
+    await settle();
+    await settle();
+
+    expect(dispatched).toEqual([
+      {
+        type: 'directoryPicker/listingFailed',
+        payload: ['/gone', 'transport unavailable'],
+      },
+    ]);
+    expect(state().loading).toBe(false);
+    expect(state().error).toBe('transport unavailable');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps the listing and shows an inline hint when navigating to a missing path', async () => {
+    const current = listing('/Users/me');
+    mocks.request.mockRejectedValue(new Error('No such file or directory (os error 2)'));
+    const { send, dispatched, state, task } = harness({
+      listing: current,
+      requestedPath: '/Users/me',
+    });
+
+    send(loadDirectoryRequested('/Users/me/ghost'));
+    await settle();
+
+    expect(mocks.request.mock.calls).toEqual([
+      ['host.listDirectory', { path: '/Users/me/ghost' }],
+    ]);
+    expect(dispatched).toEqual([
+      {
+        type: 'directoryPicker/pathNavigationFailed',
+        payload: ['/Users/me/ghost', m.onboarding_dirPicker_pathNotFound_error()],
+      },
+    ]);
+    expect(state().loading).toBe(false);
+    expect(state().pathError).toBe(m.onboarding_dirPicker_pathNotFound_error());
+    expect(state().listing).toEqual(current);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps the listing and shows a non-missing navigation error verbatim', async () => {
+    const current = listing('/Users/me');
+    mocks.request.mockRejectedValue(new Error('Permission denied (os error 13)'));
+    const { send, dispatched, state, task } = harness({
+      listing: current,
+      requestedPath: '/Users/me',
+    });
+
+    send(loadDirectoryRequested('/Users/me/vault'));
+    await settle();
+
+    expect(dispatched).toEqual([
+      {
+        type: 'directoryPicker/pathNavigationFailed',
+        payload: ['/Users/me/vault', 'Permission denied (os error 13)'],
+      },
+    ]);
+    expect(state().loading).toBe(false);
+    expect(state().pathError).toBe('Permission denied (os error 13)');
+    expect(state().listing).toEqual(current);
     task.cancel();
     await task.toPromise();
   });
@@ -143,11 +274,11 @@ describe('directoryPickerSaga', () => {
     const first = deferred<DirectoryPickerListing>();
     const second = deferred<DirectoryPickerListing>();
     mocks.request.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
-    const { channel, dispatched, task } = harness();
+    const { send, dispatched, task } = harness();
 
-    channel.put(loadDirectoryRequested('/one'));
-    channel.put(loadDirectoryRequested('/one'));
-    channel.put(loadDirectoryRequested('/two'));
+    send(loadDirectoryRequested('/one'));
+    send(loadDirectoryRequested('/one'));
+    send(loadDirectoryRequested('/two'));
     await settle();
 
     expect(mocks.request.mock.calls).toEqual([['host.listDirectory', { path: '/one' }]]);
@@ -160,7 +291,7 @@ describe('directoryPickerSaga', () => {
       },
     ]);
 
-    channel.put(loadDirectoryRequested('/two'));
+    send(loadDirectoryRequested('/two'));
     await settle();
     expect(mocks.request.mock.calls).toEqual([
       ['host.listDirectory', { path: '/one' }],
@@ -179,9 +310,9 @@ describe('directoryPickerSaga', () => {
   it('routes typed-path success through the exact path request', async () => {
     const response = listing('/Users/me/typed');
     mocks.request.mockResolvedValue(response);
-    const { channel, dispatched, task } = harness();
+    const { send, dispatched, task } = harness();
 
-    channel.put(navigateToPathRequested('/Users/me/typed'));
+    send(navigateToPathRequested('/Users/me/typed'));
     await settle();
 
     expect(mocks.request.mock.calls).toEqual([['host.listDirectory', { path: '/Users/me/typed' }]]);
@@ -197,9 +328,9 @@ describe('directoryPickerSaga', () => {
 
   it('maps a missing typed path to the localized inline error', async () => {
     mocks.request.mockRejectedValue(new Error('ENOENT: missing'));
-    const { channel, dispatched, task } = harness();
+    const { send, dispatched, task } = harness();
 
-    channel.put(navigateToPathRequested('/missing'));
+    send(navigateToPathRequested('/missing'));
     await settle();
 
     expect(dispatched).toEqual([
@@ -214,9 +345,9 @@ describe('directoryPickerSaga', () => {
 
   it('surfaces a non-missing typed-path error verbatim', async () => {
     mocks.request.mockRejectedValue(new Error('Permission denied (os error 13)'));
-    const { channel, dispatched, task } = harness();
+    const { send, dispatched, task } = harness();
 
-    channel.put(navigateToPathRequested('/forbidden'));
+    send(navigateToPathRequested('/forbidden'));
     await settle();
 
     expect(dispatched).toEqual([
@@ -233,12 +364,12 @@ describe('directoryPickerSaga', () => {
     const stale = deferred<DirectoryPickerListing>();
     const latest = listing('/latest');
     mocks.request.mockReturnValueOnce(stale.promise).mockResolvedValueOnce(latest);
-    const { channel, dispatched, task } = harness();
+    const { send, dispatched, task } = harness();
 
-    channel.put(navigateToPathRequested('/stale'));
+    send(navigateToPathRequested('/stale'));
     await settle();
-    channel.put(navigateToPathRequested('/latest'));
-    channel.put(navigateToPathRequested(''));
+    send(navigateToPathRequested('/latest'));
+    send(navigateToPathRequested(''));
     await settle();
     stale.resolve(listing('/stale'));
     await settle();
@@ -255,9 +386,9 @@ describe('directoryPickerSaga', () => {
   it('creates a directory with the exact wire request before loading it', async () => {
     const created = listing('/Users/me/new-folder');
     mocks.request.mockResolvedValueOnce(undefined).mockResolvedValueOnce(created);
-    const { channel, dispatched, task } = harness();
+    const { send, dispatched, task } = harness();
 
-    channel.put(createDirectoryRequested('/Users/me/new-folder'));
+    send(createDirectoryRequested('/Users/me/new-folder'));
     await settle();
 
     expect(mocks.request.mock.calls).toEqual([
@@ -278,9 +409,9 @@ describe('directoryPickerSaga', () => {
   it('cleans up pending work without dispatching on root cancellation', async () => {
     const pending = deferred<DirectoryPickerListing>();
     mocks.request.mockReturnValue(pending.promise);
-    const { channel, dispatched, task } = harness();
+    const { send, dispatched, task } = harness();
 
-    channel.put(loadDirectoryRequested('/pending'));
+    send(loadDirectoryRequested('/pending'));
     await settle();
     task.cancel();
     await task.toPromise();
