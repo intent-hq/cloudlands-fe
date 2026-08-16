@@ -119,6 +119,7 @@ describe('followBottom policy', () => {
   let resizeCallbacks: ResizeObserverCallback[];
   let resizeObserved: Element[];
   let resizeUnobserved: Element[];
+  let resizeActive: Set<Element>;
   let mutationCallbacks: MutationCallback[];
   let scrollHeight: number;
   let clientHeight: number;
@@ -130,6 +131,7 @@ describe('followBottom policy', () => {
     resizeCallbacks = [];
     resizeObserved = [];
     resizeUnobserved = [];
+    resizeActive = new Set();
     mutationCallbacks = [];
     scrollHeight = 900;
     clientHeight = 300;
@@ -147,11 +149,15 @@ describe('followBottom policy', () => {
         }
         observe(element: Element) {
           resizeObserved.push(element);
+          resizeActive.add(element);
         }
         unobserve(element: Element) {
           resizeUnobserved.push(element);
+          resizeActive.delete(element);
         }
-        disconnect() {}
+        disconnect() {
+          resizeActive.clear();
+        }
       },
     );
     vi.stubGlobal(
@@ -210,11 +216,18 @@ describe('followBottom policy', () => {
   }
 
   function fireResizeFor(element: Element) {
-    if (resizeObserved.includes(element)) fireResize();
+    if (resizeActive.has(element)) fireResize();
   }
 
   function fireMutation() {
     mutationCallbacks[0]?.([], {} as MutationObserver);
+  }
+
+  function fireAddedMutation(node: Node) {
+    mutationCallbacks[0]?.(
+      [{ type: 'childList', addedNodes: [node] } as unknown as MutationRecord],
+      {} as MutationObserver,
+    );
   }
 
   it('keeps a captured bottom lock exact through mutation and resize frames', () => {
@@ -255,6 +268,69 @@ describe('followBottom policy', () => {
     scrollHeight += 24;
     mutation.settle();
     expect(scrollTop).toBe(654);
+    action.destroy();
+  });
+
+  it('retains persistent direct-child observation across overlapping leases', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    const action = followBottom(container, { follow: true });
+    expect(resizeActive.has(child)).toBe(true);
+    const persistentObserveCalls = resizeObserved.filter((element) => element === child).length;
+    const first = beforeFollowBottomMutation(child);
+    const second = beforeFollowBottomMutation(child);
+
+    expect(resizeObserved.filter((element) => element === child)).toHaveLength(
+      persistentObserveCalls,
+    );
+    first.settle();
+    expect(resizeActive.has(child)).toBe(true);
+    expect(resizeUnobserved).not.toContain(child);
+    second.settle();
+    expect(resizeActive.has(child)).toBe(true);
+    expect(resizeUnobserved).not.toContain(child);
+
+    scrollHeight += 21;
+    fireResizeFor(child);
+    expect(scrollTop).toBe(621);
+    action.destroy();
+  });
+
+  it('retains mutation-added persistent observation after lease settlement', () => {
+    const action = followBottom(container, { follow: true });
+    const child = document.createElement('div');
+    container.append(child);
+    fireAddedMutation(child);
+    expect(resizeActive.has(child)).toBe(true);
+    const mutation = beforeFollowBottomMutation(child);
+
+    mutation.settle();
+    expect(resizeActive.has(child)).toBe(true);
+    expect(resizeUnobserved).not.toContain(child);
+    scrollHeight += 17;
+    fireResizeFor(child);
+    expect(scrollTop).toBe(617);
+    action.destroy();
+  });
+
+  it('releases a nested lease-only target only after its final lease', () => {
+    const wrapper = document.createElement('div');
+    const row = document.createElement('div');
+    wrapper.append(row);
+    container.append(wrapper);
+    const action = followBottom(container, { follow: true });
+    expect(resizeActive.has(row)).toBe(false);
+    const first = beforeFollowBottomMutation(row);
+    const second = beforeFollowBottomMutation(row);
+
+    expect(resizeObserved.filter((element) => element === row)).toHaveLength(1);
+    expect(resizeActive.has(row)).toBe(true);
+    first.settle();
+    expect(resizeActive.has(row)).toBe(true);
+    expect(resizeUnobserved).not.toContain(row);
+    second.settle();
+    expect(resizeActive.has(row)).toBe(false);
+    expect(resizeUnobserved.filter((element) => element === row)).toHaveLength(1);
     action.destroy();
   });
 
@@ -310,6 +386,7 @@ describe('followBottom policy', () => {
     const mutation = beforeFollowBottomMutation(child);
     action.destroy();
     const framesAfterDestroy = animationFrames.length;
+    expect(resizeActive.size).toBe(0);
 
     scrollHeight = 1000;
     mutation.request();

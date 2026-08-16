@@ -75,6 +75,12 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let activeMutationLocks = 0;
   let destroyed = false;
   const mutationElements = new Map<HTMLElement, number>();
+  const persistentResizeElements = new WeakSet<HTMLElement>();
+
+  function observePersistentResize(element: HTMLElement) {
+    persistentResizeElements.add(element);
+    resizeObserver?.observe(element);
+  }
 
   function cancelSettle() {
     if (settleFrame !== null) cancelAnimationFrame(settleFrame);
@@ -172,7 +178,9 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       activeMutationLocks += 1;
       const elementLocks = mutationElements.get(element) ?? 0;
       mutationElements.set(element, elementLocks + 1);
-      if (elementLocks === 0) resizeObserver?.observe(element);
+      if (elementLocks === 0 && !persistentResizeElements.has(element)) {
+        resizeObserver?.observe(element);
+      }
       requestBottomSettle();
       let active = true;
       return {
@@ -187,7 +195,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
           if (remainingElementLocks > 0) mutationElements.set(element, remainingElementLocks);
           else {
             mutationElements.delete(element);
-            resizeObserver?.unobserve?.(element);
+            if (!persistentResizeElements.has(element)) resizeObserver?.unobserve?.(element);
           }
           requestBottomSettle();
         },
@@ -309,7 +317,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
         if (mutation.type === 'childList') {
           for (const node of mutation.addedNodes) {
             if (node instanceof HTMLElement && resizeObserver) {
-              resizeObserver.observe(node);
+              observePersistentResize(node);
             }
           }
         }
@@ -324,11 +332,11 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
     // Watch for size changes
     resizeObserver = new ResizeObserver(handleLayoutChange);
-    resizeObserver.observe(container);
+    observePersistentResize(container);
 
     // Also observe children for size changes
     for (const child of container.children) {
-      resizeObserver.observe(child);
+      if (child instanceof HTMLElement) observePersistentResize(child);
     }
   }
 
