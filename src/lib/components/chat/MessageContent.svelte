@@ -41,7 +41,11 @@
     type RenderContentBlock,
   } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
-  import { OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS } from './operational-disclosure-row';
+  import {
+    getOperationalClusterSpacingClass,
+    isOperationalClusterBlock,
+    OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
+  } from './operational-disclosure-row';
   import { dedupeKeys, getResponseGroupBlockKeys } from './response-group-blocks';
   import NavLink from './NavLink.svelte';
   import ProposalCard from './proposals/ProposalCard.svelte';
@@ -578,30 +582,36 @@
   {/if}
 {/snippet}
 
-<div class="flex flex-col gap-2.5" style="contain: layout style paint;">
+<div class="flex flex-col" style="contain: layout style paint;">
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
-    {#if block.type === 'content_group'}
-      {@const group = block as ContentBlockGroup}
-      <ResponseGroup
-        name={group.name}
-        isStreaming={group.isStreaming}
-        isLast={blockIndex === groupedBlocks.length - 1}
-        blocks={group.children}
-      >
-        {#snippet children()}
-          {@const childKeys = getResponseGroupBlockKeys(group.children)}
-          {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-            {@render renderContentBlock(
-              childBlock,
-              `${blockIndex}-${childIndex}`,
-              blockIndex,
-              true,
-            )}
-          {/each}
-        {/snippet}
-      </ResponseGroup>
-    {:else}
-      {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}
-    {/if}
+    <div
+      class={getOperationalClusterSpacingClass(groupedBlocks, blockIndex)}
+      data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
+      data-message-content-block={block.type}
+    >
+      {#if block.type === 'content_group'}
+        {@const group = block as ContentBlockGroup}
+        <ResponseGroup
+          name={group.name}
+          isStreaming={group.isStreaming}
+          isLast={blockIndex === groupedBlocks.length - 1}
+          blocks={group.children}
+        >
+          {#snippet children()}
+            {@const childKeys = getResponseGroupBlockKeys(group.children)}
+            {#each group.children as childBlock, childIndex (childKeys[childIndex])}
+              {@render renderContentBlock(
+                childBlock,
+                `${blockIndex}-${childIndex}`,
+                blockIndex,
+                true,
+              )}
+            {/each}
+          {/snippet}
+        </ResponseGroup>
+      {:else}
+        {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}
+      {/if}
+    </div>
   {/each}
 </div>

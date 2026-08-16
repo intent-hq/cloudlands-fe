@@ -594,7 +594,7 @@ describe('MessageContent - top-level response rows', () => {
     expect(container.querySelectorAll('.border.border-border').length).toBe(2);
   });
 
-  it('uses a 10px top-level stack without changing the 6px group internals', async () => {
+  it('keeps a 10px prose stack without changing the 6px group internals', async () => {
     const MessageContent = (await import('../MessageContent.svelte')).default;
     const content = [
       {
@@ -609,7 +609,10 @@ describe('MessageContent - top-level response rows', () => {
     const { container } = render(MessageContent, { props: { content } });
     const button = container.querySelector('button')!;
     const group = button.parentElement;
-    expect(container.firstElementChild?.className).toContain('gap-2.5');
+    expect(container.firstElementChild?.className).not.toContain('gap-2.5');
+    expect(container.querySelector('[data-message-content-block="text"]')?.className).toContain(
+      'mt-2.5',
+    );
     expect(group?.className).not.toContain('mb-1.5');
     await fireEvent.click(button);
     await waitFor(() => expect(group?.querySelector('[class~="gap-1.5"]')).toBeTruthy());

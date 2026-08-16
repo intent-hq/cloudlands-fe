@@ -6,18 +6,20 @@ for (const theme of ['light', 'dark'] as const) {
     for (const zoom of [1, 2]) {
       test(`aligns top-level prose with group text in ${theme} at ${width}px and ${zoom * 100}%`, async ({
         mount,
+        page,
       }) => {
         const component = await mount(AssistantProseGeometryHost, {
           props: { theme, width, zoom },
         });
-        const groupButton = component.locator('[data-testid="group-adjacency"] button').first();
-        const groupSummary = component.locator('[data-testid="response-group-summary"]');
-        const prose = component.locator('[data-assistant-prose]');
+        const baseline = component.locator('[data-testid="baseline-geometry"]');
+        const groupButton = baseline.locator('[data-testid="group-adjacency"] button').first();
+        const groupSummary = baseline.locator('[data-testid="response-group-summary"]');
+        const prose = baseline.locator('[data-assistant-prose]');
 
         await expect(groupSummary).toBeVisible();
         await expect(prose).toHaveCount(4);
 
-        const operationalRows = component.locator('[data-operational-disclosure-row]');
+        const operationalRows = baseline.locator('[data-operational-disclosure-row]');
         await expect(operationalRows).toHaveCount(4);
         const operationalContentXs: number[] = [];
         for (const row of await operationalRows.all()) {
@@ -57,7 +59,7 @@ for (const theme of ['light', 'dark'] as const) {
         const groupX = (await groupSummary.boundingBox())!.x;
         for (const contentX of operationalContentXs) expect(contentX).toBeCloseTo(groupX, 1);
 
-        const primaryStyles = await component
+        const primaryStyles = await baseline
           .locator(
             '[data-testid="reasoning-summary"], [data-testid="response-group-name"], [data-tool-primary]',
           )
@@ -71,7 +73,7 @@ for (const theme of ['light', 'dark'] as const) {
         expect(new Set(primaryStyles.map(({ color }) => color)).size).toBe(1);
         expect(primaryStyles.every(({ fontWeight }) => fontWeight === '400')).toBe(true);
 
-        const secondaryStyles = await component
+        const secondaryStyles = await baseline
           .locator(
             '[data-testid="response-group-snippet"], [data-operational-icon-box], [data-tool-secondary]',
           )
@@ -90,10 +92,8 @@ for (const theme of ['light', 'dark'] as const) {
           expect(box?.x).toBeCloseTo(groupX, 1);
         }
 
-        const laneBox = (await component
-          .locator('[data-testid="assistant-prose-lane"]')
-          .boundingBox())!;
-        const toolBox = (await component
+        const laneBox = (await baseline.boundingBox())!;
+        const toolBox = (await baseline
           .locator('[data-testid="full-width-tool"] > *')
           .boundingBox())!;
         expect(toolBox.x).toBeCloseTo(laneBox.x, 1);
@@ -105,6 +105,63 @@ for (const theme of ['light', 'dark'] as const) {
         );
         await expect(groupDetails).toBeVisible();
         await expect(groupDetails.locator('[data-assistant-prose]')).toHaveCount(0);
+
+        const assertCluster = async (testId: string, expectedRows: number) => {
+          const fixture = component.locator(`[data-testid="${testId}"]`);
+          const stack = fixture.locator(':scope > *');
+          const rows = fixture.locator('[data-operational-cluster-row]');
+          await expect(rows).toHaveCount(expectedRows);
+          const boxes = await rows.evaluateAll((elements) =>
+            elements.map((element) => {
+              const box = element.getBoundingClientRect();
+              return { top: box.top, bottom: box.bottom };
+            }),
+          );
+          for (let index = 1; index < boxes.length; index += 1) {
+            expect(boxes[index].top - boxes[index - 1].bottom).toBeCloseTo(0, 1);
+          }
+
+          const firstBlock = fixture.locator('[data-message-content-block]').first();
+          const lastBlock = fixture.locator('[data-message-content-block]').last();
+          const firstRow = rows.first();
+          const lastRow = rows.last();
+          if (expectedRows === 1) {
+            const stackBox = (await stack.boundingBox())!;
+            const firstRowBox = (await firstRow.boundingBox())!;
+            expect(firstRowBox.y - stackBox.y).toBeCloseTo(16 * zoom, 1);
+            expect(stackBox.y + stackBox.height - (firstRowBox.y + firstRowBox.height)).toBeCloseTo(
+              16 * zoom,
+              1,
+            );
+          } else {
+            const firstBlockBox = (await firstBlock.boundingBox())!;
+            const lastBlockBox = (await lastBlock.boundingBox())!;
+            const firstRowBox = (await firstRow.boundingBox())!;
+            const lastRowBox = (await lastRow.boundingBox())!;
+            expect(firstRowBox.y - (firstBlockBox.y + firstBlockBox.height)).toBeCloseTo(
+              16 * zoom,
+              1,
+            );
+            expect(lastBlockBox.y - (lastRowBox.y + lastRowBox.height)).toBeCloseTo(16 * zoom, 1);
+          }
+        };
+
+        await assertCluster('single-operational-cluster', 1);
+        await assertCluster('static-operational-cluster', 5);
+        await assertCluster('streaming-operational-cluster', 5);
+
+        const staticRows = component.locator(
+          '[data-testid="static-operational-cluster"] [data-operational-cluster-row]',
+        );
+        await staticRows.nth(2).getByRole('button').click();
+        await staticRows.nth(4).getByRole('button').click();
+        await expect(
+          component.locator(
+            '[data-testid="static-operational-cluster"] [data-operational-expanded-content]',
+          ),
+        ).toHaveCount(2);
+        await page.waitForTimeout(200);
+        await assertCluster('static-operational-cluster', 5);
       });
     }
   }

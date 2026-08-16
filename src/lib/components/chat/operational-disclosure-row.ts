@@ -28,6 +28,40 @@ export const OPERATIONAL_ICON_BOX_CLASS = `a11y-ignore pointer-events-none flex 
 
 export const OPERATIONAL_ICON_CLASS = 'h-[1.125rem]! w-[1.125rem]! shrink-0';
 
+interface OperationalClusterBlock {
+  type: string;
+}
+
+export function isOperationalClusterBlock(block: OperationalClusterBlock): boolean {
+  return block.type === 'thinking' || block.type === 'tool_use';
+}
+
+export function getOperationalClusterSpacingClass<T extends OperationalClusterBlock>(
+  blocks: readonly T[],
+  index: number,
+  isVisible: (block: T) => boolean = () => true,
+): string {
+  const block = blocks[index];
+  if (!block || !isVisible(block)) return '';
+
+  let previousIndex = index - 1;
+  while (previousIndex >= 0 && !isVisible(blocks[previousIndex])) previousIndex -= 1;
+  let nextIndex = index + 1;
+  while (nextIndex < blocks.length && !isVisible(blocks[nextIndex])) nextIndex += 1;
+
+  const previousIsOperational =
+    previousIndex >= 0 && isOperationalClusterBlock(blocks[previousIndex]);
+  if (!isOperationalClusterBlock(block)) {
+    return previousIndex >= 0 && !previousIsOperational ? 'mt-2.5' : '';
+  }
+
+  const nextIsOperational =
+    nextIndex < blocks.length && isOperationalClusterBlock(blocks[nextIndex]);
+  return [previousIsOperational ? '' : 'mt-4', nextIsOperational ? '' : 'mb-4']
+    .filter(Boolean)
+    .join(' ');
+}
+
 /** Tool-only collapsed row: fixed icon, one truncating sentence, optional trailing state/action. */
 export const COMPACT_TOOL_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} relative grid min-h-9 w-full min-w-0 max-w-full grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto] items-center gap-[var(--operational-leading-gap)] overflow-hidden px-[var(--operational-row-inline-padding)] py-2`;
 

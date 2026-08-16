@@ -55,7 +55,11 @@
     type RenderContentBlock,
   } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
-  import { OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS } from './operational-disclosure-row';
+  import {
+    getOperationalClusterSpacingClass,
+    isOperationalClusterBlock,
+    OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
+  } from './operational-disclosure-row';
   import { dedupeKeys, getResponseGroupBlockKeys } from './response-group-blocks';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
@@ -554,6 +558,17 @@
   let blockKeys = $derived(
     dedupeKeys(groupedBlocks.map((block, index) => getBlockKey(block, index))),
   );
+
+  function isVisibleTopLevelBlock(block: RenderContentBlock): boolean {
+    if (block.type === 'content_group') return true;
+    const contentBlock = block as ContentBlock;
+    return Boolean(
+      isNavLinkBlock(contentBlock) ||
+      resolveCard(contentBlock, cardHandlers) ||
+      getProposalFromBlock(contentBlock) ||
+      ['text', 'tool_use', 'thinking', 'image'].includes(contentBlock.type),
+    );
+  }
 </script>
 
 {#snippet renderParsedContentBlock(
@@ -770,7 +785,7 @@
 {/snippet}
 
 <div
-  class="flex flex-col gap-2.5 relative"
+  class="relative flex flex-col"
   class:streaming={isStreaming}
   style="contain: layout style paint;"
   data-tool-executing={[...toolStates.values()].some((s) => s === 'running')}
@@ -779,7 +794,12 @@
     {#if block.type === 'content_group'}
       {@const group = block as ContentBlockGroup}
       <div
-        class="content-block content-block--group"
+        class="content-block content-block--group {getOperationalClusterSpacingClass(
+          groupedBlocks,
+          blockIndex,
+          isVisibleTopLevelBlock,
+        )}"
+        data-message-content-block="content_group"
         use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
       >
         <ResponseGroup
@@ -813,7 +833,13 @@
             ? 'card'
             : getProposalFromBlock(block as ContentBlock)
               ? 'proposal'
-              : block.type}"
+              : block.type} {getOperationalClusterSpacingClass(
+          groupedBlocks,
+          blockIndex,
+          isVisibleTopLevelBlock,
+        )}"
+        data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
+        data-message-content-block={block.type}
         use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
       >
         {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}
