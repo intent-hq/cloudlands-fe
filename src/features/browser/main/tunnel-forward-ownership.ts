@@ -48,6 +48,15 @@ export class ForwardOwnershipRegistry {
     this.ports.delete(remotePort);
   }
 
+  /** Distinct workspace ids currently owning at least one forwarded port. */
+  ownedWorkspaceIds(): string[] {
+    const ids = new Set<string>();
+    for (const entry of this.ports.values()) {
+      for (const id of entry.owners) ids.add(id);
+    }
+    return [...ids];
+  }
+
   /**
    * Remove `workspaceId` from every port it owns and return the ports left
    * with no owners at all — the ones whose forwards should now be closed.

@@ -14,6 +14,14 @@
  * self-heals. On backend reconnect the subscription is replayed; the registry
  * itself is only reset on backend switch (browser.ipc.ts), where the
  * providers — and their forwards — are disposed anyway.
+ *
+ * Events alone are not enough (monorepo#2646): archive/delete events fired
+ * while the client was disconnected (or before a subscribe resolved) are
+ * lost, and a forward recorded after its owner's archive event slipped past
+ * the event-driven cleanup. Every subscribe attempt therefore settles into a
+ * reconciliation pass: fetch the daemon's current workspaces
+ * (`workspace.list { includeArchived: true }`) and release owners that are
+ * archived or gone, closing forwards left with no owner.
  */
 
 import { Logger } from '../../../shared/logger';
@@ -41,6 +49,10 @@ let subscriptionId: string | undefined;
 // subscription id (same rationale as workspace-path.service.ts).
 let subscribeEpoch = 0;
 let subscribeInFlight = false;
+// Reconciliation is single-flight with a trailing coalesce: triggers landing
+// while a pass is in flight collapse into at most one follow-up pass.
+let reconcileInFlight = false;
+let reconcileQueued = false;
 
 function cleanupWorkspace(workspaceId: string, reason: 'archived' | 'deleted'): void {
   if (!deps) return;
@@ -86,6 +98,72 @@ function handleBackendNotification(n: JsonRpcNotification): void {
   }
 }
 
+/**
+ * One reconciliation pass (monorepo#2646): fetch every workspace (archived
+ * included) and release forward ownership for owners that are archived or no
+ * longer exist — the daemon's current state stands in for any archive/delete
+ * events lost while disconnected, and sweeps ownership recorded after its
+ * owner's archive event (the record-after-archive race).
+ */
+async function runReconcilePass(): Promise<void> {
+  if (!deps) return;
+  const ownedIds = deps.registry.ownedWorkspaceIds();
+  if (ownedIds.length === 0) return;
+  const epoch = subscribeEpoch;
+  let workspaces: unknown[];
+  try {
+    const result = (await getBackendClient().request('workspace.list', {
+      includeArchived: true,
+    })) as { workspaces?: unknown[] } | undefined;
+    if (!Array.isArray(result?.workspaces)) {
+      // Never treat a malformed response as everything-deleted.
+      logger.warn('workspace.list for forward reconciliation returned no workspaces array');
+      return;
+    }
+    workspaces = result.workspaces;
+  } catch (error) {
+    // Best-effort: retried on the next reconnect/subscribe attempt.
+    logger.warn('workspace.list for forward reconciliation failed', {
+      error: (error as Error).message,
+    });
+    return;
+  }
+  // A reconnect happened while the list was in flight: the response describes
+  // the previous connection's backend — drop it; the reconnect-triggered
+  // reconciliation runs against the new one.
+  if (epoch !== subscribeEpoch) return;
+  const archivedById = new Map<string, boolean>();
+  for (const raw of workspaces) {
+    const row = raw as { id?: unknown; archived?: unknown; status?: unknown } | undefined;
+    if (typeof row?.id !== 'string') continue;
+    archivedById.set(row.id, row.archived === true || row.status === 'Archived');
+  }
+  for (const workspaceId of ownedIds) {
+    const archived = archivedById.get(workspaceId);
+    if (archived === undefined) {
+      cleanupWorkspace(workspaceId, 'deleted');
+    } else if (archived) {
+      cleanupWorkspace(workspaceId, 'archived');
+    }
+  }
+}
+
+async function reconcileOwnedForwards(): Promise<void> {
+  if (reconcileInFlight) {
+    reconcileQueued = true;
+    return;
+  }
+  reconcileInFlight = true;
+  try {
+    do {
+      reconcileQueued = false;
+      await runReconcilePass();
+    } while (reconcileQueued);
+  } finally {
+    reconcileInFlight = false;
+  }
+}
+
 async function subscribeToWorkspaceEvents(): Promise<void> {
   if (subscriptionId !== undefined || subscribeInFlight) return;
   subscribeInFlight = true;
@@ -109,6 +187,12 @@ async function subscribeToWorkspaceEvents(): Promise<void> {
     });
   } finally {
     if (epoch === subscribeEpoch) subscribeInFlight = false;
+    // Reconcile after every subscribe attempt settles — success or failure:
+    // it covers events lost during an outage (reconnect resubscribe), events
+    // fired before the first subscribe resolved, and the record-after-archive
+    // race (monorepo#2646). Ordered after the subscribe so live events take
+    // over from where the reconciliation snapshot leaves off.
+    void reconcileOwnedForwards();
   }
 }
 
@@ -140,4 +224,6 @@ export function __resetWorkspaceForwardCleanupForTesting(): void {
   subscriptionId = undefined;
   subscribeEpoch = 0;
   subscribeInFlight = false;
+  reconcileInFlight = false;
+  reconcileQueued = false;
 }

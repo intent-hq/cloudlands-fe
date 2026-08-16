@@ -291,16 +291,21 @@ describe('workspace-forward-cleanup.service', () => {
     expect(closeForward).toHaveBeenCalledTimes(2);
   });
 
+  /** events.subscribe calls only — reconciliation adds workspace.list calls. */
+  function subscribeCallCount(): number {
+    return requestSpy.mock.calls.filter(([method]) => method === 'events.subscribe').length;
+  }
+
   it('re-subscribes on backend reconnect and drops the stale subscription id', async () => {
     const { registry, closeForward } = arm();
     registry.record(3000, 'ws-a');
     await flush();
-    expect(requestSpy).toHaveBeenCalledTimes(1);
+    expect(subscribeCallCount()).toBe(1);
 
     requestSpy.mockResolvedValue({ subscriptionId: 'sub-fresh' });
     for (const handler of reconnectHandlers) handler();
     await flush();
-    expect(requestSpy).toHaveBeenCalledTimes(2);
+    expect(subscribeCallCount()).toBe(2);
 
     emitEvent('workspace:deleted', { workspaceId: 'ws-a' }, SUB_ID);
     expect(closeForward).not.toHaveBeenCalled();
@@ -313,13 +318,202 @@ describe('workspace-forward-cleanup.service', () => {
     const { registry, closeForward } = arm();
     registry.record(3000, 'ws-a');
     await flush();
-    expect(requestSpy).toHaveBeenCalledTimes(1);
+    expect(subscribeCallCount()).toBe(1);
 
     ensureWorkspaceForwardCleanup({ registry, closeForward });
     await flush();
-    expect(requestSpy).toHaveBeenCalledTimes(2);
+    expect(subscribeCallCount()).toBe(2);
 
     emitEvent('workspace:deleted', { workspaceId: 'ws-a' });
+    expect(closeForward).toHaveBeenCalledWith(3000);
+  });
+});
+
+describe('reconnect reconciliation (#2646)', () => {
+  /**
+   * Route requests per method: `events.subscribe` always succeeds;
+   * `workspace.list` serves the given rows (or a rejection).
+   */
+  function mockBackend(workspaces: unknown[] | Error): void {
+    requestSpy.mockImplementation(async (method: string) => {
+      if (method === 'events.subscribe') return { subscriptionId: SUB_ID };
+      if (method === 'workspace.list') {
+        if (workspaces instanceof Error) throw workspaces;
+        return { workspaces };
+      }
+      return {};
+    });
+  }
+
+  function arm(): { registry: ForwardOwnershipRegistry; closeForward: ReturnType<typeof vi.fn> } {
+    const registry = new ForwardOwnershipRegistry();
+    const closeForward = vi.fn();
+    ensureWorkspaceForwardCleanup({ registry, closeForward });
+    return { registry, closeForward };
+  }
+
+  function reconnect(): void {
+    for (const handler of reconnectHandlers) handler();
+  }
+
+  function workspaceListCalls(): unknown[][] {
+    return requestSpy.mock.calls.filter(([method]) => method === 'workspace.list');
+  }
+
+  it('closes forwards whose owner was archived while disconnected (lost-event gap)', async () => {
+    mockBackend([{ id: 'ws-a', archived: false, status: 'Active' }]);
+    const { registry, closeForward } = arm();
+    registry.record(3000, 'ws-a');
+    await flush();
+    closeForward.mockClear();
+
+    // The archive event fired during the outage — no workspace:updated was
+    // ever delivered. Reconnect must reconcile against the daemon's state.
+    mockBackend([{ id: 'ws-a', archived: true, status: 'Archived' }]);
+    reconnect();
+    await flush();
+
+    expect(closeForward).toHaveBeenCalledWith(3000);
+    expect(workspaceListCalls().at(-1)).toEqual(['workspace.list', { includeArchived: true }]);
+  });
+
+  it('closes forwards whose owner was deleted while disconnected (absent from workspace.list)', async () => {
+    mockBackend([{ id: 'ws-a', archived: false, status: 'Active' }]);
+    const { registry, closeForward } = arm();
+    registry.record(3000, 'ws-a');
+    await flush();
+    closeForward.mockClear();
+
+    mockBackend([{ id: 'ws-other', archived: false, status: 'Active' }]);
+    reconnect();
+    await flush();
+
+    expect(closeForward).toHaveBeenCalledWith(3000);
+  });
+
+  it('mops up a forward recorded after the archive event (record-after-archive race)', async () => {
+    mockBackend([{ id: 'ws-a', archived: true, status: 'Archived' }]);
+    const { registry, closeForward } = arm();
+    await flush();
+
+    // The archive event arrives while forwardPort() is still in flight: the
+    // registry holds nothing yet, so the event-driven cleanup is a no-op...
+    emitEvent('workspace:updated', {
+      workspaceId: 'ws-a',
+      changes: { archived: true, status: 'Archived' },
+    });
+    expect(closeForward).not.toHaveBeenCalled();
+
+    // ...then the late record() re-adds ownership for the archived workspace.
+    registry.record(3000, 'ws-a');
+
+    // The next reconciliation pass closes it.
+    reconnect();
+    await flush();
+    expect(closeForward).toHaveBeenCalledWith(3000);
+  });
+
+  it('keeps forwards owned by active workspaces and app-lifetime forwards open', async () => {
+    mockBackend([
+      { id: 'ws-a', archived: false, status: 'Active' },
+      { id: 'ws-b', archived: false, status: 'Active' },
+    ]);
+    const { registry, closeForward } = arm();
+    registry.record(3000, 'ws-a');
+    registry.record(4000);
+    registry.record(5000, 'ws-b');
+    await flush();
+    closeForward.mockClear();
+
+    mockBackend([
+      { id: 'ws-a', archived: false, status: 'Active' },
+      { id: 'ws-b', archived: true, status: 'Archived' },
+    ]);
+    reconnect();
+    await flush();
+
+    expect(closeForward).toHaveBeenCalledTimes(1);
+    expect(closeForward).toHaveBeenCalledWith(5000);
+  });
+
+  it('keeps a shared port until reconciliation finds every owner archived/deleted', async () => {
+    mockBackend([
+      { id: 'ws-a', archived: false, status: 'Active' },
+      { id: 'ws-b', archived: false, status: 'Active' },
+    ]);
+    const { registry, closeForward } = arm();
+    registry.record(3000, 'ws-a');
+    registry.record(3000, 'ws-b');
+    await flush();
+    closeForward.mockClear();
+
+    mockBackend([
+      { id: 'ws-a', archived: true, status: 'Archived' },
+      { id: 'ws-b', archived: false, status: 'Active' },
+    ]);
+    reconnect();
+    await flush();
+    expect(closeForward).not.toHaveBeenCalled();
+
+    mockBackend([{ id: 'ws-b', archived: true, status: 'Archived' }]);
+    reconnect();
+    await flush();
+    expect(closeForward).toHaveBeenCalledWith(3000);
+  });
+
+  it('skips the workspace.list RPC when no forward is workspace-owned', async () => {
+    mockBackend([]);
+    const { registry } = arm();
+    registry.record(4000); // app-lifetime only
+    await flush();
+
+    reconnect();
+    await flush();
+    expect(workspaceListCalls()).toHaveLength(0);
+  });
+
+  it('tolerates a failed workspace.list and reconciles on the next reconnect', async () => {
+    mockBackend([{ id: 'ws-a', archived: false, status: 'Active' }]);
+    const { registry, closeForward } = arm();
+    registry.record(3000, 'ws-a');
+    await flush();
+    closeForward.mockClear();
+
+    mockBackend(new Error('daemon down'));
+    reconnect();
+    await flush();
+    expect(closeForward).not.toHaveBeenCalled();
+
+    mockBackend([{ id: 'ws-a', archived: true, status: 'Archived' }]);
+    reconnect();
+    await flush();
+    expect(closeForward).toHaveBeenCalledWith(3000);
+  });
+
+  it('never treats a malformed workspace.list response as everything-deleted', async () => {
+    mockBackend([{ id: 'ws-a', archived: false, status: 'Active' }]);
+    const { registry, closeForward } = arm();
+    registry.record(3000, 'ws-a');
+    await flush();
+    closeForward.mockClear();
+
+    requestSpy.mockImplementation(async (method: string) => {
+      if (method === 'events.subscribe') return { subscriptionId: SUB_ID };
+      return {}; // workspace.list → no `workspaces` array
+    });
+    reconnect();
+    await flush();
+    expect(closeForward).not.toHaveBeenCalled();
+  });
+
+  it('reconciles after the initial subscribe too (events fired before subscribe resolved)', async () => {
+    mockBackend([{ id: 'ws-a', archived: true, status: 'Archived' }]);
+    const registry = new ForwardOwnershipRegistry();
+    const closeForward = vi.fn();
+    registry.record(3000, 'ws-a');
+    ensureWorkspaceForwardCleanup({ registry, closeForward });
+    await flush();
+
     expect(closeForward).toHaveBeenCalledWith(3000);
   });
 });
