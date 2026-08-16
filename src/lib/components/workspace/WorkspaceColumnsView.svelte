@@ -272,6 +272,17 @@
     if (Math.abs(scroller.scrollLeft - lastAnchorScrollLeft) > 1) cancelScrollAnchor();
   }
 
+  function handleScrollerWheel() {
+    // Wheel input is definitive user intent. The scroll-position heuristic
+    // above can miss it: scroll events are coalesced per frame, so when a
+    // late width report re-anchors in the same frame as a wheel scroll the
+    // single scroll event reports the anchor position again and the anchor
+    // survives — snapping the view back and eating the user's scroll. Cancel
+    // on the input event itself, which no re-anchor can overwrite.
+    if (anchoredWorkspaceId === null) return;
+    cancelScrollAnchor();
+  }
+
   function scheduleRevealAfterLayout(
     reveal: (behavior: ScrollBehavior) => void,
     behaviorOverride?: ScrollBehavior,
@@ -716,6 +727,7 @@
   data-anchored-workspace-column={anchoredWorkspaceId}
   data-layout-motion-duration={layoutMotionDuration}
   onscroll={handleScrollerScroll}
+  onwheel={handleScrollerWheel}
 >
   <div class="flex h-full min-h-0 w-max min-w-full gap-2 pl-2 pr-2 pt-2">
     {#each $workspaceStacks$ as stack (stack[0])}

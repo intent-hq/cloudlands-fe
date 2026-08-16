@@ -931,6 +931,26 @@ describe('WorkspaceColumnsView', () => {
     expect(scrollTo).toHaveBeenCalledTimes(1);
   });
 
+  it('stops re-anchoring on wheel input even when scroll events still report the anchor position', async () => {
+    const { scroller, target, scrollTo } = await renderWithAnchoredInitialJump();
+
+    // Regression: shift+wheel left while the anchor is live. Scroll events are
+    // frame-coalesced, so a same-frame re-anchor can make the scroll event
+    // report the anchor position again — the position heuristic then never
+    // fires and the anchor keeps snapping the view back right. The wheel
+    // event itself must cancel the anchor, before any scroll event fires.
+    await fireEvent.wheel(scroller, { deltaY: -120, shiftKey: true });
+    expect(scroller.getAttribute('data-anchored-workspace-column')).toBeNull();
+
+    // A late width report after the user wheel must NOT scroll programmatically.
+    target.getBoundingClientRect = vi.fn(() => ({ left: 240, right: 600 }) as DOMRect);
+    panelCanvasWidths.set({ 'ws-1': 960 });
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+  });
+
   it('does not re-anchor after the width-settle window has elapsed', async () => {
     const { scroller, target, scrollTo } = await renderWithAnchoredInitialJump();
 
