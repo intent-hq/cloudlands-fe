@@ -11,14 +11,10 @@ import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspac
 import { createLogger } from '$lib/utils/client-logger';
 import { WorkspaceId } from '$shared/types/branded-ids';
 
-import {
-  workspaceMounted,
-  workspaceUnmounted,
-} from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   removeWorkspaceEntity,
-  setActiveWorkspaceId,
   setWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
 
@@ -33,7 +29,6 @@ export interface UseWorkspaceLoaderOptions {
   workspaceState: WorkspacePageStateManager | null;
   state: WorkspacePageState | null;
   previousWorkspaceId: string | null;
-  activateWorkspace?: boolean;
 }
 
 export interface WorkspaceLoadError {
@@ -220,10 +215,6 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       appStore.dispatch(workspaceMounted(ws.id));
       lastMountedWorkspaceId = ws.id;
       alreadyMounted = true;
-
-      if (options.activateWorkspace !== false) {
-        appStore.dispatch(setActiveWorkspaceId(ws.id));
-      }
     }
 
     let openResult = await workspaceClient.open(WorkspaceId(workspaceId));
@@ -267,16 +258,11 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       if (ws) {
         // Evict the stale cached entity before surfacing loadError so no
         // frame renders the zombie workspace after the failure resolves.
-        // The removeWorkspaceEntity reducer also clears activeWorkspaceId
-        // when it points at this workspace, matching deletion flows.
         logger.warn('Evicting stale cached workspace entity after definitive not-found', {
           workspaceId,
         });
         appStore.dispatch(removeWorkspaceEntity(workspaceId));
-        // Undo the pre-population mount side effect (this run or an earlier
-        // visit) so workspace-scoped state is torn down like a normal unmount.
         if (lastMountedWorkspaceId === workspaceId) {
-          appStore.dispatch(workspaceUnmounted(workspaceId));
           lastMountedWorkspaceId = null;
         }
       }
@@ -294,9 +280,6 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
 
     if (openResult.ok && openResult.data) {
       ws = openResult.data;
-      if (options.activateWorkspace !== false) {
-        appStore.dispatch(setActiveWorkspaceId(ws.id));
-      }
       logger.info('Workspace opened successfully, monitoring started', {
         workspaceId,
         worktreePath: ws.worktreePath,
@@ -332,11 +315,6 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       if (!alreadyMounted) {
         appStore.dispatch(workspaceMounted(ws.id));
         lastMountedWorkspaceId = ws.id;
-      }
-
-      // Ensure it's set as current in store
-      if (options.activateWorkspace !== false) {
-        appStore.dispatch(setActiveWorkspaceId(ws.id));
       }
     } else {
       // This case shouldn't be reached since we throw if ws is null after failed open

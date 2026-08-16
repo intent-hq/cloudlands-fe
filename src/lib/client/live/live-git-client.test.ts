@@ -88,6 +88,52 @@ describe("LiveGitClient reads (fake transport)", () => {
     });
   });
 
+  it("shares one exact git.status wire request across concurrent Git and Changes readers", async () => {
+    let resolveStatus!: (status: typeof GIT_STATUS_FIXTURE) => void;
+    mockedRequest.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStatus = resolve;
+      }),
+    );
+    const client = new LiveGitClient();
+
+    const gitOwner = client.status("ws-1");
+    const changesOwner = client.status("ws-1");
+
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    expect(mockedRequest).toHaveBeenCalledWith("git.status", { workspaceId: "ws-1" });
+
+    resolveStatus(GIT_STATUS_FIXTURE);
+    const [gitStatus, changesStatus] = await Promise.all([gitOwner, changesOwner]);
+    expect(gitStatus).toBe(changesStatus);
+    expect(gitStatus).toEqual(GIT_STATUS_FIXTURE);
+  });
+
+  it("keeps concurrent git.status requests distinct across workspaces", async () => {
+    mockedRequest.mockResolvedValue(GIT_STATUS_FIXTURE);
+    const client = new LiveGitClient();
+
+    await Promise.all([client.status("ws-1"), client.status("ws-2")]);
+
+    expect(mockedRequest.mock.calls).toEqual([
+      ["git.status", { workspaceId: "ws-1" }],
+      ["git.status", { workspaceId: "ws-2" }],
+    ]);
+  });
+
+  it("issues a fresh git.status request after the shared in-flight read settles", async () => {
+    mockedRequest
+      .mockResolvedValueOnce(GIT_STATUS_FIXTURE)
+      .mockResolvedValueOnce({ ...GIT_STATUS_FIXTURE, ahead: 1 });
+    const client = new LiveGitClient();
+
+    await client.status("ws-1");
+    const refreshed = await client.status("ws-1");
+
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+    expect(refreshed?.ahead).toBe(1);
+  });
+
   it("status carries gitlink mode/oldSha/newSha on submodule entries and omits them elsewhere (#1739)", async () => {
     mockedRequest.mockResolvedValueOnce({
       ...GIT_STATUS_FIXTURE,

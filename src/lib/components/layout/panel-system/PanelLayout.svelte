@@ -140,27 +140,27 @@
 
   // Reactive writable store that mirrors the layout scope so Redux selectors
   // re-evaluate whenever the prop changes (called at component init time).
-  const layoutIdStore = writable('');
+  const workspaceIdStore = writable('');
   $effect(() => {
-    layoutIdStore.set(effectiveLayoutId);
+    workspaceIdStore.set(workspaceId);
   });
 
   // Reactive selector subscriptions for template rendering
-  const root$ = selectPanelLayoutRoot(layoutIdStore);
-  const expandedPanelId$ = selectExpandedPanelId(layoutIdStore);
-  const panels$ = selectPanels(layoutIdStore);
-  const focusedPanelId$ = selectFocusedPanelId(layoutIdStore);
-  const activeTab$ = selectActiveTab(layoutIdStore);
-  const allTabs$ = selectAllTabs(layoutIdStore);
-  const panelColumnDefaultWidthTiers$ = selectPanelColumnDefaultWidthTiers(layoutIdStore);
+  const root$ = selectPanelLayoutRoot(workspaceIdStore);
+  const expandedPanelId$ = selectExpandedPanelId(workspaceIdStore);
+  const panels$ = selectPanels(workspaceIdStore);
+  const focusedPanelId$ = selectFocusedPanelId(workspaceIdStore);
+  const activeTab$ = selectActiveTab(workspaceIdStore);
+  const allTabs$ = selectAllTabs(workspaceIdStore);
+  const panelColumnDefaultWidthTiers$ = selectPanelColumnDefaultWidthTiers(workspaceIdStore);
   const panelDefaultWidthViewport = writable(0);
   const panelColumnDefaultWidths$ = derived(
     [panelColumnDefaultWidthTiers$, panelDefaultWidthViewport],
     ([$tiers, viewportWidth]) => $tiers.map((tier) => getPanelDefaultWidth(tier, viewportWidth)),
   );
-  const panelCanvasWidth$ = selectPanelCanvasWidth(layoutIdStore);
-  const panelCanvasWidthSource$ = selectPanelCanvasWidthSource(layoutIdStore);
-  const restoreStatus$ = selectRestoreStatus(layoutIdStore);
+  const panelCanvasWidth$ = selectPanelCanvasWidth(workspaceIdStore);
+  const panelCanvasWidthSource$ = selectPanelCanvasWidthSource(workspaceIdStore);
+  const restoreStatus$ = selectRestoreStatus(workspaceIdStore);
   const isDragging$ = selectIsDragging();
   // Keep the root renderer on the split branch when the first adjacent panel
   // opens. The existing panel then retains its keyed component instance while
@@ -954,8 +954,8 @@
   }
 
   function focusCycledPanel(direction: PanelCycleDirection): boolean {
-    const panelIds = selectPanelIds.select(appStore.state, effectiveLayoutId);
-    const focusedPanelId = selectFocusedPanelId.select(appStore.state, effectiveLayoutId);
+    const panelIds = selectPanelIds.select(appStore.state, workspaceId);
+    const focusedPanelId = selectFocusedPanelId.select(appStore.state, workspaceId);
     const localTargetId = resolveLocalPanelCycleTarget(panelIds, focusedPanelId, direction);
     if (localTargetId) {
       appStore.dispatch(markPanelTouched(effectiveLayoutId, localTargetId));
@@ -987,7 +987,7 @@
     return true;
   }
 
-  const terminalOverlayOpen = selectIsTerminalOverlayOpen();
+  const terminalOverlayOpen = selectIsTerminalOverlayOpen(workspaceIdStore);
 
   const isMac =
     typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
@@ -1010,7 +1010,7 @@
     // Mod+\ - Split horizontally
     if (isMod && e.key === '\\' && !e.shiftKey) {
       e.preventDefault();
-      const focusedId = selectFocusedPanelId.select(appStore.state, effectiveLayoutId);
+      const focusedId = selectFocusedPanelId.select(appStore.state, workspaceId);
       if (focusedId) {
         handleSplitPanel(focusedId, 'horizontal');
       }
@@ -1020,7 +1020,7 @@
     // Mod+Shift+\ also inserts into the horizontal stack.
     if (isMod && e.key === '\\' && e.shiftKey) {
       e.preventDefault();
-      const focusedId = selectFocusedPanelId.select(appStore.state, effectiveLayoutId);
+      const focusedId = selectFocusedPanelId.select(appStore.state, workspaceId);
       if (focusedId) {
         handleSplitPanel(focusedId, 'horizontal');
       }
@@ -1046,7 +1046,7 @@
     // Cmd+PageDown - Next tab in focused panel
     // Cmd+PageUp - Previous tab in focused panel
     if (e.metaKey && !e.ctrlKey && (e.key === 'PageDown' || e.key === 'PageUp')) {
-      const panel = selectFocusedPanel.select(appStore.state, effectiveLayoutId);
+      const panel = selectFocusedPanel.select(appStore.state, workspaceId);
       if (panel && panel.tabs.length > 1) {
         e.preventDefault();
         const currentIndex = panel.tabs.findIndex((t) => t.id === panel.activeTabId);
@@ -1093,6 +1093,7 @@
       if (focusCycledPanel(direction)) e.preventDefault();
       return;
     }
+
   }
 
   // Use capture phase for panel-specific shortcuts.
@@ -1207,7 +1208,7 @@
       const requestId = event?.payload?.requestId;
       // Collect all browser tabs from the panel layout
       const browserTabs = selectAllTabs
-        .select(appStore.state, effectiveLayoutId)
+        .select(appStore.state, workspaceId)
         .filter((t) => t.type === 'browser')
         .map((t) => ({
           tabId: t.id,

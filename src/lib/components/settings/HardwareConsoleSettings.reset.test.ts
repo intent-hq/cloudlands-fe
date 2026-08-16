@@ -55,7 +55,7 @@ async function buildState(actionMapping: readonly string[]) {
         'creator-micro-2': [...actionMapping],
       },
     },
-    workspace: { activeWorkspaceId: null, workspaces: createCollection('id', []) },
+    workspace: { workspaces: createCollection('id', []) },
   };
 }
 

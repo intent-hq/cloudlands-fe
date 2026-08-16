@@ -33,7 +33,6 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
 import {
   resolveCanonicalInitialAgent,
   selectAllWorkspaceAgents,
@@ -181,6 +180,20 @@ const HISTORY_ACTIONS = [
 ];
 
 const restoredWorkspaceIds = new Set<string>();
+// Workspaces whose layout has been restored under the current backend
+// namespace this session. Unlike restoredWorkspaceIds (mount-lifecycle dedup,
+// cleared on unmount so a remount re-restores), this set survives unmounts: a
+// parked column's post-restore state stays authoritative, so background
+// mutations to it must keep persisting. Cleared only when the namespace's
+// provenance is void — backend switch, clearPanelLayout, saga teardown.
+const restoredUnderBackendIds = new Set<string>();
+// Workspaces with a mounted panel-layout scope. Backend switches re-restore
+// every mounted workspace (not just the active one): with the columns UI
+// several workspaces mount at boot, and their initial restore may have read
+// the wrong backend namespace when it ran before the boot connections:list.
+// (retroactiveRestore also adds the active workspace here without a real
+// mount event; harmless — a later real unmount removes it.)
+const mountedWorkspaceIds = new Set<string>();
 
 type HistorySaveMessage = {
   action: { type: string; payload?: unknown };
@@ -347,7 +360,9 @@ export function* handleWorkspaceMountedRestore(
   action: ReturnType<typeof workspaceMounted> | ReturnType<typeof panelLayoutScopeMounted>,
 ): SagaGenerator<void> {
   const [wsId] = action.payload;
-  if (!isValidWorkspaceId(wsId) || restoredWorkspaceIds.has(wsId)) return;
+  if (!isValidWorkspaceId(wsId)) return;
+  mountedWorkspaceIds.add(wsId);
+  if (restoredWorkspaceIds.has(wsId)) return;
   restoredWorkspaceIds.add(wsId);
   yield* put(setRestoreStatus(wsId, 'pending'));
   const stored = yield* call(loadLayoutFromStorage, wsId);
@@ -359,6 +374,7 @@ export function* handleWorkspaceMountedRestore(
     yield* put(initializeLayout(wsId, normalizeLayoutForWorkspace(wsId, stored)));
     yield* put(setRestoreStatus(wsId, 'restored'));
   }
+  restoredUnderBackendIds.add(wsId);
 }
 
 export function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void> {
@@ -385,7 +401,17 @@ export function* persistPanelLayout(action: { payload?: unknown }): SagaGenerato
     if (workspace.newWorkspaceLifecycle) {
       layout.newWorkspaceLifecycle = workspace.newWorkspaceLifecycle;
     }
-    if (!restoredWorkspaceIds.has(wsId) && !hasAnyTab(layout)) {
+    // Until this workspace's restore has run under the current backend
+    // namespace, a persist would clobber the saved layout with pre-restore
+    // in-memory state — and the pending restore will replace that in-memory
+    // state anyway. When the store still holds tabs (e.g. state hydrated
+    // under a different backend namespace at boot), an early write here
+    // permanently loses the saved tabs, so skip the write whenever the
+    // stored layout still has any tab to lose. Provenance is tracked in
+    // restoredUnderBackendIds (survives unmounts) rather than
+    // restoredWorkspaceIds, so a parked column's post-restore mutations
+    // (e.g. closeTabsByAgentId, updateTabTitle) still persist.
+    if (!restoredUnderBackendIds.has(wsId)) {
       const stored = yield* call(loadLayoutFromStorage, wsId);
       if (stored !== null && stored !== 'invalid' && hasAnyTab(stored)) return;
     }
@@ -509,6 +535,7 @@ function* handleWorkspaceUnmounted(
 ): SagaGenerator<void> {
   const [wsId] = action.payload;
   restoredWorkspaceIds.delete(wsId);
+  mountedWorkspaceIds.delete(wsId);
   yield* call(cancelHistoryForWorkspace, historyMailboxes, wsId);
   try {
     yield* call(clearPanelLayoutAdapter, wsId);
@@ -520,6 +547,7 @@ function* handleWorkspaceUnmounted(
 function* clearPersistedLayout(action: ReturnType<typeof clearPanelLayout>): SagaGenerator<void> {
   const [wsId] = action.payload;
   if (!wsId) return;
+  restoredUnderBackendIds.delete(wsId);
   yield* call(removeLocalStorageItem, storageKey(wsId, yield* selectActiveBackendId()));
 }
 
@@ -586,25 +614,24 @@ function* handleNewWorkspaceBootstrap(
     }
   }
   restoredWorkspaceIds.add(wsId);
+  restoredUnderBackendIds.add(wsId);
   yield* call(persistPanelLayout, action);
   yield* call(reconcileDeferredSpec, wsId);
 }
 
-function* retroactiveRestore(): SagaGenerator<void> {
-  const activeWsId = yield* selectActiveWorkspaceId.effect();
+function* retroactiveRestore(activeWsId: string | null): SagaGenerator<void> {
   if (isValidWorkspaceId(activeWsId)) {
     yield* call(handleWorkspaceMountedRestore, workspaceMounted(activeWsId));
   }
 }
 
 /**
- * Re-restore the active workspace after a backend switch. Unlike a fresh mount,
+ * Re-restore one workspace after a backend switch. Unlike a fresh mount,
  * the store still holds the outgoing backend's tabs and history, so a backend
  * with nothing saved must be reset rather than left showing (and later
  * persisting) the previous backend's layout.
  */
-function* restoreAfterBackendSwitch(): SagaGenerator<void> {
-  const wsId = yield* selectActiveWorkspaceId.effect();
+function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
   if (!isValidWorkspaceId(wsId)) return;
   restoredWorkspaceIds.add(wsId);
   yield* put(setRestoreStatus(wsId, 'pending'));
@@ -617,23 +644,33 @@ function* restoreAfterBackendSwitch(): SagaGenerator<void> {
     yield* put(initializeLayout(wsId, normalizeLayoutForWorkspace(wsId, stored)));
     yield* put(setRestoreStatus(wsId, 'restored'));
   }
+  restoredUnderBackendIds.add(wsId);
 }
 
 /**
  * Backend switched (activeId flips via the boot connections:list refresh after
- * the window reloads): re-restore the active workspace's layout from the
- * incoming backend's namespace.
+ * the window reloads): re-restore every mounted workspace's layout from the
+ * incoming backend's namespace. In the columns UI multiple workspaces mount
+ * at boot — possibly before the boot connections:list resolves the actual
+ * backend — so restoring only the active workspace would leave the others on
+ * the wrong namespace's (usually empty) layout.
  */
 function* handleBackendSwitch(lastBackend: { id: string }): SagaGenerator<void> {
   const backendId = yield* selectActiveBackendId();
   if (backendId === lastBackend.id) return;
   lastBackend.id = backendId;
   restoredWorkspaceIds.clear();
-  yield* call(restoreAfterBackendSwitch);
+  restoredUnderBackendIds.clear();
+  for (const wsId of [...mountedWorkspaceIds]) {
+    yield* call(restoreAfterBackendSwitch, wsId);
+  }
 }
 
 /** Unregistered until the S20 middleware cutover. */
-export function* panelLayoutSaga(): SagaGenerator<void> {
+export function* panelLayoutSaga(options?: {
+  activeWorkspaceId?: string | null;
+}): SagaGenerator<void> {
+  let workspaceIdContext = options?.activeWorkspaceId ?? null;
   const historyMailboxes = new Map<string, HistoryMailbox>();
   function* queueHistorySaveForAction(action: {
     type: string;
@@ -645,6 +682,13 @@ export function* panelLayoutSaga(): SagaGenerator<void> {
     action: ReturnType<typeof workspaceUnmounted> | ReturnType<typeof panelLayoutScopeUnmounted>,
   ): SagaGenerator<void> {
     yield* handleWorkspaceUnmounted(historyMailboxes, action);
+  }
+  function* handleWorkspaceMountedAction(
+    action: ReturnType<typeof workspaceMounted> | ReturnType<typeof panelLayoutScopeMounted>,
+  ): SagaGenerator<void> {
+    const [workspaceId] = action.payload;
+    workspaceIdContext = workspaceId;
+    yield* handleWorkspaceMountedRestore(action);
   }
   try {
     yield* takeEvery(bootstrapNewWorkspaceLayout, handleNewWorkspaceBootstrap);
@@ -660,12 +704,12 @@ export function* panelLayoutSaga(): SagaGenerator<void> {
     yield* takeLeading(connectionsListReceived, handleBackendSwitch, {
       id: yield* selectActiveBackendId(),
     });
-    yield* takeEvery([workspaceMounted, panelLayoutScopeMounted], handleWorkspaceMountedRestore);
+    yield* takeEvery([workspaceMounted, panelLayoutScopeMounted], handleWorkspaceMountedAction);
     yield* takeEvery(
       [workspaceUnmounted, panelLayoutScopeUnmounted],
       handleWorkspaceUnmountedAction,
     );
-    yield* call(retroactiveRestore);
+    yield* call(retroactiveRestore, workspaceIdContext);
     yield* join(historyWatcher);
   } finally {
     const flushHistory = yield* cancelled();
@@ -681,5 +725,7 @@ export function* panelLayoutSaga(): SagaGenerator<void> {
       }
     }
     restoredWorkspaceIds.clear();
+    restoredUnderBackendIds.clear();
+    mountedWorkspaceIds.clear();
   }
 }

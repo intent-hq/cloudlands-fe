@@ -21,7 +21,7 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: { workspace: { activeWorkspaceId: null }, userPreferences: {} },
+    state: { userPreferences: {}, tabState: { currentTabId: null } },
     dispatch: vi.fn(),
   });
 });

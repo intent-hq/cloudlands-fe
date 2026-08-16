@@ -197,6 +197,20 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(true);
       expect(result.results).toHaveLength(2);
     });
+
+    it('routes listTabs through the explicit workspace context', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+
+      const result = await executeActions(
+        { actions: [{ action: 'listTabs' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.listAllTabs).toHaveBeenCalledWith('workspace-a');
+    });
   });
 
   describe('capture workspace boundaries', () => {
@@ -372,7 +386,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x?q=1' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(true);
@@ -397,7 +411,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/', undefined, undefined);
@@ -411,7 +425,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://client.localhost:5173/' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:5173/', undefined, undefined);
@@ -458,7 +472,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'navigate', url: 'http://[::1]:8080/page' }] },
         undefined,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(true);
@@ -486,7 +500,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'navigate', url: 'http://127.0.0.1:8080/page' }] },
         undefined,
         undefined,
-        undefined,
+        'workspace-a',
         localContext,
       );
       // Byte-identical result for non-rewritten URLs: no rewrite echo fields.
@@ -503,7 +517,7 @@ describe('browser-action-executor', () => {
           { actions: [{ action: 'openTab', url }] },
           mockOpenTabFn,
           undefined,
-          undefined,
+          'workspace-a',
           localContext,
         );
         expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:3000/', undefined, undefined);
@@ -529,7 +543,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'https://example.com/x' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(mockOpenTabFn).toHaveBeenCalledWith('https://example.com/x', undefined, undefined);
@@ -561,7 +575,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(false);
@@ -604,7 +618,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'navigate', url: 'http://daemon.localhost:8080/page' }] },
         undefined,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(false);
@@ -619,7 +633,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x?q=1' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(true);
@@ -641,7 +655,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(true);
@@ -653,7 +667,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'https://example.com/x' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(true);
@@ -665,7 +679,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         localContext,
       );
       expect(result.success).toBe(true);
@@ -684,7 +698,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'navigate', url: 'http://client.localhost:5173/' }] },
         undefined,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(true);
@@ -724,7 +738,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x?q=1' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
         tunnelProvider,
       );
@@ -760,7 +774,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'navigate', url: 'http://daemon.localhost:8080/page' }] },
         undefined,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
         tunnelProvider,
       );
@@ -790,7 +804,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
         tunnelProvider,
       );
@@ -809,7 +823,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
         tunnelProvider,
       );
@@ -824,7 +838,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         localContext,
         tunnelProvider,
       );
@@ -842,7 +856,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
         () => null,
       );

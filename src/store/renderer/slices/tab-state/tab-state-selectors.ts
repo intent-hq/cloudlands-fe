@@ -49,6 +49,12 @@ export const selectIsWorkspaceTabOpen = store.createSelector((state, workspaceId
   return state.tabState.openTabs[workspaceId] === true;
 });
 
+export const selectActiveWorkspaceIds = store.createSelector((state): string[] => {
+  return Object.keys(state.tabState.openTabs).filter(
+    (workspaceId) => state.tabState.openTabs[workspaceId] === true,
+  );
+});
+
 export const selectLastClosedWorkspaceTab = store.createSelector(
   (state): { workspaceId: string; closedAt: number } | null => {
     const { recentlyClosedTabIds, recentlyClosedTabAt, openTabs } = state.tabState;

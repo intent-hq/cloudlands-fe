@@ -48,6 +48,7 @@
 import { store as appStore } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 
 /** How long to wait for the navigation-triggered agent load to land. */
 const DEFAULT_TIMEOUT_MS = 5_000;
@@ -57,6 +58,8 @@ export interface FocusFirstUnreadAgentDeps {
   timeoutMs?: number;
   /** Store-change subscription seam. Defaults to the app store's readable state. */
   subscribe?: (listener: () => void) => () => void;
+  /** Current workspace-tab seam, re-read on every store emission. */
+  getCurrentWorkspaceId?: () => string | null;
 }
 
 function subscribeToStore(listener: () => void): () => void {
@@ -169,8 +172,8 @@ export function focusFirstUnreadAgent(
   // this workspace, or when an existing agent selection changed under us.
   //
   // The workspace guard tolerates the arming gap: the watch arms right after
-  // `goto()` is *invoked*, but `setActiveWorkspaceId(workspaceId)` only lands
-  // with the navigation effect, so until then the store still reports the
+  // `goto()` is *invoked*, but the current workspace tab only changes with the
+  // navigation effect, so until then the store still reports the
   // workspace we departed from. An eager equality guard would read every
   // emission in that gap as a navigation away and cancel the watch before
   // hydration ever landed.
@@ -193,10 +196,12 @@ export function focusFirstUnreadAgent(
   // With a selection already in place both hydration paths preserve it, so a
   // change then really is someone else moving the tab.
   const armedActiveAgentId = activeAgentIdOf(workspaceId);
-  const departedFrom = appStore.state.workspace?.activeWorkspaceId ?? null;
+  const getCurrentWorkspaceId =
+    deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state));
+  const departedFrom = getCurrentWorkspaceId();
   let arrived = departedFrom === workspaceId;
   function userTookOver(): boolean {
-    const activeWorkspaceId = appStore.state.workspace?.activeWorkspaceId ?? null;
+    const activeWorkspaceId = getCurrentWorkspaceId();
     if (activeWorkspaceId === workspaceId) arrived = true;
     else if (arrived || activeWorkspaceId !== departedFrom) return true;
     if (armedActiveAgentId === null) return false;

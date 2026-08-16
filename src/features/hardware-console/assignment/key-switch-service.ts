@@ -40,6 +40,7 @@ import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-lay
 import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { sessionNeedsAttention } from '../actions/agent-cycle';
 import { focusAgentComposer } from '../actions/action-key-service';
+import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 
 const logger = createLogger('HardwareConsoleKeySwitch');
 
@@ -50,6 +51,8 @@ export interface KeySwitchDeps {
   focusComposer?: (agentId: string) => void;
   /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
   isOwner?: () => boolean;
+  /** Current workspace-tab seam. */
+  getCurrentWorkspaceId?: () => string | null;
 }
 
 function resolveSlotWorkspaceId(slot: number): string | null {
@@ -142,7 +145,10 @@ export function focusWorkspaceSlot(workspaceId: string, deps: KeySwitchDeps = {}
   const focusedPanelId = layout?.focusedPanelId ?? null;
   const activeTabId = focusedPanelId ? (layout?.panels[focusedPanelId]?.activeTabId ?? null) : null;
 
-  if (appStore.state.workspace.activeWorkspaceId !== workspaceId) {
+  const activeWorkspaceId = (
+    deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state))
+  )();
+  if (activeWorkspaceId !== workspaceId) {
     // Mirror the workspace-list click (AllWorkspacesCard.handleClick): open the
     // workspace tab in tab-state so the columns view scrolls it into view.
     appStore.dispatch(openWorkspaceTab(workspaceId));

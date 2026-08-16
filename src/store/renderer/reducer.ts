@@ -27,7 +27,6 @@ import { workspaceNavigationReducer } from './slices/workspace-navigation/worksp
 import { workspaceNotesReducer } from './slices/workspace-notes/workspace-notes-slice';
 import { workspaceTasksReducer } from './slices/workspace-tasks/workspace-tasks-slice';
 import { workspaceSummariesReducer } from './slices/workspace-summaries/workspace-summaries-slice';
-import { workspaceSwitcherReducer } from './slices/workspace-switcher/workspace-switcher-slice';
 import { workspaceEventsReducer } from './slices/workspace-events/workspace-events-slice';
 import { paletteReducer } from './slices/palette/palette-slice';
 import { releaseNotesReducer } from './slices/release-notes/release-notes-slice';
@@ -123,7 +122,6 @@ export const reducers = {
   workspaceSummaries: workspaceSummariesReducer,
   workspaceOperations: workspaceOperationsReducer,
   workspaceSettings: workspaceSettingsReducer,
-  workspaceSwitcher: workspaceSwitcherReducer,
   workspaceEvents: workspaceEventsReducer,
   palette: paletteReducer,
   releaseNotes: releaseNotesReducer,

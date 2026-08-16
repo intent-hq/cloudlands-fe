@@ -14,7 +14,7 @@
   } from '$lib/utils/get-file-changes-from-messages';
   import { SPEC_NOTE_ID } from '$shared/constants/notes';
 
-  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -40,6 +40,7 @@
   } = $props();
 
   const workspaceId$ = toStore(() => workspaceId as string);
+  const workspace$ = selectWorkspaceById(workspaceId$);
 
   // Reactive list of workspace agents. selectAllWorkspaceAgents already
   // scopes to the current workspace, so no manual filtering is needed.
@@ -50,7 +51,6 @@
   const taskMetadata = $derived(note.metadata?.task);
   const assignedAgentIds = $derived(taskMetadata?.assignedAgentIds || []);
   const isSpec = $derived(note.id === SPEC_NOTE_ID);
-  const activeWorkspace = selectActiveWorkspace();
 
   // Get child tasks (notes that have this note as parent)
   const allNotes$ = selectAllNotes(workspaceId$);
@@ -108,7 +108,7 @@
 
   // Effect to load missing agents from disk
   $effect(() => {
-    const workspace = $activeWorkspace;
+    const workspace = $workspace$;
     if (!workspace) return;
 
     const missingAgentIds = assignedAgentIds.filter(
@@ -153,7 +153,7 @@
 
   async function getAggregateChanges(): Promise<ChatFileChange[]> {
     const allMessages: AgentMessage[] = [];
-    const workspace = selectActiveWorkspace.select(appStore.state);
+    const workspace = selectWorkspaceById.select(appStore.state, workspaceId);
 
     for (const agentId of assignedAgents) {
       try {

@@ -30,10 +30,7 @@ import {
   setSubscriptionSnapshot,
 } from '../agent-subscription-ui-slice';
 import { selectTrackedAgentIds, selectWaitingState } from '../agent-subscription-ui-selectors';
-import {
-  workspaceDeleted,
-  workspaceUnmounted,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 
 export const COMPLETED_DISPLAY_DURATION_MS = 3000;
 const logger = createLogger('AgentSubscriptionReadSaga');
@@ -63,7 +60,7 @@ type ReadMode = 'snapshot' | 'confirmation';
 
 function matchesWorkspaceCleanup(wsId: string) {
   return (action: { type: string; payload?: unknown }) =>
-    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    action.type === workspaceUnmounted.type &&
     Array.isArray(action.payload) &&
     action.payload[0] === wsId;
 }
@@ -252,7 +249,7 @@ function* refreshWorkspaceSubscriptionsWorker(
   }
 }
 
-function* deleteWorkspaceSubscriptionsWorker(action: ReturnType<typeof workspaceDeleted>) {
+function* clearWorkspaceSubscriptionsWorker(action: ReturnType<typeof workspaceUnmounted>) {
   const [wsId] = action.payload;
   const agentIds: string[] = yield* selectTrackedAgentIds.effect(wsId);
   for (const agentId of agentIds) yield* put(deleteSubscriptionUI(wsId, agentId));
@@ -272,6 +269,6 @@ export function* agentSubscriptionReadSaga() {
       refreshWorkspaceSubscriptionsWorker,
       coordinator,
     ),
-    takeEvery(workspaceDeleted, deleteWorkspaceSubscriptionsWorker),
+    takeEvery(workspaceUnmounted, clearWorkspaceSubscriptionsWorker),
   ]);
 }

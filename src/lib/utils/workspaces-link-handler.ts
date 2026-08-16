@@ -11,11 +11,11 @@
  */
 
 import { toast } from 'svelte-sonner';
-import { selectCurrentWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
 import { noteUrl } from '$shared/constants/intent-links';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 import { openWorkspaceNote } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 
 // URL-pattern examples shown in parse errors; passed as message params because
 // literal `{`/`}` inside a Paraglide message would parse as a parameter.
@@ -250,8 +250,8 @@ async function navigateToNote(
 ): Promise<void> {
   const { navigateToRoute } = await import('./navigation.client');
 
-  const currentWorkspace = selectCurrentWorkspace.select(appStore.state);
-  const sourceWorkspaceId = options.workspaceId ?? currentWorkspace?.id;
+  const sourceWorkspaceId =
+    options.workspaceId ?? selectCurrentWorkspaceTabId.select(appStore.state) ?? undefined;
 
   // If the link includes a workspace ID, we can navigate even without a current workspace.
   if (info.workspaceId) {

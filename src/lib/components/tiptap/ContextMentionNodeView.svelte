@@ -14,11 +14,11 @@
   import type { ContextMentionMetadata } from './ContextMention';
   import { handleLink } from '$features/navigation/link-handler';
   import { formatRelativeTime as formatRelative } from '$lib/i18n/format';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { m } from '$shared/paraglide/messages.js';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
-  const activeWorkspaceId = selectActiveWorkspaceId();
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
   let { node, selected, deleteNode }: NodeViewProps = $props();
 
@@ -219,10 +219,9 @@
     e.stopPropagation();
     const targetUrl = url();
     if (targetUrl) {
-      const wsId = $activeWorkspaceId;
-      if (wsId) {
+      if (workspaceId) {
         await handleLink(targetUrl, {
-          workspaceId: WorkspaceId(wsId),
+          workspaceId: WorkspaceId(workspaceId),
           event: e,
         });
       }

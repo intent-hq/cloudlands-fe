@@ -7,6 +7,12 @@
  *  - `file:read`   → `file.read`  (bare UTF-8 string; folded into the legacy
  *    `{ success, content, data: { content } }` double shape — the explorer
  *    reads top-level `content`, context-api/diff-viewer read `data.content`).
+ *    EXCEPT `encoding: 'base64'` reads, which forward to the real preload
+ *    bridge instead (same idiom as `file:read-chunk`): the daemon `file.read`
+ *    has no base64 arm and only serves workspace-contained paths, while the
+ *    base64 read exists solely for the remote-attachment data arm reading the
+ *    bytes off the FE host's disk (monorepo#2495 — routing it to the daemon
+ *    made every ≤25MB remote attachment fail with an opaque -32603).
  *  - `file:write`  → `file.write` (UTF-8 only; `encoding: 'base64'` binary
  *    writes have no daemon arm and fail shaped — the FilesPanel drop flow
  *    folds that into its failed-files toast).
@@ -28,11 +34,9 @@
  *    Electron-only; on web attachments arrive as in-memory `File` bytes and
  *    never take the host-path read path.
  *
- * Daemon `file.*` methods require a `workspaceId` and enforce within-workspace
- * path containment. Call sites pass absolute paths inside the workspace root
- * (the explorer CRUD is documented as absolute-path legacy IPC); when a call
- * site omits `workspaceId`, the active workspace is resolved from the store
- * (lazily imported to avoid a seeder↔store import cycle).
+ * Daemon `file.*` methods require an explicit `workspaceId` and enforce
+ * within-workspace path containment. Call sites pass absolute paths inside the
+ * workspace root (the explorer CRUD is documented as absolute-path legacy IPC).
  *
  * Every handler preserves the legacy envelope its call sites already consume
  * (`file:read`/`file:write` used `IpcResponse` object errors; the rest used
@@ -50,6 +54,16 @@ function asRecord(arg: unknown): Record<string, unknown> {
 }
 
 function errorMessage(error: unknown): string {
+  // Prefer the daemon's structured `data.detail` (BackendError, PROTOCOL §1.4)
+  // — a -32603's message is a bare "Internal error" while the actionable
+  // reason (e.g. "Access denied: path outside workspace") rides in the detail.
+  if (error && typeof error === 'object') {
+    const data = (error as { data?: unknown }).data;
+    if (data && typeof data === 'object') {
+      const detail = (data as { detail?: unknown }).detail;
+      if (typeof detail === 'string' && detail.trim().length > 0) return detail.trim();
+    }
+  }
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -58,25 +72,8 @@ function readString(record: Record<string, unknown>, key: string): string | unde
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-/**
- * Resolve the workspace the daemon should scope the operation to: the explicit
- * `workspaceId` argument when the call site provides one, else the active
- * workspace from the store. The store and selector are imported lazily because
- * the seeder barrel loads during store bootstrap.
- */
-async function resolveWorkspaceId(record: Record<string, unknown>): Promise<string | null> {
-  const explicit = readString(record, 'workspaceId');
-  if (explicit) return explicit;
-  try {
-    const [{ store }, { selectActiveWorkspaceId }] = await Promise.all([
-      import('$store/renderer/store'),
-      import('$store/renderer/slices/workspace/workspace-selectors'),
-    ]);
-    const active = selectActiveWorkspaceId.select(store.state);
-    return typeof active === 'string' && active ? active : null;
-  } catch {
-    return null;
-  }
+function readWorkspaceId(record: Record<string, unknown>): string | undefined {
+  return readString(record, 'workspaceId');
 }
 
 /** Daemon `file.read` (bare string result). */
@@ -97,7 +94,14 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.READ, async (arg) => {
   if (!path) {
     return { success: false, error: { code: 'INVALID_REQUEST', message: 'path is required' } };
   }
-  const workspaceId = await resolveWorkspaceId(request);
+  if (request.encoding === 'base64') {
+    // FE-host byte read for the remote-attachment data arm (monorepo#2495):
+    // the daemon `file.read` is UTF-8-only and workspace-contained, so a
+    // base64 read of a host path (e.g. a dragged file) must reach the
+    // main-process fs handler, exactly like file:read-chunk / file:hash.
+    return forwardToPreloadBridge(IPC_CHANNELS.FILE.READ, arg, 'main-process host-file read');
+  }
+  const workspaceId = readWorkspaceId(request);
   if (!workspaceId) {
     return {
       success: false,
@@ -137,7 +141,7 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.WRITE, async (arg) => {
       },
     };
   }
-  const workspaceId = await resolveWorkspaceId(request);
+  const workspaceId = readWorkspaceId(request);
   if (!workspaceId) {
     return {
       success: false,
@@ -158,7 +162,7 @@ registerMockIpcHandler('file:open', async (arg) => {
   const request = asRecord(arg);
   const path = readString(request, 'path');
   if (!path) return { success: false, error: 'path is required' };
-  const workspaceId = await resolveWorkspaceId(request);
+  const workspaceId = readWorkspaceId(request);
   if (!workspaceId) return { success: false, error: 'No workspace available for file.read' };
   try {
     const content = await daemonRead(workspaceId, path);
@@ -175,7 +179,7 @@ registerMockIpcHandler('file:save', async (arg) => {
   if (!path || content === undefined) {
     return { success: false, error: 'filePath and content are required' };
   }
-  const workspaceId = await resolveWorkspaceId(request);
+  const workspaceId = readWorkspaceId(request);
   if (!workspaceId) return { success: false, error: 'No workspace available for file.write' };
   try {
     await daemonWrite(workspaceId, path, content);
@@ -208,7 +212,7 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.DELETE, async (arg) => {
   const request = asRecord(arg);
   const path = readString(request, 'path');
   if (!path) return { success: false, error: 'path is required' };
-  const workspaceId = await resolveWorkspaceId(request);
+  const workspaceId = readWorkspaceId(request);
   if (!workspaceId) return { success: false, error: 'No workspace available for file.delete' };
   try {
     await backendRequest('file.delete', { workspaceId, path });
@@ -227,7 +231,7 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.MOVE, async (arg) => {
   if (!oldPath || !newPath) {
     return { success: false, error: 'oldPath and newPath are required' };
   }
-  const workspaceId = await resolveWorkspaceId(request);
+  const workspaceId = readWorkspaceId(request);
   if (!workspaceId) return { success: false, error: 'No workspace available for file.rename' };
   try {
     await backendRequest('file.rename', { workspaceId, oldPath, newPath });
@@ -246,7 +250,7 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.COPY, async (arg) => {
   if (!sourcePath || !destinationPath) {
     return { success: false, error: 'sourcePath and destinationPath are required' };
   }
-  const workspaceId = await resolveWorkspaceId(request);
+  const workspaceId = readWorkspaceId(request);
   if (!workspaceId) return { success: false, error: 'No workspace available for file.read/write' };
   try {
     // Compose read+write: the daemon has no copy RPC. Directory sources fail

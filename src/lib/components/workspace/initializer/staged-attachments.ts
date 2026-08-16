@@ -8,7 +8,8 @@
  * failures mark the item `failed` (visible pill with retry) and block the
  * first-message send — never a silent drop.
  */
-import type { FileBlock } from '$lib/client/app-client';
+import type { FileBlock, ImageBlock } from '$lib/client/app-client';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import type { ContextItem, PlaceAttachmentResult } from '$lib/components/chat/input/context-api';
 import {
   extractPlacementErrorDetail,
@@ -112,4 +113,85 @@ export async function redeemStagedAttachments(
   }
 
   return { items: out, fileBlocks, failedCount };
+}
+
+/** The first message held back from `workspace.create` while files staged. */
+export interface HeldFirstMessage {
+  workspaceId: string;
+  agentId?: string;
+  content: string;
+  imageBlocks: ImageBlock[];
+  contextReferences: unknown[];
+}
+
+export interface SendHeldFirstMessageResult {
+  /** False when the daemon rejected the send or the request failed. */
+  sent: boolean;
+  /**
+   * Human-readable failure reason for the banner (daemon `error` string /
+   * structured `data.detail` / non-generic message), when available.
+   */
+  errorDetail?: string;
+}
+
+/**
+ * Deliver the held-back first message (`agent.sendMessage`, PROTOCOL §5.5)
+ * after staged-attachment redemption succeeded.
+ *
+ * The held message lives in Svelte `$state` between create and send, so
+ * `pending` and everything nested in it (imageBlocks, contextReferences)
+ * arrive as deep-reactive Proxies. Electron's structured clone
+ * (`ipcRenderer.invoke`) rejects Proxies outright ("An object could not be
+ * cloned"), which made every send with staged attachments fail before it
+ * ever reached the daemon (monorepo#2576) — so the wire params are rebuilt
+ * as plain JSON here, never passed through from reactive state.
+ *
+ * Failures resolve as `{ sent: false, errorDetail? }` (never throw): the
+ * daemon's structured `{ success: false, error }` result and thrown
+ * transport/daemon errors both surface their reason for the banner,
+ * mirroring the placement-failure detail pattern (#1287).
+ */
+export async function sendHeldFirstMessage(
+  pending: HeldFirstMessage,
+  fileBlocks: FileBlock[],
+  request: typeof backendRequest = backendRequest,
+): Promise<SendHeldFirstMessageResult> {
+  const hasContent = pending.content.length > 0;
+  const hasBlocks =
+    pending.imageBlocks.length > 0 || fileBlocks.length > 0 || pending.contextReferences.length > 0;
+  if (!pending.agentId || (!hasContent && !hasBlocks)) return { sent: true };
+
+  try {
+    // JSON round-trip strips reactive Proxies (and anything else structured
+    // clone would reject) — the payload is plain JSON data by construction.
+    // Inside the try so a non-serializable value (circular ref, BigInt) in a
+    // future contextReference shape resolves `{ sent: false }` per contract
+    // instead of rejecting.
+    const params = JSON.parse(
+      JSON.stringify({
+        agentId: pending.agentId,
+        workspaceId: pending.workspaceId,
+        content: pending.content,
+        imageBlocks: pending.imageBlocks.length > 0 ? pending.imageBlocks : undefined,
+        fileBlocks: fileBlocks.length > 0 ? fileBlocks : undefined,
+        contextReferences:
+          pending.contextReferences.length > 0 ? pending.contextReferences : undefined,
+      }),
+    );
+
+    // `backendRequest` resolves normal daemon send failures as
+    // `{ success: false, error }` rather than rejecting — check it, or a
+    // failed send would silently drop the held message and its retry path.
+    const result = await request<{ success?: boolean; error?: string }>(
+      'agent.sendMessage',
+      params,
+    );
+    if (result?.success === false) {
+      const error = typeof result.error === 'string' ? result.error.trim() : '';
+      return { sent: false, errorDetail: error.length > 0 ? error : undefined };
+    }
+    return { sent: true };
+  } catch (error) {
+    return { sent: false, errorDetail: extractPlacementErrorDetail(error) };
+  }
 }

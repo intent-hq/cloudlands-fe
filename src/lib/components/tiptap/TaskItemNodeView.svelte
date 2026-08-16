@@ -26,7 +26,6 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { slide } from 'svelte/transition';
   import { taskNoteUrl } from '$shared/constants/intent-links';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectSelectedNoteId,
     selectNoteById,
@@ -45,21 +44,22 @@
   import Checkbox from '../ui/checkbox/checkbox.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   const logger = createLogger('TaskItemNodeView');
   const TASK_LINK_REGEX = /^intent:\/\/local\/task\/(.+)$/;
 
   let { node, selected, updateAttributes, getPos, editor, extension }: NodeViewProps = $props();
 
-  // Note editors configure an immutable owner on their task-item extension. The active
-  // workspace remains an explicit compatibility fallback for non-note editor callers.
+  // Note editors configure an immutable owner on their task-item extension. Route
+  // context is the explicit fallback for non-note editor callers.
   let owningWorkspaceId = $derived(extension?.options?.workspaceId as string | undefined);
-  const activeWorkspaceId = selectActiveWorkspaceId();
+  const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId;
   const wsIdStore = writable<string>('');
   $effect(() => {
-    wsIdStore.set(owningWorkspaceId ?? $activeWorkspaceId ?? '');
+    wsIdStore.set(owningWorkspaceId ?? routeWorkspaceId ?? '');
   });
-  let workspaceId = $derived(owningWorkspaceId ?? $activeWorkspaceId ?? '');
+  let workspaceId = $derived(owningWorkspaceId ?? routeWorkspaceId ?? '');
 
   // Core derived state
   let checked = $derived(node.attrs.checked ?? false);
@@ -197,7 +197,7 @@
       }
 
       await navigateToNote(linkedTaskNoteId, {
-        workspaceId,
+        workspaceId: (linkedTaskNote?.workspaceId as string | undefined) ?? workspaceId,
         openInAdjacentPanel,
         openInNewAdjacentPanel: true,
         sourcePanelId,
@@ -292,13 +292,17 @@
 
   function emitLinkedTaskDelegateEvent() {
     if (!linkedTaskNoteId) return;
-    if (!workspaceId) return;
+    // Prefer the linked note's own workspaceId (it may differ from the route
+    // workspace if the task lives in a different workspace), then use the
+    // immutable route context.
+    const wsId = (linkedTaskNote?.workspaceId as string | undefined) ?? workspaceId;
+    if (!wsId) return;
     // TODO(redux-remove): delegation creates an agent and assigns it atomically, which
     // the tasks seam (`task.assignAgent` assigns an EXISTING agent only) cannot express.
     // Stays on the agents-domain saga-trigger pending an AppClient agent-create+assign
     // capability; out of scope for the tasks Part C write-path migration.
     appStore.dispatch(
-      delegateExistingTaskRequested(workspaceId, linkedTaskNoteId, linkedTaskTitle, false),
+      delegateExistingTaskRequested(wsId, linkedTaskNoteId, linkedTaskTitle, false),
     );
   }
 

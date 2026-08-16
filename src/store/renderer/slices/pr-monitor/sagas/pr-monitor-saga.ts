@@ -6,7 +6,6 @@ import {
   call,
   cancel,
   delay,
-  fork,
   put,
   spawn,
   take,
@@ -20,7 +19,7 @@ import {
   flushPrMonitorRequested,
   prMonitorsUpdated,
 } from '../pr-monitor-slice';
-import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
+import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 import {
   cancelPrMonitor,
   flushPrMonitor,
@@ -83,26 +82,11 @@ function* reconcilePrMonitorSubscriptions(
 }
 
 function* watchActiveWorkspace(active: Map<string, SubscriptionEntry>): SagaGenerator<void> {
-  const initialWorkspaceId = yield* selectActiveWorkspaceId.effect();
-  let initialReconciliation: Task | null = null;
-  initialReconciliation = yield* fork(function* () {
-    try {
-      yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
-      yield* reconcilePrMonitorSubscriptions(active, initialWorkspaceId);
-    } finally {
-      initialReconciliation = null;
-    }
-  });
-
   yield* takeLatestFromSelector(
-    selectActiveWorkspaceId,
-    function* ({ payload }: SelectorChannelPayload<string | null>) {
-      if (initialReconciliation) {
-        yield* cancel(initialReconciliation);
-        initialReconciliation = null;
-      }
+    selectCurrentWorkspaceTabId,
+    function* ({ payload }: SelectorChannelPayload<string | null>): SagaGenerator<void> {
       yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
-      yield* reconcilePrMonitorSubscriptions(active, payload);
+      yield* call(reconcilePrMonitorSubscriptions, active, payload);
     },
   );
 }

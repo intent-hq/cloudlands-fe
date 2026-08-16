@@ -85,8 +85,6 @@
   } from '$store/renderer/slices/terminals/terminals-slice';
   import { resolveTerminalShortcutWorkspaceId } from '$features/terminal/terminal-shortcut-context';
   import {
-    selectActiveWorkspaceId,
-    selectWorkspaceById,
     selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
@@ -99,10 +97,8 @@
   import { bootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
   import { decideBootRoute, getBootRoutePathname } from '$lib/utils/boot-route-gate';
   import {
-    clearActiveWorkspace,
     loadWorkspacesRequested,
     recordWorkspaceView,
-    setActiveWorkspaceId,
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
@@ -132,10 +128,13 @@
   import InterruptedAgentsModal from '$lib/components/modals/InterruptedAgentsModal.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
   import { LiveAppClient } from '$lib/client/live/live-app-client';
+  import { workspaceIdFromRoute } from '$lib/utils/workspace-route-context';
   const logger = createLogger('+layout');
 
+  const routePathname = $derived($page.url.pathname);
+  const routeWorkspaceId = $derived(($page.params?.id as string | undefined) ?? '');
+  const workspaceId = $derived(workspaceIdFromRoute(routePathname, routeWorkspaceId) ?? undefined);
   const workspaceItems = selectWorkspaceItems();
-  const activeWorkspaceId = selectActiveWorkspaceId();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
   const localSetupGate = selectLocalSetupGate();
   const bootGateResolved = selectBootRouteGateResolved();
@@ -195,23 +194,6 @@
   // Interrupted agents modal state
   let showInterruptedAgentsModal = $state(false);
   let interruptedAgents = $state<InterruptedAgent[]>([]);
-
-  // Keep the active workspace synchronized with the persisted tab selection.
-  // Workspace-list snapshots must not prune tabs: refresh snapshots can be
-  // temporarily partial, while explicit workspaceDeleted events are authoritative.
-  let lastSyncedTabId = '';
-  $effect(() => {
-    const currentTabId = $currentWorkspaceTabId;
-    if (currentTabId && currentTabId !== lastSyncedTabId) {
-      lastSyncedTabId = currentTabId;
-      untrack(() => {
-        if (currentTabId !== $activeWorkspaceId) {
-          appStore.dispatch(setActiveWorkspaceId(currentTabId));
-          appStore.dispatch(recordWorkspaceView(currentTabId, Date.now()));
-        }
-      });
-    }
-  });
 
   // The root route is a minimal empty state and fresh windows boot at
   // /workspace/new, which renders onboarding. Gate boot (and legacy `/`)
@@ -421,27 +403,11 @@
 
     loadData();
 
-    // Ensure current workspace is set on initial load (direct navigation)
-    try {
-      const pathname = window.location?.pathname || '';
-      const match = pathname.match(/^\/workspace\/([^/]+)/);
-      if (match?.[1]) {
-        const id = match[1];
-        // Don't set workspace for 'new' page
-        if (id === 'new') {
-          appStore.dispatch(clearActiveWorkspace());
-        } else {
-          // Open tab and set as current - use untrack to prevent loops
-          untrack(() => {
-            appStore.dispatch(openWorkspaceTab(id));
-            if (selectActiveWorkspaceId.select(appStore.state) !== id) {
-              appStore.dispatch(setActiveWorkspaceId(id));
-              appStore.dispatch(recordWorkspaceView(id, Date.now()));
-            }
-          });
-        }
-      }
-    } catch {}
+    // Direct workspace routes open their tab without mirroring route identity into Redux.
+    if (workspaceId) {
+      appStore.dispatch(openWorkspaceTab(workspaceId));
+      appStore.dispatch(recordWorkspaceView(workspaceId, Date.now()));
+    }
     // Register global palette shortcuts (config-driven later)
     paletteShortcuts = new KeyboardShortcutManager();
     const isMac =
@@ -646,7 +612,7 @@
     // for cycling between application windows and must not be intercepted.
     // Use Ctrl+` or Cmd+J instead to toggle the terminal overlay.
     // Cmd+J (Mac) / Ctrl+J (Win/Linux) -> toggle Quake-style terminal overlay (alternate)
-    // Works both in workspace pages (uses currentWorkspaceId) and non-workspace pages (uses ROOT_WORKSPACE_ID)
+    // Works on workspace pages (using the route workspace ID) and non-workspace pages (using ROOT_WORKSPACE_ID).
     register({
       key: 'j',
       meta: isMac,
@@ -889,50 +855,11 @@
     appStore.dispatch(closeGitCredentialsModal());
   }
 
-  // Set currentWorkspaceId when navigating to workspace pages
+  // Keep the workspace list warm when navigating away from workspace pages.
   beforeNavigate(({ to }: any) => {
     cancelWorkspaceViewModeTransition();
 
-    if (to && to.url.pathname.startsWith('/workspace/')) {
-      const workspaceId = to.url.pathname.split('/')[2];
-      // Don't set workspace for 'new' page - let the page handle it
-      if (workspaceId === 'new') {
-        appStore.dispatch(clearActiveWorkspace());
-      } else {
-        // Check if this is an optimistic workspace being created
-        const isOptimistic =
-          sessionStorage.getItem(`workspace-${workspaceId}-optimistic`) === 'true';
-
-        if (isOptimistic) {
-          // For optimistic workspaces, don't try to set in store yet
-          // The page will handle creating the placeholder and loading the real workspace
-          logger.debug('[+layout] Navigating to optimistic workspace, skipping store update', {
-            workspaceId,
-          });
-        } else {
-          // Only set current workspace if it exists in the store
-          // The workspace page will handle loading it if it doesn't exist
-          const workspace = selectWorkspaceById.select(appStore.state, workspaceId);
-          if (workspace) {
-            logger.debug('[+layout] Setting current workspace', {
-              workspaceId,
-              foundWorkspaceId: workspace.id,
-              foundWorkspaceTitle: workspace.title,
-            });
-            appStore.dispatch(setActiveWorkspaceId(workspaceId));
-            appStore.dispatch(recordWorkspaceView(workspaceId, Date.now()));
-          } else {
-            logger.debug('[+layout] Workspace not found in store, page will load it', {
-              workspaceId,
-            });
-          }
-          // If workspace doesn't exist in store, the page will load it
-        }
-      }
-    } else if (to && !to.url.pathname.startsWith('/workspace/')) {
-      // Clear the current workspace when navigating away from workspace pages
-      appStore.dispatch(clearActiveWorkspace());
-
+    if (to && !to.url.pathname.startsWith('/workspace/')) {
       // Load workspaces when navigating to any non-workspace route
       // This ensures workspaces are loaded for tabs, switcher, and other UI components
       const state = appStore.state;
@@ -952,7 +879,7 @@
     const inWorkspace =
       pathname.startsWith('/workspace/') && !pathname.startsWith('/workspace/new');
 
-    // Extract workspace ID from pathname if in a workspace
+    // Read the route-owned workspace ID from the navigation target.
     let workspaceId: string | undefined;
     if (inWorkspace) {
       const match = pathname.match(/^\/workspace\/([^/?]+)/);
@@ -976,10 +903,7 @@
     data-testid="app-ready"
   >
     <!-- Title bar at top -->
-    <WindowTitleBar
-      workspaceId={$activeWorkspaceId || undefined}
-      overlayWorkspaceColumns={showWorkspaceColumns}
-    />
+    <WindowTitleBar {workspaceId} overlayWorkspaceColumns={showWorkspaceColumns} />
 
     <!-- Main Content Area with Sidebar Nav -->
     <ErrorBoundary componentName="MainLayout">
@@ -1027,13 +951,12 @@
   <CommandPalette
     isOpen={$isPaletteOpen$}
     initialQuery={$paletteQuery$}
-    workspaceId={$activeWorkspaceId || undefined}
+    {workspaceId}
     onClose={() => appStore.dispatch(closePalette())}
     onSelectFile={(detail: { path: string; line?: number; openInAdjacentPanel?: boolean }) => {
-      const wsId = $activeWorkspaceId;
-      if (wsId) {
+      if (workspaceId) {
         appStore.dispatch(
-          openWorkspaceFile(wsId, detail.path, {
+          openWorkspaceFile(workspaceId, detail.path, {
             line: detail.line,
             openInAdjacentPanel: detail.openInAdjacentPanel ?? false,
           }),
@@ -1091,6 +1014,7 @@
       operation={$globalModals.gitCredentials.error?.operation ?? 'push'}
       command={$globalModals.gitCredentials.error?.command}
       cwd={$globalModals.gitCredentials.error?.cwd}
+      workspaceId={$globalModals.gitCredentials.error?.workspaceId}
       onClose={() => {
         appStore.dispatch(closeGitCredentialsModal());
       }}

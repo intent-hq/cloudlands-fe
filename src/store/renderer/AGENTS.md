@@ -71,6 +71,15 @@ import { store as appStore } from '$store/renderer/store';
 const value = selectWorkspaceThing.select(appStore.state, workspaceId);
 ```
 
+## 5a. Workspace Identity Boundary
+
+Components in routed or reusable workspace trees receive their workspace ID from
+the immutable route context or an explicit `workspaceId` prop. They must not
+synchronize a Redux active-workspace pointer; pass the received ID to keyed
+selectors and actions instead. This component boundary does not change the
+non-component Redux ownership rules above: services and sagas keep their existing
+explicit-ID and selector responsibilities.
+
 ## 6. Side Effects Belong in Sagas
 
 - Do not put business logic in component `$effect` blocks.

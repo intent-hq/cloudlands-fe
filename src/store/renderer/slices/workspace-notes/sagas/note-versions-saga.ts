@@ -12,10 +12,7 @@ import {
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
-import {
-  workspaceDeleted,
-  workspaceUnmounted,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { withPreservedUnmetDependsOn } from '../workspace-notes-normalization';
 import { selectNoteById } from '../workspace-notes-selectors';
 import {
@@ -30,13 +27,12 @@ import { flushPendingNoteContent } from './notes-write-saga';
 
 const logger = createLogger('NoteVersionsSaga');
 type RestoreAction = ReturnType<typeof restoreNoteVersion>;
-type WorkspaceCleanupAction =
-  ReturnType<typeof workspaceDeleted> | ReturnType<typeof workspaceUnmounted>;
+type WorkspaceCleanupAction = ReturnType<typeof workspaceUnmounted>;
 type ObservedAction = { type: string; payload?: unknown };
 
 function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
   return (
-    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    action.type === workspaceUnmounted.type &&
     Array.isArray(action.payload) &&
     action.payload[0] === workspaceId
   );
@@ -136,11 +132,7 @@ export function* noteVersionsSaga() {
   const restores = yield* actionChannel(restoreNoteVersion, buffers.expanding());
   try {
     yield* takeLatest(fetchNoteVersions, fetchVersionsWorker);
-    yield* takeEvery(
-      [workspaceDeleted, workspaceUnmounted],
-      clearQueuedWorkspaceRestores,
-      restores,
-    );
+    yield* takeEvery(workspaceUnmounted, clearQueuedWorkspaceRestores, restores);
     yield* call(consumeRestores, restores);
   } finally {
     restores.close();

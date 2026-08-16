@@ -515,7 +515,9 @@
             Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
             appStore.dispatch(refreshRequested(workspaceId, true)),
           ]);
-        } catch { /* Refresh failed but push succeeded */ }
+        } catch {
+          /* Refresh failed but push succeeded */
+        }
       } else {
         toast.error(result.error || m.workspace_prSection_pushFailed_error());
       }
@@ -534,7 +536,7 @@
         toast.warning(m.workspace_prSection_forcePushDone_label());
         forcePushDrawerOpen = false;
         gitCache.invalidate(`git-status-${workspaceId}`);
-        Promise.all([
+        await Promise.all([
           Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
           appStore.dispatch(refreshRequested(workspaceId, true)),
         ]);

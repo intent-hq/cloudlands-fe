@@ -108,7 +108,6 @@ describe("workspace archive race conditions", () => {
     state = workspaceReducer(state, removeWorkspaceEntity("ws-1"));
 
     expect(getItem(state.workspaces, "ws-1")).toBeUndefined();
-    expect(state.activeWorkspaceId).toBeNull();
   });
 
   it("delete + immediate re-list filters out pending-deletion workspace from visible list", () => {

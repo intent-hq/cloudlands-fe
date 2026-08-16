@@ -6,7 +6,7 @@ import { toast } from '$lib/components/ui/toast';
 import ErrorToast from '$lib/components/ui/toast/ErrorToast.svelte';
 import { errorReporter } from '$lib/utils/error-reporter';
 import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
-import { selectCurrentWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -15,6 +15,7 @@ import { errorHandler } from '$lib/utils/error-handler.svelte';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 import { formatDateTime } from '$lib/i18n/format';
+import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 
 const APP_NAME = 'Intent'; // i18n-ignore (brand name)
 
@@ -55,7 +56,10 @@ async function copyError(error: AppError): Promise<void> {
  * Send error to an AI agent for debugging
  */
 async function sendToAgent(error: AppError): Promise<void> {
-  const workspace = selectCurrentWorkspace.select(appStore.state);
+  const activeWorkspaceId = selectCurrentWorkspaceTabId.select(appStore.state);
+  const workspace = activeWorkspaceId
+    ? selectWorkspaceById.select(appStore.state, activeWorkspaceId)
+    : undefined;
   if (!workspace) {
     toast.error(m.error_toast_noSpace_error());
     return;

@@ -1,7 +1,6 @@
 import type { CreateWorkspaceRequest, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { shallowEqual } from 'fast-equals';
-import { openTerminalOverlay, toggleTerminalOverlay } from '../terminals/terminals-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
@@ -69,7 +68,6 @@ export const defaultWorkspaceRecencyState: WorkspaceRecencyState = {
 // ---------------------------------------------------------------------------
 
 export type WorkspaceState = {
-  activeWorkspaceId: string | null;
   workspaces: Collection<Workspace, 'id'>;
   loading: boolean;
   error: string | null;
@@ -83,7 +81,6 @@ export type WorkspaceState = {
 };
 
 export const initialState: WorkspaceState = {
-  activeWorkspaceId: null,
   workspaces: createCollection('id'),
   loading: false,
   error: null,
@@ -99,10 +96,6 @@ export const initialState: WorkspaceState = {
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
-
-export const setActiveWorkspaceId = createAction<[wsId: string]>('workspace/setActiveWorkspaceId');
-
-export const clearActiveWorkspace = createAction('workspace/clearActiveWorkspace');
 
 export const setWorkspaceLoading = createAction<[loading: boolean]>(
   'workspace/setWorkspaceLoading',
@@ -308,8 +301,9 @@ function buildVisibleWorkspaceState(
       continue;
     }
 
-    // The daemon continues serving scheduled rows until the grace window
-    // expires; keep them hidden while `pendingDeleteAt` is present.
+    // Rows carrying the daemon's delete-grace-window deadline (PROTOCOL §5.1
+    // `pendingDeleteAt`, v6.7+) stay hidden: the daemon still serves them while
+    // the window runs, but the FE soft-hid them at delete-request time.
     if (workspace.pendingDeleteAt) {
       continue;
     }
@@ -357,29 +351,11 @@ function getWorkspaceById(
   return wsId ? getItem(collection, wsId as Workspace['id']) : undefined;
 }
 
-function updateActiveWorkspaceId(state: WorkspaceState, wsId: string): WorkspaceState {
-  if (state.activeWorkspaceId === wsId) return state;
-  return { ...state, activeWorkspaceId: wsId };
-}
-
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
 export const workspaceReducer = createReducer<WorkspaceState>(initialState);
-workspaceReducer.with(setActiveWorkspaceId, (state, { payload: [wsId] }) => {
-  return updateActiveWorkspaceId(state, wsId);
-});
-workspaceReducer.with(clearActiveWorkspace, (state) => {
-  if (state.activeWorkspaceId === null) return state;
-  return { ...state, activeWorkspaceId: null };
-});
-workspaceReducer.with(openTerminalOverlay, (state, { payload: [wsId] }) => {
-  return updateActiveWorkspaceId(state, wsId);
-});
-workspaceReducer.with(toggleTerminalOverlay, (state, { payload: [wsId] }) => {
-  return updateActiveWorkspaceId(state, wsId);
-});
 workspaceReducer.with(setWorkspaceLoading, (state, { payload: [loading] }) => {
   if (state.loading === loading) return state;
   return { ...state, loading };
@@ -433,6 +409,8 @@ workspaceReducer.with(clearPendingCreation, (state, { payload: [wsId] }) => {
 });
 workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace] }) => {
   if (state.pendingDeletions[workspace.id]) return state;
+  // Hide rows carrying the daemon delete-grace-window deadline (see
+  // buildVisibleWorkspaceState); drop the entity if it was still visible.
   if (workspace.pendingDeleteAt) {
     const visible = getWorkspaceById(state.workspaces, workspace.id);
     if (!visible) return state;
@@ -529,10 +507,10 @@ workspaceReducer.with(failWorkspaceTitleMutation, (state, { payload: [wsId, toke
   };
 });
 workspaceReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) => {
-  if (!getWorkspaceById(state.workspaces, wsId)) return state;
+  const existsInCollection = !!getWorkspaceById(state.workspaces, wsId);
+  if (!existsInCollection) return state;
   return {
     ...state,
-    activeWorkspaceId: state.activeWorkspaceId === wsId ? null : state.activeWorkspaceId,
     workspaces: removeItem(state.workspaces, wsId as Workspace['id']),
     pendingTitleMutations: clearPendingTitleMutation(state.pendingTitleMutations, wsId),
   };
@@ -543,8 +521,7 @@ workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
     state.pendingArchives[wsId] ||
     state.pendingCreations[wsId] ||
     state.pendingTitleMutations[wsId] ||
-    state.recency.lastViewedAt[wsId] !== undefined ||
-    state.activeWorkspaceId === wsId;
+    state.recency.lastViewedAt[wsId] !== undefined;
 
   // No-op if workspace has no trace in state. The pendingDeletions tombstone
   // is deliberately NOT cleared here: a stale workspace.get/workspace.list
@@ -559,7 +536,6 @@ workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
   const { [wsId]: _removedRecency, ...nextLastViewedAt } = state.recency.lastViewedAt;
   return {
     ...state,
-    activeWorkspaceId: state.activeWorkspaceId === wsId ? null : state.activeWorkspaceId,
     workspaces: existsInCollection
       ? removeItem(state.workspaces, wsId as Workspace['id'])
       : state.workspaces,
@@ -610,7 +586,6 @@ workspaceReducer.with(cleanupRecency, (state, { payload: [workspaceIds] }) => {
 });
 workspaceReducer.with(resetWorkspaceState, (state) => ({
   ...state,
-  activeWorkspaceId: null,
   workspaces: createCollection('id'),
   loading: false,
   error: null,

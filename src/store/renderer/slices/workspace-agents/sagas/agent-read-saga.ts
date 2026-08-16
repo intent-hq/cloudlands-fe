@@ -7,10 +7,7 @@ import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-dele
 import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
 import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
-import {
-  workspaceDeleted,
-  workspaceUnmounted,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { closeTabsByAgentId } from '../../panel-layout/panel-layout-slice';
 import { ensureAgentSessionLoaded } from '../workspace-agents-slice';
 
@@ -49,7 +46,7 @@ function* loadAgentSessionSaga(wsId: string, agentId: string) {
 
 function matchesWorkspaceCleanup(wsId: string) {
   return (action: { type: string; payload?: unknown }) =>
-    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    action.type === workspaceUnmounted.type &&
     Array.isArray(action.payload) &&
     action.payload[0] === wsId;
 }

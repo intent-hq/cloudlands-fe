@@ -2,6 +2,11 @@ import type { Task } from 'redux-saga';
 import { all, join, put, type SagaGenerator } from 'typed-redux-saga';
 
 import { isElectron } from '$lib/electron-bridge';
+import {
+  isWorkspaceCommandPayload,
+  type BrowserCloseTabPayload,
+  type BrowserOpenTabPayload,
+} from '$shared/ipc/workspace-command-payloads';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import { selectAllTabs } from '../../panel-layout/panel-layout-selectors';
 import {
@@ -12,22 +17,6 @@ import {
   updateTabBrowserUrl,
 } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
-import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
-
-type BrowserOpenTabEvent = {
-  url: string;
-  position?: 'adjacent' | 'replace' | 'same';
-  workspaceId?: string;
-  /** Main-generated id for the new tab so main can lease it immediately (monorepo#2541). */
-  tabId?: string;
-  /** Skip the panel layout's equivalent-tab dedupe and always create a new tab. */
-  allowDuplicate?: boolean;
-};
-
-type BrowserCloseTabEvent = {
-  tabId: string;
-  workspaceId?: string;
-};
 
 let running = false;
 
@@ -35,11 +24,9 @@ function browserTab(url: string): Omit<PanelTab, 'id'> {
   return { type: 'browser', title: 'Browser', browserUrl: url, closable: true };
 }
 
-function* openBrowser(data: BrowserOpenTabEvent | null): SagaGenerator<void> {
-  if (typeof data?.url !== 'string') return;
-  const activeWorkspaceId = data.workspaceId ? null : yield* selectActiveWorkspaceId.effect();
-  const workspaceId = data.workspaceId || activeWorkspaceId;
-  if (typeof workspaceId !== 'string' || workspaceId.length === 0) return;
+function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
+  if (!isWorkspaceCommandPayload(data) || typeof data.url !== 'string') return;
+  const workspaceId = data.workspaceId;
 
   // Main pre-generates the tab id so it can lease agent-opened tabs for
   // exact-URL dedupe (monorepo#2541); fall back to renderer generation for
@@ -92,11 +79,10 @@ function* openBrowser(data: BrowserOpenTabEvent | null): SagaGenerator<void> {
   );
 }
 
-function* closeBrowser(data: BrowserCloseTabEvent | null): SagaGenerator<void> {
-  if (typeof data?.tabId !== 'string' || data.tabId.length === 0) return;
-  const activeWorkspaceId = data.workspaceId ? null : yield* selectActiveWorkspaceId.effect();
-  const workspaceId = data.workspaceId || activeWorkspaceId;
-  if (typeof workspaceId !== 'string' || workspaceId.length === 0) return;
+function* closeBrowser(data: BrowserCloseTabPayload | null): SagaGenerator<void> {
+  if (!isWorkspaceCommandPayload(data) || typeof data.tabId !== 'string' || data.tabId.length === 0)
+    return;
+  const workspaceId = data.workspaceId;
 
   const tabs = yield* selectAllTabs.effect(workspaceId);
   const existing = tabs.find((tab) => tab.id === data.tabId && tab.type === 'browser');
@@ -110,7 +96,7 @@ export function* browserIpcSaga(): SagaGenerator<void> {
   running = true;
   try {
     const tasks: Task[] = [
-      yield* takeEveryFromElectronChannel<BrowserOpenTabEvent | null>(
+      yield* takeEveryFromElectronChannel<BrowserOpenTabPayload | null>(
         'browser:open-tab',
         openBrowser,
         {
@@ -120,7 +106,7 @@ export function* browserIpcSaga(): SagaGenerator<void> {
           },
         },
       ),
-      yield* takeEveryFromElectronChannel<BrowserCloseTabEvent | null>(
+      yield* takeEveryFromElectronChannel<BrowserCloseTabPayload | null>(
         'browser:close-tab',
         closeBrowser,
         {

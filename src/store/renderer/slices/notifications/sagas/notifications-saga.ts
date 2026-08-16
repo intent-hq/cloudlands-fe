@@ -1,5 +1,5 @@
 import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
-import { all, call, fork, take } from 'typed-redux-saga';
+import { actionChannel, all, call, flush, fork, race, take } from 'typed-redux-saga';
 
 import type { AgentIdleEvent } from '$features/events/types';
 import { handleNotificationNavigate } from '$features/notifications/notification-navigation';
@@ -11,8 +11,12 @@ import { createLogger } from '$lib/utils/client-logger';
 import { getPlatform } from '$lib/utils/platform-capabilities';
 import { addMockIpcListener } from '$shared/ipc-mock-router';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
-import { selectNotificationEnabled, selectSoundOnlyWhenUnfocused } from '../../user-preferences/user-preferences-selectors';
-import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
+import {
+  selectNotificationEnabled,
+  selectSoundOnlyWhenUnfocused,
+} from '../../user-preferences/user-preferences-selectors';
+import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
+import { CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS } from '../../tab-state/tab-state-slice';
 
 const logger = createLogger('NotificationsSaga');
 const activeNotifications = new Set<Notification>();
@@ -24,7 +28,6 @@ type NotificationNavigateEvent = { workspaceId?: string; chief?: boolean; agentI
 type NativeNotificationEvent =
   | { kind: 'show'; data?: NotificationShowEvent }
   | { kind: 'navigate'; data?: NotificationNavigateEvent | null };
-
 type AgentListResult = {
   agents?: Array<{
     id?: string;
@@ -38,8 +41,14 @@ export function createNativeNotificationChannel(): EventChannel<NativeNotificati
   return eventChannel<NativeNotificationEvent>((emit) => {
     if (typeof window === 'undefined' || !window.electronAPI?.on) return () => {};
     const listeners = [
-      ['notification:show', window.electronAPI.on('notification:show', (data) => emit({ kind: 'show', data }))],
-      ['notification:navigate', window.electronAPI.on('notification:navigate', (data) => emit({ kind: 'navigate', data }))],
+      [
+        'notification:show',
+        window.electronAPI.on('notification:show', (data) => emit({ kind: 'show', data })),
+      ],
+      [
+        'notification:navigate',
+        window.electronAPI.on('notification:navigate', (data) => emit({ kind: 'navigate', data })),
+      ],
     ] as const;
     return () => {
       for (const [channel, id] of listeners) window.electronAPI.offById(channel, id);
@@ -48,12 +57,16 @@ export function createNativeNotificationChannel(): EventChannel<NativeNotificati
 }
 
 export function createWebNotificationChannel(): EventChannel<AgentIdleEvent> {
-  return eventChannel<AgentIdleEvent>((emit) =>
-    addMockIpcListener('agent:idle', (payload) => {
-      const event = payload as AgentIdleEvent | undefined;
-      if (event?.type === 'agent:idle' && event.data) emit(event);
-    }),
-  buffers.expanding<AgentIdleEvent>());
+  return eventChannel<AgentIdleEvent>(
+    (emit) =>
+      addMockIpcListener('agent:idle', (payload) => {
+        const event = payload as AgentIdleEvent | undefined;
+        if (event?.type === 'agent:idle' && event.data) {
+          emit(event);
+        }
+      }),
+    buffers.expanding<AgentIdleEvent>(),
+  );
 }
 
 async function resolvePermission(): Promise<NotificationPermission> {
@@ -69,14 +82,18 @@ async function resolvePermission(): Promise<NotificationPermission> {
 
 async function ensurePermission(): Promise<boolean> {
   if (typeof window === 'undefined' || typeof Notification === 'undefined') {
-    if (!loggedPermissionSkip) logger.warn('Browser Notification API is not available; skipping web notifications');
+    if (!loggedPermissionSkip)
+      logger.warn('Browser Notification API is not available; skipping web notifications');
     loggedPermissionSkip = true;
     return false;
   }
   try {
     const permission = await resolvePermission();
     if (permission === 'granted') return true;
-    if (!loggedPermissionSkip) logger.info('Notification permission not granted; web notifications disabled', { permission });
+    if (!loggedPermissionSkip)
+      logger.info('Notification permission not granted; web notifications disabled', {
+        permission,
+      });
   } catch (error) {
     if (!loggedPermissionSkip) logger.warn('Notification permission request failed', { error });
   }
@@ -102,10 +119,15 @@ function* showBrowserNotification(
     activeNotifications.add(notification);
     notification.onclick = () => {
       activeNotifications.delete(notification);
-      try { window.focus(); } catch { /* Navigation still runs. */ }
-      const payload = workspaceId === CHIEF_WORKSPACE_ID
-        ? { workspaceId, chief: true, agentId }
-        : { workspaceId };
+      try {
+        window.focus();
+      } catch {
+        /* Navigation still runs. */
+      }
+      const payload =
+        workspaceId === CHIEF_WORKSPACE_ID
+          ? { workspaceId, chief: true, agentId }
+          : { workspaceId };
       void handleNotificationNavigate(payload);
       notification.close();
     };
@@ -119,7 +141,7 @@ function* showBrowserNotification(
   }
 }
 
-function* handleWebIdle(event: AgentIdleEvent) {
+function* handleWebIdle(event: AgentIdleEvent, activeWorkspaceId: string | null) {
   try {
     const workspaceId = event.workspaceId;
     if (!workspaceId) return;
@@ -161,36 +183,54 @@ function* handleWebIdle(event: AgentIdleEvent) {
       return;
     }
 
-    const agentList = (yield* call(backendRequest, 'agent.list', { workspaceId })) as AgentListResult | undefined;
+    const agentList = (yield* call(backendRequest, 'agent.list', { workspaceId })) as
+      AgentListResult | undefined;
     const agents = agentList?.agents ?? [];
     const idleAgent = agents.find((agent) => agent.id === event.data.agentId);
     if (idleAgent?.metadata?.isBackground) return;
-    if (agents.some((agent) => agent.id !== event.data.agentId && (agent.isStreaming || agent.isResponding))) return;
+    if (
+      agents.some(
+        (agent) => agent.id !== event.data.agentId && (agent.isStreaming || agent.isResponding),
+      )
+    )
+      return;
 
     const isChief = workspaceId === CHIEF_WORKSPACE_ID;
     let workspaceTitle: string | undefined;
     if (!isChief) {
       try {
         const response = (yield* call(backendRequest, 'workspace.get', { workspaceId })) as
-          | { workspace?: { title?: string } }
-          | undefined;
+          { workspace?: { title?: string } } | undefined;
         if (response?.workspace?.title) workspaceTitle = response.workspace.title;
       } catch {
         // Missing workspace context is non-fatal.
       }
     }
-    const content = buildNotificationContent({
-      isChief,
-      agentName: event.data.agentName,
-      specialist: event.data.specialist ?? idleAgent?.metadata?.specialist,
-      taskTitle: event.data.taskTitle,
-    }, workspaceTitle);
-    const activeWorkspaceId = yield* selectActiveWorkspaceId.effect();
-    if (typeof document !== 'undefined' && document.hasFocus() && activeWorkspaceId === workspaceId && soundOnlyWhenUnfocused) {
+    const content = buildNotificationContent(
+      {
+        isChief,
+        agentName: event.data.agentName,
+        specialist: event.data.specialist ?? idleAgent?.metadata?.specialist,
+        taskTitle: event.data.taskTitle,
+      },
+      workspaceTitle,
+    );
+    if (
+      typeof document !== 'undefined' &&
+      document.hasFocus() &&
+      activeWorkspaceId === workspaceId &&
+      soundOnlyWhenUnfocused
+    ) {
       yield* fork(playNotificationSoundPerSettings);
       return;
     }
-    yield* call(showBrowserNotification, content.title, content.body, workspaceId, event.data.agentId);
+    yield* call(
+      showBrowserNotification,
+      content.title,
+      content.body,
+      workspaceId,
+      event.data.agentId,
+    );
   } catch (error) {
     logger.error('Failed to handle agent:idle event', error);
   }
@@ -222,13 +262,27 @@ export function* notificationIpcSaga() {
 export function* webNotificationSaga() {
   if (getPlatform() !== 'web') return;
   const channel = createWebNotificationChannel();
+  const workspaceChanges = yield* actionChannel(
+    CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS,
+    buffers.expanding(),
+  );
+  let activeWorkspaceId = yield* selectCurrentWorkspaceTabId.effect();
   try {
     while (true) {
-      const event: AgentIdleEvent = yield* take(channel);
-      if (event === (END as unknown as AgentIdleEvent)) break;
-      yield* fork(handleWebIdle, event);
+      const { event, workspaceChange } = yield* race({
+        event: take(channel),
+        workspaceChange: take(workspaceChanges),
+      });
+      if (workspaceChange) {
+        yield* flush(workspaceChanges);
+        activeWorkspaceId = yield* selectCurrentWorkspaceTabId.effect();
+        continue;
+      }
+      if (!event || event === (END as unknown as AgentIdleEvent)) break;
+      yield* fork(handleWebIdle, event, activeWorkspaceId);
     }
   } finally {
+    workspaceChanges.close();
     channel.close();
     for (const notification of activeNotifications) notification.close();
     activeNotifications.clear();

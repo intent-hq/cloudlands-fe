@@ -3554,24 +3554,26 @@ describe('daemonEventsBridge (legacy mock-IPC relay — daemon events → listen
     expect(seen[0]).toMatchObject({ workspaceId: WS, data });
   });
 
-  it('re-emits changes:git-status as git:status-changed { workspaceId }', async () => {
+  it('re-emits each status-changing git event as git:status-changed { workspaceId }', async () => {
     await primeBridge();
     const seen = listenOn('git:status-changed');
 
-    capturedHandlers[0]!(
-      notification('changes:git-status', { workspaceId: WS, status: { files: [] } }),
-    );
+    capturedHandlers[0]!(notification('git:commit', { operation: 'commit' }));
+    capturedHandlers[0]!(notification('git:pull', { operation: 'pull' }));
+    capturedHandlers[0]!(notification('changes:git-status', { status: { files: [] } }));
 
-    expect(seen).toEqual([{ workspaceId: WS }]);
+    expect(seen).toEqual([{ workspaceId: WS }, { workspaceId: WS }, { workspaceId: WS }]);
   });
 
   it('re-emits changes:tracked as file-tracking:changes-updated { workspaceId }', async () => {
     await primeBridge();
     const seen = listenOn('file-tracking:changes-updated');
+    const gitSeen = listenOn('git:status-changed');
 
     capturedHandlers[0]!(notification('changes:tracked', { workspaceId: WS, changes: [] }));
 
     expect(seen).toEqual([{ workspaceId: WS }]);
+    expect(gitSeen).toEqual([{ workspaceId: WS }]);
   });
 
   it('re-emits line-attribution:updated with { workspaceId, noteId, attributions } for the gutter', async () => {
@@ -7661,13 +7663,13 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     // Ensure store is initialized (idempotent if already initialized)
     appStore.init();
     appStore.dispatch(clearAllSessions());
-    // Reset workspace/agent focus so a preceding test's setActiveWorkspaceId
+    // Reset workspace/agent focus so a preceding test's openWorkspaceTab
     // does not leak into the "no active workspace" case.
-    const { clearActiveWorkspace } =
-      await import('$store/renderer/slices/workspace/workspace-slice');
+    const { clearCurrentWorkspaceTab } =
+      await import('$store/renderer/slices/tab-state/tab-state-slice');
     const { setActiveAgentId } =
       await import('$store/renderer/slices/workspace-agents/workspace-agents-slice');
-    appStore.dispatch(clearActiveWorkspace());
+    appStore.dispatch(clearCurrentWorkspaceTab());
     appStore.dispatch(setActiveAgentId(WS, null));
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
@@ -7686,23 +7688,22 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     // hydrateAgentsRequested dispatch is fire-and-forget (saga-only trigger,
     // no reducer entry — AGENTS.md §8), so we assert the observable seam:
     // `loadChatTranscript` runs against the active agent. The workspace-less
-    // sibling below proves the whole refresh path is gated on activeWorkspaceId.
-    const { setActiveWorkspaceId } =
-      await import('$store/renderer/slices/workspace/workspace-slice');
+    // The sibling below proves the whole refresh path is gated on the current tab.
+    const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
     const { setActiveAgentId } =
       await import('$store/renderer/slices/workspace-agents/workspace-agents-slice');
-    appStore.dispatch(setActiveWorkspaceId(WS));
+    appStore.dispatch(openWorkspaceTab(WS));
     appStore.dispatch(setActiveAgentId(WS, AGENT));
 
-    await refreshDaemonEventsAfterReconnect();
+    await refreshDaemonEventsAfterReconnect(WS);
 
     expect(loadChatTranscriptSpy).toHaveBeenCalledWith(AGENT);
     expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
   });
 
   it('skips coarse-state refresh when no workspace is active (nothing to hydrate)', async () => {
-    // No `setActiveWorkspaceId` dispatched → activeWorkspaceId stays null.
-    await refreshDaemonEventsAfterReconnect();
+    // No workspace tab opened, so the explicit reconnect scope stays null.
+    await refreshDaemonEventsAfterReconnect(null);
 
     // With no active workspace, the refresh path exits early — no chat load.
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();

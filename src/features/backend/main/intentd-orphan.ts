@@ -122,9 +122,10 @@ export function getProcessExecutablePath(
  * True when the executable resolves inside `resourcesPath`. Both sides are
  * realpath'd (symlinked install locations). When the executable cannot be
  * realpath'd, only the kernel-verified Linux deleted-exe case (`deleted`
- * flag) falls back to the normalized literal path — the binary was replaced
- * on disk by an upgrade. Any other realpath failure fails containment: an
- * unresolvable path merely *claiming* to live inside resources is not proof.
+ * flag) resolves its deepest existing ancestor and restores the missing path
+ * suffix — the binary was replaced on disk by an upgrade. Any other realpath
+ * failure fails containment: an unresolvable path merely *claiming* to live
+ * inside resources is not proof.
  */
 export function isExecutableInsideResources(
   executable: ProcessExecutable,
@@ -142,7 +143,19 @@ export function isExecutableInsideResources(
     resolvedExe = fs.realpathSync(executable.path);
   } catch {
     if (!executable.deleted) return false;
-    resolvedExe = path.normalize(executable.path);
+    let existingAncestor = executable.path;
+    const missingSegments: string[] = [];
+    while (true) {
+      try {
+        resolvedExe = path.join(fs.realpathSync(existingAncestor), ...missingSegments.reverse());
+        break;
+      } catch {
+        const parent = path.dirname(existingAncestor);
+        if (parent === existingAncestor) return false;
+        missingSegments.push(path.basename(existingAncestor));
+        existingAncestor = parent;
+      }
+    }
   }
   const relative = path.relative(resolvedResources, resolvedExe);
   return relative.length > 0 && !relative.startsWith('..') && !path.isAbsolute(relative);

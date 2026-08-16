@@ -5,7 +5,7 @@ import {
   generateUniqueSpecialistId,
   type SpecialistFileScope,
 } from '$shared/specialist-file-types';
-import { store as appStore } from "$store/renderer/store";
+import { store as appStore } from '$store/renderer/store';
 import type { StoreState } from '$store/renderer/types';
 import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
 import { selectSpecialistProposalAppliedState } from '$store/renderer/slices/specialist-proposal-history/specialist-proposal-history-selectors';
@@ -28,7 +28,8 @@ import {
   saveFileSpecialist,
   type FileSpecialist,
 } from '$store/renderer/slices/specialists/specialists-slice';
-import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { getProposalId } from './proposal-id';
 
 type SpecialistProposalOperation = 'create' | 'edit' | 'delete';
@@ -63,8 +64,11 @@ function stringField(
   return typeof value === 'string' ? value : fallback;
 }
 
-function getCurrentWorkspacePath(state: StoreState): string | undefined {
-  const workspace = selectActiveWorkspace.select(state);
+function getCurrentWorkspacePath(
+  state: StoreState,
+  workspaceId: string | null,
+): string | undefined {
+  const workspace = workspaceId ? selectWorkspaceById.select(state, workspaceId) : undefined;
   return workspace?.path ?? workspace?.worktreePath ?? workspace?.repositoryPath;
 }
 
@@ -119,6 +123,7 @@ export async function applySpecialistProposalWork(
   }
 
   const state = appStore.state;
+  const activeWorkspaceId = selectCurrentWorkspaceTabId.select(state);
   const payload = getPayload(proposal);
   const operation = payload.operation ?? payload.action ?? 'edit';
   const existingSpecialists = selectSpecialists.select(state);
@@ -135,7 +140,8 @@ export async function applySpecialistProposalWork(
     );
   const fileSpec = selectGetFileSpecialist.select(state, id);
   const scope = getScope(payload.scope, fileSpec?.source);
-  const workspacePath = scope === 'project' ? getCurrentWorkspacePath(state) : undefined;
+  const workspacePath =
+    scope === 'project' ? getCurrentWorkspacePath(state, activeWorkspaceId) : undefined;
   const reverse: SpecialistReverseAction =
     operation === 'create'
       ? { kind: 'delete', id, scope, workspacePath }
@@ -162,9 +168,7 @@ export async function applySpecialistProposalWork(
   // model only (empty ⇒ the file stays model-less and the daemon resolves the
   // default) — never the daemon's resolvedModel preview, which would bake a
   // floating default into the file as a pin.
-  const fallbackModel = current
-    ? (current.defaultModel ?? '')
-    : selectSelectedModel.select(state);
+  const fallbackModel = current ? (current.defaultModel ?? '') : selectSelectedModel.select(state);
   const model = stringField(proposal, detail, 'model', fallbackModel).trim();
   const { providerId } = selectParsedCompoundModelId.select(state, model);
   const description = stringField(
@@ -199,9 +203,7 @@ export async function applySpecialistProposalWork(
   return { reverse };
 }
 
-export async function undoSpecialistProposalWork(
-  reverse: SpecialistReverseAction,
-): Promise<void> {
+export async function undoSpecialistProposalWork(reverse: SpecialistReverseAction): Promise<void> {
   if (reverse.kind === 'delete') {
     const { id, scope, workspacePath } = reverse;
     appStore.dispatch(deleteFileSpecialistAction({ id, scope, workspacePath }));

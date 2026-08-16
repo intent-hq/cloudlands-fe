@@ -5,7 +5,7 @@ import { call, cancel, delay, fork, put, spawn, take, type SagaGenerator } from 
 
 import { createLogger } from '$lib/utils/client-logger';
 import { gitRootsUpdated } from '../git-roots-slice';
-import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
+import { selectActiveWorkspaceIds } from '../../tab-state/tab-state-selectors';
 import { subscribeGitRoots, type GitRootRow } from '$features/git-roots/git-roots-service';
 
 const logger = createLogger('GitRootsSaga');
@@ -41,42 +41,46 @@ function* forwardGitRootUpdates(
 
 function* reconcileGitRootsSubscriptions(
   active: Map<string, SubscriptionEntry>,
-  activeWorkspaceId: string | null,
+  activeWorkspaceIds: string[],
 ): SagaGenerator<void> {
+  const desiredWorkspaceIds = new Set(activeWorkspaceIds);
+
   for (const [workspaceId, entry] of active) {
-    if (workspaceId === activeWorkspaceId) continue;
+    if (desiredWorkspaceIds.has(workspaceId)) continue;
     active.delete(workspaceId);
     yield* cancel(entry.task);
   }
 
-  if (!activeWorkspaceId || active.has(activeWorkspaceId)) return;
-  try {
-    const channel = createGitRootsChannel(activeWorkspaceId);
-    const task = yield* spawn(forwardGitRootUpdates, activeWorkspaceId, channel);
-    active.set(activeWorkspaceId, { channel, task });
-  } catch (error) {
-    logger.error('Failed to subscribe to gitRoot events', {
-      workspaceId: activeWorkspaceId,
-      error,
-    });
+  for (const workspaceId of activeWorkspaceIds) {
+    if (active.has(workspaceId)) continue;
+    try {
+      const channel = createGitRootsChannel(workspaceId);
+      const task = yield* spawn(forwardGitRootUpdates, workspaceId, channel);
+      active.set(workspaceId, { channel, task });
+    } catch (error) {
+      logger.error('Failed to subscribe to gitRoot events', {
+        workspaceId,
+        error,
+      });
+    }
   }
 }
 
-function* watchActiveWorkspace(active: Map<string, SubscriptionEntry>): SagaGenerator<void> {
-  const initialWorkspaceId = yield* selectActiveWorkspaceId.effect();
+function* watchActiveWorkspaces(active: Map<string, SubscriptionEntry>): SagaGenerator<void> {
+  const initialWorkspaceIds = yield* selectActiveWorkspaceIds.effect();
   let initialReconciliation: Task | null = null;
   initialReconciliation = yield* fork(function* () {
     try {
       yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
-      yield* reconcileGitRootsSubscriptions(active, initialWorkspaceId);
+      yield* reconcileGitRootsSubscriptions(active, initialWorkspaceIds);
     } finally {
       initialReconciliation = null;
     }
   });
 
   yield* takeLatestFromSelector(
-    selectActiveWorkspaceId,
-    function* ({ payload }: SelectorChannelPayload<string | null>) {
+    selectActiveWorkspaceIds,
+    function* ({ payload }: SelectorChannelPayload<string[]>) {
       if (initialReconciliation) {
         yield* cancel(initialReconciliation);
         initialReconciliation = null;
@@ -93,7 +97,7 @@ export function* gitRootsSaga(): SagaGenerator<void> {
     // The call boundary keeps the try pending until root cancellation (the
     // watcher's internal fork never ends), so the finally sees a populated
     // `active` map.
-    yield* call(watchActiveWorkspace, active);
+    yield* call(watchActiveWorkspaces, active);
   } finally {
     for (const entry of active.values()) yield* cancel(entry.task);
     active.clear();

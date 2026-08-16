@@ -7,10 +7,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { createFileRequested } from '../../app-layout/app-layout-slice';
 import { selectFileExplorerState } from '../../file-explorer/file-explorer-selectors';
 import { refreshDirectoryRequested } from '../../file-explorer/file-explorer-slice';
-import {
-  workspaceDeleted,
-  workspaceUnmounted,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { openWorkspaceFile } from '../../workspace-navigation/workspace-navigation-slice';
 import { selectFileContentEntry } from '../files-selectors';
 import {
@@ -35,7 +32,7 @@ type ObservedAction = { type: string; payload?: unknown };
 
 function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
   return (
-    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    action.type === workspaceUnmounted.type &&
     Array.isArray(action.payload) &&
     action.payload[0] === workspaceId
   );

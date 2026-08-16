@@ -7,22 +7,16 @@
 
 import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UnifiedAgentFactory } from '../agent-factory';
 
 // Mock configured app Store
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({ workspaceAgents: { byWorkspaceId: {} }, workspace: { activeWorkspaceId: 'test-ws' } }),
+    state: () => ({ workspaceAgents: { byWorkspaceId: {} } }),
     dispatch: vi.fn(),
   });
 });
