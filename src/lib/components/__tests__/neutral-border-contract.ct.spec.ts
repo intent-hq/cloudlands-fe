@@ -64,7 +64,7 @@ test('production neutral borders share color and single-edge geometry', async ({
         })),
       );
 
-      expect(new Set(styles.map(({ color }) => color))).toHaveSize(1);
+      expect(new Set(styles.map(({ color }) => color)).size).toBe(1);
       expect(styles.every(({ color }) => color.startsWith('rgb('))).toBe(true);
       expect(styles.every(({ width, ownerCount }) => width === '1px' && ownerCount === 1)).toBe(
         true,
