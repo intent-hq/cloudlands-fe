@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.56.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.0...v2.56.1) (2026-08-16)
+
+
+### 🐛 Bug Fixes
+
+* damp scroll-to-bottom button visibility against scroll-metric jitter ([#1331](https://github.com/intent-hq/cloudlands-fe/issues/1331)) ([9cdff07](https://github.com/intent-hq/cloudlands-fe/commit/9cdff07f64affdd647ce990b43f0142c83e785a2))
+* remote directory picker infinite spinner and unvalidated favorites ([#1329](https://github.com/intent-hq/cloudlands-fe/issues/1329)) ([6262852](https://github.com/intent-hq/cloudlands-fe/commit/6262852c558a2a664fb5d775cf447eab69e4a643))
+* settle window for LazyTurn swap-out to stop boundary oscillation ([#1330](https://github.com/intent-hq/cloudlands-fe/issues/1330)) ([ae37de9](https://github.com/intent-hq/cloudlands-fe/commit/ae37de945148bda2a0af75261d7339fcd35b7971))
+
 ## [2.56.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.55.0...v2.56.0) (2026-08-16)
 
 
