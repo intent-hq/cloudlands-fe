@@ -381,16 +381,23 @@ describe('DaemonStatusIndicator', () => {
       expect(formatDiskSize(0)).toBe('0 MB');
     });
 
-    it('promotes to the next unit when rounding carries past the boundary', async () => {
+    it('takes the larger unit at the half-step threshold so rounding never shows 4 digits', async () => {
       const { formatDiskSize } = await import('./DaemonStatusIndicator.svelte');
-      // 3-sig-fig rounding of 999.5+ GB reaches 1000 GB — display as 1 TB instead.
+      // The whole [999.5 GB, 1 TB) window renders "1 TB", never "1000 GB".
       expect(formatDiskSize(999_500_000_000)).toBe('1 TB');
       expect(formatDiskSize(999_990_000_000)).toBe('1 TB');
       expect(formatDiskSize(999_999_999_999)).toBe('1 TB');
-      // Just below the rounding carry stays in GB.
+      // Just below the half-step threshold stays in GB.
       expect(formatDiskSize(999_400_000_000)).toBe('999 GB');
-      // Same carry at the MB → GB boundary.
+      // Same half-step at the MB → GB boundary.
       expect(formatDiskSize(999_500_000)).toBe('1 GB');
+      expect(formatDiskSize(999_400_000)).toBe('999 MB');
+    });
+
+    it('clamps sub-MB values instead of rendering fractions like "0.0005 MB"', async () => {
+      const { formatDiskSize } = await import('./DaemonStatusIndicator.svelte');
+      expect(formatDiskSize(500)).toBe('0 MB');
+      expect(formatDiskSize(500_000)).toBe('0.5 MB');
     });
 
     it('renders the row as "free of total" when the daemon reports both fields', async () => {

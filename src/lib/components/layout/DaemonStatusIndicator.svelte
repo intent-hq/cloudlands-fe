@@ -31,26 +31,31 @@
    * values match what the OS (e.g. macOS Finder) reports for the same
    * volume. At most 3 significant figures, trailing zeros trimmed:
    * 2,000,000,000,000 B → `2 TB`; 1,070,000,000,000 B → `1.07 TB`;
-   * 994,080,000,000 B → `994 GB`. Rounding that carries past a unit
-   * boundary promotes to the next unit (999,999,999,999 B → `1 TB`, not
-   * `1000 GB`); the numeric part is locale-formatted via `$lib/i18n/format`.
+   * 994,080,000,000 B → `994 GB`. Units are chosen with a half-step
+   * threshold so rounding can never produce a 4-digit value — the whole
+   * [999.5 GB, 1 TB) window renders `1 TB`, not `1000 GB` — and sub-MB
+   * values clamp to `0 MB`. The numeric part is locale-formatted via
+   * `$lib/i18n/format`.
    */
   export function formatDiskSize(bytes: number): string {
+    const TB = 1000 ** 4;
+    const GB = 1000 ** 3;
+    const MB = 1000 ** 2;
     // i18n-ignore (SI unit suffixes are technical notation)
-    const units = [
-      ['TB', 1000 ** 4],
-      ['GB', 1000 ** 3],
-      ['MB', 1000 ** 2],
-    ] as const;
-    let index = units.findIndex(([, size]) => bytes >= size);
-    if (index === -1) index = units.length - 1;
-    let value = Number((bytes / units[index][1]).toPrecision(3));
-    if (value >= 1000 && index > 0) {
-      index -= 1;
-      value = Number((bytes / units[index][1]).toPrecision(3));
-    }
-    const formatted = formatNumber(value, { maximumSignificantDigits: 3, useGrouping: false });
-    return `${formatted} ${units[index][0]}`;
+    const [value, unit] =
+      bytes >= 999.5 * GB
+        ? [bytes / TB, 'TB']
+        : bytes >= 999.5 * MB
+          ? [bytes / GB, 'GB']
+          : [bytes / MB, 'MB'];
+    // A nearly-full disk can report sub-MB free space, which would render
+    // like "0.0005 MB" — floor the MB tier to two decimals so tiny values
+    // clamp to "0 MB".
+    const rounded =
+      unit === 'MB'
+        ? Math.round(Number(value.toPrecision(3)) * 100) / 100
+        : Number(value.toPrecision(3));
+    return `${formatNumber(rounded, { maximumSignificantDigits: 3, useGrouping: false })} ${unit}`;
   }
 
   /**
@@ -499,8 +504,8 @@
 
             <!-- Transport -->
             <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-              <span class="text-subtle">{m.layout_daemonStatus_transport_label()}</span>
-              <span class="font-mono text-xs">
+              <span class="text-subtle shrink-0">{m.layout_daemonStatus_transport_label()}</span>
+              <span class="font-mono text-xs min-w-0 truncate">
                 {$stats$.listenMode}{$stats$.port ? `:${$stats$.port}` : ''}
               </span>
             </div>
@@ -513,8 +518,8 @@
                     <span>{versionMismatchTooltip}</span>
                   {/snippet}
                   <div class="flex justify-between gap-2 text-xs w-full whitespace-nowrap">
-                    <span class="text-subtle">{m.layout_daemonStatus_version_label()}</span>
-                    <span class="flex items-center gap-1.5">
+                    <span class="text-subtle shrink-0">{m.layout_daemonStatus_version_label()}</span>
+                    <span class="flex items-center gap-1.5 min-w-0">
                       <!--
                         Keyboard focus inside the menu is menu-managed (bits-ui
                         closes on Tab; arrow keys visit only menu items), so the
@@ -529,14 +534,18 @@
                       >
                         <Fa icon={faTriangleExclamation} />
                       </span>
-                      <span class="font-mono text-xs">{$stats$.version}</span>
+                      <span class="font-mono text-xs min-w-0 truncate" title={$stats$.version}
+                        >{$stats$.version}</span
+                      >
                     </span>
                   </div>
                 </Tooltip>
               {:else}
                 <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                  <span class="text-subtle">{m.layout_daemonStatus_version_label()}</span>
-                  <span class="font-mono text-xs">{$stats$.version}</span>
+                  <span class="text-subtle shrink-0">{m.layout_daemonStatus_version_label()}</span>
+                  <span class="font-mono text-xs min-w-0 truncate" title={$stats$.version}
+                    >{$stats$.version}</span
+                  >
                 </div>
               {/if}
             {/if}
@@ -615,8 +624,8 @@
 
             <!-- Host OS/Arch -->
             <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-              <span class="text-subtle">{m.layout_daemonStatus_host_label()}</span>
-              <span class="font-mono text-xs">{$stats$.os}/{$stats$.arch}</span>
+              <span class="text-subtle shrink-0">{m.layout_daemonStatus_host_label()}</span>
+              <span class="font-mono text-xs min-w-0 truncate">{$stats$.os}/{$stats$.arch}</span>
             </div>
 
             <!-- FE connection mode -->
