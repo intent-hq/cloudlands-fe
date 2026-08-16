@@ -57,8 +57,8 @@ for (const scenario of scenarios) {
 
     expect(geometry).toMatchObject({
       contained: true,
-      fontSize: '14px',
-      lineHeight: '20px',
+      fontSize: '15px',
+      lineHeight: '22px',
       fontWeight: '400',
       hintWeight: '400',
     });
