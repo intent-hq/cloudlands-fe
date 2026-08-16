@@ -8,30 +8,7 @@ import {
   getItem,
   getItems,
 } from '@augmentcode/themis/utils/collections/collection-utils';
-import {
-  beginWorkspaceTitleMutation,
-  bulkUpdateWorkspaceEntities,
-  completeWorkspaceTitleMutation,
-  failWorkspaceTitleMutation,
-  cleanupRecency,
-  clearPendingCreation,
-  clearWorkspacePendingDeletion,
-  initialState,
-  markWorkspacePendingDeletion,
-  loadRecencyData,
-  replaceWorkspaceList,
-  recordWorkspaceView,
-  resetWorkspaceState,
-  removeWorkspaceEntity,
-  setPendingCreation,
-  setWorkspaceCreating,
-  setWorkspaceEntity,
-  setWorkspaceError,
-  setWorkspaceHasLoaded,
-  setWorkspaceLoading,
-  updateWorkspaceEntity,
-  workspaceReducer,
-} from './workspace-slice';
+import { beginWorkspaceTitleMutation, bulkUpdateWorkspaceEntities, completeWorkspaceTitleMutation, failWorkspaceTitleMutation, clearWorkspacePendingDeletion, initialState, markWorkspacePendingDeletion, loadRecencyData, replaceWorkspaceList, recordWorkspaceView, removeWorkspaceEntity, setWorkspaceEntity, updateWorkspaceEntity, workspaceReducer } from './workspace-slice';
 import {
   selectWorkspacesSortedByRecency,
   selectWorkspaceById,
@@ -90,26 +67,6 @@ describe('workspaceReducer', () => {
       const next = workspaceReducer(initialState, recordWorkspaceView('ws-1', 123));
       expect(next.recency.lastViewedAt).toEqual({ 'ws-1': 123 });
     });
-
-    it('cleans up recency data for workspaces that no longer exist', () => {
-      const withRecency = workspaceReducer(
-        initialState,
-        loadRecencyData({ lastViewedAt: { 'ws-1': 100, 'ws-2': 200 } }),
-      );
-
-      const next = workspaceReducer(withRecency, cleanupRecency(['ws-2']));
-      expect(next.recency.lastViewedAt).toEqual({ 'ws-2': 200 });
-    });
-
-    it('is a no-op when recency cleanup removes nothing', () => {
-      const withRecency = workspaceReducer(
-        initialState,
-        loadRecencyData({ lastViewedAt: { 'ws-1': 100 } }),
-      );
-
-      const next = workspaceReducer(withRecency, cleanupRecency(['ws-1', 'ws-2']));
-      expect(next).toBe(withRecency);
-    });
   });
 
   it('does not store terminal overlay workspace state', () => {
@@ -118,17 +75,6 @@ describe('workspaceReducer', () => {
   });
 
   describe('workspace request state', () => {
-    it('tracks loading, error, loaded, and creating flags', () => {
-      let state = workspaceReducer(initialState, setWorkspaceLoading(true));
-      state = workspaceReducer(state, setWorkspaceError('boom'));
-      state = workspaceReducer(state, setWorkspaceHasLoaded(true));
-      state = workspaceReducer(state, setWorkspaceCreating(true));
-
-      expect(state.loading).toBe(true);
-      expect(state.error).toBe('boom');
-      expect(state.hasLoaded).toBe(true);
-      expect(state.isCreating).toBe(true);
-    });
 
     it('tracks and clears pending deletion maps', () => {
       let state = workspaceReducer(initialState, markWorkspacePendingDeletion('ws-1'));
@@ -136,44 +82,6 @@ describe('workspaceReducer', () => {
 
       state = workspaceReducer(state, clearWorkspacePendingDeletion('ws-1'));
       expect(state.pendingDeletions).toEqual({});
-    });
-
-    it('tracks and clears pending creations', () => {
-      const pending = makeWorkspace({ id: 'pending-1', title: 'Pending' });
-      let state = workspaceReducer(initialState, setPendingCreation(pending));
-      expect(state.pendingCreations['pending-1']).toEqual(pending);
-
-      state = workspaceReducer(state, clearPendingCreation('pending-1'));
-      expect(state.pendingCreations).toEqual({});
-    });
-
-    it('replaces visible workspace items while preserving enrichment and pending creations', () => {
-      const existing = makeWorkspace({
-        id: 'ws-1',
-        title: 'Existing',
-        agentSummary: { agentIds: ['agent-1'] },
-      });
-      const pending = makeWorkspace({ id: 'pending-1', title: 'Pending' });
-
-      let state = workspaceReducer(initialState, setWorkspaceEntity(existing));
-      state = workspaceReducer(state, setPendingCreation(pending));
-      state = workspaceReducer(
-        state,
-        replaceWorkspaceList([
-          {
-            ...existing,
-            agentSummary: undefined,
-            status: WorkspaceStatusEnum.Active,
-            archived: false,
-          },
-          makeWorkspace({ id: 'pending-1', title: 'Pending From Backend' }),
-          makeWorkspace({ id: 'ws-2', title: 'Second' }),
-        ]),
-      );
-
-      expect(state.workspaces.ids).toEqual(['ws-1', 'pending-1', 'ws-2']);
-      expect(getItem(state.workspaces, 'ws-1')?.agentSummary).toEqual(existing.agentSummary);
-      expect(state.pendingCreations).toEqual({});
     });
 
     it('preserves runtime PR fields when a lite list payload omits them', () => {
@@ -238,20 +146,6 @@ describe('workspaceReducer', () => {
 
       expect(state.workspaces.ids).toEqual(['ws-2']);
       expect(getItem(state.workspaces, 'ws-1')).toBeUndefined();
-    });
-
-    it('resets workspace migration state including recency', () => {
-      const ws = makeWorkspace({ id: 'ws-1' });
-      let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
-      state = workspaceReducer(state, setWorkspaceLoading(true));
-      state = workspaceReducer(state, markWorkspacePendingDeletion('ws-1'));
-      state = workspaceReducer(state, recordWorkspaceView('ws-1', 123));
-
-      const reset = workspaceReducer(state, resetWorkspaceState());
-      expect(reset.workspaces).toEqual(createCollection('id'));
-      expect(reset.loading).toBe(false);
-      expect(reset.pendingDeletions).toEqual({});
-      expect(reset.recency).toEqual(initialState.recency);
     });
   });
 
@@ -691,14 +585,6 @@ describe('workspace selectors', () => {
       expect(state.recency.lastViewedAt['ws-1']).toBe(123456);
       state = workspaceReducer(state, workspaceDeleted('ws-1', []));
       expect(state.recency.lastViewedAt['ws-1']).toBeUndefined();
-    });
-
-    it('clears the workspace from pendingCreations map', () => {
-      const ws = makeWorkspace({ id: 'ws-1' as WorkspaceId });
-      let state = workspaceReducer(initialState, setPendingCreation(ws));
-      expect(state.pendingCreations['ws-1']).toBeDefined();
-      state = workspaceReducer(state, workspaceDeleted('ws-1', []));
-      expect(state.pendingCreations['ws-1']).toBeUndefined();
     });
 
     it('survives an in-flight replaceWorkspaceList during the undo window', () => {

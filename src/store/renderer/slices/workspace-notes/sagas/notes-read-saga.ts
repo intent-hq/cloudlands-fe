@@ -1,4 +1,4 @@
-import { call, put, race, take, takeLeading } from 'typed-redux-saga';
+import { call, put, race, take } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -8,17 +8,8 @@ import {
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { takeLeadingByWorkspace } from '../../../utils/context-saga-effects';
-import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
-import {
-  applyNoteCreated,
-  applyNoteDeleted,
-  applyNoteUpdated,
-  loadWorkspaceNotesFailed,
-  loadWorkspaceNotesSucceeded,
-  noteEventReceived,
-  selectNote,
-  type NoteEventType,
-} from '../workspace-notes-slice';
+import { selectWorkspaceNotesState } from '../workspace-notes-selectors';
+import { loadWorkspaceNotesFailed, loadWorkspaceNotesSucceeded, selectNote } from '../workspace-notes-slice';
 import { toRuntimeNote } from './note-payload-mappers';
 
 const logger = createLogger('NotesReadSaga');
@@ -56,30 +47,6 @@ function* hydrateWorkspaceNotes(workspaceId: string) {
   }
 }
 
-function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEventType) {
-  if (eventType === 'note:deleted') {
-    yield* put(applyNoteDeleted(workspaceId, noteId));
-    return;
-  }
-  try {
-    const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(
-      [appClient.notes, appClient.notes.list],
-      workspaceId,
-    );
-    const found = response.find((note) => String(note.id) === noteId);
-    if (!found || String(found.workspaceId) !== workspaceId) return;
-    const note = toRuntimeNote(found);
-    const existing = yield* selectNoteById.effect(workspaceId, noteId);
-    if (eventType === 'note:created' && !existing) {
-      yield* put(applyNoteCreated(workspaceId, note));
-    } else {
-      yield* put(applyNoteUpdated(workspaceId, noteId, note));
-    }
-  } catch (error) {
-    logger.error('Failed to apply note event', error);
-  }
-}
-
 function* hydrateWorkspaceNotesWorker(action: ReturnType<typeof workspaceMounted>) {
   const [workspaceId] = action.payload;
   if (!workspaceId) return;
@@ -89,16 +56,6 @@ function* hydrateWorkspaceNotesWorker(action: ReturnType<typeof workspaceMounted
   });
 }
 
-function* applyNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
-  const [workspaceId, noteId, eventType] = action.payload;
-  if (!workspaceId || !noteId) return;
-  yield* race({
-    apply: call(applyNoteEvent, workspaceId, noteId, eventType),
-    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
-  });
-}
-
 export function* notesReadSaga() {
   yield* takeLeadingByWorkspace(workspaceMounted, hydrateWorkspaceNotesWorker);
-  yield* takeLeading(noteEventReceived, applyNoteEventWorker);
 }

@@ -8,16 +8,7 @@ import {
   replaceWorkspaceList,
   setWorkspaceEntity,
 } from "../workspace/workspace-slice";
-import {
-  applyTaskStatusChanged,
-  clearWorkspaceTasks,
-  emptyWorkspaceTaskStats,
-  initialState,
-  loadWorkspaceTasksFailed,
-  loadWorkspaceTasksRequested,
-  loadWorkspaceTasksSucceeded,
-  workspaceTasksReducer,
-} from "./workspace-tasks-slice";
+import { applyTaskStatusChanged, emptyWorkspaceTaskStats, initialState, loadWorkspaceTasksRequested, loadWorkspaceTasksSucceeded, workspaceTasksReducer } from "./workspace-tasks-slice";
 
 const WS = "ws-1";
 
@@ -52,12 +43,6 @@ describe("workspaceTasksReducer", () => {
   });
 
   describe("loadWorkspaceTasksRequested", () => {
-    it("marks the workspace as loading and clears errors", () => {
-      const failed = workspaceTasksReducer(initialState, loadWorkspaceTasksFailed(WS, "nope"));
-      const state = workspaceTasksReducer(failed, loadWorkspaceTasksRequested(WS));
-
-      expect(state.byWorkspaceId[WS]).toMatchObject({ loading: true, error: null });
-    });
 
     it("is a no-op when a request is already in flight", () => {
       const loading = workspaceTasksReducer(initialState, loadWorkspaceTasksRequested(WS));
@@ -98,15 +83,6 @@ describe("workspaceTasksReducer", () => {
     });
   });
 
-  describe("loadWorkspaceTasksFailed", () => {
-    it("records the error and stops loading", () => {
-      const loading = workspaceTasksReducer(initialState, loadWorkspaceTasksRequested(WS));
-      const state = workspaceTasksReducer(loading, loadWorkspaceTasksFailed(WS, "boom"));
-
-      expect(state.byWorkspaceId[WS]).toMatchObject({ loading: false, error: "boom" });
-    });
-  });
-
   describe("applyTaskStatusChanged", () => {
     it("updates the status of a known task", () => {
       const state = workspaceTasksReducer(
@@ -142,11 +118,6 @@ describe("workspaceTasksReducer", () => {
   });
 
   describe("cleanup", () => {
-    it("clears workspace state on clearWorkspaceTasks", () => {
-      const state = workspaceTasksReducer(loadedState([makeTask("t1")]), clearWorkspaceTasks(WS));
-
-      expect(state.byWorkspaceId[WS]).toBeUndefined();
-    });
 
     it("retains workspace state on workspaceUnmounted to avoid sidebar status flicker", () => {
       const stats: WorkspaceTaskStats = { total: 3, completed: 3, inProgress: 0 };

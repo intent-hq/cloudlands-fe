@@ -3,24 +3,7 @@ import {
   expect,
   it,
 } from "vitest";
-import {
-  clearWorkspaceInitializerPendingGitHubPrefill,
-  DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH,
-  hydrateWorkspaceInitializer,
-  initialState,
-  removeWorkspaceInitializerRemoteSetup,
-  setCompactWorkspaceInitializerFormState,
-  setWorkspaceInitializerPendingGitHubPrefill,
-  setWorkspaceInitializerBranchForRepo,
-  setWorkspaceInitializerDefaultParentPath,
-  setWorkspaceInitializerLastSelectedRepo,
-  setWorkspaceInitializerLastSubmittedAgent,
-  setWorkspaceInitializerOnboardingFormState,
-  setWorkspaceInitializerRecentRepos,
-  setWorkspaceInitializerRemoteSetups,
-  upsertWorkspaceInitializerRemoteSetup,
-  workspaceInitializerReducer,
-} from "./workspace-initializer-slice";
+import { clearWorkspaceInitializerPendingGitHubPrefill, DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH, hydrateWorkspaceInitializer, initialState, setCompactWorkspaceInitializerFormState, setWorkspaceInitializerPendingGitHubPrefill, setWorkspaceInitializerBranchForRepo, setWorkspaceInitializerDefaultParentPath, setWorkspaceInitializerLastSelectedRepo, setWorkspaceInitializerLastSubmittedAgent, setWorkspaceInitializerOnboardingFormState, workspaceInitializerReducer } from "./workspace-initializer-slice";
 
 describe("workspaceInitializerReducer", () => {
   it("returns initial state", () => {
@@ -82,33 +65,6 @@ describe("workspaceInitializerReducer", () => {
     expect(state.branchByRepo["/repo"]).toBe("feature");
     expect(state.defaultParentPath).toBe("~/Projects");
     expect(state.lastSubmittedAgent?.isTeamMode).toBe(false);
-  });
-
-  it("normalizes recent repos and remote setups", () => {
-    const recentRepos = Array.from({ length: 12 }, (_, index) => ({
-      path: index === 10 ? "" : `/repo-${index}`,
-      type: "local" as const,
-      name: `repo-${index}`,
-    }));
-    let state = workspaceInitializerReducer(initialState, setWorkspaceInitializerRecentRepos(recentRepos));
-    expect(state.recentRepos.ids).toHaveLength(9);
-    expect(state.recentRepos.ids).not.toContain("");
-
-    state = workspaceInitializerReducer(state, setWorkspaceInitializerRemoteSetups([
-      { id: "one", name: "One", host: "h", port: 22, username: "u", workspacePath: "/one" },
-    ]));
-    state = workspaceInitializerReducer(state, upsertWorkspaceInitializerRemoteSetup({
-      id: "two",
-      name: "Two",
-      host: "h",
-      port: 22,
-      username: "u",
-      workspacePath: "/two",
-    }));
-    expect(state.remoteSetups.ids).toEqual(["one", "two"]);
-
-    state = workspaceInitializerReducer(state, removeWorkspaceInitializerRemoteSetup("one"));
-    expect(state.remoteSetups.ids).toEqual(["two"]);
   });
 
   it("falls back to the default parent for blank values and ignores empty branch repo keys", () => {

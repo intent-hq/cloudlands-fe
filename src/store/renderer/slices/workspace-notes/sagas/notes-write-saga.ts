@@ -2,7 +2,6 @@ import { buffers, channel, type Channel } from 'redux-saga';
 import {
   call,
   cancelled,
-  delay,
   flush,
   put,
   race,
@@ -19,7 +18,6 @@ import { ContentType, NoteVisibility } from '$shared/types';
 import type { CreateNoteRequest, Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import { toast } from 'svelte-sonner';
-import { takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
   createNoteRequested,
   markNoteRead,
@@ -28,20 +26,7 @@ import { openTab } from '../../panel-layout/panel-layout-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { withPreservedUnmetDependsOn } from '../workspace-notes-normalization';
 import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
-import {
-  addOptimisticNote,
-  applyLocalNoteUpdate,
-  applyNoteCreated,
-  applyNoteDeleted,
-  applyNoteUpdated,
-  createNote,
-  deleteNote,
-  loadWorkspaceNotesSucceeded,
-  removeOptimisticNote,
-  updateNote,
-  updateNoteContent,
-  updateNoteTitle,
-} from '../workspace-notes-slice';
+import { addOptimisticNote, applyLocalNoteUpdate, applyNoteCreated, applyNoteUpdated, createNote, loadWorkspaceNotesSucceeded, removeOptimisticNote, updateNote } from '../workspace-notes-slice';
 import { toRuntimeNote } from './note-payload-mappers';
 
 const logger = createLogger('NotesWriteSaga');
@@ -284,49 +269,6 @@ export function* flushPendingNoteContent(workspaceId: string, noteId: string) {
   else yield* call(runMutation, command);
 }
 
-function* handleContentAction(
-  queue: Channel<MutationEnvelope>,
-  action: ReturnType<typeof updateNoteContent>,
-) {
-  const [workspaceId, noteId, content, immediate] = action.payload;
-  if (!workspaceId || !noteId || typeof content !== 'string') return;
-  yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content }));
-  const key = noteKey(workspaceId, noteId);
-  const pending = { workspaceId, noteId, content };
-  pendingContent.set(key, pending);
-  try {
-    if (!immediate) yield* delay(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
-    if (pendingContent.get(key) !== pending) return;
-    pendingContent.delete(key);
-    yield* enqueueMutation(queue, { kind: 'content', ...pending }, true);
-  } finally {
-    if ((yield* cancelled()) && pendingContent.get(key) === pending) pendingContent.delete(key);
-  }
-}
-
-function* handleTitleAction(
-  queue: Channel<MutationEnvelope>,
-  action: ReturnType<typeof updateNoteTitle>,
-) {
-  const [workspaceId, noteId, title] = action.payload;
-  if (!workspaceId || !noteId || typeof title !== 'string') return;
-  const before = yield* selectNoteById.effect(workspaceId, noteId);
-  yield* put(applyLocalNoteUpdate(workspaceId, noteId, { title }));
-  yield* call(flushPendingNoteContent, workspaceId, noteId);
-  yield* enqueueMutation(
-    queue,
-    {
-      kind: 'metadata',
-      workspaceId,
-      noteId,
-      patch: { title },
-      rollback: { title: before?.title ?? '' },
-      titleOnly: true,
-    },
-    true,
-  );
-}
-
 function* handleMetadataAction(
   queue: Channel<MutationEnvelope>,
   action: ReturnType<typeof updateNote>,
@@ -350,18 +292,6 @@ function* handleMetadataAction(
     { kind: 'metadata', workspaceId, noteId, patch, rollback, titleOnly: false },
     true,
   );
-}
-
-function* handleDeleteAction(
-  queue: Channel<MutationEnvelope>,
-  action: ReturnType<typeof deleteNote>,
-) {
-  const [workspaceId, noteId] = action.payload;
-  if (!workspaceId || !noteId) return;
-  yield* call(flushPendingNoteContent, workspaceId, noteId);
-  const snapshot = yield* selectNoteById.effect(workspaceId, noteId);
-  yield* put(applyNoteDeleted(workspaceId, noteId));
-  yield* enqueueMutation(queue, { kind: 'delete', workspaceId, noteId, snapshot }, true);
 }
 
 function* createNewNote(
@@ -476,15 +406,7 @@ export function* notesWriteSaga() {
   const queue = channel<MutationEnvelope>(buffers.expanding());
   noteMutationQueue = queue;
   try {
-    yield* takeLatestInContext(
-      updateNoteContent,
-      (action) => noteKey(action.payload[0], action.payload[1]),
-      handleContentAction,
-      queue,
-    );
-    yield* takeEvery(updateNoteTitle, handleTitleAction, queue);
     yield* takeEvery(updateNote, handleMetadataAction, queue);
-    yield* takeEvery(deleteNote, handleDeleteAction, queue);
     yield* takeEvery(createNote, handleCreateAction);
     yield* takeEvery(createNoteRequested, handleCreateRequested);
     yield* takeEvery(workspaceUnmounted, cleanupWorkspace, queue);

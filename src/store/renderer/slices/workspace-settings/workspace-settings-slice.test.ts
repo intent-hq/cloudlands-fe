@@ -3,15 +3,7 @@ import {
   it,
   expect,
 } from "vitest";
-import {
-  workspaceSettingsReducer,
-  setAutoCommitEnabled,
-  refreshAutoCommitSettings,
-  syncWorkspaceSettings,
-  loadAutoCommitSettings,
-  clearWorkspaceSettings,
-  type WorkspaceSettingsState,
-} from "./workspace-settings-slice";
+import { workspaceSettingsReducer, setAutoCommitEnabled, refreshAutoCommitSettings, syncWorkspaceSettings, type WorkspaceSettingsState } from "./workspace-settings-slice";
 
 describe("workspaceSettingsReducer", () => {
   const initialState: WorkspaceSettingsState = {
@@ -49,36 +41,6 @@ describe("workspaceSettingsReducer", () => {
     it("should not change state (handled by saga)", () => {
       const state = workspaceSettingsReducer(initialState, syncWorkspaceSettings("ws-1"));
       expect(state).toEqual(initialState);
-    });
-  });
-
-  describe("loadAutoCommitSettings", () => {
-    it("should set autoCommitEnabled to false", () => {
-      const state = workspaceSettingsReducer(initialState, loadAutoCommitSettings("ws-1", false));
-      expect(state.byWorkspaceId["ws-1"]?.autoCommitEnabled).toBe(false);
-    });
-
-    it("should set autoCommitEnabled to true", () => {
-      const disabled: WorkspaceSettingsState = {
-        byWorkspaceId: { "ws-1": { autoCommitEnabled: false } },
-      };
-      const state = workspaceSettingsReducer(disabled, loadAutoCommitSettings("ws-1", true));
-      expect(state.byWorkspaceId["ws-1"]?.autoCommitEnabled).toBe(true);
-    });
-  });
-
-  describe("clearWorkspaceSettings", () => {
-    it("should remove workspace state", () => {
-      const withWs: WorkspaceSettingsState = {
-        byWorkspaceId: { "ws-1": { autoCommitEnabled: false } },
-      };
-      const state = workspaceSettingsReducer(withWs, clearWorkspaceSettings("ws-1"));
-      expect(state.byWorkspaceId["ws-1"]).toBeUndefined();
-    });
-
-    it("should not change state if workspace not present", () => {
-      const state = workspaceSettingsReducer(initialState, clearWorkspaceSettings("ws-1"));
-      expect(state).toBe(initialState);
     });
   });
 });

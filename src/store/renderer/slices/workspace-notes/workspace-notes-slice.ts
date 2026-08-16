@@ -39,13 +39,6 @@ export const initialState: WorkspaceNotesState = {
 
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceNotesState);
-
-export const clearWorkspaceNotesForWorkspaces = createAction<[workspaceIds: string[]]>(
-  "workspaceNotes/clearWorkspaceNotesForWorkspaces"
-);
-export const setWorkspaceNotesLoading = createAction<[workspaceIds: string[], isLoading: boolean]>(
-  "workspaceNotes/setWorkspaceNotesLoading"
-);
 export const loadWorkspaceNotesSucceeded = createAction<
   [workspaceIds: string[], notesByWorkspace: Record<string, Note[]>]
 >("workspaceNotes/loadWorkspaceNotesSucceeded");
@@ -64,25 +57,12 @@ export const applyNoteDeleted = createAction<[workspaceId: string, noteId: strin
 export const applyNoteUpdated = createAction<[workspaceId: string, noteId: string, note: Note]>(
   "workspaceNotes/applyNoteUpdated"
 );
-export const noteEventReceived = createAction<
-  [workspaceId: string, noteId: string, eventType: NoteEventType]
->('workspaceNotes/noteEventReceived');
 
 // ---- New actions from notes.store.svelte.ts migration ----
 
 /** Select a note in a workspace */
 export const selectNote = createAction<[workspaceId: string, noteId: string | null]>(
   "workspaceNotes/selectNote"
-);
-
-/** Set the user typing state */
-export const setIsUserTyping = createAction<[workspaceId: string, isTyping: boolean]>(
-  "workspaceNotes/setIsUserTyping"
-);
-
-/** Record the last user input timestamp */
-export const setLastUserInputTime = createAction<[workspaceId: string, timestamp: number]>(
-  "workspaceNotes/setLastUserInputTime"
 );
 
 /** Clear the newly created note ID (called after focusing) */
@@ -119,24 +99,9 @@ export const initializeNotes = createAction<[workspaceId: string, initialSelecte
   "workspaceNotes/initializeNotes"
 );
 
-/** Saga trigger: update note content (from user input, will debounce) */
-export const updateNoteContent = createAction<[workspaceId: string, noteId: string, content: string, immediate?: boolean]>(
-  "workspaceNotes/updateNoteContent"
-);
-
-/** Saga trigger: update note title */
-export const updateNoteTitle = createAction<[workspaceId: string, noteId: string, title: string]>(
-  "workspaceNotes/updateNoteTitle"
-);
-
 /** Saga trigger: create a new note */
 export const createNote = createAction<[workspaceId: string, data: Omit<import("$shared/types").CreateNoteRequest, "workspaceId">]>(
   "workspaceNotes/createNote"
-);
-
-/** Saga trigger: delete a note */
-export const deleteNote = createAction<[workspaceId: string, noteId: string]>(
-  "workspaceNotes/deleteNote"
 );
 
 /** Saga trigger: update note (metadata like pin, archive, etc.) */
@@ -173,30 +138,7 @@ export const applyReadyTasks = createAction<[workspaceId: string, tasks: Note[]]
   "workspaceNotes/applyReadyTasks"
 );
 
-/** Apply ready tasks fetch error to state */
-export const applyReadyTasksError = createAction<[workspaceId: string, error: string]>(
-  "workspaceNotes/applyReadyTasksError"
-);
-
 export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialState);
-workspaceNotesReducer.with(clearWorkspaceNotesForWorkspaces, (state, { payload: [workspaceIds] }) => {
-    return workspaceIds.reduce((nextState, workspaceId) => {
-      return clearWorkspaceState(nextState, workspaceId);
-    }, state);
-  });
-workspaceNotesReducer.with(setWorkspaceNotesLoading, (state, { payload: [workspaceIds, isLoading] }) => {
-    return workspaceIds.reduce((nextState, workspaceId) => {
-      const workspaceState = getWorkspaceState(nextState, workspaceId);
-      if (workspaceState.loading === isLoading) {
-        return nextState;
-      }
-      return setWorkspaceState(nextState, workspaceId, {
-        ...workspaceState,
-        loading: isLoading,
-        error: isLoading ? null : workspaceState.error,
-      });
-    }, state);
-  });
 workspaceNotesReducer.with(loadWorkspaceNotesSucceeded, (state, { payload: [workspaceIds, notesByWorkspace] }) => {
     return workspaceIds.reduce((nextState, workspaceId) => {
       const workspaceState = getWorkspaceState(nextState, workspaceId);
@@ -304,15 +246,6 @@ workspaceNotesReducer.with(selectNote, (state, { payload: [workspaceId, noteId] 
       editorHasFocus: false,
     });
   });
-workspaceNotesReducer.with(setIsUserTyping, (state, { payload: [workspaceId, isTyping] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    if (ws.isUserTyping === isTyping) return state;
-    return setWorkspaceState(state, workspaceId, { ...ws, isUserTyping: isTyping });
-  });
-workspaceNotesReducer.with(setLastUserInputTime, (state, { payload: [workspaceId, timestamp] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    return setWorkspaceState(state, workspaceId, { ...ws, lastUserInputTime: timestamp });
-  });
 workspaceNotesReducer.with(clearNewlyCreatedNoteId, (state, { payload: [workspaceId] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     if (ws.newlyCreatedNoteId === null) return state;
@@ -407,18 +340,6 @@ workspaceNotesReducer.with(applyReadyTasks, (state, { payload: [workspaceId, tas
         tasks,
         loading: false,
         error: null,
-        searched: true,
-      },
-    });
-  });
-workspaceNotesReducer.with(applyReadyTasksError, (state, { payload: [workspaceId, error] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      readyTasks: {
-        tasks: [],
-        loading: false,
-        error,
         searched: true,
       },
     });

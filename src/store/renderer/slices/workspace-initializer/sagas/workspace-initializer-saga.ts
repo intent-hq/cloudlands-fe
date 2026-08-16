@@ -29,21 +29,7 @@ import {
   selectWorkspaceInitializerRecentRepos,
   selectWorkspaceInitializerRemoteSetups,
 } from '../workspace-initializer-selectors';
-import {
-  cancelWorkspaceInitializerOnboardingFormStateDebounce,
-  debounceWorkspaceInitializerOnboardingFormState,
-  hydrateWorkspaceInitializer,
-  removeWorkspaceInitializerRemoteSetup,
-  setCompactWorkspaceInitializerFormState,
-  setWorkspaceInitializerBranchForRepo,
-  setWorkspaceInitializerDefaultParentPath,
-  setWorkspaceInitializerLastSelectedRepo,
-  setWorkspaceInitializerLastSubmittedAgent,
-  setWorkspaceInitializerOnboardingFormState,
-  setWorkspaceInitializerRecentRepos,
-  setWorkspaceInitializerRemoteSetups,
-  upsertWorkspaceInitializerRemoteSetup,
-} from '../workspace-initializer-slice';
+import { cancelWorkspaceInitializerOnboardingFormStateDebounce, debounceWorkspaceInitializerOnboardingFormState, hydrateWorkspaceInitializer, setCompactWorkspaceInitializerFormState, setWorkspaceInitializerBranchForRepo, setWorkspaceInitializerDefaultParentPath, setWorkspaceInitializerLastSelectedRepo, setWorkspaceInitializerLastSubmittedAgent, setWorkspaceInitializerOnboardingFormState, setWorkspaceInitializerRecentRepos, setWorkspaceInitializerRemoteSetups } from '../workspace-initializer-slice';
 import type {
   CompactWorkspaceInitializerFormState,
   WorkspaceInitializerAgentSettings,
@@ -308,8 +294,6 @@ function* watchWorkspaceInitializerPersistence(gate: HydrationGate) {
       setWorkspaceInitializerDefaultParentPath,
       setWorkspaceInitializerRecentRepos,
       setWorkspaceInitializerRemoteSetups,
-      upsertWorkspaceInitializerRemoteSetup,
-      removeWorkspaceInitializerRemoteSetup,
       setWorkspaceInitializerLastSubmittedAgent,
     ],
     buffers.sliding(1),

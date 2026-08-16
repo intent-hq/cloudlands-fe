@@ -410,18 +410,6 @@ export const openWorkspaceDiff = createAction<
   ]
 >('workspaceNavigation/openWorkspaceDiff');
 
-export const openWorkspaceChangeSet = createAction<[wsId: string]>(
-  'workspaceNavigation/openWorkspaceChangeSet',
-);
-
-export const openWorkspaceAgentTurnChanges = createAction<
-  [wsId: string, turn: WorkspaceNavigationAgentTurn, aggregate?: boolean]
->('workspaceNavigation/openWorkspaceAgentTurnChanges');
-
-export const openWorkspaceActivityChanges = createAction<[wsId: string, event: WorkspaceEvent]>(
-  'workspaceNavigation/openWorkspaceActivityChanges',
-);
-
 export const openWorkspaceChatChanges = createAction<
   [
     wsId: string,
@@ -731,65 +719,6 @@ workspaceNavigationReducer.with(openWorkspaceDiff, (state, { payload: [wsId, cha
         filePath,
         branchBaseRef: options?.branchBaseRef,
         branchBaseCommitSha: options?.branchBaseCommitSha,
-      },
-    );
-  }),
-);
-workspaceNavigationReducer.with(openWorkspaceChangeSet, (state, { payload: [wsId] }) =>
-  withWorkspaceNavigationState(state, wsId, (workspaceState) =>
-    pushHistoryEntry(
-      mergeWorkspaceNavigationState(workspaceState, {
-        mainPanel: createMainPanelState('change-set'),
-      }),
-      {
-        type: 'change-set',
-        id: 'commit',
-        label: m.workspace_nav_commitChanges_label(),
-      },
-    ),
-  ),
-);
-workspaceNavigationReducer.with(
-  openWorkspaceAgentTurnChanges,
-  (state, { payload: [wsId, turn, aggregate] }) =>
-    withWorkspaceNavigationState(state, wsId, (workspaceState) => {
-      const historyType = aggregate ? 'agent-aggregate-changes' : 'agent-turn-changes';
-      const historyId = aggregate
-        ? `${turn.agentId}:aggregate`
-        : `${turn.agentId}:${typeof turn.turnNumber === 'number' ? turn.turnNumber : ''}`;
-
-      return pushHistoryEntry(
-        mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState(
-            aggregate ? 'agent-aggregate-changes' : 'agent-turn-changes',
-            { selectedAgentTurn: turn },
-          ),
-        }),
-        {
-          type: historyType,
-          id: historyId,
-          label: aggregate ? m.workspace_nav_aggregate_label() : m.workspace_nav_agentTurn_label(),
-          agentTurnData: turn,
-        },
-      );
-    }),
-);
-workspaceNavigationReducer.with(openWorkspaceActivityChanges, (state, { payload: [wsId, event] }) =>
-  withWorkspaceNavigationState(state, wsId, (workspaceState) => {
-    const eventId =
-      'id' in event && typeof event.id === 'string' ? event.id : `${event.type}:${event.timestamp}`;
-
-    return pushHistoryEntry(
-      mergeWorkspaceNavigationState(workspaceState, {
-        mainPanel: createMainPanelState('activity-changes', {
-          selectedActivityEvent: event,
-        }),
-      }),
-      {
-        type: 'activity-changes',
-        id: eventId,
-        label: m.workspace_nav_activityChanges_label(),
-        activityEventData: event,
       },
     );
   }),

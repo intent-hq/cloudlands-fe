@@ -28,7 +28,7 @@ export const initialState: WorkspaceEventsState = {
   byWorkspaceId: {},
 };
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
+const { getWorkspaceState, setWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceEventsState);
 
 // ---------------------------------------------------------------------------
@@ -38,18 +38,11 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 export const eventReceived = createAction<[workspaceId: string, event: WorkspaceEvent]>(
   'workspaceEvents/eventReceived',
 );
-export const bulkEventsReceived = createAction<[workspaceId: string, events: WorkspaceEvent[]]>(
-  'workspaceEvents/bulkEventsReceived',
-);
 export const eventsLoaded = createAction<[workspaceId: string, events: WorkspaceEvent[]]>(
   'workspaceEvents/eventsLoaded',
 );
-export const eventsCleared = createAction<[workspaceId: string]>('workspaceEvents/eventsCleared');
 export const loadEventsRequested = createAction<[workspaceId: string]>(
   'workspaceEvents/loadEventsRequested',
-);
-export const setEventsLoading = createAction<[workspaceId: string, loading: boolean]>(
-  'workspaceEvents/setEventsLoading',
 );
 
 // ---------------------------------------------------------------------------
@@ -77,28 +70,6 @@ workspaceEventsReducer.with(eventReceived, (state, { payload: [workspaceId, even
   const nextEvents = combined.slice(-MAX_EVENTS);
   return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
 });
-workspaceEventsReducer.with(bulkEventsReceived, (state, { payload: [workspaceId, events] }) => {
-  const safeEvents = sanitizeWorkspaceEventsList(events, workspaceId);
-  if (safeEvents.length === 0) return state;
-  const wsState = getWorkspaceState(state, workspaceId);
-  const seenIds = new Set(wsState.events.map((existing) => existing.id));
-  const deduped: WorkspaceEvent[] = [];
-  for (const candidate of safeEvents) {
-    if (seenIds.has(candidate.id)) continue;
-    seenIds.add(candidate.id);
-    deduped.push(candidate);
-  }
-  if (deduped.length === 0) return state;
-  // STAB-2: Merge and sort by timestamp (oldest→newest) to maintain
-  // chronological order regardless of the arrival sequence of live events.
-  const combined = [...wsState.events, ...deduped].sort((a, b) => {
-    const timeA = new Date(a.timestamp).getTime();
-    const timeB = new Date(b.timestamp).getTime();
-    return timeA - timeB;
-  });
-  const nextEvents = combined.slice(-MAX_EVENTS);
-  return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
-});
 workspaceEventsReducer.with(eventsLoaded, (state, { payload: [workspaceId, events] }) => {
   const wsState = getWorkspaceState(state, workspaceId);
   const safeEvents = sanitizeWorkspaceEventsList(events, workspaceId);
@@ -107,11 +78,4 @@ workspaceEventsReducer.with(eventsLoaded, (state, { payload: [workspaceId, event
     events: safeEvents.slice(-MAX_EVENTS),
     loading: false,
   });
-});
-workspaceEventsReducer.with(eventsCleared, (state, { payload: [workspaceId] }) => {
-  return clearWorkspaceState(state, workspaceId);
-});
-workspaceEventsReducer.with(setEventsLoading, (state, { payload: [workspaceId, loading] }) => {
-  const wsState = getWorkspaceState(state, workspaceId);
-  return setWorkspaceState(state, workspaceId, { ...wsState, loading });
 });

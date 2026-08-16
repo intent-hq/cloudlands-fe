@@ -51,10 +51,6 @@ export const initialState: WorkspaceOperationsState = {
   pendingRemoveRepoPath: null,
 };
 
-export const requestOpenWorkspace = createAction<
-  [payload: { workspaceId: string; openInNewWindow: boolean }]
->("workspaceOperations/requestOpenWorkspace");
-
 export const requestDeleteWorkspace = createAction<[workspaceId: string]>(
   "workspaceOperations/requestDeleteWorkspace"
 );
@@ -65,18 +61,6 @@ export const confirmDeleteWorkspace = createAction(
 
 export const requestArchiveWorkspace = createAction<[workspaceId: string]>(
   "workspaceOperations/requestArchiveWorkspace"
-);
-
-export const requestUnarchiveWorkspace = createAction<[workspaceId: string]>(
-  "workspaceOperations/requestUnarchiveWorkspace"
-);
-
-export const requestBulkArchiveWorkspaces = createAction<[workspaceIds: string[]]>(
-  "workspaceOperations/requestBulkArchiveWorkspaces"
-);
-
-export const requestBulkDeleteWorkspaces = createAction<[workspaceIds: string[]]>(
-  "workspaceOperations/requestBulkDeleteWorkspaces"
 );
 
 export const applyWorkspaceProposal = createAction<[payload: WorkspaceProposalApplyPayload]>(
@@ -98,54 +82,6 @@ export const closeArchiveWarning = createAction("workspaceOperations/closeArchiv
 export const confirmArchiveWorkspace = createAction(
   "workspaceOperations/confirmArchiveWorkspace"
 );
-
-export const openBulkArchiveConfirm = createAction<[repoKey: string]>(
-  "workspaceOperations/openBulkArchiveConfirm"
-);
-
-export const closeBulkArchiveConfirm = createAction(
-  "workspaceOperations/closeBulkArchiveConfirm"
-);
-
-export const confirmBulkArchive = createAction("workspaceOperations/confirmBulkArchive");
-
-export const bulkArchiveActiveWorkComputed = createAction<
-  [payload: { repoKey: string; agentCount: number; hookCount: number; token: number }]
->("workspaceOperations/bulkArchiveActiveWorkComputed");
-
-export const openBulkDeleteArchivedConfirm = createAction<[repoKey: string]>(
-  "workspaceOperations/openBulkDeleteArchivedConfirm"
-);
-
-export const closeBulkDeleteArchivedConfirm = createAction(
-  "workspaceOperations/closeBulkDeleteArchivedConfirm"
-);
-
-export const confirmBulkDeleteArchived = createAction(
-  "workspaceOperations/confirmBulkDeleteArchived"
-);
-
-export const openBulkDeleteWarningConfirm = createAction<
-  [payload: { repoKey: string; workspaceCount: number; agentCount: number; hookCount: number }]
->("workspaceOperations/openBulkDeleteWarningConfirm");
-
-export const closeBulkDeleteWarningConfirm = createAction(
-  "workspaceOperations/closeBulkDeleteWarningConfirm"
-);
-
-export const confirmBulkDeleteWarning = createAction(
-  "workspaceOperations/confirmBulkDeleteWarning"
-);
-
-export const openRemoveRepoConfirm = createAction<[repoPath: string]>(
-  "workspaceOperations/openRemoveRepoConfirm"
-);
-
-export const closeRemoveRepoConfirm = createAction(
-  "workspaceOperations/closeRemoveRepoConfirm"
-);
-
-export const confirmRemoveRepo = createAction("workspaceOperations/confirmRemoveRepo");
 
 export const workspaceOperationsReducer = createReducer<WorkspaceOperationsState>(initialState);
 workspaceOperationsReducer.with(openDeleteWarning, (state, { payload: [{ workspaceId, agentNames, hookNames }] }) => ({
@@ -175,75 +111,4 @@ workspaceOperationsReducer.with(closeArchiveWarning, (state) => ({
     pendingArchiveWorkspaceId: null,
     runningAgentNamesForArchive: [],
     activeHookNamesForArchive: [],
-  }));
-workspaceOperationsReducer.with(openBulkArchiveConfirm, (state, { payload: [repoKey] }) => ({
-    ...state,
-    showBulkArchiveConfirm: true,
-    pendingBulkRepoKey: repoKey,
-    bulkArchiveActiveAgentCount: 0,
-    bulkArchiveActiveHookCount: 0,
-    bulkArchiveComputeToken: state.bulkArchiveComputeToken + 1,
-  }));
-workspaceOperationsReducer.with(closeBulkArchiveConfirm, (state) => ({
-    ...state,
-    showBulkArchiveConfirm: false,
-    pendingBulkRepoKey: undefined,
-    bulkArchiveActiveAgentCount: 0,
-    bulkArchiveActiveHookCount: 0,
-  }));
-workspaceOperationsReducer.with(
-    bulkArchiveActiveWorkComputed,
-    (state, { payload: [{ repoKey, agentCount, hookCount, token }] }) => {
-      if (
-        !state.showBulkArchiveConfirm ||
-        state.pendingBulkRepoKey !== repoKey ||
-        state.bulkArchiveComputeToken !== token
-      ) {
-        return state;
-      }
-      return {
-        ...state,
-        bulkArchiveActiveAgentCount: agentCount,
-        bulkArchiveActiveHookCount: hookCount,
-      };
-    }
-  );
-workspaceOperationsReducer.with(openBulkDeleteArchivedConfirm, (state, { payload: [repoKey] }) => ({
-    ...state,
-    showBulkDeleteArchivedConfirm: true,
-    pendingBulkRepoKey: repoKey,
-  }));
-workspaceOperationsReducer.with(closeBulkDeleteArchivedConfirm, (state) => ({
-    ...state,
-    showBulkDeleteArchivedConfirm: false,
-    pendingBulkRepoKey: undefined,
-  }));
-workspaceOperationsReducer.with(
-    openBulkDeleteWarningConfirm,
-    (state, { payload: [{ repoKey, workspaceCount, agentCount, hookCount }] }) => ({
-      ...state,
-      showBulkDeleteWarningConfirm: true,
-      pendingBulkDeleteRepoKey: repoKey,
-      bulkDeleteWorkspaceCount: workspaceCount,
-      bulkDeleteActiveAgentCount: agentCount,
-      bulkDeleteActiveHookCount: hookCount,
-    })
-  );
-workspaceOperationsReducer.with(closeBulkDeleteWarningConfirm, (state) => ({
-    ...state,
-    showBulkDeleteWarningConfirm: false,
-    pendingBulkDeleteRepoKey: null,
-    bulkDeleteWorkspaceCount: 0,
-    bulkDeleteActiveAgentCount: 0,
-    bulkDeleteActiveHookCount: 0,
-  }));
-workspaceOperationsReducer.with(openRemoveRepoConfirm, (state, { payload: [repoPath] }) => ({
-    ...state,
-    showRemoveRepoConfirm: true,
-    pendingRemoveRepoPath: repoPath,
-  }));
-workspaceOperationsReducer.with(closeRemoveRepoConfirm, (state) => ({
-    ...state,
-    showRemoveRepoConfirm: false,
-    pendingRemoveRepoPath: null,
   }));
