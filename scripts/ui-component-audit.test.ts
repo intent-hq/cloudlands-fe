@@ -184,6 +184,7 @@ describe('UI component inventory gate', () => {
       const result = spawnSync(process.execPath, [tsxCli, auditScript, 'check'], {
         encoding: 'utf8',
         env: { ...process.env, UI_COMPONENT_AUDIT_ROOT: directory },
+        timeout: 120_000,
       });
       expect(result.status).toBe(1);
       expect(result.stderr).toContain(

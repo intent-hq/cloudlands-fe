@@ -270,7 +270,19 @@ export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiCo
   };
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+function invokedAsCli(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    return (
+      fs.realpathSync(path.resolve(process.argv[1])) ===
+      fs.realpathSync(fileURLToPath(import.meta.url))
+    );
+  } catch {
+    return false;
+  }
+}
+
+if (invokedAsCli()) {
   const result = runUiComponentAudit(
     process.argv[2] ?? 'check',
     process.env.UI_COMPONENT_AUDIT_ROOT,
