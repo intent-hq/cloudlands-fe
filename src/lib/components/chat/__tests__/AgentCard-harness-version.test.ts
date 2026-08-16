@@ -2,12 +2,12 @@
  * @vitest-environment jsdom
  *
  * AgentCard — read-only "Harness vX.Y" context-menu item (PROTOCOL §5.5
- * `harnessVersion`; monorepo#2459).
+ * `harnessVersion` / `harnessFeatures`; monorepo#2459).
  *
  * Renders the REAL component against the REAL configured store: seeds an
- * agent session (with/without `harnessVersion`), opens the context menu, and
- * asserts the item's visibility, disabled state, and that clicking it does
- * not close the menu (informational, not an action).
+ * agent session (with/without `harnessVersion` / `harnessFeatures`), opens
+ * the context menu, and asserts the item's visibility, the feature-list
+ * flyout (on/off states), and that legacy/absent shapes render sensibly.
  */
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
@@ -57,7 +57,7 @@ describe('AgentCard harness version context-menu item', () => {
     appStore.dispatch(removeSession(agentId));
   });
 
-  it('shows a disabled "Harness v1.0" item when the session carries harnessVersion', async () => {
+  it('shows a disabled "Harness v1.0" item for a legacy session without a features snapshot', async () => {
     appStore.dispatch(bulkUpsertSessions([makeSession({ harnessVersion: '1.0' })]));
 
     render(AgentCard, { props: { agentId } });
@@ -67,6 +67,43 @@ describe('AgentCard harness version context-menu item', () => {
     const menuButton = item.closest('button');
     expect(menuButton).not.toBeNull();
     expect(menuButton!.disabled).toBe(true);
+  });
+
+  it('lists feature on/off states in a flyout when the session carries harnessFeatures', async () => {
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeSession({
+          harnessVersion: '1.0',
+          harnessFeatures: { structuredQuestions: true, agentActions: false },
+        }),
+      ]),
+    );
+
+    render(AgentCard, { props: { agentId } });
+    await openContextMenu();
+
+    const item = await screen.findByText('Harness v1.0');
+    const menuButton = item.closest('button');
+    expect(menuButton).not.toBeNull();
+    // Parent is enabled so the flyout can open, and marked as a submenu host.
+    expect(menuButton!.disabled).toBe(false);
+    expect(menuButton!.getAttribute('aria-haspopup')).toBe('menu');
+
+    await fireEvent.click(menuButton!);
+
+    // Feature identifiers rendered verbatim; enabled entries show the check.
+    const enabledEntry = await screen.findByText('structuredQuestions');
+    const disabledEntry = await screen.findByText('agentActions');
+    const enabledButton = enabledEntry.closest('button');
+    const disabledButton = disabledEntry.closest('button');
+    expect(enabledButton!.querySelector('svg')).not.toBeNull();
+    expect(disabledButton!.querySelector('svg')).toBeNull();
+    // Submenu entries are informational (inert).
+    expect(enabledButton!.disabled).toBe(true);
+    expect(disabledButton!.disabled).toBe(true);
+
+    // Opening the flyout does not close the menu (informational, not an action).
+    expect(screen.queryByText('Open')).toBeTruthy();
   });
 
   it('renders the version verbatim (no reformatting)', async () => {
