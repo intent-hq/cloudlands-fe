@@ -73,12 +73,12 @@ describe('AgentFeaturesSettings', () => {
     }
   });
 
-  it('shows the new-sessions-only note, qualified for the live-read exception', async () => {
+  it('shows the new-sessions-only note without a live-read qualifier', async () => {
     render(AgentFeaturesSettings);
 
     const note = screen.getByText(/newly created agent sessions only/i);
     expect(note).toBeTruthy();
-    expect(note.textContent).toMatch(/unless noted otherwise/i);
+    expect(note.textContent).not.toMatch(/unless noted otherwise/i);
   });
 
   it('defaults each feature to its daemon default when the daemon has no entry for its path', async () => {
