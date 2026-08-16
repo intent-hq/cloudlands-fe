@@ -80,9 +80,41 @@
   // new intersection notification. Use the last shared-observer state then.
   $effect(() => {
     if (!forceVisible && !isIntersecting && hasBeenMeasured && localCachedHeight !== null) {
-      setVisibleWithScrollCompensation(false);
+      requestSwapOut();
     }
   });
+
+  // Swap-out settle window: while follow-bottom re-pins the scroller every
+  // streaming frame, a turn sitting at the IntersectionObserver boundary
+  // (rootMargin '50% 0px') can be reported alternately inside/outside on
+  // consecutive frames. Swapping out immediately on each notification turns
+  // that jitter into a per-frame content↔placeholder DOM swap (60fps
+  // flicker). Instead every swap-out is deferred through this window and a
+  // re-entry cancels it, so only a turn that stays out of the extended
+  // viewport actually swaps. Swap-ins remain immediate. The window also
+  // exceeds the ResizeObserver debounce (50ms), so a deferred swap-out uses
+  // a freshly recorded content height and stays geometry-neutral.
+  const SWAP_OUT_SETTLE_MS = 250;
+  let swapOutTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function cancelPendingSwapOut() {
+    if (swapOutTimer !== null) {
+      clearTimeout(swapOutTimer);
+      swapOutTimer = null;
+    }
+  }
+
+  function requestSwapOut() {
+    if (swapOutTimer !== null) return;
+    swapOutTimer = setTimeout(() => {
+      swapOutTimer = null;
+      // Conditions re-checked at fire time: the turn may have re-entered,
+      // re-entered the force-visible window, or lost its measurement.
+      if (!forceVisible && !isIntersecting && hasBeenMeasured && localCachedHeight !== null) {
+        setVisibleWithScrollCompensation(false);
+      }
+    }, SWAP_OUT_SETTLE_MS);
+  }
 
   // Height ledger — scroll compensation for ALL height changes of this turn
   // while it sits above the reader's viewport (native scroll anchoring is off
@@ -122,11 +154,14 @@
     const stopObserving = observeLazyTurnVisibility(containerRef, scrollRoot, (next) => {
       isIntersecting = next;
       if (next) {
+        // Re-entry cancels any pending swap-out (boundary jitter must not
+        // mature into a swap while the turn keeps touching the viewport).
+        cancelPendingSwapOut();
         const cached = heightCache.get(turnKey, measuredWidth);
         if (cached !== undefined && cached !== localCachedHeight) localCachedHeight = cached;
         setVisibleWithScrollCompensation(true);
       } else if (!forceVisible && hasBeenMeasured && localCachedHeight !== null) {
-        setVisibleWithScrollCompensation(false);
+        requestSwapOut();
       }
     });
 
@@ -181,7 +216,7 @@
           }
           localCachedHeight = height;
           hasBeenMeasured = true;
-          if (!forceVisible && !isIntersecting) setVisibleWithScrollCompensation(false);
+          if (!forceVisible && !isIntersecting) requestSwapOut();
           resizeDebounceTimer = null;
         }, 50); // 50ms debounce
       }
@@ -206,7 +241,7 @@
             }
             localCachedHeight = height;
             hasBeenMeasured = true;
-            if (!forceVisible && !isIntersecting) setVisibleWithScrollCompensation(false);
+            if (!forceVisible && !isIntersecting) requestSwapOut();
           }, 0);
         }
       }
@@ -215,6 +250,7 @@
     return () => {
       disposed = true;
       stopObserving();
+      cancelPendingSwapOut();
       resizeObserver?.disconnect();
       if (initialMeasureAnimationFrame !== null) {
         cancelAnimationFrame(initialMeasureAnimationFrame);
