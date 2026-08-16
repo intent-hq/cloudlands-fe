@@ -211,6 +211,55 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(true);
       expect(embeddedBrowserCdp.listAllTabs).toHaveBeenCalledWith('workspace-a');
     });
+
+    // Regression (intent-hq/monorepo#2602): zero-delivery failures used to be
+    // invisible — focusTab returned success and openTab produced a
+    // sequence-level "failed: undefined".
+    it('surfaces a descriptive focusTab error when the workspace is not open in any window', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.focusTab).mockReturnValue(false);
+
+      const result = await executeActions(
+        { actions: [{ action: 'focusTab', tabId: 'tab-9' }] },
+        undefined,
+        undefined,
+        'ws-closed',
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.results[0]).toMatchObject({
+        action: 'focusTab',
+        success: false,
+        error: 'Could not focus tab tab-9: workspace ws-closed is not open in any window.',
+      });
+      expect(result.error).toBe(
+        "Action 'focusTab' failed: Could not focus tab tab-9: workspace ws-closed is not open in any window.",
+      );
+    });
+
+    it('surfaces the openTab failure message as the action and sequence error', async () => {
+      const failingOpenTabFn = vi.fn().mockReturnValue({
+        success: false,
+        message: 'Cannot open browser tab: workspace ws-closed is not open in any window.',
+      });
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://example.com' }] },
+        failingOpenTabFn,
+        undefined,
+        'ws-closed',
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.results[0]).toMatchObject({
+        action: 'openTab',
+        success: false,
+        error: 'Cannot open browser tab: workspace ws-closed is not open in any window.',
+      });
+      expect(result.error).toBe(
+        "Action 'openTab' failed: Cannot open browser tab: workspace ws-closed is not open in any window.",
+      );
+    });
   });
 
   describe('capture workspace boundaries', () => {

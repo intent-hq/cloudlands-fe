@@ -92,6 +92,41 @@ describe('embedded browser CDP workspace routing', () => {
     );
   });
 
+  // Regression (intent-hq/monorepo#2602): a request nothing received used to
+  // wait out the full 500 ms timeout before falling back to the cache.
+  it('short-circuits to the same-workspace cache without waiting when nothing received the list request', async () => {
+    // Seed the cache for ws-cache via a delivered round-trip.
+    mocks.sendToWorkspaceWindows.mockImplementation(
+      (workspaceId: string, channel: string, payload: { requestId?: string }) => {
+        if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+        responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+          {},
+          {
+            tabs: [{ tabId: 'tab-cached', url: 'https://cached.test', title: 'Cached' }],
+            requestId: payload.requestId,
+          },
+        );
+        return DELIVERED;
+      },
+    );
+    await embeddedBrowserCdp.requestPanelBrowserTabs('ws-cache');
+
+    vi.useFakeTimers();
+    try {
+      mocks.sendToWorkspaceWindows.mockReturnValue(DROPPED);
+      // Resolves from the cache immediately — no timer advancement — instead
+      // of burning the 500 ms reply timeout.
+      const tabs = await embeddedBrowserCdp.requestPanelBrowserTabs('ws-cache');
+      expect(tabs).toEqual([{ tabId: 'tab-cached', url: 'https://cached.test', title: 'Cached' }]);
+
+      // The fallback only consults the SAME workspace's cache entry.
+      const otherTabs = await embeddedBrowserCdp.requestPanelBrowserTabs('ws-other');
+      expect(otherTabs).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('routes tab discovery and close through exact workspace-scoped channels and params', async () => {
     const responses = [
       [{ tabId: 'tab-1', url: 'https://example.test', title: 'Example' }],

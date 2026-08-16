@@ -231,7 +231,11 @@ export function getWindowIdsForWorkspace(workspaceId: string): number[] {
 export interface WorkspaceWindowDelivery {
   /** Number of Electron windows the message was sent to. */
   windowCount: number;
-  /** Whether the browser-mode WebSocket bridge accepted the broadcast. */
+  /**
+   * Whether the browser-mode WebSocket bridge hook explicitly acknowledged
+   * (returned true) that at least one connected client received the message.
+   * A registered-but-clientless bridge reports false.
+   */
   browserClientsNotified: boolean;
   /** True when at least one window or the browser bridge received the message. */
   delivered: boolean;
