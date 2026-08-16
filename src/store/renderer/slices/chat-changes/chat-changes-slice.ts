@@ -1,9 +1,6 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   createCollection,
-  getItem,
-  upsertItem,
 } from "@augmentcode/themis/utils/collections/collection-utils";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
@@ -19,31 +16,10 @@ export const initialState: ChatChangesState = {
   byWorkspaceId: {},
 };
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
+const { clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyChatChangesWorkspaceState);
-
-export const agentFileChangeReceived = createAction<[wsId: string, path: string]>(
-  "chatChanges/agentFileChangeReceived",
-);
-
-export const agentFileRefreshTriggered = createAction<[wsId: string, path: string]>(
-  "chatChanges/agentFileRefreshTriggered",
-);
 
 export const chatChangesReducer = createReducer<ChatChangesState>(initialState);
 chatChangesReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
   clearWorkspaceState(state, wsId),
 );
-chatChangesReducer.with(agentFileRefreshTriggered, (state, { payload: [wsId, path] }) => {
-  const workspaceState = getWorkspaceState(state, wsId);
-  const current = getItem(workspaceState.refreshes, path);
-  const next: AgentFileRefreshEntry = {
-    path,
-    version: (current?.version ?? 0) + 1,
-  };
-
-  return setWorkspaceState(state, wsId, {
-    ...workspaceState,
-    refreshes: upsertItem(workspaceState.refreshes, next),
-  });
-});

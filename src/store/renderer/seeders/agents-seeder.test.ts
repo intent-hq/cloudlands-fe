@@ -32,7 +32,7 @@ import {
 import { selectAgentSession } from '../slices/agent-session/agent-session-selectors';
 import { bulkUpsertSessions } from '../slices/agent-session/agent-session-slice';
 import { selectActiveAgentId } from '../slices/workspace-agents/workspace-agents-selectors';
-import { setActiveAgentId, addAgent } from '../slices/workspace-agents/workspace-agents-slice';
+import { setActiveAgentId } from '../slices/workspace-agents/workspace-agents-slice';
 
 const mockedClient = vi.mocked(appClient);
 
@@ -188,7 +188,7 @@ describe('agents-seeder', () => {
       // GIVEN: workspace with activeAgentId already set to AGENT_ID_1
       await import('./agents-seeder');
 
-      // Pre-populate store with both agents and activeAgentId set to AGENT_ID_1
+      // Pre-populate store with both agents and activeAgentId set to AGENT_ID_1.
       const agent1: AgentSession = {
         id: AGENT_ID_1,
         workspaceId: WORKSPACE_ID,
@@ -205,18 +205,17 @@ describe('agents-seeder', () => {
         messages: [],
         status: 'idle',
       };
-      store.dispatch(addAgent(WORKSPACE_ID, agent1));
-      store.dispatch(addAgent(WORKSPACE_ID, agent2));
+      store.dispatch(bulkUpsertSessions([agent1, agent2]));
       store.dispatch(setActiveAgentId(WORKSPACE_ID, AGENT_ID_1));
 
-      // Mock daemon response: both agents present, AGENT_ID_2 is foreground
+      // Mock daemon response: both agents present, AGENT_ID_2 is foreground.
       mockedClient.agents.list.mockResolvedValueOnce([agent1, agent2]);
 
       // WHEN: seeder runs
       const { seedMockStore } = await import('../mock-bootstrap');
       await seedMockStore(store, appClient, WORKSPACE_ID);
 
-      // THEN: activeAgentId is preserved (still AGENT_ID_1, not auto-switched to AGENT_ID_2)
+      // THEN: activeAgentId is preserved (still AGENT_ID_1, not auto-switched to AGENT_ID_2).
       const activeAgentId = selectActiveAgentId.select(store.state, WORKSPACE_ID);
       expect(activeAgentId).toBe(AGENT_ID_1);
     });

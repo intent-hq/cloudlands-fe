@@ -6,7 +6,6 @@
  * by executor type.
  */
 
-import type { StoreAction } from "@augmentcode/themis/types";
 import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
@@ -15,7 +14,6 @@ import type {
   ExecutorInstanceState,
   ExecutorStatus,
   AgentExecutorContext,
-  BackgroundAgentExecutorWorkspaceState,
 } from "./background-agent-executor-types";
 import {
   emptyExecutorState,
@@ -26,7 +24,7 @@ import {
 // Workspace-scoped helpers
 // ============================================================================
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
+const { getWorkspaceState, setWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceState);
 
 function getExecutor(
@@ -88,22 +86,6 @@ export const resetExecutor = createAction<[
   executorType: string,
 ]>("bgExecutor/resetExecutor");
 
-export const clearWorkspaceExecutors = createAction<[workspaceId: string]>(
-  "bgExecutor/clearWorkspaceExecutors"
-);
-
-export const hydrateBgExecutorState = createAction<[
-  workspaceId: string,
-  workspaceState: BackgroundAgentExecutorWorkspaceState,
-]>("bgExecutor/hydrate");
-
-export const requestPersistBgExecutor = createAction<[StoreAction<any>]>(
-  "bgExecutor/requestPersist"
-);
-export const persistBgExecutor = createAction<[workspaceId: string]>(
-  "bgExecutor/persist"
-);
-
 // ============================================================================
 // Storage key
 // ============================================================================
@@ -136,18 +118,6 @@ backgroundAgentExecutorReducer.with(
   resetExecutor,
   (state, { payload: [workspaceId, executorType] }) => {
     return setExecutor(state, workspaceId, executorType, { ...emptyExecutorState });
-  },
-);
-backgroundAgentExecutorReducer.with(
-  clearWorkspaceExecutors,
-  (state, { payload: [workspaceId] }) => {
-    return clearWorkspaceState(state, workspaceId);
-  },
-);
-backgroundAgentExecutorReducer.with(
-  hydrateBgExecutorState,
-  (state, { payload: [workspaceId, workspaceState] }) => {
-    return setWorkspaceState(state, workspaceId, workspaceState);
   },
 );
 

@@ -99,39 +99,10 @@ export const setTypeOverride = createAction<
   [payload: { type: BackgroundAgentType; model: string }]
 >('backgroundAgentSettings/setTypeOverride');
 
-export const clearTypeOverride = createAction<[type: BackgroundAgentType]>(
-  'backgroundAgentSettings/clearTypeOverride',
-);
-
-export const resetSettings = createAction('backgroundAgentSettings/resetSettings');
-
 /** Hydrate full state from localStorage (used by init saga) */
 export const hydrateSettings = createAction<
   [payload: { defaultModel: string; typeOverrides: Record<BackgroundAgentType, string> }]
 >('backgroundAgentSettings/hydrateSettings');
-
-/** Hydrate provider settings cache from localStorage */
-export const hydrateProviderSettings = createAction<
-  [providerSettings: Record<string, ProviderBgSettings>]
->('backgroundAgentSettings/hydrateProviderSettings');
-
-/** Save current settings for a provider (used by switchProvider saga) */
-export const saveProviderSnapshot = createAction<
-  [payload: { providerId: string; settings: ProviderBgSettings }]
->('backgroundAgentSettings/saveProviderSnapshot');
-
-/** Restore settings for a provider (used by switchProvider saga) */
-export const restoreProviderSettings = createAction<
-  [payload: { defaultModel: string; typeOverrides: Record<BackgroundAgentType, string> }]
->('backgroundAgentSettings/restoreProviderSettings');
-
-// ============================================================================
-// Saga Trigger Actions (dispatched by consumers, handled by sagas)
-// ============================================================================
-
-export const switchProvider = createAction<
-  [payload: { newProviderId: string; previousProviderId: string }]
->('backgroundAgentSettings/switchProvider');
 
 // ============================================================================
 // Reducer
@@ -148,15 +119,6 @@ backgroundAgentSettingsReducer.with(setTypeOverride, (state, { payload: [{ type,
   ...state,
   typeOverrides: { ...state.typeOverrides, [type]: model },
 }));
-backgroundAgentSettingsReducer.with(clearTypeOverride, (state, { payload: [type] }) => ({
-  ...state,
-  typeOverrides: { ...state.typeOverrides, [type]: '' },
-}));
-backgroundAgentSettingsReducer.with(resetSettings, () => ({
-  ...initialState,
-  typeOverrides: { ...initialState.typeOverrides },
-  providerSettings: {},
-}));
 backgroundAgentSettingsReducer.with(
   hydrateSettings,
   (state, { payload: [{ defaultModel, typeOverrides }] }) => ({
@@ -167,33 +129,6 @@ backgroundAgentSettingsReducer.with(
       pr: typeOverrides?.pr || '',
       review: typeOverrides?.review || '',
       fast: typeOverrides?.fast || '',
-    },
-  }),
-);
-backgroundAgentSettingsReducer.with(
-  hydrateProviderSettings,
-  (state, { payload: [providerSettings] }) => ({
-    ...state,
-    providerSettings,
-  }),
-);
-backgroundAgentSettingsReducer.with(
-  saveProviderSnapshot,
-  (state, { payload: [{ providerId, settings }] }) => ({
-    ...state,
-    providerSettings: { ...state.providerSettings, [providerId]: settings },
-  }),
-);
-backgroundAgentSettingsReducer.with(
-  restoreProviderSettings,
-  (state, { payload: [{ defaultModel, typeOverrides }] }) => ({
-    ...state,
-    defaultModel,
-    typeOverrides: {
-      commit: typeOverrides.commit || '',
-      pr: typeOverrides.pr || '',
-      review: typeOverrides.review || '',
-      fast: typeOverrides.fast || '',
     },
   }),
 );

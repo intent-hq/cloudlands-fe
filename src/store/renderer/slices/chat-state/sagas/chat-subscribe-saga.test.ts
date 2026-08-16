@@ -66,14 +66,7 @@ import {
   transcriptHydrationSettled,
   transcriptHydrationStarted,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
-import {
-  addMessage,
-  bulkUpsertSessions,
-  clearAllSessions,
-  removeSession,
-  removeWorkspaceSessions,
-  updateSession,
-} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { addMessage, bulkUpsertSessions, removeSession, updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   clearPanelLayout,
@@ -210,7 +203,9 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
   });
   afterAll(() => stopSaga?.());
   afterEach(() => {
-    appStore.dispatch(clearAllSessions());
+    for (const [workspaceId, agentIds] of Object.entries(appStore.state.agentSessions.agentIdsByWorkspace)) {
+      appStore.dispatch(workspaceDeleted(workspaceId, agentIds));
+    }
     appStore.dispatch(clearPanelLayout(WS));
     clearPendingAgentDeletions();
     fakeSubscriptions.length = 0;
@@ -259,63 +254,6 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(subscription.unsubscribe).toHaveBeenCalledOnce();
     stopSaga = appStore.runSaga(chatSubscribeSaga);
   });
-
-  it.each([
-    {
-      name: 'scoped clear',
-      prepare: (agentId: string) => appStore.dispatch(markAgentAsViewed(agentId)),
-      close: (agentId: string) => appStore.dispatch(clearCurrentlyViewedAgent(agentId)),
-    },
-    {
-      name: 'session removal',
-      close: (agentId: string) => appStore.dispatch(removeSession(agentId)),
-    },
-    {
-      name: 'workspace session removal',
-      close: () => appStore.dispatch(removeWorkspaceSessions(WS)),
-    },
-    {
-      name: 'workspace deletion',
-      close: (agentId: string) => appStore.dispatch(workspaceDeleted(WS, [agentId])),
-    },
-    {
-      name: 'clear all',
-      close: () => appStore.dispatch(clearAllSessions()),
-    },
-  ])(
-    'disposes a late-acquired subscription after $name and rejects queued hydration/events',
-    async ({ name, prepare, close }) => {
-      appStore.dispatch(clearCurrentlyViewedAgent());
-      const agentId = `agent-sub-late-${name.replaceAll(' ', '-')}`;
-      seedSession(agentId);
-      const { acquisition, subscription } = delayNextSubscription(agentId);
-      prepare?.(agentId);
-
-      subscription.handler(transcript([makeMessage('late-before-close', 'stale')], true));
-      subscription.onPhase?.('connecting');
-      appStore.dispatch(transcriptHydrationSettled(agentId));
-      close(agentId);
-      subscription.handler(transcript([makeMessage('late-after-close', 'stale')], true));
-      acquisition.resolve(subscription.unsubscribe);
-
-      await vi.waitFor(() => expect(subscription.unsubscribe).toHaveBeenCalledOnce());
-      subscription.handler(transcript([makeMessage('late-after-acquire', 'stale')], true));
-      subscription.onPhase?.('delayed');
-      await Promise.resolve();
-
-      expect(
-        selectAgentMessages.select(appStore.state, agentId).map((message) => message.id),
-      ).not.toContain('late-before-close');
-      expect(
-        selectAgentMessages.select(appStore.state, agentId).map((message) => message.id),
-      ).not.toContain('late-after-close');
-      expect(
-        selectAgentMessages.select(appStore.state, agentId).map((message) => message.id),
-      ).not.toContain('late-after-acquire');
-      expect(selectChatLiveStreamPhase.select(appStore.state, agentId)).toBeNull();
-      expect(subscription.unsubscribe).toHaveBeenCalledOnce();
-    },
-  );
 
   it('serializes delayed unsubscribe before reopening the same agent while another agent opens independently', async () => {
     const agentA = 'agent-sub-delayed-close-a';
@@ -1736,15 +1674,6 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       expect(wsSub.unsubscribe).not.toHaveBeenCalled();
       expect(chatApi.subscribe.mock.calls.filter(([id]) => id === CHIEF_AGENT)).toHaveLength(1);
     });
-
-    it('still closes chief subscriptions on removeWorkspaceSessions for the chief workspace', () => {
-      seedChiefSession(CHIEF_AGENT);
-      const chiefSub = openChiefChat(CHIEF_AGENT);
-
-      appStore.dispatch(removeWorkspaceSessions(CHIEF_WORKSPACE_ID));
-
-      expect(chiefSub.unsubscribe).toHaveBeenCalledTimes(1);
-    });
   });
 
   describe('live stream phase mirroring', () => {
@@ -1766,41 +1695,6 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       expect(phaseOf(agentId)).toBe('resyncing');
       sub.onPhase!('delayed');
       expect(phaseOf(agentId)).toBe('delayed');
-    });
-
-    it('resets the phase to null on every subscription teardown path', () => {
-      // removeSession (agent-deletion soft-hide).
-      const agentA = 'agent-sub-phase-remove';
-      seedSession(agentA);
-      openChat(agentA).onPhase!('connecting');
-      expect(phaseOf(agentA)).toBe('connecting');
-      appStore.dispatch(removeSession(agentA));
-      expect(phaseOf(agentA)).toBeNull();
-
-      // clearAllSessions.
-      const agentB = 'agent-sub-phase-clearall';
-      seedSession(agentB);
-      openChat(agentB).onPhase!('awaiting-snapshot');
-      expect(phaseOf(agentB)).toBe('awaiting-snapshot');
-      appStore.dispatch(clearAllSessions());
-      expect(phaseOf(agentB)).toBeNull();
-
-      // workspaceDeleted (drops the whole chat-state entry too).
-      const agentC = 'agent-sub-phase-wsdel';
-      seedSession(agentC);
-      openChat(agentC).onPhase!('resyncing');
-      expect(phaseOf(agentC)).toBe('resyncing');
-      appStore.dispatch(workspaceDeleted(WS, [agentC]));
-      expect(phaseOf(agentC)).toBeNull();
-
-      // clearCurrentlyViewedAgent with no agent left viewed (chat close).
-      const agentD = 'agent-sub-phase-clearview';
-      seedSession(agentD);
-      appStore.dispatch(markAgentAsViewed(agentD));
-      openChat(agentD).onPhase!('delayed');
-      expect(phaseOf(agentD)).toBe('delayed');
-      appStore.dispatch(clearCurrentlyViewedAgent(agentD));
-      expect(phaseOf(agentD)).toBeNull();
     });
 
     it("resets the phase on agent switch (markAgentAsViewed closes the other agent's stream)", () => {

@@ -63,29 +63,6 @@ export const setAllProvidersLoading = createAction<[loadingMap: Record<string, b
   'agentAvailability/setAllProvidersLoading',
 );
 
-/** Fetch user info for a provider (saga trigger). */
-export const fetchProviderUserInfoRequested = createAction<[providerId: string]>(
-  'agentAvailability/fetchProviderUserInfoRequested',
-);
-
-export const fetchProviderUserInfoSuccess = createAction<[providerId: string, status: ProviderStatus]>(
-  'agentAvailability/fetchProviderUserInfoSuccess',
-);
-
-export const fetchProviderUserInfoComplete = createAction<[providerId: string]>(
-  'agentAvailability/fetchProviderUserInfoComplete',
-);
-
-/** Track a terminal that's installing a provider. */
-export const trackInstallTerminal = createAction<[terminalId: string]>(
-  'agentAvailability/trackInstallTerminal',
-);
-
-/** Remove a watched terminal (e.g. on exit). */
-export const removeWatchedTerminal = createAction<[terminalId: string]>(
-  'agentAvailability/removeWatchedTerminal',
-);
-
 /** Ensure providers have been checked at least once (saga trigger). */
 export const ensureProvidersChecked = createAction(
   'agentAvailability/ensureProvidersChecked',
@@ -167,53 +144,6 @@ agentAvailabilityReducer.with(checkAllProvidersComplete, (state) => {
   return {
     ...state,
     hasCheckedOnce: true,
-  };
-});
-agentAvailabilityReducer.with(
-  fetchProviderUserInfoRequested,
-  (state, { payload: [providerId] }) => ({
-    ...state,
-    providerUserInfoLoadingMap: { ...state.providerUserInfoLoadingMap, [providerId]: true },
-  }),
-);
-agentAvailabilityReducer.with(
-  fetchProviderUserInfoSuccess,
-  (state, { payload: [providerId, status] }) => {
-    const existing = state.providerStatusMap[providerId];
-    if (!existing) return state;
-    return {
-      ...state,
-      providerStatusMap: {
-        ...state.providerStatusMap,
-        [providerId]: {
-          ...existing,
-          authenticated: status.authenticated,
-          authDetails: status.authDetails,
-        },
-      },
-    };
-  },
-);
-agentAvailabilityReducer.with(
-  fetchProviderUserInfoComplete,
-  (state, { payload: [providerId] }) => ({
-    ...state,
-    providerUserInfoLoadingMap: { ...state.providerUserInfoLoadingMap, [providerId]: false },
-  }),
-);
-agentAvailabilityReducer.with(trackInstallTerminal, (state, { payload: [terminalId] }) => {
-  if (state.watchedTerminalIds.includes(terminalId)) return state;
-  return {
-    ...state,
-    watchedTerminalIds: [...state.watchedTerminalIds, terminalId],
-  };
-});
-agentAvailabilityReducer.with(removeWatchedTerminal, (state, { payload: [terminalId] }) => {
-  const idx = state.watchedTerminalIds.indexOf(terminalId);
-  if (idx === -1) return state;
-  return {
-    ...state,
-    watchedTerminalIds: state.watchedTerminalIds.filter((id) => id !== terminalId),
   };
 });
 agentAvailabilityReducer.with(setNpxStatus, (state, { payload: [npxStatus] }) => ({

@@ -14,7 +14,6 @@ import type {
   AgentStatus,
   Subscription,
   DelegationGroupStatus,
-  WokenUpInfo,
 } from './agent-subscription-ui-types';
 
 // ---------------------------------------------------------------------------
@@ -54,19 +53,6 @@ export const setSubscriptionSnapshot = createAction(
       waitingState: 'idle' | 'waiting' | 'woken' | 'completed';
     },
   ) => ({ workspaceId, agentId, data }),
-);
-
-export const setWokenUp = createAction(
-  'agentSubscriptionUI/setWokenUp',
-  (workspaceId: string, agentId: string, info: WokenUpInfo) => ({
-    workspaceId,
-    agentId,
-    info,
-  }),
-);
-
-export const clearWokenUp = createAction<[workspaceId: string, agentId: string]>(
-  'agentSubscriptionUI/clearWokenUp',
 );
 
 export const resetSubscriptionUI = createAction<[workspaceId: string, agentId: string]>(

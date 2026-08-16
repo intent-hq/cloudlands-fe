@@ -5,9 +5,8 @@
  * Tracks which agent is being followed and the current file/note context.
  */
 
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import type { AgentFollowState, PendingChange } from "./agent-follow-types";
+import type { AgentFollowState } from "./agent-follow-types";
 
 // ---------------------------------------------------------------------------
 // Initial state
@@ -26,48 +25,7 @@ export const initialState: AgentFollowState = {
 };
 
 // ---------------------------------------------------------------------------
-// Actions
-// ---------------------------------------------------------------------------
-
-/** Set the current file being tracked. */
-export const setCurrentFile = createAction<[file: string]>("agentFollow/setCurrentFile");
-
-/** Set animating flag. */
-export const setIsAnimating = createAction<[isAnimating: boolean]>("agentFollow/setIsAnimating");
-
-/** Queue a pending text animation change. */
-export const queueTextAnimation = createAction<[file: string, content: string, isAddition: boolean]>(
-  "agentFollow/queueTextAnimation",
-);
-
-// ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
 export const agentFollowReducer = createReducer<AgentFollowState>(initialState);
-
-agentFollowReducer.with(setCurrentFile, (state, { payload: [file] }) => {
-  if (state.currentFile === file) return state;
-  return {
-    ...state,
-    currentFile: file,
-    currentNoteId: null,
-  };
-});
-agentFollowReducer.with(setIsAnimating, (state, { payload: [isAnimating] }) => {
-  if (state.isAnimating === isAnimating) return state;
-  return { ...state, isAnimating };
-});
-agentFollowReducer.with(queueTextAnimation, (state, { payload: [file, content, isAddition] }) => {
-  if (!state.isFollowing) return state;
-  const change: PendingChange = {
-    file,
-    content,
-    isAddition,
-    timestamp: 0, // Saga sets real timestamp
-  };
-  return {
-    ...state,
-    pendingChanges: [...state.pendingChanges, change],
-  };
-});

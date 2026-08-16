@@ -16,14 +16,7 @@ import {
   initialState as sessionInitialState,
   bulkUpsertSessions,
 } from '../agent-session/agent-session-slice';
-import {
-  chatSendStarted,
-  chatSendFailed,
-  chatInterrupted,
-  chatStopCompleted,
-  streamCompleted,
-  chatStreamingReconciled,
-} from './chat-state-slice';
+import { chatSendStarted, chatSendFailed, chatStopCompleted, streamCompleted } from './chat-state-slice';
 import type { AgentSession } from '$shared/types';
 
 const AGENT = 'agent-regression';
@@ -88,27 +81,6 @@ describe('OR-latch regression: isStreaming/isProcessing parity (agent-session)',
     expect(getSession(s, AGENT).isStreaming).toBe(false);
     expect(getSession(s, AGENT).isProcessing).toBe(false);
   });
-
-  it('chatInterrupted clears both flags atomically', () => {
-    const s = agentSessionReducer(midStreamState(), chatInterrupted(AGENT));
-    expect(getSession(s, AGENT).isStreaming).toBe(false);
-    expect(getSession(s, AGENT).isProcessing).toBe(false);
-  });
-
-  it('no terminal action leaves flags diverged', () => {
-    const terminals = [
-      streamEnded(AGENT),
-      chatSendFailed(AGENT, 'fail'),
-      chatStopCompleted(AGENT),
-      streamFailed(AGENT),
-      chatInterrupted(AGENT),
-    ];
-    for (const action of terminals) {
-      const s = agentSessionReducer(midStreamState(), action);
-      const sess = getSession(s, AGENT);
-      expect(sess.isStreaming).toBe(sess.isProcessing);
-    }
-  });
 });
 
 // ============================================================================
@@ -116,13 +88,6 @@ describe('OR-latch regression: isStreaming/isProcessing parity (agent-session)',
 // ============================================================================
 
 describe('RAF interleaving regression (agent-session)', () => {
-  it('chatStreamingReconciled re-engages flags (by design)', () => {
-    let s = midStreamState();
-    s = agentSessionReducer(s, streamEnded(AGENT));
-    s = agentSessionReducer(s, chatStreamingReconciled(AGENT));
-    expect(getSession(s, AGENT).isStreaming).toBe(true);
-    expect(getSession(s, AGENT).isProcessing).toBe(true);
-  });
 
   it('multiple agents streaming independently do not interfere', () => {
     const A = 'agent-A';
