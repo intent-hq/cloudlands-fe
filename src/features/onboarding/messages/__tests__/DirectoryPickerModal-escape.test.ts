@@ -14,13 +14,6 @@ vi.mock('$lib/client/live/backend-transport', () => ({
   onBackendReconnected: vi.fn(() => () => {}),
 }));
 
-vi.mock('$lib/components/ui/Portal.svelte', async () => {
-  const MockPortal = (
-    await import('../../../../lib/components/modals/__tests__/mocks/MockPortal.svelte')
-  ).default;
-  return { default: MockPortal };
-});
-
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../../../lib/components/ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa, Fa: MockFa };
@@ -131,10 +124,20 @@ describe('DirectoryPickerModal Escape handling (escape-layer stack)', () => {
     const searchInput = screen.getByRole('searchbox', {
       name: 'Filter folder contents',
     }) as HTMLInputElement;
-    await fireEvent.input(searchInput, { target: { value: 'code' } });
+    await fireEvent.input(searchInput, { target: { value: 'no-such-entry' } });
+    // The filter is live: the lone entry is hidden while the search matches nothing.
+    await waitFor(() => {
+      expect(screen.queryByRole('option', { name: /code/ })).toBeNull();
+    });
+
     await fireEvent.keyDown(searchInput, { key: 'Escape' });
 
     expect(searchInput.value).toBe('');
+    // The layer's synthetic input event must sync searchDraft, un-filtering the
+    // list — clearing input.value alone would leave the entries hidden.
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /code/ })).toBeTruthy();
+    });
     expect(onClose).not.toHaveBeenCalled();
   });
 

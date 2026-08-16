@@ -209,12 +209,6 @@ describe('DirectoryPickerModal editable path input', () => {
   const baseProps = { open: true, onSelect: vi.fn(), onClose: vi.fn() };
 
   const pathInput = async (): Promise<HTMLInputElement> => {
-    // Let the bits-ui dialog's delayed open-autofocus (which focuses the
-    // Dialog.Content element) settle first; otherwise it steals focus from the
-    // path input mid-test, firing a spurious blur commit.
-    await waitFor(() =>
-      expect(document.activeElement?.getAttribute('data-slot')).toBe('dialog-content'),
-    );
     await fireEvent.click(screen.getByRole('button', { name: 'Enter a folder path' }));
     return screen.getByRole('textbox', { name: 'Path' }) as HTMLInputElement;
   };
