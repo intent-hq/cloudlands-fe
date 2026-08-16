@@ -29,6 +29,14 @@ interface PortOwnership {
 export class ForwardOwnershipRegistry {
   private readonly ports = new Map<number, PortOwnership>();
 
+  /**
+   * Invoked when a workspace id is newly recorded as an owner of a port.
+   * The cleanup service uses it to reconcile ownership recorded after its
+   * owner's archive/delete event (the record-after-archive race,
+   * monorepo#2646).
+   */
+  onWorkspaceOwnerRecorded?: (workspaceId: string) => void;
+
   /** Record a successful forward; no workspaceId marks the port app-lifetime. */
   record(remotePort: number, workspaceId?: string): void {
     let entry = this.ports.get(remotePort);
@@ -37,7 +45,9 @@ export class ForwardOwnershipRegistry {
       this.ports.set(remotePort, entry);
     }
     if (workspaceId) {
+      const isNewOwner = !entry.owners.has(workspaceId);
       entry.owners.add(workspaceId);
+      if (isNewOwner) this.onWorkspaceOwnerRecorded?.(workspaceId);
     } else {
       entry.appOwned = true;
     }
@@ -46,6 +56,15 @@ export class ForwardOwnershipRegistry {
   /** Drop all ownership for a port (its forward was explicitly closed). */
   clearPort(remotePort: number): void {
     this.ports.delete(remotePort);
+  }
+
+  /** Distinct workspace ids currently owning at least one forwarded port. */
+  ownedWorkspaceIds(): string[] {
+    const ids = new Set<string>();
+    for (const entry of this.ports.values()) {
+      for (const id of entry.owners) ids.add(id);
+    }
+    return [...ids];
   }
 
   /**
