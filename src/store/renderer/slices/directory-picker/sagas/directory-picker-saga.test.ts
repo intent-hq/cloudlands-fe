@@ -38,6 +38,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+// Pre-7.0 daemon shape (no `favorites`); the FE keeps working against it.
 function listing(path: string): DirectoryPickerListing {
   return {
     path,
@@ -46,6 +47,19 @@ function listing(path: string): DirectoryPickerListing {
     entries: [
       { name: 'src', path: `${path}/src`, isDirectory: true, isGitRepo: false },
       { name: 'repo', path: `${path}/repo`, isDirectory: true, isGitRepo: true },
+    ],
+  };
+}
+
+// PROTOCOL.md §5.14 (v7.0) shape: `favorites` is always present, existence
+// checked on the daemon host, `home` always leading.
+function listingWithFavorites(path: string): DirectoryPickerListing {
+  return {
+    ...listing(path),
+    favorites: [
+      { id: 'home', path: '/Users/me' },
+      { id: 'desktop', path: '/Users/me/Desktop' },
+      { id: 'downloads', path: '/Users/me/Downloads' },
     ],
   };
 }
@@ -91,6 +105,31 @@ describe('directoryPickerSaga', () => {
         type: 'directoryPicker/listingLoaded',
         payload: ['/Users/me/code', response],
       },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('stores the wire favorites field intact in slice state', async () => {
+    const response = listingWithFavorites('/Users/me/code');
+    mocks.request.mockResolvedValue(response);
+    const { send, dispatched, state, task } = harness();
+
+    send(loadDirectoryRequested('/Users/me/code'));
+    await settle();
+
+    expect(mocks.request.mock.calls).toEqual([['host.listDirectory', { path: '/Users/me/code' }]]);
+    expect(dispatched).toEqual([
+      {
+        type: 'directoryPicker/listingLoaded',
+        payload: ['/Users/me/code', response],
+      },
+    ]);
+    expect(state().listing).toEqual(response);
+    expect(state().listing?.favorites).toEqual([
+      { id: 'home', path: '/Users/me' },
+      { id: 'desktop', path: '/Users/me/Desktop' },
+      { id: 'downloads', path: '/Users/me/Downloads' },
     ]);
     task.cancel();
     await task.toPromise();
