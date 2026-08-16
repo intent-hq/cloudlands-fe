@@ -7,7 +7,7 @@
  * and bounced the listing back to home on every folder click.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, fireEvent, screen } from '@testing-library/svelte';
+import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 
 const mocks = vi.hoisted(() => {
@@ -52,7 +52,16 @@ vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,
 }));
 
+// Stub the heavy initializer so NewSpaceModal can render in the stacked
+// regression tests below without the full Redux/navigation graph.
+vi.mock('$lib/components/workspace/CompactWorkspaceInitializer.svelte', async () => ({
+  default: (
+    await import('../../../lib/components/modals/__tests__/mocks/MockCompactWorkspaceInitializer.svelte')
+  ).default,
+}));
+
 import DirectoryPickerModal from './DirectoryPickerModal.svelte';
+import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
 import {
   clearCreateDirectoryError,
   createDirectoryRequested,
@@ -166,7 +175,13 @@ describe('DirectoryPickerModal navigation', () => {
     render(DirectoryPickerModal, { props: { ...baseProps } });
     await flush();
 
-    expect(screen.getByRole('dialog').getAttribute('aria-modal')).toBe('true');
+    // The bits-ui Dialog.Content wrapper and the picker panel both carry the
+    // dialog role; every one of them must be marked modal.
+    const dialogs = screen.getAllByRole('dialog');
+    expect(dialogs.length).toBeGreaterThan(0);
+    for (const dialog of dialogs) {
+      expect(dialog.getAttribute('aria-modal')).toBe('true');
+    }
   });
 
   it('closes when the backdrop is clicked', async () => {
@@ -174,8 +189,19 @@ describe('DirectoryPickerModal navigation', () => {
     render(DirectoryPickerModal, { props: { ...baseProps, onClose } });
     await flush();
 
-    await fireEvent.click(screen.getByRole('presentation'));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    // bits-ui dismisses on outside pointerdown (its dismissable layer ignores
+    // interactions within a short grace period after open, hence the wait).
+    const overlay = document.querySelector('[data-slot="dialog-overlay"]')!;
+    expect(overlay).toBeTruthy();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await fireEvent.pointerDown(overlay, {
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+      pointerType: 'mouse',
+    });
+    // The dismissable layer debounces outside-interaction handling.
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 });
 
@@ -183,6 +209,12 @@ describe('DirectoryPickerModal editable path input', () => {
   const baseProps = { open: true, onSelect: vi.fn(), onClose: vi.fn() };
 
   const pathInput = async (): Promise<HTMLInputElement> => {
+    // Let the bits-ui dialog's delayed open-autofocus (which focuses the
+    // Dialog.Content element) settle first; otherwise it steals focus from the
+    // path input mid-test, firing a spurious blur commit.
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute('data-slot')).toBe('dialog-content'),
+    );
     await fireEvent.click(screen.getByRole('button', { name: 'Enter a folder path' }));
     return screen.getByRole('textbox', { name: 'Path' }) as HTMLInputElement;
   };
@@ -594,5 +626,93 @@ describe('DirectoryPickerModal keyboard focus indicators', () => {
     expect(input.getAttribute('aria-invalid')).toBe('true');
     expect(input.className).toContain('border-destructive/60');
     expect(input.className).not.toContain('focus-visible:border-ring');
+  });
+});
+
+describe('DirectoryPickerModal stacked over NewSpaceModal (regression: unclickable picker)', () => {
+  // The old custom Portal/backdrop shell did not participate in bits-ui's
+  // layer coordination, so with the New Workspace dialog open the picker sat
+  // under bits-ui's pointer-events lock and nothing in it was clickable. As a
+  // bits-ui Dialog the picker joins the same layer stack: its portal content
+  // gets pointer-events re-enabled and its overlay dismisses only the picker.
+  const pickerContent = () =>
+    document.querySelector<HTMLElement>('[data-slot="dialog-content"]:not([data-new-space-modal])');
+  const pickerOverlay = () => {
+    const overlays = document.querySelectorAll<HTMLElement>('[data-slot="dialog-overlay"]');
+    return overlays[overlays.length - 1];
+  };
+
+  const renderStack = async () => {
+    const modalOnClose = vi.fn();
+    const pickerOnClose = vi.fn();
+    // Modal opens first; the picker's portal content appends later, so it wins
+    // the z-index tie by DOM order.
+    render(NewSpaceModal, { props: { open: true, onClose: modalOnClose } });
+    render(DirectoryPickerModal, {
+      props: { open: true, onSelect: vi.fn(), onClose: pickerOnClose },
+    });
+    await flush();
+    return { modalOnClose, pickerOnClose };
+  };
+
+  it('renders the picker as a bits-ui dialog after the modal with pointer events enabled', async () => {
+    await renderStack();
+
+    const modalContent = document.querySelector('[data-new-space-modal]')!;
+    const content = pickerContent()!;
+    expect(modalContent).toBeTruthy();
+    expect(content).toBeTruthy();
+    // Picker content follows the modal content in the document, so it renders
+    // on top when the NewSpaceModal :global rules tie their z-indexes.
+    expect(
+      modalContent.compareDocumentPosition(content) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // bits-ui re-enables pointer events on the active dialog content.
+    expect(content.style.pointerEvents).toBe('auto');
+  });
+
+  it('picker controls receive clicks while the New Workspace modal is open', async () => {
+    const { modalOnClose, pickerOnClose } = await renderStack();
+
+    await fireEvent.dblClick(screen.getByRole('option', { name: /code/ }));
+    await flush();
+
+    const calls = loadCalls();
+    expect(requestedPath(calls[calls.length - 1])).toBe('/Users/me/code');
+    expect(modalOnClose).not.toHaveBeenCalled();
+    expect(pickerOnClose).not.toHaveBeenCalled();
+  });
+
+  it('clicking the picker overlay closes only the picker', async () => {
+    const { modalOnClose, pickerOnClose } = await renderStack();
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await fireEvent.pointerDown(pickerOverlay(), {
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+      pointerType: 'mouse',
+    });
+
+    await waitFor(() => expect(pickerOnClose).toHaveBeenCalledTimes(1));
+    expect(modalOnClose).not.toHaveBeenCalled();
+    expect(screen.getByText('New Workspace')).toBeTruthy();
+  });
+
+  it('clicking the New Workspace overlay without the picker still closes the modal', async () => {
+    const modalOnClose = vi.fn();
+    render(NewSpaceModal, { props: { open: true, onClose: modalOnClose } });
+    await flush();
+
+    const overlay = document.querySelector('[data-slot="dialog-overlay"]')!;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await fireEvent.pointerDown(overlay, {
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+      pointerType: 'mouse',
+    });
+
+    await waitFor(() => expect(modalOnClose).toHaveBeenCalledTimes(1));
   });
 });
