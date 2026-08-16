@@ -14,8 +14,7 @@
    *
    * Toggles are captured at agent-session creation, so changes apply to
    * newly created sessions only — existing sessions keep the surface they
-   * were created with. `stateSnapshot` is the documented exception: the
-   * daemon reads it live per turn, so it also affects existing sessions.
+   * were created with.
    *
    * The PR-monitor toggle carries a companion numeric input directly
    * beneath it for `prMonitor.debounceSeconds` (§6.9, min 10 / max 86400;
