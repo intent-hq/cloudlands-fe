@@ -6,6 +6,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import SuggestedPrompts from '../SuggestedPrompts.svelte';
+import {
+  COMPACT_TOOL_TRAILING_CLASS,
+  OPERATIONAL_ICON_BOX_CLASS,
+  OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
+  OPERATIONAL_ROW_TONE_CLASS,
+} from '../operational-disclosure-row';
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
@@ -14,7 +20,7 @@ vi.mock('svelte-fa', async () => ({
 afterEach(cleanup);
 
 describe('SuggestedPrompts', () => {
-  it('uses the canonical compact-action style and preserves selection behavior', async () => {
+  it('uses canonical operational body typography and preserves selection behavior', async () => {
     const onSelect = vi.fn();
     render(SuggestedPrompts, {
       props: {
@@ -24,8 +30,15 @@ describe('SuggestedPrompts', () => {
     });
 
     const suggestion = screen.getByRole('button', { name: 'Approved, proceed with delegation.' });
-    expect(suggestion.className).toContain('type-caption');
-    expect(suggestion.getAttribute('data-typography-role')).toBe('caption');
+    for (const className of OPERATIONAL_ROW_TONE_CLASS.split(' ')) {
+      expect(suggestion.classList.contains(className)).toBe(true);
+    }
+    for (const className of OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS.split(' ')) {
+      expect(suggestion.classList.contains(className)).toBe(true);
+    }
+    expect(suggestion.classList.contains('items-center')).toBe(true);
+    expect(suggestion.classList.contains('items-baseline')).toBe(false);
+    expect(suggestion.getAttribute('data-typography-role')).toBe('body');
 
     await fireEvent.click(suggestion);
     expect(onSelect).toHaveBeenCalledWith('Approved, proceed with delegation.');
@@ -56,11 +69,15 @@ describe('SuggestedPrompts', () => {
     expect(surface.className).not.toContain('rounded');
     expect(surface.className).not.toContain('border');
     const prompt = screen.getByRole('button', { name: 'First prompt' });
-    expect(prompt.className).toContain('gap-2');
+    expect(prompt.className).toContain('gap-[var(--operational-leading-gap)]');
     expect(prompt.className).toContain('px-1.5');
     expect(prompt.className).toContain('hover:bg-muted/30');
-    const source = readFileSync(resolve('src/lib/components/chat/SuggestedPrompts.svelte'), 'utf8');
-    expect(source).toContain('class="mt-1.5 w-4 shrink-0');
+    const icon = prompt.querySelector('[data-suggested-prompt-icon]')!;
+    for (const className of OPERATIONAL_ICON_BOX_CLASS.split(' ')) {
+      expect(icon.classList.contains(className)).toBe(true);
+    }
+    expect(icon.className).not.toContain('mt-');
+    expect(icon.className).not.toContain('/60');
   });
 
   it('removes row gaps and tightens padding in short chat panels', () => {
@@ -85,7 +102,7 @@ describe('SuggestedPrompts', () => {
     expect(chatPanel).toContain('compact={isCompactMode}');
   });
 
-  it('renders muted regular-weight shortcut hints at the prompt caption size', () => {
+  it('renders shortcut hints as opaque normal-weight operational metadata', () => {
     render(SuggestedPrompts, {
       props: {
         prompts: ['Approved, proceed with delegation.'],
@@ -96,9 +113,27 @@ describe('SuggestedPrompts', () => {
 
     const hint = screen.getByText(/(?:⌃|Alt\+)1/);
     expect(hint.className).toContain('font-normal');
-    expect(hint.className).toContain('text-muted-foreground/50');
+    for (const className of COMPACT_TOOL_TRAILING_CLASS.split(' ')) {
+      expect(hint.classList.contains(className)).toBe(true);
+    }
     expect(hint.className).not.toContain('font-medium');
-    expect(hint.className.split(/\s+/)).not.toContain('text-ui');
-    expect(hint.parentElement?.className).toContain('type-caption');
+    expect(hint.className).not.toMatch(/text-(?:muted-foreground|subtle)\//);
+    expect(hint.parentElement?.className).toContain('type-body');
+  });
+
+  it('preserves keyboard selection and the separate edit affordance', async () => {
+    const onSelect = vi.fn();
+    const onEdit = vi.fn();
+    render(SuggestedPrompts, {
+      props: { prompts: ['Review this change'], onSelect, onEdit },
+    });
+
+    const suggestion = screen.getByRole('button', { name: 'Review this change' });
+    await fireEvent.keyDown(suggestion, { key: ' ' });
+    expect(onSelect).toHaveBeenCalledWith('Review this change');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit in input' }));
+    expect(onEdit).toHaveBeenCalledWith('Review this change');
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 });
