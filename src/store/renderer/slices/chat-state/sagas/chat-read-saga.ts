@@ -2,22 +2,26 @@
  * Chat read saga — SINGLE-TRANSFER hydration. Opening a chat transfers the
  * conversation once: the standing `chat.subscribe` subscription's seq-0
  * snapshot (which already merges the in-flight assistant message, CS-0 D5) is
- * the hydration seed. This saga no longer fetches a throwaway
- * `subscribeSnapshot` nor pages the full history on the critical path:
+ * the SOLE hydration source. No `agent.getConversation` call happens on the
+ * critical path — a direct read cannot carry the in-flight assistant message,
+ * so settling from it would reveal a transcript missing the live turn (the
+ * user-message-then-chunks flicker):
  *
  *  1. `transcriptHydrationStarted`, fetch the session shell (`agents.get`,
  *     counts only) and upsert it so the subscription's snapshot can apply.
- *  2. Race the standing subscription snapshot against a direct newest-page
- *     `agent.getConversation` read. The first successful source paints; a
- *     rejected direct read gives the subscription one bounded grace period.
+ *  2. Wait (bounded) for the standing subscription's snapshot to apply —
+ *     `chatTranscriptSnapshotApplied` is dispatched only after the snapshot's
+ *     messages AND stream-accumulator seed have landed. If none arrives
+ *     within the wait, hydration fails (`transcriptHydrationFailed`) and the
+ *     existing error/retry surface shows — never a silent partial paint.
  *  3. Settle (`transcriptHydrationSettled`) — first paint gates on this.
  *  4. OFF the critical path: when older history exists beyond the snapshot
  *     window (`truncated`), page it in the background via the §5.5
  *     `aroundMessageId` seek anchored at the AUTHORITATIVE window's oldest
  *     row — the snapshot page's oldest (`TranscriptSnapshotMeta.
- *     oldestMessageId`) or the fallback read's oldest — NOT the store's
+ *     oldestMessageId`) — NOT the store's
  *     oldest retained row: retained history can sit BELOW an interior gap
- *     (§7.1 `resumed: false` fallback, degraded direct read), and anchoring
+ *     (§7.1 `resumed: false` fallback), and anchoring
  *     below the gap would walk strictly older and never fill it. Walking
  *     backward from the window's oldest traverses the gap first and the
  *     nothing-new stop condition halts on already-retained pages. Merged
@@ -62,10 +66,13 @@ import { selectTranscriptSnapshotMeta } from '../chat-state-selectors';
 
 const logger = createLogger('ChatReadSaga');
 const PAGE_LIMIT = 200;
-/** Brief hedge that preserves the single-transfer fast path without delaying a missing snapshot. */
-const DIRECT_READ_HEDGE_MS = 50;
-/** Bounded grace for a late snapshot only after the prompt direct read rejects. */
-const SNAPSHOT_RECOVERY_WAIT_MS = 1_000;
+/**
+ * Bounded wait for the standing subscription's seq-0 snapshot — the SOLE
+ * hydration source. It normally applies within tens of milliseconds; the
+ * bound only converts a broken subscription into the error/retry surface
+ * instead of a permanent skeleton.
+ */
+const SNAPSHOT_WAIT_MS = 5_000;
 /** Mirror of the agent-session slice's message prune cap — paging past it is discarded. */
 const MAX_STORE_MESSAGES = 500;
 
@@ -78,8 +85,6 @@ type HydrateResult = {
   /** Older-walk seek anchor: the authoritative window's oldest row id. */
   anchor?: string;
 };
-type NewestWindowResult =
-  { succeeded: true; fetchOlder: boolean; anchor?: string } | { succeeded: false; error: unknown };
 
 function identitySet(messages: AgentMessage[]): Set<string> {
   const ids = new Set<string>();
@@ -103,56 +108,6 @@ function* hydrateAfterPrevious(
 ): SagaGenerator<HydrateResult> {
   yield* call(() => previous);
   return yield* call(hydrateChatTranscriptSaga, request);
-}
-
-/**
- * Degraded-path direct read: the subscription's snapshot never arrived, so
- * fetch the newest `agent.getConversation` page and merge it (fetched copies
- * win for shared ids; store-only rows — optimistic sends, prior history —
- * are preserved). Returns whether older history remains beyond the page and
- * the page's oldest row id (the older-walk anchor).
- */
-function* fallbackNewestPageRead(
-  agentId: string,
-): SagaGenerator<{ fetchOlder: boolean; anchor?: string }> {
-  const page: Awaited<ReturnType<typeof appClient.agents.getConversation>> = yield* call(
-    [appClient.agents, appClient.agents.getConversation],
-    agentId,
-    PAGE_LIMIT,
-  );
-  if (yield* call(isAgentDeletionPending, agentId)) return { fetchOlder: false };
-  const current: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
-  const pageIds = identitySet(page.messages);
-  const storeOnly = current.filter(
-    (message) =>
-      !(typeof message.id === 'string' && pageIds.has(message.id)) &&
-      !(typeof message.appMessageId === 'string' && pageIds.has(message.appMessageId)),
-  );
-  const merged =
-    storeOnly.length === 0
-      ? page.messages
-      : deduplicateAgentMessages([...page.messages, ...storeOnly]);
-  yield* put(replaceMessages(agentId, merged));
-  return { fetchOlder: page.nextToken !== null, anchor: oldestMessageId(page.messages) };
-}
-
-function* tryFallbackNewestPageRead(agentId: string): SagaGenerator<NewestWindowResult> {
-  try {
-    return { succeeded: true, ...(yield* call(fallbackNewestPageRead, agentId)) };
-  } catch (error) {
-    return { succeeded: false, error };
-  }
-}
-
-function snapshotResult(meta: {
-  truncated: boolean;
-  oldestMessageId?: string;
-}): NewestWindowResult {
-  return {
-    succeeded: true,
-    fetchOlder: meta.truncated === true,
-    anchor: meta.oldestMessageId,
-  };
 }
 
 function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<HydrateResult> {
@@ -191,57 +146,36 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
     yield* put(bulkUpsertSessions([hydrated]));
     yield* put(upsertSession(hydrated));
 
-    // HEDGED FIRST WINDOW: briefly prefer the standing subscription's seq-0
-    // snapshot, then race it against a direct newest-page read.
-    // The channel is opened BEFORE the state read so a dispatch landing
-    // between the two cannot be missed.
+    // SOLE SOURCE: wait (bounded) for the standing subscription's seq-0
+    // snapshot. `chatTranscriptSnapshotApplied` is dispatched by the
+    // subscribe saga only AFTER the snapshot's messages replaced the store
+    // rows and the stream accumulator was seeded from the in-flight
+    // assistant message — so settling on it can never reveal a frame
+    // missing the live turn. The channel is opened BEFORE the state read so
+    // a dispatch landing between the two cannot be missed.
     const isSnapshotForAgent = (action: { type: string; payload?: unknown }) =>
       action.type === chatTranscriptSnapshotApplied.type &&
       Array.isArray(action.payload) &&
       action.payload[0] === agentId;
     const snapshotChannel = yield* actionChannel(isSnapshotForAgent);
     try {
-      const meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
+      let meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
       const visible: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
-      let source: NewestWindowResult | undefined;
-      if (meta && (meta.totalMessages === 0 || visible.length > 0)) {
-        source = snapshotResult(meta);
-      } else {
-        const early = yield* race({
+      // Re-settle instantly only when the already-applied snapshot is still
+      // reflected in the store (refresh with live meta); otherwise wait for
+      // a fresh application.
+      if (!(meta && (meta.totalMessages === 0 || visible.length > 0))) {
+        meta = undefined;
+        const { applied } = yield* race({
           applied: take(snapshotChannel),
-          hedgeElapsed: delay(DIRECT_READ_HEDGE_MS),
+          timedOut: delay(SNAPSHOT_WAIT_MS),
         });
-        if (early.applied) {
-          const appliedMeta = yield* selectTranscriptSnapshotMeta.effect(agentId);
-          if (appliedMeta) source = snapshotResult(appliedMeta);
-        }
+        if (applied) meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
       }
-      if (!source) {
-        const first = yield* race({
-          applied: take(snapshotChannel),
-          direct: call(tryFallbackNewestPageRead, agentId),
-        });
-        if (first.applied) {
-          const appliedMeta = yield* selectTranscriptSnapshotMeta.effect(agentId);
-          if (appliedMeta) source = snapshotResult(appliedMeta);
-        } else if (first.direct?.succeeded) {
-          source = first.direct;
-        } else {
-          const { applied } = yield* race({
-            applied: take(snapshotChannel),
-            timedOut: delay(SNAPSHOT_RECOVERY_WAIT_MS),
-          });
-          if (applied) {
-            const appliedMeta = yield* selectTranscriptSnapshotMeta.effect(agentId);
-            if (appliedMeta) source = snapshotResult(appliedMeta);
-          }
-          if (!source) throw first.direct?.error ?? new Error('No transcript source succeeded');
-        }
-      }
-      if (!source?.succeeded) throw source?.error ?? new Error('No transcript source succeeded');
+      if (!meta) throw new Error('No transcript snapshot arrived within the hydration wait');
       succeeded = true;
-      fetchOlder = source.fetchOlder;
-      anchor = source.anchor;
+      fetchOlder = meta.truncated === true;
+      anchor = meta.oldestMessageId;
     } finally {
       yield* flush(snapshotChannel);
       snapshotChannel.close();
@@ -255,12 +189,12 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
 /**
  * Background older-history fetch (OFF the hydration critical path). Anchors a
  * §5.5 `aroundMessageId` seek at the AUTHORITATIVE window's oldest row (the
- * snapshot page's / fallback page's oldest — falling back to the store's
+ * snapshot page's oldest — falling back to the store's
  * oldest when none was recorded), then walks `nextToken` backward,
  * accumulating rows the store does not hold. Anchoring at the window rather
  * than the store's oldest retained row matters when retained history sits
- * BELOW an interior gap (§7.1 `resumed: false` fallback, degraded direct
- * read): the backward walk traverses the gap first, and the nothing-new stop
+ * BELOW an interior gap (§7.1 `resumed: false` fallback): the backward walk
+ * traverses the gap first, and the nothing-new stop
  * condition halts once it reaches already-retained pages. Each page merges
  * as `[...older, ...current]` with current-wins dedup so live rows that
  * arrived meanwhile are never clobbered. Stops when: no token remains, a

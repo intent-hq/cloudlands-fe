@@ -453,6 +453,48 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
   });
 
+  // Ordering lock (atomic first-paint): the chat-read saga settles hydration
+  // (the reveal gate) on `chatTranscriptSnapshotApplied`, so that action must
+  // be dispatched only AFTER the snapshot's messages replaced the store rows
+  // AND the stream accumulator was seeded from the in-flight assistant
+  // message — otherwise the reveal frame could miss the live turn.
+  it('dispatches chatTranscriptSnapshotApplied only after messages applied and stream seeded', () => {
+    const agentId = 'agent-sub-order';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+
+    const observedAtSeed: {
+      messageIds: string[];
+      metaRecorded: boolean;
+    }[] = [];
+    vi.mocked(seedStreamFromSnapshot).mockImplementationOnce(() => {
+      observedAtSeed.push({
+        messageIds: selectAgentMessages.select(appStore.state, agentId).map((m) => m.id),
+        metaRecorded: selectTranscriptSnapshotMeta.select(appStore.state, agentId) !== undefined,
+      });
+    });
+
+    const inFlight = makeMessage('m-order-live', 'partial...', {
+      isStreaming: true,
+    } as Partial<AgentMessage>);
+    sub.handler({
+      ...transcript([makeMessage('m-order-user', 'question', { role: 'user' }), inFlight], true),
+      fromSnapshot: true,
+    });
+
+    // At seed time the snapshot messages were already in the store, but the
+    // snapshot-applied signal had NOT yet been recorded.
+    expect(observedAtSeed).toEqual([
+      { messageIds: ['m-order-user', 'm-order-live'], metaRecorded: false },
+    ]);
+    // The applied signal followed the seed.
+    expect(seedStreamFromSnapshot).toHaveBeenCalledOnce();
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toMatchObject({
+      totalMessages: 2,
+      seq: 1,
+    });
+  });
+
   it('discards retained store-only rows on a resumed: false fallback snapshot (§7.1)', () => {
     const agentId = 'agent-sub-resume-discard';
     // Retained history from a prior view: rows the daemon may since have

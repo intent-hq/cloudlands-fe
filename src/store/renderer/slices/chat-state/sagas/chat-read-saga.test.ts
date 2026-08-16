@@ -391,64 +391,40 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     await run.task.toPromise();
   });
 
-  it('falls back to a direct newest-page read when the snapshot never arrives', async () => {
+  // Regression: opening a chat mid-turn must not settle hydration from a
+  // direct `agent.getConversation` read — that page misses the in-flight
+  // assistant message (only the seq-0 snapshot merges it, CS-0 D5), so the
+  // reveal frame would flicker: user message first, streamed chunks later.
+  it('regression: never settles from a direct read while the snapshot carrying the in-flight turn is pending', async () => {
     vi.useFakeTimers();
     try {
       mocks.get.mockResolvedValue(session());
-      mocks.getConversation.mockResolvedValue(page([message('fallback', 'fb')]));
+      // What a direct read would serve mid-turn: persisted rows only.
+      mocks.getConversation.mockResolvedValue(
+        page([message('m-user', 'question', { role: 'user' })]),
+      );
       const run = harness();
       run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
-      await vi.advanceTimersByTimeAsync(50);
+      // Well past the former 50ms hedge window.
+      await vi.advanceTimersByTimeAsync(500);
 
-      expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 200);
+      // No direct read on the critical path, no premature reveal.
+      expect(mocks.getConversation).not.toHaveBeenCalled();
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
+
+      // The snapshot (with the in-flight assistant message) is the sole
+      // hydration source — only its application settles the reveal gate.
+      applySnapshot(run, [
+        message('m-user', 'question', { role: 'user' }),
+        message('m-live', 'partial stream...', { isStreaming: true }),
+      ]);
+      await settle();
       expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
-      expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual(['fallback']);
-      run.task.cancel();
-      await run.task.toPromise();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('anchors the fallback-path older walk at the fetched page oldest, not retained rows', async () => {
-    // Same gap class on the degraded path: retained rows below a gap toward
-    // the fallback newest page. The walk anchors at the PAGE's oldest.
-    vi.useFakeTimers();
-    try {
-      mocks.get.mockResolvedValue(session());
-      mocks.getConversation
-        .mockResolvedValueOnce(
-          page([message('m-page', 'newest', { timestamp: '2026-01-01T00:00:03.000Z' })], {
-            nextToken: 'older',
-          }),
-        )
-        .mockResolvedValueOnce(
-          page(
-            [
-              message('m-gap', 'gap', { timestamp: '2026-01-01T00:00:02.000Z' }),
-              message('m-page', 'newest', { timestamp: '2026-01-01T00:00:03.000Z' }),
-            ],
-            {
-              nextToken: 'older-2',
-            },
-          ),
-        )
-        .mockResolvedValueOnce(page([message('m-r1', 'retained')]));
-      const run = harness();
-      run.dispatch(bulkUpsertSessions([session({ messages: [message('m-r1', 'retained')] })]));
-      run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
-      await vi.advanceTimersByTimeAsync(50);
-
-      expect(mocks.getConversation.mock.calls).toEqual([
-        [AGENT, 200],
-        [AGENT, 200, undefined, 'm-page'],
-        [AGENT, 200, 'older-2'],
-      ]);
       expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
-        'm-r1',
-        'm-gap',
-        'm-page',
+        'm-user',
+        'm-live',
       ]);
+      expect(mocks.getConversation).not.toHaveBeenCalled();
       run.task.cancel();
       await run.task.toPromise();
     } finally {
@@ -456,18 +432,18 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     }
   });
 
-  it('accepts a late snapshot during bounded grace after the direct read rejects', async () => {
+  it('accepts a late snapshot while the bounded wait is still open', async () => {
     vi.useFakeTimers();
     try {
       mocks.get.mockResolvedValue(session());
-      mocks.getConversation.mockRejectedValue(new Error('direct rejected'));
       const run = harness();
       run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
-      await vi.advanceTimersByTimeAsync(550);
+      await vi.advanceTimersByTimeAsync(4_500);
       expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
       applySnapshot(run, [message('late', 'late snapshot')]);
       await settle();
       expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+      expect(mocks.getConversation).not.toHaveBeenCalled();
       run.task.cancel();
       await run.task.toPromise();
     } finally {
@@ -475,15 +451,15 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     }
   });
 
-  it('exposes retryable error after the direct read and snapshot grace fail', async () => {
+  it('exposes retryable error when no snapshot arrives within the bounded wait', async () => {
     vi.useFakeTimers();
     try {
       mocks.get.mockResolvedValue(session());
-      mocks.getConversation.mockRejectedValue(new Error('direct rejected'));
       const run = harness();
       run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
-      await vi.advanceTimersByTimeAsync(1_050);
+      await vi.advanceTimersByTimeAsync(5_050);
       expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('error');
+      expect(mocks.getConversation).not.toHaveBeenCalled();
       run.task.cancel();
       await run.task.toPromise();
     } finally {
