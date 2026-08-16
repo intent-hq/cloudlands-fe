@@ -14,7 +14,7 @@
     selectFocusedPanelId,
     getPanelTabOpenState,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import AuggieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import { faNote } from '$lib/icons/faNote';
@@ -138,20 +138,23 @@
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const workspaceIdStore = writable(workspaceId);
   const LAUNCHER_ICON_LIMIT = 6;
+  const LAUNCHER_TARGET_SIZE = 36;
+  const LAUNCHER_VISIBLE_SIZE = 20;
+  const LAUNCHER_STEP_SIZE = 16;
   const LAUNCHER_ICON_STACK_CLASS =
-    'isolate grid h-7 w-full min-w-0 grid-flow-col items-start overflow-visible text-muted-foreground';
+    'isolate grid h-9 w-full min-w-0 grid-flow-col items-start overflow-visible text-muted-foreground';
   const LAUNCHER_ICON_BUTTON_CLASS =
-    'launcher-icon-button group/preview pointer-events-auto relative flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none transition-colors hover:z-20 hover:text-foreground focus-visible:z-30 focus-visible:text-foreground';
+    'launcher-icon-button group/preview pointer-events-auto relative flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none transition-colors hover:z-20 hover:text-foreground focus-visible:z-30 focus-visible:text-foreground';
   const LAUNCHER_GLYPH_CLASS =
-    'launcher-glyph flex size-4.5 items-center justify-center rounded-sm bg-card transition-colors group-hover/preview:bg-background/70 group-focus-visible/preview:bg-background/80';
+    'launcher-glyph flex size-5 items-center justify-center rounded-sm bg-card transition-colors group-hover/preview:bg-background/70 group-focus-visible/preview:bg-background/80';
   const LAUNCHER_AGENT_GLYPH_CLASS =
     // i18n-ignore (Tailwind utility classes)
-    'launcher-glyph flex size-5.5 items-center justify-center rounded-sm bg-card transition-colors group-hover/preview:bg-background/70 group-focus-visible/preview:bg-background/80';
+    'launcher-glyph flex size-5 items-center justify-center rounded-sm transition-colors group-hover/preview:opacity-90 group-focus-visible/preview:opacity-80';
   const LAUNCHER_OVERFLOW_BUTTON_CLASS =
     // i18n-ignore (Tailwind utility classes)
-    'launcher-overflow-button pointer-events-auto relative z-10 flex h-7 min-w-7 w-auto shrink-0 cursor-pointer items-center justify-start rounded-none! border-0! bg-transparent! p-0! text-xs font-medium leading-3 whitespace-nowrap text-muted-foreground shadow-none! outline-none transition-colors hover:z-20 hover:bg-transparent! hover:text-foreground focus-visible:z-30 focus-visible:bg-transparent! focus-visible:text-foreground focus-visible:underline';
+    'launcher-overflow-button pointer-events-auto relative z-10 flex h-9 min-w-9 w-auto shrink-0 cursor-pointer items-center justify-center rounded-sm! bg-card text-xs font-medium leading-3 whitespace-nowrap text-muted-foreground shadow-none! outline-none transition-colors hover:z-20 hover:bg-background/70 focus-visible:z-30 focus-visible:bg-background/80';
   const LAUNCHER_OVERFLOW_STYLE =
-    'line-height: 12px; font-weight: 500; background: transparent; border: 0; border-radius: 0; padding: 0; box-shadow: none;';
+    'line-height: 12px; font-weight: 500; border-radius: 0.125rem; padding: 0; box-shadow: none;';
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
@@ -219,6 +222,21 @@
       return launcherNotes.length + (launcherNoteOverflowCount > 0 ? 1 : 0);
     }
     return 1;
+  }
+
+  function launcherGridTemplateColumns(tabId: string): string {
+    const itemCount = launcherItemCount(tabId);
+    const hasOverflow =
+      (tabId === 'agents' && launcherAgentOverflowCount > 0) ||
+      (tabId === 'context' && launcherNoteOverflowCount > 0);
+    if (hasOverflow) {
+      return itemCount > 2
+        ? `repeat(${itemCount - 2}, minmax(0, ${LAUNCHER_STEP_SIZE}px)) ${LAUNCHER_STEP_SIZE}px ${LAUNCHER_VISIBLE_SIZE}px`
+        : `${LAUNCHER_STEP_SIZE}px ${LAUNCHER_VISIBLE_SIZE}px`;
+    }
+    return itemCount > 1
+      ? `repeat(${itemCount - 1}, minmax(0, ${LAUNCHER_STEP_SIZE}px)) ${LAUNCHER_VISIBLE_SIZE}px`
+      : `${LAUNCHER_VISIBLE_SIZE}px`;
   }
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
   const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds));
@@ -1038,13 +1056,15 @@
                 >
                   <div
                     class={LAUNCHER_ICON_STACK_CLASS}
-                    style={`grid-template-columns: repeat(${launcherItemCount(tab.id)}, minmax(0, 1fr));`}
+                    style={`grid-template-columns: ${launcherGridTemplateColumns(tab.id)};`}
                     data-sidebar-launcher-icons
-                    data-launcher-pack="bounded-distribution"
+                    data-launcher-pack="left"
                     data-launcher-layout="horizontal"
-                    data-launcher-target-size="28"
-                    data-launcher-visible-size={tab.id === 'agents' ? '22' : '18'}
-                    data-launcher-visible-offset={tab.id === 'agents' ? '3' : '5'}
+                    data-launcher-target-size={LAUNCHER_TARGET_SIZE}
+                    data-launcher-visible-size={LAUNCHER_VISIBLE_SIZE}
+                    data-launcher-step-size={LAUNCHER_STEP_SIZE}
+                    data-launcher-visible-offset={(LAUNCHER_TARGET_SIZE - LAUNCHER_VISIBLE_SIZE) /
+                      2}
                   >
                     {#if tab.id === 'agents'}
                       {#each launcherAgents as { agent, isRunning, preview }, index (agent.id)}
@@ -1065,11 +1085,7 @@
                           ]}
                           emptyText={m.layout_sidebarNav_noMessages_label()}
                           kind="agent"
-                          gridPosition={index === 0
-                            ? 'start'
-                            : index === launcherItemCount('agents') - 1
-                              ? 'end'
-                              : 'center'}
+                          gridPosition="start"
                           open={openLauncherHoverKey === `agent:${agent.id}`}
                           onOpenChange={(open) => {
                             handleLauncherHoverOpenChange(`agent:${agent.id}`, open);
@@ -1089,16 +1105,16 @@
                           >
                             <span
                               class={LAUNCHER_AGENT_GLYPH_CLASS}
-                              style="width: 22px; height: 22px; box-shadow: inset 0 0 0 1px var(--color-card);"
+                              style={`width: ${LAUNCHER_VISIBLE_SIZE}px; height: ${LAUNCHER_VISIBLE_SIZE}px; box-shadow: inset 0 0 0 1px var(--color-card);`}
                               data-sidebar-launcher-glyph
                               data-launcher-avatar-seam="surface-1px"
-                              data-launcher-avatar-size="22"
+                              data-launcher-avatar-size={LAUNCHER_VISIBLE_SIZE}
                             >
-                              <AuggieAvatarWithState
+                              <AgentAvatarWithState
                                 agentId={agent.id}
                                 specialist={agent.metadata?.specialist as
                                   BuiltinSpecialistId | undefined}
-                                size={22}
+                                size={LAUNCHER_VISIBLE_SIZE}
                                 state={isRunning ? 'running' : 'idle'}
                               />
                               <OpenPanelIndicator
@@ -1114,9 +1130,7 @@
                         <Button
                           variant="plain"
                           class={LAUNCHER_OVERFLOW_BUTTON_CLASS}
-                          style={`${LAUNCHER_OVERFLOW_STYLE} justify-self: ${
-                            launcherItemCount('agents') === 1 ? 'start' : 'end'
-                          };`}
+                          style={`${LAUNCHER_OVERFLOW_STYLE} justify-self: start; width: ${LAUNCHER_VISIBLE_SIZE}px; height: ${LAUNCHER_VISIBLE_SIZE}px;`}
                           onpointerdown={(event) => event.stopPropagation()}
                           onclick={(event) => {
                             event.stopPropagation();
@@ -1137,11 +1151,7 @@
                           rows={[{ text: getNoteLauncherPreview(note) }]}
                           emptyText="Empty note"
                           kind="note"
-                          gridPosition={index === 0
-                            ? 'start'
-                            : index === launcherItemCount('context') - 1
-                              ? 'end'
-                              : 'center'}
+                          gridPosition="start"
                           open={openLauncherHoverKey === `note:${note.id}`}
                           onOpenChange={(open) =>
                             handleLauncherHoverOpenChange(`note:${note.id}`, open)}
@@ -1155,8 +1165,14 @@
                             data-launcher-leading-item={index === 0 ? 'true' : undefined}
                             data-launcher-preview-item
                           >
-                            <span class={LAUNCHER_GLYPH_CLASS} data-sidebar-launcher-glyph>
-                              <Fa icon={faNote} class="size-4.5!" />
+                            <span
+                              class={LAUNCHER_GLYPH_CLASS}
+                              style={`width: ${LAUNCHER_VISIBLE_SIZE}px; height: ${LAUNCHER_VISIBLE_SIZE}px; box-shadow: inset 0 0 0 1px var(--color-card);`}
+                              data-sidebar-launcher-glyph
+                              data-launcher-avatar-seam="surface-1px"
+                              data-launcher-avatar-size={LAUNCHER_VISIBLE_SIZE}
+                            >
+                              <Fa icon={faNote} class="size-5!" />
                               <OpenPanelIndicator
                                 count={panelState.count}
                                 active={panelState.isActive}
@@ -1170,9 +1186,7 @@
                         <Button
                           variant="plain"
                           class={LAUNCHER_OVERFLOW_BUTTON_CLASS}
-                          style={`${LAUNCHER_OVERFLOW_STYLE} justify-self: ${
-                            launcherItemCount('context') === 1 ? 'start' : 'end'
-                          };`}
+                          style={`${LAUNCHER_OVERFLOW_STYLE} justify-self: start; width: ${LAUNCHER_VISIBLE_SIZE}px; height: ${LAUNCHER_VISIBLE_SIZE}px;`}
                           onclick={() => handleTabClick('context')}
                           aria-label={launcherNoteOverflowLabel}
                           data-sidebar-context-overflow={launcherNoteOverflowCount}

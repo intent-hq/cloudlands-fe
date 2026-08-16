@@ -178,7 +178,7 @@ vi.mock('../workspace-phase', () => ({
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../ui/__tests__/mocks/Fa.svelte')).default,
 }));
-vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
+vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 vi.mock('$lib/components/ui/button', async () => ({
@@ -344,14 +344,21 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     { total: 1, visible: 1, overflow: 0 },
     { total: 6, visible: 6, overflow: 0 },
     { total: 8, visible: 6, overflow: 2 },
+    { total: 26, visible: 6, overflow: 20 },
   ])(
-    'renders $total agents as six plus semantic overflow',
+    'renders $total Agents and Context items as six plus semantic overflow',
     async ({ total, visible, overflow }) => {
       mocks.agents = Array.from({ length: total }, (_, index) => makeAgent(`agent-${index}`));
+      mocks.notes = Array.from({ length: total }, (_, index) => ({
+        id: `note-${index}`,
+        title: `Note ${index}`,
+        content: '',
+      }));
       const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
       const { container, queryByRole } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
 
       expect(container.querySelectorAll('[data-sidebar-agent]')).toHaveLength(visible);
+      expect(container.querySelectorAll('[data-sidebar-context]')).toHaveLength(visible);
       expect(
         container.querySelector('[data-sidebar-launcher="agents"] [aria-labelledby]'),
       ).toBeTruthy();
@@ -361,8 +368,10 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
             name: new RegExp(`${overflow} more agents.*${total} agents total`),
           }),
         ).toBeTruthy();
+        expect(queryByRole('button', { name: new RegExp(`${overflow} more notes`) })).toBeTruthy();
       } else {
         expect(container.querySelector('[data-sidebar-agent-overflow]')).toBeNull();
+        expect(container.querySelector('[data-sidebar-context-overflow]')).toBeNull();
       }
     },
   );
@@ -406,36 +415,34 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
         expect(card.classList.contains('p-2')).toBe(true);
         const isAgentStack = tabId === 'agents';
         expect(stack.dataset.launcherLayout).toBe('horizontal');
-        expect(stack.dataset.launcherPack).toBe('bounded-distribution');
-        expect(stack.dataset.launcherTargetSize).toBe('28');
-        expect(stack.dataset.launcherVisibleSize).toBe(isAgentStack ? '22' : '18');
-        expect(stack.dataset.launcherVisibleOffset).toBe(isAgentStack ? '3' : '5');
-        expect(stack.classList.contains('h-7')).toBe(true);
+        expect(stack.dataset.launcherPack).toBe('left');
+        expect(stack.dataset.launcherTargetSize).toBe('36');
+        expect(stack.dataset.launcherVisibleSize).toBe('20');
+        expect(stack.dataset.launcherStepSize).toBe('16');
+        expect(stack.dataset.launcherVisibleOffset).toBe('8');
+        expect(stack.classList.contains('h-9')).toBe(true);
         expect(stack.classList.contains('grid')).toBe(true);
         expect(stack.classList.contains('w-full')).toBe(true);
         expect(stack.classList.contains('overflow-visible')).toBe(true);
-        expect(targets.every((target) => target.classList.contains('size-7'))).toBe(true);
+        expect(targets.every((target) => target.classList.contains('size-9'))).toBe(true);
         expect(targets.every((target) => target.classList.contains('shrink-0'))).toBe(true);
-        expect(targets[0]?.parentElement?.classList.contains('justify-self-start')).toBe(true);
-        if (targets.length > 2) {
-          expect(targets[1].parentElement?.classList.contains('justify-self-center')).toBe(true);
-        }
+        expect(
+          targets.every((target) => target.parentElement?.classList.contains('justify-self-start')),
+        ).toBe(true);
         expect(targets.every((target) => target.classList.contains('hover:z-20'))).toBe(true);
         expect(targets.every((target) => target.classList.contains('focus-visible:z-30'))).toBe(
           true,
         );
-        expect(
-          glyphs.every((glyph) => glyph.classList.contains(isAgentStack ? 'size-5.5' : 'size-4.5')),
-        ).toBe(true);
+        expect(glyphs.every((glyph) => glyph.classList.contains('size-5'))).toBe(true);
         if (tabId === 'agents') {
           expect(stack.classList.contains('-ml-3.5')).toBe(false);
           expect(
             glyphs.every(
               (glyph) =>
                 glyph.dataset.launcherAvatarSeam === 'surface-1px' &&
-                glyph.dataset.launcherAvatarSize === '22' &&
-                getComputedStyle(glyph).width === '22px' &&
-                getComputedStyle(glyph).height === '22px' &&
+                glyph.dataset.launcherAvatarSize === '20' &&
+                getComputedStyle(glyph).width === '20px' &&
+                getComputedStyle(glyph).height === '20px' &&
                 glyph.style.boxShadow === 'inset 0 0 0 1px var(--color-card)',
             ),
           ).toBe(true);
@@ -483,7 +490,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       expect(stack.classList.contains('grid')).toBe(true);
       expect(stack.classList.contains('grid-flow-col')).toBe(true);
       expect(stack.className).not.toContain('grid-cols-');
-      expect(stack.style.gridTemplateColumns).toBe('repeat(7, minmax(0, 1fr))');
+      expect(stack.style.gridTemplateColumns).toBe('repeat(5, minmax(0, 16px)) 16px 20px');
       expect(itemCount).toBe(7);
       expect(card.classList.contains('overflow-hidden')).toBe(true);
     }
@@ -491,7 +498,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const noteOverflow = getByRole('button', { name: /2 more notes/ });
     const agentGlyphs = [
       ...container.querySelectorAll<HTMLElement>(
-        '[data-sidebar-launcher="agents"] [data-launcher-avatar-size="22"]',
+        '[data-sidebar-launcher="agents"] [data-launcher-avatar-size="24"]',
       ),
     ];
     const expectPlainOverflowStyle = (overflow: HTMLElement) => {
@@ -501,20 +508,17 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       expect(overflow.className).toContain('leading-3');
       expect(overflow.className).toContain('text-muted-foreground');
       expect(overflow.className).toContain('whitespace-nowrap');
-      expect(overflow.className).toContain('bg-transparent!');
-      expect(overflow.className).toContain('border-0!');
+      expect(overflow.className).toContain('bg-card');
       expect(overflow.className).toContain('shadow-none!');
-      expect(overflow.className).toContain('rounded-none!');
-      expect(overflow.className).not.toMatch(
-        /bg-background|font-semibold|rounded-(?:sm|md|lg|full)/,
-      );
+      expect(overflow.className).toContain('rounded-sm!');
+      expect(overflow.className).toContain('hover:bg-background/70');
+      expect(overflow.className).toContain('focus-visible:bg-background/80');
+      expect(overflow.className).not.toMatch(/font-semibold/);
       const style = getComputedStyle(overflow);
       expect(overflow.style.fontSize).toBe('');
       expect(style.lineHeight).toBe('12px');
       expect(style.fontWeight).toBe('500');
-      expect(['transparent', 'rgba(0, 0, 0, 0)']).toContain(style.backgroundColor);
-      expect(style.borderTopWidth).toBe('0px');
-      expect(style.borderRadius).toBe('0px');
+      expect(style.borderRadius).toBe('0.125rem');
       expect(style.paddingTop).toBe('0px');
       expect(style.boxShadow).toBe('none');
     };
@@ -531,9 +535,9 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
         expectPlainOverflowStyle(agentOverflow);
         for (const glyph of agentGlyphs) {
           const style = getComputedStyle(glyph);
-          expect(style.width).toBe('22px');
-          expect(style.height).toBe('22px');
-          expect(glyph.parentElement?.classList.contains('size-7')).toBe(true);
+          expect(style.width).toBe('24px');
+          expect(style.height).toBe('24px');
+          expect(glyph.parentElement?.classList.contains('size-9')).toBe(true);
         }
       }
     }
@@ -551,13 +555,21 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
 
     for (const target of container.querySelectorAll<HTMLElement>('[data-launcher-preview-item]')) {
       const glyph = target.querySelector<HTMLElement>('[data-sidebar-launcher-glyph]');
+      const isAgentGlyph = glyph?.className.includes('group-hover/preview:opacity');
       if (glyph) {
-        expect(glyph.className).toContain('group-focus-visible/preview:bg-background/80');
         expect(glyph.className).toContain('launcher-glyph');
+        if (isAgentGlyph) {
+          // Agent glyphs use opacity transitions on hover/focus for semantic status colors
+          expect(glyph.className).toContain('group-hover/preview:opacity-90');
+          expect(glyph.className).toContain('group-focus-visible/preview:opacity-80');
+        } else {
+          // Note glyphs use background transitions
+          expect(glyph.className).toContain('group-focus-visible/preview:bg-background/80');
+        }
         expect(target.className).not.toContain('focus-visible:bg-background/80');
       } else {
-        expect(target.className).toContain('focus-visible:bg-transparent!');
-        expect(target.className).toContain('focus-visible:underline');
+        // Overflow buttons
+        expect(target.className).toContain('focus-visible:bg-background/80');
       }
       expect(target.className).not.toMatch(/(?:^|\s)focus-visible:ring-/);
       expect(target.className).not.toMatch(/(?:^|\s)focus-visible:outline-(?!none)/);
@@ -565,7 +577,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     }
   });
 
-  it('keeps plain +N text as the last bounded icon-grid item', async () => {
+  it('keeps plain +N text adjacent to the last left-packed icon-grid item', async () => {
     mocks.agents = Array.from({ length: 8 }, (_, index) => makeAgent(`agent-${index}`));
     const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
     const { container, getByRole } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
@@ -576,24 +588,26 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const overflowRect = overflow.getBoundingClientRect();
 
     expect(stack.className).not.toMatch(/-ml-/);
-    expect(stack.dataset.launcherPack).toBe('bounded-distribution');
-    expect(stack.dataset.launcherVisibleSize).toBe('22');
-    expect(stack.dataset.launcherVisibleOffset).toBe('3');
+    expect(stack.dataset.launcherPack).toBe('left');
+    expect(stack.dataset.launcherVisibleSize).toBe('20');
+    expect(stack.dataset.launcherStepSize).toBe('16');
+    expect(stack.dataset.launcherVisibleOffset).toBe('8');
     for (const tabId of ['context']) {
       const siblingStack = container.querySelector<HTMLElement>(
         `[data-sidebar-launcher="${tabId}"] [data-sidebar-launcher-icons]`,
       )!;
       expect(siblingStack.className).not.toMatch(/launcher-icon-stack-offset|-ml-/);
-      expect(siblingStack.dataset.launcherVisibleSize).toBe('18');
-      expect(siblingStack.dataset.launcherVisibleOffset).toBe('5');
+      expect(siblingStack.dataset.launcherVisibleSize).toBe('20');
+      expect(siblingStack.dataset.launcherStepSize).toBe('16');
+      expect(siblingStack.dataset.launcherVisibleOffset).toBe('8');
     }
     expect(overflow.parentElement).toBe(stack);
     expect(overflowRect.left).toBeGreaterThanOrEqual(stackRect.left);
     expect(overflowRect.top).toBeGreaterThanOrEqual(stackRect.top);
     expect(overflow.textContent).toContain('+2');
     expect(overflow.className).toContain('w-auto');
-    expect(overflow.className).toContain('justify-start');
-    expect(overflow.style.justifySelf).toBe('end');
+    expect(overflow.className).toContain('justify-center');
+    expect(overflow.style.justifySelf).toBe('start');
   });
 
   it('affirms coordinator and Spec ordering in every required visual state', async () => {
