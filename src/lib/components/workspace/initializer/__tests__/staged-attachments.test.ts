@@ -272,4 +272,22 @@ describe('sendHeldFirstMessage', () => {
 
     expect(result).toEqual({ sent: false, errorDetail: undefined });
   });
+
+  it('resolves { sent: false } instead of throwing on a non-serializable held message', async () => {
+    // The never-throw contract must hold even when the params rebuild itself
+    // fails: a circular contextReference makes JSON.stringify throw, which
+    // must resolve as a failed send (the retry state stays set), not reject.
+    const circular: Record<string, unknown> = { type: 'context' };
+    circular.self = circular;
+    const request = vi.fn();
+
+    const result = await sendHeldFirstMessage(
+      heldMessage({ contextReferences: [circular] }),
+      [fileBlock],
+      request,
+    );
+
+    expect(result.sent).toBe(false);
+    expect(request).not.toHaveBeenCalled();
+  });
 });

@@ -3383,6 +3383,8 @@
   "onboarding_page_enhanceUnavailable_error": "Prompt enhancement is not available with the current provider",
   "onboarding_page_pullFailed_error": "Failed to pull changes",
   "onboarding_page_attachmentPlacementFailed_error": "The workspace was created, but some attachments failed — retry or remove them, then press Create again",
+  "onboarding_page_firstMessageSendFailed_error": "The workspace was created, but sending your message failed — press Create again to retry",
+  "onboarding_page_firstMessageSendFailedDetail_error": "The workspace was created, but sending your message failed: {detail} — press Create again to retry",
   "onboarding_page_blockingAttachments_toast": "Some attachments are still uploading or failed — retry or remove them first",
   "onboarding_page_createFailed_error": "Failed to create workspace",
   "onboarding_page_unexpected_error": "An unexpected error occurred",

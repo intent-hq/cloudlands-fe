@@ -8,7 +8,7 @@
  * failures mark the item `failed` (visible pill with retry) and block the
  * first-message send — never a silent drop.
  */
-import type { FileBlock } from '$lib/client/app-client';
+import type { FileBlock, ImageBlock } from '$lib/client/app-client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import type { ContextItem, PlaceAttachmentResult } from '$lib/components/chat/input/context-api';
 import {
@@ -120,7 +120,7 @@ export interface HeldFirstMessage {
   workspaceId: string;
   agentId?: string;
   content: string;
-  imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }>;
+  imageBlocks: ImageBlock[];
   contextReferences: unknown[];
 }
 
@@ -161,21 +161,24 @@ export async function sendHeldFirstMessage(
     pending.imageBlocks.length > 0 || fileBlocks.length > 0 || pending.contextReferences.length > 0;
   if (!pending.agentId || (!hasContent && !hasBlocks)) return { sent: true };
 
-  // JSON round-trip strips reactive Proxies (and anything else structured
-  // clone would reject) — the payload is plain JSON data by construction.
-  const params = JSON.parse(
-    JSON.stringify({
-      agentId: pending.agentId,
-      workspaceId: pending.workspaceId,
-      content: pending.content,
-      imageBlocks: pending.imageBlocks.length > 0 ? pending.imageBlocks : undefined,
-      fileBlocks: fileBlocks.length > 0 ? fileBlocks : undefined,
-      contextReferences:
-        pending.contextReferences.length > 0 ? pending.contextReferences : undefined,
-    }),
-  );
-
   try {
+    // JSON round-trip strips reactive Proxies (and anything else structured
+    // clone would reject) — the payload is plain JSON data by construction.
+    // Inside the try so a non-serializable value (circular ref, BigInt) in a
+    // future contextReference shape resolves `{ sent: false }` per contract
+    // instead of rejecting.
+    const params = JSON.parse(
+      JSON.stringify({
+        agentId: pending.agentId,
+        workspaceId: pending.workspaceId,
+        content: pending.content,
+        imageBlocks: pending.imageBlocks.length > 0 ? pending.imageBlocks : undefined,
+        fileBlocks: fileBlocks.length > 0 ? fileBlocks : undefined,
+        contextReferences:
+          pending.contextReferences.length > 0 ? pending.contextReferences : undefined,
+      }),
+    );
+
     // `backendRequest` resolves normal daemon send failures as
     // `{ success: false, error }` rather than rejecting — check it, or a
     // failed send would silently drop the held message and its retry path.

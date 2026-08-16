@@ -3382,6 +3382,8 @@
   "onboarding_page_enhanceUnavailable_error": "当前提供商不支持提示词增强",
   "onboarding_page_pullFailed_error": "拉取更改失败",
   "onboarding_page_attachmentPlacementFailed_error": "工作区已创建，但部分附件失败 — 重试或移除后再次点击创建",
+  "onboarding_page_firstMessageSendFailed_error": "工作区已创建，但消息发送失败 — 再次点击创建以重试",
+  "onboarding_page_firstMessageSendFailedDetail_error": "工作区已创建，但消息发送失败：{detail} — 再次点击创建以重试",
   "onboarding_page_blockingAttachments_toast": "部分附件仍在上传中或已失败 — 请先重试或移除",
   "onboarding_page_createFailed_error": "创建工作区失败",
   "onboarding_page_unexpected_error": "发生了意外错误",

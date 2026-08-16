@@ -2518,13 +2518,7 @@
   // the first-message send) failed: the workspace exists, the modal stays
   // open with failed pills, and the create button resumes this flow instead
   // of creating a second workspace.
-  let pendingFirstMessage = $state<{
-    workspaceId: string;
-    agentId?: string;
-    content: string;
-    imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }>;
-    contextReferences: any[];
-  } | null>(null);
+  let pendingFirstMessage = $state<HeldFirstMessage | null>(null);
 
   /**
    * Place all staged attachments into the created workspace (sourcePath-only,
@@ -2550,10 +2544,7 @@
     // Electron's structured clone rejects outright — passing it through
     // verbatim made every staged-attachment first send fail before reaching
     // the daemon (monorepo#2576).
-    const sendResult = await sendHeldFirstMessage(
-      $state.snapshot(pending) as HeldFirstMessage,
-      redemption.fileBlocks,
-    );
+    const sendResult = await sendHeldFirstMessage($state.snapshot(pending), redemption.fileBlocks);
     if (!sendResult.sent) {
       logger.error('First-message send failed after attachment placement', {
         error: sendResult.errorDetail,

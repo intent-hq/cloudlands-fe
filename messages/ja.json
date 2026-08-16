@@ -3382,6 +3382,8 @@
   "onboarding_page_enhanceUnavailable_error": "現在のプロバイダーではプロンプト強化は利用できません",
   "onboarding_page_pullFailed_error": "変更をプルできませんでした",
   "onboarding_page_attachmentPlacementFailed_error": "ワークスペースは作成されましたが、一部の添付に失敗しました — 再試行または削除してから、もう一度作成を押してください",
+  "onboarding_page_firstMessageSendFailed_error": "ワークスペースは作成されましたが、メッセージの送信に失敗しました — もう一度作成を押して再試行してください",
+  "onboarding_page_firstMessageSendFailedDetail_error": "ワークスペースは作成されましたが、メッセージの送信に失敗しました: {detail} — もう一度作成を押して再試行してください",
   "onboarding_page_blockingAttachments_toast": "一部の添付ファイルがまだアップロード中か失敗しています — 先に再試行または削除してください",
   "onboarding_page_createFailed_error": "ワークスペースを作成できませんでした",
   "onboarding_page_unexpected_error": "予期しないエラーが発生しました",

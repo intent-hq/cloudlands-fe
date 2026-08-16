@@ -929,7 +929,15 @@
         redemption.fileBlocks,
       );
       if (!sendResult.sent) {
-        throw new Error(sendResult.errorDetail || m.onboarding_page_createFailed_error());
+        // Framed like the compact initializer: the workspace already exists,
+        // Create resumes this flow — with the daemon's detail when available.
+        throw new Error(
+          sendResult.errorDetail
+            ? m.onboarding_page_firstMessageSendFailedDetail_error({
+                detail: sendResult.errorDetail,
+              })
+            : m.onboarding_page_firstMessageSendFailed_error(),
+        );
       }
       onboardingPendingSend = null;
       onboardingStagedItems = [];
@@ -1154,7 +1162,15 @@
         );
         if (!sendResult.sent) {
           onboardingCreationErrorCode = null;
-          throw new Error(sendResult.errorDetail || m.onboarding_page_createFailed_error());
+          // Framed like the compact initializer: the workspace already
+          // exists, submit resumes — with the daemon's detail when available.
+          throw new Error(
+            sendResult.errorDetail
+              ? m.onboarding_page_firstMessageSendFailedDetail_error({
+                  detail: sendResult.errorDetail,
+                })
+              : m.onboarding_page_firstMessageSendFailed_error(),
+          );
         }
         onboardingPendingSend = null;
         onboardingStagedItems = [];

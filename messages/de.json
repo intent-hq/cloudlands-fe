@@ -3382,6 +3382,8 @@
   "onboarding_page_enhanceUnavailable_error": "Prompt-Verbesserung ist mit dem aktuellen Anbieter nicht verfügbar",
   "onboarding_page_pullFailed_error": "Änderungen konnten nicht gepullt werden",
   "onboarding_page_attachmentPlacementFailed_error": "Der Workspace wurde erstellt, aber einige Anhänge sind fehlgeschlagen — erneut versuchen oder entfernen und dann erneut auf Erstellen klicken",
+  "onboarding_page_firstMessageSendFailed_error": "Der Workspace wurde erstellt, aber das Senden der Nachricht ist fehlgeschlagen — erneut auf Erstellen klicken",
+  "onboarding_page_firstMessageSendFailedDetail_error": "Der Workspace wurde erstellt, aber das Senden der Nachricht ist fehlgeschlagen: {detail} — erneut auf Erstellen klicken",
   "onboarding_page_blockingAttachments_toast": "Einige Anhänge werden noch hochgeladen oder sind fehlgeschlagen — zuerst erneut versuchen oder entfernen",
   "onboarding_page_createFailed_error": "Arbeitsbereich konnte nicht erstellt werden",
   "onboarding_page_unexpected_error": "Ein unerwarteter Fehler ist aufgetreten",

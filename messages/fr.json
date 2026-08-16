@@ -3382,6 +3382,8 @@
   "onboarding_page_enhanceUnavailable_error": "L'amélioration du prompt n'est pas disponible avec le fournisseur actuel",
   "onboarding_page_pullFailed_error": "Impossible de tirer les modifications",
   "onboarding_page_attachmentPlacementFailed_error": "L'espace de travail a été créé, mais certaines pièces jointes ont échoué — réessayez ou supprimez-les, puis cliquez à nouveau sur Créer",
+  "onboarding_page_firstMessageSendFailed_error": "L'espace de travail a été créé, mais l'envoi de votre message a échoué — appuyez à nouveau sur Créer pour réessayer",
+  "onboarding_page_firstMessageSendFailedDetail_error": "L'espace de travail a été créé, mais l'envoi de votre message a échoué : {detail} — appuyez à nouveau sur Créer pour réessayer",
   "onboarding_page_blockingAttachments_toast": "Certaines pièces jointes sont encore en cours d'envoi ou ont échoué — réessayez ou supprimez-les d'abord",
   "onboarding_page_createFailed_error": "Impossible de créer l'espace de travail",
   "onboarding_page_unexpected_error": "Une erreur inattendue s'est produite",
