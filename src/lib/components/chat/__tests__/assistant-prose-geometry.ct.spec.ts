@@ -53,7 +53,7 @@ for (const theme of ['light', 'dark'] as const) {
                 : element.querySelector('button > :nth-child(2), [data-tool-sentence]')
             ) as HTMLElement;
             return {
-              contentX: content.getBoundingClientRect().x,
+              contentX: content.getBoundingClientRect().x + window.scrollX,
               height: element.getBoundingClientRect().height,
               iconBoxSize: iconBox.getBoundingClientRect().width,
               iconSize: icon.getBoundingClientRect().width,
@@ -82,7 +82,10 @@ for (const theme of ['light', 'dark'] as const) {
           operationalContentXs.push(geometry.contentX);
         }
 
-        const groupX = (await groupSummary.boundingBox())!.x;
+        const groupX = await groupSummary.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          return box.x + window.scrollX;
+        });
         for (const contentX of operationalContentXs) expect(contentX).toBeCloseTo(groupX, 1);
 
         const summaryStyles = await baseline
@@ -156,14 +159,23 @@ for (const theme of ['light', 'dark'] as const) {
         expect(focusedState.focusIndicator).toContain('underline');
         for (const marker of await prose.all()) {
           const firstChild = marker.locator(':scope > *').first();
-          const box = await firstChild.boundingBox();
-          expect(box?.x).toBeCloseTo(groupX, 1);
+          const childX = await firstChild.evaluate((element) => {
+            const box = element.getBoundingClientRect();
+            return box.x + window.scrollX;
+          });
+          expect(childX).toBeCloseTo(groupX, 1);
         }
 
-        const laneBox = (await baseline.boundingBox())!;
-        const toolBox = (await baseline
+        const laneBox = await baseline.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          return { x: box.x + window.scrollX, width: box.width };
+        });
+        const toolBox = await baseline
           .locator('[data-testid="full-width-tool"] > *')
-          .boundingBox())!;
+          .evaluate((element) => {
+            const box = element.getBoundingClientRect();
+            return { x: box.x + window.scrollX, width: box.width };
+          });
         expect(toolBox.x).toBeCloseTo(laneBox.x, 1);
         expect(toolBox.x + toolBox.width).toBeCloseTo(laneBox.x + laneBox.width, 1);
 
