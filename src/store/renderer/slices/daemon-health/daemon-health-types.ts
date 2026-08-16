@@ -32,6 +32,10 @@ export interface SystemStatusWirePayload {
   cpuPercent?: number;
   /** Daemon process resident memory (RSS) in bytes. May be missing on older daemons. */
   memoryBytes?: number;
+  /** Available bytes on the volume holding the workspaces root. May be missing on older daemons. */
+  workspacesDiskAvailableBytes?: number;
+  /** Total bytes on the volume holding the workspaces root. May be missing on older daemons. */
+  workspacesDiskTotalBytes?: number;
   fingerprint?: string | null;
   protocolVersion: string;
   host: {
@@ -114,6 +118,10 @@ export interface DaemonHealthStats {
   cpuPercent?: number;
   /** Daemon process resident memory (RSS) in bytes. Optional for older daemons. */
   memoryBytes?: number;
+  /** Available bytes on the volume holding the workspaces root. Optional for older daemons. */
+  workspacesDiskAvailableBytes?: number;
+  /** Total bytes on the volume holding the workspaces root. Optional for older daemons. */
+  workspacesDiskTotalBytes?: number;
   os: string;
   arch: string;
   /** FE connection mode (sidecar UDS vs external WebSocket). Optional for backward compatibility. */

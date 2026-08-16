@@ -270,11 +270,12 @@ describe('DaemonStatusIndicator', () => {
       expect(formatCpu(250)).toBe('250.0%');
     });
 
-    it('formats memory bytes as human-readable MB/GB', async () => {
+    it('formats memory bytes as human-readable MB/GB/TB', async () => {
       const { formatMemory } = await import('./DaemonStatusIndicator.svelte');
       expect(formatMemory(52428800)).toBe('50.0 MB');
       expect(formatMemory(104857600)).toBe('100.0 MB');
       expect(formatMemory(1610612736)).toBe('1.50 GB');
+      expect(formatMemory(1099511627776)).toBe('1.00 TB');
       expect(formatMemory(0)).toBe('0.0 MB');
     });
 
@@ -335,6 +336,120 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.getByText('WSS clients')).toBeTruthy();
       expect(screen.queryByText('CPU')).toBeNull();
       expect(screen.queryByText('Memory')).toBeNull();
+    });
+  });
+
+  describe('workspace disk rendering', () => {
+    function withDisk(opts: {
+      health?: 'healthy' | 'degraded' | 'down';
+      availableBytes?: number;
+      totalBytes?: number;
+    }) {
+      const { health = 'healthy', availableBytes, totalBytes } = opts;
+      return {
+        daemonHealth: {
+          health,
+          stats: {
+            clients: 1,
+            agents: 0,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+            ...(availableBytes !== undefined
+              ? { workspacesDiskAvailableBytes: availableBytes }
+              : {}),
+            ...(totalBytes !== undefined ? { workspacesDiskTotalBytes: totalBytes } : {}),
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
+      };
+    }
+
+    const dotOf = (trigger: HTMLElement) => trigger.querySelector('.rounded-full')!;
+    const GB = 1024 ** 3;
+    const TB = 1024 ** 4;
+
+    it('renders the row as "free of total" when the daemon reports both fields', async () => {
+      // 412.5 GB free of 1 TB — well above the 10% threshold.
+      mockStoreState = withDisk({ availableBytes: 412.5 * GB, totalBytes: TB });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      expect(screen.getByText('Workspace disk')).toBeTruthy();
+      expect(screen.getByText('412.50 GB free of 1.00 TB')).toBeTruthy();
+      // No warning at >= 10% free.
+      expect(screen.queryByLabelText('Less than 10% of the workspaces volume is free')).toBeNull();
+    });
+
+    it('renders only the free part when the daemon omits the total', async () => {
+      mockStoreState = withDisk({ availableBytes: 100 * GB });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      expect(screen.getByText('Workspace disk')).toBeTruthy();
+      expect(screen.getByText('100.00 GB free')).toBeTruthy();
+      // No low-disk warning without a total to compare against.
+      expect(screen.queryByLabelText('Less than 10% of the workspaces volume is free')).toBeNull();
+    });
+
+    it('hides the row when an older daemon omits the fields', async () => {
+      mockStoreState = withDisk({});
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      expect(screen.getByText('WSS clients')).toBeTruthy();
+      expect(screen.queryByText('Workspace disk')).toBeNull();
+    });
+
+    it('shows the warning icon and turns the dot yellow when free space is below 10%', async () => {
+      // 50 GB free of 1 TB = ~4.9% free.
+      mockStoreState = withDisk({ availableBytes: 50 * GB, totalBytes: TB });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      expect(dotOf(trigger).classList.contains('bg-yellow-500')).toBe(true);
+      expect(dotOf(trigger).classList.contains('bg-green-500')).toBe(false);
+
+      await fireEvent.click(trigger);
+      expect(screen.getByText('50.00 GB free of 1.00 TB')).toBeTruthy();
+      const icon = screen.getByLabelText('Less than 10% of the workspaces volume is free');
+      // role="img" so the aria-label on the plain span is reliably exposed.
+      expect(icon.getAttribute('role')).toBe('img');
+      // In-menu status text renders yellow, not green.
+      const statusValue = screen.getByText('Healthy');
+      expect(statusValue.classList.contains('text-yellow-500')).toBe(true);
+      expect(statusValue.classList.contains('text-green-500')).toBe(false);
+    });
+
+    it('keeps the green dot at exactly 10% free (threshold is strictly below)', async () => {
+      mockStoreState = withDisk({ availableBytes: 0.1 * TB, totalBytes: TB });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      expect(dotOf(trigger).classList.contains('bg-green-500')).toBe(true);
+    });
+
+    it('keeps the red dot and down label when the daemon is down despite low disk', async () => {
+      mockStoreState = withDisk({ health: 'down', availableBytes: 50 * GB, totalBytes: TB });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      const trigger = screen.getByRole('button', { name: 'intentd: not running' });
+      expect(dotOf(trigger).classList.contains('bg-red-500')).toBe(true);
+      expect(dotOf(trigger).classList.contains('bg-yellow-500')).toBe(false);
     });
   });
 
