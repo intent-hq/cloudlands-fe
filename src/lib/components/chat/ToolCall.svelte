@@ -19,7 +19,9 @@
     COMPACT_TOOL_SENTENCE_CLASS,
     COMPACT_TOOL_TRAILING_CLASS,
     OPERATIONAL_ICON_CLASS,
+    OPERATIONAL_PRIMARY_CLASS,
     OPERATIONAL_ROW_CONTAINER_CLASS,
+    OPERATIONAL_SECONDARY_CLASS,
   } from './operational-disclosure-row';
   import { buildToolDisplayModel } from './tool-display-model';
   import ToolStatusIcon from './ToolStatusIcon.svelte';
@@ -206,7 +208,7 @@
                       role="button"
                       tabindex="0"
                       data-testid="tool-call-file-link"
-                      class="min-w-0 cursor-pointer truncate whitespace-pre font-normal text-muted-foreground/70 underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+                      class="min-w-0 cursor-pointer truncate whitespace-pre font-normal {OPERATIONAL_SECONDARY_CLASS} underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
                       data-tool-secondary
                       aria-label={displayModel.accessibleSentence}
                       onclick={(e) => {
@@ -224,15 +226,15 @@
                   {:else}
                     <span
                       data-testid="tool-call-file-name"
-                      class="min-w-0 truncate whitespace-pre font-normal text-muted-foreground/70"
+                      class="min-w-0 truncate whitespace-pre font-normal {OPERATIONAL_SECONDARY_CLASS}"
                       data-tool-secondary>{segment.text}</span
                     >
                   {/if}
                 {:else}
                   <span
-                    class="shrink-0 whitespace-pre {segment.kind === 'primary'
-                      ? 'font-normal text-muted-foreground'
-                      : 'font-normal text-muted-foreground/70'}"
+                    class="shrink-0 whitespace-pre font-normal {segment.kind === 'primary'
+                      ? OPERATIONAL_PRIMARY_CLASS
+                      : OPERATIONAL_SECONDARY_CLASS}"
                     data-tool-primary={segment.kind === 'primary' ? '' : undefined}
                     data-tool-secondary={segment.kind === 'secondary' ? '' : undefined}
                     >{segment.text}</span
@@ -249,8 +251,8 @@
               {#each displayModel.sentenceSegments as segment}
                 <span
                   class="font-normal {segment.kind === 'primary'
-                    ? 'text-muted-foreground'
-                    : 'text-muted-foreground/70'}"
+                    ? OPERATIONAL_PRIMARY_CLASS
+                    : OPERATIONAL_SECONDARY_CLASS}"
                   data-tool-primary={segment.kind === 'primary' ? '' : undefined}
                   data-tool-secondary={segment.kind !== 'primary' ? '' : undefined}
                   >{segment.text}</span
@@ -291,7 +293,7 @@
                   <button
                     type="button"
                     data-testid="tool-call-file-link"
-                    class="min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal text-muted-foreground/70 underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+                    class="min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal {OPERATIONAL_SECONDARY_CLASS} underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
                     data-tool-secondary
                     aria-label={displayModel.accessibleSentence}
                     onclick={openFile}>{segment.text}</button
@@ -299,15 +301,15 @@
                 {:else}
                   <span
                     data-testid="tool-call-file-name"
-                    class="min-w-0 truncate whitespace-pre font-normal text-muted-foreground/70"
+                    class="min-w-0 truncate whitespace-pre font-normal {OPERATIONAL_SECONDARY_CLASS}"
                     data-tool-secondary>{segment.text}</span
                   >
                 {/if}
               {:else}
                 <span
                   class="shrink-0 whitespace-pre font-normal {segment.kind === 'primary'
-                    ? 'text-muted-foreground'
-                    : 'text-muted-foreground/70'}"
+                    ? OPERATIONAL_PRIMARY_CLASS
+                    : OPERATIONAL_SECONDARY_CLASS}"
                   data-tool-primary={segment.kind === 'primary' ? '' : undefined}
                   data-tool-secondary={segment.kind === 'secondary' ? '' : undefined}
                   >{segment.text}</span
@@ -324,8 +326,8 @@
             title={displayModel.accessibleSentence}
             >{#each displayModel.sentenceSegments as segment}<span
                 class="font-normal {segment.kind === 'primary'
-                  ? 'text-muted-foreground'
-                  : 'text-muted-foreground/70'}"
+                  ? OPERATIONAL_PRIMARY_CLASS
+                  : OPERATIONAL_SECONDARY_CLASS}"
                 data-tool-primary={segment.kind === 'primary' ? '' : undefined}
                 data-tool-secondary={segment.kind !== 'primary' ? '' : undefined}
                 >{segment.text}</span

@@ -18,7 +18,9 @@
     COMPACT_TOOL_ROW_CLASS,
     COMPACT_TOOL_SENTENCE_CLASS,
     OPERATIONAL_ICON_CLASS,
+    OPERATIONAL_PRIMARY_CLASS,
     OPERATIONAL_ROW_CONTAINER_CLASS,
+    OPERATIONAL_SECONDARY_CLASS,
   } from './operational-disclosure-row';
   import { buildToolDisplayModel } from './tool-display-model';
   import ToolStatusIcon from './ToolStatusIcon.svelte';
@@ -252,8 +254,8 @@
           {#each displayModel.sentenceSegments as segment}
             <span
               class="font-normal {segment.kind === 'primary'
-                ? 'text-muted-foreground'
-                : 'text-muted-foreground/70'}"
+                ? OPERATIONAL_PRIMARY_CLASS
+                : OPERATIONAL_SECONDARY_CLASS}"
               data-tool-primary={segment.kind === 'primary' ? '' : undefined}
               data-tool-secondary={segment.kind !== 'primary' ? '' : undefined}>{segment.text}</span
             >
@@ -275,8 +277,8 @@
         title={displayModel.accessibleSentence}
         >{#each displayModel.sentenceSegments as segment}<span
             class="font-normal {segment.kind === 'primary'
-              ? 'text-muted-foreground'
-              : 'text-muted-foreground/70'}"
+              ? OPERATIONAL_PRIMARY_CLASS
+              : OPERATIONAL_SECONDARY_CLASS}"
             data-tool-primary={segment.kind === 'primary' ? '' : undefined}
             data-tool-secondary={segment.kind !== 'primary' ? '' : undefined}>{segment.text}</span
           >{/each}</span

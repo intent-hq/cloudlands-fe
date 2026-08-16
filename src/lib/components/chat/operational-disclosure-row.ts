@@ -19,7 +19,7 @@ export const OPERATIONAL_SUMMARY_CLASS = 'min-w-0 shrink truncate whitespace-now
 
 export const OPERATIONAL_EXPANDED_CONTENT_CLASS = 'pt-1.5';
 
-export const OPERATIONAL_PRIMARY_CLASS = 'text-muted-foreground';
+export const OPERATIONAL_PRIMARY_CLASS = 'text-foreground';
 
 export const OPERATIONAL_SECONDARY_CLASS =
   'text-muted-foreground/70 transition-colors group-hover:text-muted-foreground group-focus-within:text-muted-foreground';
@@ -67,8 +67,7 @@ export const COMPACT_TOOL_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} 
 
 export const COMPACT_TOOL_ICON_BOX_CLASS = `a11y-ignore flex size-[var(--operational-leading-slot-size)] min-w-[var(--operational-leading-slot-size)] items-center justify-center ${OPERATIONAL_SECONDARY_CLASS}`;
 
-export const COMPACT_TOOL_SENTENCE_CLASS =
-  'block min-w-0 max-w-full truncate whitespace-nowrap border-0 bg-transparent p-0 text-left font-normal text-muted-foreground focus-visible:outline-none focus-visible:text-foreground';
+export const COMPACT_TOOL_SENTENCE_CLASS = `block min-w-0 max-w-full truncate whitespace-nowrap border-0 bg-transparent p-0 text-left font-normal ${OPERATIONAL_PRIMARY_CLASS} focus-visible:outline-none focus-visible:text-foreground`;
 
 export const COMPACT_TOOL_TRAILING_CLASS =
   'shrink-0 whitespace-nowrap text-ui text-subtle focus-visible:outline-none focus-visible:text-foreground';

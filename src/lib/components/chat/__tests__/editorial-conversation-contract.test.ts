@@ -166,8 +166,10 @@ describe('editorial conversation presentation contract', () => {
     const responseGroup = source('src/lib/components/chat/ResponseGroup.svelte');
     const operationalRow = source('src/lib/components/chat/operational-disclosure-row.ts');
 
-    expect(staticContent).toContain('class="flex flex-col gap-1.5"');
-    expect(streamingContent).toContain('class="flex flex-col gap-1.5 relative"');
+    expect(staticContent).toContain('<div class="flex flex-col"');
+    expect(staticContent).toContain('getOperationalClusterSpacingClass(groupedBlocks, blockIndex)');
+    expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
+    expect(streamingContent).toContain('data-operational-cluster-row=');
     expect(streamingContent).not.toContain('my-1.25');
     expect(streamingContent).not.toContain('margin-top: -0.5rem');
     expect(responseGroup).toContain('<div class="flex flex-col gap-1.5">');
@@ -278,11 +280,11 @@ describe('editorial conversation presentation contract', () => {
     const agentTab = source('src/features/layout/tab-types/AgentTabType.svelte');
 
     expect(operationalRow).toContain(
-      'relative flex min-h-5 w-full min-w-0 max-w-full items-center gap-1.5 overflow-hidden py-0',
+      'relative flex min-h-9 w-full min-w-0 max-w-full items-center gap-[var(--operational-leading-gap)] overflow-hidden px-[var(--operational-row-inline-padding)] py-2',
     );
     expect(operationalRow).toContain('type-body font-family-child font-normal');
-    expect(operationalRow).toContain("OPERATIONAL_PRIMARY_CLASS = 'text-muted-foreground'");
-    expect(operationalRow).toContain("OPERATIONAL_SECONDARY_CLASS =\n  'text-ghost");
+    expect(operationalRow).toContain("OPERATIONAL_PRIMARY_CLASS = 'text-foreground'");
+    expect(operationalRow).toContain("OPERATIONAL_SECONDARY_CLASS =\n  'text-muted-foreground/70");
     expect(operationalRow).toContain('group-hover:text-muted-foreground');
     for (const component of [toolCall, reasoning, contextEngine]) {
       expect(component).toContain('OPERATIONAL_ROW_CONTAINER_CLASS');

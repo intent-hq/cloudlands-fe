@@ -80,6 +80,7 @@ import {
   OPERATIONAL_EXPANDED_CONTENT_CLASS,
   OPERATIONAL_ICON_BOX_CLASS,
   OPERATIONAL_ICON_CLASS,
+  OPERATIONAL_PRIMARY_CLASS,
   OPERATIONAL_ROW_LINE_CLASS,
   OPERATIONAL_SECONDARY_CLASS,
   OPERATIONAL_ROW_TONE_CLASS,
@@ -281,6 +282,13 @@ describe('shared operational disclosure-row contract', () => {
     const disclosure = screen.getByTestId('tool-call-disclosure');
     const summary = disclosure.querySelector('[data-tool-sentence]')!;
     expectClasses(summary, COMPACT_TOOL_SENTENCE_CLASS);
+    expect(disclosure.querySelectorAll('[data-tool-primary]').length).toBeGreaterThan(0);
+    for (const primary of disclosure.querySelectorAll('[data-tool-primary]')) {
+      expectClasses(primary, OPERATIONAL_PRIMARY_CLASS);
+    }
+    for (const secondary of disclosure.querySelectorAll('[data-tool-secondary]')) {
+      expectClasses(secondary, OPERATIONAL_SECONDARY_CLASS);
+    }
     expectClasses(disclosure.querySelector('[data-tool-icon]')!, OPERATIONAL_SECONDARY_CLASS);
     expect(disclosure.tagName).toBe('BUTTON');
     cleanup();
@@ -291,6 +299,13 @@ describe('shared operational disclosure-row contract', () => {
     const contextDisclosure = screen.getByTestId('context-engine-disclosure');
     const query = contextDisclosure.querySelector('[data-tool-sentence]')!;
     expectClasses(query, COMPACT_TOOL_SENTENCE_CLASS);
+    expect(contextDisclosure.querySelectorAll('[data-tool-primary]').length).toBeGreaterThan(0);
+    for (const primary of contextDisclosure.querySelectorAll('[data-tool-primary]')) {
+      expectClasses(primary, OPERATIONAL_PRIMARY_CLASS);
+    }
+    for (const secondary of contextDisclosure.querySelectorAll('[data-tool-secondary]')) {
+      expectClasses(secondary, OPERATIONAL_SECONDARY_CLASS);
+    }
     expectClasses(
       contextDisclosure.querySelector('[data-tool-icon]')!,
       OPERATIONAL_SECONDARY_CLASS,
