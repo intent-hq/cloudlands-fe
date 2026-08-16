@@ -1609,7 +1609,7 @@
             >
               <AgentAvatarWithState
                 agentId={activeTab.agentId}
-                size={20}
+                variant="standard"
                 state={activeAgentAvatarState}
                 specialist={getAgentSpecialistType(activeTab) as
                   import('$lib/constants/specialists').BuiltinSpecialistId | null}

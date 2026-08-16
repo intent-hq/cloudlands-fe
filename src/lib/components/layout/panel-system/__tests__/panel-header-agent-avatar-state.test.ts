@@ -166,12 +166,14 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('panel header agent avatar state', () => {
-  it('reacts idle → running → settled to dispatches without remounting', async () => {
+  it('uses the named standard surface and reacts without remounting', async () => {
     const { container } = render(PanelTabBar, {
       props: { tabs, activeTabId: 'tab-a', panelId: 'panel-1', workspaceId: 'workspace-1' },
     });
     const avatar = stateAvatar(container);
     expect(avatar.dataset.state).toBe('idle');
+    expect(avatar.dataset.avatarVariant).toBe('standard');
+    expect(avatar.hasAttribute('data-agent-avatar-surface')).toBe(true);
 
     appStore.dispatch({ type: 'test/responding', payload: ['agent-a', true] });
     await waitFor(() => expect(avatar.dataset.state).toBe('running'));
@@ -179,6 +181,7 @@ describe('panel header agent avatar state', () => {
     appStore.dispatch({ type: 'test/responding', payload: ['agent-a', false] });
     appStore.dispatch({ type: 'test/session', payload: ['agent-a', session('agent-a')] });
     await waitFor(() => expect(avatar.dataset.state).toBe('idle'));
+    expect(stateAvatar(container)).toBe(avatar);
   });
 
   it('switches the reactive key and preserves wait, failure, permission, and attention precedence', async () => {
@@ -233,6 +236,8 @@ describe('panel header agent avatar state', () => {
       expect(slot.className).toContain('size-5');
       expect(slot.className).toContain('items-center');
       expect(slot.className).toContain('justify-center');
+      expect(avatar.dataset.avatarVariant).toBe('standard');
+      expect(avatar.hasAttribute('data-agent-avatar-surface')).toBe(true);
       expect(avatar.style.width).toBe('20px');
       expect(avatar.style.height).toBe('20px');
       expect(slot.parentElement?.className).toContain('items-center');
