@@ -229,13 +229,19 @@ test('keeps sidebar card paint and visible-surface label alignment exact', async
         ).toBeLessThanOrEqual(0.5);
       }
     }
-    if (scenario.count > 6) {
-      await expect(page.locator('[data-sidebar-agent-overflow]')).toContainText(
-        `+${scenario.count - 6}`,
-      );
-      await expect(page.locator('[data-sidebar-context-overflow]')).toContainText(
-        `+${scenario.count - 6}`,
-      );
+    for (const [visibleSelector, overflowSelector] of [
+      ['[data-sidebar-agent]', '[data-sidebar-agent-overflow]'],
+      ['[data-sidebar-context]', '[data-sidebar-context-overflow]'],
+    ] as const) {
+      const visibleCount = await page.locator(visibleSelector).count();
+      const expectedOverflow = scenario.count - visibleCount;
+      const overflow = page.locator(overflowSelector);
+      if (expectedOverflow > 0) {
+        await expect(overflow).toBeVisible();
+        await expect(overflow).toContainText(`+${expectedOverflow}`);
+      } else {
+        await expect(overflow).toHaveCount(0);
+      }
     }
 
     await page.locator('[data-sidebar-launcher="agents"] .launcher-tile-action').click();
