@@ -86,6 +86,7 @@
     deriveAgentLauncherItems,
     deriveNoteLauncherItems,
     getAgentLauncherPreview,
+    getLauncherPreviewLimit,
     getNoteLauncherPreview,
   } from './utils/sidebar-launcher-preview';
   import {
@@ -141,6 +142,7 @@
   const LAUNCHER_TARGET_SIZE = 36;
   const LAUNCHER_VISIBLE_SIZE = 20;
   const LAUNCHER_STEP_SIZE = 16;
+  let launcherIconLimit = $state(LAUNCHER_ICON_LIMIT);
   const LAUNCHER_ICON_STACK_CLASS =
     'isolate grid h-9 w-full min-w-0 grid-flow-col items-start overflow-visible text-muted-foreground';
   const LAUNCHER_ICON_BUTTON_CLASS =
@@ -167,7 +169,7 @@
   const launcherNoteState = $derived(
     deriveNoteLauncherItems(
       $notes,
-      LAUNCHER_ICON_LIMIT,
+      launcherIconLimit,
       (note, allNotes) => !isChildNote(note, allNotes),
     ),
   );
@@ -184,7 +186,7 @@
   const launcherAgentState = $derived.by(() =>
     deriveAgentLauncherItems(
       $allWorkspaceAgents,
-      LAUNCHER_ICON_LIMIT,
+      launcherIconLimit,
       (agent) => selectAgentIsRunning.select(appStore.state, agent.id),
       (agent, isRunning) =>
         getAgentLauncherPreview(
@@ -230,11 +232,11 @@
       (tabId === 'context' && launcherNoteOverflowCount > 0);
     if (hasOverflow) {
       return itemCount > 2
-        ? `repeat(${itemCount - 2}, minmax(0, ${LAUNCHER_STEP_SIZE}px)) ${LAUNCHER_TARGET_SIZE}px minmax(${LAUNCHER_TARGET_SIZE}px, max-content)`
+        ? `repeat(${itemCount - 2}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_TARGET_SIZE}px minmax(${LAUNCHER_TARGET_SIZE}px, max-content)`
         : `${LAUNCHER_TARGET_SIZE}px minmax(${LAUNCHER_TARGET_SIZE}px, max-content)`;
     }
     return itemCount > 1
-      ? `repeat(${itemCount - 1}, minmax(0, ${LAUNCHER_STEP_SIZE}px)) ${LAUNCHER_VISIBLE_SIZE}px`
+      ? `repeat(${itemCount - 1}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_VISIBLE_SIZE}px`
       : `${LAUNCHER_VISIBLE_SIZE}px`;
   }
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
@@ -562,14 +564,39 @@
     expandedOverlayBottom = nextBottom;
   }
 
+  function updateLauncherIconLimit() {
+    const stack = sidebarElement?.querySelector<HTMLElement>('[data-sidebar-launcher-icons]');
+    if (!stack || stack.clientWidth <= 0) return;
+    const overflowWidth = Math.max(
+      LAUNCHER_TARGET_SIZE,
+      ...[...stack.querySelectorAll<HTMLElement>('.launcher-overflow-button')].map(
+        (button) => button.scrollWidth,
+      ),
+    );
+    launcherIconLimit = getLauncherPreviewLimit(
+      stack.clientWidth,
+      overflowWidth,
+      LAUNCHER_ICON_LIMIT,
+      LAUNCHER_TARGET_SIZE,
+      LAUNCHER_STEP_SIZE,
+    );
+  }
+
   onMount(() => {
     updateExpandedOverlayBounds();
-    const frame = requestAnimationFrame(updateExpandedOverlayBounds);
+    updateLauncherIconLimit();
+    const frame = requestAnimationFrame(() => {
+      updateExpandedOverlayBounds();
+      updateLauncherIconLimit();
+    });
     if (typeof ResizeObserver === 'undefined' || !sidebarElement) {
       return () => cancelAnimationFrame(frame);
     }
 
-    const observer = new ResizeObserver(updateExpandedOverlayBounds);
+    const observer = new ResizeObserver(() => {
+      updateExpandedOverlayBounds();
+      updateLauncherIconLimit();
+    });
     observer.observe(sidebarElement);
     const titleRegion = sidebarElement.querySelector<HTMLElement>('[data-workspace-title-region]');
     if (titleRegion) observer.observe(titleRegion);

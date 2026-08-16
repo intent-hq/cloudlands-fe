@@ -19,6 +19,19 @@ export interface NoteLauncherState {
   overflowCount: number;
 }
 
+export function getLauncherPreviewLimit(
+  availableWidth: number,
+  overflowWidth: number,
+  maxLimit: number,
+  targetSize: number,
+  stepSize: number,
+): number {
+  if (availableWidth <= 0) return maxLimit;
+  const fixedWidth = targetSize + Math.max(targetSize, overflowWidth);
+  const fittingLimit = Math.floor((availableWidth - fixedWidth) / stepSize) + 1;
+  return Math.max(1, Math.min(maxLimit, fittingLimit));
+}
+
 export function deriveAgentLauncherItems(
   agents: AgentSession[],
   limit: number,

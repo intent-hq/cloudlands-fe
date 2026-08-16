@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentSession, Note } from '$shared/types';
-import { deriveAgentLauncherItems, deriveNoteLauncherItems } from './sidebar-launcher-preview';
+import {
+  deriveAgentLauncherItems,
+  deriveNoteLauncherItems,
+  getLauncherPreviewLimit,
+} from './sidebar-launcher-preview';
 
 function agent(id: string, overrides: Partial<AgentSession> = {}): AgentSession {
   return {
@@ -15,6 +19,16 @@ function agent(id: string, overrides: Partial<AgentSession> = {}): AgentSession 
 }
 
 describe('sidebar launcher primary ordering', () => {
+  it.each([
+    { width: 82, overflow: 36, expected: 1 },
+    { width: 92, overflow: 36, expected: 2 },
+    { width: 132, overflow: 36, expected: 4 },
+    { width: 152, overflow: 36, expected: 6 },
+    { width: 132, overflow: 52, expected: 3 },
+  ])('fits $expected exact-step previews in a $width px stack', ({ width, overflow, expected }) => {
+    expect(getLauncherPreviewLimit(width, overflow, 6, 36, 16)).toBe(expected);
+  });
+
   it('keeps the marked initial coordinator first even when another agent is running', () => {
     const state = deriveAgentLauncherItems(
       [agent('worker'), agent('coordinator', { isInitialAgent: true })],

@@ -340,6 +340,8 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
       elements.slice(0, 2).map((card) => {
         const cardRect = card.getBoundingClientRect();
         const scale = cardRect.width / (card as HTMLElement).offsetWidth;
+        const stack = card.querySelector<HTMLElement>('[data-sidebar-launcher-icons]')!;
+        const stackRect = stack.getBoundingClientRect();
         const inset = Number((card as HTMLElement).dataset.launcherInlineInset ?? 0) * scale;
         const labelLeft =
           card.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!.getBoundingClientRect()
@@ -369,6 +371,7 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
             overflowTextRight: overflowTextRect ? itemRect.right - overflowTextRect.right : 0,
             scrollWidth: item.scrollWidth,
             clientWidth: item.clientWidth,
+            availableWidth: stackRect.width,
           };
         });
       }),
@@ -378,11 +381,38 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
     ).toBe(true);
     for (const [index, bounds] of iconBounds.entries()) {
       const total = index === 0 ? geometry.agentCount : geometry.noteCount;
-      const expectedCount = Math.min(total, 6) + (total > 6 ? 1 : 0);
+      if (total === 0) {
+        expect(bounds).toHaveLength(0);
+        continue;
+      }
+      const renderedOverflow = bounds.find(({ overflow }) => overflow);
+      const reservedOverflowWidth = renderedOverflow
+        ? renderedOverflow.width / renderedOverflow.scale
+        : 36;
+      const expectedLimit = Math.max(
+        1,
+        Math.min(
+          6,
+          Math.floor(
+            (bounds[0].availableWidth / bounds[0].scale - 36 - reservedOverflowWidth) / 16,
+          ) + 1,
+        ),
+      );
+      const expectedVisible = Math.min(total, expectedLimit);
+      const expectedOverflow = total - expectedVisible;
+      const expectedCount = expectedVisible + (expectedOverflow > 0 ? 1 : 0);
       expect(bounds).toHaveLength(expectedCount);
-      if (bounds.length === 0) continue;
       expect(Math.abs(bounds[0].visibleLeft - bounds[0].labelLeft)).toBeLessThanOrEqual(0.5);
-      expect(bounds.every(({ width, scale }) => Math.abs(width - 36 * scale) <= 0.5)).toBe(true);
+      expect(
+        bounds
+          .filter(({ overflow }) => !overflow)
+          .every(({ width, scale }) => Math.abs(width - 36 * scale) <= 0.5),
+      ).toBe(true);
+      expect(
+        bounds
+          .filter(({ overflow }) => overflow)
+          .every(({ width, scale }) => width >= 36 * scale - 0.5),
+      ).toBe(true);
       expect(
         bounds
           .filter(({ overflow }) => !overflow)
@@ -395,21 +425,17 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
         .slice(1)
         .map((item, itemIndex) => item.visibleLeft - visibleBounds[itemIndex].visibleLeft);
       if (visibleSteps.length > 1) expectEqual(visibleSteps, 0.75);
-      if (total <= 6) {
-        expect(visibleSteps.every((step) => Math.abs(step - 16 * bounds[0].scale) <= 0.5)).toBe(
-          true,
-        );
-        expect(
-          visibleSteps.every(
-            (step) => Math.abs(20 * bounds[0].scale - step - 4 * bounds[0].scale) <= 0.5,
-          ),
-        ).toBe(true);
-      }
-      if (total > 6) {
+      expect(visibleSteps.every((step) => Math.abs(step - 16 * bounds[0].scale) <= 0.5)).toBe(true);
+      expect(
+        visibleSteps.every(
+          (step) => Math.abs(20 * bounds[0].scale - step - 4 * bounds[0].scale) <= 0.5,
+        ),
+      ).toBe(true);
+      if (expectedOverflow > 0) {
         const overflow = bounds.at(-1)!;
         expect(overflow.overflow).toBe(true);
         expect(steps.at(-1)).toBeCloseTo(36 * bounds[0].scale, 1);
-        expect(overflow.overflowText).toBe(`+${total - 6}`);
+        expect(overflow.overflowText).toBe(`+${expectedOverflow}`);
         expect(overflow.overflowTextLeft).toBeGreaterThanOrEqual(0);
         expect(overflow.overflowTextRight).toBeGreaterThanOrEqual(0);
         expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
@@ -482,7 +508,7 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
             };
           }),
         );
-      expect(avatarGeometry).toHaveLength(Math.min(geometry.agentCount, 6));
+      expect(avatarGeometry).toHaveLength(iconBounds[0].filter(({ overflow }) => !overflow).length);
       expect(
         avatarGeometry.every(
           ({ variant, surface, svg, clearSpace, art }) =>
@@ -567,8 +593,8 @@ test('left-packed launchers preserve hover, focus, click, and open-panel markers
 
   const agents = page.locator('[data-sidebar-agent]');
   const notes = page.locator('[data-sidebar-context]');
-  await expect(agents).toHaveCount(6);
-  await expect(notes).toHaveCount(6);
+  await expect(agents).toHaveCount(3);
+  await expect(notes).toHaveCount(3);
   await expect(agents.nth(0).locator('[data-panel-open-marker]')).toHaveAttribute(
     'data-panel-open-state',
     'active',
