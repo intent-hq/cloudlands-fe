@@ -6,9 +6,9 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { m } from '$shared/paraglide/messages.js';
   import {
+    CHAT_OPERATIONAL_ICON_CLASS,
+    CHAT_OPERATIONAL_LEADING_CLASS,
     COMPACT_TOOL_TRAILING_CLASS,
-    OPERATIONAL_ICON_BOX_CLASS,
-    OPERATIONAL_ICON_CLASS,
     OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
     OPERATIONAL_ROW_TONE_CLASS,
   } from './operational-disclosure-row';
@@ -75,8 +75,8 @@
           onclick={() => handleClick(prompt)}
           onkeydown={(e) => handleKeyDown(e, prompt)}
         >
-          <span class={OPERATIONAL_ICON_BOX_CLASS} data-suggested-prompt-icon>
-            <Fa icon={faArrowRight} size={18} class={OPERATIONAL_ICON_CLASS} />
+          <span class={CHAT_OPERATIONAL_LEADING_CLASS} data-suggested-prompt-icon>
+            <Fa icon={faArrowRight} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
           </span>
           <span class="min-w-0 flex-1 text-pretty" data-suggested-prompt-label>{prompt}</span>
           {#if onEdit}

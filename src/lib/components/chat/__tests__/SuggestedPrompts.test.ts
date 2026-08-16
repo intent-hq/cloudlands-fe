@@ -7,8 +7,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import SuggestedPrompts from '../SuggestedPrompts.svelte';
 import {
+  CHAT_OPERATIONAL_LEADING_CLASS,
   COMPACT_TOOL_TRAILING_CLASS,
-  OPERATIONAL_ICON_BOX_CLASS,
   OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
   OPERATIONAL_ROW_TONE_CLASS,
 } from '../operational-disclosure-row';
@@ -73,11 +73,14 @@ describe('SuggestedPrompts', () => {
     expect(prompt.className).toContain('px-1.5');
     expect(prompt.className).toContain('hover:bg-muted/30');
     const icon = prompt.querySelector('[data-suggested-prompt-icon]')!;
-    for (const className of OPERATIONAL_ICON_BOX_CLASS.split(' ')) {
+    for (const className of CHAT_OPERATIONAL_LEADING_CLASS.split(' ')) {
       expect(icon.classList.contains(className)).toBe(true);
     }
     expect(icon.className).not.toContain('mt-');
     expect(icon.className).not.toContain('/60');
+    const source = readFileSync(resolve('src/lib/components/chat/SuggestedPrompts.svelte'), 'utf8');
+    expect(source).toContain('size={16} class={CHAT_OPERATIONAL_ICON_CLASS}');
+    expect(source).not.toContain('size={18} class={CHAT_OPERATIONAL_ICON_CLASS}');
   });
 
   it('removes row gaps and tightens padding in short chat panels', () => {

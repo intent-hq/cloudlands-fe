@@ -69,6 +69,6 @@ for (const scenario of scenarios) {
     expect(promptGlyphBox?.width).toBeCloseTo(toolGlyphBox!.width, 1);
     expect(promptGlyphBox?.height).toBeCloseTo(toolGlyphBox!.height, 1);
     expect(promptSlotBox?.width).toBeCloseTo(20 * scenario.zoom, 1);
-    expect(promptGlyphBox?.width).toBeCloseTo(18 * scenario.zoom, 1);
+    expect(promptGlyphBox?.width).toBeCloseTo(16 * scenario.zoom, 1);
   });
 }
