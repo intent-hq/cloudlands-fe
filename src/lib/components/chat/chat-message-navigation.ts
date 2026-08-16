@@ -42,12 +42,3 @@ export function getUserMessageNavigationItems(
   }
   return items;
 }
-
-export function filterUserMessageNavigationItems(
-  items: readonly UserMessageNavigationItem[],
-  query: string,
-): UserMessageNavigationItem[] {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  if (!normalizedQuery) return [...items];
-  return items.filter((item) => item.text.toLocaleLowerCase().includes(normalizedQuery));
-}

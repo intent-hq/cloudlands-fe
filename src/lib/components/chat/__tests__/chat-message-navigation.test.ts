@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import {
-  filterUserMessageNavigationItems,
   getPlainTextMessagePreview,
   getUserMessageNavigationItems,
 } from '../chat-message-navigation';
@@ -53,20 +52,5 @@ describe('chat user-message navigation', () => {
       message('user', 'user', 'Keep me'),
     ]);
     expect(items).toEqual([{ id: 'user', text: 'Keep me' }]);
-  });
-
-  it('filters case-insensitively without changing stable order', () => {
-    const items = [
-      { id: '1', text: 'Alpha release' },
-      { id: '2', text: 'Beta ALPHA notes' },
-      { id: '3', text: 'Gamma' },
-    ];
-    expect(filterUserMessageNavigationItems(items, ' alpha ')).toEqual(items.slice(0, 2));
-    expect(filterUserMessageNavigationItems(items, '')).toEqual(items);
-  });
-
-  it('returns an empty state for no matching user messages', () => {
-    expect(filterUserMessageNavigationItems([], 'anything')).toEqual([]);
-    expect(filterUserMessageNavigationItems([{ id: '1', text: 'Alpha' }], 'beta')).toEqual([]);
   });
 });

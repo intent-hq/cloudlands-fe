@@ -14,8 +14,10 @@
   let selectedId = $state('');
   let isAtBottom = $state(false);
   const messages = [
-    { id: 'first', text: 'Review the initial implementation plan' },
-    { id: 'virtual-target', text: 'Find the virtualized restored history message' },
+    { id: 'first', text: 'Alpha review the initial implementation plan' },
+    { id: 'beta', text: 'Beta check the current navigation state' },
+    { id: 'virtual-target', text: 'Another virtualized restored history message' },
+    { id: 'azure', text: 'Azure follow-up message' },
     {
       id: 'last',
       text: 'This long user message must truncate to one line without changing the dropdown width',

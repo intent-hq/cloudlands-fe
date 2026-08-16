@@ -4,6 +4,7 @@ import ChatMessageNavigatorHost from './ChatMessageNavigatorHost.svelte';
 for (const theme of ['light', 'dark'] as const) {
   for (const config of [
     { width: 720, zoom: 1, viewportWidth: 760 },
+    { width: 320, zoom: 1, viewportWidth: 360 },
     { width: 320, zoom: 2, viewportWidth: 700 },
   ]) {
     test(`keeps exact header geometry in ${theme} at ${config.width}px/${config.zoom}x`, async ({
@@ -49,11 +50,28 @@ for (const theme of ['light', 'dark'] as const) {
       await list.click();
       const panel = page.getByTestId('chat-message-navigator-panel');
       await expect(panel).toBeVisible();
-      const search = page.getByTestId('chat-message-navigator-search');
-      await expect(search).toBeFocused();
+      await expect(page.getByTestId('chat-message-navigator-search')).toHaveCount(0);
+      const firstResult = page.getByTestId('chat-message-navigator-result').first();
+      await expect(firstResult).toBeFocused();
       const panelRect = await panel.evaluate((node) => node.getBoundingClientRect().toJSON());
       expect(panelRect.left).toBeGreaterThanOrEqual(0);
       expect(panelRect.right).toBeLessThanOrEqual(config.viewportWidth);
+      expect(panelRect.width).toBeCloseTo(Math.min(448, config.viewportWidth - 16), 1);
+      const focusTreatment = await firstResult.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return {
+          backgroundColor: style.backgroundColor,
+          boxShadow: style.boxShadow,
+          outlineStyle: style.outlineStyle,
+        };
+      });
+      const previewFontSize = await firstResult
+        .locator('span')
+        .evaluate((node) => Number.parseFloat(getComputedStyle(node).fontSize));
+      expect(previewFontSize).toBeLessThan(13);
+      expect(focusTreatment.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+      expect(focusTreatment.boxShadow).toBe('none');
+      expect(focusTreatment.outlineStyle).toBe('none');
       const longResult = page
         .getByTestId('chat-message-navigator-result')
         .filter({ hasText: 'This long user message' });
@@ -92,19 +110,41 @@ test('supports hover, keyboard, dismissal, and virtualized message selection', a
   await component.getByTestId('chat-navigation-transcript').click({ position: { x: 20, y: 20 } });
 
   await trigger.focus();
-  await expect(page.getByTestId('chat-message-navigator-search')).toBeFocused();
+  await expect(page.getByTestId('chat-message-navigator-result').first()).toBeFocused();
   await page.keyboard.press('Escape');
   await component.getByTestId('chat-navigation-transcript').click({ position: { x: 20, y: 20 } });
   await trigger.press('Enter');
-  await expect(page.getByTestId('chat-message-navigator-search')).toBeFocused();
+  await expect(page.getByTestId('chat-message-navigator-result').first()).toBeFocused();
   await page.keyboard.press('Escape');
   await component.getByTestId('chat-navigation-transcript').click({ position: { x: 20, y: 20 } });
   await trigger.press('Space');
-  await expect(page.getByTestId('chat-message-navigator-search')).toBeFocused();
+  const alpha = page.getByTestId('chat-message-navigator-result').filter({ hasText: 'Alpha' });
+  const beta = page.getByTestId('chat-message-navigator-result').filter({ hasText: 'Beta' });
+  const another = page.getByTestId('chat-message-navigator-result').filter({ hasText: 'Another' });
+  const azure = page.getByTestId('chat-message-navigator-result').filter({ hasText: 'Azure' });
+  const last = page.getByTestId('chat-message-navigator-result').filter({ hasText: 'This long' });
+  await expect(alpha).toBeFocused();
+  await page.keyboard.press('a');
+  await expect(another).toBeFocused();
+  await page.keyboard.press('a');
+  await expect(azure).toBeFocused();
+  await page.keyboard.press('a');
+  await expect(alpha).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(beta).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(last).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(alpha).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect(component.getByTestId('chat-selected-message')).toHaveText('first');
+  await expect(page.getByTestId('chat-message-navigator-panel')).toBeHidden();
 
-  const search = page.getByTestId('chat-message-navigator-search');
-  await search.fill('virtualized restored');
-  await page.getByTestId('chat-message-navigator-result').click();
+  await trigger.press('Enter');
+  await expect(alpha).toBeFocused();
+  await page.keyboard.press('a');
+  await expect(another).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(component.getByTestId('chat-selected-message')).toHaveText('virtual-target');
   await expect(page.getByTestId('chat-message-navigator-panel')).toBeHidden();
   const target = component.getByTestId('virtualized-message');

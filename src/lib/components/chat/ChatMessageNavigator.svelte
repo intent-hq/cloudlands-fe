@@ -4,14 +4,10 @@
   import { faList } from '@fortawesome/free-solid-svg-icons';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { Input } from '$lib/components/ui/input';
   import * as Menu from '$lib/components/ui/menu';
   import { m } from '$shared/paraglide/messages.js';
   import ScrollToBottomButton from './ScrollToBottomButton.svelte';
-  import {
-    filterUserMessageNavigationItems,
-    type UserMessageNavigationItem,
-  } from './chat-message-navigation';
+  import type { UserMessageNavigationItem } from './chat-message-navigation';
 
   interface Props {
     messages: UserMessageNavigationItem[];
@@ -22,15 +18,11 @@
 
   let { messages, isAtBottom, onSelectMessage, onScrollToBottom }: Props = $props();
   let open = $state(false);
-  let query = $state('');
-  let searchInput: HTMLInputElement | null = $state(null);
   let hoverTimer: ReturnType<typeof setTimeout> | null = null;
   let pointerInside = false;
   let suppressFocusOpen = false;
-  let focusSearchOnOpen = false;
   let listRegion: HTMLDivElement | null = $state(null);
   let panelRegion: HTMLDivElement | null = $state(null);
-  const filteredMessages = $derived(filterUserMessageNavigationItems(messages, query));
 
   function containsNavigationTarget(target: Node | null) {
     return Boolean(target && (listRegion?.contains(target) || panelRegion?.contains(target)));
@@ -45,7 +37,6 @@
     pointerInside = true;
     clearHoverTimer();
     hoverTimer = setTimeout(() => {
-      focusSearchOnOpen = false;
       open = true;
     }, 120);
   }
@@ -60,7 +51,6 @@
 
   function handleFocusIn() {
     if (pointerInside || suppressFocusOpen) return;
-    focusSearchOnOpen = true;
     open = true;
   }
 
@@ -85,13 +75,12 @@
   }
 
   $effect(() => {
-    if (!open) {
-      query = '';
-      return;
-    }
-    if (focusSearchOnOpen) {
-      void tick().then(() => searchInput?.focus());
-    }
+    if (!open) return;
+    void tick().then(() => {
+      const firstItem = panelRegion?.querySelector<HTMLElement>('[role="menuitem"]');
+      const menu = panelRegion?.closest<HTMLElement>('[role="menu"]');
+      (firstItem ?? menu)?.focus();
+    });
   });
 
   $effect(() => {
@@ -121,16 +110,18 @@
     onfocusout={handleFocusOut}
     onkeydowncapture={handleEscapeCapture}
   >
-    <DropdownMenu bind:open align="end" side="bottom" contentClass="w-72 p-0">
+    <DropdownMenu
+      bind:open
+      align="end"
+      side="bottom"
+      contentClass="w-[28rem] max-w-[calc(100vw-1rem)] p-1 focus-visible:border-border focus-visible:ring-0"
+    >
       {#snippet trigger({ toggle, props })}
         <Button
           {...props}
           variant="ghost-light"
           size="icon-lg"
-          onclick={() => {
-            focusSearchOnOpen = true;
-            toggle();
-          }}
+          onclick={toggle}
           aria-label={m.chat_messageNavigator_open_ariaLabel()}
           title={m.chat_messageNavigator_open_ariaLabel()}
           aria-expanded={open}
@@ -142,7 +133,7 @@
       {#snippet content()}
         <div
           bind:this={panelRegion}
-          class="flex min-w-0 flex-col"
+          class="max-h-80 min-w-0 overflow-y-auto"
           data-testid="chat-message-navigator-panel"
           role="presentation"
           onkeydowncapture={handleEscapeCapture}
@@ -152,37 +143,28 @@
           }}
           onpointerleave={closeFromPointer}
         >
-          <div class="border-b border-border p-2">
-            <Input
-              bind:ref={searchInput}
-              bind:value={query}
-              type="search"
-              placeholder={m.chat_messageNavigator_search_placeholder()}
-              aria-label={m.chat_messageNavigator_search_ariaLabel()}
-              data-testid="chat-message-navigator-search"
-            />
-          </div>
-          <div class="max-h-72 min-w-0 overflow-y-auto p-1" role="listbox">
-            {#each filteredMessages as message (message.id)}
-              <Menu.Item
-                class="min-w-0 overflow-hidden"
-                onclick={() => void selectMessage(message.id)}
-                aria-label={message.text}
-                title={message.text}
-                data-testid="chat-message-navigator-result"
-                data-message-id={message.id}
-              >
-                <span class="block min-w-0 flex-1 truncate whitespace-nowrap">{message.text}</span>
-              </Menu.Item>
-            {:else}
-              <div
-                class="px-2 py-6 text-center text-sm text-muted-foreground"
-                data-testid="chat-message-navigator-empty"
-              >
-                {m.chat_messageNavigator_empty_label()}
-              </div>
-            {/each}
-          </div>
+          {#each messages as message (message.id)}
+            <Menu.Item
+              class="min-w-0 overflow-hidden focus-visible:outline-none focus-visible:ring-0"
+              textValue={message.text}
+              onclick={() => void selectMessage(message.id)}
+              aria-label={message.text}
+              title={message.text}
+              data-testid="chat-message-navigator-result"
+              data-message-id={message.id}
+            >
+              <span class="type-caption block min-w-0 flex-1 truncate whitespace-nowrap">
+                {message.text}
+              </span>
+            </Menu.Item>
+          {:else}
+            <div
+              class="type-caption px-2 py-6 text-center text-muted-foreground"
+              data-testid="chat-message-navigator-empty"
+            >
+              {m.chat_messageNavigator_empty_label()}
+            </div>
+          {/each}
         </div>
       {/snippet}
     </DropdownMenu>
