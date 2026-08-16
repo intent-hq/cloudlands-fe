@@ -39,14 +39,18 @@ describe('ChatMessageNavigator', () => {
     expect((buttons[1] as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('opens on click, focuses the first row, and renders responsive quiet chrome', async () => {
+  it('opens as one menu, focuses the first row, and renders responsive quiet chrome', async () => {
     renderNavigator();
     await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
     const results = await screen.findAllByTestId('chat-message-navigator-result');
+    const menu = screen.getByRole('menu');
     await waitFor(() => expect(document.activeElement).toBe(results[0]));
     expect(screen.queryByTestId('chat-message-navigator-search')).toBeNull();
-    expect(screen.getByRole('menu').className).toContain('w-[28rem]');
-    expect(screen.getByRole('menu').className).toContain('max-w-[calc(100vw-1rem)]');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(results.every((result) => result.getAttribute('role') === 'menuitem')).toBe(true);
+    expect(results.every((result) => menu.contains(result))).toBe(true);
+    expect(menu.className).toContain('w-[28rem]');
+    expect(menu.className).toContain('max-w-[calc(100vw-1rem)]');
 
     const longResult = results.at(-1)!;
     expect(longResult.getAttribute('title')).toBe(messages.at(-1)!.text);

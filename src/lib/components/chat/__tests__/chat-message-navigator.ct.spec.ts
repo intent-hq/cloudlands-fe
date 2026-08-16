@@ -51,6 +51,10 @@ for (const theme of ['light', 'dark'] as const) {
       const panel = page.getByTestId('chat-message-navigator-panel');
       await expect(panel).toBeVisible();
       await expect(page.getByTestId('chat-message-navigator-search')).toHaveCount(0);
+      const menu = page.getByRole('menu');
+      await expect(menu).toHaveCount(1);
+      await expect(page.getByRole('listbox')).toHaveCount(0);
+      await expect(menu.getByRole('menuitem')).toHaveCount(5);
       const firstResult = page.getByTestId('chat-message-navigator-result').first();
       await expect(firstResult).toBeFocused();
       const panelRect = await panel.evaluate((node) => node.getBoundingClientRect().toJSON());
