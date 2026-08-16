@@ -52,7 +52,10 @@ import {
   replaceMessages,
   upsertSession,
 } from '../../agent-session/agent-session-slice';
-import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
+import {
+  selectAgentMessages,
+  selectAgentSession,
+} from '../../agent-session/agent-session-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   chatTranscriptSnapshotApplied,
@@ -62,7 +65,7 @@ import {
   transcriptHydrationSettled,
   transcriptHydrationStarted,
 } from '../chat-state-slice';
-import { selectTranscriptSnapshotMeta } from '../chat-state-selectors';
+import { selectTranscriptHydration, selectTranscriptSnapshotMeta } from '../chat-state-selectors';
 
 const logger = createLogger('ChatReadSaga');
 const PAGE_LIMIT = 200;
@@ -70,9 +73,13 @@ const PAGE_LIMIT = 200;
  * Bounded wait for the standing subscription's seq-0 snapshot — the SOLE
  * hydration source. It normally applies within tens of milliseconds; the
  * bound only converts a broken subscription into the error/retry surface
- * instead of a permanent skeleton.
+ * instead of a permanent skeleton. Sized to survive one full LiveChatClient
+ * self-heal cycle (5s seq-0 timeout + 1s first retry delay + the fresh
+ * registration's snapshot), so a subscription the client heals on its own
+ * still settles in-window; a snapshot landing even later is caught by the
+ * recovery watcher (`snapshotRecoveryWorker`).
  */
-const SNAPSHOT_WAIT_MS = 5_000;
+const SNAPSHOT_WAIT_MS = 12_000;
 /** Mirror of the agent-session slice's message prune cap — paging past it is discarded. */
 const MAX_STORE_MESSAGES = 500;
 
@@ -330,12 +337,38 @@ function* refreshChatWorker(
   yield* hydrateChatWorker({ wsId, agentId }, hydrationTails);
 }
 
+/**
+ * Late-snapshot recovery: LiveChatClient self-heals a broken registration
+ * (unsubscribe + re-register) on its own schedule, so a seq-0 snapshot can
+ * apply AFTER the bounded wait already failed hydration and the worker
+ * exited. When that happens, settle hydration off the applied snapshot —
+ * the atomic-reveal invariant holds because `chatTranscriptSnapshotApplied`
+ * is only ever dispatched after the messages landed and the stream
+ * accumulator was seeded — and kick the background older-history walk the
+ * failed worker never ran. No-op unless hydration sits in `error`.
+ */
+function* snapshotRecoveryWorker(action: ReturnType<typeof chatTranscriptSnapshotApplied>) {
+  const [agentId, meta] = action.payload;
+  const hydration = yield* selectTranscriptHydration.effect(agentId);
+  if (hydration !== 'error') return;
+  yield* put(transcriptHydrationSettled(agentId));
+  if (meta.truncated !== true) return;
+  const session = yield* selectAgentSession.effect(agentId);
+  if (!session) return;
+  const request: ChatRequest = { wsId: String(session.workspaceId), agentId };
+  yield* race({
+    fetch: call(fetchOlderHistorySaga, request, meta.oldestMessageId),
+    cleanup: take(matchesChatCleanup(request)),
+  });
+}
+
 export function* chatReadSaga() {
   const hydrationTails: HydrationTails = new Map();
   try {
     yield* all([
       takeEvery(initializeChatRequested, initializeChatWorker, hydrationTails),
       takeEvery(refreshChatTranscriptRequested, refreshChatWorker, hydrationTails),
+      takeEvery(chatTranscriptSnapshotApplied, snapshotRecoveryWorker),
     ]);
   } finally {
     hydrationTails.clear();

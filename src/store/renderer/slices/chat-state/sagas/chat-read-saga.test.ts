@@ -432,13 +432,16 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     }
   });
 
+  // The wait window must survive one full LiveChatClient self-heal cycle
+  // (5s seq-0 timeout + 1s retry delay + fresh registration's snapshot), so
+  // a snapshot delivered by the healed registration settles normally.
   it('accepts a late snapshot while the bounded wait is still open', async () => {
     vi.useFakeTimers();
     try {
       mocks.get.mockResolvedValue(session());
       const run = harness();
       run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
-      await vi.advanceTimersByTimeAsync(4_500);
+      await vi.advanceTimersByTimeAsync(6_500);
       expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
       applySnapshot(run, [message('late', 'late snapshot')]);
       await settle();
@@ -457,9 +460,76 @@ describe('chatReadSaga (single-transfer hydration)', () => {
       mocks.get.mockResolvedValue(session());
       const run = harness();
       run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+      // Still loading past the live client's own 5s snapshot timeout — the
+      // saga's wait is wider so a client self-heal can land in-window.
       await vi.advanceTimersByTimeAsync(5_050);
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
+      await vi.advanceTimersByTimeAsync(7_050);
       expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('error');
       expect(mocks.getConversation).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Regression (PR #1327 finding 1): `initializeChatRequested` starts the
+  // read and subscribe sagas concurrently, so the seq-0 snapshot can arrive
+  // while `agents.get` is still pending. The subscribe saga DEFERS such a
+  // pre-session snapshot until the shell upserts (never meta without
+  // messages), and hydration must settle from that single deferred
+  // application — no second snapshot, no false 5s error.
+  it('settles from a snapshot deferred until after the session shell upsert (pre-session race)', async () => {
+    let resolveGet!: (value: AgentSession) => void;
+    mocks.get.mockReturnValue(
+      new Promise((done) => {
+        resolveGet = done;
+      }),
+    );
+    const run = harness();
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    await settle();
+    // Snapshot arrived pre-session: nothing was recorded, still loading.
+    expect(run.chat().byAgentId[AGENT]?.transcriptSnapshot).toBeUndefined();
+    expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
+
+    resolveGet(session());
+    await settle();
+    // Shell upserted → the deferred snapshot applies (messages + meta
+    // together, exactly once).
+    applySnapshot(run, [message('m1', 'one')]);
+    await settle();
+
+    expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+    expect(mocks.getConversation).not.toHaveBeenCalled();
+    expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual(['m1']);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  // Regression (PR #1327 finding 2): LiveChatClient self-heals a broken
+  // registration (unsubscribe + re-register) and can deliver its snapshot
+  // AFTER this saga's bounded wait already failed hydration. The applied
+  // snapshot must pull hydration out of the error state instead of leaving
+  // the panel on the retry surface until a manual retry.
+  it('recovers hydration out of the error state when a snapshot applies after the wait window', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.get.mockResolvedValue(session());
+      const run = harness();
+      run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+      await vi.advanceTimersByTimeAsync(12_050);
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('error');
+
+      // The healed registration's seq-0 snapshot applies late.
+      applySnapshot(run, [message('m-late', 'late')]);
+      await settle();
+      await settle();
+
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+      expect(mocks.getConversation).not.toHaveBeenCalled();
+      expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual(['m-late']);
       run.task.cancel();
       await run.task.toPromise();
     } finally {

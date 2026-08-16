@@ -495,6 +495,63 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     });
   });
 
+  // Regression (PR #1327 finding 1): the seq-0 snapshot can beat the
+  // chat-read saga's `agents.get` (both start on initializeChatRequested).
+  // Applying it pre-session would record snapshot meta with NO store rows to
+  // back it (applyTranscript no-ops without a session), stranding the read
+  // saga on a second snapshot that never comes. The snapshot must instead be
+  // deferred whole and replayed on the session shell's upsert — meta and
+  // messages land together.
+  it('defers a pre-session seq-0 snapshot and replays it on the session upsert', async () => {
+    const agentId = 'agent-sub-presession';
+    // No seedSession: the snapshot arrives before agents.get resolves.
+    const sub = openChat(agentId);
+
+    sub.handler({
+      ...transcript([makeMessage('m-pre-1', 'one'), makeMessage('m-pre-2', 'two')]),
+      fromSnapshot: true,
+    });
+
+    // Held back in full: no meta recorded, no rows written.
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toBeUndefined();
+    expect(selectAgentMessages.select(appStore.state, agentId)).toEqual([]);
+
+    // The read saga's shell upsert lands → the deferred snapshot replays.
+    seedSession(agentId);
+    await vi.waitFor(() => {
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toMatchObject({
+        totalMessages: 2,
+        seq: 1,
+      });
+    });
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      'm-pre-1',
+      'm-pre-2',
+    ]);
+  });
+
+  it('replays the newest deferred delta after the pre-session snapshot on session upsert', async () => {
+    const agentId = 'agent-sub-presession-delta';
+    const sub = openChat(agentId);
+
+    sub.handler({ ...transcript([makeMessage('m-a', 'a')]), fromSnapshot: true });
+    // Deltas that also arrived pre-session (no-ops at the time).
+    sub.handler(transcript([makeMessage('m-a', 'a'), makeMessage('m-b', 'b')]));
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toBeUndefined();
+
+    seedSession(agentId);
+    await vi.waitFor(() => {
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
+    });
+    // The store ends on the newest reconciled transcript, not the snapshot.
+    await vi.waitFor(() => {
+      expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+        'm-a',
+        'm-b',
+      ]);
+    });
+  });
+
   it('discards retained store-only rows on a resumed: false fallback snapshot (§7.1)', () => {
     const agentId = 'agent-sub-resume-discard';
     // Retained history from a prior view: rows the daemon may since have

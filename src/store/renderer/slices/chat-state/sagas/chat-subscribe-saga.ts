@@ -62,7 +62,7 @@
 import { buffers, channel as createChannel, type Channel } from 'redux-saga';
 import { actionChannel, call, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
 import type { ChatLiveStreamPhase, ChatTranscript } from '$lib/client/app-client';
-import type { AgentMessage } from '$shared/types';
+import type { AgentMessage, AgentSession } from '$shared/types';
 import { appClient } from '$lib/client';
 import {
   chatLiveStreamPhaseChanged,
@@ -74,11 +74,13 @@ import {
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { selectTranscriptHydration } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import {
+  bulkUpsertSessions,
   clearAllSessions,
   removeSession,
   removeWorkspaceSessions,
   replaceMessages,
   updateSession,
+  upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -109,6 +111,12 @@ interface SubscriptionEntry {
   wasStreaming: boolean;
   /** Last reconciled transcript, re-applied on transcriptHydrationSettled. */
   lastTranscript?: ChatTranscript;
+  /**
+   * A seq-0 snapshot that arrived BEFORE the session shell existed (the
+   * chat-read saga's `agents.get` was still pending), held back so its meta
+   * is never recorded without its messages; replayed on the shell's upsert.
+   */
+  pendingSnapshot?: ChatTranscript;
 }
 
 type ChatSubscriptionEvent =
@@ -381,6 +389,22 @@ function* handleSubscriptionEvent(
     if (!isCurrentSubscription(coordinator, event.agentId, entry)) return;
     entry.hasEmitted = true;
     entry.lastTranscript = event.transcript;
+    // Pre-session seq-0 race: `initializeChatRequested` starts this saga and
+    // the chat-read saga concurrently, so the snapshot can arrive while
+    // `agents.get` is still pending. Applying it now would record snapshot
+    // meta the store's rows don't back (applyTranscript no-ops without a
+    // session), stranding the read saga waiting on a second snapshot a
+    // healthy subscription never emits. Defer the WHOLE application until
+    // the session shell upserts (replayed by the lifecycle loop), so meta is
+    // only ever recorded after the messages actually landed.
+    if (event.transcript.fromSnapshot === true) {
+      const preSession = yield* selectAgentSession.effect(event.agentId);
+      if (!preSession) {
+        entry.pendingSnapshot = event.transcript;
+        return;
+      }
+      entry.pendingSnapshot = undefined;
+    }
     // §7.1 `resumed: false` snapshot: the retained transcript MUST be
     // discarded (see applyTranscript). Snapshot emits only — the settled
     // re-apply of the same transcript must not wipe the background
@@ -760,12 +784,42 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
   }
 }
 
+/**
+ * Replay a deferred pre-session seq-0 snapshot now that the agent's session
+ * exists in the store. Re-enqueued through the events channel so it runs
+ * through the same entry/token/deletion guards as a live emit. When newer
+ * delta emits landed while the snapshot was held back (they no-op without a
+ * session too), the latest one is replayed after it so the store ends on the
+ * newest reconciled transcript.
+ */
+function replayPendingSnapshot(coordinator: SubscriptionCoordinator, agentId: string): void {
+  const entry = coordinator.subscriptions.get(agentId);
+  const pending = entry?.pendingSnapshot;
+  if (!entry || !pending) return;
+  entry.pendingSnapshot = undefined;
+  // Capture BEFORE putting: a waiting taker consumes the put synchronously,
+  // and processing the replayed snapshot resets entry.lastTranscript to it.
+  const newerDelta =
+    entry.lastTranscript && entry.lastTranscript !== pending ? entry.lastTranscript : undefined;
+  coordinator.events.put({ kind: 'transcript', agentId, token: entry.token, transcript: pending });
+  if (newerDelta) {
+    coordinator.events.put({
+      kind: 'transcript',
+      agentId,
+      token: entry.token,
+      transcript: newerDelta,
+    });
+  }
+}
+
 type ChatSubscribeAction =
   | ReturnType<typeof initializeChatRequested>
   | ReturnType<typeof chatSendStarted>
   | ReturnType<typeof markAgentAsViewed>
   | ReturnType<typeof transcriptHydrationSettled>
   | ReturnType<typeof clearCurrentlyViewedAgent>
+  | ReturnType<typeof upsertSession>
+  | ReturnType<typeof bulkUpsertSessions>
   | ReturnType<typeof removeSession>
   | ReturnType<typeof removeWorkspaceSessions>
   | ReturnType<typeof workspaceDeleted>
@@ -798,6 +852,12 @@ function* routeLifecycleAction(
     } else if ((yield* selectCurrentlyViewedAgentId.effect()) === null) {
       closeMatchingSlots(coordinator, (_agentId, slot) => slot.wsId !== CHIEF_WORKSPACE_ID);
     }
+  } else if (action.type === upsertSession.type) {
+    const [session] = action.payload as [AgentSession];
+    replayPendingSnapshot(coordinator, session.id);
+  } else if (action.type === bulkUpsertSessions.type) {
+    const [sessions] = action.payload as [AgentSession[]];
+    for (const session of sessions) replayPendingSnapshot(coordinator, session.id);
   } else if (action.type === removeSession.type) {
     const [agentId] = action.payload as ReturnType<typeof removeSession>['payload'];
     enqueueClose(coordinator, agentId, true);
@@ -853,6 +913,8 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
       markAgentAsViewed,
       transcriptHydrationSettled,
       clearCurrentlyViewedAgent,
+      upsertSession,
+      bulkUpsertSessions,
       removeSession,
       removeWorkspaceSessions,
       workspaceDeleted,
