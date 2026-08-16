@@ -153,9 +153,7 @@ describe('DirectRelay', () => {
 
     // The refused forward is dropped immediately …
     await waitFor(() => relay.activeForwards().length === 1);
-    expect(relay.activeForwards()).toEqual([
-      { remotePort: healthy.port, localPort: healthyLocal },
-    ]);
+    expect(relay.activeForwards()).toEqual([{ remotePort: healthy.port, localPort: healthyLocal }]);
     // … its local listener is closed …
     await expect(connectClient(deadLocal)).rejects.toThrow();
     // … and the healthy forward's in-flight socket still relays.
@@ -223,6 +221,30 @@ describe('DirectRelay', () => {
     const received = collectUntil(fresh, payload.length);
     fresh.write(payload);
     expect((await received).equals(payload)).toBe(true);
+  });
+
+  it('notifies onForwardDropped for refused-connect drops and explicit closeForward', async () => {
+    const healthy = await startEchoServer();
+    onCleanup(() => healthy.server.close());
+    // A port with nothing listening: grab an ephemeral port then release it.
+    const probe = await startEchoServer();
+    const deadPort = probe.port;
+    await new Promise<void>((resolve) => probe.server.close(() => resolve()));
+
+    const relay = new DirectRelay();
+    onCleanup(() => relay.dispose());
+    const dropped: number[] = [];
+    relay.onForwardDropped = (remotePort) => dropped.push(remotePort);
+
+    const deadLocal = await relay.forwardPort(deadPort);
+    const refused = await connectClient(deadLocal);
+    await waitForClose(refused);
+    await waitFor(() => dropped.length === 1);
+    expect(dropped).toEqual([deadPort]);
+
+    await relay.forwardPort(healthy.port);
+    expect(relay.closeForward(healthy.port)).toBe(true);
+    expect(dropped).toEqual([deadPort, healthy.port]);
   });
 
   it('keeps an idle forward alive well past the old 10-minute idle timeout', async () => {

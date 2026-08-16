@@ -553,6 +553,76 @@ describe('TunnelManager', () => {
     expect(created.length).toBe(2);
   });
 
+  it('survives a client reset during the lazy-reconnect window (no uncaught error)', async () => {
+    const { server, port } = await startEchoServer();
+    onCleanup(() => server.close());
+    const created: FakeTunnelSocket[] = [];
+    const held: FakeTunnelSocket[] = [];
+    let holdOpen = false;
+    const manager = new TunnelManager({
+      getConfig: () => WSS_CONFIG,
+      socketFactory: () => {
+        const ws = new FakeTunnelSocket();
+        attachFakeDaemon(ws);
+        created.push(ws);
+        if (holdOpen) held.push(ws);
+        else queueMicrotask(() => ws.open());
+        return ws;
+      },
+    });
+    onCleanup(() => manager.dispose());
+
+    const localPort = await manager.forwardPort(port);
+    created[0].drop();
+    holdOpen = true;
+
+    // Accepted while the tunnel is down: the socket is held (paused) while
+    // ensureTunnel() reconnects — the fresh socket stays unopened for now.
+    const client = await connectClient(localPort);
+    await waitFor(() => held.length === 1);
+    // The client resets mid-window: the held server-side socket emits
+    // 'error' (ECONNRESET). Without a listener attached before the pause,
+    // this is an uncaught exception in the main process.
+    client.resetAndDestroy();
+    await delay(50);
+
+    // The reconnect settles against the destroyed socket without crashing …
+    held[0].open();
+    await delay(20);
+    // … the forward survives, and a fresh connection relays normally.
+    expect(manager.activeForwards()).toEqual([{ remotePort: port, localPort }]);
+    const fresh = await connectClient(localPort);
+    onCleanup(() => fresh.destroy());
+    const payload = Buffer.from('after reset');
+    const received = collectUntil(fresh, payload.length);
+    fresh.write(payload);
+    expect((await received).equals(payload)).toBe(true);
+  });
+
+  it('notifies onForwardDropped for refused-OPEN drops and explicit closeForward', async () => {
+    const healthy = await startEchoServer();
+    onCleanup(() => healthy.server.close());
+    // A port with nothing listening: grab an ephemeral port then release it.
+    const probe = await startEchoServer();
+    const deadPort = probe.port;
+    await new Promise<void>((resolve) => probe.server.close(() => resolve()));
+
+    const { manager } = makeManager();
+    onCleanup(() => manager.dispose());
+    const dropped: number[] = [];
+    manager.onForwardDropped = (remotePort) => dropped.push(remotePort);
+
+    const deadLocal = await manager.forwardPort(deadPort);
+    const refused = await connectClient(deadLocal);
+    await waitForClose(refused);
+    await waitFor(() => dropped.length === 1);
+    expect(dropped).toEqual([deadPort]);
+
+    await manager.forwardPort(healthy.port);
+    expect(manager.closeForward(healthy.port)).toBe(true);
+    expect(dropped).toEqual([deadPort, healthy.port]);
+  });
+
   it('keeps an idle forward alive well past the old 10-minute idle timeout', async () => {
     const { server, port } = await startEchoServer();
     onCleanup(() => server.close());

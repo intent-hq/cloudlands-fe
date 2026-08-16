@@ -53,6 +53,13 @@ export interface TunnelProvider {
    * mocks defaults to `"tunnel"`.
    */
   backend?: 'tunnel' | 'direct';
+  /**
+   * Hook invoked with the remote port whenever the provider drops a forward
+   * itself (e.g. a definitively refused connect/OPEN) or via `closeForward`.
+   * Mutable so the ownership wrapper can keep its registry in sync with
+   * internal drops; optional so minimal mocks satisfy the interface.
+   */
+  onForwardDropped?: ((remotePort: number) => void) | null;
 }
 
 /** Outcome of {@link resolveRewrittenRemoteTarget}. */

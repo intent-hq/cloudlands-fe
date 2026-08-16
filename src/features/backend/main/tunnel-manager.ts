@@ -321,6 +321,13 @@ export class TunnelManager {
   /** Backend discriminator echoed in tunnel action results. */
   readonly backend = 'tunnel' as const;
 
+  /**
+   * Invoked with the remote port whenever a forward is dropped by the
+   * manager itself (definitively refused `OPEN`) or via [[closeForward]],
+   * so callers tracking forwards (the ownership registry) stay in sync.
+   */
+  onForwardDropped: ((remotePort: number) => void) | null = null;
+
   private readonly getConfig: () => BackendConnectionConfig | null;
   private readonly socketFactory: (config: BackendConnectionConfig) => TunnelSocketLike;
   private readonly connectTimeoutMs: number;
@@ -571,6 +578,12 @@ export class TunnelManager {
     if (!this.ws || this.ws.readyState !== WS_OPEN) {
       // The tunnel dropped since this forward opened: reconnect lazily,
       // holding the accepted socket until the fresh tunnel socket is up.
+      // The held socket needs an 'error' listener NOW — attachStream() only
+      // adds one later, and an unhandled socket 'error' (client reset during
+      // the reconnect window) would crash the main process.
+      socket.on('error', () => {
+        // 'close' (or the reconnect settling) owns the teardown.
+      });
       socket.pause();
       this.ensureTunnel().then(
         () => {
@@ -737,6 +750,7 @@ export class TunnelManager {
       remotePort: forward.remotePort,
       localPort: forward.localPort,
     });
+    this.onForwardDropped?.(forward.remotePort);
   }
 
   /** Deregister a stream and destroy its socket (optionally telling the daemon). */

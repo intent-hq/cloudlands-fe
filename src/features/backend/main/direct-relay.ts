@@ -41,6 +41,13 @@ export class DirectRelay {
   /** Backend discriminator echoed in tunnel action results. */
   readonly backend = 'direct' as const;
 
+  /**
+   * Invoked with the remote port whenever a forward is dropped by the relay
+   * itself (definitively refused connect) or via [[closeForward]], so
+   * callers tracking forwards (the ownership registry) stay in sync.
+   */
+  onForwardDropped: ((remotePort: number) => void) | null = null;
+
   private readonly forwards = new Map<number, RelayForwardState>();
   private readonly pendingForwards = new Map<number, Promise<number>>();
   private disposed = false;
@@ -198,5 +205,6 @@ export class DirectRelay {
       remotePort: forward.remotePort,
       localPort: forward.localPort,
     });
+    this.onForwardDropped?.(forward.remotePort);
   }
 }

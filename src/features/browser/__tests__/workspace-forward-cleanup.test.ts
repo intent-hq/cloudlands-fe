@@ -40,11 +40,7 @@ import {
 
 const SUB_ID = 'sub-forward-cleanup';
 
-function emitEvent(
-  type: string,
-  data: Record<string, unknown>,
-  subscriptionId = SUB_ID,
-): void {
+function emitEvent(type: string, data: Record<string, unknown>, subscriptionId = SUB_ID): void {
   for (const handler of notificationHandlers) {
     handler({ method: 'events.event', params: { subscriptionId, event: { type, data } } });
   }
@@ -145,6 +141,46 @@ describe('wrapTunnelProviderWithOwnership', () => {
     expect(wrapped.activeForwards!()).toEqual([{ remotePort: 3000, localPort: 43000 }]);
     expect(wrapped.backend).toBe('tunnel');
   });
+
+  it('clears ownership when the provider drops a forward internally (refused connect/OPEN)', async () => {
+    const registry = new ForwardOwnershipRegistry();
+    const provider = makeProvider();
+    const wrapped = wrapTunnelProviderWithOwnership(provider, registry, 'ws-a');
+
+    await wrapped.forwardPort(3000);
+    // The provider drops the forward itself (e.g. refused OPEN): the wrapper
+    // wired onForwardDropped to the registry, so ownership goes with it.
+    provider.onForwardDropped!(3000);
+    expect(registry.releaseWorkspace('ws-a')).toEqual([]);
+  });
+
+  it('a re-minted port after an internal drop starts with fresh refcounts', async () => {
+    const registry = new ForwardOwnershipRegistry();
+    const provider = makeProvider();
+    const wrappedA = wrapTunnelProviderWithOwnership(provider, registry, 'ws-a');
+    const wrappedB = wrapTunnelProviderWithOwnership(provider, registry, 'ws-b');
+
+    await wrappedA.forwardPort(3000);
+    await wrappedB.forwardPort(3000);
+    provider.onForwardDropped!(3000);
+
+    // Only the re-minting workspace owns the fresh forward — the pre-drop
+    // owner no longer inflates the refcount.
+    await wrappedB.forwardPort(3000);
+    expect(registry.releaseWorkspace('ws-a')).toEqual([]);
+    expect(registry.releaseWorkspace('ws-b')).toEqual([3000]);
+  });
+
+  it('clears ownership even when closeForward reports no forward (already dropped)', async () => {
+    const registry = new ForwardOwnershipRegistry();
+    const provider = makeProvider();
+    provider.closeForward.mockReturnValue(false);
+    const wrapped = wrapTunnelProviderWithOwnership(provider, registry, 'ws-a');
+
+    await wrapped.forwardPort(3000);
+    expect(wrapped.closeForward!(3000)).toBe(false);
+    expect(registry.releaseWorkspace('ws-a')).toEqual([]);
+  });
 });
 
 describe('workspace-forward-cleanup.service', () => {
@@ -157,7 +193,10 @@ describe('workspace-forward-cleanup.service', () => {
 
   it('subscribes once to workspace:updated + workspace:deleted', async () => {
     arm();
-    ensureWorkspaceForwardCleanup({ registry: new ForwardOwnershipRegistry(), closeForward: vi.fn() });
+    ensureWorkspaceForwardCleanup({
+      registry: new ForwardOwnershipRegistry(),
+      closeForward: vi.fn(),
+    });
     await flush();
     expect(requestSpy).toHaveBeenCalledTimes(1);
     expect(requestSpy).toHaveBeenCalledWith('events.subscribe', {

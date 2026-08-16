@@ -73,13 +73,21 @@ export class ForwardOwnershipRegistry {
 /**
  * Wrap a tunnel provider so successful `forwardPort` calls record ownership
  * for `workspaceId` (or app-lifetime when absent) and explicit `closeForward`
- * calls clear the port's ownership. Everything else passes through.
+ * calls clear the port's ownership. The provider's `onForwardDropped` hook is
+ * wired to `registry.clearPort` so internal drops (refused connect/OPEN) also
+ * clear ownership — a later re-mint of the same port starts with fresh
+ * refcounts. Everything else passes through.
  */
 export function wrapTunnelProviderWithOwnership(
   provider: TunnelProvider,
   registry: ForwardOwnershipRegistry,
   workspaceId?: string,
 ): TunnelProvider {
+  // Assigned on the inner provider (shared across per-workspace wrappers):
+  // every wrapper wires the same registry, so re-assignment is idempotent.
+  provider.onForwardDropped = (remotePort: number): void => {
+    registry.clearPort(remotePort);
+  };
   const wrapped: TunnelProvider = {
     async forwardPort(remotePort: number): Promise<number> {
       const localPort = await provider.forwardPort(remotePort);
@@ -95,7 +103,9 @@ export function wrapTunnelProviderWithOwnership(
   if (closeForward) {
     wrapped.closeForward = (remotePort: number): boolean => {
       const closed = closeForward(remotePort);
-      if (closed) registry.clearPort(remotePort);
+      // Clear even when the provider reports no forward: it may have dropped
+      // it internally already, and stale ownership must not survive.
+      registry.clearPort(remotePort);
       return closed;
     };
   }
