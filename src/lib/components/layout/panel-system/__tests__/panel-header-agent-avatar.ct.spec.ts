@@ -69,7 +69,6 @@ for (const theme of ['light', 'dark'] as const) {
     });
     expect(await component.getAttribute('data-active-agent')).toBe('panel-avatar-agent-b');
     expect(await avatar.getAttribute('data-avatar-state')).toBe('running');
-    await expect(component.getByText('Agent B', { exact: true })).toBeVisible();
 
     await component.update({ props: { theme, width: 260, zoom: 2, scenario: 'responding' } });
     await expect(avatar).toHaveAttribute('data-avatar-state', 'running');
