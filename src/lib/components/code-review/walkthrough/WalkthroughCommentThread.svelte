@@ -193,10 +193,7 @@
       </button>
 
       {#if showSuggestedChanges}
-        <div
-          class="px-4 pb-3 divide-y divide-border"
-          transition:slide={{ duration: 150 }}
-        >
+        <div class="px-4 pb-3 divide-y divide-border" transition:slide={{ duration: 150 }}>
           {#each messages as msg, i (msg.id)}
             <div
               class="flex items-start gap-3 py-2"

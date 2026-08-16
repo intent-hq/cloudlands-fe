@@ -2,6 +2,7 @@
   import type { PanelState } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { store as appStore } from '$store/renderer/store';
   import Panel from '$lib/components/layout/panel-system/Panel.svelte';
+  import ContentSkeleton from '$lib/components/workspace/ContentSkeleton.svelte';
   import ParkedWorkspaceSurface from '$lib/components/workspace/ParkedWorkspaceSurface.svelte';
   import SidebarBrowserLauncher from '$lib/components/workspace/SidebarBrowserLauncher.svelte';
   import EventSubscriptionsCard from '$lib/components/chat/EventSubscriptionsCard.svelte';
@@ -38,8 +39,13 @@
     />
   </section>
 
-  <section class="h-48" data-testid="panel-border-fixture">
-    <Panel {panel} workspaceId="neutral-border-workspace" layoutId="neutral-border-layout" />
+  <section class="flex h-96 flex-col gap-4" data-testid="panel-border-fixture">
+    <div class="h-44">
+      <Panel {panel} workspaceId="neutral-border-workspace" layoutId="neutral-border-layout" />
+    </div>
+    <div class="h-44">
+      <ContentSkeleton />
+    </div>
   </section>
 
   <section class="w-80" data-testid="subscription-border-fixture">

@@ -448,9 +448,7 @@
         {#each previewLines as { line, hunkIndex, lineIndex } (`preview-${hunkIndex}-${lineIndex}`)}
           <div class="flex {getLineBgClass(line)}">
             <div
-              class="w-12 shrink-0 flex select-none {getGutterClass(
-                line,
-              )} border-r border-border"
+              class="w-12 shrink-0 flex select-none {getGutterClass(line)} border-r border-border"
             >
               <span class="w-12 px-2 text-right text-ui text-subtle tabular-nums"
                 >{line.newNum ?? line.oldNum ?? ''}</span

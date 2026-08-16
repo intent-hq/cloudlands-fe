@@ -77,11 +77,16 @@ test('production neutral borders share color and single-edge geometry', async ({
           '[data-workspace-surface-placeholder] > div:last-child',
           'x',
         ),
-        seam(page, '[data-panel-header] .panel-header', '.panel-content', 'y'),
+        seam(
+          page,
+          '[data-testid="panel-border-fixture"] [data-loading-panel] > div:first-child',
+          '[data-testid="panel-border-fixture"] [data-loading-panel] > div:last-child',
+          'y',
+        ),
         seam(
           page,
           '[data-testid="event-subscriptions-outer-header"]',
-          '[data-testid="event-subscriptions-body"]',
+          '[data-testid="event-subscriptions-preview"]',
           'y',
         ),
       ]);

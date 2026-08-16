@@ -537,9 +537,7 @@
       </div>
     {/if}
 
-    <footer
-      class="flex shrink-0 items-center gap-2 border-t border-border bg-muted/10 px-4 py-3"
-    >
+    <footer class="flex shrink-0 items-center gap-2 border-t border-border bg-muted/10 px-4 py-3">
       {#if mode === 'directory' && onCreateDirectory}
         {#if newFolderOpen}
           <div class="flex min-w-0 flex-1 items-center gap-1.5">
