@@ -105,6 +105,11 @@ for (const theme of ['light', 'dark'] as const) {
         );
         await expect(groupDetails).toBeVisible();
         await expect(groupDetails.locator('[data-assistant-prose]')).toHaveCount(0);
+        await expect(
+          component.locator(
+            '[data-testid="streaming-operational-cluster"] .content-block--animate-in',
+          ),
+        ).toHaveCount(0);
 
         const assertCluster = async (testId: string, expectedRows: number) => {
           const fixture = component.locator(`[data-testid="${testId}"]`);
