@@ -5,10 +5,19 @@ import type { DirectoryPickerEntry } from '$store/renderer/slices/directory-pick
 import {
   buildDirectoryPickerBreadcrumbs,
   collapseDirectoryPickerPath,
+  directoryPickerFavorites,
   favoritesFromHome,
   filterDirectoryPickerEntries,
   findActiveFavoriteId,
 } from './directory-picker-view';
+
+const favoriteLabels = {
+  home: 'Home',
+  desktop: 'Desktop',
+  documents: 'Documents',
+  downloads: 'Downloads',
+  computer: 'Computer',
+};
 
 const entries: DirectoryPickerEntry[] = [
   { name: 'Projects', path: '/Users/me/Projects', isDirectory: true, isGitRepo: false },
@@ -48,13 +57,7 @@ describe('directory picker view helpers', () => {
   });
 
   it('derives conventional favorites and chooses the most specific active path', () => {
-    const favorites = favoritesFromHome('/Users/me/', {
-      home: 'Home',
-      desktop: 'Desktop',
-      documents: 'Documents',
-      downloads: 'Downloads',
-      computer: 'Computer',
-    });
+    const favorites = favoritesFromHome('/Users/me/', favoriteLabels);
 
     expect(favorites.map(({ id, path }) => ({ id, path }))).toEqual([
       { id: 'home', path: '/Users/me' },
@@ -65,5 +68,53 @@ describe('directory picker view helpers', () => {
     ]);
     expect(findActiveFavoriteId('/Users/me/Documents/work', favorites)).toBe('documents');
     expect(findActiveFavoriteId('/Volumes/work', favorites)).toBe('computer');
+  });
+
+  it('renders exactly the daemon-reported favorites plus Computer', () => {
+    const favorites = directoryPickerFavorites(
+      {
+        home: '/home/user',
+        favorites: [
+          { id: 'home', path: '/home/user' },
+          { id: 'downloads', path: '/home/user/Téléchargements/' },
+        ],
+      },
+      favoriteLabels,
+    );
+
+    expect(favorites).toEqual([
+      { id: 'home', label: 'Home', path: '/home/user' },
+      { id: 'downloads', label: 'Downloads', path: '/home/user/Téléchargements' },
+      { id: 'computer', label: 'Computer', path: '/' },
+    ]);
+  });
+
+  it('labels an unknown daemon favorite id with its folder name', () => {
+    const favorites = directoryPickerFavorites(
+      {
+        home: '/home/user',
+        favorites: [
+          { id: 'home', path: '/home/user' },
+          { id: 'music', path: '/home/user/Music' },
+        ],
+      },
+      favoriteLabels,
+    );
+
+    expect(favorites.map(({ id, label }) => ({ id, label }))).toEqual([
+      { id: 'home', label: 'Home' },
+      { id: 'music', label: 'Music' },
+      { id: 'computer', label: 'Computer' },
+    ]);
+  });
+
+  it('falls back to conventional favorites when the listing has no favorites field', () => {
+    const listing = { home: '/Users/me' };
+    expect(directoryPickerFavorites(listing, favoriteLabels)).toEqual(
+      favoritesFromHome('/Users/me', favoriteLabels),
+    );
+    expect(directoryPickerFavorites(null, favoriteLabels)).toEqual(
+      favoritesFromHome(undefined, favoriteLabels),
+    );
   });
 });

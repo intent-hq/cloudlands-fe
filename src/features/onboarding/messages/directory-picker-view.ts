@@ -1,6 +1,9 @@
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 
-import type { DirectoryPickerEntry } from '$store/renderer/slices/directory-picker/directory-picker-slice';
+import type {
+  DirectoryPickerEntry,
+  DirectoryPickerListing,
+} from '$store/renderer/slices/directory-picker/directory-picker-slice';
 
 export interface DirectoryPickerFavorite {
   id: string;
@@ -97,6 +100,38 @@ export function favoritesFromHome(
         { id: 'downloads', label: labels.downloads, path: joinPath(normalizedHome, 'Downloads') },
       ]
     : [];
+
+  return [...favorites, { id: 'computer', label: labels.computer, path: '/' }];
+}
+
+/**
+ * Sidebar favorites for a listing. When the listing carries the
+ * daemon-validated `favorites` field, render exactly those (localized labels
+ * keyed by `id`) so favorites that do not exist on the daemon host are never
+ * offered; `Computer` (`/`) is always appended. Older daemons omit the field,
+ * so fall back to the conventional home-derived favorites.
+ */
+export function directoryPickerFavorites(
+  listing: Pick<DirectoryPickerListing, 'home' | 'favorites'> | null | undefined,
+  labels: DirectoryPickerFavoriteLabels,
+): DirectoryPickerFavorite[] {
+  const reported = listing?.favorites;
+  if (!reported) return favoritesFromHome(listing?.home, labels);
+
+  const labelById: Partial<Record<string, string>> = {
+    home: labels.home,
+    desktop: labels.desktop,
+    documents: labels.documents,
+    downloads: labels.downloads,
+  };
+  const favorites = reported.map(({ id, path }) => {
+    const normalized = normalizePath(path);
+    return {
+      id,
+      label: labelById[id] ?? normalized.split('/').filter(Boolean).at(-1) ?? normalized,
+      path: normalized,
+    };
+  });
 
   return [...favorites, { id: 'computer', label: labels.computer, path: '/' }];
 }
