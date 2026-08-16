@@ -49,6 +49,7 @@
   import ResponseGroup from './ResponseGroup.svelte';
   import {
     getOperationalClusterSpacingClass,
+    isAdjacentOperationalClusterRow,
     isOperationalClusterBlock,
     OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
   } from './operational-disclosure-row';
@@ -451,6 +452,7 @@
   parsedKey: string,
   blockIndex: number,
   nested = false,
+  adjacentOperationalRow = false,
 )}
   {#if isNavLinkBlock(block)}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
@@ -524,7 +526,13 @@
     {@const toolState = toolStates.get(toolBlock.id) || 'completed'}
     {@const resultContent = getToolResultPayload(toolResult)}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
-      <ToolCall toolUse={toolBlock} {toolState} result={resultContent} {workspaceId} />
+      <ToolCall
+        toolUse={toolBlock}
+        {toolState}
+        result={resultContent}
+        {workspaceId}
+        {adjacentOperationalRow}
+      />
     </div>
   {:else if block.type === 'tool_result'}
     {@const resultPayload = getToolResultPayload(block)}
@@ -588,6 +596,7 @@
     <ThinkingBlock
       content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
       {workspaceId}
+      {adjacentOperationalRow}
     />
   {/if}
 {/snippet}
@@ -620,7 +629,13 @@
           {/snippet}
         </ResponseGroup>
       {:else}
-        {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}
+        {@render renderContentBlock(
+          block as ContentBlock,
+          String(blockIndex),
+          blockIndex,
+          false,
+          isAdjacentOperationalClusterRow(groupedBlocks, blockIndex),
+        )}
       {/if}
     </div>
   {/each}

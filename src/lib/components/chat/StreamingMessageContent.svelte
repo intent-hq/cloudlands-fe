@@ -58,6 +58,7 @@
   import ResponseGroup from './ResponseGroup.svelte';
   import {
     getOperationalClusterSpacingClass,
+    isAdjacentOperationalClusterRow,
     isOperationalClusterBlock,
     OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
   } from './operational-disclosure-row';
@@ -683,6 +684,7 @@
   parsedKey: string,
   blockIndex: number,
   nested = false,
+  adjacentOperationalRow = false,
 )}
   {#if isNavLinkBlock(block)}
     <div class="w-full">
@@ -759,6 +761,7 @@
         toolState={toolStates.get(toolBlock.id) || 'running'}
         result={resultContent}
         {workspaceId}
+        {adjacentOperationalRow}
       />
       {#if Array.isArray(resultContent)}
         {#each resultContent as nestedBlock, nestedIndex (`${toolBlock.id}-image-${nestedIndex}`)}
@@ -782,6 +785,7 @@
       content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
       isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
       {workspaceId}
+      {adjacentOperationalRow}
     />
   {:else if block.type === 'image' && block.data && block.mimeType}
     <ChatImageBlock data={block.data} mimeType={block.mimeType} />
@@ -846,7 +850,13 @@
         data-message-content-block={block.type}
         use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
       >
-        {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}
+        {@render renderContentBlock(
+          block as ContentBlock,
+          String(blockIndex),
+          blockIndex,
+          false,
+          isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleTopLevelBlock),
+        )}
       </div>
     {/if}
   {/each}

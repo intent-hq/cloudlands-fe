@@ -202,7 +202,10 @@ describe('editorial conversation presentation contract', () => {
 
     expect(staticContent).toContain('<div class="flex flex-col"');
     expect(staticContent).toContain('getOperationalClusterSpacingClass(groupedBlocks, blockIndex)');
+    expect(staticContent).toContain('isAdjacentOperationalClusterRow(groupedBlocks, blockIndex)');
     expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
+    expect(streamingContent).toContain('isAdjacentOperationalClusterRow(');
+    expect(streamingContent).toContain('isVisibleTopLevelBlock,');
     expect(streamingContent).toContain('data-operational-cluster-row=');
     expect(streamingContent).not.toContain('my-1.25');
     expect(streamingContent).not.toContain('margin-top: -0.5rem');
