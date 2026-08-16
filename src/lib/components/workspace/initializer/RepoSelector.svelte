@@ -550,9 +550,11 @@
         const githubInfo = parseGitHubUrl(inputValue);
         if (githubInfo) {
           githubUrlInput = `${githubInfo.owner}/${githubInfo.repo}`;
+          // Pass an empty search term: the open-time pre-fill must not filter
+          // the Recent list — only actual typing should (see handleGitHubInputChange).
           handleInputChange(
             `https://github.com/${githubInfo.owner}/${githubInfo.repo}`,
-            githubUrlInput,
+            '',
           );
         }
       }
@@ -694,16 +696,34 @@
       // GitHub-pick standalone checkouts are workspace-owned, not repos to copy from
       const workspaceOwnedCheckouts = getWorkspaceOwnedCheckoutPaths(workspaces ?? []);
 
-      // Build a map of repos by path (persistent registry first, then workspace-derived)
-      const repoMap = new Map<
-        string,
-        { path: string; type: 'local' | 'github'; githubUrl?: string; name: string; owner?: string }
-      >();
+      type RecentEntry = {
+        path: string;
+        type: 'local' | 'github';
+        githubUrl?: string;
+        name: string;
+        owner?: string;
+      };
+
+      // Dedup key: GitHub entries by case-insensitive owner/repo shorthand so a
+      // workspace-derived pick merges with its repos.known registration; local
+      // entries stay keyed by checkout path.
+      const entryKey = (repo: Pick<RecentEntry, 'path' | 'type'>) =>
+        repo.type === 'github' ? `github:${repo.path.toLowerCase()}` : `local:${repo.path}`;
+
+      // Build a map of repos (persisted recents, then registry, then workspace-derived)
+      const repoMap = new Map<string, RecentEntry>();
+      // Most recent known use per entry (ms epoch), for the recency sort below.
+      const recencyByKey = new Map<string, number>();
+      const noteRecency = (key: string, timestamp?: string) => {
+        const time = timestamp ? Date.parse(timestamp) : NaN;
+        if (!Number.isFinite(time)) return;
+        recencyByKey.set(key, Math.max(recencyByKey.get(key) ?? 0, time));
+      };
 
       // Persisted recents may predate the daemon-managed exclusions below.
       for (const repo of $workspaceInitializerRecentRepos$) {
         if (isDaemonManagedRepoPath(repo.path) || workspaceOwnedCheckouts.has(repo.path)) continue;
-        repoMap.set(repo.path, repo);
+        repoMap.set(entryKey(repo), repo);
       }
 
       // Add persistent registry repos. Path-less GitHub picks carry a
@@ -711,24 +731,30 @@
       if (registryResult?.success && Array.isArray(registryResult.data)) {
         for (const repo of registryResult.data) {
           if (repo.githubUrl) {
-            repoMap.set(repo.path, {
+            const entry: RecentEntry = {
               path: repo.path,
               type: 'github' as const,
               githubUrl: repo.githubUrl,
               name: repo.name,
               owner: repo.owner,
-            });
+            };
+            const key = entryKey(entry);
+            repoMap.set(key, entry);
+            noteRecency(key, repo.lastUsedAt);
           } else if (
             repo.path &&
             !isDaemonManagedRepoPath(repo.path) &&
             !workspaceOwnedCheckouts.has(repo.path)
           ) {
-            repoMap.set(repo.path, {
+            const entry: RecentEntry = {
               path: repo.path,
               type: 'local' as const,
               name: repo.name,
               owner: repo.owner,
-            });
+            };
+            const key = entryKey(entry);
+            repoMap.set(key, entry);
+            noteRecency(key, repo.lastUsedAt);
           }
         }
       }
@@ -737,27 +763,52 @@
       if (workspaces && workspaces.length > 0) {
         const allRecentRepos = getRecentRepos(workspaces, 10);
         for (const repo of allRecentRepos) {
+          if (isDaemonManagedRepoPath(repo.path)) continue;
+
+          if (workspaceOwnedCheckouts.has(repo.path)) {
+            // A workspace-owned standalone checkout is a GitHub pick: surface it
+            // as a path-less GitHub entry (never a local copy source), matching
+            // the sidebar card's classification (recent-repos.ts).
+            if (!repo.owner || !repo.name) continue;
+            const shorthand = `${repo.owner}/${repo.name}`;
+            const entry: RecentEntry = {
+              path: shorthand,
+              type: 'github' as const,
+              githubUrl: `https://github.com/${shorthand}`,
+              name: repo.name,
+              owner: repo.owner,
+            };
+            const key = entryKey(entry);
+            repoMap.set(key, entry);
+            noteRecency(key, repo.updatedAt);
+            continue;
+          }
+
           const isLocalPath =
             repo.path.startsWith('/') ||
             repo.path.startsWith('~') ||
             repo.path.startsWith('.') ||
             repo.path.includes(':\\');
-          if (
-            isLocalPath &&
-            !isDaemonManagedRepoPath(repo.path) &&
-            !workspaceOwnedCheckouts.has(repo.path)
-          ) {
-            repoMap.set(repo.path, {
+          if (isLocalPath) {
+            const entry: RecentEntry = {
               path: repo.path,
               type: 'local' as const,
               name: repo.name,
               owner: repo.owner,
-            });
+            };
+            const key = entryKey(entry);
+            repoMap.set(key, entry);
+            noteRecency(key, repo.updatedAt);
           }
         }
       }
 
-      recentRepos = Array.from(repoMap.values()).slice(0, 9);
+      // Most-recent-first; entries with no recency signal keep their insertion
+      // order after the timestamped ones (sort is stable, missing recency = 0).
+      recentRepos = Array.from(repoMap.entries())
+        .sort(([a], [b]) => (recencyByKey.get(b) ?? 0) - (recencyByKey.get(a) ?? 0))
+        .map(([, entry]) => entry)
+        .slice(0, 9);
 
       // Save recent repos through Redux if persistence is enabled.
       if (debugConfig.get('enableFormPersistence')) {
