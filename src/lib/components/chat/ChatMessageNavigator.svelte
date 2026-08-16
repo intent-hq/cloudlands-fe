@@ -25,6 +25,7 @@
   let contentElement: HTMLElement | null = $state(null);
   let pointerDownOnTrigger = $state(false);
   let preserveOutsideFocusOnClose = $state(false);
+  let reopenOnNextPointerEntry = $state(false);
   const navigatorId = $props.id();
   const listboxId = `chat-message-navigator-listbox-${navigatorId}`;
   const filteredMessages = $derived.by(() => {
@@ -40,6 +41,7 @@
     open = nextOpen;
     if (!nextOpen) return;
     preserveOutsideFocusOnClose = false;
+    reopenOnNextPointerEntry = false;
     query = '';
     activeIndex = 0;
   }
@@ -74,8 +76,15 @@
   function handleWindowFocusIn(event: FocusEvent) {
     if (!open || !(event.target instanceof Node)) return;
     if (triggerElement?.contains(event.target) || contentElement?.contains(event.target)) return;
+    pointerDownOnTrigger = false;
     preserveOutsideFocusOnClose = true;
+    reopenOnNextPointerEntry = true;
     handleOpenChange(false);
+  }
+
+  function handleTriggerPointerEnter(event: PointerEvent) {
+    if (event.pointerType === 'touch' || !reopenOnNextPointerEntry) return;
+    handleOpenChange(true);
   }
 
   function handleCloseAutoFocus(event: Event) {
@@ -119,7 +128,13 @@
 
 <div class="flex shrink-0 items-center gap-0.5" data-testid="chat-header-navigation-controls">
   <Popover.Root bind:open onOpenChange={handleOpenChange}>
-    <Popover.Trigger bind:ref={triggerElement} openOnHover openDelay={120} closeDelay={180}>
+    <Popover.Trigger
+      bind:ref={triggerElement}
+      openOnHover
+      openDelay={120}
+      closeDelay={180}
+      onpointerenter={handleTriggerPointerEnter}
+    >
       {#snippet child({ props })}
         <Button
           {...props}
@@ -152,9 +167,9 @@
         trapFocus={false}
         onOpenAutoFocus={handleOpenAutoFocus}
         onCloseAutoFocus={handleCloseAutoFocus}
-        class="z-(--layer-popover) w-[28rem] max-w-[calc(100vw-1rem)] rounded-(--radius-medium) border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none"
+        class="z-(--layer-popover) flex max-h-[var(--bits-popover-content-available-height)] w-[28rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-(--radius-medium) border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none"
       >
-        <div class="min-w-0" data-testid="chat-message-navigator-panel">
+        <div class="flex min-h-0 min-w-0 flex-col" data-testid="chat-message-navigator-panel">
           <input
             bind:this={searchInput}
             value={query}
@@ -168,14 +183,14 @@
             aria-activedescendant={activeOptionId}
             autocomplete="off"
             placeholder={m.chat_messageNavigator_search_placeholder()}
-            class="type-caption h-8 w-full rounded-(--radius-small) border border-border bg-card px-2 text-foreground outline-none placeholder:text-muted-foreground/70 hover:border-input focus-visible:border-foreground/40 focus-visible:ring-0"
+            class="type-caption h-8 w-full shrink-0 rounded-(--radius-small) border border-border bg-card px-2 text-foreground outline-none placeholder:text-muted-foreground/70 hover:border-input focus-visible:border-foreground/40 focus-visible:ring-0"
             data-testid="chat-message-navigator-search"
           />
           {#if filteredMessages.length > 0}
             <div
               id={listboxId}
               role="listbox"
-              class="mt-1 max-h-72 min-w-0 overflow-y-auto overscroll-contain"
+              class="mt-1 min-h-0 min-w-0 flex-1 max-h-72 overflow-y-auto overscroll-contain"
             >
               {#each filteredMessages as message, index (message.id)}
                 <button

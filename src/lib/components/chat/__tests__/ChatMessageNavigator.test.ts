@@ -59,6 +59,12 @@ describe('ChatMessageNavigator', () => {
     const panel = screen.getByTestId('chat-message-navigator-panel').parentElement!;
     expect(panel.className).toContain('w-[28rem]');
     expect(panel.className).toContain('max-w-[calc(100vw-1rem)]');
+    expect(panel.className).toContain('max-h-[var(--bits-popover-content-available-height)]');
+    expect(panel.className).toContain('overflow-hidden');
+    expect(screen.getByTestId('chat-message-navigator-panel').className).toContain('min-h-0');
+    expect(listbox.className).toContain('min-h-0');
+    expect(listbox.className).toContain('flex-1');
+    expect(listbox.className).toContain('max-h-72');
 
     const longResult = results.at(-1)!;
     expect(longResult.getAttribute('title')).toBe(messages.at(-1)!.text);
@@ -195,6 +201,23 @@ describe('ChatMessageNavigator', () => {
     await fireEvent.focusIn(downButton);
     await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
     expect(document.activeElement).toBe(downButton);
+  });
+
+  it('reopens on a genuine pointer entry after outside-focus dismissal', async () => {
+    renderNavigator();
+    const trigger = screen.getByTestId('chat-message-navigator-trigger');
+    const downButton = screen.getByTestId('chat-scroll-to-bottom-button');
+
+    trigger.focus();
+    await screen.findByRole('combobox', { name: 'Filter user messages' });
+    downButton.focus();
+    await fireEvent.focusIn(downButton);
+    await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
+
+    await fireEvent.pointerLeave(trigger, { pointerType: 'mouse' });
+    await fireEvent.pointerEnter(trigger, { pointerType: 'mouse' });
+    const input = await screen.findByRole('combobox', { name: 'Filter user messages' });
+    await waitFor(() => expect(document.activeElement).toBe(input));
   });
 
   it('opens from the trigger and closes on Escape', async () => {

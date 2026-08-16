@@ -139,7 +139,9 @@ test.describe('chat message navigator production path', () => {
       expect(arrowIconBox.height).toBeCloseTo(11, 0);
       await expect(downButton).toHaveAttribute('data-icon-size', '11');
 
-      const target = component.locator('[data-message-id="user-6"]');
+      const transcript = component.locator('.conversation-column');
+      await expectUniqueVisible(transcript);
+      const target = transcript.locator('[data-message-id="user-6"][data-message-role="user"]');
       await expect(target).toHaveCount(0);
       await listButton.click();
       const dialog = await pickerForTrigger(page, listButton);
@@ -217,7 +219,7 @@ test.describe('chat message navigator production path', () => {
       await expect(target).toContainText('hidden picker suffix');
       await expect(target).toHaveClass(/message-highlight-flash/);
       await expect(downButton).toBeEnabled();
-      const scrollContainer = component.locator('.conversation-column').locator('..');
+      const scrollContainer = transcript.locator('..');
       const [targetBox, scrollBox] = await Promise.all([
         target.boundingBox(),
         scrollContainer.boundingBox(),
