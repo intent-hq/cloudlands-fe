@@ -200,6 +200,8 @@
     backendSessionId?: string | null;
     /** Hide noisy stopped badges for interrupted automated coordination turns. */
     suppressCoordinationStoppedIndicator?: boolean;
+    /** False when an outer transcript row owns the canonical message identity attributes. */
+    ownsMessageIdentity?: boolean;
   }
 
   let {
@@ -224,6 +226,7 @@
     onStickyClick,
     backendSessionId,
     suppressCoordinationStoppedIndicator = false,
+    ownsMessageIdentity = true,
   }: Props = $props();
 
   // Per-message Redux subscription. Must be called at component-init time
@@ -234,8 +237,8 @@
   // svelte-ignore state_referenced_locally -- intentional initial snapshot; keyed component identity is fixed.
   const storeMessage$ = selectAgentMessageById(agentId ?? '', messageId ?? '');
 
-  // Looked-up message drives ALL downstream $derived values, the `data-message-id`
-  // attribute, and the `{#if !message}` guard. When both ids are provided we use
+  // Looked-up message drives ALL downstream $derived values, the optional identity
+  // attributes, and the `{#if !message}` guard. When both ids are provided we use
   // the selector result (live reference from Redux); otherwise we fall back to
   // the `message` prop to preserve today's behavior for pending/optimistic
   // messages where ids may not be Redux-backed.
@@ -1156,8 +1159,8 @@
     class="group group/message transition-transform duration-200 ease-out {role === 'user'
       ? 'user-message'
       : 'relative assistant-message'}"
-    data-message-id={message?.id}
-    data-message-role={role}
+    data-message-id={ownsMessageIdentity ? message?.id : undefined}
+    data-message-role={ownsMessageIdentity ? role : undefined}
   >
     {#if role === 'user'}
       {#if isEditing}

@@ -3579,6 +3579,7 @@
                       <ChatMessage
                         {agentId}
                         messageId={message.id}
+                        ownsMessageIdentity={false}
                         {workspace}
                         isStreaming={isCurrentlyStreaming}
                         backendSessionId={auggieSessionId}
@@ -3685,6 +3686,7 @@
                       <ChatMessage
                         {agentId}
                         messageId={message.id}
+                        ownsMessageIdentity={false}
                         {workspace}
                         isStreaming={isCurrentlyStreaming}
                         backendSessionId={auggieSessionId}
@@ -3919,6 +3921,7 @@
                               <ChatMessage
                                 {agentId}
                                 messageId={message.id}
+                                ownsMessageIdentity={false}
                                 {workspace}
                                 onEditSubmit={(newText, model, blocks) =>
                                   handleEditMessage(message.id, newText, model, blocks)}
@@ -3997,6 +4000,7 @@
                             <ChatMessage
                               {agentId}
                               messageId={message.id}
+                              ownsMessageIdentity={false}
                               {workspace}
                               isStreaming={isCurrentlyStreaming}
                               onEditSubmit={(newText, model, blocks) =>

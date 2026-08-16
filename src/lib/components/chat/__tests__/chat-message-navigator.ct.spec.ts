@@ -87,6 +87,18 @@ async function classifyMessageIdentityNodes(page: Page, messageId: string) {
     );
 }
 
+async function duplicateLiveMessageIdentityPairs(page: Page) {
+  return page.locator('[data-message-id][data-message-role]').evaluateAll((nodes) => {
+    const counts = new Map<string, number>();
+    for (const node of nodes) {
+      const element = node as HTMLElement;
+      const key = `${element.dataset.messageId}:${element.dataset.messageRole}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts.entries()].filter(([, count]) => count !== 1);
+  });
+}
+
 test.describe('chat message navigator production path', () => {
   for (const state of cases) {
     test(`keeps the real header, picker, and transcript contract in ${state.label}`, async ({
@@ -171,6 +183,7 @@ test.describe('chat message navigator production path', () => {
 
       const target = page.locator('[data-message-id="user-6"]');
       await expect(target).toHaveCount(0);
+      expect(await duplicateLiveMessageIdentityPairs(page)).toEqual([]);
       await listButton.click();
       const dialog = await pickerForTrigger(page, listButton);
       await expect(dialog).toHaveRole('dialog', { name: 'Browse user messages' });
@@ -254,6 +267,8 @@ test.describe('chat message navigator production path', () => {
 
       await expect(dialog).toHaveCount(0);
       await expect(target).toHaveCount(1);
+      await expect(target).toHaveAttribute('data-message-role', 'user');
+      expect(await duplicateLiveMessageIdentityPairs(page)).toEqual([]);
       expect(await classifyMessageIdentityNodes(page, 'user-6')).toEqual([
         {
           ancestry: 'transcript',

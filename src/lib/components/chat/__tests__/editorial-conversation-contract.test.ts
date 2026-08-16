@@ -11,6 +11,18 @@ function hasUnqualifiedClassToken(content: string, token: string) {
 }
 
 describe('editorial conversation presentation contract', () => {
+  it('assigns restored and streaming transcript identity to the outer row only', () => {
+    const panel = source('src/lib/components/chat/ChatPanel.svelte');
+    const message = source('src/lib/components/chat/ChatMessage.svelte');
+
+    expect(message).toContain('ownsMessageIdentity?: boolean;');
+    expect(message).toContain('ownsMessageIdentity = true');
+    expect(message).toContain('data-message-id={ownsMessageIdentity ? message?.id : undefined}');
+    expect(message).toContain('data-message-role={ownsMessageIdentity ? role : undefined}');
+    expect(panel.match(/ownsMessageIdentity=\{false\}/g)).toHaveLength(4);
+    expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,120}ownsMessageIdentity/g)).toBeNull();
+  });
+
   it('allows variant-prefixed primary selection tokens', () => {
     const selectionClasses = 'selection:bg-primary selection:text-primary-foreground';
 
