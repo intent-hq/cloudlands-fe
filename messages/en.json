@@ -1688,6 +1688,7 @@
   "chat_agentCard_background_badge": "BG",
   "chat_agentCard_delegatedBy_label": "· Delegated by {name}",
   "chat_agentCard_menu_delete_label": "Delete",
+  "chat_agentCard_menu_harnessVersion_label": "Harness v{version}",
   "chat_agentCard_menu_open_label": "Open",
   "chat_agentCard_menu_rename_label": "Rename",
   "chat_agentCard_fileManager_label": "File Manager",

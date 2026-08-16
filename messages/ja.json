@@ -1687,6 +1687,7 @@
   "chat_agentCard_background_badge": "BG",
   "chat_agentCard_delegatedBy_label": "· {name} から委任",
   "chat_agentCard_menu_delete_label": "削除",
+  "chat_agentCard_menu_harnessVersion_label": "ハーネス v{version}",
   "chat_agentCard_menu_open_label": "開く",
   "chat_agentCard_menu_rename_label": "名前を変更",
   "chat_agentCard_fileManager_label": "ファイルマネージャー",

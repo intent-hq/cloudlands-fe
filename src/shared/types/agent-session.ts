@@ -250,6 +250,18 @@ export interface AgentSession {
    *  the FE agent list. */
   pendingDeleteAt?: string;
 
+  /** Harness version stamped at session creation (PROTOCOL §5.5, additive;
+   *  e.g. "1.0" — legacy rows backfill to "1.0"). Immutable creation-time
+   *  stamp — a daemon upgrade never changes it. Omitted by older daemons.
+   *  Rendered verbatim (read-only). */
+  harnessVersion?: string;
+
+  /** Effective agent-feature on/off values captured at session creation
+   *  (PROTOCOL §5.5, additive; camelCase keys per the §5.12 catalog).
+   *  Immutable snapshot; legacy rows without a snapshot project the daemon's
+   *  current settings on read. Omitted by older daemons. */
+  harnessFeatures?: Record<string, boolean>;
+
   // ========== UI State ==========
   /** Current user message being composed */
   currentUserMessage?: string;

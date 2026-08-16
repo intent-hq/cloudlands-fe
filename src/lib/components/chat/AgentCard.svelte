@@ -51,6 +51,7 @@
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     faArrowUpRightFromSquare,
+    faCircleInfo,
     faFolderOpen,
     faPen,
     faStop,
@@ -388,6 +389,21 @@
         }
       },
     });
+
+    // Read-only harness version stamp (PROTOCOL §5.5). Informational only —
+    // rendered as a disabled item so it is not clickable. Omitted entirely
+    // when the daemon predates the field.
+    const harnessVersion = $agent$?.harnessVersion;
+    if (harnessVersion) {
+      items.push({ type: 'separator' });
+      items.push({
+        id: 'harness-version',
+        label: m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion }),
+        icon: faCircleInfo,
+        disabled: true,
+        onClick: () => {},
+      });
+    }
 
     return items;
   }

@@ -1687,6 +1687,7 @@
   "chat_agentCard_background_badge": "AP",
   "chat_agentCard_delegatedBy_label": "· Délégué par {name}",
   "chat_agentCard_menu_delete_label": "Supprimer",
+  "chat_agentCard_menu_harnessVersion_label": "Harness v{version}",
   "chat_agentCard_menu_open_label": "Ouvrir",
   "chat_agentCard_menu_rename_label": "Renommer",
   "chat_agentCard_fileManager_label": "Gestionnaire de fichiers",
