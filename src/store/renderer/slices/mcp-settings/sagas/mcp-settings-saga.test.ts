@@ -27,6 +27,7 @@ import {
   removeServer,
   restartServer,
   saveAdvancedJson,
+  setServerErrorMessage,
   setServers,
   toggleServer,
   updateServer,
@@ -234,6 +235,67 @@ describe('mcpSettingsSaga', () => {
     expect(run.state().servers).toEqual([{ name: 'local', type: 'stdio', command: 'node' }]);
     expect(run.state().error).toBeNull();
     expect(mocks.getMcpServerStatuses.mock.calls).toEqual([]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('clears a stale error message when the post-save overlay reports a non-error status', async () => {
+    const seeded = mcpSettingsReducer(
+      mcpSettingsReducer(initialState, setServers([
+        { id: 'srv-a', name: 'alpha', type: 'http', url: 'https://alpha.test' },
+      ])),
+      setServerErrorMessage('alpha', 'old boom'),
+    );
+    mocks.getMcpServers.mockResolvedValue([
+      { id: 'srv-a', name: 'alpha', type: 'http', url: 'https://alpha.test' },
+    ]);
+    mocks.setMcpServers.mockResolvedValue({ success: true });
+    mocks.getMcpServerStatuses.mockResolvedValue([
+      { serverId: 'srv-a', state: 'running', toolCount: 2 },
+    ]);
+    const run = harness(seeded);
+    run.channel.put(updateServer('alpha', {
+      name: 'alpha', type: 'http', url: 'https://alpha.test',
+    }));
+    await settle();
+
+    expect(run.state().statusMap).toEqual({ alpha: 'connected' });
+    expect(run.state().errorMessages).toEqual({});
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('drops a stale forked status result when the daemon id changed mid-flight', async () => {
+    let resolveStale!: (value: unknown[]) => void;
+    mocks.getMcpServers
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'srv-old', name: 'local', type: 'stdio', command: 'node' }])
+      .mockResolvedValueOnce([{ id: 'srv-old', name: 'local', type: 'stdio', command: 'node' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{ id: 'srv-new', name: 'local', type: 'stdio', command: 'node' }]);
+    mocks.setMcpServers.mockResolvedValue({ success: true });
+    mocks.getMcpServerStatuses
+      .mockReturnValueOnce(new Promise((resolve) => { resolveStale = resolve; }))
+      .mockResolvedValueOnce([{ serverId: 'srv-new', state: 'running', toolCount: 1 }]);
+    const run = harness();
+    run.channel.put(addServer({ name: 'local', type: 'stdio', command: 'node' }));
+    await settle();
+    run.channel.put(removeServer('local'));
+    await settle();
+    run.channel.put(addServer({ name: 'local', type: 'stdio', command: 'node' }));
+    await settle();
+    // The re-added card now carries srv-new; the first fan-out (for srv-old)
+    // resolves late with an error that must not be applied to the new card.
+    resolveStale([{ serverId: 'srv-old', state: 'error', lastError: 'stale boom' }]);
+    await settle();
+
+    expect(mocks.getMcpServerStatuses.mock.calls).toEqual([[['srv-old']], [['srv-new']]]);
+    expect(run.state().servers).toEqual([
+      { id: 'srv-new', name: 'local', type: 'stdio', command: 'node' },
+    ]);
+    expect(run.state().statusMap.local).toEqual('connected');
+    expect(run.state().errorMessages).toEqual({});
     run.task.cancel();
     await run.task.toPromise();
   });
