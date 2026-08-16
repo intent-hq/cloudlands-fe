@@ -256,23 +256,73 @@ describe('QueuedMessageList', () => {
     });
 
     it('keeps row, textarea, focus, and selection through refresh and reorder', async () => {
+      const onedit = vi.fn().mockResolvedValue({ success: true });
       const messages = [
         queued({ id: 'q-1', content: 'first', position: 0 }),
         queued({ id: 'q-2', content: 'second', position: 1 }),
       ];
-      const view = render(QueuedMessageList, { props: { messages } });
+      const view = render(QueuedMessageList, { props: { messages, onedit } });
       const rows = Array.from(view.container.querySelectorAll<HTMLElement>('[data-message-id]'));
       await fireEvent.click(rows[0].querySelector('[data-testid="queued-message-content"]')!);
       const textarea = await waitFor(() => view.container.querySelector('textarea'));
       await waitFor(() => expect(document.activeElement).toBe(textarea));
+      await waitFor(() => expect(onedit).toHaveBeenCalledTimes(1));
       textarea!.setSelectionRange(2, 4);
 
+      const rowList = rows[0].parentElement!;
+      let didBlurDuringMove = false;
+      const blurDuringMove = new MutationObserver(() => {
+        didBlurDuringMove = true;
+        textarea!.blur();
+      });
+      blurDuringMove.observe(rowList, { childList: true });
       await view.rerender({ messages: [messages[1], { ...messages[0], editing: true }] });
+      blurDuringMove.disconnect();
       await tick();
+      expect(didBlurDuringMove).toBe(true);
       expect(view.container.querySelector('[data-message-id="q-1"]')).toBe(rows[0]);
       expect(view.container.querySelector('textarea')).toBe(textarea);
       await waitFor(() => expect(document.activeElement).toBe(textarea));
       expect([textarea!.selectionStart, textarea!.selectionEnd]).toEqual([2, 4]);
+      expect(onedit).toHaveBeenCalledTimes(1);
+
+      const outside = document.createElement('button');
+      document.body.append(outside);
+      outside.focus();
+      await waitFor(() => expect(onedit).toHaveBeenCalledTimes(2));
+      expect(onedit).toHaveBeenLastCalledWith('q-1', 'first', false);
+      outside.remove();
+    });
+
+    it('handles rapid reorder and removal before a stale save settles', async () => {
+      const save = deferred<{ success: boolean }>();
+      const onedit = vi
+        .fn()
+        .mockResolvedValueOnce({ success: true })
+        .mockImplementationOnce(() => save.promise)
+        .mockResolvedValue({ success: true });
+      const messages = [
+        queued({ id: 'q-1', content: 'first', position: 0 }),
+        queued({ id: 'q-2', content: 'second', position: 1 }),
+      ];
+      const view = render(QueuedMessageList, { props: { messages, onedit } });
+      await fireEvent.click(view.container.querySelector('[data-message-id="q-1"] button')!);
+      const firstTextarea = await waitFor(() => view.container.querySelector('textarea'));
+      await fireEvent.input(firstTextarea!, { target: { value: 'changed' } });
+      await fireEvent.keyDown(firstTextarea!, { key: 'Enter' });
+      await waitFor(() => expect(onedit).toHaveBeenCalledWith('q-1', 'changed', false));
+
+      await view.rerender({ messages: [messages[1], messages[0]] });
+      await view.rerender({ messages: [messages[1]] });
+      await waitFor(() => expect(view.container.querySelector('textarea')).toBeNull());
+      await fireEvent.click(view.container.querySelector('[data-message-id="q-2"] button')!);
+      const secondTextarea = await waitFor(() => view.container.querySelector('textarea'));
+      await waitFor(() => expect(document.activeElement).toBe(secondTextarea));
+
+      save.resolve({ success: true });
+      await tick();
+      await waitFor(() => expect(view.container.querySelector('textarea')).toBe(secondTextarea));
+      expect((secondTextarea as HTMLTextAreaElement).value).toBe('second');
     });
 
     it('removes an editing row without residual shell state', async () => {

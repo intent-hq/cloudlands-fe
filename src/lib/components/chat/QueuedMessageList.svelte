@@ -75,6 +75,7 @@
   let editStartedProgrammatically = $state(false);
   let editTextarea = $state<HTMLTextAreaElement>();
   let activeEditOperation: { messageId: string } | null = null;
+  let pendingFocusRestore: { messageId: string; textarea: HTMLTextAreaElement } | null = null;
   const rowElements = new Map<string, HTMLElement>();
 
   function registerRow(node: HTMLElement, messageId: string) {
@@ -128,6 +129,7 @@
     editOriginalContent = '';
     editStartedProgrammatically = false;
     activeEditOperation = null;
+    pendingFocusRestore = null;
     return true;
   }
 
@@ -146,13 +148,18 @@
 
   $effect.pre(() => {
     messages;
+    const messageId = editingId;
     const textarea = editTextarea;
-    if (!textarea || document.activeElement !== textarea) return;
+    if (!messageId || !textarea || document.activeElement !== textarea) return;
     const selectionStart = textarea.selectionStart;
     const selectionEnd = textarea.selectionEnd;
+    const restore = { messageId, textarea };
+    pendingFocusRestore = restore;
     void tick().then(() => {
-      if (editTextarea !== textarea || document.activeElement === textarea) return;
-      textarea.focus({ preventScroll: true });
+      if (pendingFocusRestore !== restore) return;
+      pendingFocusRestore = null;
+      if (editingId !== messageId || editTextarea !== textarea) return;
+      if (document.activeElement !== textarea) textarea.focus({ preventScroll: true });
       textarea.setSelectionRange(selectionStart, selectionEnd);
     });
   });
@@ -314,6 +321,16 @@
     }
   }
 
+  function handleEditBlur(event: FocusEvent) {
+    const textarea = event.currentTarget as HTMLTextAreaElement;
+    const restore = pendingFocusRestore;
+    const isOwnedReorderBlur =
+      restore?.textarea === textarea && restore.messageId === editingId && !event.relatedTarget;
+    if (isOwnedReorderBlur) return;
+    if (restore?.textarea === textarea) pendingFocusRestore = null;
+    void saveEdit();
+  }
+
   function handleRemove(id: string) {
     onremove?.(id);
   }
@@ -445,7 +462,7 @@
                 onkeydown={handleKeydown}
                 use:autofocusAction
                 use:autoResize
-                onblur={saveEdit}
+                onblur={handleEditBlur}
                 rows="1"
                 class="type-body flex-1 resize-none overflow-hidden rounded py-0! text-foreground focus:outline-none! focus:ring-0!"
                 autocorrect="off"
