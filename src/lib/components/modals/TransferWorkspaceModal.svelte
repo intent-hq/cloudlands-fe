@@ -246,7 +246,7 @@
           </p>
 
           <div class="space-y-1">
-            <span class="text-xs text-subtle">{m.workspace_transfer_servers_label()}</span>
+            <span class="block text-xs text-subtle">{m.workspace_transfer_servers_label()}</span>
             {#if connections.length === 0}
               <p class="text-xs text-subtle bg-muted/50 rounded p-2" data-testid="transfer-empty-servers">
                 {m.workspace_transfer_emptyServers_message()}
