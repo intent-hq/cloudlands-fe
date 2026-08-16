@@ -56,6 +56,7 @@ import CrosshairIcon from 'phosphor-svelte/lib/CrosshairIcon';
 import CubeIcon from 'phosphor-svelte/lib/CubeIcon';
 import CursorClickIcon from 'phosphor-svelte/lib/CursorClickIcon';
 import CursorTextIcon from 'phosphor-svelte/lib/CursorTextIcon';
+import HandIcon from 'phosphor-svelte/lib/HandIcon';
 import DatabaseIcon from 'phosphor-svelte/lib/DatabaseIcon';
 import DesktopIcon from 'phosphor-svelte/lib/DesktopIcon';
 import DotsSixIcon from 'phosphor-svelte/lib/DotsSixIcon';
@@ -184,6 +185,7 @@ const iconComponents: Record<string, Component<any>> = {
   'arrow-down': ArrowDownIcon,
   'arrow-left': ArrowLeftIcon,
   'arrow-pointer': CursorClickIcon,
+  hand: HandIcon,
   'arrow-right': ArrowRightIcon,
   'arrow-right-arrow-left': ArrowsLeftRightIcon,
   'arrow-rotate-left': ArrowCounterClockwiseIcon,
@@ -470,6 +472,7 @@ export const faExpandAlt = icon('expand-alt');
 export const faExternalLink = icon('arrow-up-right-from-square');
 export const faExternalLinkAlt = icon('up-right-from-square');
 export const faEye = icon('eye');
+export const faHand = icon('hand');
 export const faEyeSlash = icon('eye-slash');
 export const faFile = icon('file');
 export const faFileAlt = icon('file-lines');

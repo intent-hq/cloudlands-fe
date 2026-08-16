@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ToolUseBlock } from '$shared/types';
   import Fa from 'svelte-fa';
-  import { safeSlide } from '$lib/utils/animations';
+  import { faEye, faHand } from '$lib/icons/phosphor-icons';
   import ToolDetails from './ToolDetails.svelte';
   import { parseToolResult } from './tool-result-parser';
   import { classifyTool, isContextEngineTool } from './tool-classifier';
@@ -9,42 +9,33 @@
   import { noteUrl } from '$shared/constants/intent-links';
   import { handleIntentLink } from '$lib/utils/workspaces-link-handler';
   import { getPanelIdFromEvent } from '$lib/components/layout/panel-system/panel-context';
-  import McpIcon from '$lib/components/settings/mcp/McpIcon.svelte';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import {
-    COMPACT_TOOL_ICON_BOX_CLASS,
-    COMPACT_TOOL_ROW_CLASS,
-    COMPACT_TOOL_SENTENCE_CLASS,
+    CHAT_OPERATIONAL_ICON_CLASS,
     COMPACT_TOOL_TRAILING_CLASS,
-    OPERATIONAL_ICON_CLASS,
-    OPERATIONAL_PRIMARY_CLASS,
-    OPERATIONAL_ROW_CONTAINER_CLASS,
-    OPERATIONAL_SECONDARY_CLASS,
   } from './operational-disclosure-row';
   import { buildToolDisplayModel } from './tool-display-model';
   import ToolStatusIcon from './ToolStatusIcon.svelte';
-
-  /** MCP sources that have brand icons in McpIcon */
-  const BRANDED_MCP_ICONS = new Set([
-    'figma',
-    'sentry',
-    'playwright',
-    'github',
-    'linear',
-    'slack',
-    'context7',
-  ]);
+  import ChatOperationalRow from './ChatOperationalRow.svelte';
+  import { resolveToolLeadingIcon } from './tool-leading-icon';
 
   interface Props {
     toolUse: ToolUseBlock;
     toolState?: 'running' | 'completed' | 'error';
     result?: any;
     workspaceId?: string;
+    adjacentOperationalRow?: boolean;
   }
 
-  let { toolUse, toolState = 'completed', result = null, workspaceId }: Props = $props();
+  let {
+    toolUse,
+    toolState = 'completed',
+    result = null,
+    workspaceId,
+    adjacentOperationalRow = false,
+  }: Props = $props();
 
   // Check if this is a context engine tool (special Augment branding)
   const isContextEngine = $derived(isContextEngineTool(toolUse.name));
@@ -98,6 +89,23 @@
       toolState,
     }),
   );
+  const leadingIcon = $derived.by(() => {
+    const action = toolUse.input?.action ?? toolUse.input?.method;
+    const actions = Array.isArray(toolUse.input?.actions)
+      ? toolUse.input.actions
+          .map((item) =>
+            typeof item === 'object' && item ? (item as { action?: unknown }).action : null,
+          )
+          .filter((item): item is string => typeof item === 'string')
+      : undefined;
+    const kind = resolveToolLeadingIcon({
+      toolName: toolUse.name,
+      category: toolDisplay.category,
+      action: actions?.length ? actions : typeof action === 'string' ? action : undefined,
+      toolKind: toolUse.metadata?.toolKind,
+    });
+    return kind === 'eye' ? faEye : faHand;
+  });
 
   // Check if tool event is truly empty: completed successfully with no meaningful
   // content (whitespace-only, empty array/object, null/undefined) and no input params
@@ -125,9 +133,6 @@
 
   let expanded = $state(false);
   const isExpandable = $derived(displayModel.hasDetails);
-  const hasInlineFile = $derived(
-    displayModel.sentenceSegments.some((segment) => segment.kind === 'file'),
-  );
   const detailsId = $derived(`tool-details-${toolUse.id}`);
 
   function toggleExpanded() {
@@ -152,216 +157,126 @@
       }),
     );
   }
-
-  // Transition function for expand/collapse animation
-  function expand(node: Element) {
-    return safeSlide(node, { duration: 150 });
-  }
 </script>
+
+{#snippet leading()}
+  <Fa icon={leadingIcon} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
+{/snippet}
+
+{#snippet summary()}
+  {#each displayModel.sentenceSegments as segment}
+    {#if segment.kind === 'file'}
+      {#if workspaceId && isExpandable}
+        <span
+          role="button"
+          tabindex="0"
+          data-testid="tool-call-file-link"
+          class="min-w-0 cursor-pointer truncate whitespace-pre font-normal underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+          data-tool-secondary
+          aria-label={displayModel.accessibleSentence}
+          onclick={(event) => {
+            event.stopPropagation();
+            openFile(event);
+          }}
+          onkeydown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              event.stopPropagation();
+              openFile(event);
+            }
+          }}>{segment.text}</span
+        >
+      {:else if workspaceId}
+        <button
+          type="button"
+          data-testid="tool-call-file-link"
+          class="min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+          data-tool-secondary
+          aria-label={displayModel.accessibleSentence}
+          onclick={openFile}>{segment.text}</button
+        >
+      {:else}
+        <span
+          data-testid="tool-call-file-name"
+          class="min-w-0 truncate whitespace-pre font-normal"
+          data-tool-secondary>{segment.text}</span
+        >
+      {/if}
+    {:else}
+      <span
+        class="shrink-0 whitespace-pre font-normal"
+        data-tool-primary={segment.kind === 'primary' ? '' : undefined}
+        data-tool-secondary={segment.kind === 'secondary' ? '' : undefined}>{segment.text}</span
+      >
+    {/if}
+  {/each}
+{/snippet}
+
+{#snippet trailing()}
+  {#if displayModel.status === 'success'}
+    <ToolStatusIcon status="completed" />
+  {:else if displayModel.status === 'error'}
+    <ToolStatusIcon status="error" />
+  {:else if toolDisplay.noteId}
+    <a
+      href={noteUrl(toolDisplay.noteId)}
+      data-testid="tool-call-note-link"
+      class="{COMPACT_TOOL_TRAILING_CLASS} hover:underline"
+      aria-label={displayModel.accessibleSentence}
+      onclick={async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const openInAdjacentPanel = event.metaKey || event.ctrlKey;
+        await handleIntentLink(noteUrl(toolDisplay.noteId!), {
+          workspaceId,
+          sourcePanelId: getPanelIdFromEvent(event),
+          openInAdjacentPanel,
+        });
+      }}
+    >
+      {m.chat_toolClassifier_open_label()}
+    </a>
+  {/if}
+{/snippet}
+
+{#snippet details()}
+  <ToolDetails
+    input={toolUse.input}
+    {result}
+    {parsedResult}
+    isError={toolState === 'error'}
+    {workspaceId}
+    suppressOkOnlyResult={displayModel.isOkOnlyWorkspaceResult}
+  />
+{/snippet}
 
 <!-- Special rendering for Augment Context Engine tools -->
 {#if isContextEngine}
-  <ContextEngineToolCall {toolUse} {toolState} {result} />
+  <ContextEngineToolCall {toolUse} {toolState} {result} {adjacentOperationalRow} />
 {:else if shouldRender}
-  <div
-    class={OPERATIONAL_ROW_CONTAINER_CLASS}
-    data-tool-use-id={toolUse.id}
-    data-tool-call-id={toolUse.toolCallId || undefined}
-    data-conversation-layer="tool-activity"
-  >
-    <!-- Running state: animate-pulse on the icon indicates running state -->
-    <div class={COMPACT_TOOL_ROW_CLASS} data-operational-disclosure-row data-compact-tool-row>
-      <!-- Category icon: show MCP brand logo for known MCPs, otherwise generic FA icon -->
-      {#if isExpandable}
-        <!-- Single disclosure button containing both icon and sentence -->
-        <button
-          type="button"
-          class="col-span-2 flex w-full cursor-pointer items-center gap-[var(--operational-leading-gap)] border-0 bg-transparent p-0 text-left focus-visible:outline-none"
-          data-testid="tool-call-disclosure"
-          aria-label={displayModel.accessibleSentence}
-          aria-expanded={expanded}
-          aria-controls={detailsId}
-          title={m.chat_toolCall_technicalDetails_label()}
-          onclick={toggleExpanded}
-          onkeydown={handleDisclosureKeydown}
-        >
-          <span
-            class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
-            data-tool-icon
-          >
-            {#if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
-              <McpIcon iconName={toolDisplay.mcpSource} label={toolDisplay.mcpSource} size={18} />
-            {:else}
-              <Fa icon={toolDisplay.icon} size={18} class={OPERATIONAL_ICON_CLASS} />
-            {/if}
-          </span>
-          {#if hasInlineFile}
-            <span
-              class="{COMPACT_TOOL_SENTENCE_CLASS} flex flex-1 items-baseline"
-              data-testid="tool-call-summary"
-              data-tool-sentence
-            >
-              {#each displayModel.sentenceSegments as segment}
-                {#if segment.kind === 'file'}
-                  {#if workspaceId}
-                    <span
-                      role="button"
-                      tabindex="0"
-                      data-testid="tool-call-file-link"
-                      class="min-w-0 cursor-pointer truncate whitespace-pre font-normal {OPERATIONAL_SECONDARY_CLASS} underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
-                      data-tool-secondary
-                      aria-label={displayModel.accessibleSentence}
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        openFile(e);
-                      }}
-                      onkeydown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          openFile(e);
-                        }
-                      }}>{segment.text}</span
-                    >
-                  {:else}
-                    <span
-                      data-testid="tool-call-file-name"
-                      class="min-w-0 truncate whitespace-pre font-normal {OPERATIONAL_SECONDARY_CLASS}"
-                      data-tool-secondary>{segment.text}</span
-                    >
-                  {/if}
-                {:else}
-                  <span
-                    class="shrink-0 whitespace-pre font-normal {segment.kind === 'primary'
-                      ? OPERATIONAL_PRIMARY_CLASS
-                      : OPERATIONAL_SECONDARY_CLASS}"
-                    data-tool-primary={segment.kind === 'primary' ? '' : undefined}
-                    data-tool-secondary={segment.kind === 'secondary' ? '' : undefined}
-                    >{segment.text}</span
-                  >
-                {/if}
-              {/each}
-            </span>
-          {:else}
-            <span
-              class="{COMPACT_TOOL_SENTENCE_CLASS} flex-1"
-              data-testid="tool-call-summary"
-              data-tool-sentence
-            >
-              {#each displayModel.sentenceSegments as segment}
-                <span
-                  class="font-normal {segment.kind === 'primary'
-                    ? OPERATIONAL_PRIMARY_CLASS
-                    : OPERATIONAL_SECONDARY_CLASS}"
-                  data-tool-primary={segment.kind === 'primary' ? '' : undefined}
-                  data-tool-secondary={segment.kind !== 'primary' ? '' : undefined}
-                  >{segment.text}</span
-                >
-              {/each}
-            </span>
-          {/if}
-        </button>
-      {:else}
-        <!-- Non-expandable: icon and sentence as non-interactive elements -->
-        {#if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
-          <div
-            class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
-            data-tool-icon
-          >
-            <McpIcon iconName={toolDisplay.mcpSource} label={toolDisplay.mcpSource} size={18} />
-          </div>
-        {:else}
-          <div
-            class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
-            data-tool-icon
-          >
-            <Fa icon={toolDisplay.icon} size={18} class={OPERATIONAL_ICON_CLASS} />
-          </div>
-        {/if}
-
-        {#if hasInlineFile}
-          <span
-            class="{COMPACT_TOOL_SENTENCE_CLASS} flex items-baseline"
-            data-testid="tool-call-summary"
-            data-tool-sentence
-            aria-label={displayModel.accessibleSentence}
-            title={displayModel.accessibleSentence}
-          >
-            {#each displayModel.sentenceSegments as segment}
-              {#if segment.kind === 'file'}
-                {#if workspaceId}
-                  <button
-                    type="button"
-                    data-testid="tool-call-file-link"
-                    class="min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal {OPERATIONAL_SECONDARY_CLASS} underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
-                    data-tool-secondary
-                    aria-label={displayModel.accessibleSentence}
-                    onclick={openFile}>{segment.text}</button
-                  >
-                {:else}
-                  <span
-                    data-testid="tool-call-file-name"
-                    class="min-w-0 truncate whitespace-pre font-normal {OPERATIONAL_SECONDARY_CLASS}"
-                    data-tool-secondary>{segment.text}</span
-                  >
-                {/if}
-              {:else}
-                <span
-                  class="shrink-0 whitespace-pre font-normal {segment.kind === 'primary'
-                    ? OPERATIONAL_PRIMARY_CLASS
-                    : OPERATIONAL_SECONDARY_CLASS}"
-                  data-tool-primary={segment.kind === 'primary' ? '' : undefined}
-                  data-tool-secondary={segment.kind === 'secondary' ? '' : undefined}
-                  >{segment.text}</span
-                >
-              {/if}
-            {/each}
-          </span>
-        {:else}
-          <span
-            class={COMPACT_TOOL_SENTENCE_CLASS}
-            data-testid="tool-call-summary"
-            data-tool-sentence
-            aria-label={displayModel.accessibleSentence}
-            title={displayModel.accessibleSentence}
-            >{#each displayModel.sentenceSegments as segment}<span
-                class="font-normal {segment.kind === 'primary'
-                  ? OPERATIONAL_PRIMARY_CLASS
-                  : OPERATIONAL_SECONDARY_CLASS}"
-                data-tool-primary={segment.kind === 'primary' ? '' : undefined}
-                data-tool-secondary={segment.kind !== 'primary' ? '' : undefined}
-                >{segment.text}</span
-              >{/each}</span
-          >
-        {/if}
-      {/if}
-
-      {#if displayModel.status === 'success'}
-        <ToolStatusIcon status="completed" />
-      {:else if displayModel.status === 'error'}
-        <ToolStatusIcon status="error" />
-      {:else if toolDisplay.noteId}
-        <a
-          href={noteUrl(toolDisplay.noteId)}
-          data-testid="tool-call-note-link"
-          class="{COMPACT_TOOL_TRAILING_CLASS} hover:underline"
-          aria-label={displayModel.accessibleSentence}
-          onclick={async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-            await handleIntentLink(noteUrl(toolDisplay.noteId!), {
-              workspaceId,
-              sourcePanelId: getPanelIdFromEvent(e),
-              openInAdjacentPanel,
-            });
-          }}
-        >
-          {m.chat_toolClassifier_open_label()}
-        </a>
-      {/if}
-    </div>
-  </div>
+  <ChatOperationalRow
+    {leading}
+    {summary}
+    {trailing}
+    details={expanded ? details : undefined}
+    interactive={isExpandable}
+    {expanded}
+    controls={detailsId}
+    ariaLabel={displayModel.accessibleSentence}
+    title={isExpandable ? m.chat_toolCall_technicalDetails_label() : undefined}
+    onclick={toggleExpanded}
+    onkeydown={handleDisclosureKeydown}
+    {detailsId}
+    detailsClass="ml-1"
+    {adjacentOperationalRow}
+    streaming={toolState === 'running'}
+    toolIcon
+    disclosureTestId="tool-call-disclosure"
+    summaryTestId="tool-call-summary"
+    toolUseId={toolUse.id}
+    toolCallId={toolUse.toolCallId || undefined}
+    conversationLayer="tool-activity"
+  />
 
   <!-- Inline image preview for Figma screenshots (always visible, not just when expanded) -->
   {#if !expanded && parsedResult?.type === 'figma' && parsedResult.figmaScreenshot && toolState === 'completed'}
@@ -372,7 +287,7 @@
         if (isExpandable) expanded = !expanded;
       }}
     >
-      <div class="overflow-hidden rounded border border-border/40">
+      <div class="overflow-hidden rounded border border-border">
         <img
           src={`data:${parsedResult.figmaScreenshotMimeType || 'image/png'};base64,${parsedResult.figmaScreenshot}`}
           alt={m.chat_toolCall_figmaDesign_alt()}
@@ -382,24 +297,4 @@
       </div>
     </button>
   {/if}
-
-  {#if expanded}
-    <div id={detailsId} class="ml-1" transition:expand>
-      <ToolDetails
-        input={toolUse.input}
-        {result}
-        {parsedResult}
-        isError={toolState === 'error'}
-        {workspaceId}
-        suppressOkOnlyResult={displayModel.isOkOnlyWorkspaceResult}
-      />
-    </div>
-  {/if}
 {/if}
-
-<style>
-  /* PERF: Tool call container uses CSS containment for rendering isolation */
-  .tool-call-container {
-    contain: layout style;
-  }
-</style>

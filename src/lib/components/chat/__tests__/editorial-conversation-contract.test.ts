@@ -33,7 +33,7 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('<div class="w-full" data-testid="question-wizard-slot">');
     expect(panel).toContain("? 'w-full px-1.5!'");
     expect(panel).toContain(": 'w-full px-4 sm:px-6'");
-    expect(panel).toContain('class:pb-2={!isChiefWorkspace && !isCompactMode}');
+    expect(panel).toContain('class:pb-6={!isChiefWorkspace && !isCompactMode}');
     expect(panel).toContain('conversation-composer relative z-20 w-full');
     expect(panel).toContain('edgeDocked');
     expect(panel).not.toContain("'px-[5%]'");
@@ -57,8 +57,10 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('text={getPinnedPromptText(pinnedPrompt.message)}');
     expect(panel).toContain('onActivate={handlePinnedPromptClick}');
     expect(panel).toMatch(
-      /data-message-role="user"[\s\S]{0,600}class="message-nav-target relative z-20 mb-4/,
+      /data-message-role="user"[\s\S]{0,600}class="message-nav-target relative z-20"[\s\S]{0,120}class:mb-6=\{isAutomatedMessage\(message\)\}[\s\S]{0,120}class:mb-8=\{!isAutomatedMessage\(message\)\}/,
     );
+    expect(panel.match(/message-nav-target z-10 mb-8/g)).toHaveLength(2);
+    expect(panel).not.toContain('message-nav-target z-10 mb-9');
     expect(panel).toContain(':global(.conversation-turn) {\n    contain: style;');
     expect(panel).toContain(':global(.message-nav-target) {\n    contain: style;');
     expect(panel).not.toContain('contain: style paint');
@@ -93,6 +95,18 @@ describe('editorial conversation presentation contract', () => {
     expect(pinned).toContain('candidate.turnBottom > containerTop + ENTER_OFFSET');
     expect(pinned).toContain('const resizeObserver = new ResizeObserver(schedule);');
     expect(pinned).toContain('const mutationObserver = new MutationObserver(() => {');
+
+    // Pinning only mounts the independent overlay. It must not force a LazyTurn
+    // lease, because that changes transcript flow in the sticky transition frame.
+    const setPinnedPromptStart = panel.indexOf('function setPinnedPrompt');
+    const setPinnedPrompt = panel.slice(
+      setPinnedPromptStart,
+      panel.indexOf('// Track container height for compact mode', setPinnedPromptStart),
+    );
+    expect(setPinnedPromptStart).toBeGreaterThan(-1);
+    expect(setPinnedPrompt).toContain('pinnedPrompt = next;');
+    expect(setPinnedPrompt).not.toContain('materializeTurn');
+    expect(setPinnedPrompt).not.toContain('releaseMaterializedTurn');
 
     // With native anchoring off, LazyTurn owns scroll compensation for ALL of
     // its height changes above the reader's viewport — placeholder <-> content
@@ -154,7 +168,9 @@ describe('editorial conversation presentation contract', () => {
 
     expect(panel).toContain('<!-- Editorial rhythm between turns');
     expect(panel).toContain('<ConversationTurnGap');
+    expect(panel).toContain('class:mb-6={turn.assistantMessages.length > 0}');
     expect(gap).toContain('data-testid="conversation-turn-gap"');
+    expect(gap).toContain("? 'h-6'");
     expect(gap).toContain(": 'h-8'");
     expect(panel).not.toContain('<hr class="border-t border-border/50 mb-3" />');
   });
@@ -169,7 +185,7 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(message).toContain(': USER_MESSAGE_SURFACE_CLASS}');
     expect(surface).toContain(
-      'relative overflow-hidden rounded-lg border border-border/50 bg-secondary px-3 py-2 shadow-sm',
+      'relative overflow-hidden rounded-lg border border-border bg-secondary px-3 py-2 shadow-sm',
     );
     expect(message).not.toContain('rounded-lg border border-border/60 bg-accent/40');
     expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
@@ -240,8 +256,9 @@ describe('editorial conversation presentation contract', () => {
     expect(status).toContain(
       "import StreamingTypingIndicator from './StreamingTypingIndicator.svelte'",
     );
-    expect(status).toContain('<StreamingTypingIndicator visible message={statusMessage}');
-    expect(indicator).toContain('getRandomColorsWithSeed(seed)');
+    expect(status).toMatch(/<StreamingTypingIndicator[\s\S]*message=\{statusMessage\}/);
+    expect(status).toContain('class="mt-2 {className}"');
+    expect(indicator).toContain('getAgentColorsWithSeed(seed)');
     expect(indicator).toContain('--duration: 800ms');
     expect(indicator).toContain('animation: legacy-spinner-wave');
   });
@@ -266,7 +283,7 @@ describe('editorial conversation presentation contract', () => {
     expect(wakeup).toContain('m.events_activity_partFinished_label().trim()');
     expect(wakeup).not.toContain('<AgentCard');
     expect(avatar).toContain('<Tooltip.Trigger');
-    expect(avatar).toContain('<AugieAvatarWithState');
+    expect(avatar).toContain('<AgentAvatarWithState');
     expect(avatar).toContain('aria-label={onclick');
   });
 
@@ -296,32 +313,27 @@ describe('editorial conversation presentation contract', () => {
     expect(input).toContain('@media (prefers-reduced-motion: reduce)');
   });
 
-  it('keeps tool-call rows compact and dims their leading icon', () => {
+  it('gives tool, context, and reasoning rows one shared muted shell', () => {
     const toolCall = source('src/lib/components/chat/ToolCall.svelte');
     const reasoning = source('src/lib/components/chat/ThinkingBlock.svelte');
     const contextEngine = source('src/lib/components/chat/ContextEngineToolCall.svelte');
+    const sharedRow = source('src/lib/components/chat/ChatOperationalRow.svelte');
     const responseGroup = source('src/lib/components/chat/ResponseGroup.svelte');
     const operationalRow = source('src/lib/components/chat/operational-disclosure-row.ts');
     const agentTab = source('src/features/layout/tab-types/AgentTabType.svelte');
 
-    expect(operationalRow).toContain(
-      'relative flex min-h-9 w-full min-w-0 max-w-full items-center gap-[var(--operational-leading-gap)] overflow-hidden px-[var(--operational-row-inline-padding)] py-2',
-    );
-    expect(operationalRow).toContain('type-body font-family-child font-normal');
-    expect(operationalRow).toContain("OPERATIONAL_PRIMARY_CLASS = 'text-foreground'");
-    expect(operationalRow).toContain(
-      "OPERATIONAL_SECONDARY_CLASS =\n  'text-foreground/70 transition-colors group-hover:text-foreground group-focus-within:text-foreground'",
-    );
+    expect(operationalRow).toContain('CHAT_OPERATIONAL_ROW_CLASS');
+    expect(operationalRow).toContain('relative grid h-9 w-full min-w-0 max-w-full');
+    expect(operationalRow).toContain('font-normal text-muted-foreground transition-colors');
+    expect(operationalRow).toContain("CHAT_OPERATIONAL_ICON_CLASS = 'h-4! w-4! shrink-0'");
+    expect(sharedRow).toContain('data-chat-operational-row');
+    expect(sharedRow).toContain("{adjacentOperationalRow ? 'mt-1' : ''}");
     for (const component of [toolCall, reasoning, contextEngine]) {
-      expect(component).toContain('OPERATIONAL_ROW_CONTAINER_CLASS');
+      expect(component).toContain("import ChatOperationalRow from './ChatOperationalRow.svelte'");
+      expect(component).toContain('<ChatOperationalRow');
     }
-    for (const component of [toolCall, contextEngine]) {
-      expect(component).toContain('COMPACT_TOOL_ROW_CLASS');
-      expect(component).toContain('COMPACT_TOOL_ICON_BOX_CLASS');
-      expect(component).toContain('COMPACT_TOOL_SENTENCE_CLASS');
-    }
-    expect(reasoning).toContain('OPERATIONAL_ROW_LINE_CLASS');
-    expect(reasoning).toContain('OPERATIONAL_ICON_CLASS');
+    expect(toolCall).not.toContain('McpIcon');
+    expect(toolCall).toContain('resolveToolLeadingIcon');
     expect(responseGroup).toContain('OPERATIONAL_ROW_TONE_CLASS');
     expect(responseGroup).toContain('OPERATIONAL_ROW_LINE_CLASS');
     expect(agentTab).not.toContain('toggleShowReasoningBlocks');
@@ -342,7 +354,7 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('const COMPACT_HEIGHT_ENTER = 600');
     expect(panel).toContain('const COMPACT_HEIGHT_EXIT = 640');
     expect(panel).toContain('class:pb-3={!isChiefWorkspace && isCompactMode}');
-    expect(panel).toContain('class:pb-2={!isChiefWorkspace && !isCompactMode}');
+    expect(panel).toContain('class:pb-6={!isChiefWorkspace && !isCompactMode}');
     expect(panel).toContain("isCompactMode ? 'pb-1 pt-2' : 'py-2'");
     expect(panel).not.toContain("'pb-1 pt-3'");
     expect(panel).not.toContain('eventSubscriptionsOwnEndGap');

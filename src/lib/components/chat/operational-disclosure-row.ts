@@ -29,6 +29,17 @@ export const OPERATIONAL_PRIMARY_CLASS = 'text-foreground';
 export const OPERATIONAL_SECONDARY_CLASS =
   'text-foreground/70 transition-colors group-hover:text-foreground group-focus-within:text-foreground';
 
+export const CHAT_OPERATIONAL_SUMMARY_TONE_CLASS =
+  'font-normal text-muted-foreground transition-colors group-hover:text-foreground group-focus-within:text-foreground';
+
+export const CHAT_OPERATIONAL_ICON_CLASS = 'h-4! w-4! shrink-0';
+
+export const CHAT_OPERATIONAL_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} relative grid h-9 w-full min-w-0 max-w-full grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto] items-center gap-[var(--operational-leading-gap)] overflow-hidden px-[var(--operational-row-inline-padding)]`;
+
+export const CHAT_OPERATIONAL_LEADING_CLASS = `a11y-ignore pointer-events-none flex size-[var(--operational-leading-slot-size)] min-w-[var(--operational-leading-slot-size)] items-center justify-center ${CHAT_OPERATIONAL_SUMMARY_TONE_CLASS}`;
+
+export const CHAT_OPERATIONAL_SUMMARY_CLASS = `flex min-w-0 max-w-full items-baseline truncate whitespace-nowrap border-0 bg-transparent p-0 text-left ${CHAT_OPERATIONAL_SUMMARY_TONE_CLASS}`;
+
 export const OPERATIONAL_ICON_BOX_CLASS = `a11y-ignore pointer-events-none flex size-[var(--operational-leading-slot-size)] min-w-[var(--operational-leading-slot-size)] shrink-0 items-center justify-center ${OPERATIONAL_SECONDARY_CLASS}`;
 
 export const OPERATIONAL_ICON_CLASS = 'h-[1.125rem]! w-[1.125rem]! shrink-0';
@@ -39,6 +50,19 @@ interface OperationalClusterBlock {
 
 export function isOperationalClusterBlock(block: OperationalClusterBlock): boolean {
   return block.type === 'thinking' || block.type === 'tool_use';
+}
+
+export function isAdjacentOperationalClusterRow<T extends OperationalClusterBlock>(
+  blocks: readonly T[],
+  index: number,
+  isVisible: (block: T) => boolean = () => true,
+): boolean {
+  const block = blocks[index];
+  if (!block || !isVisible(block) || !isOperationalClusterBlock(block)) return false;
+
+  let previousIndex = index - 1;
+  while (previousIndex >= 0 && !isVisible(blocks[previousIndex])) previousIndex -= 1;
+  return previousIndex >= 0 && isOperationalClusterBlock(blocks[previousIndex]);
 }
 
 export function getOperationalClusterSpacingClass<T extends OperationalClusterBlock>(
@@ -62,7 +86,7 @@ export function getOperationalClusterSpacingClass<T extends OperationalClusterBl
 
   const nextIsOperational =
     nextIndex < blocks.length && isOperationalClusterBlock(blocks[nextIndex]);
-  return [previousIsOperational ? 'mt-1' : 'mt-4', nextIsOperational ? '' : 'mb-4']
+  return [previousIsOperational ? '' : 'mt-4', nextIsOperational ? '' : 'mb-4']
     .filter(Boolean)
     .join(' ');
 }

@@ -6,32 +6,30 @@
    * Augment branding to highlight they use Augment's proprietary context engine.
    */
   import type { ToolUseBlock } from '$shared/types';
-  import { faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons';
+  import { faEye } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { safeSlide } from '$lib/utils/animations';
   import { parseToolResult } from './tool-result-parser';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import {
-    COMPACT_TOOL_ICON_BOX_CLASS,
-    COMPACT_TOOL_ROW_CLASS,
-    COMPACT_TOOL_SENTENCE_CLASS,
-    OPERATIONAL_ICON_CLASS,
-    OPERATIONAL_PRIMARY_CLASS,
-    OPERATIONAL_ROW_CONTAINER_CLASS,
-    OPERATIONAL_SECONDARY_CLASS,
-  } from './operational-disclosure-row';
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   import { buildToolDisplayModel } from './tool-display-model';
   import ToolStatusIcon from './ToolStatusIcon.svelte';
+  import ChatOperationalRow from './ChatOperationalRow.svelte';
 
   interface Props {
     toolUse: ToolUseBlock;
     toolState?: 'running' | 'completed' | 'error';
     result?: any;
+    adjacentOperationalRow?: boolean;
   }
 
-  let { toolUse, toolState = 'completed', result = null }: Props = $props();
+  let {
+    toolUse,
+    toolState = 'completed',
+    result = null,
+    adjacentOperationalRow = false,
+  }: Props = $props();
 
   const parsedResult = $derived(
     result !== null && result !== undefined
@@ -41,10 +39,6 @@
 
   let expanded = $state(false);
   const detailsId = $derived(`context-engine-details-${toolUse.id}`);
-
-  function expand(node: Element) {
-    return safeSlide(node, { duration: 150 });
-  }
 
   // Determine the source type (codebase vs commit history)
   const isCommitRetrieval = $derived(
@@ -67,7 +61,7 @@
       toolName: toolUse.name,
       display: {
         category: 'context-engine',
-        icon: faMagnifyingGlass,
+        icon: faEye,
         verb: '',
         subject: sourceLabel,
         path: null,
@@ -224,164 +218,141 @@
   }
 </script>
 
-<div
-  class={OPERATIONAL_ROW_CONTAINER_CLASS}
-  data-testid="context-engine-tool-call"
-  data-tool-use-id={toolUse.id}
-  data-conversation-layer="tool-activity"
->
-  <div class={COMPACT_TOOL_ROW_CLASS} data-operational-disclosure-row data-compact-tool-row>
-    {#if isExpandable}
-      <!-- Single disclosure button containing both icon and sentence -->
-      <button
-        type="button"
-        class="col-span-2 flex w-full cursor-pointer items-center gap-[var(--operational-leading-gap)] border-0 bg-transparent p-0 text-left focus-visible:outline-none"
-        data-testid="context-engine-disclosure"
-        aria-label={m.chat_toolCall_technicalDetails_label()}
-        aria-expanded={expanded}
-        aria-controls={detailsId}
-        title={m.chat_toolCall_technicalDetails_label()}
-        onclick={toggleExpanded}
-        onkeydown={handleDisclosureKeydown}
-      >
-        <span
-          class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
-          data-tool-icon
-        >
-          <Fa icon={faMagnifyingGlass} size={18} class={OPERATIONAL_ICON_CLASS} />
-        </span>
-        <span class="{COMPACT_TOOL_SENTENCE_CLASS} flex-1" data-tool-sentence>
-          {#each displayModel.sentenceSegments as segment}
-            <span
-              class="font-normal {segment.kind === 'primary'
-                ? OPERATIONAL_PRIMARY_CLASS
-                : OPERATIONAL_SECONDARY_CLASS}"
-              data-tool-primary={segment.kind === 'primary' ? '' : undefined}
-              data-tool-secondary={segment.kind !== 'primary' ? '' : undefined}>{segment.text}</span
-            >
-          {/each}
-        </span>
-      </button>
-    {:else}
-      <div
-        class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
-        data-tool-icon
-      >
-        <Fa icon={faMagnifyingGlass} size={18} class={OPERATIONAL_ICON_CLASS} />
-      </div>
-      <span
-        class={COMPACT_TOOL_SENTENCE_CLASS}
-        data-testid="context-engine-query"
-        data-tool-sentence
-        aria-label={displayModel.accessibleSentence}
-        title={displayModel.accessibleSentence}
-        >{#each displayModel.sentenceSegments as segment}<span
-            class="font-normal {segment.kind === 'primary'
-              ? OPERATIONAL_PRIMARY_CLASS
-              : OPERATIONAL_SECONDARY_CLASS}"
-            data-tool-primary={segment.kind === 'primary' ? '' : undefined}
-            data-tool-secondary={segment.kind !== 'primary' ? '' : undefined}>{segment.text}</span
-          >{/each}</span
-      >
-    {/if}
-    <ToolStatusIcon status={toolState} />
+{#snippet leading()}
+  <Fa icon={faEye} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
+{/snippet}
+
+{#snippet summary()}
+  {#each displayModel.sentenceSegments as segment}
+    <span
+      class="font-normal"
+      data-tool-primary={segment.kind === 'primary' ? '' : undefined}
+      data-tool-secondary={segment.kind !== 'primary' ? '' : undefined}>{segment.text}</span
+    >
+  {/each}
+{/snippet}
+
+{#snippet trailing()}
+  <ToolStatusIcon status={toolState} />
+{/snippet}
+
+{#snippet details()}
+  <div class="type-caption px-3 py-1 text-muted-foreground" data-testid="context-engine-brand">
+    <!-- i18n-ignore (brand name) -->
+    Augment Context Engine
   </div>
-
-  {#if expanded}
-    <div id={detailsId} class="mt-1" transition:expand>
-      <div class="type-caption px-3 py-1 text-muted-foreground" data-testid="context-engine-brand">
-        <!-- i18n-ignore (brand name) -->
-        Augment Context Engine
-      </div>
-      <!-- Error display -->
-      {#if toolState === 'error'}
-        <div class="border-b border-destructive/20 bg-destructive/10 px-4 py-3">
-          <div class="flex items-start gap-2">
-            <div class="type-caption text-destructive">
-              {#if result}
-                {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
-              {:else}
-                {m.chat_contextEngine_toolCallFailed_label()}
-              {/if}
-            </div>
-          </div>
+  <!-- Error display -->
+  {#if toolState === 'error'}
+    <div class="border-b border-destructive/20 bg-destructive/10 px-4 py-3">
+      <div class="flex items-start gap-2">
+        <div class="type-caption text-destructive">
+          {#if result}
+            {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
+          {:else}
+            {m.chat_contextEngine_toolCallFailed_label()}
+          {/if}
         </div>
-      {/if}
+      </div>
+    </div>
+  {/if}
 
-      <!-- Results section -->
-      {#if toolState !== 'error' && snippetCount > 0}
-        <div class="py-2">
-          <!-- <div class="flex items-center gap-2 mb-2">
+  <!-- Results section -->
+  {#if toolState !== 'error' && snippetCount > 0}
+    <div class="py-2">
+      <!-- <div class="flex items-center gap-2 mb-2">
           <span class="text-xs text-muted-foreground uppercase tracking-wide">Retrieved</span>
           <span class="text-xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
             {snippetCount} {snippetCount === 1 ? 'file' : 'files'}
           </span>
         </div> -->
 
-          <div class="flex flex-col gap-1.5">
-            {#each snippets.slice(0, 6) as snippet, i (`snippet-${i}-${snippet.path}`)}
-              {@const fileName = snippet.path.split('/').pop() || snippet.path}
-              {@const dirPath = snippet.path.split('/').slice(0, -1).join('/')}
-              <div class="transition-colors">
-                <!-- File header -->
-                <div class="flex items-center gap-1.5 py-1">
-                  <!-- <Fa icon={faFile} size="xs" class="text-primary/60" /> -->
-                  <span class="type-caption text-subtle">{fileName}</span>
-                  {#if snippet.lineStart}
-                    <span class="type-caption text-subtle">:{snippet.lineStart}</span>
-                  {/if}
-                  {#if dirPath}
-                    <span class="type-caption truncate text-subtle" title={snippet.path}
-                      >{dirPath}</span
-                    >
-                  {/if}
-                </div>
-                <!-- Code preview with syntax highlighting -->
-                <div class="code-snippet-wrapper">
-                  <CodeBlock
-                    code={getPreviewContent(snippet.content, 6)}
-                    language={getLanguageFromPath(snippet.path)}
-                    maxHeight={120}
-                  />
-                </div>
-              </div>
-            {/each}
+      <div class="flex flex-col gap-1.5">
+        {#each snippets.slice(0, 6) as snippet, i (`snippet-${i}-${snippet.path}`)}
+          {@const fileName = snippet.path.split('/').pop() || snippet.path}
+          {@const dirPath = snippet.path.split('/').slice(0, -1).join('/')}
+          <div class="transition-colors">
+            <!-- File header -->
+            <div class="flex items-center gap-1.5 py-1">
+              <!-- <Fa icon={faFile} size="xs" class="text-primary/60" /> -->
+              <span class="type-caption text-subtle">{fileName}</span>
+              {#if snippet.lineStart}
+                <span class="type-caption text-subtle">:{snippet.lineStart}</span>
+              {/if}
+              {#if dirPath}
+                <span class="type-caption truncate text-subtle" title={snippet.path}>{dirPath}</span
+                >
+              {/if}
+            </div>
+            <!-- Code preview with syntax highlighting -->
+            <div class="code-snippet-wrapper">
+              <CodeBlock
+                code={getPreviewContent(snippet.content, 6)}
+                language={getLanguageFromPath(snippet.path)}
+                maxHeight={120}
+              />
+            </div>
+          </div>
+        {/each}
 
-            {#if snippetCount > 6}
-              <div class="text-center text-xs text-subtle py-1.5 border-t border-border/20 mt-1">
-                {snippetCount - 6 === 1
-                  ? m.chat_contextEngine_moreFiles_one({
-                      count: formatInteger(snippetCount - 6),
-                    })
-                  : m.chat_contextEngine_moreFiles_many({
-                      count: formatInteger(snippetCount - 6),
-                    })}
-              </div>
-            {/if}
+        {#if snippetCount > 6}
+          <div class="text-center text-xs text-subtle py-1.5 border-t border-border mt-1">
+            {snippetCount - 6 === 1
+              ? m.chat_contextEngine_moreFiles_one({
+                  count: formatInteger(snippetCount - 6),
+                })
+              : m.chat_contextEngine_moreFiles_many({
+                  count: formatInteger(snippetCount - 6),
+                })}
           </div>
-        </div>
-      {:else if toolState !== 'error' && parsedResult?.content}
-        <!-- Fallback: plain content -->
-        <div class="px-3 py-2">
-          <div class="code-snippet-wrapper">
-            <CodeBlock code={parsedResult.content} language="plaintext" maxHeight={300} />
-          </div>
-        </div>
-      {:else if toolState !== 'error' && result}
-        <!-- Raw result fallback -->
-        <div class="px-3 py-2">
-          <div class="code-snippet-wrapper">
-            <CodeBlock
-              code={typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
-              language="json"
-              maxHeight={300}
-            />
-          </div>
-        </div>
-      {/if}
+        {/if}
+      </div>
+    </div>
+  {:else if toolState !== 'error' && parsedResult?.content}
+    <!-- Fallback: plain content -->
+    <div class="px-3 py-2">
+      <div class="code-snippet-wrapper">
+        <CodeBlock code={parsedResult.content} language="plaintext" maxHeight={300} />
+      </div>
+    </div>
+  {:else if toolState !== 'error' && result}
+    <!-- Raw result fallback -->
+    <div class="px-3 py-2">
+      <div class="code-snippet-wrapper">
+        <CodeBlock
+          code={typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
+          language="json"
+          maxHeight={300}
+        />
+      </div>
     </div>
   {/if}
-</div>
+{/snippet}
+
+<ChatOperationalRow
+  {leading}
+  {summary}
+  {trailing}
+  details={expanded ? details : undefined}
+  interactive={isExpandable}
+  {expanded}
+  controls={detailsId}
+  ariaLabel={isExpandable
+    ? m.chat_toolCall_technicalDetails_label()
+    : displayModel.accessibleSentence}
+  title={isExpandable ? m.chat_toolCall_technicalDetails_label() : undefined}
+  onclick={toggleExpanded}
+  onkeydown={handleDisclosureKeydown}
+  {detailsId}
+  detailsClass="mt-1"
+  {adjacentOperationalRow}
+  streaming={toolState === 'running'}
+  toolIcon
+  testId="context-engine-tool-call"
+  disclosureTestId="context-engine-disclosure"
+  summaryTestId="context-engine-query"
+  toolUseId={toolUse.id}
+  conversationLayer="tool-activity"
+/>
 
 <style>
   /* Override CodeBlock styling for compact display in context engine results */
@@ -399,9 +370,5 @@
 
   .code-snippet-wrapper :global(.code-line) {
     min-height: 18px !important;
-  }
-
-  .tool-call-container {
-    contain: layout style;
   }
 </style>

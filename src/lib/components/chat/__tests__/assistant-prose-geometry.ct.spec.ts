@@ -1,6 +1,22 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import AssistantProseGeometryHost from './AssistantProseGeometryHost.svelte';
 
+function contrastRatio(foreground: string, background: string): number {
+  const luminance = (color: string) => {
+    const channels = color
+      .match(/[0-9.]+/g)!
+      .slice(0, 3)
+      .map(Number);
+    const linear = channels.map((channel) => {
+      const normalized = channel / 255;
+      return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  };
+  const [lighter, darker] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 for (const theme of ['light', 'dark'] as const) {
   for (const width of [320, 720]) {
     for (const zoom of [1, 2]) {
@@ -19,8 +35,10 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(groupSummary).toBeVisible();
         await expect(prose).toHaveCount(4);
 
-        const operationalRows = baseline.locator('[data-operational-disclosure-row]');
-        await expect(operationalRows).toHaveCount(4);
+        const operationalRows = baseline.locator(
+          '[data-chat-operational-row] [data-operational-disclosure-row]',
+        );
+        await expect(operationalRows).toHaveCount(3);
         const operationalContentXs: number[] = [];
         for (const row of await operationalRows.all()) {
           const geometry = await row.evaluate((element) => {
@@ -39,7 +57,14 @@ for (const theme of ['light', 'dark'] as const) {
               height: element.getBoundingClientRect().height,
               iconBoxSize: iconBox.getBoundingClientRect().width,
               iconSize: icon.getBoundingClientRect().width,
-              minHeight: style.minHeight,
+              iconCenter: {
+                x: icon.getBoundingClientRect().x + icon.getBoundingClientRect().width / 2,
+                y: icon.getBoundingClientRect().y + icon.getBoundingClientRect().height / 2,
+              },
+              slotCenter: {
+                x: iconBox.getBoundingClientRect().x + iconBox.getBoundingClientRect().width / 2,
+                y: iconBox.getBoundingClientRect().y + iconBox.getBoundingClientRect().height / 2,
+              },
               padding: [
                 style.paddingInlineStart,
                 style.paddingInlineEnd,
@@ -48,20 +73,29 @@ for (const theme of ['light', 'dark'] as const) {
               ],
             };
           });
-          expect(geometry.minHeight).toBe('36px');
-          expect(geometry.height).toBeGreaterThanOrEqual(36 * zoom);
+          expect(geometry.height).toBeCloseTo(36 * zoom, 1);
           expect(geometry.iconBoxSize).toBeCloseTo(20 * zoom, 1);
-          expect(geometry.iconSize).toBeCloseTo(18 * zoom, 1);
-          expect(geometry.padding).toEqual(['12px', '12px', '8px', '8px']);
+          expect(geometry.iconSize).toBeCloseTo(16 * zoom, 1);
+          expect(geometry.iconCenter.x).toBeCloseTo(geometry.slotCenter.x, 1);
+          expect(geometry.iconCenter.y).toBeCloseTo(geometry.slotCenter.y, 1);
+          expect(geometry.padding).toEqual(['12px', '12px', '0px', '0px']);
           operationalContentXs.push(geometry.contentX);
         }
 
         const groupX = (await groupSummary.boundingBox())!.x;
         for (const contentX of operationalContentXs) expect(contentX).toBeCloseTo(groupX, 1);
 
-        const primaryStyles = await baseline
+        const summaryStyles = await baseline
+          .locator('[data-chat-operational-row] [data-operational-summary]')
+          .evaluateAll((elements) =>
+            elements.map((element) => {
+              const style = getComputedStyle(element);
+              return { color: style.color, fontWeight: style.fontWeight };
+            }),
+          );
+        const segmentStyles = await baseline
           .locator(
-            '[data-testid="reasoning-summary"], [data-testid="response-group-name"], [data-tool-primary]',
+            '[data-chat-operational-row] [data-operational-summary], [data-chat-operational-row] [data-tool-primary], [data-chat-operational-row] [data-tool-secondary]',
           )
           .evaluateAll((elements) =>
             elements.map((element) => {
@@ -69,23 +103,13 @@ for (const theme of ['light', 'dark'] as const) {
               return { color: style.color, fontWeight: style.fontWeight };
             }),
           );
-        expect(primaryStyles).toHaveLength(4);
-        expect(new Set(primaryStyles.map(({ color }) => color)).size).toBe(1);
-        expect(primaryStyles.every(({ fontWeight }) => fontWeight === '400')).toBe(true);
-
-        const secondaryStyles = await baseline
-          .locator(
-            '[data-testid="response-group-snippet"], [data-operational-icon-box], [data-tool-secondary]',
-          )
-          .evaluateAll((elements) =>
-            elements.map((element) => {
-              const style = getComputedStyle(element);
-              return { color: style.color, fontWeight: style.fontWeight };
-            }),
-          );
-        expect(new Set(secondaryStyles.map(({ color }) => color)).size).toBe(1);
-        expect(secondaryStyles.every(({ fontWeight }) => fontWeight === '400')).toBe(true);
-        expect(secondaryStyles[0].color).not.toBe(primaryStyles[0].color);
+        expect(summaryStyles).toHaveLength(3);
+        expect(new Set(segmentStyles.map(({ color }) => color)).size).toBe(1);
+        expect(segmentStyles.every(({ fontWeight }) => fontWeight === '400')).toBe(true);
+        const laneBackground = await component
+          .locator('[data-testid="assistant-prose-lane"]')
+          .evaluate((element) => getComputedStyle(element).backgroundColor);
+        expect(contrastRatio(summaryStyles[0].color, laneBackground)).toBeGreaterThanOrEqual(4.5);
         for (const marker of await prose.all()) {
           const firstChild = marker.locator(':scope > *').first();
           const box = await firstChild.boundingBox();
@@ -114,8 +138,34 @@ for (const theme of ['light', 'dark'] as const) {
         const assertCluster = async (testId: string, expectedRows: number) => {
           const fixture = component.locator(`[data-testid="${testId}"]`);
           const stack = fixture.locator(':scope > *');
-          const rows = fixture.locator('[data-operational-cluster-row]');
+          const rows = fixture.locator('[data-chat-operational-row]');
           await expect(rows).toHaveCount(expectedRows);
+          const rowLines = rows.locator('[data-operational-disclosure-row]');
+          const heights = await rowLines.evaluateAll((elements) =>
+            elements.map((element) => element.getBoundingClientRect().height),
+          );
+          for (const height of heights) expect(height).toBeCloseTo(36 * zoom, 1);
+          const icons = rows.locator('[data-operational-leading] svg');
+          await expect(icons).toHaveCount(expectedRows);
+          const iconWidths = await icons.evaluateAll((elements) =>
+            elements.map((element) => element.getBoundingClientRect().width),
+          );
+          for (const width of iconWidths) expect(width).toBeCloseTo(16 * zoom, 1);
+          const summaryStyles = await rows
+            .locator('[data-operational-summary]')
+            .evaluateAll((elements) =>
+              elements.map((element) => {
+                const style = getComputedStyle(element);
+                return {
+                  color: style.color,
+                  fontSize: style.fontSize,
+                  fontWeight: style.fontWeight,
+                };
+              }),
+            );
+          expect(new Set(summaryStyles.map((style) => style.color)).size).toBe(1);
+          expect(new Set(summaryStyles.map((style) => style.fontSize)).size).toBe(1);
+          for (const style of summaryStyles) expect(style.fontWeight).toBe('400');
           const boxes = await rows.evaluateAll((elements) =>
             elements.map((element) => {
               const box = element.getBoundingClientRect();
@@ -164,7 +214,7 @@ for (const theme of ['light', 'dark'] as const) {
             'context-tool',
           ]) {
             const rows = component.locator(
-              `[data-testid="operational-pair-${mode}-${pair}"] [data-operational-cluster-row]`,
+              `[data-testid="operational-pair-${mode}-${pair}"] [data-chat-operational-row]`,
             );
             await expect(rows).toHaveCount(2);
             const boxes = await rows.evaluateAll((elements) =>

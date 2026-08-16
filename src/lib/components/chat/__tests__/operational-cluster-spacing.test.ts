@@ -1,17 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { getOperationalClusterSpacingClass } from '../operational-disclosure-row';
+import {
+  getOperationalClusterSpacingClass,
+  isAdjacentOperationalClusterRow,
+} from '../operational-disclosure-row';
 
 const blocks = (...types: string[]) => types.map((type) => ({ type }));
 
 describe('operational cluster spacing', () => {
-  it('owns 16px outer spacing and 4px between adjacent operational rows', () => {
+  it('leaves adjacent spacing to ChatOperationalRow and owns 16px cluster boundaries', () => {
     const content = blocks('text', 'thinking', 'tool_use', 'tool_use', 'text');
 
     expect(content.map((_, index) => getOperationalClusterSpacingClass(content, index))).toEqual([
       '',
       'mt-4',
-      'mt-1',
-      'mt-1 mb-4',
+      '',
+      'mb-4',
       '',
     ]);
   });
@@ -22,12 +25,12 @@ describe('operational cluster spacing', () => {
     ['reasoning to tool', 'thinking', 'tool_use'],
     ['reasoning to context', 'thinking', 'tool_use'],
     ['context to tool', 'tool_use', 'tool_use'],
-  ])('uses one owning 4px margin for %s', (_name, firstType, secondType) => {
+  ])('marks the second row as adjacent for %s', (_name, firstType, secondType) => {
     const content = blocks(firstType, secondType);
 
-    expect(content.map((_, index) => getOperationalClusterSpacingClass(content, index))).toEqual([
-      'mt-4',
-      'mt-1 mb-4',
+    expect(content.map((_, index) => isAdjacentOperationalClusterRow(content, index))).toEqual([
+      false,
+      true,
     ]);
   });
 
@@ -55,6 +58,9 @@ describe('operational cluster spacing', () => {
 
     expect(
       content.map((_, index) => getOperationalClusterSpacingClass(content, index, visible)),
-    ).toEqual(['', 'mt-4', '', 'mt-1 mb-4', '']);
+    ).toEqual(['', 'mt-4', '', 'mb-4', '']);
+    expect(
+      content.map((_, index) => isAdjacentOperationalClusterRow(content, index, visible)),
+    ).toEqual([false, false, false, true, false]);
   });
 });

@@ -74,13 +74,14 @@ import ResponseGroup from '../ResponseGroup.svelte';
 import ThinkingBlock from '../ThinkingBlock.svelte';
 import ToolCall from '../ToolCall.svelte';
 import {
-  COMPACT_TOOL_ICON_BOX_CLASS,
-  COMPACT_TOOL_ROW_CLASS,
-  COMPACT_TOOL_SENTENCE_CLASS,
+  CHAT_OPERATIONAL_ICON_CLASS,
+  CHAT_OPERATIONAL_LEADING_CLASS,
+  CHAT_OPERATIONAL_ROW_CLASS,
+  CHAT_OPERATIONAL_SUMMARY_CLASS,
+  CHAT_OPERATIONAL_SUMMARY_TONE_CLASS,
   OPERATIONAL_EXPANDED_CONTENT_CLASS,
   OPERATIONAL_EXPANDED_GUIDE_CLASS,
   OPERATIONAL_ICON_BOX_CLASS,
-  OPERATIONAL_ICON_CLASS,
   OPERATIONAL_PRIMARY_CLASS,
   OPERATIONAL_ROW_LINE_CLASS,
   OPERATIONAL_SECONDARY_CLASS,
@@ -109,10 +110,10 @@ function expectClasses(element: Element, contract: string) {
   for (const token of contract.split(' ')) expect(element.className).toContain(token);
 }
 
-function expectRenderedContract(container: HTMLElement, summary: Element, compact = false) {
+function expectRenderedContract(container: HTMLElement, summary: Element, shared = false) {
   const row = container.querySelector('[data-operational-disclosure-row]')!;
-  expectClasses(row, compact ? COMPACT_TOOL_ROW_CLASS : OPERATIONAL_ROW_LINE_CLASS);
-  expectClasses(summary, compact ? COMPACT_TOOL_SENTENCE_CLASS : OPERATIONAL_SUMMARY_CLASS);
+  expectClasses(row, shared ? CHAT_OPERATIONAL_ROW_CLASS : OPERATIONAL_ROW_LINE_CLASS);
+  expectClasses(summary, shared ? CHAT_OPERATIONAL_SUMMARY_CLASS : OPERATIONAL_SUMMARY_CLASS);
   container.style.width = '120px';
   expect(row.scrollWidth).toBeLessThanOrEqual(container.scrollWidth);
 }
@@ -130,7 +131,7 @@ describe('shared operational disclosure-row contract', () => {
           summary: screen
             .getByTestId('tool-call-disclosure')
             .querySelector('[data-tool-sentence]')!,
-          compact: true,
+          shared: true,
         };
       },
       () => {
@@ -143,7 +144,7 @@ describe('shared operational disclosure-row contract', () => {
           summary: screen
             .getByTestId('context-engine-disclosure')
             .querySelector('[data-tool-sentence]')!,
-          compact: true,
+          shared: true,
         };
       },
       () => {
@@ -152,7 +153,7 @@ describe('shared operational disclosure-row contract', () => {
           view,
           host: screen.getByTestId('reasoning-tool-call'),
           summary: screen.getByTestId('reasoning-summary'),
-          compact: false,
+          shared: true,
         };
       },
       () => {
@@ -168,17 +169,86 @@ describe('shared operational disclosure-row contract', () => {
           view,
           host: row,
           summary: screen.getByTestId('response-group-summary'),
-          compact: false,
+          shared: false,
         };
       },
     ];
 
     for (const setup of cases) {
-      const { view, host, summary, compact } = setup();
+      const { view, host, summary, shared } = setup();
       expectClasses(host, OPERATIONAL_ROW_TONE_CLASS);
-      expectRenderedContract(view.container, summary, compact);
+      expectRenderedContract(view.container, summary, shared);
+      if (shared) expect(host.hasAttribute('data-chat-operational-row')).toBe(true);
       cleanup();
     }
+  });
+
+  it.each([
+    [
+      'ToolCall',
+      () => render(ToolCall, { props: { toolUse: genericTool, adjacentOperationalRow: true } }),
+    ],
+    [
+      'ContextEngineToolCall',
+      () =>
+        render(ContextEngineToolCall, {
+          props: { toolUse: contextTool, adjacentOperationalRow: true },
+        }),
+    ],
+    [
+      'ThinkingBlock',
+      () =>
+        render(ThinkingBlock, {
+          props: { content: 'Shared reasoning', adjacentOperationalRow: true },
+        }),
+    ],
+  ])('%s delegates its shell and adjacent spacing to ChatOperationalRow', (_name, setup) => {
+    const view = setup();
+    const sharedRow = view.container.querySelector('[data-chat-operational-row]')!;
+    expect(sharedRow).toBeTruthy();
+    expect(sharedRow.className).toContain('mt-1');
+    expect(sharedRow.getAttribute('data-adjacent-operational-row')).toBe('true');
+    expectClasses(
+      sharedRow.querySelector('[data-operational-disclosure-row]')!,
+      CHAT_OPERATIONAL_ROW_CLASS,
+    );
+  });
+
+  it('renders only eye, hand, and brain leading glyphs at 16px', () => {
+    const expectLeadingIcon = (container: HTMLElement, name: string) => {
+      const leading = container.querySelector('[data-operational-leading]')!;
+      const icon = container.querySelector('[data-operational-leading] [data-icon]')!;
+      expect(icon.getAttribute('data-icon')).toBe(name);
+      expectClasses(icon, CHAT_OPERATIONAL_ICON_CLASS);
+      expect(leading.className).toContain('size-[var(--operational-leading-slot-size)]');
+      expect(leading.className).toContain('items-center');
+      expect(leading.className).toContain('justify-center');
+      expect(container.querySelector('[data-operational-leading] img')).toBeNull();
+    };
+
+    expectLeadingIcon(render(ToolCall, { props: { toolUse: genericTool } }).container, 'hand');
+    cleanup();
+    expectLeadingIcon(
+      render(ToolCall, { props: { toolUse: createToolUse('view', 'view') } }).container,
+      'eye',
+    );
+    cleanup();
+    expectLeadingIcon(
+      render(ToolCall, {
+        props: { toolUse: createToolUse('mcp-view', 'mcp__figma__get_screenshot') },
+      }).container,
+      'eye',
+    );
+    cleanup();
+    expectLeadingIcon(
+      render(ContextEngineToolCall, { props: { toolUse: contextTool } }).container,
+      'eye',
+    );
+    cleanup();
+    expectLeadingIcon(
+      render(ThinkingBlock, { props: { content: 'Reasoning' } }).container,
+      'brain',
+    );
   });
 
   it('keeps running icons readable and stateful without reintroducing decorative group icons', () => {
@@ -186,7 +256,7 @@ describe('shared operational disclosure-row contract', () => {
       props: { toolUse: genericTool, toolState: 'running' },
     });
     const toolIcon = container.querySelector('[data-tool-icon]')!;
-    expectClasses(toolIcon, COMPACT_TOOL_ICON_BOX_CLASS);
+    expectClasses(toolIcon, CHAT_OPERATIONAL_LEADING_CLASS);
     expect(toolIcon.className).toContain('animate-pulse');
     cleanup();
 
@@ -194,7 +264,7 @@ describe('shared operational disclosure-row contract', () => {
     const searchIcon = screen
       .getByTestId('context-engine-tool-call')
       .querySelector('[data-tool-icon]')!;
-    expectClasses(searchIcon, COMPACT_TOOL_ICON_BOX_CLASS);
+    expectClasses(searchIcon, CHAT_OPERATIONAL_LEADING_CLASS);
     expect(searchIcon.className).toContain('animate-pulse');
     const runningStatus = screen.getByTestId('tool-call-status');
     expect(runningStatus.getAttribute('data-tool-status')).toBe('running');
@@ -204,7 +274,7 @@ describe('shared operational disclosure-row contract', () => {
 
     render(ThinkingBlock, { props: { content: 'Thinking', isStreaming: true } });
     const brain = screen.getByTestId('reasoning-tool-call').querySelector('[data-icon="brain"]')!;
-    expectClasses(brain, OPERATIONAL_ICON_CLASS);
+    expectClasses(brain, CHAT_OPERATIONAL_ICON_CLASS);
     expect(brain.className).toContain('animate-pulse');
     cleanup();
 
@@ -279,21 +349,22 @@ describe('shared operational disclosure-row contract', () => {
     },
   );
 
-  it('keeps the single sentence meaningful while its fixed icon remains quiet', () => {
+  it('uses one muted sentence treatment and fixed icon treatment', () => {
     render(ToolCall, {
       props: { toolUse: genericTool, toolState: 'completed', result: 'passed' },
     });
     const disclosure = screen.getByTestId('tool-call-disclosure');
     const summary = disclosure.querySelector('[data-tool-sentence]')!;
-    expectClasses(summary, COMPACT_TOOL_SENTENCE_CLASS);
+    expectClasses(summary, CHAT_OPERATIONAL_SUMMARY_CLASS);
+    expectClasses(summary, CHAT_OPERATIONAL_SUMMARY_TONE_CLASS);
     expect(disclosure.querySelectorAll('[data-tool-primary]').length).toBeGreaterThan(0);
     for (const primary of disclosure.querySelectorAll('[data-tool-primary]')) {
-      expectClasses(primary, OPERATIONAL_PRIMARY_CLASS);
+      expect(primary.className).not.toContain(OPERATIONAL_PRIMARY_CLASS);
     }
     for (const secondary of disclosure.querySelectorAll('[data-tool-secondary]')) {
-      expectClasses(secondary, OPERATIONAL_SECONDARY_CLASS);
+      expect(secondary.className).not.toContain(OPERATIONAL_SECONDARY_CLASS);
     }
-    expectClasses(disclosure.querySelector('[data-tool-icon]')!, OPERATIONAL_SECONDARY_CLASS);
+    expectClasses(disclosure.querySelector('[data-tool-icon]')!, CHAT_OPERATIONAL_LEADING_CLASS);
     expect(disclosure.tagName).toBe('BUTTON');
     cleanup();
 
@@ -302,17 +373,18 @@ describe('shared operational disclosure-row contract', () => {
     });
     const contextDisclosure = screen.getByTestId('context-engine-disclosure');
     const query = contextDisclosure.querySelector('[data-tool-sentence]')!;
-    expectClasses(query, COMPACT_TOOL_SENTENCE_CLASS);
+    expectClasses(query, CHAT_OPERATIONAL_SUMMARY_CLASS);
+    expectClasses(query, CHAT_OPERATIONAL_SUMMARY_TONE_CLASS);
     expect(contextDisclosure.querySelectorAll('[data-tool-primary]').length).toBeGreaterThan(0);
     for (const primary of contextDisclosure.querySelectorAll('[data-tool-primary]')) {
-      expectClasses(primary, OPERATIONAL_PRIMARY_CLASS);
+      expect(primary.className).not.toContain(OPERATIONAL_PRIMARY_CLASS);
     }
     for (const secondary of contextDisclosure.querySelectorAll('[data-tool-secondary]')) {
-      expectClasses(secondary, OPERATIONAL_SECONDARY_CLASS);
+      expect(secondary.className).not.toContain(OPERATIONAL_SECONDARY_CLASS);
     }
     expectClasses(
       contextDisclosure.querySelector('[data-tool-icon]')!,
-      OPERATIONAL_SECONDARY_CLASS,
+      CHAT_OPERATIONAL_LEADING_CLASS,
     );
   });
 
@@ -334,7 +406,7 @@ describe('shared operational disclosure-row contract', () => {
       const disclosure = container.querySelector('[data-testid="tool-call-disclosure"]')!;
       const sentence = disclosure.querySelector('[data-tool-sentence]')!;
       const action = container.querySelector(`[data-testid="${testId}"]`)!;
-      expectClasses(sentence, COMPACT_TOOL_SENTENCE_CLASS);
+      expectClasses(sentence, CHAT_OPERATIONAL_SUMMARY_CLASS);
       if (isInline) {
         expect(sentence.contains(action)).toBe(true);
         expect(action.className).toContain('min-w-0');

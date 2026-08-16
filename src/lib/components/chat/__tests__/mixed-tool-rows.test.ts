@@ -36,7 +36,9 @@ afterEach(cleanup);
 describe('screenshot-shaped mixed compact tool sequence', () => {
   it('renders every collapsed tool as one aligned sentence without secondary columns', () => {
     const { container } = render(MixedToolRowsHarness);
-    const rows = [...container.querySelectorAll('[data-compact-tool-row]')];
+    const rows = [
+      ...container.querySelectorAll('[data-chat-operational-row][data-tool-use-id]'),
+    ].map((host) => host.querySelector('[data-compact-tool-row]')!);
     expect(rows).toHaveLength(11);
 
     const stableClasses = (element: Element) =>
@@ -50,7 +52,7 @@ describe('screenshot-shaped mixed compact tool sequence', () => {
       expect(row.className).toContain(
         'grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto]',
       );
-      expect(row.className).toContain('min-h-9');
+      expect(row.className).toContain('h-9');
       expect(row.querySelectorAll('[data-tool-icon]')).toHaveLength(1);
       expect(row.querySelectorAll('[data-tool-sentence]')).toHaveLength(1);
       expect(row.querySelectorAll('[data-testid="tool-call-path"]')).toHaveLength(0);
@@ -64,7 +66,7 @@ describe('screenshot-shaped mixed compact tool sequence', () => {
     const sentences = [...container.querySelectorAll('[data-tool-sentence]')];
     for (const sentence of sentences) {
       expect(stableClasses(sentence)).toContain(
-        'block min-w-0 max-w-full truncate whitespace-nowrap',
+        'flex min-w-0 max-w-full items-baseline truncate whitespace-nowrap',
       );
     }
     expect(container.textContent).toContain('Read tool-classifier.ts lines 1–120');
