@@ -220,8 +220,16 @@
         <Menu.SubContent>
           {#each harnessFeatureEntries as [feature, enabled] (feature)}
             <!-- Wire identifier from the §5.12 feature catalog, rendered
-                 verbatim. i18n-ignore (daemon-provided identifier) -->
-            <Menu.CommandItem icon={enabled ? faCheck : undefined} label={feature} disabled />
+                 verbatim. i18n-ignore (daemon-provided identifier). The icon
+                 column is always reserved so on/off labels align. -->
+            <Menu.Item disabled>
+              <span class="flex w-4 shrink-0 items-center justify-center" aria-hidden="true">
+                {#if enabled}
+                  <Fa icon={faCheck} size="xs" class="text-muted-foreground opacity-70" />
+                {/if}
+              </span>
+              <span class="min-w-0 flex-1 truncate">{feature}</span>
+            </Menu.Item>
           {/each}
         </Menu.SubContent>
       </Menu.Sub>
