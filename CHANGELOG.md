@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.52.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.51.5...v2.52.0) (2026-08-16)
+
+
+### 🚀 Features
+
+* virtualize workspace columns in horizontal mode (windowed mounting) ([#1243](https://github.com/intent-hq/cloudlands-fe/issues/1243)) ([2cc586f](https://github.com/intent-hq/cloudlands-fe/commit/2cc586f57ca295a6d4c605e3f374b9ed8640459f))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.6 ([#1304](https://github.com/intent-hq/cloudlands-fe/issues/1304)) ([14f57da](https://github.com/intent-hq/cloudlands-fe/commit/14f57da82eb54104ef1377c04d95605526374833))
+
 ## [2.51.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.51.4...v2.51.5) (2026-08-16)
 
 
