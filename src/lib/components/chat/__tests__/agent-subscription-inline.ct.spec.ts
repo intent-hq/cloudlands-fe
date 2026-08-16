@@ -168,6 +168,105 @@ test('starts every icon-free peek exactly 10px after the primary label', async (
   }
 });
 
+test('aligns the foreground waiting header to the standard avatar grid', async ({ mount }) => {
+  const component = await mount(AgentSubscriptionInlineHost);
+  const cases = [
+    { agentCount: 1, longLabels: true },
+    { agentCount: 7, longLabels: false },
+  ] as const;
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const width of [270, 340]) {
+      for (const zoom of [1, 2]) {
+        for (const current of cases) {
+          await component.update({ props: { theme, width, zoom, ...current } });
+          const summary = component.getByTestId('one-shot-summary-toggle');
+          if ((await summary.getAttribute('aria-expanded')) === 'false') await summary.click();
+          await expect(component.getByTestId('agent-list-item')).toHaveCount(current.agentCount);
+
+          const expanded = await component.evaluate((root) => {
+            const element = (testId: string) =>
+              root.querySelector(`[data-testid="${testId}"]`) as HTMLElement;
+            const rect = (node: Element) => {
+              const box = node.getBoundingClientRect();
+              return {
+                left: box.left,
+                right: box.right,
+                top: box.top,
+                bottom: box.bottom,
+                centerX: (box.left + box.right) / 2,
+                centerY: (box.top + box.bottom) / 2,
+              };
+            };
+            const icon = element('one-shot-leading-column').querySelector('svg')!;
+            const title = element('one-shot-summary-title');
+            const avatar = element('agent-card-avatar-wrapper');
+            const name = element('agent-card-name');
+            return {
+              slot: rect(element('one-shot-leading-column')),
+              icon: rect(icon),
+              avatar: rect(avatar),
+              title: rect(title),
+              name: rect(name),
+              iconStyle: {
+                color: getComputedStyle(icon).color,
+                opacity: getComputedStyle(icon).opacity,
+              },
+              titleStyle: {
+                color: getComputedStyle(title).color,
+                opacity: getComputedStyle(title).opacity,
+              },
+              nameColor: getComputedStyle(name).color,
+              devicePixelRatio: window.devicePixelRatio,
+            };
+          });
+
+          const deviceDelta = (left: number, right: number) =>
+            Math.abs(left - right) * expanded.devicePixelRatio;
+          expect(deviceDelta(expanded.slot.centerX, expanded.avatar.centerX)).toBeLessThanOrEqual(
+            0.5,
+          );
+          expect(deviceDelta(expanded.slot.centerY, expanded.avatar.centerY)).toBeLessThanOrEqual(
+            0.5,
+          );
+          expect(deviceDelta(expanded.icon.centerX, expanded.avatar.centerX)).toBeLessThanOrEqual(
+            0.5,
+          );
+          expect(deviceDelta(expanded.icon.centerY, expanded.avatar.centerY)).toBeLessThanOrEqual(
+            0.5,
+          );
+          expect(deviceDelta(expanded.title.left, expanded.name.left)).toBeLessThanOrEqual(0.5);
+          expect(expanded.iconStyle).toEqual({ color: expanded.nameColor, opacity: '1' });
+          expect(expanded.titleStyle).toEqual({ color: expanded.nameColor, opacity: '1' });
+
+          await summary.click();
+          await expect(summary).toHaveAttribute('aria-expanded', 'false');
+          await expect(component.getByTestId('one-shot-agent-list')).toHaveCount(0);
+          const collapsed = await component
+            .getByTestId('one-shot-leading-column')
+            .evaluate((slot) => {
+              const icon = slot.querySelector('svg')!;
+              const slotBox = slot.getBoundingClientRect();
+              const iconBox = icon.getBoundingClientRect();
+              return {
+                slotCenterX: (slotBox.left + slotBox.right) / 2,
+                iconCenterX: (iconBox.left + iconBox.right) / 2,
+                iconColor: getComputedStyle(icon).color,
+                iconOpacity: getComputedStyle(icon).opacity,
+                devicePixelRatio: window.devicePixelRatio,
+              };
+            });
+          expect(
+            Math.abs(collapsed.slotCenterX - collapsed.iconCenterX) * collapsed.devicePixelRatio,
+          ).toBeLessThanOrEqual(0.5);
+          expect(collapsed.iconColor).toBe(expanded.nameColor);
+          expect(collapsed.iconOpacity).toBe('1');
+        }
+      }
+    }
+  }
+});
+
 test('uses exact named standard avatar geometry in every subscription row', async ({ mount }) => {
   const component = await mount(AgentSubscriptionInlineHost);
   for (const theme of ['light', 'dark'] as const) {

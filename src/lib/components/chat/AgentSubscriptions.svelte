@@ -55,6 +55,8 @@
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_ICON_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
+    SUBSCRIPTION_LEADING_CONTENT_CLASS,
     SUBSCRIPTION_ROW_GEOMETRY_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
   } from './subscription-disclosure';
@@ -643,12 +645,12 @@
         {#if shouldGroupWaitingAgents}
           <!-- Section header: compact waiting summary and disclosure for large lists. -->
           <div
-            class="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden text-subtle {SUBSCRIPTION_ROW_GEOMETRY_CLASS}"
+            class="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden text-foreground {SUBSCRIPTION_ROW_GEOMETRY_CLASS}"
             data-testid="one-shot-header"
           >
             <button
               type="button"
-              class="flex min-w-0 flex-1 items-center gap-1.5 rounded border-none bg-transparent p-0 text-left font-[inherit] text-subtle cursor-pointer hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+              class="min-w-0 flex-1 rounded border-none bg-transparent p-0 text-left font-[inherit] text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring {SUBSCRIPTION_LEADING_CONTENT_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
               data-testid="one-shot-summary-toggle"
               data-subscription-row="agent-watch"
               aria-expanded={!waitingAgentsCollapsed}
@@ -656,12 +658,20 @@
               onclick={toggleWaitingAgentsCollapsed}
               onkeydown={(event) => handleActionKeydown(event, toggleWaitingAgentsCollapsed)}
             >
-              <Fa
-                icon={faHourglass}
-                size={14}
-                class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
-              />
-              <span class="min-w-0 truncate whitespace-nowrap" data-testid="one-shot-summary-title">
+              <span
+                class="{SUBSCRIPTION_LEADING_COLUMN_CLASS} text-foreground opacity-100"
+                data-testid="one-shot-leading-column"
+              >
+                <Fa
+                  icon={faHourglass}
+                  size={14}
+                  class="h-3.5! w-3.5! shrink-0 text-foreground opacity-100"
+                />
+              </span>
+              <span
+                class="min-w-0 truncate whitespace-nowrap text-foreground"
+                data-testid="one-shot-summary-title"
+              >
                 {waitingAgentRows.length === 1
                   ? m.chat_agentSubscriptions_waitingForAgents_one({
                       count: formatInteger(waitingAgentRows.length),
@@ -717,7 +727,7 @@
               >
                 <button
                   type="button"
-                  class="flex min-h-9 w-full min-w-0 max-w-full cursor-pointer items-center gap-1.5 overflow-hidden py-1.5 text-left text-subtle hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+                  class="w-full min-w-0 max-w-full cursor-pointer overflow-hidden text-left text-subtle hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring {SUBSCRIPTION_LEADING_CONTENT_CLASS} {SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
                   data-testid="finished-agent-summary"
                   data-subscription-row="grouped-summary"
                   aria-expanded={finishedAgentsExpanded}
@@ -726,8 +736,8 @@
                   onkeydown={(event) => handleActionKeydown(event, toggleFinishedAgentsExpanded)}
                 >
                   <span
-                    class="ml-2 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center"
-                    data-testid="finished-agent-icon-offset"
+                    class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
+                    data-testid="finished-agent-leading-column"
                   >
                     <Fa
                       icon={faCheck}
@@ -735,34 +745,36 @@
                       class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
                     />
                   </span>
-                  <span class="min-w-0 flex-1 truncate whitespace-nowrap">
-                    {m.chat_agentSubscriptions_finished_many({
-                      count: formatInteger(finishedAgentRows.length),
-                    })}
-                  </span>
-                  {#if latestFinishedAt}
-                    <RelativeTime
-                      date={latestFinishedAt}
-                      compact
-                      class="shrink-0 text-ui font-normal text-muted-foreground/70"
-                    />
-                  {/if}
-                  <span
-                    class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
-                    data-testid="finished-agent-chevron"
-                  >
-                    <Fa
-                      icon={faChevronDown}
-                      class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {finishedAgentsExpanded
-                        ? ''
-                        : '-rotate-90'}"
-                    />
+                  <span class="flex min-w-0 items-center gap-2">
+                    <span class="min-w-0 flex-1 truncate whitespace-nowrap">
+                      {m.chat_agentSubscriptions_finished_many({
+                        count: formatInteger(finishedAgentRows.length),
+                      })}
+                    </span>
+                    {#if latestFinishedAt}
+                      <RelativeTime
+                        date={latestFinishedAt}
+                        compact
+                        class="shrink-0 text-ui font-normal text-muted-foreground/70"
+                      />
+                    {/if}
+                    <span
+                      class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                      data-testid="finished-agent-chevron"
+                    >
+                      <Fa
+                        icon={faChevronDown}
+                        class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {finishedAgentsExpanded
+                          ? ''
+                          : '-rotate-90'}"
+                      />
+                    </span>
                   </span>
                 </button>
                 {#if finishedAgentsExpanded}
                   <div
                     id={finishedAgentListId}
-                    class="flex w-full min-w-0 max-w-full flex-col gap-1 overflow-hidden border-t border-border/40 px-1 py-1"
+                    class="flex w-full min-w-0 max-w-full flex-col overflow-hidden border-t border-border/40"
                     data-testid="finished-agent-list"
                     transition:safeSubscriptionSlide
                   >

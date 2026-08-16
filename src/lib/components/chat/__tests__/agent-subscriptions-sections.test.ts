@@ -465,12 +465,14 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       await expandWaitingAgents();
       const group = screen.getByTestId('finished-agent-group');
       const summary = screen.getByTestId('finished-agent-summary');
-      const horizontalInsetClass = /^(?:-?m(?:[lrxse])?|-?inset(?:[lrxse])?|p(?:[lrxse])?)-/;
+      const negativeInsetClass = /^-(?:m(?:[lrxse])?|inset(?:[lrxse])?)-/;
       const distinctSurfaceClass = /^(?:bg-|rounded(?:-|$)|shadow(?:-|$))/;
 
       expect(summary.getAttribute('aria-expanded')).toBe('false');
+      expect(summary.classList).toContain('px-3!');
+      expect(summary.classList).toContain('py-2!');
       for (const token of [...group.classList, ...summary.classList]) {
-        expect(token).not.toMatch(horizontalInsetClass);
+        expect(token).not.toMatch(negativeInsetClass);
         expect(token).not.toMatch(distinctSurfaceClass);
       }
     },
@@ -506,21 +508,25 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     const waitingSummary = screen.getByTestId('one-shot-summary-toggle');
     await expandWaitingAgents();
     const finishedSummary = screen.getByTestId('finished-agent-summary');
-    const finishedIconOffset = screen.getByTestId('finished-agent-icon-offset');
+    const waitingLeadingColumn = screen.getByTestId('one-shot-leading-column');
+    const finishedLeadingColumn = screen.getByTestId('finished-agent-leading-column');
     const waitingIcon = waitingSummary.querySelector('[data-icon="hourglass"]');
     const finishedIcon = finishedSummary.querySelector('[data-icon="check"]');
 
-    expect(finishedSummary.classList).toContain('items-center');
-    expect(finishedSummary.classList).toContain('gap-1.5');
+    expect(finishedSummary.classList).toContain('grid');
+    expect(finishedSummary.classList).toContain('gap-x-2');
     expect(finishedSummary.classList).not.toContain('px-2');
-    expect(finishedIconOffset.classList).toContain('ml-2');
-    expect(finishedIconOffset.classList).toContain('items-center');
+    expect(waitingLeadingColumn.classList).toContain('size-5');
+    expect(finishedLeadingColumn.classList).toContain('size-5');
+    expect(finishedLeadingColumn.className).not.toMatch(/^-m(?:[lrxse])?-/);
     expect(screen.getByTestId('one-shot-agent-list').classList).not.toContain('px-1');
     expect(screen.getByTestId('one-shot-header').classList).toContain('px-3!');
     expect(finishedIcon).toBeTruthy();
     expect(finishedSummary.querySelector('[data-icon="circle-check"]')).toBeNull();
     expect(finishedIcon?.classList).toContain('text-ghost');
     expect(finishedIcon?.classList).toContain('opacity-60');
+    expect(waitingIcon?.classList).toContain('text-foreground');
+    expect(waitingIcon?.classList).toContain('opacity-100');
     expect(finishedIcon?.className.baseVal).not.toMatch(/green/);
     for (const token of ['h-3.5!', 'w-3.5!', 'shrink-0']) {
       expect(finishedIcon?.classList).toContain(token);

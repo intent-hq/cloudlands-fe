@@ -19,6 +19,8 @@
     zoom?: number;
     previewKind?: PreviewKind;
     mode?: 'agents' | 'mixed';
+    agentCount?: number;
+    longLabels?: boolean;
   }
 
   let {
@@ -27,6 +29,8 @@
     zoom = 1,
     previewKind = 'file',
     mode = 'agents',
+    agentCount = 7,
+    longLabels = false,
   }: Props = $props();
   const agentId = 'agent-subscription-inline-geometry';
   const workspaceId = 'workspace-subscription-inline-geometry';
@@ -85,10 +89,17 @@
     disposeStore();
   });
 
-  const agents = Array.from({ length: 7 }, (_, index) => ({
-    id: index === 0 ? agentId : `agent-subscription-filler-${index}`,
-    name: index === 0 ? 'Primary Agent' : `Filler ${index}`,
-  }));
+  const agents = $derived(
+    Array.from({ length: agentCount }, (_, index) => ({
+      id: index === 0 ? agentId : `agent-subscription-filler-${index}`,
+      name:
+        index === 0
+          ? longLabels
+            ? 'Primary Agent With An Extremely Long Unicode Name 超長い名前 ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+            : 'Primary Agent'
+          : `Filler ${index}`,
+    })),
+  );
 </script>
 
 {#snippet mixedPreview()}

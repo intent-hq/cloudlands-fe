@@ -12,7 +12,8 @@
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
     SUBSCRIPTION_ICON_BUTTON_CLASS,
-    SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
+    SUBSCRIPTION_LEADING_CONTENT_CLASS,
   } from './subscription-disclosure';
   import { Button } from '$lib/components/ui/button';
   import {
@@ -144,7 +145,10 @@
           onclick={toggleCollapsed}
           onkeydown={handleToggleKeydown}
         >
-          <span class="min-w-0 flex-1 truncate">{heading}</span>
+          <span class="min-w-0 flex-1 {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
+            <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true"></span>
+            <span class="min-w-0 truncate">{heading}</span>
+          </span>
           <span
             class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
             data-testid="event-subscriptions-chevron"
