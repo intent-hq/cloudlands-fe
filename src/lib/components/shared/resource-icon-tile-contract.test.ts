@@ -30,6 +30,10 @@ describe('resource icon tile source contract', () => {
 
     expect(sidebar).toMatch(/<ResourceIconTile\s+kind="note"/);
     expect(sidebar).toContain('<ResourceIconTile kind="changes" />');
+    expect(sidebar).toContain('variant="standard"');
+    expect(sidebar).not.toMatch(
+      /<AgentAvatarWithState[\s\S]*?size=\{LAUNCHER_VISIBLE_SIZE\}[\s\S]*?\/>/,
+    );
     expect(sidebar).not.toContain('$lib/icons/faNote');
     expect(notes.match(/<ResourceIconTile kind="note" \/>/g)).toHaveLength(2);
     expect(notes).toContain('<TaskStatusIcon');

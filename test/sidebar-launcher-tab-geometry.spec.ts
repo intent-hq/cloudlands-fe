@@ -348,17 +348,27 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
         return items.map((item) => {
           const visibleSurface =
             item.querySelector<HTMLElement>('[data-sidebar-launcher-glyph]') ?? item;
+          const itemRect = item.getBoundingClientRect();
+          const visibleRect = visibleSurface.getBoundingClientRect();
+          const overflowText = item.querySelector<HTMLElement>('span[aria-hidden="true"]');
+          const overflowTextRect = overflowText?.getBoundingClientRect();
           return {
-            left: item.getBoundingClientRect().left - cardRect.left,
-            visibleLeft: visibleSurface.getBoundingClientRect().left - cardRect.left,
-            right: cardRect.right - item.getBoundingClientRect().right,
-            width: item.getBoundingClientRect().width,
+            left: itemRect.left - cardRect.left,
+            visibleLeft: visibleRect.left - cardRect.left,
+            visibleWidth: visibleRect.width,
+            right: cardRect.right - itemRect.right,
+            width: itemRect.width,
             inset,
             labelLeft,
             scale,
             overflow:
               item.hasAttribute('data-sidebar-agent-overflow') ||
               item.hasAttribute('data-sidebar-context-overflow'),
+            overflowText: overflowText?.textContent ?? '',
+            overflowTextLeft: overflowTextRect ? overflowTextRect.left - itemRect.left : 0,
+            overflowTextRight: overflowTextRect ? itemRect.right - overflowTextRect.right : 0,
+            scrollWidth: item.scrollWidth,
+            clientWidth: item.clientWidth,
           };
         });
       }),
@@ -372,19 +382,134 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
       expect(bounds).toHaveLength(expectedCount);
       if (bounds.length === 0) continue;
       expect(Math.abs(bounds[0].visibleLeft - bounds[0].labelLeft)).toBeLessThanOrEqual(0.5);
+      expect(bounds.every(({ width, scale }) => Math.abs(width - 36 * scale) <= 0.5)).toBe(true);
+      expect(
+        bounds
+          .filter(({ overflow }) => !overflow)
+          .every(({ visibleWidth, scale }) => Math.abs(visibleWidth - 20 * scale) <= 0.5),
+      ).toBe(true);
       const steps = bounds.slice(1).map((item, itemIndex) => item.left - bounds[itemIndex].left);
-      expect(bounds.every(({ width, scale }) => width >= 36 * scale - 0.5)).toBe(true);
       expect(steps.every((step) => step > 0 && step <= 36 * bounds[0].scale)).toBe(true);
-      const visibleSteps = bounds
-        .filter(({ overflow }) => !overflow)
+      const visibleBounds = bounds.filter(({ overflow }) => !overflow);
+      const visibleSteps = visibleBounds
         .slice(1)
-        .map((item, itemIndex) => item.left - bounds[itemIndex].left);
+        .map((item, itemIndex) => item.visibleLeft - visibleBounds[itemIndex].visibleLeft);
       if (visibleSteps.length > 1) expectEqual(visibleSteps, 0.75);
+      if (total <= 6) {
+        expect(visibleSteps.every((step) => Math.abs(step - 16 * bounds[0].scale) <= 0.5)).toBe(
+          true,
+        );
+        expect(
+          visibleSteps.every(
+            (step) => Math.abs(20 * bounds[0].scale - step - 4 * bounds[0].scale) <= 0.5,
+          ),
+        ).toBe(true);
+      }
       if (total > 6) {
-        expect(bounds.at(-1)?.overflow).toBe(true);
+        const overflow = bounds.at(-1)!;
+        expect(overflow.overflow).toBe(true);
         expect(steps.at(-1)).toBeCloseTo(36 * bounds[0].scale, 1);
+        expect(overflow.overflowText).toBe(`+${total - 6}`);
+        expect(overflow.overflowTextLeft).toBeGreaterThanOrEqual(0);
+        expect(overflow.overflowTextRight).toBeGreaterThanOrEqual(0);
+        expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
       }
     }
+    const cardAlignment = await surfaces.evaluateAll((elements) =>
+      elements.map((card) => {
+        const element = card as HTMLElement;
+        const cardRect = element.getBoundingClientRect();
+        const scale = cardRect.width / element.offsetWidth;
+        const label = element.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!;
+        const stack = element.querySelector<HTMLElement>('[data-sidebar-launcher-icons]');
+        const visibleSurface =
+          element.querySelector<HTMLElement>('[data-sidebar-launcher-glyph]') ??
+          element.querySelector<HTMLElement>(
+            '[data-sidebar-changes-resource] [data-resource-icon-tile]',
+          );
+        const id =
+          element.dataset.sidebarLauncher ??
+          (element.hasAttribute('data-workspace-terminal-dock') ? 'shell' : 'unknown');
+        let leadingLeft: number;
+        if (visibleSurface) {
+          leadingLeft = visibleSurface.getBoundingClientRect().left;
+        } else if (stack) {
+          leadingLeft =
+            stack.getBoundingClientRect().left +
+            Number(stack.dataset.launcherVisibleOffset ?? 0) * scale;
+        } else {
+          const style = getComputedStyle(element);
+          leadingLeft =
+            cardRect.left +
+            (Number.parseFloat(style.borderLeftWidth) + Number.parseFloat(style.paddingLeft)) *
+              scale;
+        }
+        return {
+          id,
+          delta: Math.abs(label.getBoundingClientRect().left - leadingLeft),
+        };
+      }),
+    );
+    expect(cardAlignment.map(({ id }) => id).sort()).toEqual([
+      'agents',
+      'browser',
+      'changes',
+      'context',
+      'files',
+      'shell',
+    ]);
+    expect(cardAlignment.every(({ delta }) => delta <= 0.5)).toBe(true);
+    if (geometry.agentCount > 0) {
+      const avatarGeometry = await cards
+        .filter({ has: page.locator('[data-sidebar-agent]') })
+        .locator('[data-agent-avatar-with-state]')
+        .evaluateAll((surfaces) =>
+          surfaces.map((surface) => {
+            const element = surface as HTMLElement;
+            const card = element.closest<HTMLElement>('[data-sidebar-launcher]')!;
+            const scale = card.getBoundingClientRect().width / card.offsetWidth;
+            const avatar = element.querySelector<SVGElement>('[data-agent-avatar]')!;
+            const avatarStyle = getComputedStyle(avatar);
+            return {
+              variant: element.dataset.avatarVariant,
+              surface: element.getBoundingClientRect().width / scale,
+              svg: avatar.getBoundingClientRect().width / scale,
+              clearSpace: Number.parseFloat(avatarStyle.paddingLeft),
+              art:
+                avatar.getBoundingClientRect().width / scale -
+                Number.parseFloat(avatarStyle.paddingLeft) -
+                Number.parseFloat(avatarStyle.paddingRight),
+            };
+          }),
+        );
+      expect(avatarGeometry).toHaveLength(Math.min(geometry.agentCount, 6));
+      expect(
+        avatarGeometry.every(
+          ({ variant, surface, svg, clearSpace, art }) =>
+            variant === 'standard' &&
+            Math.abs(surface - 20) < 0.1 &&
+            Math.abs(svg - 20) < 0.1 &&
+            Math.abs(clearSpace - 2) < 0.1 &&
+            Math.abs(art - 16) < 0.1,
+        ),
+      ).toBe(true);
+    }
+    const changesGeometry = await cards
+      .filter({ has: page.locator('[data-sidebar-changes-resource]') })
+      .evaluate((card) => {
+        const scale = card.getBoundingClientRect().width / (card as HTMLElement).offsetWidth;
+        return {
+          target:
+            card
+              .querySelector<HTMLElement>('[data-sidebar-changes-resource]')!
+              .getBoundingClientRect().width / scale,
+          visible:
+            card.querySelector<HTMLElement>('[data-resource-icon-tile]')!.getBoundingClientRect()
+              .width / scale,
+        };
+      });
+    expect(changesGeometry.target).toBeCloseTo(36, 1);
+    expect(changesGeometry.visible).toBeCloseTo(20, 1);
     const labelRows = await cards.evaluateAll((elements) =>
       elements.map((card) => {
         const cardRect = card.getBoundingClientRect();

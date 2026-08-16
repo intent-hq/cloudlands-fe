@@ -1113,7 +1113,7 @@
                                 agentId={agent.id}
                                 specialist={agent.metadata?.specialist as
                                   BuiltinSpecialistId | undefined}
-                                size={LAUNCHER_VISIBLE_SIZE}
+                                variant="standard"
                                 state={isRunning ? 'running' : 'idle'}
                               />
                               <OpenPanelIndicator
