@@ -20,7 +20,6 @@ import type {
   PendingCommitAction,
   PendingPRContext,
   TrackedChange,
-  StageTransition,
   CommitInfo,
   LineChangeStats,
   AgentLineStatsRequestState,
@@ -100,33 +99,6 @@ export const emptyAgentLineStatsRequestState: AgentLineStatsRequestState = {
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceState);
 
-function areChangesCoordinationStatesEqual(
-  left: ChangesCoordinationState,
-  right: ChangesCoordinationState,
-): boolean {
-  return left.lastSyncTime === right.lastSyncTime
-    && left.lastUpdatedAt === right.lastUpdatedAt
-    && left.syncInProgress === right.syncInProgress
-    && left.syncDirty === right.syncDirty
-    && left.syncDirtyForce === right.syncDirtyForce
-    && left.syncThrottleMs === right.syncThrottleMs
-    && left.loadInProgress === right.loadInProgress
-    && left.loadDirty === right.loadDirty
-    && left.refreshInProgress === right.refreshInProgress
-    && left.refreshDirty === right.refreshDirty;
-}
-
-function updateCoordinationState(
-  state: FileTrackingState,
-  wsId: string,
-  update: (coordination: ChangesCoordinationState) => ChangesCoordinationState,
-): FileTrackingState {
-  const ws = getWorkspaceState(state, wsId);
-  const coordination = update(ws.coordination);
-  if (areChangesCoordinationStatesEqual(ws.coordination, coordination)) return state;
-  return setWorkspaceState(state, wsId, { ...ws, coordination });
-}
-
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
@@ -139,9 +111,6 @@ export const clearWorkspace = createAction<[wsId: string]>(
 // Loading / error state
 export const setLoading = createAction<[wsId: string, loading: boolean]>(
   "changes/setLoading"
-);
-export const setError = createAction<[wsId: string, error: string | null]>(
-  "changes/setError"
 );
 export const setHasLoadedInitialData = createAction<[wsId: string, hasLoaded: boolean]>(
   "changes/setHasLoadedInitialData"
@@ -156,9 +125,6 @@ export const setChangesData = createAction(
     truncated,
     totalCount,
   })
-);
-export const setTransitions = createAction<[wsId: string, transitions: StageTransition[]]>(
-  "changes/setTransitions"
 );
 export const setCommitsData = createAction(
   "changes/setCommitsData",
@@ -184,9 +150,6 @@ export const setLoadingOlderCommits = createAction<[wsId: string, loading: boole
 export const setChanges = createAction<[wsId: string, changes: TrackedChange[]]>(
   "changes/setChanges"
 );
-export const clearAllChanges = createAction<[wsId: string]>(
-  "changes/clearAllChanges"
-);
 
 // UI state
 export const setMainPanelView = createAction<[view: MainPanelViewState | null]>(
@@ -194,19 +157,6 @@ export const setMainPanelView = createAction<[view: MainPanelViewState | null]>(
 );
 export const clearMainPanelView = createAction(
   "changes/clearMainPanelView"
-);
-// Saga triggers (no reducer handler needed — sagas listen for these)
-export const initWorkspace = createAction<[wsId: string]>(
-  "changes/initWorkspace"
-);
-// Operation request actions (sagas listen for these)
-export const stageChangesRequested = createAction(
-  "changes/stageChangesRequested",
-  (wsId: string, changeIds: string[], changesFromUI?: TrackedChange[]) => ({
-    wsId,
-    changeIds,
-    changesFromUI,
-  })
 );
 export const unstageChangesRequested = createAction(
   "changes/unstageChangesRequested",
@@ -225,26 +175,14 @@ export const unstageByPathRequested = createAction<[wsId: string, filePaths: str
 export const revertChangeRequested = createAction<[wsId: string, change: TrackedChange]>(
   "changes/revertChangeRequested"
 );
-export const revertChangesRequested = createAction<[wsId: string, changes: TrackedChange[]]>(
-  "changes/revertChangesRequested"
-);
 export const revertByPathRequested = createAction<[wsId: string, filePaths: string[]]>(
   "changes/revertByPathRequested"
 );
 export const refreshRequested = createAction<[wsId: string, forceSync?: boolean]>(
   "changes/refreshRequested"
 );
-export const syncWithGitRequested = createAction<[wsId: string, force?: boolean]>(
-  "changes/syncWithGitRequested"
-);
 export const loadWorkspaceDataRequested = createAction<[wsId: string]>(
   "changes/loadWorkspaceDataRequested"
-);
-export const trackChangeRequested = createAction<[wsId: string, change: Omit<TrackedChange, "id">]>(
-  "changes/trackChangeRequested"
-);
-export const clearTrackedChangesRequested = createAction<[wsId: string]>(
-  "changes/clearTrackedChangesRequested"
 );
 export const loadOlderCommitsRequested = createAction(
   "changes/loadOlderCommitsRequested",
@@ -253,47 +191,6 @@ export const loadOlderCommitsRequested = createAction(
     beforeSha,
     limit,
   })
-);
-
-// Coordination state actions for changes operation sagas
-export const changesSyncStarted = createAction<[wsId: string, lastSyncTime: number]>(
-  "changes/changesSyncStarted"
-);
-export const changesDataUpdated = createAction<[wsId: string, lastUpdatedAt: number]>(
-  "changes/changesDataUpdated"
-);
-export const changesSyncQueued = createAction<[wsId: string, force: boolean]>(
-  "changes/changesSyncQueued"
-);
-export const changesSyncFinished = createAction<[wsId: string]>(
-  "changes/changesSyncFinished"
-);
-export const changesSyncDirtyConsumed = createAction<[wsId: string]>(
-  "changes/changesSyncDirtyConsumed"
-);
-export const changesLoadStarted = createAction<[wsId: string]>(
-  "changes/changesLoadStarted"
-);
-export const changesLoadQueued = createAction<[wsId: string]>(
-  "changes/changesLoadQueued"
-);
-export const changesLoadFinished = createAction<[wsId: string]>(
-  "changes/changesLoadFinished"
-);
-export const changesLoadDirtyConsumed = createAction<[wsId: string]>(
-  "changes/changesLoadDirtyConsumed"
-);
-export const changesRefreshStarted = createAction<[wsId: string]>(
-  "changes/changesRefreshStarted"
-);
-export const changesRefreshQueued = createAction<[wsId: string]>(
-  "changes/changesRefreshQueued"
-);
-export const changesRefreshFinished = createAction<[wsId: string]>(
-  "changes/changesRefreshFinished"
-);
-export const changesRefreshDirtyConsumed = createAction<[wsId: string]>(
-  "changes/changesRefreshDirtyConsumed"
 );
 
 // ---------------------------------------------------------------------------
@@ -325,11 +222,6 @@ export const agentLineStatsRequestSucceeded = createAction(
 export const agentLineStatsRequestFailed = createAction(
   "changes/agentLineStatsRequestFailed",
   (agentId: string, error: string, finishedAt: string) => ({ agentId, error, finishedAt }),
-);
-
-/** Clear agent stats */
-export const clearAgentStats = createAction<[agentId: string]>(
-  "changes/clearAgentStats",
 );
 
 // ---------------------------------------------------------------------------
@@ -423,97 +315,10 @@ fileTrackingReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
   clearWorkspaceState(state, wsId),
 );
 
-// Changes operation coordination state
-fileTrackingReducer.with(changesSyncStarted, (state, { payload: [wsId, lastSyncTime] }) =>
-  updateCoordinationState(state, wsId, (coordination) => ({
-    ...coordination,
-    lastSyncTime,
-    syncInProgress: true,
-  })),
-);
-fileTrackingReducer.with(changesDataUpdated, (state, { payload: [wsId, lastUpdatedAt] }) =>
-  updateCoordinationState(state, wsId, (coordination) => ({
-    ...coordination,
-    lastUpdatedAt,
-  })),
-);
-fileTrackingReducer.with(changesSyncQueued, (state, { payload: [wsId, force] }) =>
-  updateCoordinationState(state, wsId, (coordination) => ({
-    ...coordination,
-    syncDirty: true,
-    syncDirtyForce: coordination.syncDirtyForce || force,
-  })),
-);
-fileTrackingReducer.with(changesSyncFinished, (state, { payload: [wsId] }) =>
-  updateCoordinationState(state, wsId, (coordination) => ({
-    ...coordination,
-    syncInProgress: false,
-  })),
-);
-fileTrackingReducer.with(changesSyncDirtyConsumed, (state, { payload: [wsId] }) =>
-  updateCoordinationState(state, wsId, (coordination) => ({
-    ...coordination,
-    syncDirty: false,
-    syncDirtyForce: false,
-  })),
-);
-fileTrackingReducer.with(changesLoadStarted, (state, { payload: [wsId] }) =>
-  updateCoordinationState(state, wsId, (coordination) => ({
-    ...coordination,
-    loadInProgress: true,
-  })),
-);
-fileTrackingReducer.with(changesLoadQueued, (state, { payload: [wsId] }) =>
-  updateCoordinationState(state, wsId, (coordination) => ({
-    ...coordination,
-    loadDirty: true,
-  })),
-);
-fileTrackingReducer.with(changesLoadFinished, (state, { payload: [wsId] }) =>
-  updateCoordinationState(state, wsId, (coordination) => ({
-    ...coordination,
-    loadInProgress: false,
-  })),
-);
-fileTrackingReducer.with(changesLoadDirtyConsumed, (state, { payload: [wsId] }) =>
-  updateCoordinationState(state, wsId, (coordination) => ({
-    ...coordination,
-    loadDirty: false,
-  })),
-);
-fileTrackingReducer.with(changesRefreshStarted, (state, { payload: [wsId] }) =>
-  updateCoordinationState(state, wsId, (coordination) => ({
-    ...coordination,
-    refreshInProgress: true,
-  })),
-);
-fileTrackingReducer.with(changesRefreshQueued, (state, { payload: [wsId] }) =>
-  updateCoordinationState(state, wsId, (coordination) => ({
-    ...coordination,
-    refreshDirty: true,
-  })),
-);
-fileTrackingReducer.with(changesRefreshFinished, (state, { payload: [wsId] }) =>
-  updateCoordinationState(state, wsId, (coordination) => ({
-    ...coordination,
-    refreshInProgress: false,
-  })),
-);
-fileTrackingReducer.with(changesRefreshDirtyConsumed, (state, { payload: [wsId] }) =>
-  updateCoordinationState(state, wsId, (coordination) => ({
-    ...coordination,
-    refreshDirty: false,
-  })),
-);
-
 // Loading / error
 fileTrackingReducer.with(setLoading, (state, { payload: [wsId, loading] }) => {
   const ws = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, { ...ws, loading });
-});
-fileTrackingReducer.with(setError, (state, { payload: [wsId, error] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, { ...ws, error });
 });
 fileTrackingReducer.with(setHasLoadedInitialData, (state, { payload: [wsId, hasLoaded] }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -531,10 +336,6 @@ fileTrackingReducer.with(setChangesData, (state, action) => {
     totalChangesCount: totalCount,
     error: null,
   });
-});
-fileTrackingReducer.with(setTransitions, (state, { payload: [wsId, transitions] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, { ...ws, transitions });
 });
 fileTrackingReducer.with(setCommitsData, (state, action) => {
   const { wsId, commits, boundarySha } = action.payload;
@@ -574,14 +375,6 @@ fileTrackingReducer.with(setChanges, (state, { payload: [wsId, changes] }) => {
   const ws = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, { ...ws, changes });
 });
-fileTrackingReducer.with(clearAllChanges, (state, { payload: [wsId] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    changes: [],
-    transitions: [],
-  });
-});
 
 // UI state
 fileTrackingReducer.with(setMainPanelView, (state, { payload: [view] }) => ({
@@ -601,16 +394,6 @@ fileTrackingReducer.with(updateAgentStats, (state, { payload }) => ({
     [payload.agentId]: payload.stats,
   },
 }));
-fileTrackingReducer.with(clearAgentStats, (state, { payload: [agentId] }) => {
-  if (!state.agentStats[agentId] && !state.agentLineStatsRequests[agentId]) return state;
-  const { [agentId]: _as, ...remainingAgentStats } = state.agentStats;
-  const { [agentId]: _request, ...remainingRequests } = state.agentLineStatsRequests;
-  return {
-    ...state,
-    agentStats: remainingAgentStats,
-    agentLineStatsRequests: remainingRequests,
-  };
-});
 fileTrackingReducer.with(agentLineStatsRequestStarted, (state, { payload }) => ({
   ...state,
   agentLineStatsRequests: {
