@@ -15,7 +15,7 @@ const semanticExceptions = new Map<string, string[]>([
 ]);
 const forbidden = [
   /\b(?:border|divide|bg)-border\/[0-9]+\b/g,
-  /\b(?:border|divide)-sidebar-border(?:\/[0-9]+)?\b/g,
+  /\b(?:border|divide|bg)-sidebar-border(?:\/[0-9]+)?\b/g,
   /\b(?:border|divide)-(?:gray|grey|neutral|slate|zinc)-[0-9]+(?:\/[0-9]+)?\b/g,
   /\b(?:border|divide)-\[(?:#[0-9a-fA-F]{3,8}|rgba?\([^\]]+\))\](?:\/[0-9]+)?\b/g,
 ];
