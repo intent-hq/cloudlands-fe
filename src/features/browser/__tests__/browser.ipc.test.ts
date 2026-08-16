@@ -27,6 +27,9 @@ vi.mock('../../system/main/system.ipc', () => ({
 vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendClient: mocks.getBackendClient,
   isSameHostBackendActive: mocks.isSameHostBackendActive,
+  // Used by the workspace-forward-cleanup service behind the provider seam.
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 vi.mock('../../backend/main/tunnel-manager', () => ({
   TunnelManager: mocks.TunnelManager,
@@ -288,8 +291,11 @@ describe('browser tunnel-backend selection seam', () => {
   it('disposes both backends on backend-connection-changed and rebuilds on next use', async () => {
     const { app } = await import('electron');
     const getProvider = await getInjectedTunnelProviderGetter();
-    const remote = getProvider() as { backend: string; dispose: Mock };
+    const remote = getProvider() as { backend: string };
     expect(remote.backend).toBe('tunnel');
+    // The handed-out provider is the ownership wrapper (no dispose on the
+    // seam); disposal is observed on the underlying constructed backend.
+    const remoteBackend = mocks.TunnelManager.mock.instances[0] as unknown as { dispose: Mock };
 
     const listener = (app.on as Mock).mock.calls.find(
       ([event]) => event === 'backend-connection-changed',
@@ -298,9 +304,9 @@ describe('browser tunnel-backend selection seam', () => {
 
     mocks.isSameHostBackendActive.mockReturnValue(true);
     listener();
-    expect(remote.dispose).toHaveBeenCalledTimes(1);
+    expect(remoteBackend.dispose).toHaveBeenCalledTimes(1);
 
-    const local = getProvider() as { backend: string; dispose: Mock };
+    const local = getProvider() as { backend: string };
     expect(local.backend).toBe('direct');
     expect(local).not.toBe(remote);
   });
