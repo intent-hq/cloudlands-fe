@@ -131,7 +131,7 @@ for (const theme of ['light', 'dark'] as const) {
             const iconStyle = getComputedStyle(icon);
             const box = row.getBoundingClientRect();
             return {
-              geometry: [box.x, box.y, box.width, box.height],
+              geometry: [box.x + window.scrollX, box.y + window.scrollY, box.width, box.height],
               row: [
                 rowStyle.backgroundColor,
                 rowStyle.color,
