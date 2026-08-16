@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test, type Locator, type Page } from '@playwright/experimental-ct-svelte';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
 
 const cases = [
@@ -7,6 +7,20 @@ const cases = [
   { theme: 'light', width: 680, height: 760, zoom: 2, label: 'light narrow at 200%' },
   { theme: 'dark', width: 680, height: 760, zoom: 2, label: 'dark narrow at 200%' },
 ] as const;
+
+async function expectUniqueVisible(locator: Locator) {
+  await expect(locator).toHaveCount(1);
+  await expect(locator).toBeVisible();
+}
+
+async function pickerForTrigger(page: Page, trigger: Locator) {
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  const pickerId = await trigger.getAttribute('aria-controls');
+  if (!pickerId) throw new Error('Expected the scoped navigator trigger to control one picker');
+  const picker = page.locator(`[id="${pickerId}"]`);
+  await expectUniqueVisible(picker);
+  return picker;
+}
 
 test.describe('chat message navigator production path', () => {
   for (const state of cases) {
@@ -36,9 +50,17 @@ test.describe('chat message navigator production path', () => {
       const header = component.locator('[data-panel-content-header]');
       const headerActions = header.locator('[data-panel-header-actions]');
       const title = header.getByText('Navigation agent', { exact: true });
-      const listButton = component.getByTestId('chat-message-navigator-trigger');
-      const downButton = component.getByTestId('chat-scroll-to-bottom-button');
-      await expect(headerActions).toBeVisible();
+      const listButton = headerActions.getByTestId('chat-message-navigator-trigger');
+      const downButton = headerActions.getByTestId('chat-scroll-to-bottom-button');
+      const panelActionsButton = headerActions.getByTestId('panel-actions-trigger');
+      const closeButton = headerActions.getByTestId('panel-close-button');
+      await expectUniqueVisible(header);
+      await expectUniqueVisible(headerActions);
+      await expectUniqueVisible(title);
+      await expectUniqueVisible(listButton);
+      await expectUniqueVisible(downButton);
+      await expectUniqueVisible(panelActionsButton);
+      await expectUniqueVisible(closeButton);
       await expect(downButton).toBeDisabled();
       expect(
         await headerActions.evaluate(
@@ -85,9 +107,11 @@ test.describe('chat message navigator production path', () => {
       const target = component.locator('[data-message-id="user-6"]');
       await expect(target).toHaveCount(0);
       await listButton.click();
-      const dialog = page.getByRole('dialog', { name: 'Browse user messages' });
+      const dialog = await pickerForTrigger(page, listButton);
+      await expect(dialog).toHaveRole('dialog', { name: 'Browse user messages' });
       const search = dialog.getByRole('combobox', { name: 'Filter user messages' });
       const options = dialog.getByRole('option');
+      await expectUniqueVisible(search);
       await expect(search).toBeFocused();
       await expect(dialog.getByRole('listbox')).toHaveCount(1);
       await expect(options).toHaveCount(14);
@@ -192,20 +216,29 @@ test.describe('chat message navigator production path', () => {
     page,
   }) => {
     const component = await mount(ChatMessageNavigatorIntegrationHost);
-    const trigger = component.getByTestId('chat-message-navigator-trigger');
-    const outside = component.getByTestId('panel-actions-trigger');
-    const title = component.getByText('Navigation agent', { exact: true });
-    const dialog = page.getByRole('dialog', { name: 'Browse user messages' });
+    const header = component.locator('[data-panel-content-header]');
+    const headerActions = header.locator('[data-panel-header-actions]');
+    const trigger = headerActions.getByTestId('chat-message-navigator-trigger');
+    const downButton = headerActions.getByTestId('chat-scroll-to-bottom-button');
+    const outside = headerActions.getByTestId('panel-actions-trigger');
+    const title = header.getByText('Navigation agent', { exact: true });
+    await expectUniqueVisible(header);
+    await expectUniqueVisible(headerActions);
+    await expectUniqueVisible(trigger);
+    await expectUniqueVisible(downButton);
+    await expectUniqueVisible(outside);
+    await expectUniqueVisible(title);
 
     await trigger.press('Space');
-    await expect(dialog).toBeVisible();
+    let dialog = await pickerForTrigger(page, trigger);
+    await expect(dialog).toHaveRole('dialog', { name: 'Browse user messages' });
     await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
 
     await outside.focus();
     await trigger.focus();
-    await expect(dialog).toBeVisible();
+    dialog = await pickerForTrigger(page, trigger);
     const search = dialog.getByRole('combobox', { name: 'Filter user messages' });
     await expect(search).toBeFocused();
     await dialog.getByRole('option').first().focus();
@@ -214,7 +247,7 @@ test.describe('chat message navigator production path', () => {
     await expect(dialog).toHaveCount(0);
 
     await trigger.hover();
-    await expect(dialog).toBeVisible();
+    dialog = await pickerForTrigger(page, trigger);
     await dialog.hover();
     await page.waitForTimeout(200);
     await expect(dialog).toBeVisible();
