@@ -146,9 +146,46 @@ function* persist(
     );
     if (!result.success) {
       yield* put(setError(toMcpErrorMessage(result.error, m.mcp_management_saveServersFailed_error())));
+      return;
     }
+    yield* call(refreshDaemonIdsAndStatuses);
   } catch (error) {
     yield* put(setError(toMcpErrorMessage(error, m.mcp_management_saveServersFailed_error())));
+  }
+}
+
+/**
+ * After a successful save, re-read the canonical list so daemon-assigned ids
+ * reach Redux (`setMcpServers` returns only `{ success }`), then run the same
+ * daemon-status overlay as the load path. Without this, neither the status
+ * fetch nor live `mcp.servers:status-changed` events can correlate a runtime
+ * status back to a just-saved server until the next `loadServers`. Ids merge
+ * by name into the current optimistic list; credentials stay stripped. A
+ * refresh failure is non-fatal — the save itself already succeeded.
+ */
+function* refreshDaemonIdsAndStatuses(): SagaGenerator<void> {
+  try {
+    const response: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call(
+      [appClient.settings, appClient.settings.getMcpServers],
+    );
+    const canonical = response.map(copyServerForState);
+    const idByName = new Map(
+      canonical.flatMap((server) => (server.id ? [[server.name, server.id] as const] : [])),
+    );
+    const current: McpServerConfig[] = yield* selectMcpServers.effect();
+    let changed = false;
+    const merged = current.map((server) => {
+      const id = idByName.get(server.name);
+      if (id === undefined || server.id === id) return server;
+      changed = true;
+      const copy = copyServerForState(server);
+      copy.id = id;
+      return copy;
+    });
+    if (changed) yield* put(setServers(merged));
+    yield* fork(fetchDaemonStatuses, canonical);
+  } catch (error) {
+    logger.warn('Failed to refresh daemon MCP server ids after save', { error });
   }
 }
 
@@ -382,6 +419,7 @@ function* saveAdvanced(json: string): SagaGenerator<void> {
     return;
   }
   yield* put(setAdvancedSaveStatus('saved'));
+  yield* call(refreshDaemonIdsAndStatuses);
   yield* fork(resetAdvancedStatus);
 }
 

@@ -156,10 +156,92 @@ describe('mcpSettingsSaga', () => {
     await run.task.toPromise();
   });
 
-  it('persists exact add/import requests and restarts only local status', async () => {
+  it('refreshes daemon ids and overlays runtime status after a successful add persist', async () => {
     mocks.getMcpServers
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{
+        id: 'srv-local', name: 'local', type: 'stdio', command: 'node', env: { MODE: 'test' },
+      }]);
+    mocks.setMcpServers.mockResolvedValue({ success: true });
+    // PROTOCOL §5.22 McpServerStatus shape.
+    mocks.getMcpServerStatuses.mockResolvedValue([
+      { serverId: 'srv-local', state: 'running', toolCount: 3, startedAt: 1750000000000 },
+    ]);
+    const run = harness();
+    run.channel.put(addServer({ name: 'local', type: 'stdio', command: 'node' }));
+    await settle();
+
+    expect(mocks.getMcpServers.mock.calls).toEqual([[], []]);
+    // Daemon id merged into state by name (credentials still stripped) so the
+    // status overlay and live mcp.servers:status-changed events can correlate.
+    expect(run.state().servers).toEqual([
+      { id: 'srv-local', name: 'local', type: 'stdio', command: 'node' },
+    ]);
+    expect(mocks.getMcpServerStatuses.mock.calls).toEqual([[['srv-local']]]);
+    expect(run.state().statusMap).toEqual({ local: 'connected' });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('refreshes daemon ids and overlays runtime status after a successful advanced save', async () => {
+    mocks.setMcpServers.mockResolvedValue({ success: true });
+    mocks.getMcpServers.mockResolvedValue([
+      { id: 'srv-remote', name: 'remote', type: 'http', url: 'https://remote.test' },
+    ]);
+    mocks.getMcpServerStatuses.mockResolvedValue([
+      { serverId: 'srv-remote', state: 'error', lastError: 'unreachable from daemon host' },
+    ]);
+    const run = harness();
+    run.channel.put(saveAdvancedJson(JSON.stringify({ mcpServers: [
+      { name: 'remote', type: 'http', url: 'https://remote.test' },
+    ] })));
+    await settle();
+
+    expect(mocks.getMcpServers.mock.calls).toEqual([[]]);
+    expect(run.state().servers).toEqual([
+      { id: 'srv-remote', name: 'remote', type: 'http', url: 'https://remote.test' },
+    ]);
+    expect(mocks.getMcpServerStatuses.mock.calls).toEqual([[['srv-remote']]]);
+    expect(run.state().statusMap).toEqual({ remote: 'error' });
+    expect(run.state().errorMessages).toEqual({ remote: 'unreachable from daemon host' });
+    expect(run.state().advancedSaveStatus).toEqual('saved');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not refresh daemon ids or fetch statuses when persist fails', async () => {
+    mocks.setMcpServers.mockResolvedValue({ success: false, error: 'write rejected' });
+    const run = harness();
+    run.channel.put(addServer({ name: 'local', type: 'stdio', command: 'node' }));
+    await settle();
+
+    expect(mocks.getMcpServers.mock.calls).toEqual([[]]);
+    expect(mocks.getMcpServerStatuses.mock.calls).toEqual([]);
+    expect(run.state().servers).toEqual([{ name: 'local', type: 'stdio', command: 'node' }]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps the optimistic list and no error when the post-save id refresh fails', async () => {
+    mocks.getMcpServers
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('refresh down'));
+    mocks.setMcpServers.mockResolvedValue({ success: true });
+    const run = harness();
+    run.channel.put(addServer({ name: 'local', type: 'stdio', command: 'node' }));
+    await settle();
+
+    expect(run.state().servers).toEqual([{ name: 'local', type: 'stdio', command: 'node' }]);
+    expect(run.state().error).toBeNull();
+    expect(mocks.getMcpServerStatuses.mock.calls).toEqual([]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('persists exact add/import requests and restarts only local status', async () => {
+    mocks.getMcpServers
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{
         name: 'local', type: 'stdio', command: 'node', args: ['server.js'], env: { MODE: 'test' },
       }]);
     mocks.setMcpServers.mockResolvedValue({ success: true });
@@ -184,7 +266,9 @@ describe('mcpSettingsSaga', () => {
         { name: 'remote', type: 'http', url: 'https://remote.test', headers: { Authorization: 'test' } },
       ]],
     ]);
-    expect(mocks.getMcpServers.mock.calls).toEqual([[], []]);
+    // Two reads per persist: the pre-save credential read plus the post-save
+    // daemon-id refresh.
+    expect(mocks.getMcpServers.mock.calls).toEqual([[], [], [], []]);
     expect(run.state().servers).toEqual([
       { name: 'local', type: 'stdio', command: 'node', args: ['server.js'] },
       { name: 'remote', type: 'http', url: 'https://remote.test' },
@@ -277,7 +361,8 @@ describe('mcpSettingsSaga', () => {
     run.channel.put(removeServer('drop'));
     await settle();
 
-    expect(mocks.getMcpServers.mock.calls).toEqual([[]]);
+    // Pre-save credential read plus the post-save daemon-id refresh.
+    expect(mocks.getMcpServers.mock.calls).toEqual([[], []]);
     expect(mocks.setMcpServers.mock.calls).toEqual([[[{
       name: 'keep', type: 'stdio', command: 'keep', env: { TOKEN: '[REDACTED]' },
     }]]]);
