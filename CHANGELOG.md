@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.51.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.51.3...v2.51.4) (2026-08-16)
+
+
+### 🐛 Bug Fixes
+
+* deflake ui-component-audit tests by running the audit in-process ([#1296](https://github.com/intent-hq/cloudlands-fe/issues/1296)) ([29f5c58](https://github.com/intent-hq/cloudlands-fe/commit/29f5c580c48e9ca19cbb676c1dbb5cc039928620))
+
 ## [2.51.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.51.2...v2.51.3) (2026-08-16)
 
 
