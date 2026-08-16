@@ -100,7 +100,10 @@ export const authRejectedReceived = createAction<[event: ConnectionAuthRejectedE
  * A `connections:protocol-mismatch` push arrived — a remote's protocolVersion
  * differs in major version from the local intentd's. Stored so the UI can
  * surface a non-blocking advisory modal (and a persistent menu warning). Resets
- * the modal-dismissed flag so the advisory shows for this fresh mismatch.
+ * the modal-dismissed flag so the advisory shows for this fresh mismatch —
+ * except for boot-origin events (`origin: 'boot'`), which latch the flag so
+ * only the persistent menu warning shows (the user did not just initiate a
+ * switch, so no modal).
  */
 export const protocolMismatchReceived = createAction<[event: ConnectionProtocolMismatchEvent]>(
   'connections/protocolMismatchReceived',
@@ -182,7 +185,14 @@ connectionsReducer.with(authRejectedReceived, (state, { payload: [event] }) => {
   return { ...state, authRejected: event };
 });
 connectionsReducer.with(protocolMismatchReceived, (state, { payload: [event] }) => {
-  return { ...state, protocolMismatch: event, protocolMismatchModalDismissed: false };
+  // Boot-origin mismatches (persisted remote restored at launch) suppress the
+  // advisory modal but keep the persistent menu warning; switch-origin (or
+  // origin-less, older payloads) mismatches show the modal.
+  return {
+    ...state,
+    protocolMismatch: event,
+    protocolMismatchModalDismissed: event.origin === 'boot',
+  };
 });
 connectionsReducer.with(protocolMismatchModalDismissed, (state) => {
   return { ...state, protocolMismatchModalDismissed: true };

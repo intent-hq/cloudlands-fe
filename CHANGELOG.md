@@ -4,6 +4,29 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.51.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.51.4...v2.51.5) (2026-08-16)
+
+
+### 🐛 Bug Fixes
+
+* restore team specialists in new-agent picker ([#1298](https://github.com/intent-hq/cloudlands-fe/issues/1298)) ([2506be0](https://github.com/intent-hq/cloudlands-fe/commit/2506be07f903c25b3cf56fe30a5d0925d18fbd02))
+
+## [2.51.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.51.3...v2.51.4) (2026-08-16)
+
+
+### 🐛 Bug Fixes
+
+* deflake ui-component-audit tests by running the audit in-process ([#1296](https://github.com/intent-hq/cloudlands-fe/issues/1296)) ([29f5c58](https://github.com/intent-hq/cloudlands-fe/commit/29f5c580c48e9ca19cbb676c1dbb5cc039928620))
+
+## [2.51.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.51.2...v2.51.3) (2026-08-16)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.5 ([#1297](https://github.com/intent-hq/cloudlands-fe/issues/1297)) ([02c9f23](https://github.com/intent-hq/cloudlands-fe/commit/02c9f23797c6e3dad10d07db05fd320289c914d5))
+* rebuild held first-message send params as plain JSON so Svelte \ proxies survive Electron IPC ([#1293](https://github.com/intent-hq/cloudlands-fe/issues/1293)) ([1e3d5c6](https://github.com/intent-hq/cloudlands-fe/commit/1e3d5c640bf0a35489fd0c66ba787a2cdbedbb4a))
+* suppress protocol-mismatch modal on boot restore of a remote backend ([#1295](https://github.com/intent-hq/cloudlands-fe/issues/1295)) ([5d85096](https://github.com/intent-hq/cloudlands-fe/commit/5d8509616f4d2552ac8ef3a3a4ca62d740afd0d2))
+
 ## [2.51.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.51.1...v2.51.2) (2026-08-15)
 
 

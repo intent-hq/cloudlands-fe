@@ -76,8 +76,9 @@ export interface ConnectionsState {
   /**
    * Whether the user has dismissed the advisory protocol-mismatch modal for the
    * current {@link protocolMismatch}. Reset to `false` on each new push so a
-   * later switch to a mismatched backend shows the modal again; the persistent
-   * menu warning ignores this flag.
+   * later switch to a mismatched backend shows the modal again — except for
+   * boot-origin pushes (`origin: 'boot'`), which set it to `true` up front so
+   * only the persistent menu warning shows; the menu warning ignores this flag.
    */
   protocolMismatchModalDismissed: boolean;
 }
