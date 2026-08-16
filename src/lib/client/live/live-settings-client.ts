@@ -42,7 +42,10 @@ import type {
   Unsubscribe,
   UserRuleState,
 } from "../app-client";
-import type { McpServerConfig } from "$store/renderer/slices/mcp-settings/mcp-settings-types";
+import type {
+  McpServerConfig,
+  McpServerRuntimeStatus,
+} from "$store/renderer/slices/mcp-settings/mcp-settings-types";
 import type { SingleWorkspaceSettings } from "$store/renderer/slices/workspace-settings/workspace-settings-slice";
 import type { BackgroundAgentSettingsState } from "$store/renderer/slices/background-agent-settings/background-agent-settings-slice";
 import type { UserPreferencesState } from "$store/renderer/slices/user-preferences/user-preferences-slice";
@@ -193,6 +196,23 @@ export class LiveSettingsClient implements SettingsClient {
     return wire.flatMap((server) => fromWireMcpConfig(server) ?? []);
   }
 
+  async getMcpServerStatuses(serverIds: string[]): Promise<McpServerRuntimeStatus[]> {
+    const statuses = await Promise.all(
+      serverIds.map(async (serverId): Promise<McpServerRuntimeStatus | null> => {
+        try {
+          const result = await backendRequest<{ status?: WireMcpServerStatus }>(
+            "mcp.servers.getStatus",
+            { serverId },
+          );
+          return fromWireMcpStatus(result?.status);
+        } catch {
+          return null;
+        }
+      }),
+    );
+    return statuses.filter((status): status is McpServerRuntimeStatus => status !== null);
+  }
+
   async setMcpServers(servers: McpServerConfig[]): Promise<MutationResult> {
     try {
       const existing = await listWireMcpServers();
@@ -318,6 +338,29 @@ interface WireMcpServerConfig {
   headers?: Record<string, string>;
   enabled?: boolean;
   scope?: string;
+}
+
+/** Wire `McpServerStatus` (PROTOCOL §5.22) — the daemon's runtime status shape. */
+interface WireMcpServerStatus {
+  serverId?: string;
+  state?: string;
+  lastError?: string;
+}
+
+/** Map a wire status (§5.22) to the FE runtime-status shape; `null` when malformed. */
+function fromWireMcpStatus(wire: WireMcpServerStatus | undefined): McpServerRuntimeStatus | null {
+  if (typeof wire?.serverId !== "string" || !wire.serverId) return null;
+  if (
+    wire.state !== "stopped" &&
+    wire.state !== "starting" &&
+    wire.state !== "running" &&
+    wire.state !== "error"
+  ) {
+    return null;
+  }
+  const status: McpServerRuntimeStatus = { serverId: wire.serverId, state: wire.state };
+  if (typeof wire.lastError === "string" && wire.lastError) status.lastError = wire.lastError;
+  return status;
 }
 
 /** `mcp.servers.list` (§5.22) — sensitive `env`/`headers` values arrive redacted. */

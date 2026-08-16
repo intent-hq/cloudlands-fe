@@ -162,6 +162,37 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
     expect(await client.getMcpServers()).toEqual([]);
   });
 
+  it("getMcpServerStatuses fans out mcp.servers.getStatus (§5.22) per serverId", async () => {
+    mockedRequest.mockImplementation(async (_method, params) => {
+      const { serverId } = params as { serverId: string };
+      if (serverId === "srv-up") {
+        // PROTOCOL §5.22 McpServerStatus — daemon-probed running server.
+        return { status: { serverId: "srv-up", state: "running", pid: 4821, toolCount: 7, startedAt: 1750000000000 } };
+      }
+      return { status: { serverId: "srv-down", state: "error", lastError: "unreachable from daemon host" } };
+    });
+    const client = new LiveSettingsClient();
+
+    const result = await client.getMcpServerStatuses(["srv-up", "srv-down"]);
+    expect(mockedRequest).toHaveBeenCalledWith("mcp.servers.getStatus", { serverId: "srv-up" });
+    expect(mockedRequest).toHaveBeenCalledWith("mcp.servers.getStatus", { serverId: "srv-down" });
+    expect(result).toEqual([
+      { serverId: "srv-up", state: "running" },
+      { serverId: "srv-down", state: "error", lastError: "unreachable from daemon host" },
+    ]);
+  });
+
+  it("getMcpServerStatuses omits failed point reads and malformed statuses", async () => {
+    mockedRequest
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce({ status: { serverId: "srv-odd", state: "warming-up" } })
+      .mockResolvedValueOnce({ status: { serverId: "srv-ok", state: "stopped" } });
+    const client = new LiveSettingsClient();
+
+    const result = await client.getMcpServerStatuses(["srv-a", "srv-odd", "srv-ok"]);
+    expect(result).toEqual([{ serverId: "srv-ok", state: "stopped" }]);
+  });
+
   it("setMcpServers diffs against mcp.servers.list: creates new, deletes missing", async () => {
     mockedRequest.mockResolvedValueOnce({
       servers: [{ id: "srv-old", name: "old-server", transport: "stdio", command: "old", enabled: true }],

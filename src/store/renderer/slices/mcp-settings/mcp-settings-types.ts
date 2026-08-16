@@ -14,6 +14,16 @@ import type {
 // Re-export for convenience
 export type { McpServerConfig, McpServerStatus, McpTool };
 
+/** Daemon-reported runtime state (PROTOCOL §5.22 `McpServerStatus.state`). */
+export type McpDaemonServerState = "stopped" | "starting" | "running" | "error";
+
+/** Daemon runtime status read via `mcp.servers.getStatus` (PROTOCOL §5.22). */
+export type McpServerRuntimeStatus = {
+  serverId: string;
+  state: McpDaemonServerState;
+  lastError?: string;
+};
+
 /** Auth check result returned from IPC */
 export type McpAuthInfo = {
   requiresAuth: boolean;
