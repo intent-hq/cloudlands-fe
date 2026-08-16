@@ -5,8 +5,6 @@ import path from 'node:path';
 const root = path.resolve(process.cwd(), 'src');
 const extensions = new Set(['.css', '.svelte', '.ts']);
 const semanticExceptions = new Map<string, string[]>([
-  ['src/lib/components/tiptap/DetailsBlock.ts', ['border-border/50']],
-  ['src/lib/styles/chat-messages.css', ['border-zinc-200', 'border-zinc-800']],
   ['src/lib/components/chat/ToolDetails.svelte', ['border-[#a9b1d6]/10']],
   [
     'src/lib/components/code-walkthrough/WalkthroughAnnotationCard.svelte',
