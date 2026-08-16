@@ -4,6 +4,7 @@ import {
   captureQueuedMessageRowMotion,
   queuedMessageRowTransition,
 } from '../queued-message-row-motion';
+import { followBottom } from '$lib/utils/smartScroll';
 
 interface AnimationStub {
   onfinish: (() => void) | null;
@@ -39,7 +40,57 @@ function motionNode(initialHeight: number, targetHeight: number) {
   };
 }
 
-afterEach(() => vi.restoreAllMocks());
+function scrollHarness(node: HTMLElement, follow: boolean) {
+  let scrollHeight = 900;
+  let scrollTop = 600;
+  let animationFrames: FrameRequestCallback[] = [];
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    animationFrames.push(callback);
+    return animationFrames.length;
+  });
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  vi.stubGlobal(
+    'MutationObserver',
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const root = document.createElement('div');
+  root.append(node);
+  Object.defineProperties(root, {
+    scrollHeight: { configurable: true, get: () => scrollHeight },
+    clientHeight: { configurable: true, value: 300 },
+    scrollTop: {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => (scrollTop = value),
+    },
+  });
+  const action = followBottom(root, { follow });
+  return {
+    action,
+    grow: (amount: number) => (scrollHeight += amount),
+    runFrame() {
+      const callbacks = animationFrames;
+      animationFrames = [];
+      callbacks.forEach((callback) => callback(performance.now()));
+    },
+    scrollTop: () => scrollTop,
+  };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe('queued message row motion', () => {
   it('animates the persistent shell from measured height to intrinsic destination', () => {
@@ -85,5 +136,44 @@ describe('queued message row motion', () => {
     captureQueuedMessageRowMotion(harness.node)();
     expect(harness.animate).not.toHaveBeenCalled();
     expect(harness.node.style.height).toBe('');
+  });
+
+  it('keeps a followed root exact through intrinsic row motion frames', () => {
+    vi.spyOn(window, 'matchMedia').mockReturnValue({
+      matches: false,
+      media: '(prefers-reduced-motion: reduce)',
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    });
+    const harness = motionNode(28, 76);
+    const scroll = scrollHarness(harness.node, true);
+    captureQueuedMessageRowMotion(harness.node)();
+
+    scroll.grow(12);
+    scroll.runFrame();
+    expect(scroll.scrollTop()).toBe(612);
+
+    harness.animations[0].onfinish?.();
+    scroll.grow(8);
+    scroll.runFrame();
+    expect(scroll.scrollTop()).toBe(620);
+    scroll.action.destroy();
+  });
+
+  it('does not move an unlocked root when a row transition requests settlement', () => {
+    const harness = motionNode(28, 76);
+    const scroll = scrollHarness(harness.node, false);
+    const transition = queuedMessageRowTransition(harness.node, undefined, { direction: 'out' });
+
+    scroll.grow(24);
+    transition.tick?.(0.5, 0.5);
+    transition.tick?.(0, 1);
+
+    expect(scroll.scrollTop()).toBe(600);
+    scroll.action.destroy();
   });
 });

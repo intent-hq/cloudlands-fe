@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   animateScrollTo,
+  beforeFollowBottomMutation,
   FOLLOW_BOTTOM_MAX_SETTLE_FRAMES,
   followBottom,
   followToBottom,
@@ -221,6 +222,42 @@ describe('followBottom policy', () => {
     runFrame();
     expect(scrollTop).toBe(750);
     expect(distances.every((distance) => distance === 0)).toBe(true);
+    action.destroy();
+  });
+
+  it('keeps a descendant mutation lease exact until its final settle', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    const action = followBottom(container, { follow: true });
+    const mutation = beforeFollowBottomMutation(child);
+
+    scrollHeight += 12;
+    runFrame();
+    expect(scrollTop).toBe(612);
+
+    scrollHeight += 18;
+    mutation.request();
+    expect(scrollTop).toBe(630);
+
+    scrollHeight += 24;
+    mutation.settle();
+    expect(scrollTop).toBe(654);
+    action.destroy();
+  });
+
+  it('leaves an unlocked viewport unchanged through descendant mutation requests', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    const action = followBottom(container, { follow: false });
+    const mutation = beforeFollowBottomMutation(child);
+
+    scrollHeight += 120;
+    mutation.request();
+    runFrame();
+    mutation.settle();
+
+    expect(scrollTop).toBe(600);
+    expect(isFollowingBottom(container)).toBe(false);
     action.destroy();
   });
 

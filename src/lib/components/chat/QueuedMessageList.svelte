@@ -20,6 +20,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { tick } from 'svelte';
   import { safeSlide } from '$lib/utils/animations';
+  import { beforeFollowBottomMutation } from '$lib/utils/smartScroll';
   import type { QueuedMessage } from '$shared/types';
   import Button from '../ui/button/button.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
@@ -150,12 +151,22 @@
     messages;
     const messageId = editingId;
     const textarea = editTextarea;
-    if (!messageId || !textarea || document.activeElement !== textarea) return;
+    const mutationNode = textarea ?? rowElements.values().next().value;
+    const bottomMutation = mutationNode ? beforeFollowBottomMutation(mutationNode) : null;
+    const settleBottom = () => {
+      bottomMutation?.request();
+      bottomMutation?.settle();
+    };
+    if (!messageId || !textarea || document.activeElement !== textarea) {
+      void tick().then(settleBottom);
+      return;
+    }
     const selectionStart = textarea.selectionStart;
     const selectionEnd = textarea.selectionEnd;
     const restore = { messageId, textarea };
     pendingFocusRestore = restore;
     void tick().then(() => {
+      settleBottom();
       if (pendingFocusRestore !== restore) return;
       pendingFocusRestore = null;
       if (editingId !== messageId || editTextarea !== textarea) return;
