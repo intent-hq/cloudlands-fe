@@ -6373,9 +6373,18 @@ describe('daemonEventsBridge (workspace:updated → tab bar archive sync)', () =
     capturedHandlers.length = 0;
     // Tab state persists across tests via appStore — clear the whole strip
     // (openTabs, currentTabId, stacks, recently-closed) before each test.
-    const { cleanupInvalidWorkspaceTabs } =
+    const { loadWorkspaceTabsState } =
       await import('$store/renderer/slices/tab-state/tab-state-slice');
-    appStore.dispatch(cleanupInvalidWorkspaceTabs([]));
+    appStore.dispatch(
+      loadWorkspaceTabsState({
+        openTabs: [],
+        currentTabId: null,
+        pinnedTabs: [],
+        unsavedTabs: [],
+        optimisticTabs: [],
+        tabOrder: [],
+      }),
+    );
   });
 
   afterEach(() => {
@@ -7667,11 +7676,20 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     appStore.dispatch(clearAllSessions());
     // Reset workspace/agent focus so a preceding test's openWorkspaceTab
     // does not leak into the "no active workspace" case.
-    const { clearCurrentWorkspaceTab } =
+    const { loadWorkspaceTabsState } =
       await import('$store/renderer/slices/tab-state/tab-state-slice');
     const { setActiveAgentId } =
       await import('$store/renderer/slices/workspace-agents/workspace-agents-slice');
-    appStore.dispatch(clearCurrentWorkspaceTab());
+    appStore.dispatch(
+      loadWorkspaceTabsState({
+        openTabs: [],
+        currentTabId: null,
+        pinnedTabs: [],
+        unsavedTabs: [],
+        optimisticTabs: [],
+        tabOrder: [],
+      }),
+    );
     appStore.dispatch(setActiveAgentId(WS, null));
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
