@@ -15,12 +15,11 @@ import {
   setWorkspaceHasLoaded,
   resetWorkspaceState,
 } from '$store/renderer/slices/workspace/workspace-slice';
-import {
-  setPinnedWorkspaceIds,
-  togglePinWorkspace,
-} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { hydrateSidebarNav, togglePinWorkspace } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { WorkspaceStatus, type Workspace, type WorkspaceId } from '$shared/types';
 import ActiveWorkspacesCardHarness from './mocks/ActiveWorkspacesCardHarness.svelte';
+
+const setPinnedWorkspaceIds = (ids: string[]) => hydrateSidebarNav({ pinnedWorkspaceIds: ids });
 
 vi.mock('$lib/components/workspace/WorkspaceCard.svelte', async () => ({
   default: (await import('./mocks/MockWorkspaceCard.svelte')).default,

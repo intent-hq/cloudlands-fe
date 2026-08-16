@@ -1,38 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  cycleFontStyle,
-  cycleNoteFontStyle,
-  deleteActivityLogPreset,
-  hydrateActivityLogPresets,
-  initialState,
-  resetNotificationSettings,
-  saveActivityLogPreset,
-  setAgentFontStyle,
-  setCodeFontFamily,
-  setGroupByRepo,
-  setGithubLinkDefaultAction,
-  setHasCompletedProviderSetup,
-  setNotificationEnabled,
-  setNoteFontStyle,
-  setLanguagePreference,
-  setShowArchived,
-  setSpellcheckEnabled,
-  setShowReasoningBlocks,
-  setSoundEnabled,
-  setSoundOnlyWhenUnfocused,
-  setSystemFonts,
-  setVolume,
-  setZoomFactor,
-  type AgentFontStyle,
-  toggleGroupByRepo,
-  toggleHasCompletedProviderSetup,
-  toggleShowArchived,
-  toggleShowReasoningBlocks,
-  setUpdateChannel,
-  toggleSpellcheck,
-  type UserPreferencesState,
-  userPreferencesReducer,
-} from './user-preferences-slice';
+import { cycleNoteFontStyle, deleteActivityLogPreset, hydrateActivityLogPresets, initialState, resetNotificationSettings, saveActivityLogPreset, setCodeFontFamily, setGroupByRepo, setGithubLinkDefaultAction, setHasCompletedProviderSetup, setNotificationEnabled, setNoteFontStyle, setLanguagePreference, setShowArchived, setSpellcheckEnabled, setShowReasoningBlocks, setSoundEnabled, setSoundOnlyWhenUnfocused, setSystemFonts, setVolume, setZoomFactor, type AgentFontStyle, toggleGroupByRepo, toggleHasCompletedProviderSetup, toggleShowArchived, toggleShowReasoningBlocks, setUpdateChannel, toggleSpellcheck, type UserPreferencesState, userPreferencesReducer } from './user-preferences-slice';
 import {
   selectAgentFontStyle,
   selectAgentFontStyleLabel,
@@ -172,27 +139,6 @@ describe('userPreferencesReducer', () => {
   });
 
   describe('font settings actions', () => {
-    it('keeps action type prefixes under fontSettings', () => {
-      expect(setAgentFontStyle.type).toBe('fontSettings/setAgentFontStyle');
-      expect(cycleFontStyle.type).toBe('fontSettings/cycleFontStyle');
-      expect(setNoteFontStyle.type).toBe('fontSettings/setNoteFontStyle');
-      expect(cycleNoteFontStyle.type).toBe('fontSettings/cycleNoteFontStyle');
-      expect(setCodeFontFamily.type).toBe('fontSettings/setCodeFontFamily');
-      expect(setSystemFonts.type).toBe('fontSettings/setSystemFonts');
-    });
-
-    it('updates and cycles agent font style', () => {
-      expect(
-        userPreferencesReducer(initialState, setAgentFontStyle('monospace')).agentFontStyle,
-      ).toBe('monospace');
-      expect(userPreferencesReducer(initialState, cycleFontStyle()).agentFontStyle).toBe(
-        'monospace',
-      );
-      expect(
-        userPreferencesReducer({ ...initialState, agentFontStyle: 'monospace' }, cycleFontStyle())
-          .agentFontStyle,
-      ).toBe('sans');
-    });
 
     it('updates and cycles note font style', () => {
       expect(

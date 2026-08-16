@@ -237,7 +237,6 @@ export const hudQuestionCaptured = createAction<[question: HudCapturedQuestion]>
 export const hudQuestionsResolvedForWorkspace = createAction<[workspaceId: string]>(
   'hud/questionsResolvedForWorkspace',
 );
-export const hudQuestionSuperseded = createAction<[agentId: string]>('hud/questionSuperseded');
 /** Header FLEET OPS repo pick (null = all workspaces). */
 export const hudGridFilterRepoPicked = createAction<[repo: string | null]>(
   'hud/gridFilterRepoPicked',
@@ -393,12 +392,6 @@ hudReducer.with(hudQuestionsResolvedForWorkspace, (state, { payload: [workspaceI
     const kept = entries.filter(([, question]) => question.workspaceId !== workspaceId);
     if (kept.length === entries.length) return state;
     return { ...state, questionsByAgentId: Object.fromEntries(kept) };
-  });
-hudReducer.with(hudQuestionSuperseded, (state, { payload: [agentId] }) => {
-    if (!(agentId in state.questionsByAgentId)) return state;
-    const next = { ...state.questionsByAgentId };
-    delete next[agentId];
-    return { ...state, questionsByAgentId: next };
   });
 hudReducer.with(hudGridFilterRepoPicked, (state, { payload: [repo] }) =>
     state.gridFilter.repo === repo

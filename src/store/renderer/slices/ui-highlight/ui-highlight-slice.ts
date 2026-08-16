@@ -17,9 +17,6 @@ export type UiHighlightRequestOptions = {
 export const requestUiHighlight = createAction<
   [highlightId: string, options?: UiHighlightRequestOptions]
 >('uiHighlight/requestUiHighlight');
-export const clearUiHighlight = createAction<[highlightId: string, token?: number]>(
-  'uiHighlight/clearUiHighlight',
-);
 
 function normalizeHighlightId(highlightId: string): string {
   return highlightId.trim();
@@ -53,13 +50,4 @@ uiHighlightReducer.with(requestUiHighlight, (state, { payload: [highlightId, opt
               [id]: durationMs,
             },
     };
-  });
-uiHighlightReducer.with(clearUiHighlight, (state, { payload: [highlightId, token] }) => {
-    const id = normalizeHighlightId(highlightId);
-    if (!id || state.activeById[id] === undefined) return state;
-    if (token !== undefined && state.activeById[id] !== token) return state;
-
-    const { [id]: _removed, ...activeById } = state.activeById;
-    const { [id]: _removedDuration, ...durationMsById } = state.durationMsById;
-    return { ...state, activeById, durationMsById };
   });

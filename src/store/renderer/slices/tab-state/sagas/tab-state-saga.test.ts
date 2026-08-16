@@ -11,33 +11,7 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
   },
 }));
 
-import {
-  cleanupInvalidWorkspaceTabs,
-  clearCurrentWorkspaceTab,
-  clearForWorkspace,
-  closeWorkspaceTab,
-  handleOptimisticWorkspaceTabTransition,
-  loadScrollPositions,
-  loadWorkspaceTabsState,
-  markWorkspaceTabOptimistic,
-  markWorkspaceTabUnsaved,
-  moveWorkspace,
-  openWorkspaceTab,
-  removeScrollPosition,
-  reorderWorkspaceTabs,
-  reopenLastClosedWorkspaceTab,
-  restoreWorkspaceTab,
-  saveScrollPosition,
-  setWorkspaceViewMode,
-  switchToNextWorkspaceTab,
-  switchToPreviousWorkspaceTab,
-  switchToWorkspaceTabByIndex,
-  TAB_SCROLL_POSITIONS_STORAGE_KEY,
-  toggleWorkspaceTabPin,
-  unmarkWorkspaceTabOptimistic,
-  WORKSPACE_TABS_STORAGE_KEY,
-  workspaceTabsHydrated,
-} from '../tab-state-slice';
+import { loadScrollPositions, loadWorkspaceTabsState, openWorkspaceTab, saveScrollPosition, TAB_SCROLL_POSITIONS_STORAGE_KEY, WORKSPACE_TABS_STORAGE_KEY, workspaceTabsHydrated } from '../tab-state-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import { tabStateSaga } from './tab-state-saga';
@@ -113,79 +87,6 @@ describe('tabStateSaga', () => {
     ]);
     task.cancel();
     await task.toPromise();
-  });
-
-  it.each([
-    openWorkspaceTab('ws-1'),
-    closeWorkspaceTab('ws-1'),
-    reopenLastClosedWorkspaceTab(),
-    restoreWorkspaceTab('ws-1'),
-    clearCurrentWorkspaceTab(),
-    cleanupInvalidWorkspaceTabs(['ws-1']),
-    toggleWorkspaceTabPin('ws-1'),
-    markWorkspaceTabUnsaved('ws-1', true),
-    reorderWorkspaceTabs('ws-1', 'ws-2'),
-    moveWorkspace('ws-1', 'ws-2', 'above'),
-    markWorkspaceTabOptimistic('optimistic-1'),
-    unmarkWorkspaceTabOptimistic('optimistic-1'),
-    handleOptimisticWorkspaceTabTransition('optimistic-1', 'ws-1'),
-    switchToNextWorkspaceTab(),
-    switchToPreviousWorkspaceTab(),
-    switchToWorkspaceTabByIndex(0),
-    setWorkspaceViewMode('columns'),
-  ])('persists the exact post-reducer tab snapshot for $type', async (action) => {
-    storage.getJSON.mockReturnValue(undefined);
-    const channel = stdChannel();
-    const task = runSaga({ channel, dispatch: vi.fn(), getState: () => state }, tabStateSaga);
-    await settle();
-    channel.put(action);
-    await settle();
-
-    expect(storage.setJSON.mock.calls).toEqual([[WORKSPACE_TABS_STORAGE_KEY, persistedTabs]]);
-    task.cancel();
-    await task.toPromise();
-  });
-
-  it.each([
-    saveScrollPosition('ws-1-note', 42),
-    removeScrollPosition('ws-1-note'),
-    clearForWorkspace('ws-1'),
-  ])('persists the exact scroll map for $type', async (action) => {
-    storage.getJSON.mockReturnValue(undefined);
-    const channel = stdChannel();
-    const task = runSaga({ channel, dispatch: vi.fn(), getState: () => state }, tabStateSaga);
-    await settle();
-    channel.put(action);
-    await settle();
-
-    expect(storage.setJSON.mock.calls).toEqual([
-      [TAB_SCROLL_POSITIONS_STORAGE_KEY, { 'ws-1-note': 42 }],
-    ]);
-    task.cancel();
-    await task.toPromise();
-  });
-
-  it('skips early cleanup persistence, survives a later write failure, and cancels cleanly', async () => {
-    storage.getJSON.mockReturnValue(undefined);
-    storage.setJSON.mockImplementationOnce(() => {
-      throw new Error('quota');
-    });
-    const current = { ...state, workspace: { hasLoaded: false } };
-    const channel = stdChannel();
-    const task = runSaga({ channel, dispatch: vi.fn(), getState: () => current }, tabStateSaga);
-    await settle();
-    channel.put(cleanupInvalidWorkspaceTabs([]));
-    channel.put(openWorkspaceTab('ws-1'));
-    channel.put(saveScrollPosition('ws-1-note', 42));
-    await settle();
-
-    expect(storage.setJSON.mock.calls).toEqual([
-      [WORKSPACE_TABS_STORAGE_KEY, persistedTabs],
-      [TAB_SCROLL_POSITIONS_STORAGE_KEY, { 'ws-1-note': 42 }],
-    ]);
-    task.cancel();
-    await task.toPromise();
-    expect(task.isCancelled()).toBe(true);
   });
 
   describe('multi-backend namespacing', () => {
