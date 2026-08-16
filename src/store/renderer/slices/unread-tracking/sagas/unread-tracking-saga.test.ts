@@ -1,6 +1,8 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+
 const marks = vi.hoisted(() => ({ boundary: vi.fn(), finish: vi.fn(), send: vi.fn() }));
 vi.mock('$features/agent/mark-agent-seen', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$features/agent/mark-agent-seen')>();
@@ -14,6 +16,7 @@ vi.mock('$features/agent/mark-agent-seen', async (importOriginal) => {
 
 import { sendMessage } from '../../chat-state/chat-state-slice';
 import { closeTab } from '../../panel-layout/panel-layout-slice';
+import { closePanel } from '../../sidebar-nav/sidebar-nav-slice';
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { agentStreamUpdateReceived } from '../../workspace-agents/workspace-agents-stream-slice';
 import type { StoreState } from '../../../types';
@@ -49,7 +52,7 @@ function state(
     },
     agentSessions: {
       byAgentId: agentSessionsByAgentId,
-      agentIdsByWorkspace: { chief: current.chiefSessionAgentIds },
+      agentIdsByWorkspace: { [CHIEF_WORKSPACE_ID]: current.chiefSessionAgentIds },
     },
     panelLayout: {
       byWorkspaceId: {
@@ -126,14 +129,6 @@ describe('detectDividerSessionBoundary', () => {
     });
   });
 
-  it('detects a visible-to-hidden chief card transition', () => {
-    const previous = snapshot({ chiefCardVisible: true, chiefSessionAgentIds: ['chief-1'] });
-    const current = snapshot({ chiefSessionAgentIds: ['chief-1'] });
-    expect(detectDividerSessionBoundary(previous, current, 'sidebarNav/closePanel')).toEqual({
-      kind: 'chief-card-close',
-      agentIds: ['chief-1'],
-    });
-  });
 });
 
 describe('unreadTrackingSaga', () => {
@@ -172,6 +167,31 @@ describe('unreadTrackingSaga', () => {
     expect(dispatch).toHaveBeenCalledWith({
       type: 'unreadTracking/endDividerSession',
       payload: ['a1'],
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('marks and ends a Chief divider session when the sidebar panel closes', async () => {
+    const channel = stdChannel();
+    let current = snapshot({
+      chiefCardVisible: true,
+      chiefSessionAgentIds: ['chief-1'],
+      dividerSessionAgentIds: ['chief-1'],
+    });
+    const dispatch = vi.fn();
+    const { task } = startSaga(channel, dispatch, () => state(current));
+    await settle();
+    current = snapshot({
+      chiefSessionAgentIds: ['chief-1'],
+      dividerSessionAgentIds: ['chief-1'],
+    });
+    channel.put(closePanel());
+    await settle();
+    expect(marks.boundary).toHaveBeenCalledWith(['chief-1']);
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'unreadTracking/endDividerSession',
+      payload: ['chief-1'],
     });
     task.cancel();
     await task.toPromise();
