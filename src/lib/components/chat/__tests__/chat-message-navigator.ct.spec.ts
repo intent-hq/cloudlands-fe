@@ -57,6 +57,36 @@ async function pickerForTrigger(page: Page, trigger: Locator) {
   return picker;
 }
 
+async function classifyMessageIdentityNodes(page: Page, messageId: string) {
+  return page
+    .locator(`[data-message-id="${messageId}"], [data-navigation-message-id="${messageId}"]`)
+    .evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const element = node as HTMLElement;
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        const popover = element.closest<HTMLElement>('[data-popover-content]');
+        const lazyTurn = element.closest<HTMLElement>('[data-lazy-visible]');
+        return {
+          ancestry: popover ? 'dialog' : lazyTurn ? 'transcript' : 'other',
+          connected: element.isConnected,
+          lifecycle: element.hasAttribute('data-navigation-message-id')
+            ? 'navigation-option'
+            : 'transcript-row',
+          transitionState:
+            popover?.getAttribute('data-state') ?? lazyTurn?.getAttribute('data-lazy-visible'),
+          visible:
+            element.isConnected &&
+            rect.width > 0 &&
+            rect.height > 0 &&
+            style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            style.opacity !== '0',
+        };
+      }),
+    );
+}
+
 test.describe('chat message navigator production path', () => {
   for (const state of cases) {
     test(`keeps the real header, picker, and transcript contract in ${state.label}`, async ({
@@ -139,9 +169,7 @@ test.describe('chat message navigator production path', () => {
       expect(arrowIconBox.height).toBeCloseTo(11, 0);
       await expect(downButton).toHaveAttribute('data-icon-size', '11');
 
-      const transcript = component.locator('.conversation-column');
-      await expectUniqueVisible(transcript);
-      const target = transcript.locator('[data-message-id="user-6"][data-message-role="user"]');
+      const target = page.locator('[data-message-id="user-6"]');
       await expect(target).toHaveCount(0);
       await listButton.click();
       const dialog = await pickerForTrigger(page, listButton);
@@ -212,13 +240,34 @@ test.describe('chat message navigator production path', () => {
       const option = dialog.getByRole('option', { name: 'Virtualized target six', exact: true });
       await expect(option).toHaveCount(1);
       await expect(option).toHaveAttribute('title', 'Virtualized target six');
+      await expect(option).toHaveAttribute('data-navigation-message-id', 'user-6');
+      expect(await classifyMessageIdentityNodes(page, 'user-6')).toEqual([
+        {
+          ancestry: 'dialog',
+          connected: true,
+          lifecycle: 'navigation-option',
+          transitionState: 'open',
+          visible: true,
+        },
+      ]);
       await option.click();
 
       await expect(dialog).toHaveCount(0);
       await expect(target).toHaveCount(1);
+      expect(await classifyMessageIdentityNodes(page, 'user-6')).toEqual([
+        {
+          ancestry: 'transcript',
+          connected: true,
+          lifecycle: 'transcript-row',
+          transitionState: 'true',
+          visible: true,
+        },
+      ]);
       await expect(target).toContainText('hidden picker suffix');
       await expect(target).toHaveClass(/message-highlight-flash/);
       await expect(downButton).toBeEnabled();
+      const transcript = component.locator('.conversation-column');
+      await expectUniqueVisible(transcript);
       const scrollContainer = transcript.locator('..');
       const [targetBox, scrollBox] = await Promise.all([
         target.boundingBox(),

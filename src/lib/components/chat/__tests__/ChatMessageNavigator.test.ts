@@ -51,6 +51,10 @@ describe('ChatMessageNavigator', () => {
     expect(screen.queryByRole('menu')).toBeNull();
     expect(results.every((result) => result.getAttribute('role') === 'option')).toBe(true);
     expect(results.every((result) => listbox.contains(result))).toBe(true);
+    expect(results.map((result) => result.getAttribute('data-navigation-message-id'))).toEqual(
+      messages.map((message) => message.id),
+    );
+    expect(results.every((result) => !result.hasAttribute('data-message-id'))).toBe(true);
     expect(input.getAttribute('aria-controls')).toBe(listbox.id);
     expect(input.getAttribute('aria-activedescendant')).toBe(results[0].id);
     expect(input.className).toContain('focus-visible:ring-0');
@@ -203,19 +207,43 @@ describe('ChatMessageNavigator', () => {
     expect(document.activeElement).toBe(downButton);
   });
 
-  it('reopens on a genuine pointer entry after outside-focus dismissal', async () => {
+  it('reopens on genuine pointer movement after outside-focus dismissal', async () => {
     renderNavigator();
     const trigger = screen.getByTestId('chat-message-navigator-trigger');
     const downButton = screen.getByTestId('chat-scroll-to-bottom-button');
 
     trigger.focus();
     await screen.findByRole('combobox', { name: 'Filter user messages' });
+    await fireEvent.pointerMove(trigger, {
+      pointerType: 'mouse',
+      pointerId: 1,
+      clientX: 10,
+      clientY: 10,
+    });
     downButton.focus();
     await fireEvent.focusIn(downButton);
     await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
 
-    await fireEvent.pointerLeave(trigger, { pointerType: 'mouse' });
-    await fireEvent.pointerEnter(trigger, { pointerType: 'mouse' });
+    await fireEvent.pointerMove(trigger, {
+      pointerType: 'mouse',
+      pointerId: 1,
+      clientX: 10,
+      clientY: 10,
+    });
+    expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull();
+    await fireEvent.pointerMove(trigger, {
+      pointerType: 'touch',
+      pointerId: 2,
+      clientX: 12,
+      clientY: 10,
+    });
+    expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull();
+    await fireEvent.pointerMove(trigger, {
+      pointerType: 'mouse',
+      pointerId: 1,
+      clientX: 11,
+      clientY: 10,
+    });
     const input = await screen.findByRole('combobox', { name: 'Filter user messages' });
     await waitFor(() => expect(document.activeElement).toBe(input));
   });

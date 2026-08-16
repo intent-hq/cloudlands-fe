@@ -25,7 +25,8 @@
   let contentElement: HTMLElement | null = $state(null);
   let pointerDownOnTrigger = $state(false);
   let preserveOutsideFocusOnClose = $state(false);
-  let reopenOnNextPointerEntry = $state(false);
+  let reopenOnNextPointerIntent = $state(false);
+  let lastTriggerPointerPosition: { pointerId: number; x: number; y: number } | null = $state(null);
   const navigatorId = $props.id();
   const listboxId = `chat-message-navigator-listbox-${navigatorId}`;
   const filteredMessages = $derived.by(() => {
@@ -41,7 +42,7 @@
     open = nextOpen;
     if (!nextOpen) return;
     preserveOutsideFocusOnClose = false;
-    reopenOnNextPointerEntry = false;
+    reopenOnNextPointerIntent = false;
     query = '';
     activeIndex = 0;
   }
@@ -78,13 +79,37 @@
     if (triggerElement?.contains(event.target) || contentElement?.contains(event.target)) return;
     pointerDownOnTrigger = false;
     preserveOutsideFocusOnClose = true;
-    reopenOnNextPointerEntry = true;
+    reopenOnNextPointerIntent = true;
     handleOpenChange(false);
   }
 
   function handleTriggerPointerEnter(event: PointerEvent) {
-    if (event.pointerType === 'touch' || !reopenOnNextPointerEntry) return;
-    handleOpenChange(true);
+    if (event.pointerType === 'touch') return;
+    lastTriggerPointerPosition = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    };
+    if (reopenOnNextPointerIntent) handleOpenChange(true);
+  }
+
+  function handleTriggerPointerMove(event: PointerEvent) {
+    if (event.pointerType === 'touch') return;
+    const moved =
+      lastTriggerPointerPosition === null ||
+      lastTriggerPointerPosition.pointerId !== event.pointerId ||
+      lastTriggerPointerPosition.x !== event.clientX ||
+      lastTriggerPointerPosition.y !== event.clientY;
+    lastTriggerPointerPosition = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    };
+    if (reopenOnNextPointerIntent && moved) handleOpenChange(true);
+  }
+
+  function handleTriggerPointerLeave(event: PointerEvent) {
+    if (event.pointerType !== 'touch') lastTriggerPointerPosition = null;
   }
 
   function handleCloseAutoFocus(event: Event) {
@@ -134,6 +159,8 @@
       openDelay={120}
       closeDelay={180}
       onpointerenter={handleTriggerPointerEnter}
+      onpointermove={handleTriggerPointerMove}
+      onpointerleave={handleTriggerPointerLeave}
     >
       {#snippet child({ props })}
         <Button
@@ -213,7 +240,7 @@
                   onpointerenter={() => (activeIndex = index)}
                   title={message.text}
                   data-testid="chat-message-navigator-result"
-                  data-message-id={message.id}
+                  data-navigation-message-id={message.id}
                 >
                   <span class="block min-w-0 flex-1 truncate whitespace-nowrap font-normal">
                     {message.text}
