@@ -270,19 +270,109 @@ describe('directoryPickerSaga', () => {
     await task.toPromise();
   });
 
-  it('uses global leading arbitration for loads across different paths', async () => {
+  // Regression: intent-hq/monorepo#2650 — under takeLeading, a click landing
+  // while a load was in flight was dropped, yet the reducer recorded its
+  // requestedPath; the first response then failed the stale-guard and the
+  // spinner stayed stuck until the next click.
+  it('terminates the spinner when a click lands while a load is in flight', async () => {
+    const first = deferred<DirectoryPickerListing>();
+    const second = deferred<DirectoryPickerListing>();
+    mocks.request.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { send, dispatched, state, task } = harness();
+
+    send(loadDirectoryRequested('/a'));
+    await settle();
+    send(loadDirectoryRequested('/b'));
+    await settle();
+
+    // The mid-flight click must get its own request, not be dropped.
+    expect(mocks.request.mock.calls).toEqual([
+      ['host.listDirectory', { path: '/a' }],
+      ['host.listDirectory', { path: '/b' }],
+    ]);
+
+    first.resolve(listing('/a'));
+    await settle();
+    second.resolve(listing('/b'));
+    await settle();
+
+    expect(dispatched).toEqual([
+      {
+        type: 'directoryPicker/listingLoaded',
+        payload: ['/b', listing('/b')],
+      },
+    ]);
+    expect(state().loading).toBe(false);
+    expect(state().listing).toEqual(listing('/b'));
+    task.cancel();
+    await task.toPromise();
+  });
+
+  // Regression: intent-hq/monorepo#2650 — same window during the initial-load
+  // home fallback: an intervening click made the echoed home listing stale
+  // again, and no task existed for the new path.
+  it('terminates the spinner when a click lands during the initial home fallback', async () => {
+    const fallback = deferred<DirectoryPickerListing>();
+    const next = deferred<DirectoryPickerListing>();
+    mocks.request
+      .mockRejectedValueOnce(new Error('No such file or directory (os error 2)'))
+      .mockReturnValueOnce(fallback.promise)
+      .mockReturnValueOnce(next.promise);
+    const { send, dispatched, state, task } = harness();
+
+    send(loadDirectoryRequested('/gone'));
+    await settle();
+    await settle();
+    expect(mocks.request.mock.calls).toEqual([
+      ['host.listDirectory', { path: '/gone' }],
+      ['host.listDirectory', {}],
+    ]);
+
+    send(loadDirectoryRequested('/b'));
+    await settle();
+    fallback.resolve(listing('/Users/me'));
+    await settle();
+    next.resolve(listing('/b'));
+    await settle();
+
+    expect(mocks.request.mock.calls).toEqual([
+      ['host.listDirectory', { path: '/gone' }],
+      ['host.listDirectory', {}],
+      ['host.listDirectory', { path: '/b' }],
+    ]);
+    expect(dispatched).toEqual([
+      {
+        type: 'directoryPicker/listingLoaded',
+        payload: ['/b', listing('/b')],
+      },
+    ]);
+    expect(state().loading).toBe(false);
+    expect(state().listing).toEqual(listing('/b'));
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('uses global latest arbitration for loads, restarting a re-clicked path', async () => {
     const first = deferred<DirectoryPickerListing>();
     const second = deferred<DirectoryPickerListing>();
     mocks.request.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
     const { send, dispatched, task } = harness();
 
     send(loadDirectoryRequested('/one'));
+    await settle();
     send(loadDirectoryRequested('/one'));
-    send(loadDirectoryRequested('/two'));
     await settle();
 
-    expect(mocks.request.mock.calls).toEqual([['host.listDirectory', { path: '/one' }]]);
+    expect(mocks.request.mock.calls).toEqual([
+      ['host.listDirectory', { path: '/one' }],
+      ['host.listDirectory', { path: '/one' }],
+    ]);
+    // The superseded task was cancelled, so its response dispatches nothing.
     first.resolve(listing('/one'));
+    await settle();
+    expect(dispatched).toEqual([]);
+
+    second.resolve(listing('/one'));
     await settle();
     expect(dispatched).toEqual([
       {
@@ -290,19 +380,6 @@ describe('directoryPickerSaga', () => {
         payload: ['/one', listing('/one')],
       },
     ]);
-
-    send(loadDirectoryRequested('/two'));
-    await settle();
-    expect(mocks.request.mock.calls).toEqual([
-      ['host.listDirectory', { path: '/one' }],
-      ['host.listDirectory', { path: '/two' }],
-    ]);
-    second.resolve(listing('/two'));
-    await settle();
-    expect(dispatched.at(-1)).toEqual({
-      type: 'directoryPicker/listingLoaded',
-      payload: ['/two', listing('/two')],
-    });
     task.cancel();
     await task.toPromise();
   });
