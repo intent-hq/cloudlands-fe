@@ -108,9 +108,18 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Request browser tab list from renderer and wait for response
+   * Request browser tab list from renderer and wait for response.
+   *
+   * Requires a workspaceId: an untargeted request used to broadcast to ALL
+   * windows, letting a caller enumerate tabs in unrelated workspaces'
+   * windows (intent-hq/monorepo#2602).
    */
   async requestPanelBrowserTabs(workspaceId?: string): Promise<PanelBrowserTab[]> {
+    if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      throw new Error('workspaceId is required to list browser tabs');
+    }
+
     // Generate unique request ID to avoid race conditions
     const requestId = `req-${++this.listTabsRequestCounter}-${Date.now()}`;
 
@@ -119,13 +128,23 @@ class EmbeddedBrowserCdpService {
       this.pendingListTabsRequests.set(requestId, { workspaceId, resolve });
     });
 
-    // Send to workspace windows (falls back to all windows if no workspaceId).
-    // The renderer echoes requestId back so the reply resolves this request
-    // specifically, not whichever request happens to be pending.
-    sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST, {
+    // Send only to windows displaying the requested workspace. The renderer
+    // echoes requestId back so the reply resolves this request specifically,
+    // not whichever request happens to be pending.
+    const delivery = sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST, {
       requestId,
-      ...(workspaceId ? { workspaceId } : {}),
+      workspaceId,
     });
+    if (!delivery.delivered) {
+      // Nothing received the request, so no reply is coming — answer from the
+      // same-workspace cache right away instead of waiting for the timeout.
+      this.pendingListTabsRequests.delete(requestId);
+      logger.warn('LIST_TABS_REQUEST reached no window; using cached data', {
+        workspaceId,
+        requestId,
+      });
+      return this.panelBrowserTabsCache.get(workspaceId) ?? [];
+    }
     logger.debug('Sent LIST_TABS_REQUEST', { workspaceId, requestId });
 
     // Create per-request timeout promise. The fallback only consults the
@@ -292,16 +311,29 @@ class EmbeddedBrowserCdpService {
    * layout knows about all tabs (including unmounted ones). The whole point
    * of focusTab() is to remount unmounted tabs that aren't in our registry.
    *
-   * @returns true if the message was sent to at least one window
+   * Requires a workspaceId: an untargeted focus used to broadcast to ALL
+   * windows, so any window whose layout knew the tabId acted on it
+   * regardless of the calling agent's workspace (intent-hq/monorepo#2602).
+   *
+   * @returns true if the message was delivered to at least one window (or
+   *          browser-mode client); throws when workspaceId is missing
    */
   focusTab(tabId: string, workspaceId?: string): boolean {
     if (!tabId) {
       logger.warn('Cannot focus tab - no tabId provided');
       return false;
     }
+    if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      throw new Error('workspaceId is required to focus a browser tab');
+    }
 
-    // Send to workspace windows (falls back to all windows if no workspaceId)
-    sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.FOCUS_TAB, { tabId });
+    // Send only to windows displaying the requested workspace.
+    const delivery = sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.FOCUS_TAB, { tabId });
+    if (!delivery.delivered) {
+      logger.warn('Focus request for browser tab reached no window', { tabId, workspaceId });
+      return false;
+    }
     logger.info('Sent focus request for browser tab', { tabId, workspaceId });
     return true;
   }
@@ -337,10 +369,18 @@ class EmbeddedBrowserCdpService {
       throw new Error(`Tab ${tabId} is not closable.`);
     }
 
-    // Send to workspace windows (falls back to all windows if no workspaceId).
-    // Include workspaceId so the renderer closes the tab in the owning
-    // workspace's panel layout, not whichever workspace is currently visible.
-    sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.CLOSE_TAB, { tabId, workspaceId });
+    // Send only to windows displaying the requested workspace. Include
+    // workspaceId so the renderer closes the tab in the owning workspace's
+    // panel layout, not whichever workspace is currently visible.
+    const delivery = sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.CLOSE_TAB, {
+      tabId,
+      workspaceId,
+    });
+    if (!delivery.delivered) {
+      throw new Error(
+        `Cannot close tab ${tabId}: workspace ${workspaceId} is not open in any window.`, // i18n-ignore (agent-facing protocol error, not user-facing)
+      );
+    }
     logger.info('Sent close request for browser tab', { tabId, workspaceId });
 
     // Confirm the renderer removed the tab. If no window received the event,

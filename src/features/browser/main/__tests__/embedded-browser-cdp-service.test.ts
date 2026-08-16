@@ -17,6 +17,9 @@ vi.mock('../../../system/main/system.ipc', () => ({
 import { IPC_CHANNELS } from '../../../../shared/ipc-registry';
 import { embeddedBrowserCdp } from '../embedded-browser-cdp-service';
 
+const DELIVERED = { windowCount: 1, browserClientsNotified: false, delivered: true };
+const DROPPED = { windowCount: 0, browserClientsNotified: false, delivered: false };
+
 describe('embedded browser CDP workspace routing', () => {
   const responseHandlers = new Map<string, (event: unknown, data: unknown) => unknown>();
 
@@ -26,6 +29,7 @@ describe('embedded browser CDP workspace routing', () => {
       responseHandlers.set(channel, handler);
     }
     mocks.sendToWorkspaceWindows.mockReset();
+    mocks.sendToWorkspaceWindows.mockReturnValue(DELIVERED);
   });
 
   it.each([undefined, null, '', 42, { workspaceId: 'ws-2' }])(
@@ -38,6 +42,91 @@ describe('embedded browser CDP workspace routing', () => {
     },
   );
 
+  // Regression (intent-hq/monorepo#2602): these used to fall back to a
+  // broadcast to ALL windows, letting a call that omitted workspaceId
+  // focus/enumerate tabs in unrelated workspaces' windows.
+  it.each([undefined, null, ''])(
+    'rejects tab focus without workspace context instead of broadcasting: %j',
+    (workspaceId) => {
+      expect(() => embeddedBrowserCdp.focusTab('tab-1', workspaceId as unknown as string)).toThrow(
+        'workspaceId is required',
+      );
+      expect(mocks.sendToWorkspaceWindows).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([undefined, null, ''])(
+    'rejects tab listing without workspace context instead of broadcasting: %j',
+    async (workspaceId) => {
+      await expect(
+        embeddedBrowserCdp.listAllTabs(workspaceId as unknown as string),
+      ).rejects.toThrow('workspaceId is required');
+      expect(mocks.sendToWorkspaceWindows).not.toHaveBeenCalled();
+    },
+  );
+
+  // Regression (intent-hq/monorepo#2602): focusTab used to return true after
+  // sending, even when zero windows received the message.
+  it('reports focus failure when the workspace is not open in any window', () => {
+    mocks.sendToWorkspaceWindows.mockReturnValue(DROPPED);
+    expect(embeddedBrowserCdp.focusTab('tab-1', 'ws-closed')).toBe(false);
+  });
+
+  it('fails a close with a clear error when the workspace is not open in any window', async () => {
+    mocks.sendToWorkspaceWindows.mockImplementation(
+      (workspaceId: string, channel: string, payload: { requestId?: string }) => {
+        if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DROPPED;
+        responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+          {},
+          {
+            tabs: [{ tabId: 'tab-1', url: 'https://example.test', title: 'Example' }],
+            requestId: payload.requestId,
+          },
+        );
+        return DELIVERED;
+      },
+    );
+
+    await expect(embeddedBrowserCdp.closeTab('tab-1', 'ws-closed')).rejects.toThrow(
+      'workspace ws-closed is not open in any window',
+    );
+  });
+
+  // Regression (intent-hq/monorepo#2602): a request nothing received used to
+  // wait out the full 500 ms timeout before falling back to the cache.
+  it('short-circuits to the same-workspace cache without waiting when nothing received the list request', async () => {
+    // Seed the cache for ws-cache via a delivered round-trip.
+    mocks.sendToWorkspaceWindows.mockImplementation(
+      (workspaceId: string, channel: string, payload: { requestId?: string }) => {
+        if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+        responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+          {},
+          {
+            tabs: [{ tabId: 'tab-cached', url: 'https://cached.test', title: 'Cached' }],
+            requestId: payload.requestId,
+          },
+        );
+        return DELIVERED;
+      },
+    );
+    await embeddedBrowserCdp.requestPanelBrowserTabs('ws-cache');
+
+    vi.useFakeTimers();
+    try {
+      mocks.sendToWorkspaceWindows.mockReturnValue(DROPPED);
+      // Resolves from the cache immediately — no timer advancement — instead
+      // of burning the 500 ms reply timeout.
+      const tabs = await embeddedBrowserCdp.requestPanelBrowserTabs('ws-cache');
+      expect(tabs).toEqual([{ tabId: 'tab-cached', url: 'https://cached.test', title: 'Cached' }]);
+
+      // The fallback only consults the SAME workspace's cache entry.
+      const otherTabs = await embeddedBrowserCdp.requestPanelBrowserTabs('ws-other');
+      expect(otherTabs).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('routes tab discovery and close through exact workspace-scoped channels and params', async () => {
     const responses = [
       [{ tabId: 'tab-1', url: 'https://example.test', title: 'Example' }],
@@ -47,7 +136,7 @@ describe('embedded browser CDP workspace routing', () => {
     ];
     mocks.sendToWorkspaceWindows.mockImplementation(
       (workspaceId: string, channel: string, payload: { requestId?: string }) => {
-        if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return;
+        if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
         const tabs = responses.shift() ?? [];
         responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
           {},
@@ -56,6 +145,7 @@ describe('embedded browser CDP workspace routing', () => {
             requestId: payload.requestId,
           },
         );
+        return DELIVERED;
       },
     );
 

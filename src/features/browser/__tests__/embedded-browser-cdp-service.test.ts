@@ -60,6 +60,8 @@ function fakeWebview(id: number, url: string) {
  * reply through the captured LIST_TABS_RESPONSE handler with the current
  * panel layout; CLOSE_TAB removes the tab from the layout (UI close path).
  */
+const DELIVERED = { windowCount: 1, browserClientsNotified: false, delivered: true };
+
 function wireRenderer(panelTabs: PanelTab[], respondForWorkspaceId?: string) {
   mocks.sendToWorkspaceWindows.mockImplementation(
     (
@@ -67,7 +69,11 @@ function wireRenderer(panelTabs: PanelTab[], respondForWorkspaceId?: string) {
       channel: string,
       payload: { requestId?: string; tabId?: string },
     ) => {
-      if (respondForWorkspaceId !== undefined && workspaceId !== respondForWorkspaceId) return;
+      // A non-matching workspace still "delivers" (some window has it open);
+      // its renderer just never answers this fake's panel layout.
+      if (respondForWorkspaceId !== undefined && workspaceId !== respondForWorkspaceId) {
+        return DELIVERED;
+      }
       if (channel === IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) {
         const respond = mocks.handlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE);
         respond?.({}, { tabs: [...panelTabs], requestId: payload.requestId });
@@ -75,6 +81,7 @@ function wireRenderer(panelTabs: PanelTab[], respondForWorkspaceId?: string) {
         const idx = panelTabs.findIndex((t) => t.tabId === payload.tabId);
         if (idx >= 0 && panelTabs[idx].closable !== false) panelTabs.splice(idx, 1);
       }
+      return DELIVERED;
     },
   );
 }
@@ -154,7 +161,7 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
     expect(await service.listAllTabs('ws-1')).toEqual([]);
   });
 
-  it('does not fall back to another workspace\'s tabs when a list request times out', async () => {
+  it("does not fall back to another workspace's tabs when a list request times out", async () => {
     const service = await loadService();
     // Only ws-a's layout answers list requests; ws-b never responds.
     wireRenderer([{ tabId: 'tab-a', url: 'http://a/', title: 'A' }], 'ws-a');
