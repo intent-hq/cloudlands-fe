@@ -4,8 +4,9 @@
    *
    * Presentational: all state arrives as props from the Redux host
    * (`TransferWorkspaceModalHost`), following the ConnectBackendModal layout.
-   *   1. `destination` — pick a target server (remote connections minus the
-   *      active backend) or "Download to file".
+   *   1. `destination` — pick a target server (connections minus the active
+   *      backend — the local entry is listed when a remote is active) or
+   *      "Download to file".
    *   2. `confirm` — render the `workspace.transfer.plan` result: manifest
    *      counts, size estimate, git summary, and pre-flight warnings.
    *   3. `transferring` — live progress (build stage, bytes down/up vs the
@@ -25,6 +26,7 @@
     faCircleCheck,
     faCircleXmark,
     faDownload,
+    faLaptop,
     faServer,
     faTriangleExclamation,
     faXmark,
@@ -47,7 +49,7 @@
     open?: boolean;
     workspaceTitle?: string;
     step?: TransferStep;
-    /** Eligible target servers (remotes minus the active backend). */
+    /** Eligible target connections (all minus the active backend; includes local when a remote is active). */
     connections?: ConnectionRecord[];
     destination?: TransferDestination | null;
     planStatus?: TransferPlanStatus;
@@ -263,7 +265,7 @@
                     onclick={() =>
                       onSelectDestination?.({ kind: 'server', connectionId: conn.id })}
                   >
-                    <Fa icon={faServer} class="text-subtle shrink-0" />
+                    <Fa icon={conn.isLocal ? faLaptop : faServer} class="text-subtle shrink-0" />
                     <span class="truncate">{formatConnectionLabel(conn)}</span>
                   </Button>
                 {/each}

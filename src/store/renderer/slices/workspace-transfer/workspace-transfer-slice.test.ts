@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import type { StoreState } from '../../types';
+import { initialState as connectionsInitialState } from '../connections/connections-slice';
+import type { ConnectionRecord } from '../connections/connections-types';
+import { selectTransferTargetConnections } from './workspace-transfer-selectors';
 import {
   closeTransferModal,
   initialState,
@@ -262,5 +268,48 @@ describe('workspaceTransferReducer — steps 3–4', () => {
     );
     state = workspaceTransferReducer(state, setTransferRestartAgents(true));
     expect(workspaceTransferReducer(state, closeTransferModal())).toEqual(initialState);
+  });
+});
+
+describe('selectTransferTargetConnections', () => {
+  const LOCAL: ConnectionRecord = {
+    id: LOCAL_CONNECTION_ID,
+    label: 'This machine (local)',
+    host: null,
+    port: null,
+    fingerprint: null,
+    isLocal: true,
+  };
+
+  const remote = (id: string, host: string): ConnectionRecord => ({
+    id,
+    label: `${host}:8443`,
+    host,
+    port: 8443,
+    fingerprint: 'AB:CD',
+    isLocal: false,
+  });
+
+  const REMOTE_1 = remote('remote-1', '10.0.0.5');
+  const REMOTE_2 = remote('remote-2', '10.0.0.6');
+
+  function connectionsState(records: ConnectionRecord[], activeId: string): StoreState {
+    return {
+      connections: {
+        ...connectionsInitialState,
+        connections: createCollection<ConnectionRecord, 'id'>('id', records),
+        activeId,
+      },
+    } as unknown as StoreState;
+  }
+
+  it('remote active: lists local and the other remotes, excluding the active backend', () => {
+    const state = connectionsState([LOCAL, REMOTE_1, REMOTE_2], 'remote-1');
+    expect(selectTransferTargetConnections.select(state)).toEqual([LOCAL, REMOTE_2]);
+  });
+
+  it('local active: lists only remotes (local excluded as the active backend)', () => {
+    const state = connectionsState([LOCAL, REMOTE_1, REMOTE_2], LOCAL_CONNECTION_ID);
+    expect(selectTransferTargetConnections.select(state)).toEqual([REMOTE_1, REMOTE_2]);
   });
 });
