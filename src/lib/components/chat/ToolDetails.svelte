@@ -197,13 +197,13 @@
 
 {#snippet rawDetails()}
   {#if inputEntries || result != null}
-    <details class="mt-2 rounded border border-border/50 bg-muted/20">
+    <details class="mt-2 rounded border border-border bg-muted/20">
       <summary
         class="type-caption cursor-pointer select-none px-2 py-1.5 text-muted-foreground hover:text-foreground"
       >
         {m.chat_toolCall_technicalDetails_label()}
       </summary>
-      <div class="flex flex-col gap-2 border-t border-border/50 p-2">
+      <div class="flex flex-col gap-2 border-t border-border p-2">
         {#if inputEntries}
           <div>
             <div class="type-caption mb-1 text-subtle">
@@ -281,7 +281,7 @@
           <!-- Raw/Formatted toggle - only when rich preview exists -->
           {#if hasRichPreview}
             <button
-              class="px-1.5 py-0.5 rounded text-ui font-medium bg-muted/80 border border-border/50 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
+              class="px-1.5 py-0.5 rounded text-ui font-medium bg-muted/80 border border-border text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
               onclick={() => (showRaw = !showRaw)}
               title={showRaw
                 ? m.chat_toolDetails_showFormatted_title()
@@ -295,7 +295,7 @@
           <!-- Copy button - Skip for file-view since CodeBlock has its own copy button -->
           {#if (parsedResult?.content || parsedResult?.newContent) && parsedResult?.type !== 'file-view'}
             <button
-              class="p-1.5 rounded bg-muted/80 border border-border/50 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
+              class="p-1.5 rounded bg-muted/80 border border-border text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
               onclick={() =>
                 copyToClipboard(
                   input.content || parsedResult?.newContent || parsedResult?.content || '',
@@ -351,7 +351,7 @@
           {:else if parsedResult.type === 'note-edit' && (parsedResult.newContent || parsedResult.content)}
             <!-- Note edit without diff - render markdown -->
             <div
-              class="overflow-hidden rounded border border-border/40 bg-muted/20 max-h-72 overflow-y-auto"
+              class="overflow-hidden rounded border border-border bg-muted/20 max-h-72 overflow-y-auto"
             >
               <div class="p-3">
                 <MarkdownRenderer
@@ -448,11 +448,11 @@
                 {@const fileName = snippet.path.split('/').pop() || snippet.path}
                 {@const dirPath = snippet.path.split('/').slice(0, -1).join('/')}
                 <div
-                  class="group/snippet rounded-md overflow-hidden border border-border/60 hover:border-border transition-colors"
+                  class="group/snippet rounded-md overflow-hidden border border-border hover:border-border transition-colors"
                 >
                   <!-- File header with icon-like styling -->
                   <div
-                    class="flex items-center gap-1.5 px-2 py-1 bg-muted/50 border-b border-border/40"
+                    class="flex items-center gap-1.5 px-2 py-1 bg-muted/50 border-b border-border"
                   >
                     <span class="font-mono text-xs font-medium text-muted-foreground"
                       >{fileName}</span
@@ -475,7 +475,7 @@
                 </div>
               {/each}
               {#if parsedResult.snippets.length > 8}
-                <div class="text-center text-xs text-subtle py-1 border-t border-border/30 mt-1">
+                <div class="text-center text-xs text-subtle py-1 border-t border-border mt-1">
                   {plural(
                     parsedResult.snippets.length - 8,
                     m.chat_toolDetails_moreResults_one,
@@ -574,7 +574,7 @@
           {:else if parsedResult.type === 'note-view' && parsedResult.content}
             <!-- Note view - rendered markdown -->
             <div
-              class="overflow-hidden rounded border border-border/40 bg-muted/20 max-h-72 overflow-y-auto"
+              class="overflow-hidden rounded border border-border bg-muted/20 max-h-72 overflow-y-auto"
             >
               <div class="p-3">
                 <MarkdownRenderer content={parsedResult.content} className="text-sm" />
@@ -651,7 +651,7 @@
                   {/if}
                 </button>
               {/each}
-              <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
+              <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                 {plural(
                   parsedResult.agents.length,
                   m.chat_toolDetails_agentCount_one,
@@ -693,7 +693,7 @@
               {/if}
               {#if parsedResult.taskContent}
                 <div
-                  class="overflow-hidden rounded border border-border/40 bg-muted/20 p-3 max-h-48 overflow-y-auto"
+                  class="overflow-hidden rounded border border-border bg-muted/20 p-3 max-h-48 overflow-y-auto"
                 >
                   <MarkdownRenderer content={parsedResult.taskContent} className="text-sm" />
                 </div>
@@ -827,7 +827,7 @@
                     m.chat_toolDetails_totalComments_one,
                     m.chat_toolDetails_totalComments_many,
                   )}
-                  <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
+                  <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                     {parsedResult.commentThreads.length === 1
                       ? m.chat_toolDetails_inThreads_one({
                           comments: commentsPart,
@@ -883,7 +883,7 @@
                     {/if}
                   </button>
                 {/each}
-                <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
+                <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                   {plural(
                     parsedResult.notes.length,
                     m.chat_toolDetails_noteCount_one,
@@ -899,7 +899,7 @@
             <div class="flex flex-col gap-2">
               {#if parsedResult.figmaScreenshot}
                 <!-- Inline Figma screenshot -->
-                <div class="overflow-hidden rounded border border-border/40">
+                <div class="overflow-hidden rounded border border-border">
                   <img
                     src={`data:${parsedResult.figmaScreenshotMimeType || 'image/png'};base64,${parsedResult.figmaScreenshot}`}
                     alt={m.chat_toolDetails_figmaScreenshot_alt()}
@@ -948,7 +948,7 @@
             <div class="flex flex-col gap-2">
               {#if parsedResult.screenshotBase64 || parsedResult.screenshotUrl}
                 <!-- Inline screenshot -->
-                <div class="overflow-hidden rounded border border-border/40">
+                <div class="overflow-hidden rounded border border-border">
                   <img
                     src={parsedResult.screenshotUrl ||
                       `data:image/png;base64,${parsedResult.screenshotBase64}`}
@@ -959,7 +959,7 @@
                       : ''}
                   />
                   {#if parsedResult.screenshotWidth && parsedResult.screenshotHeight}
-                    <div class="px-2 py-1 text-ui text-subtle border-t border-border/30">
+                    <div class="px-2 py-1 text-ui text-subtle border-t border-border">
                       {parsedResult.screenshotWidth} × {parsedResult.screenshotHeight}
                     </div>
                   {/if}
@@ -993,7 +993,7 @@
                       {/if}
                     </button>
                   {/each}
-                  <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
+                  <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                     {plural(
                       parsedResult.browserTabs.length,
                       m.chat_toolDetails_tabCount_one,
@@ -1098,7 +1098,7 @@
               </div>
               <!-- Stats row -->
               <div
-                class="px-3 py-2 border-t border-border/50 bg-muted/20 flex items-center gap-4 text-xs"
+                class="px-3 py-2 border-t border-border bg-muted/20 flex items-center gap-4 text-xs"
               >
                 <div class="flex items-center gap-1">
                   <span class="text-subtle">{m.chat_toolDetails_events_label()}</span>
@@ -1117,14 +1117,14 @@
               </div>
               <!-- Stacktrace summary (if available) -->
               {#if issue.stacktraceSummary}
-                <div class="px-3 py-2 border-t border-border/50 bg-muted/10">
+                <div class="px-3 py-2 border-t border-border bg-muted/10">
                   <pre
                     class="m-0 font-mono text-ui leading-relaxed text-subtle overflow-x-auto">{issue.stacktraceSummary}</pre>
                 </div>
               {/if}
               <!-- Link to Sentry -->
               {#if issue.url}
-                <div class="px-3 py-1.5 border-t border-border/50 bg-muted/10">
+                <div class="px-3 py-1.5 border-t border-border bg-muted/10">
                   <a
                     href={issue.url}
                     target="_blank"
@@ -1181,7 +1181,7 @@
                   {/if}
                 </div>
               {/each}
-              <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
+              <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                 {plural(
                   parsedResult.sentryIssues.length,
                   m.chat_toolDetails_issueCount_one,
@@ -1244,7 +1244,7 @@
                   </div>
                 </div>
               {/each}
-              <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
+              <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                 {plural(
                   parsedResult.githubIssues.length,
                   m.chat_toolDetails_resultCount_one,
@@ -1298,7 +1298,7 @@
                   (s, f) => s + f.deletions,
                   0,
                 )}
-                <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1 flex gap-2">
+                <div class="text-xs text-subtle pt-1 border-t border-border mt-1 flex gap-2">
                   <span
                     >{plural(
                       parsedResult.githubFiles.length,
@@ -1326,7 +1326,7 @@
                         parsedResult.githubOverallStatus === 'error'
                       ? 'text-red-600 dark:text-red-400'
                       : 'text-amber-600 dark:text-amber-400'}
-                <div class="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-border/30">
+                <div class="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-border">
                   <span class="text-sm font-medium {overallColor}"
                     >{m.chat_toolDetails_overall_label({
                       status: parsedResult.githubOverallStatus,
@@ -1379,7 +1379,7 @@
                 {@const failed = parsedResult.githubChecks.filter((c) =>
                   ['failure', 'error', 'timed_out'].includes(c.conclusion || c.status),
                 ).length}
-                <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1 flex gap-2">
+                <div class="text-xs text-subtle pt-1 border-t border-border mt-1 flex gap-2">
                   <span
                     >{plural(
                       parsedResult.githubChecks.length,

@@ -617,7 +617,7 @@
                       {#snippet content({ close }: { close: () => void })}
                         <div class={hasWarning ? 'w-64 py-1' : 'w-44 py-1'}>
                           {#if hasWarning}
-                            <div class="border-b border-border/50 pb-1">
+                            <div class="border-b border-border pb-1">
                               {#if hasPiAdapterWarning}
                                 <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
                                   {m.settings_providers_piAdapterNeeded()}

@@ -298,7 +298,7 @@
 
 {#if messages.length > 0}
   <div
-    class="relative border-t border-border/50 pt-3 pb-2 px-2 z-20"
+    class="relative border-t border-border pt-3 pb-2 px-2 z-20"
     transition:safeSlide={{ duration: 200 }}
   >
     <div class="type-caption mb-2 flex items-center gap-1.5 px-2.5 text-subtle">

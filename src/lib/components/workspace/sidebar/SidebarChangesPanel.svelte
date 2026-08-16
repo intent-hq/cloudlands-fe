@@ -1025,7 +1025,7 @@
       <!-- Loading skeleton with timeline (shown during initial load or workspace switch) -->
       <div class="flex-1 overflow-y-auto pb-20 pt-3">
         <div class="relative">
-          <div class="absolute left-0 top-2 bottom-2 w-px bg-border/30"></div>
+          <div class="absolute left-0 top-2 bottom-2 w-px bg-border"></div>
           {#each [0, 1, 2, 3] as i (i)}
             <div class="relative pl-4 mb-4">
               <div class="absolute -left-1 top-1 w-2 h-2 rounded-full bg-muted"></div>
@@ -1164,7 +1164,7 @@
 
           <div class="relative flex-1 flex flex-col pb-2 w-full">
             <!-- Vertical timeline line -->
-            <div class="absolute left-1 top-2 bottom-0 w-px bg-border dark:bg-border/50"></div>
+            <div class="absolute left-1 top-2 bottom-0 w-px bg-border dark:bg-border"></div>
 
             <FileChangesSection
               {workspaceId}

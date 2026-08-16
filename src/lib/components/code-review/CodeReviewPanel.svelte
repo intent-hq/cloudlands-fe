@@ -570,7 +570,7 @@
               transition:fly={{ y: 8, duration: 200, delay: i * 100 }}
             >
               <!-- Header skeleton -->
-              <div class="flex items-center gap-3 px-4 py-3 border-b border-border/50">
+              <div class="flex items-center gap-3 px-4 py-3 border-b border-border">
                 <Skeleton class="h-8 w-8 rounded-full" />
                 <div class="flex-1 space-y-1">
                   <Skeleton class="h-4 w-32" />
@@ -583,7 +583,7 @@
                 <Skeleton class="h-3 w-5/6" />
               </div>
               <!-- Footer skeleton -->
-              <div class="px-4 py-2 border-t border-border/50">
+              <div class="px-4 py-2 border-t border-border">
                 <Skeleton class="h-6 w-20" />
               </div>
             </div>

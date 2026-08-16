@@ -316,9 +316,9 @@
     role="dialog"
     aria-modal="true"
     aria-label={title}
-    class="flex h-[32rem] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border/50 bg-card shadow-2xl focus:outline-none"
+    class="flex h-[32rem] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl focus:outline-none"
   >
-    <header class="flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-4">
+    <header class="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
       <div class="flex min-w-0 items-center gap-2">
         <Fa icon={faFolderOpen} class="shrink-0 text-muted-foreground" />
         <h2 class="truncate text-sm font-medium">{title}</h2>
@@ -334,7 +334,7 @@
     </header>
 
     <div class="flex min-h-0 flex-1">
-      <aside class="hidden w-44 shrink-0 border-r border-border/30 bg-muted/15 px-2 py-3 sm:block">
+      <aside class="hidden w-44 shrink-0 border-r border-border bg-muted/15 px-2 py-3 sm:block">
         <h3 class="mb-1 px-2 text-xs font-semibold text-muted-foreground">
           {m.onboarding_dirPicker_favorites_label()}
         </h3>
@@ -361,7 +361,7 @@
 
       <div class="flex min-w-0 flex-1 flex-col">
         <div
-          class="flex min-h-11 shrink-0 items-center gap-2 border-b border-border/30 bg-muted/10 px-3 py-2"
+          class="flex min-h-11 shrink-0 items-center gap-2 border-b border-border bg-muted/10 px-3 py-2"
         >
           <button
             type="button"
@@ -386,7 +386,7 @@
               type="text"
               class={cn(
                 'min-w-0 flex-1 rounded border bg-background px-2 py-1 text-xs font-mono text-foreground outline-none',
-                pathError ? 'border-destructive/60' : 'border-border/60 focus-visible:border-ring',
+                pathError ? 'border-destructive/60' : 'border-border focus-visible:border-ring',
               )}
               aria-label={m.onboarding_dirPicker_path_ariaLabel()}
               aria-invalid={pathError ? true : undefined}
@@ -434,7 +434,7 @@
               bind:this={searchInputRef}
               bind:value={searchDraft}
               type="search"
-              class="w-full rounded-md border border-border/50 bg-background py-1 pl-7 pr-2 text-xs outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring"
+              class="w-full rounded-md border border-border bg-background py-1 pl-7 pr-2 text-xs outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring"
               placeholder={m.onboarding_dirPicker_search_placeholder()}
               aria-label={m.onboarding_dirPicker_search_ariaLabel()}
               autocomplete="off"
@@ -444,7 +444,7 @@
 
         {#if pathError}
           <div
-            class="shrink-0 border-b border-border/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive-foreground"
+            class="shrink-0 border-b border-border bg-destructive/10 px-3 py-1.5 text-xs text-destructive-foreground"
             role="alert"
           >
             {pathError}
@@ -530,7 +530,7 @@
 
     {#if createError}
       <div
-        class="shrink-0 border-t border-border/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive-foreground/90"
+        class="shrink-0 border-t border-border bg-destructive/10 px-3 py-1.5 text-xs text-destructive-foreground/90"
         role="alert"
       >
         {createError}
@@ -538,7 +538,7 @@
     {/if}
 
     <footer
-      class="flex shrink-0 items-center gap-2 border-t border-border/40 bg-muted/10 px-4 py-3"
+      class="flex shrink-0 items-center gap-2 border-t border-border bg-muted/10 px-4 py-3"
     >
       {#if mode === 'directory' && onCreateDirectory}
         {#if newFolderOpen}

@@ -127,7 +127,7 @@
   data-has-subscriptions={hasSubscriptions}
 >
   <section
-    class="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border/60 bg-card/80 shadow-sm font-family-child"
+    class="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border bg-card/80 shadow-sm font-family-child"
     data-conversation-layer="event-subscriptions"
     data-testid="event-subscriptions-card"
     aria-label={heading}
@@ -171,7 +171,7 @@
     >
       {#if isolatedPreview?.mode === 'agents' || isolatedPreview?.mode === 'mixed'}
         <div
-          class={isAgentOnly ? '' : 'border-t border-border/40'}
+          class={isAgentOnly ? '' : 'border-t border-border'}
           data-testid="event-subscriptions-agents"
         >
           <AgentSubscriptions
@@ -187,17 +187,17 @@
           />
         </div>
         {#if isolatedPreview.mode === 'mixed'}
-          <div class="border-t border-border/40" data-testid="event-subscriptions-preview">
+          <div class="border-t border-border" data-testid="event-subscriptions-preview">
             {@render previewContent?.()}
           </div>
         {/if}
       {:else if isolatedPreview}
-        <div class="border-t border-border/40" data-testid="event-subscriptions-preview">
+        <div class="border-t border-border" data-testid="event-subscriptions-preview">
           {@render previewContent?.()}
         </div>
       {:else}
         <div
-          class={isAgentOnly ? '' : 'border-t border-border/40'}
+          class={isAgentOnly ? '' : 'border-t border-border'}
           class:hidden={!agentsVisible}
           data-testid="event-subscriptions-agents"
         >
@@ -212,7 +212,7 @@
           />
         </div>
         <div
-          class="border-t border-border/40"
+          class="border-t border-border"
           class:hidden={!hooksVisible}
           data-testid="event-subscriptions-hooks"
         >
@@ -225,7 +225,7 @@
           />
         </div>
         <div
-          class="border-t border-border/40"
+          class="border-t border-border"
           class:hidden={!prsVisible}
           data-testid="event-subscriptions-prs"
         >

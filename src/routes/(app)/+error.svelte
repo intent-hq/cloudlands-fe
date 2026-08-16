@@ -79,7 +79,7 @@
             <!-- Stack Trace Details - Full width with proper overflow handling -->
             {#if showDetails}
               <div class="relative w-full pt-3" transition:slide={{ axis: 'y' }}>
-                <div class="p-4 border border-border/50 rounded bg-muted/30">
+                <div class="p-4 border border-border rounded bg-muted/30">
                   <pre
                     class="text-xs font-mono text-subtle leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">{m.error_page_statusLine_label(
                       { status },

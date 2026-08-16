@@ -368,7 +368,7 @@
       class="onboarding-creating-state space-y-4"
       in:fly={{ y: 12, duration: 350, easing: cubicOut }}
     >
-      <div class="rounded-xl bg-muted/20 border border-border/30 px-4 py-3">
+      <div class="rounded-xl bg-muted/20 border border-border px-4 py-3">
         <p class="text-sm text-foreground leading-relaxed">
           {onboardingInputValue}
         </p>
@@ -574,7 +574,7 @@
           >
           <BranchSelector
             variant="ghost"
-            triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
+            triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border"
             value={projectSelection?.branch || 'main'}
             repoPath={projectSelection.repoPath}
             repoType="local"
@@ -613,7 +613,7 @@
           >
           <BranchSelector
             variant="ghost"
-            triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
+            triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border"
             value={projectSelection?.branch || 'main'}
             repoPath={projectSelection.repoPath || ''}
             repoType="github"
@@ -650,7 +650,7 @@
             >
               <span>{m.onboarding_promptStep_setupEnvWith_before()}</span>
               <span
-                class="max-w-full break-words rounded-md border border-border/30 bg-card/50 px-1.5 py-1.25 font-medium text-foreground"
+                class="max-w-full break-words rounded-md border border-border bg-card/50 px-1.5 py-1.25 font-medium text-foreground"
                 >{setupScriptName}</span
               >
               <span class="text-muted-foreground"
@@ -685,7 +685,7 @@
             {onModelChange}
             variant="ghost"
             size="xs"
-            triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30 text-sm"
+            triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border text-sm"
             defaultModelId={coordinatorDefaultModel}
             defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
             silentFallback

@@ -75,7 +75,7 @@
 <div class={cn('group relative flex items-start gap-3 py-1.5 px-2', className)}>
   <!-- Timeline connector line -->
   {#if showConnector && !isLast}
-    <div class="absolute left-[18px] top-8 bottom-0 w-px bg-border/40" aria-hidden="true"></div>
+    <div class="absolute left-[18px] top-8 bottom-0 w-px bg-border" aria-hidden="true"></div>
   {/if}
 
   <!-- Icon container -->

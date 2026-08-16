@@ -141,7 +141,7 @@
 </script>
 
 <div
-  class="min-w-0 overflow-hidden rounded-(--radius-large) border border-border/70 bg-card shadow-sm"
+  class="min-w-0 overflow-hidden rounded-(--radius-large) border border-border bg-card shadow-sm"
   data-question-wizard
   data-testid="question-wizard-card"
 >
@@ -212,7 +212,7 @@
             <h2 class="type-title font-medium text-foreground">{current.question}</h2>
           </div>
 
-          <div class="flex flex-col divide-y divide-border/40">
+          <div class="flex flex-col divide-y divide-border">
             {#each current.options as option, oi (oi)}
               {@const selected = draft.sel.includes(oi)}
               <button

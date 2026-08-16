@@ -399,7 +399,7 @@
 
 <div class="walkthrough-file-diff overflow-hidden bg-card {className}">
   <!-- File header -->
-  <div class="flex flex-col border-b border-border/50">
+  <div class="flex flex-col border-b border-border">
     <button
       type="button"
       class="w-full flex items-center gap-2 px-4 py-3 hover:bg-muted/30 transition-colors text-left group"
@@ -443,14 +443,14 @@
 
   <!-- Preview when collapsed -->
   {#if isFileCollapsed && previewLines.length > 0}
-    <div class="border-t border-border/50" transition:slide={{ duration: 150 }}>
+    <div class="border-t border-border" transition:slide={{ duration: 150 }}>
       <div class="font-mono text-xs leading-relaxed opacity-60">
         {#each previewLines as { line, hunkIndex, lineIndex } (`preview-${hunkIndex}-${lineIndex}`)}
           <div class="flex {getLineBgClass(line)}">
             <div
               class="w-12 shrink-0 flex select-none {getGutterClass(
                 line,
-              )} border-r border-border/30"
+              )} border-r border-border"
             >
               <span class="w-12 px-2 text-right text-ui text-subtle tabular-nums"
                 >{line.newNum ?? line.oldNum ?? ''}</span
@@ -517,7 +517,7 @@
             {#if gapAtStart}
               <button
                 type="button"
-                class="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors border-b border-border/50"
+                class="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors border-b border-border"
                 onclick={() => expandRange(hunkIndex, gapAtStart.startIndex, gapAtStart.endIndex)}
               >
                 <Fa icon={faChevronDown} class="h-2.5 w-2.5" />
@@ -540,7 +540,7 @@
                   <div
                     class="w-20 shrink-0 flex select-none {getGutterClass(
                       line,
-                    )} border-r border-border/30"
+                    )} border-r border-border"
                   >
                     <span class="w-10 px-2 text-right text-ui text-subtle tabular-nums"
                       >{line.oldNum ?? ''}</span
@@ -608,7 +608,7 @@
                 {#if gapAfter}
                   <button
                     type="button"
-                    class="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors border-y border-border/50 bg-muted/10"
+                    class="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors border-y border-border bg-muted/10"
                     onclick={() => expandRange(hunkIndex, gapAfter.startIndex, gapAfter.endIndex)}
                   >
                     <Fa icon={faEllipsisH} class="h-2.5 w-2.5" />

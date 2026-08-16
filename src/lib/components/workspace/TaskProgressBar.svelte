@@ -176,7 +176,7 @@
 
           <!-- Completed tasks (collapsed summary) -->
           {#if completedTasks.length > 0}
-            <div class="flex flex-col gap-0.5 pt-1 border-t border-border/40">
+            <div class="flex flex-col gap-0.5 pt-1 border-t border-border">
               {#each completedTasks.slice(0, 3) as task}
                 <div class="flex items-center gap-2">
                   <div class="shrink-0">

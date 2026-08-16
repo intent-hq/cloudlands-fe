@@ -359,7 +359,7 @@
                 />
               </span>
             </div>
-            <div class="absolute top-3.5 left-0 right-0 flex-1 border-t border-border/50"></div>
+            <div class="absolute top-3.5 left-0 right-0 flex-1 border-t border-border"></div>
           </Button>
 
           {#if olderExpanded}

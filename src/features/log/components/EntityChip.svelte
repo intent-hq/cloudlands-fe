@@ -86,7 +86,7 @@
           'transition-colors duration-150 cursor-pointer',
           'border border-transparent',
           variantStyles[variant],
-          onClick && 'hover:border-border/50',
+          onClick && 'hover:border-border',
           className,
         )}
         onclick={onClick}

@@ -518,7 +518,7 @@
             {#each row as item}
               {#if item.type === 'batch'}
                 <div
-                  class="batch-group-box relative z-10 bg-background border border-border/50 rounded-xl"
+                  class="batch-group-box relative z-10 bg-background border border-border rounded-xl"
                   style="padding: {BOX_PADDING}px; margin-top: -{BOX_PADDING}px; display: grid; grid-template-columns: repeat({item.cols}, auto); gap: {GAPX}px;"
                 >
                   {#each item.children as child (child.agent.agentId)}
@@ -565,7 +565,7 @@
           <div class="utility-corrals flex flex-col gap-4">
             {#each utilityAgentGroups as group (group.id)}
               <div
-                class="utility-corral border border-dashed border-border/50 rounded-lg p-3 min-w-20"
+                class="utility-corral border border-dashed border-border rounded-lg p-3 min-w-20"
               >
                 <div class="corral-label text-xs text-subtle font-medium mb-2 text-center">
                   {group.label}

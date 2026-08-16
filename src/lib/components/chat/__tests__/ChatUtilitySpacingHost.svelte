@@ -38,7 +38,7 @@
     <div class="h-12" data-testid="transcript-tail">Transcript tail</div>
     <div class="mt-auto" data-testid="transcript-utility-stack">
       <div class="w-full {compact ? 'mt-6' : 'mt-8'}" data-testid="subscription-utility-area">
-        <section class="overflow-hidden rounded-lg border border-border/60 bg-card/80 shadow-sm">
+        <section class="overflow-hidden rounded-lg border border-border bg-card/80 shadow-sm">
           <button
             type="button"
             class="w-full px-3 py-2 text-left"
@@ -47,7 +47,7 @@
             Event subscriptions
           </button>
           {#if expanded}
-            <div class="border-t border-border/40 px-3 py-2" data-testid="subscription-body">
+            <div class="border-t border-border px-3 py-2" data-testid="subscription-body">
               Expanded subscription details
             </div>
           {/if}

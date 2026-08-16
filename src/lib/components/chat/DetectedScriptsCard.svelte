@@ -20,13 +20,13 @@
 
 <div class="detected-scripts-card my-3 rounded-lg border border-border bg-muted/30 overflow-hidden">
   <!-- Header -->
-  <div class="flex items-center gap-2 px-4 py-2.5 border-b border-border/50 bg-muted/40">
+  <div class="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-muted/40">
     <Fa icon={faWandMagicSparkles} size="sm" class="text-primary/70" />
     <span class="text-sm font-semibold text-foreground">{m.chat_detectedScripts_title()}</span>
   </div>
 
   <!-- Script list -->
-  <div class="divide-y divide-border/30">
+  <div class="divide-y divide-border">
     {#each scripts as script (script.name + script.command)}
       <div class="flex items-start gap-3 px-4 py-2.5">
         <div class="flex-1 min-w-0">
@@ -64,7 +64,7 @@
   </div>
 
   <!-- Footer -->
-  <div class="px-4 py-2 border-t border-border/50 bg-muted/20">
+  <div class="px-4 py-2 border-t border-border bg-muted/20">
     <span class="text-xs text-muted-foreground">
       {scripts.length === 1
         ? m.chat_detectedScripts_count_one({ count: formatInteger(scripts.length) })

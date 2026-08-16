@@ -170,7 +170,7 @@
         <WorkspaceCard
           {workspace}
           variant="compact"
-          class="rounded-md border border-border/40 bg-background/40"
+          class="rounded-md border border-border bg-background/40"
           onClick={(event) => handleWorkspaceClick(workspaceId, event)}
         >
           {#snippet actions()}
@@ -190,7 +190,7 @@
           {/snippet}
         </WorkspaceCard>
       {:else}
-        <div class="rounded-md border border-border/50 bg-muted/10 px-3 py-2 text-left">
+        <div class="rounded-md border border-border bg-muted/10 px-3 py-2 text-left">
           <div class="truncate font-mono text-xs text-foreground">{workspaceId}</div>
           <div class="mt-0.5 text-xs text-subtle">
             {m.chat_chatWorkspaceCard_notFound_label()}

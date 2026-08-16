@@ -223,13 +223,13 @@
   {#if !isCollapsed}
     <div
       id={agentListId}
-      class="flex w-full min-w-0 max-w-full flex-col gap-0.5 overflow-hidden border-t border-border/40 pt-1.5 pr-2 pb-0.5 pl-4.5 font-family-child"
+      class="flex w-full min-w-0 max-w-full flex-col gap-0.5 overflow-hidden border-t border-border pt-1.5 pr-2 pb-0.5 pl-4.5 font-family-child"
       data-testid="delegation-group-agent-list"
       transition:safeSubscriptionSlide
     >
       {#each orderedAgentIds.slice(0, 5) as agentId (agentId)}
         <div
-          class="w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 pt-0.5 first:border-t-0 first:pt-0"
+          class="w-full min-w-0 max-w-full overflow-hidden border-t border-border pt-0.5 first:border-t-0 first:pt-0"
           animate:flip={{ duration: 200 }}
           transition:safeSlide={{ axis: 'y', duration: 200 }}
         >

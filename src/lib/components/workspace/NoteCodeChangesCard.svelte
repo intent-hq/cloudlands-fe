@@ -263,8 +263,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
         <!-- File List -->
         {#if isExpanded && hasChanges}
-          <div class="border-t border-border/30" transition:slide={{ duration: 150 }}>
-            <div class="divide-y divide-border/20">
+          <div class="border-t border-border" transition:slide={{ duration: 150 }}>
+            <div class="divide-y divide-border">
               {#each displayedChanges as change (change.filePath)}
                 <button
                   onclick={() => handleFileClick(change)}
@@ -294,7 +294,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
             <!-- Footer -->
             {#if hasMoreFiles && !isExpanded}
-              <div class="px-4 py-2 border-t border-border/30">
+              <div class="px-4 py-2 border-t border-border">
                 <span class="text-xs text-subtle">
                   {m.workspace_noteCodeChanges_moreFiles_label({
                     count: formatInteger(changes.length - MAX_VISIBLE_FILES),

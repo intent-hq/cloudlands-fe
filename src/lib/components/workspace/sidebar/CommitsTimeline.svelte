@@ -952,7 +952,7 @@
           {/if}
         </span>
       </div>
-      <div class="absolute top-4.5 left-0 right-0 flex-1 border-t border-border/50"></div>
+      <div class="absolute top-4.5 left-0 right-0 flex-1 border-t border-border"></div>
     </button>
   {/if}
 

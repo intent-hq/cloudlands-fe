@@ -90,7 +90,7 @@
 
 <div
   class={cn(
-    'rounded-lg border border-border/50 bg-card shadow-sm',
+    'rounded-lg border border-border bg-card shadow-sm',
     comment.dismissed && 'opacity-50',
     className,
   )}
@@ -116,7 +116,7 @@
 
   <!-- File location row -->
   {#if comment.location}
-    <div class="flex items-center gap-2 px-4 py-2 border-t border-border/30">
+    <div class="flex items-center gap-2 px-4 py-2 border-t border-border">
       <button
         class="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex-1 min-w-0"
         onclick={toggleCodeExpand}
@@ -169,7 +169,7 @@
   {/if}
 
   <!-- Footer actions -->
-  <div class="flex items-center gap-3 px-4 py-2 border-t border-border/30">
+  <div class="flex items-center gap-3 px-4 py-2 border-t border-border">
     {#if onFix}
       <button
         class="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"

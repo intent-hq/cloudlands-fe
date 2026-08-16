@@ -32,7 +32,7 @@ describe('editorial workspace shell presentation contract', () => {
   it('uses a clipped semantic card surface with a consistent light border', () => {
     const panel = source('../Panel.svelte');
 
-    expect(panel).toContain('overflow-hidden rounded-lg border border-border/50');
+    expect(panel).toContain('overflow-hidden rounded-lg border border-border');
     expect(panel).toContain("? 'bg-transparent text-sidebar-foreground'");
     expect(panel).toContain(": 'bg-card text-card-foreground'");
     expect(panel).toContain('width: 100%');
@@ -70,7 +70,7 @@ describe('editorial workspace shell presentation contract', () => {
   it('renders one content-aware header per panel without the legacy tab strip', () => {
     const tabBar = source('../PanelTabBar.svelte');
 
-    expect(tabBar).toContain('border-b border-border/50 bg-card');
+    expect(tabBar).toContain('border-b border-border bg-card');
     expect(tabBar).toContain('showTabStrip = false');
     expect(tabBar).toContain("!showTabStrip && 'hidden'");
     expect(tabBar).toContain('data-panel-tab-bar');

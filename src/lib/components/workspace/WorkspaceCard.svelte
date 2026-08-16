@@ -782,7 +782,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_tabindex -->
   <div
     class={cn(
-      'rounded-lg border border-border/50 bg-sidebar text-left w-full',
+      'rounded-lg border border-border bg-sidebar text-left w-full',
       onClick && 'cursor-pointer hover:bg-sidebar/80 transition-colors',
       highlighted && 'ring-1 ring-primary/40',
       selected && 'bg-primary/5 ring-1 ring-primary/30',

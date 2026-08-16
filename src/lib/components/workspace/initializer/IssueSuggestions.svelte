@@ -1537,11 +1537,11 @@
   <!-- Expandable panel -->
   {#if isOpen}
     <div
-      class="{hideToggle ? '' : ''} rounded-lg border border-border/50 bg-muted/20 overflow-hidden"
+      class="{hideToggle ? '' : ''} rounded-lg border border-border bg-muted/20 overflow-hidden"
       transition:slide={{ duration: 200 }}
     >
       <!-- Search + filter bar -->
-      <div class="flex items-center gap-2 px-3 py-2 border-b border-border/30">
+      <div class="flex items-center gap-2 px-3 py-2 border-b border-border">
         <Fa icon={faSearch} class="w-3 h-3 text-ghost opacity-50" />
         <input
           bind:this={searchInputEl}
@@ -1582,7 +1582,7 @@
 
       <!-- Subtle filter bar - only show when there are multiple options -->
       {#if activeSource === 'sentry' && sentryProjects.length > 1}
-        <div class="flex items-center gap-1 px-3 py-1.5 border-b border-border/20">
+        <div class="flex items-center gap-1 px-3 py-1.5 border-b border-border">
           <button
             type="button"
             onclick={() => (selectedSentryProject = null)}
@@ -1609,7 +1609,7 @@
       {/if}
 
       {#if activeSource === 'linear' && linearTeams.length > 1}
-        <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border/20 bg-muted/20">
+        <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-muted/20">
           <span class="text-xs text-subtle">{m.workspace_issueSuggestions_team_label()}</span>
           <Select.Root
             value={selectedLinearTeam ?? ''}
@@ -1643,7 +1643,7 @@
 
       <!-- GitHub PR filter: All / Assigned / Review Requested / Created / Involves -->
       {#if activeSource === 'github-prs' && isGitHubAuthenticated}
-        <div class="flex items-center gap-1 px-3 py-1.5 border-b border-border/20 flex-wrap">
+        <div class="flex items-center gap-1 px-3 py-1.5 border-b border-border flex-wrap">
           <button
             type="button"
             onclick={() => {
@@ -2148,7 +2148,7 @@
         <!-- Linear auth status - only show when not authenticated -->
         {#if activeSource === 'linear' && !isLoading && !isLinearAuthenticated}
           <div
-            class="flex items-center justify-between px-3 py-2 text-sm border-t border-border/20"
+            class="flex items-center justify-between px-3 py-2 text-sm border-t border-border"
             transition:slide={{ duration: 150 }}
           >
             <div class="flex items-center gap-2">
@@ -2169,7 +2169,7 @@
         <!-- GitHub auth status - only show when not authenticated -->
         {#if (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && !isGitHubAuthenticated}
           <div
-            class="flex items-center justify-between px-3 py-2 text-sm border-t border-border/20"
+            class="flex items-center justify-between px-3 py-2 text-sm border-t border-border"
             transition:slide={{ duration: 150 }}
           >
             <div class="flex items-center gap-2">
@@ -2210,7 +2210,7 @@
 
         <!-- Sentry auth status - only show when not authenticated -->
         {#if activeSource === 'sentry' && !isLoading && !isSentryAuthenticated}
-          <div class="border-t border-border/20" transition:slide={{ duration: 150 }}>
+          <div class="border-t border-border" transition:slide={{ duration: 150 }}>
             {#if !sentryShowForm}
               <div class="flex items-center justify-between px-3 py-2 text-sm">
                 <div class="flex items-center gap-2">

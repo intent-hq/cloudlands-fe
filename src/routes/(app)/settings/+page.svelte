@@ -385,7 +385,7 @@
 
 <div class="flex h-full min-w-0">
   <aside
-    class="flex h-full w-60 shrink-0 flex-col border-r border-border dark:border-border/40 bg-sidebar"
+    class="flex h-full w-60 shrink-0 flex-col border-r border-border dark:border-border bg-sidebar"
   >
     <div class="px-5 pt-8 pb-3">
       <!-- Back button with keyboard shortcut -->
@@ -406,7 +406,7 @@
     <SettingsSidebarNav {activeTab} onSelect={setActiveTab} />
 
     <div
-      class="shrink-0 border-t border-border dark:border-border/40 px-5 py-4 text-xs text-subtle"
+      class="shrink-0 border-t border-border dark:border-border px-5 py-4 text-xs text-subtle"
     >
       <div class="flex w-full items-baseline justify-between gap-2">
         <div class="flex items-baseline gap-1.5">

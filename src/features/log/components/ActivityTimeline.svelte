@@ -297,7 +297,7 @@
               <!-- Expanded details -->
               {#if isExpanded}
                 <div
-                  class="mt-2 p-2 rounded-md bg-muted/40 text-xs font-mono text-subtle overflow-auto max-h-[40em] border border-border/50"
+                  class="mt-2 p-2 rounded-md bg-muted/40 text-xs font-mono text-subtle overflow-auto max-h-[40em] border border-border"
                   transition:slide={{ duration: 150 }}
                 >
                   <pre>{JSON.stringify(event, null, 2)}</pre>

@@ -1048,7 +1048,7 @@
               </Button>
             {/if}
             {#if $workspace?.checkoutMode}
-              <div class="mt-1.5 border-t border-border/50 pt-1.5">
+              <div class="mt-1.5 border-t border-border pt-1.5">
                 <CheckoutModePill
                   workspace={$workspace}
                   presentation="repository"

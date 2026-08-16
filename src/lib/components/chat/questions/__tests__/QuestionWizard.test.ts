@@ -74,7 +74,7 @@ describe('QuestionWizard', () => {
     const input = screen.getByPlaceholderText('Or type your own answer…');
 
     expect(wizard?.className).toContain('bg-card');
-    expect(wizard?.className).toContain('border-border/70');
+    expect(wizard?.className).toContain('border-border');
     expect(wizard?.className).toContain('rounded-(--radius-large)');
     expect(options).toHaveLength(2);
     expect(options.every((option) => option.className.includes('border-0'))).toBe(true);

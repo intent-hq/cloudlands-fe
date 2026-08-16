@@ -178,7 +178,7 @@
   }
 </script>
 
-<div class="mt-4 pt-4 border-t border-border/50 ml-4 space-y-3">
+<div class="mt-4 pt-4 border-t border-border ml-4 space-y-3">
   <!-- Reset and continue button - hidden when there are uncommitted changes or unpushed commits -->
   {#if hasNoLocalChanges}
     <div>

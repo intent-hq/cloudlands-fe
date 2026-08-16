@@ -115,7 +115,7 @@
       onclick={close}
     >
       <div
-        class="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border/80 bg-background shadow-xl shadow-black/20 max-h-[85vh]"
+        class="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl shadow-black/20 max-h-[85vh]"
         onclick={(e) => e.stopPropagation()}
         role="alertdialog"
         aria-modal="true"
@@ -183,7 +183,7 @@
         </div>
 
         <div
-          class="flex flex-col-reverse gap-2 border-t border-border/70 bg-muted/20 px-6 py-4 sm:flex-row sm:justify-end"
+          class="flex flex-col-reverse gap-2 border-t border-border bg-muted/20 px-6 py-4 sm:flex-row sm:justify-end"
         >
           <Button variant="outline" onclick={handleAbandonAll}
             >{m.modals_interruptedAgents_abandonAll_label()}</Button

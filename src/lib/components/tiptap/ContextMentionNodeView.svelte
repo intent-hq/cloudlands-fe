@@ -341,7 +341,7 @@
 
           <!-- Footer: project + timestamps -->
           {#if meta && (meta.project || meta.createdAt || meta.author)}
-            <div class="flex items-center gap-2 pt-1 border-t border-border/30">
+            <div class="flex items-center gap-2 pt-1 border-t border-border">
               {#if meta.project}
                 <span class="text-ui text-subtle">{meta.project}</span>
               {/if}

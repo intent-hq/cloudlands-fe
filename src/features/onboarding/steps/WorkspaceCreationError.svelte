@@ -104,7 +104,7 @@
         {m.onboarding_creationError_authRequired_description()}
       </p>
       <div class="flex items-center gap-2">
-        <code class="flex-1 rounded bg-background/70 border border-border/50 px-2 py-1.5 font-mono text-xs">
+        <code class="flex-1 rounded bg-background/70 border border-border px-2 py-1.5 font-mono text-xs">
           <!-- i18n-ignore (shell command) -->
           gh auth login
         </code>
@@ -214,7 +214,7 @@
        details block only applies to classified kinds. -->
   {#if showDetails && diagnosis.kind !== 'unknown' && diagnosis.rawMessage.trim()}
     <pre
-      class="mt-2 rounded bg-background/70 border border-border/50 px-2 py-1.5 text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all max-h-40 overflow-auto">
+      class="mt-2 rounded bg-background/70 border border-border px-2 py-1.5 text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all max-h-40 overflow-auto">
 {diagnosis.rawMessage}</pre>
   {/if}
 </div>

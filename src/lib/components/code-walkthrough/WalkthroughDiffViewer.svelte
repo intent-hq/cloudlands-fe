@@ -133,7 +133,7 @@
 
                 <!-- Line numbers -->
                 <div
-                  class="w-16 shrink-0 px-2 text-right text-subtle select-none border-r border-border/50"
+                  class="w-16 shrink-0 px-2 text-right text-subtle select-none border-r border-border"
                 >
                   <span class="inline-block w-6">{line.oldNum ?? ''}</span>
                   <span class="inline-block w-6">{line.newNum ?? ''}</span>

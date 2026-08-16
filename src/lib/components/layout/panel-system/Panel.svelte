@@ -441,7 +441,7 @@
   <div
     bind:this={panelRef}
     class={cn(
-      'panel group/panel relative flex flex-col h-full overflow-hidden rounded-lg border border-border/50',
+      'panel group/panel relative flex flex-col h-full overflow-hidden rounded-lg border border-border',
       panel.pristine === true && panel.tabs.length === 0
         ? 'bg-transparent text-sidebar-foreground'
         : 'bg-card text-card-foreground',

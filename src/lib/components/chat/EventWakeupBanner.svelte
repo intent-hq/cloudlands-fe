@@ -430,7 +430,7 @@
           {#if detailsOpen}
             <div
               id={detailsId}
-              class="w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 px-3 py-2"
+              class="w-full min-w-0 max-w-full overflow-hidden border-t border-border px-3 py-2"
               role="region"
               aria-label={m.chat_eventWakeup_subscriptionWakeup_tooltip()}
               data-testid="event-wakeup-details"

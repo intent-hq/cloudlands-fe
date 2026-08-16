@@ -272,7 +272,7 @@
     class="max-h-70 overflow-y-auto -mx-1 px-1"
   >
     {#if filteredRepos.length > 0}
-      <div class="divide-y divide-border/10">
+      <div class="divide-y divide-border">
         {#each filteredRepos as repo, index (repo.path)}
           {@const isFocused = index === focusedIndex}
           {@const isCommitted = repo.path === selectedPath}

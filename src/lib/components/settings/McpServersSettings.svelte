@@ -382,7 +382,7 @@
 
   {#if $enabled$}
     <div transition:slide={{ duration: 200 }} class="space-y-6">
-      <div class="mx-0 px-3 py-2 bg-muted/50 rounded-md border border-border/50">
+      <div class="mx-0 px-3 py-2 bg-muted/50 rounded-md border border-border">
         <p class="text-xs text-subtle">
           {m.settings_mcpServers_newAgentsOnlyNote()}
         </p>

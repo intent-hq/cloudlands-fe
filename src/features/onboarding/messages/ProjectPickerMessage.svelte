@@ -329,7 +329,7 @@
 
   <!-- Tab bar -->
   <div
-    class="flex gap-0 rounded-lg p-1 border border-border/20 bg-muted/30"
+    class="flex gap-0 rounded-lg p-1 border border-border bg-muted/30"
     in:fly={{ y: 12, duration: 350, delay: 150, easing: cubicOut }}
   >
     {#each tabs as tab (tab.id)}

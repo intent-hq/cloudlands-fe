@@ -1243,7 +1243,7 @@
                   ? automatedWakeBodyId
                   : undefined}
               class={agentAttribution || automatedWakePresentation
-                ? 'w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 px-3 py-2'
+                ? 'w-full min-w-0 max-w-full overflow-hidden border-t border-border px-3 py-2'
                 : 'contents'}
               data-testid={agentAttribution
                 ? 'agent-message-expanded-body'
