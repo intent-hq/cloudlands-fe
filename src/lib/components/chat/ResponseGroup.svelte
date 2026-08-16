@@ -20,6 +20,7 @@
   import { faArrowsInLineVertical } from '$lib/icons/phosphor-icons';
   import {
     OPERATIONAL_EXPANDED_CONTENT_CLASS,
+    OPERATIONAL_EXPANDED_GUIDE_CLASS,
     OPERATIONAL_ICON_BOX_CLASS,
     OPERATIONAL_ICON_CLASS,
     OPERATIONAL_PRIMARY_CLASS,
@@ -231,10 +232,11 @@
     <div
       bind:this={contentEl}
       id={detailsId}
-      class="{OPERATIONAL_EXPANDED_CONTENT_CLASS} border-l border-muted-foreground/10 pl-4.5"
+      class="{OPERATIONAL_EXPANDED_CONTENT_CLASS} relative"
       data-operational-expanded-content
       out:collapseFromCurrent={{ duration: 300 }}
     >
+      <span class={OPERATIONAL_EXPANDED_GUIDE_CLASS} data-operational-expanded-guide></span>
       <CylinderScroller isActive={isStreaming && !isExpanded} constrained={!isExpanded}>
         <div class="flex flex-col gap-1.5">
           {#if isExpanded}

@@ -173,7 +173,14 @@ describe('editorial conversation presentation contract', () => {
     expect(streamingContent).not.toContain('my-1.25');
     expect(streamingContent).not.toContain('margin-top: -0.5rem');
     expect(responseGroup).toContain('<div class="flex flex-col gap-1.5">');
-    expect(operationalRow).toContain("OPERATIONAL_EXPANDED_CONTENT_CLASS = 'pt-1.5'");
+    expect(staticContent).not.toContain("'mb-1.5'");
+    expect(streamingContent).not.toContain('class:mb-1.5');
+    expect(operationalRow).toContain('OPERATIONAL_EXPANDED_CONTENT_CLASS = `${');
+    expect(operationalRow).toContain('OPERATIONAL_EXPANDED_GUIDE_CLASS');
+    expect(responseGroup).not.toContain('pl-4.5');
+    expect(staticContent).toContain('renderContentBlock(\n                childBlock,');
+    expect(staticContent).toContain('true,\n              )');
+    expect(streamingContent).toContain('true,\n                  )');
   });
 
   it('uses quieter Chief message surfaces and neutral proposal borders', () => {

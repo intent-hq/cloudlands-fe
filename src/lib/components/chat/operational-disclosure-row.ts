@@ -1,6 +1,6 @@
 /** Shared presentation contract for quiet, collapsible operational chat rows. */
 export const OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS =
-  '[--operational-row-inline-padding:0.75rem] [--operational-leading-slot-size:1.25rem] [--operational-leading-gap:0.5rem]';
+  '[--operational-row-inline-padding:0.75rem] [--operational-leading-slot-size:1.25rem] [--operational-leading-half-slot-size:0.625rem] [--operational-leading-gap:0.5rem]';
 
 export const OPERATIONAL_ROW_TONE_CLASS =
   'type-body font-family-child font-normal text-muted-foreground transition-colors duration-[var(--motion-fast)] hover:text-foreground focus-visible:text-foreground focus-within:text-foreground';
@@ -17,7 +17,12 @@ export const OPERATIONAL_DISCLOSURE_CLASS =
 
 export const OPERATIONAL_SUMMARY_CLASS = 'min-w-0 shrink truncate whitespace-nowrap';
 
-export const OPERATIONAL_EXPANDED_CONTENT_CLASS = 'pt-1.5';
+/** Expanded content shares the operational summary text origin. */
+export const OPERATIONAL_EXPANDED_CONTENT_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} min-w-0 max-w-full pl-[calc(var(--operational-row-inline-padding)+var(--operational-leading-slot-size)+var(--operational-leading-gap))] pt-1.5`;
+
+/** Response-group guide is centered under the leading icon slot. */
+export const OPERATIONAL_EXPANDED_GUIDE_CLASS =
+  'pointer-events-none absolute inset-y-0 left-[calc(var(--operational-row-inline-padding)+var(--operational-leading-half-slot-size))] w-px -translate-x-1/2 bg-muted-foreground/10';
 
 export const OPERATIONAL_PRIMARY_CLASS = 'text-foreground';
 

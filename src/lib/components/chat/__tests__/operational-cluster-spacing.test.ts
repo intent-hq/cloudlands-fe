@@ -16,6 +16,10 @@ describe('operational cluster spacing', () => {
     ]);
   });
 
+  it('puts exactly 16px above Thinking when it follows prose', () => {
+    expect(getOperationalClusterSpacingClass(blocks('text', 'thinking'), 1)).toBe('mt-4 mb-4');
+  });
+
   it('gives a one-row boundary both outer margins', () => {
     expect(getOperationalClusterSpacingClass(blocks('tool_use'), 0)).toBe('mt-4 mb-4');
   });

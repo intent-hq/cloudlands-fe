@@ -99,7 +99,7 @@
 
   {#if isExpanded}
     <div
-      class="{OPERATIONAL_EXPANDED_CONTENT_CLASS} type-caption ml-5 text-muted-foreground [&_p]:my-2 [&_p:first-child]:mt-0 [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
+      class="{OPERATIONAL_EXPANDED_CONTENT_CLASS} type-caption text-muted-foreground [&_p]:my-2 [&_p:first-child]:mt-0 [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
       data-operational-expanded-content
       transition:safeSlide={{ duration: 150 }}
     >

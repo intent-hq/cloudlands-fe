@@ -253,7 +253,7 @@ describe('ResponseGroup - collapse state model', () => {
     const name = container.querySelector('[data-testid="response-group-name"]')!;
     expect(name.className).toContain('font-normal');
     expect(name.className).not.toContain('font-medium');
-    expect(container.querySelector('.border-l')?.className).not.toContain('ml-2');
+    expect(container.querySelector('[data-operational-expanded-guide]')).toBeTruthy();
   });
 
   it('renders the collapsed text preview as inert inline Markdown', async () => {
@@ -272,7 +272,7 @@ describe('ResponseGroup - collapse state model', () => {
     expect(header(container).querySelectorAll('button')).toHaveLength(0);
   });
 
-  it('keeps one aligned operational icon and a spaced expanded guide', async () => {
+  it('keeps one aligned operational icon and a centered expanded guide', async () => {
     const { container } = render(ResponseGroup, {
       props: { name: 'Group title', children },
     });
@@ -283,6 +283,9 @@ describe('ResponseGroup - collapse state model', () => {
     await fireEvent.click(button);
     expect(container.querySelector('[data-operational-expanded-content]')?.className).toContain(
       'pt-1.5',
+    );
+    expect(container.querySelector('[data-operational-expanded-guide]')?.className).toContain(
+      'left-[calc(var(--operational-row-inline-padding)+var(--operational-leading-half-slot-size))]',
     );
   });
 

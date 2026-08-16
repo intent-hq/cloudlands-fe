@@ -78,6 +78,7 @@ import {
   COMPACT_TOOL_ROW_CLASS,
   COMPACT_TOOL_SENTENCE_CLASS,
   OPERATIONAL_EXPANDED_CONTENT_CLASS,
+  OPERATIONAL_EXPANDED_GUIDE_CLASS,
   OPERATIONAL_ICON_BOX_CLASS,
   OPERATIONAL_ICON_CLASS,
   OPERATIONAL_PRIMARY_CLASS,
@@ -215,7 +216,7 @@ describe('shared operational disclosure-row contract', () => {
     expect(groupIconBox.querySelector('[data-icon="arrows-in-line-vertical"]')).toBeTruthy();
   });
 
-  it('uses the shared expanded-content header gap for reasoning and response groups', async () => {
+  it('uses one shared expanded child origin and centers the response guide under the icon', async () => {
     const reasoning = render(ThinkingBlock, { props: { content: 'Expanded reasoning' } });
     await fireEvent.click(screen.getByTestId('reasoning-disclosure'));
     expectClasses(
@@ -226,10 +227,13 @@ describe('shared operational disclosure-row contract', () => {
 
     const group = render(ResponseGroup, { props: { name: 'Group', children } });
     await fireEvent.click(group.container.querySelector('button')!);
+    const expanded = group.container.querySelector('[data-operational-expanded-content]')!;
+    expectClasses(expanded, OPERATIONAL_EXPANDED_CONTENT_CLASS);
     expectClasses(
-      group.container.querySelector('[data-operational-expanded-content]')!,
-      OPERATIONAL_EXPANDED_CONTENT_CLASS,
+      group.container.querySelector('[data-operational-expanded-guide]')!,
+      OPERATIONAL_EXPANDED_GUIDE_CLASS,
     );
+    expect(expanded.className).not.toContain('pl-4.5');
   });
 
   it('preserves completed and error disclosure semantics and specialized expanded content', async () => {
