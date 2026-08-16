@@ -51,14 +51,8 @@
   // State for show more/less behavior prompt
   let showFullPrompt = $state(false);
 
-  // Only hide the core team-mode specialists from the picker
-  const builtInSpecialists = ['spec-writer', 'implementor', 'verifier'];
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
-  const customSpecialists = $derived(
-    filterPickableSpecialists($specialists$, $isGitHubAuth$).filter(
-      (s) => !builtInSpecialists.includes(s.id),
-    ),
-  );
+  const customSpecialists = $derived(filterPickableSpecialists($specialists$, $isGitHubAuth$));
 
   // Dropdown state for the specialist picker
   let pickerOpen = $state(false);
