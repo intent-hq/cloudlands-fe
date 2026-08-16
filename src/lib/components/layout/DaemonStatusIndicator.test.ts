@@ -381,6 +381,18 @@ describe('DaemonStatusIndicator', () => {
       expect(formatDiskSize(0)).toBe('0 MB');
     });
 
+    it('promotes to the next unit when rounding carries past the boundary', async () => {
+      const { formatDiskSize } = await import('./DaemonStatusIndicator.svelte');
+      // 3-sig-fig rounding of 999.5+ GB reaches 1000 GB — display as 1 TB instead.
+      expect(formatDiskSize(999_500_000_000)).toBe('1 TB');
+      expect(formatDiskSize(999_990_000_000)).toBe('1 TB');
+      expect(formatDiskSize(999_999_999_999)).toBe('1 TB');
+      // Just below the rounding carry stays in GB.
+      expect(formatDiskSize(999_400_000_000)).toBe('999 GB');
+      // Same carry at the MB → GB boundary.
+      expect(formatDiskSize(999_500_000)).toBe('1 GB');
+    });
+
     it('renders the row as "free of total" when the daemon reports both fields', async () => {
       // 1.07 TB free of 2 TB — well above the 10% threshold.
       mockStoreState = withDisk({ availableBytes: 1_070_000_000_000, totalBytes: 2 * TB });

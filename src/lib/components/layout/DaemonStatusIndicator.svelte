@@ -1,4 +1,6 @@
 <script lang="ts" module>
+  import { formatNumber } from '$lib/i18n/format';
+
   /**
    * Format raw sysinfo CPU percent (may exceed 100% on multi-core hosts)
    * with one decimal, e.g. `12.3%`.
@@ -29,15 +31,26 @@
    * values match what the OS (e.g. macOS Finder) reports for the same
    * volume. At most 3 significant figures, trailing zeros trimmed:
    * 2,000,000,000,000 B → `2 TB`; 1,070,000,000,000 B → `1.07 TB`;
-   * 994,080,000,000 B → `994 GB`.
+   * 994,080,000,000 B → `994 GB`. Rounding that carries past a unit
+   * boundary promotes to the next unit (999,999,999,999 B → `1 TB`, not
+   * `1000 GB`); the numeric part is locale-formatted via `$lib/i18n/format`.
    */
   export function formatDiskSize(bytes: number): string {
-    const TB = 1000 ** 4;
-    const GB = 1000 ** 3;
-    const MB = 1000 ** 2;
-    const [value, unit] =
-      bytes >= TB ? [bytes / TB, 'TB'] : bytes >= GB ? [bytes / GB, 'GB'] : [bytes / MB, 'MB'];
-    return `${Number(value.toPrecision(3))} ${unit}`;
+    // i18n-ignore (SI unit suffixes are technical notation)
+    const units = [
+      ['TB', 1000 ** 4],
+      ['GB', 1000 ** 3],
+      ['MB', 1000 ** 2],
+    ] as const;
+    let index = units.findIndex(([, size]) => bytes >= size);
+    if (index === -1) index = units.length - 1;
+    let value = Number((bytes / units[index][1]).toPrecision(3));
+    if (value >= 1000 && index > 0) {
+      index -= 1;
+      value = Number((bytes / units[index][1]).toPrecision(3));
+    }
+    const formatted = formatNumber(value, { maximumSignificantDigits: 3, useGrouping: false });
+    return `${formatted} ${units[index][0]}`;
   }
 
   /**
