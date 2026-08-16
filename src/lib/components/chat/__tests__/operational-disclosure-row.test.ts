@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ContentBlock, ToolUseBlock } from '$shared/types';
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -85,12 +86,19 @@ import {
   OPERATIONAL_SUMMARY_CLASS,
 } from '../operational-disclosure-row';
 
-const genericTool = { id: 'tool-generic', name: 'shell', input: { command: 'pnpm test' } } as any;
-const contextTool = {
-  id: 'tool-context',
-  name: 'codebase-retrieval',
-  input: { information_request: 'Where is the operational row implemented?' },
-} as any;
+function createToolUse(
+  id: string,
+  name: string,
+  input: Record<string, unknown> = {},
+): ToolUseBlock {
+  return { type: 'tool_use', id, name, input };
+}
+
+const genericTool = createToolUse('tool-generic', 'shell', { command: 'pnpm test' });
+const contextTool = createToolUse('tool-context', 'codebase-retrieval', {
+  information_request: 'Where is the operational row implemented?',
+});
+const groupBlocks: ContentBlock[] = [{ type: 'text', text: 'Progress' }];
 const children = createRawSnippet(() => ({ render: () => '<div>Expanded group content</div>' }));
 
 afterEach(cleanup);
@@ -149,7 +157,7 @@ describe('shared operational disclosure-row contract', () => {
         const view = render(ResponseGroup, {
           props: {
             name: 'Operational group',
-            blocks: [{ type: 'text', text: 'Progress' }] as any,
+            blocks: groupBlocks,
             children,
           },
         });
@@ -297,7 +305,7 @@ describe('shared operational disclosure-row contract', () => {
     (name, testId, isInline) => {
       const { container } = render(ToolCall, {
         props: {
-          toolUse: { id: `tool-${name}`, name, input: {} } as any,
+          toolUse: createToolUse(`tool-${name}`, name),
           toolState: 'completed',
           result: 'done',
           workspaceId: 'ws-1',
@@ -331,7 +339,7 @@ describe('shared operational disclosure-row contract', () => {
   it('keeps plain, path, context-engine, and error fragments left-flowing', () => {
     const cases = [
       { toolUse: genericTool, result: 'done' },
-      { toolUse: { id: 'tool-path', name: 'path-tool', input: {} } as any, result: 'done' },
+      { toolUse: createToolUse('tool-path', 'path-tool'), result: 'done' },
       { toolUse: genericTool, result: 'failed', toolState: 'error' as const },
     ];
     for (const props of cases) {
@@ -458,7 +466,7 @@ describe('shared operational disclosure-row contract', () => {
     it('keeps an inline file action independent from its ToolCall disclosure', async () => {
       const { container } = render(ToolCall, {
         props: {
-          toolUse: { id: 'tool-file', name: 'file-tool', input: {} } as any,
+          toolUse: createToolUse('tool-file', 'file-tool'),
           toolState: 'completed',
           result: 'done',
           workspaceId: 'ws-1',

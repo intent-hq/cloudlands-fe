@@ -20,15 +20,12 @@
 
   const plain = [{ type: 'text', text: 'Plain assistant response' }] as ContentBlock[];
   const markdown = [{ type: 'text', text: '**Markdown** assistant response' }] as ContentBlock[];
-  const grouped = [
+  const grouped: ContentBlock[] = [
     {
-      type: 'content_group',
-      name: 'Adjacent group',
-      children: [{ type: 'text', text: '**Nested** markdown remains group-relative' }],
-      isStreaming: false,
+      type: 'text',
+      text: '<group:Adjacent group>**Nested** markdown remains group-relative</group>\nFollowing top-level response',
     },
-    { type: 'text', text: 'Following top-level response' },
-  ] as unknown as ContentBlock[];
+  ];
   const tool = [
     { type: 'tool_use', id: 'tool-1', name: 'read_file', input: { path: 'src/example.ts' } },
   ] as ContentBlock[];

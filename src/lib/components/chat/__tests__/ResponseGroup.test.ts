@@ -596,15 +596,12 @@ describe('MessageContent - top-level response rows', () => {
 
   it('keeps a 10px prose stack without changing the 6px group internals', async () => {
     const MessageContent = (await import('../MessageContent.svelte')).default;
-    const content = [
+    const content: ContentBlock[] = [
       {
-        type: 'content_group',
-        name: 'Plan',
-        children: [{ type: 'text', text: 'Grouped detail' }],
-        isStreaming: false,
+        type: 'text',
+        text: '<group:Plan>Grouped detail</group>\nFollowing prose',
       },
-      { type: 'text', text: 'Following prose' },
-    ] as unknown as ContentBlock[];
+    ];
 
     const { container } = render(MessageContent, { props: { content } });
     const button = container.querySelector('button')!;
