@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.54.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.53.2...v2.54.0) (2026-08-16)
+
+
+### 🚀 Features
+
+* list local intentd as a workspace transfer target ([#1315](https://github.com/intent-hq/cloudlands-fe/issues/1315)) ([081cc2c](https://github.com/intent-hq/cloudlands-fe/commit/081cc2cd3265def7541bae2f4c86c4d1669cfd48))
+* show harness version in agent tab actions menu ([#1317](https://github.com/intent-hq/cloudlands-fe/issues/1317)) ([e2c1bd4](https://github.com/intent-hq/cloudlands-fe/commit/e2c1bd42cc13167de20e2ccf9d704dc7d371a4fe))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.9 ([#1319](https://github.com/intent-hq/cloudlands-fe/issues/1319)) ([82d4529](https://github.com/intent-hq/cloudlands-fe/commit/82d452966a054b59eacf7797d177f3308b871ed6))
+* convert DirectoryPickerModal to bits-ui Dialog for nested-modal layer coordination ([#1313](https://github.com/intent-hq/cloudlands-fe/issues/1313)) ([33cd058](https://github.com/intent-hq/cloudlands-fe/commit/33cd058b8d0d7a26f656f02872a811c584639414))
+* refresh daemon-assigned MCP server ids and statuses after settings mutations ([#1316](https://github.com/intent-hq/cloudlands-fe/issues/1316)) ([6c0bac6](https://github.com/intent-hq/cloudlands-fe/commit/6c0bac65d71b7eb0601ec3e42849869677b823da))
+
 ## [2.53.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.53.1...v2.53.2) (2026-08-16)
 
 
