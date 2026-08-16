@@ -51,6 +51,7 @@
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     faArrowUpRightFromSquare,
+    faCircleInfo,
     faFolderOpen,
     faPen,
     faStop,
@@ -388,6 +389,41 @@
         }
       },
     });
+
+    // Read-only harness version stamp (PROTOCOL §5.5). Informational only.
+    // When the session carries a harnessFeatures snapshot, selecting the item
+    // opens a flyout listing each feature's on/off state (check = on) — the
+    // parent stays enabled so the submenu can open, but a submenu parent's
+    // onClick is never invoked, keeping it non-actionable. Legacy sessions
+    // without a snapshot render a plain disabled item; sessions from daemons
+    // that predate the field omit the item entirely.
+    const harnessVersion = $agent$?.harnessVersion;
+    if (harnessVersion) {
+      const harnessFeatures = $agent$?.harnessFeatures ?? {};
+      const featureEntries = Object.entries(harnessFeatures).sort(([a], [b]) =>
+        a.localeCompare(b),
+      );
+      items.push({ type: 'separator' });
+      items.push({
+        id: 'harness-version',
+        label: m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion }),
+        icon: faCircleInfo,
+        ...(featureEntries.length > 0
+          ? {
+              submenu: featureEntries.map(([feature, enabled]) => ({
+                id: `harness-feature-${feature}`,
+                // Wire identifier from the §5.12 feature catalog, rendered
+                // verbatim. i18n-ignore (daemon-provided identifier)
+                label: feature,
+                checked: enabled,
+                disabled: true,
+                onClick: () => {},
+              })),
+            }
+          : { disabled: true }),
+        onClick: () => {},
+      });
+    }
 
     return items;
   }

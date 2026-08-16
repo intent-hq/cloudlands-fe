@@ -1687,6 +1687,7 @@
   "chat_agentCard_background_badge": "背景",
   "chat_agentCard_delegatedBy_label": "· 由 {name} 委派",
   "chat_agentCard_menu_delete_label": "刪除",
+  "chat_agentCard_menu_harnessVersion_label": "Harness v{version}",
   "chat_agentCard_menu_open_label": "開啟",
   "chat_agentCard_menu_rename_label": "重新命名",
   "chat_agentCard_fileManager_label": "檔案管理器",
