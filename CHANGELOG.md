@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.54.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.54.0...v2.54.1) (2026-08-16)
+
+
+### 🐛 Bug Fixes
+
+* add spacing below transfer modal server section label ([#1320](https://github.com/intent-hq/cloudlands-fe/issues/1320)) ([d70a348](https://github.com/intent-hq/cloudlands-fe/commit/d70a3486a9b6b9c71464bfcbcb0e5ace8f9beaf9))
+
 ## [2.54.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.53.2...v2.54.0) (2026-08-16)
 
 
