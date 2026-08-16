@@ -110,6 +110,10 @@ for (const theme of ['light', 'dark'] as const) {
           .locator('[data-testid="assistant-prose-lane"]')
           .evaluate((element) => getComputedStyle(element).backgroundColor);
         expect(contrastRatio(summaryStyles[0].color, laneBackground)).toBeGreaterThanOrEqual(4.5);
+        const leadingIconNames = await component
+          .locator('[data-chat-operational-row] [data-operational-leading] [data-icon]')
+          .evaluateAll((elements) => elements.map((element) => element.getAttribute('data-icon')));
+        expect([...new Set(leadingIconNames)].sort()).toEqual(['brain', 'eye', 'hand']);
 
         const disclosure = baseline
           .locator('[data-testid="thinking-row"] [data-testid="reasoning-disclosure"]')
@@ -283,3 +287,21 @@ for (const theme of ['light', 'dark'] as const) {
     }
   }
 }
+
+test('removes operational detail motion when reduced motion is preferred', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(AssistantProseGeometryHost);
+  const disclosure = component
+    .locator('[data-testid="thinking-row"] [data-testid="reasoning-disclosure"]')
+    .first();
+  const controls = await disclosure.getAttribute('aria-controls');
+  expect(controls).toBeTruthy();
+
+  await disclosure.click();
+  const details = component.locator(`[id="${controls}"]`);
+  await expect(details).toBeVisible();
+  expect(await details.evaluate((element) => element.getAnimations().length)).toBe(0);
+});

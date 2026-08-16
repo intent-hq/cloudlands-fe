@@ -1,3 +1,5 @@
+import { safeSlide } from '$lib/utils/animations';
+
 /** Shared presentation contract for quiet, collapsible operational chat rows. */
 export const OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS =
   '[--operational-row-inline-padding:0.75rem] [--operational-leading-slot-size:1.25rem] [--operational-leading-half-slot-size:0.625rem] [--operational-leading-gap:0.5rem]';
@@ -41,6 +43,13 @@ export const CHAT_OPERATIONAL_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLA
 export const CHAT_OPERATIONAL_LEADING_CLASS = `a11y-ignore pointer-events-none flex size-[var(--operational-leading-slot-size)] min-w-[var(--operational-leading-slot-size)] items-center justify-center ${CHAT_OPERATIONAL_SUMMARY_TONE_CLASS}`;
 
 export const CHAT_OPERATIONAL_SUMMARY_CLASS = `flex min-w-0 max-w-full items-baseline truncate whitespace-nowrap border-0 bg-transparent p-0 text-left ${CHAT_OPERATIONAL_SUMMARY_TONE_CLASS}`;
+
+export function safeOperationalDetailsTransition(node: Element) {
+  const reduced =
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  return safeSlide(node, { axis: 'y', duration: reduced ? 0 : 150 });
+}
 
 export const OPERATIONAL_ICON_BOX_CLASS = `a11y-ignore pointer-events-none flex size-[var(--operational-leading-slot-size)] min-w-[var(--operational-leading-slot-size)] shrink-0 items-center justify-center ${OPERATIONAL_SECONDARY_CLASS}`;
 

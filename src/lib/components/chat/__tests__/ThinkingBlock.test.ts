@@ -7,7 +7,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
-import { OPERATIONAL_SECONDARY_CLASS } from '../operational-disclosure-row';
+import {
+  CHAT_OPERATIONAL_ICON_CLASS,
+  CHAT_OPERATIONAL_LEADING_CLASS,
+} from '../operational-disclosure-row';
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -37,8 +40,8 @@ describe('ThinkingBlock — tool-call presentation', () => {
     expect(row.className).not.toContain('bg-muted');
     const icon = row.querySelector('[data-icon="brain"]');
     const iconBox = icon?.closest('[data-operational-icon-box]');
-    expect(iconBox?.className).toContain(OPERATIONAL_SECONDARY_CLASS);
-    expect(iconBox?.className).not.toContain('text-muted-foreground/70');
+    expect(iconBox?.className).toContain(CHAT_OPERATIONAL_LEADING_CLASS);
+    expect(icon?.className).toContain(CHAT_OPERATIONAL_ICON_CLASS);
     expect(icon?.className).not.toContain('opacity-30');
     expect(row.className).toContain('text-muted-foreground');
   });
@@ -69,11 +72,27 @@ describe('ThinkingBlock — tool-call presentation', () => {
     const toggle = screen.getByRole('button');
     const summary = screen.getByTestId('reasoning-summary');
     expect(toggle.textContent?.trim()).toBe('Check schema with label');
-    expect(summary.children).toHaveLength(0);
+    expect(summary.children).toHaveLength(1);
+    expect(summary.firstElementChild?.textContent).toBe('Check schema with label');
 
     await fireEvent.click(toggle);
     expect(screen.getByTestId('markdown-viewer').textContent).toBe('Body');
     expect(document.body.textContent?.match(/Check schema with label/g)).toHaveLength(1);
+  });
+
+  it('gives each disclosure unique controls for its mounted details region', async () => {
+    await renderBlock({ content: '# First reason\n\nFirst detail' });
+    await renderBlock({ content: '# Second reason\n\nSecond detail' });
+
+    const toggles = screen.getAllByRole('button');
+    const controls = toggles.map((toggle) => toggle.getAttribute('aria-controls'));
+    expect(controls.every(Boolean)).toBe(true);
+    expect(new Set(controls).size).toBe(2);
+
+    for (let index = 0; index < toggles.length; index += 1) {
+      await fireEvent.click(toggles[index]);
+      expect(document.getElementById(controls[index]!)).not.toBeNull();
+    }
   });
 
   it('reactively replaces the streaming fallback without remounting or moving focus', async () => {

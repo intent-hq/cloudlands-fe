@@ -58,6 +58,8 @@
   }
 
   const reasoningContent = $derived(extractReasoningHeading(content));
+  const instanceId = $props.id();
+  const detailsId = `reasoning-details-${instanceId}`;
   const toggleLabel = $derived(
     reasoningContent.heading ??
       (isStreaming
@@ -93,6 +95,8 @@
   details={isExpanded ? details : undefined}
   interactive
   expanded={isExpanded}
+  controls={detailsId}
+  {detailsId}
   ariaLabel={toggleLabel}
   onclick={toggle}
   onkeydown={handleDisclosureKeydown}

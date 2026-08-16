@@ -1,11 +1,11 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { safeSlide } from '$lib/utils/animations';
   import {
     CHAT_OPERATIONAL_LEADING_CLASS,
     CHAT_OPERATIONAL_CONTAINER_CLASS,
     CHAT_OPERATIONAL_ROW_CLASS,
     CHAT_OPERATIONAL_SUMMARY_CLASS,
+    safeOperationalDetailsTransition,
   } from './operational-disclosure-row';
 
   interface Props {
@@ -122,7 +122,7 @@
       id={detailsId}
       class={detailsClass}
       data-operational-expanded-content
-      transition:safeSlide={{ duration: 150 }}
+      transition:safeOperationalDetailsTransition
     >
       {@render details()}
     </div>

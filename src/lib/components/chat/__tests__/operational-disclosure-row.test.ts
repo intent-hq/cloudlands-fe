@@ -88,6 +88,7 @@ import {
   OPERATIONAL_SECONDARY_CLASS,
   OPERATIONAL_ROW_TONE_CLASS,
   OPERATIONAL_SUMMARY_CLASS,
+  safeOperationalDetailsTransition,
 } from '../operational-disclosure-row';
 
 function createToolUse(
@@ -105,7 +106,11 @@ const contextTool = createToolUse('tool-context', 'codebase-retrieval', {
 const groupBlocks: ContentBlock[] = [{ type: 'text', text: 'Progress' }];
 const children = createRawSnippet(() => ({ render: () => '<div>Expanded group content</div>' }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 function expectClasses(element: Element, contract: string) {
   for (const token of contract.split(' ')) expect(element.className).toContain(token);
@@ -120,6 +125,35 @@ function expectRenderedContract(container: HTMLElement, summary: Element, shared
 }
 
 describe('shared operational disclosure-row contract', () => {
+  it('keeps the shared muted tone immutable through hover and focus class paths', () => {
+    const { container } = render(ThinkingBlock, { props: { content: 'Stable reasoning' } });
+    const row = container.querySelector('[data-chat-operational-row]')!;
+    const leading = container.querySelector('[data-operational-leading]')!;
+    const summary = container.querySelector('[data-operational-summary]')!;
+
+    for (const element of [row, leading, summary]) {
+      expect(element.className).toContain('text-muted-foreground');
+      expect(element.className).not.toMatch(
+        /(?:group-)?(?:hover|focus|focus-visible|focus-within):(?:text|bg|border|opacity)/,
+      );
+    }
+  });
+
+  it('uses zero-duration detail motion when reduced motion is preferred', () => {
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({ height: '40px' } as CSSStyleDeclaration);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: true })),
+    );
+    expect(safeOperationalDetailsTransition(document.createElement('div')).duration).toBe(0);
+
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false })),
+    );
+    expect(safeOperationalDetailsTransition(document.createElement('div')).duration).toBe(150);
+  });
+
   it('renders the same body-sized tone, geometry, and narrow containment across all consumers', () => {
     const cases = [
       () => {
