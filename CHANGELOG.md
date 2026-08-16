@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.51.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.51.4...v2.51.5) (2026-08-16)
+
+
+### 🐛 Bug Fixes
+
+* restore team specialists in new-agent picker ([#1298](https://github.com/intent-hq/cloudlands-fe/issues/1298)) ([2506be0](https://github.com/intent-hq/cloudlands-fe/commit/2506be07f903c25b3cf56fe30a5d0925d18fbd02))
+
 ## [2.51.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.51.3...v2.51.4) (2026-08-16)
 
 
