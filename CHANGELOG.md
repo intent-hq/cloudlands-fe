@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.55.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.54.1...v2.55.0) (2026-08-16)
+
+
+### 🚀 Features
+
+* harness features modal dialog ([#1323](https://github.com/intent-hq/cloudlands-fe/issues/1323)) ([c3b87f5](https://github.com/intent-hq/cloudlands-fe/commit/c3b87f5f8d45d9c6958dfafed3cb5807c349a9c5))
+
+
+### 🐛 Bug Fixes
+
+* auto-size daemon status menu and show disk sizes in decimal units ([#1321](https://github.com/intent-hq/cloudlands-fe/issues/1321)) ([83f22b3](https://github.com/intent-hq/cloudlands-fe/commit/83f22b31c333c778e7f8c99cc552e07bc2e72166))
+* bump intentd sidecar to v0.7.10 ([#1326](https://github.com/intent-hq/cloudlands-fe/issues/1326)) ([1b70977](https://github.com/intent-hq/cloudlands-fe/commit/1b70977e26c34b4a751981df4e56e3e56b6ba429))
+
 ## [2.54.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.54.0...v2.54.1) (2026-08-16)
 
 
