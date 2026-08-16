@@ -6,19 +6,7 @@ import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
 import { m } from '$shared/paraglide/messages.js';
 import { panelLayoutReducer } from '../../panel-layout/panel-layout-slice';
 import type { PanelLayoutSliceState } from '../../panel-layout/panel-layout-types';
-import {
-  openWorkspaceActivityChanges,
-  openWorkspaceAttachment,
-  openWorkspaceBrowser,
-  openWorkspaceChatChanges,
-  openWorkspaceCodeReview,
-  openWorkspaceCommitChangeset,
-  openWorkspaceDiff,
-  openWorkspaceFile,
-  openWorkspaceLocalChanges,
-  openWorkspaceNote,
-  type JsonValue,
-} from '../workspace-navigation-slice';
+import { openWorkspaceAttachment, openWorkspaceChatChanges, openWorkspaceCommitChangeset, openWorkspaceDiff, openWorkspaceFile, openWorkspaceLocalChanges, openWorkspaceNote, type JsonValue } from '../workspace-navigation-slice';
 import { workspaceNavigationTabSaga } from './workspace-navigation-tab-saga';
 
 const mocks = vi.hoisted(() => ({
@@ -67,62 +55,6 @@ describe('workspaceNavigationTabSaga', () => {
         }),
       }),
     );
-    task.cancel();
-    await task.toPromise();
-  });
-
-  it('routes other panel-backed workspace navigation actions through the panel layout', async () => {
-    const channel = stdChannel();
-    const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
-    const event = { id: 'event-1', type: 'file:changed', timestamp: 42 } as never;
-
-    channel.put(openWorkspaceBrowser('ws-1', 'https://example.com'));
-    channel.put(
-      openWorkspaceChatChanges('ws-1', [{ filePath: 'src/a.ts' }], '1 file changed', {
-        sourcePanelId: 'panel-agent',
-        messageId: 'message-1',
-        agentId: 'agent-1',
-        turnNumber: 2,
-      }),
-    );
-    channel.put(openWorkspaceActivityChanges('ws-1', event));
-    channel.put(openWorkspaceCodeReview('ws-1', { status: 'completed', result: 'Looks good' }));
-    await settle();
-
-    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
-      'panelLayout/openTab',
-      'panelLayout/openTabInAdjacentOrSplit',
-      'panelLayout/openTab',
-      'panelLayout/openTab',
-    ]);
-    expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      payload: {
-        tab: { type: 'browser', browserUrl: 'https://example.com' },
-      },
-    });
-    expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      payload: {
-        sourcePanelId: 'panel-agent',
-        tab: {
-          type: 'chat-changes',
-          data: {
-            changes: [{ filePath: 'src/a.ts' }],
-            messageId: 'message-1',
-            agentId: 'agent-1',
-            turnNumber: 2,
-          },
-        },
-      },
-    });
-    expect(dispatch.mock.calls[2]?.[0]).toMatchObject({
-      payload: { tab: { type: 'activity-changes', data: { event } } },
-    });
-    expect(dispatch.mock.calls[3]?.[0]).toMatchObject({
-      payload: {
-        tab: { type: 'code-review', data: { status: 'completed', result: 'Looks good' } },
-      },
-    });
     task.cancel();
     await task.toPromise();
   });

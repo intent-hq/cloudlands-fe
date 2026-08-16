@@ -3,15 +3,7 @@ import {
   expect,
   it,
 } from "vitest";
-import {
-  addTaskAgentAssociation,
-  applyRemoveTaskAgentAssociationsForAgent,
-  hydrateTaskAgentAssociations,
-  initialState,
-  pruneTaskAgentAssociationsForNote,
-  removeTaskAgentAssociation,
-  taskAgentAssociationsReducer,
-} from "./task-agent-associations-slice";
+import { addTaskAgentAssociation, hydrateTaskAgentAssociations, initialState, pruneTaskAgentAssociationsForNote, removeTaskAgentAssociation, taskAgentAssociationsReducer } from "./task-agent-associations-slice";
 import type { TaskAgentAssociation } from "./task-agent-associations-types";
 
 const association: TaskAgentAssociation = {
@@ -70,27 +62,6 @@ describe("taskAgentAssociationsReducer", () => {
     expect(withBoth.byWorkspaceId["ws-1"].byNoteId["note-1"][second.taskKey!]).toEqual(second);
     expect(withoutFirst.byWorkspaceId["ws-1"].byNoteId["note-1"]).toEqual({
       [second.taskKey!]: second,
-    });
-  });
-
-  it("removes all associations for an agent", () => {
-    const state = taskAgentAssociationsReducer(
-      initialState,
-      hydrateTaskAgentAssociations("ws-1", {
-        "note-1": {
-          "Do work": association,
-          Other: { ...association, taskText: "Other", agentId: "agent-2" },
-        },
-      })
-    );
-
-    const next = taskAgentAssociationsReducer(
-      state,
-      applyRemoveTaskAgentAssociationsForAgent("ws-1", "agent-1")
-    );
-
-    expect(next.byWorkspaceId["ws-1"].byNoteId["note-1"]).toEqual({
-      Other: { ...association, taskText: "Other", agentId: "agent-2" },
     });
   });
 

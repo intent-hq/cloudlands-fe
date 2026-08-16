@@ -65,19 +65,10 @@ export const loadWorkspaceTasksSucceeded = createAction<
   [workspaceId: string, tasks: WorkspaceTask[], stats: WorkspaceTaskStats]
 >("workspaceTasks/loadWorkspaceTasksSucceeded");
 
-export const loadWorkspaceTasksFailed = createAction<[workspaceId: string, error: string]>(
-  "workspaceTasks/loadWorkspaceTasksFailed"
-);
-
 /** Optimistically apply a task status change ahead of the tasks-changed refresh. */
 export const applyTaskStatusChanged = createAction<
   [workspaceId: string, taskId: string, newStatus: TaskStatus]
 >("workspaceTasks/applyTaskStatusChanged");
-
-/** Clear all task state for a workspace. */
-export const clearWorkspaceTasks = createAction<[workspaceId: string]>(
-  "workspaceTasks/clearWorkspaceTasks"
-);
 
 // ---------------------------------------------------------------------------
 // Reducer
@@ -104,15 +95,6 @@ workspaceTasksReducer.with(loadWorkspaceTasksSucceeded, (state, { payload: [work
       initialized: true,
     });
   });
-workspaceTasksReducer.with(loadWorkspaceTasksFailed, (state, { payload: [workspaceId, error] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    if (!ws.loading && ws.error === error) return state;
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      loading: false,
-      error,
-    });
-  });
 workspaceTasksReducer.with(applyTaskStatusChanged, (state, { payload: [workspaceId, taskId, newStatus] }) => {
     const ws = state.byWorkspaceId[workspaceId];
     if (!ws?.initialized) return state;
@@ -125,9 +107,6 @@ workspaceTasksReducer.with(applyTaskStatusChanged, (state, { payload: [workspace
       tasks: updateItem(ws.tasks, { id: task.id, status: newStatus }),
     });
   });
-workspaceTasksReducer.with(clearWorkspaceTasks, (state, { payload: [workspaceId] }) =>
-    clearWorkspaceState(state, workspaceId)
-  );
 workspaceTasksReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
 
 /**

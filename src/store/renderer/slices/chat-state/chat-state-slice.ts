@@ -442,25 +442,6 @@ function reduceAgentStreamUpdate(
   return state;
 }
 
-// ============================================================================
-// Actions
-// ============================================================================
-
-/** Initialize chat session with loaded data (session/messages now live in agent-session slice) */
-export const chatInitialized = createAction<
-  [
-    agentId: string,
-    payload: {
-      isStreaming: boolean;
-      lastAttemptedMessage: LastAttemptedMessage | null;
-    },
-  ]
->('chatState/initialized');
-
-/** Set error on chat init failure */
-export const chatInitFailed =
-  createAction<[agentId: string, error: string]>('chatState/initFailed');
-
 /** Begin sending a message — sets processing/streaming flags */
 export const chatSendStarted = createAction(
   'chatState/sendStarted',
@@ -571,9 +552,6 @@ export const chatQueueProcessingReceived = createAction<[agentId: string, turnId
   'chatState/queueProcessingReceived',
 );
 
-/** Agent was interrupted — clear streaming without error */
-export const chatInterrupted = createAction<[agentId: string]>('chatState/interrupted');
-
 /** Clear model unavailable info */
 export const chatModelUnavailableCleared = createAction<[agentId: string]>(
   'chatState/modelUnavailableCleared',
@@ -581,15 +559,6 @@ export const chatModelUnavailableCleared = createAction<[agentId: string]>(
 
 /** Stop completed — clear all streaming/interrupt flags */
 export const chatStopCompleted = createAction<[agentId: string]>('chatState/stopCompleted');
-
-/** Reset chat to initial empty state (destroy) */
-export const chatReset = createAction<[agentId: string]>('chatState/reset');
-
-/** Reconcile streaming state when panel remounts */
-export const chatStreamingReconciled = createAction(
-  'chatState/streamingReconciled',
-  (agentId: string) => ({ agentId, timestamp: Date.now() }),
-);
 
 // --- Streaming event actions ---
 
@@ -629,11 +598,6 @@ export const streamStatusReceived = createAction(
     context,
   ],
 );
-
-/** Restore status events persisted by chat-state sagas during initialization */
-export const chatStatusEventsHydrated = createAction<
-  [agentId: string, statusEvents: StatusEvent[]]
->('chatState/statusEventsHydrated');
 
 /** Stream timed out */
 export const streamTimedOut = createAction<[agentId: string]>('chatState/streamTimedOut');
@@ -719,16 +683,6 @@ export const sendMessage = createAction(
 // ============================================================================
 
 export const chatStateReducer = createReducer<ChatStateSlice>(initialState);
-chatStateReducer.with(chatInitialized, (state, { payload: [agentId, data] }) =>
-  updateAgent(state, agentId, {
-    agentId,
-    error: null,
-    lastAttemptedMessage: data.lastAttemptedMessage,
-  }),
-);
-chatStateReducer.with(chatInitFailed, (state, { payload: [agentId, error] }) =>
-  updateAgent(state, agentId, { error, modelUnavailable: null }),
-);
 chatStateReducer.with(chatSendStarted, (state, { payload: { agentId, timestamp } }) =>
   updateAgent(state, agentId, {
     error: null,
@@ -827,11 +781,6 @@ chatStateReducer.with(chatSendFailed, (state, { payload: [agentId, error, turnId
     modelUnavailable: null,
   });
 });
-chatStateReducer.with(chatInterrupted, (state, { payload: [agentId] }) =>
-  updateAgent(state, agentId, {
-    streamingStartTime: null,
-  }),
-);
 chatStateReducer.with(chatModelUnavailableCleared, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { modelUnavailable: null }),
 );
@@ -847,19 +796,6 @@ chatStateReducer.with(chatStopCompleted, (state, { payload: [agentId] }) =>
     streamingStartTime: null,
   }),
 );
-chatStateReducer.with(chatReset, (state, { payload: [agentId] }) =>
-  setAgent(state, agentId, { ...emptyChatAgentState }),
-);
-chatStateReducer.with(chatStreamingReconciled, (state, { payload: { agentId, timestamp } }) => {
-  const agent = getAgent(state, agentId);
-  // Only update the streamingStartTime (isProcessing/isStreaming are on agent-session now)
-  if (!agent.streamingStartTime) {
-    return updateAgent(state, agentId, {
-      streamingStartTime: timestamp,
-    });
-  }
-  return state;
-});
 chatStateReducer.with(agentStreamUpdateReceived, (state, { payload: [payload] }) =>
   reduceAgentStreamUpdate(state, payload),
 );
@@ -887,12 +823,6 @@ chatStateReducer.with(
       receivedFirstChunk: resetFirstChunk ? false : agent.receivedFirstChunk,
     });
   },
-);
-chatStateReducer.with(chatStatusEventsHydrated, (state, { payload: [agentId, statusEvents] }) =>
-  updateAgent(state, agentId, {
-    agentId,
-    statusEvents,
-  }),
 );
 chatStateReducer.with(streamTimedOut, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, {

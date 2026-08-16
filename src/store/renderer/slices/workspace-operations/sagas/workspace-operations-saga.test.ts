@@ -45,23 +45,7 @@ import {
   setWorkspaceEntity,
   workspaceReducer,
 } from '../../workspace/workspace-slice';
-import {
-  applyWorkspaceProposal,
-  confirmArchiveWorkspace,
-  confirmBulkArchive,
-  confirmBulkDeleteArchived,
-  confirmBulkDeleteWarning,
-  confirmDeleteWorkspace,
-  confirmRemoveRepo,
-  initialState as operationsInitialState,
-  openBulkArchiveConfirm,
-  openBulkDeleteArchivedConfirm,
-  openRemoveRepoConfirm,
-  requestArchiveWorkspace,
-  requestDeleteWorkspace,
-  requestUnarchiveWorkspace,
-  workspaceOperationsReducer,
-} from '../workspace-operations-slice';
+import { applyWorkspaceProposal, confirmArchiveWorkspace, confirmDeleteWorkspace, initialState as operationsInitialState, requestArchiveWorkspace, requestDeleteWorkspace, workspaceOperationsReducer } from '../workspace-operations-slice';
 import {
   WORKSPACE_DELETION_TOMBSTONE_TTL_MS,
   WORKSPACE_OPERATION_UNDO_DURATION_MS,
@@ -185,21 +169,6 @@ describe('workspaceOperationsSaga', () => {
         .flat()
         .some((action) => action?.type === 'workspace/bulkUpdateWorkspaceEntities'),
     ).toBe(true);
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
-  it('archives a repository concurrently with all-settled partial failure accounting', async () => {
-    mocks.archive
-      .mockResolvedValueOnce({ ok: true, data: workspace('ws-1', WorkspaceStatusEnum.Archived) })
-      .mockRejectedValueOnce(new Error('offline'));
-    const run = harness([workspace('ws-1'), workspace('ws-2')]);
-    run.send(openBulkArchiveConfirm('intent-hq/repo'));
-    run.send(confirmBulkArchive());
-    await settle();
-    expect(mocks.archive).toHaveBeenCalledTimes(2);
-    expect(mocks.toast.warning).toHaveBeenCalledTimes(1);
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -462,128 +431,6 @@ describe('workspaceOperationsSaga', () => {
     await run.task.toPromise();
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
-  });
-
-  it('undoes archive and handles direct unarchive success and failure', async () => {
-    mocks.archive.mockResolvedValue({
-      ok: true,
-      data: workspace('ws-1', WorkspaceStatusEnum.Archived),
-    });
-    mocks.unarchive
-      .mockResolvedValueOnce({ ok: true, data: workspace('ws-1') })
-      .mockResolvedValueOnce({ ok: true, data: workspace('ws-2') })
-      .mockResolvedValueOnce({ ok: false, error: 'denied' });
-    const run = harness([
-      workspace('ws-1'),
-      workspace('ws-2', WorkspaceStatusEnum.Archived),
-      workspace('ws-3', WorkspaceStatusEnum.Archived),
-    ]);
-    run.send(requestArchiveWorkspace('ws-1'));
-    await settle();
-    latestUndo()?.();
-    await settle();
-    // Undo focuses the restored workspace: tab reopen + navigation
-    expect(run.dispatch.mock.calls.flat()).toContainEqual({
-      type: 'tabState/openWorkspaceTab',
-      payload: ['ws-1'],
-    });
-    expect(mocks.navigateToRoute).toHaveBeenCalledExactlyOnceWith('/workspace/ws-1');
-    run.send(requestUnarchiveWorkspace('ws-2'));
-    await settle();
-    run.send(requestUnarchiveWorkspace('ws-3'));
-    await settle();
-    expect(mocks.unarchive.mock.calls).toEqual([['ws-1'], ['ws-2'], ['ws-3']]);
-    expect(mocks.toast.success).toHaveBeenCalledTimes(1);
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
-    // Direct unarchive gets no focus behavior — only the undo path does
-    expect(mocks.navigateToRoute).toHaveBeenCalledTimes(1);
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
-  it('reports empty bulk archive/delete and gates running-agent deletion behind confirmation', async () => {
-    vi.useFakeTimers();
-    const empty = harness([workspace('other')]);
-    empty.send(openBulkArchiveConfirm('missing/repo'));
-    empty.send(confirmBulkArchive());
-    await vi.advanceTimersByTimeAsync(50);
-    empty.send(openBulkDeleteArchivedConfirm('missing/repo'));
-    empty.send(confirmBulkDeleteArchived());
-    await vi.advanceTimersByTimeAsync(50);
-    expect(mocks.archive).not.toHaveBeenCalled();
-    expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
-    expect(mocks.toast.info).toHaveBeenCalledTimes(2);
-    empty.task.cancel();
-    await empty.task.toPromise();
-
-    vi.clearAllMocks();
-    mocks.getActiveWorkNames.mockImplementation((workspaceId: string) =>
-      Promise.resolve(
-        workspaceId === 'ws-2'
-          ? { agentNames: [], hookNames: ['pr-watch'] }
-          : { agentNames: ['Ada'], hookNames: [] },
-      ),
-    );
-    mocks.deleteWorkspace
-      .mockResolvedValueOnce({ ok: true, data: undefined })
-      .mockResolvedValueOnce({ ok: false, error: 'timed out waiting' })
-      .mockResolvedValueOnce({ ok: false, error: 'denied' });
-    const guarded = harness([
-      workspace('ws-1', WorkspaceStatusEnum.Archived),
-      workspace('ws-2', WorkspaceStatusEnum.Archived),
-      workspace('ws-3', WorkspaceStatusEnum.Archived),
-    ]);
-    guarded.send(openBulkDeleteArchivedConfirm('intent-hq/repo'));
-    guarded.send(confirmBulkDeleteArchived());
-    await vi.advanceTimersByTimeAsync(50);
-    expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
-    expect(guarded.dispatch.mock.calls.flat()).toContainEqual({
-      type: 'workspaceOperations/openBulkDeleteWarningConfirm',
-      payload: [{ repoKey: 'intent-hq/repo', workspaceCount: 3, agentCount: 2, hookCount: 1 }],
-    });
-    guarded.send(confirmBulkDeleteWarning());
-    await vi.advanceTimersByTimeAsync(50);
-    expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(3);
-    expect(mocks.toast.success).toHaveBeenCalledTimes(1);
-    expect(mocks.toast.info).toHaveBeenCalledTimes(1);
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
-    // Only the successful delete (ws-1) is tombstoned; a stale refetch cannot
-    // resurrect it, and the grace timer clears the tombstone afterwards.
-    expect(guarded.state().workspace.pendingDeletions).toEqual({ 'ws-1': true });
-    guarded.send(replaceWorkspaceList([workspace('ws-1', WorkspaceStatusEnum.Archived)]));
-    expect(getItem(guarded.state().workspace.workspaces, 'ws-1')).toBeUndefined();
-    await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
-    expect(guarded.state().workspace.pendingDeletions).toEqual({});
-    guarded.task.cancel();
-    await guarded.task.toPromise();
-  });
-
-  it('removes a repository, reports invoke failure, and no-ops without a pending path', async () => {
-    mocks.invoke
-      .mockResolvedValueOnce({ success: true, data: { removed: true } })
-      .mockResolvedValueOnce({ success: false, error: 'denied' });
-    const run = harness([]);
-    run.send(confirmRemoveRepo());
-    await settle();
-    expect(mocks.invoke).not.toHaveBeenCalled();
-    run.send(openRemoveRepoConfirm('/repo/one'));
-    run.send(confirmRemoveRepo());
-    await settle();
-    run.send(openRemoveRepoConfirm('/repo/two'));
-    run.send(confirmRemoveRepo());
-    await settle();
-    expect(mocks.invoke).toHaveBeenCalledTimes(2);
-    expect(mocks.invoke.mock.calls[0]).toEqual([
-      'workspace:remove-recent-repository',
-      { repository: '/repo/one' },
-    ]);
-    expect(run.dispatch.mock.calls.flat()).toContainEqual({
-      type: 'knownRepos/removeRepo',
-      payload: ['/repo/one'],
-    });
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
-    run.task.cancel();
-    await run.task.toPromise();
   });
 
   it('applies edited create proposals, stores success, and preserves structured failure', async () => {

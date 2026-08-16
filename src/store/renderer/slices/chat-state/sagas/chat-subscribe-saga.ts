@@ -34,8 +34,7 @@
  *    subscriptions, so the Chief panel's own destroy (collapse /
  *    thread-switch remount) is their only viewed-lifecycle teardown — and
  *    the chat area's viewed state says nothing about the chief panel.
- *  - `removeSession` (agent-deletion soft-hide), `workspaceDeleted`,
- *    `removeWorkspaceSessions`, and `clearAllSessions` tear down the affected
+ *  - `removeSession` (agent-deletion soft-hide) and `workspaceDeleted` tear down the affected
  *    subscriptions so a deleted agent's stream can never resurrect its state.
  *
  * Each emitted `ChatTranscript` (the seq-0 snapshot reduced with every block
@@ -80,9 +79,7 @@ import {
 import { selectTranscriptHydration } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import {
   bulkUpsertSessions,
-  clearAllSessions,
   removeSession,
-  removeWorkspaceSessions,
   replaceMessages,
   updateSession,
   upsertSession,
@@ -108,7 +105,7 @@ const logger = createLogger('ChatSubscribeSaga');
 interface SubscriptionEntry {
   acquisition: SubscriptionAcquisition;
   token: object;
-  /** Workspace the chat was opened under (for removeWorkspaceSessions teardown). */
+  /** Workspace the chat was opened under (for workspace teardown). */
   wsId?: string;
   /** True once the reconciler has emitted (seq-0 snapshot applied). */
   hasEmitted: boolean;
@@ -868,9 +865,7 @@ type ChatSubscribeAction =
   | ReturnType<typeof upsertSession>
   | ReturnType<typeof bulkUpsertSessions>
   | ReturnType<typeof removeSession>
-  | ReturnType<typeof removeWorkspaceSessions>
-  | ReturnType<typeof workspaceDeleted>
-  | ReturnType<typeof clearAllSessions>;
+  | ReturnType<typeof workspaceDeleted>;
 
 function* routeLifecycleAction(
   coordinator: SubscriptionCoordinator,
@@ -913,9 +908,6 @@ function* routeLifecycleAction(
   } else if (action.type === removeSession.type) {
     const [agentId] = action.payload as ReturnType<typeof removeSession>['payload'];
     enqueueClose(coordinator, agentId, true);
-  } else if (action.type === removeWorkspaceSessions.type) {
-    const [wsId] = action.payload as ReturnType<typeof removeWorkspaceSessions>['payload'];
-    closeMatchingSlots(coordinator, (_agentId, slot) => slot.wsId === wsId, true);
   } else if (action.type === workspaceDeleted.type) {
     const [wsId, agentIds] = action.payload as ReturnType<typeof workspaceDeleted>['payload'];
     for (const agentId of agentIds) resumeAnchors.delete(agentId);
@@ -969,9 +961,7 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
       upsertSession,
       bulkUpsertSessions,
       removeSession,
-      removeWorkspaceSessions,
       workspaceDeleted,
-      clearAllSessions,
     ],
     buffers.expanding<ChatSubscribeAction>(),
   );

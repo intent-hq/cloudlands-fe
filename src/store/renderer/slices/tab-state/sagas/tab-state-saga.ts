@@ -6,60 +6,25 @@ import {
 } from '../../../utils/backend-storage-namespace';
 import { getLocalStorageJSON, setLocalStorageJSON } from '../../../utils/safe-local-storage-saga';
 import { connectionsListReceived } from '../../connections/connections-slice';
-import { selectWorkspaceHasLoaded } from '../../workspace/workspace-selectors';
 import {
   selectAllScrollPositions,
   selectPersistedWorkspaceTabsState,
 } from '../tab-state-selectors';
-import {
-  cleanupInvalidWorkspaceTabs,
-  clearCurrentWorkspaceTab,
-  clearForWorkspace,
-  closeWorkspaceTab,
-  handleOptimisticWorkspaceTabTransition,
-  loadScrollPositions,
-  loadWorkspaceTabsState,
-  markWorkspaceTabOptimistic,
-  markWorkspaceTabUnsaved,
-  moveWorkspace,
-  openWorkspaceTab,
-  type PersistedWorkspaceTabsState,
-  removeScrollPosition,
-  reorderWorkspaceTabs,
-  reopenLastClosedWorkspaceTab,
-  restoreWorkspaceTab,
-  saveScrollPosition,
-  setWorkspaceViewMode,
-  switchToNextWorkspaceTab,
-  switchToPreviousWorkspaceTab,
-  switchToWorkspaceTabByIndex,
-  TAB_SCROLL_POSITIONS_STORAGE_KEY,
-  toggleWorkspaceTabPin,
-  unmarkWorkspaceTabOptimistic,
-  WORKSPACE_TABS_STORAGE_KEY,
-  workspaceTabsHydrated,
-} from '../tab-state-slice';
+import { closeWorkspaceTab, loadScrollPositions, loadWorkspaceTabsState, moveWorkspace, openWorkspaceTab, type PersistedWorkspaceTabsState, reopenLastClosedWorkspaceTab, restoreWorkspaceTab, saveScrollPosition, setWorkspaceViewMode, switchToNextWorkspaceTab, switchToPreviousWorkspaceTab, switchToWorkspaceTabByIndex, TAB_SCROLL_POSITIONS_STORAGE_KEY, WORKSPACE_TABS_STORAGE_KEY, workspaceTabsHydrated } from '../tab-state-slice';
 
 const TAB_PERSIST_ACTIONS = [
   openWorkspaceTab,
   closeWorkspaceTab,
   reopenLastClosedWorkspaceTab,
   restoreWorkspaceTab,
-  clearCurrentWorkspaceTab,
-  toggleWorkspaceTabPin,
-  markWorkspaceTabUnsaved,
-  reorderWorkspaceTabs,
   moveWorkspace,
-  markWorkspaceTabOptimistic,
-  unmarkWorkspaceTabOptimistic,
-  handleOptimisticWorkspaceTabTransition,
   switchToNextWorkspaceTab,
   switchToPreviousWorkspaceTab,
   switchToWorkspaceTabByIndex,
   setWorkspaceViewMode,
 ];
 
-const SCROLL_PERSIST_ACTIONS = [saveScrollPosition, removeScrollPosition, clearForWorkspace];
+const SCROLL_PERSIST_ACTIONS = [saveScrollPosition];
 
 /** Empty persisted tab strip — used to reset when a backend has none stored. */
 const EMPTY_WORKSPACE_TABS: PersistedWorkspaceTabsState = {
@@ -145,11 +110,6 @@ function* persistWorkspaceTabs(): SagaGenerator<void> {
   }
 }
 
-function* persistCleanedWorkspaceTabs(): SagaGenerator<void> {
-  if (!(yield* selectWorkspaceHasLoaded.effect())) return;
-  yield* call(persistWorkspaceTabs);
-}
-
 function* persistScrollPositions(): SagaGenerator<void> {
   try {
     const backendId = yield* selectActiveBackendId();
@@ -198,6 +158,5 @@ export function* tabStateSaga(): SagaGenerator<void> {
   yield* call(hydrateTabState);
   yield* fork(watchBackendSwitch);
   yield* takeEvery(TAB_PERSIST_ACTIONS, persistWorkspaceTabs);
-  yield* takeEvery(cleanupInvalidWorkspaceTabs, persistCleanedWorkspaceTabs);
   yield* takeEvery(SCROLL_PERSIST_ACTIONS, persistScrollPositions);
 }

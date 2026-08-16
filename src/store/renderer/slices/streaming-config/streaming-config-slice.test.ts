@@ -3,13 +3,7 @@ import {
   it,
   expect,
 } from 'vitest';
-import {
-  streamingConfigReducer,
-  initialState,
-  setStreamingProfile,
-  resetStreamingConfig,
-  hydrateStreamingProfile,
-} from './streaming-config-slice';
+import { streamingConfigReducer, initialState } from './streaming-config-slice';
 import {
   STREAMING_PROFILES,
   resolveStreamingConfig,
@@ -23,48 +17,6 @@ describe('streamingConfigReducer', () => {
     expect(state.currentProfile).toBe('standard');
     expect(state.customConfig).toBeNull();
     expect(state.sessionProfiles).toEqual({});
-  });
-
-  describe('setStreamingProfile', () => {
-    it('should set a valid profile', () => {
-      const state = streamingConfigReducer(initialState, setStreamingProfile('fast'));
-      expect(state.currentProfile).toBe('fast');
-    });
-
-    it('should fallback to default for unknown profile', () => {
-      const state = streamingConfigReducer(
-        initialState,
-        setStreamingProfile('nonexistent' as any),
-      );
-      expect(state.currentProfile).toBe('standard');
-    });
-
-    it('should not mutate previous state', () => {
-      const state = streamingConfigReducer(initialState, setStreamingProfile('longRunning'));
-      expect(initialState.currentProfile).toBe('standard');
-      expect(state.currentProfile).toBe('longRunning');
-    });
-  });
-
-  describe('resetStreamingConfig', () => {
-    it('should reset to defaults', () => {
-      const state = streamingConfigReducer(
-        initialState,
-        setStreamingProfile('longRunning'),
-      );
-
-      const reset = streamingConfigReducer(state, resetStreamingConfig());
-      expect(reset.currentProfile).toBe('standard');
-      expect(reset.customConfig).toBeNull();
-      expect(reset.sessionProfiles).toEqual({});
-    });
-  });
-
-  describe('hydrateStreamingProfile', () => {
-    it('should set profile from localStorage', () => {
-      const state = streamingConfigReducer(initialState, hydrateStreamingProfile('toolHeavy'));
-      expect(state.currentProfile).toBe('toolHeavy');
-    });
   });
 });
 

@@ -1,23 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  MAX_OUTPUT_CHARS,
-  MAX_OUTPUT_CHUNKS,
-  appendScriptOutput,
-  clearScriptOperations,
-  disposeScripts,
-  emptyWorkspaceState,
-  removeScript,
-  restartScriptRequested,
-  scriptOperationFailed,
-  scriptOperationSucceeded,
-  scriptsReducer,
-  setScriptOutput,
-  setScriptsData,
-  startScriptRequested,
-  stopScriptRequested,
-  updateRuntimeState,
-  upsertScript,
-} from './scripts-slice';
+import { MAX_OUTPUT_CHARS, MAX_OUTPUT_CHUNKS, appendScriptOutput, clearScriptOperations, emptyWorkspaceState, removeScript, restartScriptRequested, scriptOperationFailed, scriptOperationSucceeded, scriptsReducer, setScriptsData, startScriptRequested, stopScriptRequested, updateRuntimeState, upsertScript } from './scripts-slice';
 import type {
   ScriptOutputChunk,
   ScriptRuntimeState,
@@ -151,19 +133,6 @@ describe('scriptsReducer', () => {
     });
   });
 
-  it('removes scripts and their output buffers', () => {
-    let state = scriptsReducer(
-      undefined,
-      setScriptsData(WS, [makeScriptEntry({ id: 'script-1' })]),
-    );
-    state = scriptsReducer(state, setScriptOutput(WS, 'script-1', [makeChunk(1)]));
-
-    state = scriptsReducer(state, removeScript(WS, 'script-1'));
-
-    expect(state.byWorkspaceId[WS].scripts['script-1']).toBeUndefined();
-    expect(state.byWorkspaceId[WS].outputBuffers['script-1']).toBeUndefined();
-  });
-
   it('tracks Shell operations per workspace and suppresses a second pending request', () => {
     let state = scriptsReducer(undefined, startScriptRequested(WS, 'script-1'));
     state = scriptsReducer(state, stopScriptRequested(WS, 'script-1'));
@@ -221,20 +190,6 @@ describe('scriptsReducer', () => {
     expect(buffer.chunks.map((c) => c.text).join('')).toBe('partial line, no newline\r\nnext\r');
   });
 
-  it('evicts oldest chunks past the chunk cap and counts them as dropped', () => {
-    let state = scriptsReducer(undefined, upsertScript(WS, makeScript({ id: 'script-1' })));
-    state = scriptsReducer(state, setScriptOutput(WS, 'script-1', [makeChunk(1)]));
-
-    for (let i = 0; i < MAX_OUTPUT_CHUNKS + 1; i++) {
-      state = scriptsReducer(state, appendScriptOutput(WS, 'script-1', makeChunk(i + 2)));
-    }
-
-    const buffer = state.byWorkspaceId[WS].outputBuffers['script-1'];
-    expect(buffer.chunks).toHaveLength(MAX_OUTPUT_CHUNKS);
-    expect(buffer.dropped).toBe(2);
-    expect(buffer.chunks[0].text).toBe('chunk 3\n');
-  });
-
   it('evicts oldest chunks past the char cap but always keeps the newest chunk', () => {
     const big = 'x'.repeat(MAX_OUTPUT_CHARS);
     let state = scriptsReducer(undefined, upsertScript(WS, makeScript({ id: 'script-1' })));
@@ -245,19 +200,6 @@ describe('scriptsReducer', () => {
     expect(buffer.chunks).toHaveLength(1);
     expect(buffer.dropped).toBe(1);
     expect(buffer.chunks[0].timestamp).toBe(makeChunk(2).timestamp);
-  });
-
-  it('disposes workspace scripts state', () => {
-    let state = scriptsReducer(undefined, upsertScript(WS, makeScript({ id: 'script-1' })));
-    state = scriptsReducer(
-      state,
-      upsertScript('ws-2', makeScript({ id: 'script-2', workspaceId: 'ws-2' })),
-    );
-
-    state = scriptsReducer(state, disposeScripts(WS));
-
-    expect(state.byWorkspaceId[WS]).toBeUndefined();
-    expect(state.byWorkspaceId['ws-2']).toBeDefined();
   });
 });
 

@@ -200,22 +200,6 @@ export const closeActiveTerminalRequested = createAction<[wsId: string]>(
   "terminals/closeActiveTerminalRequested"
 );
 
-export const setTerminalsList = createAction<[wsId: string, terminals: TerminalTab[]]>(
-  "terminals/setTerminalsList"
-);
-
-export const setTerminalsLoaded = createAction<[wsId: string, terminalsLoaded: boolean]>(
-  "terminals/setTerminalsLoaded"
-);
-
-export const setIsLoadingTerminals = createAction<[wsId: string, isLoadingTerminals: boolean]>(
-  "terminals/setIsLoadingTerminals"
-);
-
-export const markTerminalRecentlyCreated = createAction<[wsId: string, terminalId: string]>(
-  "terminals/markTerminalRecentlyCreated"
-);
-
 /**
  * Signals a successful daemon `terminal.create` (PROTOCOL §5.13) from an
  * interactive create flow. Trigger-only action with no reducer entry; the
@@ -468,33 +452,6 @@ terminalsReducer.with(loadWorkspaceTerminals, (state, { payload: [wsId, terminal
 terminalsReducer.with(hydrateHeight, (state, { payload: [height] }) => {
     if (height < MIN_HEIGHT || height > MAX_HEIGHT) return state;
     return { ...state, height };
-  });
-terminalsReducer.with(setTerminalsList, (state, { payload: [wsId, terminals] }) => {
-    const ws = getWs(state, wsId);
-    // Preserve custom names from existing terminals
-    const merged = terminals.map((t) => ({
-      ...t,
-      customName: getItem(ws.terminals, t.id)?.customName || t.customName,
-    }));
-    return setWs(state, wsId, { ...ws, terminals: createCollection<TerminalTab, "id">("id", merged) });
-  });
-terminalsReducer.with(setTerminalsLoaded, (state, { payload: [wsId, terminalsLoaded] }) => {
-    const ws = getWs(state, wsId);
-    if (ws.terminalsLoaded === terminalsLoaded) return state;
-    return setWs(state, wsId, { ...ws, terminalsLoaded });
-  });
-terminalsReducer.with(setIsLoadingTerminals, (state, { payload: [wsId, isLoadingTerminals] }) => {
-    const ws = getWs(state, wsId);
-    if (ws.isLoadingTerminals === isLoadingTerminals) return state;
-    return setWs(state, wsId, { ...ws, isLoadingTerminals });
-  });
-terminalsReducer.with(markTerminalRecentlyCreated, (state, { payload: [wsId, terminalId] }) => {
-    const ws = getWs(state, wsId);
-    if (ws.recentlyCreatedTerminals.includes(terminalId)) return state;
-    return setWs(state, wsId, {
-      ...ws,
-      recentlyCreatedTerminals: [...ws.recentlyCreatedTerminals, terminalId],
-    });
   });
 
 terminalsReducer.with(setScriptsData, (state, { payload: { wsId, scripts } }) => {

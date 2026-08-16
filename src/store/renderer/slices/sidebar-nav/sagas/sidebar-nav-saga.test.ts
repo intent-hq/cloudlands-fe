@@ -14,36 +14,7 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
   },
 }));
 
-import {
-  CARD_PINNED_KEY,
-  CHIEF_ACTIVE_AGENT_ID_KEY,
-  COMBINED_PANEL_SPLIT_KEY,
-  closeAll,
-  closeHoverCards,
-  closePanel,
-  hydrateSidebarNav,
-  LEGACY_HOME_PANEL_SPLIT_KEY,
-  MULTISELECT_SIDEBAR_TAB_ORDER_KEY,
-  openPanel,
-  PANEL_ITEM_KEY,
-  PANEL_WIDTH_KEY,
-  pinWorkspace,
-  PINNED_WORKSPACES_KEY,
-  setAllSpacesViewMode,
-  setCardPinned,
-  setChiefActiveAgentId,
-  setCombinedPanelSplit,
-  setMultiSelectSidebarTabOrder,
-  setPanelWidth,
-  setPinnedWorkspaceIds,
-  setShowArchivedWorkspaces,
-  SHOW_ARCHIVED_KEY,
-  toggleCardPinned,
-  togglePanel,
-  togglePinWorkspace,
-  unpinWorkspace,
-  VIEW_MODE_KEY,
-} from '../sidebar-nav-slice';
+import { CARD_PINNED_KEY, CHIEF_ACTIVE_AGENT_ID_KEY, COMBINED_PANEL_SPLIT_KEY, hydrateSidebarNav, LEGACY_HOME_PANEL_SPLIT_KEY, MULTISELECT_SIDEBAR_TAB_ORDER_KEY, PANEL_ITEM_KEY, PANEL_WIDTH_KEY, PINNED_WORKSPACES_KEY, setAllSpacesViewMode, setPanelWidth, SHOW_ARCHIVED_KEY, VIEW_MODE_KEY } from '../sidebar-nav-slice';
 import { initialState } from '../sidebar-nav-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { connectionsListReceived } from '../../connections/connections-slice';
@@ -67,8 +38,6 @@ const current = {
 
 const REMOTE_ID = 'remote-1';
 const REMOTE_PINNED_KEY = `backend:${REMOTE_ID}:${PINNED_WORKSPACES_KEY}`;
-const REMOTE_CHIEF_KEY = `backend:${REMOTE_ID}:${CHIEF_ACTIVE_AGENT_ID_KEY}`;
-const REMOTE_TAB_ORDER_KEY = `backend:${REMOTE_ID}:${MULTISELECT_SIDEBAR_TAB_ORDER_KEY}`;
 const remoteCurrent = { ...current, connections: { activeId: REMOTE_ID } };
 
 const settle = async () => {
@@ -147,65 +116,6 @@ describe('sidebarNavSaga', () => {
     await task.toPromise();
   });
 
-  it.each([
-    [setPinnedWorkspaceIds(['ws-1']), [[PINNED_WORKSPACES_KEY, ['ws-1']]]],
-    [pinWorkspace('ws-1'), [[PINNED_WORKSPACES_KEY, ['ws-1']]]],
-    [unpinWorkspace('ws-1'), [[PINNED_WORKSPACES_KEY, ['ws-1']]]],
-    [togglePinWorkspace('ws-1'), [[PINNED_WORKSPACES_KEY, ['ws-1']]]],
-    [setAllSpacesViewMode('repo'), [[VIEW_MODE_KEY, 'repo']]],
-    [setShowArchivedWorkspaces(true), [[SHOW_ARCHIVED_KEY, true]]],
-    [setPanelWidth(320), [[PANEL_WIDTH_KEY, 320]]],
-    [setCombinedPanelSplit(0.4), [[COMBINED_PANEL_SPLIT_KEY, 0.4]]],
-    [
-      openPanel('chief'),
-      [
-        [PANEL_ITEM_KEY, 'chief'],
-        [CARD_PINNED_KEY, true],
-      ],
-    ],
-    [
-      closePanel(),
-      [
-        [PANEL_ITEM_KEY, 'chief'],
-        [CARD_PINNED_KEY, true],
-      ],
-    ],
-    [
-      togglePanel('chief'),
-      [
-        [PANEL_ITEM_KEY, 'chief'],
-        [CARD_PINNED_KEY, true],
-      ],
-    ],
-    [
-      closeAll(false),
-      [
-        [PANEL_ITEM_KEY, 'chief'],
-        [CARD_PINNED_KEY, true],
-      ],
-    ],
-    [closeHoverCards(), [[CARD_PINNED_KEY, true]]],
-    [setCardPinned(true), [[CARD_PINNED_KEY, true]]],
-    [toggleCardPinned(), [[CARD_PINNED_KEY, true]]],
-    [setChiefActiveAgentId('agent-1'), [[CHIEF_ACTIVE_AGENT_ID_KEY, 'agent-1']]],
-    [
-      setMultiSelectSidebarTabOrder(['context']),
-      [[MULTISELECT_SIDEBAR_TAB_ORDER_KEY, ['context', 'overview']]],
-    ],
-  ] as const)('persists an audited mutation trigger', async (action, expected) => {
-    storage.getItem.mockReturnValue(null);
-    storage.getJSON.mockReturnValue(undefined);
-    const channel = stdChannel();
-    const task = runSaga({ channel, dispatch: vi.fn(), getState: () => current }, sidebarNavSaga);
-    await settle();
-    channel.put(action);
-    await settle();
-
-    expect(storage.setJSON.mock.calls).toEqual(expected);
-    task.cancel();
-    await task.toPromise();
-  });
-
   it('migrates the legacy combined-panel split storage key', async () => {
     storage.getItem.mockReturnValue(null);
     storage.getJSON.mockImplementation((key: string) =>
@@ -250,45 +160,6 @@ describe('sidebarNavSaga', () => {
   });
 
   describe('multi-backend namespacing', () => {
-    it('namespaces only the backend-specific keys for a remote backend', async () => {
-      storage.getItem.mockReturnValue(null);
-      storage.getJSON.mockReturnValue(undefined);
-      const channel = stdChannel();
-      const task = runSaga(
-        { channel, dispatch: vi.fn(), getState: () => remoteCurrent },
-        sidebarNavSaga,
-      );
-      await settle();
-      channel.put(setPinnedWorkspaceIds(['ws-1']));
-      channel.put(setChiefActiveAgentId('agent-1'));
-      channel.put(setMultiSelectSidebarTabOrder(['context']));
-      channel.put(setPanelWidth(320));
-      channel.put(setAllSpacesViewMode('repo'));
-      channel.put(setCardPinned(true));
-      await settle();
-
-      expect(storage.getJSON.mock.calls).toEqual([
-        [REMOTE_PINNED_KEY],
-        [SHOW_ARCHIVED_KEY],
-        [PANEL_WIDTH_KEY],
-        [COMBINED_PANEL_SPLIT_KEY],
-        [LEGACY_HOME_PANEL_SPLIT_KEY],
-        [PANEL_ITEM_KEY],
-        [CARD_PINNED_KEY],
-        [REMOTE_CHIEF_KEY],
-        [REMOTE_TAB_ORDER_KEY],
-      ]);
-      expect(storage.setJSON.mock.calls).toEqual([
-        [REMOTE_PINNED_KEY, ['ws-1']],
-        [REMOTE_CHIEF_KEY, 'agent-1'],
-        [REMOTE_TAB_ORDER_KEY, ['context', 'overview']],
-        [PANEL_WIDTH_KEY, 320],
-        [VIEW_MODE_KEY, 'repo'],
-        [CARD_PINNED_KEY, true],
-      ]);
-      task.cancel();
-      await task.toPromise();
-    });
 
     it('re-hydrates per-backend keys on switch, resetting the ones the backend lacks', async () => {
       storage.getItem.mockReturnValue(null);

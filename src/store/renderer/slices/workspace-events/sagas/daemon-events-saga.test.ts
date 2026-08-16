@@ -42,7 +42,7 @@ import {
 import { DAEMON_EVENTS_SUBSCRIBE_TYPES } from '$features/events/daemon-events-bridge.client';
 import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
 import {
-  clearCurrentWorkspaceTab,
+  loadWorkspaceTabsState,
   openWorkspaceTab,
   tabStateReducer,
 } from '$store/renderer/slices/tab-state/tab-state-slice';
@@ -86,8 +86,15 @@ function startSaga(currentTabId: string | null = null, dispatch = vi.fn()) {
       return () => listeners.delete(listener);
     },
   };
-  const setActive = (wsId: string | null) =>
-    dispatchAction(wsId ? openWorkspaceTab(wsId) : clearCurrentWorkspaceTab());
+  const setActive = (wsId: string | null) => {
+    dispatchAction(
+      wsId
+        ? openWorkspaceTab(wsId)
+        : loadWorkspaceTabsState({
+            openTabs: [], currentTabId: null, pinnedTabs: [], unsavedTabs: [], optimisticTabs: [], tabOrder: [],
+          }),
+    );
+  };
   const task = runSaga(
     {
       channel: input,

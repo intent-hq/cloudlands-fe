@@ -53,11 +53,6 @@ export const endDividerSession = createAction<[agentId: string]>(
   "unreadTracking/endDividerSession"
 );
 
-/** End every divider viewing session (the active workspace switched). */
-export const endAllDividerSessions = createAction(
-  "unreadTracking/endAllDividerSessions"
-);
-
 /**
  * Record that, at a stop-looking boundary, an agent's transcript tail was a
  * streaming (not yet persisted) reply the user was watching. `messageId` is
@@ -106,10 +101,6 @@ unreadTrackingReducer.with(endDividerSession, (state, { payload: [agentId] }) =>
     const dividerSessionByAgentId = { ...state.dividerSessionByAgentId };
     delete dividerSessionByAgentId[agentId];
     return { ...state, dividerSessionByAgentId };
-  });
-unreadTrackingReducer.with(endAllDividerSessions, (state) => {
-    if (Object.keys(state.dividerSessionByAgentId).length === 0) return state;
-    return { ...state, dividerSessionByAgentId: {} };
   });
 unreadTrackingReducer.with(recordWatchedStreamingTail, (state, { payload: [agentId, messageId] }) => {
     if (!agentId || !messageId) return state;

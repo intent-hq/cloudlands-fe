@@ -21,32 +21,7 @@ import {
   selectShowReasoningBlocks,
   selectSpellcheckEnabled,
 } from '../user-preferences-selectors';
-import {
-  cycleFontStyle,
-  cycleNoteFontStyle,
-  deleteActivityLogPreset,
-  FONT_STYLES,
-  hydrateActivityLogPresets,
-  saveActivityLogPreset,
-  setAgentFontStyle,
-  setCodeFontFamily,
-  setGroupByRepo,
-  setGithubLinkDefaultAction,
-  setHasCompletedProviderSetup,
-  setLanguagePreference,
-  setNoteFontStyle,
-  setShowArchived,
-  setShowReasoningBlocks,
-  setSpellcheckEnabled,
-  setSystemFonts,
-  toggleGroupByRepo,
-  toggleHasCompletedProviderSetup,
-  toggleShowArchived,
-  toggleShowReasoningBlocks,
-  toggleSpellcheck,
-  type ActivityLogPresetPreference,
-  type FontStyle,
-} from '../user-preferences-slice';
+import { cycleNoteFontStyle, deleteActivityLogPreset, FONT_STYLES, hydrateActivityLogPresets, saveActivityLogPreset, setAgentFontStyle, setCodeFontFamily, setGroupByRepo, setGithubLinkDefaultAction, setHasCompletedProviderSetup, setLanguagePreference, setNoteFontStyle, setShowArchived, setShowReasoningBlocks, setSpellcheckEnabled, setSystemFonts, toggleGroupByRepo, toggleHasCompletedProviderSetup, toggleShowArchived, toggleShowReasoningBlocks, toggleSpellcheck, type ActivityLogPresetPreference, type FontStyle } from '../user-preferences-slice';
 
 const SPELLCHECK_STORAGE_KEY = 'note-spellcheck-settings';
 const SHOW_ARCHIVED_STORAGE_KEY = 'workspace-list:showArchived';
@@ -247,7 +222,7 @@ function* watchUserPreferenceWrites() {
     [setShowReasoningBlocks, toggleShowReasoningBlocks],
     persistShowReasoningBlocksWorker,
   );
-  yield* takeEvery([setAgentFontStyle, cycleFontStyle], persistAgentFontWorker);
+  yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);
   yield* takeEvery(setCodeFontFamily, persistCodeFontWorker);
   yield* takeEvery(

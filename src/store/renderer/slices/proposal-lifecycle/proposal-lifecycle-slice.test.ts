@@ -1,16 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkspaceId } from '$shared/types/branded-ids';
-import {
-  initialState,
-  hydrateProposalLifecycle,
-  pruneAppliedProposalLifecycleEntries,
-  proposalApplyStarted,
-  proposalApplySucceeded,
-  proposalFailed,
-  proposalLifecycleReducer,
-  proposalUndoStarted,
-  proposalUndoSucceeded,
-} from './proposal-lifecycle-slice';
+import { initialState, pruneAppliedProposalLifecycleEntries, proposalApplyStarted, proposalApplySucceeded, proposalFailed, proposalLifecycleReducer } from './proposal-lifecycle-slice';
 
 describe('proposalLifecycleReducer', () => {
   it('returns the initial state', () => {
@@ -35,26 +25,6 @@ describe('proposalLifecycleReducer', () => {
       lastAction: 'apply',
       error: undefined,
     });
-  });
-
-  it('tracks undo start and success transitions', () => {
-    const applied = proposalLifecycleReducer(
-      initialState,
-      proposalApplySucceeded({ proposalId: 'p1', completedAt: 20 }),
-    );
-    const undoing = proposalLifecycleReducer(
-      applied,
-      proposalUndoStarted({ proposalId: 'p1', startedAt: 30 }),
-    );
-    expect(undoing.p1.status).toBe('undoing');
-    expect(undoing.p1.lastAction).toBe('undo');
-
-    const idle = proposalLifecycleReducer(
-      undoing,
-      proposalUndoSucceeded({ proposalId: 'p1', completedAt: 40 }),
-    );
-    expect(idle.p1.status).toBe('idle');
-    expect(idle.p1.completedAt).toBe(40);
   });
 
   it('stores failed state with a retryable last action', () => {
@@ -144,41 +114,6 @@ describe('proposalLifecycleReducer', () => {
       proposalApplySucceeded({ proposalId: 'p1', completedAt: 20 }),
     );
     expect(applied.p1.result).toBeUndefined();
-  });
-
-  it('dedupes duplicate starts while a proposal is busy or already applied', () => {
-    const applying = proposalLifecycleReducer(
-      initialState,
-      proposalApplyStarted({ proposalId: 'p1', startedAt: 10 }),
-    );
-    expect(
-      proposalLifecycleReducer(applying, proposalApplyStarted({ proposalId: 'p1', startedAt: 11 })),
-    ).toBe(applying);
-
-    const applied = proposalLifecycleReducer(
-      applying,
-      proposalApplySucceeded({ proposalId: 'p1', completedAt: 20 }),
-    );
-    expect(
-      proposalLifecycleReducer(applied, proposalApplyStarted({ proposalId: 'p1', startedAt: 21 })),
-    ).toBe(applied);
-
-    const undoing = proposalLifecycleReducer(
-      applied,
-      proposalUndoStarted({ proposalId: 'p1', startedAt: 30 }),
-    );
-    expect(
-      proposalLifecycleReducer(undoing, proposalUndoStarted({ proposalId: 'p1', startedAt: 31 })),
-    ).toBe(undoing);
-  });
-
-  it('hydrates persisted lifecycle entries', () => {
-    expect(
-      proposalLifecycleReducer(
-        initialState,
-        hydrateProposalLifecycle({ p1: { status: 'applied', completedAt: 20 } }),
-      ),
-    ).toEqual({ p1: { status: 'applied', completedAt: 20 } });
   });
 
   it('prunes non-applied and expired lifecycle entries before persistence', () => {

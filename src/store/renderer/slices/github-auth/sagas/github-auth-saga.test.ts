@@ -17,19 +17,7 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ error: vi.fn() }),
 }));
 
-import {
-  cancelGitHubAuth,
-  checkGitHubAuthStatus,
-  githubAuthChanged,
-  githubAuthReducer,
-  initializeGitHubAuth,
-  initialState,
-  logoutGitHub,
-  refreshGitHubAuth,
-  setAuthenticating,
-  setDeviceFlowInfo,
-  startGitHubAuth,
-} from '../github-auth-slice';
+import { cancelGitHubAuth, checkGitHubAuthStatus, githubAuthChanged, githubAuthReducer, initializeGitHubAuth, initialState, logoutGitHub, startGitHubAuth } from '../github-auth-slice';
 import { m } from '$shared/paraglide/messages.js';
 import { githubAuthSaga } from './github-auth-saga';
 
@@ -86,47 +74,6 @@ describe('githubAuthSaga', () => {
     expect(run.state().user).toEqual({
       login: 'octo', name: 'Octo', email: null, avatar_url: 'avatar',
     });
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
-  it('clears stale device-flow UI only when refresh finds no pending flow', async () => {
-    mocks.getAuthState.mockResolvedValue({
-      isAuthenticated: false, requiresDaemonAuth: false, user: null,
-    });
-    let seed = githubAuthReducer(initialState, setAuthenticating(true));
-    seed = githubAuthReducer(seed, setDeviceFlowInfo({
-      userCode: 'ABCD', verificationUri: 'https://github.test', expiresIn: 900, interval: 5,
-    }));
-    const run = harness(seed);
-    run.channel.put(refreshGitHubAuth());
-    await settle();
-
-    expect(run.dispatched).toEqual([
-      { type: 'githubAuth/setAuthState', payload: {
-        isAuthenticated: false,
-        requiresDaemonAuth: false,
-        user: null,
-        needsScopeUpdate: false,
-        oauthUrl: null,
-      } },
-      { type: 'githubAuth/setDeviceFlowInfo', payload: [null] },
-      { type: 'githubAuth/setAuthenticating', payload: [false] },
-    ]);
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
-  it('matches exact no-result behavior when initialize and refresh reads reject', async () => {
-    mocks.getAuthState.mockRejectedValue(new Error('auth state unavailable'));
-    const run = harness();
-    run.channel.put(initializeGitHubAuth());
-    await settle();
-    run.channel.put(refreshGitHubAuth());
-    await settle();
-
-    expect(mocks.getAuthState.mock.calls).toEqual([[], []]);
-    expect(run.dispatched).toEqual([]);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -221,54 +168,6 @@ describe('githubAuthSaga', () => {
         needsScopeUpdate: false,
         oauthUrl: null,
       } },
-    ]);
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
-  it('cancels a refresh poll when start creates a replacement poll', async () => {
-    let resolveOld!: (value: unknown) => void;
-    mocks.getAuthState.mockResolvedValue({
-      isAuthenticated: false,
-      requiresDaemonAuth: false,
-      user: null,
-      deviceFlow: {
-        status: 'pending', userCode: 'OLD', verificationUri: 'https://old.test',
-        expiresIn: 900, interval: 5,
-      },
-    });
-    mocks.startAuth.mockResolvedValue({
-      success: true, userCode: 'NEW', verificationUri: 'https://new.test',
-      expiresIn: 900, interval: 5,
-    });
-    mocks.checkAuthComplete
-      .mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }))
-      .mockResolvedValueOnce({ success: true, data: { isComplete: false } });
-    const run = harness();
-    run.channel.put(refreshGitHubAuth());
-    await settle();
-    run.channel.put(startGitHubAuth());
-    await settle();
-    resolveOld({ success: true, data: { isComplete: true, user: {
-      login: 'stale', name: null, email: null, avatar_url: 'stale',
-    } } });
-    await settle();
-
-    expect(mocks.checkAuthComplete.mock.calls).toEqual([[], []]);
-    expect(run.dispatched).toEqual([
-      { type: 'githubAuth/setAuthState', payload: {
-        isAuthenticated: false, requiresDaemonAuth: false, user: null,
-        needsScopeUpdate: false, oauthUrl: null,
-      } },
-      { type: 'githubAuth/setAuthenticating', payload: [true] },
-      { type: 'githubAuth/setDeviceFlowInfo', payload: [{
-        userCode: 'OLD', verificationUri: 'https://old.test', expiresIn: 900, interval: 5,
-      }] },
-      { type: 'githubAuth/setAuthenticating', payload: [true] },
-      { type: 'githubAuth/setOAuthInfo', payload: { oauthUrl: null, needsScopeUpdate: false } },
-      { type: 'githubAuth/setDeviceFlowInfo', payload: [{
-        userCode: 'NEW', verificationUri: 'https://new.test', expiresIn: 900, interval: 5,
-      }] },
     ]);
     run.task.cancel();
     await run.task.toPromise();

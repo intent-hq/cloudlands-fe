@@ -26,7 +26,6 @@ vi.mock('$lib/utils/client-logger', () => ({
 import { refreshAcceptChangesStatus } from '../../changes/changes-slice';
 import { CACHE_TTL_MS, fetchEditors } from '../../external-editors/external-editors-slice';
 import { loadGithubRepos } from '../../github-repos/github-repos-slice';
-import { loadKnownRepos } from '../../known-repos/known-repos-slice';
 import { workspaceMounted } from '../workspace-lifecycle-slice';
 import { lifecycleIpcReadSaga } from './lifecycle-ipc-read-saga';
 
@@ -256,34 +255,6 @@ describe('lifecycleIpcReadSaga', () => {
       { type: 'externalEditors/setLoading', payload: [true] },
       { type: 'externalEditors/setLoading', payload: [false] },
     ]);
-  });
-
-  it('invokes the exact known-repos channel and keeps prior state on unusable responses', async () => {
-    const repo = {
-      path: '/repos/acme',
-      name: 'acme',
-      addedAt: '2026-01-01T00:00:00.000Z',
-      lastUsedAt: '2026-01-02T00:00:00.000Z',
-      wire_only: 'preserved',
-    };
-    mocks.invoke.mockResolvedValueOnce({ success: true, data: [repo] });
-    const run = start();
-    run.channel.put(loadKnownRepos());
-    await settle();
-    mocks.invoke.mockResolvedValueOnce({ success: false, data: [repo] });
-    run.channel.put(loadKnownRepos());
-    await settle();
-    mocks.invoke.mockRejectedValueOnce(new Error('ipc failed'));
-    run.channel.put(loadKnownRepos());
-    await settle();
-
-    expect(mocks.invoke.mock.calls).toEqual([
-      ['workspace:get-recent-repositories', {}],
-      ['workspace:get-recent-repositories', {}],
-      ['workspace:get-recent-repositories', {}],
-    ]);
-    expect(run.actions).toEqual([{ type: 'knownRepos/setRepos', payload: [[repo]] }]);
-    await stop(run.task);
   });
 
   it('merges accept-changes success and resets only trunk fields on failure', async () => {

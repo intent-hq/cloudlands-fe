@@ -12,20 +12,7 @@ import {
   getItem,
   getItems,
 } from "@augmentcode/themis/utils/collections/collection-utils";
-import {
-  applyNoteCreated,
-  applyNoteDeleted,
-  applyLocalNoteUpdate,
-  applyNoteUpdated,
-  applyTaskStatusChanged,
-  clearWorkspaceNotesForWorkspaces,
-  emptyWorkspaceNotesState,
-  initialState,
-  loadWorkspaceNotesFailed,
-  loadWorkspaceNotesSucceeded,
-  setWorkspaceNotesLoading,
-  workspaceNotesReducer,
-} from "./workspace-notes-slice";
+import { applyNoteCreated, applyNoteDeleted, applyLocalNoteUpdate, applyNoteUpdated, applyTaskStatusChanged, emptyWorkspaceNotesState, initialState, loadWorkspaceNotesSucceeded, workspaceNotesReducer } from "./workspace-notes-slice";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 
 const WS_1 = "ws-1";
@@ -101,33 +88,6 @@ describe("workspaceNotesReducer", () => {
 
     expect(first.byWorkspaceId[WS_1].notesVersion).toBe(1);
     expect(second.byWorkspaceId[WS_1].notesVersion).toBe(2);
-  });
-
-  it("tracks loading and errors per workspace", () => {
-    let state = workspaceNotesReducer(initialState, setWorkspaceNotesLoading([WS_1], true));
-    state = workspaceNotesReducer(state, loadWorkspaceNotesFailed([WS_1], "boom"));
-
-    expect(state.byWorkspaceId[WS_1]).toEqual({
-      ...emptyWorkspaceNotesState,
-      loading: false,
-      error: "boom",
-    });
-  });
-
-  it("clears only the requested workspace snapshots", () => {
-    const loadedState = workspaceNotesReducer(
-      initialState,
-      loadWorkspaceNotesSucceeded([WS_1, WS_2], {
-        [WS_1]: [mockNote("note-1")],
-        [WS_2]: [mockNote("note-2", WS_2)],
-      })
-    );
-
-    expect(workspaceNotesReducer(loadedState, clearWorkspaceNotesForWorkspaces([WS_1]))).toEqual({
-      byWorkspaceId: {
-        [WS_2]: loadedState.byWorkspaceId[WS_2],
-      },
-    });
   });
 
   it("updates task status for tracked task notes", () => {

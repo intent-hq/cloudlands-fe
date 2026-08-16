@@ -100,37 +100,12 @@ const showArchivedWorkspacesPreference = createBooleanPreference<SidebarNavState
 });
 export const setShowArchivedWorkspaces = showArchivedWorkspacesPreference.setAction;
 export const toggleShowArchivedWorkspaces = showArchivedWorkspacesPreference.toggleAction;
-
-// Pinned workspaces
-export const setPinnedWorkspaceIds = createAction<[ids: string[]]>(
-  'sidebarNav/setPinnedWorkspaceIds',
-);
-export const pinWorkspace = createAction<[id: string]>('sidebarNav/pinWorkspace');
-export const unpinWorkspace = createAction<[id: string]>('sidebarNav/unpinWorkspace');
 export const togglePinWorkspace = createAction<[id: string]>('sidebarNav/togglePinWorkspace');
-
-// Workspace sidebar tabs and note-list UI
-export const setMultiSelectSidebarTabOrder = createAction<[tabIds: string[]]>(
-  'sidebarNav/setMultiSelectSidebarTabOrder',
-);
 export const setMultiSelectSidebarSelectedTabs = createAction<
   [workspaceId: string, tabIds: string[]]
 >('sidebarNav/setMultiSelectSidebarSelectedTabs');
-export const hydrateWorkspaceSidebarUi = createAction<
-  [
-    workspaceId: string,
-    data: {
-      selectedTabIds?: string[];
-      noteOrder?: string[];
-      collapsedNoteIds?: string[];
-    },
-  ]
->('sidebarNav/hydrateWorkspaceSidebarUi');
 export const setWorkspaceNoteOrder = createAction<[workspaceId: string, noteIds: string[]]>(
   'sidebarNav/setWorkspaceNoteOrder',
-);
-export const setWorkspaceCollapsedNoteIds = createAction<[workspaceId: string, noteIds: string[]]>(
-  'sidebarNav/setWorkspaceCollapsedNoteIds',
 );
 export const setChiefActiveAgentId = createAction<[agentId: string | null]>(
   'sidebarNav/setChiefActiveAgentId',
@@ -149,7 +124,6 @@ export const clearDeferredLeave = createAction('sidebarNav/clearDeferredLeave');
 
 // Usage-stats overlay
 export const setStatsOverlayOpen = createAction<[open: boolean]>('sidebarNav/setStatsOverlayOpen');
-export const toggleStatsOverlay = createAction('sidebarNav/toggleStatsOverlay');
 
 // Composite actions (handled by reducer for pure state, sagas for side effects)
 export const closeHoverCards = createAction('sidebarNav/closeHoverCards');
@@ -224,24 +198,6 @@ sidebarNavReducer.with(setAllSpacesViewMode, (state, { payload: [mode] }) => ({
   ...state,
   allSpacesViewMode: mode,
 }));
-sidebarNavReducer.with(setPinnedWorkspaceIds, (state, { payload: [ids] }) => ({
-  ...state,
-  pinnedWorkspaceIds: ids,
-}));
-sidebarNavReducer.with(pinWorkspace, (state, { payload: [id] }) => {
-  if (state.pinnedWorkspaceIds.includes(id)) return state;
-  return {
-    ...state,
-    pinnedWorkspaceIds: [...state.pinnedWorkspaceIds, id],
-  };
-});
-sidebarNavReducer.with(unpinWorkspace, (state, { payload: [id] }) => {
-  if (!state.pinnedWorkspaceIds.includes(id)) return state;
-  return {
-    ...state,
-    pinnedWorkspaceIds: state.pinnedWorkspaceIds.filter((wid) => wid !== id),
-  };
-});
 sidebarNavReducer.with(togglePinWorkspace, (state, { payload: [id] }) => {
   if (state.pinnedWorkspaceIds.includes(id)) {
     return {
@@ -254,10 +210,6 @@ sidebarNavReducer.with(togglePinWorkspace, (state, { payload: [id] }) => {
     pinnedWorkspaceIds: [...state.pinnedWorkspaceIds, id],
   };
 });
-sidebarNavReducer.with(setMultiSelectSidebarTabOrder, (state, { payload: [tabIds] }) => ({
-  ...state,
-  multiSelectTabOrder: tabIds,
-}));
 sidebarNavReducer.with(
   setMultiSelectSidebarSelectedTabs,
   (state, { payload: [workspaceId, tabIds] }) => ({
@@ -268,27 +220,6 @@ sidebarNavReducer.with(
     },
   }),
 );
-sidebarNavReducer.with(hydrateWorkspaceSidebarUi, (state, { payload: [workspaceId, data] }) => ({
-  ...state,
-  multiSelectSelectedTabIdsByWorkspaceId: data.selectedTabIds
-    ? {
-        ...state.multiSelectSelectedTabIdsByWorkspaceId,
-        [workspaceId]: data.selectedTabIds,
-      }
-    : state.multiSelectSelectedTabIdsByWorkspaceId,
-  noteOrderByWorkspaceId: data.noteOrder
-    ? {
-        ...state.noteOrderByWorkspaceId,
-        [workspaceId]: data.noteOrder,
-      }
-    : state.noteOrderByWorkspaceId,
-  collapsedNoteIdsByWorkspaceId: data.collapsedNoteIds
-    ? {
-        ...state.collapsedNoteIdsByWorkspaceId,
-        [workspaceId]: data.collapsedNoteIds,
-      }
-    : state.collapsedNoteIdsByWorkspaceId,
-}));
 sidebarNavReducer.with(setWorkspaceNoteOrder, (state, { payload: [workspaceId, noteIds] }) => ({
   ...state,
   noteOrderByWorkspaceId: {
@@ -296,16 +227,6 @@ sidebarNavReducer.with(setWorkspaceNoteOrder, (state, { payload: [workspaceId, n
     [workspaceId]: noteIds,
   },
 }));
-sidebarNavReducer.with(
-  setWorkspaceCollapsedNoteIds,
-  (state, { payload: [workspaceId, noteIds] }) => ({
-    ...state,
-    collapsedNoteIdsByWorkspaceId: {
-      ...state.collapsedNoteIdsByWorkspaceId,
-      [workspaceId]: noteIds,
-    },
-  }),
-);
 sidebarNavReducer.with(setChiefActiveAgentId, (state, { payload: [agentId] }) => ({
   ...state,
   chiefActiveAgentId: agentId,
@@ -397,10 +318,6 @@ sidebarNavReducer.with(clearDeferredLeave, (state) => ({
 sidebarNavReducer.with(setStatsOverlayOpen, (state, { payload: [open] }) => ({
   ...state,
   statsOverlayOpen: open,
-}));
-sidebarNavReducer.with(toggleStatsOverlay, (state) => ({
-  ...state,
-  statsOverlayOpen: !state.statsOverlayOpen,
 }));
 sidebarNavReducer.with(hydrateSidebarNav, (state, { payload }) => {
   const hydrated = payload;

@@ -106,16 +106,6 @@ export const bulkSetServerStatus = createAction<[statusMap: Record<string, McpSe
   "mcpSettings/bulkSetServerStatus"
 );
 
-/** Set persisted disabled server names for a workspace */
-export const setWorkspaceDisabledServers = createAction<
-  [workspaceId: string, disabledServers: Record<string, true>]
->("mcpSettings/setWorkspaceDisabledServers");
-
-/** Apply persisted disabled server names for a workspace */
-export const applyWorkspaceDisabledServers = createAction<
-  [workspaceId: string, disabledNames: string[]]
->("mcpSettings/applyWorkspaceDisabledServers");
-
 /** Toggle a workspace-specific server enabled state and persist it */
 export const toggleWorkspaceMcpServer = createAction<
   [workspaceId: string, serverName: string, enabled: boolean]
@@ -160,11 +150,6 @@ export const importFromJson = createAction<[jsonString: string]>(
 export const importFromJsonCompleted = createAction<[count: number]>(
   "mcpSettings/importFromJsonCompleted"
 );
-
-/** Trigger: test a server connection */
-export const testServerConnection = createAction<
-  [name: string, url: string, headers?: Record<string, string>]
->("mcpSettings/testServerConnection");
 
 /** Trigger: retry/restart a stopped or errored server */
 export const restartServer = createAction<[name: string]>(
@@ -262,24 +247,6 @@ mcpSettingsReducer.with(setAdvancedSaveStatus, (state, { payload: [status, error
   advancedSaveStatus: status,
   advancedSaveError: error ?? null,
 }));
-mcpSettingsReducer.with(
-  setWorkspaceDisabledServers,
-  (state, { payload: [workspaceId, disabledServers] }) => {
-    if (!workspaceId) return state;
-    return setWorkspaceState(state, workspaceId, { disabledServers });
-  },
-);
-mcpSettingsReducer.with(
-  applyWorkspaceDisabledServers,
-  (state, { payload: [workspaceId, disabledNames] }) => {
-    if (!workspaceId) return state;
-    const disabledServers: Record<string, true> = {};
-    for (const name of disabledNames) {
-      disabledServers[name] = true;
-    }
-    return setWorkspaceState(state, workspaceId, { disabledServers });
-  },
-);
 mcpSettingsReducer.with(
   toggleWorkspaceMcpServer,
   (state, { payload: [workspaceId, serverName, enabled] }) => {

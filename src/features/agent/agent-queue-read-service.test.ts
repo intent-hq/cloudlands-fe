@@ -27,7 +27,6 @@ testStore.getExistingStoreContext = function () {
   return this.storeContext;
 };
 import {
-  clearAgentQueue,
   removeQueuedMessageFromAgentQueue,
   replaceAgentQueue,
 } from '$store/renderer/slices/agent-queue/agent-queue-slice';
@@ -79,7 +78,7 @@ function markDeletionPending(agentId: string): void {
 beforeAll(() => appStore.init());
 
 afterEach(() => {
-  appStore.dispatch(clearAgentQueue(AGENT));
+  appStore.dispatch(replaceAgentQueue(AGENT, []));
   clearPendingAgentDeletions();
   __resetAgentQueueReadServiceForTests();
   getQueueMock.mockReset();

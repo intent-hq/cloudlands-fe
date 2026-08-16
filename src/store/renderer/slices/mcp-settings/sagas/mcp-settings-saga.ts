@@ -47,7 +47,6 @@ import {
   setServerErrorMessage,
   setServers,
   setServerStatus,
-  testServerConnection,
   toggleEnabled,
   toggleServer,
   toggleServerDisabled,
@@ -470,12 +469,6 @@ function* toggleServerWorker(action: ReturnType<typeof toggleServer>): SagaGener
   yield* call(toggle, action.payload[0]);
 }
 
-function* testServerConnectionWorker(
-  action: ReturnType<typeof testServerConnection>,
-): SagaGenerator<void> {
-  logger.warn('MCP connection test unsupported — no seam method', { name: action.payload[0] });
-}
-
 function* restartServerWorker(action: ReturnType<typeof restartServer>): SagaGenerator<void> {
   yield* call(restart, action.payload[0]);
 }
@@ -494,7 +487,6 @@ export function* mcpSettingsSaga(): SagaGenerator<void> {
   yield* takeEvery(updateServer, updateServerWorker);
   yield* takeEvery(importFromJson, importFromJsonWorker);
   yield* takeEvery(toggleServer, toggleServerWorker);
-  yield* takeEvery(testServerConnection, testServerConnectionWorker);
   yield* takeEvery(restartServer, restartServerWorker);
   yield* takeEvery(saveAdvancedJson, saveAdvancedJsonWorker);
 }

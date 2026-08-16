@@ -9,11 +9,13 @@ import {
 } from '$store/renderer/slices/workspace/workspace-slice';
 import {
   setAllSpacesViewMode,
-  setPinnedWorkspaceIds,
+  hydrateSidebarNav,
   setShowArchivedWorkspaces,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { WorkspaceStatus, type Workspace, type WorkspaceId } from '$shared/types';
 import AllWorkspacesCardHarness from './mocks/AllWorkspacesCardHarness.svelte';
+
+const setPinnedWorkspaceIds = (ids: string[]) => hydrateSidebarNav({ pinnedWorkspaceIds: ids });
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$features/agent/services/active-streams-tracker', () => ({

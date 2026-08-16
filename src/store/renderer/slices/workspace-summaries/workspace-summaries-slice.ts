@@ -43,15 +43,6 @@ export const loadWorkspaceSummariesSucceeded = createAction<
   ]
 >("workspaceSummaries/loadWorkspaceSummariesSucceeded");
 
-export const loadWorkspaceSummariesFailed = createAction<[workspaceId: string, error: string]>(
-  "workspaceSummaries/loadWorkspaceSummariesFailed"
-);
-
-/** Clear all summary state for a workspace. */
-export const clearWorkspaceSummaries = createAction<[workspaceId: string]>(
-  "workspaceSummaries/clearWorkspaceSummaries"
-);
-
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -79,18 +70,6 @@ workspaceSummariesReducer.with(
         initialized: true,
       });
     }
-  );
-workspaceSummariesReducer.with(loadWorkspaceSummariesFailed, (state, { payload: [workspaceId, error] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    if (!ws.loading && ws.error === error) return state;
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      loading: false,
-      error,
-    });
-  });
-workspaceSummariesReducer.with(clearWorkspaceSummaries, (state, { payload: [workspaceId] }) =>
-    clearWorkspaceState(state, workspaceId)
   );
 workspaceSummariesReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
 workspaceSummariesReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));

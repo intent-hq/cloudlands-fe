@@ -2,19 +2,7 @@ import type { QueuedMessage } from '$shared/types';
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
-import {
-  agentQueueReducer,
-  clearAgentQueue,
-  hydrateAgentQueueRequested,
-  initialState,
-  removeQueuedMessageFromAgentQueue,
-  removeQueuedMessageRequested,
-  replaceAgentQueue,
-  restoreRecentlyRemovedMessageId,
-  setAgentQueueError,
-  setAgentQueueHydrating,
-  upsertQueuedMessageInAgentQueue,
-} from './agent-queue-slice';
+import { agentQueueReducer, hydrateAgentQueueRequested, initialState, removeQueuedMessageFromAgentQueue, removeQueuedMessageRequested, replaceAgentQueue, setAgentQueueError, setAgentQueueHydrating } from './agent-queue-slice';
 import { selectAgentQueueMessages } from './agent-queue-selectors';
 import type { AgentQueueState } from './agent-queue-types';
 
@@ -53,45 +41,6 @@ describe('agentQueueReducer', () => {
     expect(getItem(state.byAgentId[AGENT_ID].messages, 'first')).toEqual(messages[1]);
     expect(state.byAgentId[AGENT_ID].isHydrating).toBe(false);
     expect(state.byAgentId[AGENT_ID].error).toBeNull();
-  });
-
-  it('inserts an optimistic mutation result immediately', () => {
-    const queued = message('optimistic', 0);
-    const state = agentQueueReducer(
-      initialState,
-      upsertQueuedMessageInAgentQueue(AGENT_ID, queued),
-    );
-    expect(getItems(state.byAgentId[AGENT_ID].messages)).toEqual([queued]);
-  });
-
-  it('replaces authoritative queued content in stable order and honors tombstones', () => {
-    const state = agentQueueReducer(
-      initialState,
-      replaceAgentQueue(AGENT_ID, [message('m1', 0), message('m2', 1)]),
-    );
-    const replacement = { ...message('m1', 9), content: 'daemon canonical' };
-    const replaced = agentQueueReducer(
-      state,
-      upsertQueuedMessageInAgentQueue(AGENT_ID, replacement),
-    );
-    expect(getItems(replaced.byAgentId[AGENT_ID].messages).map((item) => item.id)).toEqual([
-      'm1',
-      'm2',
-    ]);
-    expect(getItem(replaced.byAgentId[AGENT_ID].messages, 'm1')?.content).toBe('daemon canonical');
-    const removed = agentQueueReducer(replaced, removeQueuedMessageFromAgentQueue(AGENT_ID, 'm1'));
-    expect(agentQueueReducer(removed, upsertQueuedMessageInAgentQueue(AGENT_ID, replacement))).toBe(
-      removed,
-    );
-  });
-
-  it('clears an agent queue and returns same ref for unknown agents', () => {
-    const state = agentQueueReducer(initialState, replaceAgentQueue(AGENT_ID, [message('m1', 0)]));
-    const cleared = agentQueueReducer(state, clearAgentQueue(AGENT_ID));
-    const unchanged = agentQueueReducer(cleared, clearAgentQueue('unknown'));
-
-    expect(cleared.byAgentId[AGENT_ID]).toBeUndefined();
-    expect(unchanged).toBe(cleared);
   });
 
   it('removes one queued message and repositions remaining messages', () => {
@@ -186,38 +135,6 @@ describe('agentQueueReducer', () => {
     ]);
     expect(getItem(staleReplacement.byAgentId[AGENT_ID].messages, 'sent-now')).toBeUndefined();
     expect(JSON.parse(JSON.stringify(staleReplacement))).toEqual(staleReplacement);
-  });
-
-  it('restores a recently-removed ID so a later snapshot can bring the message back', () => {
-    const state = agentQueueReducer(
-      initialState,
-      replaceAgentQueue(AGENT_ID, [message('m1', 0), message('m2', 1)]),
-    );
-    const removed = agentQueueReducer(state, removeQueuedMessageFromAgentQueue(AGENT_ID, 'm1'));
-    const restored = agentQueueReducer(removed, restoreRecentlyRemovedMessageId(AGENT_ID, 'm1'));
-    const rehydrated = agentQueueReducer(
-      restored,
-      replaceAgentQueue(AGENT_ID, [message('m1', 0), message('m2', 1)]),
-    );
-
-    expect(removed.byAgentId[AGENT_ID].recentlyRemovedMessageIds).toEqual(['m1']);
-    expect(restored.byAgentId[AGENT_ID].recentlyRemovedMessageIds).toEqual([]);
-    expect(getItems(rehydrated.byAgentId[AGENT_ID].messages).map((item) => item.id)).toEqual([
-      'm1',
-      'm2',
-    ]);
-  });
-
-  it('returns same state when restoring unknown agents or IDs that are not marked removed', () => {
-    const state = agentQueueReducer(
-      initialState,
-      removeQueuedMessageFromAgentQueue(AGENT_ID, 'm1'),
-    );
-
-    expect(agentQueueReducer(state, restoreRecentlyRemovedMessageId('unknown', 'm1'))).toBe(state);
-    expect(agentQueueReducer(state, restoreRecentlyRemovedMessageId(AGENT_ID, 'other'))).toBe(
-      state,
-    );
   });
 
   it('does not change state for the removeQueuedMessageRequested saga trigger', () => {

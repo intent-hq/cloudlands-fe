@@ -3,13 +3,7 @@ import {
   it,
   expect,
 } from "vitest";
-import {
-  backgroundAgentExecutorReducer,
-  initialState,
-  setExecutorState,
-  resetExecutor,
-  clearWorkspaceExecutors,
-} from "./background-agent-executor-slice";
+import { backgroundAgentExecutorReducer, initialState, setExecutorState, resetExecutor } from "./background-agent-executor-slice";
 import { emptyExecutorState } from "./background-agent-executor-types";
 
 describe("backgroundAgentExecutorReducer", () => {
@@ -79,37 +73,6 @@ describe("backgroundAgentExecutorReducer", () => {
     state = backgroundAgentExecutorReducer(state, resetExecutor("ws-1", "commit"));
     const executor = state.byWorkspaceId["ws-1"].executors["commit"];
     expect(executor).toEqual(emptyExecutorState);
-  });
-
-  it("clears all executors for a workspace", () => {
-    let state = backgroundAgentExecutorReducer(
-      initialState,
-      setExecutorState("ws-1", "commit", { status: "running" }),
-    );
-    state = backgroundAgentExecutorReducer(
-      state,
-      setExecutorState("ws-1", "pr", { status: "running" }),
-    );
-    state = backgroundAgentExecutorReducer(state, clearWorkspaceExecutors("ws-1"));
-    expect(state.byWorkspaceId["ws-1"]).toBeUndefined();
-  });
-
-  it("handles multiple workspaces independently", () => {
-    let state = backgroundAgentExecutorReducer(
-      initialState,
-      setExecutorState("ws-1", "commit", { status: "running" }),
-    );
-    state = backgroundAgentExecutorReducer(
-      state,
-      setExecutorState("ws-2", "pr", { status: "initializing" }),
-    );
-    expect(state.byWorkspaceId["ws-1"].executors["commit"].status).toBe("running");
-    expect(state.byWorkspaceId["ws-2"].executors["pr"].status).toBe("initializing");
-
-    // Clearing ws-1 doesn't affect ws-2
-    state = backgroundAgentExecutorReducer(state, clearWorkspaceExecutors("ws-1"));
-    expect(state.byWorkspaceId["ws-1"]).toBeUndefined();
-    expect(state.byWorkspaceId["ws-2"].executors["pr"].status).toBe("initializing");
   });
 
   it("handles multiple executor types per workspace independently", () => {

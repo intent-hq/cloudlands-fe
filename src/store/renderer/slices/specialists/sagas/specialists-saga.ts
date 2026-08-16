@@ -9,7 +9,6 @@ import {
   put,
   take,
   takeEvery,
-  takeLatest,
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
@@ -20,19 +19,7 @@ import { m } from '$shared/paraglide/messages.js';
 import type { SpecialistFileScope } from '$shared/specialist-file-types';
 import { settingsChanged } from '../../settings-events/settings-events-slice';
 import { selectBundledSpecialists, selectGetFileSpecialist } from '../specialists-selectors';
-import {
-  deleteFileSpecialist,
-  exportBuiltinToFile,
-  loadFileSpecialists,
-  saveFileSpecialist,
-  setBundledSpecialists,
-  setBundledSpecialistsLoaded,
-  setCustomSpecialistsLoaded,
-  setFileSpecialists,
-  setFileSpecialistsLoaded,
-  setOverridesLoaded,
-  type FileSpecialist,
-} from '../specialists-slice';
+import { deleteFileSpecialist, saveFileSpecialist, setBundledSpecialists, setBundledSpecialistsLoaded, setCustomSpecialistsLoaded, setFileSpecialists, setFileSpecialistsLoaded, setOverridesLoaded, type FileSpecialist } from '../specialists-slice';
 
 const logger = createLogger('SpecialistsSaga');
 
@@ -238,45 +225,6 @@ function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFil
   }
 }
 
-function* handleExport(context: ListContext, action: ReturnType<typeof exportBuiltinToFile>) {
-  const [id] = action.payload;
-  try {
-    const bundledSpecialists = yield* selectBundledSpecialists.effect();
-    const bundled = (bundledSpecialists.length ? bundledSpecialists : SPECIALISTS).find(
-      (specialist) => specialist.id === id,
-    );
-    if (!bundled) throw new Error(`Bundled specialist not found: ${id}`); // i18n-ignore (diagnostic includes an internal id)
-    const spec: SpecialistDef = {
-      id: bundled.id,
-      name: bundled.name,
-      description: bundled.description,
-      codingAgent: bundled.codingAgent,
-      model: bundled.defaultModel,
-      roleReminder: bundled.roleReminder,
-      modelOptions: bundled.modelOptions,
-      reasoningEffort: bundled.reasoningEffort,
-      behaviorPrompt: bundled.defaultBehaviorPrompt,
-      source: 'user',
-      hidden: bundled.hidden,
-    };
-    yield* call(
-      { context: appClient.specialists, fn: appClient.specialists.create },
-      id,
-      spec,
-      'user' as const,
-      undefined,
-    );
-    yield* call(refetchSpecialists, context);
-  } catch (error) {
-    logger.error('Failed to export bundled specialist to file', error);
-    yield* call(showMutationError, error, m.specialists_mutation_exportFailed_error());
-  }
-}
-
-function* handleLoad(context: ListContext, _action: ReturnType<typeof loadFileSpecialists>) {
-  yield* call(refetchSpecialists, context);
-}
-
 /**
  * Single-flight, trailing-coalesced settings-driven refetch loop (per the
  * event-driven refetch rule in AGENTS.md). A sliding(1) action channel
@@ -323,8 +271,6 @@ export function* specialistsSaga() {
   yield* all([
     takeEvery(saveFileSpecialist, handleSave, context),
     takeEvery(deleteFileSpecialist, handleDelete, context),
-    takeEvery(exportBuiltinToFile, handleExport, context),
-    takeLatest(loadFileSpecialists, handleLoad, context),
     fork(watchModelResolutionSettings, context),
   ]);
 }

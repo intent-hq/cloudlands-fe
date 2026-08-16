@@ -33,10 +33,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 
 import { store as appStore } from '$store/renderer/store';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
-import {
-  bulkUpsertSessions,
-  clearAllSessions,
-} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { sendMessage } from './agent-send';
 import { AgentStatus } from '$shared/types';
 import type { AgentSession, Workspace, QueuedMessage } from '$shared/types';
@@ -47,10 +44,8 @@ import {
   hydrateAgentQueue,
   noteAgentQueueEventSnapshotApplied,
 } from './agent-queue-read-service';
-import {
-  chatLastAttemptedMessageSet,
-  chatReset,
-} from '$store/renderer/slices/chat-state/chat-state-slice';
+import { chatLastAttemptedMessageSet } from '$store/renderer/slices/chat-state/chat-state-slice';
+import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
 
@@ -136,11 +131,11 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     });
     appStore.dispatch(setWorkspaceEntity(workspace()));
     seedPendingSession();
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, null));
   });
 
   afterEach(() => {
-    appStore.dispatch(clearAllSessions());
-    appStore.dispatch(chatReset(AGENT));
+    appStore.dispatch(workspaceDeleted(WS, [AGENT]));
     __resetAgentQueueReadServiceForTests();
   });
 

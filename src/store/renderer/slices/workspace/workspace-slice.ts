@@ -1,4 +1,4 @@
-import type { CreateWorkspaceRequest, Workspace } from '$shared/types';
+import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { shallowEqual } from 'fast-equals';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -93,24 +93,8 @@ export const initialState: WorkspaceState = {
   recency: defaultWorkspaceRecencyState,
 };
 
-// ---------------------------------------------------------------------------
-// Actions
-// ---------------------------------------------------------------------------
-
-export const setWorkspaceLoading = createAction<[loading: boolean]>(
-  'workspace/setWorkspaceLoading',
-);
-
-export const setWorkspaceError = createAction<[error: string | null]>(
-  'workspace/setWorkspaceError',
-);
-
 export const setWorkspaceHasLoaded = createAction<[hasLoaded: boolean]>(
   'workspace/setWorkspaceHasLoaded',
-);
-
-export const setWorkspaceCreating = createAction<[isCreating: boolean]>(
-  'workspace/setWorkspaceCreating',
 );
 
 export const replaceWorkspaceList = createAction<[workspaces: Workspace[]]>(
@@ -124,12 +108,6 @@ export const markWorkspacePendingDeletion = createAction<[wsId: string]>(
 export const clearWorkspacePendingDeletion = createAction<[wsId: string]>(
   'workspace/clearWorkspacePendingDeletion',
 );
-
-export const setPendingCreation = createAction<[workspace: Workspace]>(
-  'workspace/setPendingCreation',
-);
-
-export const clearPendingCreation = createAction<[wsId: string]>('workspace/clearPendingCreation');
 
 export const resetWorkspaceState = createAction('workspace/resetWorkspaceState');
 
@@ -175,9 +153,6 @@ export const loadRecencyData = createAction<[data: WorkspaceRecencyState]>(
   'workspace/loadRecencyData',
 );
 
-/** Remove recency entries for workspaces that no longer exist. */
-export const cleanupRecency = createAction<[workspaceIds: string[]]>('workspace/cleanupRecency');
-
 // ---------------------------------------------------------------------------
 // Saga trigger actions
 // ---------------------------------------------------------------------------
@@ -186,24 +161,8 @@ export const loadWorkspacesRequested = createAction<[retryCount?: number]>(
   'workspace/loadWorkspacesRequested',
 );
 
-export const createWorkspaceRequested = createAction<[request: CreateWorkspaceRequest]>(
-  'workspace/createWorkspaceRequested',
-);
-
 export const openWorkspaceRequested = createAction<[wsId: string]>(
   'workspace/openWorkspaceRequested',
-);
-
-export const updateWorkspaceRequested = createAction<[wsId: string, changes: Partial<Workspace>]>(
-  'workspace/updateWorkspaceRequested',
-);
-
-export const duplicateWorkspaceRequested = createAction<[wsId: string, newTitle?: string]>(
-  'workspace/duplicateWorkspaceRequested',
-);
-
-export const deleteWorkspaceRequested = createAction<[wsId: string]>(
-  'workspace/deleteWorkspaceRequested',
 );
 
 // ---------------------------------------------------------------------------
@@ -265,18 +224,6 @@ function clearPendingTitleMutation(
 }
 
 function clearBooleanMapEntry(map: Record<string, boolean>, key: string): Record<string, boolean> {
-  if (!(key in map)) {
-    return map;
-  }
-
-  const { [key]: _, ...rest } = map;
-  return rest;
-}
-
-function clearPendingCreationEntry(
-  map: Record<string, Workspace>,
-  key: string,
-): Record<string, Workspace> {
   if (!(key in map)) {
     return map;
   }
@@ -356,21 +303,9 @@ function getWorkspaceById(
 // ---------------------------------------------------------------------------
 
 export const workspaceReducer = createReducer<WorkspaceState>(initialState);
-workspaceReducer.with(setWorkspaceLoading, (state, { payload: [loading] }) => {
-  if (state.loading === loading) return state;
-  return { ...state, loading };
-});
-workspaceReducer.with(setWorkspaceError, (state, { payload: [error] }) => {
-  if (state.error === error) return state;
-  return { ...state, error };
-});
 workspaceReducer.with(setWorkspaceHasLoaded, (state, { payload: [hasLoaded] }) => {
   if (state.hasLoaded === hasLoaded) return state;
   return { ...state, hasLoaded };
-});
-workspaceReducer.with(setWorkspaceCreating, (state, { payload: [isCreating] }) => {
-  if (state.isCreating === isCreating) return state;
-  return { ...state, isCreating };
 });
 workspaceReducer.with(replaceWorkspaceList, (state, { payload: [workspaces] }) => {
   const nextVisibleState = buildVisibleWorkspaceState(state, workspaces);
@@ -391,21 +326,6 @@ workspaceReducer.with(clearWorkspacePendingDeletion, (state, { payload: [wsId] }
   const next = clearBooleanMapEntry(state.pendingDeletions, wsId);
   if (next === state.pendingDeletions) return state;
   return { ...state, pendingDeletions: next };
-});
-workspaceReducer.with(setPendingCreation, (state, { payload: [workspace] }) => {
-  const normalized = mergeWorkspaceEnrichment(state.pendingCreations[workspace.id], workspace);
-  return {
-    ...state,
-    pendingCreations: {
-      ...state.pendingCreations,
-      [workspace.id]: normalized,
-    },
-  };
-});
-workspaceReducer.with(clearPendingCreation, (state, { payload: [wsId] }) => {
-  const next = clearPendingCreationEntry(state.pendingCreations, wsId);
-  if (next === state.pendingCreations) return state;
-  return { ...state, pendingCreations: next };
 });
 workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace] }) => {
   if (state.pendingDeletions[workspace.id]) return state;
@@ -560,28 +480,6 @@ workspaceReducer.with(loadRecencyData, (state, { payload: [recency] }) => {
   return {
     ...state,
     recency,
-  };
-});
-workspaceReducer.with(cleanupRecency, (state, { payload: [workspaceIds] }) => {
-  const existingWorkspaceIds = new Set(workspaceIds);
-  let removed = false;
-  const nextLastViewedAt: Record<string, number> = {};
-
-  for (const [wsId, viewedAt] of Object.entries(state.recency.lastViewedAt)) {
-    if (existingWorkspaceIds.has(wsId)) {
-      nextLastViewedAt[wsId] = viewedAt;
-    } else {
-      removed = true;
-    }
-  }
-
-  if (!removed) return state;
-
-  return {
-    ...state,
-    recency: {
-      lastViewedAt: nextLastViewedAt,
-    },
   };
 });
 workspaceReducer.with(resetWorkspaceState, (state) => ({

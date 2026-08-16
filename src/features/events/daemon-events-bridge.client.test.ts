@@ -188,11 +188,7 @@ import { store as appStore } from '$store/renderer/store';
 import { agentStreamSaga } from '$store/renderer/slices/agent-session/sagas/agent-stream-saga';
 import { githubAuthSaga } from '$store/renderer/slices/github-auth/sagas/github-auth-saga';
 import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
-import {
-  bulkUpsertSessions,
-  clearAllSessions,
-  upsertSession,
-} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { bulkUpsertSessions, upsertSession } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectEnabledProviderIds } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import {
@@ -204,7 +200,6 @@ import {
 import { selectContextItems } from '$store/renderer/slices/context/context-selectors';
 import {
   chatQueuedRetryRecordSet,
-  chatReset,
   chatSendFailed,
   chatSendStarted,
   chatStopCompleted,
@@ -216,7 +211,7 @@ import {
 } from '$features/agent/agent-failure-registry';
 import type { StatusEvent } from '$store/renderer/slices/chat-state/chat-state-types';
 import {
-  clearAgentQueue,
+  replaceAgentQueue,
   removeQueuedMessageFromAgentQueue,
 } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
@@ -229,7 +224,8 @@ import {
   setServers,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
-import { disposeScripts, upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
+import { upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
+import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import type { ScriptOutputBuffer } from '$store/renderer/slices/scripts/scripts-types';
 import { addTerminal } from '$store/renderer/slices/terminals/terminals-slice';
 import { selectTerminalsForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
@@ -252,6 +248,27 @@ function readStatusEvents(): StatusEvent[] {
   };
   return state.chatState?.byAgentId[AGENT]?.statusEvents ?? [];
 }
+
+function clearAllSessions() {
+  const sessionState = appStore.state.agentSessions;
+  const chatAgentIds = Object.keys(appStore.state.chatState.byAgentId);
+  const indexedAgentIds = new Set<string>();
+  for (const [workspaceId, agentIds] of Object.entries(sessionState.agentIdsByWorkspace)) {
+    for (const agentId of agentIds) indexedAgentIds.add(agentId);
+    appStore.dispatch(workspaceDeleted(workspaceId, agentIds));
+  }
+  const remainingAgentIds = [...Object.keys(sessionState.byAgentId), ...chatAgentIds].filter(
+    (agentId) => !indexedAgentIds.has(agentId),
+  );
+  return workspaceDeleted('__test-reset__', remainingAgentIds);
+}
+
+const chatReset = (agentId?: string) =>
+  workspaceDeleted(
+    '__test-chat-reset__',
+    agentId ? [agentId] : Object.keys(appStore.state.chatState.byAgentId),
+  );
+const clearAgentQueue = (agentId: string) => replaceAgentQueue(agentId, []);
 
 const MESSAGE_ID = 'msg_assistant_1';
 const STREAM_ID = 'stream_1';
@@ -2801,11 +2818,15 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
 });
 
 describe('daemonEventsBridge (queue wire contract — agent:queue:updated → replaceAgentQueue)', () => {
+  let queueAgentSequence = 0;
+  let AGENT = '';
+
   beforeAll(() => {
     appStore.init();
   });
 
   beforeEach(async () => {
+    AGENT = `agent-queue-bridge-${++queueAgentSequence}`;
     appStore.dispatch(clearAllSessions());
     appStore.dispatch(clearAgentQueue(AGENT));
     appStore.dispatch(chatReset(AGENT));
@@ -2813,7 +2834,7 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
     backendRequestSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
-    seedSession();
+    seedSession({ id: AGENT });
   });
 
   afterEach(() => vi.clearAllMocks());
@@ -3608,12 +3629,6 @@ describe('daemonEventsBridge (legacy mock-IPC relay — daemon events → listen
     expect(seen).toEqual([{ workspaceId: WS, changes: { title: 'Renamed' } }]);
   });
 
-  // `pr:linked` / `pr:updated` / `pr:unlinked` are no longer re-emitted onto
-  // the legacy `workspace:updated` mock-IPC channel — they are dispatched
-  // directly to the workspace slice via `handlePrEvent`. The Redux path is
-  // covered by the "daemonEventsBridge (pr:linked / pr:updated / pr:unlinked
-  // → workspace slice)" suite below.
-
   it('re-emits agent:status-changed and agent:idle onto their legacy channels (and still dispatches the lifecycle)', async () => {
     appStore.dispatch(clearAllSessions());
     seedSession({ isStreaming: true, status: AgentStatus.Active });
@@ -3651,7 +3666,8 @@ describe('daemonEventsBridge (legacy mock-IPC relay — daemon events → listen
 });
 
 describe('daemonEventsBridge (script wire contract — script:output/state → scripts slice)', () => {
-  const SCRIPT_ID = 'script-bridge-1';
+  let scriptSequence = 0;
+  let SCRIPT_ID = '';
 
   function seedScript(): void {
     appStore.dispatch(
@@ -3715,11 +3731,11 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
   });
 
   beforeEach(async () => {
+    SCRIPT_ID = `script-bridge-${++scriptSequence}`;
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
-    appStore.dispatch(disposeScripts(WS));
     seedScript();
   });
 
@@ -5001,8 +5017,10 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
 
   it('a pending refetch is dropped if the tasks slice is cleared during the debounce window', async () => {
     const CLEARED_WS = 'ws-bridge-tasks-cleared';
-    const { loadWorkspaceTasksSucceeded, clearWorkspaceTasks } =
+    const { loadWorkspaceTasksSucceeded } =
       await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
+    const { removeWorkspaceEntity } =
+      await import('$store/renderer/slices/workspace/workspace-slice');
     appStore.dispatch(
       loadWorkspaceTasksSucceeded(CLEARED_WS, [], { total: 0, completed: 0, inProgress: 0 }),
     );
@@ -5013,7 +5031,7 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
     handler(noteEnvelope(CLEARED_WS, 'note:deleted', 'note-y'));
     // Workspace unmounted/deleted while the debounce is pending — the timer
     // re-checks `initialized` at fire time and must not issue a task.list.
-    appStore.dispatch(clearWorkspaceTasks(CLEARED_WS));
+    appStore.dispatch(removeWorkspaceEntity(CLEARED_WS));
     vi.advanceTimersByTime(2000);
 
     expect(taskListCalls(CLEARED_WS)).toHaveLength(0);
@@ -6371,9 +6389,18 @@ describe('daemonEventsBridge (workspace:updated → tab bar archive sync)', () =
     capturedHandlers.length = 0;
     // Tab state persists across tests via appStore — clear the whole strip
     // (openTabs, currentTabId, stacks, recently-closed) before each test.
-    const { cleanupInvalidWorkspaceTabs } =
+    const { loadWorkspaceTabsState } =
       await import('$store/renderer/slices/tab-state/tab-state-slice');
-    appStore.dispatch(cleanupInvalidWorkspaceTabs([]));
+    appStore.dispatch(
+      loadWorkspaceTabsState({
+        openTabs: [],
+        currentTabId: null,
+        pinnedTabs: [],
+        unsavedTabs: [],
+        optimisticTabs: [],
+        tabOrder: [],
+      }),
+    );
   });
 
   afterEach(() => {
@@ -7665,11 +7692,20 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     appStore.dispatch(clearAllSessions());
     // Reset workspace/agent focus so a preceding test's openWorkspaceTab
     // does not leak into the "no active workspace" case.
-    const { clearCurrentWorkspaceTab } =
+    const { loadWorkspaceTabsState } =
       await import('$store/renderer/slices/tab-state/tab-state-slice');
     const { setActiveAgentId } =
       await import('$store/renderer/slices/workspace-agents/workspace-agents-slice');
-    appStore.dispatch(clearCurrentWorkspaceTab());
+    appStore.dispatch(
+      loadWorkspaceTabsState({
+        openTabs: [],
+        currentTabId: null,
+        pinnedTabs: [],
+        unsavedTabs: [],
+        optimisticTabs: [],
+        tabOrder: [],
+      }),
+    );
     appStore.dispatch(setActiveAgentId(WS, null));
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();

@@ -1,10 +1,7 @@
 import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
-  addItem,
   createCollection,
-  removeItem,
-  updateItem,
   type Collection,
 } from "@augmentcode/themis/utils/collections/collection-utils";
 import type { SpecialistFileScope, SpecialistModelOption } from "$shared/specialist-file-types";
@@ -131,53 +128,12 @@ export const initialState: SpecialistsState = {
 
 export const setBundledSpecialists = createAction<[specialists: import('$lib/constants/specialists').Specialist[]]>("specialists/setBundledSpecialists");
 export const setFileSpecialists = createAction<[specialists: FileSpecialist[]]>("specialists/setFileSpecialists");
-export const setUserOverrides = createAction<[overrides: SpecialistOverrides]>("specialists/setUserOverrides");
 export const setOverridesLoaded = createAction<[loaded: boolean]>("specialists/setOverridesLoaded");
 export const setCustomSpecialistsLoaded = createAction<[loaded: boolean]>("specialists/setCustomSpecialistsLoaded");
 export const setFileSpecialistsLoaded = createAction<[loaded: boolean]>("specialists/setFileSpecialistsLoaded");
 export const setBundledSpecialistsLoaded = createAction<[loaded: boolean]>("specialists/setBundledSpecialistsLoaded");
-export const setSpecialistsFolderPath = createAction<[path: string | null]>("specialists/setSpecialistsFolderPath");
-export const setProviderModelOverrides = createAction<[overrides: Record<string, Record<string, string>>]>("specialists/setProviderModelOverrides");
-
-// ── DEPRECATED (Wave 2) ───────────────────────────────────────────────
-// Override actions are deprecated. Overrides are now persisted as user
-// specialist files (~/.intent/specialists/{id}.md) via saveFileSpecialist.
-// These actions still update in-memory state for backward compatibility
-// but are no longer persisted to electron-store.
-/** @deprecated Use saveFileSpecialist instead */
-export const setModelOverride = createAction<[specialistId: string, model: string]>("specialists/setModelOverride");
-/** @deprecated Use deleteFileSpecialist to reset to bundled */
-export const clearModelOverride = createAction<[specialistId: string]>("specialists/clearModelOverride");
-/** @deprecated Use saveFileSpecialist instead */
-export const setBehaviorPromptOverride = createAction<[specialistId: string, prompt: string]>("specialists/setBehaviorPromptOverride");
-/** @deprecated Use deleteFileSpecialist to reset to bundled */
-export const clearBehaviorPromptOverride = createAction<[specialistId: string]>("specialists/clearBehaviorPromptOverride");
-/** @deprecated Use deleteFileSpecialist to reset to bundled */
-export const clearAllOverrides = createAction<[specialistId: string]>("specialists/clearAllOverrides");
-/** @deprecated Use deleteFileSpecialist to reset to bundled */
-export const resetAllOverrides = createAction("specialists/resetAllOverrides");
-
-// ── DEPRECATED (Wave 2): Custom specialist actions ────────────────────
-// Custom specialists are now created/updated/deleted via file-based
-// actions (saveFileSpecialist, deleteFileSpecialist). These are kept
-// for the reducer but no UI code should dispatch them.
-/** @deprecated Use saveFileSpecialist instead */
-export const createCustomSpecialist = createAction<[specialist: Omit<CustomSpecialist, 'id'>], [specialist: Omit<CustomSpecialist, 'id'>, id: string]>(
-  "specialists/createCustomSpecialist",
-  (specialist) => [specialist, `custom-${Date.now()}`]
-);
-/** @deprecated Use saveFileSpecialist instead */
-export const updateCustomSpecialist = createAction<[specialistId: string, updates: Partial<Omit<CustomSpecialist, 'id'>>]>("specialists/updateCustomSpecialist");
-/** @deprecated Use deleteFileSpecialist instead */
-export const deleteCustomSpecialist = createAction<[specialistId: string]>("specialists/deleteCustomSpecialist");
-
-// Saga trigger actions
-export const switchModelOverridesForProvider = createAction<[newProviderId: string, previousProviderId: string]>("specialists/switchModelOverridesForProvider");
-export const exportBuiltinToFile = createAction<[specialistId: string]>("specialists/exportBuiltinToFile");
 export const saveFileSpecialist = createAction<[specialist: FileSpecialistWritePayload]>("specialists/saveFileSpecialist");
 export const deleteFileSpecialist = createAction<[specialist: FileSpecialistReference]>("specialists/deleteFileSpecialist");
-export const openSpecialistsFolder = createAction("specialists/openSpecialistsFolder");
-export const loadFileSpecialists = createAction("specialists/loadFileSpecialists");
 
 
 // ============================================================================
@@ -192,14 +148,6 @@ specialistsReducer.with(setBundledSpecialists, (state, { payload: [specialists] 
 specialistsReducer.with(setFileSpecialists, (state, { payload: [specialists] }) => ({
     ...state,
     fileSpecialists: createCollection<FileSpecialist, "id">("id", specialists),
-  }));
-specialistsReducer.with(setUserOverrides, (state, { payload: [overrides] }) => ({
-    ...state,
-    userOverrides: {
-      codingAgentOverrides: overrides.codingAgentOverrides ?? {},
-      modelOverrides: overrides.modelOverrides ?? {},
-      behaviorPromptOverrides: overrides.behaviorPromptOverrides ?? {},
-    },
   }));
 specialistsReducer.with(setOverridesLoaded, (state, { payload: [loaded] }) => ({
     ...state,
@@ -217,82 +165,4 @@ specialistsReducer.with(setBundledSpecialistsLoaded, (state, { payload: [loaded]
     ...state,
     bundledSpecialistsLoaded: loaded,
   }));
-specialistsReducer.with(setSpecialistsFolderPath, (state, { payload: [path] }) => ({
-    ...state,
-    specialistsFolderPath: path,
-  }));
-specialistsReducer.with(setProviderModelOverrides, (state, { payload: [overrides] }) => ({
-    ...state,
-    providerModelOverrides: overrides,
-  }));
-specialistsReducer.with(setModelOverride, (state, { payload: [specialistId, model] }) => ({
-    ...state,
-    userOverrides: {
-      ...state.userOverrides,
-      modelOverrides: { ...state.userOverrides.modelOverrides, [specialistId]: model },
-    },
-  }));
-specialistsReducer.with(clearModelOverride, (state, { payload: [specialistId] }) => {
-     
-    const { [specialistId]: _, ...rest } = state.userOverrides.modelOverrides;
-    return {
-      ...state,
-      userOverrides: { ...state.userOverrides, modelOverrides: rest },
-    };
-  });
-specialistsReducer.with(setBehaviorPromptOverride, (state, { payload: [specialistId, prompt] }) => ({
-    ...state,
-    userOverrides: {
-      ...state.userOverrides,
-      behaviorPromptOverrides: { ...state.userOverrides.behaviorPromptOverrides, [specialistId]: prompt },
-    },
-  }));
-specialistsReducer.with(clearBehaviorPromptOverride, (state, { payload: [specialistId] }) => {
-     
-    const { [specialistId]: _, ...rest } = state.userOverrides.behaviorPromptOverrides;
-    return {
-      ...state,
-      userOverrides: { ...state.userOverrides, behaviorPromptOverrides: rest },
-    };
-  });
-specialistsReducer.with(clearAllOverrides, (state, { payload: [specialistId] }) => {
-     
-    const { [specialistId]: _c, ...codingAgentRest } = state.userOverrides.codingAgentOverrides;
-     
-    const { [specialistId]: _m, ...modelRest } = state.userOverrides.modelOverrides;
-     
-    const { [specialistId]: _b, ...behaviorRest } = state.userOverrides.behaviorPromptOverrides;
-    return {
-      ...state,
-      userOverrides: { codingAgentOverrides: codingAgentRest, modelOverrides: modelRest, behaviorPromptOverrides: behaviorRest },
-    };
-  });
-specialistsReducer.with(resetAllOverrides, (state) => ({
-    ...state,
-    userOverrides: { codingAgentOverrides: {}, modelOverrides: {}, behaviorPromptOverrides: {} },
-  }));
-specialistsReducer.with(createCustomSpecialist, (state, { payload: [specialist, id] }) => {
-    const newSpecialist: CustomSpecialist = { id, ...specialist };
-    return {
-      ...state,
-      customSpecialists: addItem(state.customSpecialists, newSpecialist),
-    };
-  });
-specialistsReducer.with(updateCustomSpecialist, (state, { payload: [specialistId, updates] }) => {
-    const customSpecialists = updateItem(state.customSpecialists, { id: specialistId, ...updates });
-    if (customSpecialists === state.customSpecialists) {
-      return state;
-    }
-    return { ...state, customSpecialists };
-  });
-specialistsReducer.with(deleteCustomSpecialist, (state, { payload: [specialistId] }) => {
-    const customSpecialists = removeItem(state.customSpecialists, specialistId);
-    if (customSpecialists === state.customSpecialists) {
-      return state;
-    }
-    return {
-      ...state,
-      customSpecialists,
-    };
-  });
 

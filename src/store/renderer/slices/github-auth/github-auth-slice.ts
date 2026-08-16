@@ -34,9 +34,6 @@ export const cancelGitHubAuth = createAction("githubAuth/cancelAuth");
 /** Trigger: log out of GitHub */
 export const logoutGitHub = createAction("githubAuth/logout");
 
-/** Trigger: refresh auth state (alias for initialize) */
-export const refreshGitHubAuth = createAction("githubAuth/refresh");
-
 /** Set full auth state from backend response */
 export const setGitHubAuthState = createAction(
   "githubAuth/setAuthState",

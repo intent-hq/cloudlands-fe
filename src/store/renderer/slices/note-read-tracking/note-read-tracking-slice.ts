@@ -41,22 +41,6 @@ function withoutUnreadNoteId(
   return rest;
 }
 
-function toUnreadNoteIdRecord(unreadIds: string[]): Record<string, boolean> {
-  return unreadIds.reduce<Record<string, boolean>>((acc, unreadId) => {
-    acc[unreadId] = true;
-    return acc;
-  }, {});
-}
-
-// ============================================================================
-// Actions
-// ============================================================================
-
-/** Mark a note as currently being viewed — clears its unread status */
-export const markAsViewed = createAction<[noteId: string]>(
-  "noteReadTracking/markAsViewed"
-);
-
 /** Clear the currently viewed note */
 export const clearCurrentlyViewed = createAction(
   "noteReadTracking/clearCurrentlyViewed"
@@ -77,16 +61,6 @@ export const refreshUnreadNotes = createAction<
   [workspaceId: string, notes: Array<{ id: string; updatedAt: string; createdAt?: string }>]
 >("noteReadTracking/refreshUnreadNotes");
 
-/** Result of computeUnreadNotes IPC */
-export const computeUnreadNotesSuccess = createAction<[unreadIds: string[]]>(
-  "noteReadTracking/computeUnreadNotesSuccess"
-);
-
-/** Set loading state */
-export const setLoading = createAction<[isLoading: boolean]>(
-  "noteReadTracking/setLoading"
-);
-
 /** Clear all cached state (e.g., workspace switch) */
 export const clearCache = createAction(
   "noteReadTracking/clearCache"
@@ -97,29 +71,11 @@ export const createNoteRequested = createAction<[wsId: string]>(
   "noteReadTracking/createNoteRequested"
 );
 
-/** Load note read status from IPC (trigger saga) */
-export const loadNoteReadStatus = createAction<[workspaceId: string, noteId: string]>(
-  "noteReadTracking/loadNoteReadStatus"
-);
-
-/** Cache a read record from IPC result */
-export const loadNoteReadStatusSuccess = createAction<[noteId: string, record: NoteReadRecord]>(
-  "noteReadTracking/loadNoteReadStatusSuccess"
-);
-
 // ============================================================================
 // Reducer
 // ============================================================================
 
 export const noteReadTrackingReducer = createReducer<NoteReadTrackingState>(initialState);
-noteReadTrackingReducer.with(markAsViewed, (state, { payload: [noteId] }) => {
-    if (!noteId) return state;
-    return {
-      ...state,
-      currentlyViewedNoteId: noteId,
-      unreadNoteIds: withoutUnreadNoteId(state.unreadNoteIds, noteId),
-    };
-  });
 noteReadTrackingReducer.with(clearCurrentlyViewed, (state) => {
     if (!state.currentlyViewedNoteId) return state;
     return { ...state, currentlyViewedNoteId: null };
@@ -139,19 +95,5 @@ noteReadTrackingReducer.with(markNoteRead, (state, { payload }) => {
       unreadNoteIds: withoutUnreadNoteId(state.unreadNoteIds, noteId),
     };
   });
-noteReadTrackingReducer.with(computeUnreadNotesSuccess, (state, { payload: [unreadIds] }) => ({
-    ...state,
-    unreadNoteIds: toUnreadNoteIdRecord(unreadIds),
-    isLoading: false,
-  }));
-noteReadTrackingReducer.with(setLoading, (state, { payload: [isLoading] }) => ({
-    ...state,
-    isLoading,
-  }));
 noteReadTrackingReducer.with(clearCache, () => ({ ...initialState }));
-
-noteReadTrackingReducer.with(loadNoteReadStatusSuccess, (state, { payload: [noteId, record] }) => ({
-    ...state,
-    readRecords: { ...state.readRecords, [noteId]: record },
-  }));
 

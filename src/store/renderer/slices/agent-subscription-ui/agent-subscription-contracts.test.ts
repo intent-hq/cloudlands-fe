@@ -15,16 +15,8 @@ import {
   beforeEach,
   vi,
 } from 'vitest';
-import {
-  agentSubscriptionUIReducer,
-  initialState as rendererInitialState,
-  makeKey,
-  setSubscriptionSnapshot,
-  setWokenUp,
-  clearWokenUp,
-  resetSubscriptionUI,
-} from './agent-subscription-ui-slice';
-import type { AgentSubscriptionUIState, WokenUpInfo } from './agent-subscription-ui-types';
+import { agentSubscriptionUIReducer, initialState as rendererInitialState, makeKey, setSubscriptionSnapshot, resetSubscriptionUI } from './agent-subscription-ui-slice';
+import type { AgentSubscriptionUIState } from './agent-subscription-ui-types';
 import {
   agentSubscriptionsReducer,
   initialState as mainInitialState,
@@ -91,11 +83,6 @@ function makeSubRecord(overrides: Partial<AgentSubscriptionRecord> = {}): AgentS
     createdAt: new Date().toISOString(), ...overrides,
   };
 }
-function makeWsEvent(type: string, data: Record<string, unknown> = {}): WorkspaceEvent {
-  return createWorkspaceEvent(type as any, WS,
-    { type: 'agent', id: AGENT, name: AGENT_NAME }, { agentId: AGENT, ...data });
-}
-
 // --- Tests ---
 describe('Agent Subscription Main↔Renderer Contract', () => {
   let mainState: AgentSubscriptionsState;
@@ -106,24 +93,6 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
     mainState = mainInitialState;
     rendererState = rendererInitialState;
     bus = new FakeIPCBus();
-  });
-
-  // 1. woken-by-subscription produces correct UI state
-  it('woken-by-subscription produces correct renderer UI state', () => {
-    const wokeEvent = makeWsEvent('agent:woken-by-subscription', {
-      eventCount: 3, eventTypes: ['file:changed', 'agent:idle'],
-    });
-    const eventData = extractEventData({ payload: wokeEvent });
-    expect(eventData.agentId).toBe(AGENT);
-    expect(eventData.eventCount).toBe(3);
-    expect(eventData.eventTypes).toEqual(['file:changed', 'agent:idle']);
-
-    const info: WokenUpInfo = {
-      eventCount: eventData.eventCount, eventTypes: eventData.eventTypes, timestamp: Date.now(),
-    };
-    rendererState = agentSubscriptionUIReducer(rendererState, setWokenUp(WS, AGENT, info));
-    const key = makeKey(WS, AGENT);
-    expect(rendererState.entries[key].wokenUpInfo).toEqual(info);
   });
 
   // 2. subscriptions-changed refreshes tracked agents
@@ -154,20 +123,6 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
 
     expect(event.data.agentId).toBeUndefined();
     expect(event.workspaceId).toBe(WS);
-  });
-
-  // 3. late delivery-confirmed doesn't duplicate wake state
-  it('clearWokenUp then late setWokenUp replaces cleanly without duplication', () => {
-    const info: WokenUpInfo = { eventCount: 1, eventTypes: ['file:changed'], timestamp: Date.now() };
-    rendererState = agentSubscriptionUIReducer(rendererState, setWokenUp(WS, AGENT, info));
-    const key = makeKey(WS, AGENT);
-    expect(rendererState.entries[key].wokenUpInfo).toEqual(info);
-    rendererState = agentSubscriptionUIReducer(rendererState, clearWokenUp(WS, AGENT));
-    expect(rendererState.entries[key].wokenUpInfo).toBeNull();
-    const lateInfo: WokenUpInfo = { eventCount: 2, eventTypes: ['agent:idle'], timestamp: Date.now() + 1000 };
-    rendererState = agentSubscriptionUIReducer(rendererState, setWokenUp(WS, AGENT, lateInfo));
-    expect(rendererState.entries[key].wokenUpInfo).toEqual(lateInfo);
-    expect(rendererState.entries[key].wokenUpInfo).not.toEqual(info);
   });
 
   // 4. deleted agent can't resurrect UI state
