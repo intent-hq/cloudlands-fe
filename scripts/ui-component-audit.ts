@@ -275,7 +275,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     process.argv[2] ?? 'check',
     process.env.UI_COMPONENT_AUDIT_ROOT,
   );
-  if (result.stdout) console.log(result.stdout);
-  if (result.stderr) console.error(result.stderr);
+  if (result.exitCode === 0) {
+    console.log(result.stdout);
+  } else {
+    console.error(result.stderr);
+  }
   process.exitCode = result.exitCode;
 }
