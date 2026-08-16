@@ -4,15 +4,30 @@ import { getOperationalClusterSpacingClass } from '../operational-disclosure-row
 const blocks = (...types: string[]) => types.map((type) => ({ type }));
 
 describe('operational cluster spacing', () => {
-  it('owns 16px outer spacing and no gap between adjacent operational rows', () => {
+  it('owns 16px outer spacing and 4px between adjacent operational rows', () => {
     const content = blocks('text', 'thinking', 'tool_use', 'tool_use', 'text');
 
     expect(content.map((_, index) => getOperationalClusterSpacingClass(content, index))).toEqual([
       '',
       'mt-4',
+      'mt-1',
+      'mt-1 mb-4',
       '',
-      'mb-4',
-      '',
+    ]);
+  });
+
+  it.each([
+    ['tool to tool', 'tool_use', 'tool_use'],
+    ['tool to reasoning', 'tool_use', 'thinking'],
+    ['reasoning to tool', 'thinking', 'tool_use'],
+    ['reasoning to context', 'thinking', 'tool_use'],
+    ['context to tool', 'tool_use', 'tool_use'],
+  ])('uses one owning 4px margin for %s', (_name, firstType, secondType) => {
+    const content = blocks(firstType, secondType);
+
+    expect(content.map((_, index) => getOperationalClusterSpacingClass(content, index))).toEqual([
+      'mt-4',
+      'mt-1 mb-4',
     ]);
   });
 
@@ -40,6 +55,6 @@ describe('operational cluster spacing', () => {
 
     expect(
       content.map((_, index) => getOperationalClusterSpacingClass(content, index, visible)),
-    ).toEqual(['', 'mt-4', '', 'mb-4', '']);
+    ).toEqual(['', 'mt-4', '', 'mt-1 mb-4', '']);
   });
 });

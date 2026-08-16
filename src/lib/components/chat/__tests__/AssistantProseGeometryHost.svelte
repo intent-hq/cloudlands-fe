@@ -82,6 +82,53 @@
     ]),
     { type: 'text', text: 'Streaming prose after the operational cluster' },
   ] as ContentBlock[];
+  const operationalPairs: Array<{ id: string; content: ContentBlock[] }> = [
+    {
+      id: 'tool-tool',
+      content: [
+        { type: 'tool_use', id: 'pair-tool-a', name: 'view', input: { path: 'src/a.ts' } },
+        { type: 'tool_use', id: 'pair-tool-b', name: 'view', input: { path: 'src/b.ts' } },
+      ],
+    },
+    {
+      id: 'tool-reasoning',
+      content: [
+        { type: 'tool_use', id: 'pair-tool-c', name: 'view', input: { path: 'src/c.ts' } },
+        { type: 'thinking', id: 'pair-reasoning-a', text: 'Inspect the tool result' },
+      ],
+    },
+    {
+      id: 'reasoning-tool',
+      content: [
+        { type: 'thinking', id: 'pair-reasoning-b', text: 'Choose the next tool' },
+        { type: 'tool_use', id: 'pair-tool-d', name: 'view', input: { path: 'src/d.ts' } },
+      ],
+    },
+    {
+      id: 'reasoning-context',
+      content: [
+        { type: 'thinking', id: 'pair-reasoning-c', text: 'Search for the owning primitive' },
+        {
+          type: 'tool_use',
+          id: 'pair-context-a',
+          name: 'codebase-retrieval',
+          input: { information_request: 'Find operational spacing' },
+        },
+      ],
+    },
+    {
+      id: 'context-tool',
+      content: [
+        {
+          type: 'tool_use',
+          id: 'pair-context-b',
+          name: 'codebase-retrieval',
+          input: { information_request: 'Find a follow-up file' },
+        },
+        { type: 'tool_use', id: 'pair-tool-e', name: 'view', input: { path: 'src/e.ts' } },
+      ],
+    },
+  ];
 </script>
 
 <section
@@ -114,6 +161,16 @@
     </div>
     <div data-testid="streaming-operational-cluster">
       <StreamingMessageContent content={streamingOperationalRows} isStreaming />
+    </div>
+    <div data-testid="operational-pair-fixtures">
+      {#each operationalPairs as pair (pair.id)}
+        <div data-testid="operational-pair-static-{pair.id}">
+          <MessageContent content={pair.content} />
+        </div>
+        <div data-testid="operational-pair-streaming-{pair.id}">
+          <StreamingMessageContent content={pair.content} isStreaming />
+        </div>
+      {/each}
     </div>
   </div>
 </section>

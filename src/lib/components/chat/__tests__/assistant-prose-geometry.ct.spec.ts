@@ -123,7 +123,7 @@ for (const theme of ['light', 'dark'] as const) {
             }),
           );
           for (let index = 1; index < boxes.length; index += 1) {
-            expect(boxes[index].top - boxes[index - 1].bottom).toBeCloseTo(0, 1);
+            expect(boxes[index].top - boxes[index - 1].bottom).toBeCloseTo(4 * zoom, 1);
           }
 
           const firstBlock = fixture.locator('[data-message-content-block]').first();
@@ -154,6 +154,28 @@ for (const theme of ['light', 'dark'] as const) {
         await assertCluster('single-operational-cluster', 1);
         await assertCluster('static-operational-cluster', 5);
         await assertCluster('streaming-operational-cluster', 5);
+
+        for (const mode of ['static', 'streaming']) {
+          for (const pair of [
+            'tool-tool',
+            'tool-reasoning',
+            'reasoning-tool',
+            'reasoning-context',
+            'context-tool',
+          ]) {
+            const rows = component.locator(
+              `[data-testid="operational-pair-${mode}-${pair}"] [data-operational-cluster-row]`,
+            );
+            await expect(rows).toHaveCount(2);
+            const boxes = await rows.evaluateAll((elements) =>
+              elements.map((element) => {
+                const box = element.getBoundingClientRect();
+                return { top: box.top, bottom: box.bottom };
+              }),
+            );
+            expect(boxes[1].top - boxes[0].bottom).toBeCloseTo(4 * zoom, 1);
+          }
+        }
 
         const staticRows = component.locator(
           '[data-testid="static-operational-cluster"] [data-operational-cluster-row]',

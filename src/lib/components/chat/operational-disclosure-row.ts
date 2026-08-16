@@ -62,7 +62,7 @@ export function getOperationalClusterSpacingClass<T extends OperationalClusterBl
 
   const nextIsOperational =
     nextIndex < blocks.length && isOperationalClusterBlock(blocks[nextIndex]);
-  return [previousIsOperational ? '' : 'mt-4', nextIsOperational ? '' : 'mb-4']
+  return [previousIsOperational ? 'mt-1' : 'mt-4', nextIsOperational ? '' : 'mb-4']
     .filter(Boolean)
     .join(' ');
 }
