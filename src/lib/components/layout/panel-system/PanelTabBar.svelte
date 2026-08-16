@@ -1574,6 +1574,7 @@
       <div
         class="panel-actions flex items-center gap-0.5 px-1 opacity-30 group-hover/tabbar:opacity-100 focus-within:opacity-100 transition-opacity z-20"
       >
+        {@render contentActions?.primary?.()}
         {@render panelActionsDropdown()}
         {@render panelCloseButton()}
       </div>
@@ -1719,8 +1720,9 @@
         <div class="flex-1"></div>
       {/if}
 
-      <!-- Right: all controls live in the action menu; Close remains directly available. -->
-      <div class="flex items-center gap-0.5 shrink-0">
+      <!-- Right: stable content controls, grouped actions, and close. -->
+      <div class="flex shrink-0 items-center gap-0.5" data-panel-header-actions>
+        {@render contentActions?.primary?.()}
         {@render panelActionsDropdown()}
         {@render panelCloseButton()}
       </div>

@@ -166,7 +166,10 @@
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AttentionRequestBanner from './AttentionRequestBanner.svelte';
-  import ScrollToBottomButton from './ScrollToBottomButton.svelte';
+  import {
+    getUserMessageNavigationItems,
+    type ChatNavigationState,
+  } from './chat-message-navigation';
   import { parseSuggestedPrompts } from '$lib/utils/messageParser';
   import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
   import {
@@ -273,6 +276,7 @@
     }) => void;
     /** Whether this panel is focused (has DOM focus within panel wrapper) */
     isPanelFocused?: boolean;
+    onNavigationStateChange?: (state: ChatNavigationState) => void;
   }
 
   let {
@@ -292,6 +296,7 @@
     onFocus,
     onChatUpdate,
     isPanelFocused = false,
+    onNavigationStateChange,
   }: Props = $props();
 
   // True when this panel is rendering the Chief workspace, which opens directly
@@ -405,6 +410,14 @@
   let inputComponent = $state<SimpleRichInput>();
   let shouldFollowBottom = $state(true);
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
+  const userMessageNavigationItems = $derived(getUserMessageNavigationItems($agentMessages$));
+
+  $effect(() => {
+    onNavigationStateChange?.({
+      isAtBottom: distanceFromBottom <= SCROLL_BOTTOM_BUTTON_EPSILON,
+      userMessages: userMessageNavigationItems,
+    });
+  });
   // Transient "scroll re-locked" confirmation: a lock icon briefly flashes when
   // scrolling crosses back to the bottom and auto-follow re-engages. Purely
   // decorative (aria-hidden, pointer-events-none) so it can never intercept
@@ -3211,6 +3224,18 @@
     }
   }
 
+  export async function navigateToUserMessage(messageId: string): Promise<boolean> {
+    if (!userMessageNavigationItems.some((message) => message.id === messageId)) return false;
+    const targetElement = await forceRenderAndFindMessage(messageId);
+    if (!targetElement) return false;
+    currentMessageIndex = getMessageIndex(messageId);
+    smoothScrollTo(targetElement, 'start');
+    targetElement.classList.add('message-highlight-flash');
+    setTimeout(() => targetElement.classList.remove('message-highlight-flash'), 600);
+    scheduleDeepOpenRelease();
+    return true;
+  }
+
   export function getMessages() {
     return $agentMessages$;
   }
@@ -4201,13 +4226,7 @@
         <div class="min-h-px min-w-6 shrink-0"></div>
       </div>
     </div>
-    <!-- Scroll-to-bottom button: rendered only while scrolled up so no
-         invisible control overlaps the message actions bar or lingers in the
-         tab order while at the bottom. Auto-follow re-locks on click or on
-         scrolling back to the bottom; scrolling up unlocks it. -->
-    {#if $agentMessages$.length > 0 && distanceFromBottom > SCROLL_BOTTOM_BUTTON_EPSILON}
-      <ScrollToBottomButton onclick={() => scrollToBottom()} />
-    {:else if showLockConfirmation}
+    {#if showLockConfirmation}
       <!-- Transient re-lock confirmation: purely decorative feedback that
            auto-follow re-engaged on reaching the bottom. Never interactive:
            aria-hidden keeps it out of the accessibility tree and

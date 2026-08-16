@@ -6,9 +6,10 @@
 
   interface Props {
     onclick: () => void;
+    disabled?: boolean;
   }
 
-  let { onclick }: Props = $props();
+  let { onclick, disabled = false }: Props = $props();
   const label = $derived(m.chat_chatPanel_scrollToBottom_tooltip());
 </script>
 
@@ -16,8 +17,8 @@
   type="button"
   data-testid="chat-scroll-to-bottom-button"
   {onclick}
-  class="type-body absolute z-[45] inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 text-muted-foreground shadow-none transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:bg-muted/70 focus-visible:text-foreground active:scale-95"
-  style="width: var(--control-height-large); height: var(--control-height-large); bottom: max(var(--space-2), env(safe-area-inset-bottom, 0px)); left: max(var(--space-2), env(safe-area-inset-left, 0px));"
+  {disabled}
+  class="type-body inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent p-0 text-muted-foreground shadow-none transition-colors hover:border-border hover:bg-muted/70 hover:text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-40"
   data-icon-size={CHAT_ICON_SIZE.default}
   aria-label={label}
   title={label}

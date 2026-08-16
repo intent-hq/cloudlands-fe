@@ -138,6 +138,9 @@ vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToTask: vi.fn() }));
 vi.mock('../input/SimpleRichInput.svelte', async () => ({
   default: (await import('./mocks/MockSimpleRichInput.svelte')).default,
 }));
+vi.mock('../ChatMessage.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
 vi.mock('../AgentSubscriptions.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
@@ -582,14 +585,7 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(frames).toHaveLength(0);
   });
 
-  it('renders no scroll button at the bottom so nothing invisible is hit-testable or focusable', async () => {
-    // Regression (PR #1263 → monorepo#2508): the old scroll-lock button was
-    // fully transparent while locked at the bottom but stayed hit-testable,
-    // overlapping the last assistant message's bottom-right actions bar and
-    // flickering it on hover; even with pointer-events-none it remained
-    // keyboard-focusable. The dead lock/unlock states are gone: at the bottom
-    // the button is not rendered at all, so nothing invisible can intercept
-    // hover hit-tests or land in the tab order.
+  it('does not render the moved bottom control inside the transcript', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([{ id: 'message-1' }]);
     const view = render(ChatPanel, {
@@ -597,54 +593,51 @@ describe('ChatPanel mounted lifecycle', () => {
     });
     await tick();
 
-    // distanceFromBottom starts at 0 → at bottom → no button in the DOM.
     expect(view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="chat-scroll-to-bottom-lane"]')).toBeNull();
     expect(view.container.querySelector('[data-testid="chat-scroll-lock-button"]')).toBeNull();
   });
 
-  it('shows the scroll-to-bottom arrow only while scrolled up and scrolls down on click', async () => {
+  it('reports true-bottom state to the stable header control', async () => {
     mocks.draftGet.mockResolvedValue(null);
-    mocks.agentMessages.set([{ id: 'message-1' }]);
+    mocks.agentMessages.set([
+      {
+        id: 'message-1',
+        role: 'user',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        contentBlocks: [{ type: 'text', text: 'User prompt' }],
+      },
+    ]);
+    const onNavigationStateChange = vi.fn();
     const view = render(ChatPanel, {
-      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        onNavigationStateChange,
+      },
     });
     await tick();
     const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
     flushFrame(); // bind the distance-from-bottom scroll tracker
 
-    // Any hidden tail beyond the one-pixel geometry tolerance keeps the arrow visible.
     Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1000 });
     Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
     scrollContainer.scrollTop = 100; // 500px from the bottom
     await fireEvent.scroll(scrollContainer);
     await tick();
-    const arrowButton = view.container.querySelector(
-      '[data-testid="chat-scroll-to-bottom-button"]',
-    );
-    expect(arrowButton).not.toBeNull();
-    expect(arrowButton!.classList.contains('pointer-events-none')).toBe(false);
-    expect(arrowButton!.classList.contains('border-0')).toBe(true);
-    expect(arrowButton!.classList.contains('bg-transparent')).toBe(true);
-    expect(arrowButton!.classList.contains('z-[45]')).toBe(true);
-    expect(arrowButton!.getAttribute('aria-label')).toBeTruthy();
+    expect(onNavigationStateChange).toHaveBeenLastCalledWith({
+      isAtBottom: false,
+      userMessages: [{ id: 'message-1', text: 'User prompt' }],
+    });
+    expect(view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]')).toBeNull();
 
-    // Click scrolls to the bottom and re-enables auto-follow.
-    await fireEvent.click(arrowButton!);
-    const { followToBottom } = await import('$lib/utils/smartScroll');
-    expect(vi.mocked(followToBottom)).toHaveBeenCalledWith(scrollContainer);
-
-    scrollContainer.scrollTop = 598; // two pixels remain hidden
-    await fireEvent.scroll(scrollContainer);
-    await tick();
-    expect(
-      view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]'),
-    ).not.toBeNull();
-
-    // Within one device pixel of the real bottom → the button unmounts again.
     scrollContainer.scrollTop = 600;
     await fireEvent.scroll(scrollContainer);
     await tick();
-    expect(view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]')).toBeNull();
+    expect(onNavigationStateChange).toHaveBeenLastCalledWith({
+      isAtBottom: true,
+      userMessages: [{ id: 'message-1', text: 'User prompt' }],
+    });
   });
 
   it('flashes a decorative lock confirmation when scrolling back to the bottom re-locks', async () => {
