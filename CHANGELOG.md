@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.56.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.1...v2.56.2) (2026-08-16)
+
+
+### 🐛 Bug Fixes
+
+* atomic chat first-paint from the seq-0 snapshot and gate utility card on transcript load ([#1327](https://github.com/intent-hq/cloudlands-fe/issues/1327)) ([2cca565](https://github.com/intent-hq/cloudlands-fe/commit/2cca5653a7bbbabd482af53ad7eb36d5ef8c8307))
+* bump intentd sidecar to v0.7.11 ([#1338](https://github.com/intent-hq/cloudlands-fe/issues/1338)) ([79abb6e](https://github.com/intent-hq/cloudlands-fe/commit/79abb6e62e2aa294e6a4feadc9c7a0847257d9bf))
+* load directory picker paths with takeLatest so mid-flight clicks cannot strand the spinner ([#1333](https://github.com/intent-hq/cloudlands-fe/issues/1333)) ([8ebb511](https://github.com/intent-hq/cloudlands-fe/commit/8ebb5119303dbe7eb300c4ecceaeb713b55efc23))
+
 ## [2.56.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.0...v2.56.1) (2026-08-16)
 
 
