@@ -34,9 +34,12 @@
  * (`OPEN_ERR` destroys the local socket; a definitively connection-refused
  * `OPEN_ERR` additionally drops the whole forward — the daemon-side server is
  * gone — so the next `forwardPort()` recreates it fresh). Backpressure pauses
- * local sockets against `ws.bufferedAmount`; forwards idle for ~10 minutes are
- * closed; a tunnel drop tears down every forward, and the next use reconnects
- * lazily.
+ * local sockets against `ws.bufferedAmount`; forwards live until explicitly
+ * closed (`closeForward`), the backend switches (`dispose()`), or the app
+ * quits — there is no idle sweep. A tunnel drop destroys in-flight streams
+ * but keeps every forward's local listener (and its local port) open; the
+ * next accepted connection reconnects the tunnel lazily and relays through
+ * the fresh socket.
  */
 import net from 'node:net';
 import { createRequire } from 'node:module';
@@ -217,10 +220,6 @@ export interface TunnelManagerOptions {
   connectTimeoutMs?: number;
   /** Deadline for `OPEN` → `OPEN_OK`/`OPEN_ERR` per stream. Default 15s. */
   openTimeoutMs?: number;
-  /** A forward with no streams and no activity this long is closed. Default 10 min. */
-  idleTimeoutMs?: number;
-  /** Cadence of the idle-forward sweep. Default 30s. */
-  idleCheckIntervalMs?: number;
   /** Pause local sockets when `ws.bufferedAmount` exceeds this. Default 1 MiB. */
   backpressureHighWaterMark?: number;
   /** Cadence of the `bufferedAmount` drain poll while paused. Default 20ms. */
@@ -229,8 +228,6 @@ export interface TunnelManagerOptions {
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 const DEFAULT_OPEN_TIMEOUT_MS = 15_000;
-const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60_000;
-const DEFAULT_IDLE_CHECK_INTERVAL_MS = 30_000;
 const DEFAULT_BACKPRESSURE_HIGH_WATER = 1024 * 1024;
 const DEFAULT_BACKPRESSURE_POLL_MS = 20;
 
@@ -240,7 +237,6 @@ interface ForwardState {
   localPort: number;
   server: net.Server;
   streams: Set<StreamState>;
-  lastActivityAt: number;
 }
 
 /** One accepted local connection mapped to a mux stream. */
@@ -325,12 +321,17 @@ export class TunnelManager {
   /** Backend discriminator echoed in tunnel action results. */
   readonly backend = 'tunnel' as const;
 
+  /**
+   * Invoked with the remote port whenever a forward is dropped by the
+   * manager itself (definitively refused `OPEN`) or via [[closeForward]],
+   * so callers tracking forwards (the ownership registry) stay in sync.
+   */
+  onForwardDropped: ((remotePort: number) => void) | null = null;
+
   private readonly getConfig: () => BackendConnectionConfig | null;
   private readonly socketFactory: (config: BackendConnectionConfig) => TunnelSocketLike;
   private readonly connectTimeoutMs: number;
   private readonly openTimeoutMs: number;
-  private readonly idleTimeoutMs: number;
-  private readonly idleCheckIntervalMs: number;
   private readonly backpressureHighWaterMark: number;
   private readonly backpressurePollMs: number;
 
@@ -343,7 +344,6 @@ export class TunnelManager {
   private readonly streams = new Map<number, StreamState>();
   private readonly pausedForBackpressure = new Set<net.Socket>();
   private backpressureTimer: NodeJS.Timeout | null = null;
-  private idleTimer: NodeJS.Timeout | null = null;
   private nextStreamId = 1;
   private disposed = false;
 
@@ -352,8 +352,6 @@ export class TunnelManager {
     this.socketFactory = options.socketFactory ?? createTunnelSocket;
     this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
     this.openTimeoutMs = options.openTimeoutMs ?? DEFAULT_OPEN_TIMEOUT_MS;
-    this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
-    this.idleCheckIntervalMs = options.idleCheckIntervalMs ?? DEFAULT_IDLE_CHECK_INTERVAL_MS;
     this.backpressureHighWaterMark =
       options.backpressureHighWaterMark ?? DEFAULT_BACKPRESSURE_HIGH_WATER;
     this.backpressurePollMs = options.backpressurePollMs ?? DEFAULT_BACKPRESSURE_POLL_MS;
@@ -370,6 +368,13 @@ export class TunnelManager {
     if (this.disposed) return Promise.reject(new Error('TunnelManager disposed'));
     if (this.ws && this.ws.readyState === WS_OPEN) return Promise.resolve();
     if (this.connectPromise) return this.connectPromise;
+    if (this.ws) {
+      // The old socket is CLOSING/CLOSED but its 'close' event has not fired
+      // yet: drop it now. Waiting would let a replacement be adopted first,
+      // making the late close callback skip handleTunnelDrop (this.ws no
+      // longer matches) and leak the old streams' frames onto the new socket.
+      this.handleTunnelDrop();
+    }
     const config = this.getConfig();
     if (!config) {
       return Promise.reject(new Error('no active backend config for the tunnel'));
@@ -474,7 +479,7 @@ export class TunnelManager {
   /**
    * Forward daemon-loopback `remotePort` to a client-loopback ephemeral port;
    * resolves with the local port. Repeated calls for the same remote port
-   * reuse the existing forward (and refresh its idle clock).
+   * reuse the existing forward.
    */
   forwardPort(remotePort: number): Promise<number> {
     if (this.disposed) return Promise.reject(new Error('TunnelManager disposed'));
@@ -482,10 +487,7 @@ export class TunnelManager {
       return Promise.reject(new Error(`invalid remote port: ${remotePort}`));
     }
     const existing = this.forwards.get(remotePort);
-    if (existing) {
-      existing.lastActivityAt = Date.now();
-      return Promise.resolve(existing.localPort);
-    }
+    if (existing) return Promise.resolve(existing.localPort);
     const pending = this.pendingForwards.get(remotePort);
     if (pending) return pending;
     const promise = this.createForward(remotePort);
@@ -563,7 +565,6 @@ export class TunnelManager {
       localPort,
       server,
       streams: new Set(),
-      lastActivityAt: Date.now(),
     };
     server.on('connection', (socket) => this.handleLocalConnection(forward, socket));
     // A disposal/tunnel-drop that raced the listen setup wins.
@@ -572,17 +573,53 @@ export class TunnelManager {
       throw new Error('tunnel dropped while creating the forward');
     }
     this.forwards.set(remotePort, forward);
-    this.ensureIdleTimer();
     logger.info('forward opened', { remotePort, localPort });
     return localPort;
   }
 
   private handleLocalConnection(forward: ForwardState, socket: net.Socket): void {
-    const ws = this.ws;
-    if (!this.forwards.has(forward.remotePort) || !ws || ws.readyState !== WS_OPEN) {
+    if (!this.forwards.has(forward.remotePort)) {
       socket.destroy();
       return;
     }
+    if (!this.ws || this.ws.readyState !== WS_OPEN) {
+      // The tunnel dropped since this forward opened: reconnect lazily,
+      // holding the accepted socket until the fresh tunnel socket is up.
+      // The held socket needs an 'error' listener NOW — attachStream() only
+      // adds one later, and an unhandled socket 'error' (client reset during
+      // the reconnect window) would crash the main process.
+      socket.on('error', () => {
+        // 'close' (or the reconnect settling) owns the teardown.
+      });
+      socket.pause();
+      this.ensureTunnel().then(
+        () => {
+          if (socket.destroyed) return;
+          if (
+            !this.forwards.has(forward.remotePort) ||
+            !this.ws ||
+            this.ws.readyState !== WS_OPEN
+          ) {
+            socket.destroy();
+            return;
+          }
+          this.attachStream(forward, socket);
+        },
+        (error: unknown) => {
+          logger.warn('lazy tunnel reconnect failed', {
+            remotePort: forward.remotePort,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          socket.destroy();
+        },
+      );
+      return;
+    }
+    this.attachStream(forward, socket);
+  }
+
+  /** Map an accepted local socket to a mux stream and send its `OPEN`. */
+  private attachStream(forward: ForwardState, socket: net.Socket): void {
     const streamId = this.allocStreamId();
     const stream: StreamState = {
       streamId,
@@ -594,7 +631,6 @@ export class TunnelManager {
     };
     this.streams.set(streamId, stream);
     forward.streams.add(stream);
-    forward.lastActivityAt = Date.now();
     socket.setNoDelay(true);
     // Hold local bytes until the daemon confirms the remote connect.
     socket.pause();
@@ -607,7 +643,6 @@ export class TunnelManager {
     stream.openTimer.unref?.();
 
     socket.on('data', (chunk: Buffer) => {
-      forward.lastActivityAt = Date.now();
       // Respect the daemon's per-frame DATA cap by splitting large reads.
       for (let offset = 0; offset < chunk.length; offset += MAX_DATA_PAYLOAD_BYTES) {
         const payload = chunk.subarray(offset, offset + MAX_DATA_PAYLOAD_BYTES);
@@ -653,7 +688,6 @@ export class TunnelManager {
     // already in flight — ignore them (mirrors the daemon's tolerance).
     const stream = this.streams.get(frame.streamId);
     if (!stream) return;
-    stream.forward.lastActivityAt = Date.now();
     switch (frame.type) {
       case 'openOk':
         stream.opened = true;
@@ -674,10 +708,9 @@ export class TunnelManager {
         stream.remoteClosed = true;
         this.endStream(stream, { sendClose: false });
         // A definitively refused connect means the daemon-side server is
-        // gone: drop the whole forward so it leaves activeForwards() now
-        // (instead of lingering until the idle sweep) and the next
-        // forwardPort() recreates it fresh. Timeouts and other transient
-        // errors stay per-stream.
+        // gone: drop the whole forward so it leaves activeForwards() now and
+        // the next forwardPort() recreates it fresh. Timeouts and other
+        // transient errors stay per-stream.
         if (isConnectionRefusedOpenErr(frame.message)) {
           this.dropForward(forward, 'daemon-side port refused the connect');
         }
@@ -709,9 +742,8 @@ export class TunnelManager {
   /**
    * Close a forward's local listener and remaining streams and deregister it,
    * so the next `forwardPort(remotePort)` recreates it fresh. Used when a
-   * refused `OPEN` shows the daemon-side port is closed (the idle sweep stays
-   * as the backstop for forwards that never see another `OPEN`) and by the
-   * explicit [[closeForward]].
+   * refused `OPEN` shows the daemon-side port is closed and by the explicit
+   * [[closeForward]].
    */
   private dropForward(forward: ForwardState, reason: string): void {
     if (this.forwards.get(forward.remotePort) !== forward) return;
@@ -725,13 +757,13 @@ export class TunnelManager {
       remotePort: forward.remotePort,
       localPort: forward.localPort,
     });
+    this.onForwardDropped?.(forward.remotePort);
   }
 
   /** Deregister a stream and destroy its socket (optionally telling the daemon). */
   private endStream(stream: StreamState, options: { sendClose: boolean }): void {
     if (!this.streams.delete(stream.streamId)) return;
     stream.forward.streams.delete(stream);
-    stream.forward.lastActivityAt = Date.now();
     if (stream.openTimer) clearTimeout(stream.openTimer);
     stream.openTimer = null;
     this.pausedForBackpressure.delete(stream.socket);
@@ -773,34 +805,23 @@ export class TunnelManager {
     this.backpressureTimer.unref?.();
   }
 
-  /** Sweep forwards that have no streams and have been idle past the timeout. */
-  private ensureIdleTimer(): void {
-    if (this.idleTimer) return;
-    this.idleTimer = setInterval(() => {
-      const now = Date.now();
-      for (const [remotePort, forward] of this.forwards) {
-        if (forward.streams.size > 0) continue;
-        if (now - forward.lastActivityAt < this.idleTimeoutMs) continue;
-        this.forwards.delete(remotePort);
-        forward.server.close();
-        logger.info('idle forward closed', { remotePort, localPort: forward.localPort });
-      }
-      if (this.forwards.size === 0 && this.idleTimer) {
-        clearInterval(this.idleTimer);
-        this.idleTimer = null;
-      }
-    }, this.idleCheckIntervalMs);
-    this.idleTimer.unref?.();
-  }
-
-  /** The tunnel socket closed: tear down every forward; reconnect lazily on next use. */
+  /**
+   * The tunnel socket closed: destroy in-flight streams but keep every
+   * forward (and its local listener/port) registered — the next accepted
+   * local connection reconnects the tunnel lazily.
+   */
   private handleTunnelDrop(): void {
-    logger.warn('tunnel dropped; tearing down all forwards', {
+    logger.warn('tunnel dropped; destroying in-flight streams, keeping forwards', {
       forwards: this.forwards.size,
       streams: this.streams.size,
     });
     this.ws = null;
-    this.teardownForwards();
+    for (const stream of [...this.streams.values()]) {
+      this.endStream(stream, { sendClose: false });
+    }
+    this.pausedForBackpressure.clear();
+    if (this.backpressureTimer) clearInterval(this.backpressureTimer);
+    this.backpressureTimer = null;
   }
 
   private teardownForwards(): void {
@@ -818,8 +839,6 @@ export class TunnelManager {
     this.pausedForBackpressure.clear();
     if (this.backpressureTimer) clearInterval(this.backpressureTimer);
     this.backpressureTimer = null;
-    if (this.idleTimer) clearInterval(this.idleTimer);
-    this.idleTimer = null;
   }
 
   private allocStreamId(): number {

@@ -20,7 +20,16 @@ import {
 } from './browser-action-executor';
 import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
 import { loopbackContextFromTransport, type LoopbackRewriteContext } from './loopback-rewrite';
-import { resolveBrowserUrl, type ResolvedBrowserUrl } from './loopback-url-resolver';
+import {
+  resolveBrowserUrl,
+  type ResolvedBrowserUrl,
+  type TunnelProvider,
+} from './loopback-url-resolver';
+import {
+  ForwardOwnershipRegistry,
+  wrapTunnelProviderWithOwnership,
+} from './tunnel-forward-ownership';
+import { ensureWorkspaceForwardCleanup } from './workspace-forward-cleanup.service';
 import { getBackendClient, isSameHostBackendActive } from '../../backend/main/backend.ipc';
 import { DirectRelay } from '../../backend/main/direct-relay';
 import { TunnelManager } from '../../backend/main/tunnel-manager';
@@ -201,6 +210,43 @@ function getBrowserTunnelProvider(): TunnelManager | DirectRelay {
 }
 
 /**
+ * Workspace → forward ownership registry (refcount semantics): forwards a
+ * workspace opened are closed when its last owning workspace is archived or
+ * deleted (see workspace-forward-cleanup.service.ts). Reset on backend
+ * switch alongside the providers.
+ */
+const forwardOwnership = new ForwardOwnershipRegistry();
+
+// Wrapper memo (keyed by workspace id, '' = app-lifetime) so repeated getter
+// calls hand back the SAME provider object while the underlying backend is
+// unchanged — callers treat the provider as a stable singleton.
+const ownershipWrappers = new Map<string, { inner: TunnelProvider; wrapper: TunnelProvider }>();
+
+/** Close a forward on whichever live provider carries it; never constructs one. */
+function closeOwnedForward(remotePort: number): void {
+  tunnelManager?.closeForward(remotePort);
+  directRelay?.closeForward(remotePort);
+}
+
+/**
+ * The ownership-recording provider seam: every handout goes through the
+ * wrapper so all forwardPort paths (explicit `openTunnel`, the implicit
+ * navigate/openTab tunnel fallback, `browser:resolve-url`) record ownership
+ * — for `workspaceId` when present, app-lifetime otherwise. Also (re)arms
+ * the cleanup subscription lazily.
+ */
+function getOwnedBrowserTunnelProvider(workspaceId?: string): TunnelProvider {
+  ensureWorkspaceForwardCleanup({ registry: forwardOwnership, closeForward: closeOwnedForward });
+  const inner = getBrowserTunnelProvider();
+  const key = workspaceId ?? '';
+  const cached = ownershipWrappers.get(key);
+  if (cached && cached.inner === inner) return cached.wrapper;
+  const wrapper = wrapTunnelProviderWithOwnership(inner, forwardOwnership, workspaceId);
+  ownershipWrappers.set(key, { inner, wrapper });
+  return wrapper;
+}
+
+/**
  * Execute a sequence of browser actions.
  *
  * This is a secure alternative to arbitrary code execution - each action
@@ -220,7 +266,7 @@ export async function executeBrowserActions(
     agentId,
     workspaceId,
     getDaemonLoopbackContext,
-    getBrowserTunnelProvider,
+    () => getOwnedBrowserTunnelProvider(workspaceId),
   );
 }
 
@@ -246,6 +292,8 @@ export function registerBrowserHandlers(): void {
       directRelay.dispose();
       directRelay = null;
     }
+    forwardOwnership.reset();
+    ownershipWrappers.clear();
   });
 
   // Register a browser tab for CDP access
@@ -303,7 +351,9 @@ export function registerBrowserHandlers(): void {
           return await resolveBrowserUrl(
             validated.url,
             getDaemonLoopbackContext(),
-            getBrowserTunnelProvider,
+            // No workspaceId on this renderer-facing path: any forward it
+            // mints is app-lifetime (never workspace-cleaned).
+            () => getOwnedBrowserTunnelProvider(),
             { rewriteOnly: validated.mode === 'rewrite-only' },
           );
         } catch (err) {

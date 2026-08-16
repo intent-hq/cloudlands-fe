@@ -10,7 +10,7 @@
 import { EventEmitter } from 'node:events';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { BackendConnectionConfig } from './backend-connection';
 import {
@@ -112,8 +112,6 @@ const WSS_CONFIG: BackendConnectionConfig = {
 /** Manager + fake-socket harness with per-test option overrides. */
 function makeManager(
   options: {
-    idleTimeoutMs?: number;
-    idleCheckIntervalMs?: number;
     backpressureHighWaterMark?: number;
     openTimeoutMs?: number;
     connectTimeoutMs?: number;
@@ -408,7 +406,7 @@ describe('TunnelManager', () => {
     const refused = await connectClient(deadLocal);
     await waitForClose(refused);
 
-    // The refused forward is gone without waiting for the idle sweep …
+    // The refused forward is dropped immediately …
     await waitFor(() => manager.activeForwards().length === 1);
     expect(manager.activeForwards()).toEqual([
       { remotePort: healthy.port, localPort: healthyLocal },
@@ -506,7 +504,7 @@ describe('TunnelManager', () => {
     onCleanup(() => again.destroy());
   });
 
-  it('tears down local servers and sockets when the tunnel drops', async () => {
+  it('destroys in-flight streams but keeps forwards and listeners when the tunnel drops', async () => {
     const { server, port } = await startEchoServer();
     onCleanup(() => server.close());
     const { manager, created } = makeManager();
@@ -516,51 +514,167 @@ describe('TunnelManager', () => {
     const client = await connectClient(localPort);
     const closed = waitForClose(client);
     created[0].drop();
+    // The in-flight stream is destroyed …
     await closed;
-    expect(manager.activeForwards()).toEqual([]);
-    // The local listener is gone: a fresh connect must fail.
-    await expect(connectClient(localPort)).rejects.toThrow();
+    // … but the forward stays registered on the SAME local port …
+    expect(manager.activeForwards()).toEqual([{ remotePort: port, localPort }]);
+    // … and its listener still accepts: the next connection reconnects the
+    // tunnel lazily and relays through the fresh socket.
+    const revived = await connectClient(localPort);
+    onCleanup(() => revived.destroy());
+    const payload = Buffer.from('same port after drop');
+    const received = collectUntil(revived, payload.length);
+    revived.write(payload);
+    expect((await received).equals(payload)).toBe(true);
+    expect(created.length).toBe(2);
   });
 
-  it('reconnects lazily after a drop and the new forward works', async () => {
+  it('reconnects lazily after a drop and the surviving forward keeps working', async () => {
     const { server, port } = await startEchoServer();
     onCleanup(() => server.close());
     const { manager, created } = makeManager();
     onCleanup(() => manager.dispose());
 
-    await manager.forwardPort(port);
-    created[0].drop();
-    await waitFor(() => manager.activeForwards().length === 0);
-
     const localPort = await manager.forwardPort(port);
-    expect(created.length).toBe(2);
+    created[0].drop();
+
+    // The drop alone triggers no reconnect, and forwardPort keeps returning
+    // the surviving forward's local port without touching the tunnel.
+    await expect(manager.forwardPort(port)).resolves.toBe(localPort);
+    expect(created.length).toBe(1);
+
+    // The first accepted connection reconnects and relays.
     const client = await connectClient(localPort);
     onCleanup(() => client.destroy());
     const payload = Buffer.from('after reconnect');
     const received = collectUntil(client, payload.length);
     client.write(payload);
     expect((await received).equals(payload)).toBe(true);
+    expect(created.length).toBe(2);
   });
 
-  it('closes idle forwards after the idle timeout, keeping active ones', async () => {
-    const idle = await startEchoServer();
-    const busy = await startEchoServer();
-    onCleanup(() => {
-      idle.server.close();
-      busy.server.close();
+  it('survives a client reset during the lazy-reconnect window (no uncaught error)', async () => {
+    const { server, port } = await startEchoServer();
+    onCleanup(() => server.close());
+    const created: FakeTunnelSocket[] = [];
+    const held: FakeTunnelSocket[] = [];
+    let holdOpen = false;
+    const manager = new TunnelManager({
+      getConfig: () => WSS_CONFIG,
+      socketFactory: () => {
+        const ws = new FakeTunnelSocket();
+        attachFakeDaemon(ws);
+        created.push(ws);
+        if (holdOpen) held.push(ws);
+        else queueMicrotask(() => ws.open());
+        return ws;
+      },
     });
-    const { manager } = makeManager({ idleTimeoutMs: 150, idleCheckIntervalMs: 25 });
     onCleanup(() => manager.dispose());
 
-    const idleLocal = await manager.forwardPort(idle.port);
-    const busyLocal = await manager.forwardPort(busy.port);
-    const client = await connectClient(busyLocal);
-    onCleanup(() => client.destroy());
+    const localPort = await manager.forwardPort(port);
+    created[0].drop();
+    holdOpen = true;
 
-    await waitFor(() => manager.activeForwards().length === 1);
-    expect(manager.activeForwards()).toEqual([{ remotePort: busy.port, localPort: busyLocal }]);
-    await expect(connectClient(idleLocal)).rejects.toThrow();
-    // The busy forward still relays.
+    // Accepted while the tunnel is down: the socket is held (paused) while
+    // ensureTunnel() reconnects — the fresh socket stays unopened for now.
+    const client = await connectClient(localPort);
+    await waitFor(() => held.length === 1);
+    // The client resets mid-window: the held server-side socket emits
+    // 'error' (ECONNRESET). Without a listener attached before the pause,
+    // this is an uncaught exception in the main process.
+    client.resetAndDestroy();
+    await delay(50);
+
+    // The reconnect settles against the destroyed socket without crashing …
+    held[0].open();
+    await delay(20);
+    // … the forward survives, and a fresh connection relays normally.
+    expect(manager.activeForwards()).toEqual([{ remotePort: port, localPort }]);
+    const fresh = await connectClient(localPort);
+    onCleanup(() => fresh.destroy());
+    const payload = Buffer.from('after reset');
+    const received = collectUntil(fresh, payload.length);
+    fresh.write(payload);
+    expect((await received).equals(payload)).toBe(true);
+  });
+
+  it('cleans up old streams when reconnecting past a CLOSING socket that never emitted close', async () => {
+    const { server, port } = await startEchoServer();
+    onCleanup(() => server.close());
+    const { manager, created } = makeManager();
+    onCleanup(() => manager.dispose());
+
+    const localPort = await manager.forwardPort(port);
+    const stale = await connectClient(localPort);
+    const staleClosed = waitForClose(stale);
+
+    // The socket enters CLOSING but its 'close' event has not fired yet
+    // (e.g. the close frame is in flight). The next accepted connection must
+    // reconnect AND clean up the old socket's streams — otherwise their
+    // frames would later land on the replacement with unknown stream IDs.
+    created[0].readyState = 2; // CLOSING
+
+    const fresh = await connectClient(localPort);
+    onCleanup(() => fresh.destroy());
+    const payload = Buffer.from('past closing');
+    const received = collectUntil(fresh, payload.length);
+    fresh.write(payload);
+    expect((await received).equals(payload)).toBe(true);
+    expect(created.length).toBe(2);
+    // The stale in-flight socket was destroyed by the reconnect cleanup …
+    await staleClosed;
+    // … and the old socket's late 'close' must not disturb the new tunnel.
+    created[0].drop();
+    const again = Buffer.from('still relaying');
+    const receivedAgain = collectUntil(fresh, again.length);
+    fresh.write(again);
+    expect((await receivedAgain).equals(again)).toBe(true);
+  });
+
+  it('notifies onForwardDropped for refused-OPEN drops and explicit closeForward', async () => {
+    const healthy = await startEchoServer();
+    onCleanup(() => healthy.server.close());
+    // A port with nothing listening: grab an ephemeral port then release it.
+    const probe = await startEchoServer();
+    const deadPort = probe.port;
+    await new Promise<void>((resolve) => probe.server.close(() => resolve()));
+
+    const { manager } = makeManager();
+    onCleanup(() => manager.dispose());
+    const dropped: number[] = [];
+    manager.onForwardDropped = (remotePort) => dropped.push(remotePort);
+
+    const deadLocal = await manager.forwardPort(deadPort);
+    const refused = await connectClient(deadLocal);
+    await waitForClose(refused);
+    await waitFor(() => dropped.length === 1);
+    expect(dropped).toEqual([deadPort]);
+
+    await manager.forwardPort(healthy.port);
+    expect(manager.closeForward(healthy.port)).toBe(true);
+    expect(dropped).toEqual([deadPort, healthy.port]);
+  });
+
+  it('keeps an idle forward alive well past the old 10-minute idle timeout', async () => {
+    const { server, port } = await startEchoServer();
+    onCleanup(() => server.close());
+    // Fake the JS timers (real net I/O keeps flowing) so any lingering idle
+    // sweep armed at construction/forward time would fire during the jump.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval'] });
+    let localPort: number;
+    try {
+      const { manager } = makeManager();
+      onCleanup(() => manager.dispose());
+      localPort = await manager.forwardPort(port);
+      vi.advanceTimersByTime(11 * 60_000);
+      expect(manager.activeForwards()).toEqual([{ remotePort: port, localPort }]);
+    } finally {
+      vi.useRealTimers();
+    }
+    // The forward still accepts connections and relays after the idle jump.
+    const client = await connectClient(localPort);
+    onCleanup(() => client.destroy());
     const payload = Buffer.from('still alive');
     const received = collectUntil(client, payload.length);
     client.write(payload);

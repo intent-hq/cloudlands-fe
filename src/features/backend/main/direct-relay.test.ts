@@ -1,12 +1,12 @@
 /**
  * Unit tests for the local-transport tunnel backend (DirectRelay): a plain
  * FE-side loopback TCP relay with the same provider surface and lifecycle
- * rules as the `/tunnel` mux backend (reuse, refused-connect drop, idle
- * sweep, closeForward).
+ * rules as the `/tunnel` mux backend (reuse, refused-connect drop,
+ * closeForward, persistence until explicit close/dispose).
  */
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DirectRelay } from './direct-relay';
 
@@ -151,11 +151,9 @@ describe('DirectRelay', () => {
     const refused = await connectClient(deadLocal);
     await waitForClose(refused);
 
-    // The refused forward is gone without waiting for the idle sweep …
+    // The refused forward is dropped immediately …
     await waitFor(() => relay.activeForwards().length === 1);
-    expect(relay.activeForwards()).toEqual([
-      { remotePort: healthy.port, localPort: healthyLocal },
-    ]);
+    expect(relay.activeForwards()).toEqual([{ remotePort: healthy.port, localPort: healthyLocal }]);
     // … its local listener is closed …
     await expect(connectClient(deadLocal)).rejects.toThrow();
     // … and the healthy forward's in-flight socket still relays.
@@ -225,25 +223,49 @@ describe('DirectRelay', () => {
     expect((await received).equals(payload)).toBe(true);
   });
 
-  it('closes idle forwards after the idle timeout, keeping active ones', async () => {
-    const idle = await startEchoServer();
-    const busy = await startEchoServer();
-    onCleanup(() => {
-      idle.server.close();
-      busy.server.close();
-    });
-    const relay = new DirectRelay({ idleTimeoutMs: 150, idleCheckIntervalMs: 25 });
+  it('notifies onForwardDropped for refused-connect drops and explicit closeForward', async () => {
+    const healthy = await startEchoServer();
+    onCleanup(() => healthy.server.close());
+    // A port with nothing listening: grab an ephemeral port then release it.
+    const probe = await startEchoServer();
+    const deadPort = probe.port;
+    await new Promise<void>((resolve) => probe.server.close(() => resolve()));
+
+    const relay = new DirectRelay();
     onCleanup(() => relay.dispose());
+    const dropped: number[] = [];
+    relay.onForwardDropped = (remotePort) => dropped.push(remotePort);
 
-    const idleLocal = await relay.forwardPort(idle.port);
-    const busyLocal = await relay.forwardPort(busy.port);
-    const client = await connectClient(busyLocal);
+    const deadLocal = await relay.forwardPort(deadPort);
+    const refused = await connectClient(deadLocal);
+    await waitForClose(refused);
+    await waitFor(() => dropped.length === 1);
+    expect(dropped).toEqual([deadPort]);
+
+    await relay.forwardPort(healthy.port);
+    expect(relay.closeForward(healthy.port)).toBe(true);
+    expect(dropped).toEqual([deadPort, healthy.port]);
+  });
+
+  it('keeps an idle forward alive well past the old 10-minute idle timeout', async () => {
+    const { server, port } = await startEchoServer();
+    onCleanup(() => server.close());
+    // Fake the JS timers (real net I/O keeps flowing) so any lingering idle
+    // sweep armed at construction/forward time would fire during the jump.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval'] });
+    let localPort: number;
+    try {
+      const relay = new DirectRelay();
+      onCleanup(() => relay.dispose());
+      localPort = await relay.forwardPort(port);
+      vi.advanceTimersByTime(11 * 60_000);
+      expect(relay.activeForwards()).toEqual([{ remotePort: port, localPort }]);
+    } finally {
+      vi.useRealTimers();
+    }
+    // The forward still accepts connections and relays after the idle jump.
+    const client = await connectClient(localPort);
     onCleanup(() => client.destroy());
-
-    await waitFor(() => relay.activeForwards().length === 1);
-    expect(relay.activeForwards()).toEqual([{ remotePort: busy.port, localPort: busyLocal }]);
-    await expect(connectClient(idleLocal)).rejects.toThrow();
-    // The busy forward still relays.
     const payload = Buffer.from('still alive');
     const received = collectUntil(client, payload.length);
     client.write(payload);

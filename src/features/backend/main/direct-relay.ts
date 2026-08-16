@@ -14,8 +14,9 @@
  * Lifecycle mirrors the mux backend: repeated `forwardPort()` for the same
  * remote port reuses the existing forward, a definitively connection-refused
  * target drops the whole forward (the server is gone; the next
- * `forwardPort()` recreates it fresh), and forwards idle past the timeout
- * with no live sockets are swept.
+ * `forwardPort()` recreates it fresh), and forwards live until explicitly
+ * closed (`closeForward`), the backend switches (`dispose()`), or the app
+ * quits — there is no idle sweep.
  */
 import net from 'node:net';
 
@@ -23,24 +24,12 @@ import { Logger } from '$shared/logger';
 
 const logger = new Logger('DirectRelay');
 
-/** Options for [[DirectRelay]]. */
-export interface DirectRelayOptions {
-  /** A forward with no sockets and no activity this long is closed. Default 10 min. */
-  idleTimeoutMs?: number;
-  /** Cadence of the idle-forward sweep. Default 30s. */
-  idleCheckIntervalMs?: number;
-}
-
-const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60_000;
-const DEFAULT_IDLE_CHECK_INTERVAL_MS = 30_000;
-
 /** One local forwarded port: an ephemeral loopback listener relaying to a local target port. */
 interface RelayForwardState {
   remotePort: number;
   localPort: number;
   server: net.Server;
   sockets: Set<net.Socket>;
-  lastActivityAt: number;
 }
 
 /**
@@ -52,22 +41,21 @@ export class DirectRelay {
   /** Backend discriminator echoed in tunnel action results. */
   readonly backend = 'direct' as const;
 
-  private readonly idleTimeoutMs: number;
-  private readonly idleCheckIntervalMs: number;
+  /**
+   * Invoked with the remote port whenever a forward is dropped by the relay
+   * itself (definitively refused connect) or via [[closeForward]], so
+   * callers tracking forwards (the ownership registry) stay in sync.
+   */
+  onForwardDropped: ((remotePort: number) => void) | null = null;
+
   private readonly forwards = new Map<number, RelayForwardState>();
   private readonly pendingForwards = new Map<number, Promise<number>>();
-  private idleTimer: NodeJS.Timeout | null = null;
   private disposed = false;
-
-  constructor(options: DirectRelayOptions = {}) {
-    this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
-    this.idleCheckIntervalMs = options.idleCheckIntervalMs ?? DEFAULT_IDLE_CHECK_INTERVAL_MS;
-  }
 
   /**
    * Forward local `remotePort` to a client-loopback ephemeral port; resolves
    * with the local port. Repeated calls for the same remote port reuse the
-   * existing forward (and refresh its idle clock).
+   * existing forward.
    */
   forwardPort(remotePort: number): Promise<number> {
     if (this.disposed) return Promise.reject(new Error('DirectRelay disposed'));
@@ -75,10 +63,7 @@ export class DirectRelay {
       return Promise.reject(new Error(`invalid remote port: ${remotePort}`));
     }
     const existing = this.forwards.get(remotePort);
-    if (existing) {
-      existing.lastActivityAt = Date.now();
-      return Promise.resolve(existing.localPort);
-    }
+    if (existing) return Promise.resolve(existing.localPort);
     const pending = this.pendingForwards.get(remotePort);
     if (pending) return pending;
     const promise = this.createForward(remotePort);
@@ -121,8 +106,6 @@ export class DirectRelay {
       forward.sockets.clear();
     }
     this.forwards.clear();
-    if (this.idleTimer) clearInterval(this.idleTimer);
-    this.idleTimer = null;
   }
 
   private async createForward(remotePort: number): Promise<number> {
@@ -145,7 +128,6 @@ export class DirectRelay {
       localPort,
       server,
       sockets: new Set(),
-      lastActivityAt: Date.now(),
     };
     server.on('connection', (socket) => this.handleLocalConnection(forward, socket));
     if (this.disposed) {
@@ -153,7 +135,6 @@ export class DirectRelay {
       throw new Error('DirectRelay disposed while creating the forward');
     }
     this.forwards.set(remotePort, forward);
-    this.ensureIdleTimer();
     logger.info('forward opened', { remotePort, localPort });
     return localPort;
   }
@@ -164,7 +145,6 @@ export class DirectRelay {
       return;
     }
     forward.sockets.add(socket);
-    forward.lastActivityAt = Date.now();
     socket.setNoDelay(true);
 
     // Hold local bytes until the target connect succeeds — piping starts on
@@ -175,24 +155,19 @@ export class DirectRelay {
     const target = net.connect({ host: '127.0.0.1', port: forward.remotePort });
     target.setNoDelay(true);
     let connected = false;
-    const touch = (): void => {
-      forward.lastActivityAt = Date.now();
-    };
     target.on('connect', () => {
       connected = true;
       // Relay both ways; pipe() propagates FIN for half-close (allowHalfOpen)
       // and resumes the paused local socket.
       socket.pipe(target);
       target.pipe(socket);
-      socket.on('data', touch);
-      target.on('data', touch);
     });
     target.on('error', (error: NodeJS.ErrnoException) => {
       // A definitively refused connect means the target server is gone: drop
-      // the whole forward so it leaves activeForwards() now (instead of
-      // lingering until the idle sweep) and the next forwardPort() recreates
-      // it fresh — symmetric with the mux backend's refused-OPEN drop
-      // (intent-hq/monorepo#2537). Other errors end only this socket pair.
+      // the whole forward so it leaves activeForwards() now and the next
+      // forwardPort() recreates it fresh — symmetric with the mux backend's
+      // refused-OPEN drop (intent-hq/monorepo#2537). Other errors end only
+      // this socket pair.
       if (!connected && error.code === 'ECONNREFUSED') {
         logger.warn('relay target refused the connect', {
           remotePort: forward.remotePort,
@@ -206,11 +181,9 @@ export class DirectRelay {
     });
     socket.on('close', () => {
       forward.sockets.delete(socket);
-      forward.lastActivityAt = Date.now();
       if (!target.destroyed) target.destroy();
     });
     target.on('close', () => {
-      forward.lastActivityAt = Date.now();
       if (!socket.destroyed) socket.destroy();
     });
   }
@@ -232,25 +205,6 @@ export class DirectRelay {
       remotePort: forward.remotePort,
       localPort: forward.localPort,
     });
-  }
-
-  /** Sweep forwards that have no sockets and have been idle past the timeout. */
-  private ensureIdleTimer(): void {
-    if (this.idleTimer) return;
-    this.idleTimer = setInterval(() => {
-      const now = Date.now();
-      for (const [remotePort, forward] of this.forwards) {
-        if (forward.sockets.size > 0) continue;
-        if (now - forward.lastActivityAt < this.idleTimeoutMs) continue;
-        this.forwards.delete(remotePort);
-        forward.server.close();
-        logger.info('idle forward closed', { remotePort, localPort: forward.localPort });
-      }
-      if (this.forwards.size === 0 && this.idleTimer) {
-        clearInterval(this.idleTimer);
-        this.idleTimer = null;
-      }
-    }, this.idleCheckIntervalMs);
-    this.idleTimer.unref?.();
+    this.onForwardDropped?.(forward.remotePort);
   }
 }
