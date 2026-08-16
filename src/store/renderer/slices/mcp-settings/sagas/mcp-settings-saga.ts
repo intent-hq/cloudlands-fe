@@ -16,7 +16,11 @@ import {
   MCP_SERVER_NAME_REGEX,
   RESERVED_MCP_SERVER_NAMES,
 } from '$shared/config/mcp-constants';
-import { normalizeMcpServersPayload, toMcpErrorMessage } from '../mcp-settings-normalization';
+import {
+  mapDaemonMcpState,
+  normalizeMcpServersPayload,
+  toMcpErrorMessage,
+} from '../mcp-settings-normalization';
 import {
   selectMcpAdvancedSaveStatus,
   selectMcpDisabledServers,
@@ -40,6 +44,7 @@ import {
   setEnabled,
   setError,
   setLoading,
+  setServerErrorMessage,
   setServers,
   setServerStatus,
   testServerConnection,
@@ -77,9 +82,11 @@ function copyServerForWire(
   return server;
 }
 
-function statusFor(server: McpServerConfig, disabled: boolean): McpServerStatus {
-  if (disabled) return 'disabled';
-  return server.type === 'stdio' ? 'configured' : 'connected';
+// Never fabricate 'connected' from config shape alone: an enabled server shows
+// 'configured' ("Ready") until the daemon reports a real status (load fetch via
+// `mcp.servers.getStatus` or a `mcp.servers:status-changed` event).
+function statusFor(disabled: boolean): McpServerStatus {
+  return disabled ? 'disabled' : 'configured';
 }
 
 function validateName(name: string, existing: McpServerConfig[]): void {
@@ -145,6 +152,39 @@ function* persist(
   }
 }
 
+/**
+ * Fetch daemon-reported runtime statuses (`mcp.servers.getStatus`, §5.22) for
+ * enabled servers carrying a daemon id, and overlay them on the status map.
+ * A wire failure leaves the config-derived statuses in place — live updates
+ * still arrive via `mcp.servers:status-changed`.
+ */
+function* fetchDaemonStatuses(servers: McpServerConfig[]): SagaGenerator<void> {
+  const nameById = new Map(
+    servers.flatMap((server) => (server.id && !server.disabled ? [[server.id, server.name] as const] : [])),
+  );
+  if (nameById.size === 0) return;
+  try {
+    const statuses: Awaited<ReturnType<typeof appClient.settings.getMcpServerStatuses>> =
+      yield* call(
+        [appClient.settings, appClient.settings.getMcpServerStatuses],
+        [...nameById.keys()],
+      );
+    const statusMap: Record<string, McpServerStatus> = {};
+    for (const status of statuses) {
+      const name = nameById.get(status.serverId);
+      const mapped = mapDaemonMcpState(status.state);
+      if (!name || mapped === null) continue;
+      statusMap[name] = mapped;
+      if (mapped === 'error' && status.lastError) {
+        yield* put(setServerErrorMessage(name, status.lastError));
+      }
+    }
+    if (Object.keys(statusMap).length > 0) yield* put(bulkSetServerStatus(statusMap));
+  } catch (error) {
+    logger.warn('Failed to fetch daemon MCP server statuses', { error });
+  }
+}
+
 function* load(): SagaGenerator<void> {
   const current: McpServerConfig[] = yield* selectMcpServers.effect();
   if (current.length === 0) yield* put(setLoading(true));
@@ -158,12 +198,17 @@ function* load(): SagaGenerator<void> {
     const statuses: Record<string, McpServerStatus> = {};
     for (const server of servers) {
       if (server.disabled) disabled[server.name] = true;
-      statuses[server.name] = statusFor(server, Boolean(server.disabled));
+      statuses[server.name] = statusFor(Boolean(server.disabled));
     }
     yield* put(setServers(servers));
     yield* put(clearAllErrorMessages());
     yield* put(setDisabledServers(disabled));
     yield* put(bulkSetServerStatus(statuses));
+    // Forked (not called) so a slow daemon status fan-out never delays
+    // `setLoading(false)` — the list renders with config-derived badges that
+    // upgrade when statuses land. Attached fork: a newer `loadServers` still
+    // cancels it via takeLatest, so no stale overlay can apply.
+    yield* fork(fetchDaemonStatuses, servers);
   } catch (error) {
     yield* put(setError(toMcpErrorMessage(error, m.mcp_management_loadServersFailed_error())));
   } finally {
@@ -184,7 +229,7 @@ function* add(configInput: McpServerConfig): SagaGenerator<void> {
   delete config.disabled;
   const next = [...servers.map(copyServerForState), config];
   yield* put(setServers(next));
-  yield* put(setServerStatus(config.name, statusFor(config, false)));
+  yield* put(setServerStatus(config.name, statusFor(false)));
   const enabled: boolean = yield* selectMcpEnabled.effect();
   if (!enabled) yield* put(setEnabled(true));
   const credentialInputs: CredentialInput[] = [[configInput]];
@@ -217,7 +262,7 @@ function* update(name: string, configInput: McpServerConfig): SagaGenerator<void
   const next = servers.map((server, position) =>
     position === index ? config : copyServerForState(server));
   yield* put(setServers(next));
-  yield* put(setServerStatus(config.name, statusFor(config, false)));
+  yield* put(setServerStatus(config.name, statusFor(false)));
   const credentialInputs: CredentialInput[] = [[configInput, name]];
   yield* call(persist, next, credentialInputs);
 }
@@ -246,7 +291,7 @@ function* importJson(json: string): SagaGenerator<void> {
     const next = [...existing.map(copyServerForState), ...stateAdded];
     yield* put(setServers(next));
     for (const config of stateAdded) {
-      yield* put(setServerStatus(config.name, statusFor(config, false)));
+      yield* put(setServerStatus(config.name, statusFor(false)));
     }
     const enabled: boolean = yield* selectMcpEnabled.effect();
     if (!enabled) yield* put(setEnabled(true));
@@ -260,7 +305,7 @@ function* toggle(name: string): SagaGenerator<void> {
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
   const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
   const server = servers.find((candidate) => candidate.name === name);
-  if (server) yield* put(setServerStatus(name, statusFor(server, name in disabled)));
+  if (server) yield* put(setServerStatus(name, statusFor(name in disabled)));
   yield* call(persist, servers, []);
 }
 
@@ -275,7 +320,7 @@ function* restart(name: string): SagaGenerator<void> {
   const server = servers.find((candidate) => candidate.name === name);
   if (!server) return;
   yield* put(clearServerErrorMessage(name));
-  yield* put(setServerStatus(name, statusFor(server, false)));
+  yield* put(setServerStatus(name, statusFor(false)));
 }
 
 function* saveAdvanced(json: string): SagaGenerator<void> {
@@ -312,7 +357,7 @@ function* saveAdvanced(json: string): SagaGenerator<void> {
   const stateConfigs = configs.map(copyServerForState);
   for (const config of stateConfigs) {
     if (config.disabled) disabled[config.name] = true;
-    statuses[config.name] = statusFor(config, Boolean(config.disabled));
+    statuses[config.name] = statusFor(Boolean(config.disabled));
   }
   yield* put(setServers(stateConfigs));
   yield* put(setDisabledServers(disabled));

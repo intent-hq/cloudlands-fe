@@ -162,6 +162,50 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
     expect(await client.getMcpServers()).toEqual([]);
   });
 
+  it("getMcpServerStatuses fans out mcp.servers.getStatus (§5.22) per serverId", async () => {
+    // PROTOCOL §5.22 McpServerStatus — daemon-probed running server, then a
+    // failed one. Point reads are issued in serverIds order.
+    mockedRequest
+      .mockResolvedValueOnce({
+        status: { serverId: "srv-up", state: "running", pid: 4821, toolCount: 7, startedAt: 1750000000000 },
+      })
+      .mockResolvedValueOnce({
+        status: { serverId: "srv-down", state: "error", lastError: "unreachable from daemon host" },
+      });
+    const client = new LiveSettingsClient();
+
+    const result = await client.getMcpServerStatuses(["srv-up", "srv-down"]);
+    expect(mockedRequest.mock.calls).toEqual([
+      ["mcp.servers.getStatus", { serverId: "srv-up" }],
+      ["mcp.servers.getStatus", { serverId: "srv-down" }],
+    ]);
+    expect(result).toEqual([
+      { serverId: "srv-up", state: "running" },
+      { serverId: "srv-down", state: "error", lastError: "unreachable from daemon host" },
+    ]);
+  });
+
+  it("getMcpServerStatuses omits failed/malformed reads and keys results by the requested id", async () => {
+    mockedRequest
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce({ status: { serverId: "srv-odd", state: "warming-up" } })
+      .mockResolvedValueOnce({ status: { state: "stopped" } })
+      .mockResolvedValueOnce({ status: { serverId: "srv-ok", state: "stopped" } });
+    const client = new LiveSettingsClient();
+
+    const result = await client.getMcpServerStatuses(["srv-a", "srv-odd", "srv-echoless", "srv-ok"]);
+    expect(mockedRequest.mock.calls).toEqual([
+      ["mcp.servers.getStatus", { serverId: "srv-a" }],
+      ["mcp.servers.getStatus", { serverId: "srv-odd" }],
+      ["mcp.servers.getStatus", { serverId: "srv-echoless" }],
+      ["mcp.servers.getStatus", { serverId: "srv-ok" }],
+    ]);
+    expect(result).toEqual([
+      { serverId: "srv-echoless", state: "stopped" },
+      { serverId: "srv-ok", state: "stopped" },
+    ]);
+  });
+
   it("setMcpServers diffs against mcp.servers.list: creates new, deletes missing", async () => {
     mockedRequest.mockResolvedValueOnce({
       servers: [{ id: "srv-old", name: "old-server", transport: "stdio", command: "old", enabled: true }],

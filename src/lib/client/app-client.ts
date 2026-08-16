@@ -50,7 +50,7 @@ import type { SkillInfo } from "$store/renderer/slices/skills/skills-types";
 import type { AuggieModel } from "$features/auggie/auggie-models.client";
 import type { ProviderCatalogResult } from "$shared/provider-catalog";
 import type { RecentUrl } from "$store/renderer/slices/browser/browser-types";
-import type { McpServerConfig } from "$store/renderer/slices/mcp-settings/mcp-settings-types";
+import type { McpServerConfig, McpServerRuntimeStatus } from "$store/renderer/slices/mcp-settings/mcp-settings-types";
 import type { UserPreferencesState } from "$store/renderer/slices/user-preferences/user-preferences-slice";
 import type { ProviderSettingsState } from "$store/renderer/slices/provider-settings/provider-settings-slice";
 
@@ -983,6 +983,12 @@ export interface SettingsClient {
   setProviderSettings(settings: Partial<PersistedProviderSettings>): Promise<MutationResult>;
   getMcpServers(): Promise<McpServerConfig[]>;
   setMcpServers(servers: McpServerConfig[]): Promise<MutationResult>;
+  /**
+   * `mcp.servers.getStatus` (§5.22) fanned out per server id. Returns the
+   * daemon-reported runtime statuses keyed by `serverId`; ids whose point read
+   * fails are omitted (live updates arrive via `mcp.servers:status-changed`).
+   */
+  getMcpServerStatuses(serverIds: string[]): Promise<McpServerRuntimeStatus[]>;
   getWorkspaceSettings(workspaceId: string): Promise<SingleWorkspaceSettings | null>;
   setWorkspaceSettings(
     workspaceId: string,

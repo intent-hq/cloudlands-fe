@@ -2,11 +2,16 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { m } from '$shared/paraglide/messages.js';
 
-const mocks = vi.hoisted(() => ({ getMcpServers: vi.fn(), setMcpServers: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getMcpServers: vi.fn(),
+  setMcpServers: vi.fn(),
+  getMcpServerStatuses: vi.fn(),
+}));
 vi.mock('$lib/client', () => ({
   appClient: { settings: {
     getMcpServers: mocks.getMcpServers,
     setMcpServers: mocks.setMcpServers,
+    getMcpServerStatuses: mocks.getMcpServerStatuses,
   } },
 }));
 vi.mock('$lib/utils/client-logger', () => ({
@@ -52,6 +57,7 @@ describe('mcpSettingsSaga', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getMcpServers.mockResolvedValue([]);
+    mocks.getMcpServerStatuses.mockResolvedValue([]);
   });
   afterEach(() => vi.useRealTimers());
 
@@ -99,9 +105,53 @@ describe('mcpSettingsSaga', () => {
       }]] },
       { type: 'mcpSettings/clearAllErrorMessages', payload: [] },
       { type: 'mcpSettings/setDisabledServers', payload: [{}] },
-      { type: 'mcpSettings/bulkSetServerStatus', payload: [{ secure: 'connected' }] },
+      { type: 'mcpSettings/bulkSetServerStatus', payload: [{ secure: 'configured' }] },
       { type: 'mcpSettings/setLoading', payload: [false] },
     ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('overlays daemon-reported statuses on load for enabled servers with daemon ids', async () => {
+    mocks.getMcpServers.mockResolvedValue([
+      { id: 'srv-up', name: 'up', type: 'http', url: 'https://up.test' },
+      { id: 'srv-down', name: 'down', type: 'http', url: 'https://down.test' },
+      { id: 'srv-off', name: 'off', type: 'http', url: 'https://off.test', disabled: true },
+      { name: 'no-id', type: 'stdio', command: 'node' },
+    ]);
+    // PROTOCOL §5.22 McpServerStatus shapes.
+    mocks.getMcpServerStatuses.mockResolvedValue([
+      { serverId: 'srv-up', state: 'running', toolCount: 7, startedAt: 1750000000000 },
+      { serverId: 'srv-down', state: 'error', lastError: 'unreachable from daemon host' },
+    ]);
+    const run = harness();
+    run.channel.put(loadServers());
+    await settle();
+
+    expect(mocks.getMcpServerStatuses.mock.calls).toEqual([[['srv-up', 'srv-down']]]);
+    expect(run.state().statusMap).toEqual({
+      up: 'connected',
+      down: 'error',
+      off: 'disabled',
+      'no-id': 'configured',
+    });
+    expect(run.state().errorMessages).toEqual({ down: 'unreachable from daemon host' });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps config-derived statuses when the daemon status fetch fails', async () => {
+    mocks.getMcpServers.mockResolvedValue([
+      { id: 'srv-up', name: 'up', type: 'http', url: 'https://up.test' },
+    ]);
+    mocks.getMcpServerStatuses.mockRejectedValue(new Error('wire down'));
+    const run = harness();
+    run.channel.put(loadServers());
+    await settle();
+
+    expect(run.state().statusMap).toEqual({ up: 'configured' });
+    expect(run.state().error).toBeNull();
+    expect(run.state().loading).toBe(false);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -139,7 +189,7 @@ describe('mcpSettingsSaga', () => {
       { name: 'local', type: 'stdio', command: 'node', args: ['server.js'] },
       { name: 'remote', type: 'http', url: 'https://remote.test' },
     ]);
-    expect(run.state().statusMap).toEqual({ local: 'configured', remote: 'connected' });
+    expect(run.state().statusMap).toEqual({ local: 'configured', remote: 'configured' });
     expect(run.state().lastImportedCount).toEqual(1);
     run.task.cancel();
     await run.task.toPromise();
@@ -259,7 +309,7 @@ describe('mcpSettingsSaga', () => {
       { type: 'mcpSettings/setServers', payload: [[{
         name: 'remote', type: 'http', url: 'https://new.test',
       }]] },
-      { type: 'mcpSettings/setServerStatus', payload: ['remote', 'connected'] },
+      { type: 'mcpSettings/setServerStatus', payload: ['remote', 'configured'] },
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -301,7 +351,7 @@ describe('mcpSettingsSaga', () => {
     expect(mocks.setMcpServers.mock.calls).toEqual([]);
     expect(run.dispatched).toEqual([
       { type: 'mcpSettings/clearServerErrorMessage', payload: ['remote'] },
-      { type: 'mcpSettings/setServerStatus', payload: ['remote', 'connected'] },
+      { type: 'mcpSettings/setServerStatus', payload: ['remote', 'configured'] },
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -392,7 +442,7 @@ describe('mcpSettingsSaga', () => {
       { type: 'mcpSettings/setAdvancedSaveStatus', payload: ['saving'] },
       { type: 'mcpSettings/setServers', payload: [[remote]] },
       { type: 'mcpSettings/setDisabledServers', payload: [{}] },
-      { type: 'mcpSettings/bulkSetServerStatus', payload: [{ remote: 'connected' }] },
+      { type: 'mcpSettings/bulkSetServerStatus', payload: [{ remote: 'configured' }] },
       { type: 'mcpSettings/setAdvancedSaveStatus', payload: ['error', 'advanced rejected'] },
     ]);
     advancedRun.task.cancel();

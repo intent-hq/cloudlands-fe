@@ -239,7 +239,7 @@ import {
   setServerErrorMessage,
   setServerStatus,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
-import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
+import { mapDaemonMcpState } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
 import {
@@ -2563,21 +2563,9 @@ function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: s
  * `mcpSettings.servers` list (`fromWireMcpConfig` carries `id` through), then
  * dispatch `setServerStatus` plus `setServerErrorMessage` /
  * `clearServerErrorMessage` keyed by name — the slice keys everything by name.
+ * The daemon-state → badge mapping is the shared `mapDaemonMcpState` from
+ * mcp-settings-normalization (also used by the load saga's status fetch).
  */
-function mapDaemonMcpState(state: unknown): McpServerStatus | null {
-  switch (state) {
-    case 'running':
-      return 'connected';
-    case 'starting':
-      return 'configured';
-    case 'stopped':
-      return 'stopped';
-    case 'error':
-      return 'error';
-    default:
-      return null;
-  }
-}
 
 /**
  * `github:auth-changed` (§6.5) carries `data = { status }` on device-flow

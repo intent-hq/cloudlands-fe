@@ -96,6 +96,26 @@ export function normalizeMcpServerStatus(value: unknown): McpServerStatus | unde
     : undefined;
 }
 
+/**
+ * Map a daemon `McpServerStatus.state` (PROTOCOL §5.22 — one of
+ * `"stopped" | "starting" | "running" | "error"`) to the FE badge status.
+ * `null` for unrecognized states so callers can drop the update.
+ */
+export function mapDaemonMcpState(state: unknown): McpServerStatus | null {
+  switch (state) {
+    case 'running':
+      return 'connected';
+    case 'starting':
+      return 'configured';
+    case 'stopped':
+      return 'stopped';
+    case 'error':
+      return 'error';
+    default:
+      return null;
+  }
+}
+
 export function normalizeDisabledServers(value: unknown): Record<string, true> {
   if (!Array.isArray(value)) return {};
   return value.reduce<Record<string, true>>((acc, item) => {
