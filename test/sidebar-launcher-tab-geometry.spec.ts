@@ -287,7 +287,9 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
     { width: 360, zoom: 1, theme: 'light' as const, agentCount: 0, noteCount: 0 },
     { width: 280, zoom: 1, theme: 'dark' as const, agentCount: 1, noteCount: 1 },
     { width: 280, zoom: 1.5, theme: 'light' as const, agentCount: 3, noteCount: 3 },
+    { width: 360, zoom: 1, theme: 'dark' as const, agentCount: 6, noteCount: 6 },
     { width: 260, zoom: 2, theme: 'dark' as const, agentCount: 8, noteCount: 8 },
+    { width: 360, zoom: 1.5, theme: 'light' as const, agentCount: 26, noteCount: 26 },
   ]) {
     await mountSidebar(page, { ...geometry, selectedTab: 'overview' });
     const cards = page.locator('[data-sidebar-launcher-grid] [data-sidebar-launcher]');
@@ -339,20 +341,50 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
         const cardRect = card.getBoundingClientRect();
         const scale = cardRect.width / (card as HTMLElement).offsetWidth;
         const inset = Number((card as HTMLElement).dataset.launcherInlineInset ?? 0) * scale;
-        const items = [...card.querySelectorAll<HTMLElement>('[data-launcher-preview-item]')].map(
-          (item) => item.getBoundingClientRect(),
-        );
-        return items.map((item) => ({
-          left: item.left - cardRect.left,
-          right: cardRect.right - item.right,
-          inset,
-        }));
+        const labelLeft =
+          card.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!.getBoundingClientRect()
+            .left - cardRect.left;
+        const items = [...card.querySelectorAll<HTMLElement>('[data-launcher-preview-item]')];
+        return items.map((item) => {
+          const visibleSurface =
+            item.querySelector<HTMLElement>('[data-sidebar-launcher-glyph]') ?? item;
+          return {
+            left: item.getBoundingClientRect().left - cardRect.left,
+            visibleLeft: visibleSurface.getBoundingClientRect().left - cardRect.left,
+            right: cardRect.right - item.getBoundingClientRect().right,
+            width: item.getBoundingClientRect().width,
+            inset,
+            labelLeft,
+            scale,
+            overflow:
+              item.hasAttribute('data-sidebar-agent-overflow') ||
+              item.hasAttribute('data-sidebar-context-overflow'),
+          };
+        });
       }),
     );
     expect(
       iconBounds.flat().every(({ left, right, inset }) => left >= inset && right >= inset),
     ).toBe(true);
-
+    for (const [index, bounds] of iconBounds.entries()) {
+      const total = index === 0 ? geometry.agentCount : geometry.noteCount;
+      const expectedCount = Math.min(total, 6) + (total > 6 ? 1 : 0);
+      expect(bounds).toHaveLength(expectedCount);
+      if (bounds.length === 0) continue;
+      expect(Math.abs(bounds[0].visibleLeft - bounds[0].labelLeft)).toBeLessThanOrEqual(0.5);
+      const steps = bounds.slice(1).map((item, itemIndex) => item.left - bounds[itemIndex].left);
+      expect(bounds.every(({ width, scale }) => width >= 36 * scale - 0.5)).toBe(true);
+      expect(steps.every((step) => step > 0 && step <= 36 * bounds[0].scale)).toBe(true);
+      const visibleSteps = bounds
+        .filter(({ overflow }) => !overflow)
+        .slice(1)
+        .map((item, itemIndex) => item.left - bounds[itemIndex].left);
+      if (visibleSteps.length > 1) expectEqual(visibleSteps, 0.75);
+      if (total > 6) {
+        expect(bounds.at(-1)?.overflow).toBe(true);
+        expect(steps.at(-1)).toBeCloseTo(36 * bounds[0].scale, 1);
+      }
+    }
     const labelRows = await cards.evaluateAll((elements) =>
       elements.map((card) => {
         const cardRect = card.getBoundingClientRect();
@@ -393,6 +425,55 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
     await page.waitForTimeout(300);
     expect(await boxes(cards)).toEqual(before);
   }
+});
+
+test('left-packed launchers preserve hover, focus, click, and open-panel markers', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 1000 });
+  await mountSidebar(page, {
+    width: 320,
+    zoom: 1,
+    theme: 'light',
+    selectedTab: 'overview',
+    agentCount: 8,
+    noteCount: 8,
+  });
+
+  const agents = page.locator('[data-sidebar-agent]');
+  const notes = page.locator('[data-sidebar-context]');
+  await expect(agents).toHaveCount(6);
+  await expect(notes).toHaveCount(6);
+  await expect(agents.nth(0).locator('[data-panel-open-marker]')).toHaveAttribute(
+    'data-panel-open-state',
+    'active',
+  );
+  await expect(notes.nth(0).locator('[data-panel-open-marker]')).toHaveAttribute(
+    'data-panel-open-state',
+    'open',
+  );
+
+  await agents.nth(0).hover({ position: { x: 2, y: 18 } });
+  await expect(page.locator('[data-sidebar-hover-card="agent"]')).toBeVisible();
+  await notes.nth(0).focus();
+  await expect(notes.nth(0)).toBeFocused();
+  await expect(page.locator('[data-sidebar-hover-card="note"]')).toBeVisible();
+
+  await notes.nth(0).click({ position: { x: 2, y: 18 } });
+  await expect(notes.nth(0).locator('[data-panel-open-marker]')).toHaveAttribute(
+    'data-panel-open-state',
+    'active',
+  );
+  await agents.nth(0).focus();
+  await page.keyboard.press('Tab');
+  await expect(agents.nth(1)).toBeFocused();
+
+  await page.locator('[data-sidebar-agent-overflow]').click();
+  await expect(page.locator('[data-sidebar-overlay]')).toBeVisible();
+  await expect(page.locator('[data-sidebar-tab-strip]')).toHaveAttribute(
+    'data-active-tab',
+    'agents',
+  );
 });
 
 test('View PR follows the workspace description once in compact and expanded modes', async ({
