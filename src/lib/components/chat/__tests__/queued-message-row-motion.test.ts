@@ -12,16 +12,20 @@ interface AnimationStub {
   cancel: ReturnType<typeof vi.fn>;
 }
 
-function motionNode(initialHeight: number, targetHeight: number) {
+function motionNode(initialHeight: number, targetHeight: number, zoom = 1) {
   const node = document.createElement('div');
-  let visualHeight = initialHeight;
+  let layoutHeight = initialHeight;
   const animations: AnimationStub[] = [];
   vi.spyOn(node, 'getBoundingClientRect').mockImplementation(
     () =>
       ({
-        height: node.style.height === 'auto' ? targetHeight : visualHeight,
+        height: (node.style.height === 'auto' ? targetHeight : layoutHeight) * zoom,
       }) as DOMRect,
   );
+  Object.defineProperty(node, 'offsetHeight', {
+    configurable: true,
+    get: () => (node.style.height === 'auto' ? targetHeight : layoutHeight),
+  });
   const animate = vi.fn((_frames: Keyframe[], _options: KeyframeAnimationOptions) => {
     const animation: AnimationStub = {
       onfinish: null,
@@ -36,7 +40,7 @@ function motionNode(initialHeight: number, targetHeight: number) {
     node,
     animate,
     animations,
-    setVisualHeight: (height: number) => (visualHeight = height),
+    setVisualHeight: (height: number) => (layoutHeight = height),
   };
 }
 
@@ -117,6 +121,21 @@ describe('queued message row motion', () => {
     harness.animations[0].onfinish?.();
     expect(harness.node.style.height).toBe('');
     expect(harness.node.style.overflow).toBe('');
+  });
+
+  it('uses unzoomed layout heights for intrinsic and Svelte transitions', () => {
+    const harness = motionNode(30, 60, 2);
+    const play = captureQueuedMessageRowMotion(harness.node);
+    expect(harness.node.style.height).toBe('30px');
+    play();
+
+    const frames = harness.animate.mock.calls[0][0] as Keyframe[];
+    expect(frames[0].height).toBe('30px');
+    expect(frames.at(-1)?.height).toBe('60px');
+
+    const transitionHarness = motionNode(30, 60, 2);
+    const transition = queuedMessageRowTransition(transitionHarness.node);
+    expect(transition.css?.(1, 0)).toContain('height:30px');
   });
 
   it('interrupts and reverses from the current visual height', () => {

@@ -40,34 +40,38 @@ function numericStyle(style: CSSStyleDeclaration, property: keyof CSSStyleDeclar
   return Number.isFinite(value) ? value : 0;
 }
 
+function layoutHeight(node: HTMLElement): number {
+  return node.offsetHeight > 0 ? node.offsetHeight : node.getBoundingClientRect().height;
+}
+
 export function captureQueuedMessageRowMotion(node: HTMLElement): () => void {
   const bottomMutation = beforeFollowBottomMutation(node);
-  const current = node.getBoundingClientRect();
+  const currentHeight = layoutHeight(node);
   const currentOpacity = numericStyle(getComputedStyle(node), 'opacity') || 1;
   cancelActiveMotion(node);
 
-  if (current.height > 0) {
-    node.style.height = `${current.height}px`;
+  if (currentHeight > 0) {
+    node.style.height = `${currentHeight}px`;
     node.style.overflow = 'hidden';
   }
 
   return () => {
     cancelActiveMotion(node);
     node.style.height = 'auto';
-    const targetHeight = node.getBoundingClientRect().height;
+    const targetHeight = layoutHeight(node);
     const targetOpacity = numericStyle(getComputedStyle(node), 'opacity') || 1;
 
-    if (reducedMotion() || current.height <= 0 || targetHeight <= 0 || !node.animate) {
+    if (reducedMotion() || currentHeight <= 0 || targetHeight <= 0 || !node.animate) {
       node.style.height = '';
       node.style.overflow = '';
       bottomMutation.settle();
       return;
     }
 
-    node.style.height = `${current.height}px`;
+    node.style.height = `${currentHeight}px`;
     const animation = node.animate(
       [
-        { height: `${current.height}px`, opacity: currentOpacity },
+        { height: `${currentHeight}px`, opacity: currentOpacity },
         { height: `${targetHeight}px`, opacity: Math.min(currentOpacity, targetOpacity, 0.72) },
         { height: `${targetHeight}px`, opacity: targetOpacity },
       ],
@@ -108,7 +112,7 @@ export function queuedMessageRowTransition(
   }
   cancelQueuedMessageRowMotion(node);
   const style = getComputedStyle(node);
-  const height = node.getBoundingClientRect().height;
+  const height = layoutHeight(node);
   if (!Number.isFinite(height) || height <= 0) {
     settleBottomMutation();
     return { duration: 0 };

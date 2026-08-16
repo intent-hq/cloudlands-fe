@@ -225,10 +225,96 @@ describe('followBottom policy', () => {
 
   function fireAddedMutation(node: Node) {
     mutationCallbacks[0]?.(
-      [{ type: 'childList', addedNodes: [node] } as unknown as MutationRecord],
+      [
+        {
+          type: 'childList',
+          addedNodes: [node],
+          removedNodes: [],
+        } as unknown as MutationRecord,
+      ],
       {} as MutationObserver,
     );
   }
+
+  function fireRemovedMutation(node: Node) {
+    mutationCallbacks[0]?.(
+      [
+        {
+          type: 'childList',
+          addedNodes: [],
+          removedNodes: [node],
+        } as unknown as MutationRecord,
+      ],
+      {} as MutationObserver,
+    );
+  }
+
+  it('owns one native bottom anchor and restores existing child styles on destroy', () => {
+    const child = document.createElement('div');
+    const nested = document.createElement('div');
+    child.style.overflowAnchor = 'auto';
+    child.append(nested);
+    container.append(child);
+
+    const action = followBottom(container, { follow: true });
+    const anchor = container.querySelector<HTMLElement>('[data-follow-bottom-anchor]');
+
+    expect(anchor).not.toBeNull();
+    expect(container.querySelectorAll('[data-follow-bottom-anchor]')).toHaveLength(1);
+    expect(container.lastElementChild).toBe(anchor);
+    expect(anchor?.getAttribute('aria-hidden')).toBe('true');
+    expect(anchor?.style.height).toBe('1px');
+    expect(anchor?.style.overflowAnchor).toBe('auto');
+    expect(child.style.overflowAnchor).toBe('none');
+    expect(nested.style.overflowAnchor).toBe('');
+
+    action.destroy();
+    expect(container.querySelector('[data-follow-bottom-anchor]')).toBeNull();
+    expect(child.style.overflowAnchor).toBe('auto');
+  });
+
+  it('attaches the native anchor only while following', () => {
+    const action = followBottom(container, { follow: false });
+    expect(container.querySelector('[data-follow-bottom-anchor]')).toBeNull();
+
+    action.update({ follow: true });
+    const anchor = container.querySelector<HTMLElement>('[data-follow-bottom-anchor]')!;
+    expect(anchor.style.overflowAnchor).toBe('auto');
+
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: -20 }));
+    expect(container.querySelector('[data-follow-bottom-anchor]')).toBeNull();
+    expect(anchor.style.overflowAnchor).toBe('none');
+    action.destroy();
+  });
+
+  it('keeps the native anchor last and restores mutation-added child styles', () => {
+    const action = followBottom(container, { follow: true });
+    const anchor = container.querySelector<HTMLElement>('[data-follow-bottom-anchor]')!;
+    const child = document.createElement('div');
+    child.style.overflowAnchor = 'auto';
+    container.append(child);
+
+    fireAddedMutation(child);
+    expect(child.style.overflowAnchor).toBe('none');
+    expect(container.lastElementChild).toBe(anchor);
+
+    child.remove();
+    fireRemovedMutation(child);
+    expect(child.style.overflowAnchor).toBe('auto');
+    action.destroy();
+  });
+
+  it('restores a detached child when destroy precedes mutation delivery', () => {
+    const child = document.createElement('div');
+    child.style.overflowAnchor = 'auto';
+    container.append(child);
+    const action = followBottom(container, { follow: true });
+
+    child.remove();
+    action.destroy();
+
+    expect(child.style.overflowAnchor).toBe('auto');
+  });
 
   it('keeps a captured bottom lock exact through mutation and resize frames', () => {
     const distances: number[] = [];
@@ -334,7 +420,7 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
-  it('corrects narrow leased growth before an already-queued sampler frame', () => {
+  it('corrects narrow leased growth when its resize observation delivers', () => {
     const wrapper = document.createElement('div');
     const row = document.createElement('div');
     wrapper.append(row);

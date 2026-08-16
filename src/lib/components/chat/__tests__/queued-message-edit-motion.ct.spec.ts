@@ -107,12 +107,17 @@ test('preserves a deliberately scrolled-up viewport during edit, refresh, reorde
   });
   const initialTop = await transcript.evaluate((node) => node.scrollTop);
   await startSampling(transcript, row, 36);
-  await row.getByTestId('queued-message-content').click();
+  // Locator.click() scrolls an off-screen target into view before dispatching
+  // input, which would make this an automation-scroll test instead.
+  await row.getByTestId('queued-message-content').dispatchEvent('click');
   const textarea = row.locator('textarea');
-  await textarea.fill('one\ntwo\nthree');
+  await textarea.evaluate((node, value) => {
+    node.value = value;
+    node.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  }, 'one\ntwo\nthree');
   await component.getByTestId('queued-edit-refresh').click();
   await component.getByTestId('queued-edit-reorder').click();
-  await textarea.press('Escape');
+  await textarea.dispatchEvent('keydown', { key: 'Escape' });
   const samples = await finishSampling(page);
   expect(samples.every((sample) => sample.editModes + sample.displayModes === 1)).toBe(true);
   expect(await transcript.evaluate((node) => node.scrollTop)).toBeCloseTo(initialTop, 1);

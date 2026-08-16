@@ -76,6 +76,45 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let destroyed = false;
   const mutationElements = new Map<HTMLElement, number>();
   const persistentResizeElements = new WeakSet<HTMLElement>();
+  const originalOverflowAnchors = new Map<HTMLElement, string>();
+  const nativeBottomAnchor = document.createElement('div');
+  nativeBottomAnchor.dataset.followBottomAnchor = '';
+  nativeBottomAnchor.setAttribute('aria-hidden', 'true');
+  nativeBottomAnchor.style.cssText =
+    'height:1px;overflow-anchor:auto;pointer-events:none;flex:0 0 auto;';
+
+  function excludeNativeAnchor(element: HTMLElement) {
+    if (element === nativeBottomAnchor || originalOverflowAnchors.has(element)) return;
+    originalOverflowAnchors.set(element, element.style.overflowAnchor);
+    element.style.overflowAnchor = 'none';
+  }
+
+  function restoreNativeAnchor(element: HTMLElement) {
+    const original = originalOverflowAnchors.get(element);
+    if (original === undefined) return;
+    element.style.overflowAnchor = original;
+    originalOverflowAnchors.delete(element);
+  }
+
+  function setNativeBottomAnchorActive(active: boolean) {
+    nativeBottomAnchor.style.overflowAnchor = active ? 'auto' : 'none';
+    if (!active) nativeBottomAnchor.remove();
+    else if (nativeBottomAnchor.parentElement !== container || nativeBottomAnchor.nextSibling) {
+      container.append(nativeBottomAnchor);
+    }
+  }
+
+  function setupNativeBottomAnchor() {
+    for (const child of container.children) {
+      if (child instanceof HTMLElement) excludeNativeAnchor(child);
+    }
+    setNativeBottomAnchorActive(isFollowing);
+  }
+
+  function teardownNativeBottomAnchor() {
+    nativeBottomAnchor.remove();
+    for (const element of originalOverflowAnchors.keys()) restoreNativeAnchor(element);
+  }
 
   function observePersistentResize(element: HTMLElement) {
     persistentResizeElements.add(element);
@@ -114,10 +153,12 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function setFollowing(value: boolean, notify = true) {
-    if (isFollowing !== value) {
+    const changed = isFollowing !== value;
+    if (changed) {
       isFollowing = value;
-      if (notify) onFollowChange?.(value);
     }
+    setNativeBottomAnchorActive(value);
+    if (changed && notify) onFollowChange?.(value);
     if (!value) cancelSettle();
     reportState();
   }
@@ -315,13 +356,18 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       // When new children are added, observe them for size changes too
       for (const mutation of mutations) {
         if (mutation.type === 'childList') {
+          for (const node of mutation.removedNodes) {
+            if (node instanceof HTMLElement) restoreNativeAnchor(node);
+          }
           for (const node of mutation.addedNodes) {
-            if (node instanceof HTMLElement && resizeObserver) {
+            if (node instanceof HTMLElement && node !== nativeBottomAnchor && resizeObserver) {
               observePersistentResize(node);
+              if (node.parentElement === container) excludeNativeAnchor(node);
             }
           }
         }
       }
+      setNativeBottomAnchorActive(isFollowing);
       handleLayoutChange();
     });
     mutationObserver.observe(container, {
@@ -336,7 +382,9 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
     // Also observe children for size changes
     for (const child of container.children) {
-      if (child instanceof HTMLElement) observePersistentResize(child);
+      if (child instanceof HTMLElement && child !== nativeBottomAnchor) {
+        observePersistentResize(child);
+      }
     }
   }
 
@@ -359,6 +407,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   window.addEventListener('pointercancel', handlePointerUp, { passive: true });
 
   // Initial setup
+  setupNativeBottomAnchor();
   setupObservers();
   if (isFollowing) setExactBottom();
   reportState();
@@ -387,6 +436,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       cancelSettle();
       if (bottomFollowers.get(container) === follower) bottomFollowers.delete(container);
       teardownObservers();
+      teardownNativeBottomAnchor();
       container.removeEventListener('scroll', handleScroll);
       container.removeEventListener('wheel', handleWheel);
       container.removeEventListener('touchstart', handleTouchStart);
