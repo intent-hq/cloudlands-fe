@@ -1,8 +1,6 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import type {
   WebSocketApiState,
-  WebSocketApiStatusSnapshot,
 } from "./websocket-api-types";
 
 export const initialState: WebSocketApiState = {
@@ -19,81 +17,4 @@ export const initialState: WebSocketApiState = {
   discoveryCountdownNow: null,
 };
 
-export const setWebSocketApiLoading = createAction<[loading: boolean]>(
-  "websocketApi/setLoading"
-);
-
-export const setWebSocketApiRegenerating = createAction<[regenerating: boolean]>(
-  "websocketApi/setRegenerating"
-);
-
-export const setWebSocketApiError = createAction<[error: string | null]>(
-  "websocketApi/setError"
-);
-
-export const webSocketApiStatusLoaded = createAction<[status: WebSocketApiStatusSnapshot]>(
-  "websocketApi/statusLoaded"
-);
-
-export const setWebSocketApiEnabledState = createAction<[enabled: boolean]>(
-  "websocketApi/setEnabledState"
-);
-
-export const setWebSocketApiToken = createAction<[token: string]>(
-  "websocketApi/setToken"
-);
-
-export const setWebSocketApiDiscoveryState = createAction<
-  [enabled: boolean, expiresAt: number | null]
->("websocketApi/setDiscoveryState");
-
-export const setWebSocketApiDiscoveryCountdownNow = createAction<[now: number | null]>(
-  "websocketApi/setDiscoveryCountdownNow"
-);
-
-export const webSocketApiDiscoveryAutoDisabled = createAction(
-  "websocketApi/discoveryAutoDisabled"
-);
-
 export const websocketApiReducer = createReducer<WebSocketApiState>(initialState);
-websocketApiReducer.with(setWebSocketApiLoading, (state, { payload: [loading] }) => ({
-    ...state,
-    loading,
-  }));
-websocketApiReducer.with(setWebSocketApiRegenerating, (state, { payload: [regenerating] }) => ({
-    ...state,
-    regenerating,
-  }));
-websocketApiReducer.with(setWebSocketApiError, (state, { payload: [error] }) => ({
-    ...state,
-    error,
-  }));
-websocketApiReducer.with(webSocketApiStatusLoaded, (state, { payload: [status] }) => ({
-    ...state,
-    ...status,
-    error: null,
-  }));
-websocketApiReducer.with(setWebSocketApiEnabledState, (state, { payload: [enabled] }) => ({
-    ...state,
-    enabled,
-  }));
-websocketApiReducer.with(setWebSocketApiToken, (state, { payload: [token] }) => ({
-    ...state,
-    token,
-  }));
-websocketApiReducer.with(setWebSocketApiDiscoveryState, (state, { payload: [enabled, expiresAt] }) => ({
-    ...state,
-    discoveryEnabled: enabled,
-    discoveryExpiresAt: expiresAt,
-    discoveryCountdownNow: enabled && expiresAt ? state.discoveryCountdownNow : null,
-  }));
-websocketApiReducer.with(setWebSocketApiDiscoveryCountdownNow, (state, { payload: [now] }) => ({
-    ...state,
-    discoveryCountdownNow: now,
-  }));
-websocketApiReducer.with(webSocketApiDiscoveryAutoDisabled, (state) => ({
-    ...state,
-    discoveryEnabled: false,
-    discoveryExpiresAt: null,
-    discoveryCountdownNow: null,
-  }));

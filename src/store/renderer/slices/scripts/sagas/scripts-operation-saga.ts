@@ -7,16 +7,7 @@ import {
   workspaceDeleted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import {
-  clearScriptOperations,
-  disposeScripts,
-  refreshScripts,
-  restartScriptRequested,
-  scriptOperationFailed,
-  scriptOperationSucceeded,
-  startScriptRequested,
-  stopScriptRequested,
-} from '../scripts-slice';
+import { clearScriptOperations, refreshScripts, restartScriptRequested, scriptOperationFailed, scriptOperationSucceeded, startScriptRequested, stopScriptRequested } from '../scripts-slice';
 import type { ScriptQuickAction } from '../scripts-types';
 
 type ScriptOperationRequest = ReturnType<
@@ -30,8 +21,7 @@ function operationContext(action: ScriptOperationRequest): string {
 function matchesWorkspaceCleanup(workspaceId: string) {
   return (action: { type: string; payload?: unknown }) =>
     (action.type === workspaceUnmounted.type ||
-      action.type === workspaceDeleted.type ||
-      action.type === disposeScripts.type) &&
+      action.type === workspaceDeleted.type) &&
     Array.isArray(action.payload) &&
     action.payload[0] === workspaceId;
 }

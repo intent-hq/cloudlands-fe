@@ -229,7 +229,7 @@ import {
   setServers,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
-import { disposeScripts, upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
+import { upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
 import type { ScriptOutputBuffer } from '$store/renderer/slices/scripts/scripts-types';
 import { addTerminal } from '$store/renderer/slices/terminals/terminals-slice';
 import { selectTerminalsForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
@@ -3651,7 +3651,8 @@ describe('daemonEventsBridge (legacy mock-IPC relay — daemon events → listen
 });
 
 describe('daemonEventsBridge (script wire contract — script:output/state → scripts slice)', () => {
-  const SCRIPT_ID = 'script-bridge-1';
+  let scriptSequence = 0;
+  let SCRIPT_ID = '';
 
   function seedScript(): void {
     appStore.dispatch(
@@ -3715,11 +3716,11 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
   });
 
   beforeEach(async () => {
+    SCRIPT_ID = `script-bridge-${++scriptSequence}`;
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
-    appStore.dispatch(disposeScripts(WS));
     seedScript();
   });
 

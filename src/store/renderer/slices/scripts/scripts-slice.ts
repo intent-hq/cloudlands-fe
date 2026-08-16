@@ -102,10 +102,6 @@ export const scriptOperationFailed = createAction<
 
 export const clearScriptOperations = createAction<[wsId: string]>('scripts/clearScriptOperations');
 
-/** Set loading state */
-export const setScriptsLoading =
-  createAction<[wsId: string, loading: boolean]>('scripts/setLoading');
-
 /** Set initialized state */
 export const setScriptsInitialized =
   createAction<[wsId: string, initialized: boolean]>('scripts/setInitialized');
@@ -136,25 +132,6 @@ export const updateRuntimeState = createAction(
 /** Append one raw output chunk for a script */
 export const appendScriptOutput =
   createAction<[wsId: string, scriptId: string, chunk: ScriptOutputChunk]>('scripts/appendOutput');
-
-/**
- * Replace a script's output buffer wholesale. No production dispatcher today
- * (reopen replay is served straight from the renderer store); kept for tests
- * and future seeding. The reducer resets `dropped` to 0 — do not dispatch
- * while a `ScriptOutputViewer` is live, or its absolute stream position would
- * exceed the new buffer's and it would render nothing until it catches up.
- */
-export const setScriptOutput =
-  createAction<[wsId: string, scriptId: string, chunks: ScriptOutputChunk[]]>('scripts/setOutput');
-
-/**
- * Dispose workspace scripts state. No production dispatcher today: scripts
- * state is intentionally retained for the session across workspace switches
- * and overlay unmounts (monorepo#1330), matching terminals. Kept for
- * test-harness state resets (mirroring `setScriptOutput` above); wire it into
- * a `workspaceDeleted` purge if scripts ever need clearing on delete.
- */
-export const disposeScripts = createAction<[wsId: string]>('scripts/dispose');
 
 // ============================================================================
 // Reducer
@@ -205,10 +182,6 @@ scriptsReducer.with(clearScriptOperations, (state, { payload: [wsId] }) => {
   const ws = getWorkspaceState(state, wsId);
   if (Object.keys(ws.operations).length === 0) return state;
   return setWorkspaceState(state, wsId, { ...ws, operations: {} });
-});
-scriptsReducer.with(setScriptsLoading, (state, { payload: [wsId, loading] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, { ...ws, loading });
 });
 scriptsReducer.with(setScriptsInitialized, (state, { payload: [wsId, initialized] }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -261,13 +234,3 @@ scriptsReducer.with(appendScriptOutput, (state, { payload: [wsId, scriptId, chun
     outputBuffers: { ...ws.outputBuffers, [scriptId]: combined },
   });
 });
-scriptsReducer.with(setScriptOutput, (state, { payload: [wsId, scriptId, chunks] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    outputBuffers: { ...ws.outputBuffers, [scriptId]: trimOutputBuffer({ chunks, dropped: 0 }) },
-  });
-});
-scriptsReducer.with(disposeScripts, (state, { payload: [wsId] }) =>
-  clearWorkspaceState(state, wsId),
-);

@@ -3,17 +3,7 @@ import {
   expect,
   it,
 } from "vitest";
-import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
-import {
-  applyWorkspaceDisabledServers,
-  initialState,
-  mcpSettingsReducer,
-  setAdvancedSaveStatus,
-  setServerErrorMessage,
-  setServerStatus,
-  setServers,
-  toggleWorkspaceMcpServer,
-} from "./mcp-settings-slice";
+import { initialState, mcpSettingsReducer, setAdvancedSaveStatus, setServerErrorMessage, setServerStatus, setServers, toggleWorkspaceMcpServer } from "./mcp-settings-slice";
 import type { McpServerConfig } from "./mcp-settings-types";
 
 const servers: McpServerConfig[] = [
@@ -48,18 +38,6 @@ describe("mcpSettingsReducer", () => {
     expect(state.advancedSaveError).toBeNull();
   });
 
-  it("applies workspace disabled server names without enabled booleans", () => {
-    const state = mcpSettingsReducer(
-      initialState,
-      applyWorkspaceDisabledServers("ws-1", ["linear", "filesystem"])
-    );
-
-    expect(state.byWorkspaceId["ws-1"].disabledServers).toEqual({
-      linear: true,
-      filesystem: true,
-    });
-  });
-
   it("toggles workspace server enabled state by adding and removing disabled names", () => {
     let state = mcpSettingsReducer(
       initialState,
@@ -84,18 +62,5 @@ describe("mcpSettingsReducer", () => {
     );
 
     expect(nextState).toBe(state);
-  });
-
-  it("clears workspace MCP state when a workspace unmounts", () => {
-    let state = mcpSettingsReducer(
-      initialState,
-      applyWorkspaceDisabledServers("ws-1", ["linear"])
-    );
-    state = mcpSettingsReducer(state, applyWorkspaceDisabledServers("ws-2", ["filesystem"]));
-
-    const nextState = mcpSettingsReducer(state, workspaceUnmounted("ws-1"));
-
-    expect(nextState.byWorkspaceId["ws-1"]).toBeUndefined();
-    expect(nextState.byWorkspaceId["ws-2"]).toBeDefined();
   });
 });

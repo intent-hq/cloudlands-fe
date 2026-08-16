@@ -15,12 +15,6 @@ import type { ReleaseNotes, ReleaseNotesState } from "./release-notes-types";
 /** Trigger initialization: subscribe to the main-process "show" push */
 export const initializeReleaseNotes = createAction("releaseNotes/initialize");
 
-/** Set loading state */
-export const setLoading = createAction<[loading: boolean]>("releaseNotes/setLoading");
-
-/** Set error state */
-export const setError = createAction<[error: string | null]>("releaseNotes/setError");
-
 /** Mark as initialized */
 export const setInitialized = createAction("releaseNotes/setInitialized");
 
@@ -57,14 +51,6 @@ export const initialState: ReleaseNotesState = {
 // ---------------------------------------------------------------------------
 
 export const releaseNotesReducer = createReducer<ReleaseNotesState>(initialState);
-releaseNotesReducer.with(setLoading, (state, { payload: [loading] }) => ({
-    ...state,
-    loading,
-  }));
-releaseNotesReducer.with(setError, (state, { payload: [error] }) => ({
-    ...state,
-    error,
-  }));
 releaseNotesReducer.with(setInitialized, (state) => ({
     ...state,
     initialized: true,

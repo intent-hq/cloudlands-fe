@@ -98,10 +98,6 @@ export const updateFileContent = createAction<[wsId: string, path: string, conte
   "files/updateFileContent",
 );
 
-export const applyExternalFileContent = createAction<
-  [wsId: string, path: string, content: string, isBinary?: boolean, truncated?: boolean]
->("files/applyExternalFileContent");
-
 export const saveFileContentRequested = createAction<
   [wsId: string, path: string, absolutePath: string, content: string, options?: FileContentSaveOptions]
 >("files/saveFileContentRequested");
@@ -171,25 +167,6 @@ filesReducer.with(updateFileContent, (state, { payload: [wsId, path, content] })
     if (entry.localContent === content) return entry;
     return { ...entry, localContent: content };
   }),
-);
-filesReducer.with(
-  applyExternalFileContent,
-  (state, { payload: [wsId, path, content, isBinary, truncated] }) =>
-    upsertFileEntry(state, wsId, path, (entry) => {
-      const hasPendingEdits =
-        entry.localContent !== null && entry.localContent !== entry.originalContent;
-      const nextLocal = hasPendingEdits ? entry.localContent : content;
-      return {
-        ...entry,
-        originalContent: content,
-        localContent: nextLocal,
-        lastUpdated: bumpLastUpdated(entry),
-        loading: false,
-        error: null,
-        isBinary: isBinary ?? entry.isBinary,
-        truncated: truncated ?? false,
-      };
-    }),
 );
 filesReducer.with(saveFileContentRequested, (state, { payload: [wsId, path, absolutePath] }) =>
   upsertFileEntry(state, wsId, path, (entry) => ({

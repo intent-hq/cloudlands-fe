@@ -3,26 +3,7 @@ import {
   it,
   expect,
 } from "vitest";
-import {
-  terminalsReducer,
-  openTerminalOverlay,
-  closeTerminalOverlay,
-  toggleTerminalOverlay,
-  selectTerminal,
-  addTerminal,
-  removeTerminal,
-  setTerminalOverlayHeight,
-  renameTerminal,
-  saveTerminalMetadata,
-  loadWorkspaceTerminals,
-  hydrateHeight,
-  setTerminalsLoaded,
-  setIsLoadingTerminals,
-  markTerminalRecentlyCreated,
-  setTerminalsList,
-  type TerminalOverlayState,
-  type TerminalTab,
-} from "./terminals-slice";
+import { terminalsReducer, openTerminalOverlay, closeTerminalOverlay, toggleTerminalOverlay, selectTerminal, addTerminal, removeTerminal, setTerminalOverlayHeight, renameTerminal, saveTerminalMetadata, loadWorkspaceTerminals, hydrateHeight, type TerminalOverlayState, type TerminalTab } from "./terminals-slice";
 import {
   createCollection,
   getItems,
@@ -504,38 +485,6 @@ describe("terminalsReducer", () => {
     });
   });
 
-  describe("setTerminalsLoaded", () => {
-    it("should set terminalsLoaded flag", () => {
-      const state = terminalsReducer(initialState, setTerminalsLoaded(WS, true));
-      expect(getWs(state).terminalsLoaded).toBe(true);
-    });
-
-    it("should return same state if unchanged", () => {
-      const state = terminalsReducer(initialState, setTerminalsLoaded(WS, false));
-      expect(state).toBe(initialState);
-    });
-  });
-
-  describe("setIsLoadingTerminals", () => {
-    it("should set isLoadingTerminals flag", () => {
-      const state = terminalsReducer(initialState, setIsLoadingTerminals(WS, true));
-      expect(getWs(state).isLoadingTerminals).toBe(true);
-    });
-  });
-
-  describe("markTerminalRecentlyCreated", () => {
-    it("should add terminal to recently created list", () => {
-      const state = terminalsReducer(initialState, markTerminalRecentlyCreated(WS, "t1"));
-      expect(getWs(state).recentlyCreatedTerminals).toEqual(["t1"]);
-    });
-
-    it("should not duplicate", () => {
-      let state = terminalsReducer(initialState, markTerminalRecentlyCreated(WS, "t1"));
-      state = terminalsReducer(state, markTerminalRecentlyCreated(WS, "t1"));
-      expect(getWs(state).recentlyCreatedTerminals).toEqual(["t1"]);
-    });
-  });
-
   describe("fresh-create stale customName regression (PanelLayout.handleCreateTerminal)", () => {
     // A previously-renamed terminal can leave a stale entry in the slice
     // (e.g. tab closed without removing the terminal, or daemon restart that
@@ -718,31 +667,6 @@ describe("terminalsReducer", () => {
       const ws = getWs(state);
       expect(terms(state).map((t) => t.id)).toEqual(["pty-42"]);
       expect(ws.daemonBootId).toBe("boot-1");
-    });
-  });
-
-  describe("setTerminalsList", () => {
-    it("should replace terminal list preserving custom names", () => {
-      const stateWith: TerminalOverlayState = {
-        ...initialState,
-        workspaces: { [WS]: {
-          isOpen: false,
-          activeTerminalId: null,
-          terminals: col([{ id: "t1", name: "T1", customName: "My Term" }]),
-          terminalsLoaded: false,
-          isLoadingTerminals: false,
-          recentlyCreatedTerminals: [],
-          daemonBootId: null,
-        }},
-      };
-      const state = terminalsReducer(stateWith, setTerminalsList(WS, [
-        { id: "t1", name: "New T1" },
-        { id: "t2", name: "T2" },
-      ]));
-      const ws = getWs(state);
-      expect(terms(state)).toHaveLength(2);
-      expect(getItem(ws.terminals, "t1")?.customName).toBe("My Term");
-      expect(getItem(ws.terminals, "t1")?.name).toBe("New T1");
     });
   });
 });

@@ -17,7 +17,7 @@ const emptyWorkspaceState: PRStatusWorkspaceState = {
   lastError: null,
 };
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
+const { getWorkspaceState, setWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceState);
 
 export { getWorkspaceState as getPRStatusWorkspaceState };
@@ -44,21 +44,6 @@ export const prStatusRefreshCompleted = createAction(
   (wsId: string, success: boolean, error?: string) => ({ wsId, success, error, timestamp: Date.now() })
 );
 
-/** Clean up all PR status tracking for a workspace */
-export const cleanupPRStatusWorkspace = createAction<[wsId: string]>(
-  "prStatus/cleanupWorkspace"
-);
-
-/** Start PR polling for a workspace (saga-only trigger) */
-export const startPRPolling = createAction<[wsId: string]>(
-  "prStatus/startPolling"
-);
-
-/** Stop PR polling for a workspace (saga-only trigger) */
-export const stopPRPolling = createAction<[wsId: string]>(
-  "prStatus/stopPolling"
-);
-
 // ── Reducer ──
 
 export const prStatusReducer = createReducer<PRStatusState>(initialState);
@@ -80,7 +65,4 @@ prStatusReducer.with(prStatusRefreshCompleted, (state, action) => {
       lastError: error ?? null,
     });
   });
-prStatusReducer.with(cleanupPRStatusWorkspace, (state, { payload: [wsId] }) =>
-    clearWorkspaceState(state, wsId)
-  );
 

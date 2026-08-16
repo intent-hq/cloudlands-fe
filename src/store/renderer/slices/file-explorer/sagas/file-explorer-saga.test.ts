@@ -4,21 +4,7 @@ import { getItem } from '@augmentcode/themis/utils/collections/collection-utils'
 
 import { appClient } from '$lib/client';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import {
-  addExpandedPath,
-  addLoadingPath,
-  clearFileExplorerForWorkspace,
-  expandToPathRequested,
-  fileExplorerReducer,
-  initialState,
-  initializeFileExplorer,
-  refreshFileExplorer,
-  removeLoadingPath,
-  setFileExplorerInitialized,
-  setFileExplorerLoading,
-  setFileExplorerWorkspacePath,
-  setRootNode,
-} from '../file-explorer-slice';
+import { addExpandedPath, addLoadingPath, expandToPathRequested, fileExplorerReducer, initialState, initializeFileExplorer, refreshFileExplorer, removeLoadingPath, setFileExplorerInitialized, setFileExplorerLoading, setFileExplorerWorkspacePath, setRootNode } from '../file-explorer-slice';
 import { fileExplorerSaga } from './file-explorer-saga';
 
 const settle = async () => {
@@ -205,37 +191,6 @@ describe('fileExplorerSaga', () => {
       type: 'file',
       children: [],
     });
-    task.cancel();
-    await task.toPromise();
-  });
-
-  it('does not recreate cleared workspace state when cleanup cancels a directory load', async () => {
-    vi.spyOn(appClient.files, 'listDirectory').mockReturnValue(new Promise(() => undefined));
-    let fileExplorer = fileExplorerReducer(
-      undefined,
-      setFileExplorerWorkspacePath('ws-1', '/repo'),
-    );
-    fileExplorer = fileExplorerReducer(fileExplorer, setRootNode('ws-1', root));
-    const channel = stdChannel();
-    const actions: Parameters<typeof fileExplorerReducer>[1][] = [];
-    const dispatch = (action: Parameters<typeof fileExplorerReducer>[1]) => {
-      actions.push(action);
-      fileExplorer = fileExplorerReducer(fileExplorer, action);
-    };
-    const task = runSaga(
-      { channel, dispatch, getState: () => ({ fileExplorer }) },
-      fileExplorerSaga,
-    );
-
-    channel.put(expandToPathRequested('ws-1', '/repo/src/'));
-    await settle();
-    fileExplorer = fileExplorerReducer(fileExplorer, clearFileExplorerForWorkspace('ws-1'));
-    const actionCountBeforeCleanup = actions.length;
-    channel.put(workspaceUnmounted('ws-1'));
-    await settle();
-
-    expect(actions.slice(actionCountBeforeCleanup)).toEqual([]);
-    expect(fileExplorer.byWorkspaceId).toEqual({});
     task.cancel();
     await task.toPromise();
   });

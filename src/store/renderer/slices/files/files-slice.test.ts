@@ -5,20 +5,7 @@ import {
 } from "vitest";
 import { getItem } from "@augmentcode/themis/utils/collections/collection-utils";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
-import {
-  applyExternalFileContent,
-  emptyFilesWorkspaceState,
-  filesReducer,
-  initialState,
-  loadFileContentFailed,
-  loadFileContentRequested,
-  loadFileContentSucceeded,
-  removeFileContentEntry,
-  saveFileContentFailed,
-  saveFileContentRequested,
-  saveFileContentSucceeded,
-  updateFileContent,
-} from "./files-slice";
+import { emptyFilesWorkspaceState, filesReducer, initialState, loadFileContentFailed, loadFileContentRequested, loadFileContentSucceeded, removeFileContentEntry, saveFileContentFailed, saveFileContentRequested, saveFileContentSucceeded, updateFileContent } from "./files-slice";
 import {
   selectFileContent,
   selectFileIsDirty,
@@ -324,43 +311,6 @@ describe("filesReducer", () => {
       localContent: "edited",
       saving: false,
       error: "save failed",
-    });
-  });
-
-  it("applies external content as clean content", () => {
-    const editedState = filesReducer(initialState, loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, "original", false));
-    const externalState = filesReducer(editedState, applyExternalFileContent(WS_ID, PATH, "external", false));
-
-    expect(externalState.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
-      originalContent: "external",
-      localContent: "external",
-      lastUpdated: 1,
-      error: null,
-      truncated: false,
-    });
-    expect(selectFileIsDirty.select({ files: externalState } as any, WS_ID, PATH)).toBe(false);
-  });
-
-  it("preserves user edits when external content arrives while edits are pending", () => {
-    let state = filesReducer(initialState, loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, "X", false));
-    state = filesReducer(state, updateFileContent(WS_ID, PATH, "Y"));
-    state = filesReducer(state, applyExternalFileContent(WS_ID, PATH, "Z", false));
-
-    const entry = getItem(state.byWorkspaceId[WS_ID].files, PATH);
-    expect(entry?.localContent).toBe("Y");
-    expect(entry?.originalContent).toBe("Z");
-  });
-
-  it("stores truncated state from external content", () => {
-    const externalState = filesReducer(
-      initialState,
-      applyExternalFileContent(WS_ID, PATH, "partial external", false, true),
-    );
-
-    expect(externalState.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
-      originalContent: "partial external",
-      localContent: "partial external",
-      truncated: true,
     });
   });
 
