@@ -1,11 +1,30 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
+import type { Locator } from '@playwright/test';
 import WorkspaceColumnsRevealHarness from './mocks/WorkspaceColumnsRevealHarness.svelte';
+
+type MountedComponent = { locator: (selector: string) => Locator };
+
+async function requireReadyHarness(component: MountedComponent) {
+  const host = component.locator('[data-reveal-host]');
+  const ready = component.locator('[data-reveal-host][data-reveal-ready="true"]');
+  const initializationError = component.locator(
+    '[data-reveal-initialization-error], [data-reveal-boundary-error]',
+  );
+  await expect(host).toBeVisible();
+  await expect(ready.or(initializationError)).toBeAttached();
+  if (await initializationError.count()) {
+    throw new Error(
+      `WorkspaceColumnsRevealHarness initialization failed: ${await initializationError.first().textContent()}`,
+    );
+  }
+  return host;
+}
 
 test('fully reveals and consumes an equivalent panel request at 200% zoom', async ({ mount }) => {
   const component = await mount(WorkspaceColumnsRevealHarness, {
     props: { viewportWidth: 400, zoom: 2 },
   });
-  const host = component.locator('[data-reveal-host]');
+  const host = await requireReadyHarness(component);
   const state = component.locator('[data-reveal-state]');
   const scroller = component.locator('[data-workspace-columns]');
   const target = component.locator('[data-panel-id="target-panel"]');
