@@ -55,6 +55,7 @@
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_ICON_CLASS,
     SUBSCRIPTION_ICON_BUTTON_CLASS,
+    SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
   } from './subscription-disclosure';
   import { getExpandedPrMonitorId, setExpandedPrMonitorId } from './agent-subscriptions-view-state';
@@ -266,7 +267,7 @@
     {#each activeMonitors as monitor (monitor.monitorId)}
       {@const detailsId = `monitored-pr-details-${monitor.monitorId}`}
       <div
-        class="overflow-hidden border-t border-border/40 first:border-t-0"
+        class="overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
         data-monitor-state={monitor.state}
         data-subscription-motion-row="pr-monitor"
         role="group"

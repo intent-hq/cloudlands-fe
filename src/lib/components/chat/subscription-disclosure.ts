@@ -14,6 +14,9 @@ export const SUBSCRIPTION_LEADING_COLUMN_CLASS =
   'inline-flex size-5 shrink-0 items-center justify-center leading-none';
 export const SUBSCRIPTION_LEADING_CONTENT_CLASS =
   'grid grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-x-2';
+export const SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS =
+  "relative before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-border/40 before:content-['']";
+export const SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS = `${SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS} first:before:hidden`;
 export const SUBSCRIPTION_DISCLOSURE_ROW_CLASS =
   'type-body flex h-9! w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3! py-2! font-normal text-subtle';
 export const SUBSCRIPTION_COMPACT_DISCLOSURE_ROW_CLASS =
@@ -55,7 +58,6 @@ export function safeSubscriptionRowTransition(node: Element): TransitionConfig {
       `overflow:hidden;height:${t * height}px;` +
       `padding-top:${t * value('paddingTop')}px;padding-bottom:${t * value('paddingBottom')}px;` +
       `margin-top:${t * value('marginTop')}px;margin-bottom:${t * value('marginBottom')}px;` +
-      `border-top-width:${t * value('borderTopWidth')}px;border-bottom-width:${t * value('borderBottomWidth')}px;` +
       `opacity:${t * (Number.isFinite(opacity) ? opacity : 1)};transform:translateY(${-2 * u}px);`,
   };
 }

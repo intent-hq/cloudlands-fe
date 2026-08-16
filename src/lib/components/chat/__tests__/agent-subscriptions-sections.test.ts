@@ -92,6 +92,8 @@ import AgentSubscriptions from '../AgentSubscriptions.svelte';
 import {
   SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
   SUBSCRIPTION_CARD_SURFACE_CLASS,
+  SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
+  SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS,
 } from '../subscription-disclosure';
 import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
 
@@ -916,6 +918,19 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       expect(visibleAgentIds()).toEqual(['agent-3', 'agent-2', 'agent-1', 'agent-primary']),
     );
     expect(screen.getAllByTestId('agent-list-item')).toHaveLength(4);
+    const list = screen.getByTestId('one-shot-agent-list');
+    for (const token of SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS.split(' ')) {
+      expect(list.classList).toContain(token);
+    }
+    expect(list.classList).not.toContain('border-t');
+    for (const item of screen.getAllByTestId('agent-list-item')) {
+      const owner = item.closest<HTMLElement>('[data-subscription-motion-row]');
+      expect(owner).toBeTruthy();
+      for (const token of SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS.split(' ')) {
+        expect(owner?.classList).toContain(token);
+      }
+      expect(owner?.classList).not.toContain('border-t');
+    }
   });
 
   it('keeps per-agent stop and subscription-scoped cancel actions', async () => {

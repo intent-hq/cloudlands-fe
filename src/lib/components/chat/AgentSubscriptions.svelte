@@ -56,6 +56,8 @@
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_ICON_CLASS,
+    SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
+    SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS,
     SUBSCRIPTION_LEADING_COLUMN_CLASS,
     SUBSCRIPTION_LEADING_CONTENT_CLASS,
     SUBSCRIPTION_ROW_GEOMETRY_CLASS,
@@ -520,7 +522,7 @@
 {#snippet watchedAgentRow(row: WaitingAgentRow, finished: boolean)}
   {@const watchedAgentId = row.agentId}
   <div
-    class="group/watch w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 first:border-t-0"
+    class="group/watch w-full min-w-0 max-w-full overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
     data-agent-id={watchedAgentId}
     data-subscription-motion-row={finished ? 'finished' : 'waiting'}
     transition:safeSubscriptionRowTransition
@@ -677,7 +679,7 @@
     <!-- One top-level waiting disclosure for every unique watched agent. -->
     {#if waitingAgentRows.length > 0}
       <div
-        class="w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 first:border-t-0"
+        class="w-full min-w-0 max-w-full overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
         data-testid="one-shot-watches"
         transition:safeSlide={{ duration: 150 }}
       >
@@ -749,7 +751,7 @@
           <div
             id={waitingAgentListId}
             class="flex w-full min-w-0 max-w-full flex-col overflow-hidden {shouldGroupWaitingAgents
-              ? 'border-t border-border/40'
+              ? SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS
               : ''}"
             data-testid="one-shot-agent-list"
             data-agent-list-mode={shouldGroupWaitingAgents ? 'grouped' : 'direct'}
@@ -760,7 +762,7 @@
             {/each}
             {#if shouldGroupFinishedAgents}
               <div
-                class="w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 first:border-t-0"
+                class="w-full min-w-0 max-w-full overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
                 data-testid="finished-agent-group"
                 data-finished-at={latestFinishedAt}
               >
@@ -813,7 +815,7 @@
                 {#if finishedAgentsExpanded}
                   <div
                     id={finishedAgentListId}
-                    class="flex w-full min-w-0 max-w-full flex-col overflow-hidden border-t border-border/40"
+                    class="flex w-full min-w-0 max-w-full flex-col overflow-hidden {SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS}"
                     data-testid="finished-agent-list"
                     transition:safeSubscriptionSlide
                   >
