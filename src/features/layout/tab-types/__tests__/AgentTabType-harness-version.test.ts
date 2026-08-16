@@ -6,8 +6,9 @@
  *
  * Mirrors AgentCard-harness-version.test.ts for the tab menu: renders the
  * agentActions snippet through the real panel-header context and real Menu
- * components, and asserts the item's visibility, the feature-list flyout
- * (on/off states), and that legacy/absent shapes render sensibly.
+ * components, and asserts the item's visibility, that selecting it opens
+ * the read-only harness-features modal, and that legacy/absent shapes
+ * render sensibly.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
@@ -160,48 +161,55 @@ describe('AgentTabType harness version panel-actions menu item', () => {
     document.body.innerHTML = '';
   });
 
-  it('shows a disabled "Harness v1.0" item for a legacy session without a features snapshot', async () => {
-    seedSession({ harnessVersion: '1.0' });
+  it('opens the harness-features modal when clicked (features snapshot present)', async () => {
+    seedSession({
+      harnessVersion: '1.0',
+      harnessFeatures: { structuredQuestions: true, taskGraph: false },
+    });
     renderTab();
     await openPanelActionsMenu();
 
     const item = await screen.findByText('Harness v1.0');
     const menuItem = item.closest('[role="menuitem"]');
     expect(menuItem).not.toBeNull();
-    expect(menuItem!.getAttribute('aria-disabled')).toBe('true');
+    // Enabled, plain command item (no flyout).
+    expect(menuItem!.getAttribute('aria-disabled')).not.toBe('true');
+    expect(menuItem!.getAttribute('aria-haspopup')).not.toBe('menu');
+
+    await fireEvent.click(menuItem!);
+
+    const dialog = await screen.findByRole('dialog', { name: 'Harness v1.0' });
+    expect(dialog).toBeTruthy();
+    // Settings-page labels, not raw keys; snapshot value wins.
+    const list = dialog.querySelector('[data-testid="harness-features-list"]')!;
+    expect(list).not.toBeNull();
+    expect(screen.getByText('Structured questions')).toBeTruthy();
+    const states = Array.from(
+      dialog.querySelectorAll('[data-testid="harness-feature-state"]'),
+    ) as HTMLElement[];
+    const stateFor = (key: string) => states.find((el) => el.dataset.feature === key);
+    expect(stateFor('structuredQuestions')!.dataset.enabled).toBe('true');
+    expect(stateFor('taskGraph')!.dataset.enabled).toBe('false');
+    // Catalog keys absent from the snapshot render OFF.
+    expect(stateFor('backgroundHooks')!.dataset.enabled).toBe('false');
   });
 
-  it('lists feature on/off states in a flyout when the session carries harnessFeatures', async () => {
-    seedSession({
-      harnessVersion: '1.0',
-      harnessFeatures: { structuredQuestions: true, agentActions: false },
-    });
+  it('opens the modal for a legacy session without a features snapshot (all OFF)', async () => {
+    seedSession({ harnessVersion: '1.0' });
     renderTab();
     await openPanelActionsMenu();
 
     const item = await screen.findByText('Harness v1.0');
-    const subTrigger = item.closest('[role="menuitem"]');
-    expect(subTrigger).not.toBeNull();
-    // Parent is enabled so the flyout can open, and marked as a submenu host.
-    expect(subTrigger!.getAttribute('aria-disabled')).not.toBe('true');
-    expect(subTrigger!.getAttribute('aria-haspopup')).toBe('menu');
+    const menuItem = item.closest('[role="menuitem"]');
+    expect(menuItem!.getAttribute('aria-disabled')).not.toBe('true');
+    await fireEvent.click(menuItem!);
 
-    (subTrigger as HTMLElement).focus();
-    await fireEvent.keyDown(subTrigger!, { key: 'ArrowRight' });
-
-    // Feature identifiers rendered verbatim; enabled entries show the check.
-    const enabledEntry = await screen.findByText('structuredQuestions');
-    const disabledEntry = await screen.findByText('agentActions');
-    const enabledItem = enabledEntry.closest('[role="menuitem"]') as HTMLElement;
-    const disabledItem = disabledEntry.closest('[role="menuitem"]') as HTMLElement;
-    expect(enabledItem.querySelector('svg')).not.toBeNull();
-    expect(disabledItem.querySelector('svg')).toBeNull();
-    // Submenu entries are informational (inert).
-    expect(enabledItem.getAttribute('aria-disabled')).toBe('true');
-    expect(disabledItem.getAttribute('aria-disabled')).toBe('true');
-
-    // Opening the flyout does not close the menu (informational, not an action).
-    expect(screen.queryByText('Delete agent')).toBeTruthy();
+    const dialog = await screen.findByRole('dialog', { name: 'Harness v1.0' });
+    const states = Array.from(
+      dialog.querySelectorAll('[data-testid="harness-feature-state"]'),
+    ) as HTMLElement[];
+    expect(states.length).toBeGreaterThan(0);
+    expect(states.every((el) => el.dataset.enabled === 'false')).toBe(true);
   });
 
   it('renders the version verbatim (no reformatting)', async () => {
@@ -222,18 +230,15 @@ describe('AgentTabType harness version panel-actions menu item', () => {
     expect(screen.queryByText(/^Harness v/)).toBeNull();
   });
 
-  it('does not close the menu when the disabled item is clicked', async () => {
-    seedSession({ harnessVersion: '1.0' });
+  it('dismisses the modal with Escape', async () => {
+    seedSession({ harnessVersion: '1.0', harnessFeatures: { structuredQuestions: true } });
     renderTab();
     await openPanelActionsMenu();
 
-    const item = await screen.findByText('Harness v1.0');
-    await fireEvent.click(item);
+    await fireEvent.click(await screen.findByText('Harness v1.0'));
+    const dialog = await screen.findByRole('dialog', { name: 'Harness v1.0' });
 
-    // Still rendered: a disabled menu item is inert.
-    await waitFor(() => {
-      expect(screen.queryByText('Harness v1.0')).toBeTruthy();
-      expect(screen.queryByText('Delete agent')).toBeTruthy();
-    });
+    await fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });

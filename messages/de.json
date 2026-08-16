@@ -1688,6 +1688,7 @@
   "chat_agentCard_delegatedBy_label": "· Delegiert von {name}",
   "chat_agentCard_menu_delete_label": "Löschen",
   "chat_agentCard_menu_harnessVersion_label": "Harness v{version}",
+  "chat_harnessFeaturesModal_description": "Funktionen, mit denen diese Agentensitzung erstellt wurde. Diese Momentaufnahme ist schreibgeschützt und für die Lebensdauer der Sitzung festgelegt.",
   "chat_agentCard_menu_open_label": "Öffnen",
   "chat_agentCard_menu_rename_label": "Umbenennen",
   "chat_agentCard_fileManager_label": "Dateimanager",

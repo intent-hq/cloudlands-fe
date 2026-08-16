@@ -1688,6 +1688,7 @@
   "chat_agentCard_delegatedBy_label": "· {name} から委任",
   "chat_agentCard_menu_delete_label": "削除",
   "chat_agentCard_menu_harnessVersion_label": "ハーネス v{version}",
+  "chat_harnessFeaturesModal_description": "このエージェントセッションの作成時に有効だった機能です。このスナップショットは読み取り専用で、セッションの存続期間中は変更されません。",
   "chat_agentCard_menu_open_label": "開く",
   "chat_agentCard_menu_rename_label": "名前を変更",
   "chat_agentCard_fileManager_label": "ファイルマネージャー",
