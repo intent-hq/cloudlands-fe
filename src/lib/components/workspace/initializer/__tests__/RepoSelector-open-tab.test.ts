@@ -21,7 +21,16 @@ const mocks = vi.hoisted(() => {
     const fn = () => readable(getter);
     return Object.assign(fn, { select: () => getter() });
   };
-  return { selector, dispatch: vi.fn() };
+  const state = {
+    recentRepos: [] as Array<{
+      path: string;
+      type: 'local' | 'github';
+      githubUrl?: string;
+      name: string;
+      owner?: string;
+    }>,
+  };
+  return { selector, state, dispatch: vi.fn() };
 });
 
 vi.mock('$store/renderer/store', async () => {
@@ -66,7 +75,7 @@ vi.mock(
   '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
   () => ({
     selectWorkspaceInitializerDefaultParentPath: mocks.selector(() => ''),
-    selectWorkspaceInitializerRecentRepos: mocks.selector(() => []),
+    selectWorkspaceInitializerRecentRepos: mocks.selector(() => mocks.state.recentRepos),
     selectWorkspaceInitializerRemoteSetups: mocks.selector(() => []),
   }),
 );
@@ -110,6 +119,9 @@ vi.mock('$lib/components/workspace/initializer/AddRemoteSetupModal.svelte', asyn
 
 import RepoSelector from '../RepoSelector.svelte';
 import { warmImport } from '../../../../../test/warm-import';
+import { invoke } from '$lib/electron-bridge';
+import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
+import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 
 const DROPDOWN_HEADING = 'What repo should we work on?';
 const ACTIVE_TAB_CLASS = 'bg-background';
@@ -173,5 +185,181 @@ describe('RepoSelector open tab derived from the value prop', () => {
     expect(tabButton('Pick a repo').className).toContain(ACTIVE_TAB_CLASS);
     expect(tabButton('Copy local repo').className).not.toContain(ACTIVE_TAB_CLASS);
     expect(githubInput()?.value).toBe('');
+  });
+});
+
+// Regression: the open-time GitHub pre-fill used to seed searchTerm, so the
+// Recent list opened filtered down to the already-selected repo. Only actual
+// typing should filter it (intent-hq/monorepo).
+describe('RepoSelector Recent list vs the open-time pre-fill', () => {
+  const GITHUB_RECENTS = [
+    {
+      path: 'octo/alpha',
+      type: 'github' as const,
+      githubUrl: 'https://github.com/octo/alpha',
+      name: 'alpha',
+      owner: 'octo',
+    },
+    {
+      path: 'octo/beta',
+      type: 'github' as const,
+      githubUrl: 'https://github.com/octo/beta',
+      name: 'beta',
+      owner: 'octo',
+    },
+  ];
+
+  /** Normalized labels of the rendered Recent-list repo buttons. */
+  const recentRepoLabels = () =>
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'))
+      .map((b) => b.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+      .filter((text) => text.startsWith('octo /'));
+
+  afterEach(() => {
+    cleanup();
+    mocks.dispatch.mockReset();
+    mocks.state.recentRepos = [];
+  });
+
+  it('shows the full Recent list on open despite the pre-filled input', async () => {
+    mocks.state.recentRepos = GITHUB_RECENTS;
+    await openDropdown({ value: 'octo/alpha' });
+
+    expect(githubInput()?.value).toBe('octo/alpha');
+    await waitFor(() =>
+      expect(recentRepoLabels()).toEqual(['octo / alpha', 'octo / beta']),
+    );
+  });
+
+  it('still filters the Recent list when the user types', async () => {
+    mocks.state.recentRepos = GITHUB_RECENTS;
+    await openDropdown({ value: 'octo/alpha' });
+    await waitFor(() => expect(recentRepoLabels()).toHaveLength(2));
+
+    await fireEvent.input(githubInput()!, { target: { value: 'beta' } });
+    await waitFor(() => expect(recentRepoLabels()).toEqual(['octo / beta']));
+  });
+});
+
+// Regression: a workspace-owned standalone checkout (repositoryPath ===
+// worktreePath, i.e. a GitHub pick) used to be dropped from the recents merge
+// entirely, so the most recently worked-on repo was missing from the
+// "Pick a repo" RECENT list unless it happened to be in repos.known. It must
+// surface as a path-less GitHub entry — and still never as a local copy source.
+describe('RepoSelector Recent list derived from workspaces', () => {
+  const invokeMock = vi.mocked(invoke);
+  const workspaceListMock = vi.mocked(workspaceClient.list);
+
+  /** A GitHub-pick workspace: standalone checkout owned by the workspace. */
+  const ownedCheckoutWorkspace = (over: Record<string, unknown> = {}) => ({
+    id: 'ws-gamma',
+    repositoryPath: '/home/dev/.intent/workspaces/gamma',
+    worktreePath: '/home/dev/.intent/workspaces/gamma',
+    repositoryName: 'gamma',
+    repositoryOwner: 'octo',
+    lastActivity: '2026-02-01T00:00:00Z',
+    createdAt: '2026-01-20T00:00:00Z',
+    updatedAt: '2026-02-01T00:00:00Z',
+    ...over,
+  });
+
+  /** A local-copy workspace: repositoryPath is the user's own source repo. */
+  const localCopyWorkspace = {
+    id: 'ws-local',
+    repositoryPath: '/Users/dev/source-repo',
+    worktreePath: '/home/dev/.intent/workspaces/wt-local',
+    repositoryName: 'source-repo',
+    lastActivity: '2026-01-10T00:00:00Z',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-10T00:00:00Z',
+  };
+
+  const setWorkspaces = (workspaces: unknown[]) =>
+    workspaceListMock.mockImplementation(async () => ({ ok: true, data: workspaces }) as never);
+
+  const setRegistry = (registry: unknown[]) =>
+    invokeMock.mockImplementation(async (channel: string) =>
+      channel === WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES
+        ? ({ success: true, data: registry } as never)
+        : ({ success: true, data: [] } as never),
+    );
+
+  const recentRepoLabels = () =>
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'))
+      .map((b) => b.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+      .filter((text) => text.startsWith('octo /'));
+
+  const buttonTexts = () =>
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).map(
+      (b) => b.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+    );
+
+  afterEach(() => {
+    cleanup();
+    mocks.dispatch.mockReset();
+    mocks.state.recentRepos = [];
+    workspaceListMock.mockImplementation(async () => ({ ok: true, data: [] }) as never);
+    invokeMock.mockImplementation(async () => ({ success: true, data: [] }) as never);
+  });
+
+  it('surfaces a workspace-owned checkout as a GitHub entry, never a local one', async () => {
+    setWorkspaces([ownedCheckoutWorkspace(), localCopyWorkspace]);
+    await openDropdown();
+
+    await waitFor(() => expect(recentRepoLabels()).toEqual(['octo / gamma']));
+
+    await fireEvent.click(tabButton('Copy local repo'));
+    await waitFor(() => expect(buttonTexts()).toContain('source-repo'));
+    expect(recentRepoLabels()).toEqual([]);
+    expect(buttonTexts()).not.toContain('gamma');
+  });
+
+  it('dedups a workspace-derived repo against its repos.known registry entry', async () => {
+    setWorkspaces([ownedCheckoutWorkspace()]);
+    setRegistry([
+      {
+        path: 'Octo/Gamma',
+        name: 'Gamma',
+        owner: 'Octo',
+        githubUrl: 'https://github.com/Octo/Gamma',
+        addedAt: '2026-01-01T00:00:00Z',
+        lastUsedAt: '2026-01-15T00:00:00Z',
+      },
+    ]);
+    await openDropdown();
+
+    await waitFor(() =>
+      expect(buttonTexts().filter((text) => /gamma/i.test(text))).toEqual(['octo / gamma']),
+    );
+  });
+
+  it('orders RECENT most-recent-first across registry and workspace entries', async () => {
+    mocks.state.recentRepos = [
+      {
+        path: 'octo/omega',
+        type: 'github' as const,
+        githubUrl: 'https://github.com/octo/omega',
+        name: 'omega',
+        owner: 'octo',
+      },
+    ];
+    setWorkspaces([ownedCheckoutWorkspace()]);
+    setRegistry([
+      {
+        path: 'octo/beta',
+        name: 'beta',
+        owner: 'octo',
+        githubUrl: 'https://github.com/octo/beta',
+        addedAt: '2026-01-01T00:00:00Z',
+        lastUsedAt: '2026-01-01T00:00:00Z',
+      },
+    ]);
+    await openDropdown();
+
+    // gamma (workspace activity, Feb) > beta (registry lastUsedAt, Jan) >
+    // omega (persisted recent, no recency signal).
+    await waitFor(() =>
+      expect(recentRepoLabels()).toEqual(['octo / gamma', 'octo / beta', 'octo / omega']),
+    );
   });
 });
