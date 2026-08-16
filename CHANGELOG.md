@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.53.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.53.1...v2.53.2) (2026-08-16)
+
+
+### 🐛 Bug Fixes
+
+* render daemon-reported MCP server status instead of fabricating Connected ([#1309](https://github.com/intent-hq/cloudlands-fe/issues/1309)) ([f876418](https://github.com/intent-hq/cloudlands-fe/commit/f87641819ee674dcf513c5f73cd04c2e129e3a35))
+
 ## [2.53.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.53.0...v2.53.1) (2026-08-16)
 
 
