@@ -8874,9 +8874,19 @@ describe('daemonEventsBridge (agent:deleted → reconcileWorkspaceAgentSummary)'
     backendRequestSpy.mockReset();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
+    // The agent:deleted arm registers a pending-deletion tombstone — clear it
+    // so it cannot leak across tests.
+    const { clearPendingAgentDeletions } =
+      await import('$features/agent/utils/pending-agent-deletions');
+    clearPendingAgentDeletions();
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(async () => {
+    vi.clearAllMocks();
+    const { clearPendingAgentDeletions } =
+      await import('$features/agent/utils/pending-agent-deletions');
+    clearPendingAgentDeletions();
+  });
 
   async function seedWorkspace(agentIds: string[]): Promise<void> {
     const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
@@ -9011,6 +9021,27 @@ describe('daemonEventsBridge (agent:deleted → reconcileWorkspaceAgentSummary)'
     // The agentSummary reconcile still fires (monorepo#1712 regression guard).
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS_SUMMARY });
+  });
+
+  // An `agent.list`/`agent.get` begun before agent:deleted can return the
+  // pre-delete row after the synchronous removals; without a tombstone the
+  // hydration path would resurrect the agent. Immediate deletes have no
+  // agent:delete-scheduled entry, so the deleted arm must register one.
+  it('registers a pending-deletion tombstone so a stale refetch cannot resurrect the agent', async () => {
+    const DELETED = 'agent-deleted-1';
+    const { isAgentDeletionPending } =
+      await import('$features/agent/utils/pending-agent-deletions');
+    expect(isAgentDeletionPending(DELETED)).toBe(false);
+
+    await seedWorkspace([DELETED]);
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(agentDeletedNotification());
+
+    expect(isAgentDeletionPending(DELETED)).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
   });
 
   // AGENTS.md "Event-driven refetches — single-flight and coalesced": a burst
