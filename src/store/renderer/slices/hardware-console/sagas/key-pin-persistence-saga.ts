@@ -110,6 +110,10 @@ function* persistPinMutation(gate: HydrationGate, action: PinMutationAction): Sa
     // Hydration failed, so the in-memory pins are boot defaults — persisting them
     // would overwrite the real bag. Retry hydration and re-apply the mutation on
     // top of the restored pins; if the retry fails too, skip the persist.
+    // Known limitation: only the latest mutation is re-applied. Earlier mutations
+    // made while hydration kept failing were already skipped, so the recovery
+    // hydrate silently reverts them in the UI — the accepted trade-off versus
+    // wiping the bag. A follow-up could queue all skipped mutations instead.
     if (yield* attemptHydration(gate)) {
       yield* put(action);
     } else {
