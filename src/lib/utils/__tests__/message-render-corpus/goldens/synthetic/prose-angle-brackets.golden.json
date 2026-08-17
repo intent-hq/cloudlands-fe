@@ -1,0 +1,15 @@
+{
+  "note": "a < b comparisons and <NotATag> stay literal text",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "When a < b holds and x <group is not a tag, <NotATag> stays literal."
+        }
+      ]
+    }
+  ]
+}

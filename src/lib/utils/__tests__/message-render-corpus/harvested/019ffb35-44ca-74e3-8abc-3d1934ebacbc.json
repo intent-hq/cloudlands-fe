@@ -1,0 +1,75 @@
+[
+  {
+    "type": "text",
+    "id": "019ffb35-44ca-74e3-8abc-3d1934ebacbc:0",
+    "text": "<group:Checking PR>\n"
+  },
+  {
+    "type": "tool_use",
+    "id": "019ffb35-44ca-74e3-8abc-3d1934ebacbc:1",
+    "name": "Check PR #1133 state after merge",
+    "input": {
+      "code": "[omitted 354 chars]",
+      "summary": "Check PR #1133 state after merge",
+      "_acpTitle": "Check PR #1133 state after merge"
+    },
+    "toolCallId": "toolu_01ENGDRNHZ87BDqpGipfWugm",
+    "metadata": {
+      "toolKind": "other",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019ffb35-44ca-74e3-8abc-3d1934ebacbc:2",
+    "tool_use_id": "toolu_01ENGDRNHZ87BDqpGipfWugm",
+    "output": {
+      "output": "[omitted 298 chars]"
+    },
+    "is_error": false
+  },
+  {
+    "type": "thinking",
+    "id": "019ffb35-44ca-74e3-8abc-3d1934ebacbc:3",
+    "text": "The merge conflicts are resolved and checks are running, though some are still pending. I'm deciding whether to ask the user now about enabling auto-m…"
+  },
+  {
+    "type": "tool_use",
+    "id": "019ffb35-44ca-74e3-8abc-3d1934ebacbc:4",
+    "name": "Ask merge preference",
+    "input": {
+      "code": "[omitted 486 chars]",
+      "summary": "Ask merge preference",
+      "_acpTitle": "Ask merge preference"
+    },
+    "toolCallId": "toolu_01Q7wH39rwzYunSR9VD12SLQ",
+    "metadata": {
+      "toolKind": "other",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019ffb35-44ca-74e3-8abc-3d1934ebacbc:5",
+    "tool_use_id": "toolu_01Q7wH39rwzYunSR9VD12SLQ",
+    "output": {
+      "output": "\"asked\""
+    },
+    "is_error": false
+  },
+  {
+    "type": "text",
+    "id": "019ffb35-44ca-74e3-8abc-3d1934ebacbc:6",
+    "text": "The PR monitor stays armed and will wake me when CI settles either way. Ending my turn pending your answer.\n\n<!-- suggested-prompts\nSquash-merge it once checks are green.\nWait for CI and ask me before merging.\n-->\n"
+  },
+  {
+    "type": "resource",
+    "resource": {
+      "uri": "intent-question://tar-30207b9e6c71",
+      "name": "Merge",
+      "mimeType": "application/vnd.intent.question+json",
+      "text": "[omitted 472 chars]"
+    },
+    "id": "019ffb35-44ca-74e3-8abc-3d1934ebacbc:7"
+  }
+]

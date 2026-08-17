@@ -1,0 +1,22 @@
+{
+  "note": "trailing text block containing only a prompts comment is dropped from render",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "content_group",
+      "name": "Finishing",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "final work"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

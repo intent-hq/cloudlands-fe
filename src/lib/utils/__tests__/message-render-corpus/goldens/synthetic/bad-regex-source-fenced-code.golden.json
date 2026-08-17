@@ -1,0 +1,28 @@
+{
+  "note": "GROUP_AND_THINK_TAG_REGEX source quoted in an augment-style fence",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "The scanner regex is:"
+        },
+        {
+          "type": "augment_code_snippet",
+          "content": "const GROUP_AND_THINK_TAG_REGEX =\n  /<group:([^>\\n<]+)>|<group:([^\\n<]+)\\n|<group:([^>\\n<]+)$|.../g;",
+          "metadata": {
+            "path": "src/lib/utils/messageParser.ts",
+            "mode": "EXCERPT",
+            "language": "typescript"
+          }
+        },
+        {
+          "type": "text",
+          "content": "Because the second alternative accepts anything up to a newline, it misfires."
+        }
+      ]
+    }
+  ]
+}

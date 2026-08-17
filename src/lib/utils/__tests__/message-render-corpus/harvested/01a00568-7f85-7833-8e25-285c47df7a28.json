@@ -1,0 +1,60 @@
+[
+  {
+    "type": "text",
+    "id": "01a00568-7f85-7833-8e25-285c47df7a28:0",
+    "text": "You've landed on the right framing, with one refinement: intentd never needs to know — and in fact it already doesn't. The tunnel decision is entirely client-side: `TunnelManager` lives in the FE, which always knows its own transport (UDS vs ws/wss), re-read lazily on every reconnect, so a mid-flight backend switch is already handled (tunnel drop → forwards torn down → next use reconnects against the new config).\n\nYour uniformity instinct is right though: the agent-visible behavior should be identical everywhere. `openTunnel` should always create a **real local listener** and return a real `localPort` — so `listTunnels` lists real things, `closeTunnel` closes real things, and connect-refused teardown works the same. The only question is what the listener's backend is, and that can stay an internal FE detail:\n\n- **Remote (ws/wss)**: relay streams over the daemon's `/tunnel` mux — exactly today's `TunnelManager`.\n- **Local (UDS/local TCP)**: routing through the daemon would work but is a pointless double hop — and the `/tunnel` socket doesn't even exist for UDS transports today, so it would need intentd changes. Instead the FE just relays `127.0.0.1:<ephemeralPort>` → `127.0.0.1:<remotePort>` directly with a plain TCP pipe. Identical observable semantics (real listener, refused connect → forward drops), zero daemon involvement, no protocol change.\n\nSo: **always \"tunnel\" from the agent's perspective; the FE picks mux-over-daemon vs direct local relay under the hood.** Agents get one recipe with no local/remote branching, intentd stays oblivious, and it's still FE-only work.\n\nUpdating the actions task to this design:\n"
+  },
+  {
+    "type": "tool_use",
+    "id": "01a00568-7f85-7833-8e25-285c47df7a28:1",
+    "name": "Record uniform local/remote openTunnel design in the actions...",
+    "input": {
+      "code": "[omitted 1628 chars]",
+      "summary": "Record uniform local/remote openTunnel design in the actions task",
+      "_acpTitle": "Record uniform local/remote openTunnel design in the actions..."
+    },
+    "toolCallId": "toolu_vrtx_0197BEcEB5r8bMJZ8N5mvNPg",
+    "metadata": {
+      "toolKind": "other",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "01a00568-7f85-7833-8e25-285c47df7a28:2",
+    "tool_use_id": "toolu_vrtx_0197BEcEB5r8bMJZ8N5mvNPg",
+    "output": {
+      "output": "true"
+    },
+    "is_error": false
+  },
+  {
+    "type": "tool_use",
+    "id": "01a00568-7f85-7833-8e25-285c47df7a28:3",
+    "name": "Record design decision in spec, update status",
+    "input": {
+      "code": "[omitted 1055 chars]",
+      "summary": "Record design decision in spec, update status",
+      "_acpTitle": "Record design decision in spec, update status"
+    },
+    "toolCallId": "toolu_vrtx_01SbcdgYkLQ4Qid1XVSNkJfX",
+    "metadata": {
+      "toolKind": "other",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "01a00568-7f85-7833-8e25-285c47df7a28:4",
+    "tool_use_id": "toolu_vrtx_01SbcdgYkLQ4Qid1XVSNkJfX",
+    "output": {
+      "output": "[2]: true,true"
+    },
+    "is_error": false
+  },
+  {
+    "type": "text",
+    "id": "01a00568-7f85-7833-8e25-285c47df7a28:5",
+    "text": "Design settled and recorded in the [Spec](intent://local/note/spec) and the actions task note:\n\n```mermaid\nflowchart LR\n  A[agent: openTunnel remotePort] --> E{FE transport?}\n  E -->|ws/wss remote| M[listener → /tunnel mux → daemon 127.0.0.1:port]\n  E -->|UDS / local TCP| D[listener → direct TCP relay → 127.0.0.1:port]\n  M --> R[\"{ localPort, backend: tunnel }\"]\n  D --> R2[\"{ localPort, backend: direct }\"]\n```\n\nKey points of the recorded design:\n- **Agents get one recipe** — `openTunnel` → connect to `localPort` — identical everywhere; `listTunnels`/`closeTunnel` operate on one registry covering both backends.\n- **intentd stays oblivious** (as you said, it can't reliably know anyway, and the client transport can change mid-flight — the FE already re-reads its transport config on reconnect and tears down forwards on a switch).\n- **Local mode skips the daemon** rather than looping through it: a plain FE-side TCP relay gives the same observable semantics (real listener, refused-connect drops the forward) without the pointless double hop — and avoids needing `/tunnel` support for UDS transports, keeping this FE-only with no protocol change.\n\nThe auto-drop task (already running) is unaffected. The actions task picks up this design when it starts after the first lands on the shared branch.\n\n<!-- suggested-prompts\nMerge PR #2531.\nMerge both PRs.\nShow me the auto-drop task's progress.\n-->\n"
+  }
+]

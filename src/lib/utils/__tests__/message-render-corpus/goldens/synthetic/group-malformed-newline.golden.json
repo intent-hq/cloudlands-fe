@@ -1,0 +1,31 @@
+{
+  "note": "malformed open <group:Name\\n (missing >) still opens a group",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "content_group",
+      "name": "Reviewing changes",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "inside malformed group"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "tail"
+        }
+      ]
+    }
+  ]
+}

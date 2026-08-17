@@ -1,0 +1,53 @@
+{
+  "source": "local intentd.db agent_message 019ffe40-a49f-7a51-b8f7-bba4ab2eb6ab (sanitized)",
+  "features": [
+    "prompts",
+    "fence4"
+  ],
+  "prompts": [
+    "Looks good — open the PR.",
+    "Tighten the subsection wording a bit more.",
+    "Drop the beta→alpha touch-ups from this change."
+  ],
+  "tree": [
+    {
+      "type": "tool_use",
+      "name": "Run `git diff -- AGENTS.md`",
+      "input": {
+        "command": "git diff -- AGENTS.md",
+        "cwd": "/home/user/intent/workspaces/runs-build/monorepo",
+        "wait": true,
+        "max_wait_seconds": 30,
+        "_acpTitle": "Run `git diff -- AGENTS.md`"
+      }
+    },
+    {
+      "type": "tool_result",
+      "output": {
+        "output": "[omitted 2817 chars]"
+      }
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "The intentd clarification is in. Here's the final subsection (full diff in the tool output above):"
+        },
+        {
+          "type": "augment_code_snippet",
+          "content": "### Tracking shipped work (hourly alpha builds)\n\nAlpha builds happen automatically: releases are cut every hour, so merged work ships\nin a cloudlands-fe alpha shortly after landing. When the work changed intentd and/or\ncloudlands-fe, the workspace is NOT done once the PRs are merged: wait on / monitor\nthe release PR(s) until the work ships in a cloudlands-fe alpha, then update the\nfinal workspace status message with the version that carries the feat/fix (e.g.\n\"Shipped in cloudlands-fe vX.Y.Z (alpha).\"). This applies to intentd-only changes\ntoo: an intentd change first ships in an intentd release, is then pinned into\ncloudlands-fe automatically, and finally rides the next cloudlands-fe alpha (roughly\nan hour later) — the version to report is still the cloudlands-fe alpha (verify\ninclusion via `intentdVersion` in the published release's `release-manifest.json`).\nUse background monitoring (`ws.pr.monitor` / `ws.hook.*`) — never block a turn\npolling. Monorepo-only work (docs, Makefile, CI, scripts) ships nothing to the alpha\nchannel, so it needs no release monitoring or shipped-version status message.",
+          "metadata": {
+            "path": "AGENTS.md",
+            "mode": "EXCERPT",
+            "language": "markdown"
+          }
+        },
+        {
+          "type": "text",
+          "content": "Plus the two beta→alpha consistency touch-ups (Release Process intro and the intentd manifest bullet). Everything is still an uncommitted working-tree edit — no commit, push, or PR.\n\nApprove and I'll have the PR opened, or tell me what else to adjust."
+        }
+      ]
+    }
+  ]
+}

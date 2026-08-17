@@ -18,6 +18,11 @@ logs/
 messages/en-XA.json
 .agents/skills/themis/
 
+# Message render corpus fixtures/goldens (verbatim harvested payloads + vitest file snapshots)
+src/lib/utils/__tests__/message-render-corpus/harvested/
+src/lib/utils/__tests__/message-render-corpus/goldens/
+src/lib/utils/__tests__/message-render-corpus/manifest.json
+
 # Documentation archives
 docs-archive-*/
 
