@@ -181,6 +181,58 @@ function assertNoContentLoss(blocks: ContentBlock[], rendered: RenderedMessage):
 }
 
 // ---------------------------------------------------------------------------
+// Fixture hygiene tripwire
+// ---------------------------------------------------------------------------
+
+// Deny-list of patterns that must never appear anywhere under the corpus tree
+// (fixtures, goldens, manifest): credential shapes, home-directory paths, real
+// emails, and PII scrubbed from the harvest. Values are assembled from parts
+// so this test file itself does not trip secret scanners.
+const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
+  { name: 'GitHub classic PAT', regex: new RegExp('gh[pousr]_[A-Za-z0-9]{20,}') },
+  { name: 'GitHub fine-grained PAT', regex: new RegExp('github' + '_pat_[A-Za-z0-9_]{20,}') },
+  { name: 'OpenAI-style key', regex: new RegExp('sk-[A-Za-z0-9]{20,}') },
+  { name: 'AWS access key id', regex: new RegExp('AKIA' + '[0-9A-Z]{16}') },
+  { name: 'JWT-like token', regex: new RegExp('eyJ' + '[A-Za-z0-9_-]{10,}\\.' + 'eyJ') },
+  { name: 'Bearer token', regex: new RegExp('Bearer\\s+[A-Za-z0-9._~+/=-]{15,}') },
+  { name: 'private key block', regex: new RegExp('-----BEGIN[A-Z ]*' + 'PRIVATE KEY-----') },
+  // Home paths: only the sanitized placeholder /home/user/... is allowed.
+  { name: 'non-placeholder /home/ path', regex: new RegExp('/home/(?!user\\b)[A-Za-z0-9_-]+') },
+  { name: '/Users/ home path', regex: new RegExp('/Users/[A-Za-z0-9_-]+') },
+  // Emails: only example.com / example.org placeholders are allowed.
+  {
+    name: 'non-placeholder email',
+    regex: new RegExp('[A-Za-z0-9._%+-]+@(?!example\\.(?:com|org))[A-Za-z0-9-]+\\.[A-Za-z]{2,}'),
+  },
+  // PII scrubbed from the harvest (assembled to avoid a literal hit here).
+  { name: 'scrubbed full name', regex: new RegExp('Clem' + 'ent Pa' + 'ng') },
+];
+
+describe('message render corpus — fixture hygiene', () => {
+  const files: string[] = [];
+  (function walk(dir: string) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else files.push(full);
+    }
+  })(CORPUS_DIR);
+
+  it('contains no credentials, home paths, or PII', () => {
+    const violations: string[] = [];
+    for (const file of files) {
+      const content = fs.readFileSync(file, 'utf8');
+      for (const { name, regex } of FORBIDDEN_PATTERNS) {
+        if (regex.test(content)) {
+          violations.push(`${path.relative(CORPUS_DIR, file)}: ${name}`);
+        }
+      }
+    }
+    expect(violations, `forbidden patterns in corpus files: ${violations.join('; ')}`).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Synthetic fixtures
 // ---------------------------------------------------------------------------
 

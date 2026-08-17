@@ -71,13 +71,13 @@
     },
     {
       "type": "tool_use",
-      "name": "Run `gh api repos/intent-hq/ios/contents/IntentTests/ConversationMessageTests.swift?r...`",
+      "name": "Run `gh api repos/intent-hq/ios/contents/IntentTests/SampleRecordMessageTests.swift?r...`",
       "input": {
-        "command": "gh api repos/intent-hq/ios/contents/IntentTests/ConversationMessageTests.swift?ref=fix/trim-from-agent-id --jq .content | base64 -d | sed -n '460,540p'",
+        "command": "gh api repos/intent-hq/ios/contents/IntentTests/SampleRecordMessageTests.swift?ref=fix/trim-from-robot-id --jq .content | base64 -d | sed -n '460,540p'",
         "wait": true,
         "max_wait_seconds": 60,
         "cwd": "/home/user/intent/workspaces/messages-check/monorepo",
-        "_acpTitle": "Run `gh api repos/intent-hq/ios/contents/IntentTests/ConversationMessageTests.swift?r...`"
+        "_acpTitle": "Run `gh api repos/intent-hq/ios/contents/IntentTests/SampleRecordMessageTests.swift?r...`"
       }
     },
     {
@@ -209,7 +209,7 @@
           "blocks": [
             {
               "type": "text",
-              "content": "Review complete. Summary:\n\n**Verdict: APPROVED** (posted as a comment review on [intent-hq/ios#109](https://github.com/intent-hq/ios/pull/109) — GitHub blocked `--approve` because the authenticated user is the PR author).\n\n**Findings against the review checklist:**\n- ✅ **Trim semantics vs fe**: `trimmingCharacters(in: .whitespacesAndNewlines)` is equivalent to fe's `md.fromAgentId.trim() !== ''` for all realistic inputs. Only edge divergences: U+FEFF (JS trims, Swift doesn't) and U+0085 NEL (Swift trims, JS doesn't) — impossible in daemon-stamped agent ids, non-blocking.\n- ✅ **Doc comment**: \"non-empty\" → \"non-blank\" is accurate.\n- ✅ **Test coverage**: whitespace-only visible (new test, `\"   \"` and `\"\\t\\n\"`), empty visible (existing `isUserMessageTrueWithEmptyFromAgentId`), non-blank hidden (existing `isUserMessageFalseWithFromAgentId`). Rule-ordering tests intact.\n- ✅ **Scope**: only the two expected files (+3/−2 and +7/−0), no unrelated changes.\n\n**Caveats:** the \"iOS Build & Test\" CI check was still pending at review time (I could not run iOS tests locally), so merge should wait for it to go green. The PR was not merged, per instructions. Verdict reported to the parent via `reportToParent`."
+              "content": "Review complete. Summary:\n\n**Verdict: APPROVED** (posted as a comment review on [intent-hq/ios#109](https://github.com/intent-hq/ios/pull/109) — GitHub blocked `--approve` because the authenticated user is the PR author).\n\n**Findings against the review checklist:**\n- ✅ **Trim semantics vs fe**: `trimmingCharacters(in: .whitespacesAndNewlines)` is equivalent to fe's `md.fromRobotId.trim() !== ''` for all realistic inputs. Only edge divergences: U+FEFF (JS trims, Swift doesn't) and U+0085 NEL (Swift trims, JS doesn't) — impossible in daemon-stamped agent ids, non-blocking.\n- ✅ **Doc comment**: \"non-empty\" → \"non-blank\" is accurate.\n- ✅ **Test coverage**: whitespace-only visible (new test, `\"   \"` and `\"\\t\\n\"`), empty visible (existing `isLocalRecordTrueWithEmptyFromRobotId`), non-blank hidden (existing `isLocalRecordFalseWithFromRobotId`). Rule-ordering tests intact.\n- ✅ **Scope**: only the two expected files (+3/−2 and +7/−0), no unrelated changes.\n\n**Caveats:** the \"iOS Build & Test\" CI check was still pending at review time (I could not run iOS tests locally), so merge should wait for it to go green. The PR was not merged, per instructions. Verdict reported to the parent via `reportToParent`."
             }
           ]
         }

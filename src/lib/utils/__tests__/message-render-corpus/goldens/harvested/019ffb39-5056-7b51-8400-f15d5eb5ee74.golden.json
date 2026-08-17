@@ -178,13 +178,13 @@
     },
     {
       "type": "tool_use",
-      "name": "Run `git config user.name \"Clement Pang\" && git config user.email \"user@example.com...`",
+      "name": "Run `git config user.name \"Sample Person\" && git config user.email \"user@example.com...`",
       "input": {
         "command": "[omitted 222 chars]",
         "wait": true,
         "max_wait_seconds": 60,
         "cwd": "/home/user/intent/workspaces/completely-setup/monorepo",
-        "_acpTitle": "Run `git config user.name \"Clement Pang\" && git config user.email \"user@example.com...`"
+        "_acpTitle": "Run `git config user.name \"Sample Person\" && git config user.email \"user@example.com...`"
       }
     },
     {

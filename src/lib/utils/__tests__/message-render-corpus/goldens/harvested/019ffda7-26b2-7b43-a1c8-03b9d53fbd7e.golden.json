@@ -59,7 +59,7 @@
           "type": "tool_use",
           "name": "codebase-retrieval",
           "input": {
-            "information_request": "iOS app queued messages rendering — where queued messages (agent.getQueue, agent:queue:updated, QueuedMessage) are displayed in SwiftUI, any filtering of messageMetadata / user vs system entries",
+            "information_request": "iOS app queued messages rendering — where queued messages (agent.getQueue, agent:queue:updated, QueuedPayload) are displayed in SwiftUI, any filtering of messageMetadata / user vs system entries",
             "_acpTitle": "[omitted 212 chars]"
           }
         },
@@ -71,13 +71,13 @@
         },
         {
           "type": "tool_use",
-          "name": "Run `cd packages/ios && sed -n 1,120p Intent/Views/Conversation/QueuedMessagesView.sw...`",
+          "name": "Run `cd packages/ios && sed -n 1,120p Intent/Views/Conversation/QueuedPayloadsView.sw...`",
           "input": {
             "command": "[omitted 229 chars]",
             "wait": true,
             "max_wait_seconds": 30,
             "cwd": "/home/user/intent/workspaces/messages-check/monorepo",
-            "_acpTitle": "Run `cd packages/ios && sed -n 1,120p Intent/Views/Conversation/QueuedMessagesView.sw...`"
+            "_acpTitle": "Run `cd packages/ios && sed -n 1,120p Intent/Views/Conversation/QueuedPayloadsView.sw...`"
           }
         },
         {
@@ -88,17 +88,17 @@
         },
         {
           "type": "thinking",
-          "content": "I need to look at the iOS implementation to understand how the filter works for user messages and what the QueuedMessage model's visibility properties…"
+          "content": "I need to look at the iOS implementation to understand how the filter works for user messages and what the QueuedPayload model's visibility properties…"
         },
         {
           "type": "tool_use",
-          "name": "Run `cd packages/ios && sed -n 50,75p Intent/ViewModels/ConversationViewModel.swift &...`",
+          "name": "Run `cd packages/ios && sed -n 50,75p Intent/ViewModels/SampleListViewModel.swift &...`",
           "input": {
-            "command": "cd packages/ios && sed -n 50,75p Intent/ViewModels/ConversationViewModel.swift && echo ==== && grep -rn \"isUserMessage\\|isVisible\\|isEventNotificationWake\" Intent/Models/*.swift | head -20",
+            "command": "cd packages/ios && sed -n 50,75p Intent/ViewModels/SampleListViewModel.swift && echo ==== && grep -rn \"isLocalRecord\\|isVisible\\|isSampleNotificationWake\" Intent/Models/*.swift | head -20",
             "wait": true,
             "max_wait_seconds": 30,
             "cwd": "/home/user/intent/workspaces/messages-check/monorepo",
-            "_acpTitle": "Run `cd packages/ios && sed -n 50,75p Intent/ViewModels/ConversationViewModel.swift &...`"
+            "_acpTitle": "Run `cd packages/ios && sed -n 50,75p Intent/ViewModels/SampleListViewModel.swift &...`"
           }
         },
         {
@@ -113,13 +113,13 @@
         },
         {
           "type": "tool_use",
-          "name": "Run `cd packages/ios && sed -n 85,130p Intent/Models/ConversationMessage.swift`",
+          "name": "Run `cd packages/ios && sed -n 85,130p Intent/Models/SampleRecordMessage.swift`",
           "input": {
-            "command": "cd packages/ios && sed -n 85,130p Intent/Models/ConversationMessage.swift",
+            "command": "cd packages/ios && sed -n 85,130p Intent/Models/SampleRecordMessage.swift",
             "wait": true,
             "max_wait_seconds": 30,
             "cwd": "/home/user/intent/workspaces/messages-check/monorepo",
-            "_acpTitle": "Run `cd packages/ios && sed -n 85,130p Intent/Models/ConversationMessage.swift`"
+            "_acpTitle": "Run `cd packages/ios && sed -n 85,130p Intent/Models/SampleRecordMessage.swift`"
           }
         },
         {
@@ -139,20 +139,20 @@
       "blocks": [
         {
           "type": "text",
-          "content": "## iOS already matches — both platforms use the same visibility rules today\n\nI checked the iOS app (`packages/ios`, pinned at `6ed85baa`, current `main`). It already implements the same queue filter as the fixed cloudlands-fe:"
+          "content": "## iOS already matches — both platforms use the same visibility rules today\n\nI checked the iOS app (`packages/ios`, pinned at `1a2b3c4d`, current `main`). It already implements the same queue filter as the fixed cloudlands-fe:"
         },
         {
           "type": "augment_code_snippet",
-          "content": "var queuedMessages: [QueuedMessage] {\n    store.queuedMessages.filter {\n        $0.isUserMessage\n            || $0.hookWakeAttribution != nil\n            || $0.prMonitorWakeAttribution != nil\n            || $0.agentMessageAttribution != nil\n            || $0.isEventNotificationWake\n    }\n}",
+          "content": "var queuedMessages: [QueuedPayload] {\n    store.queuedMessages.filter {\n        $0.isLocalRecord\n            || $0.sampleHookAttribution != nil\n            || $0.samplePrAttribution != nil\n            || $0.sampleAttributionHelper != nil\n            || $0.isSampleNotificationWake\n    }\n}",
           "metadata": {
-            "path": "packages/ios/Intent/ViewModels/ConversationViewModel.swift",
+            "path": "packages/ios/Intent/ViewModels/SampleListViewModel.swift",
             "mode": "EXCERPT",
             "language": "swift"
           }
         },
         {
           "type": "text",
-          "content": "`QueuedMessage.isUserMessage` in iOS uses the identical rules as the FE's `isUserQueuedMessage` (hidden iff metadata has a string `type`, non-empty `fromAgentId`, or `source == \"system\"`; fail-open on absent/malformed metadata), and `QueuedMessagesView` renders the four wake types as compact non-editable attribution rows explicitly marked \"FE parity: QueuedMessageList\". So the PR #1031 regression never affected iOS, and after FE #1120 (v2.30.1+) the two platforms are in parity.\n\nThe one open decision: both platforms currently show **user messages plus** four compact attributed rows (agent-to-agent sends, workspace-event wakes, hook wakes, PR-monitor wakes) — a deliberate design from FE #1120 and mirrored on iOS. If you literally want **only user messages** on both, that's a behavior change to both repos, not a parity fix. Let me confirm which you want before speccing any work."
+          "content": "`QueuedPayload.isLocalRecord` in iOS uses the identical rules as the FE's `isUserQueuedPayload` (hidden iff metadata has a string `type`, non-empty `fromRobotId`, or `source == \"system\"`; fail-open on absent/malformed metadata), and `QueuedPayloadsView` renders the four wake types as compact non-editable attribution rows explicitly marked \"FE parity: QueuedPayloadList\". So the PR #1031 regression never affected iOS, and after FE #1120 (v2.30.1+) the two platforms are in parity.\n\nThe one open decision: both platforms currently show **user messages plus** four compact attributed rows (agent-to-agent sends, workspace-event wakes, hook wakes, PR-monitor wakes) — a deliberate design from FE #1120 and mirrored on iOS. If you literally want **only user messages** on both, that's a behavior change to both repos, not a parity fix. Let me confirm which you want before speccing any work."
         }
       ]
     },

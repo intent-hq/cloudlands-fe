@@ -38,7 +38,7 @@
       "blocks": [
         {
           "type": "text",
-          "content": "Progress on [#120](https://github.com/intent-hq/ios/pull/120): CI went green, then the Augment review bot raised 3 valid points — user copies could include non-rendered code blocks, and assistant copies leaked suggested-prompts/`agent_digest` content and `<group:>` tags. The implementor fixed all three in `f1770a3` by making the copy text mirror the display pipelines (`userCopyText`/`assistantCopyText` + shared `stripSuggestedPrompts`), added 5 tests, replied to and resolved all threads.\n\nNow waiting on the CI re-run; then verifier → merge per your standing authorization."
+          "content": "Progress on [#120](https://github.com/intent-hq/ios/pull/120): CI went green, then the Augment review bot raised 3 valid points — user copies could include non-rendered code blocks, and assistant copies leaked suggested-prompts/`agent_digest` content and `<group:>` tags. The implementor fixed all three in `c7d8e9f` by making the copy text mirror the display pipelines (`userSampleText`/`assistantSampleText` + shared `stripSamplePrompts`), added 5 tests, replied to and resolved all threads.\n\nNow waiting on the CI re-run; then verifier → merge per your standing authorization."
         }
       ]
     }
