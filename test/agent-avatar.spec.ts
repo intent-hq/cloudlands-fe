@@ -18,6 +18,7 @@ test.beforeAll(async () => {
   server = await createServer({
     configFile: false,
     root: process.cwd(),
+    cacheDir: process.env.AGENT_AVATAR_VITE_CACHE_DIR,
     plugins: [svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
       alias: [
@@ -130,11 +131,6 @@ async function catalogStackPng(locator: Locator, scale: number): Promise<Buffer>
       context.roundRect(x, y, size, size, 7 * selectedScale);
       context.fillStyle = style.backgroundColor;
       context.fill();
-      context.lineWidth = selectedScale;
-      context.strokeStyle = item.hasAttribute('data-agent-avatar-with-state')
-        ? getComputedStyle(item, '::after').borderTopColor
-        : style.borderTopColor;
-      context.stroke();
       context.strokeStyle = style.color;
       context.lineWidth = 1.25 * selectedScale;
       context.beginPath();
@@ -205,12 +201,140 @@ test('renders every vector and state without provider or status overlays', async
   await expect(
     catalog.locator('.agent-avatar-catalog-states [data-agent-avatar-with-state]'),
   ).toHaveCount(130);
+  const avatarSurfaces = page.locator(
+    '[data-agent-avatar-with-state], [data-agent-message-leading-identity]',
+  );
   await expect(
-    page.locator('img, [data-provider-icon], [data-avatar-overlay], [data-icon]'),
+    avatarSurfaces.locator('img, [data-provider-icon], [data-avatar-overlay], [data-icon]'),
   ).toHaveCount(0);
+  await expect(
+    page.locator(
+      '[data-coordinator-message-cards] [data-testid="agent-message-chevron-column"] [data-icon]',
+    ),
+  ).toHaveCount(2);
+  await expect(
+    page.locator('[data-testid="agent-message-chevron-column"] [data-icon]'),
+  ).toHaveCount(7);
   await expect(catalog.locator('.agent-avatar-catalog-states [data-agent-avatar]')).toHaveCount(
     130,
   );
+});
+
+test('renders repeated Coordinator message cards with canonical identity on the runtime path', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await mountAvatarHost(page);
+  const host = page.locator('[data-coordinator-message-cards]');
+  const cards = host.locator('[data-coordinator-message-card]');
+  await expect(cards).toHaveCount(2);
+
+  for (const theme of ['light', 'dark'] as const) {
+    await page.evaluate((selectedTheme) => {
+      document.documentElement.classList.toggle('dark', selectedTheme === 'dark');
+      document.documentElement.classList.toggle('light', selectedTheme === 'light');
+    }, theme);
+    for (const width of [220, 420]) {
+      for (const zoom of [1, 2]) {
+        await host.evaluate(
+          (node, geometry) => {
+            const element = node as HTMLElement;
+            element.style.width = `${geometry.width}px`;
+            element.style.zoom = String(geometry.zoom);
+          },
+          { width, zoom },
+        );
+
+        for (let index = 0; index < 2; index += 1) {
+          const card = cards.nth(index);
+          const row = card.locator('[data-testid="agent-message-disclosure-header"]');
+          const identity = card.locator('[data-agent-message-leading-identity]');
+          const avatar = card.locator('[data-agent-avatar-surface]');
+          const glyph = avatar.locator('[data-agent-avatar]');
+          await expect(glyph).toHaveAttribute('data-avatar-design', 'coordinator');
+          await expect(avatar).toHaveAttribute('data-avatar-state', 'idle');
+          await expect(avatar).toHaveAttribute('data-avatar-variant', 'standard');
+          await expect(identity.locator('[data-avatar-overlay], [data-icon], img')).toHaveCount(0);
+          await expect(
+            card.locator('[data-testid="agent-message-chevron-column"] [data-icon]'),
+          ).toHaveCount(1);
+          await expect(card.getByTestId('agent-message-attribution')).toHaveAccessibleName(
+            'Coordinator',
+          );
+          await expect(card.getByTestId('agent-message-disclosure-toggle')).toHaveAccessibleName(
+            /sent a message: Coordinator message/,
+          );
+
+          const [rowBox, identityBox, avatarBox, glyphBox] = await Promise.all([
+            row.boundingBox(),
+            identity.boundingBox(),
+            avatar.boundingBox(),
+            glyph.boundingBox(),
+          ]);
+          expect(rowBox).not.toBeNull();
+          expect(identityBox).not.toBeNull();
+          expect(avatarBox).not.toBeNull();
+          expect(glyphBox).not.toBeNull();
+          expect(avatarBox!.width).toBeCloseTo(20 * zoom, 1);
+          expect(avatarBox!.height).toBeCloseTo(20 * zoom, 1);
+          expect(glyphBox!.width).toBeCloseTo(20 * zoom, 1);
+          expect(glyphBox!.height).toBeCloseTo(20 * zoom, 1);
+          const geometry = await avatar.evaluate((node) => {
+            const style = getComputedStyle(node);
+            const pseudo = getComputedStyle(node, '::after');
+            return {
+              radius: style.borderRadius,
+              pseudoContent: pseudo.content,
+              pseudoWidth: pseudo.borderTopWidth,
+            };
+          });
+          expect(geometry).toEqual({ radius: '6px', pseudoContent: 'none', pseudoWidth: '0px' });
+          const rowCenter = rowBox!.y + rowBox!.height / 2;
+          const identityCenter = identityBox!.y + identityBox!.height / 2;
+          expect(
+            Math.abs(rowCenter - identityCenter) * (await page.evaluate(() => devicePixelRatio)),
+          ).toBeLessThanOrEqual(0.5);
+        }
+      }
+    }
+  }
+
+  const coordinatorButton = cards.first().getByTestId('agent-message-attribution');
+  await coordinatorButton.hover({ force: true });
+  await coordinatorButton.focus();
+  await expect(coordinatorButton).toBeFocused();
+});
+
+test('resolves computed attribution surfaces for every canonical semantic state', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await mountAvatarHost(page);
+  const stateCards = page.locator('[data-attribution-state-cards]');
+  const expectedStates = {
+    neutral: ['idle', 'neutral'],
+    running: ['running', 'active'],
+    waiting: ['waiting', 'waiting'],
+    error: ['failed', 'attention'],
+    attention: ['attention-discussion', 'attention'],
+  } as const;
+
+  for (const theme of ['light', 'dark'] as const) {
+    await page.evaluate((selectedTheme) => {
+      document.documentElement.classList.toggle('dark', selectedTheme === 'dark');
+      document.documentElement.classList.toggle('light', selectedTheme === 'light');
+    }, theme);
+    await page.waitForTimeout(250);
+    for (const [cardName, [state, family]] of Object.entries(expectedStates)) {
+      const card = stateCards.locator(`[data-attribution-state-card="${cardName}"]`);
+      const avatar = card.locator('[data-agent-avatar-surface]');
+      await expect(avatar).toHaveAttribute('data-avatar-state', state);
+      const presentation = await computedPresentation(avatar);
+      expect(presentation.background).toEqual(expectedSurfaceByTheme[theme][family]);
+      await expect(card.locator('button')).toHaveCount(2);
+      await expect(card.locator('button button')).toHaveCount(0);
+    }
+  }
 });
 
 test('keeps named surface and art geometry clear at 200% zoom', async ({ page }) => {
@@ -232,13 +356,13 @@ test('keeps named surface and art geometry clear at 200% zoom', async ({ page })
         }),
         surface.evaluate((node) => {
           const style = getComputedStyle(node);
-          const ring = getComputedStyle(node, '::after');
+          const pseudo = getComputedStyle(node, '::after');
           const art = getComputedStyle(node.querySelector('svg') as SVGElement);
           return {
             radius: style.borderRadius,
             clipPath: style.clipPath,
-            ringRadius: ring.borderRadius,
-            ringWidth: ring.borderTopWidth,
+            pseudoContent: pseudo.content,
+            pseudoWidth: pseudo.borderTopWidth,
             padding: art.paddingLeft,
             artSize: style.getPropertyValue('--agent-avatar-art-size').trim(),
             overlap: style.getPropertyValue('--agent-avatar-stack-overlap').trim(),
@@ -250,8 +374,8 @@ test('keeps named surface and art geometry clear at 200% zoom', async ({ page })
       expect(svgBox?.width).toBeCloseTo(geometry.surface * 2, 1);
       expect(svgBox?.height).toBeCloseTo(geometry.surface * 2, 1);
       expect(geometryStyles.radius).toBe(`${geometry.radius}px`);
-      expect(geometryStyles.ringRadius).toBe(geometryStyles.radius);
-      expect(geometryStyles.ringWidth).toBe(`${geometry.ring}px`);
+      expect(geometryStyles.pseudoContent).toBe('none');
+      expect(geometryStyles.pseudoWidth).toBe('0px');
       expect(geometryStyles.padding).toBe(`${geometry.clearSpace}px`);
       expect(geometryStyles.artSize).toBe(`${geometry.art}px`);
       expect(geometryStyles.overlap).toBe(`${geometry.overlap}px`);
@@ -503,24 +627,28 @@ test('is legible in light, dark, forced-colors, and reduced-motion modes', async
   await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' });
   const presentation = await avatar.evaluate((node) => {
     const style = getComputedStyle(node);
-    const boundary = getComputedStyle(node, '::after');
+    const pseudo = getComputedStyle(node, '::after');
     return {
       backgroundColor: style.backgroundColor,
       color: style.color,
       radius: style.borderRadius,
       clipPath: style.clipPath,
-      boundaryRadius: boundary.borderRadius,
-      boundaryWidth: boundary.borderTopWidth,
-      boundaryColor: boundary.borderTopColor,
+      outlineStyle: style.outlineStyle,
+      outlineWidth: style.outlineWidth,
+      outlineColor: style.outlineColor,
+      pseudoContent: pseudo.content,
+      pseudoWidth: pseudo.borderTopWidth,
       transitionDuration: style.transitionDuration,
     };
   });
   expect(presentation.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
   expect(presentation.color).not.toBe('rgba(0, 0, 0, 0)');
   expect(presentation.radius).toBe('6px');
-  expect(presentation.boundaryRadius).toBe(presentation.radius);
-  expect(presentation.boundaryWidth).toBe('1px');
-  expect(presentation.boundaryColor).not.toBe('rgba(0, 0, 0, 0)');
+  expect(presentation.outlineStyle).toBe('solid');
+  expect(presentation.outlineWidth).toBe('1px');
+  expect(presentation.outlineColor).not.toBe('rgba(0, 0, 0, 0)');
+  expect(presentation.pseudoContent).toBe('none');
+  expect(presentation.pseudoWidth).toBe('0px');
   expect(presentation.clipPath).toContain(presentation.radius);
   expect(Number.parseFloat(presentation.transitionDuration)).toBeLessThan(0.001);
   await expect(avatar).toHaveAccessibleName(/discussion/i);

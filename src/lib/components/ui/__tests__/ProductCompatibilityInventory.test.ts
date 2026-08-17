@@ -7,9 +7,9 @@ const reconciledImports = [
   '$lib/components/ui/ProviderIcon.svelte',
   '$lib/components/ui/ViewSettingsDropdown.svelte',
   '$lib/components/ui/WorkspaceActionsMenu.svelte',
-  '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte',
-  '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte',
-  '$lib/components/ui/auggie-avatar/avatar-state',
+  '$lib/components/ui/agent-avatar/AgentAvatar.svelte',
+  '$lib/components/ui/agent-avatar/AgentAvatarWithState.svelte',
+  '$lib/components/ui/agent-avatar/avatar-state',
   '$lib/components/ui/content-header',
   '$lib/components/ui/diff',
 ] as const;

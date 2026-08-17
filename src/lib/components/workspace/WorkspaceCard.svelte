@@ -15,13 +15,18 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
+  import WorkspaceStatusIcon from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
-  import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
   import type { WorkspacePhaseInfo, WorkspacePhaseStats, WorkspacePhase } from './workspace-phase';
+  import {
+    getWorkspaceStatusPresentation,
+    resolveWorkspaceStatusState,
+  } from './utils/workspace-status-presentation';
   import TaskProgressBar from './TaskProgressBar.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Button } from '$lib/components/ui/button';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
+  import SidebarOverflowMenu from '$lib/components/ui/sidebar-context-menu/SidebarOverflowMenu.svelte';
   import type {
     SidebarMenuEntry,
     SidebarMenuItem,
@@ -80,6 +85,7 @@
     phase?: WorkspacePhaseInfo;
     stats?: WorkspacePhaseStats;
     variant?: 'compact' | 'expanded' | 'header' | 'row';
+    /** @deprecated Status visuals resolve from the workspace status contract. */
     isRunning?: boolean;
     isUnread?: boolean;
     /**
@@ -87,6 +93,7 @@
      * Defaults to the workspace's own BE-sent `waiting` flag (PROTOCOL §5.1)
      * when not explicitly passed; an explicit value overrides the flag.
      */
+    /** @deprecated Status visuals resolve from the workspace status contract. */
     isWaiting?: boolean;
     isPinned?: boolean;
     streamingAgentIds?: string[];
@@ -154,10 +161,6 @@
     actions,
   }: Props = $props();
 
-  // Waiting dot signal: explicit prop wins; otherwise fall back to the
-  // workspace's BE-sent `waiting` flag so every card surface renders it.
-  const showWaiting = $derived(isWaiting ?? workspace?.waiting === true);
-
   const workspaceIdStore = writable('');
   $effect(() => {
     workspaceIdStore.set(workspace?.id ?? '');
@@ -181,19 +184,10 @@
     appStore.dispatch(ensureWorkspaceTasksLoaded(String(workspaceId)));
   });
 
-  const workspacePhaseInfo = $derived(
-    workspace
-      ? deriveWorkspacePhase(workspace, {
-          hasActiveAgents: isRunning,
-          taskProgress: $workspaceTaskProgress$,
-        })
-      : undefined,
+  const workspaceStatusState = $derived(resolveWorkspaceStatusState(workspace ?? {}));
+  const workspaceStatusPresentation = $derived(
+    getWorkspaceStatusPresentation(workspaceStatusState),
   );
-  const workspaceBuildProgress = $derived.by(() => {
-    const { total, completed } = $workspaceTaskProgress$;
-    if (total === 0) return 0;
-    return completed / total;
-  });
   let isCurrent = $derived(workspace ? page.url.pathname === `/workspace/${workspace.id}` : false);
   let hoverCardVisible = $state(false);
   let rowElement: HTMLDivElement | null = $state(null);
@@ -283,21 +277,25 @@
   });
 
   let contextMenu: { x: number; y: number } | null = $state(null);
+  let overflowMenuOpen = $state(false);
   let hadContextMenu = false;
 
   function handleContextMenu(e: MouseEvent) {
     if (!workspace) return;
     e.preventDefault();
     e.stopPropagation();
+    overflowMenuOpen = false;
     contextMenu = { x: e.clientX, y: e.clientY };
   }
 
   function closeContextMenu() {
     contextMenu = null;
+    overflowMenuOpen = false;
   }
 
   $effect(() => {
-    const isOpen = contextMenu !== null;
+    if (overflowMenuOpen) contextMenu = null;
+    const isOpen = contextMenu !== null || overflowMenuOpen;
 
     if (isOpen && !hadContextMenu) {
       appStore.dispatch(incrementContextMenuOpen());
@@ -500,7 +498,7 @@
       variant="plain"
       class="absolute inset-0 z-0 h-auto w-auto rounded-md focus-visible:border-transparent focus-visible:bg-background/50 focus-visible:ring-0"
       aria-label={workspace.title || m.workspace_links_untitled_label()}
-      aria-describedby={isPinned ? `workspace-pinned-state-${workspace.id}` : undefined}
+      aria-describedby={`workspace-status-state-${workspace.id}${isPinned ? ` workspace-pinned-state-${workspace.id}` : ''}`}
       aria-current={isCurrent ? 'page' : undefined}
       data-workspace-card-trigger
       onclick={(event) => {
@@ -513,29 +511,12 @@
       {#if $microConnected$ && $workspaceKeySlot$ !== null}
         <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
       {/if}
-      <div class="shrink-0 relative flex items-center">
-        <WorkspacePhaseIndicator
-          phase={workspacePhaseInfo?.phase ?? 'planning'}
-          progress={workspaceBuildProgress}
-          size={14}
-        />
-        {#if isRunning}
-          <div
-            class="absolute -right-0.5 -top-0.5 size-1.5 animate-pulse rounded-full bg-success"
-            aria-hidden="true"
-          ></div>
-        {:else if isUnread}
-          <div
-            class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-info"
-            aria-hidden="true"
-          ></div>
-        {:else if showWaiting}
-          <div
-            class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-muted-foreground/60"
-            aria-hidden="true"
-          ></div>
-        {/if}
-      </div>
+      <Tooltip content={workspaceStatusPresentation.tooltip} side="bottom" sideOffset={4}>
+        <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
+      </Tooltip>
+      <span id="workspace-status-state-{workspace.id}" class="sr-only">
+        {workspaceStatusPresentation.accessibleName}
+      </span>
     </div>
 
     <div class="relative z-10 flex min-w-0 flex-1 items-center gap-2">
@@ -591,7 +572,7 @@
                 : 'bg-warning/10 text-warning'
               : prStatus === PullRequestStatus.Draft
                 ? 'bg-muted text-muted-foreground'
-                : 'bg-destructive/10 text-destructive-foreground'}
+                : 'bg-destructive/10 text-error-foreground'}
         <Tooltip
           content={prTooltipContent}
           side="bottom"
@@ -645,7 +626,7 @@
       </span>
     </div>
 
-    {#if actions || onTogglePin || (isUnread && onMarkAsRead)}
+    {#if actions || onOpenInNewWindow || onTogglePin || (isUnread && onMarkAsRead)}
       <div
         class="wc-actions absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 focus-within:opacity-100 group-focus-within:opacity-100
           {highlighted
@@ -654,6 +635,14 @@
             ? 'opacity-0'
             : 'opacity-0 group-hover:opacity-100'}"
       >
+        {#if onOpenInNewWindow}
+          <SidebarOverflowMenu
+            bind:open={overflowMenuOpen}
+            items={getContextMenuItems()}
+            ariaLabel={m.workspace_progressCard_actions_ariaLabel()}
+            class="flex size-5 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:outline-none"
+          />
+        {/if}
         {@render actions?.()}
         {#if isUnread && onMarkAsRead}
           <Button
@@ -827,7 +816,7 @@
             >
             <span class="tabular-nums">
               <span class="text-success">+{stats.files.additions}</span>
-              <span class="ml-1 text-destructive-foreground">-{stats.files.deletions}</span>
+              <span class="ml-1 text-error-foreground">-{stats.files.deletions}</span>
             </span>
           </div>
         {/if}

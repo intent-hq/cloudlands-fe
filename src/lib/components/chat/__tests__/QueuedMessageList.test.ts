@@ -70,6 +70,50 @@ describe('QueuedMessageList', () => {
     expect(text.className).toContain('truncate');
   });
 
+  describe('queue disclosure', () => {
+    it('starts expanded and exposes the controlled queue content', () => {
+      render(QueuedMessageList, { props: { messages: [queued({})] } });
+
+      const disclosure = screen.getByTestId('queued-messages-disclosure');
+      const content = screen.getByTestId('queued-messages-content');
+      const container = screen.getByTestId('queued-messages-container');
+      const label = screen.getByTestId('queued-messages-label');
+      expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+      expect(disclosure.getAttribute('aria-controls')).toBe(content.id);
+      expect(label.textContent?.trim()).toBe('1 queued message');
+      expect(container.className).toContain('pb-2');
+      expect(screen.getAllByTestId('queued-message-row')).toHaveLength(1);
+    });
+
+    it('keeps focus and updates the live count while collapsed', async () => {
+      const view = render(QueuedMessageList, { props: { messages: [queued({})] } });
+      const disclosure = screen.getByTestId('queued-messages-disclosure');
+      disclosure.focus();
+
+      await fireEvent.click(disclosure);
+      await tick();
+      expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.queryByTestId('queued-messages-content')).toBeNull();
+      expect(screen.queryByTestId('queued-message-row')).toBeNull();
+      expect(document.activeElement).toBe(disclosure);
+
+      await view.rerender({
+        messages: [queued({}), queued({ id: 'q-2', content: 'second', position: 1 })],
+      });
+      expect(screen.getByTestId('queued-messages-label').textContent?.trim()).toBe(
+        '2 queued messages',
+      );
+      expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.queryByTestId('queued-message-row')).toBeNull();
+
+      await fireEvent.click(disclosure);
+      await tick();
+      expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getAllByTestId('queued-message-row')).toHaveLength(2);
+      expect(document.activeElement).toBe(disclosure);
+    });
+  });
+
   it('editLastMessage() starts editing the last queued message', async () => {
     const { component, container } = render(QueuedMessageList, {
       props: {

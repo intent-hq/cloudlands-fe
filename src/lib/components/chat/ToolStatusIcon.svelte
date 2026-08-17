@@ -2,7 +2,10 @@
   import Fa from 'svelte-fa';
   import { faCircleCheck, faCircleXmark, faSpinner } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
-  import { OPERATIONAL_ICON_BOX_CLASS, OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
+  import {
+    CHAT_OPERATIONAL_ICON_CLASS,
+    CHAT_OPERATIONAL_LEADING_CLASS,
+  } from './operational-disclosure-row';
 
   interface Props {
     status: 'running' | 'completed' | 'error';
@@ -33,13 +36,13 @@
 </script>
 
 <span
-  class="{OPERATIONAL_ICON_BOX_CLASS} {presentation.className}"
+  class="{CHAT_OPERATIONAL_LEADING_CLASS} shrink-0 {presentation.className}"
   data-testid="tool-call-status"
   data-tool-status={status === 'completed' ? 'success' : status}
   role="img"
   aria-label={presentation.label}
   title={presentation.label}
 >
-  <Fa icon={presentation.icon} size={18} class={OPERATIONAL_ICON_CLASS} />
+  <Fa icon={presentation.icon} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
   <span class="sr-only">{presentation.label}</span>
 </span>

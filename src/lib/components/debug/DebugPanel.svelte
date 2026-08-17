@@ -556,7 +556,7 @@
               <!-- i18n-ignore (dev-only debug UI) -->
               <p class="text-xs text-green-500">✓ Resume triggered successfully</p>
             {:else if backendResumeStatus === 'error'}
-              <p class="text-xs text-red-500">✗ {backendResumeError}</p>
+              <p class="text-xs text-error-foreground">✗ {backendResumeError}</p>
             {/if}
           </div>
         </div>

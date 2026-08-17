@@ -137,6 +137,8 @@ const OpenTabActionSchema = z.object({
   // the renderer so its own equivalent-tab dedupe doesn't coalesce the
   // requested duplicate.
   allowDuplicate: z.boolean().optional(),
+  // Pin the panel resolved by this open, including an existing reused panel.
+  pin: z.boolean().optional(),
 });
 
 const NavigateActionSchema = z.object({
@@ -262,6 +264,7 @@ async function executeAction(
     url: string,
     position?: 'adjacent' | 'replace' | 'same',
     allowDuplicate?: boolean,
+    pin?: boolean,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,
@@ -434,7 +437,10 @@ async function executeAction(
               requestedUrl: action.url,
               agentId,
             });
-            const focused = embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId);
+            const focused =
+              action.pin === undefined
+                ? embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId)
+                : embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId, action.pin);
             return {
               action: 'openTab',
               success: true,
@@ -464,7 +470,8 @@ async function executeAction(
                 idleTabId,
                 `window.location.href = ${JSON.stringify(finalRewrite.url)}`,
               );
-              embeddedBrowserCdp.focusTab(idleTabId, workspaceId);
+              if (action.pin === undefined) embeddedBrowserCdp.focusTab(idleTabId, workspaceId);
+              else embeddedBrowserCdp.focusTab(idleTabId, workspaceId, action.pin);
               return {
                 action: 'openTab',
                 success: true,
@@ -491,11 +498,15 @@ async function executeAction(
         // already checked model-opened tabs above — so the renderer must
         // create a genuinely new tab rather than coalesce onto an equivalent
         // one (which could silently hand the agent a user-opened tab).
-        const result = openTabFn(
-          finalRewrite.url,
-          action.position,
-          agentId ? true : action.allowDuplicate,
-        );
+        const result =
+          action.pin === undefined
+            ? openTabFn(finalRewrite.url, action.position, agentId ? true : action.allowDuplicate)
+            : openTabFn(
+                finalRewrite.url,
+                action.position,
+                agentId ? true : action.allowDuplicate,
+                action.pin,
+              );
         // Lease the new tab to the requesting agent right away so a repeat
         // openTab for the same URL dedupes onto it (intent-hq/monorepo#2541)
         // instead of treating it as an untouchable user-opened tab.
@@ -602,6 +613,7 @@ export async function executeActions(
     url: string,
     position?: 'adjacent' | 'replace' | 'same',
     allowDuplicate?: boolean,
+    pin?: boolean,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,

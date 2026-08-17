@@ -811,10 +811,11 @@
 {/snippet}
 
 <div
-  class="relative flex flex-col"
+  class="relative flex flex-col gap-1"
   class:streaming={isStreaming}
   style="contain: layout style paint;"
   data-tool-executing={[...toolStates.values()].some((s) => s === 'running')}
+  data-operational-stack
 >
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
     {#if block.type === 'content_group'}
@@ -833,17 +834,34 @@
           isStreaming={group.isStreaming}
           isLast={blockIndex === groupedBlocks.length - 1}
           blocks={group.children}
+          adjacentOperationalRow={isAdjacentOperationalClusterRow(
+            groupedBlocks,
+            blockIndex,
+            isVisibleTopLevelBlock,
+          )}
         >
           {#snippet children()}
             {@const childKeys = getResponseGroupBlockKeys(group.children)}
             {#each group.children as childBlock, childIndex (childKeys[childIndex])}
               {#if childBlock.type !== 'tool_result'}
-                <div class="content-block content-block--{childBlock.type}">
+                <div
+                  class="content-block content-block--{childBlock.type} {getOperationalClusterSpacingClass(
+                    group.children,
+                    childIndex,
+                    (candidate) => candidate.type !== 'tool_result',
+                  )}"
+                  data-message-content-block={childBlock.type}
+                >
                   {@render renderContentBlock(
                     childBlock,
                     `${blockIndex}-${childIndex}`,
                     blockIndex,
                     true,
+                    isAdjacentOperationalClusterRow(
+                      group.children,
+                      childIndex,
+                      (candidate) => candidate.type !== 'tool_result',
+                    ),
                   )}
                 </div>
               {/if}

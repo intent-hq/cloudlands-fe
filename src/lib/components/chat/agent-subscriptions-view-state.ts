@@ -8,7 +8,7 @@ function disclosureKey(workspaceId: string, agentId: string): string {
 }
 
 export function getEventSubscriptionsExpanded(workspaceId: string, agentId: string): boolean {
-  return eventSubscriptionsExpandedBySubscription.get(disclosureKey(workspaceId, agentId)) ?? false;
+  return eventSubscriptionsExpandedBySubscription.get(disclosureKey(workspaceId, agentId)) ?? true;
 }
 
 export function setEventSubscriptionsExpanded(

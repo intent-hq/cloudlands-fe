@@ -12,7 +12,10 @@
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
+  import {
+    CHAT_OPERATIONAL_ICON_CLASS,
+    OPERATIONAL_INLINE_DETAILS_CLASS,
+  } from './operational-disclosure-row';
   import { buildToolDisplayModel } from './tool-display-model';
   import ToolStatusIcon from './ToolStatusIcon.svelte';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
@@ -332,6 +335,7 @@
   {leading}
   {summary}
   {trailing}
+  showChevron={false}
   details={expanded ? details : undefined}
   interactive={isExpandable}
   {expanded}
@@ -339,11 +343,12 @@
   ariaLabel={isExpandable
     ? m.chat_toolCall_technicalDetails_label()
     : displayModel.accessibleSentence}
-  title={isExpandable ? m.chat_toolCall_technicalDetails_label() : undefined}
+  title={isExpandable ? m.chat_toolCall_technicalDetails_label() : displayModel.accessibleSentence}
+  summaryTitle={displayModel.accessibleSentence}
   onclick={toggleExpanded}
   onkeydown={handleDisclosureKeydown}
   {detailsId}
-  detailsClass="mt-1"
+  detailsClass={OPERATIONAL_INLINE_DETAILS_CLASS}
   {adjacentOperationalRow}
   streaming={toolState === 'running'}
   toolIcon

@@ -13,6 +13,11 @@ import {
   configuredVisualStates,
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
+import {
+  allocatePanelWidths,
+  DEFAULT_CHAT_PANEL_WIDTH,
+  MIN_PANEL_CANVAS_WIDTH,
+} from '$shared/panel-layout-sizing';
 
 vi.mock('../Panel.svelte', async () => ({
   default: (await import('./mocks/MockMountedPanel.svelte')).default,
@@ -158,6 +163,7 @@ describe('mounted dominant panel expansion', () => {
     async ({ widths, target }) => {
       const canvasWidth =
         widths.reduce((sum, width) => sum + width, 0) + GUTTER * (widths.length - 1);
+      const restoredWidths = allocatePanelWidths(widths, viewportWidth).panelWidths;
       const { workspaceId, panelIds } = initialize(widths.length, canvasWidth, widths);
       await mount(workspaceId);
       const inset = document.querySelector<HTMLElement>('[data-testid="panel-workspace-inset"]')!;
@@ -181,7 +187,9 @@ describe('mounted dominant panel expansion', () => {
 
       appStore.dispatch(toggleExpandPanel(workspaceId, panelIds[target]));
       await waitFor(() => {
-        panelWidths().forEach((width, index) => expect(width).toBeCloseTo(widths[index], 6));
+        panelWidths().forEach((width, index) =>
+          expect(width).toBeCloseTo(restoredWidths[index], 6),
+        );
       });
       expect(selectPanelCanvasWidth.select(appStore.state, workspaceId)).toBe(canvasWidth);
       expect(inset.scrollLeft).toBe(120);
@@ -197,13 +205,18 @@ describe('mounted dominant panel expansion', () => {
       'agent',
     );
     const result = await mount(workspaceId);
+    const expandedCanvasWidth =
+      DEFAULT_CHAT_PANEL_WIDTH + MIN_PANEL_CANVAS_WIDTH * 4 + GUTTER * 4;
     appStore.dispatch(toggleExpandPanel(workspaceId, panelIds[2]));
     await waitFor(() =>
-      expect(selectPanelCanvasWidth.select(appStore.state, workspaceId)).toBe(1652),
+      expect(selectPanelCanvasWidth.select(appStore.state, workspaceId)).toBe(expandedCanvasWidth),
     );
     await waitFor(() => {
       panelWidths().forEach((width, index) =>
-        expect(width).toBeCloseTo(index === 2 ? 500 : 280, 6),
+        expect(width).toBeCloseTo(
+          index === 2 ? DEFAULT_CHAT_PANEL_WIDTH : MIN_PANEL_CANVAS_WIDTH,
+          6,
+        ),
       );
     });
     expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(5);
@@ -213,7 +226,12 @@ describe('mounted dominant panel expansion', () => {
       contained: true,
       canvasSizing: 'content',
     });
-    panelWidths().forEach((width, index) => expect(width).toBeCloseTo(index === 2 ? 500 : 280, 6));
+    panelWidths().forEach((width, index) =>
+      expect(width).toBeCloseTo(
+        index === 2 ? DEFAULT_CHAT_PANEL_WIDTH : MIN_PANEL_CANVAS_WIDTH,
+        6,
+      ),
+    );
     appStore.dispatch(toggleExpandPanel(workspaceId, panelIds[2]));
     await waitFor(() =>
       expect(selectPanelCanvasWidth.select(appStore.state, workspaceId)).toBe(1000),

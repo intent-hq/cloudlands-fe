@@ -78,6 +78,22 @@ export function createMessageSendLaunchBubble(
   return bubble;
 }
 
+export function settleFollowedSendAtBottom(
+  scrollContainer: HTMLElement,
+  shouldFollow: () => boolean,
+): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (scrollContainer.isConnected && shouldFollow()) {
+          followToBottom(scrollContainer);
+        }
+        resolve();
+      });
+    });
+  });
+}
+
 export function animateMessageSend({
   origin,
   target,
@@ -88,6 +104,7 @@ export function animateMessageSend({
   signal,
 }: AnimateMessageSendOptions): Promise<void> {
   let animation: Animation | null = null;
+  let geometryObserver: ResizeObserver | null = null;
   let watchdog: ReturnType<typeof setTimeout> | null = null;
   let overlay: HTMLElement | null = launchBubble ?? null;
   let settled = false;
@@ -99,6 +116,7 @@ export function animateMessageSend({
   const owner: TargetTransitionOwner = { cancel: () => cleanup() };
   const handleAbort = () => cleanup();
   const handlePageHide = () => cleanup();
+  const handleViewportResize = () => cleanup();
   const handleVisibilityChange = () => {
     if (document.hidden) cleanup();
   };
@@ -110,6 +128,8 @@ export function animateMessageSend({
     signal?.removeEventListener('abort', handleAbort);
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     window.removeEventListener('pagehide', handlePageHide);
+    window.removeEventListener('resize', handleViewportResize);
+    geometryObserver?.disconnect();
     try {
       animation?.cancel();
     } catch {
@@ -174,6 +194,19 @@ export function animateMessageSend({
     signal?.addEventListener('abort', handleAbort, { once: true });
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('pagehide', handlePageHide, { once: true });
+    window.addEventListener('resize', handleViewportResize, { once: true });
+    if (typeof ResizeObserver !== 'undefined') {
+      geometryObserver = new ResizeObserver(() => {
+        const currentRect = target.getBoundingClientRect();
+        if (
+          Math.abs(currentRect.width - targetRect.width) > 0.5 ||
+          Math.abs(currentRect.height - targetRect.height) > 0.5
+        ) {
+          cleanup();
+        }
+      });
+      geometryObserver.observe(target);
+    }
     watchdog = setTimeout(cleanup, MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS);
     if (signal?.aborted || document.hidden) {
       cleanup();

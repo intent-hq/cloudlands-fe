@@ -20,7 +20,8 @@ import {
   upsertSession,
 } from '../../agent-session/agent-session-slice';
 import { selectSelectedModel } from '../../model/model-selectors';
-import { openTab, openTabInAdjacentOrSplit } from '../../panel-layout/panel-layout-slice';
+import { openTab, openTabInNewRootColumn } from '../../panel-layout/panel-layout-slice';
+import { selectPanelOpenMode } from '../../user-preferences/user-preferences-selectors';
 import { selectEffectiveDefaultProviderId } from '../../provider-catalog/provider-catalog-selectors';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
 import {
@@ -89,7 +90,11 @@ function* openCreatedAgent(
     closable: true,
   };
   if (options.openInAdjacentPanel) {
-    yield* put(openTabInAdjacentOrSplit(wsId, tab, options.sourcePanelId));
+    yield* put(
+      openTabInNewRootColumn(wsId, tab, {
+        panelOpenMode: yield* selectPanelOpenMode.effect(),
+      }),
+    );
   } else if (options.panelId) {
     yield* put(openTab(wsId, tab, options.panelId));
   } else {

@@ -1,8 +1,12 @@
-import { getPanelDefaultWidth, type PanelDefaultWidthTier } from './panel-layout-sizing';
+import {
+  DEFAULT_PANEL_WIDTH,
+  getPanelDefaultWidth,
+  type PanelDefaultWidthTier,
+} from './panel-layout-sizing';
 
 /** Authoritative default tier for every built-in panel tab type on the frozen base. */
 export const PANEL_DEFAULT_WIDTH_TIERS = {
-  agent: 'narrow',
+  agent: 'chat',
   'agent-overview': 'narrow',
   'activity-changes': 'wide',
   browser: 'wide',
@@ -29,4 +33,11 @@ export function getPanelDefaultWidthTier(type: string): PanelDefaultWidthTier {
 /** Resolve a built-in tab type against the usable panel viewport. */
 export function getPanelDefaultWidthForType(type: string, viewportWidth = 0): number {
   return getPanelDefaultWidth(getPanelDefaultWidthTier(type), viewportWidth);
+}
+
+/** Preserve existing non-chat insertion widths while applying the canonical chat default. */
+export function getPanelCreationWidthForType(type: string): number {
+  return getPanelDefaultWidthTier(type) === 'chat'
+    ? getPanelDefaultWidth('chat')
+    : DEFAULT_PANEL_WIDTH;
 }

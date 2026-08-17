@@ -17,13 +17,12 @@ describe('scrollWorkspaceColumnIntoView', () => {
     container.append(column);
     setHorizontalRect(container, 0, 500);
     setHorizontalRect(column, 600, 900);
+    container.scrollTop = 37;
 
-    expect(scrollWorkspaceColumnIntoView(container, 'ws-new', 'smooth')).toBe(true);
-    expect(column.scrollIntoView).toHaveBeenCalledWith({
-      behavior: 'smooth',
-      block: 'nearest',
-      inline: 'nearest',
-    });
+    expect(scrollWorkspaceColumnIntoView(container, 'ws-new', 'auto')).toBe(true);
+    expect(container.scrollLeft).toBe(400);
+    expect(container.scrollTop).toBe(37);
+    expect(column.scrollIntoView).not.toHaveBeenCalled();
   });
 
   it('does not move the scroller when the workspace is already visible', () => {
@@ -87,13 +86,28 @@ describe('scrollWorkspaceColumnIntoView', () => {
     container.append(column);
     setHorizontalRect(container, 0, 500);
     setHorizontalRect(panel, 600, 900);
+    container.scrollTop = 29;
 
-    expect(scrollWorkspacePanelIntoView(container, 'ws-new', 'panel-new', 'smooth')).toBe(true);
-    expect(panel.scrollIntoView).toHaveBeenCalledWith({
-      behavior: 'smooth',
-      block: 'nearest',
-      inline: 'end',
-    });
+    expect(scrollWorkspacePanelIntoView(container, 'ws-new', 'panel-new', 'auto')).toBe(true);
+    expect(container.scrollLeft).toBe(400);
+    expect(container.scrollTop).toBe(29);
+    expect(panel.scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it('converts visual geometry to layout scroll units at 200% CSS zoom', () => {
+    const container = document.createElement('div');
+    const column = document.createElement('section');
+    const panel = document.createElement('div');
+    column.dataset.workspaceColumn = 'ws-zoomed';
+    panel.dataset.panelId = 'panel-zoomed';
+    column.append(panel);
+    container.append(column);
+    Object.defineProperty(container, 'clientWidth', { configurable: true, value: 500 });
+    setHorizontalRect(container, 0, 1000);
+    setHorizontalRect(panel, 1200, 1800);
+
+    expect(scrollWorkspacePanelIntoView(container, 'ws-zoomed', 'panel-zoomed')).toBe(true);
+    expect(container.scrollLeft).toBe(400);
   });
 
   it('does not move the scroller when the panel is already visible', () => {
@@ -126,9 +140,11 @@ describe('scrollWorkspaceColumnIntoView', () => {
     container.append(column);
     setHorizontalRect(container, 0, 500);
     setHorizontalRect(panel, left, right);
+    container.scrollLeft = 100;
 
     expect(scrollWorkspacePanelIntoView(container, 'ws-clipped', 'panel-clipped')).toBe(true);
-    expect(panel.scrollIntoView).toHaveBeenCalledOnce();
+    expect(container.scrollLeft).toBe(_side === 'left' ? 50 : 150);
+    expect(panel.scrollIntoView).not.toHaveBeenCalled();
   });
 
   it('does nothing when a panel is outside the owning workspace', () => {

@@ -9,24 +9,24 @@
   import type { McpServerConfig } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 
   import {
-  loadServers,
-  toggleWorkspaceMcpServer,
-} from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
+    loadServers,
+    toggleWorkspaceMcpServer,
+  } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
   import {
-  selectMcpServers,
-  selectMcpErrorMessages,
-  selectWorkspaceDisabledMcpServerNamesByWorkspaceId,
-} from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
+    selectMcpServers,
+    selectMcpErrorMessages,
+    selectWorkspaceDisabledMcpServerNamesByWorkspaceId,
+  } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
   import { slide } from 'svelte/transition';
   import Switch from '$lib/components/ui/switch/switch.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import {
-  faChevronDown,
-  faExclamationTriangle,
-  faGear,
-  faPlug,
-  faTerminal,
-} from '@fortawesome/free-solid-svg-icons';
+    faChevronDown,
+    faExclamationTriangle,
+    faGear,
+    faPlug,
+    faTerminal,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { store as appStore } from '$store/renderer/store';
@@ -129,7 +129,11 @@
       class="w-full flex items-center gap-2 px-1.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
       onclick={() => (isExpanded = !isExpanded)}
     >
-      <Fa icon={faChevronDown} size="xs" class="opacity-50 transition-transform duration-200 {isExpanded ? '' : '-rotate-90'}" />
+      <Fa
+        icon={faChevronDown}
+        size="xs"
+        class="opacity-50 transition-transform duration-200 {isExpanded ? '' : '-rotate-90'}"
+      />
       <!-- <Fa icon={faPlug} size="xs" class="opacity-70" /> -->
       <span>{m.workspace_mcpServers_title()}</span>
       <span class="ml-auto text-ui opacity-60"
@@ -146,9 +150,7 @@
           {@const serverError = error}
           {@const faviconUrl = getFaviconUrl(server)}
           {@const showFallback = !faviconUrl || faviconErrors[server.name]}
-          <div
-            class="flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors group"
-          >
+          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors group">
             <!-- Server Icon - Favicon for HTTP/SSE, terminal icon for command -->
             <div
               class="size-3.5 rounded flex items-center justify-center shrink-0 {isEnabled
@@ -174,16 +176,16 @@
             <!-- Server Name & Type -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5">
-                <span
-                  class="text-sm truncate {isEnabled
-                    ? 'text-foreground'
-                    : 'text-subtle'}"
-                >
+                <span class="text-sm truncate {isEnabled ? 'text-foreground' : 'text-subtle'}">
                   {server.name}
                 </span>
                 {#if serverError && isEnabled}
                   <Tooltip content={serverError} side="right" delayDuration={200}>
-                    <Fa icon={faExclamationTriangle} size="xs" class="text-red-500 shrink-0" />
+                    <Fa
+                      icon={faExclamationTriangle}
+                      size="xs"
+                      class="text-error-foreground shrink-0"
+                    />
                   </Tooltip>
                 {/if}
               </div>

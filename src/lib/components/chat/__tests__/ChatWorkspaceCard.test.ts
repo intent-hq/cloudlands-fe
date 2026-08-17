@@ -60,7 +60,7 @@ vi.mock('$lib/components/ui/tooltip/Tooltip.svelte', async () => ({
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
 }));
-vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
+vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 
@@ -147,6 +147,7 @@ async function renderWorkspaceCard(workspaceIds = ['ws-1']) {
 
 async function openMenu() {
   const button = screen.getByRole('button', { name: /workspace actions for archive cleanup/i });
+  button.focus();
   button.getBoundingClientRect = vi.fn(() => ({
     x: 120,
     y: 20,
@@ -189,9 +190,12 @@ describe('ChatWorkspaceCard overflow menu', () => {
     const actions = button.closest('.wc-actions');
     expect(actions?.className).toContain('opacity-0');
     expect(actions?.className).toContain('group-hover:opacity-100');
+    expect(button.getAttribute('aria-expanded')).toBe('false');
 
     const menu = await openMenu();
 
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(document.body.contains(menu)).toBe(true);
     expect(mocks.goto).not.toHaveBeenCalled();
     expect(screen.getByRole('menuitem', { name: 'Open' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: 'Open in New Window' })).toBeTruthy();
@@ -200,6 +204,48 @@ describe('ChatWorkspaceCard overflow menu', () => {
 
     await fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(document.body.contains(menu)).toBe(false));
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(button);
+  });
+
+  it.each(['Enter', ' '])('opens from the keyboard with %s and does not navigate', async (key) => {
+    await renderWorkspaceCard();
+    const button = await screen.findByRole('button', {
+      name: /workspace actions for archive cleanup/i,
+    });
+
+    button.focus();
+    await fireEvent.keyDown(button, { key });
+
+    expect(await screen.findByRole('menu')).toBeTruthy();
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(mocks.goto).not.toHaveBeenCalled();
+  });
+
+  it('dismisses outside and keeps only one card menu open', async () => {
+    mocks.workspaces['ws-2'] = workspace('ws-2', 'Second Workspace');
+    await renderWorkspaceCard(['ws-1', 'ws-2']);
+    const first = await screen.findByRole('button', {
+      name: /workspace actions for archive cleanup/i,
+    });
+    const second = screen.getByRole('button', { name: /workspace actions for second workspace/i });
+
+    await fireEvent.click(first);
+    expect(await screen.findByRole('menu')).toBeTruthy();
+    await fireEvent.keyDown(second, { key: 'Enter' });
+
+    await waitFor(() => expect(first.getAttribute('aria-expanded')).toBe('false'));
+    expect(second.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getAllByRole('menu')).toHaveLength(1);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await fireEvent.pointerDown(document.body, {
+      button: 0,
+      pointerType: 'mouse',
+      clientX: 100,
+      clientY: 100,
+    });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   });
 
   it('runs open actions from the menu', async () => {
@@ -220,16 +266,28 @@ describe('ChatWorkspaceCard overflow menu', () => {
     await waitFor(() => expect(screen.getByText('Archive Cleanup')).toBeTruthy());
 
     await openMenu();
+    mocks.dispatch.mockClear();
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }));
-    expect(mocks.dispatch).toHaveBeenCalledWith({
+    expect(
+      mocks.dispatch.mock.calls.filter(
+        ([action]) => action.type === 'workspaceOperations/requestArchiveWorkspace',
+      ),
+    ).toHaveLength(1);
+    expect(mocks.dispatch).toHaveBeenLastCalledWith({
       type: 'workspaceOperations/requestArchiveWorkspace',
       payload: ['ws-1'],
     });
 
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     await openMenu();
+    mocks.dispatch.mockClear();
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete Space…' }));
-    expect(mocks.dispatch).toHaveBeenCalledWith({
+    expect(
+      mocks.dispatch.mock.calls.filter(
+        ([action]) => action.type === 'workspaceOperations/requestDeleteWorkspace',
+      ),
+    ).toHaveLength(1);
+    expect(mocks.dispatch).toHaveBeenLastCalledWith({
       type: 'workspaceOperations/requestDeleteWorkspace',
       payload: ['ws-1'],
     });

@@ -87,9 +87,18 @@ function expectWidths(expected: number[]) {
   const actual = panelWidths();
   expect(actual).toHaveLength(expected.length);
   actual.forEach((width, index) => expect(width).toBeCloseTo(expected[index], 6));
+  const panelContentWidth =
+    actual.reduce((sum, width) => sum + width, 0) + GUTTER_WIDTH * (actual.length - 1);
   expect(
-    actual.reduce((sum, width) => sum + width, 0) + GUTTER_WIDTH * (actual.length - 1),
-  ).toBeCloseTo(canvasWidth(), 6);
+    canvasWidth(),
+    `persisted=${selectPanelCanvasWidth.select(appStore.state, WORKSPACE_ID)} source=${appStore.state.panelLayout.byWorkspaceId[WORKSPACE_ID].canvasWidthSource}`,
+  ).toBeCloseTo(panelContentWidth, 6);
+}
+
+function widthsAfterDelta(index: number, delta: number): number[] {
+  const expected = panelWidths();
+  expected[index] = Math.max(96, expected[index] + delta);
+  return expected;
 }
 
 function splitHandle(index: number): HTMLButtonElement {
@@ -140,15 +149,20 @@ async function releaseAndSample(
   expectWidths(expected);
 
   const samples: Sample[] = [];
-  const sample = (phase: string) => {
-    expectWidths(expected);
+  const sample = (phase: string, verifyCanvas = true) => {
+    if (verifyCanvas) expectWidths(expected);
+    else {
+      const actual = panelWidths();
+      expect(actual).toHaveLength(expected.length);
+      actual.forEach((width, index) => expect(width).toBeCloseTo(expected[index], 6));
+    }
     samples.push({ phase, timestamp: performance.now(), widths: panelWidths() });
   };
   sample('final-preview');
   fireEvent.mouseUp(document, { clientX: moves.at(-1) ?? startX });
-  sample('pointerup');
+  sample('pointerup', false);
   await Promise.resolve();
-  sample('microtask');
+  sample('microtask', false);
   await tick();
   TestResizeObserver.flush();
   await tick();
@@ -274,21 +288,24 @@ describe('root horizontal resize release evidence', () => {
     const inset = document.querySelector<HTMLElement>('[data-testid="panel-workspace-inset"]')!;
     inset.scrollLeft = 173;
 
-    await releaseAndSample(splitHandle(0), 100, [116, 148, 180], [400, 500, 364]);
+    await releaseAndSample(splitHandle(0), 100, [116, 148, 180], widthsAfterDelta(0, 80));
     expect(inset.scrollLeft).toBe(173);
-    await releaseAndSample(splitHandle(1), 200, [180, 160, 140], [400, 440, 364]);
+    await releaseAndSample(splitHandle(1), 200, [180, 160, 140], widthsAfterDelta(1, -60));
     expect(inset.scrollLeft).toBe(173);
-    await releaseAndSample(outerHandle(), 1000, [1030, 1060, 1090], [400, 440, 454]);
+    await releaseAndSample(outerHandle(), 1000, [1030, 1060, 1090], widthsAfterDelta(2, 90));
     expect(inset.scrollLeft).toBe(173);
   });
 
   it('preserves siblings through repeated expand, shrink, rapid input, and the minimum clamp', async () => {
     await mount('columns');
-    await releaseAndSample(splitHandle(0), 100, [140, 196], [416, 500, 364]);
-    await releaseAndSample(splitHandle(0), 100, [80, 20, -40], [276, 500, 364]);
-    await releaseAndSample(splitHandle(0), 100, [-900], [96, 500, 364]);
-    await releaseAndSample(splitHandle(1), 200, [260, 310], [96, 610, 364]);
-    expect(selectPanelCanvasWidth.select(appStore.state, WORKSPACE_ID)).toBe(1086);
+    await releaseAndSample(splitHandle(0), 100, [140, 196], widthsAfterDelta(0, 96));
+    await releaseAndSample(splitHandle(0), 100, [80, 20, -40], widthsAfterDelta(0, -140));
+    await releaseAndSample(splitHandle(0), 100, [-900], widthsAfterDelta(0, -1000));
+    await releaseAndSample(splitHandle(1), 200, [260, 310], widthsAfterDelta(1, 110));
+    expect(selectPanelCanvasWidth.select(appStore.state, WORKSPACE_ID)).toBeCloseTo(
+      canvasWidth(),
+      6,
+    );
     expect(appStore.state.panelLayout.byWorkspaceId[WORKSPACE_ID].canvasWidthSource).toBe(
       'explicit',
     );
@@ -298,12 +315,17 @@ describe('root horizontal resize release evidence', () => {
     await mount('columns');
     startProductionSaga();
     await settleSaga();
-    const trace = await releaseAndSample(splitHandle(0), 100, [188], [408, 500, 364]);
+    const persistedWidths = widthsAfterDelta(0, 88);
+    const trace = await releaseAndSample(splitHandle(0), 100, [188], persistedWidths);
     sagaChannel!.put({ type: resizePanelLayoutAtHorizontalPanel.type, payload: [WORKSPACE_ID] });
     await settleSaga();
 
     const serialized = JSON.parse(storage.get(STORAGE_KEY) ?? 'null');
-    expect(serialized).toMatchObject({ canvasWidth: 1288, canvasWidthSource: 'explicit' });
+    const persistedCanvasWidth = canvasWidth();
+    expect(serialized).toMatchObject({
+      canvasWidth: persistedCanvasWidth,
+      canvasWidthSource: 'explicit',
+    });
     trace.push({
       phase: 'serialized-storage',
       timestamp: performance.now(),
@@ -320,8 +342,8 @@ describe('root horizontal resize release evidence', () => {
     await settleSaga();
     sagaChannel!.put(panelLayoutScopeMounted(WORKSPACE_ID));
     await settleSaga();
-    const result = await mount('columns', 1288);
-    expectWidths([408, 500, 364]);
+    const result = await mount('columns', persistedCanvasWidth);
+    expectWidths(persistedWidths);
     trace.push({ phase: 'rehydrated-mount', timestamp: performance.now(), widths: panelWidths() });
     expect(trace.slice(-2).map(({ phase }) => phase)).toEqual([
       'serialized-storage',

@@ -86,7 +86,7 @@ vi.mock('$lib/components/ui/tooltip/Tooltip.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockTooltip.svelte')).default,
 }));
 
-vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
+vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 

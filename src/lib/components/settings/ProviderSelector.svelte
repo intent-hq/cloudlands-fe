@@ -439,7 +439,7 @@
 <div class="flex flex-col gap-6">
   {#if checkError}
     <div class="flex items-center justify-between gap-4 rounded-xl bg-card px-6 py-4">
-      <p class="text-sm text-destructive-foreground">{checkError}</p>
+      <p class="text-sm text-error-foreground">{checkError}</p>
       <button
         type="button"
         class="text-primary hover:text-primary/80 cursor-pointer transition-colors text-xs font-medium"
@@ -601,11 +601,11 @@
                     {/if}
 
                     <DropdownMenu align="end" contentClass="p-0!">
-                      {#snippet trigger({ toggle }: { toggle: () => void })}
+                      {#snippet trigger({ props })}
                         <Button
+                          {...props}
                           variant="ghost-light"
                           size="icon-xs"
-                          onclick={toggle}
                           aria-label={m.settings_providers_actionsFor_ariaLabel({
                             name: provider.name,
                           })}

@@ -16,6 +16,7 @@ export { default as PanelLayout } from './PanelLayout.svelte';
 export { default as PanelLayoutControls } from './PanelLayoutControls.svelte';
 export { default as PanelLayoutHeader } from './PanelLayoutHeader.svelte';
 export { default as PanelMinimap } from './PanelMinimap.svelte';
+export { default as PanelNavigator } from './PanelNavigator.svelte';
 export { default as PanelSplitHandle } from './PanelSplitHandle.svelte';
 export { default as PanelTabBar } from './PanelTabBar.svelte';
 
@@ -24,8 +25,4 @@ export type { LayoutPreset, LayoutPresetId } from './types';
 
 // Legacy type exports (deprecated, use LayoutPresetId instead)
 export type ContentPresetId =
-  | 'focus-agent'
-  | 'focus-code'
-  | 'focus-notes'
-  | 'code-review'
-  | 'research';
+  'focus-agent' | 'focus-code' | 'focus-notes' | 'code-review' | 'research';

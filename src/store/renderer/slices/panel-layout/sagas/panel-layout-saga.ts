@@ -35,6 +35,11 @@ import {
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
+import { selectPanelOpenMode } from '../../user-preferences/user-preferences-selectors';
+import {
+  setPanelOpenMode,
+  togglePanelOpenMode,
+} from '../../user-preferences/user-preferences-slice';
 import {
   resolveCanonicalInitialAgent,
   resolveEmptyLayoutAgent,
@@ -48,11 +53,19 @@ import {
   applyNoteUpdated,
   loadWorkspaceNotesSucceeded,
 } from '../../workspace-notes/workspace-notes-slice';
-import { selectPanelLayoutWorkspace } from '../panel-layout-selectors';
-import { normalizeTablessPanelLayout, removeForeignWorkspaceTabs } from '../panel-layout-tabless';
+import {
+  selectPanelLayoutWorkspace,
+  selectPanelLayoutWorkspaceIds,
+} from '../panel-layout-selectors';
+import {
+  getPanelOrder,
+  normalizeTablessPanelLayout,
+  removeForeignWorkspaceTabs,
+} from '../panel-layout-tabless';
 import { migratePanelCanvasWidth } from '../panel-layout-width-provenance';
 import {
   clearPanelLayout,
+  collapseToReusablePanel,
   bootstrapNewWorkspaceLayout,
   closeActiveTab,
   closeAllOthersEverywhere,
@@ -81,6 +94,7 @@ import {
   openTab,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
+  openTabWithPanelModeRequested,
   observeDeferredSpecGeneration,
   panelLayoutScopeMounted,
   panelLayoutScopeUnmounted,
@@ -96,6 +110,7 @@ import {
   selectPreviousTab,
   setActiveTab,
   setDeferSpecTab,
+  setPanelPinned,
   setRestoreStatus,
   splitPanel,
   toggleExpandPanel,
@@ -119,6 +134,7 @@ const PERSIST_ACTIONS = [
   openTab,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
+  collapseToReusablePanel,
   closeTab,
   closeActiveTab,
   closeTabsByType,
@@ -159,6 +175,7 @@ const PERSIST_ACTIONS = [
   updateTabFavicon,
   updateFileTabPath,
   consumePendingFocus,
+  setPanelPinned,
 ];
 
 const HISTORY_ACTIONS = [
@@ -228,6 +245,47 @@ function getWsId(action: { payload?: unknown }): string | undefined {
   return undefined;
 }
 
+function workspaceNeedsReusablePanelCollapse(workspace: WorkspacePanelLayoutState): boolean {
+  const panels = Object.values(workspace.panels);
+  const unpinned = panels.filter(
+    (panel) => panel.pinned !== true && !panel.tabs.some((tab) => tab.closable === false),
+  );
+  return (
+    unpinned.length > 1 ||
+    (unpinned.length === 1 && unpinned[0].tabs.length === 0 && panels.some((panel) => panel.pinned))
+  );
+}
+
+function* enforceReusablePanelInvariant(action: { payload?: unknown }): SagaGenerator<void> {
+  if ((yield* selectPanelOpenMode.effect()) !== 'pin') return;
+  const wsId = getWsId(action);
+  if (!wsId) return;
+  const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
+  if (workspace !== emptyWorkspaceState && workspaceNeedsReusablePanelCollapse(workspace)) {
+    yield* put(collapseToReusablePanel(wsId));
+  }
+}
+
+function* collapseAllWorkspacesForPanelMode(): SagaGenerator<void> {
+  if ((yield* selectPanelOpenMode.effect()) !== 'pin') return;
+  const workspaceIds = yield* selectPanelLayoutWorkspaceIds.effect();
+  for (const wsId of workspaceIds) yield* put(collapseToReusablePanel(wsId));
+}
+
+function* openTabWithPanelMode(
+  action: ReturnType<typeof openTabWithPanelModeRequested>,
+): SagaGenerator<void> {
+  const { wsId, tab, options, timestamp } = action.payload;
+  yield* put(
+    openTabInNewRootColumn(
+      wsId,
+      tab,
+      { ...options, panelOpenMode: yield* selectPanelOpenMode.effect() },
+      timestamp,
+    ),
+  );
+}
+
 function collectPanelIds(node: PanelLayoutNode, panelIds: Set<string>): boolean {
   if (node.type === 'panel') {
     if (typeof node.panelId !== 'string' || node.panelId.length === 0) return false;
@@ -286,6 +344,7 @@ export function isStoredLayoutValid(value: unknown): value is WorkspacePanelLayo
     for (const [panelId, panel] of Object.entries(layout.panels)) {
       if (!panel || panel.id !== panelId || !Array.isArray(panel.tabs)) return false;
       if (panel.pristine !== undefined && typeof panel.pristine !== 'boolean') return false;
+      if (panel.pinned !== undefined && typeof panel.pinned !== 'boolean') return false;
       if (
         !panel.tabs.every((tab) => tab && typeof tab === 'object' && typeof tab.id === 'string')
       ) {
@@ -334,6 +393,19 @@ function normalizeLayoutForWorkspace(
   if (layout.newWorkspaceLifecycle !== undefined) {
     normalized.newWorkspaceLifecycle = layout.newWorkspaceLifecycle;
   }
+  const order = getPanelOrder(normalized.root);
+  const initialAgentId = normalized.newWorkspaceLifecycle?.initialAgentId;
+  const initialPanelId = order.find((panelId) =>
+    normalized.panels[panelId]?.tabs.some(
+      (tab) => tab.type === 'agent' && (!initialAgentId || String(tab.agentId) === initialAgentId),
+    ),
+  );
+  if (initialPanelId && normalized.panels[initialPanelId].pinned === undefined) {
+    normalized.panels = {
+      ...normalized.panels,
+      [initialPanelId]: { ...normalized.panels[initialPanelId], pinned: true },
+    };
+  }
   return normalized;
 }
 
@@ -359,6 +431,8 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
       { force: true },
     ),
   );
+  const opened = yield* selectPanelLayoutWorkspace.effect(wsId);
+  if (opened.focusedPanelId) yield* put(setPanelPinned(wsId, opened.focusedPanelId, true));
 }
 
 export function* loadLayoutFromStorage(
@@ -691,6 +765,9 @@ export function* panelLayoutSaga(): SagaGenerator<void> {
       reconcileSpecFromNoteAction,
     );
     yield* takeEvery(PERSIST_ACTIONS, persistPanelLayout);
+    yield* takeEvery(PERSIST_ACTIONS, enforceReusablePanelInvariant);
+    yield* takeEvery(openTabWithPanelModeRequested, openTabWithPanelMode);
+    yield* takeEvery([setPanelOpenMode, togglePanelOpenMode], collapseAllWorkspacesForPanelMode);
     yield* takeEvery(clearPanelLayout, clearPersistedLayout);
     const historyWatcher = yield* takeEvery(HISTORY_ACTIONS, queueHistorySaveForAction);
     yield* takeLatest(initializeLayout, loadHistoryForWorkspace);

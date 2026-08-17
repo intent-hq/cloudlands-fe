@@ -927,14 +927,14 @@
       <div class="flex shrink-0 -mt-0.5 -mr-2 items-center gap-0.5" data-workspace-header-actions>
         {#if !hideActionsMenu}
           <DropdownMenu bind:open={dropdownOpen}>
-            {#snippet trigger({ toggle }: { toggle: () => void })}
+            {#snippet trigger({ props })}
               <Button
+                {...props}
                 variant="ghost-light"
                 size="icon-sm"
                 data-workspace-actions-kebab
                 aria-label={m.workspace_progressCard_actions_ariaLabel()}
                 class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
-                onclick={toggle}
                 disabled={isDeleting}
               >
                 {#if isDeleting}
@@ -1344,7 +1344,7 @@
     </div>
   {:else if readyTasksError}
     <div
-      class="w-full px-4x pb-3 text-xs text-destructive-foreground mt-2"
+      class="w-full px-4x pb-3 text-xs text-error-foreground mt-2"
       transition:slide={{ axis: 'y', duration: 200 }}
     >
       Error: {readyTasksError}

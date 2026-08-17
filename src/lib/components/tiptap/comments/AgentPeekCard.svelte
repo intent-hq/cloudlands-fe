@@ -16,7 +16,7 @@
   import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
@@ -134,7 +134,7 @@
       aria-label={m.tiptap_agentPeek_session_ariaLabel({ name: agentData.name })}
     >
       <div class="icon-wrapper">
-        <AuggieAvatar
+        <AgentAvatar
           size={24}
           agentId={agentData.id}
           class={cn($agentIsResponding$ && 'animate-pulse')}
@@ -177,7 +177,7 @@
     {#if agentData}
       <!-- Header - Always visible (collapsed and expanded) -->
       <div class="flex items-center gap-2 px-3 py-2">
-        <AuggieAvatar
+        <AgentAvatar
           size={isCollapsed ? 18 : 20}
           agentId={agentData.id}
           class={cn($agentIsResponding$ && 'animate-pulse')}
@@ -289,9 +289,9 @@
         {:else}
           <!-- Agent not found error (comment is old) -->
           <div class="flex items-start gap-2">
-            <Fa icon={faExclamationTriangle} class="h-4 w-4 mt-0.5 text-destructive-foreground" />
+            <Fa icon={faExclamationTriangle} class="h-4 w-4 mt-0.5 text-error-foreground" />
             <div class="flex-1">
-              <div class="text-sm font-medium text-destructive-foreground">
+              <div class="text-sm font-medium text-error-foreground">
                 {displayMode === 'full'
                   ? m.tiptap_agentPeek_assignedNotFound_label()
                   : m.tiptap_agentPeek_notFound_label()}
@@ -339,7 +339,7 @@
 
   .icon-button.session-comment.error {
     border-color: var(--destructive);
-    background: var(--destructive-foreground);
+    background: var(--error-foreground);
   }
 
   .icon-button:hover {

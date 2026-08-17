@@ -1057,6 +1057,7 @@
         sidebarStorageKey={`workspace-left-panel-width:${workspaceId}`}
         sidebarExpandedStorageKey={`workspace-left-panel-expanded-width:${workspaceId}`}
         {sidebarFillsAvailableWidth}
+        {columnMode}
         disableSidebarWidthTransition={columnMode}
         {onSidebarWidthChange}
         startCollapsed={isOnboarding}

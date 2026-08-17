@@ -385,12 +385,12 @@
 {:else}
   <div class="inline-flex items-center {className}">
     <DropdownMenu bind:open={dropdownOpen} align="end" portal={usePortal} {side}>
-      {#snippet trigger({ toggle, props })}
+      {#snippet trigger({ props })}
         {#if children}
           <!-- With a single action there is no dropdown to show; run it directly. -->
           <button
             type="button"
-            onclick={actions.length > 1 ? toggle : handlePrimaryClick}
+            onclick={actions.length > 1 ? undefined : handlePrimaryClick}
             class="cursor-pointer"
             title={primaryTitle}
             {...(actions.length > 1 ? props : {})}
@@ -400,9 +400,9 @@
         {:else if compact}
           <!-- Compact mode: single icon button with dropdown -->
           <Button
+            {...props}
             variant="ghost-light"
             size="icon-xs"
-            onclick={toggle}
             tooltip={m.ui_openCombo_openInApp_tooltip()}
             tooltipSide="bottom"
           >
@@ -445,9 +445,9 @@
             </button>
             {#if actions.length > 1}
               <button
+                {...props}
                 type="button"
                 class="flex items-center h-full min-h-full px-1.5 py-2 {bgClass} border-lx border-border transition-colors cursor-pointer"
-                onclick={toggle}
               >
                 <Fa icon={faChevronDown} class="w-2! h-2! text-ghost" />
               </button>

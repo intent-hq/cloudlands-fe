@@ -306,15 +306,6 @@
       : liveGroups;
   });
 
-  function _isRunning(ws: Workspace): boolean {
-    // Streaming-based UI affordance only (the running dot on the card); the
-    // status grouping above renders the BE displayStatus verbatim and is never
-    // influenced by this signal.
-    void activeStreamsVersion;
-    const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
-    return ws.activity === 'agent_running' || streamingAgentIds.length > 0;
-  }
-
   function _getStreamingIds(ws: Workspace): string[] {
     void activeStreamsVersion;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
@@ -457,7 +448,6 @@
             <WorkspaceCard
               {workspace}
               variant="compact"
-              isRunning={_isRunning(workspace)}
               isUnread={_isUnread(workspace)}
               isPinned={$pinnedIds$.includes(workspace.id)}
               streamingAgentIds={_getStreamingIds(workspace)}
@@ -531,7 +521,6 @@
             <WorkspaceCard
               {workspace}
               variant="compact"
-              isRunning={_isRunning(workspace)}
               isUnread={_isUnread(workspace)}
               isPinned={$pinnedIds$.includes(workspace.id)}
               trailingLabel={workspace.status === WorkspaceStatusEnum.Archived
@@ -572,7 +561,6 @@
                   <WorkspaceCard
                     {workspace}
                     variant="compact"
-                    isRunning={_isRunning(workspace)}
                     isUnread={_isUnread(workspace)}
                     isPinned={$pinnedIds$.includes(workspace.id)}
                     trailingLabel={workspace.status === WorkspaceStatusEnum.Archived
@@ -624,7 +612,6 @@
               <WorkspaceCard
                 {workspace}
                 variant="compact"
-                isRunning={_isRunning(workspace)}
                 isUnread={_isUnread(workspace)}
                 isPinned={$pinnedIds$.includes(workspace.id)}
                 trailingLabel={workspace.status === WorkspaceStatusEnum.Archived

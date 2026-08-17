@@ -2,18 +2,17 @@
   import { handleLink } from '$features/navigation/link-handler';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
-  selectSentryIsAuthenticated,
-  selectSentryOrganization,
-  selectSentryIsConnecting,
-  selectSentryError,
-} from '$store/renderer/slices/sentry-auth/sentry-auth-selectors';
+    selectSentryIsAuthenticated,
+    selectSentryOrganization,
+    selectSentryIsConnecting,
+    selectSentryError,
+  } from '$store/renderer/slices/sentry-auth/sentry-auth-selectors';
   import {
-  initializeSentryAuth,
-  connectSentry,
-  logoutSentry,
-  clearSentryError,
-} from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
-
+    initializeSentryAuth,
+    connectSentry,
+    logoutSentry,
+    clearSentryError,
+  } from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
 
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -108,7 +107,7 @@
     </div>
     <p class="text-xs text-subtle pl-6">{m.settings_connections_sentry_description()}</p>
     {#if $error$}
-      <p class="text-xs text-destructive-foreground pl-6">{$error$}</p>
+      <p class="text-xs text-error-foreground pl-6">{$error$}</p>
     {/if}
   </div>
 
@@ -126,7 +125,7 @@
       <span class="text-ghost">·</span>
       <button
         type="button"
-        class="text-muted-foreground hover:text-destructive-foreground cursor-pointer transition-colors"
+        class="text-muted-foreground hover:text-error-foreground cursor-pointer transition-colors"
         onclick={handleSentryDisconnect}
         disabled={isDisconnectingSentry}
       >
@@ -172,7 +171,7 @@
         id="sentry-token"
         type="password"
         bind:value={sentryToken}
-        placeholder={'sntrys_...' /* i18n-ignore (token format) */}
+        placeholder={/* i18n-ignore (credential format example) */ 'sntrys_...'}
         disabled={$storeIsConnecting$}
         class="text-sm"
       />
@@ -207,7 +206,12 @@
           ? m.settings_connections_connecting()
           : m.settings_connections_connect()}
       </Button>
-      <Button variant="ghost" size="sm" onclick={handleCancelConnect} disabled={$storeIsConnecting$}>
+      <Button
+        variant="ghost"
+        size="sm"
+        onclick={handleCancelConnect}
+        disabled={$storeIsConnecting$}
+      >
         {m.settings_connections_cancel()}
       </Button>
     </div>

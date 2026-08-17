@@ -116,10 +116,6 @@ vi.mock('$lib/components/ui/tooltip', async () => ({
   TooltipRich: (await import('../sidebar/__tests__/mocks/MockTooltipRich.svelte')).default,
 }));
 
-vi.mock('$lib/components/ui/dropdown-menu.svelte', async () => ({
-  default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
-}));
-
 vi.mock('$features/workspace/components/WorkspaceActionsMenu.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
@@ -404,5 +400,46 @@ describe('WorkspaceSidebarHeader status message', () => {
 
     await waitFor(() => expect(screen.queryByLabelText('Workspace status')).toBeNull());
     expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it.each(['Enter', ' '])(
+    'opens workspace actions with %s and restores focus on Escape',
+    async (key) => {
+      const { container } = await renderHeader();
+      const trigger = screen.getByRole('button', { name: 'Workspace actions' });
+
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key });
+      const menu = await screen.findByRole('menu');
+
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      expect(container.contains(menu)).toBe(false);
+      await fireEvent.keyDown(menu, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      expect(document.activeElement).toBe(trigger);
+    },
+  );
+
+  it('opens workspace actions on pointer click and dismisses outside', async () => {
+    await renderHeader();
+    const trigger = screen.getByRole('button', { name: 'Workspace actions' });
+
+    await fireEvent.pointerDown(trigger, { button: 0, pointerType: 'mouse' });
+    await fireEvent.click(trigger, { detail: 1 });
+    await screen.findByRole('menu');
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await fireEvent.pointerDown(document.body, {
+      button: 0,
+      pointerType: 'mouse',
+      clientX: 100,
+      clientY: 100,
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('menu')).toBeNull();
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    });
   });
 });

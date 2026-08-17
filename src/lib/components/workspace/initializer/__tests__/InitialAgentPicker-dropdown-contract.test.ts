@@ -8,14 +8,15 @@ const picker = readFileSync(
 );
 
 describe('InitialAgentPicker specialist dropdown', () => {
-  it('uses the menu trigger toggle only after single-agent mode is selected', () => {
+  it('forwards the menu trigger contract only after single-agent mode is selected', () => {
     const start = picker.indexOf('<DropdownMenu');
     const end = picker.indexOf('</DropdownMenu>', start);
     const dropdownMarkup = picker.slice(start, end);
 
-    expect(dropdownMarkup).toContain('{#snippet trigger({ toggle }');
+    expect(dropdownMarkup).toContain('{#snippet trigger({ props }');
     expect(dropdownMarkup).toContain('if (isTeamMode)');
-    expect(dropdownMarkup).toContain('toggle();');
+    expect(dropdownMarkup).toContain('{...isTeamMode ? {} : props}');
+    expect(dropdownMarkup).toContain('props.onclick');
   });
 
   it('opts both model pickers into the modal collision boundary without focus rings', () => {

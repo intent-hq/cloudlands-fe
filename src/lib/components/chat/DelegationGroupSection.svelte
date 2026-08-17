@@ -38,6 +38,7 @@
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_ICON_CLASS,
+    SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
   } from './subscription-disclosure';
 
   interface Props {
@@ -88,12 +89,12 @@
   data-testid="delegation-group-section"
 >
   <div
-    class="flex min-h-9 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3 py-2 text-sm text-subtle"
+    class="flex min-h-9 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3 py-2 {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
     data-testid="delegation-group-header"
   >
     <button
       type="button"
-      class="flex min-w-0 flex-1 items-center gap-1.5 rounded border-none bg-transparent p-0 text-left font-[inherit] text-subtle cursor-pointer hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      class="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       class:text-warning={deliveryPending}
       data-testid="group-summary-toggle"
       aria-expanded={!isCollapsed}
@@ -214,6 +215,7 @@
       <span class="inline-flex" data-testid="group-chevron">
         <Fa
           icon={faChevronDown}
+          size={16}
           class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {isCollapsed
             ? 'rotate-90'
             : ''}"

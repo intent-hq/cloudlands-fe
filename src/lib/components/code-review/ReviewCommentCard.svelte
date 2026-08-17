@@ -148,7 +148,7 @@
             {m.codeReview_commentCard_loading_label()}
           </div>
         {:else if snippetError}
-          <div class="text-xs text-red-500 py-2">{snippetError}</div>
+          <div class="text-xs text-error-foreground py-2">{snippetError}</div>
         {:else if codeSnippet}
           <CodeBlock
             code={codeSnippet}

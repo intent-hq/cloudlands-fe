@@ -76,6 +76,35 @@ describe('browser:resolve-url IPC handler', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('forwards explicit pin intent in the browser open event', async () => {
+    const { executeActions } = await import('../main/browser-action-executor');
+    vi.mocked(executeActions).mockImplementationOnce(async (_input, openTab) => {
+      openTab?.('https://example.com', 'adjacent', true, true);
+      return { success: true, results: [] };
+    });
+    const { executeBrowserActions } = await import('../main/browser.ipc');
+    const { sendToWorkspaceWindows } = await import('../../system/main/system.ipc');
+
+    await executeBrowserActions(
+      [{ action: 'openTab', url: 'https://example.com', pin: true }],
+      undefined,
+      'agent-1',
+      'ws-1',
+    );
+
+    expect(sendToWorkspaceWindows).toHaveBeenCalledWith(
+      'ws-1',
+      'browser:open-tab',
+      expect.objectContaining({
+        url: 'https://example.com',
+        position: 'adjacent',
+        workspaceId: 'ws-1',
+        allowDuplicate: true,
+        pin: true,
+      }),
+    );
+  });
+
   it('rewrites daemon.localhost to 127.0.0.1 when the backend is same-host', async () => {
     mocks.isSameHostBackendActive.mockReturnValue(true);
     const handler = await registerAndGetHandler();

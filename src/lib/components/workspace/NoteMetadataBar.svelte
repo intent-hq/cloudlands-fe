@@ -3,7 +3,7 @@
   import type { Note, AgentMessage, AgentSession } from '$shared/types';
   import type { WorkspaceId, AgentId } from '$shared/types/branded-ids';
   import { createLogger } from '$lib/utils/client-logger';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import TaskStatusIndicator from './TaskStatusIndicator.svelte';
   import TaskRelationLink from './TaskRelationLink.svelte';
   import Fa from 'svelte-fa';
@@ -238,7 +238,7 @@
                   onclick={(e) => handleAgentClick(e, agentId)}
                   class="inline-flex items-center gap-1 min-w-0 py-0.5 pl-0.5 pr-2 rounded bg-muted/30 px-2 cursor-pointer"
                 >
-                  <AuggieAvatar size={22} {agentId} />
+                  <AgentAvatar size={22} {agentId} />
                   <span class="truncate font-medium text-subtle -mt-0.5"
                     >{getAgentName(agentId)}</span
                   >

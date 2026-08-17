@@ -12,7 +12,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { toast } from '$lib/components/ui/toast';
@@ -434,7 +434,7 @@
             }}
             title={m.notes_diagramBlock_viewAgent_tooltip()}
           >
-            <AuggieAvatar agentId={linkedAgentId} size={16} />
+            <AgentAvatar agentId={linkedAgentId} size={16} />
           </button>
         {/if}
         <button
@@ -457,18 +457,19 @@
 
         <!-- Copy dropdown -->
         <DropdownMenu align="end">
-          {#snippet trigger({ toggle }: { toggle: () => void })}
+          {#snippet trigger({ props })}
             <Tooltip
               content={m.notes_diagramBlock_copyDiagram_tooltip()}
               side="top"
               delayDuration={300}
             >
               <button
+                {...props}
                 type="button"
                 class="flex-none p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-muted-foreground cursor-pointer"
                 onclick={(e) => {
                   e.stopPropagation();
-                  toggle();
+                  (props.onclick as ((event: MouseEvent) => void) | undefined)?.(e);
                 }}
               >
                 {#if copiedSvg || copiedPng}

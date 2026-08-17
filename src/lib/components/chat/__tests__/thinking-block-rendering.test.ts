@@ -37,6 +37,7 @@ afterEach(() => {
 });
 
 warmImport(() => import('../StreamingMessageContent.svelte'));
+warmImport(() => import('../MessageContent.svelte'));
 
 /** Daemon-shaped thinking block (PROTOCOL §7.1). */
 function thinking(id: string, text: string): ContentBlock {
@@ -48,6 +49,11 @@ async function renderStreaming(content: ContentBlock[], isStreaming: boolean) {
   return render(StreamingMessageContent, { props: { content, isStreaming } });
 }
 
+async function renderStatic(content: ContentBlock[]) {
+  const MessageContent = (await import('../MessageContent.svelte')).default;
+  return render(MessageContent, { props: { content } });
+}
+
 describe('thinking blocks — StreamingMessageContent', () => {
   it('renders the daemon `text` field while streaming (auto-expanded)', async () => {
     await renderStreaming([thinking('msg_1:0', 'Checking the schema first')], true);
@@ -57,12 +63,12 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('renders a persisted headingless block with the localized collapsed fallback', async () => {
+  it('renders a restored headingless block with the localized collapsed fallback', async () => {
     await renderStreaming([thinking('msg_1:0', 'Checking the schema first')], false);
 
     const toggle = screen.getByRole('button');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(toggle.textContent?.trim()).toBe('Reasoning');
+    expect(toggle.textContent?.trim()).toBe('Thinking...');
     expect(screen.queryByTestId('markdown-viewer')).toBeNull();
     await fireEvent.click(toggle);
     expect(screen.getByTestId('markdown-viewer').textContent).toContain(
@@ -84,9 +90,35 @@ describe('thinking blocks — StreamingMessageContent', () => {
   });
 
   it('still renders legacy `content`-bearing thinking blocks (FE <think> parser)', async () => {
-    await renderStreaming([{ type: 'thinking', content: 'legacy reasoning' }], true);
+    await renderStreaming(
+      [{ type: 'thinking', content: 'Legacy restoration plan\n\nInspect saved state.' }],
+      true,
+    );
 
-    expect(screen.getByTestId('markdown-viewer').textContent).toContain('legacy reasoning');
+    expect(screen.getByRole('button').textContent?.trim()).toBe('Legacy restoration plan');
+    expect(screen.getByTestId('markdown-viewer').textContent).toBe('Inspect saved state.');
+  });
+
+  it('uses the reasoning title for daemon streaming and restored-history paths', async () => {
+    const content = [thinking('msg_1:0', 'Considering task restoration\n\nInspect saved state.')];
+    const view = await renderStreaming(content, true);
+    expect(screen.getByRole('button').textContent?.trim()).toBe('Considering task restoration');
+    expect(screen.getByTestId('markdown-viewer').textContent).toBe('Inspect saved state.');
+
+    await view.rerender({ content, isStreaming: false });
+    expect(screen.getByRole('button').textContent?.trim()).toBe('Considering task restoration');
+    expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+  });
+
+  it('uses the reasoning title in the static message path', async () => {
+    await renderStatic([
+      thinking('msg_1:0', '# Considering task restoration\n\nInspect saved state.'),
+    ]);
+
+    const toggle = screen.getByRole('button');
+    expect(toggle.textContent?.trim()).toBe('Considering task restoration');
+    await fireEvent.click(toggle);
+    expect(screen.getByTestId('markdown-viewer').textContent).toBe('Inspect saved state.');
   });
 
   it('renders thinking blocks regardless of the legacy visibility preference', async () => {

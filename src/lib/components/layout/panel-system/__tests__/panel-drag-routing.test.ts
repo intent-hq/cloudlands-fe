@@ -414,13 +414,28 @@ describe('panel and tab drag MIME routing', () => {
 });
 
 describe('panel context menu routing', () => {
-  it('keeps only the kebab and Close visible while grouping panel controls in the menu', async () => {
+  it('keeps pin, kebab, and Close visible while grouping other panel controls in the menu', async () => {
     const { container } = renderTabBar({ onClosePanel: vi.fn() });
     const directActions = container.querySelector<HTMLElement>('.panel-actions')!;
 
-    expect(directActions.querySelectorAll('button')).toHaveLength(2);
+    expect(directActions.querySelectorAll('button')).toHaveLength(3);
+    const pinButton = directActions.querySelector<HTMLButtonElement>('[data-panel-pin]')!;
+    expect(pinButton.getAttribute('aria-label')).toBe('Pin panel');
+    expect(pinButton.getAttribute('aria-pressed')).toBe('false');
     expect(directActions.querySelector('[data-testid="panel-actions-trigger"]')).toBeTruthy();
     expect(directActions.querySelector('[data-testid="panel-close-button"]')).toBeTruthy();
+
+    await fireEvent.click(pinButton);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panelLayout/setPanelPinned',
+        payload: expect.objectContaining({
+          wsId: 'workspace-1',
+          panelId: 'target-panel',
+          pinned: true,
+        }),
+      }),
+    );
 
     await fireEvent.click(
       directActions.querySelector<HTMLElement>('[data-testid="panel-actions-trigger"]')!,
@@ -439,7 +454,7 @@ describe('panel context menu routing', () => {
     const icon = container.querySelector<SVGElement>('[data-testid="panel-actions-trigger"] svg');
 
     expect(icon?.getAttribute('viewBox')).toBe('0 0 16 16');
-    expect(icon?.getAttribute('class')).toContain('size-4');
+    expect(icon?.getAttribute('class')).toContain('size-3');
     expect(icon?.querySelector('path')?.getAttribute('d')).toContain('M8 2a1.5');
   });
 

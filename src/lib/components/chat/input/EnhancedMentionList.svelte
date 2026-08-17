@@ -10,8 +10,7 @@
   import { getIconForType } from '$lib/services/mentions/icon-map';
   import { faNote } from '$lib/icons/faNote';
   import Fa from 'svelte-fa';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
-  import { getAvatarStateFromStore } from '$features/agent/components/auggie-avatar/avatar-state';
+  import MentionAgentAvatar from './MentionAgentAvatar.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import {
     faFile,
@@ -378,11 +377,7 @@
               >
                 {#if isAgent}
                   <span class="mention-agent-avatar">
-                    <AugieAvatarWithState
-                      agentId={item.id}
-                      size={16}
-                      state={getAvatarStateFromStore(item.meta?.workspaceId || '', item.id)}
-                    />
+                    <MentionAgentAvatar agentId={item.id} />
                   </span>
                 {:else}
                   <span class="mention-icon" class:selected={isSelected}>

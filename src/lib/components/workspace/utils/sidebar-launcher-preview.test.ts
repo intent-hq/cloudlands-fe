@@ -3,6 +3,7 @@ import type { AgentSession, Note } from '$shared/types';
 import {
   deriveAgentLauncherItems,
   deriveNoteLauncherItems,
+  getAgentLauncherPreview,
   getLauncherPreviewLimit,
 } from './sidebar-launcher-preview';
 
@@ -19,6 +20,21 @@ function agent(id: string, overrides: Partial<AgentSession> = {}): AgentSession 
 }
 
 describe('sidebar launcher primary ordering', () => {
+  it('hides exact delivery notes from the launcher preview', () => {
+    const note =
+      '[SYSTEM NOTE] This message was queued at 2026-01-01T00:00:00Z and waited 8s before delivery.';
+    const session = agent('queued', {
+      messages: [
+        {
+          id: 'user-queued',
+          role: 'user',
+          contentBlocks: [{ type: 'text', text: `Visible prompt\n\n${note}` }],
+        } as never,
+      ],
+    });
+
+    expect(getAgentLauncherPreview(session).lastUserMessage).toBe('Visible prompt');
+  });
   it.each([
     { width: 82, overflow: 36, expected: 1 },
     { width: 92, overflow: 36, expected: 2 },

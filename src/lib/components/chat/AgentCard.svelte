@@ -742,7 +742,9 @@
                 class="whitespace-nowrap {panelRow
                   ? 'min-w-0 flex-1 truncate type-body font-normal text-foreground'
                   : inline
-                    ? 'shrink-0 type-body font-normal text-foreground'
+                    ? typographyClass
+                      ? 'shrink-0 type-body font-normal text-foreground!'
+                      : 'shrink-0 type-body font-normal text-foreground'
                     : 'shrink-0 text-sm font-normal text-foreground'}"
                 data-testid="agent-card-name"
                 data-agent-row-name={panelRow ? '' : undefined}

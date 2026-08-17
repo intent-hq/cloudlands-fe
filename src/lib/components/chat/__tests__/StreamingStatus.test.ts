@@ -243,7 +243,7 @@ describe('StreamingStatus rendered UI', () => {
     });
 
     const errorTitle = screen.getByTestId('error-title');
-    expect(errorTitle.className).toContain('text-destructive');
+    expect(errorTitle.className).toContain('text-error-foreground');
     expect(errorTitle.className).not.toContain('text-xs');
   });
 

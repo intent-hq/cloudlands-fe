@@ -2,7 +2,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ensureAgentSessionLoaded } from '../../workspace-agents/workspace-agents-slice';
-import { openAgentTabRequested } from '../app-layout-slice';
+import { focusBrowserTabRequested, openAgentTabRequested } from '../app-layout-slice';
 import { appLayoutNavigationSaga } from './app-layout-navigation-saga';
 
 const settle = async () => {
@@ -28,10 +28,10 @@ describe('appLayoutNavigationSaga', () => {
     await settle();
     expect(dispatch).toHaveBeenNthCalledWith(1, ensureAgentSessionLoaded('ws-1', 'agent-1'));
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
+      type: 'panelLayout/openTabInNewRootColumn',
       payload: {
         wsId: 'ws-1',
-        panelId: 'panel-1',
+        sourcePanelId: 'panel-1',
         force: true,
         tab: {
           type: 'agent',
@@ -54,7 +54,7 @@ describe('appLayoutNavigationSaga', () => {
     await settle();
     expect(dispatch).toHaveBeenNthCalledWith(1, ensureAgentSessionLoaded('ws-1', 'agent-1'));
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInAdjacentOrSplit',
+      type: 'panelLayout/openTabInNewRootColumn',
       payload: {
         wsId: 'ws-1',
         sourcePanelId: 'panel-1',
@@ -111,7 +111,7 @@ describe('appLayoutNavigationSaga', () => {
     await settle();
     expect(dispatch).toHaveBeenNthCalledWith(1, ensureAgentSessionLoaded('ws-1', 'agent-missing'));
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
+      type: 'panelLayout/openTabInNewRootColumn',
       payload: {
         wsId: 'ws-1',
         force: true,
@@ -124,6 +124,97 @@ describe('appLayoutNavigationSaga', () => {
         },
       },
     });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('pins only the panel correlated to an explicit agent open request', async () => {
+    const channel = stdChannel();
+    let state: any = {
+      agentSessions: { byAgentId: { 'agent-1': { id: 'agent-1', name: 'Ada' } } },
+      panelLayout: { byWorkspaceId: { 'ws-1': { panels: {}, pendingPanelReveal: null } } },
+    };
+    const dispatch = vi.fn((action: any) => {
+      if (action.type === 'panelLayout/openTabInNewRootColumn') {
+        state = {
+          ...state,
+          panelLayout: {
+            byWorkspaceId: {
+              'ws-1': {
+                panels: {},
+                pendingPanelReveal: {
+                  panelId: 'panel-resolved',
+                  tabId: 'tab-reused',
+                  requestId: action.payload.newTabId,
+                },
+              },
+            },
+          },
+        };
+      }
+    });
+    const task = runSaga({ channel, dispatch, getState: () => state }, appLayoutNavigationSaga);
+
+    channel.put(openAgentTabRequested('ws-1', { agentId: 'agent-1', pin: true }));
+    await settle();
+
+    const openAction = dispatch.mock.calls.find(
+      ([action]) => action.type === 'panelLayout/openTabInNewRootColumn',
+    )?.[0];
+    expect(openAction.payload.newTabId).not.toBe('tab-reused');
+    expect(dispatch.mock.calls.at(-1)?.[0]).toMatchObject({
+      type: 'panelLayout/setPanelPinned',
+      payload: { wsId: 'ws-1', panelId: 'panel-resolved', pinned: true },
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('focuses and pins the exact panel for a reused browser tab', async () => {
+    const channel = stdChannel();
+    const state: any = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: {
+              'panel-other': { tabs: [{ id: 'note-1', type: 'note' }] },
+              'panel-browser': { tabs: [{ id: 'browser-1', type: 'browser' }] },
+            },
+            pendingPanelReveal: null,
+          },
+        },
+      },
+    };
+    const dispatch = vi.fn((action: any) => {
+      if (action.type === 'panelLayout/focusPanel') {
+        state.panelLayout.byWorkspaceId['ws-1'].pendingPanelReveal = {
+          panelId: 'panel-browser',
+          tabId: 'browser-1',
+          requestId: action.payload.requestId,
+        };
+      }
+    });
+    const task = runSaga({ channel, dispatch, getState: () => state }, appLayoutNavigationSaga);
+
+    channel.put(focusBrowserTabRequested('ws-1', 'browser-1', true));
+    await settle();
+
+    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
+      'panelLayout/setActiveTab',
+      'panelLayout/focusPanel',
+      'panelLayout/setPanelPinned',
+    ]);
+    expect(dispatch.mock.calls.at(-1)?.[0]).toMatchObject({
+      payload: { panelId: 'panel-browser', pinned: true },
+    });
+
+    dispatch.mockClear();
+    channel.put(focusBrowserTabRequested('ws-1', 'browser-1'));
+    await settle();
+    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
+      'panelLayout/setActiveTab',
+      'panelLayout/focusPanel',
+    ]);
     task.cancel();
     await task.toPromise();
   });

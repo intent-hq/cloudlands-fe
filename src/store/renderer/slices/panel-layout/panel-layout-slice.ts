@@ -20,6 +20,7 @@ import type {
   LayoutSnapshot,
   RecentlyClosedTab,
   PanelDragLayoutSnapshot,
+  PanelRevealRequest,
 } from './panel-layout-types';
 import { MAX_RECENTLY_CLOSED, MAX_LAYOUT_HISTORY, MAX_FOCUS_HISTORY } from './panel-layout-types';
 import {
@@ -45,12 +46,15 @@ import {
   DEFAULT_PANEL_WIDTH,
   getAutomaticPanelCanvasWidth,
   getWideFirstChatSizes,
+  PANEL_SPLIT_GUTTER_WIDTH,
 } from '../../../../shared/panel-layout-sizing';
+import { getPanelCreationWidthForType } from '../../../../shared/panel-default-width-tiers';
 import {
   initializePanelCanvasWidth,
   resolveUserPanelCanvasResize,
 } from './panel-layout-width-provenance';
 import { findEquivalentPanelTab, type EquivalentPanelTab } from './panel-tab-identity';
+import type { PanelOpenMode } from '../user-preferences/user-preferences-slice';
 
 // ============================================================================
 // ID Generation Helpers (used in payload modifiers)
@@ -140,6 +144,7 @@ export const bootstrapNewWorkspaceLayout = createAction(
     initialAgentId: string | null,
     initialAgentTitle: string,
     coordinator = false,
+    timestamp?: number,
   ) => ({
     wsId,
     initialAgentId,
@@ -148,6 +153,7 @@ export const bootstrapNewWorkspaceLayout = createAction(
     panelId: generatePanelId(),
     placeholderPanelId: generatePanelId(),
     tabId: generateTabId(),
+    timestamp: timestamp ?? Date.now(),
   }),
 );
 
@@ -231,7 +237,16 @@ export const openTabInNewRootColumn = createAction(
   (
     wsId: string,
     tab: Omit<PanelTab, 'id'>,
-    options?: { availableCanvasWidth?: number; adaptiveFirstChat?: boolean; force?: boolean },
+    options?: {
+      availableCanvasWidth?: number;
+      adaptiveFirstChat?: boolean;
+      force?: boolean;
+      panelOpenMode?: PanelOpenMode;
+      allowDuplicate?: boolean;
+      newPanelId?: string;
+      newTabId?: string;
+      sourcePanelId?: string;
+    },
     timestamp?: number,
   ) => ({
     wsId,
@@ -239,8 +254,32 @@ export const openTabInNewRootColumn = createAction(
     availableCanvasWidth: options?.availableCanvasWidth,
     adaptiveFirstChat: options?.adaptiveFirstChat ?? false,
     force: options?.force ?? false,
-    newPanelId: generatePanelId(),
-    newTabId: generateTabId(),
+    panelOpenMode: options?.panelOpenMode ?? 'normal',
+    ...(options?.allowDuplicate === undefined ? {} : { allowDuplicate: options.allowDuplicate }),
+    sourcePanelId: options?.sourcePanelId,
+    newPanelId: options?.newPanelId ?? generatePanelId(),
+    newTabId: options?.newTabId ?? generateTabId(),
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
+export const openTabWithPanelModeRequested = createAction(
+  'panelLayout/openTabWithPanelModeRequested',
+  (
+    wsId: string,
+    tab: Omit<PanelTab, 'id'>,
+    options?: {
+      availableCanvasWidth?: number;
+      adaptiveFirstChat?: boolean;
+      force?: boolean;
+      allowDuplicate?: boolean;
+      newTabId?: string;
+    },
+    timestamp?: number,
+  ) => ({
+    wsId,
+    tab,
+    options,
     timestamp: timestamp ?? Date.now(),
   }),
 );
@@ -417,7 +456,14 @@ export const closeAllOthersEverywhere = createAction(
 );
 
 // --- Panel Operations ---
-export const focusPanel = createAction<[wsId: string, panelId: string]>('panelLayout/focusPanel');
+export const focusPanel = createAction(
+  'panelLayout/focusPanel',
+  (wsId: string, panelId: string) => ({
+    wsId,
+    panelId,
+    requestId: generateTabId(),
+  }),
+);
 
 export const splitPanel = createAction(
   'panelLayout/splitPanel',
@@ -425,13 +471,14 @@ export const splitPanel = createAction(
     wsId: string,
     panelId: string,
     direction: 'horizontal' | 'vertical',
-    options?: { animated?: boolean },
+    options?: { animated?: boolean; panelWidth?: number },
     timestamp?: number,
   ) => ({
     wsId,
     panelId,
     direction,
     animated: options?.animated ?? false,
+    panelWidth: options?.panelWidth,
     newPanelId: generatePanelId(),
     timestamp: timestamp ?? Date.now(),
   }),
@@ -442,6 +489,22 @@ export const closePanel = createAction(
   (wsId: string, panelId: string, timestamp?: number) => ({
     wsId,
     panelId,
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
+export const collapseToReusablePanel = createAction(
+  'panelLayout/collapseToReusablePanel',
+  (wsId: string, timestamp?: number) => ({ wsId, timestamp: timestamp ?? Date.now() }),
+);
+
+export const setPanelPinned = createAction(
+  'panelLayout/setPanelPinned',
+  (wsId: string, panelId: string, pinned: boolean, timestamp?: number) => ({
+    wsId,
+    panelId,
+    pinned,
+    requestId: generateTabId(),
     timestamp: timestamp ?? Date.now(),
   }),
 );
@@ -502,6 +565,7 @@ export const resizePanelLayoutAtHorizontalPanel = createAction<
     nextWidth: number,
     panelIndex: number,
     nextCanvasWidth: number,
+      previousPanelWidths?: readonly number[],
   ]
 >('panelLayout/resizePanelLayoutAtHorizontalPanel');
 
@@ -544,11 +608,13 @@ export const goBack = createAction('panelLayout/goBack', (wsId: string, timestam
   timestamp: timestamp ?? Date.now(),
 }));
 export const goForward = createAction<[wsId: string]>('panelLayout/goForward');
-export const goBackInFocusHistory = createAction<[wsId: string]>(
+export const goBackInFocusHistory = createAction(
   'panelLayout/goBackInFocusHistory',
+  (wsId: string) => ({ wsId, requestId: generateTabId() }),
 );
-export const goForwardInFocusHistory = createAction<[wsId: string]>(
+export const goForwardInFocusHistory = createAction(
   'panelLayout/goForwardInFocusHistory',
+  (wsId: string) => ({ wsId, requestId: generateTabId() }),
 );
 
 // --- Spec Tab Deferral ---
@@ -667,6 +733,14 @@ function activateEquivalentTab(
   return next;
 }
 
+function createPanelRevealRequest(
+  panelId: string,
+  tabId: string | null,
+  requestId: string,
+): PanelRevealRequest {
+  return { panelId, tabId, requestId };
+}
+
 function restoreExpandedWorkspaceLayout(
   workspace: WorkspacePanelLayoutState,
 ): WorkspacePanelLayoutState {
@@ -710,6 +784,7 @@ function closePanelHelper(
     ws.focusedPanelId === panelId ? (Object.keys(remainingPanels)[0] ?? null) : ws.focusedPanelId;
 
   const closableRemovedTabs = removedPanel.tabs.filter((tab) => tab.closable !== false);
+  const focusHistory = ws.focusHistory.filter((entry) => entry.panelId !== panelId);
   const newRecentlyClosed =
     closableRemovedTabs.length > 0 && timestamp !== undefined
       ? [
@@ -721,19 +796,71 @@ function closePanelHelper(
           ...ws.recentlyClosed,
         ].slice(0, MAX_RECENTLY_CLOSED)
       : ws.recentlyClosed;
+  const canvasWidth = (() => {
+    if (ws.canvasWidth === null) return null;
+    const previousGutterWidth =
+      PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, countHorizontalPanelColumns(ws.root) - 1);
+    const remainingGutterWidth =
+      PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, countHorizontalPanelColumns(removal.node) - 1);
+    const previousPanelWidth = Math.max(0, ws.canvasWidth - previousGutterWidth);
+    return previousPanelWidth * removal.remainingWidthRatio + remainingGutterWidth;
+  })();
 
   return {
     ...ws,
     root: removal.node,
     panels: remainingPanels,
     focusedPanelId,
-    canvasWidth: ws.canvasWidth === null ? null : ws.canvasWidth * removal.remainingWidthRatio,
+    canvasWidth,
     expandedPanelId: null,
     savedSizesBeforeExpand: [],
     savedCanvasWidthBeforeExpand: undefined,
     savedCanvasWidthSourceBeforeExpand: undefined,
     recentlyClosed: newRecentlyClosed,
+    pendingPanelReveal: ws.pendingPanelReveal?.panelId === panelId ? null : ws.pendingPanelReveal,
+    pendingFocusTabId: removedPanel.tabs.some((tab) => tab.id === ws.pendingFocusTabId)
+      ? null
+      : ws.pendingFocusTabId,
+    focusHistory,
+    focusHistoryIndex: Math.min(ws.focusHistoryIndex, focusHistory.length - 1),
   };
+}
+
+function panelIsPinned(panel: PanelState): boolean {
+  return panel.pinned === true || panel.tabs.some((tab) => tab.closable === false);
+}
+
+function collapseWorkspaceToReusablePanel(
+  workspace: WorkspacePanelLayoutState,
+  timestamp: number,
+  preferredReusableId?: string,
+  dropEmptyReusable = false,
+): WorkspacePanelLayoutState {
+  const order = getPanelOrder(workspace.root);
+  const unpinnedIds = order.filter((panelId) => {
+    const panel = workspace.panels[panelId];
+    return panel && !panelIsPinned(panel);
+  });
+  if (unpinnedIds.length === 0) return workspace;
+  const reusableId =
+    preferredReusableId && unpinnedIds.includes(preferredReusableId)
+      ? preferredReusableId
+      : workspace.focusedPanelId && unpinnedIds.includes(workspace.focusedPanelId)
+        ? workspace.focusedPanelId
+        : unpinnedIds[0];
+  let next = workspace;
+  for (const panelId of unpinnedIds) {
+    if (panelId !== reusableId) next = closePanelHelper(next, panelId, timestamp);
+  }
+  if (
+    dropEmptyReusable &&
+    next.panels[reusableId]?.tabs.length === 0 &&
+    Object.keys(next.panels).length > 1
+  ) {
+    return closePanelHelper(next, reusableId, timestamp);
+  }
+  const root = movePanelToRootEdgeInLayout(next.root, reusableId, 'before');
+  return root ? { ...next, root } : next;
 }
 
 /** Add an entry to focus history using the timestamp generated before dispatch. */
@@ -880,6 +1007,48 @@ function selfDispatch(
   return _reducerRef(state, action);
 }
 
+function openAndPinNewWorkspaceInitialAgent(
+  state: PanelLayoutSliceState,
+  wsId: string,
+  agentId: string,
+  title: string,
+  panelId: string,
+  tabId: string,
+  timestamp: number,
+): PanelLayoutSliceState {
+  const preserveExplicitCanvasWidth =
+    getWorkspaceState(state, wsId).canvasWidthSource === 'explicit';
+  const tab: Omit<PanelTab, 'id'> = {
+    type: 'agent',
+    title,
+    agentId,
+    workspaceId: wsId,
+    closable: true,
+  };
+  const opened = selfDispatch(
+    state,
+    openTabInNewRootColumn(
+      wsId,
+      tab,
+      { force: true, newPanelId: panelId, newTabId: tabId },
+      timestamp,
+    ),
+  );
+  const revealPanelId = getWorkspaceState(opened, wsId).pendingPanelReveal?.panelId;
+  if (!revealPanelId) return opened;
+  const pinned = selfDispatch(opened, setPanelPinned(wsId, revealPanelId, true, timestamp));
+  const workspace = getWorkspaceState(pinned, wsId);
+  const lifecycle = workspace.newWorkspaceLifecycle;
+  return setWorkspaceState(pinned, wsId, {
+    ...workspace,
+    canvasWidth: preserveExplicitCanvasWidth ? workspace.canvasWidth : null,
+    canvasWidthSource: preserveExplicitCanvasWidth ? workspace.canvasWidthSource : null,
+    newWorkspaceLifecycle: lifecycle
+      ? { ...lifecycle, initialAgentId: agentId, initialAgentPending: false }
+      : lifecycle,
+  });
+}
+
 export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialState);
 // --- Initialization ---
 panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
@@ -894,6 +1063,8 @@ panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
     ...canvasWidthState,
     deferSpecTab: layout.deferSpecTab ?? false,
     newWorkspaceLifecycle: layout.newWorkspaceLifecycle ?? null,
+    pendingFocusTabId: null,
+    pendingPanelReveal: null,
   });
 });
 panelLayoutReducer.with(bootstrapNewWorkspaceLayout, (state, { payload }) => {
@@ -905,136 +1076,57 @@ panelLayoutReducer.with(bootstrapNewWorkspaceLayout, (state, { payload }) => {
     panelId,
     placeholderPanelId,
     tabId,
+    timestamp,
   } = payload;
-  const tabs: PanelTab[] = initialAgentId
-    ? [
-        {
-          id: tabId,
-          type: 'agent',
-          title: initialAgentTitle,
-          agentId: initialAgentId,
-          workspaceId: wsId,
-          closable: true,
-        },
-      ]
-    : [];
-  const panels: Record<string, PanelState> = {
-    [panelId]: {
-      id: panelId,
-      tabs,
-      activeTabId: tabs[0]?.id ?? null,
-      pristine: false,
-    },
-  };
-  if (coordinator) {
-    panels[placeholderPanelId] = {
-      id: placeholderPanelId,
-      tabs: [],
-      activeTabId: null,
-      pristine: true,
-    };
-  }
-  return setWorkspaceState(state, wsId, {
+  const bootstrapped = setWorkspaceState(state, wsId, {
     ...emptyWorkspaceState,
-    root: coordinator
-      ? {
-          type: 'split',
-          direction: 'horizontal',
-          children: [
-            { type: 'panel', panelId },
-            { type: 'panel', panelId: placeholderPanelId },
-          ],
-          sizes: [50, 50],
-        }
-      : { type: 'panel', panelId },
-    panels,
-    focusedPanelId: panelId,
+    root: { type: 'panel', panelId: placeholderPanelId },
+    panels: {
+      [placeholderPanelId]: {
+        id: placeholderPanelId,
+        tabs: [],
+        activeTabId: null,
+        pristine: true,
+        pinned: false,
+      },
+    },
+    focusedPanelId: placeholderPanelId,
     restoreStatus: 'restored',
-    pendingFocusTabId: tabs[0]?.id ?? null,
+    pendingFocusTabId: null,
     deferSpecTab: true,
     newWorkspaceLifecycle: {
       coordinator,
-      initialAgentId,
-      initialAgentPending: initialAgentId === null,
+      initialAgentId: null,
+      initialAgentPending: true,
       spec: { noteId: 'spec', generation: null, state: 'deferred' },
     },
   });
+  return initialAgentId
+    ? openAndPinNewWorkspaceInitialAgent(
+        bootstrapped,
+        wsId,
+        initialAgentId,
+        initialAgentTitle,
+        panelId,
+        tabId,
+        timestamp,
+      )
+    : bootstrapped;
 });
 panelLayoutReducer.with(resolveNewWorkspaceInitialAgent, (state, { payload }) => {
-  const { wsId, agentId, title, tabId, timestamp } = payload;
-  let ws = getWorkspaceState(state, wsId);
+  const { wsId, agentId, title, panelId, tabId, timestamp } = payload;
+  const ws = getWorkspaceState(state, wsId);
   const lifecycle = ws.newWorkspaceLifecycle;
   if (!lifecycle?.initialAgentPending) return state;
-
-  for (const [existingPanelId, panel] of Object.entries(ws.panels)) {
-    const existing = panel.tabs.find((tab) => tab.type === 'agent' && tab.agentId === agentId);
-    if (!existing) continue;
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      panels: { ...ws.panels, [existingPanelId]: { ...panel, activeTabId: existing.id } },
-      focusedPanelId: existingPanelId,
-      pendingFocusTabId: existing.id,
-      newWorkspaceLifecycle: {
-        ...lifecycle,
-        initialAgentId: agentId,
-        initialAgentPending: false,
-      },
-    });
-  }
-
-  const tab: PanelTab = {
-    id: tabId,
-    type: 'agent',
-    title,
-    agentId,
-    workspaceId: wsId,
-    closable: true,
-  };
-  const emptyPanel = Object.values(ws.panels).find(
-    (panel) => panel.tabs.length === 0 && panel.pristine !== true,
-  );
-  if (!emptyPanel) {
-    const { id: _tabId, ...tabWithoutId } = tab;
-    const opened = selfDispatch(
-      state,
-      openTabInAdjacentOrSplit(
-        wsId,
-        tabWithoutId,
-        ws.focusedPanelId ?? undefined,
-        { force: true },
-        timestamp,
-      ),
-    );
-    const openedWorkspace = getWorkspaceState(opened, wsId);
-    return setWorkspaceState(opened, wsId, {
-      ...openedWorkspace,
-      newWorkspaceLifecycle: {
-        ...lifecycle,
-        initialAgentId: agentId,
-        initialAgentPending: false,
-      },
-    });
-  }
-  ws = {
-    ...ws,
-    panels: {
-      ...ws.panels,
-      [emptyPanel.id]: { ...emptyPanel, tabs: [tab], activeTabId: tabId, pristine: false },
-    },
-    focusedPanelId: emptyPanel.id,
-    pendingFocusTabId: tabId,
-    newWorkspaceLifecycle: {
-      ...lifecycle,
-      initialAgentId: agentId,
-      initialAgentPending: false,
-    },
-  };
-  ws = addToFocusHistory(ws, emptyPanel.id, tabId, timestamp);
-  return setWorkspaceState(state, wsId, ws);
+  return openAndPinNewWorkspaceInitialAgent(state, wsId, agentId, title, panelId, tabId, timestamp);
 });
 panelLayoutReducer.with(setRestoreStatus, (state, { payload: [wsId, restoreStatus] }) => {
   const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, { ...ws, restoreStatus });
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    restoreStatus,
+    ...(restoreStatus === 'pending' ? { pendingFocusTabId: null, pendingPanelReveal: null } : {}),
+  });
 });
 panelLayoutReducer.with(loadLayoutHistory, (state, { payload }) => {
   const { wsId, history, historyIndex } = payload;
@@ -1085,7 +1177,8 @@ panelLayoutReducer.with(openTab, (state, { payload }) => {
         pristine: false,
       },
     },
-    pendingPanelReveal: null,
+    focusedPanelId: targetPanelId,
+    pendingPanelReveal: createPanelRevealRequest(targetPanelId, newTabId, newTabId),
   };
   ws = addToFocusHistory(ws, targetPanelId, newTabId, timestamp);
   return setWorkspaceState(state, wsId, ws);
@@ -1097,6 +1190,7 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
     availableCanvasWidth,
     adaptiveFirstChat,
     force,
+    panelOpenMode,
     newPanelId,
     newTabId,
     timestamp,
@@ -1105,13 +1199,77 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
   let ws = getWorkspaceState(state, wsId);
   if (ws.deferSpecTab && tab.type === 'note' && tab.noteId === 'spec' && !force) return state;
 
-  const existing = findEquivalentPanelTab(wsId, ws, tab, ws.focusedPanelId);
+  const existing = payload.allowDuplicate
+    ? null
+    : findEquivalentPanelTab(wsId, ws, tab, ws.focusedPanelId);
   if (existing) {
     return setWorkspaceState(
       state,
       wsId,
       activateEquivalentTab(ws, existing, tab, newTabId, timestamp),
     );
+  }
+
+  if (panelOpenMode === 'pin') {
+    const newTab: PanelTab = { ...tab, id: newTabId };
+    ws = saveToHistory(ws, timestamp);
+    ws = collapseWorkspaceToReusablePanel(ws, timestamp);
+    const reusablePanelId = getPanelOrder(ws.root).find((panelId) => {
+      const panel = ws.panels[panelId];
+      return panel && !panelIsPinned(panel);
+    });
+
+    if (reusablePanelId) {
+      const panel = ws.panels[reusablePanelId];
+      const closed = panel.tabs
+        .filter((oldTab) => oldTab.closable !== false)
+        .map((oldTab) => ({ tab: { ...oldTab }, panelId: reusablePanelId, closedAt: timestamp }));
+      const root = movePanelToRootEdgeInLayout(ws.root, reusablePanelId, 'before');
+      ws = {
+        ...ws,
+        ...(root ? { root } : {}),
+        panels: {
+          ...ws.panels,
+          [reusablePanelId]: {
+            ...panel,
+            tabs: [newTab],
+            activeTabId: newTabId,
+            pristine: false,
+          },
+        },
+        focusedPanelId: reusablePanelId,
+        pendingFocusTabId: newTabId,
+        pendingPanelReveal: createPanelRevealRequest(reusablePanelId, newTabId, newTabId),
+        recentlyClosed: [...closed, ...ws.recentlyClosed].slice(0, MAX_RECENTLY_CLOSED),
+      };
+      ws = addToFocusHistory(ws, reusablePanelId, newTabId, timestamp);
+      return setWorkspaceState(state, wsId, ws);
+    }
+
+    const existingCanvasWidth =
+      ws.canvasWidth ?? getAutomaticPanelLayoutCanvasWidth(ws.root, ws.panels, 'content');
+    const newPanelWidth = getPanelCreationWidthForType(tab.type);
+    const appendedRoot = appendHorizontalPanelToLayout(
+      ws.root,
+      newPanelId,
+      existingCanvasWidth,
+      newPanelWidth,
+    );
+    const root = movePanelToRootEdgeInLayout(appendedRoot, newPanelId, 'before') ?? appendedRoot;
+    ws = {
+      ...ws,
+      root,
+      panels: {
+        ...ws.panels,
+        [newPanelId]: { id: newPanelId, tabs: [newTab], activeTabId: newTabId },
+      },
+      focusedPanelId: newPanelId,
+      canvasWidth: existingCanvasWidth + newPanelWidth + PANEL_SPLIT_GUTTER_WIDTH,
+      pendingFocusTabId: newTabId,
+      pendingPanelReveal: createPanelRevealRequest(newPanelId, newTabId, newTabId),
+    };
+    ws = addToFocusHistory(ws, newPanelId, newTabId, timestamp);
+    return setWorkspaceState(state, wsId, ws);
   }
 
   const panelIds = Object.keys(ws.panels);
@@ -1151,7 +1309,7 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
         focusedPanelId: initialPanelId,
         canvasWidth: availableCanvasWidth,
         pendingFocusTabId: newTabId,
-        pendingPanelReveal: null,
+        pendingPanelReveal: createPanelRevealRequest(initialPanelId, newTabId, newTabId),
       };
     } else {
       ws = {
@@ -1167,7 +1325,7 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
         },
         focusedPanelId: initialPanelId,
         pendingFocusTabId: newTabId,
-        pendingPanelReveal: null,
+        pendingPanelReveal: createPanelRevealRequest(initialPanelId, newTabId, newTabId),
       };
     }
     ws = addToFocusHistory(ws, initialPanelId, newTabId, timestamp);
@@ -1176,17 +1334,18 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
 
   const existingCanvasWidth =
     ws.canvasWidth ?? getAutomaticPanelLayoutCanvasWidth(ws.root, ws.panels, 'content');
+  const newPanelWidth = getPanelCreationWidthForType(tab.type);
   ws = {
     ...ws,
-    root: appendHorizontalPanelToLayout(ws.root, newPanelId, existingCanvasWidth),
+    root: appendHorizontalPanelToLayout(ws.root, newPanelId, existingCanvasWidth, newPanelWidth),
     panels: {
       ...ws.panels,
       [newPanelId]: { id: newPanelId, tabs: [newTab], activeTabId: newTabId },
     },
     focusedPanelId: newPanelId,
-    canvasWidth: existingCanvasWidth + DEFAULT_PANEL_WIDTH,
+    canvasWidth: existingCanvasWidth + newPanelWidth + PANEL_SPLIT_GUTTER_WIDTH,
     pendingFocusTabId: newTabId,
-    pendingPanelReveal: null,
+    pendingPanelReveal: createPanelRevealRequest(newPanelId, newTabId, newTabId),
   };
   ws = addToFocusHistory(ws, newPanelId, newTabId, timestamp);
   return setWorkspaceState(state, wsId, ws);
@@ -1362,6 +1521,8 @@ panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
         activeTabId: newTabId,
       },
     },
+    focusedPanelId: targetPanelId,
+    pendingPanelReveal: createPanelRevealRequest(targetPanelId, newTabId, newTabId),
   };
   return setWorkspaceState(state, wsId, ws);
 });
@@ -1652,14 +1813,20 @@ panelLayoutReducer.with(closeAllOthersEverywhere, (state, { payload }) => {
   return setWorkspaceState(state, wsId, ws);
 });
 // --- Focus Panel ---
-panelLayoutReducer.with(focusPanel, (state, { payload: [wsId, panelId] }) => {
+panelLayoutReducer.with(focusPanel, (state, { payload }) => {
+  const { wsId, panelId, requestId } = payload;
   const ws = getWorkspaceState(state, wsId);
-  if (!ws.panels[panelId] || ws.focusedPanelId === panelId) return state;
-  return setWorkspaceState(state, wsId, { ...ws, focusedPanelId: panelId });
+  const panel = ws.panels[panelId];
+  if (!panel) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    focusedPanelId: panelId,
+    pendingPanelReveal: createPanelRevealRequest(panelId, panel.activeTabId, requestId),
+  });
 });
 // --- Split Panel ---
 panelLayoutReducer.with(splitPanel, (state, { payload }) => {
-  const { wsId, panelId, direction, animated, newPanelId, timestamp } = payload;
+  const { wsId, panelId, direction, animated, panelWidth, newPanelId, timestamp } = payload;
   let ws = getWorkspaceState(state, wsId);
 
   ws = restoreExpandedWorkspaceLayout(ws);
@@ -1670,17 +1837,29 @@ panelLayoutReducer.with(splitPanel, (state, { payload }) => {
   const newPanel: PanelState = { id: newPanelId, tabs: [], activeTabId: null };
 
   if (direction === 'horizontal') {
-    const root = insertHorizontalPanelInLayout(ws.root, newPanelId, panelId, ws.canvasWidth);
+    const newPanelWidth =
+      typeof panelWidth === 'number' && Number.isFinite(panelWidth) && panelWidth > 0
+        ? panelWidth
+        : DEFAULT_PANEL_WIDTH;
+    const root = insertHorizontalPanelInLayout(
+      ws.root,
+      newPanelId,
+      panelId,
+      ws.canvasWidth,
+      newPanelWidth,
+    );
     if (!root) return state;
     return setWorkspaceState(state, wsId, {
       ...ws,
       root,
       panels: { ...ws.panels, [newPanelId]: newPanel },
       focusedPanelId: newPanelId,
+      pendingPanelReveal: createPanelRevealRequest(newPanelId, null, newPanelId),
       canvasWidth:
         (ws.canvasWidth ??
           getAutomaticPanelCanvasWidth(countHorizontalPanelColumns(ws.root), 'content')) +
-        DEFAULT_PANEL_WIDTH,
+        newPanelWidth +
+        PANEL_SPLIT_GUTTER_WIDTH,
     });
   }
 
@@ -1724,6 +1903,7 @@ panelLayoutReducer.with(splitPanel, (state, { payload }) => {
       root: result.replacement,
       panels: { ...ws.panels, [newPanelId]: newPanel },
       focusedPanelId: newPanelId,
+      pendingPanelReveal: createPanelRevealRequest(newPanelId, null, newPanelId),
     };
   }
   return setWorkspaceState(state, wsId, ws);
@@ -1741,6 +1921,43 @@ panelLayoutReducer.with(closePanel, (state, { payload }) => {
   let updatedWs = saveToHistory(ws, timestamp);
   updatedWs = closePanelHelper(updatedWs, panelId, timestamp);
   return setWorkspaceState(state, wsId, updatedWs);
+});
+panelLayoutReducer.with(collapseToReusablePanel, (state, { payload }) => {
+  const { wsId, timestamp } = payload;
+  const ws = getWorkspaceState(state, wsId);
+  const collapsed = collapseWorkspaceToReusablePanel(
+    saveToHistory(ws, timestamp),
+    timestamp,
+    undefined,
+    true,
+  );
+  return collapsed === ws ? state : setWorkspaceState(state, wsId, collapsed);
+});
+panelLayoutReducer.with(setPanelPinned, (state, { payload }) => {
+  const { wsId, panelId, pinned, requestId, timestamp } = payload;
+  const ws = getWorkspaceState(state, wsId);
+  const panel = ws.panels[panelId];
+  if (!panel || panel.pinned === pinned) return state;
+  const next = saveToHistory(ws, timestamp);
+  if (!pinned) {
+    const unpinned = collapseWorkspaceToReusablePanel(
+      {
+        ...next,
+        panels: { ...next.panels, [panelId]: { ...panel, pinned: false } },
+      },
+      timestamp,
+      panelId,
+    );
+    return setWorkspaceState(state, wsId, {
+      ...unpinned,
+      focusedPanelId: panelId,
+      pendingPanelReveal: createPanelRevealRequest(panelId, panel.activeTabId, requestId),
+    });
+  }
+  return setWorkspaceState(state, wsId, {
+    ...next,
+    panels: { ...next.panels, [panelId]: { ...panel, pinned } },
+  });
 });
 // --- Update Sizes ---
 panelLayoutReducer.with(movePanel, (state, { payload }) => {
@@ -1837,7 +2054,19 @@ panelLayoutReducer.with(
 );
 panelLayoutReducer.with(
   resizePanelLayoutAtHorizontalPanel,
-  (state, { payload: [wsId, previousWidth, nextWidth, panelIndex, nextCanvasWidth] }) => {
+  (
+    state,
+    {
+      payload: [
+        wsId,
+        previousWidth,
+        nextWidth,
+        panelIndex,
+        nextCanvasWidth,
+        previousPanelWidths,
+      ],
+    },
+  ) => {
     if (
       previousWidth <= 0 ||
       nextWidth <= 0 ||
@@ -1850,7 +2079,13 @@ panelLayoutReducer.with(
       return state;
     }
     const ws = getWorkspaceState(state, wsId);
-    const resized = resizeRootHorizontalPanel(ws.root, previousWidth, nextWidth, panelIndex);
+    const resized = resizeRootHorizontalPanel(
+      ws.root,
+      previousWidth,
+      nextWidth,
+      panelIndex,
+      previousPanelWidths,
+    );
     const acceptedCanvasWidth = nextCanvasWidth + resized.nextWidth - nextWidth;
     if (!Number.isFinite(acceptedCanvasWidth) || acceptedCanvasWidth <= 0) return state;
     const canvasWidthState = resolveUserPanelCanvasResize(
@@ -2009,7 +2244,8 @@ panelLayoutReducer.with(goForward, (state, { payload: [wsId] }) => {
   });
 });
 // --- Go Back In Focus History ---
-panelLayoutReducer.with(goBackInFocusHistory, (state, { payload: [wsId] }) => {
+panelLayoutReducer.with(goBackInFocusHistory, (state, { payload }) => {
+  const { wsId, requestId } = payload;
   const ws = getWorkspaceState(state, wsId);
   if (ws.focusHistoryIndex <= 0) return state;
 
@@ -2028,6 +2264,7 @@ panelLayoutReducer.with(goBackInFocusHistory, (state, { payload: [wsId] }) => {
             [entry.panelId]: { ...panel, activeTabId: entry.tabId },
           },
           focusHistoryIndex: idx,
+          pendingPanelReveal: createPanelRevealRequest(entry.panelId, entry.tabId, requestId),
         });
       }
     }
@@ -2036,7 +2273,8 @@ panelLayoutReducer.with(goBackInFocusHistory, (state, { payload: [wsId] }) => {
   return state;
 });
 // --- Go Forward In Focus History ---
-panelLayoutReducer.with(goForwardInFocusHistory, (state, { payload: [wsId] }) => {
+panelLayoutReducer.with(goForwardInFocusHistory, (state, { payload }) => {
+  const { wsId, requestId } = payload;
   const ws = getWorkspaceState(state, wsId);
   if (ws.focusHistoryIndex >= ws.focusHistory.length - 1) return state;
 
@@ -2054,6 +2292,7 @@ panelLayoutReducer.with(goForwardInFocusHistory, (state, { payload: [wsId] }) =>
             [entry.panelId]: { ...panel, activeTabId: entry.tabId },
           },
           focusHistoryIndex: idx,
+          pendingPanelReveal: createPanelRevealRequest(entry.panelId, entry.tabId, requestId),
         });
       }
     }
@@ -2117,6 +2356,7 @@ panelLayoutReducer.with(revealDeferredSpecTab, (state, { payload }) => {
       panels: { ...ws.panels, [existingPanelId]: { ...panel, activeTabId: existing.id } },
       focusedPanelId: existingPanelId,
       pendingFocusTabId: existing.id,
+      pendingPanelReveal: createPanelRevealRequest(existingPanelId, existing.id, tabId),
       deferSpecTab: false,
       newWorkspaceLifecycle: revealedLifecycle,
     });
@@ -2158,7 +2398,11 @@ panelLayoutReducer.with(revealDeferredSpecTab, (state, { payload }) => {
   const pristinePlaceholder = Object.values(ws.panels).find(
     (panel) => panel.pristine === true && panel.tabs.length === 0 && panel.activeTabId === null,
   );
-  const targetPanelId = pristinePlaceholder?.id ?? getPanelOrder(ws.root).at(-1);
+  const reusablePanelId = getPanelOrder(ws.root).find((panelId) => {
+    const panel = ws.panels[panelId];
+    return panel && !panelIsPinned(panel);
+  });
+  const targetPanelId = pristinePlaceholder?.id ?? reusablePanelId ?? getPanelOrder(ws.root).at(-1);
   const targetPanel = targetPanelId ? ws.panels[targetPanelId] : undefined;
   if (!targetPanelId || !targetPanel) return state;
   const nextTab: PanelTab = { ...tab, id: tabId };
@@ -2175,6 +2419,7 @@ panelLayoutReducer.with(revealDeferredSpecTab, (state, { payload }) => {
     },
     focusedPanelId: targetPanelId,
     pendingFocusTabId: tabId,
+    pendingPanelReveal: createPanelRevealRequest(targetPanelId, tabId, tabId),
     deferSpecTab: false,
     newWorkspaceLifecycle: revealedLifecycle,
   };
@@ -2282,7 +2527,13 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
   // Split then open in new panel
   let result = selfDispatch(
     state,
-    splitPanel(wsId, effectiveSourcePanelId, 'horizontal', { animated }, timestamp),
+    splitPanel(
+      wsId,
+      effectiveSourcePanelId,
+      'horizontal',
+      { animated, panelWidth: getPanelCreationWidthForType(tab.type) },
+      timestamp,
+    ),
   );
   // The new panel is now focused; open tab there
   result = selfDispatch(

@@ -40,6 +40,8 @@
     agentId?: string;
     /** Turn number within the conversation */
     turnNumber?: number;
+    /** Keep the production row inert in deterministic catalog previews. */
+    readOnly?: boolean;
   }
 
   let {
@@ -51,6 +53,7 @@
     isStreaming = false,
     agentId,
     turnNumber,
+    readOnly = false,
   }: Props = $props();
 
   function createMessageSummaryMemo() {
@@ -94,6 +97,7 @@
   );
 
   function handleClick(event: MouseEvent) {
+    if (readOnly) return;
     // Navigate to chat changes view
     // Pass message reference for reactive updates during streaming
     const sourcePanelId = (event.currentTarget as HTMLElement)
@@ -120,10 +124,15 @@
   <div class="mt-4 w-full {isAggregate ? 'mb-1' : ''}" data-testid="file-changes-surface">
     <button
       onclick={handleClick}
-      class="type-caption group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1.5 py-1 text-muted-foreground transition-colors duration-[var(--motion-fast)] hover:bg-muted/30 hover:text-foreground"
+      aria-disabled={readOnly}
+      tabindex={readOnly ? -1 : undefined}
+      class="type-caption group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1.5 py-1 text-muted-foreground transition-colors duration-[var(--motion-fast)] hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
     >
       <div class="flex min-w-0 flex-1 items-center gap-2">
-        <Fa icon={faFile} class="w-4 shrink-0 opacity-40" size="xs" />
+        <Fa
+          icon={faFile}
+          class="h-4! w-4! shrink-0 opacity-40 transition-opacity group-hover:opacity-60"
+        />
         <span class="truncate min-w-0 text-left flex-1">
           {displayLabel}
         </span>
@@ -135,7 +144,10 @@
         /> -->
       </div>
 
-      <Fa icon={faArrowRight} class="opacity-30 w-3 h-3 shrink-0 transition-colors" />
+      <Fa
+        icon={faArrowRight}
+        class="h-3.5! w-3.5! shrink-0 opacity-30 transition-opacity group-hover:opacity-50"
+      />
     </button>
   </div>
 {/if}

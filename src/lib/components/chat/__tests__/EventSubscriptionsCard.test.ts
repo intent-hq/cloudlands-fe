@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
@@ -87,11 +87,15 @@ describe('EventSubscriptionsCard', () => {
     expect(body.classList.contains('hidden')).toBe(false);
     await fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(body.classList.contains('hidden')).toBe(true);
+    expect(body.getAttribute('aria-hidden')).toBe('true');
+    await waitFor(() => expect(screen.queryByTestId('event-subscriptions-body')).toBeNull());
     expect(card.isConnected).toBe(true);
-    await fireEvent.keyDown(toggle, { key: 'Enter' });
+    await fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(body.classList.contains('hidden')).toBe(false);
+    await waitFor(() => expect(screen.queryByTestId('event-subscriptions-body')).not.toBeNull());
+    expect(screen.getByTestId('event-subscriptions-body').getAttribute('aria-hidden')).toBe(
+      'false',
+    );
     expect(card.parentElement?.className).not.toMatch(/pb-(8|12)|mb-(8|12)/);
   });
 
@@ -101,14 +105,14 @@ describe('EventSubscriptionsCard', () => {
     });
     await tick();
     await fireEvent.click(screen.getByRole('button', { name: 'Subscribed to 3 events' }));
-    expect(screen.getByTestId('event-subscriptions-body').classList.contains('hidden')).toBe(true);
+    await waitFor(() => expect(screen.queryByTestId('event-subscriptions-body')).toBeNull());
     first.unmount();
 
     await renderCard('agents-hooks-prs');
     expect(
       screen.getByRole('button', { name: 'Subscribed to 3 events' }).getAttribute('aria-expanded'),
     ).toBe('false');
-    expect(screen.getByTestId('event-subscriptions-body').classList.contains('hidden')).toBe(true);
+    expect(screen.queryByTestId('event-subscriptions-body')).toBeNull();
   });
 
   it('hides the entire bounded surface when every category is empty', async () => {

@@ -165,7 +165,7 @@
             </span>
           {:else if status === 'error' && errorDisplay}
             <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span class="font-medium text-destructive-foreground" data-testid="error-title"
+              <span class="font-medium text-error-foreground" data-testid="error-title"
                 >{errorDisplay.title}{#if failedAt}
                   <span
                     class="type-caption ml-1.5 leading-4 font-normal text-muted-foreground"

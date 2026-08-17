@@ -12,8 +12,8 @@
    * Fixed width for consistent layout and connector line alignment.
    */
   import type { AgentNode } from './types';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
-  import type { AvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+  import type { AvatarState } from '$features/agent/components/agent-avatar/avatar-state';
   import { Spinner } from '$lib/components/ui/indicators';
   import { classifyTool } from '$lib/components/chat/tool-classifier';
   import {
@@ -120,7 +120,7 @@
     <div
       class="avatar-wrapper h-9 w-12 flex items-center justify-center bg-background rounded-full"
     >
-      <AugieAvatarWithState
+      <AgentAvatarWithState
         agentId={agent.agentId}
         size={24}
         state={avatarState}

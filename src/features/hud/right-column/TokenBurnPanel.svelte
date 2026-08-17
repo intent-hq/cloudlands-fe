@@ -130,7 +130,7 @@
     color: hsl(var(--primary));
   }
   .hud-burn-rate.down {
-    color: hsl(var(--destructive-foreground));
+    color: hsl(var(--error-foreground));
   }
   .hud-burn-arrow {
     /* Inherits the 12px rate size (above the a11y tiny-font threshold). */

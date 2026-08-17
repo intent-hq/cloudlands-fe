@@ -12,13 +12,50 @@ import {
   SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
   SUBSCRIPTION_CARD_SURFACE_CLASS,
   SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
+  SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS,
 } from '../subscription-disclosure';
 import { USER_MESSAGE_SURFACE_CLASS } from '../user-message-surface';
 
-const { dispatchMock, handleLinkMock } = vi.hoisted(() => ({
-  dispatchMock: vi.fn(),
-  handleLinkMock: vi.fn(),
-}));
+const { dispatchMock, handleLinkMock, agentSelectorHarness } = vi.hoisted(() => {
+  type Snapshot = {
+    session: Record<string, unknown>;
+    responding: boolean;
+    waiting: boolean;
+    permissionCount: number;
+    provider: string | undefined;
+  };
+  const initialSnapshot: Snapshot = {
+    session: { status: 'idle', metadata: { specialist: 'spec-writer' } },
+    responding: false,
+    waiting: false,
+    permissionCount: 0,
+    provider: 'augment',
+  };
+  let snapshot = initialSnapshot;
+  const listeners = new Set<() => void>();
+  return {
+    dispatchMock: vi.fn(),
+    handleLinkMock: vi.fn(),
+    agentSelectorHarness: {
+      readable: <T>(select: (value: Snapshot) => T) => ({
+        subscribe: (run: (value: T) => void) => {
+          const notify = () => run(select(snapshot));
+          notify();
+          listeners.add(notify);
+          return () => listeners.delete(notify);
+        },
+      }),
+      set: (updates: Partial<Snapshot>) => {
+        snapshot = { ...snapshot, ...updates };
+        for (const notify of [...listeners]) notify();
+      },
+      reset: () => {
+        snapshot = initialSnapshot;
+        for (const notify of [...listeners]) notify();
+      },
+    },
+  };
+});
 
 // Mock Redux store and selectors
 vi.mock('$store/renderer/store', async () => {
@@ -77,10 +114,20 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     }),
     { select: () => undefined },
   ),
+  selectAgentSession: Object.assign(() => agentSelectorHarness.readable((value) => value.session), {
+    select: () => ({ metadata: { specialist: 'spec-writer' } }),
+  }),
+  selectAgentIsResponding: () => agentSelectorHarness.readable((value) => value.responding),
+  selectAgentIsWaiting: () => agentSelectorHarness.readable((value) => value.waiting),
+  selectAgentProvider: () => agentSelectorHarness.readable((value) => value.provider),
 }));
 
-vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
-  default: (await import('./mocks/AgentAvatar.svelte')).default,
+vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
+  selectPendingCount: () => agentSelectorHarness.readable((value) => value.permissionCount),
+}));
+
+vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => ({
+  default: (await import('./mocks/AgentMessageAttributionAvatar.svelte')).default,
 }));
 
 // Stub the edit-mode input; its real dependency tree (ModelPicker → useAgentSession)
@@ -241,6 +288,7 @@ describe('ChatMessage user message text rendering', () => {
 describe('ChatMessage agent-to-agent sender attribution', () => {
   beforeEach(() => {
     dispatchMock.mockClear();
+    agentSelectorHarness.reset();
   });
 
   it('affirms attributed message hierarchy and density in every required visual state', async () => {
@@ -285,6 +333,10 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(screen.getByText('sent a message')).toBeTruthy();
     const avatar = screen.getByTestId('agent-avatar');
     expect(avatar.getAttribute('data-agent-id')).toBe('agent-sender-1');
+    expect(avatar.getAttribute('data-specialist')).toBe('spec-writer');
+    expect(avatar.getAttribute('data-provider')).toBe('augment');
+    expect(avatar.getAttribute('data-avatar-state')).toBe('idle');
+    expect(avatar.getAttribute('data-avatar-variant')).toBe('standard');
     const preview = screen.getByTestId('agent-message-preview');
     expect(preview.textContent).toContain('hello from another agent');
     expect(screen.queryByTestId('agent-message-expanded-body')).toBeNull();
@@ -304,6 +356,60 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     }
     expect(disclosureHeader.classList.contains('gap-2')).toBe(true);
     expect(surface.querySelector('button button')).toBeNull();
+  });
+
+  it('updates live semantic state and identity inputs without remounting', async () => {
+    render(ChatMessage, {
+      props: {
+        message: userMessage({
+          type: 'agent_message',
+          fromAgentId: 'agent-sender-live',
+          fromAgentName: 'Live Builder',
+        }),
+      },
+    });
+    const mountedAvatar = screen.getByTestId('agent-avatar');
+    expect(mountedAvatar.getAttribute('data-avatar-state')).toBe('idle');
+
+    const transitions = [
+      {
+        updates: {
+          responding: true,
+          session: { status: 'Processing', metadata: { specialist: 'implementor' } },
+          provider: 'codex',
+        },
+        state: 'running',
+      },
+      {
+        updates: { responding: false, waiting: true, session: { status: 'Waiting' } },
+        state: 'waiting',
+      },
+      {
+        updates: { waiting: false, session: { status: 'error' } },
+        state: 'failed',
+      },
+      {
+        updates: { session: { status: 'Waiting' }, permissionCount: 1 },
+        state: 'needs-permission',
+      },
+      {
+        updates: {
+          permissionCount: 0,
+          session: { status: 'Waiting', attentionRequestKind: 'discussion' },
+        },
+        state: 'attention-discussion',
+      },
+    ] as const;
+
+    for (const transition of transitions) {
+      agentSelectorHarness.set(transition.updates);
+      await Promise.resolve();
+      const avatar = screen.getByTestId('agent-avatar');
+      expect(avatar).toBe(mountedAvatar);
+      expect(avatar.getAttribute('data-avatar-state')).toBe(transition.state);
+    }
+    expect(mountedAvatar.getAttribute('data-specialist')).toBeNull();
+    expect(mountedAvatar.getAttribute('data-provider')).toBe('codex');
   });
 
   it.each([
@@ -602,7 +708,9 @@ describe('ChatMessage hook wake attribution', () => {
     for (const token of SUBSCRIPTION_DISCLOSURE_ROW_CLASS.split(' ')) {
       expect(header.classList.contains(token)).toBe(true);
     }
-    expect(surface.classList.contains('mt-4')).toBe(true);
+    for (const token of SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS.split(' ')) {
+      expect(surface.classList.contains(token)).toBe(true);
+    }
     expect(surface.getAttribute('data-external-spacing-owner')).toBe('automated-wake-card');
     expect(screen.getByText('ci-watch')).toBeTruthy();
     expect(screen.getByText('woke the agent')).toBeTruthy();
@@ -704,7 +812,9 @@ describe('ChatMessage hook wake attribution', () => {
     // Automated-wake cards render on the subscription-card surface → muted tone.
     expect(timing.className).toContain('text-subtle');
     expect(timing.className).not.toContain('text-primary-foreground/80');
-    expect(timing.textContent).toContain('waited');
+    expect(screen.getByTestId('queued-message-notice-text').textContent).toBe(
+      'Waited in queue for 3s',
+    );
     expect(screen.getByText('CI is red')).toBeTruthy();
     expect(screen.queryByText(/SYSTEM NOTE/)).toBeNull();
   });

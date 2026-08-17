@@ -21,6 +21,8 @@ export interface FollowBottomOptions {
   onFollowChange?: (follow: boolean) => void;
   /** Reports live geometry for controls outside the scroll container. */
   onScrollStateChange?: (state: FollowBottomState) => void;
+  /** Keep the native anchor active without reserving a layout pixel. */
+  layoutNeutralBottomAnchor?: boolean;
 }
 
 export interface FollowBottomState {
@@ -81,7 +83,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   nativeBottomAnchor.dataset.followBottomAnchor = '';
   nativeBottomAnchor.setAttribute('aria-hidden', 'true');
   nativeBottomAnchor.style.cssText =
-    'height:1px;overflow-anchor:auto;pointer-events:none;flex:0 0 auto;';
+    `height:${options.layoutNeutralBottomAnchor ? 0 : 1}px;` +
+    'overflow-anchor:auto;pointer-events:none;flex:0 0 auto;';
 
   function excludeNativeAnchor(element: HTMLElement) {
     if (element === nativeBottomAnchor || originalOverflowAnchors.has(element)) return;

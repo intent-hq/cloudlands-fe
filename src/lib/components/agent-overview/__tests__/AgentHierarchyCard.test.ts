@@ -70,7 +70,7 @@ vi.mock('svelte-fa', async () => ({
   default: (await import('../../ui/__tests__/mocks/Fa.svelte')).default,
 }));
 
-vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
+vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => ({
   default: (await import('../../chat/__tests__/mocks/MockAvatarWithState.svelte')).default,
 }));
 

@@ -1988,7 +1988,7 @@ describe('NotificationService structured notification:show payload', () => {
       specialistDisplayName: 'Coordinator',
       taskTitle: longTaskTitle,
       provider: 'claude-code',
-      // Seeds AuggieAvatar's deterministic gradient colors in the toast.
+      // Seeds AgentAvatar's deterministic gradient colors in the toast.
       agentId: 'agent-self',
     });
   });

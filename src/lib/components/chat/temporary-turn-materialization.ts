@@ -1,12 +1,10 @@
-export type TemporaryTurnMaterializationKind = 'pinned' | 'editing';
+export type TemporaryTurnMaterializationKind = 'editing';
 
 export interface TemporaryTurnMaterialization {
-  pinned: string | null;
   editing: string | null;
 }
 
 export const EMPTY_TEMPORARY_TURN_MATERIALIZATION: TemporaryTurnMaterialization = {
-  pinned: null,
   editing: null,
 };
 
@@ -30,5 +28,5 @@ export function isTurnTemporarilyMaterialized(
   state: TemporaryTurnMaterialization,
   turnKey: string,
 ): boolean {
-  return state.pinned === turnKey || state.editing === turnKey;
+  return state.editing === turnKey;
 }

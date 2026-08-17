@@ -15,7 +15,7 @@
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import { faCheckCircle, faXmarkCircle, faSpinner } from '@fortawesome/free-solid-svg-icons';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { slide } from 'svelte/transition';
   import type { Snippet } from 'svelte';
 
@@ -64,7 +64,7 @@
 
   const statusColors: Record<Status, string> = {
     success: 'text-green-500',
-    error: 'text-red-500',
+    error: 'text-error-foreground',
     pending: 'text-amber-500 animate-spin',
     neutral: '',
   };
@@ -113,7 +113,7 @@
       class="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
       onclick={onAgentClick}
     >
-      <AuggieAvatar size={20} {agentId} />
+      <AgentAvatar size={20} {agentId} />
     </button>
   {/if}
 </div>

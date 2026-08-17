@@ -11,6 +11,7 @@ export const SYSTEM_DEFAULT_FONT =
 export type FontStyle = 'sans' | 'monospace';
 export type AgentFontStyle = FontStyle;
 export type NoteFontStyle = FontStyle | 'serif';
+export type PanelOpenMode = 'normal' | 'pin';
 
 export const FONT_STYLES: FontStyle[] = ['sans', 'monospace'];
 export const NOTE_FONT_STYLES: NoteFontStyle[] = ['sans', 'serif', 'monospace'];
@@ -57,6 +58,8 @@ export type UserPreferencesState = {
   /** BCP-47 locale tag of an available catalog, or "system" to follow the OS. */
   languagePreference: string;
   githubLinkDefaultAction: GithubLinkDefaultAction;
+  /** Global content-open policy shared by every workspace. */
+  panelOpenMode: PanelOpenMode;
 };
 
 export type FontSettingsState = Pick<
@@ -96,6 +99,7 @@ export const initialState: UserPreferencesState = {
   activityLogPresets: [],
   languagePreference: SYSTEM_LANGUAGE_PREFERENCE,
   githubLinkDefaultAction: 'show-choices',
+  panelOpenMode: 'normal',
 };
 
 export const setUpdateChannel = createAction<[channel: UpdateChannel]>(
@@ -170,6 +174,12 @@ export const setLanguagePreference = createAction<[preference: string]>(
 export const setGithubLinkDefaultAction = createAction<[action: GithubLinkDefaultAction]>(
   'userPreferences/setGithubLinkDefaultAction',
 );
+
+export const setPanelOpenMode = createAction<[mode: PanelOpenMode]>(
+  'userPreferences/setPanelOpenMode',
+);
+
+export const togglePanelOpenMode = createAction('userPreferences/togglePanelOpenMode');
 
 const showArchivedPreference = createBooleanPreference<UserPreferencesState>({
   sliceName: 'userPreferences',
@@ -294,4 +304,11 @@ userPreferencesReducer.with(setLanguagePreference, (state, { payload: [preferenc
 userPreferencesReducer.with(setGithubLinkDefaultAction, (state, { payload: [action] }) => ({
   ...state,
   githubLinkDefaultAction: action,
+}));
+userPreferencesReducer.with(setPanelOpenMode, (state, { payload: [mode] }) =>
+  state.panelOpenMode === mode ? state : { ...state, panelOpenMode: mode },
+);
+userPreferencesReducer.with(togglePanelOpenMode, (state) => ({
+  ...state,
+  panelOpenMode: state.panelOpenMode === 'pin' ? 'normal' : 'pin',
 }));

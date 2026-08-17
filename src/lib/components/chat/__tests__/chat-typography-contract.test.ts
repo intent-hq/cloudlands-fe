@@ -7,20 +7,23 @@ function source(path: string) {
 }
 
 describe('chat typography contract', () => {
-  it('lets the transcript and composer fill the panel width', () => {
+  it('caps transcript and composer content at the approved 70em measure', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
-    expect(panel).toContain('conversation-column flex min-h-full w-full flex-col');
+    expect(panel).toContain(
+      'conversation-column mx-auto flex min-h-full w-full min-w-0 max-w-[70em] flex-col',
+    );
     expect(panel).toContain('conversation-composer relative z-20 w-full');
+    expect(panel).toContain(
+      'mx-auto w-full min-w-0 max-w-[70em]" data-testid="chat-composer-controls-inner',
+    );
     expect(panel).not.toContain('max-w-[var(--content-measure-');
   });
 
   it('keeps prose at body hierarchy and operational rows on the shared quiet tone', () => {
     expect(source('src/lib/components/chat/ChatMessage.svelte')).toContain('type-body text-pretty');
-    expect(source('src/lib/components/chat/ToolCall.svelte')).toContain(
-      'OPERATIONAL_ROW_CONTAINER_CLASS',
-    );
+    expect(source('src/lib/components/chat/ToolCall.svelte')).toContain('<ChatOperationalRow');
     expect(source('src/lib/components/chat/operational-disclosure-row.ts')).toContain('type-body');
-    expect(source('src/lib/components/chat/ResponseGroup.svelte')).toContain('type-caption');
+    expect(source('src/lib/components/chat/ResponseGroup.svelte')).toContain('<ChatOperationalRow');
     expect(source('src/lib/components/chat/ChatFileChangesSummary.svelte')).toContain(
       'type-caption',
     );
@@ -86,5 +89,51 @@ describe('chat typography contract', () => {
     expect(divider).not.toContain('faEnvelope');
     expect(divider).not.toContain('text-accent');
     expect(divider).not.toContain('rounded-full');
+  });
+
+  it('keeps collapsed event summaries canonical and expanded report roles compact', () => {
+    const wake = source('src/lib/components/chat/EventWakeupBanner.svelte');
+    const agentCard = source('src/lib/components/chat/AgentCard.svelte');
+    for (const token of [
+      'event-wakeup-agent-name',
+      'event-wakeup-status',
+      'event-wakeup-timestamp',
+      'event-wakeup-report',
+      'max-w-[68ch]',
+      'tabular-nums',
+    ]) {
+      expect(wake).toContain(token);
+    }
+    expect(agentCard).toContain('data-testid="agent-card-status"');
+    expect(agentCard).toContain(
+      'type-body shrink-0 truncate whitespace-nowrap font-normal text-muted-foreground',
+    );
+    expect(agentCard).toContain('type-body shrink-0 truncate');
+    expect(wake).toContain('type-body min-w-0 truncate font-normal text-muted-foreground');
+    expect(wake).not.toContain('type-body min-w-0 truncate font-medium text-foreground');
+    expect(wake).not.toMatch(/type-(?:title|display)|text-(?:base|lg|xl|2xl)/);
+  });
+
+  it('shares opaque muted body summaries and 16px event chevrons', () => {
+    const subscription = source('src/lib/components/chat/subscription-disclosure.ts');
+    const operational = source('src/lib/components/chat/operational-disclosure-row.ts');
+    const eventFiles = [
+      'src/lib/components/chat/AgentMessageAttributionHeader.svelte',
+      'src/lib/components/chat/AgentSubscriptions.svelte',
+      'src/lib/components/chat/AutomatedWakeCardHeader.svelte',
+      'src/lib/components/chat/DelegationGroupSection.svelte',
+      'src/lib/components/chat/BackgroundHooksRow.svelte',
+      'src/lib/components/chat/MonitoredPrsRow.svelte',
+    ].map(source);
+    expect(subscription).toContain("font-normal text-muted-foreground!'");
+    expect(subscription).not.toContain('text-muted-foreground/');
+    expect(subscription).toContain("SUBSCRIPTION_CHEVRON_SIZE_CLASS = 'h-[16px]! w-[16px]!'");
+    expect(operational).toContain(
+      "CHAT_OPERATIONAL_SUMMARY_TONE_CLASS = 'font-normal text-muted-foreground'",
+    );
+    expect(operational).toContain("'h-[16px]! w-[16px]! shrink-0 opacity-60");
+    expect(eventFiles.join('')).not.toMatch(
+      /type-caption[^\n]*(?:summary|status)|text-ghost[^\n]*\{/,
+    );
   });
 });

@@ -13,6 +13,7 @@ import {
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setNotificationEnabled,
+  setPanelOpenMode,
   setNoteFontStyle,
   setLanguagePreference,
   setShowArchived,
@@ -30,6 +31,7 @@ import {
   toggleShowReasoningBlocks,
   setUpdateChannel,
   toggleSpellcheck,
+  togglePanelOpenMode,
   type UserPreferencesState,
   userPreferencesReducer,
 } from './user-preferences-slice';
@@ -51,6 +53,7 @@ import {
   selectNoteFontStyleLabel,
   selectNotificationEnabled,
   selectNotificationVolume,
+  selectPanelOpenMode,
   selectShowArchived,
   selectShowReasoningBlocks,
   selectSoundEnabled,
@@ -112,6 +115,19 @@ describe('userPreferencesReducer', () => {
         toggleSpellcheck(),
       );
       expect(state.spellcheckEnabled).toBe(false);
+    });
+  });
+
+  describe('panel open mode', () => {
+    it('defaults to normal and supports set and toggle actions', () => {
+      expect(initialState.panelOpenMode).toBe('normal');
+      const pinned = userPreferencesReducer(initialState, setPanelOpenMode('pin'));
+      expect(pinned.panelOpenMode).toBe('pin');
+      expect(userPreferencesReducer(pinned, togglePanelOpenMode()).panelOpenMode).toBe('normal');
+    });
+
+    it('selects normal for legacy state without the preference', () => {
+      expect(selectPanelOpenMode.select({ userPreferences: undefined } as any)).toBe('normal');
     });
   });
 

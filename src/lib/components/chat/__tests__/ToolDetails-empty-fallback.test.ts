@@ -3,10 +3,10 @@
  *
  * ToolDetails must never expand to an empty container: when parsedResult is
  * rich-typed (e.g. 'confirmation') but has no renderable content, it must fall
- * fall back to sanitized input/output behind an explicit technical-details
- * disclosure, without adding a redundant completion state.
+ * back to sanitized input/output under the parent disclosure, without adding a
+ * redundant completion state or nested disclosure.
  */
-import { render, cleanup, fireEvent } from '@testing-library/svelte';
+import { render, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 vi.mock('$store/renderer/store', async () => {
@@ -35,8 +35,8 @@ vi.mock('../AgentCard.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
-  default: (await import('./mocks/AuggieAvatar.svelte')).default,
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
+  default: (await import('./mocks/AgentAvatar.svelte')).default,
 }));
 
 import ToolDetails from '../ToolDetails.svelte';
@@ -47,7 +47,7 @@ afterEach(() => {
 });
 
 describe('ToolDetails empty rich-result fallback', () => {
-  it('keeps fallback input and output behind a collapsed technical-details disclosure', async () => {
+  it('renders fallback input and output inline under the parent disclosure', () => {
     const { container } = render(ToolDetails, {
       props: {
         input: {
@@ -62,15 +62,14 @@ describe('ToolDetails empty rich-result fallback', () => {
 
     expect(container.textContent).not.toContain('Completed');
     expect(container.textContent).not.toContain('Raw');
-    const disclosure = container.querySelector('details');
-    const summary = container.querySelector('summary');
-    expect(disclosure?.open).toBe(false);
-    expect(summary?.textContent?.trim()).toBe('Technical details');
-
-    await fireEvent.click(summary!);
-    expect(disclosure?.open).toBe(true);
-    expect(disclosure?.textContent).toContain('Ask the user a clarifying question');
-    expect(disclosure?.textContent).toContain('Question queued');
+    expect(container.querySelector('details')).toBeNull();
+    expect(container.querySelector('summary')).toBeNull();
+    expect(container.querySelector('[data-tool-detail-section="input"]')?.textContent).toContain(
+      'Ask the user a clarifying question',
+    );
+    expect(container.querySelector('[data-tool-detail-section="output"]')?.textContent).toContain(
+      'Question queued',
+    );
   });
 
   it('shows input details without a redundant completion label', () => {
@@ -87,7 +86,7 @@ describe('ToolDetails empty rich-result fallback', () => {
     });
 
     expect(container.textContent).toContain('Ask the user');
-    expect(container.textContent).toContain('Technical details');
+    expect(container.querySelector('[data-tool-detail-section="input"]')).toBeTruthy();
     expect(container.textContent).not.toContain('Completed');
   });
 

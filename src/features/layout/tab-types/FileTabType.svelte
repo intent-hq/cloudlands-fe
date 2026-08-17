@@ -7,7 +7,10 @@
 
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { closeTab, updateFileTabPath } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import {
+    closeTab,
+    updateFileTabPath,
+  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   import {
     selectFileContent,
@@ -425,7 +428,7 @@
       </div>
     {:else if fileError}
       <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
-        <p class="text-destructive-foreground">{m.layout_fileTab_errorLoading_label()}</p>
+        <p class="text-error-foreground">{m.layout_fileTab_errorLoading_label()}</p>
         <p class="text-xs">{fileError}</p>
         <p class="text-xs font-mono">{tab.filePath}</p>
         {#if fileNotFoundCandidates.length > 0}

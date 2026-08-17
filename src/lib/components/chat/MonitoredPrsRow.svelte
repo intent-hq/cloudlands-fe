@@ -274,7 +274,9 @@
         aria-label={monitorLabel(monitor)}
         transition:safeSubscriptionRowTransition
       >
-        <div class="flex min-h-9 min-w-0 max-w-full items-center gap-2 px-3 py-2 text-subtle">
+        <div
+          class="flex min-h-9 min-w-0 max-w-full items-center gap-2 px-3 py-2 text-muted-foreground"
+        >
           <Button
             variant="plain"
             type="button"
@@ -300,14 +302,15 @@
             collisionPadding={12}
             contentClass="monitored-pr-menu-content p-0"
           >
-            {#snippet trigger({ toggle }: { toggle: () => void })}
+            {#snippet trigger({ props })}
               <Button
+                {...props}
                 variant="plain"
                 size="icon-xs"
                 type="button"
                 onclick={(event) => {
                   event.stopPropagation();
-                  toggle();
+                  (props.onclick as ((event: MouseEvent) => void) | undefined)?.(event);
                 }}
                 class="h-6 w-6 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
                 data-testid="monitored-pr-chip"
@@ -390,6 +393,7 @@
             <span data-testid="monitored-pr-chevron">
               <Fa
                 icon={faChevronDown}
+                size={16}
                 class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {expandedMonitorId ===
                 monitor.monitorId
                   ? ''

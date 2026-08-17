@@ -11,6 +11,7 @@ import {
   getAutomaticPanelLayoutCanvasWidth,
   getHorizontalPanelColumnDefaultWidthTiers,
   getHorizontalPanelColumnDefaultWidths,
+  getPanelOrder,
 } from './panel-layout-tabless';
 import { panelTabsAreEquivalent } from './panel-tab-identity';
 import type { PanelDefaultWidthTier } from '../../../../shared/panel-layout-sizing';
@@ -50,6 +51,10 @@ export const selectPanelRevealRequestsByWorkspaceId = store.createSelector((stat
       layout.pendingPanelReveal ? [[workspaceId, layout.pendingPanelReveal]] : [],
     ),
   ),
+);
+
+export const selectPanelLayoutWorkspaceIds = store.createSelector((state) =>
+  Object.keys(state.panelLayout.byWorkspaceId),
 );
 
 export type PanelTabIdentityRequest = Pick<PanelTab, 'type'> &
@@ -314,11 +319,38 @@ export const selectFileContentPrunePayload = store.createSelector((state): strin
   return stalePaths;
 });
 
-/** Get all panel IDs */
+/** Get all panel IDs in canonical rendered order. */
 export const selectPanelIds = store.createSelector<[wsId: string], string[]>((state, wsId) => {
   const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
-  return Object.keys(ws.panels);
+  return getPanelOrder(ws.root);
 });
+
+function getPanelNavigatorItems(layout: WorkspacePanelLayoutState) {
+  return getPanelOrder(layout.root).flatMap((panelId) => {
+    const panel = layout.panels[panelId];
+    if (!panel) return [];
+    const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId);
+    return [{ id: panelId, title: activeTab?.title ?? panel.tabs[0]?.title ?? '' }];
+  });
+}
+
+/** Generic panel order and titles for proportional navigation surfaces. */
+export const selectPanelNavigatorItems = store.createSelector<
+  [wsId: string],
+  { id: string; title: string }[]
+>((state, wsId) =>
+  getPanelNavigatorItems(state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState),
+);
+
+/** Generic panel order and titles for every mounted workspace. */
+export const selectPanelNavigatorItemsByWorkspaceId = store.createSelector((state) =>
+  Object.fromEntries(
+    Object.entries(state.panelLayout.byWorkspaceId).map(([workspaceId, layout]) => [
+      workspaceId,
+      getPanelNavigatorItems(layout),
+    ]),
+  ),
+);
 
 // ============================================================================
 // History Selectors

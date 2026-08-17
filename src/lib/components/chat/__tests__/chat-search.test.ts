@@ -18,6 +18,20 @@ describe('chat search utilities', () => {
     );
   });
 
+  it('does not index exact delivery notes on user messages', () => {
+    const note =
+      '[SYSTEM NOTE] This message was queued at 2026-01-01T00:00:00Z and waited 8s before delivery.';
+    const message = {
+      id: 'user-queued',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: `Visible prompt\n\n${note}` }],
+      metadata: { queueInfo: { queuedAt: '2026-01-01T00:00:00Z', waitedMs: 8_000 } },
+    } as AgentMessage;
+
+    expect(findChatSearchMatches([message], 'Visible', new Map())).toHaveLength(1);
+    expect(findChatSearchMatches([message], 'queued at', new Map())).toEqual([]);
+  });
+
   it('creates a range for a match spanning multiple text nodes', () => {
     const element = document.createElement('div');
     element.innerHTML = '<span>cross</span><span>node</span><input value="ignored" />';

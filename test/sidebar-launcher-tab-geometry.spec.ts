@@ -387,7 +387,7 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
       }
       const renderedOverflow = bounds.find(({ overflow }) => overflow);
       const reservedOverflowWidth = renderedOverflow
-        ? Math.max(36, renderedOverflow.width / renderedOverflow.scale)
+        ? renderedOverflow.width / renderedOverflow.scale
         : 36;
       const expectedLimit = Math.max(
         1,
@@ -411,7 +411,7 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
       expect(
         bounds
           .filter(({ overflow }) => overflow)
-          .every(({ width, scale }) => width > 0 && width < 36 * scale),
+          .every(({ width, scale }) => width >= 36 * scale - 0.5),
       ).toBe(true);
       expect(
         bounds

@@ -1,0 +1,262 @@
+import { expect, test } from '@playwright/experimental-ct-svelte';
+import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
+
+test.setTimeout(120_000);
+
+for (const theme of ['light', 'dark'] as const) {
+  for (const zoom of [1, 2]) {
+    for (const width of [320, 720]) {
+      test(`keeps real ChatPanel operational seams exact in ${theme} at ${zoom * 100}% and ${width}px`, async ({
+        mount,
+      }) => {
+        const component = await mount(ChatPanelOperationalGeometryHost, {
+          props: { theme, zoom, width },
+        });
+        for (const messageId of ['assistant-finished', 'assistant-streaming']) {
+          const message = component.locator(`[data-message-id="${messageId}"]`);
+          await message.getByTestId('response-group-disclosure').click();
+          const rows = message.locator('[data-chat-operational-row]');
+          await expect(rows).toHaveCount(messageId === 'assistant-streaming' ? 21 : 20);
+          const groupContent = message.locator('[data-operational-expanded-content]').first();
+          await groupContent.evaluate(async (element) => {
+            await Promise.all(
+              element
+                .getAnimations({ subtree: true })
+                .map((animation) => animation.finished.catch(() => {})),
+            );
+          });
+          const geometry = await rows.evaluateAll((elements) =>
+            elements.map((element) => {
+              const row = element.querySelector('[data-operational-disclosure-row]')!;
+              const box = row.getBoundingClientRect();
+              const leading = element.querySelector('[data-operational-leading]')!;
+              const icon = leading.querySelector('svg')!;
+              const summary = element.querySelector<HTMLElement>('[data-operational-summary]')!;
+              const wrapper = element.closest('[data-message-content-block]')!;
+              const style = getComputedStyle(element);
+              const wrapperStyle = getComputedStyle(wrapper);
+              const cardBox = element.getBoundingClientRect();
+              const leadingBox = leading.getBoundingClientRect();
+              const iconBox = icon.getBoundingClientRect();
+              const summaryBox = summary.getBoundingClientRect();
+              const summaryStyle = getComputedStyle(summary);
+              const baselineProbe = document.createElement('span');
+              baselineProbe.style.cssText =
+                'display:inline-block;width:0;height:0;margin:0;padding:0;vertical-align:baseline';
+              summary.append(baselineProbe);
+              const baseline = baselineProbe.getBoundingClientRect().bottom - box.top;
+              baselineProbe.remove();
+              const kind = icon.matches('[data-icon="brain"]')
+                ? 'thinking'
+                : element.getAttribute('data-testid') === 'response-group'
+                  ? 'response-group'
+                  : element.getAttribute('data-testid') === 'context-engine-tool-call'
+                    ? 'context'
+                    : 'tool';
+              return {
+                kind,
+                top: box.top,
+                bottom: box.bottom,
+                height: row.getBoundingClientRect().height,
+                cardEdges: [cardBox.left, cardBox.right],
+                rowEdges: [box.left, box.right],
+                rowCenter: (box.top + box.bottom) / 2,
+                leading: leadingBox.width,
+                leadingCenter: [
+                  (leadingBox.left + leadingBox.right) / 2,
+                  (leadingBox.top + leadingBox.bottom) / 2,
+                ],
+                icon: [iconBox.width, iconBox.height],
+                iconCenter: [
+                  (iconBox.left + iconBox.right) / 2,
+                  (iconBox.top + iconBox.bottom) / 2,
+                ],
+                labelStart: summaryBox.left,
+                baseline,
+                insets: [
+                  iconBox.left - box.left,
+                  iconBox.top - box.top,
+                  box.bottom - iconBox.bottom,
+                ],
+                summary: [
+                  summaryStyle.minWidth,
+                  summaryStyle.overflow,
+                  summaryStyle.textOverflow,
+                  summaryStyle.whiteSpace,
+                ],
+                summaryClipped: summary.scrollWidth > summary.clientWidth,
+                margins: [
+                  style.marginTop,
+                  style.marginBottom,
+                  wrapperStyle.marginTop,
+                  wrapperStyle.marginBottom,
+                ],
+              };
+            }),
+          );
+          for (const row of geometry) {
+            expect(row.height).toBeCloseTo(36 * zoom, 1);
+            expect(row.leading).toBeCloseTo(20 * zoom, 1);
+            expect(row.icon).toEqual([16 * zoom, 16 * zoom]);
+            expect(row.cardEdges).toEqual(row.rowEdges);
+            expect(row.leadingCenter[1]).toBeCloseTo(row.rowCenter, 1);
+            expect(row.iconCenter[1]).toBeCloseTo(row.rowCenter, 1);
+            expect(row.labelStart - row.rowEdges[0]).toBeCloseTo(36 * zoom, 1);
+            expect(row.insets[0]).toBeCloseTo(row.insets[1], 1);
+            expect(row.insets[0]).toBeCloseTo(row.insets[2], 1);
+            expect(row.summary).toEqual(['0px', 'hidden', 'ellipsis', 'nowrap']);
+            expect(row.margins).toEqual(['0px', '0px', '0px', '0px']);
+          }
+          if (width === 320) expect(geometry.some((row) => row.summaryClipped)).toBe(true);
+          const pairOrders = new Set<string>();
+          for (let index = 1; index < geometry.length; index += 1) {
+            const previous = geometry[index - 1];
+            const current = geometry[index];
+            if (previous.kind !== 'thinking' && current.kind !== 'thinking') continue;
+            if (previous.kind === 'thinking' && current.kind === 'thinking') continue;
+            pairOrders.add(`${previous.kind}>${current.kind}`);
+            for (const [before, after] of [
+              [previous.cardEdges[0], current.cardEdges[0]],
+              [previous.cardEdges[1], current.cardEdges[1]],
+              [previous.iconCenter[0], current.iconCenter[0]],
+              [previous.labelStart, current.labelStart],
+              [previous.baseline, current.baseline],
+              [previous.height, current.height],
+            ]) {
+              expect(Math.abs(before - after)).toBeLessThanOrEqual(0.5);
+            }
+          }
+          expect(pairOrders).toEqual(
+            new Set([
+              'thinking>tool',
+              'tool>thinking',
+              'thinking>context',
+              'context>thinking',
+              'thinking>response-group',
+              'response-group>thinking',
+            ]),
+          );
+          await expect(message.locator('[data-operational-stack]')).toHaveCSS('row-gap', '4px');
+
+          if (messageId === 'assistant-streaming') {
+            const streamingRow = message.getByTestId('reasoning-tool-call').last();
+            await expect(streamingRow.locator('[data-operational-leading]')).toHaveClass(
+              /animate-pulse/,
+            );
+            await expect(streamingRow.locator('[data-operational-expanded-content]')).toBeVisible();
+          }
+
+          const groupedX = await message
+            .locator(
+              `[data-tool-use-id="${messageId === 'assistant-finished' ? 'finished' : 'streaming'}-grouped-tool"]`,
+            )
+            .evaluate((element) => element.getBoundingClientRect().x);
+          const ungroupedX = await message
+            .locator(
+              `[data-tool-use-id="${messageId === 'assistant-finished' ? 'finished' : 'streaming'}-view"]`,
+            )
+            .evaluate((element) => element.getBoundingClientRect().x);
+          expect(groupedX).toBeCloseTo(ungroupedX, 1);
+          await expect(message.locator('[data-operational-expanded-guide]')).toHaveCount(0);
+
+          if (messageId === 'assistant-finished') {
+            const staticRow = message.getByTestId('reasoning-tool-call').first();
+            const beforeExpansion = await staticRow.evaluate((element) => {
+              const row = element.querySelector('[data-operational-disclosure-row]')!;
+              const box = row.getBoundingClientRect();
+              return [box.left, box.right, box.height];
+            });
+            await staticRow.getByTestId('reasoning-disclosure').click();
+            await expect(staticRow.locator('[data-operational-expanded-content]')).toBeVisible();
+            const afterExpansion = await staticRow.evaluate((element) => {
+              const row = element.querySelector('[data-operational-disclosure-row]')!;
+              const box = row.getBoundingClientRect();
+              return [box.left, box.right, box.height];
+            });
+            expect(afterExpansion).toEqual(beforeExpansion);
+          }
+        }
+
+        const finished = component.locator('[data-message-id="assistant-finished"]');
+        await expect(
+          finished.locator('[data-conversation-layer="tool-activity"] [data-operational-chevron]'),
+        ).toHaveCount(0);
+        const empty = finished.locator('[data-tool-use-id="finished-empty"]');
+        await expect(empty.locator('button')).toHaveCount(0);
+        await expect(empty.locator('[data-operational-trailing]')).toHaveCount(0);
+
+        for (const [id, inputCount, outputCount] of [
+          ['finished-input-only', 1, 0],
+          ['finished-output-only', 0, 1],
+          ['finished-both', 1, 1],
+          ['finished-error', 1, 1],
+          ['finished-long', 1, 1],
+        ] as const) {
+          const tool = finished.locator(`[data-tool-use-id="${id}"]`);
+          const disclosure = tool.getByTestId('tool-call-disclosure');
+          await disclosure.focus();
+          await expect(disclosure).toBeFocused();
+          await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+          await disclosure.press('Enter');
+          await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+          const inline = tool.locator('[data-tool-details-inline]');
+          await expect(inline).toBeVisible();
+          await expect(inline.locator('details, summary')).toHaveCount(0);
+          await expect(inline.getByText('Technical details', { exact: true })).toHaveCount(0);
+          await expect(inline.locator('[data-tool-detail-section="input"]')).toHaveCount(
+            inputCount,
+          );
+          await expect(inline.locator('[data-tool-detail-section="output"]')).toHaveCount(
+            outputCount,
+          );
+          await expect
+            .poll(() =>
+              tool.evaluate((element) => {
+                const row = element.querySelector('[data-operational-disclosure-row]')!;
+                const details = element.querySelector('[data-tool-details-inline]')!;
+                return details.getBoundingClientRect().top - row.getBoundingClientRect().bottom;
+              }),
+            )
+            .toBeCloseTo(4 * zoom, 1);
+          const alignment = await tool.evaluate((element) => {
+            const row = element.querySelector('[data-operational-disclosure-row]')!;
+            const summary = element.querySelector('[data-operational-summary]')!;
+            const details = element.querySelector('[data-tool-details-inline]')!;
+            const style = getComputedStyle(details);
+            return {
+              gap: details.getBoundingClientRect().top - row.getBoundingClientRect().bottom,
+              summaryX: summary.getBoundingClientRect().x,
+              detailsX: details.getBoundingClientRect().x,
+              border: [
+                style.borderTopWidth,
+                style.borderRightWidth,
+                style.borderBottomWidth,
+                style.borderLeftWidth,
+              ],
+              radius: style.borderRadius,
+              background: style.backgroundColor,
+            };
+          });
+          expect(alignment.gap).toBeCloseTo(4 * zoom, 1);
+          expect(alignment.detailsX).toBeCloseTo(alignment.summaryX, 1);
+          expect(alignment.border).toEqual(['0px', '0px', '0px', '0px']);
+          expect(alignment.radius).toBe('0px');
+          expect(alignment.background).toBe('rgba(0, 0, 0, 0)');
+        }
+
+        const longPayload = finished.locator('[data-tool-use-id="finished-long"] pre').last();
+        const longStyle = await longPayload.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            whiteSpace: style.whiteSpace,
+            overflowY: style.overflowY,
+            maxHeight: style.maxHeight,
+          };
+        });
+        expect(longStyle.whiteSpace).toBe('pre-wrap');
+        expect(longStyle.overflowY).toBe('auto');
+        expect(Number.parseFloat(longStyle.maxHeight)).toBeGreaterThan(0);
+      });
+    }
+  }
+}

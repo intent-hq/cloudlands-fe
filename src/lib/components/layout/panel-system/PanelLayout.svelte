@@ -21,7 +21,11 @@
   } from '$features/layout/panel-cycle-navigation';
   import PanelContainer from './PanelContainer.svelte';
   import PanelCanvasFrame from './PanelCanvasFrame.svelte';
-  import { getPanelCanvasWidths, getPanelViewportContentWidth } from './panel-canvas-width';
+  import {
+    getPanelCanvasWidths,
+    getPanelPreferredWidths,
+    getPanelViewportContentWidth,
+  } from './panel-canvas-width';
   import PanelDragPreview from './PanelDragPreview.svelte';
   import {
     EMPTY_LAYOUT_LOADING_TIMEOUT_MS,
@@ -198,55 +202,82 @@
   let panelOuterResizeCommittedDelta = $state(0);
   let panelOuterResizeCommittedWidth = $state<number | null>(null);
   let panelOuterResizeStartReferenceSize: number | null = null;
+  const effectivePreferredCanvasWidth = $derived(
+    panelOuterResizeCommittedWidth ?? panelCanvasResizeCommittedWidth ?? $panelCanvasWidth$,
+  );
+  const effectivePreferredCanvasWidthSource = $derived(
+    panelOuterResizeCommittedWidth !== null || panelCanvasResizeCommittedWidth !== null
+      ? 'explicit'
+      : $panelCanvasWidthSource$,
+  );
+  const rootHorizontalSizes = $derived(
+    $root$.type === 'split' &&
+      $root$.direction === 'horizontal' &&
+      $root$.children.length === $panelColumnDefaultWidths$.length
+      ? $root$.sizes
+      : null,
+  );
+  const panelColumnPreferredWidths = $derived(
+    getPanelPreferredWidths(
+      $panelColumnDefaultWidths$,
+      rootHorizontalSizes,
+      effectivePreferredCanvasWidth,
+      effectivePreferredCanvasWidthSource,
+    ),
+  );
+  const allocatedPanelCanvas = $derived(
+    getPanelCanvasWidths(panelViewportWidth, panelColumnPreferredWidths, canvasSizing, null, null),
+  );
   const expandedAutomaticViewportWidth = $derived(
     $expandedPanelId$ !== null &&
       canvasSizing === 'viewport' &&
       $panelCanvasWidthSource$ !== 'explicit'
-      ? Math.max(
-          panelViewportWidth,
-          $panelCanvasWidth$ ?? 0,
-          getPanelCanvasWidths(
-            panelViewportWidth,
-            $panelColumnDefaultWidths$,
-            canvasSizing,
-            $panelCanvasWidth$,
-            $panelCanvasWidthSource$,
-          ).defaultWidth,
-        )
+      ? Math.max(panelViewportWidth, $panelCanvasWidth$ ?? 0, allocatedPanelCanvas.defaultWidth)
       : null,
+  );
+  const effectivePanelCanvasWidth = $derived(
+    panelOuterResizeCommittedWidth ??
+      panelCanvasResizeCommittedWidth ??
+      expandedAutomaticViewportWidth ??
+      $panelCanvasWidth$,
+  );
+  const effectivePanelCanvasWidthSource = $derived(
+    panelOuterResizeCommittedWidth !== null ||
+      panelCanvasResizeCommittedWidth !== null ||
+      expandedAutomaticViewportWidth !== null
+      ? 'explicit'
+      : $panelCanvasWidthSource$,
   );
   const panelGeometryCanvasWidth = $derived(
     (panelOuterResizeCommittedWidth ??
       panelCanvasResizeCommittedWidth ??
       expandedAutomaticViewportWidth ??
-      getPanelCanvasWidths(
-        panelViewportWidth,
-        $panelColumnDefaultWidths$,
-        canvasSizing,
-        $panelCanvasWidth$,
-        panelOuterResizeCommittedWidth !== null || panelCanvasResizeCommittedWidth !== null
-          ? 'explicit'
-          : $panelCanvasWidthSource$,
-      ).defaultWidth) +
+      allocatedPanelCanvas.defaultWidth) +
       panelCanvasResizeDelta +
       panelOuterResizeDelta,
   );
   let retainedRootPanel = $state<{ panelId: string; width: number } | null>(null);
 
   $effect(() => {
-    const authoritativeWidth = getPanelCanvasWidths(
-      panelViewportWidth,
-      $panelColumnDefaultWidths$,
-      canvasSizing,
-      $panelCanvasWidth$,
-      $panelCanvasWidthSource$,
-    ).defaultWidth;
-    if (panelCanvasResizeCommittedWidth === authoritativeWidth) {
+    const rootIsReconciled =
+      $root$ === selectPanelLayoutRoot.select(appStore.state, effectiveLayoutId);
+    if (
+      panelCanvasResizeCommittedWidth !== null &&
+      rootIsReconciled &&
+      $panelCanvasWidthSource$ === 'explicit' &&
+      $panelCanvasWidth$ === panelCanvasResizeCommittedWidth
+    ) {
       panelCanvasResizeCommittedWidth = null;
     }
     if (
       panelOuterResizeCommittedWidth !== null &&
-      authoritativeWidth === panelOuterResizeCommittedWidth
+      rootIsReconciled &&
+      (($panelCanvasWidthSource$ === 'explicit' &&
+        $panelCanvasWidth$ === panelOuterResizeCommittedWidth) ||
+        ($panelCanvasWidthSource$ === null &&
+          $panelCanvasWidth$ === null &&
+          panelOuterResizeCommittedWidth ===
+            getAutomaticPanelCanvasWidth($panelColumnDefaultWidths$, 'content')))
     ) {
       panelOuterResizeCommittedWidth = null;
       panelOuterResizeCommittedDelta = 0;
@@ -737,6 +768,7 @@
     nextWidth: number,
     panelIndex: number,
     nextCanvasWidth: number,
+    previousPanelWidths: readonly number[],
   ) {
     markPristinePanelsTouched();
     // Pin the accepted outer pixels before removing the preview delta. Redux then
@@ -749,6 +781,7 @@
       nextWidth,
       panelIndex,
       nextCanvasWidth,
+      previousPanelWidths,
     );
   }
 
@@ -1195,7 +1228,8 @@
         logger.warn('browser:focus-tab received without tabId', { event });
         return;
       }
-      appStore.dispatch(focusBrowserTabRequested(workspaceId, tabId));
+      const pin = event?.payload?.pin === true ? true : undefined;
+      appStore.dispatch(focusBrowserTabRequested(workspaceId, tabId, pin));
     });
 
     // Listen for browser tab list requests from main process
@@ -1269,6 +1303,7 @@
           suppressLayoutMotion={suppressCommittedPanelMoveMotion}
           {retainedRootPanelWidth}
           rootPanelReferenceSize={panelGeometryCanvasWidth > 0 ? panelGeometryCanvasWidth : null}
+          rootHorizontalPanelWidths={allocatedPanelCanvas.panelWidths}
           rootCanvasResizeDelta={panelOuterResizeDelta + panelOuterResizeCommittedDelta}
           onFocusPanel={handleFocusPanel}
           onTabClick={handleTabClick}
@@ -1323,13 +1358,16 @@
   {/if}
 {/snippet}
 
-<div class="panel-layout h-full w-full flex flex-col" aria-label={m.layout_panelLayout_ariaLabel()}>
+<div
+  class="panel-layout h-full w-full flex flex-col bg-sidebar"
+  aria-label={m.layout_panelLayout_ariaLabel()}
+>
   <!-- Main panel area -->
   <div
     bind:this={panelWorkspaceInset}
     use:measurePanelViewportWidth
     class={cn(
-      'flex-1 min-h-0 overflow-y-hidden scrollbar-none',
+      'flex-1 min-h-0 overflow-y-hidden scrollbar-none bg-sidebar',
       contained ? 'overflow-hidden py-2 px-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3',
     )}
     data-testid="panel-workspace-inset"
@@ -1343,16 +1381,10 @@
         <PanelCanvasFrame
           sizing={canvasSizing}
           viewportWidth={panelViewportWidth}
-          panelColumnWidths={$panelColumnDefaultWidths$}
-          canvasWidth={panelOuterResizeCommittedWidth ??
-            panelCanvasResizeCommittedWidth ??
-            expandedAutomaticViewportWidth ??
-            $panelCanvasWidth$}
-          canvasWidthSource={panelOuterResizeCommittedWidth !== null ||
-          panelCanvasResizeCommittedWidth !== null ||
-          expandedAutomaticViewportWidth !== null
-            ? 'explicit'
-            : $panelCanvasWidthSource$}
+          panelColumnWidths={panelColumnPreferredWidths}
+          resetPanelColumnWidths={$panelColumnDefaultWidths$}
+          canvasWidth={effectivePanelCanvasWidth}
+          canvasWidthSource={effectivePanelCanvasWidthSource}
           transientWidthDelta={panelCanvasResizeDelta}
           scrollContainer={panelWorkspaceInset}
           onWidthChange={handlePanelCanvasWidthChange}

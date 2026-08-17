@@ -45,8 +45,11 @@ describe('ChatFileChangesSummary', () => {
     const button = screen.getByRole('button', { name: /1 file changed/i });
     expect(button.className).toContain('gap-2');
     expect(button.className).toContain('px-1.5');
-    expect(button.className).toContain('hover:bg-muted/30');
-    expect(button.querySelector('svg')?.getAttribute('class')).toContain('w-4');
+    expect(button.className).not.toContain('hover:bg-');
+    expect(button.className).toContain('focus-visible:ring-1');
+    const icons = button.querySelectorAll('svg');
+    expect(icons[0]?.getAttribute('class')).toContain('h-4!');
+    expect(icons[1]?.getAttribute('class')).toContain('h-3.5!');
   });
 
   it('opens changes in the workspace that owns the conversation', async () => {

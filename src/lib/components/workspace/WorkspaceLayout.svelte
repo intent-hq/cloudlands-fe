@@ -90,14 +90,18 @@
 <ErrorBoundary logger={workspaceLogger}>
   <!-- Main Workspace Layout -->
   <div
-    class="workspace-page h-full flex flex-col relative bg-transparent"
+    class="workspace-page h-full flex flex-col relative bg-sidebar"
     aria-label={m.workspace_layout_ariaLabel()}
   >
     <!-- Upper Area: Sidebar + Content (shrinks when terminal is open) -->
     <div class="upper-area flex-1 flex min-h-0" class:workspace-column-layout={columnMode}>
       {#if sidebarSide === 'right'}
         <!-- Main Content Area (Panel Layout) - rendered first when sidebar is on right -->
-        <div class="main-content-area flex h-full min-w-0 z-10 {columnMode ? '' : 'pl-2 sm:pl-3'}">
+        <div
+          class="main-content-area flex h-full min-w-0 z-10 bg-sidebar {columnMode
+            ? ''
+            : 'pl-2 sm:pl-3'}"
+        >
           {@render content()}
         </div>
       {/if}
@@ -119,7 +123,7 @@
         notifyAutomaticWidthChanges={!columnMode}
         clampStoredWidth={columnMode}
         onWidthChange={onSidebarWidthChange}
-        className="workspace-sidebar-panel workspace-sidebar-{sidebarSide} flex-none h-full min-w-0 {sidebarSide ===
+        className="workspace-sidebar-panel workspace-sidebar-{sidebarSide} flex-none h-full min-w-0 bg-sidebar {sidebarSide ===
         'left'
           ? 'mr-auto ml-0'
           : 'ml-auto mr-0'}"
@@ -129,7 +133,7 @@
 
       {#if sidebarSide === 'left'}
         <!-- Main Content Area (Panel Layout) - rendered after when sidebar is on left -->
-        <div class="main-content-area flex h-full min-w-0 z-10">
+        <div class="main-content-area flex h-full min-w-0 z-10 bg-sidebar">
           {@render content()}
         </div>
       {/if}

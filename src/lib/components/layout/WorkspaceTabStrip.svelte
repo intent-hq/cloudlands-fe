@@ -9,10 +9,13 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
+  import WorkspaceStatusIcon from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
+  import { formatWorkspaceTabStatusSummary } from '$lib/components/workspace/utils/workspace-tab-status-presentation';
   import {
-    formatWorkspaceTabStatusSummary,
-    getWorkspaceTabStatusPresentation,
-  } from '$lib/components/workspace/utils/workspace-tab-status-presentation';
+    getWorkspaceStatusPresentation,
+    resolveWorkspaceStatusState,
+    type WorkspaceStatusPresentationState,
+  } from '$lib/components/workspace/utils/workspace-status-presentation';
   import { getWorkspaceViewTransitionName } from '$lib/components/workspace/workspace-view-transition';
   import {
     closeWorkspaceTab,
@@ -130,11 +133,16 @@
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
   }
 
-  function tabAccessibleLabel(title: string, status?: WorkspaceTabStatus): string {
-    if (!status) return title;
+  function tabAccessibleLabel(
+    title: string,
+    workspaceState: WorkspaceStatusPresentationState,
+    status?: WorkspaceTabStatus,
+  ): string {
     return m.layout_workspaceTabStrip_status_ariaLabel({
       name: title,
-      statuses: formatWorkspaceTabStatusSummary(status),
+      statuses: status
+        ? formatWorkspaceTabStatusSummary(status)
+        : getWorkspaceStatusPresentation(workspaceState).accessibleName,
     });
   }
 
@@ -387,7 +395,7 @@
         {#if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
           {@const tabStatus = $workspaceTabStatuses$[workspaceId]}
-          {@const leadingStatus = tabStatus?.categories[0]}
+          {@const workspaceStatusState = resolveWorkspaceStatusState(workspace)}
           {@const workspaceTitle =
             workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label()}
           <div
@@ -489,7 +497,7 @@
                 role="tab"
                 aria-selected={isCurrent}
                 aria-current={isCurrent ? 'page' : undefined}
-                aria-label={tabAccessibleLabel(workspaceTitle, tabStatus)}
+                aria-label={tabAccessibleLabel(workspaceTitle, workspaceStatusState, tabStatus)}
                 tabindex={isCurrent ? 0 : -1}
                 data-workspace-tab-hover-trigger
               >
@@ -500,31 +508,12 @@
                   class="pointer-events-none ml-auto flex shrink-0 items-center gap-1"
                   data-workspace-tab-controls
                 >
-                  {#if leadingStatus}
-                    {@const presentation = getWorkspaceTabStatusPresentation(
-                      leadingStatus.category,
-                    )}
-                    <span
-                      class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end gap-px overflow-hidden"
-                      data-workspace-tab-status-cluster
-                    >
-                      <span
-                        class={cn(
-                          'flex size-4 shrink-0 items-center justify-center',
-                          presentation.className,
-                        )}
-                        data-workspace-tab-status={leadingStatus.category}
-                        data-workspace-status-icon={presentation.icon.iconName}
-                        data-status-count={leadingStatus.count}
-                        data-status-leading="true"
-                        role="img"
-                        aria-label={presentation.label}
-                        title={presentation.label}
-                      >
-                        <Fa icon={presentation.icon} class="size-3.5" />
-                      </span>
-                    </span>
-                  {/if}
+                  <span
+                    class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end overflow-hidden"
+                    data-workspace-tab-status-cluster
+                  >
+                    <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
+                  </span>
                   <span class="size-5 shrink-0" data-workspace-tab-close-space aria-hidden="true"
                   ></span>
                 </span>

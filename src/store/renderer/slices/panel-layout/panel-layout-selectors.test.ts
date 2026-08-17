@@ -4,6 +4,8 @@ import {
   selectPanelCanvasWidthsByWorkspaceId,
   selectPanelColumnCount,
   selectPanelColumnCountsByWorkspaceId,
+  selectPanelIds,
+  selectPanelNavigatorItems,
   selectPanelRestoreStatusesByWorkspaceId,
 } from './panel-layout-selectors';
 import { emptyWorkspaceState } from './panel-layout-slice';
@@ -81,6 +83,11 @@ describe('panel layout selectors', () => {
     });
     expect(selectPanelColumnCount.select(state as any, 'populated')).toBe(2);
     expect(selectPanelColumnCount.select(state as any, 'vertical')).toBe(1);
+    expect(selectPanelIds.select(state as any, 'populated')).toEqual(['p1', 'p2']);
+    expect(selectPanelNavigatorItems.select(state as any, 'populated')).toEqual([
+      { id: 'p1', title: 'One' },
+      { id: 'p2', title: '' },
+    ]);
     expect(selectPanelCanvasWidthsByWorkspaceId.select(state as any)).toEqual({
       empty: 500,
       populated: 1000,

@@ -7,19 +7,19 @@
   import { fly } from 'svelte/transition';
   import Fa from 'svelte-fa';
   import {
-  faExclamationTriangle,
-  faClipboard,
-  faCheck,
-  faChevronDown,
-  faChevronRight,
-} from '@fortawesome/free-solid-svg-icons';
+    faExclamationTriangle,
+    faClipboard,
+    faCheck,
+    faChevronDown,
+    faChevronRight,
+  } from '@fortawesome/free-solid-svg-icons';
   import { shell } from '$lib/electron-bridge';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import {
-  diagnoseCloneError,
-  type CloneErrorKind,
-} from '$features/onboarding/utils/diagnose-clone-error';
+    diagnoseCloneError,
+    type CloneErrorKind,
+  } from '$features/onboarding/utils/diagnose-clone-error';
 
   interface Props {
     message: string;
@@ -91,9 +91,15 @@
   <div class="flex items-start gap-2 mb-2">
     <Fa
       icon={faExclamationTriangle}
-      class="mt-0.5 shrink-0 {variant === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-destructive-foreground'}"
+      class="mt-0.5 shrink-0 {variant === 'warning'
+        ? 'text-amber-600 dark:text-amber-400'
+        : 'text-error-foreground'}"
     />
-    <p class="font-medium {variant === 'warning' ? 'text-amber-700 dark:text-amber-300' : 'text-destructive-foreground'}">
+    <p
+      class="font-medium {variant === 'warning'
+        ? 'text-amber-700 dark:text-amber-300'
+        : 'text-error-foreground'}"
+    >
       {titles[diagnosis.kind]}
     </p>
   </div>
@@ -104,7 +110,9 @@
         {m.onboarding_creationError_authRequired_description()}
       </p>
       <div class="flex items-center gap-2">
-        <code class="flex-1 rounded bg-background/70 border border-border px-2 py-1.5 font-mono text-xs">
+        <code
+          class="flex-1 rounded bg-background/70 border border-border px-2 py-1.5 font-mono text-xs"
+        >
           <!-- i18n-ignore (shell command) -->
           gh auth login
         </code>
@@ -122,7 +130,9 @@
         <button
           type="button"
           class="underline hover:text-foreground cursor-pointer"
-          onclick={() => openLink('https://cli.github.com/')}>{m.onboarding_creationError_installIt_label()}</button>
+          onclick={() => openLink('https://cli.github.com/')}
+          >{m.onboarding_creationError_installIt_label()}</button
+        >
         {m.onboarding_creationError_or_label()}
         <button
           type="button"
@@ -130,7 +140,8 @@
           onclick={() =>
             openLink(
               'https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git',
-            )}>{m.onboarding_creationError_credentialHelper_label()}</button>{m.onboarding_creationError_noCli_after()}
+            )}>{m.onboarding_creationError_credentialHelper_label()}</button
+        >{m.onboarding_creationError_noCli_after()}
       </p>
     </div>
   {:else if diagnosis.kind === 'askpass-missing'}
@@ -151,7 +162,8 @@
     <p class="text-foreground">
       {m.onboarding_creationError_repoNotFound_before()}
       <!-- i18n-ignore (shell command) -->
-      <code class="font-mono text-xs">gh auth login</code>{m.onboarding_creationError_repoNotFound_after()}
+      <code class="font-mono text-xs">gh auth login</code
+      >{m.onboarding_creationError_repoNotFound_after()}
     </p>
   {:else if diagnosis.kind === 'access-denied'}
     <p class="text-foreground">
@@ -191,7 +203,9 @@
 
   <div class="flex items-center gap-4 mt-3">
     {#if onRetry}
-      <Button variant="default" size="sm" onclick={onRetry}>{m.onboarding_creationError_tryAgain_label()}</Button>
+      <Button variant="default" size="sm" onclick={onRetry}
+        >{m.onboarding_creationError_tryAgain_label()}</Button
+      >
     {/if}
     {#if diagnosis.kind !== 'unknown' && diagnosis.rawMessage.trim()}
       <button

@@ -19,24 +19,16 @@
   }
 
   // Mock props that would come from bits-ui MenuPrimitive.Trigger
-  const mockProps = {
+  const mockProps = $derived({
     'aria-expanded': open,
     'aria-haspopup': 'menu' as const,
     'data-state': open ? 'open' : 'closed',
-  };
+    onclick: toggle,
+  });
 </script>
 
 {#if trigger}
-  <div
-    role="button"
-    tabindex="0"
-    onclick={() => (open = !open)}
-    onkeydown={(event) => {
-      if (event.key === 'Enter' || event.key === ' ') open = !open;
-    }}
-  >
-    {@render trigger({ toggle, open, props: mockProps })}
-  </div>
+  {@render trigger({ toggle, open, props: mockProps })}
 {/if}
 {#if open && content}
   {@render content({ close: () => (open = false) })}

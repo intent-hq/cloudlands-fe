@@ -105,26 +105,24 @@ describe('browserIpcSaga', () => {
     };
     await emit({ url: 'https://new.test', position: 'replace' });
 
-    expect(actions).toEqual([
+    expect(actions).toMatchObject([
       {
-        type: 'panelLayout/openTabInAdjacentOrSplit',
+        type: 'panelLayout/openTabInNewRootColumn',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://one.test'),
           sourcePanelId: undefined,
-          animated: false,
           force: false,
           newTabId: `tab-${NOW}-i`,
           timestamp: NOW,
         },
       },
       {
-        type: 'panelLayout/openTabInAdjacentOrSplit',
+        type: 'panelLayout/openTabInNewRootColumn',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://two.test'),
           sourcePanelId: undefined,
-          animated: false,
           force: false,
           newTabId: `tab-${NOW}-i`,
           timestamp: NOW,
@@ -142,12 +140,11 @@ describe('browserIpcSaga', () => {
         },
       },
       {
-        type: 'panelLayout/openTabInAdjacentOrSplit',
+        type: 'panelLayout/openTabInNewRootColumn',
         payload: {
           wsId: 'ws-2',
           tab: TAB('https://four.test'),
           sourcePanelId: undefined,
-          animated: false,
           force: false,
           newTabId: `tab-${NOW}-i`,
           timestamp: NOW,
@@ -190,14 +187,13 @@ describe('browserIpcSaga', () => {
     });
     await emit({ url: 'https://three.test', position: 'replace', tabId: 'tab-main-3' });
 
-    expect(actions).toEqual([
+    expect(actions).toMatchObject([
       {
-        type: 'panelLayout/openTabInAdjacentOrSplit',
+        type: 'panelLayout/openTabInNewRootColumn',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://one.test'),
           sourcePanelId: undefined,
-          animated: false,
           force: false,
           allowDuplicate: true,
           newTabId: 'tab-main-1',
@@ -228,6 +224,58 @@ describe('browserIpcSaga', () => {
         },
       },
     ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('pins the panel correlated to an explicit browser open request', async () => {
+    const actions: any[] = [];
+    const task = start((action: any) => {
+      actions.push(action);
+      if (action.type === 'panelLayout/openTabInNewRootColumn') {
+        state.panelLayout.byWorkspaceId['ws-1'] = {
+          panels: {},
+          pendingPanelReveal: {
+            panelId: 'panel-resolved',
+            tabId: 'browser-reused',
+            requestId: action.payload.newTabId,
+          },
+        };
+      }
+    });
+
+    await emit({ url: 'https://pinned.test', tabId: 'request-1', pin: true });
+
+    expect(actions.map((action) => action.type)).toEqual([
+      'panelLayout/openTabInNewRootColumn',
+      'panelLayout/setPanelPinned',
+    ]);
+    expect(actions[1]).toMatchObject({
+      payload: { wsId: 'ws-1', panelId: 'panel-resolved', pinned: true },
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not pin when the pending reveal belongs to another request', async () => {
+    const actions: any[] = [];
+    const task = start((action: any) => {
+      actions.push(action);
+      if (action.type === 'panelLayout/openTabInNewRootColumn') {
+        state.panelLayout.byWorkspaceId['ws-1'] = {
+          panels: {},
+          pendingPanelReveal: {
+            panelId: 'panel-other',
+            tabId: 'browser-other',
+            requestId: 'another-request',
+          },
+        };
+      }
+    });
+
+    await emit({ url: 'https://stale.test', tabId: 'request-1', pin: true });
+
+    expect(actions.map((action) => action.type)).toEqual(['panelLayout/openTabInNewRootColumn']);
     task.cancel();
     await task.toPromise();
   });

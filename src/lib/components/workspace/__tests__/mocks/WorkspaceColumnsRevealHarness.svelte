@@ -1,9 +1,13 @@
 <script lang="ts">
   import { onMount, type Component } from 'svelte';
 
-  let { viewportWidth = 400, zoom = 2 }: { viewportWidth?: number; zoom?: number } = $props();
+  let {
+    viewportWidth = 400,
+    zoom = 2,
+    workspaceKey = 'default',
+  }: { viewportWidth?: number; zoom?: number; workspaceKey?: string } = $props();
 
-  type RuntimeProps = { onReady: () => void };
+  type RuntimeProps = { onReady: () => void; workspaceKey: string };
   let Runtime = $state<Component<RuntimeProps> | null>(null);
   let ready = $state(false);
   let initializationError = $state('');
@@ -55,7 +59,7 @@
       {#snippet failed(error: unknown)}
         <output data-reveal-boundary-error>{formatInitializationError(error)}</output>
       {/snippet}
-      <Runtime onReady={handleReady} />
+      <Runtime onReady={handleReady} {workspaceKey} />
     </svelte:boundary>
   {:else if !initializationError}
     <span data-reveal-initializing></span>

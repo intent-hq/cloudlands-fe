@@ -25,6 +25,7 @@ export type ShowAgentDetail = {
 
 export type OpenAgentTabDetail = {
   agentId: string;
+  pin?: boolean;
   openInAdjacentPanel?: boolean;
   openInNewColumn?: boolean;
   sourcePanelId?: string;

@@ -29,6 +29,7 @@
     faCompress,
     faTableColumns,
     faGripLines,
+    faThumbtack,
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { toast } from '$lib/components/ui/toast';
@@ -45,6 +46,7 @@
   import { startDrag, endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
     restorePanelDragLayout,
+    setPanelPinned,
     toggleExpandPanel,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { selectPanelLayoutWorkspace } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -124,6 +126,7 @@
     tabs: PanelTab[];
     activeTabId: string | null;
     panelId: string;
+    pinned?: boolean;
     workspaceId: string;
     layoutId?: string;
     isFocused?: boolean;
@@ -164,6 +167,7 @@
     tabs,
     activeTabId,
     panelId,
+    pinned = false,
     workspaceId,
     layoutId,
     isFocused = false,
@@ -1197,14 +1201,39 @@
   }
 </script>
 
+{#snippet panelPinButton()}
+  <Tooltip
+    content={pinned
+      ? m.layout_panelTabBar_unpinPanel_label()
+      : m.layout_panelTabBar_pinPanel_label()}
+    side="bottom"
+    delayDuration={300}
+  >
+    <Button
+      variant="ghost-light"
+      size="icon-sm"
+      class={pinned ? 'text-primary' : undefined}
+      onclick={() => appStore.dispatch(setPanelPinned(workspaceId, panelId, !pinned))}
+      aria-label={pinned
+        ? m.layout_panelTabBar_unpinPanel_label()
+        : m.layout_panelTabBar_pinPanel_label()}
+      aria-pressed={pinned}
+      data-panel-pin
+    >
+      <Fa icon={faThumbtack} size="xs" />
+    </Button>
+  </Tooltip>
+{/snippet}
+
 {#snippet panelActionsDropdown()}
   <DropdownMenu align="end" side="bottom" contentClass="w-56">
-    {#snippet trigger({ toggle }: { toggle: () => void })}
+    <!-- i18n-ignore -->
+    {#snippet trigger({ props }: { props: Record<string, unknown> })}
       <Tooltip content={m.ui_breadcrumb_more_label()} side="bottom" delayDuration={300}>
         <Button
+          {...props}
           variant="ghost-light"
           size="icon-sm"
-          onclick={toggle}
           aria-label={m.ui_breadcrumb_more_label()}
           data-testid="panel-actions-trigger"
         >
@@ -1239,6 +1268,16 @@
       </div>
       <div data-panel-actions-section="actions">
         {@render contentActions?.actions?.()}
+        <Menu.CommandItem
+          icon={faThumbtack}
+          label={pinned
+            ? m.layout_panelTabBar_unpinPanel_label()
+            : m.layout_panelTabBar_pinPanel_label()}
+          onclick={() => {
+            appStore.dispatch(setPanelPinned(workspaceId, panelId, !pinned));
+            close();
+          }}
+        />
         <Menu.CommandItem
           icon={faTableColumns}
           label={m.layout_panelTabBar_splitRight_label()}
@@ -1462,7 +1501,7 @@
           class="shrink-0 flex items-center self-stretch pl-1 pr-1 transition-opacity sticky right-0 bg-card"
         >
           <DropdownMenu align="start" side="bottom">
-            {#snippet trigger({ toggle }: { toggle: () => void })}
+            {#snippet trigger({ props }: { props: Record<string, unknown> })}
               <Tooltip
                 content={m.layout_panelTabBar_new_tooltip()}
                 side="bottom"
@@ -1470,10 +1509,10 @@
                 class="flex"
               >
                 <Button
+                  {...props}
                   variant="ghost-light"
                   size="icon-xs"
                   class="opacity-30 group-hover/tabbar:opacity-100"
-                  onclick={toggle}
                   aria-label={m.layout_panelTabBar_createNew_ariaLabel()}
                 >
                   <Fa icon={faPlus} size="xs" />
@@ -1579,6 +1618,7 @@
         class="panel-actions flex items-center gap-0.5 px-1 opacity-30 group-hover/tabbar:opacity-100 focus-within:opacity-100 transition-opacity z-20"
       >
         {@render contentActions?.primary?.()}
+        {@render panelPinButton()}
         {@render panelActionsDropdown()}
         {@render panelCloseButton()}
       </div>
@@ -1738,6 +1778,7 @@
       <!-- Right: stable content controls, grouped actions, and close. -->
       <div class="flex shrink-0 items-center gap-0.5" data-panel-header-actions>
         {@render contentActions?.primary?.()}
+        {@render panelPinButton()}
         {@render panelActionsDropdown()}
         {@render panelCloseButton()}
       </div>

@@ -1,4 +1,9 @@
+<script module lang="ts">
+  let closeActiveMenu: (() => void) | null = null;
+</script>
+
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import type { Snippet } from 'svelte';
   import * as Menu from './menu';
   import { m } from '$shared/paraglide/messages.js';
@@ -27,6 +32,8 @@
     class?: string;
   } = $props();
 
+  let rootElement: HTMLDivElement | null = $state(null);
+
   function toggle() {
     const openBeforeClick = open;
     queueMicrotask(() => {
@@ -37,9 +44,39 @@
   function close() {
     open = false;
   }
+
+  function handleDocumentPointerDown(event: PointerEvent) {
+    if (!open || event.button !== 0) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (rootElement?.contains(target) || target.closest('[role="menu"]')) return;
+    close();
+    if (!target.closest('[data-dropdown-menu-trigger]')) {
+      queueMicrotask(() => {
+        if (!open) rootElement?.querySelector<HTMLElement>('[data-dropdown-menu-trigger]')?.focus();
+      });
+    }
+  }
+
+  $effect(() => {
+    if (!open) {
+      if (closeActiveMenu === close) closeActiveMenu = null;
+      return;
+    }
+
+    const previousClose = closeActiveMenu;
+    closeActiveMenu = close;
+    if (previousClose && previousClose !== close) previousClose();
+  });
+
+  onDestroy(() => {
+    if (closeActiveMenu === close) closeActiveMenu = null;
+  });
 </script>
 
-<div class="relative inline-block {className}">
+<svelte:document onpointerdown={handleDocumentPointerDown} />
+
+<div bind:this={rootElement} class="relative inline-block {className}">
   <Menu.Root bind:open>
     <Menu.Trigger>
       {#snippet child({ props })}
@@ -51,6 +88,7 @@
       {side}
       {portal}
       {collisionPadding}
+      preventScroll={false}
       class={contentClass}
       maxHeight={contentMaxHeight}
       aria-label={m.ui_dropdownMenu_ariaLabel()}

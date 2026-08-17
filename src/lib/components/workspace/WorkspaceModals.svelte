@@ -59,7 +59,9 @@
       tabindex="-1"
       onkeydown={(e) => e.stopPropagation()}
     >
-      <h2 class="text-lg font-semibold text-foreground mb-4">{m.workspace_modals_createNewAgent_label()}</h2>
+      <h2 class="text-lg font-semibold text-foreground mb-4">
+        {m.workspace_modals_createNewAgent_label()}
+      </h2>
 
       <p class="text-sm text-subtle mb-4">
         {m.workspace_modals_createAgent_description()}
@@ -68,10 +70,12 @@
       {#if createAgentError}
         <div class="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
           <div class="flex items-start gap-2">
-            <span class="text-red-500 text-lg">⚠️</span>
+            <span class="text-error-foreground text-lg">⚠️</span>
             <div class="flex-1">
-              <p class="text-sm text-red-400 font-medium mb-1">{m.workspace_modals_createAgentFailed_error()}</p>
-              <p class="text-xs text-red-300">{createAgentError}</p>
+              <p class="text-sm text-error-foreground font-medium mb-1">
+                {m.workspace_modals_createAgentFailed_error()}
+              </p>
+              <p class="text-xs text-error-foreground">{createAgentError}</p>
 
               {#if showAuthHelper}
                 <div class="mt-3 p-3 bg-primary/10 border border-primary/30 rounded-lg">
@@ -82,7 +86,9 @@
                   <ol class="text-xs text-blue-200 space-y-2 ml-4 list-decimal">
                     <li>
                       {m.workspace_modals_openTerminalStep_label()}
-                      <Button onclick={onOpenSystemTerminal}>{m.workspace_modals_openSystemTerminal_label()}</Button>
+                      <Button onclick={onOpenSystemTerminal}
+                        >{m.workspace_modals_openSystemTerminal_label()}</Button
+                      >
                     </li>
                     <li>
                       {m.workspace_modals_runInTerminal_before()}

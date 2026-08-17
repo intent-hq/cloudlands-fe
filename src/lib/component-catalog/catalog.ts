@@ -1,5 +1,6 @@
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 import { canonicalComponentManifest } from '$lib/components/ui/manifest';
+import { m } from '$shared/paraglide/messages.js';
 
 export interface CatalogEntry {
   slug: string;
@@ -24,6 +25,23 @@ const componentEntries: CatalogEntry[] = canonicalComponentManifest.map((compone
 
 export const catalogEntries: CatalogEntry[] = [
   ...componentEntries,
+  {
+    slug: 'chat-polish',
+    name: m.sandbox_chatPolish_title(),
+    description: m.sandbox_chatPolish_description(),
+    category: 'product',
+    source: 'src/lib/components/chat',
+    fixtures: [
+      {
+        id: 'comprehensive-conversation',
+        title: m.sandbox_chatPolish_mixedReviewComplete_title(),
+        states: ['comprehensive', 'deterministic', 'daemon-free', 'read-only'],
+        themes: ['light', 'dark'],
+        viewport: 'both',
+        reducedMotion: true,
+      },
+    ],
+  } satisfies CatalogEntry,
   {
     slug: 'proposal-card',
     name: 'Proposal Card',

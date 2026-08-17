@@ -65,9 +65,9 @@ if (shouldIsolateDevIntentdDataDir(process.env, !app.isPackaged)) {
 import { setupConsoleLogCapture } from './logging/console-log-capture.js';
 setupConsoleLogCapture();
 
-// Set app name early - in dev mode, show custom name or "Intent [Dev N]" in dock/menu bar
+// Set the application name early. The same resolved value labels the macOS app menu.
 const isDev = process.env.NODE_ENV === 'development';
-app.setName(resolveAppTitle());
+const appName = setResolvedAppName(app);
 
 // Track registered handlers globally
 const __registeredHandlers = new Set<string>();
@@ -337,7 +337,7 @@ import { registerDebugExportHandlers } from '../features/debug-export/main/debug
 import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
 import { registerWorkspacePRHandlers } from '../features/workspace/main/workspace-pr.ipc';
 import { ipcCleanupManager } from './ipc-cleanup-manager';
-import { resolveAppTitle } from './utils/resolve-app-title.js';
+import { setResolvedAppName } from './utils/resolve-app-title.js';
 import { getMainWindow } from './state';
 import {
   captureWindowSessionsSnapshot,
@@ -591,7 +591,6 @@ app.whenReady().then(async () => {
 
   // Set application menu with correct app name on macOS
   const { Menu } = require('electron');
-  const appName = resolveAppTitle();
   const isDevMode = process.env.NODE_ENV === 'development';
   const isMacOS = process.platform === 'darwin';
 

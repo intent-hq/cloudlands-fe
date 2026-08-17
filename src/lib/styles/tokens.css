@@ -16,6 +16,7 @@
   --color-muted-foreground: hsl(var(--muted-foreground));
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-error-foreground: hsl(var(--error-foreground));
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
@@ -69,16 +70,19 @@
   --theme-light-success-foreground: 0 0% 100%;
   --theme-light-warning: 42 91% 54%;
   --theme-light-warning-foreground: 154 44% 14%;
-  --theme-light-sidebar: 140 3% 94%;
+  --theme-light-sidebar: 0 0% 98%;
   --theme-light-sidebar-foreground: 154 44% 14%;
   --theme-light-sidebar-accent: 140 24% 87%;
   --theme-light-sidebar-accent-foreground: 154 44% 14%;
   --theme-light-sidebar-border: 150 8% 82%;
   --theme-light-app-background: 0 0% 100%;
   --theme-light-agent-avatar-surface-neutral: var(--theme-light-muted);
+  --theme-light-agent-avatar-surface-completed: 145 14% 88%;
+  --theme-light-agent-avatar-foreground-completed: 154 32% 24%;
   --theme-light-agent-avatar-surface-attention: 30.785 100% 62.549%;
   --theme-light-agent-avatar-surface-active: 66.892 71.845% 59.608%;
   --theme-light-agent-avatar-surface-unread: 218.049 87.234% 90.784%;
+  --theme-light-agent-avatar-surface-waiting: 263.2 74.257% 80.196%;
 
   --theme-dark-background: 154 16% 3%;
   --theme-dark-foreground: 135 20% 92%;
@@ -105,16 +109,19 @@
   --theme-dark-success-foreground: 154 25% 9%;
   --theme-dark-warning: 42 91% 63%;
   --theme-dark-warning-foreground: 154 25% 9%;
-  --theme-dark-sidebar: 154 16% 6%;
+  --theme-dark-sidebar: 154 16% 5%;
   --theme-dark-sidebar-foreground: 135 20% 92%;
   --theme-dark-sidebar-accent: 145 18% 22%;
   --theme-dark-sidebar-accent-foreground: 125 25% 88%;
   --theme-dark-sidebar-border: 145 9% 28%;
   --theme-dark-app-background: 154 24% 7%;
   --theme-dark-agent-avatar-surface-neutral: 145 12% 78%;
+  --theme-dark-agent-avatar-surface-completed: 145 14% 24%;
+  --theme-dark-agent-avatar-foreground-completed: 135 20% 86%;
   --theme-dark-agent-avatar-surface-attention: 31 100% 70%;
   --theme-dark-agent-avatar-surface-active: 67 78% 68%;
   --theme-dark-agent-avatar-surface-unread: 218 100% 86%;
+  --theme-dark-agent-avatar-surface-waiting: 259.024 64.063% 74.902%;
 
   --theme-background: var(--theme-light-background);
   --theme-foreground: var(--theme-light-foreground);
@@ -148,9 +155,12 @@
   --theme-sidebar-border: var(--theme-light-sidebar-border);
   --theme-app-background: var(--theme-light-app-background);
   --theme-agent-avatar-surface-neutral: var(--theme-light-agent-avatar-surface-neutral);
+  --theme-agent-avatar-surface-completed: var(--theme-light-agent-avatar-surface-completed);
+  --theme-agent-avatar-foreground-completed: var(--theme-light-agent-avatar-foreground-completed);
   --theme-agent-avatar-surface-attention: var(--theme-light-agent-avatar-surface-attention);
   --theme-agent-avatar-surface-active: var(--theme-light-agent-avatar-surface-active);
   --theme-agent-avatar-surface-unread: var(--theme-light-agent-avatar-surface-unread);
+  --theme-agent-avatar-surface-waiting: var(--theme-light-agent-avatar-surface-waiting);
 
   --background: var(--theme-background);
   --foreground: var(--theme-foreground);
@@ -168,6 +178,8 @@
   --muted-foreground: var(--theme-muted-foreground);
   --destructive: var(--theme-destructive);
   --destructive-foreground: var(--theme-destructive-foreground);
+  /* Destructive foreground is for a destructive surface; error foreground is for other surfaces. */
+  --error-foreground: var(--destructive-foreground);
   --border: var(--theme-border);
   --input: var(--theme-input);
   --ring: var(--theme-ring);
@@ -185,9 +197,12 @@
 
   --app-background: var(--theme-app-background);
   --agent-avatar-surface-neutral: var(--theme-agent-avatar-surface-neutral);
+  --agent-avatar-surface-completed: var(--theme-agent-avatar-surface-completed);
+  --agent-avatar-foreground-completed: var(--theme-agent-avatar-foreground-completed);
   --agent-avatar-surface-attention: var(--theme-agent-avatar-surface-attention);
   --agent-avatar-surface-active: var(--theme-agent-avatar-surface-active);
   --agent-avatar-surface-unread: var(--theme-agent-avatar-surface-unread);
+  --agent-avatar-surface-waiting: var(--theme-agent-avatar-surface-waiting);
   --agent-avatar-compact-surface-size: 16px;
   --agent-avatar-compact-art-size: 14px;
   --agent-avatar-compact-clear-space: 1px;
@@ -280,11 +295,9 @@
   --radius-large: 9px;
   --radius-full: 9999px;
   --theme-light-elevation-raised: 0 1px 2px rgb(0 0 0 / 0.08);
-  --theme-light-elevation-overlay:
-    0 8px 24px rgb(0 0 0 / 0.14), 0 2px 8px rgb(0 0 0 / 0.08);
+  --theme-light-elevation-overlay: 0 8px 24px rgb(0 0 0 / 0.14), 0 2px 8px rgb(0 0 0 / 0.08);
   --theme-dark-elevation-raised: 0 1px 2px rgb(0 0 0 / 0.32);
-  --theme-dark-elevation-overlay:
-    0 12px 32px rgb(0 0 0 / 0.56), 0 3px 10px rgb(0 0 0 / 0.4);
+  --theme-dark-elevation-overlay: 0 12px 32px rgb(0 0 0 / 0.56), 0 3px 10px rgb(0 0 0 / 0.4);
   --elevation-raised: var(--theme-light-elevation-raised);
   --elevation-overlay: var(--theme-light-elevation-overlay);
   --surface-hatch: repeating-linear-gradient(
@@ -310,6 +323,42 @@
   --radius: var(--radius-base);
   --z-comments-portal: var(--layer-chrome);
   --z-comments-focused: calc(var(--layer-chrome) + 1);
+}
+
+:where([data-avatar-variant='compact']) {
+  --agent-avatar-surface-size: var(--agent-avatar-compact-surface-size);
+  --agent-avatar-art-size: var(--agent-avatar-compact-art-size);
+  --agent-avatar-clear-space: var(--agent-avatar-compact-clear-space);
+  --agent-avatar-corner-radius: var(--agent-avatar-compact-corner-radius);
+  --agent-avatar-ring-width: var(--agent-avatar-compact-ring-width);
+  --agent-avatar-stack-overlap: var(--agent-avatar-compact-stack-overlap);
+}
+
+:where([data-avatar-variant='standard']) {
+  --agent-avatar-surface-size: var(--agent-avatar-standard-surface-size);
+  --agent-avatar-art-size: var(--agent-avatar-standard-art-size);
+  --agent-avatar-clear-space: var(--agent-avatar-standard-clear-space);
+  --agent-avatar-corner-radius: var(--agent-avatar-standard-corner-radius);
+  --agent-avatar-ring-width: var(--agent-avatar-standard-ring-width);
+  --agent-avatar-stack-overlap: var(--agent-avatar-standard-stack-overlap);
+}
+
+:where([data-avatar-variant='emphasized'], [data-avatar-variant='card-stack']) {
+  --agent-avatar-surface-size: var(--agent-avatar-emphasized-surface-size);
+  --agent-avatar-art-size: var(--agent-avatar-emphasized-art-size);
+  --agent-avatar-clear-space: var(--agent-avatar-emphasized-clear-space);
+  --agent-avatar-corner-radius: var(--agent-avatar-emphasized-corner-radius);
+  --agent-avatar-ring-width: var(--agent-avatar-emphasized-ring-width);
+  --agent-avatar-stack-overlap: var(--agent-avatar-emphasized-stack-overlap);
+}
+
+:where([data-avatar-variant='prominent']) {
+  --agent-avatar-surface-size: var(--agent-avatar-prominent-surface-size);
+  --agent-avatar-art-size: var(--agent-avatar-prominent-art-size);
+  --agent-avatar-clear-space: var(--agent-avatar-prominent-clear-space);
+  --agent-avatar-corner-radius: var(--agent-avatar-prominent-corner-radius);
+  --agent-avatar-ring-width: var(--agent-avatar-prominent-ring-width);
+  --agent-avatar-stack-overlap: var(--agent-avatar-prominent-stack-overlap);
 }
 
 .light {
@@ -352,9 +401,12 @@
   --theme-sidebar-border: var(--theme-dark-sidebar-border);
   --theme-app-background: var(--theme-dark-app-background);
   --theme-agent-avatar-surface-neutral: var(--theme-dark-agent-avatar-surface-neutral);
+  --theme-agent-avatar-surface-completed: var(--theme-dark-agent-avatar-surface-completed);
+  --theme-agent-avatar-foreground-completed: var(--theme-dark-agent-avatar-foreground-completed);
   --theme-agent-avatar-surface-attention: var(--theme-dark-agent-avatar-surface-attention);
   --theme-agent-avatar-surface-active: var(--theme-dark-agent-avatar-surface-active);
   --theme-agent-avatar-surface-unread: var(--theme-dark-agent-avatar-surface-unread);
+  --theme-agent-avatar-surface-waiting: var(--theme-dark-agent-avatar-surface-waiting);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -365,5 +417,11 @@
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+}
+
+@media (forced-colors: active) {
+  :where(.text-error-foreground) {
+    color: CanvasText !important;
   }
 }

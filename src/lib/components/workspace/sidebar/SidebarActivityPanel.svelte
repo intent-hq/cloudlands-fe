@@ -44,7 +44,7 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { faNote } from '$lib/icons/faNote';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { m } from '$shared/paraglide/messages.js';
@@ -281,16 +281,16 @@
     if (type === 'test:completed') {
       const data = event.data as Record<string, unknown> | undefined;
       if (data?.status === 'passed') return 'text-emerald-500/70';
-      if (data?.status === 'failed') return 'text-red-400/70';
+      if (data?.status === 'failed') return 'text-error-foreground';
     }
     if (type === 'build:completed') {
       const data = event.data as Record<string, unknown> | undefined;
       if (data?.status === 'success') return 'text-emerald-500/70';
-      if (data?.status === 'failed') return 'text-red-400/70';
+      if (data?.status === 'failed') return 'text-error-foreground';
     }
 
     // Error states
-    if (type === 'agent:failed') return 'text-red-400/70';
+    if (type === 'agent:failed') return 'text-error-foreground';
     if (type === 'agent:deleted') return 'text-subtle';
 
     // Active/running states
@@ -457,7 +457,7 @@
             <div class="relative flex items-center justify-center w-3.5 h-[1.2rem] shrink-0">
               {#if eventAgentId}
                 <div class="flex items-center justify-center bg-sidebar">
-                  <AuggieAvatar size={14} agentId={eventAgentId} />
+                  <AgentAvatar size={14} agentId={eventAgentId} />
                 </div>
               {:else}
                 <div class="flex items-center justify-center w-3 rounded-sm bg-sidebar">

@@ -15,7 +15,7 @@
   import AgentHierarchyCard, { CARD_WIDTH, CARD_HEIGHT } from './AgentHierarchyCard.svelte';
   import BackgroundAgentCard, { BG_CARD_SIZE } from './BackgroundAgentCard.svelte';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { formatRelativeTime } from '$lib/utils/timeFormatting';
   import Fa from 'svelte-fa';
   import { faGear } from '@fortawesome/free-solid-svg-icons';
@@ -605,7 +605,7 @@
           <div class="p-3 space-y-2">
             <!-- Header with avatar and name -->
             <div class="flex items-center gap-2">
-              <AuggieAvatar size={24} agentId={hoveredAgent.agentId} />
+              <AgentAvatar size={24} agentId={hoveredAgent.agentId} />
               <div class="flex-1 min-w-0">
                 <div class="font-medium text-sm truncate">{hoveredAgent.name}</div>
                 {#if hoveredAgent.specialist}

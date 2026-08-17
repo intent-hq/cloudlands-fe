@@ -149,6 +149,74 @@ describe('theme color contract', () => {
     },
   );
 
+  it.each(['light', 'dark'] as const)(
+    'keeps the %s on-surface error foreground readable on normal surfaces',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const values = tokenValues(css, mode);
+      expect(tokenValue(css, 'error-foreground')).toBe('var(--destructive-foreground)');
+      for (const surface of ['background', 'card', 'popover', 'muted', 'sidebar'] as const) {
+        expect(
+          contrast(values['destructive-foreground'], values[surface]),
+          `error-foreground on ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    },
+  );
+
+  it('maps on-surface error content to the system text color in forced-colors mode', () => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+    expect(css).toMatch(
+      /@media \(forced-colors: active\)\s*{\s*:where\(\.text-error-foreground\)\s*{\s*color:\s*CanvasText !important;/,
+    );
+  });
+
+  it.each([
+    ['light', -2],
+    ['dark', 2],
+  ] as const)('keeps the %s sidebar exactly two HSL points toward contrast', (mode, delta) => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+    const values = tokenValues(css, mode);
+    const background = hslChannels(values.background);
+    const sidebar = hslChannels(values.sidebar);
+
+    expect(sidebar.slice(0, 2)).toEqual(background.slice(0, 2));
+    expect(sidebar[2] - background[2]).toBe(delta);
+    expect(values.sidebar).not.toContain('/');
+    expect(tokenValue(css, 'sidebar')).toBe('var(--theme-sidebar)');
+    expect(tokenValue(css, `theme-${mode}-sidebar`)).toBe(values.sidebar);
+  });
+
+  it('keeps canonical sidebar shells on the shared token without local color overrides', () => {
+    const sidebar = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/components/ui/sidebar/sidebar.svelte'),
+      'utf8',
+    );
+    const provider = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/components/ui/sidebar/sidebar-provider.svelte'),
+      'utf8',
+    );
+    const skeleton = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/components/workspace/SidebarSkeleton.svelte'),
+      'utf8',
+    );
+    const navigationPanel = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/components/layout/sidebar-nav/SidebarPanel.svelte'),
+      'utf8',
+    );
+
+    expect(sidebar.match(/\bbg-sidebar\b/g)).toHaveLength(3);
+    expect(sidebar).not.toMatch(/bg-\[#[\da-f]+\]/i);
+    expect(provider).toContain('has-data-[variant=inset]:bg-sidebar');
+    expect(skeleton).toContain('bg-sidebar text-sidebar-foreground');
+    expect(navigationPanel).toContain(
+      'sidebar-panel h-full flex flex-col relative bg-sidebar text-sidebar-foreground dark:bg-transparent',
+    );
+    for (const source of [sidebar, provider, skeleton, navigationPanel]) {
+      expect(source).not.toMatch(/--sidebar\s*:/);
+    }
+  });
+
   it('lets light, dark, and system modes select the same semantic contract', () => {
     const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
     expect(css).toMatch(/:root\s*{[^}]*color-scheme:\s*light dark/s);

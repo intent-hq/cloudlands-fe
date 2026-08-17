@@ -34,6 +34,8 @@ import {
   resolveNewWorkspaceInitialAgent,
   revealDeferredSpecTab,
   resetLayout,
+  collapseToReusablePanel,
+  setPanelPinned,
 } from './panel-layout-slice';
 import { removeTerminal } from '../terminals/terminals-slice';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -107,10 +109,37 @@ describe('panelLayoutReducer', () => {
         canvasWidthSource: null,
       });
     });
+
+    it('drops stale focus and reveal work when a restored layout replaces the panel tree', () => {
+      const opened = panelLayoutReducer(
+        stateWithPanel('old-panel'),
+        openTab(
+          WS,
+          { type: 'note', title: 'Old', noteId: 'old', closable: true },
+          'old-panel',
+          'old-tab',
+        ),
+      );
+      opened.byWorkspaceId[WS].pendingFocusTabId = 'old-tab';
+
+      const result = panelLayoutReducer(
+        opened,
+        initializeLayout(WS, {
+          root: { type: 'panel', panelId: 'restored-panel' },
+          panels: {
+            'restored-panel': { id: 'restored-panel', tabs: [], activeTabId: null },
+          },
+          focusedPanelId: 'restored-panel',
+        }),
+      ).byWorkspaceId[WS];
+
+      expect(result.pendingFocusTabId).toBeNull();
+      expect(result.pendingPanelReveal).toBeNull();
+    });
   });
 
   describe('new workspace canonical bootstrap', () => {
-    it('seeds coordinator chat plus one pristine reserved panel', () => {
+    it('seeds the reusable panel before the pinned coordinator chat', () => {
       const result = panelLayoutReducer(
         emptyState(),
         bootstrapNewWorkspaceLayout(WS, 'agent-1', 'Coordinator', true),
@@ -122,13 +151,14 @@ describe('panelLayoutReducer', () => {
       expect(workspace.root).toMatchObject({
         type: 'split',
         direction: 'horizontal',
-        sizes: [50, 50],
+        sizes: [expect.closeTo((500 / 1200) * 100, 6), expect.closeTo((700 / 1200) * 100, 6)],
       });
       expect(tabs).toEqual([
         expect.objectContaining({ type: 'agent', agentId: 'agent-1', title: 'Coordinator' }),
       ]);
+      expect(panels.find((panel) => panel.tabs[0]?.agentId === 'agent-1')?.pinned).toBe(true);
       expect(panels.filter((panel) => panel.pristine)).toEqual([
-        expect.objectContaining({ tabs: [], activeTabId: null }),
+        expect.objectContaining({ tabs: [], activeTabId: null, pinned: false }),
       ]);
       expect(workspace.newWorkspaceLifecycle).toMatchObject({
         coordinator: true,
@@ -160,6 +190,9 @@ describe('panelLayoutReducer', () => {
         initialAgentId: 'agent-1',
         initialAgentPending: false,
       });
+      expect(Object.values(workspace.panels).find((panel) => panel.tabs.length > 0)?.pinned).toBe(
+        true,
+      );
     });
 
     it('adds the delayed agent without replacing user content in its reserved slot', () => {
@@ -283,7 +316,7 @@ describe('panelLayoutReducer', () => {
 
       const expanded = panelLayoutReducer(state, toggleExpandPanel(WS, 'p1'));
       expect(expanded.byWorkspaceId[WS].root).toMatchObject({
-        sizes: [expect.closeTo((712 / 992) * 100, 6), expect.closeTo((280 / 992) * 100, 6)],
+        sizes: [expect.closeTo(72, 6), expect.closeTo(28, 6)],
       });
       expect(expanded.byWorkspaceId[WS].savedSizesBeforeExpand).toEqual([
         { nodePath: [], sizes: [35, 65] },
@@ -367,7 +400,7 @@ describe('panelLayoutReducer', () => {
       const switched = panelLayoutReducer(first, toggleExpandPanel(WS, 'p2'));
       const restored = panelLayoutReducer(switched, toggleExpandPanel(WS, 'p2'));
       expect(switched.byWorkspaceId[WS].root).toMatchObject({
-        sizes: [expect.closeTo((280 / 992) * 100, 6), expect.closeTo((712 / 992) * 100, 6)],
+        sizes: [expect.closeTo(28, 6), expect.closeTo(72, 6)],
       });
       expect(restored.byWorkspaceId[WS].root).toMatchObject({ sizes: [30, 70] });
     });
@@ -416,6 +449,25 @@ describe('panelLayoutReducer', () => {
       const result = panelLayoutReducer(emptyState(), setRestoreStatus(WS, 'pending'));
       expect(result.byWorkspaceId[WS].restoreStatus).toBe('pending');
     });
+
+    it('cancels one-shot focus and reveal work when restore starts without recreating it', () => {
+      const state = stateWithPanel('p1');
+      state.byWorkspaceId[WS].pendingFocusTabId = 'tab-before-restore';
+      state.byWorkspaceId[WS].pendingPanelReveal = {
+        panelId: 'p1',
+        tabId: 'tab-before-restore',
+        requestId: 'reveal-before-restore',
+      };
+
+      const pending = panelLayoutReducer(state, setRestoreStatus(WS, 'pending'));
+      const restored = panelLayoutReducer(pending, setRestoreStatus(WS, 'restored'));
+
+      expect(restored.byWorkspaceId[WS]).toMatchObject({
+        restoreStatus: 'restored',
+        pendingFocusTabId: null,
+        pendingPanelReveal: null,
+      });
+    });
   });
 
   describe('openTab', () => {
@@ -450,6 +502,11 @@ describe('panelLayoutReducer', () => {
       expect(panel.tabs).toHaveLength(1);
       expect(panel.tabs[0].noteId).toBe('n1');
       expect(panel.activeTabId).toBe('tab1');
+      expect(result.byWorkspaceId[WS].pendingPanelReveal).toEqual({
+        panelId: 'p1',
+        tabId: 'tab1',
+        requestId: 'tab1',
+      });
     });
 
     it('blocks spec note when deferSpecTab is true', () => {
@@ -553,6 +610,56 @@ describe('panelLayoutReducer', () => {
         type: 'note',
         noteId: 'spec',
       });
+      expect(result.byWorkspaceId[WS].canvasWidth).toBe(1008);
+      const focusedPanelId = result.byWorkspaceId[WS].focusedPanelId!;
+      expect(result.byWorkspaceId[WS].pendingPanelReveal).toMatchObject({
+        panelId: focusedPanelId,
+        tabId: result.byWorkspaceId[WS].panels[focusedPanelId].activeTabId,
+      });
+    });
+
+    it('creates every adjacent chat at old default plus exactly 200px', () => {
+      const state = stateWithPanel('p1', [{ id: 'existing', type: 'note', title: 'Existing' }]);
+      const result = panelLayoutReducer(
+        state,
+        openTabInAdjacentOrSplit(
+          WS,
+          { type: 'agent', title: 'Ada', agentId: 'agent-1', closable: true },
+          undefined,
+          undefined,
+          1234,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.canvasWidth).toBe(1208);
+      if (result.root.type !== 'split') throw new Error('Expected horizontal split');
+      expect(result.root.sizes).toEqual([
+        expect.closeTo((500 / 1200) * 100, 6),
+        expect.closeTo((700 / 1200) * 100, 6),
+      ]);
+    });
+
+    it('preserves existing explicit column pixels when adding the wider chat', () => {
+      const state = stateWithPanel('p1', [{ id: 'existing', type: 'note', title: 'Existing' }]);
+      state.byWorkspaceId[WS].canvasWidth = 860;
+      state.byWorkspaceId[WS].canvasWidthSource = 'explicit';
+      const result = panelLayoutReducer(
+        state,
+        openTabInAdjacentOrSplit(WS, {
+          type: 'agent',
+          title: 'Ada',
+          agentId: 'agent-1',
+          closable: true,
+        }),
+      ).byWorkspaceId[WS];
+
+      expect(result.canvasWidth).toBe(1568);
+      expect(result.canvasWidthSource).toBe('explicit');
+      if (result.root.type !== 'split') throw new Error('Expected horizontal split');
+      expect(result.root.sizes).toEqual([
+        expect.closeTo((860 / 1560) * 100, 6),
+        expect.closeTo((700 / 1560) * 100, 6),
+      ]);
     });
 
     it('fills an empty focused panel instead of creating another empty shell', () => {
@@ -758,11 +865,15 @@ describe('panelLayoutReducer', () => {
       if (result.root.type !== 'split') throw new Error('Expected horizontal split');
       expect(result.root.children).toMatchObject([{ panelId: 'p1' }, { panelId: 'p2' }, {}]);
       expect(result.root.sizes).toEqual([
-        expect.closeTo(40, 6),
-        expect.closeTo(100 / 3.75, 6),
-        expect.closeTo(100 / 3, 6),
+        expect.closeTo((595.2 / 1692) * 100, 6),
+        expect.closeTo((396.8 / 1692) * 100, 6),
+        expect.closeTo((700 / 1692) * 100, 6),
       ]);
-      expect(result.canvasWidth).toBe(1500);
+      expect(result.canvasWidth).toBe(1708);
+      expect(result.pendingPanelReveal).toMatchObject({
+        panelId: result.focusedPanelId,
+        tabId: result.panels[result.focusedPanelId!].activeTabId,
+      });
     });
 
     it('reveals an existing canonical agent instead of adding a column', () => {
@@ -782,9 +893,221 @@ describe('panelLayoutReducer', () => {
       expect(result.focusedPanelId).toBe('p1');
       expect(result.pendingPanelReveal).toMatchObject({ panelId: 'p1', tabId: 'agent-tab' });
     });
+
+    it('replaces the reusable panel and preserves pinned panels in pin mode', () => {
+      const state = emptyState();
+      state.byWorkspaceId[WS] = {
+        ...emptyWorkspaceState,
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'pinned' },
+            { type: 'panel', panelId: 'reuse' },
+          ],
+          sizes: [50, 50],
+        },
+        panels: {
+          pinned: {
+            id: 'pinned',
+            tabs: [{ id: 'keep', type: 'note', title: 'Keep', closable: true } as any],
+            activeTabId: 'keep',
+            pinned: true,
+          },
+          reuse: {
+            id: 'reuse',
+            tabs: [{ id: 'old', type: 'note', title: 'Old', closable: true } as any],
+            activeTabId: 'old',
+          },
+        },
+        focusedPanelId: 'reuse',
+      };
+
+      const result = panelLayoutReducer(
+        state,
+        openTabInNewRootColumn(WS, agentTab, { force: true, panelOpenMode: 'pin' }, 10),
+      ).byWorkspaceId[WS];
+
+      expect(Object.keys(result.panels)).toEqual(['pinned', 'reuse']);
+      expect(result.root).toMatchObject({
+        children: [{ panelId: 'reuse' }, { panelId: 'pinned' }],
+      });
+      expect(result.panels.pinned.tabs[0].id).toBe('keep');
+      expect(result.panels.reuse.tabs).toEqual([
+        expect.objectContaining({ type: 'agent', agentId: 'agent-1' }),
+      ]);
+      expect(result.recentlyClosed[0].tab.id).toBe('old');
+    });
+  });
+
+  describe('reusable panel state', () => {
+    it('keeps the focused unpinned panel and closes other unpinned panels', () => {
+      let state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
+      state = panelLayoutReducer(state, splitPanel(WS, 'p1', 'horizontal', undefined, 1));
+      const p2 = state.byWorkspaceId[WS].focusedPanelId!;
+      state = panelLayoutReducer(
+        state,
+        openTab(
+          WS,
+          { type: 'note', title: 'Two', noteId: 'two', closable: true },
+          p2,
+          'two',
+          true,
+          2,
+        ),
+      );
+
+      const result = panelLayoutReducer(state, collapseToReusablePanel(WS, 3)).byWorkspaceId[WS];
+
+      expect(Object.keys(result.panels)).toEqual([p2]);
+      expect(result.root).toEqual({ type: 'panel', panelId: p2 });
+      expect(result.panels[p2].tabs[0].id).toBe('two');
+      expect(result.recentlyClosed.some((entry) => entry.tab.id === 'one')).toBe(true);
+    });
+
+    it('stores explicit pin state without changing panel content', () => {
+      const result = panelLayoutReducer(
+        stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]),
+        setPanelPinned(WS, 'p1', true, 1),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.p1).toMatchObject({ pinned: true, activeTabId: 'one' });
+    });
+
+    it('unpins the selected panel into the reusable slot and closes the previous reusable panel', () => {
+      const state = emptyState();
+      const targetTabs = [{ id: 'target-tab', type: 'note', title: 'Target' } as any];
+      state.byWorkspaceId[WS] = {
+        ...emptyWorkspaceState,
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: ['reuse', 'target', 'newer', 'older'].map((panelId) => ({
+            type: 'panel' as const,
+            panelId,
+          })),
+          sizes: [20, 30, 28, 22],
+        },
+        panels: {
+          reuse: {
+            id: 'reuse',
+            tabs: [{ id: 'old-tab', type: 'note', title: 'Old' } as any],
+            activeTabId: 'old-tab',
+            pinned: false,
+          },
+          target: { id: 'target', tabs: targetTabs, activeTabId: 'target-tab', pinned: true },
+          newer: { id: 'newer', tabs: [], activeTabId: null, pinned: true },
+          older: { id: 'older', tabs: [], activeTabId: null, pinned: true },
+        },
+        focusedPanelId: 'reuse',
+        canvasWidth: 1000,
+        canvasWidthSource: 'explicit',
+      };
+
+      const result = panelLayoutReducer(state, setPanelPinned(WS, 'target', false, 10))
+        .byWorkspaceId[WS];
+
+      expect(Object.keys(result.panels)).toEqual(['target', 'newer', 'older']);
+      expect(result.root).toMatchObject({
+        children: [{ panelId: 'target' }, { panelId: 'newer' }, { panelId: 'older' }],
+        sizes: [expect.closeTo(37.5, 6), expect.closeTo(35, 6), expect.closeTo(27.5, 6)],
+      });
+      expect(result.panels.target).toMatchObject({
+        id: 'target',
+        activeTabId: 'target-tab',
+        pinned: false,
+      });
+      expect(result.panels.target.tabs).toBe(targetTabs);
+      expect(result.focusedPanelId).toBe('target');
+      expect(result.pendingPanelReveal).toMatchObject({
+        panelId: 'target',
+        tabId: 'target-tab',
+      });
+      expect(result.canvasWidth).toBeCloseTo(796.8, 6);
+      expect(result.canvasWidthSource).toBe('explicit');
+      expect(result.recentlyClosed[0]).toMatchObject({ panelId: 'reuse', tab: { id: 'old-tab' } });
+    });
+
+    it('keeps newer pins closer to each newly created reusable panel', () => {
+      const state = emptyState();
+      state.byWorkspaceId[WS] = {
+        ...emptyWorkspaceState,
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'reuse' },
+            { type: 'panel', panelId: 'older' },
+          ],
+          sizes: [50, 50],
+        },
+        panels: {
+          reuse: {
+            id: 'reuse',
+            tabs: [{ id: 'reuse-tab', type: 'note', title: 'Reuse' } as any],
+            activeTabId: 'reuse-tab',
+            pinned: false,
+          },
+          older: { id: 'older', tabs: [], activeTabId: null, pinned: true },
+        },
+        focusedPanelId: 'reuse',
+      };
+
+      const pinned = panelLayoutReducer(state, setPanelPinned(WS, 'reuse', true, 1));
+      const opened = panelLayoutReducer(
+        pinned,
+        openTabInNewRootColumn(
+          WS,
+          { type: 'note', title: 'Next', noteId: 'next', closable: true },
+          { panelOpenMode: 'pin', force: true, newTabId: 'next-tab' },
+          2,
+        ),
+      ).byWorkspaceId[WS];
+      const order =
+        opened.root.type === 'split'
+          ? opened.root.children.map((child) => (child.type === 'panel' ? child.panelId : 'split'))
+          : [opened.root.panelId];
+
+      expect(order.slice(1)).toEqual(['reuse', 'older']);
+      expect(opened.panels[order[0]]).toMatchObject({ activeTabId: 'next-tab' });
+      expect(opened.panels[order[0]].pinned).toBeUndefined();
+      expect(new Set(order).size).toBe(order.length);
+    });
+
+    it('removes an empty reusable placeholder instead of leaving a shell', () => {
+      const bootstrapped = panelLayoutReducer(
+        emptyState(),
+        bootstrapNewWorkspaceLayout(WS, 'agent-1', 'Coordinator', true),
+      );
+      const result = panelLayoutReducer(bootstrapped, collapseToReusablePanel(WS, 1)).byWorkspaceId[
+        WS
+      ];
+
+      expect(Object.values(result.panels)).toEqual([
+        expect.objectContaining({
+          pinned: true,
+          tabs: [expect.objectContaining({ agentId: 'agent-1' })],
+        }),
+      ]);
+      expect(result.root.type).toBe('panel');
+    });
   });
 
   describe('splitPanel', () => {
+    it('preserves an explicit caller-provided panel width', () => {
+      const result = panelLayoutReducer(
+        stateWithPanel('p1'),
+        splitPanel(WS, 'p1', 'horizontal', { panelWidth: 640 }, 1234),
+      ).byWorkspaceId[WS];
+
+      expect(result.canvasWidth).toBe(1148);
+      if (result.root.type !== 'split') throw new Error('Expected horizontal split');
+      expect(result.root.sizes).toEqual([
+        expect.closeTo((500 / 1140) * 100, 6),
+        expect.closeTo((640 / 1140) * 100, 6),
+      ]);
+    });
+
     it('adds a root horizontal column without resizing existing columns', () => {
       const state = emptyState();
       state.byWorkspaceId[WS] = {
@@ -817,7 +1140,7 @@ describe('panelLayoutReducer', () => {
         expect(root.sizes[1]).toBeCloseTo(100 / 3);
         expect(root.sizes[2]).toBeCloseTo(80 / 3);
       }
-      expect(result.byWorkspaceId[WS].canvasWidth).toBe(1500);
+      expect(result.byWorkspaceId[WS].canvasWidth).toBe(1516);
     });
 
     it('preserves sibling pixels when adding a column after a manual edge resize', () => {
@@ -848,11 +1171,11 @@ describe('panelLayoutReducer', () => {
       );
       const workspace = result.byWorkspaceId[WS];
 
-      expect(workspace.canvasWidth).toBe(1500);
+      expect(workspace.canvasWidth).toBe(1508);
       if (workspace.root.type !== 'split') throw new Error('Expected horizontal split');
-      expect(workspace.root.sizes[0]).toBeCloseTo((576 / 1500) * 100);
-      expect(workspace.root.sizes[1]).toBeCloseTo((500 / 1500) * 100);
-      expect(workspace.root.sizes[2]).toBeCloseTo((424 / 1500) * 100);
+      expect(workspace.root.sizes[0]).toBeCloseTo((571.392 / 1492) * 100);
+      expect(workspace.root.sizes[1]).toBeCloseTo((500 / 1492) * 100);
+      expect(workspace.root.sizes[2]).toBeCloseTo((420.608 / 1492) * 100);
     });
   });
 
@@ -911,7 +1234,7 @@ describe('panelLayoutReducer', () => {
       const workspace = result.byWorkspaceId[WS];
 
       expect(workspace.root).toEqual({ type: 'panel', panelId: 'p2' });
-      expect(workspace.canvasWidth).toBe(750);
+      expect(workspace.canvasWidth).toBe(744);
     });
 
     it('threads closeActiveTab action timestamp through internal dispatch', () => {
@@ -1012,11 +1335,29 @@ describe('panelLayoutReducer', () => {
   });
 
   describe('focusPanel', () => {
-    it('changes focused panel ID', () => {
+    it('requests a fresh reveal even when the panel was already focused', () => {
       const state = stateWithPanel('p1');
       state.byWorkspaceId[WS].panels.p2 = { id: 'p2', tabs: [], activeTabId: null };
-      const result = panelLayoutReducer(state, focusPanel(WS, 'p2'));
-      expect(result.byWorkspaceId[WS].focusedPanelId).toBe('p2');
+      const first = panelLayoutReducer(state, focusPanel(WS, 'p2'));
+      const second = panelLayoutReducer(first, focusPanel(WS, 'p2'));
+      expect(second.byWorkspaceId[WS].focusedPanelId).toBe('p2');
+      expect(second.byWorkspaceId[WS].pendingPanelReveal).toMatchObject({
+        panelId: 'p2',
+        tabId: null,
+      });
+      expect(second.byWorkspaceId[WS].pendingPanelReveal?.requestId).not.toBe(
+        first.byWorkspaceId[WS].pendingPanelReveal?.requestId,
+      );
+    });
+
+    it('clears an in-flight reveal when its panel is removed', () => {
+      let state = stateWithPanel('p1');
+      state = panelLayoutReducer(state, splitPanel(WS, 'p1', 'horizontal', undefined, 10));
+      const panelId = state.byWorkspaceId[WS].focusedPanelId!;
+      expect(state.byWorkspaceId[WS].pendingPanelReveal?.panelId).toBe(panelId);
+
+      const result = panelLayoutReducer(state, closePanel(WS, panelId, 20));
+      expect(result.byWorkspaceId[WS].pendingPanelReveal).toBeNull();
     });
   });
 

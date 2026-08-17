@@ -211,6 +211,23 @@ function workspace(id: string): Workspace {
   } as Workspace;
 }
 
+function latestSentAppMessageId(): string {
+  const action = mocks.dispatch.mock.calls
+    .map(([candidate]) => candidate)
+    .findLast((candidate) => candidate?.type === 'chatState/sendMessage');
+  return action.payload.payload.userAppMessageId as string;
+}
+
+function optimisticUserMessage(appMessageId: string, text: string) {
+  return {
+    id: `optimistic-${appMessageId}`,
+    appMessageId,
+    role: 'user',
+    timestamp: '2026-01-01T00:00:00.000Z',
+    contentBlocks: [{ type: 'text', text }],
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -429,6 +446,152 @@ describe('ChatPanel mounted lifecycle', () => {
 
     view.unmount();
     expect(bubble.isConnected).toBe(false);
+  });
+
+  it('matches a delayed optimistic row once and restores the focused composer after finish', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.draftClear.mockResolvedValue({ ok: true });
+    const finish = deferred<void>();
+    mocks.animateMessageSend.mockImplementation(
+      async ({ launchBubble }: { launchBubble?: HTMLElement | null }) => {
+        await finish.promise;
+        launchBubble?.remove();
+      },
+    );
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const editor = screen.getByTestId('mock-rich-input-editor');
+    editor.focus();
+    await fireEvent.input(editor, { target: { value: 'delayed optimistic row' } });
+    (screen.getByTestId('mock-input-submit') as HTMLButtonElement).click();
+
+    await vi.advanceTimersByTimeAsync(2500);
+    const appMessageId = latestSentAppMessageId();
+    mocks.agentMessages.set([optimisticUserMessage(appMessageId, 'delayed optimistic row')]);
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    expect(mocks.animateMessageSend).toHaveBeenCalledOnce();
+    expect(
+      view.container.querySelectorAll(`[data-send-app-message-id="${appMessageId}"]`),
+    ).toHaveLength(1);
+    expect(document.activeElement).toBe(editor);
+    finish.resolve();
+    await Promise.resolve();
+    await tick();
+
+    const row = view.container.querySelector<HTMLElement>(
+      `[data-send-app-message-id="${appMessageId}"]`,
+    );
+    expect(row?.classList.contains('invisible')).toBe(false);
+    expect(document.querySelector('[data-message-send-transition]')).toBeNull();
+    expect(document.activeElement).toBe(editor);
+  });
+
+  it('aborts an active handoff on destroy and removes its launch bubble', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.draftClear.mockResolvedValue({ ok: true });
+    let signal: AbortSignal | undefined;
+    mocks.animateMessageSend.mockImplementation(
+      ({
+        signal: nextSignal,
+        launchBubble,
+      }: {
+        signal?: AbortSignal;
+        launchBubble?: HTMLElement | null;
+      }) =>
+        new Promise<void>((resolve) => {
+          signal = nextSignal;
+          nextSignal?.addEventListener(
+            'abort',
+            () => {
+              launchBubble?.remove();
+              resolve();
+            },
+            { once: true },
+          );
+        }),
+    );
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'active handoff' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    const appMessageId = latestSentAppMessageId();
+    mocks.agentMessages.set([optimisticUserMessage(appMessageId, 'active handoff')]);
+    await tick();
+    await Promise.resolve();
+    await tick();
+    expect(signal?.aborted).toBe(false);
+
+    view.unmount();
+
+    expect(signal?.aborted).toBe(true);
+    expect(document.querySelector('[data-message-send-transition]')).toBeNull();
+  });
+
+  it('aborts an active handoff when the mounted panel changes agent', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.draftClear.mockResolvedValue({ ok: true });
+    let signal: AbortSignal | undefined;
+    mocks.animateMessageSend.mockImplementation(
+      ({ signal: nextSignal }: { signal?: AbortSignal }) =>
+        new Promise<void>((resolve) => {
+          signal = nextSignal;
+          nextSignal?.addEventListener('abort', () => resolve(), { once: true });
+        }),
+    );
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'handoff before agent rebind' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    const appMessageId = latestSentAppMessageId();
+    mocks.agentMessages.set([optimisticUserMessage(appMessageId, 'handoff before agent rebind')]);
+    await tick();
+    await Promise.resolve();
+    await tick();
+    expect(signal?.aborted).toBe(false);
+
+    await view.rerender({ workspace: workspace('workspace-a'), agentId: 'agent-b' });
+    await tick();
+
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('keeps rapid ordinary sends unique and expires the only unmatched launch bubble', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.draftClear.mockResolvedValue({ ok: true });
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    for (const text of ['first rapid send', 'second rapid send']) {
+      await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+        target: { value: text },
+      });
+      await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    }
+    const sendActions = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action?.type === 'chatState/sendMessage');
+    const identities = sendActions.map((action) => action.payload.payload.userAppMessageId);
+
+    expect(new Set(identities).size).toBe(2);
+    expect(mocks.createMessageSendLaunchBubble).toHaveBeenCalledOnce();
+    expect(document.querySelectorAll('[data-message-send-transition]')).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(document.querySelector('[data-message-send-transition]')).toBeNull();
   });
 
   it('keeps draft restore and save ownership with the rebound workspace and agent', async () => {

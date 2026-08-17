@@ -1,16 +1,21 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { tick } from 'svelte';
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import BackgroundHooksRow from './BackgroundHooksRow.svelte';
   import MonitoredPrsRow from './MonitoredPrsRow.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import Fa from 'svelte-fa';
-  import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import { faBell, faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import AgentAvatarStack, {
+    type AgentAvatarStackItem,
+  } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import {
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
+    SUBSCRIPTION_ICON_CLASS,
     SUBSCRIPTION_ICON_BUTTON_CLASS,
     SUBSCRIPTION_LEADING_COLUMN_CLASS,
     SUBSCRIPTION_LEADING_CONTENT_CLASS,
@@ -20,6 +25,7 @@
     getEventSubscriptionsExpanded,
     setEventSubscriptionsExpanded,
   } from './agent-subscriptions-view-state';
+  import { safeSubscriptionSlide } from './subscription-disclosure';
 
   interface Props {
     workspaceId: string;
@@ -50,8 +56,12 @@
   let agentCount = $state(0);
   let hookCount = $state(0);
   let prCount = $state(0);
+  let participantAgentIds = $state<string[]>([]);
   let isCollapsed = $state(false);
+  let desiredCollapsed = $state(false);
+  let bodyIsClosing = $state(false);
   let disclosureKey = $state('');
+  let bodyElement: HTMLElement | undefined = $state();
   const componentId = $props.id();
   const bodyId = `event-subscriptions-body-${componentId}`;
   const hasSubscriptions = $derived(
@@ -69,6 +79,13 @@
   const agentOnlyCount = $derived(
     isolatedPreview?.mode === 'agents' ? (isolatedPreview.agents?.length ?? 0) : agentCount,
   );
+  const collapsedStackItems = $derived.by(() => {
+    return participantAgentIds.map((participantAgentId): AgentAvatarStackItem => ({
+      key: participantAgentId,
+      agentId: participantAgentId,
+      state: 'waiting',
+    }));
+  });
 
   const heading = $derived.by(() => {
     if (isolatedPreview && !isAgentOnly) {
@@ -106,17 +123,26 @@
     isCollapsed = isolatedPreview
       ? !(isolatedPreview.initiallyExpanded ?? true)
       : !getEventSubscriptionsExpanded(workspaceId, agentId);
+    desiredCollapsed = isCollapsed;
+    bodyIsClosing = false;
   });
 
-  function toggleCollapsed() {
-    isCollapsed = !isCollapsed;
-    if (!isolatedPreview) setEventSubscriptionsExpanded(workspaceId, agentId, !isCollapsed);
-  }
-
-  function handleToggleKeydown(event: KeyboardEvent) {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    toggleCollapsed();
+  async function toggleCollapsed(event?: MouseEvent) {
+    const nextCollapsed = !desiredCollapsed;
+    desiredCollapsed = nextCollapsed;
+    if (nextCollapsed && bodyElement?.contains(document.activeElement)) {
+      (event?.currentTarget as HTMLElement | null)?.focus({ preventScroll: true });
+    }
+    if (nextCollapsed) {
+      bodyIsClosing = true;
+      await tick();
+      if (!desiredCollapsed) return;
+      isCollapsed = true;
+    } else {
+      isCollapsed = false;
+      bodyIsClosing = false;
+    }
+    if (!isolatedPreview) setEventSubscriptionsExpanded(workspaceId, agentId, !nextCollapsed);
   }
 </script>
 
@@ -140,22 +166,42 @@
           class="shrink whitespace-normal rounded-none border-0 text-left {SUBSCRIPTION_DISCLOSURE_ROW_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-2 focus-visible:ring-inset"
           data-testid="event-subscriptions-summary"
           data-subscription-row="grouped-summary"
-          aria-expanded={!isCollapsed}
+          aria-expanded={!desiredCollapsed}
           aria-controls={bodyId}
           onclick={toggleCollapsed}
-          onkeydown={handleToggleKeydown}
         >
-          <span class="min-w-0 flex-1 {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
-            <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true"></span>
-            <span class="min-w-0 truncate">{heading}</span>
+          <span class="min-w-0 shrink {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
+            <span
+              class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
+              data-testid="event-subscriptions-leading-column"
+              aria-hidden="true"
+            >
+              <Fa
+                icon={faBell}
+                size={14}
+                class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+              />
+            </span>
+            <span
+              class="min-w-0 truncate text-muted-foreground"
+              data-testid="event-subscriptions-summary-title"
+            >
+              {heading}
+            </span>
           </span>
+          {#if isCollapsed && collapsedStackItems.length > 0}
+            <AgentAvatarStack items={collapsedStackItems} maxVisible={8} adaptive />
+          {:else}
+            <span class="min-w-0 flex-1" aria-hidden="true"></span>
+          {/if}
           <span
             class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
             data-testid="event-subscriptions-chevron"
           >
             <Fa
               icon={faChevronDown}
-              class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {isCollapsed
+              size={16}
+              class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {desiredCollapsed
                 ? 'rotate-90'
                 : ''}"
             />
@@ -163,81 +209,88 @@
         </Button>
       </h2>
     {/if}
-    <div
-      id={bodyId}
-      class:hidden={!isAgentOnly && isCollapsed}
-      data-testid="event-subscriptions-body"
-      aria-hidden={!isAgentOnly && isCollapsed}
-    >
-      {#if isolatedPreview?.mode === 'agents' || isolatedPreview?.mode === 'mixed'}
-        <div
-          class={isAgentOnly ? '' : 'border-t border-border'}
-          data-testid="event-subscriptions-agents"
-        >
-          <AgentSubscriptions
-            {workspaceId}
-            {agentId}
-            {compact}
-            embedded
-            forceWaitingHeader
-            isolatedPreview={{
-              agents: isolatedPreview.agents ?? [],
-              initiallyExpanded: isolatedPreview.initiallyExpanded ?? true,
-            }}
-          />
-        </div>
-        {#if isolatedPreview.mode === 'mixed'}
+    {#if isAgentOnly || !isCollapsed}
+      <div
+        bind:this={bodyElement}
+        id={bodyId}
+        data-testid="event-subscriptions-body"
+        data-subscription-motion="height-opacity-y"
+        inert={!isAgentOnly && bodyIsClosing}
+        aria-hidden={!isAgentOnly && bodyIsClosing}
+        transition:safeSubscriptionSlide
+      >
+        {#if isolatedPreview?.mode === 'agents' || isolatedPreview?.mode === 'mixed'}
+          <div
+            class={isAgentOnly ? '' : 'border-t border-border'}
+            data-testid="event-subscriptions-agents"
+          >
+            <AgentSubscriptions
+              {workspaceId}
+              {agentId}
+              {compact}
+              embedded
+              forceWaitingHeader
+              isolatedPreview={{
+                agents: isolatedPreview.agents ?? [],
+                initiallyExpanded: isolatedPreview.initiallyExpanded ?? true,
+              }}
+              bind:participantAgentIds
+            />
+          </div>
+          {#if isolatedPreview.mode === 'mixed'}
+            <div class="border-t border-border" data-testid="event-subscriptions-preview">
+              {@render previewContent?.()}
+            </div>
+          {/if}
+        {:else if isolatedPreview}
           <div class="border-t border-border" data-testid="event-subscriptions-preview">
             {@render previewContent?.()}
           </div>
+        {:else}
+          <div
+            class={isAgentOnly ? '' : 'border-t border-border'}
+            class:hidden={!agentsVisible}
+            data-testid="event-subscriptions-agents"
+          >
+            <AgentSubscriptions
+              {workspaceId}
+              {agentId}
+              {compact}
+              embedded
+              forceWaitingHeader
+              bind:visible={agentsVisible}
+              bind:count={agentCount}
+              bind:participantAgentIds
+            />
+          </div>
+          <div
+            class="border-t border-border"
+            class:hidden={!hooksVisible}
+            data-testid="event-subscriptions-hooks"
+          >
+            <BackgroundHooksRow
+              {workspaceId}
+              {agentId}
+              embedded
+              bind:visible={hooksVisible}
+              bind:count={hookCount}
+            />
+          </div>
+          <div
+            class="border-t border-border"
+            class:hidden={!prsVisible}
+            data-testid="event-subscriptions-prs"
+          >
+            <MonitoredPrsRow
+              {workspaceId}
+              {agentId}
+              embedded
+              bind:visible={prsVisible}
+              bind:count={prCount}
+            />
+          </div>
         {/if}
-      {:else if isolatedPreview}
-        <div class="border-t border-border" data-testid="event-subscriptions-preview">
-          {@render previewContent?.()}
-        </div>
-      {:else}
-        <div
-          class={isAgentOnly ? '' : 'border-t border-border'}
-          class:hidden={!agentsVisible}
-          data-testid="event-subscriptions-agents"
-        >
-          <AgentSubscriptions
-            {workspaceId}
-            {agentId}
-            {compact}
-            embedded
-            forceWaitingHeader
-            bind:visible={agentsVisible}
-            bind:count={agentCount}
-          />
-        </div>
-        <div
-          class="border-t border-border"
-          class:hidden={!hooksVisible}
-          data-testid="event-subscriptions-hooks"
-        >
-          <BackgroundHooksRow
-            {workspaceId}
-            {agentId}
-            embedded
-            bind:visible={hooksVisible}
-            bind:count={hookCount}
-          />
-        </div>
-        <div
-          class="border-t border-border"
-          class:hidden={!prsVisible}
-          data-testid="event-subscriptions-prs"
-        >
-          <MonitoredPrsRow
-            {workspaceId}
-            {agentId}
-            embedded
-            bind:visible={prsVisible}
-            bind:count={prCount}
-          />
-        </div>
-      {/if}
-    </div>
+      </div>
+    {/if}
   </section>
 </div>

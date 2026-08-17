@@ -66,7 +66,7 @@ describe('screenshot-shaped mixed compact tool sequence', () => {
     const sentences = [...container.querySelectorAll('[data-tool-sentence]')];
     for (const sentence of sentences) {
       expect(stableClasses(sentence)).toContain(
-        'flex min-w-0 max-w-full items-baseline truncate whitespace-nowrap',
+        'block min-w-0 max-w-full truncate overflow-hidden text-ellipsis whitespace-nowrap',
       );
     }
     expect(container.textContent).toContain('Read tool-classifier.ts lines 1–120');

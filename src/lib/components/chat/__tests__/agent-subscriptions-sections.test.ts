@@ -229,7 +229,7 @@ async function refetch(wsId: string, wire: unknown) {
 }
 
 async function expandWaitingAgents() {
-  const toggle = screen.queryByTestId('one-shot-collapse-toggle');
+  const toggle = screen.queryByTestId('one-shot-summary-toggle');
   if (toggle?.getAttribute('aria-expanded') === 'false') await fireEvent.click(toggle);
   return screen.getByTestId('one-shot-agent-list');
 }
@@ -325,10 +325,18 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       'Waiting for 7 agents',
     );
     expect(summary.getAttribute('aria-expanded')).toBe('false');
-    expect(chevron.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByTestId('one-shot-agent-list')).toBeNull();
+    const stack = screen.getByTestId('one-shot-header').querySelector('[data-agent-avatar-stack]');
+    expect(stack).toBeTruthy();
+    expect(stack?.querySelectorAll('[data-icon]')).toHaveLength(0);
+    expect(stack?.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(0);
+    expect(stack?.querySelector('[data-agent-avatar-overflow]')?.textContent?.trim()).toBe('+7');
     await fireEvent.click(summary);
     expect(summary.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      screen.getByTestId('one-shot-header').querySelector('[data-agent-avatar-stack]'),
+    ).toBeNull();
+    expect(summary.querySelector('[data-icon="hourglass"]')).toBeTruthy();
     expect(screen.getByTestId('one-shot-agent-list')).toBeTruthy();
     await fireEvent.click(chevron);
     expect(summary.getAttribute('aria-expanded')).toBe('false');
@@ -473,6 +481,11 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       expect(summary.getAttribute('aria-expanded')).toBe('false');
       expect(summary.classList).toContain('px-3!');
       expect(summary.classList).toContain('py-2!');
+      expect(summary.textContent?.trim()).toBe('2 agents finished');
+      expect(
+        summary.querySelector('time, [title], [data-finished-at], [role="tooltip"]'),
+      ).toBeNull();
+      expect(group.hasAttribute('data-finished-at')).toBe(false);
       for (const token of [...group.classList, ...summary.classList]) {
         expect(token).not.toMatch(negativeInsetClass);
         expect(token).not.toMatch(distinctSurfaceClass);
@@ -480,61 +493,64 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     },
   );
 
-  it.each(['light', 'dark'])('uses an aligned neutral checkmark in %s', async (theme) => {
-    document.documentElement.classList.add(theme);
-    const wsId = `ws-finished-icon-${theme}`;
-    seedSession('agent-a', '2026-01-02T00:00:00.000Z');
-    seedSession('agent-b', '2026-01-03T00:00:00.000Z');
-    await renderWithSnapshot(
-      wsId,
-      snapshot(
-        [
-          oneShotSubscription('watch-finished', wsId, [
-            'agent-a',
-            'agent-b',
-            'agent-c',
-            'agent-d',
-            'agent-e',
-            'agent-f',
-            'agent-g',
-          ]),
-        ],
-        [],
-        {
-          'agent-a': 'completed',
-          'agent-b': 'completed',
-        },
-      ),
-    );
+  it.each(['light', 'dark'])(
+    'uses the aligned compact semantic success check-circle in %s',
+    async (theme) => {
+      document.documentElement.classList.add(theme);
+      const wsId = `ws-finished-icon-${theme}`;
+      seedSession('agent-a', '2026-01-02T00:00:00.000Z');
+      seedSession('agent-b', '2026-01-03T00:00:00.000Z');
+      await renderWithSnapshot(
+        wsId,
+        snapshot(
+          [
+            oneShotSubscription('watch-finished', wsId, [
+              'agent-a',
+              'agent-b',
+              'agent-c',
+              'agent-d',
+              'agent-e',
+              'agent-f',
+              'agent-g',
+            ]),
+          ],
+          [],
+          {
+            'agent-a': 'completed',
+            'agent-b': 'completed',
+          },
+        ),
+      );
 
-    const waitingSummary = screen.getByTestId('one-shot-summary-toggle');
-    await expandWaitingAgents();
-    const finishedSummary = screen.getByTestId('finished-agent-summary');
-    const waitingLeadingColumn = screen.getByTestId('one-shot-leading-column');
-    const finishedLeadingColumn = screen.getByTestId('finished-agent-leading-column');
-    const waitingIcon = waitingSummary.querySelector('[data-icon="hourglass"]');
-    const finishedIcon = finishedSummary.querySelector('[data-icon="check"]');
+      const waitingSummary = screen.getByTestId('one-shot-summary-toggle');
+      await expandWaitingAgents();
+      const finishedSummary = screen.getByTestId('finished-agent-summary');
+      const waitingLeadingColumn = screen.getByTestId('one-shot-leading-column');
+      const finishedLeadingColumn = screen.getByTestId('finished-agent-leading-column');
+      const waitingIcon = waitingSummary.querySelector('[data-icon="hourglass"]');
+      const finishedIcon = finishedSummary.querySelector('[data-icon="circle-check"]');
 
-    expect(finishedSummary.classList).toContain('grid');
-    expect(finishedSummary.classList).toContain('gap-x-2');
-    expect(finishedSummary.classList).not.toContain('px-2');
-    expect(waitingLeadingColumn.classList).toContain('size-5');
-    expect(finishedLeadingColumn.classList).toContain('size-5');
-    expect(finishedLeadingColumn.className).not.toMatch(/^-m(?:[lrxse])?-/);
-    expect(screen.getByTestId('one-shot-agent-list').classList).not.toContain('px-1');
-    expect(screen.getByTestId('one-shot-header').classList).toContain('px-3!');
-    expect(finishedIcon).toBeTruthy();
-    expect(finishedSummary.querySelector('[data-icon="circle-check"]')).toBeNull();
-    expect(finishedIcon?.classList).toContain('text-ghost');
-    expect(finishedIcon?.classList).toContain('opacity-60');
-    expect(waitingIcon?.classList).toContain('text-foreground');
-    expect(waitingIcon?.classList).toContain('opacity-100');
-    expect(finishedIcon?.className.baseVal).not.toMatch(/green/);
-    for (const token of ['h-3.5!', 'w-3.5!', 'shrink-0']) {
-      expect(finishedIcon?.classList).toContain(token);
-      expect(waitingIcon?.classList).toContain(token);
-    }
-  });
+      expect(finishedSummary.classList).toContain('grid');
+      expect(finishedSummary.classList).toContain('gap-x-2');
+      expect(finishedSummary.classList).not.toContain('px-2');
+      expect(waitingLeadingColumn.classList).toContain('size-5');
+      expect(finishedLeadingColumn.classList).toContain('size-5');
+      expect(finishedLeadingColumn.className).not.toMatch(/^-m(?:[lrxse])?-/);
+      expect(screen.getByTestId('one-shot-agent-list').classList).not.toContain('px-1');
+      expect(screen.getByTestId('one-shot-summary-toggle').classList).toContain('px-3!');
+      expect(finishedIcon).toBeTruthy();
+      expect(finishedSummary.querySelector('[data-icon="check"]')).toBeNull();
+      expect(finishedIcon?.classList).toContain('text-success');
+      expect(finishedIcon?.getAttribute('aria-hidden')).toBe('true');
+      expect(waitingIcon?.classList).toContain('text-ghost');
+      expect(waitingIcon?.classList).toContain('opacity-60');
+      expect(finishedIcon?.className.baseVal).not.toMatch(/green/);
+      for (const token of ['h-3.5!', 'w-3.5!', 'shrink-0']) {
+        expect(finishedIcon?.classList).toContain(token);
+        expect(waitingIcon?.classList).toContain(token);
+      }
+    },
+  );
 
   it('supports keyboard disclosure plus navigation and removal inside the finished group', async () => {
     const wsId = 'ws-finished-actions';
@@ -1041,9 +1057,9 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     const summary = screen.getByTestId('one-shot-summary-toggle');
     const chevron = screen.getByTestId('one-shot-collapse-toggle');
     expect(summary.getAttribute('aria-controls')).toMatch(/^waiting-agent-list-/);
-    expect(chevron.getAttribute('aria-controls')).toBe(summary.getAttribute('aria-controls'));
+    expect(chevron.getAttribute('aria-controls')).toBeNull();
     summary.focus();
-    await fireEvent.keyDown(summary, { key: 'Enter' });
+    await fireEvent.click(summary);
     expect(summary.getAttribute('aria-expanded')).toBe('true');
     expect(document.activeElement).toBe(summary);
   });
@@ -1243,7 +1259,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     // Preview should have truncate and muted styling
     expect(preview.className).toContain('truncate');
     expect(preview.className).toContain('whitespace-nowrap');
-    expect(preview.className).toContain('text-muted-foreground/70');
+    expect(preview.className).toContain('text-muted-foreground');
   });
 
   it('timestamp and preview share typography token class', async () => {
@@ -1276,8 +1292,8 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(timestamp).not.toBeNull();
 
     // Both must have identical typography token/class for color and opacity
-    expect(preview.className).toContain('text-muted-foreground/70');
-    expect(timestamp!.className).toContain('text-muted-foreground/70');
+    expect(preview.className).toContain('text-muted-foreground');
+    expect(timestamp!.className).toContain('text-muted-foreground');
 
     // Timestamp must have tabular-nums class for stable width
     expect(timestamp!.className).toContain('tabular-nums');

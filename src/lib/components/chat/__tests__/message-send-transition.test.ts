@@ -225,6 +225,24 @@ describe('message send transition', () => {
     expect(document.querySelector('[data-message-send-transition]')).toBeNull();
   });
 
+  it('cancels fixed geometry immediately when the viewport resizes', async () => {
+    const { composer, target, scrollContainer } = fixture();
+    const cancel = vi.fn();
+    stubAnimate(() => ({ finished: new Promise<void>(() => {}), cancel }));
+
+    const transition = animateMessageSend({
+      origin: captureMessageSendOrigin(composer),
+      target,
+      scrollContainer,
+    });
+    window.dispatchEvent(new Event('resize'));
+    await transition;
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(target.style.visibility).toBe('');
+    expect(document.querySelector('[data-message-send-transition]')).toBeNull();
+  });
+
   it('does not let an older cleanup restore over a newer transition on the same target', async () => {
     const { composer, target, scrollContainer } = fixture();
     const animations = [deferred(), deferred()];

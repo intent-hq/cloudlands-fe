@@ -485,17 +485,12 @@
         <div
           class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3"
         >
-          <div class="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+          <div class="flex items-center gap-2 text-sm text-error-foreground">
             <span class="font-medium">{m.codeReview_panel_reviewFailed_label()}</span>
             <span>{error}</span>
           </div>
           {#if onRerun}
-            <Button
-              variant="ghost"
-              size="xs"
-              class="mt-2 text-red-600 dark:text-red-400"
-              onclick={onRerun}
-            >
+            <Button variant="ghost" size="xs" class="mt-2 text-error-foreground" onclick={onRerun}>
               <Fa icon={faRotateRight} class="h-3 w-3 mr-1" />
               {m.codeReview_panel_tryAgain_label()}
             </Button>

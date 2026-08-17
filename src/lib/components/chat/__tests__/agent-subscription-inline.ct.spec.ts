@@ -20,7 +20,7 @@ async function measure(component: Locator, page: Page) {
     const name = element('agent-card-name');
     const timestamp = element('agent-card-trailing-slot').querySelector('[title]') as HTMLElement;
     const row = element('agent-list-item').querySelector('button') as HTMLElement;
-    const header = element('one-shot-header');
+    const header = element('one-shot-summary-toggle');
     const rows = Array.from(root.querySelectorAll('[data-testid="agent-list-item"] button'));
     const rect = (node: Element) => {
       const value = node.getBoundingClientRect();
@@ -168,7 +168,9 @@ test('starts every icon-free peek exactly 10px after the primary label', async (
   }
 });
 
-test('aligns the foreground waiting header to the standard avatar grid', async ({ mount }) => {
+test('keeps the muted waiting icon aligned in expanded and collapsed headers', async ({
+  mount,
+}) => {
   const component = await mount(AgentSubscriptionInlineHost);
   const cases = [
     { agentCount: 1, longLabels: true },
@@ -246,31 +248,48 @@ test('aligns the foreground waiting header to the standard avatar grid', async (
             ),
           ).toBeLessThanOrEqual(0.5);
           expect(deviceDelta(expanded.title.left, expanded.name.left)).toBeLessThanOrEqual(0.5);
-          expect(expanded.iconStyle).toEqual({ color: expanded.nameColor, opacity: '1' });
-          expect(expanded.titleStyle).toEqual({ color: expanded.nameColor, opacity: '1' });
+          // The icon and summary title share the muted secondary tone. The agent
+          // name remains the opaque primary tone.
+          expect(expanded.iconStyle.opacity).toBe('0.6');
+          expect(expanded.iconStyle.color).toBe(expanded.titleStyle.color);
+          expect(expanded.titleStyle.opacity).toBe('1');
+          expect(expanded.titleStyle.color).not.toBe(expanded.nameColor);
 
           await summary.click();
           await expect(summary).toHaveAttribute('aria-expanded', 'false');
           await expect(component.getByTestId('one-shot-agent-list')).toHaveCount(0);
-          const collapsed = await component
+          await expect(component.getByTestId('one-shot-leading-column').locator('svg')).toHaveCount(
+            1,
+          );
+          await expect(
+            component.getByTestId('one-shot-header').locator('[data-agent-avatar-stack]'),
+          ).toHaveCount(1);
+          const collapsedTitleLeft = await component
+            .getByTestId('one-shot-summary-title')
+            .evaluate((title) => title.getBoundingClientRect().left);
+          expect(
+            Math.abs(collapsedTitleLeft - expanded.title.left) * expanded.devicePixelRatio,
+          ).toBeLessThanOrEqual(0.5);
+          const collapsedIcon = await component
             .getByTestId('one-shot-leading-column')
-            .evaluate((slot) => {
-              const icon = slot.querySelector('svg')!;
-              const slotBox = slot.getBoundingClientRect();
-              const iconBox = icon.getBoundingClientRect();
+            .locator('svg')
+            .evaluate((icon) => {
+              const box = icon.getBoundingClientRect();
               return {
-                slotCenterX: (slotBox.left + slotBox.right) / 2,
-                iconCenterX: (iconBox.left + iconBox.right) / 2,
-                iconColor: getComputedStyle(icon).color,
-                iconOpacity: getComputedStyle(icon).opacity,
-                devicePixelRatio: window.devicePixelRatio,
+                centerX: (box.left + box.right) / 2,
+                centerY: (box.top + box.bottom) / 2,
+                color: getComputedStyle(icon).color,
+                opacity: getComputedStyle(icon).opacity,
               };
             });
-          expect(
-            Math.abs(collapsed.slotCenterX - collapsed.iconCenterX) * collapsed.devicePixelRatio,
-          ).toBeLessThanOrEqual(0.5);
-          expect(collapsed.iconColor).toBe(expanded.nameColor);
-          expect(collapsed.iconOpacity).toBe('1');
+          expect(deviceDelta(collapsedIcon.centerX, expanded.icon.centerX)).toBeLessThanOrEqual(
+            0.5,
+          );
+          expect(deviceDelta(collapsedIcon.centerY, expanded.icon.centerY)).toBeLessThanOrEqual(
+            0.5,
+          );
+          expect(collapsedIcon.color).toBe(expanded.iconStyle.color);
+          expect(collapsedIcon.opacity).toBe('0.6');
         }
       }
     }
@@ -353,7 +372,8 @@ test('uses exact named standard avatar geometry in every subscription row', asyn
               height: (node as HTMLElement).style.height,
             })),
             radii: [wrapper, surface, glyph].map((node) => getComputedStyle(node).borderRadius),
-            ringRadius: getComputedStyle(surface, '::after').borderRadius,
+            pseudoContent: getComputedStyle(surface, '::after').content,
+            pseudoWidth: getComputedStyle(surface, '::after').borderTopWidth,
             clearSpace: Number.parseFloat(glyphStyle.paddingInlineStart),
             artWidth:
               (glyph as HTMLElement).clientWidth -
@@ -379,7 +399,8 @@ test('uses exact named standard avatar geometry in every subscription row', asyn
           ).toBeLessThanOrEqual(0.5);
         }
         expect(value.radii).toEqual(['6px', '6px', '6px']);
-        expect(value.ringRadius).toBe('6px');
+        expect(value.pseudoContent).toBe('none');
+        expect(value.pseudoWidth).toBe('0px');
         expect(value.clearSpace).toBe(2);
         expect(value.artWidth).toBe(16);
         expect(
@@ -410,6 +431,271 @@ test('shares exact header and agent-row padding and minimum height', async ({ mo
   }
 });
 
+test('omits cohort time and pins the finished chevron across count and state', async ({
+  mount,
+}) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { mode: 'agents', agentCount: 7, finishedCount: 2, initiallyExpanded: true },
+  });
+  for (const theme of ['light', 'dark'] as const) {
+    for (const width of [270, 420]) {
+      for (const zoom of [1, 2]) {
+        let expectedRight: number | undefined;
+        for (const finishedCount of [2, 5]) {
+          await component.update({
+            props: {
+              mode: 'agents',
+              agentCount: 7,
+              finishedCount,
+              initiallyExpanded: true,
+              theme,
+              width,
+              zoom,
+            },
+          });
+          const waitingSummary = component.getByTestId('one-shot-summary-toggle');
+          if ((await waitingSummary.getAttribute('aria-expanded')) === 'false') {
+            await waitingSummary.click();
+          }
+          const summary = component.getByTestId('finished-agent-summary');
+          if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
+          await expect(summary).toHaveText(`${finishedCount} agents finished`);
+          await expect(
+            summary.locator('time, [title], [data-finished-at], [role="tooltip"]'),
+          ).toHaveCount(0);
+          await expect(component.getByTestId('finished-agent-group')).not.toHaveAttribute(
+            'data-finished-at',
+          );
+
+          const collapsed = await summary.evaluate((row) => {
+            const slot = row.querySelector('[data-testid="finished-agent-chevron"]') as HTMLElement;
+            const rowBox = row.getBoundingClientRect();
+            const slotBox = slot.getBoundingClientRect();
+            return {
+              rowRight: rowBox.right,
+              rowCenterY: (rowBox.top + rowBox.bottom) / 2,
+              slotRight: slotBox.right,
+              slotCenterY: (slotBox.top + slotBox.bottom) / 2,
+              slotWidth: slotBox.width,
+              slotHeight: slotBox.height,
+              devicePixelRatio: window.devicePixelRatio,
+            };
+          });
+          expectedRight ??= collapsed.slotRight;
+          expect(
+            Math.abs(collapsed.slotRight - expectedRight) * collapsed.devicePixelRatio,
+          ).toBeLessThanOrEqual(0.5);
+          expect(collapsed.rowRight - collapsed.slotRight).toBeCloseTo(12 * zoom, 1);
+          expect(collapsed.slotWidth).toBeCloseTo(24 * zoom, 1);
+          expect(collapsed.slotHeight).toBeCloseTo(24 * zoom, 1);
+          expect(
+            Math.abs(collapsed.slotCenterY - collapsed.rowCenterY) * collapsed.devicePixelRatio,
+          ).toBeLessThanOrEqual(0.5);
+
+          await summary.click();
+          await expect(summary).toHaveAttribute('aria-expanded', 'true');
+          const expandedRight = await component
+            .getByTestId('finished-agent-chevron')
+            .evaluate((slot) => slot.getBoundingClientRect().right);
+          expect(
+            Math.abs(expandedRight - collapsed.slotRight) * collapsed.devicePixelRatio,
+          ).toBeLessThanOrEqual(0.5);
+        }
+      }
+    }
+  }
+});
+
+test('centers the finished summary and gives completed avatars a muted semantic surface', async ({
+  mount,
+}) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { mode: 'agents', agentCount: 7, finishedCount: 2, initiallyExpanded: true },
+  });
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const width of [270, 420]) {
+      for (const zoom of [1, 2]) {
+        await component.update({
+          props: {
+            mode: 'agents',
+            agentCount: 7,
+            finishedCount: 2,
+            initiallyExpanded: true,
+            theme,
+            width,
+            zoom,
+          },
+        });
+        const waitingSummary = component.getByTestId('one-shot-summary-toggle');
+        if ((await waitingSummary.getAttribute('aria-expanded')) === 'false') {
+          await waitingSummary.click();
+        }
+        const summary = component.getByTestId('finished-agent-summary');
+        if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
+
+        const geometry = await summary.evaluate((row) => {
+          const icon = row.querySelector('[data-icon="circle-check"]') as SVGElement;
+          const title = row.querySelector(
+            '[data-testid="finished-agent-summary-title"]',
+          ) as HTMLElement;
+          const rowBox = row.getBoundingClientRect();
+          const iconBox = icon.getBoundingClientRect();
+          const titleBox = title.getBoundingClientRect();
+          const contentTop = Math.min(iconBox.top, titleBox.top);
+          const contentBottom = Math.max(iconBox.bottom, titleBox.bottom);
+          const style = getComputedStyle(row);
+          return {
+            paddingTop: style.paddingTop,
+            paddingBottom: style.paddingBottom,
+            topGap: contentTop - rowBox.top,
+            bottomGap: rowBox.bottom - contentBottom,
+            rowCenterY: (rowBox.top + rowBox.bottom) / 2,
+            iconCenterY: (iconBox.top + iconBox.bottom) / 2,
+            titleCenterY: (titleBox.top + titleBox.bottom) / 2,
+            iconWidth: iconBox.width,
+            iconHeight: iconBox.height,
+            devicePixelRatio: window.devicePixelRatio,
+          };
+        });
+        expect(geometry.paddingTop).toBe('8px');
+        expect(geometry.paddingBottom).toBe('8px');
+        expect(
+          Math.abs(geometry.topGap - geometry.bottomGap) * geometry.devicePixelRatio,
+        ).toBeLessThanOrEqual(0.5);
+        expect(
+          Math.abs(geometry.iconCenterY - geometry.rowCenterY) * geometry.devicePixelRatio,
+        ).toBeLessThanOrEqual(0.5);
+        expect(
+          Math.abs(geometry.titleCenterY - geometry.rowCenterY) * geometry.devicePixelRatio,
+        ).toBeLessThanOrEqual(0.5);
+        expect(geometry.iconWidth).toBeCloseTo(14 * zoom, 1);
+        expect(geometry.iconHeight).toBeCloseTo(14 * zoom, 1);
+
+        await summary.click();
+        const completed = component
+          .getByTestId('finished-agent-list')
+          .locator('[data-agent-avatar-with-state]')
+          .first();
+        await expect(completed).toHaveAttribute('data-avatar-state', 'completed');
+        await expect(completed.locator('[data-avatar-overlay], [data-icon]')).toHaveCount(0);
+        const colors = await completed.evaluate((avatar) => {
+          const parseRgb = (value: string) =>
+            (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number) as [number, number, number];
+          const luminance = ([red, green, blue]: [number, number, number]) => {
+            const channel = (value: number) => {
+              const normalized = value / 255;
+              return normalized <= 0.04045
+                ? normalized / 12.92
+                : ((normalized + 0.055) / 1.055) ** 2.4;
+            };
+            return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue);
+          };
+          const contrast = (first: string, second: string) => {
+            const values = [luminance(parseRgb(first)), luminance(parseRgb(second))].sort(
+              (left, right) => right - left,
+            );
+            return (values[0] + 0.05) / (values[1] + 0.05);
+          };
+          const chroma = (value: string) => {
+            const channels = parseRgb(value);
+            return Math.max(...channels) - Math.min(...channels);
+          };
+          const resolveBackground = (variable: string) => {
+            const probe = document.createElement('span');
+            probe.style.backgroundColor = `hsl(var(${variable}))`;
+            avatar.append(probe);
+            const value = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            return value;
+          };
+          const avatarStyle = getComputedStyle(avatar);
+          const card = avatar.closest('[data-testid="agent-subscriptions-card"]') as HTMLElement;
+          const cardBackground = getComputedStyle(card).backgroundColor;
+          const icon = card.querySelector('[data-icon="circle-check"]') as SVGElement;
+          const completedBackground = avatarStyle.backgroundColor;
+          const completedForeground = avatarStyle.color;
+          const avatarArt = avatar.querySelector('[data-agent-avatar]') as SVGElement;
+          const avatarArtStyle = getComputedStyle(avatarArt);
+          const parentStyle = getComputedStyle(avatar.parentElement!);
+          const activeBackground = resolveBackground('--agent-avatar-surface-active');
+          const waitingBackground = resolveBackground('--agent-avatar-surface-waiting');
+          return {
+            design: avatar.querySelector('[data-agent-avatar]')?.getAttribute('data-avatar-design'),
+            completedBackground,
+            completedForeground,
+            avatarOpacity: avatarStyle.opacity,
+            avatarArtColor: avatarArtStyle.color,
+            avatarArtOpacity: avatarArtStyle.opacity,
+            parentOpacity: parentStyle.opacity,
+            parentColor: parentStyle.color,
+            cardBackground,
+            cardOpacity: getComputedStyle(card).opacity,
+            activeAnimations: avatar.getAnimations().map((animation) => ({
+              playState: animation.playState,
+              progress: animation.effect?.getComputedTiming().progress,
+              duration: animation.effect?.getComputedTiming().duration,
+            })),
+            activeBackground,
+            waitingBackground,
+            completedContrast: contrast(completedForeground, completedBackground),
+            iconContrast: contrast(getComputedStyle(icon).color, cardBackground),
+            completedChroma: chroma(completedBackground),
+            activeChroma: chroma(activeBackground),
+            waitingChroma: chroma(waitingBackground),
+          };
+        });
+        expect(colors.design).toBeTruthy();
+        expect(colors.completedBackground).not.toBe(colors.activeBackground);
+        expect(colors.completedBackground).not.toBe(colors.waitingBackground);
+        expect(colors.avatarOpacity).toBe('1');
+        expect(colors.avatarArtOpacity).toBe('1');
+        expect(colors.parentOpacity).toBe('1');
+        expect(colors.cardOpacity).toBe('1');
+        expect(colors.avatarArtColor).toBe(colors.completedForeground);
+        expect(colors.activeAnimations).toEqual([]);
+        expect(colors.completedContrast, JSON.stringify(colors)).toBeGreaterThanOrEqual(4.5);
+        expect(colors.iconContrast).toBeGreaterThanOrEqual(3);
+        expect(colors.completedChroma).toBeLessThan(colors.activeChroma);
+        expect(colors.completedChroma).toBeLessThan(colors.waitingChroma);
+      }
+    }
+  }
+});
+
+test('screenshots the finished summary and completed participant treatment', async ({ mount }) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { mode: 'agents', agentCount: 7, finishedCount: 2, initiallyExpanded: true },
+  });
+  for (const theme of ['light', 'dark'] as const) {
+    for (const zoom of [1, 2]) {
+      await component.update({
+        props: {
+          mode: 'agents',
+          agentCount: 7,
+          finishedCount: 2,
+          initiallyExpanded: true,
+          theme,
+          width: 420,
+          zoom,
+        },
+      });
+      const waitingSummary = component.getByTestId('one-shot-summary-toggle');
+      if ((await waitingSummary.getAttribute('aria-expanded')) === 'false') {
+        await waitingSummary.click();
+      }
+      const finishedSummary = component.getByTestId('finished-agent-summary');
+      if ((await finishedSummary.getAttribute('aria-expanded')) === 'false') {
+        await finishedSummary.click();
+      }
+      await expect(component.getByTestId('finished-agent-list')).toBeVisible();
+      await expect(component).toHaveScreenshot(
+        `finished-participants-${theme}-${zoom === 1 ? '100' : '200'}.png`,
+      );
+    }
+  }
+});
+
 test('renders exactly one promoted Waiting disclosure in agent-only mode', async ({ mount }) => {
   const component = await mount(AgentSubscriptionInlineHost, { props: { mode: 'agents' } });
   await expect(component.getByTestId('event-subscriptions-outer-header')).toHaveCount(0);
@@ -426,4 +712,444 @@ test('keeps the outer Subscribed header and a distinct cohort header in mixed mo
   await expect(component.getByRole('button', { name: 'Subscribed to 8 events' })).toHaveCount(1);
   await expect(component.getByText('Waiting for 7 agents', { exact: true })).toHaveCount(1);
   await expect(component.getByTestId('mixed-subscription-preview')).toBeVisible();
+});
+
+test('keeps the muted bell in the outer header across themes, widths, zoom, and disclosure states', async ({
+  mount,
+}) => {
+  const component = await mount(AgentSubscriptionInlineHost, { props: { mode: 'mixed' } });
+  const summary = component.getByTestId('event-subscriptions-summary');
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const width of [270, 340]) {
+      for (const zoom of [1, 2]) {
+        await component.update({ props: { mode: 'mixed', theme, width, zoom } });
+        for (const expanded of [true, false]) {
+          if ((await summary.getAttribute('aria-expanded')) !== String(expanded)) {
+            await summary.click();
+          }
+          await expect(summary).toHaveAttribute('aria-expanded', String(expanded));
+          const geometry = await component.evaluate((root) => {
+            const leading = root.querySelector(
+              '[data-testid="event-subscriptions-leading-column"]',
+            ) as HTMLElement;
+            const icon = leading.querySelector('svg')!;
+            const title = root.querySelector(
+              '[data-testid="event-subscriptions-summary-title"]',
+            ) as HTMLElement;
+            const slotBox = leading.getBoundingClientRect();
+            const iconBox = icon.getBoundingClientRect();
+            return {
+              slotWidth: slotBox.width,
+              slotCenterX: (slotBox.left + slotBox.right) / 2,
+              slotCenterY: (slotBox.top + slotBox.bottom) / 2,
+              iconWidth: iconBox.width,
+              iconCenterX: (iconBox.left + iconBox.right) / 2,
+              iconCenterY: (iconBox.top + iconBox.bottom) / 2,
+              iconColor: getComputedStyle(icon).color,
+              iconOpacity: getComputedStyle(icon).opacity,
+              titleColor: getComputedStyle(title).color,
+            };
+          });
+          expect(geometry.slotWidth).toBeCloseTo(20 * zoom, 1);
+          expect(geometry.iconWidth).toBeCloseTo(14 * zoom, 1);
+          expect(geometry.iconCenterX).toBeCloseTo(geometry.slotCenterX, 1);
+          expect(geometry.iconCenterY).toBeCloseTo(geometry.slotCenterY, 1);
+          // Both icon and title use text-muted-foreground (text-ghost resolves to muted-foreground)
+          // Icon has 0.6 opacity via the SUBSCRIPTION_ICON_CLASS
+          expect(geometry.iconOpacity).toBe('0.6');
+          expect(geometry.iconColor).toBe(geometry.titleColor);
+          await expect(
+            component.getByTestId('event-subscriptions-leading-column').locator('svg'),
+          ).toHaveCount(1);
+        }
+      }
+    }
+  }
+});
+
+test('fits one through eight participants and computes overflow from remaining agents', async ({
+  mount,
+}) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { mode: 'agents', agentCount: 1, width: 600, initiallyExpanded: false },
+  });
+  const summary = component.getByTestId('one-shot-summary-toggle');
+
+  for (let agentCount = 1; agentCount <= 8; agentCount += 1) {
+    await component.update({
+      props: { mode: 'agents', agentCount, width: 600, initiallyExpanded: false },
+    });
+    if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
+    const stack = component.getByTestId('one-shot-header').locator('[data-agent-avatar-stack]');
+    await expect
+      .poll(() => stack.locator('[data-agent-avatar-with-state]').count())
+      .toBe(agentCount);
+    await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveCount(0);
+    await expect(stack.locator('[data-icon]')).toHaveCount(0);
+  }
+
+  for (const [agentCount, remaining] of [
+    [9, 1],
+    [12, 4],
+  ] as const) {
+    await component.update({
+      props: { mode: 'agents', agentCount, width: 600, initiallyExpanded: false },
+    });
+    const stack = component.getByTestId('one-shot-header').locator('[data-agent-avatar-stack]');
+    await expect.poll(() => stack.locator('[data-agent-avatar-with-state]').count()).toBe(8);
+    await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveText(`+${remaining}`);
+  }
+
+  await component.update({
+    props: { mode: 'agents', agentCount: 6, width: 120, initiallyExpanded: false },
+  });
+  const narrowStack = component.getByTestId('one-shot-header').locator('[data-agent-avatar-stack]');
+  await expect
+    .poll(() => narrowStack.locator('[data-agent-avatar-with-state]').count())
+    .toBeLessThan(6);
+  const visible = await narrowStack.locator('[data-agent-avatar-with-state]').count();
+  await expect(narrowStack.locator('[data-agent-avatar-overflow]')).toHaveText(`+${6 - visible}`);
+
+  await component.update({
+    props: { mode: 'agents', agentCount: 12, width: 600, initiallyExpanded: false },
+  });
+  const measuredStack = component
+    .getByTestId('one-shot-header')
+    .locator('[data-agent-avatar-stack]');
+  await expect.poll(() => measuredStack.locator('[data-agent-avatar-stack-item]').count()).toBe(8);
+  const style = await measuredStack.evaluate((stack) => {
+    const items = Array.from(stack.querySelectorAll<HTMLElement>('[data-agent-avatar-stack-item]'));
+    const overflow = stack.querySelector('[data-agent-avatar-overflow]') as HTMLElement;
+    const stackBox = stack.getBoundingClientRect();
+    const overflowBox = overflow.getBoundingClientRect();
+    return {
+      zIndexes: items.map((item) => Number(getComputedStyle(item).zIndex)),
+      masks: items.map((item) => getComputedStyle(item).maskImage),
+      avatarPseudos: items.map((item) => {
+        const pseudo = getComputedStyle(
+          item.querySelector('[data-agent-avatar-with-state]')!,
+          '::after',
+        );
+        return { content: pseudo.content, width: pseudo.borderTopWidth };
+      }),
+      overflowFontSize: getComputedStyle(overflow).fontSize,
+      overflowBackground: getComputedStyle(overflow).backgroundColor,
+      overflowCenterY: (overflowBox.top + overflowBox.bottom) / 2,
+      stackCenterY: (stackBox.top + stackBox.bottom) / 2,
+      devicePixelRatio: window.devicePixelRatio,
+    };
+  });
+  expect(style.zIndexes).toEqual([8, 7, 6, 5, 4, 3, 2, 1]);
+  expect(style.masks[0]).toBe('none');
+  for (const mask of style.masks.slice(1)) {
+    expect(mask).toContain('url(');
+    expect(mask).not.toContain('radial-gradient');
+  }
+  expect(style.avatarPseudos).toEqual(Array(8).fill({ content: 'none', width: '0px' }));
+  expect(style.overflowFontSize).toBe('11px');
+  expect(style.overflowBackground).toBe('rgba(0, 0, 0, 0)');
+  expect(
+    Math.abs(style.overflowCenterY - style.stackCenterY) * style.devicePixelRatio,
+  ).toBeLessThanOrEqual(0.5);
+});
+
+test('toggles exactly once from every full-row disclosure region and not from agent rows', async ({
+  mount,
+}) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { mode: 'agents', agentCount: 12, width: 600, initiallyExpanded: false },
+  });
+  const summary = component.getByTestId('one-shot-summary-toggle');
+  const stack = summary.locator('[data-agent-avatar-stack]');
+  await expect(summary).toHaveAttribute('aria-expanded', 'false');
+  await expect.poll(() => stack.locator('[data-agent-avatar-stack-item]').count()).toBe(8);
+
+  const regions = [
+    component.getByTestId('one-shot-leading-column'),
+    component.getByTestId('one-shot-summary-title'),
+    stack.locator('[data-agent-avatar-stack-item]').first(),
+    stack.locator('[data-agent-avatar-overflow]'),
+    component.getByTestId('one-shot-collapse-toggle'),
+  ];
+  for (const region of regions) {
+    await region.click();
+    await expect(summary).toHaveAttribute('aria-expanded', 'true');
+    await summary.click();
+    await expect(summary).toHaveAttribute('aria-expanded', 'false');
+  }
+
+  const stackBox = await stack.boundingBox();
+  const summaryBox = await summary.boundingBox();
+  expect(stackBox).not.toBeNull();
+  expect(summaryBox).not.toBeNull();
+  await summary.click({
+    position: {
+      x: stackBox!.x - summaryBox!.x + 2,
+      y: stackBox!.y - summaryBox!.y + stackBox!.height / 2,
+    },
+  });
+  await expect(summary).toHaveAttribute('aria-expanded', 'true');
+  await component
+    .getByTestId('agent-list-item')
+    .first()
+    .locator('button')
+    .evaluate((row) => row.click());
+  await expect(summary).toHaveAttribute('aria-expanded', 'true');
+
+  await summary.press('Enter');
+  await expect(summary).toHaveAttribute('aria-expanded', 'false');
+  await summary.press(' ');
+  await expect(summary).toHaveAttribute('aria-expanded', 'true');
+  await expect(summary).toBeFocused();
+});
+
+test('pins the participant stack before a fixed trailing chevron slot', async ({ mount }) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { mode: 'agents', agentCount: 6, initiallyExpanded: false },
+  });
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const width of [220, 600]) {
+      for (const zoom of [1, 2]) {
+        let expectedChevronRight: number | undefined;
+        for (const agentCount of [1, 6, 12]) {
+          await component.update({
+            props: {
+              mode: 'agents',
+              agentCount,
+              longLabels: agentCount === 12,
+              initiallyExpanded: false,
+              theme,
+              width,
+              zoom,
+            },
+          });
+          const summary = component.getByTestId('one-shot-summary-toggle');
+          const chevron = component.getByTestId('one-shot-collapse-toggle');
+          if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
+          await expect(summary).toHaveAttribute('aria-expanded', 'false');
+          await expect(chevron.locator('[data-icon="chevron-down"]')).toHaveClass(/rotate-90/);
+
+          const collapsed = await component.getByTestId('one-shot-header').evaluate((header) => {
+            const slot = header.querySelector(
+              '[data-testid="one-shot-collapse-toggle"]',
+            ) as HTMLElement;
+            const stack = header.querySelector('[data-agent-avatar-stack]') as HTMLElement;
+            const headerBox = header.getBoundingClientRect();
+            const slotBox = slot.getBoundingClientRect();
+            const stackBox = stack.getBoundingClientRect();
+            return {
+              headerRight: headerBox.right,
+              headerCenterY: (headerBox.top + headerBox.bottom) / 2,
+              slotRight: slotBox.right,
+              slotCenterY: (slotBox.top + slotBox.bottom) / 2,
+              slotWidth: slotBox.width,
+              slotHeight: slotBox.height,
+              stackRight: stackBox.right,
+              devicePixelRatio: window.devicePixelRatio,
+            };
+          });
+          expectedChevronRight ??= collapsed.slotRight;
+          expect(
+            Math.abs(collapsed.slotRight - expectedChevronRight) * collapsed.devicePixelRatio,
+          ).toBeLessThanOrEqual(0.5);
+          expect(collapsed.slotWidth).toBeCloseTo(24 * zoom, 1);
+          expect(collapsed.slotHeight).toBeCloseTo(24 * zoom, 1);
+          expect(collapsed.headerRight - collapsed.slotRight).toBeCloseTo(12 * zoom, 1);
+          expect(
+            Math.abs(collapsed.slotCenterY - collapsed.headerCenterY) * collapsed.devicePixelRatio,
+          ).toBeLessThanOrEqual(0.5);
+          expect(collapsed.stackRight).toBeLessThanOrEqual(collapsed.slotRight - 8 * zoom + 0.5);
+
+          await summary.press('Enter');
+          await expect(summary).toHaveAttribute('aria-expanded', 'true');
+          await expect(chevron.locator('[data-icon="chevron-down"]')).not.toHaveClass(/rotate-90/);
+          await expect(component.getByTestId('one-shot-agent-list')).toBeVisible();
+          const expandedRight = await chevron.evaluate(
+            (slot) => slot.getBoundingClientRect().right,
+          );
+          expect(
+            Math.abs(expandedRight - collapsed.slotRight) * collapsed.devicePixelRatio,
+          ).toBeLessThanOrEqual(0.5);
+          await summary.press(' ');
+          await expect(summary).toHaveAttribute('aria-expanded', 'false');
+          await expect(summary).toBeFocused();
+        }
+      }
+    }
+  }
+});
+
+test('shows only participant agents in the mixed collapsed cohort stack', async ({ mount }) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { mode: 'mixed', agentCount: 7, width: 600, initiallyExpanded: false },
+  });
+  const summary = component.getByTestId('event-subscriptions-summary');
+  const chevron = component.getByTestId('event-subscriptions-chevron');
+  const stack = summary.locator('[data-agent-avatar-stack]');
+  await expect(summary).toHaveAttribute('aria-expanded', 'false');
+  await expect.poll(() => stack.locator('[data-agent-avatar-with-state]').count()).toBe(7);
+  await expect(stack.locator('[data-agent-avatar-overflow], [data-icon]')).toHaveCount(0);
+  const collapsedRight = await chevron.evaluate((slot) => slot.getBoundingClientRect().right);
+  await summary.press(' ');
+  await expect(summary).toHaveAttribute('aria-expanded', 'true');
+  await expect(stack).toHaveCount(0);
+  await expect(component.getByTestId('event-subscriptions-body')).toHaveAttribute(
+    'aria-hidden',
+    'false',
+  );
+  expect(await chevron.evaluate((slot) => slot.getBoundingClientRect().right)).toBeCloseTo(
+    collapsedRight,
+    1,
+  );
+  await component.getByTestId('one-shot-summary-toggle').press('Enter');
+  await expect(component.getByTestId('one-shot-agent-list')).toBeVisible();
+  await expect(component.getByTestId('mixed-subscription-preview')).toBeVisible();
+});
+
+test('keeps 27 live participant surfaces on one rounded-square overlap geometry', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { mode: 'agents', agentCount: 27, width: 420, initiallyExpanded: false },
+  });
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const zoom of [1, 2]) {
+      await component.update({
+        props: {
+          mode: 'agents',
+          agentCount: 27,
+          width: 420,
+          initiallyExpanded: false,
+          theme,
+          zoom,
+        },
+      });
+      await expect(page.locator('html')).toHaveClass(new RegExp(`(?:^|\\s)${theme}(?:\\s|$)`));
+      const summary = component.getByTestId('one-shot-summary-toggle');
+      if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
+      await expect(summary).toContainText('Waiting for 27 agents');
+      const stack = summary.locator('[data-agent-avatar-stack]');
+      await expect.poll(() => stack.locator('[data-agent-avatar-stack-item]').count()).toBe(7);
+      await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveText('+20');
+
+      const geometry = await stack.evaluate((root) => {
+        const items = Array.from(
+          root.querySelectorAll<HTMLElement>('[data-agent-avatar-stack-item]'),
+        );
+        return items.map((item) => {
+          const surface = item.querySelector<HTMLElement>('[data-agent-avatar-with-state]')!;
+          const avatar = surface.querySelector<SVGElement>('[data-agent-avatar]')!;
+          const itemBox = item.getBoundingClientRect();
+          const surfaceBox = surface.getBoundingClientRect();
+          const avatarBox = avatar.getBoundingClientRect();
+          const itemStyle = getComputedStyle(item);
+          const surfaceStyle = getComputedStyle(surface);
+          const avatarStyle = getComputedStyle(avatar);
+          const surfaceEdgeStyle = getComputedStyle(surface, '::after');
+          return {
+            itemBox: {
+              left: itemBox.left,
+              right: itemBox.right,
+              width: itemBox.width,
+              height: itemBox.height,
+            },
+            surfaceBox: { width: surfaceBox.width, height: surfaceBox.height },
+            avatarBox: { width: avatarBox.width, height: avatarBox.height },
+            radii: [
+              itemStyle.borderTopLeftRadius,
+              surfaceStyle.borderTopLeftRadius,
+              avatarStyle.borderTopLeftRadius,
+            ],
+            backgrounds: [itemStyle.backgroundColor, surfaceStyle.backgroundColor],
+            edges: {
+              itemBorder: itemStyle.borderTopWidth,
+              surfaceBorder: surfaceStyle.borderTopWidth,
+              surfaceOutline: surfaceStyle.outlineStyle,
+              surfaceShadow: surfaceStyle.boxShadow,
+              pseudoContent: surfaceEdgeStyle.content,
+              pseudoBorder: surfaceEdgeStyle.borderTopWidth,
+              pseudoShadow: surfaceEdgeStyle.boxShadow,
+            },
+            zIndex: Number(itemStyle.zIndex),
+            maskImage: itemStyle.maskImage,
+            state: surface.dataset.avatarState,
+          };
+        });
+      });
+
+      expect(geometry.map((entry) => entry.zIndex)).toEqual([7, 6, 5, 4, 3, 2, 1]);
+      expect(geometry.map((entry) => entry.state)).toEqual([
+        'running',
+        'idle',
+        'idle',
+        'idle',
+        'idle',
+        'idle',
+        'idle',
+      ]);
+      expect(new Set(geometry.map((entry) => entry.backgrounds[1])).size).toBe(2);
+      for (const [index, entry] of geometry.entries()) {
+        expect(entry.itemBox.width).toBeCloseTo(24 * zoom, 1);
+        expect(entry.itemBox.height).toBeCloseTo(24 * zoom, 1);
+        expect(entry.surfaceBox.width).toBeCloseTo(24 * zoom, 1);
+        expect(entry.surfaceBox.height).toBeCloseTo(24 * zoom, 1);
+        expect(entry.avatarBox.width).toBeCloseTo(24 * zoom, 1);
+        expect(entry.avatarBox.height).toBeCloseTo(24 * zoom, 1);
+        expect(entry.radii).toEqual(['7px', '7px', '7px']);
+        expect(entry.backgrounds[0]).toBe('rgba(0, 0, 0, 0)');
+        expect(entry.edges).toEqual({
+          itemBorder: '0px',
+          surfaceBorder: '0px',
+          surfaceOutline: 'none',
+          surfaceShadow: 'none',
+          pseudoContent: 'none',
+          pseudoBorder: '0px',
+          pseudoShadow: 'none',
+        });
+        if (index === 0) expect(entry.maskImage).toBe('none');
+        else {
+          expect(entry.maskImage).toContain('url(');
+          expect(entry.maskImage).not.toContain('radial-gradient');
+          const previous = geometry[index - 1];
+          expect(previous.itemBox.right - entry.itemBox.left).toBeCloseTo(6 * zoom, 1);
+        }
+      }
+      await expect(stack).toHaveScreenshot(
+        `participant-stack-live-27-${theme}-${zoom === 1 ? '100' : '200'}.png`,
+      );
+    }
+  }
+});
+
+test('screenshots participant cutouts over varied parent backgrounds', async ({ mount }) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { mode: 'agents', agentCount: 6, width: 420, initiallyExpanded: false },
+  });
+  for (const theme of ['light', 'dark'] as const) {
+    for (const parentBackground of ['background', 'muted', 'accent'] as const) {
+      for (const zoom of [1, 2]) {
+        await component.update({
+          props: {
+            mode: 'agents',
+            agentCount: 6,
+            width: 420,
+            initiallyExpanded: false,
+            theme,
+            parentBackground,
+            zoom,
+          },
+        });
+        const summary = component.getByTestId('one-shot-summary-toggle');
+        if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
+        await expect.poll(() => summary.locator('[data-agent-avatar-with-state]').count()).toBe(6);
+        await expect(component).toHaveScreenshot(
+          `participant-stack-${theme}-${parentBackground}-${zoom === 1 ? '100' : '200'}.png`,
+        );
+      }
+    }
+  }
 });

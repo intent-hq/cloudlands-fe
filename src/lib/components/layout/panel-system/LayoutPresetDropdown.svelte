@@ -36,7 +36,7 @@
     onApplyPreset: (presetId: LayoutPresetId) => void;
     onOpenChange?: (open: boolean) => void;
     /** Optional custom trigger - if provided, replaces the default "Presets" button */
-    children?: Snippet<[{ toggle: () => void; open: boolean }]>;
+    children?: Snippet<[{ toggle: () => void; open: boolean; props: Record<string, unknown> }]>;
     /** AI prompt value (controlled externally) */
     promptValue?: string;
     /** Whether AI is currently generating */
@@ -143,14 +143,13 @@
 </script>
 
 <DropdownMenu align="end" side="bottom" bind:open={dropdownOpen} contentClass="px-0">
-  {#snippet trigger({ toggle, open, props }: { toggle: () => void; open: boolean; props: Record<string, unknown> })}
+  {#snippet trigger({ toggle, open, props })}
     {#if children}
-      {@render children({ toggle, open })}
+      {@render children({ toggle, open, props })}
     {:else}
       <Button
         variant="ghost"
         size="xs"
-        onclick={toggle}
         class="gap-1 px-1.5 text-muted-foreground hover:text-foreground"
         {...props}
       >

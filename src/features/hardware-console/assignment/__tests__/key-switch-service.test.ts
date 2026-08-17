@@ -172,7 +172,7 @@ describe('focusWorkspaceSlot — first press (workspace not active)', () => {
 
     focusWorkspaceSlot(WS);
 
-    expect(focusPanelCalls()).toEqual([[WS, 'panel-2']]);
+    expect(focusPanelCalls()).toEqual([expect.objectContaining({ wsId: WS, panelId: 'panel-2' })]);
     expect(setActiveTabCalls()).toEqual([
       expect.objectContaining({ wsId: WS, tabId: 't4', panelId: 'panel-2' }),
     ]);
@@ -272,7 +272,7 @@ describe('focusWorkspaceSlot — subsequent presses (workspace active)', () => {
 
     focusWorkspaceSlot(WS);
 
-    expect(focusPanelCalls()).toEqual([[WS, 'panel-2']]);
+    expect(focusPanelCalls()).toEqual([expect.objectContaining({ wsId: WS, panelId: 'panel-2' })]);
     expect(setActiveTabCalls()).toEqual([
       expect.objectContaining({ wsId: WS, tabId: 't4', panelId: 'panel-2' }),
     ]);
@@ -283,7 +283,7 @@ describe('focusWorkspaceSlot — subsequent presses (workspace active)', () => {
 
     focusWorkspaceSlot(WS);
 
-    expect(focusPanelCalls()).toEqual([[WS, 'panel-1']]);
+    expect(focusPanelCalls()).toEqual([expect.objectContaining({ wsId: WS, panelId: 'panel-1' })]);
     expect(setActiveTabCalls()).toEqual([
       expect.objectContaining({ wsId: WS, tabId: 't1', panelId: 'panel-1' }),
     ]);

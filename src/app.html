@@ -13,13 +13,9 @@
     <script src="/runtime-config.js"></script>
     <style>
       html,
-      body {
-        background: #ffffff;
-      }
-
-      html.dark,
-      html.dark body {
-        background: #0a0a0a;
+      body,
+      #app {
+        background: transparent;
       }
 
       /* Splash screen to prevent blank flash during SvelteKit SPA initialization (~1s).
@@ -32,7 +28,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: inherit;
+        background: transparent;
       }
       #splash-art {
         display: block;

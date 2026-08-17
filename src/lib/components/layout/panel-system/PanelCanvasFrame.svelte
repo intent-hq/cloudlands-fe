@@ -9,6 +9,7 @@
     sizing,
     viewportWidth,
     panelColumnWidths,
+    resetPanelColumnWidths = panelColumnWidths,
     canvasWidth: providedCanvasWidth,
     canvasWidthSource = 'explicit',
     transientWidthDelta = 0,
@@ -23,6 +24,7 @@
     sizing: PanelCanvasSizing;
     viewportWidth: number;
     panelColumnWidths: readonly number[];
+    resetPanelColumnWidths?: readonly number[];
     /**
      * Persisted canvas width from Redux (`null` before the user resizes).
      * When present it drives `defaultWidth`, so middle-handle drags that
@@ -52,6 +54,7 @@
       sizing,
       providedCanvasWidth,
       canvasWidthSource,
+      resetPanelColumnWidths,
     ),
   );
 </script>

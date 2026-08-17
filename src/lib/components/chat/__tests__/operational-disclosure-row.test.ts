@@ -81,7 +81,7 @@ import {
   CHAT_OPERATIONAL_SUMMARY_CLASS,
   CHAT_OPERATIONAL_SUMMARY_TONE_CLASS,
   OPERATIONAL_EXPANDED_CONTENT_CLASS,
-  OPERATIONAL_EXPANDED_GUIDE_CLASS,
+  OPERATIONAL_GROUP_CONTENT_CLASS,
   OPERATIONAL_ICON_BOX_CLASS,
   OPERATIONAL_PRIMARY_CLASS,
   OPERATIONAL_ROW_LINE_CLASS,
@@ -202,9 +202,9 @@ describe('shared operational disclosure-row contract', () => {
         const row = view.container.querySelector('[data-operational-disclosure-row]')!;
         return {
           view,
-          host: row,
+          host: row.closest('[data-chat-operational-row]')!,
           summary: screen.getByTestId('response-group-summary'),
-          shared: false,
+          shared: true,
         };
       },
     ];
@@ -241,12 +241,21 @@ describe('shared operational disclosure-row contract', () => {
     const view = setup();
     const sharedRow = view.container.querySelector('[data-chat-operational-row]')!;
     expect(sharedRow).toBeTruthy();
-    expect(sharedRow.className).toContain('mt-1');
+    expect(sharedRow.className).not.toContain('mt-1');
     expect(sharedRow.getAttribute('data-adjacent-operational-row')).toBe('true');
     expectClasses(
       sharedRow.querySelector('[data-operational-disclosure-row]')!,
       CHAT_OPERATIONAL_ROW_CLASS,
     );
+  });
+
+  it('gives response groups the same adjacent operational-row contract', () => {
+    const view = render(ResponseGroup, {
+      props: { name: 'Resume', adjacentOperationalRow: true, children },
+    });
+    const row = view.container.querySelector('[data-operational-row-container]')!;
+    expect(row.className).not.toContain('mt-1');
+    expect(row.getAttribute('data-adjacent-operational-row')).toBe('true');
   });
 
   it('renders only eye, hand, and brain leading glyphs at 16px', () => {
@@ -317,11 +326,11 @@ describe('shared operational disclosure-row contract', () => {
       props: { name: 'Streaming group', isStreaming: true, children },
     });
     const groupIconBox = group.container.querySelector('[data-operational-icon-box]')!;
-    expectClasses(groupIconBox, OPERATIONAL_ICON_BOX_CLASS);
+    expectClasses(groupIconBox, CHAT_OPERATIONAL_LEADING_CLASS);
     expect(groupIconBox.querySelector('[data-icon="arrows-in-line-vertical"]')).toBeTruthy();
   });
 
-  it('uses one shared expanded child origin and centers the response guide under the icon', async () => {
+  it('keeps reasoning indented and response-group children flush without a guide', async () => {
     const reasoning = render(ThinkingBlock, { props: { content: 'Expanded reasoning' } });
     await fireEvent.click(screen.getByTestId('reasoning-disclosure'));
     expectClasses(
@@ -333,12 +342,9 @@ describe('shared operational disclosure-row contract', () => {
     const group = render(ResponseGroup, { props: { name: 'Group', children } });
     await fireEvent.click(group.container.querySelector('button')!);
     const expanded = group.container.querySelector('[data-operational-expanded-content]')!;
-    expectClasses(expanded, OPERATIONAL_EXPANDED_CONTENT_CLASS);
-    expectClasses(
-      group.container.querySelector('[data-operational-expanded-guide]')!,
-      OPERATIONAL_EXPANDED_GUIDE_CLASS,
-    );
-    expect(expanded.className).not.toContain('pl-4.5');
+    expectClasses(expanded, OPERATIONAL_GROUP_CONTENT_CLASS);
+    expect(group.container.querySelector('[data-operational-expanded-guide]')).toBeNull();
+    expect(expanded.className).not.toContain('pl-');
   });
 
   it('preserves completed and error disclosure semantics and specialized expanded content', async () => {

@@ -9,8 +9,11 @@
   import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
   import { formatDistanceToNow } from '$lib/i18n/format';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
-  import type { AvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+  import AgentAvatarStack, {
+    type AgentAvatarStackItem,
+  } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
+  import type { AvatarState } from '$features/agent/components/agent-avatar/avatar-state';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { onMount } from 'svelte';
@@ -36,6 +39,8 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import TaskStatusProgress from './TaskStatusProgress.svelte';
+  import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
+  import { resolveWorkspaceStatusState } from './utils/workspace-status-presentation';
 
   interface Props {
     workspace: Workspace | null;
@@ -318,6 +323,7 @@
   );
 
   let statusMessage = $derived(workspace?.statusMessage?.trim());
+  let workspaceStatusState = $derived(resolveWorkspaceStatusState(workspace ?? {}));
 
   let lifecycleText = $derived.by(() => {
     if (!workspace) return null;
@@ -392,6 +398,18 @@
     const knownAgentIds = new Set(hoverAgentInfos.map((agent) => agent.id));
     return streamingAgentIds.filter((agentId) => !knownAgentIds.has(agentId));
   });
+  let hoverCardStackItems = $derived([
+    ...streamingAgentIdsWithoutInfo.map((agentId): AgentAvatarStackItem => ({
+      key: `running:${agentId}`,
+      agentId,
+      state: 'running',
+    })),
+    ...unreadOnlyAgentIds.map((agentId): AgentAvatarStackItem => ({
+      key: `unread:${agentId}`,
+      agentId,
+      state: 'unread',
+    })),
+  ]);
 
   let taskStatuses = $derived(
     workspace ? $workspaceTaskDisplayList$.map((task) => task.status) : [],
@@ -441,6 +459,7 @@
       <Skeleton class="h-5 w-40" />
     {:else}
       <div class="flex items-start gap-2">
+        <WorkspaceStatusIcon status={workspaceStatusState} size={14} class="mt-0.5" />
         <div class="min-w-0 flex-1">
           <div class="text-sm font-semibold text-foreground truncate">
             {workspace?.title || m.workspace_links_untitled_label()}
@@ -499,9 +518,9 @@
               >
                 <div class="flex-1 flex min-w-0 flex-1 items-center gap-2">
                   <span class="grid h-6 w-6 shrink-0 place-items-center">
-                    <AugieAvatarWithState
+                    <AgentAvatarWithState
                       agentId={agent.id}
-                      size={20}
+                      variant="standard"
                       state={getRunningAgentAvatarState(agent)}
                       specialist={agent.specialist as BuiltinSpecialistId | null}
                     />
@@ -523,14 +542,12 @@
         </div>
       {/if}
 
-      {#if streamingAgentIdsWithoutInfo.length > 0 || unreadOnlyAgentIds.length > 0}
-        <div class="flex items-center -space-x-1 py-1">
-          {#each streamingAgentIdsWithoutInfo.slice(0, 3) as agentId (agentId)}
-            <AugieAvatarWithState {agentId} size={16} state="running" />
-          {/each}
-          {#each unreadOnlyAgentIds.slice(0, Math.max(0, 3 - streamingAgentIdsWithoutInfo.length)) as agentId (agentId)}
-            <AugieAvatarWithState {agentId} size={16} state="unread" />
-          {/each}
+      {#if hoverCardStackItems.length > 0}
+        <div
+          class="flex items-center py-1 pl-[var(--agent-avatar-emphasized-ring-width)] pr-[var(--agent-avatar-emphasized-ring-width)]"
+          data-workspace-hover-card-agent-stack
+        >
+          <AgentAvatarStack items={hoverCardStackItems} />
         </div>
       {/if}
 

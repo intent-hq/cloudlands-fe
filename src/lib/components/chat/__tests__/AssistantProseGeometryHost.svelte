@@ -128,6 +128,29 @@
         { type: 'tool_use', id: 'pair-tool-e', name: 'view', input: { path: 'src/e.ts' } },
       ],
     },
+    {
+      id: 'group-tool',
+      content: [
+        { type: 'text', text: '<group:Resume>Continue the operation</group:Resume>' },
+        { type: 'tool_use', id: 'pair-tool-f', name: 'view', input: { path: 'src/f.ts' } },
+      ],
+    },
+    {
+      id: 'tool-group',
+      content: [
+        { type: 'tool_use', id: 'pair-tool-g', name: 'view', input: { path: 'src/g.ts' } },
+        { type: 'text', text: '<group:Review>Review the operation</group:Review>' },
+      ],
+    },
+    {
+      id: 'group-group',
+      content: [
+        {
+          type: 'text',
+          text: '<group:First>First operation</group:First><group:Second>Second operation</group:Second>',
+        },
+      ],
+    },
   ];
 </script>
 

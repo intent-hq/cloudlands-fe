@@ -55,7 +55,7 @@ describe('workspaceNavigationTabSaga', () => {
 
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'panelLayout/openTab',
+        type: 'panelLayout/openTabInNewRootColumn',
         payload: expect.objectContaining({
           wsId: 'ws-1',
           force: true,
@@ -91,10 +91,10 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
-      'panelLayout/openTab',
-      'panelLayout/openTabInAdjacentOrSplit',
-      'panelLayout/openTab',
-      'panelLayout/openTab',
+      'panelLayout/openTabInNewRootColumn',
+      'panelLayout/openTabInNewRootColumn',
+      'panelLayout/openTabInNewRootColumn',
+      'panelLayout/openTabInNewRootColumn',
     ]);
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
       payload: {
@@ -147,7 +147,7 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInAdjacentOrSplit',
+      type: 'panelLayout/openTabInNewRootColumn',
       payload: {
         sourcePanelId: 'panel-note',
         tab: { type: 'note', noteId: 'note-1' },
@@ -203,7 +203,7 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInAdjacentOrSplit',
+      type: 'panelLayout/openTabInNewRootColumn',
       payload: {
         wsId: 'ws-1',
         sourcePanelId: 'panel-1',
@@ -218,7 +218,7 @@ describe('workspaceNavigationTabSaga', () => {
       },
     });
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInAdjacentOrSplit',
+      type: 'panelLayout/openTabInNewRootColumn',
       payload: {
         wsId: 'ws-1',
         sourcePanelId: 'panel-1',
@@ -268,7 +268,7 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInAdjacentOrSplit',
+      type: 'panelLayout/openTabInNewRootColumn',
       payload: {
         wsId: 'ws-1',
         sourcePanelId: 'panel-a',
@@ -283,10 +283,10 @@ describe('workspaceNavigationTabSaga', () => {
       },
     });
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
+      type: 'panelLayout/openTabInNewRootColumn',
       payload: {
         wsId: 'ws-1',
-        panelId: 'panel-b',
+        sourcePanelId: 'panel-b',
         force: true,
         tab: {
           type: 'diff',
@@ -317,7 +317,7 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
+      type: 'panelLayout/openTabInNewRootColumn',
       payload: {
         wsId: 'ws-1',
         force: true,
@@ -354,7 +354,7 @@ describe('workspaceNavigationTabSaga', () => {
     );
     await settle();
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInAdjacentOrSplit',
+      type: 'panelLayout/openTabInNewRootColumn',
       payload: {
         wsId: 'ws-1',
         sourcePanelId: 'panel-runtime',
@@ -391,7 +391,7 @@ describe('workspaceNavigationTabSaga', () => {
     );
     await settle();
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
+      type: 'panelLayout/openTabInNewRootColumn',
       payload: {
         wsId: 'ws-1',
         force: true,
@@ -674,7 +674,7 @@ describe('workspaceNavigationTabSaga', () => {
     channel.put(openWorkspaceLocalChanges('ws-1'));
     await settle();
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
+      type: 'panelLayout/openTabInNewRootColumn',
       payload: {
         wsId: 'ws-1',
         force: true,

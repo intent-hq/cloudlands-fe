@@ -185,7 +185,7 @@ vi.mock('$lib/components/ui/Header.svelte', async () => {
   return { default: MockComponent };
 });
 
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => {
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => {
   const { default: MockComponent } = await import('./mocks/MockSimple.svelte');
   return { default: MockComponent };
 });

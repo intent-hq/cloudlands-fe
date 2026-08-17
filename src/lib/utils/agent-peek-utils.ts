@@ -8,6 +8,10 @@
 import type { AgentSession, AgentMessage, FileOperation, ToolUseBlock } from '$shared/types';
 import { AuggieTextParser } from './auggie-text-parser';
 import { stripGroupTags } from './text-utils';
+import {
+  getPresentedUserMessageText,
+  stripInternalDeliveryNotes,
+} from './user-message-presentation';
 import { m } from '$shared/paraglide/messages.js';
 
 export interface AgentPeekData {
@@ -148,7 +152,7 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
   }
 
   if (!foundUserMessage && agent.lastUserMessage) {
-    lastUserMessage = agent.lastUserMessage;
+    lastUserMessage = stripInternalDeliveryNotes(agent.lastUserMessage);
   }
 
   // Extract completion report and parent agent from metadata if available
@@ -180,6 +184,7 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
  * has no text blocks (callers can fall back to tool_use previews separately).
  */
 function extractMessageText(msg: AgentMessage): string {
+  if (msg.role === 'user') return stripGroupTags(getPresentedUserMessageText(msg));
   if (msg.contentBlocks && Array.isArray(msg.contentBlocks)) {
     return stripGroupTags(
       msg.contentBlocks

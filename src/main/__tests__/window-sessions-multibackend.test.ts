@@ -277,23 +277,6 @@ describe('multi-backend window sessions', () => {
       expect(live).toHaveLength(1);
       expect(live[0].isDestroyed()).toBe(false);
     });
-
-    it('keeps the shared app title when a development page supplies its own title', () => {
-      const previousNodeEnv = process.env.NODE_ENV;
-      process.env.NODE_ENV = 'development';
-
-      try {
-        restoreWindowsForBackend('remote-empty');
-        const event = { preventDefault: vi.fn() };
-
-        FakeBrowserWindow.getAllWindows()[0].emit('page-title-updated', event, 'Workspace title');
-
-        expect(event.preventDefault).toHaveBeenCalledOnce();
-      } finally {
-        if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
-        else process.env.NODE_ENV = previousNodeEnv;
-      }
-    });
   });
 
   describe('capture + restore sequence (T3 switch)', () => {

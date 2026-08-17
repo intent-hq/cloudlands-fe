@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { resolveAppTitle } from '../resolve-app-title';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resolveAppTitle, setResolvedAppName } from '../resolve-app-title';
 
 const ENV_KEYS = ['NODE_ENV', 'DEV_NAME', 'DEV_INSTANCE', 'DEV_PORT'] as const;
 
@@ -50,5 +50,28 @@ describe('resolveAppTitle', () => {
     process.env.DEV_NAME = 'polish-ui';
 
     expect(resolveAppTitle()).toBe('Intent');
+  });
+
+  it('sets and returns one development app name for the macOS application menu', () => {
+    process.env.NODE_ENV = 'development';
+    process.env.DEV_NAME = 'polish-ui';
+    const app = { setName: vi.fn() };
+    const processTarget = { title: 'Electron' };
+
+    const menuLabel = setResolvedAppName(app, processTarget);
+
+    expect(app.setName).toHaveBeenCalledWith('Electron [polish-ui]');
+    expect(processTarget.title).toBe('Electron [polish-ui]');
+    expect(menuLabel).toBe('Electron [polish-ui]');
+  });
+
+  it('does not change the packaged process title in production', () => {
+    process.env.NODE_ENV = 'production';
+    const app = { setName: vi.fn() };
+    const processTarget = { title: '/Applications/Intent.app/Contents/MacOS/Intent' };
+
+    expect(setResolvedAppName(app, processTarget)).toBe('Intent');
+    expect(app.setName).toHaveBeenCalledWith('Intent');
+    expect(processTarget.title).toBe('/Applications/Intent.app/Contents/MacOS/Intent');
   });
 });

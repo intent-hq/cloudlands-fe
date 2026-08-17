@@ -151,4 +151,63 @@ describe('AuroraBackground cleanup', () => {
     expect(getContextSpy).toHaveBeenCalledTimes(1);
     expect(mockGL.loseContext).toHaveBeenCalledTimes(1);
   });
+
+  it('uses five blobs with radii increased by about twelve percent', () => {
+    render(AuroraBackground, { props: { agentId: 'agent-1' } });
+
+    const fragmentSource = mockGL.gl.shaderSource.mock.calls
+      .map(([, source]) => String(source))
+      .find((source) => source.includes('precision mediump float'));
+    expect(fragmentSource).toBeDefined();
+
+    const radii = Array.from(
+      fragmentSource!.matchAll(/float b[1-5] = blob\(uv, c[1-5], ([0-9.]+)\);/g),
+      (match) => Number(match[1]),
+    );
+    const previousRadii = [0.5, 0.45, 0.55, 0.48, 0.42];
+
+    expect(radii).toHaveLength(5);
+    radii.forEach((radius, index) => {
+      expect(radius / previousRadii[index]).toBeGreaterThanOrEqual(1.11);
+      expect(radius / previousRadii[index]).toBeLessThanOrEqual(1.13);
+    });
+  });
+
+  it('keeps drawing throttled to the 30 fps budget', () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+    render(AuroraBackground, { props: { agentId: 'agent-1' } });
+    expect(mockGL.gl.drawArrays).not.toHaveBeenCalled();
+
+    now.mockReturnValue(10);
+    flushRafCallbacks();
+    now.mockReturnValue(20);
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).not.toHaveBeenCalled();
+
+    now.mockReturnValue(34);
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
+    now.mockRestore();
+  });
+
+  it('does not draw frames when reduced motion is requested', () => {
+    vi.mocked(window.matchMedia).mockImplementation(
+      (query) =>
+        ({
+          matches: query === '(prefers-reduced-motion: reduce)',
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }) as MediaQueryList,
+    );
+
+    render(AuroraBackground, { props: { agentId: 'agent-1' } });
+    flushRafCallbacks();
+
+    expect(mockGL.gl.drawArrays).not.toHaveBeenCalled();
+  });
 });

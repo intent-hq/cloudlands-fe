@@ -92,6 +92,19 @@ beforeEach(() => {
   mocks.fromId.mockReturnValue(undefined);
 });
 
+describe('focusTab', () => {
+  it('forwards explicit pin intent with the exact tab focus request', async () => {
+    const service = await loadService();
+
+    expect(service.focusTab('tab-1', 'ws-1', true)).toBe(true);
+    expect(mocks.sendToWorkspaceWindows).toHaveBeenCalledWith(
+      'ws-1',
+      IPC_CHANNELS.BROWSER.FOCUS_TAB,
+      { tabId: 'tab-1', pin: true },
+    );
+  });
+});
+
 describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
   it('excludes a UI-closed tab whose webview is still alive', async () => {
     const service = await loadService();
@@ -154,7 +167,7 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
     expect(await service.listAllTabs('ws-1')).toEqual([]);
   });
 
-  it('does not fall back to another workspace\'s tabs when a list request times out', async () => {
+  it("does not fall back to another workspace's tabs when a list request times out", async () => {
     const service = await loadService();
     // Only ws-a's layout answers list requests; ws-b never responds.
     wireRenderer([{ tabId: 'tab-a', url: 'http://a/', title: 'A' }], 'ws-a');

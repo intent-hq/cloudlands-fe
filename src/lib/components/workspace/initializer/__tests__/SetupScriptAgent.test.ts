@@ -25,7 +25,7 @@ vi.mock('$lib/components/editor/CodeEditor.svelte', async () => ({
   default: (await import('./mocks/MockComponent.svelte')).default,
 }));
 
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
   default: (await import('./mocks/MockComponent.svelte')).default,
 }));
 

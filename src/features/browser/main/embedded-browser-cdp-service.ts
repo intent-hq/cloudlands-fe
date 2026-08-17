@@ -291,15 +291,18 @@ class EmbeddedBrowserCdpService {
    *
    * @returns true if the message was sent to at least one window
    */
-  focusTab(tabId: string, workspaceId?: string): boolean {
+  focusTab(tabId: string, workspaceId?: string, pin?: boolean): boolean {
     if (!tabId) {
       logger.warn('Cannot focus tab - no tabId provided');
       return false;
     }
 
     // Send to workspace windows (falls back to all windows if no workspaceId)
-    sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.FOCUS_TAB, { tabId });
-    logger.info('Sent focus request for browser tab', { tabId, workspaceId });
+    sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.FOCUS_TAB, {
+      tabId,
+      ...(pin === undefined ? {} : { pin }),
+    });
+    logger.info('Sent focus request for browser tab', { tabId, workspaceId, pin });
     return true;
   }
 

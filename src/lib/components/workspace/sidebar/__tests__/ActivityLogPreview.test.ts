@@ -7,7 +7,7 @@ import {
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
 
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
   default: (await import('./mocks/MockSimple.svelte')).default,
 }));
 

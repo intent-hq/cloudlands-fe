@@ -58,11 +58,11 @@ beforeEach(() => {
 
 describe('WINDOW_CHANNELS.SET_THEME', () => {
   it.each([
-    { theme: 'dark', isDark: true, background: '#0a0a0a' },
-    { theme: 'light', isDark: false, background: '#ffffff' },
+    { theme: 'dark', isDark: true },
+    { theme: 'light', isDark: false },
   ] as const)(
     'applies app $theme while the system uses the opposite appearance',
-    async ({ theme, isDark, background }) => {
+    async ({ theme, isDark }) => {
       const window = { setBackgroundColor: vi.fn() };
       electronMocks.fromWebContents.mockReturnValue(window);
       electronMocks.nativeTheme.shouldUseDarkColors = isDark;
@@ -70,7 +70,9 @@ describe('WINDOW_CHANNELS.SET_THEME', () => {
       const result = await handlerFor(WINDOW_CHANNELS.SET_THEME)({ sender: {} }, { theme });
 
       expect(electronMocks.nativeTheme.themeSource).toBe(theme);
-      expect(window.setBackgroundColor).toHaveBeenCalledWith(background);
+      expect(window.setBackgroundColor).toHaveBeenCalledWith(
+        getWindowBackgroundColor(isDark, process.platform),
+      );
       expect(result).toEqual({ success: true });
     },
   );
@@ -101,7 +103,9 @@ describe('WINDOW_CHANNELS.SET_THEME', () => {
     listener();
 
     for (const window of windows) {
-      expect(window.setBackgroundColor).toHaveBeenCalledWith('#0a0a0a');
+      expect(window.setBackgroundColor).toHaveBeenCalledWith(
+        getWindowBackgroundColor(true, process.platform),
+      );
     }
   });
 });

@@ -156,8 +156,8 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('data-sidebar-context={note.id}');
     expect(sidebar).not.toContain('data-sidebar-change={changePath}');
     expect(sidebar).toContain('const LAUNCHER_ICON_LIMIT = 6');
-    expect(sidebar).toContain('grid h-7 w-full min-w-0 grid-flow-col items-start overflow-visible');
-    expect(sidebar).toContain('data-launcher-pack="bounded-distribution"');
+    expect(sidebar).toContain('grid h-9 w-full min-w-0 grid-flow-col items-start overflow-visible');
+    expect(sidebar).toContain('data-launcher-pack="left"');
     expect(sidebar).toContain('deriveAgentLauncherItems(');
     expect(sidebar).toContain('LAUNCHER_ICON_LIMIT,');
     expect(sidebar).toContain('deriveNoteLauncherItems(');

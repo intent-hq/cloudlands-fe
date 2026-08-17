@@ -25,7 +25,7 @@ import { tabTypeRegistry } from '../registry';
 import { RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
 
 const expectedTiers = {
-  agent: 'narrow',
+  agent: 'chat',
   'agent-overview': 'narrow',
   'activity-changes': 'wide',
   browser: 'wide',
@@ -52,9 +52,9 @@ describe('registered panel default width tiers', () => {
     ).toEqual(expectedTiers);
   });
 
-  it('resolves chat narrow, notes medium, and browsers wide', () => {
+  it('resolves chat, notes, and browsers through their canonical tiers', () => {
     registerAllTabTypes();
-    expect(tabTypeRegistry.getDefaultWidth('agent', 1200)).toBe(500);
+    expect(tabTypeRegistry.getDefaultWidth('agent', 1200)).toBe(700);
     expect(tabTypeRegistry.getDefaultWidth('note', 1200)).toBe(720);
     expect(tabTypeRegistry.getDefaultWidth('browser', 1200)).toBe(960);
   });

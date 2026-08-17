@@ -43,7 +43,7 @@ export const requestPanelFocus = createAction<[wsId: string, panelId: string]>(
   "appLayout/requestPanelFocus"
 );
 
-export const focusBrowserTabRequested = createAction<[wsId: string, tabId: string]>(
+export const focusBrowserTabRequested = createAction<[wsId: string, tabId: string, pin?: boolean]>(
   "appLayout/focusBrowserTabRequested"
 );
 

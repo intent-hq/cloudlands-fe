@@ -15,7 +15,7 @@
   import { ListItem } from '$lib/components/ui/list';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import TreeNode from './TreeNode.svelte';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -188,7 +188,7 @@
               class="rounded-full overflow-hidden"
               title={m.fileTracking_changes_recentlyEdited_tooltip()}
             >
-              <AuggieAvatar {agentId} size={16} />
+              <AgentAvatar {agentId} size={16} />
             </div>
           {/each}
         </div>
@@ -295,7 +295,7 @@
               class="rounded-full overflow-hidden"
               title={m.fileTracking_changes_recentlyEdited_tooltip()}
             >
-              <AuggieAvatar {agentId} size={16} />
+              <AgentAvatar {agentId} size={16} />
             </div>
           {/each}
         </div>

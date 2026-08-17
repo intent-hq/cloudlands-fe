@@ -164,7 +164,7 @@
       {#if onDismiss}
         <button
           type="button"
-          class="shrink-0 border-none bg-transparent px-3 py-2.5 type-caption text-destructive-foreground cursor-pointer font-[inherit] hover:bg-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          class="shrink-0 border-none bg-transparent px-3 py-2.5 type-caption text-error-foreground cursor-pointer font-[inherit] hover:bg-destructive hover:text-destructive-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           title={m.chat_questionWizard_dismiss_tooltip()}
           onclick={() => (confirmingDismiss = true)}
         >
@@ -194,7 +194,7 @@
         {#if onDismiss}
           <button
             type="button"
-            class="border-none bg-transparent type-caption text-destructive-foreground cursor-pointer font-[inherit] px-1.5 py-1 rounded-(--radius-small) hover:bg-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            class="border-none bg-transparent type-caption text-error-foreground cursor-pointer font-[inherit] px-1.5 py-1 rounded-(--radius-small) hover:bg-destructive hover:text-destructive-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             title={m.chat_questionWizard_dismiss_tooltip()}
             onclick={() => (confirmingDismiss = true)}
           >

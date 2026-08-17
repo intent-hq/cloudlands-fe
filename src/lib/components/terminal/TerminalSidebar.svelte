@@ -14,7 +14,7 @@
   } from '$store/renderer/slices/scripts/scripts-slice';
   import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
 
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import { ListContainer, ListItem, ListSection } from '$lib/components/ui/list';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -959,7 +959,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 class="shrink-0 flex-none"
                 style="min-width: 16px; min-height: 16px; width: 16px; height: 16px;"
               >
-                <AugieAvatarWithState agentId={$_scriptDetectAgentId$} state="running" size={16} />
+                <AgentAvatarWithState agentId={$_scriptDetectAgentId$} state="running" size={16} />
               </div>
               <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
             </button>
@@ -1186,7 +1186,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                   <div class="border-t border-border my-1"></div>
                   <button
                     type="button"
-                    class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors text-destructive-foreground hover:bg-destructive/10"
+                    class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors text-error-foreground hover:bg-destructive/10"
                     onclick={() => handleContextMenuAction('delete')}
                   >
                     {selectedScriptIds.size > 1

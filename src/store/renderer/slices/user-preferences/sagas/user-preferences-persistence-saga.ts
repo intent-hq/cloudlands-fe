@@ -17,6 +17,7 @@ import {
   selectHasCompletedProviderSetup,
   selectLanguagePreference,
   selectNoteFontStyle,
+  selectPanelOpenMode,
   selectShowArchived,
   selectShowReasoningBlocks,
   selectSpellcheckEnabled,
@@ -35,6 +36,7 @@ import {
   setHasCompletedProviderSetup,
   setLanguagePreference,
   setNoteFontStyle,
+  setPanelOpenMode,
   setShowArchived,
   setShowReasoningBlocks,
   setSpellcheckEnabled,
@@ -44,6 +46,7 @@ import {
   toggleShowArchived,
   toggleShowReasoningBlocks,
   toggleSpellcheck,
+  togglePanelOpenMode,
   type ActivityLogPresetPreference,
   type FontStyle,
 } from '../user-preferences-slice';
@@ -59,6 +62,7 @@ const CODE_STORAGE_KEY = 'code-font-settings';
 const ACTIVITY_LOG_PRESETS_STORAGE_KEY = 'activityLogPresets';
 const LANGUAGE_PREFERENCE_STORAGE_KEY = 'language-preference';
 const GITHUB_LINK_DEFAULT_ACTION_STORAGE_KEY = 'github-links:defaultAction';
+const PANEL_OPEN_MODE_STORAGE_KEY = 'panel-layout:openMode';
 
 type ListSystemFontsResponse = {
   success?: boolean;
@@ -157,6 +161,11 @@ export function* hydrateUserPreferencesWorker() {
   if (isGithubLinkDefaultAction(githubLinkDefaultAction)) {
     yield* put(setGithubLinkDefaultAction(githubLinkDefaultAction));
   }
+
+  const panelOpenMode = yield* getLocalStorageJSON<unknown>(PANEL_OPEN_MODE_STORAGE_KEY);
+  if (panelOpenMode === 'normal' || panelOpenMode === 'pin') {
+    yield* put(setPanelOpenMode(panelOpenMode));
+  }
 }
 
 export function* persistSpellcheckWorker() {
@@ -235,6 +244,10 @@ export function* persistGithubLinkDefaultActionWorker() {
   );
 }
 
+export function* persistPanelOpenModeWorker() {
+  yield* setLocalStorageJSON(PANEL_OPEN_MODE_STORAGE_KEY, yield* selectPanelOpenMode.effect());
+}
+
 function* watchUserPreferenceWrites() {
   yield* takeEvery([setSpellcheckEnabled, toggleSpellcheck], persistSpellcheckWorker);
   yield* takeEvery([setShowArchived, toggleShowArchived], persistShowArchivedWorker);
@@ -256,6 +269,7 @@ function* watchUserPreferenceWrites() {
   );
   yield* takeEvery(setLanguagePreference, persistLanguagePreferenceWorker);
   yield* takeEvery(setGithubLinkDefaultAction, persistGithubLinkDefaultActionWorker);
+  yield* takeEvery([setPanelOpenMode, togglePanelOpenMode], persistPanelOpenModeWorker);
 }
 
 /** Unregistered until the S20 middleware cutover. */

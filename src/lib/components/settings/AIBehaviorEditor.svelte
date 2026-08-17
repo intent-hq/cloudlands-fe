@@ -903,7 +903,7 @@
         <button
           type="button"
           onclick={deleteSpecialist}
-          class="text-xs text-muted-foreground hover:text-destructive-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
+          class="text-xs text-muted-foreground hover:text-error-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
         >
           <Fa icon={faTrash} class="w-3 h-3" />
           {m.settings_aiBehavior_deleteSpecialist()}

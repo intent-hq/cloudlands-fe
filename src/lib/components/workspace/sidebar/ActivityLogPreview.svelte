@@ -9,7 +9,7 @@
   import { calculateCompactTime } from '$lib/utils/reactive-time.svelte';
   import { sharedTimeManager } from '$lib/utils/shared-time-manager.svelte';
   import { cn } from '$lib/utils';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
 
   import Fa from 'svelte-fa';
@@ -179,11 +179,11 @@
         aria-label={m.workspace_activityPreview_openAgent_ariaLabel()}
         onclick={() => handleAvatarClick(row.event)}
       >
-        <AuggieAvatar size={14} agentId={eventAgentId} />
+        <AgentAvatar size={14} agentId={eventAgentId} />
       </Button>
     {:else if eventAgentId}
       <span class="bg-sidebar flex w-3.5 shrink-0 items-center justify-center py-0.5">
-        <AuggieAvatar size={14} agentId={eventAgentId} />
+        <AgentAvatar size={14} agentId={eventAgentId} />
       </span>
     {:else}
       <div class="bg-sidebar py-0.5">

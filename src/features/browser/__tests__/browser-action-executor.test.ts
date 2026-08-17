@@ -58,6 +58,24 @@ describe('browser-action-executor', () => {
   // URL Validation via openTab
   // =========================================================================
   describe('openTab URL validation', () => {
+    it('accepts an explicit pin request and forwards it to the opener', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'https://example.com', pin: true }] },
+        mockOpenTabFn,
+      );
+      expect(result.success).toBe(true);
+      expect(mockOpenTabFn).toHaveBeenCalledWith('https://example.com', undefined, undefined, true);
+    });
+
+    it('rejects a non-boolean pin request before opening a tab', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'https://example.com', pin: 'yes' }] },
+        mockOpenTabFn,
+      );
+      expect(result.success).toBe(false);
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+
     it('should allow http:// URLs', async () => {
       const result = await executeActions(
         { actions: [{ action: 'openTab', url: 'http://localhost:3000' }] },
@@ -888,6 +906,38 @@ describe('browser-action-executor', () => {
         tabId: 'tab-dup',
         url: 'http://localhost:3000/board',
       });
+    });
+
+    it('forwards pin intent when it reuses an exact-URL model tab', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-dup');
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/board', pin: true }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-dup', 'ws-1', true);
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+
+    it('forwards pin intent when it navigates and reuses an idle model tab', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle');
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/board', pin: true }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-idle', 'ws-1', true);
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
     });
 
     it('takes precedence over idle-tab reuse (no navigation of an idle tab)', async () => {

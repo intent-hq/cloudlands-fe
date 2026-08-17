@@ -43,6 +43,7 @@ function openBrowserTab(
   position: 'adjacent' | 'replace' | 'same' = 'adjacent',
   workspaceId?: string,
   allowDuplicate?: boolean,
+  pin?: boolean,
 ): { success: boolean; message: string; tabId?: string } {
   // Validate URL before sending to renderer
   try {
@@ -77,8 +78,9 @@ function openBrowserTab(
     workspaceId,
     tabId,
     ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
+    ...(pin === undefined ? {} : { pin }),
   });
-  logger.info('Sent browser:open-tab', { url, position, workspaceId, tabId, allowDuplicate });
+  logger.info('Sent browser:open-tab', { url, position, workspaceId, tabId, allowDuplicate, pin });
   // i18n-ignore (agent-facing protocol message, not user-facing)
   return { success: true, message: `Opening browser tab with URL: ${url}`, tabId };
 }
@@ -166,7 +168,8 @@ export async function executeBrowserActions(
 ): Promise<ExecutionResult> {
   return executeActions(
     { actions, tabId },
-    (url, position, allowDuplicate) => openBrowserTab(url, position, workspaceId, allowDuplicate),
+    (url, position, allowDuplicate, pin) =>
+      openBrowserTab(url, position, workspaceId, allowDuplicate, pin),
     agentId,
     workspaceId,
     getDaemonLoopbackContext,

@@ -444,7 +444,7 @@
 
         {#if pathError}
           <div
-            class="shrink-0 border-b border-border bg-destructive/10 px-3 py-1.5 text-xs text-destructive-foreground"
+            class="shrink-0 border-b border-border bg-destructive/10 px-3 py-1.5 text-xs text-error-foreground"
             role="alert"
           >
             {pathError}
@@ -463,7 +463,7 @@
               <span>{m.onboarding_dirPicker_loading_label()}</span>
             </div>
           {:else if error}
-            <div class="px-5 py-10 text-sm text-destructive-foreground">
+            <div class="px-5 py-10 text-sm text-error-foreground">
               <p class="mb-1 font-medium">{m.onboarding_dirPicker_readError_title()}</p>
               <p class="break-all text-xs text-muted-foreground">{error}</p>
             </div>
@@ -530,7 +530,7 @@
 
     {#if createError}
       <div
-        class="shrink-0 border-t border-border bg-destructive/10 px-3 py-1.5 text-xs text-destructive-foreground/90"
+        class="shrink-0 border-t border-border bg-destructive/10 px-3 py-1.5 text-xs text-error-foreground/90"
         role="alert"
       >
         {createError}

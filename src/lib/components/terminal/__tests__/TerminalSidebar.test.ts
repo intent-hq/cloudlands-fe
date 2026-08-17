@@ -171,7 +171,7 @@ vi.mock('svelte-fa', async () => {
   return { default: MockFa, Fa: MockFa };
 });
 
-vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => {
+vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => {
   const MockSimple = (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
     .default;
   return { default: MockSimple };

@@ -16,3 +16,15 @@ export function resolveAppTitle(): string {
   const devInstance = resolveDevInstance();
   return devInstance ? `Electron [Dev ${devInstance}]` : 'Electron [Dev]';
 }
+
+export function setResolvedAppName(
+  app: { setName(name: string): void },
+  processTarget: { title: string } = process,
+): string {
+  const appName = resolveAppTitle();
+  app.setName(appName);
+  if (process.env.NODE_ENV === 'development') {
+    processTarget.title = appName;
+  }
+  return appName;
+}

@@ -192,7 +192,9 @@
         data-subscription-motion-row="hook"
         transition:safeSubscriptionRowTransition
       >
-        <div class="flex min-h-9 min-w-0 max-w-full items-center gap-2 px-3 py-2 text-subtle">
+        <div
+          class="flex min-h-9 min-w-0 max-w-full items-center gap-2 px-3 py-2 text-muted-foreground"
+        >
           <Button
             variant="plain"
             type="button"
@@ -210,13 +212,14 @@
                 : ''}"
             />
             <span class="min-w-0 flex-1 truncate">{hook.name}</span>
-            <span class="shrink-0 text-ghost">{stateLabel(hook)}</span>
+            <span class="shrink-0 text-muted-foreground">{stateLabel(hook)}</span>
             {#if hook.nextRunAt}
-              <span class="shrink-0 text-ghost">{nextRunIn(hook)}</span>
+              <span class="shrink-0 text-muted-foreground">{nextRunIn(hook)}</span>
             {/if}
             <span class="shrink-0" data-testid="background-hook-chevron">
               <Fa
                 icon={faChevronDown}
+                size={16}
                 class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {expandedHookId ===
                 hook.hookId
                   ? ''
@@ -225,15 +228,15 @@
             </span>
           </Button>
           <DropdownMenu side="top" align="end">
-            {#snippet trigger({ toggle }: { toggle: () => void })}
+            {#snippet trigger({ props })}
               <Button
+                {...props}
                 variant="plain"
                 size="icon-xs"
                 type="button"
                 class="h-6 w-6 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
                 data-testid="background-hook-chip"
                 aria-label={m.chat_backgroundHooks_row_ariaLabel()}
-                onclick={toggle}
               >
                 <KebabIcon class="h-3 w-3" />
               </Button>

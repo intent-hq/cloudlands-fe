@@ -113,7 +113,7 @@ export function registerAllTabTypes(): void {
   tabTypeRegistry.register({
     type: 'agent',
     component: AgentTabType,
-    defaultWidthTier: 'narrow',
+    defaultWidthTier: 'chat',
     icon: faComment,
     get defaultTitle() {
       return m.layout_tabTypes_agent_title();

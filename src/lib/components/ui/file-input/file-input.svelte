@@ -129,7 +129,7 @@
     </span>
   </div>
   {#if error}
-    <p id={errorId} class="type-body mt-1.5 text-destructive-foreground" role="alert">
+    <p id={errorId} class="type-body mt-1.5 text-error-foreground" role="alert">
       {error}
     </p>
   {/if}

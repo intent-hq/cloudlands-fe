@@ -62,7 +62,7 @@ vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/Fa.svelte'))
 
 // The avatar pulls agent-session/theme selectors (Svelte store context);
 // mock it to the marker div — the only 'mock-component' testid in this suite.
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
   default: (await import('./mocks/MockSimple.svelte')).default,
 }));
 
@@ -430,7 +430,7 @@ describe('SecondaryRootChangesView', () => {
     const { container, queryAllByTestId } = await renderView(makeEntry('main'));
     await waitFor(() => expect(container.textContent).toContain('feat: human commit'));
 
-    // Exactly one AuggieAvatar (the agent commit); the human commit gets faCodeCommit.
+    // Exactly one AgentAvatar (the agent commit); the human commit gets faCodeCommit.
     expect(queryAllByTestId('mock-component')).toHaveLength(1);
     expect(container.querySelectorAll('[data-icon="code-commit"]')).toHaveLength(1);
   });

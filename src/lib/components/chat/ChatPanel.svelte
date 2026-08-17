@@ -41,6 +41,7 @@
   import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
   import { shouldHandleChatFocusRequest, type ChatFocusRequest } from './chat-focus-ownership';
   import type { AgentMessage } from '$shared/types';
+  import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import { saveAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     agentSessionDismissQuestionsRequested,
@@ -212,6 +213,11 @@
   } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
   import { selectDividerSession } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import AuroraBackground from './AuroraBackground.svelte';
+  import AuroraSofteningLayer from './AuroraSofteningLayer.svelte';
+  import {
+    CHAT_SCROLL_END_MARKER_CLASS,
+    chatTranscriptBottomInsetClass,
+  } from './chat-queue-edge-layout';
   import { invoke, listenSync } from '$lib/electron-bridge';
   import {
     selectSpecialists,
@@ -734,6 +740,13 @@
       queueLength: visibleQueuedMessages.length,
       hasPendingQuestions: !!pendingQuestions,
       questionWizardCollapsed,
+    }),
+  );
+  const transcriptBottomInsetClass = $derived(
+    chatTranscriptBottomInsetClass({
+      isChiefWorkspace,
+      isCompactMode,
+      showQueue: queuedMessagesVisibility.showQueue,
     }),
   );
 
@@ -1936,7 +1949,8 @@
 
   $effect(() => {
     const transitionWorkspaceId = workspace?.id;
-    if (!transitionWorkspaceId) return;
+    const transitionAgentId = agentId;
+    if (!transitionWorkspaceId || !transitionAgentId) return;
     return cancelAllSendTransitions;
   });
 
@@ -2462,23 +2476,7 @@
 
   function setPinnedPrompt(next: PinnedPromptState | null) {
     if (next?.id === pinnedPrompt?.id && next?.message === pinnedPrompt?.message) return;
-    const previousTurnKey = pinnedPrompt ? messageIdToTurnKey.get(pinnedPrompt.id) : undefined;
-    if (previousTurnKey) {
-      temporaryTurnMaterialization = releaseMaterializedTurn(
-        temporaryTurnMaterialization,
-        'pinned',
-        previousTurnKey,
-      );
-    }
     pinnedPrompt = next;
-    const nextTurnKey = next ? messageIdToTurnKey.get(next.id) : undefined;
-    if (nextTurnKey) {
-      temporaryTurnMaterialization = materializeTurn(
-        temporaryTurnMaterialization,
-        'pinned',
-        nextTurnKey,
-      );
-    }
   }
 
   // Track container height for compact mode using ResizeObserver
@@ -2655,7 +2653,7 @@
     const lastAgentMessage = [...messages].reverse().find((m) => m.role === 'assistant');
 
     onChatUpdate({
-      lastUserMessage: lastUserMessage ? extractAllContent(lastUserMessage) : undefined,
+      lastUserMessage: lastUserMessage ? getPresentedUserMessageText(lastUserMessage) : undefined,
       lastAgentResponse: lastAgentMessage ? extractAllContent(lastAgentMessage) : undefined,
       isProcessing: $agentIsResponding$,
       messageCount: messages.length,
@@ -3369,7 +3367,7 @@
              variant's user-row inset so the pinned bubble aligns with
              in-conversation user bubbles. -->
         <div
-          class={isChiefWorkspace ? 'px-0' : 'px-4 sm:px-6'}
+          class="mx-auto w-full min-w-0 max-w-[70em] {isChiefWorkspace ? 'px-0' : 'px-4 sm:px-6'}"
           data-testid="pinned-prompt-overlay-lane"
         >
           <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
@@ -3397,6 +3395,7 @@
         // scroll target.
         follow: shouldFollowBottom && !showSearch && $agentMessages$.length > 0,
         threshold: 100,
+        layoutNeutralBottomAnchor: true,
         onFollowChange: (f) => {
           shouldFollowBottom = f;
         },
@@ -3405,13 +3404,13 @@
       class="flex-1 overflow-y-auto"
       class:agent-font-monospace={$isAgentMonospace}
       style="scrollbar-gutter: stable; overflow-anchor: none;"
+      data-testid="chat-transcript-scroll-viewport"
     >
       <div
-        class="conversation-column flex min-h-full w-full flex-col {isChiefWorkspace
+        class="conversation-column mx-auto flex min-h-full w-full min-w-0 max-w-[70em] flex-col {isChiefWorkspace
           ? 'px-0'
-          : 'px-4 pt-2 sm:px-6'}"
-        class:pb-3={!isChiefWorkspace && isCompactMode}
-        class:pb-2={!isChiefWorkspace && !isCompactMode}
+          : 'px-4 pt-2 sm:px-6'} {transcriptBottomInsetClass}"
+        data-testid="chat-transcript-inner"
       >
         <!-- Task Assignment Pill -->
         {#if $agentTasks$.length > 0}
@@ -3574,7 +3573,7 @@
                 {/if}
                 <!-- Conversation turn container - constrains sticky behavior -->
                 <div class="conversation-turn">
-                  <div class="message-nav-target z-10 mb-9 bg-transparent">
+                  <div class="message-nav-target z-10 mb-8 bg-transparent">
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
@@ -3681,7 +3680,7 @@
                 {/if}
                 <!-- Conversation turn container - constrains sticky behavior -->
                 <div class="conversation-turn">
-                  <div class="message-nav-target z-10 mb-9">
+                  <div class="message-nav-target z-10 mb-8">
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
@@ -3885,6 +3884,7 @@
                             data-pinned-prompt-id={message.id}
                             data-message-index={globalIndex}
                             class="message-nav-target relative z-10"
+                            class:mb-3={turn.assistantMessages.length > 0}
                             class:bg-sidebar={isChiefWorkspace}
                             class:bg-card={!isChiefWorkspace}
                             use:attachPinnedPromptMessage={message}
@@ -3924,7 +3924,9 @@
                             data-pinned-prompt-id={message.id}
                             data-send-app-message-id={message.appMessageId}
                             data-message-index={globalIndex}
-                            class="message-nav-target relative z-20 mb-4"
+                            class="message-nav-target relative z-20"
+                            class:mb-6={isAutomatedMessage(message)}
+                            class:mb-8={!isAutomatedMessage(message)}
                             class:invisible={pendingSendMessageIds.has(
                               String(message.appMessageId ?? ''),
                             )}
@@ -4197,8 +4199,8 @@
           {/if}
         </div>
 
-        <!-- Scroll anchor - ensures proper scroll to absolute bottom -->
-        <div class="min-h-px min-w-6 shrink-0"></div>
+        <!-- Zero-size semantic end marker; followBottom owns exact bottom anchoring. -->
+        <div class={CHAT_SCROLL_END_MARKER_CLASS} data-testid="chat-scroll-end-marker"></div>
       </div>
     </div>
     {#if showLockConfirmation}
@@ -4222,66 +4224,77 @@
     class="conversation-composer relative z-20 w-full"
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}
+    data-testid="chat-composer-shell"
   >
     <!-- Aurora northern lights effect during streaming -->
     {#if $agentSessionIsStreaming$}
       <div
         class="absolute -inset-x-2 -bottom-2 pointer-events-none z-0 overflow-hidden"
+        data-testid="composer-aurora-host"
         transition:fade
         style="height: calc(100% + 10rem);"
       >
         <AuroraBackground {agentId} />
+        <AuroraSofteningLayer />
       </div>
     {/if}
 
-    {#if pendingQuestions}
-      {#key pendingQuestions.messageId}
-        <div class="w-full" data-testid="question-wizard-slot">
-          <QuestionWizard
-            questions={pendingQuestions.questions}
-            collapsed={questionWizardCollapsed}
-            onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
-            onComplete={handleQuestionWizardComplete}
-            onDismiss={handleQuestionWizardDismiss}
+    <div
+      class="composer-prompt-layer relative z-10 w-full border-t border-border"
+      style:padding-inline-end="{scrollbarGutterWidth}px"
+      data-testid="composer-prompt-layer"
+    >
+      <div class="mx-auto w-full min-w-0 max-w-[70em]" data-testid="chat-composer-controls-inner">
+        {#if pendingQuestions}
+          {#key pendingQuestions.messageId}
+            <div class="w-full" data-testid="question-wizard-slot">
+              <QuestionWizard
+                questions={pendingQuestions.questions}
+                collapsed={questionWizardCollapsed}
+                onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
+                onComplete={handleQuestionWizardComplete}
+                onDismiss={handleQuestionWizardDismiss}
+              />
+            </div>
+          {/key}
+        {/if}
+        {#if !pendingQuestions || questionWizardCollapsed}
+          {#if draftManager.gateVisible}
+            <ChatDraftLoadingGate />
+          {/if}
+          <SimpleRichInput
+            bind:this={inputComponent}
+            bind:contextItems
+            bind:value={inputValue}
+            onvaluechange={(value) => {
+              if (workspace?.id && agentId) {
+                appStore.dispatch(setChatDraft(workspace.id, agentId, value));
+              }
+            }}
+            onsubmit={handleSend}
+            onforcesubmit={handleForceSubmit}
+            onstop={handleStop}
+            onHistoryPrev={handleHistoryPrev}
+            onHistoryNext={handleHistoryNext}
+            disabled={!workspace || !$agentSession$}
+            inputLocked={draftManager.gateActive}
+            isStreaming={$agentSessionIsStreaming$}
+            isResponding={$agentIsResponding$}
+            {workspace}
+            currentContext={currentMainPanelContext}
+            {agentId}
+            selectedModel={hydratedInputModel}
+            compactMode={isCompactMode}
+            editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
+            contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
+            edgeDocked
+            externalDropTarget
+            requiresModelSwitchConfirmation={!canChangeProvider}
+            providerId={inputProviderId}
           />
-        </div>
-      {/key}
-    {/if}
-    {#if !pendingQuestions || questionWizardCollapsed}
-      {#if draftManager.gateVisible}
-        <ChatDraftLoadingGate />
-      {/if}
-      <SimpleRichInput
-        bind:this={inputComponent}
-        bind:contextItems
-        bind:value={inputValue}
-        onvaluechange={(value) => {
-          if (workspace?.id && agentId) {
-            appStore.dispatch(setChatDraft(workspace.id, agentId, value));
-          }
-        }}
-        onsubmit={handleSend}
-        onforcesubmit={handleForceSubmit}
-        onstop={handleStop}
-        onHistoryPrev={handleHistoryPrev}
-        onHistoryNext={handleHistoryNext}
-        disabled={!workspace || !$agentSession$}
-        inputLocked={draftManager.gateActive}
-        isStreaming={$agentSessionIsStreaming$}
-        isResponding={$agentIsResponding$}
-        {workspace}
-        currentContext={currentMainPanelContext}
-        {agentId}
-        selectedModel={hydratedInputModel}
-        compactMode={isCompactMode}
-        editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
-        contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
-        edgeDocked
-        externalDropTarget
-        requiresModelSwitchConfirmation={!canChangeProvider}
-        providerId={inputProviderId}
-      />
-    {/if}
+        {/if}
+      </div>
+    </div>
   </div>
 </div>
 
@@ -4353,6 +4366,11 @@
   /* Subtle flash animation for input when draft prompt is applied */
   .input-flash :global(.rich-input-container) {
     animation: input-flash 0.6s ease-out;
+  }
+
+  /* The full-width prompt layer owns the docked divider. */
+  .composer-prompt-layer :global(.rich-input-container) {
+    border-top-width: 0;
   }
 
   @keyframes input-flash {

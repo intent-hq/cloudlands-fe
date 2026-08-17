@@ -2,14 +2,23 @@ import { put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { m } from '$shared/paraglide/messages.js';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
+import { selectPanels, selectPendingPanelReveal } from '../../panel-layout/panel-layout-selectors';
 import {
-  openTab,
-  openTabInAdjacentOrSplit,
+  focusPanel,
   openTabInNewRootColumn,
+  setActiveTab,
+  setPanelPinned,
 } from '../../panel-layout/panel-layout-slice';
+import { selectPanelOpenMode } from '../../user-preferences/user-preferences-selectors';
 import { ensureAgentSessionLoaded } from '../../workspace-agents/workspace-agents-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
-import { openAgentTabRequested } from '../app-layout-slice';
+import { focusBrowserTabRequested, openAgentTabRequested } from '../app-layout-slice';
+
+function* pinRevealedPanel(workspaceId: string, requestId: string): SagaGenerator<void> {
+  const reveal = yield* selectPendingPanelReveal.effect(workspaceId);
+  if (reveal?.requestId !== requestId) return;
+  yield* put(setPanelPinned(workspaceId, reveal.panelId, true));
+}
 
 function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGenerator<void> {
   const [workspaceId, detail] = action.payload;
@@ -24,24 +33,48 @@ function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGe
     workspaceId,
     closable: true,
   };
+  const panelOpenMode = yield* selectPanelOpenMode.effect();
 
-  if (detail.openInNewColumn) {
-    yield* put(
-      openTabInNewRootColumn(detail.panelLayoutId ?? workspaceId, tab, {
-        availableCanvasWidth: detail.availablePanelCanvasWidth,
-        adaptiveFirstChat: detail.adaptiveFirstChat,
-        force: true,
-      }),
-    );
-    return;
+  const targetWorkspaceId = detail.openInNewColumn
+    ? (detail.panelLayoutId ?? workspaceId)
+    : workspaceId;
+  const openAction = openTabInNewRootColumn(targetWorkspaceId, tab, {
+    ...(detail.openInNewColumn
+      ? {
+          availableCanvasWidth: detail.availablePanelCanvasWidth,
+          adaptiveFirstChat: detail.adaptiveFirstChat,
+        }
+      : { sourcePanelId: detail.sourcePanelId }),
+    force: true,
+    panelOpenMode,
+  });
+  yield* put(openAction);
+  if (detail.pin === true) {
+    yield* pinRevealedPanel(targetWorkspaceId, openAction.payload.newTabId);
   }
-  if (detail.openInAdjacentPanel) {
-    yield* put(openTabInAdjacentOrSplit(workspaceId, tab, detail.sourcePanelId, { force: true }));
-    return;
+}
+
+function* focusBrowserTab(
+  action: ReturnType<typeof focusBrowserTabRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, tabId, pin] = action.payload;
+  if (!workspaceId || !tabId) return;
+  const panels = yield* selectPanels.effect(workspaceId);
+  const target = Object.entries(panels).find(([, panel]) =>
+    panel.tabs.some((tab) => tab.id === tabId && tab.type === 'browser'),
+  );
+  if (!target) return;
+
+  const [panelId] = target;
+  yield* put(setActiveTab(workspaceId, tabId, panelId));
+  const focusAction = focusPanel(workspaceId, panelId);
+  yield* put(focusAction);
+  if (pin === true) {
+    yield* pinRevealedPanel(workspaceId, focusAction.payload.requestId);
   }
-  yield* put(openTab(workspaceId, tab, detail.sourcePanelId, undefined, true));
 }
 
 export function* appLayoutNavigationSaga(): SagaGenerator<void> {
   yield* takeEvery(openAgentTabRequested, openAgentTab);
+  yield* takeEvery(focusBrowserTabRequested, focusBrowserTab);
 }

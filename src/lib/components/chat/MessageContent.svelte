@@ -139,6 +139,10 @@
   // Group content blocks by <group:Name> tags at the ContentBlock level.
   const groupedBlocks = $derived(groupContentBlocks(blocks, isStreaming));
 
+  function isVisibleOperationalBlock(block: RenderContentBlock): boolean {
+    return block.type !== 'tool_result';
+  }
+
   // Build a map of tool results from tool_result blocks, paired by
   // toolCallId ↔ tool_use_id per PROTOCOL.md §7.1, with position-based
   // fallback for error results with empty tool_use_id
@@ -619,10 +623,14 @@
   {/if}
 {/snippet}
 
-<div class="flex flex-col" style="contain: layout style paint;">
+<div class="flex flex-col gap-1" style="contain: layout style paint;" data-operational-stack>
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
     <div
-      class={getOperationalClusterSpacingClass(groupedBlocks, blockIndex)}
+      class={getOperationalClusterSpacingClass(
+        groupedBlocks,
+        blockIndex,
+        isVisibleOperationalBlock,
+      )}
       data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
       data-message-content-block={block.type}
     >
@@ -633,16 +641,37 @@
           isStreaming={group.isStreaming}
           isLast={blockIndex === groupedBlocks.length - 1}
           blocks={group.children}
+          adjacentOperationalRow={isAdjacentOperationalClusterRow(
+            groupedBlocks,
+            blockIndex,
+            isVisibleOperationalBlock,
+          )}
         >
           {#snippet children()}
             {@const childKeys = getResponseGroupBlockKeys(group.children)}
             {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-              {@render renderContentBlock(
-                childBlock,
-                `${blockIndex}-${childIndex}`,
-                blockIndex,
-                true,
-              )}
+              {#if childBlock.type !== 'tool_result'}
+                <div
+                  class={getOperationalClusterSpacingClass(
+                    group.children,
+                    childIndex,
+                    isVisibleOperationalBlock,
+                  )}
+                  data-message-content-block={childBlock.type}
+                >
+                  {@render renderContentBlock(
+                    childBlock,
+                    `${blockIndex}-${childIndex}`,
+                    blockIndex,
+                    true,
+                    isAdjacentOperationalClusterRow(
+                      group.children,
+                      childIndex,
+                      isVisibleOperationalBlock,
+                    ),
+                  )}
+                </div>
+              {/if}
             {/each}
           {/snippet}
         </ResponseGroup>
@@ -652,7 +681,7 @@
           String(blockIndex),
           blockIndex,
           false,
-          isAdjacentOperationalClusterRow(groupedBlocks, blockIndex),
+          isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleOperationalBlock),
         )}
       {/if}
     </div>

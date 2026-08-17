@@ -116,10 +116,10 @@
      destructive tokens (button/badge destructive variants). */
   .radial-cancel {
     background: var(--color-destructive, hsl(0 84% 95%));
-    color: var(--color-destructive-foreground, hsl(0 92% 30%));
+    color: var(--color-error-foreground, hsl(0 92% 30%));
     border-color: color-mix(
       in srgb,
-      var(--color-destructive-foreground, hsl(0 92% 30%)) 35%,
+      var(--color-error-foreground, hsl(0 92% 30%)) 35%,
       transparent
     );
   }

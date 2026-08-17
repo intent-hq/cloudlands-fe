@@ -22,11 +22,12 @@
   }
 
   // Mock props that would come from bits-ui MenuPrimitive.Trigger
-  const mockProps = {
+  const mockProps = $derived({
     'aria-expanded': open,
     'aria-haspopup': 'menu' as const,
     'data-state': open ? 'open' : 'closed',
-  };
+    onclick: toggle,
+  });
 
   // Handle Escape key to close dropdown (like bits-ui does)
   onMount(() => {

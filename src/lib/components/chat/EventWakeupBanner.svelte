@@ -80,8 +80,11 @@
   function localizedActivityLabel(type: string, data: Record<string, unknown>): string {
     const name = firstNonEmptyString(data.agentName, data.name, data.agentId);
     if (name) {
-      if (type === 'agent:idle' || type === 'agent:reportToParent') {
+      if (type === 'agent:idle') {
         return m.events_activity_nameFinished_label({ name });
+      }
+      if (type === 'agent:reportToParent') {
+        return m.events_activity_nameSentMessage_label({ name });
       }
       if (type === 'agent:completed') return m.events_activity_nameCompleted_label({ name });
       if (type === 'agent:failed') return m.events_activity_nameFailed_label({ name });
@@ -162,6 +165,24 @@
         : m.chat_eventWakeup_eventCount_many({ count: formatInteger(count) });
   });
 
+  const agentSummaryRoles = $derived.by((): { name: string; status: string } | null => {
+    if ((metadata?.eventCount ?? 0) !== 1) return null;
+    const event = Array.isArray(metadata?.events) ? metadata.events[0] : undefined;
+    if (!event || (event.type !== 'agent:idle' && event.type !== 'agent:reportToParent')) {
+      return null;
+    }
+    const data = 'data' in event ? event.data : event;
+    const name = firstNonEmptyString(data.agentName);
+    if (!name) return null;
+    return {
+      name,
+      status:
+        event.type === 'agent:reportToParent'
+          ? m.chat_msgAttribution_sentMessage_after()
+          : m.events_activity_partFinished_label().trim(),
+    };
+  });
+
   // Parse event details from message text
   interface ParsedEvent {
     type: string;
@@ -191,6 +212,16 @@
 
   function isAgentIdentityEvent(type: string): boolean {
     return type === 'agent:idle' || type === 'agent:reportToParent' || type === 'agent:created';
+  }
+
+  function isAgentCompletionEvent(type: string): boolean {
+    return type === 'agent:idle' || type === 'agent:reportToParent';
+  }
+
+  function agentStatusLabel(type: string): string {
+    return type === 'agent:reportToParent'
+      ? m.chat_msgAttribution_sentMessage_after()
+      : m.events_activity_partFinished_label().trim();
   }
 
   const eventDetails = $derived.by((): EventDetail[] => {
@@ -367,10 +398,7 @@
     {#if showSummary || (showAgentCards && agentEvents.length > 0)}
       <div class="relative w-full min-w-0 max-w-full overflow-hidden">
         {#if showSummary}
-          <div
-            class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} font-medium text-muted-foreground"
-            data-testid="event-wakeup-header"
-          >
+          <div class={SUBSCRIPTION_DISCLOSURE_ROW_CLASS} data-testid="event-wakeup-header">
             {#if showAgentCards && agentEvents.length > 0}
               <div
                 class="event-wakeup-avatar-stack flex min-w-0 shrink items-center overflow-hidden"
@@ -411,15 +439,37 @@
               onclick={() => (detailsOpen = !detailsOpen)}
               data-testid="event-wakeup-summary"
             >
-              <span class="min-w-0 flex-1 truncate" title={friendlySummary} aria-hidden="true"
-                >{friendlySummary}</span
-              >
+              {#if agentSummaryRoles}
+                <span
+                  class="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden"
+                  title={friendlySummary}
+                  aria-hidden="true"
+                >
+                  <strong
+                    class="type-body min-w-0 truncate font-normal text-muted-foreground"
+                    data-testid="event-wakeup-agent-name"
+                  >
+                    {agentSummaryRoles.name}
+                  </strong>
+                  <span
+                    class="type-body min-w-0 shrink truncate font-normal text-muted-foreground"
+                    data-testid="event-wakeup-status"
+                  >
+                    {agentSummaryRoles.status}
+                  </span>
+                </span>
+              {:else}
+                <span class="min-w-0 flex-1 truncate" title={friendlySummary} aria-hidden="true"
+                  >{friendlySummary}</span
+                >
+              {/if}
               <span
                 class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
                 data-testid="event-wakeup-chevron-column"
               >
                 <Fa
                   icon={faChevronDown}
+                  size={16}
                   class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {detailsOpen
                     ? ''
                     : 'rotate-90'}"
@@ -446,27 +496,42 @@
                       data-event-detail-key={event.key}
                       transition:safeSubscriptionRowTransition
                     >
-                      {#if !usesHeaderAgentIdentity(event) || event.timestamp}
-                        <div
-                          class="type-caption flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-subtle"
-                        >
-                          {#if !usesHeaderAgentIdentity(event)}
-                            <span class="font-medium text-primary">{event.label}</span>
+                      {#if !usesHeaderAgentIdentity(event)}
+                        <div class="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+                          {#if event.agentName && isAgentCompletionEvent(event.type)}
+                            <strong
+                              class="type-body min-w-0 break-words font-medium text-foreground [overflow-wrap:anywhere]"
+                            >
+                              {event.agentName}
+                            </strong>
+                            <span class="type-caption font-normal text-muted-foreground">
+                              {agentStatusLabel(event.type)}
+                            </span>
+                          {:else}
+                            <span class="type-caption font-medium text-primary">{event.label}</span>
                             {#if event.agentName}
-                              <span class="min-w-0 break-words [overflow-wrap:anywhere]">
+                              <span
+                                class="type-caption min-w-0 break-words font-normal text-muted-foreground [overflow-wrap:anywhere]"
+                              >
                                 {event.agentName}
                               </span>
                             {/if}
                           {/if}
-                          {#if event.timestamp}
-                            <time class="shrink-0" datetime={event.datetime}>{event.timestamp}</time
-                            >
-                          {/if}
                         </div>
+                      {/if}
+                      {#if event.timestamp}
+                        <time
+                          class="type-caption mt-0.5 block w-fit tabular-nums font-normal text-subtle"
+                          datetime={event.datetime}
+                          data-testid="event-wakeup-timestamp"
+                        >
+                          {event.timestamp}
+                        </time>
                       {/if}
                       {#if event.summary}
                         <p
-                          class="type-caption mt-0.5 max-w-full whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]"
+                          class="type-body mt-1.5 w-full max-w-[68ch] whitespace-pre-wrap font-normal text-foreground [overflow-wrap:anywhere]"
+                          data-testid="event-wakeup-report"
                         >
                           {event.summary}
                         </p>

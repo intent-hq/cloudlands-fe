@@ -35,10 +35,9 @@
 >
   <div class="test-surface" data-testid="outside-area" style="min-height: 400px; background: var(--color-background); padding: 100px 20px;">
     <DropdownMenu bind:open align="end" portal={true} side="bottom">
-      {#snippet trigger({ toggle, props })}
+      {#snippet trigger({ props })}
         <button
           type="button"
-          onclick={toggle}
           data-testid="files-open-in-trigger"
           class="trigger-button"
           {...props}

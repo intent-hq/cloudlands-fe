@@ -193,7 +193,7 @@
   import { faNote } from '$lib/icons/faNote';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import InlineDiffItem from './InlineDiffItem.svelte';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
   import { safeSlide } from '$lib/utils/animations';
   import { onDestroy, tick, untrack } from 'svelte';
@@ -2829,7 +2829,7 @@
                 title={m.chat_changesPanel_openAgent_title()}
               >
                 <span class="shrink-0">
-                  <AuggieAvatar agentId={displayAgentId ?? undefined} size={14} />
+                  <AgentAvatar agentId={displayAgentId ?? undefined} size={14} />
                 </span>
                 <span class="truncate">{agentName}</span>
               </button>

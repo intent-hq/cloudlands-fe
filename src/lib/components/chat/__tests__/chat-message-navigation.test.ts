@@ -75,29 +75,30 @@ describe('chat user-message navigation', () => {
     );
   });
 
-  it('strips the exact system-note marker and suffix from previews without changing source data', () => {
-    const source = message(
-      'system-note',
-      'user',
-      'Keep this prompt\n\n[SYSTEM NOTE] This internal suffix must not appear',
-    );
+  it('strips exact trailing delivery notes without changing source data', () => {
+    const note =
+      '[SYSTEM NOTE] This message was queued at 2026-01-01T00:00:00Z and waited 8s before delivery.';
+    const source = message('system-note', 'user', `Keep this prompt\n\n${note}`);
     expect(getPlainTextMessagePreview(source)).toBe('Keep this prompt');
     expect(getUserMessageNavigationItems([source])).toEqual([
       { id: 'system-note', text: 'Keep this prompt' },
     ]);
     expect(source.contentBlocks[0]).toEqual({
       type: 'text',
-      text: 'Keep this prompt\n\n[SYSTEM NOTE] This internal suffix must not appear',
+      text: `Keep this prompt\n\n${note}`,
     });
   });
 
-  it('omits user rows that are empty after system-note stripping', () => {
+  it('preserves arbitrary authored system-note literals', () => {
     expect(
       getUserMessageNavigationItems([
-        message('empty-system-note', 'user', '[SYSTEM NOTE] Internal suffix only'),
+        message('authored-system-note', 'user', '[SYSTEM NOTE] Internal suffix only'),
         message('similar-marker', 'user', '[System Note] Keep this differently-cased text'),
       ]),
-    ).toEqual([{ id: 'similar-marker', text: '[System Note] Keep this differently-cased text' }]);
+    ).toEqual([
+      { id: 'authored-system-note', text: '[SYSTEM NOTE] Internal suffix only' },
+      { id: 'similar-marker', text: '[System Note] Keep this differently-cased text' },
+    ]);
   });
 
   it('keeps stable message order, deduplicates IDs, and keeps repeated content', () => {

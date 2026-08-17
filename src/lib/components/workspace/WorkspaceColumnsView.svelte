@@ -7,6 +7,7 @@
   import ParkedWorkspaceSurface from './ParkedWorkspaceSurface.svelte';
   import { getWorkspaceViewTransitionName } from './workspace-view-transition';
   import ResizablePanelGroup from '$lib/components/layout/ResizablePanelGroup.svelte';
+  import PanelNavigator from '$lib/components/layout/panel-system/PanelNavigator.svelte';
   import { resize } from '$lib/components/layout/size-transition';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -21,13 +22,16 @@
     selectWorkspaceStacks,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
-    selectFocusedPanelTargetsByWorkspaceId,
     selectPanelCanvasWidthsByWorkspaceId,
     selectPanelColumnCountsByWorkspaceId,
+    selectPanelNavigatorItemsByWorkspaceId,
     selectPanelRevealRequestsByWorkspaceId,
     selectPanelTabCountsByWorkspaceId,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import { consumePanelReveal } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import {
+    consumePanelReveal,
+    focusPanel,
+  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import {
     findAdjacentWorkspaceWithPanels,
     type PanelCycleBoundaryTarget,
@@ -43,9 +47,12 @@
     type WorkspaceDragPlacement,
   } from './utils/workspace-drag-placement';
   import {
+    findWorkspaceColumn,
+    findWorkspacePanel,
     scrollWorkspaceColumnIntoView,
     scrollWorkspacePanelIntoView,
   } from './utils/workspace-column-scroll';
+  import { createLayoutStableRevealScheduler } from './utils/layout-stable-reveal';
   import { isFocusInEditableElement } from '$lib/utils/keyboardShortcuts';
   import AllWorkspacesCard from '$lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte';
   import { CONTAINED_PANEL_INLINE_CHROME } from '$shared/panel-layout-sizing';
@@ -59,32 +66,40 @@
     selectResizablePanelSizes,
   } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { resolveLiveWorkspaceIds } from './workspace-surface-window';
+  import {
+    observeWorkspaceColumnsOverlap,
+    type WorkspaceColumnsOverlapObserver,
+  } from './workspace-columns-overlap';
+
+  interface Props {
+    onHorizontalOverlapChange?: (overlap: boolean) => void;
+  }
+
+  let { onHorizontalOverlapChange = () => {} }: Props = $props();
 
   const currentWorkspaceId$ = selectCurrentWorkspaceTabId();
   const workspaceStacks$ = selectWorkspaceStacks();
   const panelCanvasWidthsByWorkspaceId$ = selectPanelCanvasWidthsByWorkspaceId();
   const panelColumnCountsByWorkspaceId$ = selectPanelColumnCountsByWorkspaceId();
   const panelTabCountsByWorkspaceId$ = selectPanelTabCountsByWorkspaceId();
-  const focusedPanelTargetsByWorkspaceId$ = selectFocusedPanelTargetsByWorkspaceId();
+  const panelNavigatorItemsByWorkspaceId$ = selectPanelNavigatorItemsByWorkspaceId();
   const resizablePanelSizes$ = selectResizablePanelSizes();
   const hydratedResizablePanelSizes$ = selectHydratedResizablePanelSizes();
   const panelRevealRequestsByWorkspaceId$ = selectPanelRevealRequestsByWorkspaceId();
   const workspaceItems$ = selectWorkspaceItems();
   const workspaceTabStatuses$ = selectWorkspaceTabStatuses();
-  const LAYOUT_WIDTH_SETTLE_MS = 340;
   let sidebarWidths = $state<Record<string, number>>({});
   let livePanelCanvasWidths = $state<Record<string, number>>({});
   let columnsScroller = $state<HTMLDivElement | null>(null);
+  let navigatorPanelRoot = $state<HTMLElement | null>(null);
+  let overlapObserver: WorkspaceColumnsOverlapObserver | null = null;
   let panelPreviewWidthRatios = $state<Record<string, number>>({});
   let draggedWorkspaceId = $state<string | null>(null);
   let dragOverWorkspaceId = $state<string | null>(null);
   let dragOverPlacement = $state<WorkspaceDragPlacement | null>(null);
   let lifecycleMotionReady = $state(false);
   let lastScrolledWorkspaceId: string | null = null;
-  let previousPanelColumnCounts: Record<string, number> = {};
-  let panelColumnCountsInitialized = false;
-  let revealFrame: number | null = null;
-  let revealSettleTimer: ReturnType<typeof setTimeout> | null = null;
+  const layoutRevealScheduler = createLayoutStableRevealScheduler();
   const requestedSidebarWidthKeys = new Set<string>();
   const layoutMotionDuration = $derived(lifecycleMotionReady ? 180 : 0);
   const openWorkspaceIds = $derived($workspaceStacks$.flat());
@@ -114,8 +129,6 @@
   let visibilityMeasurementFrame: number | null = null;
   let visibleStackKeys = $state<string[]>([]);
   let materializingWorkspaceId = $state<string | null>(null);
-  const panelRevealFrames = new Map<string, number>();
-  const panelRevealSettleTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const workspaceById = $derived(
     new Map($workspaceItems$.map((workspace) => [String(workspace.id), workspace])),
   );
@@ -127,6 +140,26 @@
       materializingWorkspaceId,
     ),
   );
+  const currentPanelNavigatorItems = $derived(
+    ($panelNavigatorItemsByWorkspaceId$[$currentWorkspaceId$ ?? ''] ?? []).map((panel) => ({
+      ...panel,
+      title: panel.title || m.layout_panelEmptyState_newPanel_label(),
+    })),
+  );
+
+  $effect(() => {
+    const workspaceId = $currentWorkspaceId$;
+    const scroller = columnsScroller;
+    void currentPanelNavigatorItems;
+    if (!workspaceId || !scroller) {
+      navigatorPanelRoot = null;
+      return;
+    }
+    void tick().then(() => {
+      if (columnsScroller !== scroller || $currentWorkspaceId$ !== workspaceId) return;
+      navigatorPanelRoot = findWorkspaceColumn(scroller, workspaceId);
+    });
+  });
 
   function measureVisibleWorkspaceStacks() {
     const scroller = columnsScroller;
@@ -156,58 +189,67 @@
     });
   }
 
+  function handleColumnsScroll() {
+    overlapObserver?.measure();
+    scheduleVisibleWorkspaceStackMeasurement();
+  }
+
   onMount(() => {
     measureVisibleWorkspaceStacks();
     const scroller = columnsScroller;
-    if (!scroller || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(scheduleVisibleWorkspaceStackMeasurement);
-    observer.observe(scroller);
-    return () => observer.disconnect();
+    if (!scroller) return;
+    overlapObserver = observeWorkspaceColumnsOverlap(scroller, onHorizontalOverlapChange);
+    if (typeof ResizeObserver === 'undefined') return () => overlapObserver?.destroy();
+    const visibilityObserver = new ResizeObserver(scheduleVisibleWorkspaceStackMeasurement);
+    visibilityObserver.observe(scroller);
+    return () => {
+      visibilityObserver.disconnect();
+      overlapObserver?.destroy();
+      overlapObserver = null;
+    };
   });
 
   $effect(() => {
     void $workspaceStacks$;
     if (!columnsScroller) return;
     scheduleVisibleWorkspaceStackMeasurement();
+    void tick().then(() => overlapObserver?.measure());
   });
 
   $effect(() => {
     const requests = $panelRevealRequestsByWorkspaceId$;
     const scroller = columnsScroller;
-    if (!scroller) return;
-    for (const [workspaceId, request] of Object.entries(requests)) {
-      if (
-        panelRevealFrames.has(request.requestId) ||
-        panelRevealSettleTimers.has(request.requestId)
-      )
-        continue;
-      materializingWorkspaceId = workspaceId;
-      panelRevealFrames.set(request.requestId, -1);
-      void tick().then(() => {
-        const latest = $panelRevealRequestsByWorkspaceId$[workspaceId];
-        if (latest?.requestId !== request.requestId || columnsScroller !== scroller) {
-          panelRevealFrames.delete(request.requestId);
-          if (!latest && materializingWorkspaceId === workspaceId) materializingWorkspaceId = null;
-          return;
-        }
-        scheduleRevealAfterLayout(
-          (behavior) => {
-            const current = $panelRevealRequestsByWorkspaceId$[workspaceId];
-            if (current?.requestId !== request.requestId || columnsScroller !== scroller) {
-              if (!current && materializingWorkspaceId === workspaceId)
-                materializingWorkspaceId = null;
-              return;
-            }
-            scrollWorkspacePanelIntoView(scroller, workspaceId, request.panelId, behavior);
-            appStore.dispatch(consumePanelReveal(workspaceId, request.requestId));
-            if (materializingWorkspaceId === workspaceId) materializingWorkspaceId = null;
-          },
-          undefined,
-          true,
-          request.requestId,
-        );
-      });
+    const entries = Object.entries(requests);
+    if (!scroller || entries.length === 0) {
+      layoutRevealScheduler.cancel();
+      if (entries.length === 0) materializingWorkspaceId = null;
+      return;
     }
+    const [workspaceId, request] =
+      entries.find(([candidateId]) => candidateId === $currentWorkspaceId$) ?? entries.at(-1)!;
+    materializingWorkspaceId = workspaceId;
+    void tick().then(() => {
+      const isCurrent = () =>
+        columnsScroller === scroller &&
+        $panelRevealRequestsByWorkspaceId$[workspaceId]?.requestId === request.requestId;
+      if (!isCurrent()) return;
+      scheduleRevealAfterLayout(
+        () => findWorkspacePanel(scroller, workspaceId, request.panelId),
+        (behavior) => {
+          if (!isCurrent()) return;
+          scrollWorkspacePanelIntoView(scroller, workspaceId, request.panelId, behavior);
+          appStore.dispatch(consumePanelReveal(workspaceId, request.requestId));
+          if (materializingWorkspaceId === workspaceId) materializingWorkspaceId = null;
+        },
+        undefined,
+        isCurrent,
+        () => {
+          if (!isCurrent()) return;
+          appStore.dispatch(consumePanelReveal(workspaceId, request.requestId));
+          if (materializingWorkspaceId === workspaceId) materializingWorkspaceId = null;
+        },
+      );
+    });
   });
 
   onMount(() => {
@@ -250,7 +292,7 @@
       );
       if (targetWorkspaceId) {
         activateWorkspace(targetWorkspaceId);
-        scheduleWorkspaceReveal(targetWorkspaceId, 'start', 'smooth', false);
+        scheduleWorkspaceReveal(targetWorkspaceId, 'start', 'smooth');
       }
     };
 
@@ -259,45 +301,26 @@
       window.removeEventListener('keydown', handleWorkspaceColumnShortcut, { capture: true });
   });
 
-  function cancelPendingReveal() {
-    if (revealFrame !== null) cancelAnimationFrame(revealFrame);
-    if (revealSettleTimer !== null) clearTimeout(revealSettleTimer);
-    revealFrame = null;
-    revealSettleTimer = null;
-  }
-
   function scheduleRevealAfterLayout(
+    resolveTarget: () => HTMLElement | null,
     reveal: (behavior: ScrollBehavior) => void,
     behaviorOverride?: ScrollBehavior,
-    waitForLayout = true,
-    requestId?: string,
+    isCurrent: () => boolean = () => true,
+    onTargetRemoved?: () => void,
   ) {
     const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const behavior: ScrollBehavior = prefersReducedMotion
       ? 'auto'
       : (behaviorOverride ?? (lifecycleMotionReady ? 'smooth' : 'auto'));
-    const settleDelay = waitForLayout && layoutMotionDuration > 0 ? LAYOUT_WIDTH_SETTLE_MS : 0;
-
-    if (requestId) {
-      const frame = requestAnimationFrame(() => {
-        panelRevealFrames.delete(requestId);
-        const timer = setTimeout(() => {
-          panelRevealSettleTimers.delete(requestId);
-          reveal(behavior);
-        }, settleDelay);
-        panelRevealSettleTimers.set(requestId, timer);
-      });
-      panelRevealFrames.set(requestId, frame);
-      return;
-    }
-
-    cancelPendingReveal();
-    revealFrame = requestAnimationFrame(() => {
-      revealFrame = null;
-      revealSettleTimer = setTimeout(() => {
-        reveal(behavior);
-        revealSettleTimer = null;
-      }, settleDelay);
+    layoutRevealScheduler.schedule({
+      resolveElements: () => {
+        const container = columnsScroller;
+        const target = resolveTarget();
+        return container && target ? { container, target } : null;
+      },
+      isCurrent,
+      reveal: () => reveal(behavior),
+      onTargetRemoved,
     });
   }
 
@@ -305,7 +328,6 @@
     workspaceId: string,
     inline: ScrollLogicalPosition = 'nearest',
     behavior?: ScrollBehavior,
-    waitForLayout = true,
   ) {
     const scroller = columnsScroller;
     if (!scroller) return;
@@ -314,12 +336,13 @@
     void tick().then(() => {
       if (columnsScroller !== scroller || lastScrolledWorkspaceId !== workspaceId) return;
       scheduleRevealAfterLayout(
+        () => findWorkspaceColumn(scroller, workspaceId),
         (resolvedBehavior) => {
           if (columnsScroller !== scroller || lastScrolledWorkspaceId !== workspaceId) return;
           scrollWorkspaceColumnIntoView(scroller, workspaceId, resolvedBehavior, inline);
         },
         behavior,
-        waitForLayout,
+        () => columnsScroller === scroller && lastScrolledWorkspaceId === workspaceId,
       );
     });
   }
@@ -332,45 +355,9 @@
     scheduleWorkspaceReveal(workspaceId);
   });
 
-  $effect(() => {
-    const counts = $panelColumnCountsByWorkspaceId$;
-    const workspaceId = $currentWorkspaceId$;
-    const previousCount = workspaceId ? (previousPanelColumnCounts[workspaceId] ?? 0) : 0;
-    const nextCount = workspaceId ? (counts[workspaceId] ?? 0) : 0;
-    previousPanelColumnCounts = { ...counts };
-
-    if (!panelColumnCountsInitialized) {
-      panelColumnCountsInitialized = true;
-      return;
-    }
-    if (!workspaceId || nextCount <= previousCount) return;
-
-    const panelId = $focusedPanelTargetsByWorkspaceId$[workspaceId]?.panelId;
-    const scroller = columnsScroller;
-    if (!panelId || !scroller) return;
-
-    void tick().then(() => {
-      if (
-        columnsScroller !== scroller ||
-        $currentWorkspaceId$ !== workspaceId ||
-        ($panelColumnCountsByWorkspaceId$[workspaceId] ?? 0) < nextCount
-      ) {
-        return;
-      }
-      scheduleRevealAfterLayout((behavior) => {
-        if (columnsScroller !== scroller || $currentWorkspaceId$ !== workspaceId) return;
-        scrollWorkspacePanelIntoView(scroller, workspaceId, panelId, behavior);
-      });
-    });
-  });
-
   onDestroy(() => {
-    cancelPendingReveal();
+    layoutRevealScheduler.cancel();
     if (visibilityMeasurementFrame !== null) cancelAnimationFrame(visibilityMeasurementFrame);
-    for (const frame of panelRevealFrames.values()) if (frame >= 0) cancelAnimationFrame(frame);
-    for (const timer of panelRevealSettleTimers.values()) clearTimeout(timer);
-    panelRevealFrames.clear();
-    panelRevealSettleTimers.clear();
   });
 
   function updateSidebarWidth(workspaceId: string, width: number) {
@@ -408,6 +395,12 @@
     materializingWorkspaceId = workspaceId;
     appStore.dispatch(openWorkspaceTab(workspaceId));
     void goto(`/workspace/${workspaceId}`);
+  }
+
+  function activatePanelFromNavigator(panelId: string) {
+    const workspaceId = $currentWorkspaceId$;
+    if (!workspaceId) return;
+    appStore.dispatch(focusPanel(workspaceId, panelId));
   }
 
   function handlePanelCycleBoundary(
@@ -514,7 +507,7 @@
 
 {#snippet workspaceColumn(workspaceId: string)}
   <section
-    class="relative h-full min-h-0 w-full overflow-hidden rounded-lg bg-sidebar shadow-md transition-[opacity,transform,box-shadow] duration-(--motion-fast) {draggedWorkspaceId ===
+    class="relative h-full min-h-0 w-full overflow-hidden rounded-xl border border-border bg-sidebar shadow-sm transition-[opacity,transform,box-shadow] duration-(--motion-fast) {draggedWorkspaceId ===
     workspaceId
       ? 'scale-[0.99] opacity-50 shadow-none'
       : ''}"
@@ -589,77 +582,89 @@
   </div>
 {/snippet}
 
-<div
-  bind:this={columnsScroller}
-  class="scrollbar-none h-full min-h-0 w-full overflow-x-auto overflow-y-hidden bg-transparent"
-  aria-label={m.workspace_columns_openSpaces_ariaLabel()}
-  data-workspace-columns
-  data-sidebar-widths-ready={sidebarWidthsReady}
-  onscroll={scheduleVisibleWorkspaceStackMeasurement}
->
-  <div class="flex h-full min-h-0 w-max min-w-full gap-2 pl-2 pr-2 pt-2">
-    {#if sidebarWidthsReady}
-      {#each $workspaceStacks$ as stack (stack[0])}
-        {@const stackWidth = Math.max(
-          ...stack.map((workspaceId) => {
-            const panelCount = $panelColumnCountsByWorkspaceId$[workspaceId] ?? 0;
-            const panelCanvasWidth =
-              livePanelCanvasWidths[workspaceId] ??
-              $panelCanvasWidthsByWorkspaceId$[workspaceId] ??
-              480;
-            return (
-              getSidebarWidth(workspaceId) +
-              (panelCount > 0
-                ? panelCanvasWidth * (panelPreviewWidthRatios[workspaceId] ?? 1) +
-                  CONTAINED_PANEL_INLINE_CHROME
-                : 0)
-            );
-          }),
-        )}
-        <div
-          class="h-full min-h-0 shrink-0"
-          style:width={`${stackWidth}px`}
-          data-workspace-stack={stack.join(',')}
-          data-workspace-stack-key={stack[0]}
-          animate:flip={{ duration: layoutMotionDuration, easing: cubicOut }}
-          transition:resize={{ axis: 'x', duration: layoutMotionDuration }}
-        >
-          {#if stack.length > 1}
-            <div class="h-full min-h-0 w-full" data-workspace-stack-resize-group>
-              <ResizablePanelGroup
-                panels={stack.map((workspaceId) => ({ id: workspaceId, minSize: 180 }))}
-                orientation="vertical"
-                storageKey={`workspace-stack-heights:${stack.join(':')}`}
-                className="h-full min-h-0"
-              >
-                {#snippet children(panel, index)}
-                  {@render resizableWorkspaceStackItem(panel.id, index, stack.length)}
-                {/snippet}
-              </ResizablePanelGroup>
-            </div>
-          {:else}
-            {@render resizableWorkspaceStackItem(stack[0], 0, 1)}
-          {/if}
-        </div>
-      {/each}
-    {/if}
-    <aside
-      class="flex h-full min-h-0 w-90 shrink-0 overflow-y-auto px-4 py-10"
-      aria-label={m.layout_sidebarNav_allWorkspaces_title()}
-      data-workspace-directory-column
-    >
-      <section class="my-auto w-full max-w-sm" data-workspace-directory-content>
-        <AllWorkspacesCard
-          recentsOnly
-          recentLimit={3}
-          searchRecents
-          expandableRecents
-          excludedWorkspaceIds={$workspaceStacks$.flat()}
-          showLoadingText={false}
-        />
-      </section>
-    </aside>
+<div class="relative h-full min-h-0 w-full">
+  <div
+    bind:this={columnsScroller}
+    class="scrollbar-none h-full min-h-0 w-full overflow-x-auto overflow-y-hidden bg-transparent"
+    aria-label={m.workspace_columns_openSpaces_ariaLabel()}
+    data-workspace-columns
+    data-sidebar-widths-ready={sidebarWidthsReady}
+    onscroll={handleColumnsScroll}
+  >
+    <div class="flex h-full min-h-0 w-max min-w-full gap-3 p-2">
+      {#if sidebarWidthsReady}
+        {#each $workspaceStacks$ as stack (stack[0])}
+          {@const stackWidth = Math.max(
+            ...stack.map((workspaceId) => {
+              const panelCount = $panelColumnCountsByWorkspaceId$[workspaceId] ?? 0;
+              const panelCanvasWidth =
+                livePanelCanvasWidths[workspaceId] ??
+                $panelCanvasWidthsByWorkspaceId$[workspaceId] ??
+                480;
+              return (
+                getSidebarWidth(workspaceId) +
+                (panelCount > 0
+                  ? panelCanvasWidth * (panelPreviewWidthRatios[workspaceId] ?? 1) +
+                    CONTAINED_PANEL_INLINE_CHROME
+                  : 0)
+              );
+            }),
+          )}
+          <div
+            class="h-full min-h-0 shrink-0"
+            style:width={`${stackWidth}px`}
+            data-workspace-stack={stack.join(',')}
+            data-workspace-stack-key={stack[0]}
+            animate:flip={{ duration: layoutMotionDuration, easing: cubicOut }}
+            transition:resize={{ axis: 'x', duration: layoutMotionDuration }}
+          >
+            {#if stack.length > 1}
+              <div class="h-full min-h-0 w-full" data-workspace-stack-resize-group>
+                <ResizablePanelGroup
+                  panels={stack.map((workspaceId) => ({ id: workspaceId, minSize: 180 }))}
+                  orientation="vertical"
+                  storageKey={`workspace-stack-heights:${stack.join(':')}`}
+                  className="h-full min-h-0"
+                >
+                  {#snippet children(panel, index)}
+                    {@render resizableWorkspaceStackItem(panel.id, index, stack.length)}
+                  {/snippet}
+                </ResizablePanelGroup>
+              </div>
+            {:else}
+              {@render resizableWorkspaceStackItem(stack[0], 0, 1)}
+            {/if}
+          </div>
+        {/each}
+      {/if}
+      <aside
+        class="flex h-full min-h-0 w-90 shrink-0 overflow-y-auto px-4 py-10"
+        aria-label={m.layout_sidebarNav_allWorkspaces_title()}
+        data-workspace-directory-column
+      >
+        <section class="my-auto w-full max-w-sm" data-workspace-directory-content>
+          <AllWorkspacesCard
+            recentsOnly
+            recentLimit={3}
+            searchRecents
+            expandableRecents
+            excludedWorkspaceIds={$workspaceStacks$.flat()}
+            showLoadingText={false}
+          />
+        </section>
+      </aside>
+    </div>
   </div>
+  {#if currentPanelNavigatorItems.length >= 2}
+    <PanelNavigator
+      panels={currentPanelNavigatorItems}
+      viewport={columnsScroller}
+      panelRoot={navigatorPanelRoot}
+      ariaLabel={m.layout_panelLayout_ariaLabel()}
+      onActivate={activatePanelFromNavigator}
+      class="absolute inset-x-3 bottom-3 z-50"
+    />
+  {/if}
 </div>
 
 <style>

@@ -1,12 +1,12 @@
 /**
  * Tests for WorkspaceCard idle activity behavior.
  *
- * Verifies that compact workspace rows communicate activity through the
- * phase indicator without rendering a noisy inline agent avatar/count cluster.
+ * Verifies that compact workspace rows use the shared workspace status
+ * indicator without rendering local status dots or agent clusters.
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatus } from '$shared/types';
 import {
@@ -75,13 +75,14 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     activity: 'idle',
+    displayStatus: 'idle',
     agentSummary: { agentIds: [], hasActiveAgents: false },
     ...overrides,
   } as Workspace;
 }
 
 describe('WorkspaceCard compact agent metadata', () => {
-  it('does not render inline agent metadata when workspace.activity === "agent_running"', () => {
+  it('uses the daemon display status without inferring state from activity', () => {
     const wsId = createTestWorkspaceId();
     const agentId = createTestAgentId();
     const workspace = makeWorkspace({
@@ -96,116 +97,31 @@ describe('WorkspaceCard compact agent metadata', () => {
 
     expect(container.querySelector('[data-workspace-card-agents]')).toBeNull();
     expect(container.querySelector('[data-testid="mock-avatar"]')).toBeNull();
+    expect(container.querySelectorAll('[data-workspace-status]')).toHaveLength(1);
+    expect(container.querySelector('[data-workspace-status="idle"]')).toBeTruthy();
   });
 
-  it('uses the workspace unread marker without rendering inline agent metadata', () => {
-    const wsId = createTestWorkspaceId();
-    const agentId = createTestAgentId();
-    const workspace = makeWorkspace({
-      id: wsId,
-      activity: 'idle',
-      agentSummary: { agentIds: [agentId], hasActiveAgents: false },
-    });
+  it('updates the same shared icon through unread, waiting, running, and blocked states', async () => {
+    const workspace = makeWorkspace({ attention: 'unread', waiting: true });
+    const { container, rerender } = render(WorkspaceCard, { props: { workspace } });
+    const icon = container.querySelector('[data-workspace-status]');
 
-    const { container } = render(WorkspaceCard, {
-      props: {
-        workspace,
-        streamingAgentIds: [],
-        isRunning: false,
-        isUnread: true,
-      },
-    });
+    expect(icon?.getAttribute('data-workspace-status')).toBe('unread');
+    expect(container.querySelectorAll('[data-workspace-status]')).toHaveLength(1);
 
-    expect(container.querySelector('.bg-info')).toBeTruthy();
-    expect(container.querySelector('[data-workspace-card-agents]')).toBeNull();
-    expect(container.querySelector('[data-testid="mock-avatar"]')).toBeNull();
-  });
+    await rerender({ workspace: makeWorkspace({ waiting: true }) });
+    expect(container.querySelector('[data-workspace-status]')).toBe(icon);
+    expect(icon?.getAttribute('data-workspace-status')).toBe('waiting');
 
-  it('renders a static muted waiting dot that loses to running and unread', () => {
-    const workspace = makeWorkspace();
-    const waitingDotSelector = '[class*="bg-muted-foreground/60"]';
+    await rerender({ workspace: makeWorkspace({ displayStatus: 'in_progress', waiting: true }) });
+    expect(container.querySelector('[data-workspace-status]')).toBe(icon);
+    expect(icon?.getAttribute('data-workspace-status')).toBe('in_progress');
+    expect(icon?.getAttribute('data-workspace-status-icon')).toBe('circle');
 
-    const waiting = render(WorkspaceCard, {
-      props: { workspace, isWaiting: true },
-    });
-    const waitingDot = waiting.container.querySelector(waitingDotSelector);
-    expect(waitingDot).toBeTruthy();
-    expect(waitingDot?.className).not.toContain('animate-pulse');
-    expect(waiting.container.querySelector('.bg-success')).toBeNull();
-    expect(waiting.container.querySelector('.bg-info')).toBeNull();
-    waiting.unmount();
-
-    const running = render(WorkspaceCard, {
-      props: { workspace, isWaiting: true, isRunning: true },
-    });
-    expect(running.container.querySelector('.bg-success')).toBeTruthy();
-    expect(running.container.querySelector(waitingDotSelector)).toBeNull();
-    running.unmount();
-
-    const unread = render(WorkspaceCard, {
-      props: { workspace, isWaiting: true, isUnread: true },
-    });
-    expect(unread.container.querySelector('.bg-info')).toBeTruthy();
-    expect(unread.container.querySelector(waitingDotSelector)).toBeNull();
-    unread.unmount();
-  });
-
-  it('derives the waiting dot from workspace.waiting when isWaiting is not passed', () => {
-    const waitingDotSelector = '[class*="bg-muted-foreground/60"]';
-
-    // No prop: the BE-sent flag drives the dot on every card surface.
-    const derived = render(WorkspaceCard, {
-      props: { workspace: makeWorkspace({ waiting: true }) },
-    });
-    const derivedDot = derived.container.querySelector(waitingDotSelector);
-    expect(derivedDot).toBeTruthy();
-    expect(derivedDot?.className).not.toContain('animate-pulse');
-    derived.unmount();
-
-    // Flag absent (older daemons omit it): no dot.
-    const notWaiting = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
-    expect(notWaiting.container.querySelector(waitingDotSelector)).toBeNull();
-    notWaiting.unmount();
-
-    // Explicit prop overrides the flag in both directions.
-    const suppressed = render(WorkspaceCard, {
-      props: { workspace: makeWorkspace({ waiting: true }), isWaiting: false },
-    });
-    expect(suppressed.container.querySelector(waitingDotSelector)).toBeNull();
-    suppressed.unmount();
-
-    const forced = render(WorkspaceCard, {
-      props: { workspace: makeWorkspace(), isWaiting: true },
-    });
-    expect(forced.container.querySelector(waitingDotSelector)).toBeTruthy();
-    forced.unmount();
-  });
-
-  it('suppresses the derived waiting dot under running/unread precedence and keeps it on pinned rows', () => {
-    const waitingDotSelector = '[class*="bg-muted-foreground/60"]';
-
-    // Models the Active-card Running row: isRunning={true}, no isWaiting prop.
-    const running = render(WorkspaceCard, {
-      props: { workspace: makeWorkspace({ waiting: true }), isRunning: true },
-    });
-    expect(running.container.querySelector('.bg-success')).toBeTruthy();
-    expect(running.container.querySelector(waitingDotSelector)).toBeNull();
-    running.unmount();
-
-    // Models the Active-card Unread row: isUnread={true}, no isWaiting prop.
-    const unread = render(WorkspaceCard, {
-      props: { workspace: makeWorkspace({ waiting: true }), isUnread: true },
-    });
-    expect(unread.container.querySelector('.bg-info')).toBeTruthy();
-    expect(unread.container.querySelector(waitingDotSelector)).toBeNull();
-    unread.unmount();
-
-    // A pinned waiting row keeps the informational grey dot.
-    const pinned = render(WorkspaceCard, {
-      props: { workspace: makeWorkspace({ waiting: true }), isPinned: true, onTogglePin: vi.fn() },
-    });
-    expect(pinned.container.querySelector(waitingDotSelector)).toBeTruthy();
-    pinned.unmount();
+    await rerender({ workspace: makeWorkspace({ displayStatus: 'blocked', attention: 'unread' }) });
+    expect(container.querySelector('[data-workspace-status]')).toBe(icon);
+    expect(icon?.getAttribute('data-workspace-status')).toBe('blocked');
+    expect(icon?.getAttribute('data-workspace-status-icon')).toBe('xmark');
   });
 
   it('uses the canonical compact row hierarchy and inset styling', () => {
@@ -270,7 +186,7 @@ describe('WorkspaceCard compact agent metadata', () => {
     const title = container.querySelector('[data-workspace-card-title]')!;
     const titleGroup = container.querySelector('[data-workspace-card-title-group]')!;
     const marker = container.querySelector('[data-workspace-card-pin-indicator]')!;
-    const trigger = getByRole('button', { name: 'Test Workspace', description: 'Pinned' });
+    const trigger = getByRole('button', { name: 'Test Workspace', description: /Pinned/ });
 
     expect(titleGroup.contains(title)).toBe(true);
     expect(title.nextElementSibling).toBe(marker);
@@ -278,15 +194,17 @@ describe('WorkspaceCard compact agent metadata', () => {
     expect(marker.classList.contains('opacity-0')).toBe(false);
     expect(getByRole('button', { name: 'Unpin' })).toBeTruthy();
     expect(container.querySelectorAll('[data-workspace-card-pin-indicator]')).toHaveLength(1);
-    expect(trigger.getAttribute('aria-describedby')).toBe(`workspace-pinned-state-${workspace.id}`);
+    expect(trigger.getAttribute('aria-describedby')).toBe(
+      `workspace-status-state-${workspace.id} workspace-pinned-state-${workspace.id}`,
+    );
 
     await fireEvent.click(getByRole('button', { name: 'Unpin' }));
     expect(onTogglePin).toHaveBeenCalledOnce();
 
     await rerender({ workspace, isPinned: false, onTogglePin });
     expect(container.querySelector('[data-workspace-card-pin-indicator]')).toBeNull();
-    expect(getByRole('button', { name: 'Test Workspace' }).hasAttribute('aria-describedby')).toBe(
-      false,
+    expect(getByRole('button', { name: 'Test Workspace' }).getAttribute('aria-describedby')).toBe(
+      `workspace-status-state-${workspace.id}`,
     );
     expect(getByRole('button', { name: 'Pin' })).toBeTruthy();
   });
@@ -326,14 +244,17 @@ describe('WorkspaceCard compact agent metadata', () => {
     expect(actions.className).toContain('group-focus-within:opacity-100');
     expect(getByText('PR #42')).toBeTruthy();
     expect(container.querySelector('[data-workspace-card-time]')).toBeTruthy();
-    expect(container.querySelector('.bg-success')?.contains(marker)).toBe(false);
+    expect(container.querySelector('[data-workspace-status]')?.contains(marker)).toBe(false);
     expect(trigger.className).not.toMatch(/focus-visible:ring-(?:1|2|4|8)|ring-inset|ring-offset/);
     expect(unpin.className).not.toMatch(/focus-visible:ring-(?:1|2|4|8)|ring-inset|ring-offset/);
     expect(trigger.className).toContain('focus-visible:bg-background/50');
   });
 
   it('retains one visible pin across current, highlighted, and unread row states', () => {
-    const workspace = makeWorkspace({ id: 'current-pinned' as Workspace['id'] });
+    const workspace = makeWorkspace({
+      id: 'current-pinned' as Workspace['id'],
+      attention: 'unread',
+    });
     pageState.url = new URL('http://localhost/workspace/current-pinned');
     const { container, getByRole } = render(WorkspaceCard, {
       props: {
@@ -348,13 +269,89 @@ describe('WorkspaceCard compact agent metadata', () => {
     expect(container.querySelector('[data-workspace-card-row]')?.className).toContain(
       'bg-background/60',
     );
-    expect(container.querySelector('.bg-info')).toBeTruthy();
+    expect(container.querySelector('[data-workspace-status="unread"]')).toBeTruthy();
     expect(container.querySelector('[data-workspace-card-pin-indicator]')?.className).toContain(
       'opacity-0',
     );
     expect(container.querySelector('.wc-actions')?.className).toContain('opacity-100');
     expect(getByRole('button', { name: 'Unpin' })).toBeTruthy();
     pageState.url = new URL('http://localhost/');
+  });
+
+  it.each(['Enter', ' '])(
+    'opens the All Workspaces overflow menu with %s without activating the row',
+    async (key) => {
+      const onClick = vi.fn();
+      const onOpenInNewWindow = vi.fn();
+      const { container } = render(WorkspaceCard, {
+        props: { workspace: makeWorkspace(), onClick, onOpenInNewWindow },
+      });
+      const trigger = screen.getByRole('button', { name: 'Workspace actions' });
+
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key });
+      const menu = await screen.findByRole('menu');
+
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      expect(container.contains(menu)).toBe(false);
+      expect(onClick).not.toHaveBeenCalled();
+
+      await fireEvent.keyDown(menu, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      expect(document.activeElement).toBe(trigger);
+    },
+  );
+
+  it('opens on pointer click and dismisses outside', async () => {
+    const onClick = vi.fn();
+    const onOpenInNewWindow = vi.fn();
+    render(WorkspaceCard, {
+      props: { workspace: makeWorkspace(), onClick, onOpenInNewWindow },
+    });
+    const trigger = screen.getByRole('button', { name: 'Workspace actions' });
+
+    await fireEvent.pointerDown(trigger, { button: 0, pointerType: 'mouse' });
+    await fireEvent.click(trigger, { detail: 1 });
+    await screen.findByRole('menu');
+    expect(onClick).not.toHaveBeenCalled();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await fireEvent.pointerDown(document.body, {
+      button: 0,
+      pointerType: 'mouse',
+      clientX: 100,
+      clientY: 100,
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('menu')).toBeNull();
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    });
+  });
+
+  it('runs an overflow action once without activating the row', async () => {
+    const onClick = vi.fn();
+    const onOpenInNewWindow = vi.fn();
+    render(WorkspaceCard, {
+      props: { workspace: makeWorkspace(), onClick, onOpenInNewWindow },
+    });
+    const trigger = screen.getByRole('button', { name: 'Workspace actions' });
+
+    await fireEvent.click(trigger);
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Open in New Window' }));
+    expect(onOpenInNewWindow).toHaveBeenCalledTimes(1);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('keeps the right-click context menu working beside the overflow trigger', async () => {
+    const { container } = render(WorkspaceCard, {
+      props: { workspace: makeWorkspace(), onOpenInNewWindow: vi.fn() },
+    });
+    const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+
+    await fireEvent.contextMenu(row, { clientX: 20, clientY: 30 });
+
+    expect(await screen.findByRole('menu')).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Open in New Window' })).toBeTruthy();
   });
 
   it('omits busy agent counts from the compact row', () => {

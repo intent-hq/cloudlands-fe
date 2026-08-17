@@ -37,25 +37,53 @@
     };
   });
 
-  function textMessage(id: string, role: AgentMessage['role'], text: string, second: number) {
+  const waitNote =
+    '[SYSTEM NOTE] This message was queued at 2026-08-16T04:00:08.000Z and waited 37s before delivery.';
+  const staleNote =
+    '[SYSTEM NOTE] This message was queued before you completed; your completion report was already delivered to your parent at 2026-08-16T04:00:09.000Z. Only call reportToParent again if this message materially changes the outcome — do not re-send the same report.';
+
+  function textMessage(
+    id: string,
+    role: AgentMessage['role'],
+    text: string,
+    second: number,
+    metadata?: AgentMessage['metadata'],
+  ) {
     return {
       id,
       role,
       timestamp: `2026-08-16T04:00:${String(second).padStart(2, '0')}.000Z`,
       contentBlocks: [{ type: 'text', text }],
+      metadata,
     } as AgentMessage;
   }
 
   const messages = Array.from({ length: 15 }, (_, index) => {
     const number = index + 1;
     const userText =
-      number === 3
-        ? '[SYSTEM NOTE] Internal-only picker row'
-        : number === 6
-          ? 'Virtualized target six [SYSTEM NOTE] hidden picker suffix'
-          : `User prompt ${number} with enough transcript content to make scrolling measurable.`;
+      number === 1
+        ? 'OK'
+        : number === 2
+          ? `Duplicate prefix — ${'a deliberately long message preview that must end with an ellipsis instead of clipping '.repeat(6)}`
+          : number === 3
+            ? 'Authored literal [SYSTEM NOTE] must stay visible'
+            : number === 4
+              ? 'Duplicate prefix — short sibling'
+              : number === 5
+                ? 'Multilingual: こんにちは Привет مرحبا café नमस्ते 😀'
+                : number === 6
+                  ? `Virtualized target six\n\n${staleNote}\n\n${waitNote}`
+                  : `User prompt ${number} with enough transcript content to make scrolling measurable.`;
     return [
-      textMessage(`user-${number}`, 'user', userText, index * 2),
+      textMessage(
+        `user-${number}`,
+        'user',
+        userText,
+        index * 2,
+        number === 6
+          ? { queueInfo: { queuedAt: '2026-08-16T04:00:08.000Z', waitedMs: 37_000 } }
+          : undefined,
+      ),
       textMessage(
         `assistant-${number}`,
         'assistant',

@@ -12,6 +12,7 @@
   import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 
   type PreviewKind = 'file' | 'terminal' | 'tool' | 'text';
+  type ParentBackground = 'background' | 'muted' | 'accent';
 
   interface Props {
     theme?: 'light' | 'dark';
@@ -23,6 +24,8 @@
     longLabels?: boolean;
     reverseAgents?: boolean;
     finishedCount?: number;
+    initiallyExpanded?: boolean;
+    parentBackground?: ParentBackground;
   }
 
   let {
@@ -35,6 +38,8 @@
     longLabels = false,
     reverseAgents = false,
     finishedCount = 0,
+    initiallyExpanded = true,
+    parentBackground = 'background',
   }: Props = $props();
   const agentId = 'agent-subscription-inline-geometry';
   const workspaceId = 'workspace-subscription-inline-geometry';
@@ -66,6 +71,18 @@
       type: 'file',
     });
   }
+
+  $effect(() => {
+    const root = document.documentElement;
+    const hadLight = root.classList.contains('light');
+    const hadDark = root.classList.contains('dark');
+    root.classList.toggle('dark', theme === 'dark');
+    root.classList.toggle('light', theme === 'light');
+    return () => {
+      root.classList.toggle('light', hadLight);
+      root.classList.toggle('dark', hadDark);
+    };
+  });
 
   $effect(() => {
     const currentKind = previewKind;
@@ -120,7 +137,14 @@
   style:zoom
   data-testid="subscription-inline-host"
 >
-  <div class="bg-background p-2 text-foreground">
+  <div
+    class="p-2 text-foreground {parentBackground === 'accent'
+      ? 'bg-accent'
+      : parentBackground === 'muted'
+        ? 'bg-muted'
+        : 'bg-background'}"
+    data-parent-background={parentBackground}
+  >
     <EventSubscriptionsCard
       {workspaceId}
       agentId="parent-subscription-inline-geometry"
@@ -128,7 +152,7 @@
         count: mode === 'mixed' ? agents.length + 1 : agents.length,
         agents,
         mode,
-        initiallyExpanded: true,
+        initiallyExpanded,
       }}
       previewContent={mixedPreview}
     />

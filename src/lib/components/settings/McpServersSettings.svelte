@@ -621,7 +621,7 @@
                       {/each}
 
                       {#if installError}
-                        <p class="text-xs text-destructive-foreground mb-2">{installError}</p>
+                        <p class="text-xs text-error-foreground mb-2">{installError}</p>
                       {/if}
 
                       <div class="flex gap-2 mt-3">
@@ -740,7 +740,7 @@
                     >{m.settings_mcpServers_savedIndicator()}</span
                   >
                 {:else if $advancedSaveStatus$ === 'error'}
-                  <span class="text-xs text-destructive-foreground"
+                  <span class="text-xs text-error-foreground"
                     >✗ {$advancedSaveError$ || m.settings_mcpServers_saveFailed()}</span
                   >
                 {:else if $advancedSaveStatus$ === 'saving'}

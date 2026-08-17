@@ -183,7 +183,7 @@ describe('EventWakeupBanner details disclosure', () => {
     const items = within(details).getAllByTestId('event-wakeup-detail');
     expect(items).toHaveLength(4);
     expect(items.map((item) => item.textContent)).toEqual([
-      expect.stringContaining('Agent finished'),
+      expect.stringContaining('Builder finished'),
       expect.stringContaining('note changes'),
       expect.stringContaining('custom:signal'),
       expect.stringContaining('custom:signal'),
@@ -227,6 +227,90 @@ describe('EventWakeupBanner details disclosure', () => {
     expect(details.className).toContain('min-w-0');
     expect(report.className).toContain('[overflow-wrap:anywhere]');
     expect(report.className).toContain('whitespace-pre-wrap');
+  });
+
+  it('assigns semantic, compact typography roles without a larger type class', async () => {
+    const reportText =
+      'Preserve this report exactly.\n\nUnicode 你好世界 and token-' + 'unbroken'.repeat(20);
+    renderBanner({
+      type: 'event_notification',
+      eventCount: 1,
+      eventTypes: ['agent:idle'],
+      events: [
+        {
+          type: 'agent:idle',
+          timestamp: '2026-08-12T12:00:00.000Z',
+          data: { agentName: 'Builder', completionReport: reportText },
+        },
+      ],
+    });
+
+    const name = screen.getByTestId('event-wakeup-agent-name');
+    const status = screen.getByTestId('event-wakeup-status');
+    expect(name.tagName).toBe('STRONG');
+    expect(name.className).toContain('type-body');
+    expect(name.className).toContain('font-normal');
+    expect(name.className).toContain('text-muted-foreground');
+    expect(status.tagName).toBe('SPAN');
+    expect(status.className).toContain('type-body');
+    expect(status.className).toContain('font-normal');
+    expect(status.className).toContain('text-muted-foreground');
+
+    await fireEvent.click(screen.getByTestId('event-wakeup-summary'));
+    const timestamp = screen.getByTestId('event-wakeup-timestamp');
+    const report = screen.getByTestId('event-wakeup-report');
+    expect(timestamp.tagName).toBe('TIME');
+    expect(timestamp.className).toContain('type-caption');
+    expect(timestamp.className).toContain('tabular-nums');
+    expect(timestamp.className).toContain('text-subtle');
+    expect(report.tagName).toBe('P');
+    expect(report.textContent).toBe(reportText);
+    expect(report.className).toContain('type-body');
+    expect(report.className).toContain('max-w-[68ch]');
+    expect(report.className).toContain('[overflow-wrap:anywhere]');
+
+    for (const element of [name, status, timestamp, report]) {
+      expect(element.className).not.toMatch(/type-(?:title|display)|text-(?:base|lg|xl|2xl)/);
+    }
+  });
+
+  it('keeps finished and sent-a-message summaries on identical collapsed geometry', async () => {
+    const { rerender } = renderBanner({
+      type: 'event_notification',
+      eventCount: 1,
+      eventTypes: ['agent:idle'],
+      events: [
+        {
+          type: 'agent:idle',
+          timestamp: '2026-08-12T12:00:00.000Z',
+          data: { agentName: 'Builder' },
+        },
+      ],
+    });
+    const finishedHeaderClass = screen.getByTestId('event-wakeup-header').className;
+    const finishedSummaryClass = screen.getByTestId('event-wakeup-summary').className;
+    expect(screen.getByTestId('event-wakeup-status').textContent?.trim()).toBe('finished');
+
+    await rerender({
+      metadata: {
+        type: 'event_notification',
+        eventCount: 1,
+        eventTypes: ['agent:reportToParent'],
+        events: [
+          {
+            type: 'agent:reportToParent',
+            timestamp: '2026-08-12T12:00:00.000Z',
+            data: { agentName: 'Builder' },
+          },
+        ],
+      },
+      asDivider: true,
+      showAgentCards: false,
+    });
+
+    expect(screen.getByTestId('event-wakeup-status').textContent?.trim()).toBe('sent a message');
+    expect(screen.getByTestId('event-wakeup-header').className).toBe(finishedHeaderClass);
+    expect(screen.getByTestId('event-wakeup-summary').className).toBe(finishedSummaryClass);
   });
 
   it('retains useful legacy type and count-only fallbacks', async () => {

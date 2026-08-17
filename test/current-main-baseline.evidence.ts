@@ -124,14 +124,17 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
       'affirms the composer-to-bubble transition in every required visual state',
       [...visualStates],
     ),
-    selector(['success'], 'uses one compositor transform and an instant bottom-follow adjustment'),
+    selector(
+      ['success'],
+      'uses one compositor transform and delegates bottom follow to the scroll authority',
+    ),
     selector(['failure'], 'settles rejected animations without leaking styles'),
     selector(['cancel'], 'aborts immediately and restores exact styles'),
   ],
   'CHAT-07': [
     selector(
       ['mounted', 'runtime-success', 'success'],
-      'uses one compositor transform and an instant bottom-follow adjustment',
+      'uses one compositor transform and delegates bottom follow to the scroll authority',
     ),
     selector(['runtime-error', 'failure'], 'settles rejected animations without leaking styles'),
     selector(['keyboard'], 'settles immediately when the page becomes hidden', ['keyboard']),
@@ -251,7 +254,7 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
   ],
   'WORKSPACE-14': [
     selector(['mixed-statuses'], 'orders every member for the launcher'),
-    selector(['overflow'], 'renders 8 agents as six plus semantic overflow'),
+    selector(['overflow'], 'renders 8 Agents and Context items as six plus semantic overflow'),
   ],
   'WORKSPACE-17': [
     selector(
@@ -276,7 +279,10 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
   'WORKSPACE-22': [
     selector(['reuse'], 'opens each compact agent and note exactly once'),
     selector(['loading'], 'keeps the compact Agents launcher stable while sessions are loading'),
-    selector(['error', 'empty'], 'renders +0 agents as six plus semantic overflow'),
+    selector(
+      ['error', 'empty'],
+      'renders +0 Agents and Context items as six plus semantic overflow',
+    ),
   ],
   'WORKSPACE-27': [
     selector(['focus-restore'], 'contained outline-free keyboard focus states'),
@@ -293,7 +299,10 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
       ['healthy', 'active', 'failed', 'waiting', 'attention', 'overflow'],
       'right-aligns intrinsic statuses before a stable close reservation',
     ),
-    selector(['hidden'], 'keeps the trailing close reservation when a workspace has no status'),
+    selector(
+      ['hidden'],
+      'keeps one shared status icon and the trailing close reservation without agent detail',
+    ),
     selector(
       ['stale', 'rehydration'],
       'renders persisted inactive tabs while their workspace metadata loads',
@@ -325,7 +334,7 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
   'WORKSPACE-36': [
     selector(
       ['mounted', 'cleanup'],
-      'migrates stale fill while preserving proven explicit and per-type widths',
+      'fills one-panel viewports and preserves explicit overflow preferences',
     ),
     selector(
       ['runtime-success', 'edges'],
@@ -340,7 +349,7 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
   'WORKSPACE-37': [
     selector(
       ['mounted', 'cleanup'],
-      'migrates stale fill while preserving proven explicit and per-type widths',
+      'fills one-panel viewports and preserves explicit overflow preferences',
     ),
     selector(['runtime-success'], 'uses the edge panel when the layout has no valid focus'),
     selector(['runtime-error'], 'skips empty workspaces and wraps in display order'),
@@ -457,7 +466,7 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
       ['editor'],
       'opens the isolated compact Files chooser and routes the installed editor action',
     ),
-    selector(['other'], 'keeps plain +N text as the last bounded icon-grid item'),
+    selector(['other'], 'keeps plain +N text adjacent to the last left-packed icon-grid item'),
     selector(
       ['focus-restore'],
       'uses contained outline-free keyboard focus states for every preview target',
@@ -546,7 +555,7 @@ const mountedRowsByScene: Record<MountedScene, Record<string, string[]>> = {
   },
   sidebar: {
     'WORKSPACE-03': ['does not render an Activity launcher in the compact deck'],
-    'WORKSPACE-14': ['renders six ordered agent previews and semantic +2 overflow'],
+    'WORKSPACE-14': ['renders bounded ordered agent previews with semantic responsive overflow'],
     'WORKSPACE-15': ['contains every visible agent preview inside the launcher paint bounds'],
     'WORKSPACE-16': ['keeps the final compact Agents preview left-oriented'],
     'WORKSPACE-19': ['renders the expanded sidebar as a bounded physical deck'],

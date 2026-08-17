@@ -12,7 +12,7 @@
     nextIsEventNotification
       ? 'h-0'
       : currentIsEventNotification && !currentHasAssistantMessages
-        ? 'h-12'
+        ? 'h-6'
         : 'h-8',
   );
 </script>

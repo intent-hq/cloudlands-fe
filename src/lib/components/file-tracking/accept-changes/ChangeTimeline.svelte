@@ -42,7 +42,7 @@
     groupFilesByAgent,
     type AgentChangeGroup,
   } from './types';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 
   import type { Workspace } from '$shared/types';
@@ -660,7 +660,7 @@
               <Button
                 variant="ghost"
                 size="icon-xs"
-                class="h-6 w-6 text-muted-foreground hover:text-destructive-foreground"
+                class="h-6 w-6 text-muted-foreground hover:text-error-foreground"
                 onclick={onStopGeneratingPR}
                 tooltip={m.fileTracking_changeTimeline_stopGenerating_tooltip()}
                 tooltipSide="top"
@@ -830,7 +830,7 @@
                     <Button
                       variant="ghost"
                       size="xs"
-                      class="h-5 px-2 text-muted-foreground hover:text-destructive-foreground"
+                      class="h-5 px-2 text-muted-foreground hover:text-error-foreground"
                       onclick={isAutofillAndCreatingPR || backgroundOperation?.type === 'create-pr'
                         ? onStopGeneratingPR
                         : onStopGeneratingMessage}
@@ -982,7 +982,7 @@
                                     'rotate-90'}"
                                 />
                                 {#if group.agentId}
-                                  <AuggieAvatar
+                                  <AgentAvatar
                                     class="-mt-1 -mr-0.5"
                                     agentId={group.agentId}
                                     size={18}
@@ -1152,7 +1152,7 @@
                                     'rotate-90'}"
                                 />
                                 {#if group.agentId}
-                                  <AuggieAvatar class="-mt-1" agentId={group.agentId} size={18} />
+                                  <AgentAvatar class="-mt-1" agentId={group.agentId} size={18} />
                                 {:else}
                                   <Fa icon={faUser} class="h-3 w-3 text-ghost" />
                                 {/if}
@@ -1314,7 +1314,7 @@
                           <Button
                             variant="ghost"
                             size="xs"
-                            class="h-5 px-1.5 text-muted-foreground hover:text-destructive-foreground"
+                            class="h-5 px-1.5 text-muted-foreground hover:text-error-foreground"
                             onclick={isAutofillAndCreatingPR ||
                             backgroundOperation?.type === 'create-pr'
                               ? onStopGeneratingPR
@@ -1445,7 +1445,7 @@
                             <Button
                               variant="ghost"
                               size="icon-xs"
-                              class="h-6 w-6 text-muted-foreground hover:text-destructive-foreground"
+                              class="h-6 w-6 text-muted-foreground hover:text-error-foreground"
                               onclick={onStopGeneratingMessage}
                               tooltip={m.fileTracking_changeTimeline_stopGenerating_tooltip()}
                               tooltipSide="top"
@@ -1527,7 +1527,7 @@
                           <Button
                             variant="ghost"
                             size="xs"
-                            class="h-5 px-1.5 text-muted-foreground hover:text-destructive-foreground"
+                            class="h-5 px-1.5 text-muted-foreground hover:text-error-foreground"
                             onclick={onStopGeneratingMessage}
                             tooltip={m.fileTracking_changeTimeline_stopGenerating_tooltip()}
                             tooltipSide="left"
@@ -1777,7 +1777,7 @@
                               <Button
                                 variant="ghost"
                                 size="xs"
-                                class="h-5 px-1.5 text-muted-foreground hover:text-destructive-foreground"
+                                class="h-5 px-1.5 text-muted-foreground hover:text-error-foreground"
                                 onclick={isAutofillAndCreatingPR ||
                                 backgroundOperation?.type === 'create-pr'
                                   ? onStopGeneratingPR

@@ -363,13 +363,13 @@
   contentMaxHeight="var(--bits-dropdown-menu-content-available-height)"
   portal={true}
 >
-  {#snippet trigger({ toggle }: { toggle: () => void })}
+  {#snippet trigger({ props })}
     <Tooltip side="bottom">
       {#snippet content()}
         <span>{triggerLabel}</span>
       {/snippet}
       <button
-        onclick={toggle}
+        {...props}
         class={cn(
           'flex items-center justify-center h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer',
           activeRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
@@ -393,7 +393,9 @@
         <div class="px-3 py-2 space-y-1.5">
           <div class="flex justify-between text-xs">
             <span class="text-subtle">{m.layout_daemonStatus_status_label()}</span>
-            <span class="text-red-500 font-medium">{m.layout_daemonStatus_notRunning_label()}</span>
+            <span class="text-error-foreground font-medium"
+              >{m.layout_daemonStatus_notRunning_label()}</span
+            >
           </div>
           <div class="h-px bg-border my-1"></div>
           <div class="text-xs text-subtle text-center py-2">
@@ -629,7 +631,7 @@
 
             <!-- Stop action -->
             <button
-              class="w-full text-left text-xs text-red-500 hover:bg-muted/50 rounded px-1 py-1 mt-0.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+              class="w-full text-left text-xs text-error-foreground hover:bg-muted/50 rounded px-1 py-1 mt-0.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
               disabled={$unslothStopping$}
               onclick={() => {
                 dropdownOpen = false;
@@ -722,7 +724,7 @@
                 </Menu.Item>
                 {#if !conn.isLocal}
                   <Menu.Item
-                    class="cursor-pointer text-xs text-red-500 data-[highlighted]:text-red-500"
+                    class="cursor-pointer text-xs text-error-foreground data-[highlighted]:text-error-foreground"
                     onSelect={() => handleForgetConnection(conn.id)}
                   >
                     {m.layout_daemonStatus_forget_action()}

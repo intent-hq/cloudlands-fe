@@ -51,9 +51,22 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
           repositoryName: 'intent',
           statusMessage: 'Polishing the workspace navigation experience.',
           activity: 'agent_running',
+          displayStatus: 'in_progress',
         },
-        { id: 'ws-2', title: 'Beta', branch: 'main', repositoryName: 'intent' },
-        { id: 'ws-3', title: 'Gamma', branch: 'release', repositoryName: 'intent' },
+        {
+          id: 'ws-2',
+          title: 'Beta',
+          branch: 'main',
+          repositoryName: 'intent',
+          displayStatus: 'idle',
+        },
+        {
+          id: 'ws-3',
+          title: 'Gamma',
+          branch: 'release',
+          repositoryName: 'intent',
+          displayStatus: 'blocked',
+        },
       ].filter((workspace) => mocks.loadedWorkspaceIds.has(workspace.id)),
     ),
 }));
@@ -83,8 +96,8 @@ vi.mock('$features/agent/services/active-streams-tracker', () => ({
     ),
   },
 }));
-vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
-  default: (await import('../workspace/__tests__/mocks/MockAugieAvatar.svelte')).default,
+vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => ({
+  default: (await import('../workspace/__tests__/mocks/MockAgentAvatar.svelte')).default,
 }));
 vi.mock('$lib/components/workspace/WorkspaceHoverCard.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockWorkspaceHoverCard.svelte')).default,
@@ -136,7 +149,7 @@ describe('WorkspaceTabStrip', () => {
         ...view,
         target,
         assertCapability: () => {
-          expect(target.querySelector('[data-workspace-tab-status="running"]')).toBeTruthy();
+          expect(target.querySelector('[data-workspace-status="in_progress"]')).toBeTruthy();
           expect(target.className).toContain('h-full w-full');
           expect(target.querySelector('[data-workspace-tab-close-space]')).toBeTruthy();
         },
@@ -174,7 +187,7 @@ describe('WorkspaceTabStrip', () => {
     expect(hydrated.closest('[data-testid="workspace-tab-tooltip-root"]')?.className).toContain(
       'absolute -inset-px',
     );
-    expect(hydrated.querySelector('[data-workspace-tab-status="running"]')).toBeTruthy();
+    expect(hydrated.querySelector('[data-workspace-status="in_progress"]')).toBeTruthy();
     expect(hydrated.querySelector('[data-workspace-tab-title]')?.textContent).toBe('Alpha');
   });
 
@@ -183,7 +196,7 @@ describe('WorkspaceTabStrip', () => {
     render(WorkspaceTabStrip);
 
     const alpha = screen.getByRole('tab', { name: /Alpha/ });
-    const statusIcon = alpha.querySelector('[data-workspace-tab-status="running"]')!;
+    const statusIcon = alpha.querySelector('[data-workspace-status="in_progress"]')!;
     const title = alpha.querySelector('[data-workspace-tab-title]')!;
     const loading = screen.getByRole('tab', { name: 'Loading workspace ws-3' });
     const targets: Array<[Element, string, number]> = [
@@ -230,19 +243,19 @@ describe('WorkspaceTabStrip', () => {
     expect(cluster.parentElement).toBe(controls);
   });
 
-  it('keeps the trailing close reservation when a workspace has no status', () => {
+  it('keeps one shared status icon and the trailing close reservation without agent detail', () => {
     mocks.tabStatuses = {};
     render(WorkspaceTabStrip);
     for (const tab of screen.getAllByRole('tab')) {
       const controls = tab.querySelector('[data-workspace-tab-controls]');
       if (!controls) continue;
-      expect(controls.querySelector('[data-workspace-tab-status-cluster]')).toBeNull();
-      expect(controls.children).toHaveLength(1);
-      expect(controls.firstElementChild?.hasAttribute('data-workspace-tab-close-space')).toBe(true);
+      expect(controls.querySelectorAll('[data-workspace-status]')).toHaveLength(1);
+      expect(controls.children).toHaveLength(2);
+      expect(controls.lastElementChild?.hasAttribute('data-workspace-tab-close-space')).toBe(true);
     }
   });
 
-  it('renders only the highest-priority status as a circle while announcing every status', () => {
+  it('renders the shared workspace state while announcing detailed agent statuses', () => {
     mocks.tabStatuses = {
       'ws-1': {
         agentCount: 2,
@@ -264,11 +277,11 @@ describe('WorkspaceTabStrip', () => {
     const tab = screen.getByRole('tab', {
       name: 'Alpha. QUESTION: 1 (Coordinator) · UNREAD: 1 (Builder) · RUNNING: 1 (Builder)',
     });
-    const statuses = tab.querySelectorAll('[data-workspace-tab-status]');
+    const statuses = tab.querySelectorAll('[data-workspace-status]');
     expect(statuses).toHaveLength(1);
-    expect(statuses[0].getAttribute('data-workspace-tab-status')).toBe('question');
+    expect(statuses[0].getAttribute('data-workspace-status')).toBe('in_progress');
     expect(statuses[0].getAttribute('data-workspace-status-icon')).toBe('circle');
-    expect(statuses[0].className).toContain('text-warning');
+    expect(statuses[0].className).toContain('text-success');
     expect(tab.querySelector('[data-workspace-tab-status-overflow]')).toBeNull();
   });
 

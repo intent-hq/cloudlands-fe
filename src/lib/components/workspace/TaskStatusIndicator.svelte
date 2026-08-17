@@ -8,7 +8,6 @@
   import { updateTaskNoteStatus } from '$features/tasks/tasks-write-service';
   import { m } from '$shared/paraglide/messages.js';
 
-
   let {
     workspaceId,
     noteId,
@@ -25,6 +24,7 @@
 
   let selectedIndex = $state(0);
   let menuRef: HTMLDivElement | null = $state(null);
+  let menuOpen = $state(false);
 
   const statusOptions: TaskStatus[] = [
     'not_started',
@@ -108,6 +108,10 @@
     menuRef?.focus();
   }
 
+  $effect(() => {
+    if (menuOpen) void handleMenuOpen();
+  });
+
   function handleKeyDown(e: KeyboardEvent, close: () => void) {
     switch (e.key) {
       case 'ArrowDown':
@@ -131,19 +135,15 @@
 </script>
 
 {#if isInteractive}
-  <DropdownMenu align="start" side="bottom">
-    {#snippet trigger({ toggle, open, props }: { toggle: () => void; open: boolean; props: Record<string, unknown> })}
+  <DropdownMenu bind:open={menuOpen} align="start" side="bottom">
+    {#snippet trigger({ props })}
       <button
-        onclick={() => {
-          if (!open) handleMenuOpen();
-          toggle();
-        }}
         {...props}
         class="inline-flex font-mediumx text-subtlex items-center cursor-pointer {compact
           ? 'py-0.5 text-sm gap-1.5'
           : 'py-1 text-sm gap-2'}"
       >
-            <TaskStatusIcon status={status} size={12} />
+        <TaskStatusIcon {status} size={12} />
         {statusLabels[status]}
       </button>
     {/snippet}

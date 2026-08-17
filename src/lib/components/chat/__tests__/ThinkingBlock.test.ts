@@ -55,13 +55,27 @@ describe('ThinkingBlock — tool-call presentation', () => {
     expect(screen.getByTestId('markdown-viewer').textContent).toContain('Let me check the schema');
   });
 
-  it('uses the localized Reasoning fallback for headingless persisted content', async () => {
+  it('uses the localized Thinking fallback for headingless persisted content', async () => {
     await renderBlock({ content: 'Let me check the schema', isStreaming: false });
 
     const toggle = screen.getByRole('button');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByTestId('markdown-viewer')).toBeNull();
-    expect(toggle.textContent?.trim()).toBe('Reasoning');
+    expect(toggle.textContent?.trim()).toBe('Thinking...');
+  });
+
+  it('uses a short first-line title once and starts the body with the paragraph', async () => {
+    await renderBlock({
+      content: 'Considering task restoration\n\nCheck the saved task state before continuing.',
+    });
+
+    const toggle = screen.getByRole('button');
+    expect(toggle.textContent?.trim()).toBe('Considering task restoration');
+    await fireEvent.click(toggle);
+    expect(screen.getByTestId('markdown-viewer').textContent).toBe(
+      'Check the saved task state before continuing.',
+    );
+    expect(document.body.textContent?.match(/Considering task restoration/g)).toHaveLength(1);
   });
 
   it('renders the first Markdown heading once as plain toggle text', async () => {
@@ -107,6 +121,35 @@ describe('ThinkingBlock — tool-call presentation', () => {
     expect(screen.getByRole('button')).toBe(toggle);
     expect(document.activeElement).toBe(toggle);
     expect(screen.getByTestId('markdown-viewer').textContent).toBe('Partial body');
+  });
+
+  it('keeps manual collapse state when a streamed short title arrives', async () => {
+    const view = await renderBlock({ content: 'Partial body', isStreaming: true });
+    const toggle = screen.getByRole('button');
+    await fireEvent.click(toggle);
+    toggle.focus();
+
+    await view.rerender({
+      content: 'Considering task restoration\n\nPartial body',
+      isStreaming: true,
+    });
+
+    await waitFor(() => expect(toggle.textContent?.trim()).toBe('Considering task restoration'));
+    expect(screen.getByRole('button')).toBe(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(toggle);
+  });
+
+  it('keeps keyboard focus and toggles with Enter and Space', async () => {
+    await renderBlock({ content: '# Keyboard title\n\nBody' });
+    const toggle = screen.getByRole('button');
+    toggle.focus();
+
+    await fireEvent.keyDown(toggle, { key: 'Enter' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    await fireEvent.keyDown(toggle, { key: ' ' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(toggle);
   });
 
   it('collapses when streaming completes', async () => {

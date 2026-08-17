@@ -1,23 +1,17 @@
 <script lang="ts">
   import type { McpServerFormState, McpTransportType, McpAuthType } from './types';
-  import {
-  createEmptyFormState,
-  formStateToServer,
-} from './types';
+  import { createEmptyFormState, formStateToServer } from './types';
   import Button from '$lib/components/ui/button/button.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
-  import {
-  faPlus,
-  faTrash,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faPlus, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import {
-  RESERVED_MCP_SERVER_NAMES,
-  MCP_SERVER_NAME_REGEX,
-  MCP_SERVER_NAME_MAX_LENGTH,
-} from '$shared/config/mcp-constants';
+    RESERVED_MCP_SERVER_NAMES,
+    MCP_SERVER_NAME_REGEX,
+    MCP_SERVER_NAME_MAX_LENGTH,
+  } from '$shared/config/mcp-constants';
 
   interface Props {
     /** Initial form values (for edit mode) */
@@ -32,9 +26,13 @@
     onCancel: () => void;
   }
 
-  let { initialValues, editMode = false, existingServerNames = [], onSubmit, onCancel }: Props = $props();
-
-
+  let {
+    initialValues,
+    editMode = false,
+    existingServerNames = [],
+    onSubmit,
+    onCancel,
+  }: Props = $props();
 
   // Form state - initialize once from props
   function getInitialForm(): McpServerFormState {
@@ -157,7 +155,7 @@
   <!-- Server Name -->
   <div>
     <span class="block text-sm font-medium mb-1.5">
-      {m.settings_mcp_form_serverName_label()} <span class="text-destructive-foreground">*</span>
+      {m.settings_mcp_form_serverName_label()} <span class="text-error-foreground">*</span>
     </span>
     <Input
       bind:value={form.name}
@@ -166,7 +164,7 @@
       maxlength={MCP_SERVER_NAME_MAX_LENGTH}
     />
     {#if nameError && !editMode}
-      <p class="text-xs text-destructive-foreground mt-1">{nameError}</p>
+      <p class="text-xs text-error-foreground mt-1">{nameError}</p>
     {:else}
       <p class="text-xs text-subtle mt-1">{m.settings_mcp_form_serverName_hint()}</p>
     {/if}
@@ -176,7 +174,7 @@
   <div>
     <span class="block text-sm font-medium mb-1.5">
       {m.settings_mcp_form_connectionType_label()}
-      <span class="text-destructive-foreground">*</span>
+      <span class="text-error-foreground">*</span>
     </span>
     <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit">
       {#each transportTypes as type (type.value)}
@@ -184,8 +182,8 @@
           type="button"
           class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer
                  {form.type === type.value
-                   ? 'bg-background text-foreground shadow-sm'
-                   : 'text-muted-foreground hover:text-foreground'}"
+            ? 'bg-background text-foreground shadow-sm'
+            : 'text-muted-foreground hover:text-foreground'}"
           onclick={() => (form.type = type.value)}
         >
           {type.label}
@@ -208,7 +206,7 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
         <span class="block text-sm font-medium mb-1.5">
-          {m.settings_mcp_form_command_label()} <span class="text-destructive-foreground">*</span>
+          {m.settings_mcp_form_command_label()} <span class="text-error-foreground">*</span>
         </span>
         <!-- i18n-ignore (example command) -->
         <Input bind:value={form.command} placeholder="npx -y @some/mcp-server" />
@@ -216,7 +214,8 @@
       </div>
 
       <div>
-        <span class="block text-sm font-medium mb-1.5">{m.settings_mcp_form_arguments_label()}</span>
+        <span class="block text-sm font-medium mb-1.5">{m.settings_mcp_form_arguments_label()}</span
+        >
         <!-- i18n-ignore (example flags) -->
         <Input bind:value={form.args} placeholder="--port 3000 --verbose" />
         <p class="text-xs text-subtle mt-1">{m.settings_mcp_form_arguments_hint()}</p>
@@ -245,7 +244,7 @@
               <!-- i18n-ignore (env var format examples) -->
               <Input bind:value={pair.value} placeholder="value" class="flex-1" />
               <Button size="sm" variant="ghost" onclick={() => removeEnvVar(pair.id)}>
-                <Fa icon={faTrash} size="xs" class="text-destructive-foreground" />
+                <Fa icon={faTrash} size="xs" class="text-error-foreground" />
               </Button>
             </div>
           {/each}
@@ -256,7 +255,7 @@
     <!-- Remote fields (http/sse) -->
     <div>
       <span class="block text-sm font-medium mb-1.5">
-        {m.settings_mcp_form_url_label()} <span class="text-destructive-foreground">*</span>
+        {m.settings_mcp_form_url_label()} <span class="text-error-foreground">*</span>
       </span>
       <!-- i18n-ignore (example URL) -->
       <Input bind:value={form.url} placeholder="https://example.com/mcp" />
@@ -265,15 +264,17 @@
 
     <!-- Auth Type -->
     <div>
-      <span class="block text-sm font-medium mb-1.5">{m.settings_mcp_form_authentication_label()}</span>
+      <span class="block text-sm font-medium mb-1.5"
+        >{m.settings_mcp_form_authentication_label()}</span
+      >
       <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit">
         {#each authTypes as auth (auth.value)}
           <button
             type="button"
             class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer
                    {form.authType === auth.value
-                     ? 'bg-background text-foreground shadow-sm'
-                     : 'text-muted-foreground hover:text-foreground'}"
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'}"
             onclick={() => (form.authType = auth.value)}
           >
             {auth.label}
@@ -314,7 +315,7 @@
                 <!-- i18n-ignore (header format examples) -->
                 <Input bind:value={pair.value} placeholder="value" class="flex-1" />
                 <Button size="sm" variant="ghost" onclick={() => removeHeader(pair.id)}>
-                  <Fa icon={faTrash} size="xs" class="text-destructive-foreground" />
+                  <Fa icon={faTrash} size="xs" class="text-error-foreground" />
                 </Button>
               </div>
             {/each}
@@ -334,7 +335,7 @@
 
   <!-- Error message -->
   {#if error}
-    <div class="text-sm text-destructive-foreground">{error}</div>
+    <div class="text-sm text-error-foreground">{error}</div>
   {/if}
 
   <!-- Actions -->

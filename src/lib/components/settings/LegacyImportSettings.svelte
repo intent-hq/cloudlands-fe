@@ -41,7 +41,9 @@
         <p class="text-xs text-subtle mt-0.5">{m.settings_legacyImport_description()}</p>
       </div>
       <Button size="sm" disabled={$loading} onclick={handleImport}>
-        {$loading ? m.settings_legacyImport_importing_label() : m.settings_legacyImport_import_label()}
+        {$loading
+          ? m.settings_legacyImport_importing_label()
+          : m.settings_legacyImport_import_label()}
       </Button>
     </div>
 
@@ -54,7 +56,7 @@
       </p>
     {:else if $error}
       <p
-        class="text-xs text-destructive-foreground bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2 mt-3"
+        class="text-xs text-error-foreground bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2 mt-3"
         role="alert"
       >
         {m.settings_legacyImport_importFailed_error({ error: $error })}

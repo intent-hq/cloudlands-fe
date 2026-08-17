@@ -37,15 +37,20 @@ describe('editorial conversation presentation contract', () => {
     expect(hasUnqualifiedClassToken(primarySurfaceClasses, 'text-primary-foreground')).toBe(true);
   });
 
-  it('lets the transcript, questions, and composer fill the panel width', () => {
+  it('caps transcript, questions, and composer content at the approved 70em measure', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
 
-    expect(panel).toContain('conversation-column flex min-h-full w-full flex-col');
+    expect(panel).toContain(
+      'conversation-column mx-auto flex min-h-full w-full min-w-0 max-w-[70em] flex-col',
+    );
     expect(panel).not.toContain('max-w-[var(--content-measure-wide)]');
     expect(panel).toContain('<div class="w-full" data-testid="question-wizard-slot">');
     expect(panel).toContain("? 'w-full px-1.5!'");
     expect(panel).toContain(": 'w-full px-4 sm:px-6'");
     expect(panel).toContain('conversation-composer relative z-20 w-full');
+    expect(panel).toContain(
+      'mx-auto w-full min-w-0 max-w-[70em]" data-testid="chat-composer-controls-inner',
+    );
     expect(panel).toContain('edgeDocked');
     expect(panel).not.toContain("'px-[5%]'");
   });
@@ -189,24 +194,34 @@ describe('editorial conversation presentation contract', () => {
     const responseGroup = source('src/lib/components/chat/ResponseGroup.svelte');
     const operationalRow = source('src/lib/components/chat/operational-disclosure-row.ts');
 
-    expect(staticContent).toContain('<div class="flex flex-col"');
-    expect(staticContent).toContain('getOperationalClusterSpacingClass(groupedBlocks, blockIndex)');
-    expect(staticContent).toContain('isAdjacentOperationalClusterRow(groupedBlocks, blockIndex)');
+    expect(staticContent).toContain('<div class="flex flex-col gap-1"');
+    expect(streamingContent).toContain('class="relative flex flex-col gap-1"');
+    expect(staticContent).toContain(
+      'getOperationalClusterSpacingClass(\n        groupedBlocks,\n        blockIndex,\n        isVisibleOperationalBlock,',
+    );
+    expect(staticContent).toContain(
+      'isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleOperationalBlock)',
+    );
     expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
     expect(streamingContent).toContain('isAdjacentOperationalClusterRow(');
     expect(streamingContent).toContain('isVisibleTopLevelBlock,');
     expect(streamingContent).toContain('data-operational-cluster-row=');
     expect(streamingContent).not.toContain('my-1.25');
     expect(streamingContent).not.toContain('margin-top: -0.5rem');
-    expect(responseGroup).toContain('<div class="flex flex-col gap-1.5">');
+    expect(responseGroup).toContain('<div class="flex flex-col gap-1"');
     expect(staticContent).not.toContain("'mb-1.5'");
     expect(streamingContent).not.toContain('class:mb-1.5');
     expect(operationalRow).toContain('OPERATIONAL_EXPANDED_CONTENT_CLASS = `${');
-    expect(operationalRow).toContain('OPERATIONAL_EXPANDED_GUIDE_CLASS');
+    expect(operationalRow).toContain('OPERATIONAL_GROUP_CONTENT_CLASS');
+    expect(operationalRow).not.toContain('OPERATIONAL_EXPANDED_GUIDE_CLASS');
+    expect(responseGroup).not.toContain('data-operational-expanded-guide');
     expect(responseGroup).not.toContain('pl-4.5');
-    expect(staticContent).toContain('renderContentBlock(\n                childBlock,');
-    expect(staticContent).toContain('true,\n              )');
-    expect(streamingContent).toContain('true,\n                  )');
+    expect(staticContent).toMatch(
+      /true,\s+isAdjacentOperationalClusterRow\(\s+group\.children,/,
+    );
+    expect(streamingContent).toMatch(
+      /true,\s+isAdjacentOperationalClusterRow\(\s+group\.children,/,
+    );
   });
 
   it('uses quieter Chief message surfaces and neutral proposal borders', () => {
@@ -315,17 +330,23 @@ describe('editorial conversation presentation contract', () => {
     expect(operationalRow).toContain(
       "CHAT_OPERATIONAL_SUMMARY_TONE_CLASS = 'font-normal text-muted-foreground'",
     );
-    expect(operationalRow).toContain("CHAT_OPERATIONAL_ICON_CLASS = 'h-4! w-4! shrink-0'");
+    expect(operationalRow).toContain(
+      "CHAT_OPERATIONAL_ICON_CLASS = 'h-[16px]! w-[16px]! shrink-0'",
+    );
     expect(sharedRow).toContain('data-chat-operational-row');
-    expect(sharedRow).toContain("{adjacentOperationalRow ? 'mt-1' : ''}");
-    for (const component of [toolCall, reasoning, contextEngine]) {
+    expect(sharedRow).not.toContain("{adjacentOperationalRow ? 'mt-1' : ''}");
+    expect(sharedRow).not.toContain('margin-top: var(--chat-operational-row-gap');
+    expect(sharedRow).toContain(
+      'data-adjacent-operational-row={adjacentOperationalRow || undefined}',
+    );
+    for (const component of [toolCall, reasoning, contextEngine, responseGroup]) {
       expect(component).toContain("import ChatOperationalRow from './ChatOperationalRow.svelte'");
       expect(component).toContain('<ChatOperationalRow');
     }
     expect(toolCall).not.toContain('McpIcon');
     expect(toolCall).toContain('resolveToolLeadingIcon');
-    expect(responseGroup).toContain('OPERATIONAL_ROW_TONE_CLASS');
-    expect(responseGroup).toContain('OPERATIONAL_ROW_LINE_CLASS');
+    expect(responseGroup).toContain('OPERATIONAL_GROUP_CONTENT_CLASS');
+    expect(responseGroup).not.toContain('OPERATIONAL_ROW_LINE_CLASS');
     expect(agentTab).not.toContain('toggleShowReasoningBlocks');
     expect(agentTab).not.toContain('layout_agentTab_reasoningShow_tooltip');
   });
@@ -340,10 +361,13 @@ describe('editorial conversation presentation contract', () => {
   it('compresses prompt and transcript bottom spacing in short chat panels', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const message = source('src/lib/components/chat/ChatMessage.svelte');
+    const queueEdgeLayout = source('src/lib/components/chat/chat-queue-edge-layout.ts');
 
     expect(panel).toContain('const COMPACT_HEIGHT_ENTER = 600');
     expect(panel).toContain('const COMPACT_HEIGHT_EXIT = 640');
-    expect(panel).toContain('class:pb-3={!isChiefWorkspace && isCompactMode}');
+    expect(panel).toContain('const transcriptBottomInsetClass = $derived(');
+    expect(panel).toContain('{transcriptBottomInsetClass}');
+    expect(queueEdgeLayout).toContain("return isCompactMode ? 'pb-3' : 'pb-6'");
     expect(panel).toContain("isCompactMode ? 'pb-1 pt-2' : 'py-2'");
     expect(panel).not.toContain("'pb-1 pt-3'");
     expect(panel).not.toContain('eventSubscriptionsOwnEndGap');

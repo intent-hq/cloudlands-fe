@@ -185,6 +185,7 @@ for (const theme of ['light', 'dark'] as const) {
         );
         await expect(groupDetails).toBeVisible();
         await expect(groupDetails.locator('[data-assistant-prose]')).toHaveCount(0);
+        await page.waitForTimeout(250);
         await expect(
           component.locator(
             '[data-testid="streaming-operational-cluster"] .content-block--animate-in',
@@ -268,9 +269,12 @@ for (const theme of ['light', 'dark'] as const) {
             'reasoning-tool',
             'reasoning-context',
             'context-tool',
+            'group-tool',
+            'tool-group',
+            'group-group',
           ]) {
             const rows = component.locator(
-              `[data-testid="operational-pair-${mode}-${pair}"] [data-chat-operational-row]`,
+              `[data-testid="operational-pair-${mode}-${pair}"] [data-operational-row-container]`,
             );
             await expect(rows).toHaveCount(2);
             const boxes = await rows.evaluateAll((elements) =>
@@ -280,6 +284,43 @@ for (const theme of ['light', 'dark'] as const) {
               }),
             );
             expect(boxes[1].top - boxes[0].bottom).toBeCloseTo(4 * zoom, 1);
+            const wrapperMargins = await rows.evaluateAll((elements) =>
+              elements.map((element) => {
+                const row = getComputedStyle(element);
+                const block = element.closest('[data-message-content-block]')!;
+                const blockStyle = getComputedStyle(block);
+                const intermediateMargins: string[][] = [];
+                let wrapper = element.parentElement;
+                while (wrapper && wrapper !== block) {
+                  const style = getComputedStyle(wrapper);
+                  intermediateMargins.push([
+                    style.marginTop,
+                    style.marginRight,
+                    style.marginBottom,
+                    style.marginLeft,
+                  ]);
+                  wrapper = wrapper.parentElement;
+                }
+                return {
+                  rowTop: row.marginTop,
+                  blockTop: blockStyle.marginTop,
+                  blockBottom: blockStyle.marginBottom,
+                  intermediateMargins,
+                };
+              }),
+            );
+            expect(wrapperMargins[0].blockBottom).toBe('0px');
+            for (const margins of wrapperMargins.flatMap(
+              ({ intermediateMargins }) => intermediateMargins,
+            )) {
+              expect(margins).toEqual(['0px', '0px', '0px', '0px']);
+            }
+            expect(wrapperMargins[1]).toMatchObject({
+              rowTop: '0px',
+              blockTop: '0px',
+              blockBottom: '0px',
+            });
+            await expect(fixture.locator('[data-operational-stack]')).toHaveCSS('row-gap', '4px');
           }
         }
 
@@ -294,6 +335,15 @@ for (const theme of ['light', 'dark'] as const) {
           ),
         ).toHaveCount(2);
         await page.waitForTimeout(200);
+        await assertCluster('static-operational-cluster', 5);
+        await staticRows.nth(2).getByRole('button').click();
+        await staticRows.nth(4).getByRole('button').click();
+        await page.waitForTimeout(200);
+        await expect(
+          component.locator(
+            '[data-testid="static-operational-cluster"] [data-operational-expanded-content]',
+          ),
+        ).toHaveCount(0);
         await assertCluster('static-operational-cluster', 5);
       });
     }

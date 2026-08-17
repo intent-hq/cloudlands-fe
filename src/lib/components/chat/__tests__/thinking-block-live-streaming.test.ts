@@ -166,7 +166,7 @@ describe('ThinkingBlock — live streaming integration', () => {
     await waitFor(
       () => {
         const buttons = screen.getAllByRole('button');
-        const thinkingButton = buttons.find((b) => b.textContent?.includes('Reasoning'));
+        const thinkingButton = buttons.find((b) => b.textContent?.includes('Thinking'));
         expect(thinkingButton?.getAttribute('aria-expanded')).toBe('false');
       },
       { timeout: 500 },

@@ -12,7 +12,7 @@ import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 import {
   openTab,
-  openTabInAdjacentOrSplit,
+  openTabWithPanelModeRequested,
   closeTab,
   closeActiveTab,
   closeTabsByType,
@@ -119,7 +119,7 @@ export class PanelLayoutAdapter {
       this.dispatch(openTab(this.workspaceId, tab, panelId));
       return;
     }
-    this.dispatch(openTabInAdjacentOrSplit(this.workspaceId, tab));
+    this.dispatch(openTabWithPanelModeRequested(this.workspaceId, tab));
   }
   /** User opens bypass Spec deferral and consume a pristine coordinator placeholder first. */
   openUserTab(tab: Omit<PanelTab, 'id'>, panelId?: string) {
@@ -131,14 +131,19 @@ export class PanelLayoutAdapter {
       this.dispatch(openTab(this.workspaceId, tab, panelId ?? placeholder?.id, undefined, true));
       return;
     }
-    this.dispatch(openTabInAdjacentOrSplit(this.workspaceId, tab, undefined, { force: true }));
+    this.dispatch(openTabWithPanelModeRequested(this.workspaceId, tab, { force: true }));
   }
   openTabInAdjacentOrSplit(
     tab: Omit<PanelTab, 'id'>,
     sourcePanelId?: string,
     options?: { animated?: boolean; force?: boolean; allowDuplicate?: boolean },
   ) {
-    this.dispatch(openTabInAdjacentOrSplit(this.workspaceId, tab, sourcePanelId, options));
+    this.dispatch(
+      openTabWithPanelModeRequested(this.workspaceId, tab, {
+        force: options?.force,
+        allowDuplicate: options?.allowDuplicate,
+      }),
+    );
   }
   openBrowserPanel(url?: string, contextItemId?: string, sourcePanelId?: string): void {
     const tab: Omit<PanelTab, 'id'> = {
@@ -256,6 +261,7 @@ export class PanelLayoutAdapter {
     nextWidth: number,
     panelIndex: number,
     nextCanvasWidth: number,
+    previousPanelWidths: readonly number[],
   ) {
     this.dispatch(
       resizePanelLayoutAtHorizontalPanel(
@@ -264,6 +270,7 @@ export class PanelLayoutAdapter {
         nextWidth,
         panelIndex,
         nextCanvasWidth,
+        previousPanelWidths,
       ),
     );
   }

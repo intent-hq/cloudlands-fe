@@ -93,7 +93,7 @@
     />
   </div>
   {#if nameError}
-    <p class="text-sm text-red-500 px-1">{nameError}</p>
+    <p class="text-sm text-error-foreground px-1">{nameError}</p>
   {/if}
 </div>
 

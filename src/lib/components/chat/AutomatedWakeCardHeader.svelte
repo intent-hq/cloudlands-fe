@@ -55,13 +55,14 @@
 </script>
 
 <div
-  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} font-medium text-muted-foreground"
+  class={SUBSCRIPTION_DISCLOSURE_ROW_CLASS}
   data-testid="automated-wake-header"
   data-wake-kind={presentation.kind}
   data-wake-state={presentation.state}
 >
   <Fa
     icon={presentation.kind === 'hook' ? faBolt : faCodePullRequest}
+    size={16}
     class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} shrink-0 {SUBSCRIPTION_ICON_CLASS}"
   />
   {#if presentation.kind === 'hook'}
@@ -72,7 +73,7 @@
     <Button
       type="button"
       variant="plain"
-      class="h-auto min-w-0 flex-1 justify-start whitespace-normal break-words text-left font-inherit text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      class="h-auto min-w-0 flex-1 justify-start whitespace-normal break-words text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       data-testid="pr-monitor-wake-chip"
       title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
       onclick={openPr}
@@ -81,7 +82,7 @@
     </Button>
   {/if}
   <span
-    class="type-caption shrink truncate text-subtle"
+    class="type-body shrink truncate font-normal text-muted-foreground"
     style="max-width: 35%;"
     data-testid="wake-status"
     title={statusLabel}
@@ -101,6 +102,7 @@
   >
     <Fa
       icon={faChevronDown}
+      size={16}
       class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {expanded
         ? ''
         : 'rotate-90'}"

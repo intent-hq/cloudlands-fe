@@ -261,7 +261,7 @@
       <!-- Error state -->
       {#if hasError}
         <div class="rounded-lg bg-destructive/10 border border-destructive/20 p-4">
-          <p class="text-sm text-destructive-foreground">{error}</p>
+          <p class="text-sm text-error-foreground">{error}</p>
           {#if onRegenerate}
             <Button variant="ghost" size="xs" class="mt-2" onclick={onRegenerate}>
               <Fa icon={faRotateRight} class="h-3 w-3 mr-1" />

@@ -11,6 +11,7 @@
   const renderableEntries = catalogEntries.filter(
     (entry) =>
       entry.slug === 'proposal-card' ||
+      entry.slug === 'chat-polish' ||
       catalogRendererIds.includes(entry.slug as (typeof catalogRendererIds)[number]),
   );
   const groups = buildCatalogGroups(renderableEntries);

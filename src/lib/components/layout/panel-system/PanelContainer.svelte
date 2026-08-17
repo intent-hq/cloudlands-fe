@@ -46,6 +46,8 @@
     suppressLayoutMotion?: boolean;
     retainedRootPanelWidth?: number | null;
     rootPanelReferenceSize?: number | null;
+    /** Canonical pixel widths for direct root-level horizontal children. */
+    rootHorizontalPanelWidths?: readonly number[] | null;
     /** Live outer-canvas delta; only the final root panel absorbs it. */
     rootCanvasResizeDelta?: number;
     /** Report the root split's gutter-exclusive content width. */
@@ -79,6 +81,7 @@
       nextWidth: number,
       panelIndex: number,
       nextCanvasWidth: number,
+      previousPanelWidths: readonly number[],
     ) => void;
     /** Handler for dropping a tab to create a split */
     onTabDropToSplit?: (
@@ -133,6 +136,7 @@
     suppressLayoutMotion = false,
     retainedRootPanelWidth = null,
     rootPanelReferenceSize = null,
+    rootHorizontalPanelWidths = null,
     rootCanvasResizeDelta = 0,
     onRootReferenceSizeChange,
     nodePath = [],
@@ -285,6 +289,13 @@
       panelReferenceSize,
     );
     if (dominantWidth !== null) return `0 0 ${dominantWidth}px`;
+    if (
+      nodePath.length === 0 &&
+      node.direction === 'horizontal' &&
+      rootHorizontalPanelWidths?.length === node.children.length
+    ) {
+      return `0 0 ${rootHorizontalPanelWidths[index]}px`;
+    }
     return getPanelFlexValue(
       resizeSizes[index] ?? node.sizes[index],
       panelReferenceSize,
@@ -445,7 +456,8 @@
 
   function handleResizeEnd(panelIndex?: number) {
     const committedSizes = liveResizeSizes;
-    const wasCanvasResize = growsCanvasAtRootHorizontal && canvasResizeStartChildWidths !== null;
+    const previousPanelWidths = canvasResizeStartChildWidths;
+    const wasCanvasResize = growsCanvasAtRootHorizontal && previousPanelWidths !== null;
     const previousCanvasWidth = canvasResizeStartWidth;
     const nextCanvasWidth = canvasResizeNextWidth;
     const nextRenderedCanvasWidth =
@@ -471,6 +483,7 @@
         nextCanvasWidth,
         panelIndex,
         nextRenderedCanvasWidth,
+        previousPanelWidths,
       );
     } else if (wasCanvasResize) {
       onCanvasResizePreview?.(0);

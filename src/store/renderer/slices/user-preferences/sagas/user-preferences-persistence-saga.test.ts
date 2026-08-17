@@ -38,6 +38,7 @@ import {
   setHasCompletedProviderSetup,
   setLanguagePreference,
   setNoteFontStyle,
+  setPanelOpenMode,
   setShowArchived,
   setShowReasoningBlocks,
   setSpellcheckEnabled,
@@ -47,6 +48,7 @@ import {
   toggleShowArchived,
   toggleShowReasoningBlocks,
   toggleSpellcheck,
+  togglePanelOpenMode,
 } from '../user-preferences-slice';
 import {
   hydrateUserPreferencesWorker,
@@ -146,6 +148,7 @@ describe('userPreferencesPersistenceSaga', () => {
       activityLogPresets: [preset],
       'language-preference': 'de',
       'github-links:defaultAction': 'copy-link',
+      'panel-layout:openMode': 'pin',
     };
     mocks.getJSON.mockImplementation((key: string) => stored[key]);
     const dispatch = vi.fn();
@@ -164,6 +167,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [hydrateActivityLogPresets([preset])],
       [setLanguagePreference('de')],
       [setGithubLinkDefaultAction('copy-link')],
+      [setPanelOpenMode('pin')],
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([]);
   });
@@ -197,6 +201,7 @@ describe('userPreferencesPersistenceSaga', () => {
         activityLogPresets: [preset],
         languagePreference: 'de',
         githubLinkDefaultAction: 'start-workspace',
+        panelOpenMode: 'pin',
       },
     };
     const channel = stdChannel();
@@ -228,6 +233,8 @@ describe('userPreferencesPersistenceSaga', () => {
       deleteActivityLogPreset(0),
       setLanguagePreference('de'),
       setGithubLinkDefaultAction('start-workspace'),
+      setPanelOpenMode('pin'),
+      togglePanelOpenMode(),
     ];
     for (const action of actions) {
       channel.put(action);
@@ -254,6 +261,8 @@ describe('userPreferencesPersistenceSaga', () => {
       ['activityLogPresets', [preset]],
       ['language-preference', 'de'],
       ['github-links:defaultAction', 'start-workspace'],
+      ['panel-layout:openMode', 'pin'],
+      ['panel-layout:openMode', 'pin'],
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([['de']]);
     expect(vi.mocked(window.electronAPI.invoke).mock.calls).toEqual([

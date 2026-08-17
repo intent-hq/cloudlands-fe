@@ -25,12 +25,12 @@ const tab = {
 describe('PanelLayoutAdapter', () => {
   beforeEach(() => mocks.dispatch.mockClear());
 
-  it('opens untargeted content beside the focused panel', () => {
+  it('routes untargeted content through the global panel mode', () => {
     new PanelLayoutAdapter('ws-1').openTab(tab);
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'panelLayout/openTabInAdjacentOrSplit',
+        type: 'panelLayout/openTabWithPanelModeRequested',
         payload: expect.objectContaining({ wsId: 'ws-1', tab }),
       }),
     );
@@ -47,12 +47,12 @@ describe('PanelLayoutAdapter', () => {
     );
   });
 
-  it('opens browser content beside the focused panel', () => {
+  it('routes browser content through the global panel mode', () => {
     new PanelLayoutAdapter('ws-1').openBrowserPanel('https://example.com');
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'panelLayout/openTabInAdjacentOrSplit',
+        type: 'panelLayout/openTabWithPanelModeRequested',
         payload: expect.objectContaining({
           wsId: 'ws-1',
           tab: expect.objectContaining({ type: 'browser', browserUrl: 'https://example.com' }),

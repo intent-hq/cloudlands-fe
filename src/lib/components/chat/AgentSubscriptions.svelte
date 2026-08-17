@@ -20,7 +20,6 @@
     faHourglass,
     faXmark,
     faStop,
-    faCheck,
     faCircleCheck,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -32,8 +31,11 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { selectAgentSessionsByIds } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import AgentAvatarStack, {
+    type AgentAvatarStackItem,
+  } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
+  import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
 
   import {
     selectAgentSubscriptions,
@@ -55,6 +57,7 @@
     SUBSCRIPTION_CARD_SURFACE_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
+    SUBSCRIPTION_FINISHED_ROW_GEOMETRY_CLASS,
     SUBSCRIPTION_ICON_CLASS,
     SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
     SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS,
@@ -97,6 +100,7 @@
     embedded?: boolean;
     visible?: boolean;
     count?: number;
+    participantAgentIds?: string[];
     /** Static rows for daemon-free catalog and visual-test previews. */
     isolatedPreview?: {
       agents: Array<{ id: string; name: string; finished?: boolean }>;
@@ -113,6 +117,7 @@
     embedded = false,
     visible = $bindable(false),
     count = $bindable(0),
+    participantAgentIds = $bindable([]),
     isolatedPreview,
     forceWaitingHeader = false,
   }: Props = $props();
@@ -229,7 +234,6 @@
   const watchedAgentSessionsById = $derived(
     new Map($watchedAgentSessions$.map((session) => [String(session.id), session])),
   );
-
   // Agents that have finished (completed or deleted) across delegation groups
   const completedAgentIdSet = $derived.by(() => {
     if (isolatedPreview) {
@@ -249,6 +253,19 @@
       if (status === 'completed') ids.add(id);
     }
     return ids;
+  });
+  const waitingHeaderStackItems = $derived.by(() => {
+    return waitingAgentRows.map((row): AgentAvatarStackItem => {
+      const session = watchedAgentSessionsById.get(row.agentId);
+      return {
+        key: row.agentId,
+        agentId: row.agentId,
+        specialist: session?.metadata?.specialist ?? session?.agentMetadata?.specialist ?? null,
+        state: getAvatarStateForSession(session, {
+          isCompleted: completedAgentIdSet.has(row.agentId),
+        }),
+      };
+    });
   });
 
   // Semantic grouping priority order:
@@ -313,11 +330,6 @@
     shouldGroupFinishedAgents ? activeAgentRows : [...activeAgentRows, ...finishedAgentRows],
   );
   const agentRowIdentityKey = $derived(waitingAgentRows.map((row) => row.agentId).join('\u001f'));
-  const latestFinishedAt = $derived(
-    shouldGroupFinishedAgents
-      ? watchedAgentSessionsById.get(finishedAgentRows[0]?.agentId ?? '')?.updatedAt
-      : undefined,
-  );
 
   const isCompleted = $derived($waitingState$ === 'completed');
 
@@ -388,6 +400,7 @@
   $effect(() => {
     visible = showSubscriptionRow || !!$wokenUpInfo$;
     count = waitingAgentRows.length;
+    participantAgentIds = waitingAgentRows.map((row) => row.agentId);
   });
 
   // ── Button handlers ──────────────────────────────────────────────────
@@ -627,11 +640,11 @@
     {#if isCompleted || $wokenUpInfo$}
       <!-- Slim status row: transitional "Completed" state and/or "Woken up" pill -->
       <div
-        class="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3 pt-1.5 pb-1 text-subtle {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+        class="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3 pt-1.5 pb-1 {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
       >
         {#if isCompleted}
           <span
-            class="shrink-0 flex items-center gap-2 whitespace-nowrap text-green-500"
+            class="shrink-0 flex items-center gap-2 whitespace-nowrap text-muted-foreground"
             transition:fade={{ duration: 200 }}
           >
             <Fa icon={faCircleCheck} size={14} class="h-3.5! w-3.5! shrink-0" />
@@ -643,7 +656,7 @@
             <Tooltip.Root delayDuration={0}>
               <Tooltip.Trigger>
                 <span
-                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-subtle bg-muted/50 {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+                  class="inline-flex items-center gap-1 rounded-full bg-muted/50 px-1.5 py-0.5 {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
                   transition:fade={{ duration: 200 }}
                 >
                   <Fa
@@ -685,58 +698,52 @@
       >
         {#if shouldGroupWaitingAgents}
           <!-- Section header: compact waiting summary and disclosure for large lists. -->
-          <div
-            class="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden text-foreground {SUBSCRIPTION_ROW_GEOMETRY_CLASS}"
-            data-testid="one-shot-header"
-          >
+          <div class="w-full min-w-0 max-w-full" data-testid="one-shot-header">
             <button
               type="button"
-              class="min-w-0 flex-1 rounded border-none bg-transparent p-0 text-left font-[inherit] text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring {SUBSCRIPTION_LEADING_CONTENT_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+              class="flex w-full min-w-0 max-w-full cursor-pointer items-center gap-2 overflow-hidden rounded border-none bg-transparent text-left font-[inherit] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring {SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
               data-testid="one-shot-summary-toggle"
               data-subscription-row="agent-watch"
               aria-expanded={!waitingAgentsCollapsed}
               aria-controls={waitingAgentListId}
               onclick={toggleWaitingAgentsCollapsed}
-              onkeydown={(event) => handleActionKeydown(event, toggleWaitingAgentsCollapsed)}
             >
-              <span
-                class="{SUBSCRIPTION_LEADING_COLUMN_CLASS} text-foreground opacity-100"
-                data-testid="one-shot-leading-column"
-              >
-                <Fa
-                  icon={faHourglass}
-                  size={14}
-                  class="h-3.5! w-3.5! shrink-0 text-foreground opacity-100"
-                />
+              <span class="min-w-0 shrink {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
+                <span
+                  class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
+                  data-testid="one-shot-leading-column"
+                >
+                  <Fa
+                    icon={faHourglass}
+                    size={14}
+                    class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                  />
+                </span>
+                <span
+                  class="min-w-0 truncate whitespace-nowrap text-muted-foreground"
+                  data-testid="one-shot-summary-title"
+                >
+                  {waitingAgentRows.length === 1
+                    ? m.chat_agentSubscriptions_waitingForAgents_one({
+                        count: formatInteger(waitingAgentRows.length),
+                      })
+                    : m.chat_agentSubscriptions_waitingForAgents_many({
+                        count: formatInteger(waitingAgentRows.length),
+                      })}
+                </span>
               </span>
+              {#if waitingAgentsCollapsed}
+                <AgentAvatarStack items={waitingHeaderStackItems} maxVisible={8} adaptive />
+              {:else}
+                <span class="min-w-0 flex-1" aria-hidden="true"></span>
+              {/if}
               <span
-                class="min-w-0 truncate whitespace-nowrap text-foreground"
-                data-testid="one-shot-summary-title"
+                class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                data-testid="one-shot-collapse-toggle"
               >
-                {waitingAgentRows.length === 1
-                  ? m.chat_agentSubscriptions_waitingForAgents_one({
-                      count: formatInteger(waitingAgentRows.length),
-                    })
-                  : m.chat_agentSubscriptions_waitingForAgents_many({
-                      count: formatInteger(waitingAgentRows.length),
-                    })}
-              </span>
-            </button>
-            <button
-              type="button"
-              class="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-ghost transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              data-testid="one-shot-collapse-toggle"
-              aria-expanded={!waitingAgentsCollapsed}
-              aria-controls={waitingAgentListId}
-              aria-label={waitingAgentsCollapsed
-                ? m.chat_agentSubscriptions_expandWatches_ariaLabel()
-                : m.chat_agentSubscriptions_collapseWatches_ariaLabel()}
-              onclick={toggleWaitingAgentsCollapsed}
-              onkeydown={(event) => handleActionKeydown(event, toggleWaitingAgentsCollapsed)}
-            >
-              <span class="inline-flex" data-testid="one-shot-chevron">
                 <Fa
                   icon={faChevronDown}
+                  size={16}
                   class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {waitingAgentsCollapsed
                     ? 'rotate-90'
                     : ''}"
@@ -764,11 +771,10 @@
               <div
                 class="w-full min-w-0 max-w-full overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
                 data-testid="finished-agent-group"
-                data-finished-at={latestFinishedAt}
               >
                 <button
                   type="button"
-                  class="w-full min-w-0 max-w-full cursor-pointer overflow-hidden text-left text-subtle hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring {SUBSCRIPTION_LEADING_CONTENT_CLASS} {SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+                  class="w-full min-w-0 max-w-full cursor-pointer items-center! overflow-hidden text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring {SUBSCRIPTION_LEADING_CONTENT_CLASS} {SUBSCRIPTION_FINISHED_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
                   data-testid="finished-agent-summary"
                   data-subscription-row="grouped-summary"
                   aria-expanded={finishedAgentsExpanded}
@@ -781,30 +787,27 @@
                     data-testid="finished-agent-leading-column"
                   >
                     <Fa
-                      icon={faCheck}
+                      icon={faCircleCheck}
                       size={14}
-                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                      class="h-3.5! w-3.5! shrink-0 text-success"
                     />
                   </span>
                   <span class="flex min-w-0 items-center gap-2">
-                    <span class="min-w-0 flex-1 truncate whitespace-nowrap">
+                    <span
+                      class="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground"
+                      data-testid="finished-agent-summary-title"
+                    >
                       {m.chat_agentSubscriptions_finished_many({
                         count: formatInteger(finishedAgentRows.length),
                       })}
                     </span>
-                    {#if latestFinishedAt}
-                      <RelativeTime
-                        date={latestFinishedAt}
-                        compact
-                        class="shrink-0 text-ui font-normal text-muted-foreground/70"
-                      />
-                    {/if}
                     <span
                       class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
                       data-testid="finished-agent-chevron"
                     >
                       <Fa
                         icon={faChevronDown}
+                        size={16}
                         class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {finishedAgentsExpanded
                           ? ''
                           : '-rotate-90'}"

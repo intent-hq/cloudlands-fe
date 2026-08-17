@@ -60,12 +60,7 @@
   const reasoningContent = $derived(extractReasoningHeading(content));
   const instanceId = $props.id();
   const detailsId = `reasoning-details-${instanceId}`;
-  const toggleLabel = $derived(
-    reasoningContent.heading ??
-      (isStreaming
-        ? m.chat_thinkingBlock_thinking_label()
-        : m.chat_thinkingBlock_reasoning_label()),
-  );
+  const toggleLabel = $derived(reasoningContent.heading ?? m.chat_thinkingBlock_thinking_label());
 </script>
 
 {#snippet leading()}
@@ -98,6 +93,7 @@
   controls={detailsId}
   {detailsId}
   ariaLabel={toggleLabel}
+  summaryTitle={toggleLabel}
   onclick={toggle}
   onkeydown={handleDisclosureKeydown}
   detailsClass="{OPERATIONAL_EXPANDED_CONTENT_CLASS} type-caption text-muted-foreground [&_p]:my-2 [&_p:first-child]:mt-0 [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"

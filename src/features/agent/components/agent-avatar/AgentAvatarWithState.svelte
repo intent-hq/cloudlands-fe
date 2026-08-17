@@ -74,24 +74,6 @@
     forced-color-adjust: auto;
   }
 
-  .agent-avatar-with-state::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border: var(--agent-avatar-ring-width, 1px) solid transparent;
-    border-radius: inherit;
-    pointer-events: none;
-  }
-
-  .agent-avatar-with-state:focus-visible {
-    outline: none;
-  }
-
-  .agent-avatar-with-state:focus-visible::after {
-    border-color: hsl(var(--ring));
-    box-shadow: inset 0 0 0 var(--agent-avatar-ring-width, 1px) hsl(var(--ring));
-  }
-
   .agent-avatar-with-state--running,
   .agent-avatar-with-state--responding {
     background-color: hsl(var(--agent-avatar-surface-active));
@@ -100,6 +82,7 @@
   .agent-avatar-with-state--completed {
     background-color: hsl(var(--agent-avatar-surface-completed));
     color: hsl(var(--agent-avatar-foreground-completed));
+    transition: none;
   }
 
   .agent-avatar-with-state--unread {

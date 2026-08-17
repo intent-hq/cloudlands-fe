@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -57,6 +57,7 @@ const consumerFiles = [
 ] as const;
 
 const overflowFiles = [
+  'src/features/agent/components/agent-avatar/AgentAvatarStack.svelte',
   'src/features/agent/components/agent-avatar/AgentAvatarCatalog.svelte',
   'src/features/layout/components/panel-tabs/Tab.svelte',
   'src/lib/components/chat/DelegationGroupSection.svelte',
@@ -67,6 +68,16 @@ const overflowFiles = [
 
 function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
+}
+
+function productionSvelteFiles(directory = 'src'): string[] {
+  return readdirSync(resolve(process.cwd(), directory), { withFileTypes: true }).flatMap(
+    (entry) => {
+      const path = `${directory}/${entry.name}`;
+      if (entry.isDirectory()) return productionSvelteFiles(path);
+      return entry.isFile() && entry.name.endsWith('.svelte') ? [path] : [];
+    },
+  );
 }
 
 describe('agent avatar overlay inventory', () => {
@@ -81,13 +92,50 @@ describe('agent avatar overlay inventory', () => {
     }
   });
 
+  it('keeps every production runtime consumer behind the canonical compatibility boundary', () => {
+    const runtimeConsumers = productionSvelteFiles().filter((path) => {
+      const contents = source(path);
+      return contents.includes('agent-avatar/') || contents.includes('data-agent-avatar');
+    });
+
+    expect(runtimeConsumers.length).toBeGreaterThanOrEqual(consumerFiles.length - 5);
+    for (const path of runtimeConsumers) {
+      const contents = source(path);
+      expect(contents, path).not.toContain('/auggie-avatar/');
+      expect(contents, path).not.toContain('/ui/agent-avatar/');
+      expect(contents, path).not.toContain('data-avatar-overlay');
+    }
+  });
+
+  it('resolves message-card identity from the live sender and uses named canonical geometry', () => {
+    const contents = source('src/lib/components/chat/AgentMessageAttributionHeader.svelte');
+    expect(contents).toContain('selectAgentSession(attribution.fromAgentId)');
+    expect(contents).toContain('data-agent-message-leading-identity');
+    expect(contents).toMatch(
+      /<AgentAvatar[\s\S]*specialist=\{senderSpecialist\}[\s\S]*variant="standard"/,
+    );
+    expect(contents).not.toMatch(/<AgentAvatar[\s\S]{0,180}\bsize=/);
+  });
+
   it('keeps every avatar-stack overflow count intrinsic and transparent', () => {
     for (const path of overflowFiles) {
       const contents = source(path);
       expect(contents, path).toContain('data-agent-avatar-overflow');
-      expect(contents, path).toMatch(/(?:text-xs|font-size:\s*0\.75rem)/);
+      expect(contents, path).toMatch(/(?:text-xs|font-size:\s*0\.(?:6875|75)rem)/);
       expect(contents, path).toMatch(/(?:bg-transparent|background:\s*transparent)/);
       expect(contents, path).not.toMatch(/agent-avatar-overflow[^}]*border-radius/s);
     }
+  });
+
+  it('uses parent-revealing participant cutouts without stack separator colors or icons', () => {
+    const contents = source('src/features/agent/components/agent-avatar/AgentAvatarStack.svelte');
+    expect(contents).toContain('mask-image: url(');
+    expect(contents).toContain('border-radius: var(--agent-avatar-corner-radius)');
+    expect(contents).not.toContain('radial-gradient');
+    expect(contents).toContain('style:z-index={visibleItems.length - index}');
+    expect(contents).toContain('font-size: 0.6875rem');
+    expect(contents).not.toContain('svelte-fa');
+    expect(contents).not.toContain('stack-icon');
+    expect(contents).not.toMatch(/agent-avatar-stack-item[\s\S]{0,500}\bborder:/);
   });
 });

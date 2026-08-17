@@ -174,7 +174,7 @@ html.workspace-view-transition::view-transition-group(workspace-view-sidebar-geo
 
 html,
 body {
-  background-color: hsl(var(--background));
+  background-color: transparent;
   color: hsl(var(--foreground));
   font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
@@ -183,6 +183,10 @@ body {
   --header-height: 2.7rem;
   --footer-height: 1.75rem;
   --panel-header-height: 3rem;
+}
+
+#app {
+  background-color: transparent;
 }
 
 /* Browsers default <kbd> to monospace; shortcuts use the app's UI typography. */

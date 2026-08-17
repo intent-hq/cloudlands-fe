@@ -16,7 +16,7 @@
   import { getLastMeaningfulLine } from '$lib/utils/text-utils';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { taskAgentPollingManager } from './task-agent-polling-manager';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -568,7 +568,7 @@
     </div>
 
     <div class="status-icon">
-      <AugieAvatarWithState {agentId} size={19} />
+      <AgentAvatarWithState {agentId} size={19} />
     </div>
   </button>
 {/if}

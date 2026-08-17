@@ -59,7 +59,7 @@ describe('LazyAgentCard', () => {
 
     expect(screen.queryByTestId('mock-agent-card')).toBeNull();
     const placeholder = container.querySelector<HTMLElement>('[data-lazy-agent-card]');
-    expect(placeholder?.style.height).toBe('48px');
+    expect(placeholder?.style.height).toBe('40px');
 
     MockIntersectionObserver.instances[0]?.fire(true);
     expect((await screen.findByTestId('mock-agent-card')).getAttribute('data-agent-id')).toBe(

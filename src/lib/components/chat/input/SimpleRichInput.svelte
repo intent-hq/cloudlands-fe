@@ -1619,7 +1619,7 @@
             onclick={handleMicClick}
             aria-label={m.chat_richInput_micStop_label()}
             aria-pressed="true"
-            class="text-destructive-foreground animate-pulse"
+            class="text-error-foreground animate-pulse"
             data-testid="composer-mic-button"
           >
             <Fa icon={faMicrophone} size="sm" />

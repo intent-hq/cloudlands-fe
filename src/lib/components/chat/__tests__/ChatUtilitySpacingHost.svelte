@@ -31,7 +31,7 @@
 
 <div class="{theme} bg-background p-3 text-foreground" data-testid="utility-host">
   <div
-    class="flex min-h-96 w-full flex-col {compact ? 'pb-3' : 'pb-2'}"
+    class="flex min-h-96 w-full flex-col {compact ? 'pb-3' : 'pb-6'}"
     data-testid="utility-column"
     data-streaming={streaming}
   >

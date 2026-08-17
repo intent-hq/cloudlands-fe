@@ -49,13 +49,15 @@
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
   import QueuedMessageNoticeHeader from './QueuedMessageNoticeHeader.svelte';
-  import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
+  import { getQueueInfo } from '$lib/utils/queue-info';
+  import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import AutomatedWakeCardHeader from './AutomatedWakeCardHeader.svelte';
   import { getAutomatedWakePresentation } from './automated-wake-presentation';
   import {
     safeSubscriptionSlide,
     SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
     SUBSCRIPTION_CARD_SURFACE_CLASS,
+    SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS,
   } from './subscription-disclosure';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
@@ -87,12 +89,14 @@
   }
 
   function openChatFile(path: string, event?: MouseEvent) {
+    if (readOnly) return;
     const workspaceId = getOwningWorkspaceId();
     if (!workspaceId) return;
     appStore.dispatch(openWorkspaceFile(workspaceId, path, getPanelOptions(event)));
   }
 
   function openChatNote(noteId: string, event?: MouseEvent) {
+    if (readOnly) return;
     const workspaceId = getOwningWorkspaceId();
     if (!workspaceId) return;
     appStore.dispatch(openWorkspaceNote(workspaceId, noteId, getPanelOptions(event)));
@@ -200,6 +204,8 @@
     backendSessionId?: string | null;
     /** Hide noisy stopped badges for interrupted automated coordination turns. */
     suppressCoordinationStoppedIndicator?: boolean;
+    /** Disable all outbound actions in isolated catalog and visual-test previews. */
+    readOnly?: boolean;
     /** False when an outer transcript row owns the canonical message identity attributes. */
     ownsMessageIdentity?: boolean;
   }
@@ -226,6 +232,7 @@
     onStickyClick,
     backendSessionId,
     suppressCoordinationStoppedIndicator = false,
+    readOnly = false,
     ownsMessageIdentity = true,
   }: Props = $props();
 
@@ -337,12 +344,16 @@
     role === 'user' ? getAgentMessageAttribution(message?.metadata) : null,
   );
   let isAgentMessageExpanded = $state(false);
-  let agentMessagePreview = $derived(message ? extractAllContent(message).trim() : '');
+  let agentMessagePreview = $derived(
+    message
+      ? (role === 'user' ? getPresentedUserMessageText(message) : extractAllContent(message)).trim()
+      : '',
+  );
   let agentMessageBodyId = $derived(`agent-message-body-${message?.id ?? 'pending'}`);
 
   // Queued-delivery info for messages drained from the pending queue
-  // (metadata-first, null when absent/malformed so old transcripts keep
-  // rendering the raw [SYSTEM NOTE] unchanged).
+  // (metadata-first, null when absent/malformed; exact legacy note removal is
+  // owned separately by the immutable user-message presentation boundary).
   let queueInfo = $derived(role === 'user' ? getQueueInfo(message?.metadata) : null);
 
   // Delivered background-hook and PR-monitor wakes share one metadata-first
@@ -715,6 +726,7 @@
 
   // Handle clicking on a context pill to navigate to the referenced content
   async function handlePillClick(pill: ContextPill, event?: MouseEvent) {
+    if (readOnly) return;
     // Handle external links (Linear, GitHub, Sentry, etc.) via unified link handler
     if (pill.url) {
       const wsId = getOwningWorkspaceId();
@@ -775,6 +787,7 @@
     openerElement: HTMLButtonElement,
     index: number = 0,
   ) {
+    if (readOnly) return;
     lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
     lightboxImageName =
       imageBlock.fileName ||
@@ -810,6 +823,7 @@
   // tab. A missing file (deleted from disk out-of-band) or a failed lookup
   // surfaces a toast — never a crash.
   function openAttachmentReference(block: ContentBlock & { attachmentId?: string }) {
+    if (readOnly) return;
     const wsId = workspace?.id ? String(workspace.id) : ($activeWorkspaceId ?? '');
     if (!block.attachmentId || !wsId) return;
     appStore.dispatch(openWorkspaceAttachment(wsId, block.attachmentId, block.fileName ?? ''));
@@ -817,6 +831,7 @@
 
   // Download a legacy inline-data file block via a data URL.
   function downloadInlineFileBlock(block: ContentBlock, index: number) {
+    if (readOnly) return;
     const dataUrl = `data:${block.mimeType || 'application/octet-stream'};base64,${block.data}`;
     const link = document.createElement('a');
     link.href = dataUrl;
@@ -828,11 +843,13 @@
 
   // Parse context and get clean text for user messages
   const parsedMessage = $derived.by(() => {
-    const rawText = automatedWakePresentation?.bodyText ?? extractTextFromMessage();
+    const rawText =
+      automatedWakePresentation?.bodyText ??
+      (role === 'user' && message
+        ? getPresentedUserMessageText(message)
+        : extractTextFromMessage());
     if (role === 'user') {
-      // Hide the daemon's dequeue-wait [SYSTEM NOTE] from the displayed body
-      // when structured queueInfo metadata renders it as a chip instead.
-      const parsed = parseContextFromMessage(queueInfo ? stripDequeueWaitNote(rawText) : rawText);
+      const parsed = parseContextFromMessage(rawText);
       // Get metadata refs for URL lookup
       const metadataRefs = message?.metadata?.contextReferences;
 
@@ -914,9 +931,14 @@
     const processedToolIds = new Set<string>();
 
     // Extract text and tool blocks from contentBlocks
+    if (role === 'user' && message) {
+      const presentedText = getPresentedUserMessageText(message);
+      if (presentedText.trim()) parts.push(presentedText);
+    }
     if (message?.contentBlocks && Array.isArray(message.contentBlocks)) {
       for (const block of message.contentBlocks) {
         if (block.type === 'text') {
+          if (role === 'user') continue;
           const text = (block as any).text || (block as any).content || '';
           if (text.trim()) {
             parts.push(text);
@@ -987,10 +1009,9 @@
 
   // Handle edit mode
   function handleStartEdit() {
-    // Parse the stored message to extract context and user message; the
-    // dequeue-wait [SYSTEM NOTE] hidden from the body stays out of the edit
-    // box too (it must not be re-sent as user text).
-    const rawText = queueInfo ? stripDequeueWaitNote(getMessageText()) : getMessageText();
+    // Presentation-only delivery notes stay out of edit/retry text while the
+    // canonical stored content remains unchanged.
+    const rawText = message ? getPresentedUserMessageText(message) : getMessageText();
     const parsed = parseStoredMessage(rawText);
     editValue = parsed.userMessage;
 
@@ -1161,6 +1182,7 @@
       : 'relative assistant-message'}"
     data-message-id={ownsMessageIdentity ? message?.id : undefined}
     data-message-role={ownsMessageIdentity ? role : undefined}
+    inert={readOnly}
   >
     {#if role === 'user'}
       {#if isEditing}
@@ -1192,7 +1214,7 @@
           class="{agentAttribution
             ? `${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
             : automatedWakePresentation
-              ? `relative mt-4 ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
+              ? `relative ${SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS} ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
               : USER_MESSAGE_SURFACE_CLASS} {onEditSubmit &&
           !agentAttribution &&
           !hookWakeAttribution &&

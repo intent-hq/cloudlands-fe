@@ -15,6 +15,7 @@
   import {
     CHAT_OPERATIONAL_ICON_CLASS,
     COMPACT_TOOL_TRAILING_CLASS,
+    OPERATIONAL_INLINE_DETAILS_CLASS,
   } from './operational-disclosure-row';
   import { buildToolDisplayModel } from './tool-display-model';
   import ToolStatusIcon from './ToolStatusIcon.svelte';
@@ -133,6 +134,11 @@
 
   let expanded = $state(false);
   const isExpandable = $derived(displayModel.hasDetails);
+  const hasTrailing = $derived(
+    displayModel.status === 'success' ||
+      displayModel.status === 'error' ||
+      Boolean(toolDisplay.noteId),
+  );
   const detailsId = $derived(`tool-details-${toolUse.id}`);
 
   function toggleExpanded() {
@@ -257,17 +263,21 @@
   <ChatOperationalRow
     {leading}
     {summary}
-    {trailing}
+    trailing={hasTrailing ? trailing : undefined}
+    showChevron={false}
     details={expanded ? details : undefined}
     interactive={isExpandable}
     {expanded}
     controls={detailsId}
     ariaLabel={displayModel.accessibleSentence}
-    title={isExpandable ? m.chat_toolCall_technicalDetails_label() : undefined}
+    title={isExpandable
+      ? m.chat_toolCall_technicalDetails_label()
+      : displayModel.accessibleSentence}
+    summaryTitle={displayModel.accessibleSentence}
     onclick={toggleExpanded}
     onkeydown={handleDisclosureKeydown}
     {detailsId}
-    detailsClass="ml-1"
+    detailsClass={OPERATIONAL_INLINE_DETAILS_CLASS}
     {adjacentOperationalRow}
     streaming={toolState === 'running'}
     toolIcon

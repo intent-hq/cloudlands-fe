@@ -1,23 +1,19 @@
 <script lang="ts">
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import Fa from 'svelte-fa';
   import {
-  faRotateLeft,
-  faCheck,
-  faCircleNotch,
-  faCircleExclamation,
-  faTriangleExclamation,
-} from '@fortawesome/free-solid-svg-icons';
+    faRotateLeft,
+    faCheck,
+    faCircleNotch,
+    faCircleExclamation,
+    faTriangleExclamation,
+  } from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
   import { Logger } from '$lib/utils/logger';
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
   import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger, formatNumber } from '$lib/i18n/format';
-
 
   const logger = new Logger({ category: 'AgentRulesEditor' });
 
@@ -186,7 +182,7 @@
 
   {#if errorMessage}
     <div
-      class="bg-destructive/10 border border-destructive/20 text-destructive-foreground px-4 py-2 rounded-md text-sm shrink-0"
+      class="bg-destructive/10 border border-destructive/20 text-error-foreground px-4 py-2 rounded-md text-sm shrink-0"
     >
       {errorMessage}
     </div>
@@ -195,7 +191,7 @@
   <!-- Character limit warning/error callout -->
   {#if isOverLimit}
     <div
-      class="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-md text-destructive-foreground shrink-0"
+      class="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-md text-error-foreground shrink-0"
     >
       <Fa icon={faCircleExclamation} class="w-4 h-4 flex-shrink-0" />
       <span class="text-sm">

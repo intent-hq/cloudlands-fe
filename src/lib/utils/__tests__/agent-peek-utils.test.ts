@@ -1,8 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import * as BrandedIds from '$shared/types/branded-ids';
@@ -37,9 +33,7 @@ describe('getAgentPeekData', () => {
   });
 
   it('exposes lastResponse when the assistant message is text-only', () => {
-    const session = makeSession([
-      makeAssistantMessage([{ type: 'text', text: 'Hello world' }]),
-    ]);
+    const session = makeSession([makeAssistantMessage([{ type: 'text', text: 'Hello world' }])]);
     const data = getAgentPeekData(session);
     expect(data?.lastResponse).toBe('Hello world');
     expect(data?.lastToolUse).toBeUndefined();
@@ -238,6 +232,17 @@ describe('getAgentPeekData', () => {
       const data = getAgentPeekData(session);
       expect(data?.lastResponse).toBe('wire response');
       expect(data?.lastUserMessage).toBe('wire user message');
+    });
+
+    it('hides exact trailing delivery notes from wire preview text', () => {
+      const note =
+        '[SYSTEM NOTE] This message was queued at 2026-01-01T00:00:00Z and waited 8s before delivery.';
+      const session = {
+        ...makeSession([]),
+        lastUserMessage: `wire user message\n\n${note}`,
+      };
+
+      expect(getAgentPeekData(session)?.lastUserMessage).toBe('wire user message');
     });
 
     it('keeps the transcript-derived response when an assistant message exists', () => {
