@@ -165,6 +165,7 @@ test.describe('chat message navigator production path', () => {
       const header = component.locator('[data-panel-content-header]');
       const headerActions = header.locator('[data-panel-header-actions]');
       const title = header.getByText('Navigation agent', { exact: true });
+      const pinButton = headerActions.locator('[data-panel-pin]');
       const listButton = headerActions.getByTestId('chat-message-navigator-trigger');
       const downButton = headerActions.getByTestId('chat-scroll-to-bottom-button');
       const panelActionsButton = headerActions.getByTestId('panel-actions-trigger');
@@ -172,41 +173,58 @@ test.describe('chat message navigator production path', () => {
       await expectUniqueVisible(header);
       await expectUniqueVisible(headerActions);
       await expectUniqueVisible(title);
+      await expectUniqueVisible(pinButton);
       await expectUniqueVisible(listButton);
       await expectUniqueVisible(downButton);
       await expectUniqueVisible(panelActionsButton);
       await expectUniqueVisible(closeButton);
       await expect(downButton).toBeDisabled();
       expect(
-        await headerActions.evaluate(
-          (actions, ids) => {
-            const nodes = ids.map((id) => actions.querySelector(`[data-testid="${id}"]`));
-            return nodes.every(
-              (node, index) =>
-                node &&
-                (index === nodes.length - 1 ||
-                  Boolean(
-                    node.compareDocumentPosition(nodes[index + 1]!) &
-                    Node.DOCUMENT_POSITION_FOLLOWING,
-                  )),
-            );
-          },
-          [
-            'chat-message-navigator-trigger',
-            'chat-scroll-to-bottom-button',
-            'panel-actions-trigger',
-            'panel-close-button',
-          ],
-        ),
-      ).toBe(true);
-      const [titleBox, actionsBox, headerBox, listIconBox, arrowIconBox] = await Promise.all([
+        await headerActions
+          .locator('button')
+          .evaluateAll((buttons) =>
+            buttons.map((button) =>
+              button.hasAttribute('data-panel-pin')
+                ? 'panel-pin'
+                : button.getAttribute('data-testid'),
+            ),
+          ),
+      ).toEqual([
+        'panel-pin',
+        'chat-message-navigator-trigger',
+        'chat-scroll-to-bottom-button',
+        'panel-actions-trigger',
+        'panel-close-button',
+      ]);
+      const [
+        titleBox,
+        actionsBox,
+        headerBox,
+        pinButtonBox,
+        listButtonBox,
+        downButtonBox,
+        listIconBox,
+        arrowIconBox,
+      ] = await Promise.all([
         title.boundingBox(),
         headerActions.boundingBox(),
         header.boundingBox(),
+        pinButton.boundingBox(),
+        listButton.boundingBox(),
+        downButton.boundingBox(),
         listButton.locator('svg').boundingBox(),
         downButton.locator('svg').boundingBox(),
       ]);
-      if (!titleBox || !actionsBox || !headerBox || !listIconBox || !arrowIconBox) {
+      if (
+        !titleBox ||
+        !actionsBox ||
+        !headerBox ||
+        !pinButtonBox ||
+        !listButtonBox ||
+        !downButtonBox ||
+        !listIconBox ||
+        !arrowIconBox
+      ) {
         throw new Error('Expected complete production header geometry');
       }
       expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(actionsBox.x + 0.5);
@@ -215,9 +233,15 @@ test.describe('chat message navigator production path', () => {
       );
       expect(listIconBox.width).toBeCloseTo(12, 0);
       expect(listIconBox.height).toBeCloseTo(12, 0);
-      expect(arrowIconBox.width).toBeCloseTo(20, 0);
-      expect(arrowIconBox.height).toBeCloseTo(20, 0);
-      await expect(downButton).toHaveAttribute('data-icon-size', '20');
+      expect(arrowIconBox.width).toBeCloseTo(24, 0);
+      expect(arrowIconBox.height).toBeCloseTo(24, 0);
+      expect(pinButtonBox.width).toBeCloseTo(28, 0);
+      expect(pinButtonBox.height).toBeCloseTo(28, 0);
+      expect(listButtonBox.width).toBeCloseTo(36, 0);
+      expect(listButtonBox.height).toBeCloseTo(36, 0);
+      expect(downButtonBox.width).toBeCloseTo(36, 0);
+      expect(downButtonBox.height).toBeCloseTo(36, 0);
+      await expect(downButton).toHaveAttribute('data-icon-size', '24');
 
       const target = page.locator('[data-message-id="user-6"]');
       await expect(target).toHaveCount(0);
@@ -447,6 +471,13 @@ test.describe('chat message navigator production path', () => {
         .poll(() => scrollContainer.evaluate((element) => element.scrollTop))
         .toBeCloseTo(selectedScrollTop, 0);
       await expect(downButton).toBeEnabled();
+      await pinButton.focus();
+      await page.keyboard.press('Tab');
+      await expect(listButton).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(downButton).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(panelActionsButton).toBeFocused();
       await downButton.click();
       await expect(downButton).toBeDisabled();
       await expect
@@ -466,16 +497,25 @@ test.describe('chat message navigator production path', () => {
     const component = await mount(ChatMessageNavigatorIntegrationHost);
     const header = component.locator('[data-panel-content-header]');
     const headerActions = header.locator('[data-panel-header-actions]');
+    const pinButton = headerActions.locator('[data-panel-pin]');
     const trigger = headerActions.getByTestId('chat-message-navigator-trigger');
     const downButton = headerActions.getByTestId('chat-scroll-to-bottom-button');
     const outside = headerActions.getByTestId('panel-actions-trigger');
     const title = header.getByText('Navigation agent', { exact: true });
     await expectUniqueVisible(header);
     await expectUniqueVisible(headerActions);
+    await expectUniqueVisible(pinButton);
     await expectUniqueVisible(trigger);
     await expectUniqueVisible(downButton);
     await expectUniqueVisible(outside);
     await expectUniqueVisible(title);
+
+    await pinButton.focus();
+    await expect(pinButton).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(trigger).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(outside).toBeFocused();
 
     await trigger.press('Space');
     let dialog = await pickerForTrigger(page, trigger);

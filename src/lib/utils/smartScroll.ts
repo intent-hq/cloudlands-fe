@@ -520,6 +520,7 @@ export function animateScrollTo(
   getContainer: () => HTMLElement | null | undefined,
   targetScrollTop: number,
   duration = 150,
+  onComplete?: (container: HTMLElement) => void,
 ): void {
   const container = getContainer();
   if (!container) return;
@@ -543,6 +544,8 @@ export function animateScrollTo(
 
     if (progress < 1) {
       requestAnimationFrame(animate);
+    } else {
+      onComplete?.(current);
     }
   }
 

@@ -38,7 +38,7 @@ describe('ChatMessageNavigator', () => {
     expect(buttons[1]).toBe(screen.getByTestId('chat-scroll-to-bottom-button'));
     expect((buttons[1] as HTMLButtonElement).disabled).toBe(true);
     expect(buttons[0].querySelector('[data-icon]')?.classList.contains('size-3!')).toBe(true);
-    expect(buttons[1].querySelector('[data-icon]')?.classList.contains('size-5!')).toBe(true);
+    expect(buttons[1].querySelector('[data-icon]')?.classList.contains('size-6!')).toBe(true);
   });
 
   it('opens a valid searchable listbox and autofocuses its quiet field', async () => {

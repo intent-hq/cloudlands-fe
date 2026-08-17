@@ -23,5 +23,5 @@
   aria-label={label}
   title={label}
 >
-  <Fa icon={faArrowDown} size={CHAT_ICON_SIZE.navigationArrow} class="size-5!" />
+  <Fa icon={faArrowDown} size={CHAT_ICON_SIZE.navigationArrow} class="size-6!" />
 </button>

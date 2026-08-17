@@ -420,6 +420,7 @@ describe('panel context menu routing', () => {
 
     expect(directActions.querySelectorAll('button')).toHaveLength(3);
     const pinButton = directActions.querySelector<HTMLButtonElement>('[data-panel-pin]')!;
+    expect(directActions.querySelector('button')).toBe(pinButton);
     expect(pinButton.getAttribute('aria-label')).toBe('Pin panel');
     expect(pinButton.getAttribute('aria-pressed')).toBe('false');
     expect(directActions.querySelector('[data-testid="panel-actions-trigger"]')).toBeTruthy();

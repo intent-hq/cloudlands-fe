@@ -3,7 +3,10 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workspace } from '$shared/types';
-import { followToBottom as scrollToBottomUtil } from '$lib/utils/smartScroll';
+import {
+  animateScrollTo as animateScrollToUtil,
+  followToBottom as scrollToBottomUtil,
+} from '$lib/utils/smartScroll';
 
 const mocks = vi.hoisted(() => {
   const mutableReadable = <T>(initial: T) => {
@@ -38,10 +41,15 @@ const mocks = vi.hoisted(() => {
     resizeDisconnect: vi.fn(),
     resizeConstructor: vi.fn(),
     agentMessages: mutableReadable<unknown[]>([]),
+    animateScrollTo: vi.fn(),
     animateMessageSend: vi.fn(),
     createMessageSendLaunchBubble: vi.fn(),
     pendingQuestions: null as { messageId: string; questions: unknown[] } | null,
-    followBottomOptions: null as { onFollowChange?: (follow: boolean) => void } | null,
+    prefersReducedMotion: false,
+    followBottomOptions: null as {
+      follow: boolean;
+      onFollowChange?: (follow: boolean) => void;
+    } | null,
     selector,
   };
 });
@@ -115,6 +123,7 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => ({ getPanelIds: () => [], getPanel: () => null }),
 }));
 vi.mock('$lib/utils/smartScroll', () => ({
+  animateScrollTo: mocks.animateScrollTo,
   followToBottom: vi.fn(),
   followBottom: (
     node: HTMLElement,
@@ -290,6 +299,16 @@ beforeEach(() => {
       disconnect = mocks.resizeDisconnect;
     },
   );
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query === '(prefers-reduced-motion: reduce)' && mocks.prefersReducedMotion,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }));
   vi.clearAllMocks();
   clearDraftCacheForTests();
   clearChatScrollCacheForTests();
@@ -312,6 +331,7 @@ beforeEach(() => {
     return bubble;
   });
   mocks.pendingQuestions = null;
+  mocks.prefersReducedMotion = false;
   mocks.followBottomOptions = null;
 });
 
@@ -840,9 +860,7 @@ describe('ChatPanel mounted lifecycle', () => {
     scrollContainer.scrollTop = 100; // 500px from the bottom
     await fireEvent.scroll(scrollContainer);
     await tick();
-    expect(
-      view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]'),
-    ).toBeNull();
+    expect(view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]')).toBeNull();
     await vi.advanceTimersByTimeAsync(SCROLL_BUTTON_SHOW_SETTLE_MS);
     await tick();
     const arrowButton = view.container.querySelector(
@@ -863,6 +881,65 @@ describe('ChatPanel mounted lifecycle', () => {
       userMessages: [{ id: 'message-1', text: 'User prompt' }],
     });
     expect(view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]')).toBeNull();
+  });
+
+  it('smoothly scrolls the header action before re-locking at the live bottom', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([{ id: 'message-1' }]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    flushFrame();
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 400 },
+    });
+    scrollContainer.scrollTop = 100;
+    mocks.followBottomOptions?.onFollowChange?.(false);
+    await tick();
+    vi.mocked(scrollToBottomUtil).mockClear();
+    mocks.animateScrollTo.mockClear();
+
+    view.component.scrollToBottom();
+
+    expect(animateScrollToUtil).toHaveBeenCalledOnce();
+    const [getContainer, target, duration, onComplete] = mocks.animateScrollTo.mock.calls[0];
+    expect(getContainer()).toBe(scrollContainer);
+    expect(target).toBe(600);
+    expect(duration).toBe(150);
+    expect(scrollToBottomUtil).not.toHaveBeenCalled();
+
+    onComplete(scrollContainer);
+    await tick();
+    expect(scrollToBottomUtil).toHaveBeenCalledOnce();
+    expect(scrollToBottomUtil).toHaveBeenCalledWith(scrollContainer);
+    expect(mocks.followBottomOptions?.follow).toBe(true);
+  });
+
+  it('scrolls the header action immediately when reduced motion is preferred', async () => {
+    mocks.prefersReducedMotion = true;
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([{ id: 'message-1' }]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    flushFrame();
+    mocks.followBottomOptions?.onFollowChange?.(false);
+    await tick();
+    vi.mocked(scrollToBottomUtil).mockClear();
+    mocks.animateScrollTo.mockClear();
+
+    view.component.scrollToBottom();
+    await tick();
+
+    expect(animateScrollToUtil).not.toHaveBeenCalled();
+    expect(scrollToBottomUtil).toHaveBeenCalledOnce();
+    expect(scrollToBottomUtil).toHaveBeenCalledWith(scrollContainer);
+    expect(mocks.followBottomOptions?.follow).toBe(true);
   });
 
   it('flashes a decorative lock confirmation when scrolling back to the bottom re-locks', async () => {

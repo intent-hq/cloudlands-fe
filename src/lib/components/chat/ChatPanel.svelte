@@ -3222,10 +3222,24 @@
   }
 
   export function scrollToBottom() {
-    if (scrollContainer) {
+    const container = scrollContainer;
+    if (!container) return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
       shouldFollowBottom = true;
-      followToBottom(scrollContainer);
+      followToBottom(container);
+      return;
     }
+    shouldFollowBottom = false;
+    animateScrollTo(
+      () => (scrollContainer === container ? container : null),
+      Math.max(0, container.scrollHeight - container.clientHeight),
+      150,
+      () => {
+        if (scrollContainer !== container) return;
+        shouldFollowBottom = true;
+        followToBottom(container);
+      },
+    );
   }
 
   export async function navigateToUserMessage(messageId: string): Promise<boolean> {

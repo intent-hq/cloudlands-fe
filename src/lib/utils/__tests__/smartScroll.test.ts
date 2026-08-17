@@ -45,17 +45,21 @@ describe('animateScrollTo', () => {
 
   it('animates scrollTop to the target and stops scheduling at completion', () => {
     const container = makeContainer(0);
-    animateScrollTo(() => container, 100, 150);
+    const onComplete = vi.fn();
+    animateScrollTo(() => container, 100, 150, onComplete);
     expect(rafCallbacks).toHaveLength(1);
 
     runFrames(75);
     expect(container.scrollTop).toBeGreaterThan(0);
     expect(container.scrollTop).toBeLessThan(100);
     expect(rafCallbacks).toHaveLength(1);
+    expect(onComplete).not.toHaveBeenCalled();
 
     runFrames(150);
     expect(container.scrollTop).toBe(100);
     expect(rafCallbacks).toHaveLength(0);
+    expect(onComplete).toHaveBeenCalledOnce();
+    expect(onComplete).toHaveBeenCalledWith(container);
   });
 
   it('stops cleanly when the container becomes null mid-animation', () => {

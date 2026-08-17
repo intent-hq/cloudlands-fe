@@ -1617,8 +1617,8 @@
       <div
         class="panel-actions flex items-center gap-0.5 px-1 opacity-30 group-hover/tabbar:opacity-100 focus-within:opacity-100 transition-opacity z-20"
       >
-        {@render contentActions?.primary?.()}
         {@render panelPinButton()}
+        {@render contentActions?.primary?.()}
         {@render panelActionsDropdown()}
         {@render panelCloseButton()}
       </div>
@@ -1777,8 +1777,8 @@
 
       <!-- Right: stable content controls, grouped actions, and close. -->
       <div class="flex shrink-0 items-center gap-0.5" data-panel-header-actions>
-        {@render contentActions?.primary?.()}
         {@render panelPinButton()}
+        {@render contentActions?.primary?.()}
         {@render panelActionsDropdown()}
         {@render panelCloseButton()}
       </div>
