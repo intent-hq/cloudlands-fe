@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.56.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.4...v2.56.5) (2026-08-17)
+
+
+### 🐛 Bug Fixes
+
+* decode TOON-encoded workspace_api delegate results in chat parser ([#1347](https://github.com/intent-hq/cloudlands-fe/issues/1347)) ([88c0075](https://github.com/intent-hq/cloudlands-fe/commit/88c00756c3ccefff53b25a60be6407e8135e586a))
+
 ## [2.56.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.3...v2.56.4) (2026-08-16)
 
 
