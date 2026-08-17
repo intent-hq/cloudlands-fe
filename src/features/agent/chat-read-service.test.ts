@@ -415,6 +415,40 @@ describe('chatReadService (fake seam, real store)', () => {
     expect(stored.map((m) => m.id)).toEqual(Array.from({ length: 125 }, (_, i) => `msg-${i + 1}`));
   });
 
+  // Pager bound (intent-hq/monorepo#2627): the agent-session slice prunes to
+  // the newest 500 messages, so paging past that cap fetches rows only to
+  // discard them. The newest-first walk must stop once 500 messages have
+  // accumulated instead of draining every page of a huge transcript.
+  it('stops paging at the 500-message store cap instead of draining the full transcript', async () => {
+    const agentId = 'agent-pagination-cap';
+    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
+
+    // An 800-message conversation in 200-message pages, newest page first:
+    // Page 1 (no token): messages 601-800, Page 2: 401-600, Page 3: 201-400.
+    // Page 3 still advertises nextToken="page4" — the bound must stop there
+    // (the page-4 mock is deliberately NOT queued; an unbounded pager would
+    // fetch the afterEach default empty page instead and fail the call-count
+    // assertion below).
+    const page = (start: number) =>
+      Array.from({ length: 200 }, (_, i) => makeMessage(`msg-${start + i}`, `m ${start + i}`));
+    agentsApi.getConversation
+      .mockResolvedValueOnce({ ...conversation(page(601), 'page2') } as never)
+      .mockResolvedValueOnce({ ...conversation(page(401), 'page3') } as never)
+      .mockResolvedValueOnce({ ...conversation(page(201), 'page4') } as never);
+
+    await loadChatTranscript(agentId);
+
+    // 3 pages accumulate 600 >= 500 — the fourth page is never requested.
+    expect(agentsApi.getConversation).toHaveBeenCalledTimes(3);
+    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(3, agentId, 200, 'page3');
+
+    // The store keeps the newest 500 (the slice's prune cap), oldest-first.
+    const stored = selectAgentMessages.select(appStore.state, agentId);
+    expect(stored.length).toBe(500);
+    expect(stored[0].id).toBe('msg-301');
+    expect(stored[stored.length - 1].id).toBe('msg-800');
+  });
+
   it('tab-switch mid-turn keeps interim blocks via full transcript reload', async () => {
     // The in-flight assistant message may be included in the conversation
     // transcript when the daemon has it. A re-mount re-hydrates it.

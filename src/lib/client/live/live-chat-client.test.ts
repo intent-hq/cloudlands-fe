@@ -1735,3 +1735,92 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
     off();
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// Daemon-side stream restart (intent-hq/monorepo#2627): a harness restart
+// re-emits the seq-0 snapshot and restarts the delta seq counter on the SAME
+// subscriptionId. The reconciler must rebuild from that snapshot — rejecting
+// it as a stale duplicate leaves expectedSeq ahead of the restarted stream,
+// so every following delta is silently dropped as 'stale' and the transcript
+// freezes until an unrelated seq jump (the user's next message) finally
+// forces a gap resnapshot.
+// ---------------------------------------------------------------------------
+
+describe('LiveChatClient.subscribe daemon stream restart (intent-hq/monorepo#2627)', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    reset();
+  });
+
+  const subscribeCalls = () => mockedRequest.mock.calls.filter(([m]) => m === 'chat.subscribe');
+
+  const assistantDelta = (messageId: string, text: string) => ({
+    added: [
+      {
+        messageId,
+        role: 'assistant',
+        block: { type: 'text', id: `${messageId}:0`, text },
+        blockIndex: 0,
+        streamingComplete: false,
+      },
+    ],
+    updated: [],
+    removedIds: [],
+  });
+
+  it('rebuilds from a re-emitted seq-0 snapshot and applies the restarted delta stream', async () => {
+    vi.useFakeTimers();
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ id: string; contentBlocks?: Array<{ text?: string }> }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t as never));
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Hydrated and advanced: expectedSeq is now 3.
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+    deltaPush('sub-1', 1, assistantDelta('a1', 'hello'));
+    deltaPush('sub-1', 2, assistantDelta('a1', 'hello world'));
+    expect(seen).toHaveLength(3);
+
+    // Harness restart: the daemon re-emits seq-0 and restarts deltas at 1 on
+    // the same subscription. The snapshot must re-seed the transcript…
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+    expect(seen).toHaveLength(4);
+
+    // …and the restarted deltas must render (the frozen-transcript black
+    // hole dropped every one of these as 'stale').
+    deltaPush('sub-1', 1, assistantDelta('b1', 'recovered'));
+    deltaPush('sub-1', 2, assistantDelta('b1', 'recovered turn'));
+    expect(seen).toHaveLength(6);
+    const last = seen[seen.length - 1];
+    expect(last.messages.map((m) => m.id)).toEqual(['0190a1b2-user', 'b1']);
+    expect(last.messages[1].contentBlocks?.[0]).toMatchObject({ text: 'recovered turn' });
+
+    // The rebuild is in-place: no unsubscribe/subscribe churn afterwards.
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(subscribeCalls()).toHaveLength(1);
+    off();
+  });
+
+  it('still ignores an exact duplicate re-delivery of the hydration snapshot', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: unknown[] = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+    expect(seen).toHaveLength(1);
+
+    // Duplicate re-delivery before any delta advanced the stream: no repeat
+    // hydration edge.
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+    expect(seen).toHaveLength(1);
+
+    // The stream continues at seq 1 and applies normally either way.
+    deltaPush('sub-1', 1, assistantDelta('a1', 'hi'));
+    expect(seen).toHaveLength(2);
+    off();
+  });
+});
