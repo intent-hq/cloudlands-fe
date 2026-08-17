@@ -11,6 +11,7 @@
 
   import {
     selectAvailableModels,
+    selectAvailableModelsProviderId,
     selectModelEffortLevels,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
@@ -52,6 +53,7 @@
   const activeProviderId$ = selectActiveProviderId();
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
+  const availableModelsProviderId$ = selectAvailableModelsProviderId();
 
   interface Props {
     /** Selected specialist ID - null means blank agent */
@@ -345,16 +347,43 @@
     if (defaultPreviewReady) reconcileReasoningEffort(activeModelForReasoning);
   });
 
-  // Clear stale model overrides restored from saved state.
-  // When the user changes specialist defaults in Settings (e.g., spec-writer → sonnet4.5),
-  // the form may still have a saved selectedModel (e.g., "opus4.6") marked as overridden
-  // from a previous session when that was the default. This runs reactively (not onMount)
-  // so it waits until file specialists and the parent's persisted form state are
-  // loaded — comparing before then is meaningless — and re-runs if hydration
-  // re-applies a stale override after mount. A persisted "override" that matches the
-  // current specialist default is not a real override; one that differs is stale. Either
-  // way it is cleared so the daemon-resolved default drives the picker (and a no-model
-  // create). Overrides the user made in this session are never cleared.
+  // Known model catalog for a provider: the session-lifetime provider-models
+  // cache first, else the global availableModels catalog when it was loaded
+  // for that provider. `undefined` means no catalog evidence is loaded yet.
+  function knownModelsForProvider(providerId: string): Array<{ value: string }> | undefined {
+    const normalizedProviderId = selectNormalizedProviderId.select(appStore.state, providerId);
+    const cachedModels = selectProviderModelsCacheEntry.select(
+      appStore.state,
+      normalizedProviderId,
+    )?.models;
+    if (cachedModels && cachedModels.length > 0) return cachedModels;
+    if ($availableModelsProviderId$ === normalizedProviderId && $availableModels$.length > 0) {
+      return $availableModels$;
+    }
+    return undefined;
+  }
+
+  // Whether a restored override is provably invalid: its provider is reported
+  // unavailable, or a loaded catalog for its provider lacks the model (e.g.
+  // it was retired). With no evidence either way (availability check pending,
+  // no catalog loaded for the provider) the override is kept.
+  function isRestoredOverrideInvalid(model: string): boolean {
+    const { providerId, modelId } = parseCompoundModelId(model, $defaultProviderId$);
+    if (providerAvailability && !getProviderAvailable(providerId)) return true;
+    const knownModels = knownModelsForProvider(providerId);
+    if (!knownModels) return false;
+    return !knownModels.some((row) => row.value === model || row.value === modelId);
+  }
+
+  // Clear invalid model overrides restored from saved state
+  // (intent-hq/monorepo#2678). A persisted override is cleared only on
+  // positive evidence it is invalid (see isRestoredOverrideInvalid) — a valid
+  // restored override survives hydration so an explicit pick persists across
+  // sessions and is submitted as the initial agent's model. This runs
+  // reactively (not onMount) so it waits until file specialists and the
+  // parent's persisted form state are loaded — comparing before then is
+  // meaningless — and re-runs if hydration re-applies a stale override after
+  // mount. Overrides the user made in this session are never cleared.
   $effect(() => {
     const dataReady = $fileSpecialistsLoaded$ && $initializerHydrated$;
     if (!dataReady || modelOverriddenThisSession) return;
@@ -366,8 +395,8 @@
       onModelChange?.(undefined);
       return;
     }
-    if (modelWasOverridden && selectedModel) {
-      logger.debug('Clearing stale persisted model override:', { selectedModel });
+    if (modelWasOverridden && selectedModel && isRestoredOverrideInvalid(selectedModel)) {
+      logger.debug('Clearing invalid persisted model override:', { selectedModel });
       selectedModel = undefined;
       modelWasOverridden = false;
       onModelChange?.(undefined);

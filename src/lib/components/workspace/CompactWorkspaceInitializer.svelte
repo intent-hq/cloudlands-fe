@@ -581,9 +581,16 @@
   let didApplyHydratedLastSelectedRepo = $state(false);
   let hasInitialPrefillData = $state(hasWorkspacePrefillData());
 
+  // Whether the user explicitly picked a model in this form session. Late
+  // hydration (the applyAgentSettings re-application below) must not
+  // overwrite an in-session pick with restored state (intent-hq/monorepo#2678).
+  let modelPickedThisSession = $state(false);
+
   function applyAgentSettings(settings: CompactWorkspaceInitializerFormState | null | undefined) {
     if (!settings) return;
     if (settings.selectedSpecialist !== undefined) selectedSpecialist = settings.selectedSpecialist;
+    if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
+    if (modelPickedThisSession) return;
     const model = settings.selectedModel;
     const savedModelAccepted =
       !!model &&
@@ -593,7 +600,6 @@
       selectedModel = model;
       modelWasOverridden = settings.modelWasOverridden ?? modelWasOverridden;
     }
-    if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
     selectedReasoningEffort =
       !model || savedModelAccepted ? settings.selectedReasoningEffort : undefined;
   }
@@ -608,7 +614,11 @@
     scope =
       formState.scope && formState.repoPath === formState.scopeRepoPath ? formState.scope : scope;
     remoteSetup = formState.remoteSetup ?? remoteSetup;
-    selectedProvider = formState.selectedProvider ?? selectedProvider;
+    // Keep the provider paired with an in-session pick: restoring a different
+    // provider would trip the picker's provider-mismatch effect and clear it.
+    if (!modelPickedThisSession) {
+      selectedProvider = formState.selectedProvider ?? selectedProvider;
+    }
     skipIsolation = readSkipIsolation(formState) ?? skipIsolation;
     applyAgentSettings(formState);
   }
@@ -3223,6 +3233,9 @@
             {selectedModel}
             onModelChange={(model) => {
               selectedModel = model;
+              // An explicit pick pins the model for this form session so late
+              // hydration cannot overwrite it (intent-hq/monorepo#2678).
+              if (model) modelPickedThisSession = true;
             }}
             bind:selectedReasoningEffort
             bind:modelWasOverridden
