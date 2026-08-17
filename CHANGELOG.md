@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.57.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.57.0...v2.57.1) (2026-08-17)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.13 ([#1361](https://github.com/intent-hq/cloudlands-fe/issues/1361)) ([b28dbce](https://github.com/intent-hq/cloudlands-fe/commit/b28dbcec14cc5dc083f323749bb891b28a29ce5d))
+* rebuild the chat transcript when the daemon re-emits seq-0 on the same subscription ([#1359](https://github.com/intent-hq/cloudlands-fe/issues/1359)) ([12ee028](https://github.com/intent-hq/cloudlands-fe/commit/12ee0281bb4f7dfe2cb5a3e039f1b73a68d4d3ee))
+* treat group/think tag literals in code spans and fences as literal text ([#1358](https://github.com/intent-hq/cloudlands-fe/issues/1358)) ([e8cf272](https://github.com/intent-hq/cloudlands-fe/commit/e8cf27297a95202ed726041ee427162926925d83))
+
 ## [2.57.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.7...v2.57.0) (2026-08-17)
 
 
