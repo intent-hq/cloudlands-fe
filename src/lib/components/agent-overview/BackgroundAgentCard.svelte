@@ -12,12 +12,15 @@
    */
   import type { AgentNode } from './types';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
-  import type { AvatarState } from '$features/agent/components/agent-avatar/avatar-state';
+  import {
+    getAvatarState,
+    getAvatarStateForSession,
+  } from '$features/agent/components/agent-avatar/avatar-state';
   import {
     selectAgentAttentionRequest,
+    selectAgentSession,
     selectAgentIsWaitingForOtherAgents,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import type { AgentAttentionKind } from '$shared/utils/agent-attention';
 
   interface Props {
     agent: AgentNode;
@@ -32,25 +35,25 @@
   const agentIsWaitingForOtherAgents$ = selectAgentIsWaitingForOtherAgents(agent.agentId);
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; agentId is stable per card
   const attentionRequest$ = selectAgentAttentionRequest(agent.agentId);
+  // svelte-ignore state_referenced_locally - selector readables must be created at component init; agentId is stable per card
+  const agentSession$ = selectAgentSession(agent.agentId);
 
-  // Map agent status to avatar state
-  function getAvatarState(
-    status: AgentNode['status'],
-    waitingForOtherAgents: boolean,
-    attentionKind: AgentAttentionKind | null,
-  ): AvatarState {
-    if (status === 'completed') return 'completed';
-    if (status === 'failed') return 'failed';
-    if (attentionKind === 'discussion') return 'attention-discussion';
-    if (attentionKind === 'blocker') return 'attention-blocker';
-    if (waitingForOtherAgents) return 'waiting';
-    if (status === 'responding') return 'running';
-    return 'idle';
-  }
-
-  const avatarState = $derived(
-    getAvatarState(agent.status, $agentIsWaitingForOtherAgents$, $attentionRequest$?.kind ?? null),
-  );
+  const avatarState = $derived.by(() => {
+    const options = { attentionKind: $attentionRequest$?.kind ?? null };
+    if ($agentSession$) return getAvatarStateForSession($agentSession$, options);
+    return getAvatarState(
+      {
+        status: agent.status,
+        isResponding: agent.status === 'responding',
+        isWaitingForOtherAgents: $agentIsWaitingForOtherAgents$,
+      },
+      {
+        ...options,
+        isCompleted: agent.status === 'completed',
+        isFailed: agent.status === 'failed',
+      },
+    );
+  });
 </script>
 
 <button

@@ -252,7 +252,73 @@
       },
       { type: 'text', text: `</group:${prefix} grouped seams>` },
     ] as AgentMessage['contentBlocks'];
-  const eventTurn = (id: string, type: string, data: Record<string, unknown>) => [
+  const toolOnlyContent = (prefix: string) =>
+    [
+      {
+        type: 'tool_use',
+        id: `${prefix}-tool`,
+        name: 'view',
+        input: { path: `src/${prefix}.ts` },
+      },
+      {
+        type: 'tool_result',
+        id: `${prefix}-result`,
+        tool_use_id: `${prefix}-tool`,
+        output: `${prefix} complete`,
+      },
+    ] as AgentMessage['contentBlocks'];
+  const productionWrapperMessages = [
+    {
+      ...message('assistant-production-search', 'assistant', [
+        {
+          type: 'tool_use',
+          id: 'production-search-tool',
+          name: 'codebase-retrieval',
+          input: { information_request: 'Find the production chat renderer' },
+        },
+        {
+          type: 'tool_result',
+          id: 'production-search-result',
+          tool_use_id: 'production-search-tool',
+          output: 'Search complete',
+        },
+      ]),
+      timestamp: '2026-08-17T11:00:00.000Z',
+    } as AgentMessage,
+    {
+      ...message('assistant-production-reopen', 'assistant', [
+        {
+          type: 'tool_use',
+          id: 'production-reopen-tool',
+          name: 'view',
+          input: { path: 'src/lib/components/chat/ChatPanel.svelte' },
+        },
+        {
+          type: 'tool_result',
+          id: 'production-reopen-result',
+          tool_use_id: 'production-reopen-tool',
+          output: 'File reopened',
+        },
+      ]),
+      timestamp: '2026-08-17T11:00:01.000Z',
+    } as AgentMessage,
+    {
+      ...message('assistant-production-reasoning', 'assistant', [
+        {
+          type: 'thinking',
+          id: 'production-following-reasoning',
+          text: 'Trace the higher-level list wrapper',
+        },
+      ]),
+      timestamp: '2026-08-17T11:00:02.000Z',
+    } as AgentMessage,
+  ];
+  const eventTurn = (
+    id: string,
+    type: string,
+    data: Record<string, unknown>,
+    assistantContent: AgentMessage['contentBlocks'] = [thinking(`${id}-thinking`)],
+  ) => [
     {
       ...message(`event-${id}`, 'user', [{ type: 'text', text: `Event ${id}` }]),
       metadata: {
@@ -262,7 +328,7 @@
         events: [{ type, data, timestamp }],
       },
     } as AgentMessage,
-    message(`assistant-${id}`, 'assistant', [thinking(`${id}-thinking`)]),
+    message(`assistant-${id}`, 'assistant', assistantContent),
   ];
   const alignmentMessages = [
     message('user-finished', 'user', [{ type: 'text', text: 'Render the finished rows' }]),
@@ -271,6 +337,20 @@
     message('assistant-streaming', 'assistant', operationalContent('streaming', true)),
   ];
   const seamMessages = [
+    {
+      ...message('assistant-orphan-tool-a', 'assistant', toolOnlyContent('orphan-a')),
+      timestamp: '2026-08-15T12:00:00.000Z',
+    } as AgentMessage,
+    {
+      ...message('assistant-orphan-tool-b', 'assistant', toolOnlyContent('orphan-b')),
+      timestamp: '2026-08-16T12:00:00.000Z',
+    } as AgentMessage,
+    ...productionWrapperMessages,
+    {
+      ...message('assistant-before-event-tool', 'assistant', toolOnlyContent('before-event')),
+      timestamp: '2026-08-17T11:30:00.000Z',
+    } as AgentMessage,
+    ...eventTurn('tool-spacing', 'custom:event', {}, toolOnlyContent('event-tool')),
     ...eventTurn('wake', 'custom:event', {}),
     ...eventTurn('subscription', 'agent:subscriptions-changed', { agentName: 'Subscriber' }),
     ...eventTurn('finished-event', 'agent:idle', { agentName: 'Finisher' }),
@@ -288,6 +368,11 @@
       },
     } as AgentMessage,
     message('assistant-streaming-seam', 'assistant', seamContent('streaming', true)),
+    message('user-tool-message-boundary', 'user', [
+      { type: 'text', text: 'Render consecutive tool-only assistant messages' },
+    ]),
+    message('assistant-tool-message-static', 'assistant', toolOnlyContent('message-static')),
+    message('assistant-tool-message-streaming', 'assistant', toolOnlyContent('message-streaming')),
   ];
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
   const messages = seamOnly ? seamMessages : alignmentMessages;

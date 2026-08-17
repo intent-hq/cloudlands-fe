@@ -13,6 +13,10 @@ const source = readFileSync(
   resolve(process.cwd(), 'src/features/agent/components/agent-avatar/AgentAvatarWithState.svelte'),
   'utf8',
 );
+const avatarSource = readFileSync(
+  resolve(process.cwd(), 'src/features/agent/components/agent-avatar/AgentAvatar.svelte'),
+  'utf8',
+);
 const tokenSource = readFileSync(resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
 const stackSource = readFileSync(
   resolve(process.cwd(), 'src/features/agent/components/agent-avatar/AgentAvatarStack.svelte'),
@@ -120,6 +124,13 @@ describe('AgentAvatarWithState', () => {
     expect(source).toContain('hsl(var(--agent-avatar-surface-active))');
     expect(source).toContain('hsl(var(--agent-avatar-surface-unread))');
     expect(source).toContain('hsl(var(--agent-avatar-surface-waiting))');
+    expect(avatarSource).toContain('hsl(var(--agent-avatar-surface-neutral))');
+    expect(avatarSource).toContain('background-color: var(');
+    expect(avatarSource).toContain('--agent-avatar-background-forced, Canvas');
+    expect(avatarSource).toContain('opacity: 1');
+    expect(source).toContain('--agent-avatar-background-forced: Highlight');
+    expect(source).toContain('--agent-avatar-background-forced: Field');
+    expect(source).toContain('--agent-avatar-background-forced: Mark');
     expect(source).toContain('color: #080808');
     expect(source.match(/^\s+color:/gm)).toHaveLength(4);
     expect(source).toMatch(/transition: background-color/);
@@ -203,15 +214,17 @@ describe('AgentAvatarWithState', () => {
     }
     expect(catalogSource).not.toMatch(/<AgentAvatarWithState[\s\S]{0,180}\bsize=/);
     expect(tabSource).not.toMatch(/<AgentAvatarWithState[\s\S]{0,180}\bsize=/);
+    expect(catalogSource).toContain('<AgentAvatarStack');
+    expect(tabSource).toContain('<AgentAvatarStack');
     expect(tabSource).toContain('variant="emphasized"');
-    expect(tabSource).toContain('data-agent-avatar-overflow');
+    expect(tabSource).toContain('overflowId=');
   });
 
   it('uses the card-stack rounded-square silhouette for every overlap layer', () => {
     expect(stackSource).toContain('border-radius: var(--agent-avatar-corner-radius)');
     expect(stackSource).toContain("viewBox='0 0 24 24'");
-    expect(stackSource).toContain("x='-17.5' y='.5' width='23' height='23'");
-    expect(stackSource).toContain("rx='6.5'");
+    expect(stackSource).toContain("x='17' y='-1' width='26' height='26'");
+    expect(stackSource).toContain("rx='8'");
     expect(stackSource).toContain('mask-size: 100% 100%');
     expect(stackSource).not.toContain('radial-gradient');
   });

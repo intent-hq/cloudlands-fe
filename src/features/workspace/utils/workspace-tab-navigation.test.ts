@@ -375,26 +375,25 @@ describe('global workspace tab navigation', () => {
   });
 
   describe('openNewPanel', () => {
-    it('splits the focused panel into a new empty panel and focuses it', () => {
+    it('clears the existing reusable working panel and focuses it', () => {
       const store = makeStore('ws-2', layoutWith([makePanel('p1', ['t1'])], 'p1'));
 
-      const newPanelId = openNewPanel(store, '/workspace/ws-2');
-      expect(newPanelId).not.toBeNull();
+      expect(openNewPanel(store, '/workspace/ws-2')).toBe('p1');
 
       const ws = store.state.panelLayout.byWorkspaceId['ws-2'];
-      expect(Object.keys(ws.panels)).toHaveLength(2);
-      expect(ws.panels[newPanelId as string].tabs).toEqual([]);
-      expect(ws.focusedPanelId).toBe(newPanelId);
+      expect(Object.keys(ws.panels)).toEqual(['p1']);
+      expect(ws.panels.p1).toMatchObject({ tabs: [], pinned: false, pristine: true });
+      expect(ws.focusedPanelId).toBe('p1');
     });
 
-    it('splits the last panel when none is focused', () => {
+    it('collapses multiple reusable panels into the working column', () => {
       const store = makeStore(
         'ws-2',
         layoutWith([makePanel('p1', ['t1']), makePanel('p2', ['t2'])], null),
       );
 
-      expect(openNewPanel(store, '/workspace/ws-2')).not.toBeNull();
-      expect(Object.keys(store.state.panelLayout.byWorkspaceId['ws-2'].panels)).toHaveLength(3);
+      expect(openNewPanel(store, '/workspace/ws-2')).toBe('p1');
+      expect(Object.keys(store.state.panelLayout.byWorkspaceId['ws-2'].panels)).toEqual(['p1']);
     });
 
     it('returns null outside workspace routes', () => {

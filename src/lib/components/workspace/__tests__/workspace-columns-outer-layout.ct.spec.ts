@@ -86,6 +86,15 @@ test('preserves card elevation, shared gaps, end padding, and stack edges at scr
     const cards = component.locator('[data-workspace-column]');
     const first = await cards.first().boundingBox();
     const scrollerBox = await scroller.boundingBox();
+    const inlineGeometry = await track.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        startPadding: style.paddingInlineStart,
+        endPadding: style.paddingInlineEnd,
+      };
+    });
+    expect(inlineGeometry).toEqual({ startPadding: '8px', endPadding: '8px' });
+    expect(first!.x - scrollerBox!.x).toBeCloseTo(8, 1);
     expect(first!.y).toBeGreaterThanOrEqual(scrollerBox!.y + 8);
     expect(await cards.first().evaluate((node) => getComputedStyle(node).boxShadow)).not.toBe(
       'none',
@@ -159,4 +168,67 @@ test('keeps persisted visible sidebar widths stable through remount and reactive
       await restored.unmount();
     }
   }
+});
+
+test('reveals first and last workspaces across the visual-state matrix', async ({
+  mount,
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const cases = [
+    { theme: 'light' as const, zoom: 1, viewportWidth: 1100, stacked: false, reduced: false },
+    { theme: 'dark' as const, zoom: 1, viewportWidth: 620, stacked: true, reduced: true },
+    { theme: 'light' as const, zoom: 2, viewportWidth: 620, stacked: false, reduced: true },
+    { theme: 'dark' as const, zoom: 2, viewportWidth: 1100, stacked: true, reduced: false },
+  ];
+
+  for (const state of cases) {
+    await page.emulateMedia({ reducedMotion: state.reduced ? 'reduce' : 'no-preference' });
+    await page.evaluate((zoom) => (document.documentElement.style.zoom = String(zoom)), state.zoom);
+    const component = await mount(WorkspaceColumnsOuterLayoutHarness, {
+      props: { ...state, count: 4 },
+    });
+    const scroller = component.locator('[data-workspace-columns]');
+    const first = component.locator('[data-workspace-column="0"]');
+    const last = component.locator('[data-workspace-column="3"]');
+    const revealInset = 8 * state.zoom;
+
+    const startBox = await scroller.boundingBox();
+    const firstBox = await first.boundingBox();
+    expect(firstBox!.x - startBox!.x).toBeCloseTo(revealInset, 1);
+
+    await component.locator('[data-reveal-last]').evaluate((node) => (node as HTMLElement).click());
+    await expect
+      .poll(async () => {
+        const [scrollerBox, lastBox] = await Promise.all([
+          scroller.boundingBox(),
+          last.boundingBox(),
+        ]);
+        return lastBox!.x - scrollerBox!.x;
+      })
+      .toBeCloseTo(revealInset, 1);
+    const lastExtent = await scroller.evaluate((node) => ({
+      scrollLeft: node.scrollLeft,
+      maxScrollLeft: node.scrollWidth - node.clientWidth,
+    }));
+    expect(lastExtent.scrollLeft).toBeLessThanOrEqual(lastExtent.maxScrollLeft);
+
+    await component
+      .locator('[data-reveal-first]')
+      .evaluate((node) => (node as HTMLElement).click());
+    await expect.poll(() => scroller.evaluate((node) => node.scrollLeft)).toBeCloseTo(0, 1);
+
+    if (state.stacked) {
+      const stackedXs = await Promise.all(
+        ['0', '1'].map((id) =>
+          component
+            .locator(`[data-workspace-column="${id}"]`)
+            .evaluate((node) => node.getBoundingClientRect().x),
+        ),
+      );
+      expect(stackedXs[0]).toBeCloseTo(stackedXs[1], 1);
+    }
+    await component.unmount();
+  }
+  await page.evaluate(() => (document.documentElement.style.zoom = ''));
 });

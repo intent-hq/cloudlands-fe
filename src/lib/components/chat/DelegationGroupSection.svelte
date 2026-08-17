@@ -23,6 +23,9 @@
   import { Button } from '$lib/components/ui/button';
   import AgentCard from './AgentCard.svelte';
   import InlineAgentAvatar from './InlineAgentAvatar.svelte';
+  import AgentAvatarStack, {
+    type AgentAvatarStackItem,
+  } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import {
     groupDoneCount,
     isGroupDeliveryPending,
@@ -69,6 +72,9 @@
   );
   const orderedAgentIds = $derived(
     sortWorkingAgentsFirst(group.expectedAgentIds, completedAgentIdSet),
+  );
+  const orderedAgentStackItems = $derived(
+    orderedAgentIds.map((agentId): AgentAvatarStackItem => ({ key: agentId, agentId })),
   );
   const doneCount = $derived(groupDoneCount(group));
   const totalCount = $derived(uniqueAgentIds(group.expectedAgentIds).length);
@@ -126,27 +132,25 @@
     <!-- Inline agent avatars when collapsed -->
     {#if isCollapsed}
       <div
-        class="flex min-w-0 shrink items-center -space-x-1.5 overflow-hidden"
+        class="min-w-0 shrink overflow-hidden"
         data-testid="group-avatar-strip"
         transition:fade={{ duration: 150 }}
       >
-        {#each orderedAgentIds.slice(0, 5) as agentId (agentId)}
-          <div animate:flip={{ duration: 200 }}>
-            <InlineAgentAvatar
-              {agentId}
-              {workspace}
-              isCompleted={completedAgentIdSet.has(agentId)}
-            />
-          </div>
-        {/each}
-        {#if orderedAgentIds.length > 5}
-          <span
-            class="ml-1! inline-flex w-max flex-none items-center bg-transparent text-xs leading-none text-subtle"
-            data-agent-avatar-overflow
-          >
-            +{orderedAgentIds.length - 5}
-          </span>
-        {/if}
+        {#snippet delegationAvatar(item: AgentAvatarStackItem)}
+          <InlineAgentAvatar
+            agentId={item.agentId}
+            {workspace}
+            isCompleted={completedAgentIdSet.has(item.agentId)}
+          />
+        {/snippet}
+        <AgentAvatarStack
+          items={orderedAgentStackItems}
+          maxVisible={5}
+          adaptive
+          interactive
+          variant="standard"
+          itemContent={delegationAvatar}
+        />
       </div>
     {/if}
 

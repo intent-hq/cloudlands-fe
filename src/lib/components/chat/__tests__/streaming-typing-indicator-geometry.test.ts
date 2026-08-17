@@ -7,6 +7,11 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import StreamingTypingIndicator from '../StreamingTypingIndicator.svelte';
+import {
+  CHAT_OPERATIONAL_LEADING_CLASS,
+  CHAT_OPERATIONAL_ROW_CLASS,
+  CHAT_OPERATIONAL_SUMMARY_CLASS,
+} from '../operational-disclosure-row';
 
 afterEach(cleanup);
 
@@ -15,36 +20,28 @@ function expectClasses(element: Element, contract: string) {
 }
 
 describe('StreamingTypingIndicator geometry matches operational rows', () => {
-  it('matches operational row height with min-h-5 py-0', () => {
+  it('uses the shared operational row geometry', () => {
     const { container } = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
     const row = container.firstElementChild!;
-    expectClasses(row, 'min-h-5 py-0');
+    expect(row.className).toContain(CHAT_OPERATIONAL_ROW_CLASS);
   });
 
-  it('matches operational row gap (gap-1.5)', () => {
-    const { container } = render(StreamingTypingIndicator, {
-      props: { visible: true, message: 'Thinking' },
-    });
-    const row = container.firstElementChild!;
-    expectClasses(row, 'gap-1.5');
-  });
-
-  it('matches operational icon slot sizing (h-5 w-4 min-w-4)', () => {
+  it('uses the shared operational leading slot', () => {
     const { container } = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
     const spinner = container.querySelector('.legacy-streaming-spinner')!;
-    expectClasses(spinner, 'h-5 w-4 min-w-4');
+    expect(spinner.className).toContain(CHAT_OPERATIONAL_LEADING_CLASS);
   });
 
-  it('matches operational icon box layout (shrink-0 items-center justify-center)', () => {
+  it('uses the shared operational summary geometry', () => {
     const { container } = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
-    const spinner = container.querySelector('.legacy-streaming-spinner')!;
-    expectClasses(spinner, 'shrink-0 items-center justify-center');
+    const label = container.querySelector('[data-testid="streaming-status-thinking"]')!;
+    expect(label.className).toContain(CHAT_OPERATIONAL_SUMMARY_CLASS);
   });
 
   it('uses body typography on the label (type-body)', () => {
@@ -99,10 +96,10 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
     const { container } = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
-    
+
     // Create a matchMedia mock for reduced motion
     const originalMatchMedia = window.matchMedia;
-    window.matchMedia = vi.fn().mockImplementation(query => ({
+    window.matchMedia = vi.fn().mockImplementation((query) => ({
       matches: query === '(prefers-reduced-motion: reduce)',
       media: query,
       onchange: null,
@@ -127,6 +124,6 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
       props: { visible: true, message: 'Thinking' },
     });
     const row = container.firstElementChild!;
-    expectClasses(row, 'items-center');
+    expectClasses(row, 'grid items-center');
   });
 });

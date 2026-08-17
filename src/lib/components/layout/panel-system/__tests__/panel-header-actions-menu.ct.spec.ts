@@ -15,7 +15,27 @@ for (const [index, panelType] of panelTypes.entries()) {
     const trigger = component.locator(
       '[data-panel-tabless-header] [data-testid="panel-actions-trigger"]',
     );
+    const close = component.locator(
+      '[data-panel-tabless-header] [data-testid="panel-close-button"]',
+    );
+    const actions = component.locator('[data-panel-tabless-header] [data-panel-header-actions]');
     const key = index % 2 === 0 ? 'Enter' : 'Space';
+
+    const actionGeometry = await actions.evaluate((node) => {
+      const trigger = node.querySelector<HTMLElement>('[data-testid="panel-actions-trigger"]')!;
+      const close = node.querySelector<HTMLElement>('[data-testid="panel-close-button"]')!;
+      const closeGlyph = close.querySelector<SVGElement>('svg')!;
+      return {
+        gap: getComputedStyle(node).columnGap,
+        trigger: [getComputedStyle(trigger).width, getComputedStyle(trigger).height],
+        close: [getComputedStyle(close).width, getComputedStyle(close).height],
+        closeGlyph: [getComputedStyle(closeGlyph).width, getComputedStyle(closeGlyph).height],
+      };
+    });
+    expect(actionGeometry.gap).toBe('0px');
+    expect(actionGeometry.trigger).toEqual(['28px', '28px']);
+    expect(actionGeometry.close).toEqual(['28px', '28px']);
+    expect(actionGeometry.closeGlyph).toEqual(['14px', '14px']);
 
     await trigger.focus();
     await page.keyboard.press(key);
@@ -71,9 +91,7 @@ for (const [index, panelType] of panelTypes.entries()) {
     await expect(menu).toBeHidden();
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
-    await component
-      .locator('[data-panel-tabless-header] [data-testid="panel-close-button"]')
-      .click();
+    await close.click();
     await expect(component).toHaveAttribute('data-close-count', '1');
   });
 }

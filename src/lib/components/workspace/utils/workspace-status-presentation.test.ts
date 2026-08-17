@@ -7,7 +7,7 @@ import {
 } from './workspace-status-presentation';
 
 const expected: Array<[WorkspaceStatusPresentationState, string, string, string]> = [
-  ['failed', 'triangle-exclamation', 'text-destructive', 'Failed'],
+  ['failed', 'triangle-exclamation', 'text-foreground', 'Failed'],
   ['blocked', 'xmark', 'text-destructive', 'Blocked'],
   ['needs_attention', 'circle-exclamation', 'text-warning', 'Needs attention'],
   ['in_progress', 'circle', 'text-success', 'In progress'],

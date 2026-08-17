@@ -31,11 +31,12 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { selectAgentSessionsByIds } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectAgentSessionsById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import AgentAvatarStack, {
     type AgentAvatarStackItem,
   } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
+  import type { AgentSession } from '$shared/types';
 
   import {
     selectAgentSubscriptions,
@@ -101,6 +102,7 @@
     visible?: boolean;
     count?: number;
     participantAgentIds?: string[];
+    participantAvatarItems?: AgentAvatarStackItem[];
     /** Static rows for daemon-free catalog and visual-test previews. */
     isolatedPreview?: {
       agents: Array<{ id: string; name: string; finished?: boolean }>;
@@ -118,6 +120,7 @@
     visible = $bindable(false),
     count = $bindable(0),
     participantAgentIds = $bindable([]),
+    participantAvatarItems = $bindable([]),
     isolatedPreview,
     forceWaitingHeader = false,
   }: Props = $props();
@@ -226,14 +229,14 @@
     return rows;
   });
 
-  const watchedAgentIdsStore = writable<string[]>([]);
-  $effect(() => {
-    watchedAgentIdsStore.set(waitingAgentRows.map((row) => row.agentId));
+  // The participant ID set changes independently from the session map. Bridge
+  // immutable Redux snapshots into local rune state so derived avatar items
+  // invalidate when Redux replaces a session.
+  let rendererState = $state.raw(appStore.state);
+  const unsubscribeRendererState = appStore.getReadableState().subscribe((state) => {
+    rendererState = state;
   });
-  const watchedAgentSessions$ = selectAgentSessionsByIds(watchedAgentIdsStore);
-  const watchedAgentSessionsById = $derived(
-    new Map($watchedAgentSessions$.map((session) => [String(session.id), session])),
-  );
+  onDestroy(unsubscribeRendererState);
   // Agents that have finished (completed or deleted) across delegation groups
   const completedAgentIdSet = $derived.by(() => {
     if (isolatedPreview) {
@@ -254,9 +257,10 @@
     }
     return ids;
   });
-  const waitingHeaderStackItems = $derived.by(() => {
-    return waitingAgentRows.map((row): AgentAvatarStackItem => {
-      const session = watchedAgentSessionsById.get(row.agentId);
+  function getHeaderStackItems(rows: readonly WaitingAgentRow[]): AgentAvatarStackItem[] {
+    const agentSessionsById = selectAgentSessionsById.select(rendererState);
+    return rows.map((row): AgentAvatarStackItem => {
+      const session = agentSessionsById[row.agentId];
       return {
         key: row.agentId,
         agentId: row.agentId,
@@ -266,15 +270,18 @@
         }),
       };
     });
-  });
+  }
 
   // Semantic grouping priority order:
   // 1. attention-required (blocker/discussion)
   // 2. active work (responding/active/processing)
   // 3. idle/waiting
   // 4. terminal (completed/cancelled/deleted/failed)
-  function getSemanticPriority(agentId: string): number {
-    const session = watchedAgentSessionsById.get(agentId);
+  function getSemanticPriority(
+    agentId: string,
+    agentSessionsById: Readonly<Record<string, AgentSession>>,
+  ): number {
+    const session = agentSessionsById[agentId];
     if (!session) return 2; // Default to idle tier
 
     // Check attention requests first
@@ -294,6 +301,7 @@
   }
 
   const activeAgentRows = $derived.by(() => {
+    const agentSessionsById = selectAgentSessionsById.select(rendererState);
     const nonTerminal = waitingAgentRows.filter((row) => !completedAgentIdSet.has(row.agentId));
     // Stable semantic sort: group by priority, preserve source order within each group
     // Build index map for stable tie-breaking
@@ -301,8 +309,8 @@
     waitingAgentRows.forEach((row, idx) => sourceIndexMap.set(row.agentId, idx));
 
     return nonTerminal.slice().sort((a, b) => {
-      const aPriority = getSemanticPriority(a.agentId);
-      const bPriority = getSemanticPriority(b.agentId);
+      const aPriority = getSemanticPriority(a.agentId, agentSessionsById);
+      const bPriority = getSemanticPriority(b.agentId, agentSessionsById);
       if (aPriority !== bPriority) return aPriority - bPriority;
       // Preserve source order within same priority group (stable tie)
       const aIndex = sourceIndexMap.get(a.agentId) ?? 0;
@@ -312,19 +320,33 @@
   });
 
   const finishedAgentRows = $derived.by(() => {
+    const agentSessionsById = selectAgentSessionsById.select(rendererState);
     return waitingAgentRows
       .filter((row) => completedAgentIdSet.has(row.agentId))
       .sort((a, b) => {
-        const aTimestamp = timestampMillis(watchedAgentSessionsById.get(a.agentId)?.updatedAt);
-        const bTimestamp = timestampMillis(watchedAgentSessionsById.get(b.agentId)?.updatedAt);
+        const aTimestamp = timestampMillis(agentSessionsById[a.agentId]?.updatedAt);
+        const bTimestamp = timestampMillis(agentSessionsById[b.agentId]?.updatedAt);
         return bTimestamp - aTimestamp || a.agentId.localeCompare(b.agentId);
       });
   });
   const shouldGroupWaitingAgents = $derived(
     forceWaitingHeader || waitingAgentRows.length > WAITING_AGENT_DISCLOSURE_THRESHOLD,
   );
+  const hasActiveAgentRows = $derived(activeAgentRows.length > 0);
+  const summaryAgentRows = $derived(hasActiveAgentRows ? activeAgentRows : finishedAgentRows);
+  const summaryHeading = $derived.by(() => {
+    const count = summaryAgentRows.length;
+    if (!hasActiveAgentRows) {
+      return count === 1
+        ? m.chat_agentSubscriptions_finished_one({ count: formatInteger(count) })
+        : m.chat_agentSubscriptions_finished_many({ count: formatInteger(count) });
+    }
+    return count === 1
+      ? m.chat_agentSubscriptions_waitingForAgents_one({ count: formatInteger(count) })
+      : m.chat_agentSubscriptions_waitingForAgents_many({ count: formatInteger(count) });
+  });
   const shouldGroupFinishedAgents = $derived(
-    shouldGroupWaitingAgents && finishedAgentRows.length >= 2,
+    shouldGroupWaitingAgents && hasActiveAgentRows && finishedAgentRows.length >= 2,
   );
   const ungroupedAgentRows = $derived(
     shouldGroupFinishedAgents ? activeAgentRows : [...activeAgentRows, ...finishedAgentRows],
@@ -399,8 +421,9 @@
 
   $effect(() => {
     visible = showSubscriptionRow || !!$wokenUpInfo$;
-    count = waitingAgentRows.length;
-    participantAgentIds = waitingAgentRows.map((row) => row.agentId);
+    count = activeAgentRows.length;
+    participantAgentIds = activeAgentRows.map((row) => row.agentId);
+    participantAvatarItems = getHeaderStackItems(activeAgentRows);
   });
 
   // ── Button handlers ──────────────────────────────────────────────────
@@ -701,44 +724,55 @@
           <div class="w-full min-w-0 max-w-full" data-testid="one-shot-header">
             <button
               type="button"
-              class="flex w-full min-w-0 max-w-full cursor-pointer items-center gap-2 overflow-hidden rounded border-none bg-transparent text-left font-[inherit] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring {SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+              class="relative flex w-full min-w-0 max-w-full cursor-pointer items-center gap-0 overflow-hidden rounded border-none bg-transparent text-left font-[inherit] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring {SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+              style="padding-inline-end: 2.25rem !important;"
               data-testid="one-shot-summary-toggle"
               data-subscription-row="agent-watch"
+              aria-label={summaryHeading}
               aria-expanded={!waitingAgentsCollapsed}
               aria-controls={waitingAgentListId}
               onclick={toggleWaitingAgentsCollapsed}
             >
-              <span class="min-w-0 shrink {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
+              <span
+                class="w-max shrink-0 {SUBSCRIPTION_LEADING_CONTENT_CLASS}"
+                style="grid-template-columns: 1rem minmax(0, 1fr); column-gap: 0.25rem;"
+              >
                 <span
                   class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
                   data-testid="one-shot-leading-column"
                 >
-                  <Fa
-                    icon={faHourglass}
-                    size={14}
-                    class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
-                  />
+                  {#if hasActiveAgentRows}
+                    <Fa
+                      icon={faHourglass}
+                      size={14}
+                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                    />
+                  {:else}
+                    <Fa
+                      icon={faCircleCheck}
+                      size={14}
+                      class="h-3.5! w-3.5! shrink-0 text-success"
+                    />
+                  {/if}
                 </span>
                 <span
-                  class="min-w-0 truncate whitespace-nowrap text-muted-foreground"
+                  class="whitespace-nowrap text-muted-foreground"
                   data-testid="one-shot-summary-title"
                 >
-                  {waitingAgentRows.length === 1
-                    ? m.chat_agentSubscriptions_waitingForAgents_one({
-                        count: formatInteger(waitingAgentRows.length),
-                      })
-                    : m.chat_agentSubscriptions_waitingForAgents_many({
-                        count: formatInteger(waitingAgentRows.length),
-                      })}
+                  {summaryHeading}
                 </span>
               </span>
               {#if waitingAgentsCollapsed}
-                <AgentAvatarStack items={waitingHeaderStackItems} maxVisible={8} adaptive />
+                <AgentAvatarStack
+                  items={getHeaderStackItems(summaryAgentRows)}
+                  maxVisible={8}
+                  adaptive
+                />
               {:else}
                 <span class="min-w-0 flex-1" aria-hidden="true"></span>
               {/if}
               <span
-                class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                class="absolute end-3 inline-flex h-6 w-6 shrink-0 items-center justify-center"
                 data-testid="one-shot-collapse-toggle"
               >
                 <Fa

@@ -48,7 +48,6 @@ const inertFollowBottomMutation: FollowBottomMutation = {
 };
 
 const bottomFollowers = new WeakMap<HTMLElement, BottomFollower>();
-export const FOLLOW_BOTTOM_MAX_SETTLE_FRAMES = 32;
 const FOLLOW_BOTTOM_STABLE_FRAMES = 2;
 
 /**
@@ -56,7 +55,7 @@ const FOLLOW_BOTTOM_STABLE_FRAMES = 2;
  *
  * The consumer owns the follow policy. Mutation and resize observers capture
  * that policy before they run and keep a followed viewport at the exact
- * maximum through a bounded settle. Enabling follow also snaps immediately.
+ * maximum until the observed layout is stable. Enabling follow also snaps immediately.
  */
 export function followBottom(container: HTMLElement, options: FollowBottomOptions) {
   let isFollowing = options.follow;
@@ -71,7 +70,6 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let mutationObserver: MutationObserver | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let settleFrame: number | null = null;
-  let settleFramesRemaining = 0;
   let stableFrames = 0;
   let previousMaximum: number | null = null;
   let activeMutationLocks = 0;
@@ -100,7 +98,10 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function setNativeBottomAnchorActive(active: boolean) {
-    nativeBottomAnchor.style.overflowAnchor = active ? 'auto' : 'none';
+    const overflowAnchor = active ? 'auto' : 'none';
+    if (nativeBottomAnchor.style.overflowAnchor !== overflowAnchor) {
+      nativeBottomAnchor.style.overflowAnchor = overflowAnchor;
+    }
     if (!active) nativeBottomAnchor.remove();
     else if (nativeBottomAnchor.parentElement !== container || nativeBottomAnchor.nextSibling) {
       container.append(nativeBottomAnchor);
@@ -127,7 +128,6 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   function cancelSettle() {
     if (settleFrame !== null) cancelAnimationFrame(settleFrame);
     settleFrame = null;
-    settleFramesRemaining = 0;
     stableFrames = 0;
     previousMaximum = null;
   }
@@ -172,38 +172,34 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     const maximum = setExactBottom();
     reportState();
     if (maximum === previousMaximum) stableFrames += 1;
-    else stableFrames = 0;
-    previousMaximum = maximum;
-    settleFramesRemaining -= 1;
-    if (
-      settleFramesRemaining > 0 &&
-      (activeMutationLocks > 0 || stableFrames < FOLLOW_BOTTOM_STABLE_FRAMES)
-    ) {
+    else {
+      stableFrames = 0;
+      previousMaximum = maximum;
+    }
+    if (activeMutationLocks > 0 || stableFrames < FOLLOW_BOTTOM_STABLE_FRAMES) {
       settleFrame = requestAnimationFrame(runSettleFrame);
     }
   }
 
-  function scheduleBottomSettle(reset = false) {
-    if (destroyed || !isFollowing) return;
-    if (reset || settleFramesRemaining === 0) {
-      settleFramesRemaining = FOLLOW_BOTTOM_MAX_SETTLE_FRAMES;
-      stableFrames = 0;
-      previousMaximum = null;
-    }
-    if (settleFrame !== null) return;
+  function scheduleBottomSettle() {
+    if (destroyed || !isFollowing || settleFrame !== null) return;
     settleFrame = requestAnimationFrame(runSettleFrame);
   }
 
   function requestBottomSettle() {
     if (destroyed || !isFollowing) return;
-    setExactBottom();
+    const maximum = setExactBottom();
     reportState();
-    scheduleBottomSettle(true);
+    stableFrames = 0;
+    previousMaximum = maximum;
+    scheduleBottomSettle();
   }
 
   function handleLayoutChange() {
     if (isFollowing) {
-      setExactBottom();
+      const maximum = setExactBottom();
+      stableFrames = 0;
+      previousMaximum = maximum;
       scheduleBottomSettle();
     }
     reportState();
@@ -212,9 +208,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   const follower: BottomFollower = {
     followAndScroll() {
       setFollowing(true);
-      setExactBottom();
-      reportState();
-      scheduleBottomSettle();
+      requestBottomSettle();
     },
     isFollowing: () => isFollowing,
     beforeMutation(element) {
@@ -311,6 +305,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   function handleScroll() {
     if (!pointerScrolling) {
+      if (isFollowing) setExactBottom();
       reportState();
       return;
     }
@@ -374,6 +369,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       handleLayoutChange();
     });
     mutationObserver.observe(container, {
+      attributes: true,
       childList: true,
       subtree: true,
       characterData: true,
@@ -412,7 +408,9 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   // Initial setup
   setupNativeBottomAnchor();
   setupObservers();
-  if (isFollowing) setExactBottom();
+  if (isFollowing) {
+    setExactBottom();
+  }
   reportState();
 
   return {
@@ -425,9 +423,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       // callback is reserved for wheel, touch, keyboard, and scrollbar input.
       if (newOptions.follow && !isFollowing) {
         setFollowing(true, false);
-        setExactBottom();
-        reportState();
-        scheduleBottomSettle();
+        requestBottomSettle();
       } else if (!newOptions.follow && isFollowing) setFollowing(false, false);
       else reportState();
     },
@@ -459,7 +455,7 @@ export function isFollowingBottom(element: HTMLElement): boolean {
 
 /**
  * Capture the nearest followed scroll container before descendant layout changes.
- * The returned lease asks that single authority to keep its bounded settle active.
+ * The returned lease asks that single authority to keep its settle active.
  */
 export function beforeFollowBottomMutation(element: HTMLElement): FollowBottomMutation {
   let current: HTMLElement | null = element;

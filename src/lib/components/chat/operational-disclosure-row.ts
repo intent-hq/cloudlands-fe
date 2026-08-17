@@ -26,7 +26,7 @@ export const OPERATIONAL_EXPANDED_CONTENT_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TO
 export const OPERATIONAL_INLINE_DETAILS_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} min-w-0 max-w-full pl-[calc(var(--operational-row-inline-padding)+var(--operational-leading-slot-size)+var(--operational-leading-gap))] pt-1`;
 
 /** Group children stay on the top-level operational-row edge with no guide or horizontal offset. */
-export const OPERATIONAL_GROUP_CONTENT_CLASS = 'min-w-0 max-w-full pt-1';
+export const OPERATIONAL_GROUP_CONTENT_CLASS = 'min-w-0 max-w-full';
 
 export const OPERATIONAL_PRIMARY_CLASS = 'text-muted-foreground';
 
@@ -39,7 +39,7 @@ export const CHAT_OPERATIONAL_CONTAINER_CLASS =
 
 export const CHAT_OPERATIONAL_ICON_CLASS = 'h-[16px]! w-[16px]! shrink-0';
 
-export const CHAT_OPERATIONAL_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} relative grid h-9 w-full min-w-0 max-w-full grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto] items-center gap-[var(--operational-leading-gap)] overflow-hidden rounded-md px-[var(--operational-row-inline-padding)] type-body transition-colors duration-[var(--motion-fast)] motion-reduce:transition-none`;
+export const CHAT_OPERATIONAL_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} relative grid h-7 w-full min-w-0 max-w-full grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto] items-center gap-[var(--operational-leading-gap)] overflow-hidden rounded-md px-[var(--operational-row-inline-padding)] type-body transition-colors duration-[var(--motion-fast)] motion-reduce:transition-none`;
 
 export const CHAT_OPERATIONAL_LEADING_CLASS = `a11y-ignore pointer-events-none flex size-[var(--operational-leading-slot-size)] min-w-[var(--operational-leading-slot-size)] shrink-0 items-center justify-center ${CHAT_OPERATIONAL_SUMMARY_TONE_CLASS}`;
 
@@ -70,6 +70,14 @@ export function isOperationalClusterBlock(block: OperationalClusterBlock): boole
   return block.type === 'thinking' || block.type === 'tool_use' || block.type === 'content_group';
 }
 
+export function getOperationalGroupContentSpacingClass<T extends OperationalClusterBlock>(
+  blocks?: readonly T[],
+): string {
+  const firstVisibleBlock = blocks?.find((block) => block.type !== 'tool_result');
+  if (!firstVisibleBlock || isOperationalClusterBlock(firstVisibleBlock)) return '';
+  return 'pt-4';
+}
+
 export function isAdjacentOperationalClusterRow<T extends OperationalClusterBlock>(
   blocks: readonly T[],
   index: number,
@@ -93,10 +101,15 @@ export function getOperationalClusterSpacingClass<T extends OperationalClusterBl
 
   let previousIndex = index - 1;
   while (previousIndex >= 0 && !isVisible(blocks[previousIndex])) previousIndex -= 1;
-  const previousIsOperational =
-    previousIndex >= 0 && isOperationalClusterBlock(blocks[previousIndex]);
-  if (block.type !== 'thinking' || previousIndex < 0) return '';
-  return !previousIsOperational || blocks[previousIndex]?.type === 'tool_use' ? 'pt-2' : '';
+  if (previousIndex < 0) return '';
+
+  const previous = blocks[previousIndex];
+  if (previous.type === 'thinking' && block.type === 'thinking') return 'pt-14';
+  const previousIsOperational = isOperationalClusterBlock(previous);
+  const currentIsOperational = isOperationalClusterBlock(block);
+  if (previousIsOperational && currentIsOperational) return '';
+  if (previousIsOperational || currentIsOperational) return 'pt-4';
+  return 'pt-1';
 }
 
 /** Tool-only collapsed row: fixed icon, one truncating sentence, optional trailing state/action. */

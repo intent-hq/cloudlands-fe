@@ -35,9 +35,7 @@ function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGe
   };
   const panelOpenMode = yield* selectPanelOpenMode.effect();
 
-  const targetWorkspaceId = detail.openInNewColumn
-    ? (detail.panelLayoutId ?? workspaceId)
-    : workspaceId;
+  const targetWorkspaceId = detail.panelLayoutId ?? workspaceId;
   const openAction = openTabInNewRootColumn(targetWorkspaceId, tab, {
     ...(detail.openInNewColumn
       ? {

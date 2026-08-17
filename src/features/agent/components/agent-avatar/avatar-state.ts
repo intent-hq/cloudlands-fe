@@ -1,11 +1,17 @@
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentSession } from '$shared/types';
 import type { AgentAttentionKind } from '$shared/utils/agent-attention';
+import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
+import {
+  hasAgentActiveTurnEvidence,
+  isAgentBlockedWaitingState,
+  isAgentRunningState,
+  type AgentRuntimeStateInput,
+} from '$shared/utils/agent-runtime-state';
 import { store as appStore } from '$store/renderer/store';
 import {
   selectAgentSession,
   selectAgentIsResponding,
-  selectAgentIsBlockedWaiting,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
 /**
@@ -54,30 +60,13 @@ export interface AvatarStateOptions {
 /**
  * Input data for determining avatar state
  */
-export interface AgentStateInput {
-  /** Whether the agent is currently streaming */
-  isStreaming?: boolean;
-  /** Whether the agent is currently processing */
-  isProcessing?: boolean;
-  /** Whether the agent is currently responding */
-  isResponding?: boolean;
-  /** The agent's status */
-  status?: AgentStatus | string;
-}
+export interface AgentStateInput extends AgentRuntimeStateInput {}
 
 /**
  * Check if an agent is actively working (streaming, processing, or responding)
  */
 export function isAgentActivelyWorking(input: AgentStateInput): boolean {
-  if (
-    (input.status === AgentStatus.Idle || input.status === 'idle') &&
-    !input.isStreaming &&
-    !input.isProcessing
-  ) {
-    return false;
-  }
-
-  return !!(input.isStreaming || input.isProcessing || input.isResponding);
+  return hasAgentActiveTurnEvidence(input);
 }
 
 /**
@@ -85,12 +74,11 @@ export function isAgentActivelyWorking(input: AgentStateInput): boolean {
  * running statuses the `running` branch below already accepts.
  */
 function isRunningInput(input: AgentStateInput): boolean {
-  return (
-    isAgentActivelyWorking(input) ||
-    input.status === AgentStatus.Processing ||
-    input.status === 'streaming' ||
-    input.status === 'processing'
-  );
+  return isAgentRunningState(input);
+}
+
+function isBlockedWaitingInput(input: AgentStateInput): boolean {
+  return isAgentBlockedWaitingState(input);
 }
 
 /**
@@ -143,14 +131,15 @@ export function getAvatarState(
     return 'attention-blocker';
   }
 
+  // Purple waiting is reserved for a genuine block. A live turn with an
+  // unresolved tool, or a stale Waiting status, remains active/running.
+  if (isBlockedWaitingInput(input)) {
+    return 'waiting';
+  }
+
   // Check if agent is currently running (streaming/processing/responding)
   if (isRunningInput(input)) {
     return 'running';
-  }
-
-  // Waiting state
-  if (input.status === AgentStatus.Waiting || input.status === 'waiting') {
-    return 'waiting';
   }
 
   // Check if agent has unread messages (and is not the active agent)
@@ -170,17 +159,38 @@ export function getAvatarStateForSession(
   options: AvatarStateOptions = {},
 ): AvatarState {
   if (!session) {
-    return 'idle';
+    return getAvatarState({}, options);
   }
+
+  const attentionRequest = getAgentAttentionRequest(session);
+  const completedStatus =
+    session.status === AgentStatus.Completed ||
+    String(session.status).toLowerCase() === 'completed';
+  const failedStatus =
+    session.status === AgentStatus.Error ||
+    session.status === AgentStatus.Deleted ||
+    String(session.status).toLowerCase() === 'failed';
 
   return getAvatarState(
     {
       isStreaming: session.isStreaming,
       isProcessing: session.isProcessing,
       isResponding: session.isResponding,
+      turnInFlight: session.turnInFlight,
+      liveTurnOpen: (session as AgentSession & { liveTurnOpen?: boolean }).liveTurnOpen,
+      isWaitingOnTool: session.isWaitingOnTool,
+      isWaitingForOtherAgents: session.isWaitingForOtherAgents,
+      lastToolUse: session.lastToolUse,
+      activationState: session.activationState,
       status: session.status,
     },
-    options,
+    {
+      ...options,
+      hasUnread: options.hasUnread ?? session.hasUnread,
+      isCompleted: options.isCompleted ?? completedStatus,
+      isFailed: options.isFailed ?? failedStatus,
+      attentionKind: options.attentionKind ?? attentionRequest?.kind ?? null,
+    },
   );
 }
 
@@ -200,19 +210,7 @@ export function getAvatarStateFromStore(
     return 'idle';
   }
 
-  // Blocked waits (explicit Waiting status / paused on peer agents / a tool
-  // wait with no live turn) render the hourglass; a tool executing inside an
-  // in-flight turn stays "running".
-  const isWaiting = selectAgentIsBlockedWaiting.select(state, agentId);
-  const isResponding = selectAgentIsResponding.select(state, agentId);
-
-  return getAvatarState(
-    {
-      isStreaming: isResponding && !isWaiting,
-      status: isWaiting ? AgentStatus.Waiting : session.status,
-    },
-    options,
-  );
+  return getAvatarStateForSession(session, options);
 }
 
 /**

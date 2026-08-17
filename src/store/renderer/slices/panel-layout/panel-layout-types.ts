@@ -65,7 +65,7 @@ export interface PanelState {
   id: string;
   tabs: PanelTab[];
   activeTabId: string | null;
-  /** True only for the untouched reusable panel seeded for a new workspace. */
+  /** True for an untouched reusable blank panel that the next user item can consume. */
   pristine?: boolean;
   /** Pinned panels are preserved when reusable-panel mode collapses the layout. */
   pinned?: boolean;

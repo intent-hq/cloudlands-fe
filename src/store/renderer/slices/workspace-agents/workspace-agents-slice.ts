@@ -214,10 +214,14 @@ export const hydrateAgentsRequested = createAction<[wsId: string]>(
   'workspaceAgents/hydrateAgentsRequested',
 );
 export const createAgentRequested = createAction<
-  [wsId: string, agentType?: string, options?: { panelLayoutId?: string }]
+  [wsId: string, agentType?: string, options?: { panelLayoutId?: string; panelId?: string }]
 >('workspaceAgents/createAgentRequested');
 export const createAgentWithSpecialistRequested = createAction<
-  [wsId: string, specialistId: string | null, options?: { panelLayoutId?: string }]
+  [
+    wsId: string,
+    specialistId: string | null,
+    options?: { panelLayoutId?: string; panelId?: string },
+  ]
 >('workspaceAgents/createAgentWithSpecialistRequested');
 export const createAgentFromConfigRequested = createAsyncAction<
   [wsId: string, config: UnifiedAgentConfig, options?: AgentCreationRequestOptions],

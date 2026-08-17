@@ -84,8 +84,11 @@ test('measures the production finished-card turn gap across all required states'
               expect(measurement.finishedInset).toEqual(measurement.sentInset);
               expect(measurement.finishedHeight).toBeCloseTo(36 * zoom, 1);
               expect(measurement.surfaceInset).toEqual(['0px', '0px']);
-              expect(measurement.cardTop - measurement.predecessorBottom).toBeCloseTo(20 * zoom, 1);
-              expect(measurement.nextRowTop - measurement.cardBottom).toBeCloseTo(24 * zoom, 1);
+              const topGap = measurement.cardTop - measurement.predecessorBottom;
+              const bottomGap = measurement.nextRowTop - measurement.cardBottom;
+              expect(topGap).toBeCloseTo(32 * zoom, 1);
+              expect(bottomGap).toBeCloseTo(32 * zoom, 1);
+              expect(topGap).toBeCloseTo(bottomGap, 1);
               measuredStates += 1;
             }
           }
@@ -153,6 +156,7 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
               'color',
               'gap',
               'align-items',
+              'justify-content',
               'overflow-x',
               'overflow-y',
             ];
@@ -195,6 +199,11 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
 
           expect(collapsed.agentSurface).toEqual(collapsed.eventSurface);
           expect(collapsed.agentRow).toEqual(collapsed.eventRow);
+          expect(collapsed.agentRow['justify-content']).toBe('flex-start');
+          expect(collapsed.agentIconRect.left - collapsed.agentRowRect.left).toBeCloseTo(
+            12 * zoom,
+            1,
+          );
           expect(collapsed.agentRowRect.bottom - collapsed.agentRowRect.top).toBeCloseTo(
             36 * zoom,
             1,

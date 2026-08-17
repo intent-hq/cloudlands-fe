@@ -9,6 +9,11 @@
   import { cubicOut } from 'svelte/easing';
   import { getAgentColorsWithSeed } from '$lib/utils/agent-colors';
   import { m } from '$shared/paraglide/messages.js';
+  import {
+    CHAT_OPERATIONAL_LEADING_CLASS,
+    CHAT_OPERATIONAL_ROW_CLASS,
+    CHAT_OPERATIONAL_SUMMARY_CLASS,
+  } from './operational-disclosure-row';
 
   interface Props {
     visible?: boolean;
@@ -33,15 +38,17 @@
 
 {#if visible}
   <div
-    class="flex min-h-5 items-center gap-1.5 py-0 text-muted-foreground type-body {className}"
+    class="{CHAT_OPERATIONAL_ROW_CLASS} font-family-child font-normal text-muted-foreground {className}"
+    data-streaming-typing-row
     in:fade={{ duration: 200, easing: cubicOut }}
     out:fade={{ duration: 150, easing: cubicOut }}
   >
     <div
-      class="legacy-streaming-spinner inline-flex h-5 w-4 min-w-4 shrink-0 items-center justify-center"
+      class="legacy-streaming-spinner {CHAT_OPERATIONAL_LEADING_CLASS}"
       style="--size: 3.5px; --gap: 1px; --color1: {color1}; --color2: {color2};"
       role="status"
       aria-label={m.ui_spinner_loading_ariaLabel()}
+      data-operational-leading
     >
       <span class="legacy-spinner-track" aria-hidden="true">
         <span class="legacy-spinner-square legacy-spinner-square-0"></span>
@@ -52,8 +59,10 @@
 
     <!-- Message text -->
     {#if !compact && message}
-      <span class="font-normal text-muted-foreground" data-testid="streaming-status-thinking"
-        >{message}</span
+      <span
+        class={CHAT_OPERATIONAL_SUMMARY_CLASS}
+        data-operational-summary
+        data-testid="streaming-status-thinking">{message}</span
       >
     {/if}
   </div>

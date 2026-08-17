@@ -25,7 +25,7 @@ describe('chat typography contract', () => {
     expect(source('src/lib/components/chat/operational-disclosure-row.ts')).toContain('type-body');
     expect(source('src/lib/components/chat/ResponseGroup.svelte')).toContain('<ChatOperationalRow');
     expect(source('src/lib/components/chat/ChatFileChangesSummary.svelte')).toContain(
-      'type-caption',
+      'CHAT_OPERATIONAL_ROW_CLASS',
     );
     expect(source('src/lib/components/chat/SuggestedPrompts.svelte')).toContain('type-caption');
   });

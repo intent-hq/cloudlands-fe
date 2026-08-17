@@ -17,6 +17,7 @@ for (const scenario of scenarios) {
       name: 'Review the implementation and verify the focused behavior.',
     });
     const label = row.locator('[data-suggested-prompt-label]');
+    const surface = component.getByTestId('suggested-prompts-surface');
     const promptSlot = row.locator('[data-suggested-prompt-icon]');
     const promptGlyph = promptSlot.locator('svg');
     const toolSlot = component.locator('[data-tool-icon]').first();
@@ -44,8 +45,12 @@ for (const scenario of scenarios) {
         fontWeight: labelStyle.fontWeight,
         labelColor: labelStyle.color,
         hintWeight: hintStyle.fontWeight,
+        hintFontSize: hintStyle.fontSize,
       };
     });
+    const surfaceMarginTop = await surface.evaluate(
+      (element) => getComputedStyle(element).marginTop,
+    );
     const toolColor = await toolSlot.evaluate((element) => getComputedStyle(element).color);
     const [promptSlotBox, toolSlotBox, promptGlyphBox, toolGlyphBox] = await Promise.all([
       promptSlot.boundingBox(),
@@ -60,7 +65,9 @@ for (const scenario of scenarios) {
       lineHeight: '22px',
       fontWeight: '400',
       hintWeight: '400',
+      hintFontSize: '13px',
     });
+    expect(surfaceMarginTop).toBe('16px');
     expect(geometry.labelColor).toBe(toolColor);
     expect(geometry.centerDelta).toBeLessThan(0.6 * scenario.zoom);
     expect(promptSlotBox?.width).toBeCloseTo(toolSlotBox!.width, 1);

@@ -149,6 +149,12 @@ describe('theme color contract', () => {
     },
   );
 
+  it('keeps the approved global card colors in light and dark modes', () => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+    expect(tokenValue(css, 'theme-light-card')).toBe('0 0% 100%');
+    expect(tokenValue(css, 'theme-dark-card')).toBe('154 16% 3%');
+  });
+
   it.each(['light', 'dark'] as const)(
     'keeps the %s on-surface error foreground readable on normal surfaces',
     (mode) => {
@@ -259,7 +265,7 @@ describe('theme color contract', () => {
     expect(hslChannels(light.background)[2]).toBeGreaterThan(hslChannels(light.sidebar)[2]);
     expect(hslChannels(light.accent)[2]).toBeLessThan(hslChannels(light.sidebar)[2]);
     expect(hslChannels(dark.popover)[2]).toBeGreaterThan(hslChannels(dark.card)[2]);
-    expect(hslChannels(dark.card)[2]).toBeGreaterThan(hslChannels(dark.background)[2]);
+    expect(dark.card).toBe(dark.background);
   });
 
   it.each(['light', 'dark'] as const)('keeps %s control boundaries and focus at 3:1', (mode) => {

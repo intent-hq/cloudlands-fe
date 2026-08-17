@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
   const invoke = vi.fn().mockResolvedValue({ success: true });
   const openUserTab = vi.fn();
+  const handleLink = vi.fn();
   const selector = <T>(value: T) =>
     Object.assign(
       () => ({
@@ -46,6 +47,7 @@ const mocks = vi.hoisted(() => {
     dispatch,
     invoke,
     openUserTab,
+    handleLink,
     selector,
     selectorFrom,
     // eslint-disable-next-line themis/collection-state-shape -- test-only dynamic selector fixture
@@ -55,6 +57,13 @@ const mocks = vi.hoisted(() => {
     changes: [] as Array<{ id: string; file: string; relativePath: string }>,
     selectedTabs: ['overview'] as string[],
     runningAgentIds: new Set<string>(),
+    activePrSummary: null as null | {
+      number: number;
+      url: string;
+      repo?: string;
+      actionLabel: string;
+      actionTooltip: string;
+    },
   };
 });
 
@@ -85,6 +94,7 @@ vi.mock('$lib/components/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+vi.mock('$features/navigation/link-handler', () => ({ handleLink: mocks.handleLink }));
 
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectCurrentWorkspaceId: mocks.selector('ws-1'),
@@ -134,6 +144,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     worktreePath: '/tmp/project',
     skipWorktree: false,
   }),
+  selectWorkspaceActivePrSummary: mocks.selectorFrom(() => mocks.activePrSummary),
   selectWorkspaceActivePullRequest: mocks.selector(null),
   selectIsWorkspaceHostLocal: mocks.selector(true),
 }));
@@ -284,6 +295,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     mocks.changes = [];
     mocks.selectedTabs = ['overview'];
     mocks.runningAgentIds.clear();
+    mocks.activePrSummary = null;
   });
 
   afterEach(() => {
@@ -339,6 +351,63 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('vscode:open', '/tmp/project'));
   });
 
+  it('places one canonical PR action in the Changes trailing action area', async () => {
+    mocks.activePrSummary = {
+      number: 1373,
+      url: 'https://github.com/other/repository-with-a-very-long-name/pull/1373',
+      repo: 'other/repository-with-a-very-long-name',
+      actionLabel: 'View PR (other/repository-with-a-very-long-name)',
+      actionTooltip: 'Open the monitored pull request.',
+    };
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const launcher = container.querySelector<HTMLElement>('[data-sidebar-launcher="changes"]')!;
+    const cardAction = launcher.querySelector<HTMLButtonElement>('.launcher-tile-action')!;
+    const label = launcher.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!;
+    const prAction = launcher.querySelector<HTMLButtonElement>('[data-sidebar-pr-link]')!;
+    const resource = container.querySelector<HTMLElement>('[data-sidebar-changes-resource]');
+
+    expect(label.textContent).toBe('Changes');
+    expect(label.nextElementSibling).toBe(prAction);
+    expect(label.className).toContain('flex-1');
+    expect(label.className).toContain('truncate');
+    expect(prAction.className).toContain('ml-auto');
+    expect(prAction.getAttribute('aria-label')).toBe(mocks.activePrSummary.actionLabel);
+    expect(prAction.getAttribute('title')).toBe(mocks.activePrSummary.actionTooltip);
+    expect(prAction.dataset.sidebarPrUrl).toBe(mocks.activePrSummary.url);
+    expect(prAction.querySelectorAll('.fa-icon')).toHaveLength(1);
+    expect(launcher.querySelector('[data-sidebar-active-pr]')).toBeNull();
+    expect(launcher.textContent).not.toContain('1,373');
+    expect(launcher.textContent).not.toContain('Open');
+    expect(
+      resource
+        ?.querySelector('[data-resource-icon-tile]')
+        ?.getAttribute('data-resource-icon-variant'),
+    ).toBe('emphasized');
+
+    prAction.focus();
+    await fireEvent.click(prAction, { detail: 0 });
+    expect(mocks.handleLink).toHaveBeenCalledWith(mocks.activePrSummary.url, {
+      workspaceId: 'ws-1',
+    });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'sidebarNav/setMultiSelectSidebarSelectedTabs' }),
+    );
+
+    await fireEvent.click(cardAction);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'sidebarNav/setMultiSelectSidebarSelectedTabs' }),
+    );
+  });
+
+  it('keeps the Changes card PR-free when there is no active PR', async () => {
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+
+    expect(container.querySelector('[data-sidebar-pr-link]')).toBeNull();
+    expect(container.querySelector('[data-sidebar-changes-resource]')).not.toBeNull();
+  });
+
   it.each([
     { total: 0, visible: 0, overflow: 0 },
     { total: 1, visible: 1, overflow: 0 },
@@ -356,21 +425,22 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       }));
       const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
       const { container, queryByRole } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+      const agentStack = container.querySelector<HTMLElement>(
+        '[data-sidebar-launcher="agents"] [data-agent-avatar-stack]',
+      )!;
 
-      expect(container.querySelectorAll('[data-sidebar-agent]')).toHaveLength(visible);
+      expect(agentStack.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(visible);
       expect(container.querySelectorAll('[data-sidebar-context]')).toHaveLength(visible);
       expect(
         container.querySelector('[data-sidebar-launcher="agents"] [aria-labelledby]'),
       ).toBeTruthy();
       if (overflow > 0) {
-        expect(
-          queryByRole('button', {
-            name: new RegExp(`${overflow} more agents.*${total} agents total`),
-          }),
-        ).toBeTruthy();
+        expect(agentStack.querySelector('[data-agent-avatar-overflow]')?.textContent).toBe(
+          `+${overflow}`,
+        );
         expect(queryByRole('button', { name: new RegExp(`${overflow} more notes`) })).toBeTruthy();
       } else {
-        expect(container.querySelector('[data-sidebar-agent-overflow]')).toBeNull();
+        expect(agentStack.querySelector('[data-agent-avatar-overflow]')).toBeNull();
         expect(container.querySelector('[data-sidebar-context-overflow]')).toBeNull();
       }
     },
@@ -382,94 +452,40 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const { container, getByRole } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
 
     expect(getByRole('button', { name: /Agents.*0 agents total/ })).toBeTruthy();
-    expect(container.querySelectorAll('[data-sidebar-agent]')).toHaveLength(0);
-    expect(container.querySelector('[data-sidebar-agent-overflow]')).toBeNull();
+    expect(container.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(0);
+    expect(container.querySelector('[data-agent-avatar-overflow]')).toBeNull();
   });
 
-  it.each([1, 4, 6])(
-    'keeps cross-card visible edges and shared geometry aligned at %i-item density',
-    async (count) => {
-      mocks.agents = Array.from({ length: count }, (_, index) =>
-        makeAgent(`agent-${index}`, { isInitialAgent: index === 0 }),
-      );
-      mocks.notes = Array.from({ length: count }, (_, index) => ({
-        id: index === count - 1 ? 'spec' : `note-${index}`,
-        title: `Note ${index}`,
-        content: '',
-      }));
-      mocks.changes = Array.from({ length: count }, (_, index) => ({
-        id: `change-${index}`,
-        file: `/tmp/file-${index}.ts`,
-        relativePath: `file-${index}.ts`,
-      }));
-      const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
-      const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
-      const geometry = (tabId: string) => {
-        const card = container.querySelector<HTMLElement>(`[data-sidebar-launcher="${tabId}"]`)!;
-        const stack = card.querySelector<HTMLElement>('[data-sidebar-launcher-icons]')!;
-        const label = card.querySelector<HTMLElement>(`[id^="sidebar-launcher-label-${tabId}-"]`)!;
-        const targets = [...stack.querySelectorAll<HTMLElement>('[data-launcher-preview-item]')];
-        const glyphs = [...stack.querySelectorAll<HTMLElement>('[data-sidebar-launcher-glyph]')];
-        expect(card.dataset.launcherTopInset).toBe('8');
-        expect(card.dataset.launcherInlineInset).toBe('8');
-        expect(card.classList.contains('p-2')).toBe(true);
-        expect(card.classList.contains('bg-sidebar')).toBe(true);
-        expect(label.parentElement?.classList.contains('pl-2')).toBe(true);
-        expect(stack.dataset.launcherLayout).toBe('horizontal');
-        expect(stack.dataset.launcherPack).toBe('left');
-        expect(stack.dataset.launcherTargetSize).toBe('36');
-        expect(stack.dataset.launcherVisibleSize).toBe('20');
-        expect(stack.dataset.launcherStepSize).toBe('16');
-        expect(stack.dataset.launcherVisibleOffset).toBe('8');
-        expect(stack.classList.contains('h-9')).toBe(true);
-        expect(stack.classList.contains('grid')).toBe(true);
-        expect(stack.classList.contains('w-full')).toBe(true);
-        expect(stack.classList.contains('overflow-visible')).toBe(true);
-        expect(targets.every((target) => target.classList.contains('size-9'))).toBe(true);
-        expect(targets.every((target) => target.classList.contains('shrink-0'))).toBe(true);
-        expect(
-          targets.every((target) => target.parentElement?.classList.contains('justify-self-start')),
-        ).toBe(true);
-        expect(targets.every((target) => target.classList.contains('hover:z-20'))).toBe(true);
-        expect(targets.every((target) => target.classList.contains('focus-visible:z-30'))).toBe(
-          true,
-        );
-        expect(glyphs.every((glyph) => glyph.classList.contains('size-5'))).toBe(true);
-        if (tabId === 'agents') {
-          expect(stack.classList.contains('-ml-3.5')).toBe(false);
-          expect(
-            glyphs.every(
-              (glyph) =>
-                glyph.dataset.launcherAvatarSeam === 'surface-1px' &&
-                glyph.dataset.launcherAvatarSize === '20' &&
-                getComputedStyle(glyph).width === '20px' &&
-                getComputedStyle(glyph).height === '20px' &&
-                glyph.style.boxShadow === 'inset 0 0 0 1px var(--color-card)',
-            ),
-          ).toBe(true);
-          expect(
-            glyphs.every((glyph) => !/ring-(?:[1-9])|border-(?:[2-9])/.test(glyph.className)),
-          ).toBe(true);
-        }
-        expect(Number(stack.dataset.launcherVisibleOffset)).toBe(
-          Number(stack.dataset.launcherTargetSize) / 2 -
-            Number(stack.dataset.launcherVisibleSize) / 2,
-        );
-        expect(targets[0]?.dataset.launcherLeadingItem).toBe('true');
-        expect(label).toBeTruthy();
-        return {
-          topInset: card.dataset.launcherTopInset,
-          inlineInset: card.dataset.launcherInlineInset,
-          pack: stack.dataset.launcherPack,
-          target: stack.dataset.launcherTargetSize,
-        };
-      };
+  it.each([1, 4, 6])('uses the shared logical-start stack at %i-item density', async (count) => {
+    mocks.agents = Array.from({ length: count }, (_, index) =>
+      makeAgent(`agent-${index}`, { isInitialAgent: index === 0 }),
+    );
+    mocks.notes = Array.from({ length: count }, (_, index) => ({
+      id: index === count - 1 ? 'spec' : `note-${index}`,
+      title: `Note ${index}`,
+      content: '',
+    }));
+    mocks.changes = Array.from({ length: count }, (_, index) => ({
+      id: `change-${index}`,
+      file: `/tmp/file-${index}.ts`,
+      relativePath: `file-${index}.ts`,
+    }));
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const card = container.querySelector<HTMLElement>('[data-sidebar-launcher="agents"]')!;
+    const stack = card.querySelector<HTMLElement>('[data-agent-avatar-stack]')!;
+    const items = [...stack.querySelectorAll<HTMLElement>('[data-agent-avatar-stack-item]')];
+    expect(card.className).not.toMatch(/-ml-|negative/);
+    expect(stack.dataset.agentAvatarStackAlign).toBe('start');
+    expect(stack.dataset.agentAvatarStackOverlap).toBe('later-on-top');
+    expect(stack.dataset.avatarVariant).toBe('standard');
+    expect(items).toHaveLength(count);
+    expect(items.map((item) => item.style.zIndex)).toEqual(
+      Array.from({ length: count }, (_, index) => String(index + 1)),
+    );
+  });
 
-      expect(geometry('agents')).toEqual(geometry('context'));
-    },
-  );
-
-  it('uses one contained horizontal row with plain overflow text at narrow zoomed sizes', async () => {
+  it('uses interactive shared-stack agents and keeps overflow as plain text', async () => {
     mocks.agents = Array.from({ length: 8 }, (_, index) => makeAgent(`agent-${index}`));
     mocks.notes = Array.from({ length: 8 }, (_, index) => ({
       id: index === 7 ? 'spec' : `note-${index}`,
@@ -483,26 +499,14 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     }));
     const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
     const { container, getByRole } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
-
-    for (const tabId of ['agents', 'context']) {
-      const card = container.querySelector<HTMLElement>(`[data-sidebar-launcher="${tabId}"]`)!;
-      const stack = card.querySelector<HTMLElement>('[data-sidebar-launcher-icons]')!;
-      const itemCount = stack.querySelectorAll('[data-launcher-preview-item]').length;
-      expect(stack.classList.contains('grid')).toBe(true);
-      expect(stack.classList.contains('grid-flow-col')).toBe(true);
-      expect(stack.className).not.toContain('grid-cols-');
-      expect(stack.style.gridTemplateColumns).toBe('repeat(5, 16px) 36px max-content');
-      expect(itemCount).toBe(7);
-      expect(card.classList.contains('overflow-hidden')).toBe(true);
-    }
-    const agentOverflow = getByRole('button', { name: /2 more agents.*8 agents total/ });
+    const agentCard = container.querySelector<HTMLElement>('[data-sidebar-launcher="agents"]')!;
+    const agentStack = agentCard.querySelector<HTMLElement>('[data-agent-avatar-stack]')!;
+    const agentOverflow = agentStack.querySelector<HTMLElement>('[data-agent-avatar-overflow]')!;
+    const contextStack = container.querySelector<HTMLElement>(
+      '[data-sidebar-launcher="context"] [data-sidebar-launcher-icons]',
+    )!;
     const noteOverflow = getByRole('button', { name: /2 more notes/ });
-    const agentGlyphs = [
-      ...container.querySelectorAll<HTMLElement>(
-        '[data-sidebar-launcher="agents"] [data-launcher-avatar-size="24"]',
-      ),
-    ];
-    const expectPlainOverflowStyle = (overflow: HTMLElement) => {
+    const expectNoteOverflowStyle = (overflow: HTMLElement) => {
       expect(overflow.className).toContain('launcher-overflow-button');
       expect(overflow.className).toContain('text-xs');
       expect(overflow.className).toContain('font-medium');
@@ -527,22 +531,20 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       expect(style.boxShadow).toBe('none');
     };
 
-    for (const overflow of [agentOverflow, noteOverflow]) {
-      expectPlainOverflowStyle(overflow);
-    }
-
+    expect(agentCard.classList.contains('overflow-hidden')).toBe(true);
+    expect(agentStack.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(6);
+    expect(agentStack.querySelectorAll('button[data-sidebar-agent]')).toHaveLength(6);
+    expect(agentOverflow.matches('button, [role="button"], [tabindex]')).toBe(false);
+    expect(agentOverflow.textContent).toBe('+2');
+    expect(getComputedStyle(agentOverflow).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    expect(contextStack.style.gridTemplateColumns).toBe('repeat(5, 15px) 36px max-content');
+    expectNoteOverflowStyle(noteOverflow);
     for (const theme of ['light', 'dark'] as const) {
       document.documentElement.classList.toggle('dark', theme === 'dark');
       document.documentElement.dataset.theme = theme;
       for (const zoom of [1, 2]) {
         container.style.zoom = String(zoom);
-        expectPlainOverflowStyle(agentOverflow);
-        for (const glyph of agentGlyphs) {
-          const style = getComputedStyle(glyph);
-          expect(style.width).toBe('24px');
-          expect(style.height).toBe('24px');
-          expect(glyph.parentElement?.classList.contains('size-9')).toBe(true);
-        }
+        expect(getComputedStyle(agentOverflow).backgroundColor).toBe('rgba(0, 0, 0, 0)');
       }
     }
     container.style.removeProperty('zoom');
@@ -562,6 +564,14 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
 
     for (const target of container.querySelectorAll<HTMLElement>('[data-launcher-preview-item]')) {
+      if (target.hasAttribute('data-sidebar-agent')) {
+        expect(target.className).toContain('launcher-agent-avatar-button');
+        expect(target.className).toContain('size-5');
+        expect(target.className).toContain('focus-visible:ring-1');
+        expect(target.className).toContain('focus-visible:ring-ring');
+        expect(target.className).not.toMatch(/(?:^|\s)focus-visible:outline-(?!none)/);
+        continue;
+      }
       const glyph = target.querySelector<HTMLElement>('[data-sidebar-launcher-glyph]');
       const isAgentGlyph = glyph?.className.includes('group-hover/preview:opacity');
       if (glyph) {
@@ -589,37 +599,18 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     }
   });
 
-  it('keeps plain +N text adjacent to the last left-packed icon-grid item', async () => {
+  it('keeps plain +N text inside the shared logical-start stack', async () => {
     mocks.agents = Array.from({ length: 8 }, (_, index) => makeAgent(`agent-${index}`));
     const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
-    const { container, getByRole } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
     const card = container.querySelector<HTMLElement>('[data-sidebar-launcher="agents"]')!;
-    const stack = card.querySelector<HTMLElement>('[data-sidebar-launcher-icons]')!;
-    const overflow = getByRole('button', { name: /2 more agents.*8 agents total/ });
-    const stackRect = stack.getBoundingClientRect();
-    const overflowRect = overflow.getBoundingClientRect();
+    const stack = card.querySelector<HTMLElement>('[data-agent-avatar-stack]')!;
+    const overflow = stack.querySelector<HTMLElement>('[data-agent-avatar-overflow]')!;
 
-    expect(stack.className).not.toMatch(/-ml-/);
-    expect(stack.dataset.launcherPack).toBe('left');
-    expect(stack.dataset.launcherVisibleSize).toBe('20');
-    expect(stack.dataset.launcherStepSize).toBe('16');
-    expect(stack.dataset.launcherVisibleOffset).toBe('8');
-    for (const tabId of ['context']) {
-      const siblingStack = container.querySelector<HTMLElement>(
-        `[data-sidebar-launcher="${tabId}"] [data-sidebar-launcher-icons]`,
-      )!;
-      expect(siblingStack.className).not.toMatch(/launcher-icon-stack-offset|-ml-/);
-      expect(siblingStack.dataset.launcherVisibleSize).toBe('20');
-      expect(siblingStack.dataset.launcherStepSize).toBe('16');
-      expect(siblingStack.dataset.launcherVisibleOffset).toBe('8');
-    }
+    expect(card.className).not.toMatch(/-ml-/);
+    expect(stack.dataset.agentAvatarStackAlign).toBe('start');
     expect(overflow.parentElement).toBe(stack);
-    expect(overflowRect.left).toBeGreaterThanOrEqual(stackRect.left);
-    expect(overflowRect.top).toBeGreaterThanOrEqual(stackRect.top);
-    expect(overflow.textContent).toContain('+2');
-    expect(overflow.className).toContain('w-auto');
-    expect(overflow.className).toContain('justify-center');
-    expect(overflow.style.justifySelf).toBe('start');
+    expect(overflow.textContent).toBe('+2');
   });
 
   it('affirms coordinator and Spec ordering in every required visual state', async () => {
@@ -632,12 +623,16 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       ];
       const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
       const view = render(Sidebar, { props: { workspaceId: 'ws-1' } });
-      const target = view.container.querySelector<HTMLElement>('[data-sidebar-agent]')!;
+      const target = view.getByTestId('agent-panel-toggle');
       return {
         ...view,
         target,
         assertCapability: () => {
-          expect(target.getAttribute('data-sidebar-agent')).toBe('coordinator');
+          expect(
+            view.container
+              .querySelector('[data-agent-avatar-stack-item]')
+              ?.getAttribute('data-agent-avatar-stack-key'),
+          ).toBe('coordinator');
           expect(
             view.container
               .querySelector('[data-sidebar-context]')
@@ -654,33 +649,89 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       makeAgent(`agent-${index}`, {
         unread: index === 2,
         lastActivity: `2026-08-12T00:00:0${index}.000Z`,
+        specialist: index === 2 ? 'implementor' : index === 5 ? 'verifier' : undefined,
       }),
     );
     mocks.runningAgentIds.add('agent-1');
     const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
     const overview = render(Sidebar, { props: { workspaceId: 'ws-1' } });
 
-    expect(
-      [...overview.container.querySelectorAll('[data-sidebar-agent]')].map((item) =>
-        item.getAttribute('data-sidebar-agent'),
-      ),
-    ).toEqual(['agent-1', 'agent-2', 'agent-7', 'agent-6', 'agent-5', 'agent-4']);
-    const overflow = overview.getByRole('button', { name: /2 more agents.*8 agents total/ });
-    overflow.focus();
-    await fireEvent.pointerDown(overflow);
-    await fireEvent.keyDown(overflow, { key: 'Enter' });
-    await fireEvent.keyDown(overflow, { key: ' ' });
-    expect(document.activeElement).toBe(overflow);
-    await fireEvent.click(overflow);
+    const collapsedDesignInputs = [
+      ...overview.container.querySelectorAll<HTMLElement>('[data-agent-avatar-stack-item]'),
+    ].map((item) => ({
+      agentId: item.dataset.agentAvatarStackAgentId,
+      specialist: item.dataset.agentAvatarStackSpecialist,
+    }));
+    expect(collapsedDesignInputs.map(({ agentId }) => agentId)).toEqual([
+      'agent-1',
+      'agent-2',
+      'agent-7',
+      'agent-6',
+      'agent-5',
+      'agent-4',
+    ]);
+    expect(overview.getByTestId('sidebar-agent-overflow').textContent).toBe('+2');
+    const cardAction = overview.getByTestId('agent-panel-toggle');
+    cardAction.focus();
+    expect(document.activeElement).toBe(cardAction);
+    await fireEvent.click(cardAction);
     expect(mocks.dispatch).toHaveBeenCalled();
 
     cleanup();
     mocks.selectedTabs = ['agents'];
     const expanded = render(Sidebar, { props: { workspaceId: 'ws-1' } });
     expect(expanded.container.querySelectorAll('[data-expanded-agent]')).toHaveLength(8);
+    const expandedDesignInputs = [
+      ...expanded.container.querySelectorAll<HTMLElement>('[data-expanded-agent]'),
+    ].map((item) => ({
+      agentId: item.dataset.expandedAgent,
+      specialist: item.dataset.expandedAgentSpecialist,
+    }));
+    const expandedByAgentId = new Map(
+      expandedDesignInputs.map((input) => [input.agentId, input.specialist]),
+    );
+    expect(collapsedDesignInputs).toContainEqual({
+      agentId: 'agent-2',
+      specialist: 'implementor',
+    });
+    expect(collapsedDesignInputs).toContainEqual({
+      agentId: 'agent-5',
+      specialist: 'verifier',
+    });
+    for (const input of collapsedDesignInputs) {
+      expect(expandedByAgentId.get(input.agentId)).toBe(input.specialist);
+    }
   });
 
-  it('opens each compact agent and note exactly once', async () => {
+  it('opens the exact collapsed-stack agent without expanding the Agents card', async () => {
+    mocks.agents = [makeAgent('agent-a'), makeAgent('agent-b', { specialist: 'verifier' })];
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const target = container.querySelector<HTMLButtonElement>('[data-sidebar-agent="agent-b"]')!;
+
+    mocks.dispatch.mockClear();
+    target.focus();
+    await fireEvent.click(target);
+    expect(document.activeElement).toBe(target);
+    expect(
+      mocks.dispatch.mock.calls.filter(
+        ([action]) => action.type === 'appLayout/openAgentTabRequested',
+      ),
+    ).toEqual([
+      [
+        expect.objectContaining({
+          payload: ['ws-1', expect.objectContaining({ agentId: 'agent-b', openInNewColumn: true })],
+        }),
+      ],
+    ]);
+    expect(
+      mocks.dispatch.mock.calls.some(
+        ([action]) => action.type === 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+      ),
+    ).toBe(false);
+  });
+
+  it('opens the Agents card and compact note exactly once', async () => {
     mocks.agents = [makeAgent('primary', { isInitialAgent: true })];
     mocks.notes = [{ id: 'spec', title: 'Spec', content: '' }];
     mocks.changes = [{ id: 'change', file: '/tmp/file.ts', relativePath: 'file.ts' }];
@@ -688,23 +739,16 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
 
     mocks.dispatch.mockClear();
-    await fireEvent.click(container.querySelector('[data-sidebar-agent="primary"]')!);
+    await fireEvent.click(container.querySelector('[data-testid="agent-panel-toggle"]')!);
     expect(
       mocks.dispatch.mock.calls.filter(
         ([action]) => action.type === 'appLayout/openAgentTabRequested',
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        payload: [
-          'ws-1',
-          expect.objectContaining({
-            agentId: 'primary',
-            adaptiveFirstChat: true,
-            availablePanelCanvasWidth: 0,
-            openInNewColumn: true,
-          }),
-        ],
+        type: 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+        payload: ['ws-1', ['agents']],
       }),
     );
 

@@ -623,7 +623,7 @@
   {/if}
 {/snippet}
 
-<div class="flex flex-col gap-1" style="contain: layout style paint;" data-operational-stack>
+<div class="flex flex-col gap-0" style="contain: layout style paint;" data-operational-stack>
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
     <div
       class={getOperationalClusterSpacingClass(

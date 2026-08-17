@@ -69,6 +69,21 @@ describe('scrollWorkspaceColumnIntoView', () => {
     vi.unstubAllGlobals();
   });
 
+  it('keeps start-aligned workspace chrome inside the configured scroll padding', () => {
+    const container = document.createElement('div');
+    const column = document.createElement('section');
+    column.dataset.workspaceColumn = 'ws-padded';
+    container.dataset.workspaceRevealInset = '8';
+    container.style.scrollPaddingInline = '8px';
+    container.append(column);
+    setHorizontalRect(container, 0, 500);
+    setHorizontalRect(column, 200, 450);
+    container.scrollLeft = 100;
+
+    expect(scrollWorkspaceColumnIntoView(container, 'ws-padded', 'auto', 'start')).toBe(true);
+    expect(container.scrollLeft).toBe(292);
+  });
+
   it('does nothing when the workspace column has not rendered', () => {
     const container = document.createElement('div');
 
@@ -108,6 +123,39 @@ describe('scrollWorkspaceColumnIntoView', () => {
 
     expect(scrollWorkspacePanelIntoView(container, 'ws-zoomed', 'panel-zoomed')).toBe(true);
     expect(container.scrollLeft).toBe(400);
+  });
+
+  it('scales scroll padding with the visual viewport at 200% CSS zoom', () => {
+    const container = document.createElement('div');
+    const column = document.createElement('section');
+    column.dataset.workspaceColumn = 'ws-zoomed';
+    container.dataset.workspaceRevealInset = '8';
+    container.style.scrollPaddingInline = '8px';
+    container.append(column);
+    Object.defineProperty(container, 'clientWidth', { configurable: true, value: 500 });
+    setHorizontalRect(container, 0, 1000);
+    setHorizontalRect(column, 1200, 1800);
+
+    expect(scrollWorkspaceColumnIntoView(container, 'ws-zoomed', 'auto', 'start')).toBe(true);
+    expect(container.scrollLeft).toBe(592);
+  });
+
+  it('reveals a partly clipped panel inside both scroll-padding edges', () => {
+    const container = document.createElement('div');
+    const column = document.createElement('section');
+    const panel = document.createElement('div');
+    column.dataset.workspaceColumn = 'ws-padded';
+    panel.dataset.panelId = 'panel-padded';
+    container.dataset.workspaceRevealInset = '8';
+    container.style.scrollPaddingInline = '8px';
+    column.append(panel);
+    container.append(column);
+    setHorizontalRect(container, 0, 500);
+    setHorizontalRect(panel, 200, 496);
+    container.scrollLeft = 100;
+
+    expect(scrollWorkspacePanelIntoView(container, 'ws-padded', 'panel-padded')).toBe(true);
+    expect(container.scrollLeft).toBe(104);
   });
 
   it('does not move the scroller when the panel is already visible', () => {

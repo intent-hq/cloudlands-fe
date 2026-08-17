@@ -56,6 +56,8 @@
 
 <style>
   .agent-avatar-with-state {
+    --agent-avatar-background: hsl(var(--agent-avatar-surface-neutral));
+
     display: inline-flex;
     flex: none;
     align-items: center;
@@ -67,7 +69,7 @@
     overflow: hidden;
     border-radius: var(--agent-avatar-corner-radius, 6px);
     clip-path: inset(0 round var(--agent-avatar-corner-radius, 6px));
-    background-color: hsl(var(--agent-avatar-surface-neutral));
+    background-color: var(--agent-avatar-background);
     color: #080808;
     opacity: 1;
     transition: background-color var(--motion-fast) var(--ease-standard);
@@ -76,32 +78,35 @@
 
   .agent-avatar-with-state--running,
   .agent-avatar-with-state--responding {
-    background-color: hsl(var(--agent-avatar-surface-active));
+    --agent-avatar-background: hsl(var(--agent-avatar-surface-active));
   }
 
   .agent-avatar-with-state--completed {
-    background-color: hsl(var(--agent-avatar-surface-completed));
+    --agent-avatar-background: hsl(var(--agent-avatar-surface-completed));
     color: hsl(var(--agent-avatar-foreground-completed));
     transition: none;
   }
 
   .agent-avatar-with-state--unread {
-    background-color: hsl(var(--agent-avatar-surface-unread));
+    --agent-avatar-background: hsl(var(--agent-avatar-surface-unread));
   }
 
   .agent-avatar-with-state--waiting {
-    background-color: hsl(var(--agent-avatar-surface-waiting));
+    --agent-avatar-background: hsl(var(--agent-avatar-surface-waiting));
   }
 
   .agent-avatar-with-state--failed,
   .agent-avatar-with-state--attention-blocker,
   .agent-avatar-with-state--needs-permission,
   .agent-avatar-with-state--attention-discussion {
-    background-color: hsl(var(--agent-avatar-surface-attention));
+    --agent-avatar-background: hsl(var(--agent-avatar-surface-attention));
   }
 
   @media (forced-colors: active) {
     .agent-avatar-with-state {
+      --agent-avatar-background-forced: Canvas;
+      --agent-avatar-outline-forced: none;
+
       background-color: Canvas;
       color: CanvasText;
       outline: 1px solid CanvasText;
@@ -109,22 +114,27 @@
     }
     .agent-avatar-with-state--running,
     .agent-avatar-with-state--responding {
+      --agent-avatar-background-forced: Highlight;
       background-color: Highlight;
     }
     .agent-avatar-with-state--completed {
+      --agent-avatar-background-forced: ButtonFace;
       background-color: ButtonFace;
       color: ButtonText;
     }
     .agent-avatar-with-state--unread {
+      --agent-avatar-background-forced: ButtonFace;
       background-color: ButtonFace;
     }
     .agent-avatar-with-state--waiting {
+      --agent-avatar-background-forced: Field;
       background-color: Field;
     }
     .agent-avatar-with-state--failed,
     .agent-avatar-with-state--attention-blocker,
     .agent-avatar-with-state--needs-permission,
     .agent-avatar-with-state--attention-discussion {
+      --agent-avatar-background-forced: Mark;
       background-color: Mark;
     }
   }

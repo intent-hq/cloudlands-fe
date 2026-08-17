@@ -65,6 +65,7 @@ describe('SuggestedPrompts', () => {
     });
 
     const surface = screen.getByTestId('suggested-prompts-surface');
+    expect(surface.className).toContain('mt-4');
     expect(surface.className).not.toContain('bg-');
     expect(surface.className).not.toContain('rounded');
     expect(surface.className).not.toContain('border');
@@ -115,10 +116,14 @@ describe('SuggestedPrompts', () => {
     });
 
     const hint = screen.getByText(/(?:⌃|Alt\+)1/);
-    expect(hint.className).toContain('font-normal');
-    for (const className of COMPACT_TOOL_TRAILING_CLASS.split(' ')) {
+    expect(hint.className).toContain('font-normal!');
+    expect(hint.className).toContain('text-muted-foreground!');
+    for (const className of COMPACT_TOOL_TRAILING_CLASS.replace('text-ui', '').split(' ')) {
+      if (!className) continue;
       expect(hint.classList.contains(className)).toBe(true);
     }
+    expect(hint.className).toContain('type-caption');
+    expect(hint.className).not.toContain('text-ui');
     expect(hint.className).not.toContain('font-medium');
     expect(hint.className).not.toMatch(/text-(?:muted-foreground|subtle)\//);
     expect(hint.parentElement?.className).toContain('type-body');

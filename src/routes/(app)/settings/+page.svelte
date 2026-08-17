@@ -25,6 +25,7 @@
   import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
+  import PanelOpenModeSettings from '$lib/components/settings/PanelOpenModeSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import HardwareConsoleSettings from '$lib/components/settings/HardwareConsoleSettings.svelte';
   import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
@@ -455,7 +456,7 @@
   <div class="flex min-w-0 flex-1 flex-col">
     <div class="min-h-0 flex-1 overflow-auto">
       <main
-        class="mx-auto flex min-h-full max-w-4xl flex-col pr-8 pl-6 pt-6 pb-8"
+        class="mx-auto flex min-h-full max-w-4xl flex-col pr-8 pl-6 py-12"
         aria-labelledby="settings-page-title"
       >
         <h1 id="settings-page-title" class="sr-only">{m.settings_page_title()}</h1>
@@ -611,6 +612,18 @@
                 class="px-6 py-5"
               >
                 <ColorThemeSettings bind:this={colorThemeSettingsRef} />
+              </section>
+            </div>
+          </div>
+
+          <!-- Panels -->
+          <div id="panels" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_panels()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <PanelOpenModeSettings />
               </section>
             </div>
           </div>

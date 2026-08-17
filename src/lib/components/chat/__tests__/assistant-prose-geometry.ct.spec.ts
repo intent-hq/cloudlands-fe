@@ -73,7 +73,7 @@ for (const theme of ['light', 'dark'] as const) {
               ],
             };
           });
-          expect(geometry.height).toBeCloseTo(36 * zoom, 1);
+          expect(geometry.height).toBeCloseTo(28 * zoom, 1);
           expect(geometry.iconBoxSize).toBeCloseTo(20 * zoom, 1);
           expect(geometry.iconSize).toBeCloseTo(16 * zoom, 1);
           expect(geometry.iconCenter.x).toBeCloseTo(geometry.slotCenter.x, 1);
@@ -206,7 +206,7 @@ for (const theme of ['light', 'dark'] as const) {
           const heights = await rowLines.evaluateAll((elements) =>
             elements.map((element) => element.getBoundingClientRect().height),
           );
-          for (const height of heights) expect(height).toBeCloseTo(36 * zoom, 1);
+          for (const height of heights) expect(height).toBeCloseTo(28 * zoom, 1);
           const icons = rows.locator('[data-operational-leading] svg');
           await expect(icons).toHaveCount(expectedRows);
           const iconWidths = await icons.evaluateAll((elements) =>
@@ -234,10 +234,7 @@ for (const theme of ['light', 'dark'] as const) {
               return { top: box.top, bottom: box.bottom };
             }),
           );
-          const expectedGaps =
-            testId === 'static-operational-cluster'
-              ? [4, 12, 4, 12]
-              : Array.from({ length: expectedRows - 1 }, () => 4);
+          const expectedGaps = Array.from({ length: expectedRows - 1 }, () => 0);
           for (let index = 1; index < boxes.length; index += 1) {
             expect(boxes[index].top - boxes[index - 1].bottom).toBeCloseTo(
               expectedGaps[index - 1] * zoom,
@@ -263,16 +260,31 @@ for (const theme of ['light', 'dark'] as const) {
             const firstRowBox = (await firstRow.boundingBox())!;
             const lastRowBox = (await lastRow.boundingBox())!;
             expect(firstRowBox.y - (firstBlockBox.y + firstBlockBox.height)).toBeCloseTo(
-              (testId === 'static-operational-cluster' ? 12 : 4) * zoom,
+              16 * zoom,
               1,
             );
-            expect(lastBlockBox.y - (lastRowBox.y + lastRowBox.height)).toBeCloseTo(4 * zoom, 1);
+            expect(lastBlockBox.y - (lastRowBox.y + lastRowBox.height)).toBeCloseTo(
+              (testId === 'streaming-operational-cluster' ? 16 : 0) * zoom,
+              1,
+            );
           }
         };
 
         await assertCluster('single-operational-cluster', 1);
         await assertCluster('static-operational-cluster', 5);
         await assertCluster('streaming-operational-cluster', 5);
+
+        const expandedGroup = component.locator('[data-testid="expanded-group-prose"]');
+        const groupRow = expandedGroup.locator('[data-operational-row-container]');
+        const groupProse = expandedGroup.locator(
+          '[data-response-group-content] > [data-message-content-block="text"]',
+        );
+        await expect(groupProse).toBeVisible();
+        const [groupRowBox, groupProseBox] = await Promise.all([
+          groupRow.boundingBox(),
+          groupProse.boundingBox(),
+        ]);
+        expect(groupProseBox!.y - (groupRowBox!.y + groupRowBox!.height)).toBeCloseTo(16 * zoom, 1);
 
         for (const mode of ['static', 'streaming']) {
           for (const pair of [
@@ -285,9 +297,7 @@ for (const theme of ['light', 'dark'] as const) {
             'tool-group',
             'group-group',
           ]) {
-            const fixture = component.locator(
-              `[data-testid="operational-pair-${mode}-${pair}"]`,
-            );
+            const fixture = component.locator(`[data-testid="operational-pair-${mode}-${pair}"]`);
             const rows = fixture.locator('[data-operational-row-container]');
             await expect(rows).toHaveCount(2);
             const boxes = await rows.evaluateAll((elements) =>
@@ -296,10 +306,7 @@ for (const theme of ['light', 'dark'] as const) {
                 return { top: box.top, bottom: box.bottom };
               }),
             );
-            expect(boxes[1].top - boxes[0].bottom).toBeCloseTo(
-              (pair === 'tool-reasoning' ? 12 : 4) * zoom,
-              1,
-            );
+            expect(boxes[1].top - boxes[0].bottom).toBeCloseTo(0, 1);
             const wrapperMargins = await rows.evaluateAll((elements) =>
               elements.map((element) => {
                 const row = getComputedStyle(element);
@@ -336,7 +343,7 @@ for (const theme of ['light', 'dark'] as const) {
               blockTop: '0px',
               blockBottom: '0px',
             });
-            await expect(fixture.locator('[data-operational-stack]')).toHaveCSS('row-gap', '4px');
+            await expect(fixture.locator('[data-operational-stack]')).toHaveCSS('row-gap', '0px');
           }
         }
 

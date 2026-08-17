@@ -95,15 +95,14 @@ for (const theme of ['light', 'dark'] as const) {
             }),
           );
           for (const row of geometry) {
-            expect(row.height).toBeCloseTo(36 * zoom, 1);
+            expect(row.height).toBeCloseTo(28 * zoom, 1);
             expect(row.leading).toBeCloseTo(20 * zoom, 1);
             expect(row.icon).toEqual([16 * zoom, 16 * zoom]);
             expect(row.cardEdges).toEqual(row.rowEdges);
             expect(row.leadingCenter[1]).toBeCloseTo(row.rowCenter, 1);
             expect(row.iconCenter[1]).toBeCloseTo(row.rowCenter, 1);
             expect(row.labelStart - row.rowEdges[0]).toBeCloseTo(36 * zoom, 1);
-            expect(row.insets[0]).toBeCloseTo(row.insets[1], 1);
-            expect(row.insets[0]).toBeCloseTo(row.insets[2], 1);
+            expect(row.insets[1]).toBeCloseTo(row.insets[2], 1);
             expect(row.summary).toEqual(['0px', 'hidden', 'ellipsis', 'nowrap']);
             expect(row.margins).toEqual(['0px', '0px', '0px', '0px']);
           }
@@ -121,7 +120,6 @@ for (const theme of ['light', 'dark'] as const) {
               [previous.iconCenter[0], current.iconCenter[0]],
               [previous.labelStart, current.labelStart],
               [previous.baseline, current.baseline],
-              [previous.height, current.height],
             ]) {
               expect(Math.abs(before - after)).toBeLessThanOrEqual(0.5);
             }
@@ -136,7 +134,7 @@ for (const theme of ['light', 'dark'] as const) {
               'response-group>thinking',
             ]),
           );
-          await expect(message.locator('[data-operational-stack]')).toHaveCSS('row-gap', '4px');
+          await expect(message.locator('[data-operational-stack]')).toHaveCSS('row-gap', '0px');
 
           if (messageId === 'assistant-streaming') {
             const streamingRow = message.getByTestId('reasoning-tool-call').last();

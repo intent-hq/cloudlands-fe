@@ -22,7 +22,7 @@ import {
   SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
   SUBSCRIPTION_CARD_SURFACE_CLASS,
   SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
-  SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS,
+  EVENT_WAKEUP_IN_THREAD_SPACING_CLASS,
 } from '../subscription-disclosure';
 
 type Metadata = {
@@ -74,7 +74,8 @@ describe('EventWakeupBanner details disclosure', () => {
     expect(avatarSource).toContain('variant="standard"');
     expect(avatarSource).not.toContain('size={18}');
     expect(avatarSource).not.toContain('rounded-full');
-    expect(bannerSource).toContain('--agent-avatar-standard-stack-overlap');
+    expect(bannerSource).toContain('<AgentAvatarStack');
+    expect(bannerSource).toContain('variant="standard"');
     expect(bannerSource).not.toMatch(/-space-x-|translate-y-|top-\[/);
   });
 
@@ -93,7 +94,7 @@ describe('EventWakeupBanner details disclosure', () => {
     ]) {
       expect(card.classList.contains(token)).toBe(true);
     }
-    expect(card.classList.contains(SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS)).toBe(true);
+    expect(card.classList.contains(EVENT_WAKEUP_IN_THREAD_SPACING_CLASS)).toBe(true);
     expect(card.classList.contains('mb-4')).toBe(false);
     expect(card.getAttribute('data-external-spacing-owner')).toBe('event-wakeup-card');
     for (const token of ['px-1.5', 'py-1']) {
@@ -127,7 +128,7 @@ describe('EventWakeupBanner details disclosure', () => {
     for (const token of SUBSCRIPTION_CARD_SURFACE_CLASS.split(' ')) {
       expect(card.classList.contains(token)).toBe(false);
     }
-    expect(card.classList.contains(SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS)).toBe(false);
+    expect(card.classList.contains(EVENT_WAKEUP_IN_THREAD_SPACING_CLASS)).toBe(false);
     expect(card.classList.contains('mb-4')).toBe(false);
     expect(card.getAttribute('data-embedded')).toBe('true');
     expect(card.hasAttribute('data-external-spacing-owner')).toBe(false);

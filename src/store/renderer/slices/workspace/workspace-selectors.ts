@@ -14,6 +14,7 @@ import { selectIsDaemonLocal } from '../daemon-health/daemon-health-selectors';
 import { selectActivePrMonitors } from '../pr-monitor/pr-monitor-selectors';
 import type {
   WorkflowStage,
+  WorkspaceActivePrSummary,
   WorkspaceProgressAction,
   WorkspaceProgressHeadline,
   WorkspaceProgressInput,
@@ -208,6 +209,53 @@ function resolvePrIdentity(
     prUrl: activePR?.url ?? existingPR?.htmlUrl,
   };
 }
+
+/**
+ * One sidebar source for the View PR link and Changes-card PR action. The
+ * workspace-linked PR wins; active monitors are the fallback used by View PR.
+ */
+export const selectWorkspaceActivePrSummary = store.createSelector<
+  [wsId: string],
+  WorkspaceActivePrSummary | null
+>((state, wsId) => {
+  const workspace = getItem(state.workspace.workspaces, wsId as Workspace['id']);
+  const activePR = workspace?.activePullRequest;
+  const legacyNumber = workspace?.prNumber;
+  const legacyUrl = workspace?.prUrl;
+  const number = activePR?.number ?? legacyNumber;
+  const url = activePR?.url ?? legacyUrl;
+  if (number !== undefined && number !== null && url) {
+    return {
+      number,
+      url,
+      actionLabel: m.workspace_progress_viewPr_label(),
+      actionTooltip: m.workspace_progress_viewPr_tooltip(),
+    };
+  }
+
+  const monitor = selectActivePrMonitors.select(state, wsId)[0];
+  if (!monitor) return null;
+  const workspaceRepo =
+    workspace?.repositoryOwner && workspace?.repositoryName
+      ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
+      : undefined;
+  const crossRepo = workspaceRepo !== undefined && monitor.repo !== workspaceRepo;
+  const formattedNumber = formatInteger(monitor.prNumber);
+  return {
+    number: monitor.prNumber,
+    url: monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`,
+    repo: crossRepo ? monitor.repo : undefined,
+    actionLabel: crossRepo
+      ? m.workspace_progress_viewMonitoredPrCrossRepo_label({ repo: monitor.repo })
+      : m.workspace_progress_viewPr_label(),
+    actionTooltip: crossRepo
+      ? m.workspace_progress_viewMonitoredPrCrossRepo_tooltip({
+          repo: monitor.repo,
+          number: formattedNumber,
+        })
+      : m.workspace_progress_viewMonitoredPr_tooltip({ number: formattedNumber }),
+  };
+});
 
 export const selectWorkflowStage = store.createSelector<
   [wsId: string, input: WorkspaceProgressInput],
@@ -504,7 +552,9 @@ export const selectWorkspaceProgressActions = store.createSelector<
   const { taskStats } = input;
   const existingPR = input.gitStatus?.existingPR;
   const activePR = selectWorkspaceActivePullRequest.select(state, wsId) ?? undefined;
-  const { prUrl } = resolvePrIdentity(activePR, input);
+  const activePrSummary = selectWorkspaceActivePrSummary.select(state, wsId);
+  const { prUrl: fallbackPrUrl } = resolvePrIdentity(activePR, input);
+  const prUrl = activePrSummary?.url ?? fallbackPrUrl;
 
   // The approved stage retains its dedicated Merge PR action.
   if (stage === 'pr-approved') {
@@ -522,6 +572,18 @@ export const selectWorkspaceProgressActions = store.createSelector<
 
   // For every other stage, an openable PR takes priority over the
   // stage-based Review/Commit/Push actions.
+  if (activePrSummary) {
+    return [
+      {
+        id: 'view-pr',
+        label: activePrSummary.actionLabel,
+        iconKey: 'code-branch',
+        tooltip: activePrSummary.actionTooltip,
+        url: activePrSummary.url,
+      },
+    ];
+  }
+
   if (prUrl) {
     return [
       {
@@ -530,38 +592,6 @@ export const selectWorkspaceProgressActions = store.createSelector<
         iconKey: 'code-branch',
         tooltip: m.workspace_progress_viewPr_tooltip(),
         url: prUrl,
-      },
-    ];
-  }
-
-  // No branch-linked PR: fall back to the FIRST active agent-monitored PR
-  // (PROTOCOL §6.9). Cross-repo monitors surface their org/repo context in
-  // the label and tooltip.
-  const monitors = selectActivePrMonitors.select(state, wsId);
-  if (monitors.length > 0) {
-    const monitor = monitors[0];
-    const workspace = getItem(state.workspace.workspaces, wsId as Workspace['id']);
-    const workspaceRepo =
-      workspace?.repositoryOwner && workspace?.repositoryName
-        ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
-        : undefined;
-    const crossRepo = workspaceRepo !== undefined && monitor.repo !== workspaceRepo;
-    return [
-      {
-        id: 'view-pr',
-        label: crossRepo
-          ? m.workspace_progress_viewMonitoredPrCrossRepo_label({ repo: monitor.repo })
-          : m.workspace_progress_viewPr_label(),
-        iconKey: 'code-branch',
-        tooltip: crossRepo
-          ? m.workspace_progress_viewMonitoredPrCrossRepo_tooltip({
-              repo: monitor.repo,
-              number: String(monitor.prNumber),
-            })
-          : m.workspace_progress_viewMonitoredPr_tooltip({
-              number: String(monitor.prNumber),
-            }),
-        url: monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`,
       },
     ];
   }

@@ -15,8 +15,8 @@ import {
 import {
   closePanel,
   closeActiveTab,
+  openBlankWorkingPanel,
   reopenClosedTab,
-  splitPanel,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
   selectPanels,
@@ -65,8 +65,8 @@ interface WorkspaceTabNavigationStore {
       | ReturnType<typeof reopenLastClosedWorkspaceTab>
       | ReturnType<typeof closePanel>
       | ReturnType<typeof closeActiveTab>
-      | ReturnType<typeof reopenClosedTab>
-      | ReturnType<typeof splitPanel>,
+      | ReturnType<typeof openBlankWorkingPanel>
+      | ReturnType<typeof reopenClosedTab>,
   ): unknown;
 }
 
@@ -227,8 +227,7 @@ export function reopenPanelOrWorkspaceTab(
 }
 
 /**
- * Cmd+T: open an empty new panel next to the focused panel on the
- * current workspace route.
+ * Cmd+T: clear or create the reusable working panel on the current workspace route.
  */
 export function openNewPanel(
   store: WorkspaceTabNavigationStore,
@@ -238,14 +237,9 @@ export function openNewPanel(
   const workspaceId = match && match[1] !== 'new' ? match[1] : null;
   if (!workspaceId) return null;
 
-  const panels = selectPanels.select(store.state, workspaceId);
-  const panelIds = Object.keys(panels);
-  const focusedPanelId = selectFocusedPanelId.select(store.state, workspaceId);
-  const targetId =
-    focusedPanelId && panels[focusedPanelId] ? focusedPanelId : panelIds[panelIds.length - 1];
-  const action = splitPanel(workspaceId, targetId, 'horizontal');
+  const action = openBlankWorkingPanel(workspaceId);
   store.dispatch(action);
-  return action.payload.newPanelId;
+  return selectFocusedPanelId.select(store.state, workspaceId);
 }
 
 export function selectWorkspaceTabByPosition(

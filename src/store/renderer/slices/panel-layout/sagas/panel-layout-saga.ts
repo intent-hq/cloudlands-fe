@@ -91,6 +91,7 @@ import {
   moveTabToSplit,
   moveTabToSplitLevel,
   openTab,
+  openBlankWorkingPanel,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
   openTabWithPanelModeRequested,
@@ -133,6 +134,7 @@ const PERSIST_ACTIONS = [
   openTab,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
+  openBlankWorkingPanel,
   collapseToReusablePanel,
   closeTab,
   closeActiveTab,
@@ -179,6 +181,7 @@ const PERSIST_ACTIONS = [
 
 const HISTORY_ACTIONS = [
   openTab,
+  openBlankWorkingPanel,
   openTabInAdjacentOrSplit,
   closeTab,
   closeActiveTab,
@@ -265,7 +268,10 @@ function workspaceNeedsReusablePanelCollapse(workspace: WorkspacePanelLayoutStat
   );
   return (
     unpinned.length > 1 ||
-    (unpinned.length === 1 && unpinned[0].tabs.length === 0 && panels.some((panel) => panel.pinned))
+    (unpinned.length === 1 &&
+      unpinned[0].tabs.length === 0 &&
+      unpinned[0].pristine !== true &&
+      panels.some((panel) => panel.pinned))
   );
 }
 
@@ -330,7 +336,8 @@ export function isStoredLayoutValid(value: unknown): value is WorkspacePanelLayo
     if (
       layout.canvasWidthSource !== undefined &&
       layout.canvasWidthSource !== null &&
-      layout.canvasWidthSource !== 'explicit'
+      layout.canvasWidthSource !== 'explicit' &&
+      layout.canvasWidthSource !== 'intrinsic'
     ) {
       return false;
     }

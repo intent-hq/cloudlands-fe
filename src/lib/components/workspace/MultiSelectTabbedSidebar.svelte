@@ -1,6 +1,8 @@
 <script lang="ts">
   /* eslint-disable max-lines -- splitting this workspace sidebar is outside launcher-only scope */
   import { navigateAfterWorkspaceRemoval } from '$lib/utils/workspace-navigation';
+  import { handleLink } from '$features/navigation/link-handler';
+  import { WorkspaceId } from '$shared/types/branded-ids';
   import './multi-select-sidebar-transitions.css';
   import {
     selectStagedWorkingChanges,
@@ -14,7 +16,11 @@
     selectFocusedPanelId,
     getPanelTabOpenState,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import AgentAvatarStack, {
+    type AgentAvatarStackItem,
+  } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+  import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
@@ -44,6 +50,7 @@
   import { selectPendingLocateInSidebar } from '$store/renderer/slices/app-layout/app-layout-selectors';
   import {
     faArrowUpRightFromSquare,
+    faCodePullRequest,
     faCompressAlt,
     faExpandAlt,
     faPencil,
@@ -71,7 +78,10 @@
   import SidebarBrowserLauncher from './SidebarBrowserLauncher.svelte';
   import SidebarBrowserList from './SidebarBrowserList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectWorkspaceActivePrSummary,
+    selectWorkspaceById,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectAllNotes,
     selectNotesLoading,
@@ -81,7 +91,6 @@
   import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { selectMultiSelectSidebarSelectedTabIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { store as appStore } from '$store/renderer/store';
-  import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import {
     deriveAgentLauncherItems,
     deriveNoteLauncherItems,
@@ -141,16 +150,13 @@
   const LAUNCHER_ICON_LIMIT = 6;
   const LAUNCHER_TARGET_SIZE = 36;
   const LAUNCHER_VISIBLE_SIZE = 20;
-  const LAUNCHER_STEP_SIZE = 16;
+  const LAUNCHER_STEP_SIZE = 15;
   let launcherIconLimit = $state(LAUNCHER_ICON_LIMIT);
   const LAUNCHER_ICON_STACK_CLASS =
     'isolate grid h-9 w-full min-w-0 grid-flow-col items-start overflow-visible text-muted-foreground';
   const LAUNCHER_ICON_BUTTON_CLASS =
     'launcher-icon-button group/preview pointer-events-auto relative flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none transition-colors hover:z-20 hover:text-foreground focus-visible:z-30 focus-visible:text-foreground';
   const LAUNCHER_GLYPH_CLASS = 'launcher-glyph relative flex size-5 items-center justify-center';
-  const LAUNCHER_AGENT_GLYPH_CLASS =
-    // i18n-ignore (Tailwind utility classes)
-    'launcher-glyph flex size-5 items-center justify-center rounded-sm transition-colors group-hover/preview:opacity-90 group-focus-visible/preview:opacity-80';
   const LAUNCHER_OVERFLOW_BUTTON_CLASS =
     // i18n-ignore (Tailwind utility classes)
     'launcher-overflow-button pointer-events-auto relative z-10 flex h-5 w-auto shrink-0 cursor-pointer items-center justify-center border-0! bg-transparent! px-0! text-xs font-medium leading-3 whitespace-nowrap text-muted-foreground shadow-none! outline-none transition-colors hover:z-20 hover:text-foreground focus-visible:z-30 focus-visible:text-foreground';
@@ -165,6 +171,7 @@
   const pendingLocateInSidebar$ = selectPendingLocateInSidebar();
 
   const workspace = selectWorkspaceById(workspaceIdStore);
+  const activePrSummary$ = selectWorkspaceActivePrSummary(workspaceIdStore);
   const notes = selectAllNotes(workspaceIdStore);
   const launcherNoteState = $derived(
     deriveNoteLauncherItems(
@@ -186,7 +193,7 @@
   const launcherAgentState = $derived.by(() =>
     deriveAgentLauncherItems(
       $allWorkspaceAgents,
-      launcherIconLimit,
+      $allWorkspaceAgents.length,
       (agent) => selectAgentIsRunning.select(appStore.state, agent.id),
       (agent, isRunning) =>
         getAgentLauncherPreview(
@@ -196,18 +203,19 @@
     ),
   );
   const launcherAgents = $derived(launcherAgentState.launcherAgents);
+  const launcherAgentStackItems = $derived(
+    launcherAgents.map(({ agent }): AgentAvatarStackItem => ({
+      key: agent.id,
+      agentId: agent.id,
+      specialist: agent.metadata?.specialist || agent.agentMetadata?.specialist || null,
+      state: getAvatarStateForSession(agent),
+    })),
+  );
   const runningLauncherAgents = $derived(launcherAgentState.runningAgents);
   const launcherAgentTotal = $derived(launcherAgentState.totalAgents);
-  const launcherAgentOverflowCount = $derived(launcherAgentState.overflowCount);
   const launcherAgentCountLabel = $derived(
     m.workspace_multiSelectSidebar_agentsLauncherCount_ariaLabel({
       count: formatInteger(launcherAgentTotal),
-    }),
-  );
-  const launcherAgentOverflowLabel = $derived(
-    m.workspace_multiSelectSidebar_agentsLauncherOverflow_ariaLabel({
-      remaining: formatInteger(launcherAgentOverflowCount),
-      total: formatInteger(launcherAgentTotal),
     }),
   );
 
@@ -216,9 +224,6 @@
   }
 
   function launcherItemCount(tabId: string): number {
-    if (tabId === 'agents') {
-      return launcherAgents.length + (launcherAgentOverflowCount > 0 ? 1 : 0);
-    }
     if (tabId === 'context') {
       return launcherNotes.length + (launcherNoteOverflowCount > 0 ? 1 : 0);
     }
@@ -227,9 +232,7 @@
 
   function launcherGridTemplateColumns(tabId: string): string {
     const itemCount = launcherItemCount(tabId);
-    const hasOverflow =
-      (tabId === 'agents' && launcherAgentOverflowCount > 0) ||
-      (tabId === 'context' && launcherNoteOverflowCount > 0);
+    const hasOverflow = tabId === 'context' && launcherNoteOverflowCount > 0;
     if (hasOverflow) {
       return itemCount > 2
         ? `repeat(${itemCount - 2}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_TARGET_SIZE}px max-content`
@@ -738,6 +741,50 @@
   });
 </script>
 
+{#snippet launcherAgentAvatar(item: AgentAvatarStackItem)}
+  {@const launcherItem = launcherAgents.find(({ agent }) => agent.id === item.agentId)}
+  {#if launcherItem}
+    {@const { agent, isRunning, preview } = launcherItem}
+    <SidebarLauncherHoverCard
+      title={agent.name || `${m.workspace_fileChanges_agent_label()} ${agent.id.slice(0, 8)}`}
+      status={isRunning ? m.chat_backgroundHooks_running_label() : undefined}
+      rows={[
+        { label: m.chat_agentThread_you_label(), text: preview.lastUserMessage },
+        { label: m.workspace_fileChanges_agent_label(), text: preview.response },
+      ]}
+      emptyText={m.layout_sidebarNav_noMessages_label()}
+      kind="agent"
+      gridPosition="start"
+      open={openLauncherHoverKey === `agent:${agent.id}`}
+      onOpenChange={(open) => {
+        handleLauncherHoverOpenChange(`agent:${agent.id}`, open);
+        if (open && agent.messages.length === 0) void loadChatTranscript(agent.id);
+      }}
+    >
+      <Button
+        variant="plain"
+        class="launcher-agent-avatar-button pointer-events-auto relative flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm p-0! outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+        aria-label={agent.name || m.workspace_fileChanges_agent_label()}
+        data-sidebar-agent={agent.id}
+        data-sidebar-agent-state={item.state ?? 'idle'}
+        data-launcher-preview-item
+        onpointerdown={(event) => event.stopPropagation()}
+        onclick={(event) => {
+          event.stopPropagation();
+          handleOpenAgentInPanel(agent.id);
+        }}
+      >
+        <AgentAvatarWithState
+          agentId={item.agentId}
+          specialist={item.specialist}
+          state={item.state ?? 'idle'}
+          variant="standard"
+        />
+      </Button>
+    </SidebarLauncherHoverCard>
+  {/if}
+{/snippet}
+
 <div
   bind:this={sidebarElement}
   class={cn('relative flex h-full flex-col overflow-hidden bg-transparent', className)}
@@ -1081,95 +1128,34 @@
                   class="pointer-events-none relative z-10 flex h-full min-h-0 w-full min-w-0 flex-col justify-between"
                 >
                   <div
-                    class={LAUNCHER_ICON_STACK_CLASS}
-                    style={`grid-template-columns: ${launcherGridTemplateColumns(tab.id)};`}
+                    class={tab.id === 'agents'
+                      ? 'flex h-9 w-full min-w-0 items-center overflow-hidden ps-2 text-muted-foreground'
+                      : LAUNCHER_ICON_STACK_CLASS}
+                    style={tab.id === 'agents'
+                      ? undefined
+                      : `grid-template-columns: ${launcherGridTemplateColumns(tab.id)};`}
                     data-sidebar-launcher-icons
                     data-launcher-pack="left"
                     data-launcher-layout="horizontal"
-                    data-launcher-target-size={LAUNCHER_TARGET_SIZE}
+                    data-launcher-target-size={tab.id === 'agents'
+                      ? LAUNCHER_VISIBLE_SIZE
+                      : LAUNCHER_TARGET_SIZE}
                     data-launcher-visible-size={LAUNCHER_VISIBLE_SIZE}
                     data-launcher-step-size={LAUNCHER_STEP_SIZE}
                     data-launcher-visible-offset={(LAUNCHER_TARGET_SIZE - LAUNCHER_VISIBLE_SIZE) /
                       2}
                   >
                     {#if tab.id === 'agents'}
-                      {#each launcherAgents as { agent, isRunning, preview }, index (agent.id)}
-                        {@const panelState = getAgentPanelState(agent.id)}
-                        <SidebarLauncherHoverCard
-                          title={agent.name ||
-                            `${m.workspace_fileChanges_agent_label()} ${agent.id.slice(0, 8)}`}
-                          status={isRunning ? m.chat_backgroundHooks_running_label() : undefined}
-                          rows={[
-                            {
-                              label: m.chat_agentThread_you_label(),
-                              text: preview.lastUserMessage,
-                            },
-                            {
-                              label: m.workspace_fileChanges_agent_label(),
-                              text: preview.response,
-                            },
-                          ]}
-                          emptyText={m.layout_sidebarNav_noMessages_label()}
-                          kind="agent"
-                          gridPosition="start"
-                          open={openLauncherHoverKey === `agent:${agent.id}`}
-                          onOpenChange={(open) => {
-                            handleLauncherHoverOpenChange(`agent:${agent.id}`, open);
-                            if (open && agent.messages.length === 0)
-                              void loadChatTranscript(agent.id);
-                          }}
-                        >
-                          <Button
-                            variant="plain"
-                            class={LAUNCHER_ICON_BUTTON_CLASS}
-                            onclick={() => handleOpenAgentInPanel(agent.id)}
-                            aria-label={agent.name || m.workspace_fileChanges_agent_label()}
-                            data-sidebar-agent={agent.id}
-                            data-sidebar-agent-state={isRunning ? 'running' : 'idle'}
-                            data-launcher-leading-item={index === 0 ? 'true' : undefined}
-                            data-launcher-preview-item
-                          >
-                            <span
-                              class={LAUNCHER_AGENT_GLYPH_CLASS}
-                              style={`width: ${LAUNCHER_VISIBLE_SIZE}px; height: ${LAUNCHER_VISIBLE_SIZE}px; box-shadow: inset 0 0 0 1px var(--color-card);`}
-                              data-sidebar-launcher-glyph
-                              data-launcher-avatar-seam="surface-1px"
-                              data-launcher-avatar-size={LAUNCHER_VISIBLE_SIZE}
-                            >
-                              <AgentAvatarWithState
-                                agentId={agent.id}
-                                specialist={agent.metadata?.specialist as
-                                  BuiltinSpecialistId | undefined}
-                                variant="standard"
-                                state={isRunning ? 'running' : 'idle'}
-                              />
-                              <OpenPanelIndicator
-                                count={panelState.count}
-                                active={panelState.isActive}
-                                overlay
-                              />
-                            </span>
-                          </Button>
-                        </SidebarLauncherHoverCard>
-                      {/each}
-                      {#if launcherAgentOverflowCount > 0}
-                        <Button
-                          variant="plain"
-                          class={LAUNCHER_OVERFLOW_BUTTON_CLASS}
-                          style={`${LAUNCHER_OVERFLOW_STYLE} justify-self: start; height: ${LAUNCHER_VISIBLE_SIZE}px;`}
-                          onpointerdown={(event) => event.stopPropagation()}
-                          onclick={(event) => {
-                            event.stopPropagation();
-                            handleTabClick('agents');
-                          }}
-                          data-sidebar-agent-overflow={launcherAgentOverflowCount}
-                          data-agent-avatar-overflow
-                          data-launcher-preview-item
-                        >
-                          <span aria-hidden="true">+{launcherAgentOverflowCount}</span>
-                          <span class="sr-only">{launcherAgentOverflowLabel}</span>
-                        </Button>
-                      {/if}
+                      <AgentAvatarStack
+                        items={launcherAgentStackItems}
+                        maxVisible={LAUNCHER_ICON_LIMIT}
+                        adaptive
+                        align="start"
+                        variant="standard"
+                        interactive
+                        itemContent={launcherAgentAvatar}
+                        overflowTestId="sidebar-agent-overflow"
+                      />
                     {:else if tab.id === 'context'}
                       {#each launcherNotes as note, index (note.id)}
                         {@const panelState = getNotePanelState(note.id as string)}
@@ -1225,19 +1211,41 @@
                         data-sidebar-changes-resource
                         data-launcher-leading-item="true"
                       >
-                        <ResourceIconTile kind="changes" />
+                        <ResourceIconTile kind="changes" variant="emphasized" />
                       </span>
                     {/if}
                   </div>
                   <div
-                    class="flex h-7 min-w-0 items-center justify-between gap-2 pl-2"
+                    class={cn('flex h-7 min-w-0 items-center pl-2', 'justify-between gap-2')}
                     data-sidebar-label-row
                   >
                     <span
                       id={`sidebar-launcher-label-${tab.id}-${workspaceId}`}
                       data-sidebar-launcher-label
-                      class="truncate text-sm font-semibold">{tab.label}</span
+                      class={cn(
+                        'truncate text-sm font-semibold',
+                        tab.id === 'changes' ? 'min-w-0 flex-1' : '',
+                      )}>{tab.label}</span
                     >
+                    {#if tab.id === 'changes' && $activePrSummary$}
+                      {@const pr = $activePrSummary$}
+                      <Button
+                        variant="plain"
+                        size="icon"
+                        class="pointer-events-auto relative z-20 ml-auto size-6 shrink-0 cursor-pointer rounded text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:bg-background/80 focus-visible:text-foreground"
+                        aria-label={pr.actionLabel}
+                        title={pr.actionTooltip}
+                        data-sidebar-pr-link
+                        data-sidebar-pr-url={pr.url}
+                        onpointerdown={(event) => event.stopPropagation()}
+                        onclick={(event) => {
+                          event.stopPropagation();
+                          handleLink(pr.url, { workspaceId: WorkspaceId(workspaceId) });
+                        }}
+                      >
+                        <Fa icon={faCodePullRequest} class="size-4!" />
+                      </Button>
+                    {/if}
                     {#if tab.id === 'agents'}
                       <span id={`sidebar-launcher-agent-count-${workspaceId}`} class="sr-only">
                         {launcherAgentCountLabel}

@@ -18,8 +18,6 @@
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { Button } from '$lib/components/ui/button';
-  import Fa from 'svelte-fa';
-  import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
   import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
@@ -31,10 +29,7 @@
   import {
     selectZoomFactor,
     selectCounterScale,
-    selectPanelOpenMode,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { togglePanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-  import { store as appStore } from '$store/renderer/store';
   import { navigateBackFromSettings, navigateToSettings } from '$lib/utils/workspace-navigation';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectWorkspaceViewMode } from '$store/renderer/slices/tab-state/tab-state-selectors';
@@ -71,7 +66,6 @@
   const panelWidth$ = selectPanelWidth();
   const workspaceViewMode$ = selectWorkspaceViewMode();
   const onboardingActive$ = selectOnboardingActive();
-  const panelOpenMode$ = selectPanelOpenMode();
 
   // Where the workspace controls naturally start (left edge, titlebar coords).
   // Measured from the fixed controls (SidebarNav) so the margin below can align
@@ -261,32 +255,12 @@
       await navigateToSettings();
     }
   }
-
-  function panelOpenModeLabel(mode: 'normal' | 'pin'): string {
-    return mode === 'pin'
-      ? m.layout_titleBar_panelOpenMode_pin_tooltip()
-      : m.layout_titleBar_panelOpenMode_normal_tooltip();
-  }
 </script>
 
 {#snippet titlebarUtilities(showDaemonStatus: boolean)}
   {#if showDaemonStatus}
     <DaemonStatusIndicator />
   {/if}
-  <Tooltip content={panelOpenModeLabel($panelOpenMode$)} side="bottom" delayDuration={300}>
-    <Button
-      variant="ghost"
-      size="icon"
-      iconOnly
-      class={cn(TITLEBAR_NAVIGATION_CONTROL_CLASS, $panelOpenMode$ === 'pin' && 'text-primary')}
-      onclick={() => appStore.dispatch(togglePanelOpenMode())}
-      aria-label={panelOpenModeLabel($panelOpenMode$)}
-      aria-pressed={$panelOpenMode$ === 'pin'}
-      data-titlebar-panel-open-mode
-    >
-      <Fa icon={faThumbtack} size="sm" />
-    </Button>
-  </Tooltip>
   <Tooltip content={m.layout_sidebarNav_settings_label()} side="bottom" delayDuration={300}>
     <Button
       variant="ghost"

@@ -1260,7 +1260,7 @@
               class="w-full text-left justify-start px-0!"
               onclick={() => runProgressAction(action)}
             >
-              <Fa icon={PROGRESS_ACTION_ICONS[action.iconKey]} size="xs" class="ml-1" />
+              <Fa icon={PROGRESS_ACTION_ICONS[action.iconKey]} size={14} class="ml-1 size-3.5!" />
               <span class="underline decoration-dotted underline-offset-2">{action.label}</span>
             </Button>
           </Tooltip>

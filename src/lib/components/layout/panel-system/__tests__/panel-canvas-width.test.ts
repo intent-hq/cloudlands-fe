@@ -83,6 +83,19 @@ describe('panel canvas width', () => {
     expect(getPanelCanvasWidths(480, [720], 'viewport', 500, 'explicit').defaultWidth).toBe(500);
   });
 
+  it('caps the intrinsic default on ultrawide viewports and shrinks it responsively', () => {
+    expect(getPanelCanvasWidths(3440, [720, 700], 'viewport', 1428, 'intrinsic')).toMatchObject({
+      defaultWidth: 1428,
+      panelWidths: [720, 700],
+      overflows: false,
+    });
+    expect(getPanelCanvasWidths(1000, [720, 700], 'viewport', 1428, 'intrinsic')).toMatchObject({
+      defaultWidth: 1000,
+      panelWidths: [expect.closeTo(502.99, 2), expect.closeTo(489.01, 2)],
+      overflows: false,
+    });
+  });
+
   it('uses per-column intrinsic widths for browser and non-browser panels', () => {
     expect(getPanelCanvasWidths(800, [500, 900], 'viewport', null)).toEqual({
       defaultWidth: 1408,

@@ -36,15 +36,30 @@ for (const theme of ['light', 'dark'] as const) {
               thinkingWrapper.getBoundingClientRect().top - element.getBoundingClientRect().bottom
             );
           }, assistantId);
-          expect(gap, `${eventId}>Thinking`).toBeCloseTo(12 * zoom, 1);
+          expect(gap, `${eventId}>Thinking`).toBeCloseTo(32 * zoom, 1);
         }
 
+        const eventBoundary = await component
+          .locator('[data-message-id="event-wake"]')
+          .evaluate((event) => {
+            const previous = document.querySelector('[data-message-id="assistant-tool-spacing"]')!;
+            const next = document.querySelector('[data-message-id="assistant-wake"]')!;
+            const thinking = next.querySelector('[data-message-content-block="thinking"]')!;
+            return {
+              top: event.getBoundingClientRect().top - previous.getBoundingClientRect().bottom,
+              bottom: thinking.getBoundingClientRect().top - event.getBoundingClientRect().bottom,
+            };
+          });
+        expect(eventBoundary.top).toBeCloseTo(32 * zoom, 1);
+        expect(eventBoundary.bottom).toBeCloseTo(32 * zoom, 1);
+        expect(eventBoundary.top).toBeCloseTo(eventBoundary.bottom, 1);
+
         for (const [messageId, topLevelTypes, topLevelGaps] of [
-          ['assistant-static-tools', ['tool_use', 'thinking', 'tool_use', 'tool_use'], [12, 4, 4]],
+          ['assistant-static-tools', ['tool_use', 'thinking', 'tool_use', 'tool_use'], [0, 0, 0]],
           [
             'assistant-streaming-seam',
             ['thinking', 'tool_use', 'thinking', 'tool_use', 'tool_use'],
-            [4, 12, 4, 4],
+            [0, 0, 0, 0],
           ],
         ] as const) {
           const message = component.locator(`[data-message-id="${messageId}"]`);
@@ -68,7 +83,7 @@ for (const theme of ['light', 'dark'] as const) {
                   ':scope > [data-message-content-block="tool_use"], :scope > [data-message-content-block="thinking"]',
                 ),
               types: ['tool_use', 'thinking', 'tool_use', 'tool_use'],
-              gaps: [12, 4, 4],
+              gaps: [0, 0, 0],
             },
           ] as const;
 
@@ -86,6 +101,8 @@ for (const theme of ['light', 'dark'] as const) {
                   bottom: rowBox.bottom,
                   childMargins: [rowStyle.marginTop, rowStyle.marginBottom],
                   wrapperMargins: [wrapperStyle.marginTop, wrapperStyle.marginBottom],
+                  wrapperPaddingTop: wrapperStyle.paddingTop,
+                  parentRowGap: getComputedStyle(wrapper.parentElement!).rowGap,
                 };
               }),
             );
@@ -101,6 +118,14 @@ for (const theme of ['light', 'dark'] as const) {
               geometry.map((row) => row.wrapperMargins),
               rowSet.label,
             ).toEqual(rowSet.types.map(() => ['0px', '0px']));
+            expect(
+              geometry.map((row) => row.wrapperPaddingTop),
+              `${rowSet.label}:wrapper padding`,
+            ).toEqual(['0px', ...rowSet.gaps.map((gap) => `${gap}px`)]);
+            expect(
+              geometry.map((row) => row.parentRowGap),
+              `${rowSet.label}:parent gap`,
+            ).toEqual(rowSet.types.map(() => '0px'));
             for (let index = 1; index < geometry.length; index += 1) {
               expect(
                 geometry[index].top - geometry[index - 1].bottom,

@@ -13,6 +13,7 @@ const {
   selectAgentIsWaitingForOtherAgentsMock,
   selectAgentIsRespondingMock,
   selectAgentAttentionRequestMock,
+  selectAgentSessionMock,
 } = vi.hoisted(() => {
   const thinkingByAgentId = new Map<string, boolean>();
   const waitingByAgentId = new Map<string, boolean>();
@@ -55,6 +56,12 @@ const {
         return () => {};
       },
     })),
+    selectAgentSessionMock: vi.fn(() => ({
+      subscribe: (run: (value: null) => void) => {
+        run(null);
+        return () => {};
+      },
+    })),
   };
 });
 
@@ -64,6 +71,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsWaiting: selectAgentIsWaitingMock,
   selectAgentIsWaitingForOtherAgents: selectAgentIsWaitingForOtherAgentsMock,
   selectAgentAttentionRequest: selectAgentAttentionRequestMock,
+  selectAgentSession: selectAgentSessionMock,
 }));
 
 vi.mock('svelte-fa', async () => ({
@@ -113,6 +121,7 @@ describe('AgentHierarchyCard Thinking consumer wiring', () => {
     selectAgentIsWaitingForOtherAgentsMock.mockClear();
     selectAgentIsRespondingMock.mockClear();
     selectAgentAttentionRequestMock.mockClear();
+    selectAgentSessionMock.mockClear();
   });
 
   afterEach(() => cleanup());

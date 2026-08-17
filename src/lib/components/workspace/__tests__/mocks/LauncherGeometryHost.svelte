@@ -32,7 +32,16 @@
     id: index === 0 ? 'agent-running' : `agent-${index}`,
     workspaceId,
     name: index === 0 ? 'Running agent' : `Agent ${index}`,
-    status: index === 0 ? 'active' : 'idle',
+    status:
+      index === 0
+        ? 'active'
+        : index === 1
+          ? 'waiting'
+          : index === 2
+            ? 'error'
+            : index === 3
+              ? 'completed'
+              : 'idle',
     isActive: index === 0,
     isStreaming: index === 0,
     isProcessing: index === 0,
@@ -48,6 +57,17 @@
       title: 'Launcher geometry',
       path: '/tmp/launcher-geometry',
       status: 'active',
+      repositoryOwner: 'intent-hq',
+      repositoryName: 'repository-with-a-very-long-name',
+      activePullRequest: {
+        id: 'pr-1373',
+        number: 1373,
+        url: 'https://github.com/intent-hq/repository-with-a-very-long-name/pull/1373',
+        title: 'Polish sidebar PR state',
+        status: 'OPEN',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
       createdAt: timestamp,
       updatedAt: timestamp,
     } as never),

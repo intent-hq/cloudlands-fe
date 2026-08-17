@@ -17,7 +17,7 @@
     selectAgentIsResponding,
     selectAgentSessionHasStreamOwnedMessage,
     selectAgentSessionStreamingContent,
-    selectAgentIsWaiting,
+    selectAgentIsBlockedWaiting,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectChatReceivedFirstChunk } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import {
@@ -36,7 +36,7 @@
   import { renderInlineMarkdownPlainText } from './inline-markdown-snippet';
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
-  import { getAvatarState } from '$features/agent/components/agent-avatar/avatar-state';
+  import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
   import { safeSlide } from '$lib/utils/animations';
@@ -438,7 +438,7 @@
   // above handles the disk restore.
   const agent$ = selectAgentSession(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
-  const agentIsWaiting$ = selectAgentIsWaiting(agentIdStore);
+  const agentIsBlockedWaiting$ = selectAgentIsBlockedWaiting(agentIdStore);
   const agentData = $derived(getAgentPeekData($agent$));
 
   // Get parent agent ID from metadata (for delegation info)
@@ -465,7 +465,7 @@
   // `agent:stream:end`, flipped by the first text-bearing activity ping.
   const receivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
   const streamingBuffer = $derived($streamingContent$);
-  const isStreamActive = $derived($agentIsResponding$ && !$agentIsWaiting$);
+  const isStreamActive = $derived($agentIsResponding$ && !$agentIsBlockedWaiting$);
 
   // Extract display data
   const displayName = $derived(agentData?.name || agentName || m.chat_shared_agentName_fallback());
@@ -476,19 +476,14 @@
   // fields; null when none is pending (retired on agent:updated clear).
   const attentionRequest = $derived(getAgentAttentionRequest($agent$));
 
-  // Use centralized getAvatarState for consistent state calculation
+  // Use the canonical session state derivation for every agent surface.
   const avatarState = $derived(
-    getAvatarState(
-      {
-        isStreaming: isStreamActive || ($agentIsResponding$ && !$agentIsWaiting$),
-        status: $agentIsWaiting$ ? 'waiting' : agentData?.status,
-      },
-      {
-        hasPermissionRequest: $agentPermCount > 0,
-        isCompleted,
-        attentionKind: attentionRequest?.kind ?? null,
-      },
-    ),
+    getAvatarStateForSession($agent$, {
+      hasPermissionRequest: $agentPermCount > 0,
+      isActive: selected,
+      isCompleted,
+      attentionKind: attentionRequest?.kind ?? null,
+    }),
   );
 
   // Get specialist ID from agent metadata (for avatar overlay)

@@ -49,7 +49,7 @@ describe('screenshot-shaped mixed compact tool sequence', () => {
       expect(row.className).toContain(
         'grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto]',
       );
-      expect(row.className).toContain('h-9');
+      expect(row.className).toContain('h-7');
       expect(row.querySelectorAll('[data-tool-icon]')).toHaveLength(1);
       expect(row.querySelectorAll('[data-tool-sentence]')).toHaveLength(1);
       expect(row.querySelectorAll('[data-testid="tool-call-path"]')).toHaveLength(0);

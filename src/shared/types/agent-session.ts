@@ -309,6 +309,15 @@ export interface AgentSession {
   isResponding?: boolean;
 
   /**
+   * Daemon-owned turn liveness (PROTOCOL.md §5.5, STAB-125). True while an
+   * active worker is draining a session/prompt turn for this agent.
+   */
+  turnInFlight?: boolean;
+
+  /** Most recent stream activity for the in-flight turn (RFC-3339). */
+  lastStreamActivityAt?: string;
+
+  /**
    * Daemon-owned activity flag (PROTOCOL.md §5.5): the in-flight turn has an
    * unresolved `tool_use` block. Implies `isResponding`. Rendered verbatim —
    * the FE no longer derives this from message internals.
@@ -348,7 +357,12 @@ export interface AgentSession {
    * a parent or client can tell a PR-monitor-waiting idle agent from a
    * stalled one. Rendered verbatim.
    */
-  waitingOnPrMonitors?: Array<{ monitorId: string; repo: string; prNumber: number; title?: string }>;
+  waitingOnPrMonitors?: Array<{
+    monitorId: string;
+    repo: string;
+    prNumber: number;
+    title?: string;
+  }>;
 
   /**
    * Process queue hint (PROTOCOL §6.5 agent:process:queued/resumed).

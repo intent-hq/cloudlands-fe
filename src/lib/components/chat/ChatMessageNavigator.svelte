@@ -194,7 +194,7 @@
 
 <svelte:window onfocusincapture={handleWindowFocusIn} />
 
-<div class="flex shrink-0 items-center gap-0.5" data-testid="chat-header-navigation-controls">
+<div class="flex shrink-0 items-center gap-0" data-testid="chat-header-navigation-controls">
   <Popover.Root bind:open onOpenChange={handleOpenChange}>
     <Popover.Trigger
       bind:ref={triggerElement}
@@ -210,10 +210,12 @@
         <Button
           {...props}
           variant="ghost-light"
-          size="icon-lg"
+          size="icon-sm"
           class="focus-visible:border-border focus-visible:bg-muted focus-visible:ring-0"
           aria-label={m.chat_messageNavigator_open_ariaLabel()}
-          title={m.chat_messageNavigator_open_ariaLabel()}
+          tooltip={m.chat_messageNavigator_open_ariaLabel()}
+          tooltipSide="bottom"
+          tooltipDelayDuration={300}
           aria-expanded={open}
           onfocus={handleTriggerFocus}
           onkeydown={handleTriggerKeydown}

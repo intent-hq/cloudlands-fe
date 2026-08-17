@@ -119,11 +119,11 @@
     /** Handler for renaming a tab (note, agent, or file) */
     onTabRename?: (tab: PanelTab, newName: string) => void;
     /** Callbacks for creating new items */
-    onCreateAgent?: () => void;
-    onCreateAgentWithSpecialist?: (specialistId: string | null) => void;
-    onCreateNote?: () => void;
-    onCreateTerminal?: () => void;
-    onOpenBrowser?: () => void;
+    onCreateAgent?: (panelId?: string) => void;
+    onCreateAgentWithSpecialist?: (specialistId: string | null, panelId?: string) => void;
+    onCreateNote?: (panelId?: string) => void;
+    onCreateTerminal?: (panelId?: string) => void;
+    onOpenBrowser?: (panelId?: string) => void;
   }
 
   let {
@@ -372,6 +372,7 @@
   let canvasResizeNextWidth: number | null = null;
   let canvasResizeStartCanvasWidth: number | null = null;
   let canvasResizeTargetIndex: number | null = null;
+  let canvasResizeInlineScale = 1;
   // Frozen per-child pixel widths captured at drag start. During a canvas-grow
   // drag we imperatively pin every sibling to its start pixel width and grow
   // only the target child, so we do not rely on the percentage/reference-size
@@ -394,7 +395,7 @@
       const nextWidth = getAcceptedIndependentPanelResizeWidth(
         canvasResizeStartWidth,
         targetChildStartWidth,
-        previousWidth + delta,
+        previousWidth + delta / canvasResizeInlineScale,
       );
       const nextChildWidth = targetChildStartWidth + nextWidth - canvasResizeStartWidth;
       applyLiveCanvasResizeChildWidths(index, nextChildWidth);
@@ -434,10 +435,16 @@
     suppressResizeCommitMotion = false;
     liveResizeSizes = node.type === 'split' ? [...node.sizes] : null;
     isResizing = true;
+    const renderedContainerWidth = containerRef?.getBoundingClientRect().width ?? 0;
+    const layoutContainerWidth = containerRef?.offsetWidth ?? 0;
+    canvasResizeInlineScale =
+      growsCanvasAtRootHorizontal && renderedContainerWidth > 0 && layoutContainerWidth > 0
+        ? renderedContainerWidth / layoutContainerWidth
+        : 1;
     canvasResizeStartChildWidths =
       growsCanvasAtRootHorizontal && containerRef
         ? Array.from(containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child')).map(
-            (el) => el.getBoundingClientRect().width,
+            (el) => el.getBoundingClientRect().width / canvasResizeInlineScale,
           )
         : null;
     canvasResizeStartWidth = canvasResizeStartChildWidths
@@ -495,6 +502,7 @@
     canvasResizeStartCanvasWidth = null;
     canvasResizeTargetIndex = null;
     canvasResizeStartChildWidths = null;
+    canvasResizeInlineScale = 1;
     if (wasCanvasResize) {
       // The reducer update changes the reactive flex values. Do not write the
       // pre-commit values back imperatively here; doing so replays movement for
@@ -679,14 +687,7 @@
 
 {#if node.type === 'panel'}
   {@const panel = panels[node.panelId]}
-  {@const isEmptySurface = !panel || (panel.pristine === true && panel.tabs.length === 0)}
-  <div
-    class={cn(
-      'h-full w-full min-h-0 min-w-0',
-      isEmptySurface && 'bg-sidebar text-sidebar-foreground',
-    )}
-    data-empty-panel-surface={isEmptySurface || undefined}
-  >
+  <div class="h-full w-full min-h-0 min-w-0">
     {#if panel}
       <Panel
         {panel}

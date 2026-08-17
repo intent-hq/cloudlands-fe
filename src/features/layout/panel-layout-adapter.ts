@@ -88,6 +88,12 @@ export class PanelLayoutAdapter {
     appStore.dispatch(action);
   }
 
+  private getEmptyTargetPanelId(sourcePanelId?: string): string | undefined {
+    const panels = selectPanels.select(this.state, this.workspaceId);
+    const panelId = sourcePanelId ?? selectFocusedPanelId.select(this.state, this.workspaceId);
+    return panelId && panels[panelId]?.tabs.length === 0 ? panelId : undefined;
+  }
+
   // --- Imperative read methods (for event handlers / one-time reads only) ---
 
   /** Get all panel IDs. One-time read — not reactive. */
@@ -115,8 +121,9 @@ export class PanelLayoutAdapter {
 
   // --- Tab operations ---
   openTab(tab: Omit<PanelTab, 'id'>, panelId?: string) {
-    if (panelId) {
-      this.dispatch(openTab(this.workspaceId, tab, panelId));
+    const targetPanelId = panelId ?? this.getEmptyTargetPanelId();
+    if (targetPanelId) {
+      this.dispatch(openTab(this.workspaceId, tab, targetPanelId));
       return;
     }
     this.dispatch(openTabWithPanelModeRequested(this.workspaceId, tab));
@@ -138,6 +145,11 @@ export class PanelLayoutAdapter {
     sourcePanelId?: string,
     options?: { animated?: boolean; force?: boolean; allowDuplicate?: boolean },
   ) {
+    const targetPanelId = this.getEmptyTargetPanelId(sourcePanelId);
+    if (targetPanelId) {
+      this.dispatch(openTab(this.workspaceId, tab, targetPanelId, undefined, options?.force));
+      return;
+    }
     this.dispatch(
       openTabWithPanelModeRequested(this.workspaceId, tab, {
         force: options?.force,

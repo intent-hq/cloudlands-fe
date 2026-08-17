@@ -37,6 +37,10 @@
   // Mac: Ctrl+number (⌥ produces special chars, ⌘ is tab switching)
   // Win/Linux: Alt+number (Ctrl is tab switching)
   const modifierSymbol = isMac ? '⌃' : 'Alt+';
+  const SUGGESTED_PROMPT_HINT_CLASS = COMPACT_TOOL_TRAILING_CLASS.replace(
+    'text-ui',
+    'type-caption',
+  );
 
   function handleClick(prompt: SuggestedPrompt) {
     onSelect(prompt);
@@ -57,7 +61,7 @@
 
 {#if prompts.length > 0}
   <div
-    class="flex flex-col"
+    class="mt-4 flex flex-col"
     data-testid="suggested-prompts-surface"
     transition:fade={{ duration: 150 }}
   >
@@ -101,7 +105,7 @@
           {/if}
           {#if hasShortcutHint(index) && showShortcutHints}
             <span
-              class="{COMPACT_TOOL_TRAILING_CLASS} font-normal transition-colors duration-150 group-hover:text-muted-foreground"
+              class="{SUGGESTED_PROMPT_HINT_CLASS} font-normal! text-muted-foreground! transition-colors duration-150"
               data-suggested-prompt-hint
             >
               {modifierSymbol}{index + 1}

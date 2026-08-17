@@ -30,6 +30,10 @@
     faTableColumns,
     faGripLines,
     faThumbtack,
+    faArrowLeft,
+    faArrowRight,
+    faCheck,
+    faMagnifyingGlass,
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { toast } from '$lib/components/ui/toast';
@@ -40,16 +44,20 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import Portal from '$lib/components/ui/Portal.svelte';
-  import { tick } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { startDrag, endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
+    reopenClosedTab,
     restorePanelDragLayout,
     setPanelPinned,
     toggleExpandPanel,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import { selectPanelLayoutWorkspace } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import {
+    selectPanelLayoutWorkspace,
+    selectRecentlyClosed,
+  } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
     PANEL_DRAG_MIME,
     clearDraggedPanelState,
@@ -66,7 +74,6 @@
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import {
     filterPickableSpecialists,
-    selectSpecialistName,
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
@@ -77,17 +84,13 @@
     selectWorkspaceById,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
-  import {
-    selectAgentAttentionRequest,
-    selectAgentIsBlockedWaiting,
-    selectAgentIsResponding,
-  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { writable } from 'svelte/store';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import {
     type AvatarState,
-    getAvatarState,
+    getAvatarStateForSession,
   } from '$features/agent/components/agent-avatar/avatar-state';
+  import { getAgentAvatarStateLabel } from '$features/agent/components/agent-avatar/avatar-state-label';
   import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
@@ -100,6 +103,13 @@
   import type { PanelHeaderActions } from './panel-header-context.svelte';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
   import { getResourceIconKind, RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
+  import {
+    filterPanelTabs,
+    getAdjacentPanelTabId,
+    getDistinctPanelIdentityValue,
+    getPanelIdentityContext,
+    PANEL_IDENTITY_SEARCH_THRESHOLD,
+  } from './panel-identity-history';
 
   // Detect platform for file manager labels
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -121,6 +131,8 @@
   const CONTEXT_MENU_FALLBACK_HEIGHT = 360;
   const PANEL_HEADER_INTERACTIVE_SELECTOR =
     'button, a, input, textarea, select, [role="button"], [role="tab"], [contenteditable="true"]';
+  const IDENTITY_HOVER_OPEN_DELAY = 140;
+  const IDENTITY_HOVER_CLOSE_DELAY = 40;
 
   interface Props {
     tabs: PanelTab[];
@@ -199,9 +211,6 @@
   const allPermissionRequests = selectPermissionRequests();
   const activeAgentIdStore = writable<string>('');
   const activeAgentSession$ = selectAgentSession(activeAgentIdStore);
-  const activeAgentIsResponding$ = selectAgentIsResponding(activeAgentIdStore);
-  const activeAgentIsBlockedWaiting$ = selectAgentIsBlockedWaiting(activeAgentIdStore);
-  const activeAgentAttentionRequest$ = selectAgentAttentionRequest(activeAgentIdStore);
 
   // Context menu state
   let contextMenuTab = $state<{
@@ -212,6 +221,17 @@
   } | null>(null);
   let contextMenuElement = $state<HTMLDivElement | null>(null);
 
+  // Identity history menu state is local presentation state.
+  let identityMenuOpen = $state(false);
+  let identitySearchQuery = $state('');
+  let identityTriggerRef = $state<HTMLButtonElement | null>(null);
+  let identityMenuRef = $state<HTMLDivElement | null>(null);
+  let identityHoverTimer: ReturnType<typeof setTimeout> | null = null;
+  let suppressNextIdentityFocusOpen = false;
+  let identityTriggerHovered = false;
+  let identityMenuHovered = false;
+  let identityPointerPosition: { x: number; y: number } | null = null;
+
   // Tab rename state - tracks which tab is being renamed inline
   let renamingTabId = $state<string | null>(null);
   let renameInputRef = $state<HTMLInputElement | null>(null);
@@ -221,8 +241,11 @@
   // re-evaluates when the prop changes while the component stays mounted.
   // svelte-ignore state_referenced_locally
   const workspaceIdStore = writable(workspaceId);
+  // svelte-ignore state_referenced_locally
+  const panelLayoutIdStore = writable(layoutId ?? workspaceId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);
+    panelLayoutIdStore.set(layoutId ?? workspaceId);
   });
 
   // Reveal-in-file-manager runs against workspace file paths on this
@@ -235,6 +258,7 @@
   // state, specialist, and delegation info all derive from this store so the
   // UI updates when agents rename or their session metadata changes.
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
+  const recentlyClosed$ = selectRecentlyClosed(panelLayoutIdStore);
 
   // Reactive store subscription for specialist names - ensures re-render when specialists change
   const specialists$ = selectSpecialists();
@@ -298,13 +322,12 @@
    * Uses $workspaceAgents$ for reactive updates when session metadata changes
    * Uses unified specialist lookup that includes built-in, custom, AND team specialists
    */
-  function getAgentSpecialist(tab: PanelTab): string | null {
+  function getAgentSpecialist(tab: PanelTab) {
     if (tab.type !== 'agent' || !tab.agentId) return null;
     const agent = $workspaceAgents$.find((a) => a.id === tab.agentId);
     const specialistId = agent?.metadata?.specialist || (agent as any)?.agentMetadata?.specialist;
     if (!specialistId) return null;
-    // Use unified specialist lookup from store (includes team specialists like product-voice, dev-partner)
-    return selectSpecialistName.select(appStore.state, specialistId);
+    return $specialists$.find((specialist) => specialist.id === specialistId) ?? null;
   }
 
   /**
@@ -316,17 +339,9 @@
     if (tab.agentId === activeTab?.agentId) return activeAgentAvatarState;
     const agent = $workspaceAgents$.find((a) => a.id === tab.agentId);
     if (!agent) return 'idle';
-    return getAvatarState(
-      {
-        isStreaming: agent.isStreaming,
-        isProcessing: agent.isProcessing,
-        isResponding: agent.isResponding,
-        status: agent.status,
-      },
-      {
-        hasPermissionRequest: $allPermissionRequests.some((r) => r.sessionId === tab.agentId),
-      },
-    );
+    return getAvatarStateForSession(agent, {
+      hasPermissionRequest: $allPermissionRequests.some((r) => r.sessionId === tab.agentId),
+    });
   }
 
   /**
@@ -364,6 +379,132 @@
   function handleTabClick(tabId: string) {
     onTabClick?.(tabId);
   }
+
+  const identityTabs = $derived([
+    ...tabs,
+    ...(!pinned
+      ? $recentlyClosed$.filter((entry) => entry.panelId === panelId).map((entry) => entry.tab)
+      : []),
+  ]);
+  const backPanelTabId = $derived(getAdjacentPanelTabId(identityTabs, activeTabId, 1));
+  const forwardPanelTabId = $derived(getAdjacentPanelTabId(identityTabs, activeTabId, -1));
+  const filteredIdentityTabs = $derived(
+    filterPanelTabs(identityTabs, identitySearchQuery, getTabTitle),
+  );
+  const showIdentityHistory = $derived(identityTabs.length > 1);
+  const showIdentitySearch = $derived(identityTabs.length >= PANEL_IDENTITY_SEARCH_THRESHOLD);
+
+  function clearIdentityHoverTimer() {
+    if (!identityHoverTimer) return;
+    clearTimeout(identityHoverTimer);
+    identityHoverTimer = null;
+  }
+
+  function scheduleIdentityMenuOpen() {
+    clearIdentityHoverTimer();
+    identityHoverTimer = setTimeout(() => {
+      identityMenuOpen = true;
+      identityHoverTimer = null;
+    }, IDENTITY_HOVER_OPEN_DELAY);
+  }
+
+  function updateIdentityPointerPosition(event: PointerEvent) {
+    identityPointerPosition = { x: event.clientX, y: event.clientY };
+  }
+
+  function isIdentityPointerWithin(node: HTMLElement | null) {
+    if (!node || !identityPointerPosition) return false;
+    const rect = node.getBoundingClientRect();
+    return (
+      identityPointerPosition.x > rect.left &&
+      identityPointerPosition.x < rect.right &&
+      identityPointerPosition.y > rect.top &&
+      identityPointerPosition.y < rect.bottom
+    );
+  }
+
+  function handleIdentityWindowPointerMove(event: PointerEvent) {
+    if (!identityMenuOpen) return;
+    updateIdentityPointerPosition(event);
+    identityTriggerHovered = isIdentityPointerWithin(identityTriggerRef);
+    identityMenuHovered = isIdentityPointerWithin(identityMenuRef);
+    if (identityTriggerHovered || identityMenuHovered) {
+      clearIdentityHoverTimer();
+      return;
+    }
+    if (!identityHoverTimer) scheduleIdentityMenuClose();
+  }
+
+  function handleIdentityTriggerPointerEnter(event: PointerEvent) {
+    updateIdentityPointerPosition(event);
+    identityTriggerHovered = true;
+    scheduleIdentityMenuOpen();
+  }
+
+  function handleIdentityTriggerPointerLeave(event: PointerEvent) {
+    updateIdentityPointerPosition(event);
+    identityTriggerHovered = false;
+    scheduleIdentityMenuClose();
+  }
+
+  function handleIdentityMenuPointerEnter(event: PointerEvent) {
+    updateIdentityPointerPosition(event);
+    identityMenuHovered = true;
+    clearIdentityHoverTimer();
+  }
+
+  function handleIdentityMenuPointerLeave(event: PointerEvent) {
+    updateIdentityPointerPosition(event);
+    identityMenuHovered = false;
+    scheduleIdentityMenuClose();
+  }
+
+  function scheduleIdentityMenuClose() {
+    clearIdentityHoverTimer();
+    identityHoverTimer = setTimeout(() => {
+      if (
+        identityTriggerHovered ||
+        identityMenuHovered ||
+        identityTriggerRef?.matches(':hover') ||
+        identityMenuRef?.matches(':hover') ||
+        isIdentityPointerWithin(identityTriggerRef) ||
+        isIdentityPointerWithin(identityMenuRef)
+      ) {
+        identityHoverTimer = null;
+        return;
+      }
+      handleIdentityOpenChange(false);
+      identityHoverTimer = null;
+    }, IDENTITY_HOVER_CLOSE_DELAY);
+  }
+
+  function handleIdentityOpenChange(open: boolean) {
+    if (!open) {
+      suppressNextIdentityFocusOpen = document.activeElement !== identityTriggerRef;
+      identitySearchQuery = '';
+    }
+    identityMenuOpen = open;
+  }
+
+  function handleIdentityTriggerFocus() {
+    if (suppressNextIdentityFocusOpen) {
+      suppressNextIdentityFocusOpen = false;
+      return;
+    }
+    identityMenuOpen = true;
+  }
+
+  function activateIdentityTab(tabId: string | null) {
+    if (!tabId) return;
+    if (tabs.some((tab) => tab.id === tabId)) {
+      handleTabClick(tabId);
+    } else {
+      appStore.dispatch(reopenClosedTab(layoutId ?? workspaceId, undefined, tabId));
+    }
+    handleIdentityOpenChange(false);
+  }
+
+  onDestroy(clearIdentityHoverTimer);
 
   function handleTabClose(e: MouseEvent, tabId: string) {
     e.stopPropagation();
@@ -1044,23 +1185,10 @@
     const session = $activeAgentSession$;
     if (!agentId || !session || session.id !== agentId) return 'idle';
 
-    const isBlockedWaiting = $activeAgentIsBlockedWaiting$;
-    const isResponding = $activeAgentIsResponding$;
-    const hasFailed = session.status === 'error';
-    return getAvatarState(
-      {
-        isStreaming: !isBlockedWaiting && (isResponding || session.isStreaming),
-        isProcessing: !isBlockedWaiting && session.isProcessing,
-        isResponding: !isBlockedWaiting && isResponding,
-        status: isBlockedWaiting && !hasFailed ? 'waiting' : session.status,
-      },
-      {
-        hasPermissionRequest: $allPermissionRequests.some(
-          (request) => request.sessionId === agentId,
-        ),
-        attentionKind: $activeAgentAttentionRequest$?.kind ?? null,
-      },
-    );
+    return getAvatarStateForSession(session, {
+      isActive: true,
+      hasPermissionRequest: $allPermissionRequests.some((request) => request.sessionId === agentId),
+    });
   });
 
   /**
@@ -1212,7 +1340,7 @@
     <Button
       variant="ghost-light"
       size="icon-sm"
-      class={pinned ? 'text-primary' : undefined}
+      class={pinned ? 'text-primary' : 'text-muted-foreground opacity-40 hover:opacity-100'}
       onclick={() => appStore.dispatch(setPanelPinned(workspaceId, panelId, !pinned))}
       aria-label={pinned
         ? m.layout_panelTabBar_unpinPanel_label()
@@ -1220,7 +1348,13 @@
       aria-pressed={pinned}
       data-panel-pin
     >
-      <Fa icon={faThumbtack} size="xs" />
+      <span
+        class="inline-flex transition-transform duration-[var(--motion-fast)] motion-reduce:transition-none"
+        style:transform={pinned ? 'rotate(-45deg)' : undefined}
+        data-panel-pin-icon
+      >
+        <Fa icon={faThumbtack} size="xs" />
+      </span>
     </Button>
   </Tooltip>
 {/snippet}
@@ -1313,13 +1447,42 @@
         aria-label={m.layout_panelTabBar_closePanel_label()}
         data-testid="panel-close-button"
       >
-        <Fa icon={faXmark} size={12} class="size-3!" />
+        <Fa icon={faXmark} size={14} class="size-3.5!" />
       </Button>
     </Tooltip>
   {/if}
 {/snippet}
 
-<svelte:window onkeydown={handlePanelDragKeyDown} />
+{#snippet panelIdentity(tab: PanelTab, compact = false)}
+  {@const resourceKind = getResourceIconKind(tab.type)}
+  {#if tab.type === 'agent' && tab.agentId}
+    <AgentAvatarWithState
+      agentId={tab.agentId}
+      variant={compact ? 'standard' : 'emphasized'}
+      state={getAgentAvatarState(tab)}
+      specialist={getAgentSpecialistType(tab) as
+        import('$lib/constants/specialists').BuiltinSpecialistId | null}
+    />
+  {:else if resourceKind}
+    <ResourceIconTile kind={resourceKind} variant={compact ? 'standard' : 'emphasized'} />
+  {:else if tab.faviconUrl}
+    <img
+      src={tab.faviconUrl}
+      alt=""
+      width={compact ? 14 : 16}
+      height={compact ? 14 : 16}
+      class="rounded-sm"
+    />
+  {:else}
+    <Fa
+      icon={getTabIcon(tab.type)}
+      size={compact ? 14 : 16}
+      class="shrink-0 text-muted-foreground"
+    />
+  {/if}
+{/snippet}
+
+<svelte:window onkeydown={handlePanelDragKeyDown} onpointermove={handleIdentityWindowPointerMove} />
 
 <!-- Tab bar + Header wrapper -->
 <div class="panel-tab-wrapper flex flex-col">
@@ -1615,7 +1778,8 @@
     <!-- Panel Actions (on tab bar) -->
     <div class="shrink-0 h-full flex items-center">
       <div
-        class="panel-actions flex items-center gap-0.5 px-1 opacity-30 group-hover/tabbar:opacity-100 focus-within:opacity-100 transition-opacity z-20"
+        class="panel-actions flex items-center gap-0 px-1 opacity-30 group-hover/tabbar:opacity-100 focus-within:opacity-100 transition-opacity z-20"
+        data-panel-header-actions
       >
         {@render panelPinButton()}
         {@render contentActions?.primary?.()}
@@ -1628,7 +1792,24 @@
   <!-- Compact header bar (breadcrumb style) -->
   {#if activeTab}
     {@const activeTabPath = getTabPath(activeTab)}
-    {@const activeResourceKind = getResourceIconKind(activeTab.type)}
+    {@const activeTabTitle = getTabTitle(activeTab)}
+    {@const activeIdentityContext = getPanelIdentityContext(
+      activeTabTitle,
+      activeTabPath ?? activeTab.browserUrl ?? null,
+    )}
+    {@const activeAgentSpecialist = getAgentSpecialist(activeTab)}
+    {@const activeAgentSpecialistName = getDistinctPanelIdentityValue(activeAgentSpecialist?.name, [
+      activeTabTitle,
+    ])}
+    {@const activeAgentSpecialistDescription = getDistinctPanelIdentityValue(
+      activeAgentSpecialist?.description,
+      [activeTabTitle, activeAgentSpecialistName],
+    )}
+    {@const activeAgentDelegatedBy = getDistinctPanelIdentityValue(activeAgentDelegatedByName, [
+      activeTabTitle,
+    ])}
+    {@const activeAgentStateLabel =
+      activeTab.type === 'agent' ? getAgentAvatarStateLabel(activeAgentAvatarState) : null}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class={cn(
@@ -1645,113 +1826,204 @@
     >
       <!-- Left: one content title + optional context (changes tabs provide their own header). -->
       <div class="flex min-w-0 flex-1 items-center gap-2">
-        <!-- Type icon / agent avatar for the active content. -->
-        {#if activeTab.type === 'agent' && activeTab.agentId}
-          <span
-            class="panel-header-leading-surface flex size-5 shrink-0 items-center justify-center self-center"
-            data-testid="panel-header-agent-avatar-slot"
-            data-panel-header-leading-surface
-          >
-            <AgentAvatarWithState
-              agentId={activeTab.agentId}
-              variant="standard"
-              state={activeAgentAvatarState}
-              specialist={getAgentSpecialistType(activeTab) as
-                import('$lib/constants/specialists').BuiltinSpecialistId | null}
-            />
-          </span>
-        {:else if activeResourceKind}
-          <span
-            class="panel-header-leading-surface flex size-5 shrink-0 items-center justify-center self-center"
-            data-panel-header-leading-surface
-          >
-            <ResourceIconTile kind={activeResourceKind} />
-          </span>
-        {:else if activeTab.faviconUrl}
-          <span
-            class="panel-header-leading-surface flex size-5 shrink-0 items-center justify-center self-center"
-            data-panel-header-leading-surface
-          >
-            <img
-              src={activeTab.faviconUrl}
-              alt=""
-              width="12"
-              height="12"
-              class="shrink-0 rounded-sm"
-              onerror={(e) => {
-                const target = e.currentTarget as HTMLImageElement;
-                target.style.display = 'none';
-                const fallback = target.nextElementSibling as HTMLElement | null;
-                if (fallback) fallback.style.display = '';
-              }}
-            />
-            <!-- Fallback icon, hidden by default, shown if favicon fails to load -->
-            <span style="display: none;">
-              <Fa
-                icon={getTabIcon(activeTab.type)}
-                size={12}
-                class={isFocused ? 'text-subtle' : 'text-ghost'}
-              />
-            </span>
-          </span>
-        {:else}
-          <span
-            class="panel-header-leading-surface flex size-5 shrink-0 items-center justify-center self-center"
-            data-panel-header-leading-surface
-          >
-            <Fa
-              icon={getTabIcon(activeTab.type)}
-              size={12}
-              class={isFocused ? 'text-subtle' : 'text-ghost'}
-            />
-          </span>
-        {/if}
-        <!-- Single content title; type/category is conveyed by the content itself. -->
-        {#if isTabRenameable(activeTab) && onTabRename}
-          <EditableName
-            value={getTabTitle(activeTab)}
-            onSave={(newName) => handleTabRename(activeTab, newName)}
-            textClass="text-sm shrink font-medium {isFocused ? 'text-foreground' : 'text-subtle'}"
-            title={m.ui_editableName_rename_tooltip()}
-            maxWidth={240}
-          />
-        {:else}
-          <span
-            class="text-sm truncate shrink font-medium {isFocused
-              ? 'text-foreground'
-              : 'text-subtle'}"
-          >
-            {getTabTitle(activeTab)}
-          </span>
-        {/if}
-
-        <!-- Keep useful agent context, but suppress a specialist name that repeats the title. -->
-        {#if activeTab.type === 'agent'}
-          {@const specialist = getAgentSpecialist(activeTab)}
-          {@const delegatedBy = activeAgentDelegatedByName}
-          {@const showSpecialist =
-            specialist?.toLocaleLowerCase() !== getTabTitle(activeTab).toLocaleLowerCase()
-              ? specialist
-              : null}
-          {#if showSpecialist || delegatedBy}
-            <span
-              class="text-xs shrink-5 truncate whitespace-nowrap {isFocused
-                ? 'text-subtle'
-                : 'text-ghost'}"
+        <!-- Type identity opens the existing ordered tabs for this panel column. -->
+        <span
+          class="shrink-0 self-center"
+          onpointerenter={handleIdentityTriggerPointerEnter}
+          onpointerleave={handleIdentityTriggerPointerLeave}
+        >
+          <Menu.Root bind:open={identityMenuOpen} onOpenChange={handleIdentityOpenChange}>
+            <Menu.Trigger>
+              {#snippet child({ props })}
+                <button
+                  {...props}
+                  bind:this={identityTriggerRef}
+                  type="button"
+                  class="panel-header-leading-surface flex size-6 items-center justify-center rounded-md outline-none hover:bg-accent focus-visible:bg-accent focus-visible:text-accent-foreground"
+                  aria-label={m.layout_panelTabBar_identityHistory_ariaLabel()}
+                  onfocus={handleIdentityTriggerFocus}
+                  data-testid={activeTab.type === 'agent'
+                    ? 'panel-header-agent-avatar-slot'
+                    : 'panel-identity-history-trigger'}
+                  data-panel-identity-history-trigger
+                  data-panel-header-leading-surface
+                >
+                  {@render panelIdentity(activeTab)}
+                </button>
+              {/snippet}
+            </Menu.Trigger>
+            <Menu.Content
+              bind:ref={identityMenuRef}
+              align="start"
+              side="bottom"
+              collisionPadding={8}
+              class="w-64 max-w-[calc(100vw-1rem)] p-1.5 focus-visible:border-border focus-visible:ring-0 data-[state=closed]:animate-none!"
+              maxHeight="min(28rem, calc(100dvh - 1rem))"
+              aria-label={m.layout_panelTabBar_identityHistory_ariaLabel()}
+              onpointerenter={handleIdentityMenuPointerEnter}
+              onpointerleave={handleIdentityMenuPointerLeave}
+              data-panel-identity-history-menu
             >
-              {#if showSpecialist && delegatedBy}
-                {m.layout_panelTabBar_specialistDelegatedBy_label({
-                  specialist: showSpecialist,
-                  name: delegatedBy,
-                })}
-              {:else if showSpecialist}
-                {m.layout_panelTabBar_specialistAgent_label({ specialist: showSpecialist })}
-              {:else if delegatedBy}
-                {m.layout_panelTabBar_delegatedBy_label({ name: delegatedBy })}
+              <div
+                class="flex min-w-0 items-start gap-2 px-2 pb-1.5 pt-1"
+                data-panel-identity-current
+              >
+                <span class="flex size-5 shrink-0 items-center justify-center" aria-hidden="true">
+                  {@render panelIdentity(activeTab, true)}
+                </span>
+                <div class="min-w-0 flex-1">
+                  <div
+                    class="truncate text-sm font-medium text-foreground"
+                    data-panel-identity-title
+                  >
+                    {activeTabTitle}
+                  </div>
+                  {#if activeAgentStateLabel}
+                    <div
+                      class="type-caption truncate text-muted-foreground"
+                      data-panel-identity-agent-state
+                    >
+                      {activeAgentStateLabel}
+                    </div>
+                  {/if}
+                  {#if activeIdentityContext}
+                    <div
+                      class="type-caption truncate text-muted-foreground"
+                      data-panel-identity-context
+                    >
+                      {activeIdentityContext}
+                    </div>
+                  {/if}
+                  {#if activeAgentSpecialistName}
+                    <div
+                      class="type-caption truncate text-muted-foreground"
+                      data-panel-identity-specialist
+                    >
+                      {m.layout_panelTabBar_specialistAgent_label({
+                        specialist: activeAgentSpecialistName,
+                      })}
+                    </div>
+                  {/if}
+                  {#if activeAgentSpecialistDescription}
+                    <div
+                      class="type-caption line-clamp-2 text-muted-foreground"
+                      data-panel-identity-specialist-description
+                    >
+                      {activeAgentSpecialistDescription}
+                    </div>
+                  {/if}
+                  {#if activeAgentDelegatedBy}
+                    <div
+                      class="type-caption truncate text-muted-foreground"
+                      data-panel-identity-delegated-by
+                    >
+                      {m.layout_panelTabBar_delegatedBy_label({ name: activeAgentDelegatedBy })}
+                    </div>
+                  {/if}
+                </div>
+              </div>
+              {#if showIdentityHistory}
+                <div data-panel-identity-history-section>
+                  <Menu.Separator />
+                  <div class="flex items-center gap-2 px-1 py-1" data-panel-identity-navigation>
+                    <div
+                      class="shrink-0 px-1 text-base font-medium text-muted-foreground"
+                      data-panel-identity-history-title
+                    >
+                      {m.layout_panelTabBar_identityHistory_ariaLabel()}
+                    </div>
+                    {#if showIdentitySearch}
+                      <label class="relative min-w-0 flex-1">
+                        <span class="sr-only">{m.ui_searchableSelect_search_placeholder()}</span>
+                        <Fa
+                          icon={faMagnifyingGlass}
+                          size="xs"
+                          class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                        />
+                        <input
+                          bind:value={identitySearchQuery}
+                          type="search"
+                          aria-label={m.ui_searchableSelect_search_placeholder()}
+                          placeholder={m.ui_searchableSelect_search_placeholder()}
+                          class="h-7 w-full rounded-md border border-border bg-transparent pl-7 pr-2 text-xs outline-none focus:border-input focus:ring-1 focus:ring-border"
+                          data-panel-identity-search
+                        />
+                      </label>
+                    {/if}
+                    <div class="ml-auto flex shrink-0 items-center gap-1">
+                      <Button
+                        variant="ghost-light"
+                        size="icon-sm"
+                        class="focus:border-border focus:bg-accent focus:text-accent-foreground focus:ring-0 focus-visible:border-border focus-visible:ring-0"
+                        disabled={!backPanelTabId}
+                        aria-label={m.ui_contentHeader_goBack_tooltip()}
+                        onclick={() => activateIdentityTab(backPanelTabId)}
+                        data-panel-identity-back
+                      >
+                        <Fa icon={faArrowLeft} size="xs" />
+                      </Button>
+                      <Button
+                        variant="ghost-light"
+                        size="icon-sm"
+                        class="focus:border-border focus:bg-accent focus:text-accent-foreground focus:ring-0 focus-visible:border-border focus-visible:ring-0"
+                        disabled={!forwardPanelTabId}
+                        aria-label={m.ui_contentHeader_goForward_tooltip()}
+                        onclick={() => activateIdentityTab(forwardPanelTabId)}
+                        data-panel-identity-forward
+                      >
+                        <Fa icon={faArrowRight} size="xs" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div class="max-h-64 overflow-y-auto overscroll-contain" data-panel-identity-list>
+                    {#each filteredIdentityTabs as tab (tab.id)}
+                      {@const current = tab.id === activeTabId}
+                      <Menu.Item
+                        class="min-h-8"
+                        aria-current={current ? 'page' : undefined}
+                        onclick={() => activateIdentityTab(tab.id)}
+                        data-panel-identity-item={tab.id}
+                        data-panel-identity-type={tab.type}
+                      >
+                        <span class="flex size-5 shrink-0 items-center justify-center">
+                          {@render panelIdentity(tab, true)}
+                        </span>
+                        <span class="min-w-0 flex-1 truncate">{getTabTitle(tab)}</span>
+                        {#if current}
+                          <Fa icon={faCheck} size="xs" class="shrink-0 text-primary" />
+                        {/if}
+                      </Menu.Item>
+                    {:else}
+                      <div class="px-2 py-3 text-center text-xs text-muted-foreground">
+                        {m.ui_combobox_noOptions_message()}
+                      </div>
+                    {/each}
+                  </div>
+                </div>
               {/if}
+            </Menu.Content>
+          </Menu.Root>
+        </span>
+        <!-- Single content title; type/category is conveyed by the content itself. -->
+        <div class="panel-header-title min-w-0 shrink" data-panel-header-title>
+          {#if isTabRenameable(activeTab) && onTabRename}
+            <EditableName
+              value={activeTabTitle}
+              onSave={(newName) => handleTabRename(activeTab, newName)}
+              textClass="text-sm shrink font-medium {isFocused ? 'text-foreground' : 'text-subtle'}"
+              title={m.ui_editableName_rename_tooltip()}
+              maxWidth={240}
+            />
+          {:else}
+            <span
+              class="block truncate text-sm font-medium {isFocused
+                ? 'text-foreground'
+                : 'text-subtle'}"
+            >
+              {activeTabTitle}
             </span>
           {/if}
-        {/if}
+        </div>
 
         <!-- Path (for file-based tabs) -->
         {#if activeTabPath}
@@ -1776,7 +2048,7 @@
       </div>
 
       <!-- Right: stable content controls, grouped actions, and close. -->
-      <div class="flex shrink-0 items-center gap-0.5" data-panel-header-actions>
+      <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
         {@render panelPinButton()}
         {@render contentActions?.primary?.()}
         {@render panelActionsDropdown()}
@@ -2153,7 +2425,7 @@
 
   .panel-header {
     padding-inline-start: calc(
-      (var(--panel-header-height) - var(--agent-avatar-standard-surface-size)) / 2
+      (var(--panel-header-height) - var(--agent-avatar-emphasized-surface-size)) / 2
     );
   }
 

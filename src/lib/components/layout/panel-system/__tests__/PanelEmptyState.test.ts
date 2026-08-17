@@ -51,7 +51,7 @@ function renderEmptyState(props: Record<string, unknown> = {}) {
     reopenClosedTab: vi.fn(),
   };
   render(PanelEmptyState, {
-    props: { workspaceId: 'workspace-1', ...props },
+    props: { workspaceId: 'workspace-1', panelId: 'panel-1', ...props },
     context: new Map([['panelLayoutManager', () => layoutManager]]),
   });
   return layoutManager;
@@ -71,6 +71,7 @@ describe('PanelEmptyState', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'New Agent' }));
 
     expect(onCreateAgent).toHaveBeenCalledOnce();
+    expect(onCreateAgent).toHaveBeenCalledWith('panel-1');
   });
 
   it('creates a panel from the focused panel and presents Mod+T as New Panel', async () => {
@@ -97,7 +98,9 @@ describe('PanelEmptyState', () => {
     await fireEvent.click(screen.getByRole('button', { name: /All shortcuts/ }));
 
     expect(onCreateNote).toHaveBeenCalledOnce();
+    expect(onCreateNote).toHaveBeenCalledWith('panel-1');
     expect(onCreateTerminal).toHaveBeenCalledOnce();
+    expect(onCreateTerminal).toHaveBeenCalledWith('panel-1');
     expect(layoutManager.reopenClosedTab).toHaveBeenCalledOnce();
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'palette/open' });
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'uiLayout/toggleSidebar', payload: [] });

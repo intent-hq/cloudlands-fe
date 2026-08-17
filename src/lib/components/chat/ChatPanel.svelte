@@ -154,12 +154,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
-  import {
-    faArrowDown,
-    faLock,
-    faPaperclip,
-    faSquareCheck,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faLock, faPaperclip, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
@@ -236,7 +231,12 @@
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
-  import { indexConversationTurns, type ConversationTurn } from './conversation-turns';
+  import {
+    hasOperationalAssistantMessageBoundary,
+    hasOperationalAssistantTurnBoundary,
+    indexConversationTurns,
+    type ConversationTurn,
+  } from './conversation-turns';
   import {
     collectSearchRanges,
     createRangeForSpan,
@@ -441,11 +441,6 @@
   const cachedScrollRestoreTop =
     cachedScroll && !cachedScroll.shouldFollowBottom ? cachedScroll.scrollTop : null;
   let shouldFollowBottom = $state(cachedScroll?.shouldFollowBottom ?? true);
-  // Committed (damped) visibility for the scroll-to-bottom button. Driven by
-  // the hysteresis + settle-window controller below so per-frame
-  // distance-from-bottom jitter (transient scrollHeight changes: lazy-turn
-  // placeholder swaps, image loads) can never strobe the button.
-  let scrollButtonVisible = $state(false);
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
   const userMessageNavigationItems = $derived(getUserMessageNavigationItems($agentMessages$));
 
@@ -2488,9 +2483,7 @@
   onMount(() => {
     scrollButtonVisibility = createScrollBottomButtonVisibility({
       atBottomThreshold: SCROLL_BOTTOM_THRESHOLD,
-      onVisibilityChange: (visible) => {
-        scrollButtonVisible = visible;
-      },
+      onVisibilityChange: () => {},
       onRelock: flashLockConfirmation,
     });
     scrollButtonVisibility.update(distanceFromBottom);
@@ -3461,7 +3454,7 @@
       <div
         class="conversation-column mx-auto flex min-h-full w-full min-w-0 max-w-[70em] flex-col {isChiefWorkspace
           ? 'px-0'
-          : 'px-4 pt-2 sm:px-6'} {transcriptBottomInsetClass}"
+          : 'px-4 pt-8 sm:px-6'} {transcriptBottomInsetClass}"
         data-testid="chat-transcript-inner"
       >
         <!-- Task Assignment Pill -->
@@ -3892,8 +3885,16 @@
                   {@const nextTurnIsEventNotification = isEventWakeMessage(
                     nextTurn?.userMessage ?? undefined,
                   )}
+                  {@const nextTurnHasUserMessage = Boolean(
+                    nextTurn?.userMessage && !nextTurnIsEventNotification,
+                  )}
                   {@const isLastTurnInConversation =
                     globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1}
+                  {@const compactOperationalTurnBoundary = hasOperationalAssistantTurnBoundary(
+                    turn,
+                    nextTurn,
+                  )}
+                  {@const zeroOperationalTurnBoundary = compactOperationalTurnBoundary}
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- PERF: LazyTurn defers rendering of off-screen turns -->
                   <!-- PERF: Only force-visible the last turn during streaming, not all turns -->
@@ -3936,7 +3937,7 @@
                             data-pinned-prompt-id={message.id}
                             data-message-index={globalIndex}
                             class="message-nav-target relative z-10"
-                            class:mb-3={turn.assistantMessages.length > 0}
+                            class:mb-8={turn.assistantMessages.length > 0}
                             class:bg-sidebar={isChiefWorkspace}
                             class:bg-card={!isChiefWorkspace}
                             use:attachPinnedPromptMessage={message}
@@ -3977,8 +3978,8 @@
                             data-send-app-message-id={message.appMessageId}
                             data-message-index={globalIndex}
                             class="message-nav-target relative z-20"
-                            class:mb-6={isAutomatedMessage(message)}
-                            class:mb-8={!isAutomatedMessage(message)}
+                            class:mb-5={isAutomatedMessage(message)}
+                            class:mb-7={!isAutomatedMessage(message)}
                             class:invisible={pendingSendMessageIds.has(
                               String(message.appMessageId ?? ''),
                             )}
@@ -4057,6 +4058,16 @@
                             assistantIndex === turn.assistantMessages.length - 1}
                           {@const isLastMessage = isLastTurn && isLastAssistant}
                           {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
+                          {@const compactPreviousMessageBoundary =
+                            hasOperationalAssistantMessageBoundary(
+                              turn.assistantMessages[assistantIndex - 1],
+                              message,
+                            )}
+                          {@const compactNextMessageBoundary =
+                            hasOperationalAssistantMessageBoundary(
+                              message,
+                              turn.assistantMessages[assistantIndex + 1],
+                            )}
                           {@const turnNumber = getMessageTurnNumber(message.id)}
                           {@const globalIndex = getMessageIndex(message.id)}
                           <div
@@ -4065,6 +4076,9 @@
                             data-message-index={globalIndex}
                             data-turn-number={turnNumber}
                             class="message-nav-target"
+                            data-operational-message-seam={compactPreviousMessageBoundary
+                              ? 'true'
+                              : undefined}
                           >
                             <ChatMessage
                               {agentId}
@@ -4106,7 +4120,13 @@
                             </div>
                           {/if}
                           <!-- Show file changes after each assistant turn -->
-                          <div class="w-full mb-1">
+                          <div
+                            class="w-full"
+                            class:mb-1={!compactNextMessageBoundary &&
+                              !(isLastAssistant && compactOperationalTurnBoundary) &&
+                              !(isLastAssistant && nextTurnHasUserMessage)}
+                            data-after-assistant-message={message.id}
+                          >
                             <ChatFileChangesSummary
                               workspaceId={workspace.id}
                               {message}
@@ -4136,6 +4156,9 @@
                       currentIsEventNotification={isEventNotification}
                       currentHasAssistantMessages={turn.assistantMessages.length > 0}
                       nextIsEventNotification={nextTurnIsEventNotification}
+                      nextHasUserMessage={nextTurnHasUserMessage}
+                      compactOperationalSeam={compactOperationalTurnBoundary}
+                      zeroToolSeam={zeroOperationalTurnBoundary}
                     />
                   {/if}
                   <!-- Turn-boundary divider placement: the anchor is this turn's
@@ -4257,24 +4280,7 @@
         <div class={CHAT_SCROLL_END_MARKER_CLASS} data-testid="chat-scroll-end-marker"></div>
       </div>
     </div>
-    <!-- Scroll-to-bottom button: rendered only while scrolled up so no
-         invisible control overlaps the message actions bar or lingers in the
-         tab order while at the bottom. Auto-follow re-locks on click or on
-         scrolling back to the bottom; scrolling up unlocks it. Visibility is
-         the damped (hysteresis + settle window) state, not the raw distance,
-         so per-frame scroll-metric jitter cannot strobe the button. -->
-    {#if $agentMessages$.length > 0 && scrollButtonVisible}
-      <Button
-        variant="outline"
-        size="icon-xs"
-        data-testid="chat-scroll-to-bottom-button"
-        onclick={() => scrollToBottom()}
-        class="absolute bottom-2 right-2 text-muted-foreground bg-sidebar rounded-sm transition-all opacity-0 group-hover/panel:opacity-100 focus-visible:opacity-100 active:scale-95"
-        title={m.chat_chatPanel_scrollToBottom_tooltip()}
-      >
-        <Fa icon={faArrowDown} class="w-3! h-3!" />
-      </Button>
-    {:else if showLockConfirmation}
+    {#if showLockConfirmation}
       <!-- Transient re-lock confirmation: purely decorative feedback that
            auto-follow re-engaged on reaching the bottom. Never interactive:
            aria-hidden keeps it out of the accessibility tree and

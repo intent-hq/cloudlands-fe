@@ -9,12 +9,23 @@ describe('resource icon tile source contract', () => {
   it('uses the canonical standard surface and opaque semantic neutral colors', () => {
     const tile = source('./ResourceIconTile.svelte');
 
-    expect(tile).toContain('var(--agent-avatar-standard-surface-size)');
-    expect(tile).toContain('var(--agent-avatar-standard-corner-radius)');
+    expect(tile).toContain(
+      '--resource-icon-surface-size: var(--agent-avatar-standard-surface-size)',
+    );
+    expect(tile).toContain(
+      '--resource-icon-corner-radius: var(--agent-avatar-standard-corner-radius)',
+    );
+    expect(tile).toContain('--resource-icon-glyph-size: 12px');
+    expect(tile).toContain(
+      '--resource-icon-surface-size: var(--agent-avatar-emphasized-surface-size)',
+    );
+    expect(tile).toContain(
+      '--resource-icon-corner-radius: var(--agent-avatar-emphasized-corner-radius)',
+    );
     expect(tile).toContain('background: hsl(var(--muted))');
     expect(tile).toContain('color: hsl(var(--muted-foreground))');
-    expect(tile.match(/width: 12px/g)).toHaveLength(2);
-    expect(tile.match(/height: 12px/g)).toHaveLength(2);
+    expect(tile.match(/width: var\(--resource-icon-glyph-size\)/g)).toHaveLength(2);
+    expect(tile.match(/height: var\(--resource-icon-glyph-size\)/g)).toHaveLength(2);
     expect(tile).not.toMatch(/#[0-9a-f]{3,8}|gradient|opacity:/i);
   });
 
@@ -29,7 +40,7 @@ describe('resource icon tile source contract', () => {
     const tabs = source('../workspace/multi-select-sidebar-tabs.ts');
 
     expect(sidebar).toMatch(/<ResourceIconTile\s+kind="note"/);
-    expect(sidebar).toContain('<ResourceIconTile kind="changes" />');
+    expect(sidebar).toContain('<ResourceIconTile kind="changes" variant="emphasized" />');
     expect(sidebar).toContain('variant="standard"');
     expect(sidebar).not.toMatch(
       /<AgentAvatarWithState[\s\S]*?size=\{LAUNCHER_VISIBLE_SIZE\}[\s\S]*?\/>/,
@@ -59,22 +70,24 @@ describe('resource icon tile source contract', () => {
     const chatSizes = source('../chat/chat-icon-size.ts');
 
     expect(tabBar).toContain('<ResourceIconTile kind={resourceKind} />');
-    expect(tabBar).toContain('<ResourceIconTile kind={activeResourceKind} />');
+    expect(tabBar).toContain(
+      "<ResourceIconTile kind={resourceKind} variant={compact ? 'standard' : 'emphasized'} />",
+    );
+    expect(tabBar).toContain('{@render panelIdentity(activeTab)}');
     expect(tabBar).toContain('data-panel-header-leading-surface');
-    expect(tabBar).toContain('size={12}');
-    expect(tabBar).toContain('width="12"');
-    expect(tabBar).not.toMatch(/size=\{14\}|width="14"|height="14"/);
+    expect(tabBar).toContain('size={16}');
+    expect(tabBar).toContain('width="16"');
     expect(tabBar).toContain('<KebabIcon class="pointer-events-none size-3!" />');
     expect(tabBar).toContain('<Fa icon={faXmark} size={12} class="size-3!" />');
     expect(navigator).toContain('size={CHAT_ICON_SIZE.header} class="size-3!"');
-    expect(scrollButton).toContain('size={CHAT_ICON_SIZE.navigationArrow} class="size-6!"');
+    expect(scrollButton).toContain('size={CHAT_ICON_SIZE.compact} class="size-4!"');
     expect(chatSizes).toContain('header: 12');
-    expect(chatSizes).toContain('navigationArrow: 24');
+    expect(chatSizes).toContain('compact: 16');
     expect(tabBar).not.toContain('pl-4 pr-2.5 sm:pl-6');
     expect(tabBar).toContain(
-      '(var(--panel-header-height) - var(--agent-avatar-standard-surface-size)) / 2',
+      '(var(--panel-header-height) - var(--agent-avatar-emphasized-surface-size)) / 2',
     );
-    expect(empty).toContain('<ResourceIconTile kind={action.resourceKind} />');
+    expect(empty).toContain('<ResourceIconTile kind={action.resourceKind} variant="emphasized" />');
     expect(empty).toContain('<ResourceIconTile kind={resourceKind} />');
   });
 

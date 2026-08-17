@@ -13,6 +13,14 @@
 
   type PreviewKind = 'file' | 'terminal' | 'tool' | 'text';
   type ParentBackground = 'background' | 'muted' | 'accent';
+  type AgentStateScenario =
+    | 'responding'
+    | 'live-payload-tool'
+    | 'in-flight-tool'
+    | 'blocked-tool'
+    | 'active-peer-turn'
+    | 'peer-wait'
+    | 'stale-waiting';
 
   interface Props {
     theme?: 'light' | 'dark';
@@ -26,6 +34,7 @@
     finishedCount?: number;
     initiallyExpanded?: boolean;
     parentBackground?: ParentBackground;
+    agentStateScenario?: AgentStateScenario;
   }
 
   let {
@@ -40,6 +49,7 @@
     finishedCount = 0,
     initiallyExpanded = true,
     parentBackground = 'background',
+    agentStateScenario = 'responding',
   }: Props = $props();
   const agentId = 'agent-subscription-inline-geometry';
   const workspaceId = 'workspace-subscription-inline-geometry';
@@ -86,18 +96,58 @@
 
   $effect(() => {
     const currentKind = previewKind;
+    const activity: Record<AgentStateScenario, Partial<AgentSession>> = {
+      responding: { status: AgentStatus.Active, isResponding: true },
+      'live-payload-tool': {
+        status: AgentStatus.Active,
+        isActive: true,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: true,
+        isWaitingOnTool: true,
+        isWaitingForOtherAgents: false,
+        turnInFlight: true,
+        lastStreamActivityAt: '2026-08-17T12:04:59.000Z',
+        lastToolUse: { name: 'view', status: 'running' },
+      },
+      'in-flight-tool': {
+        status: AgentStatus.Waiting,
+        isResponding: false,
+        isWaitingOnTool: true,
+      },
+      'blocked-tool': { status: AgentStatus.Waiting },
+      'active-peer-turn': {
+        status: AgentStatus.Active,
+        isResponding: true,
+        isWaitingForOtherAgents: true,
+        turnInFlight: true,
+      },
+      'peer-wait': {
+        status: AgentStatus.Idle,
+        isWaitingForOtherAgents: true,
+      },
+      'stale-waiting': { status: AgentStatus.Waiting, isResponding: true },
+    };
+    const currentActivity = activity[agentStateScenario];
     const session: AgentSession = {
       id: AgentId(agentId),
       backendSessionId: AgentId('backend-subscription-inline-geometry'),
       workspaceId: WorkspaceId(workspaceId),
       name: 'Primary Agent',
-      status: AgentStatus.Active,
-      isStreaming: true,
+      status: currentActivity.status ?? AgentStatus.Active,
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: currentActivity.isResponding ?? false,
+      isWaitingOnTool: currentActivity.isWaitingOnTool ?? false,
+      isWaitingForOtherAgents: currentActivity.isWaitingForOtherAgents ?? false,
+      turnInFlight: currentActivity.turnInFlight ?? false,
+      lastStreamActivityAt: currentActivity.lastStreamActivityAt,
       lastAgentResponse:
         currentKind === 'text'
           ? 'Review `src/agent.ts` with **strong markers**, [safe label](https://example.com), and 超長い-unbroken-token-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 <button>unsafe</button>'
           : '',
-      lastToolUse: currentKind === 'text' ? undefined : toolUse(currentKind),
+      lastToolUse:
+        currentActivity.lastToolUse ?? (currentKind === 'text' ? undefined : toolUse(currentKind)),
       messages: [],
       createdAt: '2026-08-15T12:00:00.000Z',
       updatedAt: '2026-08-15T12:05:00.000Z',

@@ -123,7 +123,7 @@ describe('mounted new workspace layout', () => {
       );
       expect(firstEmptyPanel?.classList.contains('bg-sidebar')).toBe(true);
       expect(firstEmptyPanel?.classList.contains('bg-card')).toBe(false);
-      expect(firstEmptyPanel?.querySelector('[data-mounted-panel]')).toBeTruthy();
+      expect(firstEmptyPanel?.matches('[data-mounted-panel]')).toBe(true);
       expect(firstPopulatedPanel?.classList.contains('bg-card')).toBe(true);
       expect(firstPopulatedPanel?.classList.contains('bg-sidebar')).toBe(false);
 

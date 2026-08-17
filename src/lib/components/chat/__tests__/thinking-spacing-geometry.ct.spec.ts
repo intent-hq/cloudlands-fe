@@ -13,11 +13,11 @@ for (const theme of ['light', 'dark'] as const) {
         });
 
         for (const [testId, previousSelector, expectedGap] of [
-          ['attention-card-boundary', '[data-testid="attention-card"]', 12],
-          ['notice-boundary', '.discussion-request-notice', 16],
-          ['prose-boundary', '[data-message-content-block="text"]', 12],
-          ['message-content-boundary', '[data-testid="message-content"]', 12],
-          ['streaming-boundary', '[data-message-content-block="text"]', 12],
+          ['attention-card-boundary', '[data-testid="attention-card"]', 20],
+          ['notice-boundary', '.discussion-request-notice', 24],
+          ['prose-boundary', '[data-message-content-block="text"]', 16],
+          ['message-content-boundary', '[data-testid="message-content"]', 20],
+          ['streaming-boundary', '[data-message-content-block="text"]', 16],
         ] as const) {
           const fixture = component.getByTestId(testId);
           const measurement = await fixture.evaluate((root, selector) => {
@@ -35,18 +35,61 @@ for (const theme of ['light', 'dark'] as const) {
             expectedGap * zoom,
             1,
           );
-          expect(measurement.row.height, testId).toBeCloseTo(36 * zoom, 1);
+          expect(measurement.row.height, testId).toBeCloseTo(28 * zoom, 1);
         }
 
         const first = component.getByTestId('first-child-boundary');
         const firstGeometry = await first.evaluate((root) => {
-          const rootBox = root.firstElementChild!.getBoundingClientRect();
-          const thinkingBox = root
+          const stack = root.firstElementChild!;
+          const wrapper = stack.querySelector('[data-message-content-block="thinking"]')!;
+          const rootBox = stack.getBoundingClientRect();
+          const thinkingBox = wrapper
             .querySelector('[data-testid="reasoning-tool-call"]')!
             .getBoundingClientRect();
-          return { rootTop: rootBox.top, thinkingTop: thinkingBox.top };
+          return {
+            rootTop: rootBox.top,
+            thinkingTop: thinkingBox.top,
+            parentRowGap: getComputedStyle(stack).rowGap,
+            wrapperPaddingTop: getComputedStyle(wrapper).paddingTop,
+          };
         });
         expect(firstGeometry.thinkingTop - firstGeometry.rootTop).toBeCloseTo(0, 1);
+        expect(firstGeometry.parentRowGap).toBe('0px');
+        expect(firstGeometry.wrapperPaddingTop).toBe('0px');
+
+        const operationalGeometry = await component
+          .getByTestId('operational-boundary')
+          .evaluate((root) => {
+            const tool = root.querySelector('[data-message-content-block="tool_use"]')!;
+            const thinking = root.querySelector('[data-message-content-block="thinking"]')!;
+            const toolRow = tool.querySelector('[data-chat-operational-row]')!;
+            const thinkingRow = thinking.querySelector('[data-chat-operational-row]')!;
+            return {
+              gap: thinkingRow.getBoundingClientRect().top - toolRow.getBoundingClientRect().bottom,
+              parentRowGap: getComputedStyle(tool.parentElement!).rowGap,
+              thinkingPaddingTop: getComputedStyle(thinking).paddingTop,
+            };
+          });
+        expect(operationalGeometry.gap).toBeCloseTo(0, 1);
+        expect(operationalGeometry.parentRowGap).toBe('0px');
+        expect(operationalGeometry.thinkingPaddingTop).toBe('0px');
+
+        const consecutiveReasoning = component.getByTestId('consecutive-reasoning-boundary');
+        const reasoningDisclosures = consecutiveReasoning.getByTestId('reasoning-disclosure');
+        await expect(reasoningDisclosures).toHaveCount(2);
+        await reasoningDisclosures.nth(0).click();
+        await reasoningDisclosures.nth(1).click();
+        await page.waitForTimeout(180);
+        const reasoningGroupGap = await consecutiveReasoning.evaluate((root) => {
+          const groups = [
+            ...root.querySelectorAll<HTMLElement>('[data-testid="reasoning-tool-call"]'),
+          ];
+          const secondRow = groups[1].querySelector<HTMLElement>(
+            '[data-operational-disclosure-row]',
+          )!;
+          return secondRow.getBoundingClientRect().top - groups[0].getBoundingClientRect().bottom;
+        });
+        expect(reasoningGroupGap).toBeCloseTo(56 * zoom, 1);
 
         const attention = component.getByTestId('attention-card-boundary');
         const disclosure = attention.getByTestId('reasoning-disclosure');
@@ -67,13 +110,13 @@ for (const theme of ['light', 'dark'] as const) {
             const thinking = root.querySelector('[data-testid="reasoning-tool-call"]')!;
             return thinking.getBoundingClientRect().top - card.getBoundingClientRect().bottom;
           });
-        expect(await gap()).toBeCloseTo(12 * zoom, 1);
+        expect(await gap()).toBeCloseTo(20 * zoom, 1);
         await disclosure.click();
         await page.waitForTimeout(180);
-        expect(await gap()).toBeCloseTo(12 * zoom, 1);
+        expect(await gap()).toBeCloseTo(20 * zoom, 1);
         await disclosure.click();
         await page.waitForTimeout(180);
-        expect(await gap()).toBeCloseTo(12 * zoom, 1);
+        expect(await gap()).toBeCloseTo(20 * zoom, 1);
 
         await component.update({
           props: { theme, width, zoom, showStreamingThinking: false },
@@ -90,7 +133,7 @@ for (const theme of ['light', 'dark'] as const) {
             wrapper.previousElementSibling!.getBoundingClientRect().bottom
           );
         });
-        expect(streamingGap).toBeCloseTo(12 * zoom, 1);
+        expect(streamingGap).toBeCloseTo(16 * zoom, 1);
       });
     }
   }

@@ -28,6 +28,9 @@ test('keeps named standard wake-up avatars optically centered at every required 
             ...root.querySelectorAll('[data-testid="inline-agent-avatar-trigger"]'),
           ];
           const row = root.querySelector('[data-testid="event-wakeup-header"]')!;
+          const stackHost = root.querySelector('[data-testid="event-wakeup-avatar-stack"]')!;
+          const stack = root.querySelector('[data-agent-avatar-stack]')!;
+          const summary = root.querySelector('[data-testid="event-wakeup-summary"]')!;
           const avatars = triggers.map((trigger) => {
             const ring = trigger.querySelector('[data-testid="inline-agent-avatar-ring"]')!;
             const surface = trigger.querySelector('[data-agent-avatar-surface]')!;
@@ -62,6 +65,11 @@ test('keeps named standard wake-up avatars optically centered at every required 
           return {
             avatars,
             row: rect(row),
+            stackHost: rect(stackHost),
+            stack: rect(stack),
+            summary: rect(summary),
+            stackAlign: stack.getAttribute('data-agent-avatar-stack-align'),
+            stackJustification: getComputedStyle(stack).justifyContent,
             overflow: rect(overflow),
             overflowRadius: overflowStyle.borderRadius,
             overflowBackground: overflowStyle.backgroundColor,
@@ -74,6 +82,11 @@ test('keeps named standard wake-up avatars optically centered at every required 
         });
 
         expect(value.avatars).toHaveLength(5);
+        expect(value.stackAlign).toBe('start');
+        expect(value.stackJustification).toBe('flex-start');
+        expect(value.stack.left).toBeCloseTo(value.stackHost.left, 1);
+        expect(value.avatars[0].trigger.left).toBeCloseTo(value.stackHost.left, 1);
+        expect(value.summary.left - value.stackHost.right).toBeCloseTo(8 * zoom, 1);
         for (const avatar of value.avatars) {
           expect(avatar.variants).toEqual(['standard', 'standard']);
           expect(avatar.inlineSizes).toEqual([
@@ -107,7 +120,7 @@ test('keeps named standard wake-up avatars optically centered at every required 
         expect(value.overflow.left - value.avatars.at(-1)!.trigger.right).toBeCloseTo(4 * zoom, 1);
         expect(value.overflow.width).toBeGreaterThan(0);
         expect(value.overflow.width).toBeLessThan(20 * zoom);
-        expect(value.overflow.height).toBeCloseTo(12 * zoom, 1);
+        expect(value.overflow.height).toBeCloseTo(20 * zoom, 1);
         expect(value.overflowRadius).toBe('0px');
         expect(value.overflowBackground).toBe('rgba(0, 0, 0, 0)');
         expect(value.overflowBorder).toBe('0px');

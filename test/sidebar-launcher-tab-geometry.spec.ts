@@ -337,7 +337,7 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
     expect(compactHeights).toEqual([44, 44]);
 
     const iconBounds = await cards.evaluateAll((elements) =>
-      elements.slice(0, 2).map((card) => {
+      elements.slice(1, 2).map((card) => {
         const cardRect = card.getBoundingClientRect();
         const scale = cardRect.width / (card as HTMLElement).offsetWidth;
         const stack = card.querySelector<HTMLElement>('[data-sidebar-launcher-icons]')!;
@@ -379,8 +379,8 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
     expect(
       iconBounds.flat().every(({ left, right, inset }) => left >= inset && right >= inset),
     ).toBe(true);
-    for (const [index, bounds] of iconBounds.entries()) {
-      const total = index === 0 ? geometry.agentCount : geometry.noteCount;
+    for (const bounds of iconBounds) {
+      const total = geometry.noteCount;
       if (total === 0) {
         expect(bounds).toHaveLength(0);
         continue;
@@ -394,7 +394,7 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
         Math.min(
           6,
           Math.floor(
-            (bounds[0].availableWidth / bounds[0].scale - 36 - reservedOverflowWidth) / 16,
+            (bounds[0].availableWidth / bounds[0].scale - 36 - reservedOverflowWidth) / 15,
           ) + 1,
         ),
       );
@@ -425,10 +425,10 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
         .slice(1)
         .map((item, itemIndex) => item.visibleLeft - visibleBounds[itemIndex].visibleLeft);
       if (visibleSteps.length > 1) expectEqual(visibleSteps, 0.75);
-      expect(visibleSteps.every((step) => Math.abs(step - 16 * bounds[0].scale) <= 0.5)).toBe(true);
+      expect(visibleSteps.every((step) => Math.abs(step - 15 * bounds[0].scale) <= 0.5)).toBe(true);
       expect(
         visibleSteps.every(
-          (step) => Math.abs(20 * bounds[0].scale - step - 4 * bounds[0].scale) <= 0.5,
+          (step) => Math.abs(20 * bounds[0].scale - step - 5 * bounds[0].scale) <= 0.5,
         ),
       ).toBe(true);
       if (expectedOverflow > 0) {
@@ -484,42 +484,10 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
       'files',
       'shell',
     ]);
-    expect(cardAlignment.every(({ delta }) => delta <= 0.5)).toBe(true);
-    if (geometry.agentCount > 0) {
-      const avatarGeometry = await cards
-        .filter({ has: page.locator('[data-sidebar-agent]') })
-        .locator('[data-agent-avatar-with-state]')
-        .evaluateAll((surfaces) =>
-          surfaces.map((surface) => {
-            const element = surface as HTMLElement;
-            const card = element.closest<HTMLElement>('[data-sidebar-launcher]')!;
-            const scale = card.getBoundingClientRect().width / card.offsetWidth;
-            const avatar = element.querySelector<SVGElement>('[data-agent-avatar]')!;
-            const avatarStyle = getComputedStyle(avatar);
-            return {
-              variant: element.dataset.avatarVariant,
-              surface: element.getBoundingClientRect().width / scale,
-              svg: avatar.getBoundingClientRect().width / scale,
-              clearSpace: Number.parseFloat(avatarStyle.paddingLeft),
-              art:
-                avatar.getBoundingClientRect().width / scale -
-                Number.parseFloat(avatarStyle.paddingLeft) -
-                Number.parseFloat(avatarStyle.paddingRight),
-            };
-          }),
-        );
-      expect(avatarGeometry).toHaveLength(iconBounds[0].filter(({ overflow }) => !overflow).length);
-      expect(
-        avatarGeometry.every(
-          ({ variant, surface, svg, clearSpace, art }) =>
-            variant === 'standard' &&
-            Math.abs(surface - 20) < 0.1 &&
-            Math.abs(svg - 20) < 0.1 &&
-            Math.abs(clearSpace - 2) < 0.1 &&
-            Math.abs(art - 16) < 0.1,
-        ),
-      ).toBe(true);
-    }
+    expect(
+      cardAlignment.every(({ delta }) => delta <= 0.5),
+      JSON.stringify(cardAlignment),
+    ).toBe(true);
     const changesGeometry = await cards
       .filter({ has: page.locator('[data-sidebar-changes-resource]') })
       .evaluate((card) => {
@@ -578,9 +546,111 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
   }
 });
 
-test('left-packed launchers preserve hover, focus, click, and open-panel markers', async ({
-  page,
-}) => {
+test('Agents card shares adaptive stack geometry for 1, 3, and large counts', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1200, height: 1000 });
+  for (const agentCount of [1, 3, 26]) {
+    for (const theme of ['light', 'dark'] as const) {
+      for (const zoom of [1, 2]) {
+        await mountSidebar(page, {
+          width: 260,
+          zoom,
+          theme,
+          selectedTab: 'overview',
+          agentCount,
+          noteCount: 3,
+        });
+        for (const direction of ['ltr', 'rtl'] as const) {
+          await page.evaluate((dir) => {
+            document.documentElement.dir = dir;
+          }, direction);
+          const card = page.locator('[data-sidebar-launcher="agents"]');
+          const stack = card.locator('[data-agent-avatar-stack]');
+          await expect
+            .poll(() => stack.locator('[data-agent-avatar-stack-item]').count())
+            .toBeGreaterThan(0);
+          const geometry = await card.evaluate((element) => {
+            const action = element.querySelector<HTMLElement>(
+              '[data-testid="agent-panel-toggle"]',
+            )!;
+            const stack = element.querySelector<HTMLElement>('[data-agent-avatar-stack]')!;
+            const overflow = stack.querySelector<HTMLElement>('[data-agent-avatar-overflow]');
+            const items = [
+              ...stack.querySelectorAll<HTMLElement>('[data-agent-avatar-stack-item]'),
+            ];
+            const box = (node: Element) => {
+              const rect = node.getBoundingClientRect();
+              return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+            };
+            const stackBox = box(stack);
+            const overflowBox = overflow ? box(overflow) : null;
+            return {
+              card: box(element),
+              action: box(action),
+              align: stack.dataset.agentAvatarStackAlign,
+              overlap: stack.dataset.agentAvatarStackOverlap,
+              items: items.map((item) => ({
+                box: box(item),
+                zIndex: Number(getComputedStyle(item).zIndex),
+                mask: getComputedStyle(item).maskImage,
+                state: item.querySelector<HTMLElement>('[data-agent-avatar-with-state]')?.dataset
+                  .avatarState,
+              })),
+              overflow: overflow?.textContent ?? null,
+              centerDelta: overflowBox
+                ? Math.abs(
+                    (overflowBox.top + overflowBox.bottom) / 2 -
+                      (stackBox.top + stackBox.bottom) / 2,
+                  )
+                : 0,
+              direction: getComputedStyle(stack).direction,
+              devicePixelRatio: window.devicePixelRatio,
+            };
+          });
+          const visibleCount = geometry.items.length;
+          expect(geometry.align).toBe('start');
+          expect(geometry.overlap).toBe('later-on-top');
+          expect(geometry.items.map(({ zIndex }) => zIndex)).toEqual(
+            Array.from({ length: visibleCount }, (_, index) => index + 1),
+          );
+          expect(geometry.items.map(({ state }) => state)).toEqual([
+            'running',
+            ...Array.from({ length: visibleCount - 1 }, () => 'idle'),
+          ]);
+          expect(geometry.items.at(-1)?.mask).toBe('none');
+          expect(geometry.items.slice(0, -1).every(({ mask }) => mask.includes('url('))).toBe(true);
+          const steps = geometry.items
+            .slice(1)
+            .map(({ box }, index) => box.left - geometry.items[index].box.left);
+          expect(steps.every((step) => (direction === 'ltr' ? step > 0 : step < 0))).toBe(true);
+          if (agentCount <= 3) {
+            expect(visibleCount).toBe(agentCount);
+            expect(geometry.overflow).toBeNull();
+          } else {
+            expect(visibleCount).toBeLessThan(agentCount);
+            expect(geometry.overflow).toBe(`+${agentCount - visibleCount}`);
+          }
+          expect(geometry.centerDelta * geometry.devicePixelRatio).toBeLessThanOrEqual(0.5);
+          expect(geometry.action.left - geometry.card.left).toBeCloseTo(zoom, 1);
+          expect(geometry.card.right - geometry.action.right).toBeCloseTo(zoom, 1);
+          expect(geometry.action.top - geometry.card.top).toBeCloseTo(zoom, 1);
+          expect(geometry.card.bottom - geometry.action.bottom).toBeCloseTo(zoom, 1);
+          expect(geometry.direction).toBe(direction);
+          await expect(card.locator('[data-sidebar-agent]')).toHaveCount(visibleCount);
+          await expect(card.locator('[data-agent-avatar-overflow] button')).toHaveCount(0);
+        }
+        await page.locator('[data-testid="agent-panel-toggle"]').click();
+        await expect(page.locator('[data-sidebar-overlay]')).toBeVisible();
+        await expect(page.locator('[data-sidebar-tab-strip]')).toHaveAttribute(
+          'data-active-tab',
+          'agents',
+        );
+      }
+    }
+  }
+});
+
+test('launcher cards preserve note focus and the full Agents card target', async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 1000 });
   await mountSidebar(page, {
     width: 320,
@@ -591,40 +661,134 @@ test('left-packed launchers preserve hover, focus, click, and open-panel markers
     noteCount: 8,
   });
 
-  const agents = page.locator('[data-sidebar-agent]');
+  const agentStack = page.locator('[data-sidebar-launcher="agents"] [data-agent-avatar-stack]');
   const notes = page.locator('[data-sidebar-context]');
-  await expect(agents).toHaveCount(6);
-  await expect(notes).toHaveCount(6);
-  await expect(agents.nth(0).locator('[data-panel-open-marker]')).toHaveAttribute(
-    'data-panel-open-state',
-    'active',
+  const visibleAgents = await agentStack.locator('[data-agent-avatar-stack-item]').count();
+  expect(visibleAgents).toBeGreaterThan(0);
+  expect(visibleAgents).toBeLessThanOrEqual(6);
+  await expect(agentStack.locator('[data-agent-avatar-overflow]')).toHaveText(
+    `+${8 - visibleAgents}`,
   );
+  await expect(agentStack.locator('button[data-sidebar-agent]')).toHaveCount(visibleAgents);
+  const visibleNotes = await notes.count();
+  expect(visibleNotes).toBeGreaterThan(0);
+  expect(visibleNotes).toBeLessThanOrEqual(6);
+  await expect(page.locator('[data-sidebar-context-overflow]')).toHaveText(`+${8 - visibleNotes}`);
   await expect(notes.nth(0).locator('[data-panel-open-marker]')).toHaveAttribute(
     'data-panel-open-state',
     'open',
   );
 
-  await agents.nth(0).hover({ position: { x: 2, y: 18 } });
-  await expect(page.locator('[data-sidebar-hover-card="agent"]')).toBeVisible();
   await notes.nth(0).focus();
   await expect(notes.nth(0)).toBeFocused();
   await expect(page.locator('[data-sidebar-hover-card="note"]')).toBeVisible();
 
-  await notes.nth(0).click({ position: { x: 2, y: 18 } });
-  await expect(notes.nth(0).locator('[data-panel-open-marker]')).toHaveAttribute(
-    'data-panel-open-state',
-    'active',
-  );
-  await agents.nth(0).focus();
-  await page.keyboard.press('Tab');
-  await expect(agents.nth(1)).toBeFocused();
-
-  await page.locator('[data-sidebar-agent-overflow]').click();
+  const cardAction = page.locator('[data-testid="agent-panel-toggle"]');
+  await cardAction.focus();
+  await expect(cardAction).toBeFocused();
+  await cardAction.click();
   await expect(page.locator('[data-sidebar-overlay]')).toBeVisible();
   await expect(page.locator('[data-sidebar-tab-strip]')).toHaveAttribute(
     'data-active-tab',
     'agents',
   );
+});
+
+test('visible Agents stack avatars support hover, focus, Enter, and Space', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 1000 });
+  await mountSidebar(page, {
+    width: 260,
+    zoom: 1,
+    theme: 'light',
+    selectedTab: 'overview',
+    agentCount: 3,
+    noteCount: 3,
+  });
+
+  const buttons = page.locator('[data-sidebar-launcher="agents"] [data-sidebar-agent]');
+  await expect(buttons).toHaveCount(3);
+  expect(
+    await buttons.evaluateAll((items) =>
+      items.map((item) => item.getAttribute('data-sidebar-agent')),
+    ),
+  ).toEqual(['agent-running', 'agent-1', 'agent-2']);
+
+  await buttons.nth(0).hover();
+  await expect(page.locator('[data-sidebar-hover-card="agent"]')).toBeVisible();
+  await page.mouse.move(0, 0);
+  await buttons.nth(1).focus();
+  await expect(buttons.nth(1)).toBeFocused();
+  await expect(page.locator('[data-sidebar-hover-card="agent"]')).toBeVisible();
+
+  await buttons.nth(1).evaluate((button) => {
+    button.addEventListener('click', () => {
+      button.setAttribute(
+        'data-keyboard-clicks',
+        String(Number(button.getAttribute('data-keyboard-clicks') ?? 0) + 1),
+      );
+    });
+  });
+  await page.keyboard.press('Enter');
+  await expect(buttons.nth(1)).toHaveAttribute('data-keyboard-clicks', '1');
+
+  await buttons.nth(2).focus();
+  await buttons.nth(2).evaluate((button) => {
+    button.addEventListener('click', () => {
+      button.setAttribute(
+        'data-keyboard-clicks',
+        String(Number(button.getAttribute('data-keyboard-clicks') ?? 0) + 1),
+      );
+    });
+  });
+  await page.keyboard.press('Space');
+  await expect(buttons.nth(2)).toHaveAttribute('data-keyboard-clicks', '1');
+  await expect(page.locator('[data-sidebar-overlay]')).toHaveCount(0);
+});
+
+test('Changes PR action stays in the trailing card area at normal and narrow zoom', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 1000 });
+  for (const scenario of [
+    { width: 360, zoom: 1 },
+    { width: 220, zoom: 2 },
+  ]) {
+    await mountSidebar(page, {
+      ...scenario,
+      theme: 'light',
+      selectedTab: 'overview',
+      hasPullRequest: true,
+    });
+    const card = page.locator('[data-sidebar-launcher="changes"]');
+    const action = card.locator('[data-sidebar-pr-link]');
+    await expect(action).toHaveCount(1);
+    await expect(action).toHaveAttribute('data-sidebar-pr-url', /\/pull\/42$/);
+    const geometry = await card.evaluate((element) => {
+      const box = (selector: string) => {
+        const rect = element.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, width: rect.width };
+      };
+      const label = element.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!;
+      const cardRect = element.getBoundingClientRect();
+      return {
+        card: { left: cardRect.left, right: cardRect.right, width: cardRect.width },
+        row: box('[data-sidebar-label-row]'),
+        label: box('[data-sidebar-launcher-label]'),
+        action: box('[data-sidebar-pr-link]'),
+        labelClientWidth: label.clientWidth,
+        labelScrollWidth: label.scrollWidth,
+      };
+    });
+    expect(geometry.action.width).toBeCloseTo(24 * scenario.zoom, 1);
+    expect(geometry.card.right - geometry.action.right).toBeCloseTo(9 * scenario.zoom, 1);
+    expect(geometry.label.right).toBeLessThanOrEqual(geometry.action.left);
+    expect(geometry.row.right).toBeCloseTo(geometry.action.right, 1);
+    expect(geometry.labelScrollWidth).toBeGreaterThanOrEqual(geometry.labelClientWidth);
+    await action.focus();
+    await expect(action).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(action).toHaveCount(1);
+  }
 });
 
 test('View PR follows the workspace description once in compact and expanded modes', async ({

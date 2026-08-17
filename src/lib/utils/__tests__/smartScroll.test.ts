@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   animateScrollTo,
   beforeFollowBottomMutation,
-  FOLLOW_BOTTOM_MAX_SETTLE_FRAMES,
   followBottom,
   followToBottom,
   isFollowingBottom,
@@ -227,6 +226,17 @@ describe('followBottom policy', () => {
     mutationCallbacks[0]?.([], {} as MutationObserver);
   }
 
+  function fireAttributeMutation(target: Node = container) {
+    mutationCallbacks[0]?.(
+      [{ type: 'attributes', target } as MutationRecord],
+      {} as MutationObserver,
+    );
+  }
+
+  function runSettleTail() {
+    for (let frame = 0; frame < 10 && animationFrames.length > 0; frame += 1) runFrame();
+  }
+
   function fireAddedMutation(node: Node) {
     mutationCallbacks[0]?.(
       [
@@ -275,6 +285,14 @@ describe('followBottom policy', () => {
     action.destroy();
     expect(container.querySelector('[data-follow-bottom-anchor]')).toBeNull();
     expect(child.style.overflowAnchor).toBe('auto');
+  });
+
+  it('starts followed and idle with no pending animation frame', () => {
+    const action = followBottom(container, { follow: true });
+
+    expect(scrollTop).toBe(600);
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
   });
 
   it('attaches the native anchor only while following', () => {
@@ -338,6 +356,22 @@ describe('followBottom policy', () => {
     runFrame();
     expect(scrollTop).toBe(750);
     expect(distances.every((distance) => distance === 0)).toBe(true);
+    action.destroy();
+  });
+
+  it('repairs a non-user scroll without releasing the captured lock', () => {
+    const followChanges: boolean[] = [];
+    const action = followBottom(container, {
+      follow: true,
+      onFollowChange: (follow) => followChanges.push(follow),
+    });
+
+    scrollTop = 420;
+    container.dispatchEvent(new Event('scroll'));
+
+    expect(scrollTop).toBe(600);
+    expect(isFollowingBottom(container)).toBe(true);
+    expect(followChanges).toEqual([]);
     action.destroy();
   });
 
@@ -576,6 +610,22 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
+  it('unlocks after an upward scrollbar drag moves away from the bottom', () => {
+    const followChanges: boolean[] = [];
+    const action = followBottom(container, {
+      follow: true,
+      onFollowChange: (follow) => followChanges.push(follow),
+    });
+    container.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 315 }));
+    scrollTop = 300;
+    container.dispatchEvent(new Event('scroll'));
+
+    expect(scrollTop).toBe(300);
+    expect(isFollowingBottom(container)).toBe(false);
+    expect(followChanges).toEqual([false]);
+    action.destroy();
+  });
+
   it('does not re-lock after a scrollbar interaction moves upward because of a clamp', () => {
     const followChanges: boolean[] = [];
     const action = followBottom(container, {
@@ -617,18 +667,54 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
-  it('bounds a continuously changing settle burst', () => {
-    const action = followBottom(container, { follow: true });
-    fireMutation();
-    let frames = 0;
-    while (animationFrames.length > 0) {
+  it('keeps an active lease pinned beyond 80 frames, settles idle, and restarts later', () => {
+    const followChanges: boolean[] = [];
+    const child = document.createElement('div');
+    container.append(child);
+    const action = followBottom(container, {
+      follow: true,
+      onFollowChange: (follow) => followChanges.push(follow),
+    });
+    const mutation = beforeFollowBottomMutation(child);
+    for (let frame = 0; frame < 81; frame += 1) {
       scrollHeight += 1;
       runFrame();
-      frames += 1;
+      expect(scrollTop).toBe(scrollHeight - clientHeight);
+      expect(isFollowingBottom(container)).toBe(true);
     }
 
-    expect(frames).toBe(FOLLOW_BOTTOM_MAX_SETTLE_FRAMES);
+    expect(animationFrames).toHaveLength(1);
+    mutation.settle();
+    runSettleTail();
+    expect(animationFrames).toHaveLength(0);
+
+    scrollHeight += 17;
+    fireMutation();
     expect(scrollTop).toBe(scrollHeight - clientHeight);
+    expect(animationFrames).toHaveLength(1);
+    runSettleTail();
+    expect(animationFrames).toHaveLength(0);
+    expect(followChanges).toEqual([]);
+    action.destroy();
+  });
+
+  it('restarts an idle settle tail for attribute and resize observations', () => {
+    const action = followBottom(container, { follow: true });
+    expect(animationFrames).toHaveLength(0);
+
+    scrollHeight += 11;
+    fireAttributeMutation();
+    expect(scrollTop).toBe(611);
+    expect(animationFrames).toHaveLength(1);
+    runSettleTail();
+    expect(animationFrames).toHaveLength(0);
+
+    scrollHeight += 13;
+    fireResize();
+    expect(scrollTop).toBe(624);
+    expect(animationFrames).toHaveLength(1);
+    runSettleTail();
+    expect(animationFrames).toHaveLength(0);
     action.destroy();
   });
 

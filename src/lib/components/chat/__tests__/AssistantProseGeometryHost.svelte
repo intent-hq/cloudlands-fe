@@ -26,6 +26,9 @@
       text: '<group:Adjacent group>**Nested** markdown remains group-relative</group>\nFollowing top-level response',
     },
   ];
+  const expandedGroupProse: ContentBlock[] = [
+    { type: 'text', text: '<group:Audit>The first hygiene command failed.</group>' },
+  ];
   const tool = [
     { type: 'tool_use', id: 'tool-1', name: 'read_file', input: { path: 'src/example.ts' } },
   ] as ContentBlock[];
@@ -174,6 +177,7 @@
         <ThinkingBlock content="Inspecting streaming geometry" isStreaming />
       </div>
       <div data-testid="group-adjacency"><MessageContent content={grouped} /></div>
+      <div data-testid="expanded-group-prose"><MessageContent content={expandedGroupProse} /></div>
       <div data-testid="full-width-tool"><MessageContent content={tool} /></div>
     </div>
     <div data-testid="single-operational-cluster">

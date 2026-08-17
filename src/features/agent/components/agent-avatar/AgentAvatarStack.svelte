@@ -1,5 +1,6 @@
 <script lang="ts" module>
   import type { AvatarState } from './avatar-state';
+  import type { AgentAvatarVariant } from './avatar-size';
 
   export interface AgentAvatarStackItem {
     key: string;
@@ -10,17 +11,37 @@
 </script>
 
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import { onMount, tick } from 'svelte';
+  import { formatInteger } from '$lib/i18n/format';
   import AgentAvatarWithState from './AgentAvatarWithState.svelte';
+  import { agentAvatarGeometry } from './avatar-size';
 
   interface Props {
     items: AgentAvatarStackItem[];
     maxVisible?: number;
     adaptive?: boolean;
+    align?: 'start' | 'end';
+    variant?: AgentAvatarVariant;
+    interactive?: boolean;
+    overflowId?: string;
+    overflowTestId?: string;
+    itemContent?: Snippet<[AgentAvatarStackItem]>;
     class?: string;
   }
 
-  let { items, maxVisible = 3, adaptive = false, class: className = '' }: Props = $props();
+  let {
+    items,
+    maxVisible = 3,
+    adaptive = false,
+    align = 'end',
+    variant = 'card-stack',
+    interactive = false,
+    overflowId,
+    overflowTestId,
+    itemContent,
+    class: className = '',
+  }: Props = $props();
   let rootElement: HTMLElement | undefined = $state();
   let measuredVisibleCount: number | undefined = $state();
   const visibleCount = $derived(
@@ -31,24 +52,31 @@
   );
   const visibleItems = $derived(items.slice(0, visibleCount));
   const overflowCount = $derived(Math.max(0, items.length - visibleItems.length));
+  const geometry = $derived(agentAvatarGeometry[variant]);
+  const itemStep = $derived(geometry.surface - geometry.overlap);
+  const trackWidth = $derived(
+    visibleItems.length === 0 ? 0 : geometry.surface + (visibleItems.length - 1) * itemStep,
+  );
 
   function overflowTextWidth(remaining: number, style: CSSStyleDeclaration): number {
     const context = document.createElement('canvas').getContext('2d');
     if (!context) return 20;
-    context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    return context.measureText(`+${remaining}`).width + 4;
+    context.font = `500 12px ${style.fontFamily}`;
+    return context.measureText(`+${formatInteger(remaining)}`).width;
   }
 
   function updateVisibleCount() {
     if (!adaptive || !rootElement) return;
     const availableWidth = rootElement.clientWidth;
     if (availableWidth <= 0) {
-      measuredVisibleCount = 0;
+      measuredVisibleCount = rootElement.getClientRects().length > 0 ? 0 : undefined;
       return;
     }
     const style = getComputedStyle(rootElement);
     const surface = Number.parseFloat(style.getPropertyValue('--agent-avatar-surface-size')) || 24;
     const overlap = Number.parseFloat(style.getPropertyValue('--agent-avatar-stack-overlap')) || 6;
+    const overflowGap =
+      Number.parseFloat(style.getPropertyValue('--agent-avatar-stack-overflow-gap')) || 4;
     const step = surface - overlap;
     const cap = Math.min(items.length, Math.max(0, maxVisible));
     const avatarsWidth = (count: number) => (count === 0 ? 0 : surface + (count - 1) * step);
@@ -59,7 +87,10 @@
     }
     for (let count = cap; count >= 0; count -= 1) {
       const remaining = items.length - count;
-      if (avatarsWidth(count) + overflowTextWidth(remaining, style) <= availableWidth) {
+      const requiredWidth =
+        avatarsWidth(count) +
+        (remaining > 0 ? (count > 0 ? overflowGap : 0) + overflowTextWidth(remaining, style) : 0);
+      if (requiredWidth <= availableWidth) {
         measuredVisibleCount = count;
         return;
       }
@@ -71,6 +102,7 @@
     items.length;
     maxVisible;
     adaptive;
+    variant;
     void tick().then(updateVisibleCount);
   });
 
@@ -87,28 +119,50 @@
   bind:this={rootElement}
   class="agent-avatar-stack {className}"
   class:agent-avatar-stack--adaptive={adaptive}
+  class:agent-avatar-stack--start={align === 'start'}
   data-agent-avatar-stack
-  data-avatar-variant="card-stack"
-  aria-hidden="true"
+  data-agent-avatar-stack-align={align}
+  data-agent-avatar-stack-overlap="later-on-top"
+  data-avatar-variant={variant}
+  data-agent-avatar-stack-clear-space={geometry.ring}
+  aria-hidden={!interactive && !overflowId ? 'true' : undefined}
 >
-  {#each visibleItems as item, index (item.key)}
-    <span
-      class="agent-avatar-stack-item"
-      style:z-index={visibleItems.length - index}
-      data-agent-avatar-stack-item
-    >
-      <AgentAvatarWithState
-        agentId={item.agentId}
-        specialist={item.specialist}
-        state={item.state ?? 'idle'}
-        variant="card-stack"
-        class="agent-avatar-stack-surface"
-      />
+  {#if visibleItems.length > 0}
+    <span class="agent-avatar-stack-track" style:width={`${trackWidth}px`}>
+      {#each visibleItems as item, index (item.key)}
+        <span
+          class="agent-avatar-stack-item"
+          style={`inset-inline-start: ${index * itemStep}px; z-index: ${index + 1};`}
+          data-agent-avatar-stack-item
+          data-agent-avatar-stack-index={index}
+          data-agent-avatar-stack-key={item.key}
+          data-agent-avatar-stack-agent-id={item.agentId}
+          data-agent-avatar-stack-specialist={item.specialist ?? undefined}
+          aria-hidden={!interactive ? 'true' : undefined}
+        >
+          {#if itemContent}
+            {@render itemContent(item)}
+          {:else}
+            <AgentAvatarWithState
+              agentId={item.agentId}
+              specialist={item.specialist}
+              state={item.state ?? 'idle'}
+              {variant}
+              class="agent-avatar-stack-surface"
+            />
+          {/if}
+        </span>
+      {/each}
     </span>
-  {/each}
+  {/if}
   {#if overflowCount > 0}
-    <span class="agent-avatar-stack-overflow" data-agent-avatar-overflow>
-      +{overflowCount}
+    <span
+      id={overflowId}
+      class="agent-avatar-stack-overflow"
+      data-agent-avatar-overflow
+      data-testid={overflowTestId}
+    >
+      +{formatInteger(overflowCount)}
     </span>
   {/if}
 </span>
@@ -120,20 +174,33 @@
     min-width: 0;
     flex: none;
     align-items: center;
+    gap: var(--agent-avatar-stack-overflow-gap, 0.25rem);
     height: var(--agent-avatar-surface-size);
     line-height: 1;
   }
 
   .agent-avatar-stack--adaptive {
     width: auto;
-    min-width: 1.5rem;
+    min-width: 0;
     flex: 1 1 0;
     justify-content: flex-end;
     overflow: hidden;
   }
 
-  .agent-avatar-stack-item {
+  .agent-avatar-stack--start {
+    justify-content: flex-start;
+  }
+
+  .agent-avatar-stack-track {
     position: relative;
+    display: inline-flex;
+    height: var(--agent-avatar-surface-size);
+    flex: none;
+  }
+
+  .agent-avatar-stack-item {
+    position: absolute;
+    inset-block-start: 0;
     display: inline-flex;
     width: var(--agent-avatar-surface-size);
     height: var(--agent-avatar-surface-size);
@@ -141,19 +208,34 @@
     border-radius: var(--agent-avatar-corner-radius);
   }
 
-  .agent-avatar-stack-item + .agent-avatar-stack-item {
-    margin-inline-start: calc(-1 * var(--agent-avatar-stack-overlap));
-  }
-
-  .agent-avatar-stack-item:not(:first-child) {
-    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' preserveAspectRatio='none'%3E%3Cmask id='cutout'%3E%3Crect width='24' height='24' fill='white'/%3E%3Crect x='-17.5' y='.5' width='23' height='23' rx='6.5' fill='black'/%3E%3C/mask%3E%3Crect width='24' height='24' fill='white' mask='url(%23cutout)'/%3E%3C/svg%3E");
+  .agent-avatar-stack-item:not(:last-child) {
     -webkit-mask-position: center;
     -webkit-mask-repeat: no-repeat;
     -webkit-mask-size: 100% 100%;
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' preserveAspectRatio='none'%3E%3Cmask id='cutout'%3E%3Crect width='24' height='24' fill='white'/%3E%3Crect x='-17.5' y='.5' width='23' height='23' rx='6.5' fill='black'/%3E%3C/mask%3E%3Crect width='24' height='24' fill='white' mask='url(%23cutout)'/%3E%3C/svg%3E");
     mask-position: center;
     mask-repeat: no-repeat;
     mask-size: 100% 100%;
+  }
+
+  .agent-avatar-stack[data-avatar-variant='compact'] .agent-avatar-stack-item:not(:last-child) {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' preserveAspectRatio='none'%3E%3Cmask id='c'%3E%3Crect width='16' height='16' fill='white'/%3E%3Crect x='11' y='-1' width='18' height='18' rx='6' fill='black'/%3E%3C/mask%3E%3Crect width='16' height='16' fill='white' mask='url(%23c)'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' preserveAspectRatio='none'%3E%3Cmask id='c'%3E%3Crect width='16' height='16' fill='white'/%3E%3Crect x='11' y='-1' width='18' height='18' rx='6' fill='black'/%3E%3C/mask%3E%3Crect width='16' height='16' fill='white' mask='url(%23c)'/%3E%3C/svg%3E");
+  }
+
+  .agent-avatar-stack[data-avatar-variant='standard'] .agent-avatar-stack-item:not(:last-child) {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' preserveAspectRatio='none'%3E%3Cmask id='c'%3E%3Crect width='20' height='20' fill='white'/%3E%3Crect x='14' y='-1' width='22' height='22' rx='7' fill='black'/%3E%3C/mask%3E%3Crect width='20' height='20' fill='white' mask='url(%23c)'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' preserveAspectRatio='none'%3E%3Cmask id='c'%3E%3Crect width='20' height='20' fill='white'/%3E%3Crect x='14' y='-1' width='22' height='22' rx='7' fill='black'/%3E%3C/mask%3E%3Crect width='20' height='20' fill='white' mask='url(%23c)'/%3E%3C/svg%3E");
+  }
+
+  .agent-avatar-stack[data-avatar-variant='emphasized'] .agent-avatar-stack-item:not(:last-child),
+  .agent-avatar-stack[data-avatar-variant='card-stack'] .agent-avatar-stack-item:not(:last-child) {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' preserveAspectRatio='none'%3E%3Cmask id='c'%3E%3Crect width='24' height='24' fill='white'/%3E%3Crect x='17' y='-1' width='26' height='26' rx='8' fill='black'/%3E%3C/mask%3E%3Crect width='24' height='24' fill='white' mask='url(%23c)'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' preserveAspectRatio='none'%3E%3Cmask id='c'%3E%3Crect width='24' height='24' fill='white'/%3E%3Crect x='17' y='-1' width='26' height='26' rx='8' fill='black'/%3E%3C/mask%3E%3Crect width='24' height='24' fill='white' mask='url(%23c)'/%3E%3C/svg%3E");
+  }
+
+  .agent-avatar-stack[data-avatar-variant='prominent'] .agent-avatar-stack-item:not(:last-child) {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40' preserveAspectRatio='none'%3E%3Cmask id='c'%3E%3Crect width='40' height='40' fill='white'/%3E%3Crect x='30' y='-2' width='44' height='44' rx='14' fill='black'/%3E%3C/mask%3E%3Crect width='40' height='40' fill='white' mask='url(%23c)'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40' preserveAspectRatio='none'%3E%3Cmask id='c'%3E%3Crect width='40' height='40' fill='white'/%3E%3Crect x='30' y='-2' width='44' height='44' rx='14' fill='black'/%3E%3C/mask%3E%3Crect width='40' height='40' fill='white' mask='url(%23c)'/%3E%3C/svg%3E");
   }
 
   .agent-avatar-stack-overflow {
@@ -163,12 +245,11 @@
     flex: none;
     align-items: center;
     justify-content: center;
-    margin-inline-start: 0.25rem;
     border: 0;
     background: transparent;
     box-shadow: none;
     color: hsl(var(--muted-foreground));
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     font-weight: 500;
     line-height: 1;
   }

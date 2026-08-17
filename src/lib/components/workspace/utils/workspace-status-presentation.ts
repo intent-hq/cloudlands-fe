@@ -46,7 +46,7 @@ const VISUALS: Record<
   WorkspaceStatusPresentationState,
   Pick<WorkspaceStatusPresentation, 'icon' | 'className'>
 > = {
-  failed: { icon: faTriangleExclamation, className: 'text-destructive' },
+  failed: { icon: faTriangleExclamation, className: 'text-foreground' },
   blocked: { icon: faXmark, className: 'text-destructive' },
   needs_attention: { icon: faCircleExclamation, className: 'text-warning' },
   in_progress: { icon: faCircle, className: 'text-success' },

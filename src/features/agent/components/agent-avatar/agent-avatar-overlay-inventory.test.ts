@@ -58,12 +58,17 @@ const consumerFiles = [
 
 const overflowFiles = [
   'src/features/agent/components/agent-avatar/AgentAvatarStack.svelte',
+  'src/lib/components/workspace/sidebar/NotesPanel.svelte',
+] as const;
+
+const canonicalStackConsumers = [
   'src/features/agent/components/agent-avatar/AgentAvatarCatalog.svelte',
   'src/features/layout/components/panel-tabs/Tab.svelte',
+  'src/lib/components/chat/AgentSubscriptions.svelte',
   'src/lib/components/chat/DelegationGroupSection.svelte',
   'src/lib/components/chat/EventWakeupBanner.svelte',
+  'src/lib/components/workspace/WorkspaceHoverCard.svelte',
   'src/lib/components/workspace/MultiSelectTabbedSidebar.svelte',
-  'src/lib/components/workspace/sidebar/NotesPanel.svelte',
 ] as const;
 
 function source(path: string): string {
@@ -127,13 +132,35 @@ describe('agent avatar overlay inventory', () => {
     }
   });
 
+  it('routes shared stack consumers through the canonical geometry primitive', () => {
+    for (const path of canonicalStackConsumers) {
+      const contents = source(path);
+      expect(contents, path).toContain('<AgentAvatarStack');
+      expect(contents, path).not.toMatch(/-space-x-|margin-inline-start:\s*calc\(-1/);
+    }
+  });
+
+  it('keeps subscription and sidebar summaries on the same adaptive stack contract', () => {
+    const subscription = source('src/lib/components/chat/AgentSubscriptions.svelte');
+    const sidebar = source('src/lib/components/workspace/MultiSelectTabbedSidebar.svelte');
+    for (const contents of [subscription, sidebar]) {
+      expect(contents).toContain('<AgentAvatarStack');
+      expect(contents).toContain('adaptive');
+      expect(contents).not.toMatch(/-space-x-|margin-inline-start:\s*calc\(-1/);
+    }
+    expect(sidebar).toContain('itemContent={launcherAgentAvatar}');
+    expect(sidebar).toContain('<AgentAvatarWithState');
+    expect(sidebar).not.toContain('data-sidebar-agent-overflow');
+  });
+
   it('uses parent-revealing participant cutouts without stack separator colors or icons', () => {
     const contents = source('src/features/agent/components/agent-avatar/AgentAvatarStack.svelte');
     expect(contents).toContain('mask-image: url(');
     expect(contents).toContain('border-radius: var(--agent-avatar-corner-radius)');
     expect(contents).not.toContain('radial-gradient');
-    expect(contents).toContain('style:z-index={visibleItems.length - index}');
-    expect(contents).toContain('font-size: 0.6875rem');
+    expect(contents).toContain('z-index: ${index + 1}');
+    expect(contents).toContain('font-size: 0.75rem');
+    expect(contents).toContain("x='17' y='-1' width='26' height='26'");
     expect(contents).not.toContain('svelte-fa');
     expect(contents).not.toContain('stack-icon');
     expect(contents).not.toMatch(/agent-avatar-stack-item[\s\S]{0,500}\bborder:/);

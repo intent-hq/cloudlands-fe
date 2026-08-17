@@ -6,15 +6,17 @@ function source(relativePath: string) {
 }
 
 describe('sidebar overview status summary', () => {
-  it('sorts the Agents card by last message and marks each running avatar', () => {
+  it('sorts the Agents card by last message and preserves each avatar status', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
     const preview = source('../utils/sidebar-launcher-preview.ts');
 
     expect(sidebar).toContain('selectAgentIsRunning.select(appStore.state, agent.id)');
     expect(preview).toContain('compareAgentsByLastMessage(a.agent, b.agent)');
     expect(sidebar).not.toContain('.sort((a, b) => Number(b.isRunning) - Number(a.isRunning))');
-    expect(sidebar).toContain("data-sidebar-agent-state={isRunning ? 'running' : 'idle'}");
-    expect(sidebar).toContain("state={isRunning ? 'running' : 'idle'}");
+    expect(sidebar).toContain('state: getAvatarStateForSession(agent)');
+    expect(sidebar).toContain("data-sidebar-agent-state={item.state ?? 'idle'}");
+    expect(sidebar).toContain("state={item.state ?? 'idle'}");
+    expect(sidebar).not.toContain("state: isRunning ? 'running' : 'idle'");
   });
 
   it('omits the running-agent summary from the overview', () => {

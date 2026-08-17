@@ -19,6 +19,7 @@
   import {
     OPERATIONAL_GROUP_CONTENT_CLASS,
     CHAT_OPERATIONAL_ICON_CLASS,
+    getOperationalGroupContentSpacingClass,
     OPERATIONAL_PRIMARY_CLASS,
     OPERATIONAL_SECONDARY_CLASS,
   } from './operational-disclosure-row';
@@ -123,6 +124,9 @@
     return previewBlock ? getContentBlockText(previewBlock).trim() : '';
   });
   const accessibleSummary = $derived(textSnippet ? `${name}: ${textSnippet}` : name);
+  const groupContentClass = $derived(
+    `${OPERATIONAL_GROUP_CONTENT_CLASS} ${getOperationalGroupContentSpacingClass(blocks)}`,
+  );
 </script>
 
 {#snippet leading()}
@@ -141,7 +145,7 @@
 
 {#snippet details()}
   <CylinderScroller isActive={isStreaming} constrained={false}>
-    <div class="flex flex-col gap-1" data-response-group-content>
+    <div class="flex flex-col gap-0" data-response-group-content>
       {@render children()}
     </div>
   </CylinderScroller>
@@ -159,7 +163,7 @@
   summaryTitle={accessibleSummary}
   onclick={toggle}
   {detailsId}
-  detailsClass={OPERATIONAL_GROUP_CONTENT_CLASS}
+  detailsClass={groupContentClass}
   detailsTransition={safeDisclosureTransition}
   detailsMotion="height-opacity-y"
   detailsInert={isClosing}

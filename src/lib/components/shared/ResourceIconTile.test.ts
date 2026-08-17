@@ -19,8 +19,20 @@ describe('ResourceIconTile', () => {
     const tile = container.querySelector<HTMLElement>('[data-resource-icon-tile]')!;
 
     expect(tile.dataset.resourceKind).toBe(kind);
+    expect(tile.dataset.resourceIconVariant).toBe('standard');
     expect(tile.getAttribute('aria-hidden')).toBe('true');
     expect(tile.querySelector('[data-resource-icon-glyph]')).toBeTruthy();
     expect(tile.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe(iconName);
+  });
+
+  it('supports the larger panel identity geometry without changing the default', () => {
+    const { container } = render(ResourceIconTile, {
+      props: { kind: 'note', variant: 'emphasized' },
+    });
+
+    expect(
+      container.querySelector<HTMLElement>('[data-resource-icon-tile]')?.dataset
+        .resourceIconVariant,
+    ).toBe('emphasized');
   });
 });

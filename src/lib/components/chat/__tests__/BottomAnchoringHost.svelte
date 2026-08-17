@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { followBottom, type FollowBottomState } from '$lib/utils/smartScroll';
+  import {
+    beforeFollowBottomMutation,
+    followBottom,
+    followToBottom,
+    type FollowBottomState,
+  } from '$lib/utils/smartScroll';
   import { createHeightLedger } from '../lazy-turn-scroll-ledger';
 
   interface Props {
@@ -17,6 +22,7 @@
     composerHeight?: number;
     disclosureExpanded?: boolean;
     virtualHeight?: number;
+    streamingActive?: boolean;
   }
 
   let {
@@ -33,9 +39,11 @@
     composerHeight = 72,
     disclosureExpanded = false,
     virtualHeight = 180,
+    streamingActive = false,
   }: Props = $props();
   let scrollRoot = $state<HTMLDivElement>();
   let virtualTurn = $state<HTMLDivElement>();
+  let stream = $state<HTMLDivElement>();
   let follow = $state(true);
   let distance = $state(0);
   const ledger = createHeightLedger(
@@ -46,6 +54,16 @@
   function report(state: FollowBottomState) {
     distance = state.distanceFromBottom;
   }
+
+  function relock() {
+    if (scrollRoot) followToBottom(scrollRoot);
+  }
+
+  $effect(() => {
+    if (!streamingActive || !stream) return;
+    const mutation = beforeFollowBottomMutation(stream);
+    return () => mutation.settle();
+  });
 
   onMount(() => {
     if (!virtualTurn) return;
@@ -65,6 +83,7 @@
 >
   <header class="h-10 shrink-0 border-b border-border px-3 py-2">
     <span data-testid="bottom-state">{follow ? 'locked' : 'unlocked'}:{distance}</span>
+    <button data-testid="relock" onclick={relock}>Follow bottom</button>
   </header>
   <div
     bind:this={scrollRoot}
@@ -90,6 +109,7 @@
       <div class="h-16 px-4 py-3" data-testid={`sent-${index}`}>Sent message {index}</div>
     {/each}
     <div
+      bind:this={stream}
       class="overflow-hidden bg-muted/20 transition-[height] duration-200"
       data-testid="stream"
       style:height="{streamHeight}px"

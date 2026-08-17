@@ -12,6 +12,9 @@
   import { getActivityLabel } from '$features/events/activity-labels';
   import type { WorkspaceEvent } from '$features/events/types';
   import InlineAgentAvatar from './InlineAgentAvatar.svelte';
+  import AgentAvatarStack, {
+    type AgentAvatarStackItem,
+  } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import { categorizeEventTypes, firstNonEmptyString } from './event-wake-summary';
   import {
     SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
@@ -20,7 +23,7 @@
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
     SUBSCRIPTION_ICON_CLASS,
-    SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS,
+    EVENT_WAKEUP_IN_THREAD_SPACING_CLASS,
     safeSubscriptionRowTransition,
     safeSubscriptionSlide,
   } from './subscription-disclosure';
@@ -349,6 +352,13 @@
 
     return Array.from(agentMap.values());
   });
+  const agentEventsById = $derived(new Map(agentEvents.map((event) => [event.agentId, event])));
+  const agentEventStackItems = $derived(
+    agentEvents.map((event): AgentAvatarStackItem => ({
+      key: event.agentId,
+      agentId: event.agentId,
+    })),
+  );
 
   function usesHeaderAgentIdentity(event: EventDetail): boolean {
     return (
@@ -388,7 +398,7 @@
   <div
     class="event-wakeup-banner group/banner {SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {embedded
       ? ''
-      : `${SUBSCRIPTION_CARD_SURFACE_CLASS} ${SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS}`}"
+      : `${SUBSCRIPTION_CARD_SURFACE_CLASS} ${EVENT_WAKEUP_IN_THREAD_SPACING_CLASS}`}"
     data-testid="event-wakeup-card"
     data-embedded={embedded}
     data-external-spacing-owner={!embedded ? 'event-wakeup-card' : undefined}
@@ -401,27 +411,30 @@
           <div class={SUBSCRIPTION_DISCLOSURE_ROW_CLASS} data-testid="event-wakeup-header">
             {#if showAgentCards && agentEvents.length > 0}
               <div
-                class="event-wakeup-avatar-stack flex min-w-0 shrink items-center overflow-hidden"
+                class="flex min-w-0 shrink-0 items-center overflow-hidden"
                 data-testid="event-wakeup-avatar-stack"
               >
-                {#each agentEvents.slice(0, 5) as event (event.agentId)}
-                  <InlineAgentAvatar
-                    agentId={event.agentId}
-                    agentName={event.agentName}
-                    {workspace}
-                    isCompleted={event.type !== 'agent:created'}
-                    onclick={(pointerEvent) => openAgent(pointerEvent, event.agentId)}
-                  />
-                {/each}
-                {#if agentEvents.length > 5}
-                  <span
-                    class="event-wakeup-avatar-overflow text-xs text-subtle"
-                    data-testid="event-wakeup-avatar-overflow"
-                    data-agent-avatar-overflow
-                  >
-                    +{formatInteger(agentEvents.length - 5)}
-                  </span>
-                {/if}
+                {#snippet wakeupAvatar(item: AgentAvatarStackItem)}
+                  {@const event = agentEventsById.get(item.agentId)}
+                  {#if event}
+                    <InlineAgentAvatar
+                      agentId={event.agentId}
+                      agentName={event.agentName}
+                      {workspace}
+                      isCompleted={event.type !== 'agent:created'}
+                      onclick={(pointerEvent) => openAgent(pointerEvent, event.agentId)}
+                    />
+                  {/if}
+                {/snippet}
+                <AgentAvatarStack
+                  items={agentEventStackItems}
+                  maxVisible={5}
+                  align="start"
+                  interactive
+                  variant="standard"
+                  overflowTestId="event-wakeup-avatar-overflow"
+                  itemContent={wakeupAvatar}
+                />
               </div>
             {:else}
               <Fa
@@ -572,23 +585,3 @@
     <span>{friendlySummary}</span>
   </div>
 {/if}
-
-<style>
-  .event-wakeup-avatar-stack > :global(* + *) {
-    margin-inline-start: calc(-1 * var(--agent-avatar-standard-stack-overlap));
-  }
-
-  .event-wakeup-avatar-overflow {
-    display: inline-flex;
-    width: max-content;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    margin-inline-start: 0.25rem !important;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-    font-size: 0.75rem;
-    line-height: 1;
-  }
-</style>

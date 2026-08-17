@@ -128,6 +128,40 @@ describe('appLayoutNavigationSaga', () => {
     await task.toPromise();
   });
 
+  it('uses the explicit layout and source panel for a normal agent open', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      {
+        channel,
+        dispatch,
+        getState: () => ({
+          agentSessions: { byAgentId: { 'agent-1': { id: 'agent-1', name: 'Ada' } } },
+        }),
+      },
+      appLayoutNavigationSaga,
+    );
+    channel.put(
+      openAgentTabRequested('ws-1', {
+        agentId: 'agent-1',
+        panelLayoutId: 'layout-1',
+        sourcePanelId: 'working-panel',
+      }),
+    );
+    await settle();
+
+    expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
+      type: 'panelLayout/openTabInNewRootColumn',
+      payload: {
+        wsId: 'layout-1',
+        sourcePanelId: 'working-panel',
+        tab: { agentId: 'agent-1', workspaceId: 'ws-1' },
+      },
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('pins only the panel correlated to an explicit agent open request', async () => {
     const channel = stdChannel();
     let state: any = {

@@ -29,12 +29,15 @@ describe('editorial workspace shell presentation contract', () => {
     expect(workspace).toContain('position: absolute');
   });
 
-  it('uses a clipped semantic card surface with a consistent light border', () => {
+  it('uses one clipped semantic shell for the panel background, radius, and border', () => {
     const panel = source('../Panel.svelte');
+    const container = source('../PanelContainer.svelte');
 
     expect(panel).toContain('overflow-hidden rounded-lg border border-border');
-    expect(panel).toContain("? 'bg-transparent text-sidebar-foreground'");
+    expect(panel).toContain("? 'bg-sidebar text-sidebar-foreground'");
     expect(panel).toContain(": 'bg-card text-card-foreground'");
+    expect(panel).toContain('data-empty-panel-surface={');
+    expect(container).not.toContain("isEmptySurface && 'bg-sidebar text-sidebar-foreground'");
     expect(panel).toContain('width: 100%');
     expect(panel).toContain('min-width: 0');
     expect(panel).not.toContain('min-width: 30em');
@@ -216,9 +219,7 @@ describe('editorial workspace shell presentation contract', () => {
     const navigation = source('../../sidebar-nav/SidebarNav.svelte');
     const sidebarPanel = source('../../sidebar-nav/SidebarPanel.svelte');
 
-    expect(appLayout).toContain(
-      'workspace-frame-row flex flex-1 min-h-0 bg-transparent pb-2 pl-2',
-    );
+    expect(appLayout).toContain('workspace-frame-row flex flex-1 min-h-0 bg-transparent pb-2 pl-2');
     expect(appLayout).toContain('workspace-frame relative');
     expect(appLayout).not.toContain('<ChiefNotch />');
     expect(appLayout).not.toContain('clip-path: var(--workspace-clip');

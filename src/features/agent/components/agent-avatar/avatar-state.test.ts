@@ -1,16 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types';
 
-const {
-  getStateMock,
-  selectAgentSessionMock,
-  selectAgentIsRespondingMock,
-  selectAgentIsBlockedWaitingMock,
-} = vi.hoisted(() => ({
+const { getStateMock, selectAgentSessionMock, selectAgentIsRespondingMock } = vi.hoisted(() => ({
   getStateMock: vi.fn(() => ({ marker: 'state' })),
   selectAgentSessionMock: vi.fn(),
   selectAgentIsRespondingMock: vi.fn(),
-  selectAgentIsBlockedWaitingMock: vi.fn(),
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -22,21 +16,12 @@ vi.mock('$store/renderer/store', async () => {
   });
 });
 
-vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
-  selectAgentSession: {
-    select: selectAgentSessionMock,
-  },
-}));
-
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: {
     select: selectAgentSessionMock,
   },
   selectAgentIsResponding: {
     select: selectAgentIsRespondingMock,
-  },
-  selectAgentIsBlockedWaiting: {
-    select: selectAgentIsBlockedWaitingMock,
   },
 }));
 
@@ -47,25 +32,37 @@ describe('avatar-state store-backed selectors', () => {
     getStateMock.mockClear();
     selectAgentSessionMock.mockReset();
     selectAgentIsRespondingMock.mockReset();
-    selectAgentIsBlockedWaitingMock.mockReset();
   });
 
-  it('uses selectAgentIsResponding for running state', () => {
-    selectAgentSessionMock.mockReturnValue({ id: 'agent-1', status: AgentStatus.Active });
+  it('uses the canonical session fields for running state', () => {
+    selectAgentSessionMock.mockReturnValue({
+      id: 'agent-1',
+      status: AgentStatus.Active,
+      isResponding: true,
+    });
     selectAgentIsRespondingMock.mockReturnValue(true);
-    selectAgentIsBlockedWaitingMock.mockReturnValue(false);
-
     expect(getAvatarStateFromStore('ws-1', 'agent-1')).toBe('running');
-    expect(selectAgentIsRespondingMock).toHaveBeenCalledWith({ marker: 'state' }, 'agent-1');
   });
 
-  it('lets a blocked wait take precedence over responding for avatar state', () => {
-    selectAgentSessionMock.mockReturnValue({ id: 'agent-1', status: AgentStatus.Processing });
+  it('lets active orchestration work take precedence over a peer-wait flag', () => {
+    selectAgentSessionMock.mockReturnValue({
+      id: 'agent-1',
+      status: AgentStatus.Processing,
+      isResponding: true,
+      isWaitingForOtherAgents: true,
+    });
     selectAgentIsRespondingMock.mockReturnValue(true);
-    selectAgentIsBlockedWaitingMock.mockReturnValue(true);
+    expect(getAvatarStateFromStore('ws-1', 'agent-1')).toBe('running');
+  });
 
+  it('renders a peer wait after its active turn ends', () => {
+    selectAgentSessionMock.mockReturnValue({
+      id: 'agent-1',
+      status: AgentStatus.Idle,
+      isResponding: false,
+      isWaitingForOtherAgents: true,
+    });
     expect(getAvatarStateFromStore('ws-1', 'agent-1')).toBe('waiting');
-    expect(selectAgentIsBlockedWaitingMock).toHaveBeenCalledWith({ marker: 'state' }, 'agent-1');
   });
 
   it('uses selectAgentIsResponding for store-backed streaming checks', () => {

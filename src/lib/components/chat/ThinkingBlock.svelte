@@ -76,17 +76,20 @@
 {/snippet}
 
 {#snippet details()}
-  <MarkdownViewer
-    content={reasoningContent.body}
-    {isStreaming}
-    {workspaceId}
-    taskBlockRenderMode="content"
-  />
+  <div class="reasoning-expanded-body" data-reasoning-expanded-body>
+    <MarkdownViewer
+      content={reasoningContent.body}
+      {isStreaming}
+      {workspaceId}
+      taskBlockRenderMode="content"
+    />
+  </div>
 {/snippet}
 
 <ChatOperationalRow
   {leading}
   {summary}
+  showChevron={false}
   details={isExpanded ? details : undefined}
   interactive
   expanded={isExpanded}
@@ -96,7 +99,7 @@
   summaryTitle={toggleLabel}
   onclick={toggle}
   onkeydown={handleDisclosureKeydown}
-  detailsClass="{OPERATIONAL_EXPANDED_CONTENT_CLASS} type-caption text-muted-foreground [&_p]:my-2 [&_p:first-child]:mt-0 [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
+  detailsClass="{OPERATIONAL_EXPANDED_CONTENT_CLASS} type-caption text-muted-foreground [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
   {adjacentOperationalRow}
   streaming={isStreaming}
   testId="reasoning-tool-call"
@@ -104,3 +107,26 @@
   summaryTestId="reasoning-summary"
   class={className}
 />
+
+<style>
+  .reasoning-expanded-body :global(.markdown-viewer),
+  .reasoning-expanded-body :global(.markdown-viewer > .ProseMirror) {
+    display: flex;
+    flex-direction: column;
+    row-gap: 0.5rem;
+  }
+
+  .reasoning-expanded-body :global(.markdown-viewer > *),
+  .reasoning-expanded-body :global(.markdown-viewer > .ProseMirror > *) {
+    margin-block: 0 !important;
+  }
+
+  .reasoning-expanded-body :global(.markdown-viewer :is(h1, h2, h3, h4, h5, h6):not(:first-child)) {
+    margin-block-start: 1.5rem !important;
+  }
+
+  .reasoning-expanded-body :global(.markdown-viewer :is(br + strong, p > strong:only-child)) {
+    display: block;
+    margin-block-start: 1.5rem;
+  }
+</style>

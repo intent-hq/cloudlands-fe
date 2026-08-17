@@ -14,10 +14,10 @@ describe('panel content insets', () => {
 
     expect(header).toContain('bg-card pr-2.5');
     expect(header).toContain(
-      '(var(--panel-header-height) - var(--agent-avatar-standard-surface-size)) / 2',
+      '(var(--panel-header-height) - var(--agent-avatar-emphasized-surface-size)) / 2',
     );
     expect(panel).not.toContain('max-w-[var(--content-measure-');
-    expect(panel).toContain(": 'px-4 pt-2 sm:px-6'");
+    expect(panel).toContain(": 'px-4 pt-8 sm:px-6'");
     expect(panel).toContain('chatTranscriptBottomInsetClass({');
     expect(panel).toContain('{transcriptBottomInsetClass}');
     expect(panel).not.toContain('eventSubscriptionsOwnEndGap');

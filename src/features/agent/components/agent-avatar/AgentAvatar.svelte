@@ -73,6 +73,9 @@
     width: var(--agent-avatar-surface-size, 20px);
     height: var(--agent-avatar-surface-size, 20px);
     border-radius: var(--agent-avatar-corner-radius, 6px);
+    background-color: var(--agent-avatar-background, hsl(var(--agent-avatar-surface-neutral)));
+    opacity: 1;
+    forced-color-adjust: auto;
   }
 
   .agent-avatar--named {
@@ -81,5 +84,14 @@
 
   .agent-avatar--legacy {
     padding: 0;
+  }
+
+  @media (forced-colors: active) {
+    .agent-avatar {
+      background-color: var(--agent-avatar-background-forced, Canvas);
+      color: CanvasText;
+      outline: var(--agent-avatar-outline-forced, 1px solid CanvasText);
+      outline-offset: -1px;
+    }
   }
 </style>

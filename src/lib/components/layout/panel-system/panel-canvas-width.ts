@@ -48,10 +48,32 @@ export function getPanelCanvasWidths(
     persistedWidth > 0
       ? persistedWidth
       : null;
-  const allocation = allocatePanelWidths(
+  const intrinsicCanvasWidth =
+    persistedWidthSource === 'intrinsic' &&
+    persistedWidth !== null &&
+    Number.isFinite(persistedWidth) &&
+    persistedWidth > 0
+      ? persistedWidth
+      : null;
+  let allocation = allocatePanelWidths(
     preferredWidths,
     sizing === 'viewport' ? (explicitCanvasWidth ?? viewportWidth) : 0,
   );
+  if (intrinsicCanvasWidth !== null) {
+    const targetWidth =
+      sizing === 'viewport' && viewportWidth > 0
+        ? Math.min(viewportWidth, intrinsicCanvasWidth)
+        : intrinsicCanvasWidth;
+    const gapWidth = PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, preferredWidths.length - 1);
+    const preferredTotal = preferredWidths.reduce((sum, width) => sum + width, 0);
+    const scale = preferredTotal > 0 ? Math.max(0, targetWidth - gapWidth) / preferredTotal : 0;
+    allocation = {
+      panelWidths: preferredWidths.map((width) => width * scale),
+      canvasWidth: targetWidth,
+      availablePanelWidth: Math.max(0, targetWidth - gapWidth),
+      overflows: false,
+    };
+  }
   const resetPreferredWidths =
     typeof resetPanelColumns === 'number'
       ? Array.from({ length: Math.max(1, resetPanelColumns) }, () => DEFAULT_PANEL_WIDTH)

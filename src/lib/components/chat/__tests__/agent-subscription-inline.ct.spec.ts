@@ -849,18 +849,62 @@ test('fits one through eight participants and computes overflow from remaining a
       devicePixelRatio: window.devicePixelRatio,
     };
   });
-  expect(style.zIndexes).toEqual([8, 7, 6, 5, 4, 3, 2, 1]);
-  expect(style.masks[0]).toBe('none');
-  for (const mask of style.masks.slice(1)) {
+  expect(style.zIndexes).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  expect(style.masks.at(-1)).toBe('none');
+  for (const mask of style.masks.slice(0, -1)) {
     expect(mask).toContain('url(');
     expect(mask).not.toContain('radial-gradient');
   }
   expect(style.avatarPseudos).toEqual(Array(8).fill({ content: 'none', width: '0px' }));
-  expect(style.overflowFontSize).toBe('11px');
+  expect(style.overflowFontSize).toBe('12px');
   expect(style.overflowBackground).toBe('rgba(0, 0, 0, 0)');
   expect(
     Math.abs(style.overflowCenterY - style.stackCenterY) * style.devicePixelRatio,
   ).toBeLessThanOrEqual(0.5);
+});
+
+test('keeps the complete waiting count ahead of the adaptive stack at narrow widths', async ({
+  mount,
+}) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { mode: 'agents', agentCount: 6, width: 260, initiallyExpanded: false },
+  });
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const zoom of [1, 2]) {
+      await component.update({
+        props: { theme, zoom, mode: 'agents', agentCount: 6, width: 260, initiallyExpanded: false },
+      });
+      const summary = component.getByTestId('one-shot-summary-toggle');
+      const title = component.getByTestId('one-shot-summary-title');
+      const stack = summary.locator('[data-agent-avatar-stack]');
+      await expect(summary).toHaveAccessibleName('Waiting for 6 agents');
+      await expect(title).toHaveText('Waiting for 6 agents');
+      await expect
+        .poll(() => stack.locator('[data-agent-avatar-stack-item]').count())
+        .toBeLessThan(6);
+
+      const geometry = await summary.evaluate(
+        (button, [titleTestId, chevronTestId]) => {
+          const titleNode = button.querySelector(`[data-testid="${titleTestId}"]`)!;
+          const chevronNode = button.querySelector(`[data-testid="${chevronTestId}"]`)!;
+          const titleBox = titleNode.getBoundingClientRect();
+          const chevronBox = chevronNode.getBoundingClientRect();
+          return {
+            titleRight: titleBox.right,
+            chevronLeft: chevronBox.left,
+            buttonRight: button.getBoundingClientRect().right,
+            titleScrollWidth: (titleNode as HTMLElement).scrollWidth,
+            titleClientWidth: (titleNode as HTMLElement).clientWidth,
+          };
+        },
+        ['one-shot-summary-title', 'one-shot-collapse-toggle'],
+      );
+      expect(geometry.titleScrollWidth).toBe(geometry.titleClientWidth);
+      expect(geometry.titleRight).toBeLessThanOrEqual(geometry.chevronLeft);
+      expect(geometry.chevronLeft).toBeLessThan(geometry.buttonRight);
+    }
+  }
 });
 
 test('toggles exactly once from every full-row disclosure region and not from agent rows', async ({
@@ -1046,7 +1090,7 @@ test('keeps 27 live participant surfaces on one rounded-square overlap geometry'
         .poll(() => stack.locator('[data-agent-avatar-stack-item]').count())
         .toBeGreaterThanOrEqual(6);
       const visibleCount = await stack.locator('[data-agent-avatar-stack-item]').count();
-      expect(visibleCount).toBeLessThanOrEqual(7);
+      expect(visibleCount).toBeLessThanOrEqual(8);
       await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveText(
         `+${27 - visibleCount}`,
       );
@@ -1107,7 +1151,7 @@ test('keeps 27 live participant surfaces on one rounded-square overlap geometry'
       });
 
       expect(geometry.map((entry) => entry.zIndex)).toEqual(
-        Array.from({ length: visibleCount }, (_, index) => visibleCount - index),
+        Array.from({ length: visibleCount }, (_, index) => index + 1),
       );
       expect(geometry.map((entry) => entry.state)).toEqual([
         'running',
@@ -1132,17 +1176,70 @@ test('keeps 27 live participant surfaces on one rounded-square overlap geometry'
           pseudoBorder: '0px',
           pseudoShadow: 'none',
         });
-        if (index === 0) expect(entry.maskImage).toBe('none');
+        if (index === visibleCount - 1) expect(entry.maskImage).toBe('none');
         else {
           expect(entry.maskImage).toContain('url(');
           expect(entry.maskImage).not.toContain('radial-gradient');
-          const previous = geometry[index - 1];
-          expect(previous.itemBox.right - entry.itemBox.left).toBeCloseTo(6 * zoom, 1);
+          const next = geometry[index + 1];
+          expect(entry.itemBox.right - next.itemBox.left).toBeCloseTo(6 * zoom, 1);
         }
       }
     }
   }
 });
+
+const canonicalAgentStateCases = [
+  ['responding', 'running'],
+  ['live-payload-tool', 'running'],
+  ['in-flight-tool', 'running'],
+  ['blocked-tool', 'waiting'],
+  ['active-peer-turn', 'running'],
+  ['peer-wait', 'waiting'],
+  ['stale-waiting', 'running'],
+] as const;
+
+for (const [agentStateScenario, expected] of canonicalAgentStateCases) {
+  test(`keeps ${agentStateScenario} ${expected} in production subscription surfaces`, async ({
+    mount,
+  }) => {
+    const component = await mount(AgentSubscriptionInlineHost, {
+      props: {
+        mode: 'mixed',
+        agentCount: 7,
+        initiallyExpanded: false,
+        agentStateScenario,
+      },
+    });
+    const outerSummary = component.getByTestId('event-subscriptions-summary');
+    if ((await outerSummary.getAttribute('aria-expanded')) === 'false') await outerSummary.click();
+    const waitingSummary = component.getByTestId('one-shot-summary-toggle');
+    if ((await waitingSummary.getAttribute('aria-expanded')) === 'false')
+      await waitingSummary.click();
+    await expect(
+      component
+        .locator(
+          '[data-testid="agent-list-item"][data-agent-id="agent-subscription-inline-geometry"]',
+        )
+        .locator('[data-agent-avatar-with-state]'),
+      `${agentStateScenario} should render ${expected} in the expanded row`,
+    ).toHaveAttribute('data-avatar-state', expected);
+
+    await waitingSummary.click();
+    await expect(
+      waitingSummary
+        .locator('[data-agent-avatar-stack-agent-id="agent-subscription-inline-geometry"]')
+        .locator('[data-agent-avatar-with-state]'),
+      `${agentStateScenario} should remain ${expected} in the nested collapsed stack`,
+    ).toHaveAttribute('data-avatar-state', expected);
+    await outerSummary.click();
+    await expect(
+      outerSummary
+        .locator('[data-agent-avatar-stack-agent-id="agent-subscription-inline-geometry"]')
+        .locator('[data-agent-avatar-with-state]'),
+      `${agentStateScenario} should remain ${expected} in the collapsed stack`,
+    ).toHaveAttribute('data-avatar-state', expected);
+  });
+}
 
 test('screenshots participant cutouts over varied parent backgrounds', async ({ mount }) => {
   const component = await mount(AgentSubscriptionInlineHost, {

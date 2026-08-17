@@ -107,7 +107,7 @@ function providerForModel(model: string, fallback: string): string {
 }
 
 function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): SagaGenerator<void> {
-  const [wsId, agentType] = action.payload;
+  const [wsId, agentType, options] = action.payload;
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   const agents = yield* selectAllWorkspaceAgents.effect(wsId);
@@ -132,7 +132,13 @@ function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): Sag
       return;
     }
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
-    yield* put(openAgentTabRequested(wsId, { agentId: result.agent.id }));
+    yield* put(
+      openAgentTabRequested(wsId, {
+        agentId: result.agent.id,
+        panelLayoutId: options?.panelLayoutId,
+        sourcePanelId: options?.panelId,
+      }),
+    );
   } catch (error) {
     logger.error('Failed to create agent', { workspaceId: wsId, error });
   }
@@ -141,7 +147,7 @@ function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): Sag
 function* createSpecialistAgent(
   action: ReturnType<typeof createAgentWithSpecialistRequested>,
 ): SagaGenerator<void> {
-  const [wsId, specialistId] = action.payload;
+  const [wsId, specialistId, options] = action.payload;
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   const agents = yield* selectAllWorkspaceAgents.effect(wsId);
@@ -181,7 +187,13 @@ function* createSpecialistAgent(
       return;
     }
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
-    yield* put(openAgentTabRequested(wsId, { agentId: result.agent.id }));
+    yield* put(
+      openAgentTabRequested(wsId, {
+        agentId: result.agent.id,
+        panelLayoutId: options?.panelLayoutId,
+        sourcePanelId: options?.panelId,
+      }),
+    );
   } catch (error) {
     logger.error('Failed to create specialist agent', { workspaceId: wsId, error });
   }

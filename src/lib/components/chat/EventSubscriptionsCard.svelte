@@ -57,6 +57,7 @@
   let hookCount = $state(0);
   let prCount = $state(0);
   let participantAgentIds = $state<string[]>([]);
+  let participantAvatarItems = $state<AgentAvatarStackItem[]>([]);
   let isCollapsed = $state(false);
   let desiredCollapsed = $state(false);
   let bodyIsClosing = $state(false);
@@ -79,13 +80,7 @@
   const agentOnlyCount = $derived(
     isolatedPreview?.mode === 'agents' ? (isolatedPreview.agents?.length ?? 0) : agentCount,
   );
-  const collapsedStackItems = $derived.by(() => {
-    return participantAgentIds.map((participantAgentId): AgentAvatarStackItem => ({
-      key: participantAgentId,
-      agentId: participantAgentId,
-      state: 'waiting',
-    }));
-  });
+  const collapsedStackItems = $derived(participantAvatarItems);
 
   const heading = $derived.by(() => {
     if (isolatedPreview && !isAgentOnly) {
@@ -170,7 +165,7 @@
           aria-controls={bodyId}
           onclick={toggleCollapsed}
         >
-          <span class="min-w-0 shrink {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
+          <span class="w-max shrink-0 {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
             <span
               class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
               data-testid="event-subscriptions-leading-column"
@@ -183,7 +178,7 @@
               />
             </span>
             <span
-              class="min-w-0 truncate text-muted-foreground"
+              class="whitespace-nowrap text-muted-foreground"
               data-testid="event-subscriptions-summary-title"
             >
               {heading}
@@ -235,6 +230,7 @@
                 initiallyExpanded: isolatedPreview.initiallyExpanded ?? true,
               }}
               bind:participantAgentIds
+              bind:participantAvatarItems
             />
           </div>
           {#if isolatedPreview.mode === 'mixed'}
@@ -261,6 +257,7 @@
               bind:visible={agentsVisible}
               bind:count={agentCount}
               bind:participantAgentIds
+              bind:participantAvatarItems
             />
           </div>
           <div

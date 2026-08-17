@@ -811,7 +811,7 @@
 {/snippet}
 
 <div
-  class="relative flex flex-col gap-1"
+  class="relative flex flex-col gap-0"
   class:streaming={isStreaming}
   style="contain: layout style paint;"
   data-tool-executing={[...toolStates.values()].some((s) => s === 'running')}

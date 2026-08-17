@@ -538,9 +538,10 @@ describe('WorkspaceColumnsView', () => {
     expect([...workspaceColumns].every((column) => column.classList.contains('shadow-sm'))).toBe(
       true,
     );
-    const columnsLayout = screen.getByLabelText('Open spaces in columns').firstElementChild;
+    const columnsLayout = screen.getByLabelText('Open spaces in columns')
+      .firstElementChild as HTMLElement | null;
     expect(columnsLayout?.classList.contains('gap-3')).toBe(true);
-    expect(columnsLayout?.classList.contains('p-2')).toBe(true);
+    expect(columnsLayout?.style.padding).toBe('var(--workspace-reveal-inset)');
   });
 
   it('adds the intrinsic panel canvas width and inset chrome to the measured sidebar width', () => {
@@ -610,12 +611,13 @@ describe('WorkspaceColumnsView', () => {
   it('keeps the scrollable right gutter without an outer workspace resize handle', () => {
     render(WorkspaceColumnsView);
 
-    const scroller = document.querySelector('[data-workspace-columns]');
-    const columnsTrack = document.querySelector('[data-workspace-columns]')?.firstElementChild;
+    const scroller = document.querySelector<HTMLElement>('[data-workspace-columns]');
+    const columnsTrack = scroller?.firstElementChild as HTMLElement | null;
 
     expect(scroller?.classList.contains('scrollbar-none')).toBe(true);
     expect(scroller?.classList.contains('overflow-x-auto')).toBe(true);
-    expect(columnsTrack?.classList.contains('p-2')).toBe(true);
+    expect(scroller?.style.getPropertyValue('--workspace-reveal-inset')).toBe('0.5rem');
+    expect(columnsTrack?.style.padding).toBe('var(--workspace-reveal-inset)');
     expect(document.querySelector('[data-mock-resize-handle]')).toBeNull();
     expect(document.querySelector('[data-resize-scroll-container="true"]')).toBeNull();
   });
@@ -828,7 +830,7 @@ describe('WorkspaceColumnsView', () => {
     currentWorkspaceId.set('ws-1');
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 450));
-    expect(scroller.scrollLeft).toBe(500);
+    expect(scroller.scrollLeft).toBe(492);
 
     mocks.dispatch.mockClear();
     mocks.goto.mockClear();
@@ -870,7 +872,7 @@ describe('WorkspaceColumnsView', () => {
       );
       await tick();
 
-      expect(scroller.scrollLeft).toBe(600);
+      expect(scroller.scrollLeft).toBe(592);
       expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       Element.prototype.scrollIntoView = originalScrollIntoView;
@@ -898,7 +900,7 @@ describe('WorkspaceColumnsView', () => {
       ),
     );
     await tick();
-    expect(scroller.scrollLeft).toBe(600);
+    expect(scroller.scrollLeft).toBe(592);
     expect(scroller.getAttribute('data-anchored-workspace-column')).toBe('ws-3');
     return { scroller, target };
   }
@@ -913,7 +915,7 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(scroller.scrollLeft).toBe(840);
+    expect(scroller.scrollLeft).toBe(824);
     expect(scroller.getAttribute('data-anchored-workspace-column')).toBe('ws-3');
   });
 
@@ -949,7 +951,7 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(scroller.scrollLeft).toBe(600);
+    expect(scroller.scrollLeft).toBe(592);
   });
 
   it('does not re-anchor after the width-settle window has elapsed', async () => {
@@ -964,7 +966,7 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(scroller.scrollLeft).toBe(600);
+    expect(scroller.scrollLeft).toBe(592);
   });
 
   it('keeps layout motion disabled until the post-jump settle window ends', async () => {
@@ -991,7 +993,7 @@ describe('WorkspaceColumnsView', () => {
 
     currentWorkspaceId.set('ws-3');
     await tick();
-    await waitFor(() => expect(scroller.scrollLeft).toBe(460), { timeout: 1000 });
+    await waitFor(() => expect(scroller.scrollLeft).toBe(892), { timeout: 1000 });
   });
 
   it('mounts only the landing window on initial mount, not intermediate columns', async () => {
@@ -1040,10 +1042,34 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 450));
 
-    expect(scroller.scrollLeft).toBe(460);
+    expect(scroller.scrollLeft).toBe(892);
   });
 
-  it('does not scroll a newly selected workspace that is already visible', async () => {
+  it('re-reveals the active workspace after remove, add, and reorder changes', async () => {
+    render(WorkspaceColumnsView);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const scroller = screen.getByLabelText('Open spaces in columns');
+    const target = screen.getByLabelText('Workspace column ws-2');
+    scroller.getBoundingClientRect = vi.fn(() => ({ left: 0, right: 800 }) as DOMRect);
+
+    scroller.scrollLeft = 500;
+    target.getBoundingClientRect = vi.fn(() => ({ left: -20, right: 340 }) as DOMRect);
+    workspaceStacks.set([['ws-2'], ['ws-3']]);
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(scroller.scrollLeft).toBe(472);
+
+    target.getBoundingClientRect = vi.fn(() => ({ left: 600, right: 960 }) as DOMRect);
+    workspaceStacks.set([['ws-1'], ['ws-2'], ['ws-3']]);
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(scroller.scrollLeft).toBeCloseTo(1064);
+
+    target.getBoundingClientRect = vi.fn(() => ({ left: 100, right: 460 }) as DOMRect);
+    workspaceStacks.set([['ws-2'], ['ws-3'], ['ws-1']]);
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(scroller.scrollLeft).toBe(1156);
+  });
+
+  it('aligns a newly selected visible workspace to the padded start edge', async () => {
     render(WorkspaceColumnsView);
     const scroller = screen.getByLabelText('Open spaces in columns');
     const target = screen.getByLabelText('Workspace column ws-3');
@@ -1054,7 +1080,7 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 400));
 
-    expect(scroller.scrollLeft).toBe(0);
+    expect(scroller.scrollLeft).toBe(392);
   });
 
   it('reveals a newly opened panel from its canonical request after layout expands', async () => {
@@ -1071,7 +1097,7 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 450));
 
-    expect(scroller.scrollLeft).toBe(580);
+    expect(scroller.scrollLeft).toBe(588);
   });
 
   it('does not scroll a newly opened panel that is already visible', async () => {
@@ -1129,7 +1155,7 @@ describe('WorkspaceColumnsView', () => {
       await tick();
       await new Promise((resolve) => setTimeout(resolve, 450));
 
-      expect(scroller.scrollLeft).toBeCloseTo(reducedMotion ? 80 : 200, 0);
+      expect(scroller.scrollLeft).toBeCloseTo(reducedMotion ? 88 : 208, 0);
       expect(
         mocks.dispatch.mock.calls.filter(
           ([action]) => action.type === 'panelLayout/consumePanelReveal',
@@ -1165,7 +1191,7 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 450));
 
-    expect(scroller.scrollLeft).toBe(100);
+    expect(scroller.scrollLeft).toBe(108);
     expect(
       mocks.dispatch.mock.calls
         .map(([action]) => action)

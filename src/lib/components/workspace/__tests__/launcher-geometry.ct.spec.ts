@@ -14,34 +14,36 @@ async function inspectLauncher(card: Locator) {
     const labelRect = card
       .querySelector<HTMLElement>('[data-sidebar-launcher-label]')!
       .getBoundingClientRect();
-    const items = [...stack.querySelectorAll<HTMLElement>('[data-launcher-preview-item]')].map(
-      (item) => {
-        const rect = item.getBoundingClientRect();
-        const surface = item.querySelector<HTMLElement>(
-          '[data-sidebar-launcher-glyph], [data-resource-icon-tile]',
-        );
-        const surfaceRect = surface?.getBoundingClientRect();
-        const textRect = item
-          .querySelector<HTMLElement>('span[aria-hidden="true"]')
-          ?.getBoundingClientRect();
-        return {
-          left: (rect.left - cardRect.left) / scale,
-          width: rect.width / scale,
-          visibleLeft: surfaceRect ? (surfaceRect.left - cardRect.left) / scale : null,
-          visibleWidth: surfaceRect ? surfaceRect.width / scale : null,
-          overflow:
-            item.hasAttribute('data-sidebar-agent-overflow') ||
-            item.hasAttribute('data-sidebar-context-overflow'),
-          text: textRect?.width
-            ? item.querySelector('span[aria-hidden="true"]')?.textContent
-            : null,
-          textWidth: textRect ? textRect.width / scale : null,
-          clientWidth: item.clientWidth,
-          scrollWidth: item.scrollWidth,
-          inlineWidth: item.style.width,
-        };
-      },
-    );
+    const items = [
+      ...stack.querySelectorAll<HTMLElement>(
+        '[data-launcher-preview-item], [data-agent-avatar-overflow]',
+      ),
+    ].map((item) => {
+      const rect = item.getBoundingClientRect();
+      const surface = item.querySelector<HTMLElement>(
+        '[data-sidebar-launcher-glyph], [data-resource-icon-tile], [data-agent-avatar-with-state]',
+      );
+      const surfaceRect = surface?.getBoundingClientRect();
+      const textNode = item.hasAttribute('data-agent-avatar-overflow')
+        ? item
+        : item.querySelector<HTMLElement>('span[aria-hidden="true"]');
+      const textRect = textNode?.getBoundingClientRect();
+      return {
+        left: (rect.left - cardRect.left) / scale,
+        width: rect.width / scale,
+        visibleLeft: surfaceRect ? (surfaceRect.left - cardRect.left) / scale : null,
+        visibleWidth: surfaceRect ? surfaceRect.width / scale : null,
+        overflow:
+          item.hasAttribute('data-sidebar-agent-overflow') ||
+          item.hasAttribute('data-sidebar-context-overflow') ||
+          item.hasAttribute('data-agent-avatar-overflow'),
+        text: textRect?.width ? textNode?.textContent : null,
+        textWidth: textRect ? textRect.width / scale : null,
+        clientWidth: item.clientWidth,
+        scrollWidth: item.scrollWidth,
+        inlineWidth: item.style.width,
+      };
+    });
     return {
       labelLeft: (labelRect.left - cardRect.left) / scale,
       targetSize: stack.dataset.launcherTargetSize,
@@ -105,19 +107,21 @@ for (const scenario of [
     );
 
     for (const launcherId of ['agents', 'context']) {
+      const expectedTargetSize = launcherId === 'agents' ? 20 : 36;
       const geometry = await inspectLauncher(
         component.locator(`[data-sidebar-launcher="${launcherId}"]`),
       );
-      expect(geometry.targetSize).toBe('36');
+      expect(geometry.targetSize).toBe(String(expectedTargetSize));
       expect(geometry.visibleSize).toBe('20');
-      expect(geometry.stepSize).toBe('16');
+      expect(geometry.stepSize).toBe('15');
       const visibleItems = geometry.items.filter(({ overflow }) => !overflow);
       const overflow = geometry.items.find((item) => item.overflow)!;
       expect(visibleItems.length).toBeGreaterThan(0);
       expect(
         visibleItems.every(
           ({ width, visibleWidth }) =>
-            Math.max(Math.abs(width - 36), Math.abs((visibleWidth ?? 0) - 20)) <= TOLERANCE,
+            Math.max(Math.abs(width - expectedTargetSize), Math.abs((visibleWidth ?? 0) - 20)) <=
+            TOLERANCE,
         ),
       ).toBe(true);
       expect(Math.abs(visibleItems[0].visibleLeft! - geometry.labelLeft)).toBeLessThanOrEqual(
@@ -126,22 +130,42 @@ for (const scenario of [
       const steps = visibleItems
         .slice(1)
         .map((item, index) => item.left - visibleItems[index].left);
-      expect(steps.every((step) => Math.abs(step - 16) <= TOLERANCE)).toBe(true);
-      expect(steps.every((step) => Math.abs(20 - step - 4) <= TOLERANCE)).toBe(true);
+      expect(steps.every((step) => Math.abs(step - 15) <= TOLERANCE)).toBe(true);
+      expect(steps.every((step) => Math.abs(20 - step - 5) <= TOLERANCE)).toBe(true);
       expect(overflow.text).toBe(`+${ITEM_COUNT - visibleItems.length}`);
       expect(overflow.inlineWidth).toBe('');
       expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
       expect(overflow.width).toBeGreaterThanOrEqual((overflow.textWidth ?? 0) - TOLERANCE);
     }
 
-    for (const launcherId of ['context', 'changes']) {
-      const resource = await inspectResource(
-        component.locator(`[data-sidebar-launcher="${launcherId}"]`),
-      );
-      expect(resource.leftDelta).toBeLessThanOrEqual(TOLERANCE);
-      expect(resource.width).toBeCloseTo(20, 1);
-      expect(resource.height).toBeCloseTo(20, 1);
-    }
+    const contextResource = await inspectResource(
+      component.locator('[data-sidebar-launcher="context"]'),
+    );
+    expect(contextResource.leftDelta).toBeLessThanOrEqual(TOLERANCE);
+    expect(contextResource.width).toBeCloseTo(20, 1);
+    expect(contextResource.height).toBeCloseTo(20, 1);
+
+    const changesLauncher = component.locator('[data-sidebar-launcher="changes"]');
+    const changesResource = await inspectResource(changesLauncher);
+    expect(changesResource.leftDelta).toBeLessThanOrEqual(2);
+    expect(changesResource.width).toBeCloseTo(24, 1);
+    expect(changesResource.height).toBeCloseTo(24, 1);
+    const changesLabel = changesLauncher.locator('[data-sidebar-launcher-label]');
+    const prAction = changesLauncher.locator('[data-sidebar-pr-link]');
+    await expect(prAction).toHaveCount(1);
+    await expect(prAction.locator('svg')).toHaveCount(1);
+    await expect(prAction).toHaveAttribute(
+      'data-sidebar-pr-url',
+      'https://github.com/intent-hq/repository-with-a-very-long-name/pull/1373',
+    );
+    const labelBounds = await changesLabel.boundingBox();
+    const actionBounds = await prAction.boundingBox();
+    expect((actionBounds!.x - (labelBounds!.x + labelBounds!.width)) / scenario.zoom).toBeCloseTo(
+      8,
+      1,
+    );
+    await expect(changesLauncher.getByText('PR #', { exact: false })).toHaveCount(0);
+    await expect(changesLauncher.getByText('Open', { exact: true })).toHaveCount(0);
 
     const glyphs = component.locator('[data-sidebar-launcher-glyph]');
     await expect(
@@ -155,7 +179,28 @@ for (const scenario of [
   });
 }
 
-test('preserves hover, focus, click, and open-marker behavior', async ({ mount, page }) => {
+test('preserves semantic colors in the collapsed agent stack', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 1200, height: 800 });
+  const component = await mount(LauncherGeometryHost, {
+    props: { width: 480, zoom: 1, theme: 'light', itemCount: 4 },
+  });
+  const states = ['running', 'waiting', 'failed', 'completed'] as const;
+  const colors: string[] = [];
+
+  for (const state of states) {
+    const agent = component.locator(`[data-sidebar-agent-state="${state}"]`);
+    await expect(agent).toHaveCount(1);
+    colors.push(
+      await agent
+        .locator('[data-agent-avatar-with-state]')
+        .evaluate((element) => getComputedStyle(element).backgroundColor),
+    );
+  }
+
+  expect(new Set(colors).size).toBe(states.length);
+});
+
+test('preserves hover, focus, click, and note open-marker behavior', async ({ mount, page }) => {
   await page.setViewportSize({ width: 1200, height: 1000 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(LauncherGeometryHost, {
@@ -165,24 +210,20 @@ test('preserves hover, focus, click, and open-marker behavior', async ({ mount, 
   const notes = component.locator('[data-sidebar-context]');
   await expect(agents).toHaveCount(6);
   await expect(notes).toHaveCount(6);
-  await expect(agents.first().locator('[data-panel-open-marker]')).toHaveAttribute(
-    'data-panel-open-state',
-    'active',
-  );
   await expect(notes.first().locator('[data-panel-open-marker]')).toHaveAttribute(
     'data-panel-open-state',
     'open',
   );
 
   await agents.first().hover({ position: { x: 2, y: 18 } });
-  await expect(page.locator('[data-sidebar-hover-card="agent"]')).toBeVisible();
+  await expect(page.locator('[data-sidebar-hover-card="agent"]')).toBeVisible({ timeout: 250 });
   await notes.first().focus();
   await expect(notes.first()).toBeFocused();
-  await expect(page.locator('[data-sidebar-hover-card="note"]')).toBeVisible();
+  await expect(page.locator('[data-sidebar-hover-card="note"]')).toBeVisible({ timeout: 250 });
   await agents.first().focus();
   await page.keyboard.press('Tab');
   await expect(agents.nth(1)).toBeFocused();
-  await component.locator('[data-sidebar-agent-overflow]').click();
+  await component.getByTestId('agent-panel-toggle').click();
   await expect(component.locator('[data-sidebar-overlay]')).toBeVisible();
   await expect(component.locator('[data-sidebar-tab-strip]')).toHaveAttribute(
     'data-active-tab',

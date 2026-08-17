@@ -108,9 +108,9 @@
     hideEmptyLayout?: boolean;
     allowCloseLastPanel?: boolean;
     /** Callbacks for creating new items (passed to panel tab bars) */
-    onCreateAgent?: () => void;
-    onCreateAgentWithSpecialist?: (specialistId: string | null) => void;
-    onCreateNote?: () => void;
+    onCreateAgent?: (panelId?: string) => void;
+    onCreateAgentWithSpecialist?: (specialistId: string | null, panelId?: string) => void;
+    onCreateNote?: (panelId?: string) => void;
     onPanelMovePreviewWidthRatioChange?: (ratio: number) => void;
     onPanelCanvasWidthChange?: (width: number) => void;
     onAvailableCanvasWidthChange?: (width: number) => void;
@@ -226,7 +226,13 @@
     ),
   );
   const allocatedPanelCanvas = $derived(
-    getPanelCanvasWidths(panelViewportWidth, panelColumnPreferredWidths, canvasSizing, null, null),
+    getPanelCanvasWidths(
+      panelViewportWidth,
+      panelColumnPreferredWidths,
+      effectivePreferredCanvasWidthSource === 'explicit' ? 'content' : canvasSizing,
+      null,
+      null,
+    ),
   );
   const expandedAutomaticViewportWidth = $derived(
     $expandedPanelId$ !== null &&
@@ -625,7 +631,7 @@
   // Handler to create a new terminal via the daemon (`terminal.create`,
   // PROTOCOL §5.13). The daemon assigns the terminalId; we surface it as
   // `MutationResult.id` from the live client.
-  async function handleCreateTerminal() {
+  async function handleCreateTerminal(panelId?: string) {
     try {
       const result = await appClient.terminals.create({
         workspaceId,
@@ -651,12 +657,15 @@
         loadTerminals(workspaceId);
 
         // Open the new terminal as a tab in the panel layout
-        layoutManager.openTab({
-          type: 'terminal',
-          title: m.layout_panelLayout_terminal_fallback(),
-          terminalId: result.id,
-          closable: true,
-        });
+        layoutManager.openTab(
+          {
+            type: 'terminal',
+            title: m.layout_panelLayout_terminal_fallback(),
+            terminalId: result.id,
+            closable: true,
+          },
+          panelId,
+        );
       } else if (!result.success) {
         logger.error('Failed to create terminal', { error: result.error });
       }
@@ -670,8 +679,8 @@
   // capability exists — child components hide their "New Browser" entry points
   // when onOpenBrowser is undefined.
   const canOpenBrowserPanel = hasCapability('browserPanel');
-  function handleOpenBrowser() {
-    layoutManager.openBrowserPanel('about:blank');
+  function handleOpenBrowser(panelId?: string) {
+    layoutManager.openBrowserPanel('about:blank', undefined, panelId);
   }
 
   // Provide a getter function to child components via context
@@ -1126,7 +1135,6 @@
       if (focusCycledPanel(direction)) e.preventDefault();
       return;
     }
-
   }
 
   // Use capture phase for panel-specific shortcuts.

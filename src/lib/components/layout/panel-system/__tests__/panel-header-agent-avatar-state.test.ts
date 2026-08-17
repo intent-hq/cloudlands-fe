@@ -142,7 +142,7 @@ const tabs = [
 ];
 
 function session(id: string, changes: Record<string, unknown> = {}) {
-  return { id, name: id, status: 'active', messages: [], ...changes };
+  return { id, name: id, status: 'idle', messages: [], ...changes };
 }
 
 function stateAvatar(container: HTMLElement) {
@@ -166,26 +166,31 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('panel header agent avatar state', () => {
-  it('uses the named standard surface and reacts without remounting', async () => {
+  it('uses the named emphasized surface and reacts without remounting', async () => {
     const { container } = render(PanelTabBar, {
       props: { tabs, activeTabId: 'tab-a', panelId: 'panel-1', workspaceId: 'workspace-1' },
     });
     const avatar = stateAvatar(container);
     expect(avatar.dataset.state).toBe('idle');
-    expect(avatar.dataset.avatarVariant).toBe('standard');
+    expect(avatar.dataset.avatarVariant).toBe('emphasized');
     expect(avatar.hasAttribute('data-agent-avatar-surface')).toBe(true);
 
-    appStore.dispatch({ type: 'test/responding', payload: ['agent-a', true] });
+    appStore.dispatch({
+      type: 'test/session',
+      payload: ['agent-a', session('agent-a', { status: 'active', isResponding: true })],
+    });
     await waitFor(() => expect(avatar.dataset.state).toBe('running'));
 
-    appStore.dispatch({ type: 'test/responding', payload: ['agent-a', false] });
     appStore.dispatch({ type: 'test/session', payload: ['agent-a', session('agent-a')] });
     await waitFor(() => expect(avatar.dataset.state).toBe('idle'));
     expect(stateAvatar(container)).toBe(avatar);
   });
 
   it('switches the reactive key and preserves wait, failure, permission, and attention precedence', async () => {
-    appStore.dispatch({ type: 'test/responding', payload: ['agent-b', true] });
+    appStore.dispatch({
+      type: 'test/session',
+      payload: ['agent-b', session('agent-b', { status: 'active', isResponding: true })],
+    });
     const view = render(PanelTabBar, {
       props: { tabs, activeTabId: 'tab-a', panelId: 'panel-1', workspaceId: 'workspace-1' },
     });
@@ -199,7 +204,10 @@ describe('panel header agent avatar state', () => {
     });
     await waitFor(() => expect(stateAvatar(view.container).dataset.state).toBe('running'));
 
-    appStore.dispatch({ type: 'test/blocked-waiting', payload: ['agent-b', true] });
+    appStore.dispatch({
+      type: 'test/session',
+      payload: ['agent-b', session('agent-b', { status: 'Waiting', isResponding: false })],
+    });
     await waitFor(() => expect(stateAvatar(view.container).dataset.state).toBe('waiting'));
 
     appStore.dispatch({
@@ -209,19 +217,64 @@ describe('panel header agent avatar state', () => {
     await waitFor(() => expect(stateAvatar(view.container).dataset.state).toBe('failed'));
 
     appStore.dispatch({ type: 'test/session', payload: ['agent-b', session('agent-b')] });
-    appStore.dispatch({ type: 'test/blocked-waiting', payload: ['agent-b', false] });
     appStore.dispatch({ type: 'test/permissions', payload: [null, [{ sessionId: 'agent-b' }]] });
     await waitFor(() => expect(stateAvatar(view.container).dataset.state).toBe('needs-permission'));
 
     appStore.dispatch({ type: 'test/permissions', payload: [null, []] });
-    appStore.dispatch({ type: 'test/attention', payload: ['agent-b', { kind: 'blocker' }] });
+    appStore.dispatch({
+      type: 'test/session',
+      payload: [
+        'agent-b',
+        session('agent-b', {
+          attentionRequestKind: 'blocker',
+          attentionRequestReason: 'Blocked',
+        }),
+      ],
+    });
     await waitFor(() =>
       expect(stateAvatar(view.container).dataset.state).toBe('attention-blocker'),
     );
   });
 
+  it.each([
+    ['responding', { status: 'active', isResponding: true }, 'running'],
+    [
+      'live AgentLite tool payload',
+      {
+        status: 'active',
+        isActive: true,
+        isResponding: true,
+        isWaitingOnTool: true,
+        turnInFlight: true,
+        lastStreamActivityAt: '2026-08-17T12:04:59.000Z',
+        lastToolUse: { name: 'view', status: 'running' },
+      },
+      'running',
+    ],
+    ['in-flight tool', { status: 'Waiting', isWaitingOnTool: true }, 'running'],
+    ['blocked wait', { status: 'Waiting' }, 'waiting'],
+    [
+      'active orchestration peer wait',
+      { status: 'active', isResponding: true, isWaitingForOtherAgents: true },
+      'running',
+    ],
+    ['settled peer wait', { status: 'idle', isWaitingForOtherAgents: true }, 'waiting'],
+    ['stale Waiting status', { status: 'Waiting', isResponding: true }, 'running'],
+  ])('renders %s through the canonical panel-header state', async (_name, fields, expected) => {
+    const { container } = render(PanelTabBar, {
+      props: { tabs, activeTabId: 'tab-a', panelId: 'panel-1', workspaceId: 'workspace-1' },
+    });
+
+    appStore.dispatch({
+      type: 'test/session',
+      payload: ['agent-a', session('agent-a', fields)],
+    });
+
+    await waitFor(() => expect(stateAvatar(container).dataset.state).toBe(expected));
+  });
+
   it.each([{ theme: 'light' }, { theme: 'dark' }])(
-    'keeps a centered 20px surface at narrow 200% in $theme',
+    'keeps a centered 24px surface at narrow 200% in $theme',
     async ({ theme }) => {
       document.documentElement.className = theme === 'dark' ? 'dark' : '';
       const { container } = render(PanelTabBar, {
@@ -233,14 +286,14 @@ describe('panel header agent avatar state', () => {
         '[data-testid="panel-header-agent-avatar-slot"]',
       )!;
       const avatar = stateAvatar(container);
-      expect(slot.className).toContain('size-5');
+      expect(slot.className).toContain('size-6');
       expect(slot.className).toContain('items-center');
       expect(slot.className).toContain('justify-center');
-      expect(avatar.dataset.avatarVariant).toBe('standard');
+      expect(avatar.dataset.avatarVariant).toBe('emphasized');
       expect(avatar.hasAttribute('data-agent-avatar-surface')).toBe(true);
-      expect(avatar.style.width).toBe('20px');
-      expect(avatar.style.height).toBe('20px');
-      expect(slot.parentElement?.className).toContain('items-center');
+      expect(avatar.style.width).toBe('24px');
+      expect(avatar.style.height).toBe('24px');
+      expect(slot.parentElement?.className).toContain('self-center');
     },
   );
 });

@@ -6,9 +6,10 @@
   import UnsavedIndicator from '$lib/components/ui/indicators/UnsavedIndicator.svelte';
   import AgentBadge from '$lib/components/ui/indicators/AgentBadge.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import AgentAvatarWithState, {
-    type AvatarState,
-  } from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+  import AgentAvatarStack, {
+    type AgentAvatarStackItem,
+  } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
+  import type { AvatarState } from '$features/agent/components/agent-avatar/avatar-state';
 
   interface RunningAgent {
     agentId: string;
@@ -64,6 +65,14 @@
   }: Props = $props();
 
   let isHovered = $state(false);
+  const runningAgentStackItems = $derived(
+    runningAgents.map(({ agentId, state, specialist }): AgentAvatarStackItem => ({
+      key: agentId,
+      agentId,
+      state,
+      specialist,
+    })),
+  );
 </script>
 
 <!-- svelte-ignore a11y_interactive_supports_focus -->
@@ -149,20 +158,12 @@
       <div class="flex items-center gap-1 ml-auto">
         <!-- Running/unread agents with avatars -->
         {#if runningAgents.length > 0}
-          <div class="tab-agent-stack" data-agent-avatar-stack>
-            {#each runningAgents.slice(0, 2) as { agentId, state, specialist } (agentId)}
-              <AgentAvatarWithState {agentId} variant="emphasized" {state} {specialist} />
-            {/each}
-            {#if runningAgents.length > 2}
-              <span
-                id={`tab-${id ?? 'untitled'}-agent-overflow`}
-                class="tab-agent-overflow"
-                data-agent-avatar-overflow
-              >
-                +{runningAgents.length - 2}
-              </span>
-            {/if}
-          </div>
+          <AgentAvatarStack
+            items={runningAgentStackItems}
+            maxVisible={2}
+            variant="emphasized"
+            overflowId={`tab-${id ?? 'untitled'}-agent-overflow`}
+          />
         {:else if agentCount > 0}
           <!-- Fallback to agent count badge if no running agents -->
           <AgentBadge count={agentCount} />
@@ -205,40 +206,6 @@
 </div>
 
 <style>
-  .tab-agent-stack {
-    display: flex;
-    flex: none;
-    align-items: center;
-    width: max-content;
-    min-width: 0;
-  }
-
-  .tab-agent-stack > :global([data-agent-avatar-with-state] + [data-agent-avatar-with-state]) {
-    margin-inline-start: calc(-1 * var(--agent-avatar-emphasized-stack-overlap));
-  }
-
-  .tab-agent-overflow {
-    display: inline-flex;
-    width: max-content;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    margin-inline-start: 0.25rem;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-    color: hsl(var(--muted-foreground));
-    font-size: 0.75rem;
-    font-weight: 500;
-    line-height: 1;
-  }
-
-  @media (forced-colors: active) {
-    .tab-agent-overflow {
-      color: CanvasText;
-    }
-  }
-
   .tab-button {
     -webkit-app-region: no-drag;
     /* Smooth transitions for all state changes */

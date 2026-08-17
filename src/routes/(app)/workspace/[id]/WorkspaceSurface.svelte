@@ -699,9 +699,9 @@
     appStore.dispatch(commandPaletteActionConsumed(workspaceId));
   });
 
-  function handleCreateNote() {
+  function handleCreateNote(panelId?: string) {
     if (!$workspace?.id) return;
-    appStore.dispatch(createNoteRequested($workspace.id));
+    appStore.dispatch(createNoteRequested($workspace.id, { panelLayoutId, panelId }));
   }
 
   // ============================================================================
@@ -720,28 +720,28 @@
   /**
    * Create a new agent (used by keyboard shortcuts and UI buttons)
    */
-  async function handleCreateAgent(agentType?: string) {
+  async function handleCreateAgent(agentType?: string, panelId?: string) {
     if (!$workspace) return;
     if (columnMode) {
-      appStore.dispatch(createAgentRequested($workspace.id, agentType, { panelLayoutId }));
+      appStore.dispatch(createAgentRequested($workspace.id, agentType, { panelLayoutId, panelId }));
       return;
     }
-    appStore.dispatch(createAgentRequested($workspace.id, agentType));
+    appStore.dispatch(createAgentRequested($workspace.id, agentType, { panelId }));
   }
 
   /**
    * Create a new agent with a specific specialist configuration
    * @param specialistId - The ID of the specialist to use, or null for default agent
    */
-  async function handleCreateAgentWithSpecialist(specialistId: string | null) {
+  async function handleCreateAgentWithSpecialist(specialistId: string | null, panelId?: string) {
     if (!$workspace) return;
     if (columnMode) {
       appStore.dispatch(
-        createAgentWithSpecialistRequested($workspace.id, specialistId, { panelLayoutId }),
+        createAgentWithSpecialistRequested($workspace.id, specialistId, { panelLayoutId, panelId }),
       );
       return;
     }
-    appStore.dispatch(createAgentWithSpecialistRequested($workspace.id, specialistId));
+    appStore.dispatch(createAgentWithSpecialistRequested($workspace.id, specialistId, { panelId }));
   }
 
   // ============================================================================
@@ -975,7 +975,7 @@
             canvasSizing={columnMode ? 'content' : 'viewport'}
             hideEmptyLayout={columnMode}
             allowCloseLastPanel={columnMode}
-            onCreateAgent={handleCreateAgent}
+            onCreateAgent={(panelId) => handleCreateAgent(undefined, panelId)}
             onCreateAgentWithSpecialist={handleCreateAgentWithSpecialist}
             onCreateNote={handleCreateNote}
             {onPanelMovePreviewWidthRatioChange}

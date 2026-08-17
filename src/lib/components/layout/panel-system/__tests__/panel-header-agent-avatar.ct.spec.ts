@@ -29,9 +29,9 @@ for (const theme of ['light', 'dark'] as const) {
         centerDeltaY: avatarRect.top + avatarRect.height / 2 - (slotRect.top + slotRect.height / 2),
       };
     });
-    expect(geometry).toMatchObject({ width: '20px', height: '20px', radius: '6px' });
-    expect(geometry.renderedWidth).toBeCloseTo(40, 1);
-    expect(geometry.renderedHeight).toBeCloseTo(40, 1);
+    expect(geometry).toMatchObject({ width: '24px', height: '24px', radius: '7px' });
+    expect(geometry.renderedWidth).toBeCloseTo(48, 1);
+    expect(geometry.renderedHeight).toBeCloseTo(48, 1);
     expect(geometry.centerDeltaX).toBeCloseTo(0, 1);
     expect(geometry.centerDeltaY).toBeCloseTo(0, 1);
 

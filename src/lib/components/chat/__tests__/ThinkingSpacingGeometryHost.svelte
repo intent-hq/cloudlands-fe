@@ -31,6 +31,10 @@
     { type: 'tool_use', id: 'read-first', name: 'view', input: { path: 'src/example.ts' } },
     thinking('after-tool'),
   ] as ContentBlock[];
+  const consecutiveReasoning = [
+    { type: 'thinking', id: 'reasoning-one', text: '# First reasoning group\n\nFirst body' },
+    { type: 'thinking', id: 'reasoning-two', text: '# Second reasoning group\n\nSecond body' },
+  ] as ContentBlock[];
   const streamingContent = $derived(
     showStreamingThinking
       ? ([
@@ -73,6 +77,9 @@
     </div>
     <div data-testid="first-child-boundary"><MessageContent content={firstChild} /></div>
     <div data-testid="operational-boundary"><MessageContent content={toolThenThinking} /></div>
+    <div data-testid="consecutive-reasoning-boundary">
+      <MessageContent content={consecutiveReasoning} />
+    </div>
     <div data-testid="streaming-boundary">
       <StreamingMessageContent content={streamingContent} isStreaming />
     </div>

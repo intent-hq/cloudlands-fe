@@ -7,13 +7,19 @@
    */
   import type { AgentNode } from './types';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
-  import { getAvatarState } from '$features/agent/components/agent-avatar/avatar-state';
+  import {
+    getAvatarState,
+    getAvatarStateForSession,
+  } from '$features/agent/components/agent-avatar/avatar-state';
 
   import {
     selectSpecialistName,
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
-  import { selectAgentAttentionRequest } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import {
+    selectAgentAttentionRequest,
+    selectAgentSession,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import { store as appStore } from '$store/renderer/store';
@@ -28,19 +34,21 @@
 
   // svelte-ignore state_referenced_locally -- graph cards are mounted per agent; selector subscriptions are initialized once.
   const attentionRequest$ = selectAgentAttentionRequest(node.agentId);
+  // svelte-ignore state_referenced_locally -- graph cards are mounted per agent; selector subscriptions are initialized once.
+  const agentSession$ = selectAgentSession(node.agentId);
 
   // Get avatar state from agent status
-  const state = $derived(
-    getAvatarState(
+  const state = $derived.by(() => {
+    const options = { attentionKind: $attentionRequest$?.kind ?? null };
+    if ($agentSession$) return getAvatarStateForSession($agentSession$, options);
+    return getAvatarState(
       {
-        isStreaming: node.status === 'responding',
+        isResponding: node.status === 'responding',
         status: node.status,
       },
-      {
-        attentionKind: $attentionRequest$?.kind ?? null,
-      },
-    ),
-  );
+      { ...options, isCompleted: node.status === 'completed', isFailed: node.status === 'failed' },
+    );
+  });
 
   // Get specialist ID (accepts any specialist including team specialists)
   const specialist = $derived.by(() => {

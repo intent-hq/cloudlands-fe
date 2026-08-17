@@ -80,11 +80,11 @@
     /** Handler for renaming a tab (note, agent, or file) */
     onTabRename?: (tab: PanelTab, newName: string) => void;
     /** Callbacks for creating new items */
-    onCreateAgent?: () => void;
-    onCreateAgentWithSpecialist?: (specialistId: string | null) => void;
-    onCreateNote?: () => void;
-    onCreateTerminal?: () => void;
-    onOpenBrowser?: () => void;
+    onCreateAgent?: (panelId?: string) => void;
+    onCreateAgentWithSpecialist?: (specialistId: string | null, panelId?: string) => void;
+    onCreateNote?: (panelId?: string) => void;
+    onCreateTerminal?: (panelId?: string) => void;
+    onOpenBrowser?: (panelId?: string) => void;
     emptyState?: Snippet;
     /** Split panel horizontally (side by side) */
     onSplitHorizontal?: () => void;
@@ -285,14 +285,18 @@
   // otherwise leave the panel unfocused. Uses `pointerdown` (capture) so the
   // panel focuses before nested interactive elements handle the event, and it
   // stays passive — no preventDefault / stopPropagation.
-  function handlePanelPointerDown() {
-    markUserTouch();
+  function isEmptyStateInteraction(target: EventTarget | null): boolean {
+    return target instanceof Element && target.closest('[data-panel-empty-state]') !== null;
+  }
+
+  function handlePanelPointerDown(event: PointerEvent) {
+    if (!isEmptyStateInteraction(event.target)) markUserTouch();
     if (isFocused) return;
     onFocus?.();
   }
 
-  function handlePanelKeyDown() {
-    markUserTouch();
+  function handlePanelKeyDown(event: KeyboardEvent) {
+    if (!isEmptyStateInteraction(event.target)) markUserTouch();
   }
 
   // Determine which drop zone based on cursor position (relative to content area below tab bar)
@@ -443,7 +447,7 @@
     class={cn(
       'panel group/panel relative flex flex-col h-full overflow-hidden rounded-lg border border-border',
       panel.pristine === true && panel.tabs.length === 0
-        ? 'bg-transparent text-sidebar-foreground'
+        ? 'bg-sidebar text-sidebar-foreground'
         : 'bg-card text-card-foreground',
     )}
     class:contained
@@ -452,6 +456,9 @@
     data-focused={isFocused}
     data-zoomed={isZoomed}
     data-pristine={panel.pristine === true}
+    data-empty-panel-surface={panel.pristine === true && panel.tabs.length === 0
+      ? 'true'
+      : undefined}
     onfocusin={handlePanelFocus}
     onpointerdowncapture={handlePanelPointerDown}
     onkeydowncapture={handlePanelKeyDown}
@@ -562,6 +569,7 @@
       {:else}
         <PanelEmptyState
           {workspaceId}
+          panelId={panel.id}
           {onCreateAgent}
           {onCreateAgentWithSpecialist}
           {onCreateNote}

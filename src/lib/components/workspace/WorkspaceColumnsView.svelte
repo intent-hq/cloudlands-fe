@@ -107,7 +107,7 @@
   let dragOverWorkspaceId = $state<string | null>(null);
   let dragOverPlacement = $state<WorkspaceDragPlacement | null>(null);
   let lifecycleMotionReady = $state(false);
-  let lastScrolledWorkspaceId: string | null = null;
+  let lastWorkspaceRevealKey: string | null = null;
   let hasRevealedInitialWorkspace = false;
   let previousPanelColumnCounts: Record<string, number> = {};
   let panelColumnCountsInitialized = false;
@@ -127,6 +127,9 @@
   const requestedSidebarWidthKeys = new Set<string>();
   const requestedLayoutRestoreIds = new Set<string>();
   const openWorkspaceIds = $derived($workspaceStacks$.flat());
+  const workspaceStackLayoutKey = $derived(
+    $workspaceStacks$.map((stack) => stack.join(':')).join('|'),
+  );
   const sidebarWidthsReady = $derived(
     openWorkspaceIds.every(
       (workspaceId) =>
@@ -376,24 +379,25 @@
 
   function scheduleWorkspaceReveal(
     workspaceId: string,
-    inline: ScrollLogicalPosition = 'nearest',
+    inline: ScrollLogicalPosition = 'start',
     behavior?: ScrollBehavior,
   ) {
     const scroller = columnsScroller;
     if (!scroller) return;
 
     cancelScrollAnchor();
-    lastScrolledWorkspaceId = workspaceId;
+    const revealKey = `${workspaceId}:${workspaceStackLayoutKey}`;
+    lastWorkspaceRevealKey = revealKey;
     void tick().then(() => {
-      if (columnsScroller !== scroller || lastScrolledWorkspaceId !== workspaceId) return;
+      if (columnsScroller !== scroller || lastWorkspaceRevealKey !== revealKey) return;
       scheduleRevealAfterLayout(
         () => findWorkspaceColumn(scroller, workspaceId),
         (resolvedBehavior) => {
-          if (columnsScroller !== scroller || lastScrolledWorkspaceId !== workspaceId) return;
+          if (columnsScroller !== scroller || lastWorkspaceRevealKey !== revealKey) return;
           scrollWorkspaceColumnIntoView(scroller, workspaceId, resolvedBehavior, inline);
         },
         behavior,
-        () => columnsScroller === scroller && lastScrolledWorkspaceId === workspaceId,
+        () => columnsScroller === scroller && lastWorkspaceRevealKey === revealKey,
       );
     });
   }
@@ -402,7 +406,8 @@
     const workspaceId = $currentWorkspaceId$;
     const scroller = columnsScroller;
     const ready = columnsReady;
-    if (!workspaceId || !scroller || !ready || workspaceId === lastScrolledWorkspaceId) return;
+    const revealKey = workspaceId ? `${workspaceId}:${workspaceStackLayoutKey}` : null;
+    if (!workspaceId || !scroller || !ready || revealKey === lastWorkspaceRevealKey) return;
 
     if (!hasRevealedInitialWorkspace) {
       // The first reveal per mount jumps instantly — a smooth sweep would drag
@@ -414,7 +419,7 @@
       // `inline: 'start'` (not 'nearest') so a partially visible target is
       // still aligned instead of silently skipped.
       hasRevealedInitialWorkspace = true;
-      lastScrolledWorkspaceId = workspaceId;
+      lastWorkspaceRevealKey = revealKey;
       scrollWorkspaceColumnIntoView(scroller, workspaceId, 'auto', 'start');
       // The jump is anchored to pre-settle widths: surfaces that lazily mount
       // after it report live widths that shift the target while scrollLeft
@@ -797,8 +802,10 @@
   <div
     bind:this={columnsScroller}
     class="scrollbar-none h-full min-h-0 w-full overflow-x-auto overflow-y-hidden bg-transparent"
+    style="--workspace-reveal-inset: 0.5rem; scroll-padding-inline: var(--workspace-reveal-inset)"
     aria-label={m.workspace_columns_openSpaces_ariaLabel()}
     data-workspace-columns
+    data-workspace-reveal-inset="8"
     data-visible-workspace-columns={visibleWorkspaceIdsAttribute}
     data-sidebar-widths-ready={sidebarWidthsReady}
     data-anchored-workspace-column={anchoredWorkspaceId}
@@ -806,24 +813,27 @@
     onscroll={handleColumnsScroll}
     onwheel={handleScrollerWheel}
   >
-    <div class="flex h-full min-h-0 w-max min-w-full gap-3 p-2">
+    <div
+      class="flex h-full min-h-0 w-max min-w-full gap-3"
+      style:padding="var(--workspace-reveal-inset)"
+    >
       {#each $workspaceStacks$ as stack (stack[0])}
         {@const stackWidth = columnsReady
           ? Math.max(
-            ...stack.map((workspaceId) => {
-              const panelCount = $panelColumnCountsByWorkspaceId$[workspaceId] ?? 0;
-              const panelCanvasWidth =
-                livePanelCanvasWidths[workspaceId] ??
-                $panelCanvasWidthsByWorkspaceId$[workspaceId] ??
-                480;
-              return (
-                getSidebarWidth(workspaceId) +
-                (panelCount > 0
-                  ? panelCanvasWidth * (panelPreviewWidthRatios[workspaceId] ?? 1) +
-                    CONTAINED_PANEL_INLINE_CHROME
-                  : 0)
-              );
-            }),
+              ...stack.map((workspaceId) => {
+                const panelCount = $panelColumnCountsByWorkspaceId$[workspaceId] ?? 0;
+                const panelCanvasWidth =
+                  livePanelCanvasWidths[workspaceId] ??
+                  $panelCanvasWidthsByWorkspaceId$[workspaceId] ??
+                  480;
+                return (
+                  getSidebarWidth(workspaceId) +
+                  (panelCount > 0
+                    ? panelCanvasWidth * (panelPreviewWidthRatios[workspaceId] ?? 1) +
+                      CONTAINED_PANEL_INLINE_CHROME
+                    : 0)
+                );
+              }),
             )
           : FALLBACK_STACK_WIDTH}
         <div

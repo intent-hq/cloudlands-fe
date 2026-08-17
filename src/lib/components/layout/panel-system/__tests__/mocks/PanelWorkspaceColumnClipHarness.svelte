@@ -23,6 +23,7 @@
     zoomFactor = 1,
     panelTypes = null,
     panelSizes = null,
+    pristine = false,
   }: {
     mode?: 'contained' | 'uncontained';
     /** Root split direction: horizontal columns or a vertical stack. */
@@ -39,9 +40,11 @@
     zoomFactor?: number;
     panelTypes?: PanelTabType[] | null;
     panelSizes?: number[] | null;
+    pristine?: boolean;
   } = $props();
 
   let widthAdjustment = $state(0);
+  let layoutMountKey = $state(0);
   const LAYOUT_ID = `column-clip-check-${scenario}-${panelTypes?.join('-') ?? 'default'}`;
   const agentTab = {
     type: 'agent' as const,
@@ -92,7 +95,10 @@
               },
             ];
           }
-          return [panelId, { id: panelId, tabs: [], activeTabId: null }];
+          return [
+            panelId,
+            { id: panelId, tabs: [], activeTabId: null, pristine: pristine || undefined },
+          ];
         }),
       ),
       focusedPanelId: 'p1',
@@ -120,6 +126,9 @@
 <button data-testid="width-plus-one" class="sr-only" onclick={() => (widthAdjustment = 1)}>
   Wide
 </button>
+<button data-testid="reload-panel-layout" class="sr-only" onclick={() => (layoutMountKey += 1)}>
+  Reload
+</button>
 
 {#if scenario === 'create-agent'}
   <button data-testid="create-agent-panel" class="sr-only" onclick={createAgentPanel}>
@@ -144,13 +153,15 @@
         data-testid="column-sidebar"
       ></div>
       <div class="flex h-full min-w-0 flex-1" data-testid="column-content">
-        <PanelLayout
-          workspaceId={LAYOUT_ID}
-          layoutId={LAYOUT_ID}
-          contained
-          canvasSizing="content"
-          allowCloseLastPanel
-        />
+        {#key layoutMountKey}
+          <PanelLayout
+            workspaceId={LAYOUT_ID}
+            layoutId={LAYOUT_ID}
+            contained
+            canvasSizing="content"
+            allowCloseLastPanel
+          />
+        {/key}
       </div>
     </div>
   </div>
@@ -170,12 +181,14 @@
       data-testid="column-sidebar"
     ></div>
     <div class="flex h-full min-w-0 flex-1" data-testid="column-content">
-      <PanelLayout
-        workspaceId={LAYOUT_ID}
-        layoutId={LAYOUT_ID}
-        canvasSizing="viewport"
-        allowCloseLastPanel
-      />
+      {#key layoutMountKey}
+        <PanelLayout
+          workspaceId={LAYOUT_ID}
+          layoutId={LAYOUT_ID}
+          canvasSizing="viewport"
+          allowCloseLastPanel
+        />
+      {/key}
     </div>
   </div>
 {/if}

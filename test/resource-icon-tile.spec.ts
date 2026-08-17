@@ -120,11 +120,11 @@ test('keeps resource tiles and compact header insets exact across the geometry m
 
   expect(results).toHaveLength(48);
   for (const result of results) {
-    expect(result.tileWidth, result.scenario).toBe('20px');
-    expect(result.tileHeight, result.scenario).toBe('20px');
-    expect(result.radius, result.scenario).toBe('6px');
-    expect(result.glyphWidth, result.scenario).toBe('12px');
-    expect(result.glyphHeight, result.scenario).toBe('12px');
+    expect(result.tileWidth, result.scenario).toBe('24px');
+    expect(result.tileHeight, result.scenario).toBe('24px');
+    expect(result.radius, result.scenario).toBe('7px');
+    expect(result.glyphWidth, result.scenario).toBe('16px');
+    expect(result.glyphHeight, result.scenario).toBe('16px');
     expect(result.listWidth, result.scenario).toBe('12px');
     expect(result.listHeight, result.scenario).toBe('12px');
     expect(result.arrowWidth, result.scenario).toBe('11px');

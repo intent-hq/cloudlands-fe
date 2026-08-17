@@ -50,6 +50,10 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
         return session ? [session] : [];
       }),
     ),
+  selectAgentSessionsById: Object.assign(
+    () => makeReadable(Object.fromEntries(sessionState.byId)),
+    { select: () => Object.fromEntries(sessionState.byId) },
+  ),
   selectAgentIsResponding: (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
     makeDerivedReadable(agentId, (id) => mockIsResponding.get(id) ?? false),
   selectAgentIsWaiting: () => makeReadable(false),
@@ -324,13 +328,17 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(screen.getByTestId('one-shot-summary-title').textContent?.trim()).toBe(
       'Waiting for 7 agents',
     );
+    expect(screen.getByRole('button', { name: 'Waiting for 7 agents' })).toBe(summary);
+    const title = screen.getByTestId('one-shot-summary-title');
+    expect(title.classList.contains('truncate')).toBe(false);
+    expect(title.parentElement?.classList.contains('shrink-0')).toBe(true);
     expect(summary.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByTestId('one-shot-agent-list')).toBeNull();
     const stack = screen.getByTestId('one-shot-header').querySelector('[data-agent-avatar-stack]');
     expect(stack).toBeTruthy();
     expect(stack?.querySelectorAll('[data-icon]')).toHaveLength(0);
-    expect(stack?.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(0);
-    expect(stack?.querySelector('[data-agent-avatar-overflow]')?.textContent?.trim()).toBe('+7');
+    expect(stack?.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(7);
+    expect(stack?.querySelector('[data-agent-avatar-overflow]')).toBeNull();
     await fireEvent.click(summary);
     expect(summary.getAttribute('aria-expanded')).toBe('true');
     expect(
@@ -341,6 +349,35 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     await fireEvent.click(chevron);
     expect(summary.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByTestId('one-shot-agent-list')).toBeNull();
+  });
+
+  it('labels a retained all-finished cohort as finished instead of waiting', async () => {
+    const wsId = 'ws-all-finished-summary';
+    const agents = ['agent-a', 'agent-b', 'agent-c'];
+    resetWorkspace(wsId);
+    backendRequestSpy.mockResolvedValue(
+      snapshot([oneShotSubscription('watch-finished', wsId, agents)], [], {
+        'agent-a': 'completed',
+        'agent-b': 'completed',
+        'agent-c': 'completed',
+      }),
+    );
+    render(AgentSubscriptions, {
+      props: { workspaceId: wsId, agentId: PARENT, forceWaitingHeader: true },
+    });
+    await flush();
+    await flush();
+
+    const summary = await screen.findByTestId('one-shot-summary-toggle');
+    expect(summary.getAttribute('aria-label')).toBe('3 agents finished');
+    expect(screen.getByTestId('one-shot-summary-title').textContent?.trim()).toBe(
+      '3 agents finished',
+    );
+    expect(summary.querySelector('[data-icon="circle-check"]')).toBeTruthy();
+    expect(summary.querySelector('[data-icon="hourglass"]')).toBeNull();
+    await fireEvent.click(summary);
+    expect(visibleAgentIds()).toEqual(agents);
+    expect(screen.queryByTestId('finished-agent-summary')).toBeNull();
   });
 
   it('persists the watched-agent expanded state across remounts in the session', async () => {

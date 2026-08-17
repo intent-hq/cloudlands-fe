@@ -40,15 +40,17 @@
 
   interface Props {
     workspaceId: string;
-    onCreateAgent?: () => void;
-    onCreateAgentWithSpecialist?: (specialistId: string | null) => void;
-    onCreateNote?: () => void;
-    onCreateTerminal?: () => void;
-    onOpenBrowser?: () => void;
+    panelId: string;
+    onCreateAgent?: (panelId?: string) => void;
+    onCreateAgentWithSpecialist?: (specialistId: string | null, panelId?: string) => void;
+    onCreateNote?: (panelId?: string) => void;
+    onCreateTerminal?: (panelId?: string) => void;
+    onOpenBrowser?: (panelId?: string) => void;
   }
 
   let {
     workspaceId: _workspaceId,
+    panelId,
     onCreateAgent,
     onCreateAgentWithSpecialist,
     onCreateNote,
@@ -130,10 +132,10 @@
 
   function handleCreateAgent() {
     if (onCreateAgent) {
-      onCreateAgent();
+      onCreateAgent(panelId);
       return;
     }
-    onCreateAgentWithSpecialist?.(null);
+    onCreateAgentWithSpecialist?.(null, panelId);
   }
 
   function handleCreatePanel() {
@@ -165,13 +167,13 @@
       label: m.layout_panelEmptyState_note_label(),
       icon: RESOURCE_ICON_BY_KIND.note,
       resourceKind: 'note',
-      action: () => onCreateNote?.(),
+      action: () => onCreateNote?.(panelId),
     },
     {
       id: 'terminal',
       label: m.layout_panelEmptyState_terminal_label(),
       icon: faTerminal,
-      action: () => onCreateTerminal?.(),
+      action: () => onCreateTerminal?.(panelId),
     },
     ...(onOpenBrowser
       ? [
@@ -179,7 +181,7 @@
             id: 'browser',
             label: m.layout_panelEmptyState_browser_label(),
             icon: faGlobe,
-            action: () => onOpenBrowser?.(),
+            action: () => onOpenBrowser?.(panelId),
           },
         ]
       : []),
@@ -215,6 +217,7 @@
 
 <div
   class="empty-state flex h-full items-center justify-center overflow-y-auto bg-sidebar px-6 py-10 text-sidebar-foreground"
+  data-panel-empty-state
 >
   <section
     class="empty-state-content w-full max-w-[36rem]"
@@ -229,12 +232,13 @@
           aria-label={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
         >
           {#if action.resourceKind}
-            <ResourceIconTile kind={action.resourceKind} />
+            <ResourceIconTile kind={action.resourceKind} variant="emphasized" />
           {:else}
             <span
-              class="flex size-7 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground"
+              class="flex size-6 shrink-0 items-center justify-center rounded-[7px] bg-background/70 text-muted-foreground"
+              data-panel-empty-leading-surface
             >
-              <Fa icon={action.icon} class="size-3.5" />
+              <Fa icon={action.icon} class="size-4" />
             </span>
           {/if}
           <span class="min-w-0 truncate font-medium">

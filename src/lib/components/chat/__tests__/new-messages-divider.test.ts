@@ -143,7 +143,7 @@ describe('turn-boundary divider placement (ChatPanel contract)', () => {
     ).replace(/<!--[\s\S]*?-->/g, '');
     const normalized = panel.replace(/\s+/g, ' ');
     expect(normalized).toContain(
-      '{#if !isLastTurnInConversation} <ConversationTurnGap currentIsEventNotification={isEventNotification} currentHasAssistantMessages={turn.assistantMessages.length > 0} nextIsEventNotification={nextTurnIsEventNotification} /> {/if} {#if dividerAtTurnBoundary} <NewMessagesDivider /> {/if}',
+      '{#if !isLastTurnInConversation} <ConversationTurnGap currentIsEventNotification={isEventNotification} currentHasAssistantMessages={turn.assistantMessages.length > 0} nextIsEventNotification={nextTurnIsEventNotification} compactOperationalSeam={compactToolTurnBoundary} /> {/if} {#if dividerAtTurnBoundary} <NewMessagesDivider /> {/if}',
     );
   });
 

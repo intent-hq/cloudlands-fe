@@ -205,6 +205,7 @@ test.describe('chat message navigator production path', () => {
         downButtonBox,
         listIconBox,
         arrowIconBox,
+        arrowComputedSize,
       ] = await Promise.all([
         title.boundingBox(),
         headerActions.boundingBox(),
@@ -214,6 +215,13 @@ test.describe('chat message navigator production path', () => {
         downButton.boundingBox(),
         listButton.locator('svg').boundingBox(),
         downButton.locator('svg').boundingBox(),
+        downButton.locator('svg').evaluate((icon) => {
+          const computed = getComputedStyle(icon);
+          return {
+            width: Number.parseFloat(computed.width),
+            height: Number.parseFloat(computed.height),
+          };
+        }),
       ]);
       if (
         !titleBox ||
@@ -233,15 +241,16 @@ test.describe('chat message navigator production path', () => {
       );
       expect(listIconBox.width).toBeCloseTo(12, 0);
       expect(listIconBox.height).toBeCloseTo(12, 0);
-      expect(arrowIconBox.width).toBeCloseTo(24, 0);
-      expect(arrowIconBox.height).toBeCloseTo(24, 0);
+      expect(arrowIconBox.width).toBeCloseTo(16, 0);
+      expect(arrowIconBox.height).toBeCloseTo(16, 0);
+      expect(arrowComputedSize).toEqual({ width: 16, height: 16 });
       expect(pinButtonBox.width).toBeCloseTo(28, 0);
       expect(pinButtonBox.height).toBeCloseTo(28, 0);
       expect(listButtonBox.width).toBeCloseTo(36, 0);
       expect(listButtonBox.height).toBeCloseTo(36, 0);
       expect(downButtonBox.width).toBeCloseTo(36, 0);
       expect(downButtonBox.height).toBeCloseTo(36, 0);
-      await expect(downButton).toHaveAttribute('data-icon-size', '24');
+      await expect(downButton).toHaveAttribute('data-icon-size', '16');
 
       const target = page.locator('[data-message-id="user-6"]');
       await expect(target).toHaveCount(0);

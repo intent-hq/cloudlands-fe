@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   initializePanelCanvasWidth,
   migratePanelCanvasWidth,
+  resolveIntrinsicPanelCanvasWidth,
   resolveUserPanelCanvasResize,
 } from './panel-layout-width-provenance';
 
@@ -17,6 +18,17 @@ describe('panel canvas width provenance', () => {
     expect(migratePanelCanvasWidth(1600, 'explicit')).toEqual({
       canvasWidth: 1600,
       canvasWidthSource: 'explicit',
+    });
+  });
+
+  it('preserves a serializable intrinsic width without marking it as a user resize', () => {
+    expect(resolveIntrinsicPanelCanvasWidth(1428)).toEqual({
+      canvasWidth: 1428,
+      canvasWidthSource: 'intrinsic',
+    });
+    expect(migratePanelCanvasWidth(1428, 'intrinsic')).toEqual({
+      canvasWidth: 1428,
+      canvasWidthSource: 'intrinsic',
     });
   });
 

@@ -64,13 +64,13 @@ function initialize(root: PanelLayoutNode, panelIds: string[], canvasWidth: numb
   return workspaceId;
 }
 
-async function mount(workspaceId: string) {
+async function mount(workspaceId: string, expectedPanelCount = 2) {
   const result = render(PanelLayout, {
     props: { workspaceId, layoutId: workspaceId, contained: false, canvasSizing: 'viewport' },
     context: new Map([[STORE_CONTEXT, storeContext]]),
   });
   await waitFor(() =>
-    expect(document.querySelectorAll('[data-mounted-panel]').length).toBeGreaterThan(1),
+    expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(expectedPanelCount),
   );
   // Let the lifecycle-motion latch arm so close runs the animated code path.
   await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
@@ -119,6 +119,24 @@ afterEach(() => {
 });
 
 describe('closing a panel that collapses a split', () => {
+  it('clears the final panel content instead of ignoring its close button', async () => {
+    const workspaceId = initialize({ type: 'panel', panelId: 'p1' }, ['p1'], VIEWPORT_WIDTH);
+    await mount(workspaceId, 1);
+
+    const closeButton = document
+      .querySelector<HTMLElement>('[data-mounted-panel="p1"]')!
+      .querySelector<HTMLButtonElement>('[data-panel-close]')!;
+    await fireEvent.click(closeButton);
+
+    await waitFor(() => {
+      const workspace = appStore.state.panelLayout.byWorkspaceId[workspaceId];
+      expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(1);
+      expect(workspace.panels.p1.tabs).toHaveLength(0);
+      expect(workspace.panels.p1.activeTabId).toBeNull();
+      expect(workspace.recentlyClosed).toHaveLength(1);
+    });
+  });
+
   it('keeps the bottom panel visible after closing the top panel of a vertical stack', async () => {
     const workspaceId = initialize(
       {
@@ -142,9 +160,7 @@ describe('closing a panel that collapses a split', () => {
       .querySelector<HTMLButtonElement>('[data-panel-close]')!;
     await fireEvent.click(closeButton);
 
-    await waitFor(() =>
-      expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(1),
-    );
+    await waitFor(() => expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(1));
     // The exiting vertical gutter (full container width mid-outro) must not
     // corrupt the re-measured reference size and collapse the survivor to ~1px.
     await waitFor(() => expect(flexBasis(survivorWrapper('p2'))).toBeCloseTo(VIEWPORT_WIDTH, 3));
@@ -168,16 +184,12 @@ describe('closing a panel that collapses a split', () => {
 
     appStore.dispatch(closePanel(workspaceId, 'p1'));
 
-    await waitFor(() =>
-      expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(1),
-    );
+    await waitFor(() => expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(1));
     // The exiting 8px horizontal gutter must not be subtracted from the
     // re-measured reference size: nothing re-measures after its outro ends,
     // which would leave the survivor permanently short by the gutter width.
     const expectedReference = VIEWPORT_WIDTH;
-    await waitFor(() =>
-      expect(flexBasis(survivorWrapper('p2'))).toBeCloseTo(expectedReference, 3),
-    );
+    await waitFor(() => expect(flexBasis(survivorWrapper('p2'))).toBeCloseTo(expectedReference, 3));
   });
 
   it('keeps the bottom panel visible after closing the top panel final tab', async () => {
@@ -204,9 +216,7 @@ describe('closing a panel that collapses a split', () => {
       .querySelector<HTMLButtonElement>('[data-tab-close]')!;
     await fireEvent.click(tabCloseButton);
 
-    await waitFor(() =>
-      expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(1),
-    );
+    await waitFor(() => expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(1));
     await waitFor(() => expect(flexBasis(survivorWrapper('p2'))).toBeCloseTo(VIEWPORT_WIDTH, 3));
   });
 
@@ -227,8 +237,6 @@ describe('closing a panel that collapses a split', () => {
     // removes the panel inside the closeTab reducer, so handleTabClose must
     // route the collapsing case through the motion-suppressing helper too.
     const layout = source('PanelLayout.svelte');
-    expect(layout).toMatch(
-      /function handleTabClose\([\s\S]{0,700}?commitPanelMoveWithoutReplay\(/,
-    );
+    expect(layout).toMatch(/function handleTabClose\([\s\S]{0,700}?commitPanelMoveWithoutReplay\(/);
   });
 });

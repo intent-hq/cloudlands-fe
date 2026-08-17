@@ -6,7 +6,7 @@ describe('WorkspaceStatusIcon', () => {
   it.each([
     ['in_progress', 'In progress', 'circle', 'text-success'],
     ['blocked', 'Blocked', 'xmark', 'text-destructive'],
-    ['failed', 'Failed', 'triangle-exclamation', 'text-destructive'],
+    ['failed', 'Failed', 'triangle-exclamation', 'text-foreground'],
   ] as const)('renders one accessible, shape-distinct %s icon', (status, label, icon, color) => {
     const view = render(WorkspaceStatusIcon, { props: { status, size: 12 } });
     const indicator = screen.getByRole('img', { name: label });

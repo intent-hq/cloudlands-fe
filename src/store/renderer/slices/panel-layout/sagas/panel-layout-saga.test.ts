@@ -65,6 +65,7 @@ import {
   moveTabToSplit,
   moveTabToSplitLevel,
   openTab,
+  openBlankWorkingPanel,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
   panelLayoutScopeMounted,
@@ -281,6 +282,7 @@ const persistActionCreators = [
   openTab,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
+  openBlankWorkingPanel,
   collapseToReusablePanel,
   closeTab,
   closeActiveTab,
@@ -338,6 +340,9 @@ describe('panelLayoutSaga', () => {
     expect(isStoredLayoutValid({ ...layout, canvasWidth: 1080 })).toBe(true);
     expect(
       isStoredLayoutValid({ ...layout, canvasWidth: 1080, canvasWidthSource: 'explicit' }),
+    ).toBe(true);
+    expect(
+      isStoredLayoutValid({ ...layout, canvasWidth: 1428, canvasWidthSource: 'intrinsic' }),
     ).toBe(true);
     expect(isStoredLayoutValid({ ...layout, canvasWidthSource: 'viewport' } as never)).toBe(false);
     expect(isStoredLayoutValid({ ...layout, canvasWidth: 0 })).toBe(false);

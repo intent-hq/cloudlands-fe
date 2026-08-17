@@ -12,6 +12,26 @@ function horizontalLayoutScale(container: HTMLElement, viewport: DOMRect): numbe
   return visualWidth / layoutWidth;
 }
 
+function parseScrollPadding(value: string): number {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getHorizontalRevealViewport(container: HTMLElement, viewport: DOMRect): DOMRect {
+  const explicitInset = Number.parseFloat(container.dataset.workspaceRevealInset ?? '');
+  const style = typeof getComputedStyle === 'function' ? getComputedStyle(container) : null;
+  const startPadding = Number.isFinite(explicitInset)
+    ? explicitInset
+    : parseScrollPadding(style?.scrollPaddingInlineStart ?? '');
+  const endPadding = Number.isFinite(explicitInset)
+    ? explicitInset
+    : parseScrollPadding(style?.scrollPaddingInlineEnd ?? '');
+  const scale = horizontalLayoutScale(container, viewport);
+  const left = viewport.left + startPadding * scale;
+  const right = viewport.right - endPadding * scale;
+  return right > left ? ({ ...viewport, left, right } as DOMRect) : viewport;
+}
+
 function cancelHorizontalScroll(container: HTMLElement): void {
   const frame = activeHorizontalScrollFrames.get(container);
   if (frame !== undefined) cancelAnimationFrame(frame);
@@ -87,8 +107,10 @@ export function scrollWorkspaceColumnIntoView(
   if (!column) return false;
   if (inline === 'start') {
     const viewport = container.getBoundingClientRect();
+    const revealViewport = getHorizontalRevealViewport(container, viewport);
     const columnRect = column.getBoundingClientRect();
-    const offset = (columnRect.left - viewport.left) / horizontalLayoutScale(container, viewport);
+    const offset =
+      (columnRect.left - revealViewport.left) / horizontalLayoutScale(container, viewport);
     if (Math.abs(offset) < 1) return false;
 
     const targetLeft = Math.max(0, container.scrollLeft + offset);
@@ -97,9 +119,10 @@ export function scrollWorkspaceColumnIntoView(
   }
   if (inline === 'nearest' && isHorizontallyVisible(container, column)) return false;
   const viewport = container.getBoundingClientRect();
+  const revealViewport = getHorizontalRevealViewport(container, viewport);
   const columnRect = column.getBoundingClientRect();
   const delta =
-    getMinimumHorizontalRevealDelta(viewport, columnRect) /
+    getMinimumHorizontalRevealDelta(revealViewport, columnRect) /
     horizontalLayoutScale(container, viewport);
   writeHorizontalScroll(container, container.scrollLeft + delta, behavior);
   return true;
@@ -115,8 +138,9 @@ export function scrollWorkspacePanelIntoView(
   if (!panel) return false;
   if (isHorizontallyVisible(container, panel)) return false;
   const viewport = container.getBoundingClientRect();
+  const revealViewport = getHorizontalRevealViewport(container, viewport);
   const delta =
-    getMinimumHorizontalRevealDelta(viewport, panel.getBoundingClientRect()) /
+    getMinimumHorizontalRevealDelta(revealViewport, panel.getBoundingClientRect()) /
     horizontalLayoutScale(container, viewport);
   writeHorizontalScroll(container, container.scrollLeft + delta, behavior);
   return true;
@@ -138,10 +162,14 @@ function getMinimumHorizontalRevealDelta(viewport: DOMRect, target: DOMRect): nu
 
 function isHorizontallyVisible(container: HTMLElement, target: HTMLElement): boolean {
   const viewport = container.getBoundingClientRect();
+  const revealViewport = getHorizontalRevealViewport(container, viewport);
   const targetRect = target.getBoundingClientRect();
-  if (viewport.right <= viewport.left || targetRect.right <= targetRect.left) return false;
+  if (revealViewport.right <= revealViewport.left || targetRect.right <= targetRect.left) {
+    return false;
+  }
   const tolerance = horizontalTolerance();
   return (
-    targetRect.left >= viewport.left - tolerance && targetRect.right <= viewport.right + tolerance
+    targetRect.left >= revealViewport.left - tolerance &&
+    targetRect.right <= revealViewport.right + tolerance
   );
 }

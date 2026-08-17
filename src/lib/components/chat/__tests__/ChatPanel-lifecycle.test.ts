@@ -853,8 +853,8 @@ describe('ChatPanel mounted lifecycle', () => {
     const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
     flushFrame(); // bind the distance-from-bottom scroll tracker
 
-    // Scrolled up well past the at-bottom threshold → arrow appears once the
-    // distance has held there for the anti-jitter settle window.
+    // Scrolling up still updates header navigation state, but the former
+    // floating bottom-right arrow stays removed.
     Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1000 });
     Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
     scrollContainer.scrollTop = 100; // 500px from the bottom
@@ -863,11 +863,7 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]')).toBeNull();
     await vi.advanceTimersByTimeAsync(SCROLL_BUTTON_SHOW_SETTLE_MS);
     await tick();
-    const arrowButton = view.container.querySelector(
-      '[data-testid="chat-scroll-to-bottom-button"]',
-    );
-    expect(arrowButton).not.toBeNull();
-    expect(arrowButton!.classList.contains('pointer-events-none')).toBe(false);
+    expect(view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]')).toBeNull();
     expect(onNavigationStateChange).toHaveBeenLastCalledWith({
       isAtBottom: false,
       userMessages: [{ id: 'message-1', text: 'User prompt' }],
