@@ -163,8 +163,8 @@ class EmbeddedBrowserCdpService {
       this.pendingListTabsRequests.delete(requestId);
       const cached = this.panelBrowserTabsCache.get(workspaceId);
       if (!cached) {
-        // i18n-ignore (agent-facing protocol error, not user-facing)
         throw new Error(
+          // i18n-ignore (agent-facing protocol error, not user-facing)
           `Cannot list browser tabs: workspace ${workspaceId} is not open in any window.`,
         );
       }
@@ -199,8 +199,8 @@ class EmbeddedBrowserCdpService {
             workspaceId,
           });
           reject(
-            // i18n-ignore (agent-facing protocol error, not user-facing)
             new Error(
+              // i18n-ignore (agent-facing protocol error, not user-facing)
               `Tab list for workspace ${workspaceId} is unavailable: the renderer did not respond and no cached tab list exists.`,
             ),
           );
@@ -475,8 +475,8 @@ class EmbeddedBrowserCdpService {
       if (stale) {
         // A stale cache that lacks the tab proves nothing about whether it
         // is closed — only a fresh renderer reply can (monorepo#2756 RC4).
-        // i18n-ignore (agent-facing protocol error, not user-facing)
         throw new Error(
+          // i18n-ignore (agent-facing protocol error, not user-facing)
           `Cannot close tab ${tabId}: the tab list for workspace ${workspaceId} is unavailable (the renderer did not respond), so whether the tab exists cannot be determined.`,
         );
       }
