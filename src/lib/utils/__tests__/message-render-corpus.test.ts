@@ -22,12 +22,13 @@ import { syntheticFixtures } from './message-render-corpus/synthetic';
  *     parseSuggestedPrompts() -> parseAgentMessage() -> groupParsedBlocks()
  *
  * and the resulting render tree is locked in as a golden file. Goldens capture
- * CURRENT behavior — including known-bad behavior (tag literals inside inline
- * code / fenced code being treated as real group/think tags, see
- * intent-hq/monorepo#2689). Fixtures listed in KNOWN_BAD are documented bugs:
- * they are excluded from the no-content-loss invariant, and their goldens are
- * expected to CHANGE when the parser fix lands (update the golden + remove the
- * KNOWN_BAD entry in the fix PR).
+ * CURRENT behavior. Fixtures carrying a knownBad / KNOWN_BAD marker are
+ * documented bugs: they are excluded from the no-content-loss invariant, and
+ * their goldens are expected to CHANGE when the corresponding fix lands
+ * (update the golden + remove the marker in the fix PR). The
+ * intent-hq/monorepo#2689 entries (tag literals inside inline code / fenced
+ * code scanned as real group/think tags) flipped to correct output when the
+ * code-region-aware scanner landed and now serve as regression coverage.
  */
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -136,7 +137,7 @@ function renderMessage(blocks: ContentBlock[]): RenderedMessage {
 // special-block parsing). Everything else in a text block must survive into
 // the render tree.
 const TAG_SYNTAX_REGEX =
-  /<group:([^>\n<]+)>|<group:([^\n<]+)\n|<group:([^>\n<]+)$|<group:([^>\n<]+)<\/group(?::[^>\n<]*)?>|<\/group(?::([^>\n<]*))?>|<\/?think(?:ing)?>|<\/?augment_code_snippet[^>]*>|<\/?agent_digest>|<<<\/?DETECTED_SCRIPTS>>>|<\/?COMMIT_MESSAGE>/g;
+  /<group:([^>\n<]+)>|<group:([^>\n<]+)\n|<group:([^>\n<]+)$|<group:([^>\n<]+)<\/group(?::[^>\n<]*)?>|<\/group(?::([^>\n<]*))?>|<\/?think(?:ing)?>|<\/?augment_code_snippet[^>]*>|<\/?agent_digest>|<<<\/?DETECTED_SCRIPTS>>>|<\/?COMMIT_MESSAGE>/g;
 
 const TOKEN_REGEX = /[A-Za-z0-9_]{4,}/g;
 

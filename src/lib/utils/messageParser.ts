@@ -994,13 +994,9 @@ function mergeConsecutiveTextBlocks(blocks: ParsedContent[]): ParsedContent[] {
   return merged;
 }
 
-// Combined pattern to find any group tag (open or close) in a single pass
-// Note: Group name capture uses [^>\n<]+ to avoid capturing across newlines or into
-// nested tags like <think> that may appear immediately after the group name.
-// The second alternative (<group:([^<\n]+)\n) handles malformed tags without closing >
-// (e.g., "<group:Prepping\n<think>..." where the model omits the closing bracket).
-
 // Combined pattern to find group tags AND think tags in a single pass.
+// Group name captures use [^>\n<]+ to avoid capturing across newlines or into
+// nested tags like <think> that may appear immediately after the group name.
 // Think tags are used by some external providers (e.g., opencode) that embed
 // model thinking directly in text rather than as separate thinking content blocks.
 // Supports both <think>/<thinking> variants (different models use different tags).
@@ -1027,10 +1023,15 @@ interface CodeRegion {
 
 /**
  * Find the offsets of code regions in a text block: fenced code blocks
- * (``` / ~~~, line-based, mirroring processRegularContent) and inline code
- * spans (backtick runs paired per CommonMark: a run of N backticks closes at
- * the next run of exactly N backticks; an unpaired run stays literal; spans
- * do not cross blank lines).
+ * (``` / ~~~, line-based, same fence-pairing rules as findSuggestedPromptsBlocks
+ * via the shared FENCE_LINE_REGEX) and inline code spans (backtick runs paired
+ * per CommonMark: a run of N backticks closes at the next run of exactly N
+ * backticks; an unpaired run stays literal; spans do not cross blank lines).
+ *
+ * Known divergence: FENCE_LINE_REGEX accepts 0-3 leading spaces (CommonMark),
+ * while processRegularContent renders fences at any indentation. A 4+-space
+ * indented fence is usually still covered by the inline-span pass (the fence
+ * markers pair as a span), except when a blank line falls inside it.
  *
  * Group/think tag syntax inside these regions is a literal *mention* of the
  * syntax (documentation, quoted output), not a real tag, and must not be
