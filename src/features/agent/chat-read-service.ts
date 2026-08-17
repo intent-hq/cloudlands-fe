@@ -1,9 +1,12 @@
 /**
  * Reusable on-demand transcript read seam used by the daemon event router
  * (reconnect / event-driven refetches). `loadChatTranscript(agentId)` fetches
- * the session (`appClient.agents.get`) AND the FULL transcript by paging through
+ * the session (`appClient.agents.get`) AND the transcript by paging through
  * `agent.getConversation` (PROTOCOL §5.5, up to 200 messages per page, looping
- * on `nextToken` until the complete conversation is assembled). The daemon's
+ * on `nextToken`). Paging walks from the newest page backwards and stops once
+ * `MAX_STORE_MESSAGES` messages have accumulated — the agent-session slice
+ * prunes to the newest 500 anyway, so pages past the cap would be fetched only
+ * to be discarded (intent-hq/monorepo#2627). The daemon's
  * AgentLite projection (from `agents.get`) returns only message COUNTS, so
  * `getConversation` is the sole source of the actual message content.
  * `bulkUpsertSessions` populates the agent-session slice (`byAgentId` + messages
@@ -41,6 +44,9 @@ import { createLogger } from '$lib/utils/client-logger';
 import { isAgentDeletionPending } from './utils/pending-agent-deletions';
 
 const logger = createLogger('ChatReadService');
+
+/** Mirror of the agent-session slice's message prune cap — paging past it is discarded. */
+const MAX_STORE_MESSAGES = 500;
 
 /** In-flight loads keyed by agent id; coalesces concurrent requests. */
 const inFlight = new Map<string, Promise<void>>();
@@ -135,8 +141,12 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       // soft-hidden session (and paging the transcript would be wasted work).
       if (isAgentDeletionPending(agentId)) return;
 
-      // Fetch the FULL transcript by paging through agent.getConversation.
+      // Fetch the transcript by paging through agent.getConversation.
       // Request 200 messages per page (daemon max) and loop on nextToken.
+      // Paging walks newest→oldest, so stopping at MAX_STORE_MESSAGES keeps
+      // exactly the newest messages the store's prune cap would retain —
+      // older pages would be fetched only to be sliced off by the
+      // agent-session slice (intent-hq/monorepo#2627).
       const allMessages: AgentMessage[] = [];
       let nextToken: string | null = null;
       const pageLimit = 200;
@@ -151,7 +161,7 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
         // each page to maintain overall newest-first order when accumulating.
         allMessages.unshift(...page.messages);
         nextToken = page.nextToken;
-      } while (nextToken !== null);
+      } while (nextToken !== null && allMessages.length < MAX_STORE_MESSAGES);
 
       // Final re-check before any side effects: the deletion may have become
       // pending during transcript paging above.
