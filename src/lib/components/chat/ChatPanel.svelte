@@ -3404,7 +3404,11 @@
       data-testid="pinned-prompt-overlay-host"
       aria-live="off"
     >
-      {#if pinnedPrompt}
+      <!-- Gated behind the switch-back reveal deferral: `pinnedPrompt` is
+           retained state from the pre-switch transcript (trackPinnedPrompt only
+           clears it on a later animation frame after the turns unmount), so it
+           would otherwise paint stale message content above the skeleton. -->
+      {#if pinnedPrompt && !deferTranscriptReveal}
         <!-- Mirror the conversation column's horizontal padding plus the chief
              variant's user-row inset so the pinned bubble aligns with
              in-conversation user bubbles. -->

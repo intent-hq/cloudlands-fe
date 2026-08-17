@@ -821,15 +821,19 @@ export const SWITCH_BACK_REVEAL_WAIT_MS =
 /**
  * Saga-owned fallback timer for one armed switch-back reveal gate: races the
  * bounded wait against the gate's own clearing signals (snapshot applied, or
- * subscription closed — both already clear the gate in the reducer). Only a
- * timeout with the gate STILL armed dispatches the fallback clear; the
- * reducer additionally no-ops a stale dispatch, so a superseded watcher can
- * never re-clear a re-armed gate.
+ * subscription closed — both already clear the gate in the reducer). A
+ * re-dispatched `markAgentAsViewed` for the same agent also retires this
+ * watcher — the route handler forks a fresh one when the gate is (still)
+ * armed, so exactly one watcher runs per armed gate instead of duplicates
+ * racing. Only a timeout with the gate STILL armed dispatches the fallback
+ * clear; the reducer additionally no-ops a stale dispatch, so a superseded
+ * watcher can never re-clear a re-armed gate.
  */
 function* switchBackRevealFallback(agentId: string): SagaGenerator<void> {
   const clearsGate = (action: { type: string; payload?: unknown }): boolean => {
     if (!Array.isArray(action.payload) || action.payload[0] !== agentId) return false;
     if (action.type === chatTranscriptSnapshotApplied.type) return true;
+    if (action.type === markAgentAsViewed.type) return true;
     return action.type === chatLiveStreamPhaseChanged.type && action.payload[1] === null;
   };
   const { timedOut } = yield* race({

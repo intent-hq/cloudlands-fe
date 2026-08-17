@@ -42,6 +42,10 @@ const mocks = vi.hoisted(() => {
     createMessageSendLaunchBubble: vi.fn(),
     pendingQuestions: null as { messageId: string; questions: unknown[] } | null,
     followBottomOptions: null as { onFollowChange?: (follow: boolean) => void } | null,
+    pinnedPromptOptions: null as {
+      enabled: boolean;
+      onChange: (prompt: { id: string; message: unknown } | null) => void;
+    } | null,
     selector,
   };
 });
@@ -132,6 +136,28 @@ vi.mock('$lib/utils/smartScroll', () => ({
   },
   scrollToBottom: vi.fn(),
 }));
+// Pass-through wrapper around the real tracker that additionally captures the
+// options so tests can drive `onChange` (set a pinned prompt) directly.
+vi.mock('../pinned-prompt', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../pinned-prompt')>();
+  return {
+    ...actual,
+    trackPinnedPrompt: (
+      container: HTMLElement,
+      options: NonNullable<typeof mocks.pinnedPromptOptions>,
+    ) => {
+      mocks.pinnedPromptOptions = options;
+      const real = actual.trackPinnedPrompt(container, options);
+      return {
+        update: (next: NonNullable<typeof mocks.pinnedPromptOptions>) => {
+          mocks.pinnedPromptOptions = next;
+          real.update(next);
+        },
+        destroy: real.destroy,
+      };
+    },
+  };
+});
 vi.mock('../message-send-transition', () => ({
   captureMessageSendOrigin: () => ({ left: 0, top: 600, width: 320, borderRadius: '8px' }),
   createMessageSendLaunchBubble: mocks.createMessageSendLaunchBubble,
@@ -275,6 +301,7 @@ beforeEach(() => {
   });
   mocks.pendingQuestions = null;
   mocks.followBottomOptions = null;
+  mocks.pinnedPromptOptions = null;
 });
 
 afterEach(() => {
@@ -902,6 +929,49 @@ describe('ChatPanel mounted lifecycle', () => {
 
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
     expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
+  });
+
+  it('hides the pinned-prompt overlay while the switch-back reveal is deferred', async () => {
+    // The overlay renders from retained `pinnedPrompt` state that
+    // trackPinnedPrompt only clears on a later animation frame after the
+    // turns unmount — it must not paint stale message content above the
+    // skeleton while the gate holds.
+    mocks.draftGet.mockResolvedValue(null);
+    const message = {
+      id: 'm1',
+      role: 'user',
+      content: 'stale pinned prompt',
+      timestamp: '2026-01-01T00:00:00.000Z',
+    };
+    mocks.agentMessages.set([message]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    // The user is scrolled into a pinned user prompt.
+    mocks.pinnedPromptOptions?.onChange({ id: 'm1', message });
+    await tick();
+    expect(
+      view.container.querySelector('[data-testid="pinned-prompt-overlay-lane"]'),
+    ).not.toBeNull();
+
+    // Gate arms (switch-back): the skeleton and the overlay swap in the same
+    // paint — no stale pinned content above the skeleton.
+    mocks.awaitingSwitchBackSnapshot.set(true);
+    await tick();
+    expect(
+      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
+    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="pinned-prompt-overlay-lane"]')).toBeNull();
+
+    // Snapshot applies (slice clears the flag) → transcript and overlay return.
+    mocks.awaitingSwitchBackSnapshot.set(false);
+    await tick();
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="pinned-prompt-overlay-lane"]'),
+    ).not.toBeNull();
   });
 
   it('does not defer the reveal when the gate is not armed', async () => {

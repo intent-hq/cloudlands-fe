@@ -1774,5 +1774,33 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         vi.useRealTimers();
       }
     });
+
+    it('a re-dispatched markAgentAsViewed supersedes the previous fallback watcher', async () => {
+      vi.useFakeTimers();
+      try {
+        const agentId = 'agent-sub-swbk-redispatch';
+        hydrateAndSwitchAway(agentId, 'agent-sub-swbk-redispatch-other');
+
+        appStore.dispatch(markAgentAsViewed(agentId));
+        expect(gateOf(agentId)).toBe(true);
+
+        // Re-dispatch while the gate is still armed: the first watcher
+        // retires and a single fresh one owns the full bounded wait from now.
+        await vi.advanceTimersByTimeAsync(1_000);
+        appStore.dispatch(markAgentAsViewed(agentId));
+        expect(gateOf(agentId)).toBe(true);
+
+        // Past the FIRST watcher's deadline: a surviving duplicate would
+        // have cleared the gate here.
+        await vi.advanceTimersByTimeAsync(SWITCH_BACK_REVEAL_WAIT_MS - 500);
+        expect(gateOf(agentId)).toBe(true);
+
+        // The superseding watcher's own bound elapses: the gate clears.
+        await vi.advanceTimersByTimeAsync(600);
+        expect(gateOf(agentId)).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });
