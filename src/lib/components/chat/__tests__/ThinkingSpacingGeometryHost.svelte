@@ -46,7 +46,7 @@
 
 <section class:dark={theme === 'dark'} style:width="{width}px" style:zoom>
   <div class="flex flex-col bg-background text-foreground" data-testid="thinking-spacing-host">
-    <div class="flex flex-col" data-testid="attention-card-boundary">
+    <div class="flex flex-col gap-1" data-testid="attention-card-boundary">
       <div class="rounded border border-border bg-card px-3 py-2" data-testid="attention-card">
         Agent attention requested
       </div>
@@ -65,7 +65,7 @@
     </div>
 
     <div data-testid="prose-boundary"><MessageContent content={proseThenThinking} /></div>
-    <div class="flex flex-col" data-testid="message-content-boundary">
+    <div class="flex flex-col gap-1" data-testid="message-content-boundary">
       <div class="type-body" data-testid="message-content">Ordinary message content</div>
       <div class={thinkingBoundaryClass('message')} data-thinking-boundary>
         <ThinkingBlock content="Thinking after message content" />

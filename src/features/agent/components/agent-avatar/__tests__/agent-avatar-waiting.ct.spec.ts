@@ -80,10 +80,16 @@ test('keeps waiting separate through a live same-node state transition', async (
     const colors = await surfaceColors(component);
 
     expect(parseRgb(colors.waiting)).toEqual(waitingByTheme[theme]);
-    for (const color of [colors.idle, colors.running, colors.unread, colors.failed]) {
+    for (const color of [
+      colors.idle,
+      colors.running,
+      colors.completed,
+      colors.unread,
+      colors.failed,
+    ]) {
       expect(colorDistance(parseRgb(colors.waiting), parseRgb(color))).toBeGreaterThan(60);
     }
-    expect(colors.running).toBe(colors.completed);
+    expect(colors.running).not.toBe(colors.completed);
     expect(colors.failed).toBe(colors.permission);
     expect(colors.failed).toBe(colors.discussion);
     expect(colors.failed).toBe(colors.blocker);
@@ -94,7 +100,13 @@ test('keeps waiting separate through a live same-node state transition', async (
         true,
       );
       await expect(reactive).toHaveAttribute('data-avatar-state', state);
-      await expect(reactive).toHaveCSS('color', 'rgb(8, 8, 8)');
+      if (state === 'completed') {
+        expect(await reactive.evaluate((node) => getComputedStyle(node).color)).not.toBe(
+          'rgb(8, 8, 8)',
+        );
+      } else {
+        await expect(reactive).toHaveCSS('color', 'rgb(8, 8, 8)');
+      }
       await expect(reactive).toHaveCSS('opacity', '1');
     }
   }

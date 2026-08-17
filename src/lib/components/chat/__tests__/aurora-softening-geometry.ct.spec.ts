@@ -9,7 +9,6 @@ for (const state of [
     mount,
   }) => {
     const component = await mount(AuroraSofteningGeometryHost, { props: state });
-    const host = component.getByTestId('aurora-geometry-host');
     const layer = component.getByTestId('aurora-softening-layer');
     const prompt = component.getByTestId('sharp-prompt-layer');
     const input = component.getByTestId('prompt-input');
@@ -40,7 +39,12 @@ for (const state of [
     await input.evaluate((node) => (node as HTMLTextAreaElement).setSelectionRange(2, 12));
     await expect(input).toBeFocused();
     expect(await input.evaluate((node) => (node as HTMLTextAreaElement).selectionStart)).toBe(2);
-    expect(await host.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    expect(
+      await layer.evaluate((node) => {
+        const host = node.parentElement!;
+        return host.scrollWidth <= host.clientWidth;
+      }),
+    ).toBe(true);
   });
 }
 
@@ -49,10 +53,10 @@ test('keeps the softened layer static with reduced motion', async ({ mount, page
   const component = await mount(AuroraSofteningGeometryHost);
   const layer = component.getByTestId('aurora-softening-layer');
 
-  expect(
-    await layer.evaluate((node) => {
-      const style = getComputedStyle(node);
-      return [style.animationName, style.transitionDuration];
-    }),
-  ).toEqual(['none', '0s']);
+  const motion = await layer.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return { animationName: style.animationName, transitionDuration: style.transitionDuration };
+  });
+  expect(motion.animationName).toBe('none');
+  expect(Number.parseFloat(motion.transitionDuration)).toBeLessThanOrEqual(0.00001);
 });

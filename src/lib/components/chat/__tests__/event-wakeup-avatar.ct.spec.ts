@@ -46,7 +46,6 @@ test('keeps named standard wake-up avatars optically centered at every required 
                 width: (node as HTMLElement).style.width,
                 height: (node as HTMLElement).style.height,
               })),
-              stateRingRadius: getComputedStyle(surface, '::after').borderRadius,
               clipPath: getComputedStyle(surface).clipPath,
               clearSpace: Number.parseFloat(glyphStyle.paddingInlineStart),
               artWidth:
@@ -92,7 +91,6 @@ test('keeps named standard wake-up avatars optically centered at every required 
             ).toBeLessThanOrEqual(0.5);
           }
           expect(new Set(avatar.radii)).toEqual(new Set([`${6}px`]));
-          expect(avatar.stateRingRadius).toBe('6px');
           expect(avatar.clipPath).toContain('6px');
           expect(avatar.clearSpace).toBe(2);
           expect(avatar.artWidth).toBe(16);

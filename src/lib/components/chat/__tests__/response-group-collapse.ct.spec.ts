@@ -39,7 +39,7 @@ for (const theme of ['light', 'dark'] as const) {
 
     for (const position of ['first', 'middle', 'last'] as const) {
       const group = component.getByTestId(`response-group-${position}`);
-      const trigger = group.locator('[data-operational-disclosure-row]');
+      const trigger = group.getByTestId('response-group-disclosure');
       const body = group.locator('[data-operational-expanded-content]');
       await expect(trigger).toHaveAttribute('aria-expanded', 'true');
       await expect(body).toHaveCount(1);
@@ -48,9 +48,9 @@ for (const theme of ['light', 'dark'] as const) {
         const motion = await trigger.evaluate(async (element) => {
           element.click();
           await new Promise(requestAnimationFrame);
-          const details = element.parentElement?.querySelector(
-            '[data-operational-expanded-content]',
-          );
+          const details = element
+            .closest('[data-operational-row-container]')
+            ?.querySelector('[data-operational-expanded-content]');
           const frames = details?.getAnimations()[0]?.effect?.getKeyframes() ?? [];
           return frames.map((frame) => ({
             height: String(frame.height ?? ''),
@@ -88,7 +88,7 @@ for (const theme of ['light', 'dark'] as const) {
     await component.update({ props: { theme, width: 260, zoom: 2, chunk: 'new chunk' } });
     for (const position of ['first', 'middle', 'last'] as const) {
       const group = component.getByTestId(`response-group-${position}`);
-      await expect(group.locator('[data-operational-disclosure-row]')).toHaveAttribute(
+      await expect(group.getByTestId('response-group-disclosure')).toHaveAttribute(
         'aria-expanded',
         'false',
       );
@@ -99,7 +99,7 @@ for (const theme of ['light', 'dark'] as const) {
     }
 
     const first = component.getByTestId('response-group-first');
-    const firstTrigger = first.locator('[data-operational-disclosure-row]');
+    const firstTrigger = first.getByTestId('response-group-disclosure');
     await firstTrigger.click();
     await expect(firstTrigger).toHaveAttribute('aria-expanded', 'true');
     const focusTarget = first.getByTestId('response-group-focus-first');
@@ -116,7 +116,7 @@ for (const theme of ['light', 'dark'] as const) {
 
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const middle = component.getByTestId('response-group-middle');
-    const middleTrigger = middle.locator('[data-operational-disclosure-row]');
+    const middleTrigger = middle.getByTestId('response-group-disclosure');
     await middleTrigger.click();
     await expect(middleTrigger).toHaveAttribute('aria-expanded', 'true');
     expect(

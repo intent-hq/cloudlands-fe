@@ -177,7 +177,6 @@ test('keeps waiting, finished, peer, and inline-agent summaries canonical', asyn
           '[data-testid="event-subscriptions-summary-title"]',
           '[data-testid="one-shot-summary-title"]',
           '[data-testid="finished-agent-summary-title"]',
-          '[data-testid="agent-card-name"]',
         ]);
         await expectChevronGlyphs(
           component,

@@ -165,7 +165,9 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             const agentChevron = element('agent-message-chevron-column');
             const eventChevron = element('event-wakeup-chevron-column');
             const preview = element('agent-message-preview');
-            const senderName = element('agent-message-attribution').querySelector('[title]')!;
+            const senderName = element('agent-message-attribution').querySelector(
+              'span.truncate[title]',
+            )!;
             return {
               agentSurface: style(agentCard, surfaceProperties),
               eventSurface: style(eventCard, surfaceProperties),
@@ -179,9 +181,15 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
               eventIconRect: rect(eventIcon),
               agentChevronRect: rect(agentChevron),
               eventChevronRect: rect(eventChevron),
-              truncates: [preview, senderName].some(
-                (node) => node.scrollWidth > node.clientWidth && node.clientWidth > 0,
-              ),
+              ellipsisStyles: [preview, senderName].map((node) => {
+                const computed = getComputedStyle(node);
+                return {
+                  hasTruncateClass: node.classList.contains('truncate'),
+                  overflowX: computed.overflowX,
+                  textOverflow: computed.textOverflow,
+                  whiteSpace: computed.whiteSpace,
+                };
+              }),
             };
           });
 
@@ -215,7 +223,16 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             collapsed.eventChevronRect.bottom - collapsed.eventChevronRect.top,
             1,
           );
-          if (labelLength === 'long') expect(collapsed.truncates).toBe(true);
+          if (labelLength === 'long') {
+            for (const ellipsisStyle of collapsed.ellipsisStyles) {
+              expect(ellipsisStyle).toEqual({
+                hasTruncateClass: true,
+                overflowX: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              });
+            }
+          }
 
           const interactionStyle = async (state: 'hover' | 'focus', target: typeof agentToggle) => {
             if (state === 'hover') await target.hover();

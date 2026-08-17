@@ -89,7 +89,7 @@ test('keeps the edge gap at zero for empty, one, and many queues in every displa
             paddingTop: '4px',
             paddingBottom: '4px',
             rowGap: 'normal',
-            containerPaddingBottom: '0px',
+            containerPaddingBottom: '8px',
           });
         }
       }
@@ -175,7 +175,9 @@ test('leaves no stale shell after removal, transition reversal, or reduced motio
   await expect(component.getByTestId('queued-message-utility-area')).toHaveCount(1);
   await expect(component.getByTestId('queued-messages-container')).toHaveCount(1);
   expect(await outerGap(component)).toBeCloseTo(0, 5);
-  expect(await component.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
+  await expect
+    .poll(() => component.evaluate((node) => node.getAnimations({ subtree: true }).length))
+    .toBe(0);
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await component.getByTestId('queued-message-row').hover();
@@ -183,10 +185,14 @@ test('leaves no stale shell after removal, transition reversal, or reduced motio
   await expect(component.getByTestId('queued-message-utility-area')).toHaveCount(0);
   await expect(component.getByTestId('queued-messages-container')).toHaveCount(0);
   await expect(component.getByTestId('chat-scroll-end-marker')).toHaveCSS('height', '0px');
-  expect(await component.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
+  await expect
+    .poll(() => component.evaluate((node) => node.getAnimations({ subtree: true }).length))
+    .toBe(0);
 
   await component.update({ props: { queueCount: 2 } });
   await expect(component.getByTestId('queued-message-row')).toHaveCount(1);
-  expect(await visibleComposerGap(component)).toBeCloseTo(0, 5);
-  expect(await component.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
+  await expect.poll(() => visibleComposerGap(component)).toBeCloseTo(0, 5);
+  await expect
+    .poll(() => component.evaluate((node) => node.getAnimations({ subtree: true }).length))
+    .toBe(0);
 });

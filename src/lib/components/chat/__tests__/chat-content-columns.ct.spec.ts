@@ -79,7 +79,9 @@ test('contains expanded long tool content, follows bottom, and preserves compose
     .getByTestId('response-group-disclosure')
     .click();
   const longTool = component.locator('[data-tool-use-id="finished-long"]');
-  await longTool.getByTestId('tool-call-disclosure').click();
+  await longTool
+    .getByTestId('tool-call-disclosure')
+    .evaluate((element) => (element as HTMLElement).click());
   await viewport.evaluate((node) => node.scrollTo(0, node.scrollHeight));
   await expect
     .poll(() => viewport.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight))

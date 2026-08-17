@@ -301,7 +301,10 @@ test.describe('chat message navigator production path', () => {
           outline: style.outlineStyle,
         };
       });
-      expect(searchFocus).toEqual(searchBlur);
+      expect(searchFocus.backgroundColor).toBe(searchBlur.backgroundColor);
+      expect(searchFocus.borderColor).not.toBe(searchBlur.borderColor);
+      expect(hasVisibleBoxShadow(searchBlur.boxShadow)).toBe(false);
+      expect(searchFocus.outline).toBe(searchBlur.outline);
       const rowFocus = await initialOption.evaluate((element) => {
         const style = getComputedStyle(element);
         return {

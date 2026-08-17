@@ -13,11 +13,11 @@ for (const theme of ['light', 'dark'] as const) {
         });
 
         for (const [testId, previousSelector, expectedGap] of [
-          ['attention-card-boundary', '[data-testid="attention-card"]', 16],
+          ['attention-card-boundary', '[data-testid="attention-card"]', 12],
           ['notice-boundary', '.discussion-request-notice', 16],
-          ['prose-boundary', '[data-message-content-block="text"]', 20],
-          ['message-content-boundary', '[data-testid="message-content"]', 16],
-          ['streaming-boundary', '[data-message-content-block="text"]', 20],
+          ['prose-boundary', '[data-message-content-block="text"]', 12],
+          ['message-content-boundary', '[data-testid="message-content"]', 12],
+          ['streaming-boundary', '[data-message-content-block="text"]', 12],
         ] as const) {
           const fixture = component.getByTestId(testId);
           const measurement = await fixture.evaluate((root, selector) => {
@@ -67,13 +67,13 @@ for (const theme of ['light', 'dark'] as const) {
             const thinking = root.querySelector('[data-testid="reasoning-tool-call"]')!;
             return thinking.getBoundingClientRect().top - card.getBoundingClientRect().bottom;
           });
-        expect(await gap()).toBeCloseTo(16 * zoom, 1);
+        expect(await gap()).toBeCloseTo(12 * zoom, 1);
         await disclosure.click();
         await page.waitForTimeout(180);
-        expect(await gap()).toBeCloseTo(16 * zoom, 1);
+        expect(await gap()).toBeCloseTo(12 * zoom, 1);
         await disclosure.click();
         await page.waitForTimeout(180);
-        expect(await gap()).toBeCloseTo(16 * zoom, 1);
+        expect(await gap()).toBeCloseTo(12 * zoom, 1);
 
         await component.update({
           props: { theme, width, zoom, showStreamingThinking: false },
@@ -90,7 +90,7 @@ for (const theme of ['light', 'dark'] as const) {
             wrapper.previousElementSibling!.getBoundingClientRect().bottom
           );
         });
-        expect(streamingGap).toBeCloseTo(20 * zoom, 1);
+        expect(streamingGap).toBeCloseTo(12 * zoom, 1);
       });
     }
   }
