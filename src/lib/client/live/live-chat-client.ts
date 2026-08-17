@@ -12,8 +12,15 @@
  * `messageSeq`/`timestamp`/`streamingComplete` on the terminal frame; the
  * block is the FULL current block, upserted by its stable
  * `{messageId}:{blockIndex}` id into the owning message (created on first
- * appearance). `removedIds` are block ids the persisted message does not
- * contain (orphan self-heal). Sequence gaps trigger resnapshot (unsubscribe
+ * appearance). The registration opts into `deltaEncoding: "incremental"`
+ * (§7.1, monorepo#2675): live `text`/`thinking` chunk deltas then carry only
+ * the new fragment as `textDelta`, which the reducer APPENDS to the block's
+ * text (an `added` fragment creates the block — an append onto the empty
+ * string) — enabled strictly by the snapshot's `deltaEncoding: "incremental"`
+ * echo, so an older daemon that ignores the param reduces full-text as
+ * before. Tool blocks, row deltas, and the terminal reconcile stay full
+ * blocks in both modes. `removedIds` are block ids the persisted message does
+ * not contain (orphan self-heal). Sequence gaps trigger resnapshot (unsubscribe
  * + fresh `chat.subscribe`); a transport reconnect re-registers against the
  * daemon's rebuilt registry; a rejected registration or a missing seq-0
  * snapshot self-heals via a delayed re-registration with exponential backoff
@@ -48,6 +55,13 @@ interface ChatSnapshotPayload {
    * pruned anchor). Absent on non-resume snapshots.
    */
   resumed?: boolean;
+  /**
+   * Incremental-encoding echo (§7.1, monorepo#2675): `"incremental"` on every
+   * snapshot an incremental subscription emits (seq-0 AND lag recovery).
+   * Absent in full mode and from older daemons that ignore the request param
+   * — the echo, not the request, decides the reducer.
+   */
+  deltaEncoding?: string;
 }
 
 /** Decoded seq-0 snapshot page (mirrors `agent.getConversation` shape). */
@@ -155,11 +169,16 @@ function parseChatPush(method: string, params: unknown): ChatPush | null {
   return null;
 }
 
-/** One delta entity: the message pointer plus the FULL current block (§7.1). */
+/**
+ * One delta entity: the message pointer plus the current block (§7.1) — the
+ * FULL block, except on an incremental subscription where a live `text`/
+ * `thinking` chunk block carries only the new fragment as `textDelta`
+ * (`{ type, id, textDelta }`, monorepo#2675).
+ */
 interface ChatDeltaEntity {
   messageId: string;
   role?: string;
-  block: ContentBlock & { id?: string };
+  block: ContentBlock & { id?: string; textDelta?: string };
   messageSeq?: number;
   timestamp?: string;
   streamingComplete?: boolean;
@@ -257,9 +276,14 @@ function fingerprintSnapshot(raw: unknown): number {
  * transcript (PROTOCOL §7.1). A snapshot rebuilds the message list; a
  * contiguous delta upserts each entity's FULL block by `block.id` into its
  * owning message — created on first appearance for a new in-flight message —
- * and strips `removedIds` from every message (orphan self-heal). Mutated
- * messages are replaced with shallow copies so emitted transcripts are
- * referentially fresh where they changed.
+ * and strips `removedIds` from every message (orphan self-heal). When the
+ * snapshot echoed `deltaEncoding: "incremental"` (§7.1, monorepo#2675), a
+ * `textDelta`-bearing `text`/`thinking` entity APPENDS its fragment to the
+ * identified block's text instead of replacing it — an `added` fragment
+ * creates the block with text equal to the fragment (append onto the empty
+ * string). Without the echo (full mode, older daemons) every block reduces
+ * full-text as before. Mutated messages are replaced with shallow copies so
+ * emitted transcripts are referentially fresh where they changed.
  */
 export class ChatTranscriptReconciler {
   private messages: AgentMessage[] = [];
@@ -269,6 +293,7 @@ export class ChatTranscriptReconciler {
   private expectedSeq = 0;
   private seeded = false;
   private snapshotFingerprint = 0;
+  private incremental = false;
 
   /** Forget all state so the next snapshot rebuilds from scratch. */
   reset(): void {
@@ -279,6 +304,7 @@ export class ChatTranscriptReconciler {
     this.expectedSeq = 0;
     this.seeded = false;
     this.snapshotFingerprint = 0;
+    this.incremental = false;
   }
 
   /**
@@ -313,6 +339,11 @@ export class ChatTranscriptReconciler {
       this.messages.some((m) => m.isStreaming === true) ||
       p.isResponding === true ||
       p.turnInFlight === true;
+    // §7.1 encoding echo (monorepo#2675): every snapshot an incremental
+    // subscription emits carries `deltaEncoding: "incremental"`. The echo —
+    // never the request — arms the append reducer, so a daemon that ignored
+    // the param (older, or full mode) keeps the full-text reduction.
+    this.incremental = p.deltaEncoding === 'incremental';
     this.expectedSeq = seq + 1;
     this.seeded = true;
     return true;
@@ -368,7 +399,29 @@ export class ChatTranscriptReconciler {
     };
   }
 
-  /** Upsert one delta entity's full block into its owning message. */
+  /**
+   * Materialize the entity's block for the upsert. In incremental mode a
+   * live `text`/`thinking` chunk block carries only the new `textDelta`
+   * fragment (§7.1, monorepo#2675): append it to the prior block's text —
+   * or the empty string when no block exists yet (the `added` first chunk)
+   * — mirroring the daemon-side gate on the mapper-owned block types, so a
+   * non-text block carrying its own `textDelta` field stays latest-wins.
+   * Everything else (full mode, tool blocks, terminal reconcile) is the
+   * FULL block, upserted verbatim.
+   */
+  private materializeBlock(entity: ChatDeltaEntity, prior: ContentBlock | undefined): ContentBlock {
+    const { textDelta, ...block } = entity.block;
+    if (
+      !this.incremental ||
+      typeof textDelta !== 'string' ||
+      (block.type !== 'text' && block.type !== 'thinking')
+    ) {
+      return entity.block;
+    }
+    return { ...block, text: (prior?.text ?? '') + textDelta };
+  }
+
+  /** Upsert one delta entity's block into its owning message. */
   private upsertBlock(entity: ChatDeltaEntity): void {
     const streamingComplete = entity.streamingComplete === true;
     let index = this.messages.findIndex((m) => m.id === entity.messageId);
@@ -396,8 +449,12 @@ export class ChatTranscriptReconciler {
     const message = this.messages[index];
     const blocks = [...(message.contentBlocks ?? [])];
     const blockIndex = blocks.findIndex((b) => b.id === entity.block.id);
-    if (blockIndex >= 0) blocks[blockIndex] = mergeToolUseBlock(blocks[blockIndex], entity.block);
-    else blocks.push(entity.block);
+    const incoming = this.materializeBlock(
+      entity,
+      blockIndex >= 0 ? blocks[blockIndex] : undefined,
+    );
+    if (blockIndex >= 0) blocks[blockIndex] = mergeToolUseBlock(blocks[blockIndex], incoming);
+    else blocks.push(incoming);
     const next: AgentMessage = {
       ...message,
       contentBlocks: blocks,
@@ -573,10 +630,14 @@ export class LiveChatClient implements ChatClient {
       // registration reports `connecting`; a backoff retry keeps reporting
       // `delayed` until a snapshot hydrates.
       if (!retrying) setPhase(awaitingResnapshot ? 'resyncing' : 'connecting');
-      backendRequest<{ subscriptionId?: string }>(
-        'chat.subscribe',
-        resumeAnchor === undefined ? { agentId } : { agentId, sinceMessageId: resumeAnchor },
-      )
+      // Opt into fragment deltas (§7.1 `deltaEncoding`, monorepo#2675): an
+      // older daemon ignores the unknown param and echoes nothing, so the
+      // reducer stays full-text there — the snapshot echo decides the mode.
+      backendRequest<{ subscriptionId?: string }>('chat.subscribe', {
+        agentId,
+        deltaEncoding: 'incremental',
+        ...(resumeAnchor === undefined ? {} : { sinceMessageId: resumeAnchor }),
+      })
         .then((result) => {
           const id = result?.subscriptionId;
           if (generation !== thisGeneration || disposed) {
