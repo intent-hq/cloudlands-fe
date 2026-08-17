@@ -229,7 +229,7 @@ import {
   setServers,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
-import { disposeScripts, upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
+import { upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
 import type { ScriptOutputBuffer } from '$store/renderer/slices/scripts/scripts-types';
 import { addTerminal } from '$store/renderer/slices/terminals/terminals-slice';
 import { selectTerminalsForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
@@ -245,6 +245,7 @@ import {
 import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
 import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/question-resource';
 import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -3726,7 +3727,8 @@ describe('daemonEventsBridge (legacy mock-IPC relay — daemon events → listen
 });
 
 describe('daemonEventsBridge (script wire contract — script:output/state → scripts slice)', () => {
-  const SCRIPT_ID = 'script-bridge-1';
+  let scriptSequence = 0;
+  let SCRIPT_ID = '';
 
   function seedScript(): void {
     appStore.dispatch(
@@ -3790,11 +3792,11 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
   });
 
   beforeEach(async () => {
+    SCRIPT_ID = `script-bridge-${++scriptSequence}`;
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
-    appStore.dispatch(disposeScripts(WS));
     seedScript();
   });
 
@@ -6446,9 +6448,18 @@ describe('daemonEventsBridge (workspace:updated → tab bar archive sync)', () =
     capturedHandlers.length = 0;
     // Tab state persists across tests via appStore — clear the whole strip
     // (openTabs, currentTabId, stacks, recently-closed) before each test.
-    const { cleanupInvalidWorkspaceTabs } =
+    const { loadWorkspaceTabsState } =
       await import('$store/renderer/slices/tab-state/tab-state-slice');
-    appStore.dispatch(cleanupInvalidWorkspaceTabs([]));
+    appStore.dispatch(
+      loadWorkspaceTabsState({
+        openTabs: [],
+        currentTabId: null,
+        pinnedTabs: [],
+        unsavedTabs: [],
+        optimisticTabs: [],
+        tabOrder: [],
+      }),
+    );
   });
 
   afterEach(() => {
@@ -7740,11 +7751,20 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     appStore.dispatch(clearAllSessions());
     // Reset workspace/agent focus so a preceding test's openWorkspaceTab
     // does not leak into the "no active workspace" case.
-    const { clearCurrentWorkspaceTab } =
+    const { loadWorkspaceTabsState } =
       await import('$store/renderer/slices/tab-state/tab-state-slice');
     const { setActiveAgentId } =
       await import('$store/renderer/slices/workspace-agents/workspace-agents-slice');
-    appStore.dispatch(clearCurrentWorkspaceTab());
+    appStore.dispatch(
+      loadWorkspaceTabsState({
+        openTabs: [],
+        currentTabId: null,
+        pinnedTabs: [],
+        unsavedTabs: [],
+        optimisticTabs: [],
+        tabOrder: [],
+      }),
+    );
     appStore.dispatch(setActiveAgentId(WS, null));
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
@@ -8948,9 +8968,19 @@ describe('daemonEventsBridge (agent:deleted → reconcileWorkspaceAgentSummary)'
     backendRequestSpy.mockReset();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
+    // The agent:deleted arm registers a pending-deletion tombstone — clear it
+    // so it cannot leak across tests.
+    const { clearPendingAgentDeletions } =
+      await import('$features/agent/utils/pending-agent-deletions');
+    clearPendingAgentDeletions();
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(async () => {
+    vi.clearAllMocks();
+    const { clearPendingAgentDeletions } =
+      await import('$features/agent/utils/pending-agent-deletions');
+    clearPendingAgentDeletions();
+  });
 
   async function seedWorkspace(agentIds: string[]): Promise<void> {
     const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
@@ -9044,6 +9074,68 @@ describe('daemonEventsBridge (agent:deleted → reconcileWorkspaceAgentSummary)'
     expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS_SUMMARY });
     const agentSummary = await readAgentSummary();
     expect(agentSummary?.agentIds).toEqual(['agent-deleted-1']);
+  });
+
+  // An immediate delete (no agent:delete-scheduled grace window) must clean
+  // the local slices synchronously — mirroring handleAgentDeleteScheduledEvent
+  // — AND still fire the agentSummary reconcile (monorepo#1712).
+  it('removes the tracked session/agent from the slices and still reconciles agentSummary', async () => {
+    const DELETED = 'agent-deleted-1';
+    const session: AgentSession = {
+      id: DELETED,
+      backendSessionId: 'backend-del',
+      workspaceId: WS_SUMMARY,
+      name: 'Doomed',
+      status: AgentStatus.Idle,
+      messages: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as AgentSession;
+    appStore.dispatch(bulkUpsertSessions([session]));
+    appStore.dispatch(upsertSession(session));
+    appStore.dispatch(setAgents(WS_SUMMARY, [session]));
+    await seedWorkspace([DELETED, 'agent-kept-1']);
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const before = appStore.state as {
+      agentSessions: { byAgentId: Record<string, unknown> };
+      workspaceAgents: { byWorkspaceId: Record<string, { agentIds?: string[] }> };
+    };
+    expect(before.agentSessions.byAgentId[DELETED]).toBeDefined();
+    expect(before.workspaceAgents.byWorkspaceId[WS_SUMMARY]?.agentIds ?? []).toContain(DELETED);
+
+    handler(agentDeletedNotification());
+
+    // Slice cleanup is synchronous — no refetch needed to converge.
+    const after = appStore.state as typeof before;
+    expect(after.agentSessions.byAgentId[DELETED]).toBeUndefined();
+    expect(after.workspaceAgents.byWorkspaceId[WS_SUMMARY]?.agentIds ?? []).not.toContain(DELETED);
+
+    // The agentSummary reconcile still fires (monorepo#1712 regression guard).
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS_SUMMARY });
+  });
+
+  // An `agent.list`/`agent.get` begun before agent:deleted can return the
+  // pre-delete row after the synchronous removals; without a tombstone the
+  // hydration path would resurrect the agent. Immediate deletes have no
+  // agent:delete-scheduled entry, so the deleted arm must register one.
+  it('registers a pending-deletion tombstone so a stale refetch cannot resurrect the agent', async () => {
+    const DELETED = 'agent-deleted-1';
+    const { isAgentDeletionPending } =
+      await import('$features/agent/utils/pending-agent-deletions');
+    expect(isAgentDeletionPending(DELETED)).toBe(false);
+
+    await seedWorkspace([DELETED]);
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(agentDeletedNotification());
+
+    expect(isAgentDeletionPending(DELETED)).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
   });
 
   // AGENTS.md "Event-driven refetches — single-flight and coalesced": a burst

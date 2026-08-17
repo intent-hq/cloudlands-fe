@@ -123,8 +123,6 @@ export const setAgentFontStyle = createAction<[style: AgentFontStyle]>(
   'fontSettings/setAgentFontStyle',
 );
 
-export const cycleFontStyle = createAction('fontSettings/cycleFontStyle');
-
 export const setNoteFontStyle = createAction<[style: NoteFontStyle]>(
   'fontSettings/setNoteFontStyle',
 );
@@ -243,10 +241,6 @@ userPreferencesReducer.with(setZoomFactor, (state, { payload: [factor] }) => {
 userPreferencesReducer.with(setAgentFontStyle, (state, { payload: [style] }) => ({
   ...state,
   agentFontStyle: style,
-}));
-userPreferencesReducer.with(cycleFontStyle, (state) => ({
-  ...state,
-  agentFontStyle: FONT_STYLES[(FONT_STYLES.indexOf(state.agentFontStyle) + 1) % FONT_STYLES.length],
 }));
 userPreferencesReducer.with(setNoteFontStyle, (state, { payload: [style] }) => ({
   ...state,

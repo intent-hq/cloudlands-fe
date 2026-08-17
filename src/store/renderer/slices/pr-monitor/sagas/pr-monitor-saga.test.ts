@@ -18,11 +18,7 @@ import {
   initialState,
   prMonitorReducer,
 } from '../pr-monitor-slice';
-import {
-  clearCurrentWorkspaceTab,
-  openWorkspaceTab,
-  tabStateReducer,
-} from '../../tab-state/tab-state-slice';
+import { openWorkspaceTab, tabStateReducer } from '../../tab-state/tab-state-slice';
 import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { cancelPrMonitorWorker, flushPrMonitorWorker, prMonitorSaga } from './pr-monitor-saga';
 
@@ -235,24 +231,6 @@ describe('prMonitorSaga', () => {
 
     expect(mocks.subscribePrMonitors).toHaveBeenCalledTimes(1);
     expect(disposeA).not.toHaveBeenCalled();
-    harness.task.cancel();
-    await harness.task.toPromise();
-  });
-
-  it('disposes the live subscription when the active workspace is cleared', async () => {
-    const harness = createHarness('ws-A');
-    await settle();
-    await advanceReconciliation();
-    const disposeA = mocks.subscribePrMonitors.mock.results[0].value.dispose as ReturnType<
-      typeof vi.fn
-    >;
-
-    harness.dispatch(clearCurrentWorkspaceTab());
-    await settle();
-    await advanceReconciliation();
-
-    expect(disposeA).toHaveBeenCalledOnce();
-    expect(mocks.subscribePrMonitors).toHaveBeenCalledTimes(1);
     harness.task.cancel();
     await harness.task.toPromise();
   });

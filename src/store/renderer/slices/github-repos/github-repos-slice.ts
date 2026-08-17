@@ -57,9 +57,6 @@ export const setGithubReposError = createAction<[error: string]>(
   "githubRepos/setError",
 );
 
-/** Reset to the initial empty state (e.g. on GitHub logout). */
-export const clearGithubRepos = createAction("githubRepos/clear");
-
 export const githubReposReducer = createReducer<GithubReposState>(initialState);
 
 githubReposReducer.with(setGithubReposLoading, (state) => ({
@@ -79,4 +76,3 @@ githubReposReducer.with(setGithubReposError, (state, { payload: [error] }) => ({
   loading: false,
   error,
 }));
-githubReposReducer.with(clearGithubRepos, () => initialState);

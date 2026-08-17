@@ -26,7 +26,6 @@ vi.mock('$lib/i18n/locale', () => ({
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
 
 import {
-  cycleFontStyle,
   cycleNoteFontStyle,
   deleteActivityLogPreset,
   hydrateActivityLogPresets,
@@ -225,7 +224,6 @@ describe('userPreferencesPersistenceSaga', () => {
       setShowReasoningBlocks(true),
       toggleShowReasoningBlocks(),
       setAgentFontStyle('monospace'),
-      cycleFontStyle(),
       setNoteFontStyle('sans'),
       cycleNoteFontStyle(),
       setCodeFontFamily('Monaco'),
@@ -253,7 +251,6 @@ describe('userPreferencesPersistenceSaga', () => {
       ['chat:showReasoningBlocks', true],
       ['chat:showReasoningBlocks', true],
       ['agent-font-settings', { fontStyle: 'monospace' }],
-      ['agent-font-settings', { fontStyle: 'monospace' }],
       ['note-font-settings', { fontStyle: 'sans' }],
       ['note-font-settings', { fontStyle: 'sans' }],
       ['code-font-settings', { fontFamily: 'Monaco' }],
@@ -271,7 +268,6 @@ describe('userPreferencesPersistenceSaga', () => {
     task.cancel();
     await task.toPromise();
   });
-
   it('skips main-process language IPC outside Electron', async () => {
     mocks.isElectron.mockReturnValue(false);
     await runSaga(

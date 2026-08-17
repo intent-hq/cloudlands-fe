@@ -7,7 +7,7 @@
 
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import type { OnboardingState, OnboardingStep, ProjectConfig, AgentStatus } from './onboarding-types';
+import type { OnboardingState, OnboardingStep, ProjectConfig } from './onboarding-types';
 import { STEP_ORDER } from './onboarding-types';
 
 // =============================================================================
@@ -37,7 +37,6 @@ export const initialState: OnboardingState = {
 export const goToStep = createAction<[step: OnboardingStep]>('onboarding/goToStep');
 export const nextStep = createAction('onboarding/nextStep');
 export const setProjectConfig = createAction<[config: Partial<ProjectConfig>]>('onboarding/setProjectConfig');
-export const setAgentStatus = createAction<[status: Partial<AgentStatus>]>('onboarding/setAgentStatus');
 export const setOnboardingWorkspaceId = createAction<[id: string]>('onboarding/setWorkspaceId');
 export const resetOnboarding = createAction('onboarding/reset');
 export const setOnboardingFullFlowRequested = createAction<[value: boolean]>(
@@ -63,10 +62,6 @@ onboardingReducer.with(nextStep, (state) => {
 onboardingReducer.with(setProjectConfig, (state, { payload: [config] }) => ({
     ...state,
     projectConfig: { ...state.projectConfig, ...config },
-  }));
-onboardingReducer.with(setAgentStatus, (state, { payload: [status] }) => ({
-    ...state,
-    agentStatus: { ...state.agentStatus, ...status },
   }));
 onboardingReducer.with(setOnboardingWorkspaceId, (state, { payload: [id] }) => ({
     ...state,

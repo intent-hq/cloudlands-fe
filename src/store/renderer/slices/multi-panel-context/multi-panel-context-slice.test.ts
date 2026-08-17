@@ -7,20 +7,7 @@ import {
   createCollection,
   getItems,
 } from "@augmentcode/themis/utils/collections/collection-utils";
-import {
-  multiPanelContextReducer,
-  setWorkspace,
-  updatePanels,
-  togglePanel,
-  setSelection,
-  clearSelection,
-  toggleSelection,
-  uncheckAllSelections,
-  addSearchedItem,
-  type MultiPanelContextState,
-  type PanelContextItem,
-  type SelectionContextItem,
-} from "./multi-panel-context-slice";
+import { multiPanelContextReducer, setWorkspace, updatePanels, togglePanel, setSelection, clearSelection, toggleSelection, addSearchedItem, type MultiPanelContextState, type PanelContextItem, type SelectionContextItem } from "./multi-panel-context-slice";
 
 const initialState: MultiPanelContextState = {
   panels: createCollection<PanelContextItem, "id">("id"),
@@ -216,14 +203,6 @@ describe("multiPanelContextReducer", () => {
       const stateWithSel = withSelections(makeSelection({ checked: true }));
       const state = multiPanelContextReducer(stateWithSel, toggleSelection("sel-panel-1-tab-1"));
       expect(getItems(state.selections)[0].checked).toBe(false);
-    });
-  });
-
-  describe("uncheckAllSelections", () => {
-    it("should uncheck all selections", () => {
-      const stateWithSels = withSelections(makeSelection({ checked: true }));
-      const state = multiPanelContextReducer(stateWithSels, uncheckAllSelections());
-      expect(getItems(state.selections).every((s) => !s.checked)).toBe(true);
     });
   });
 

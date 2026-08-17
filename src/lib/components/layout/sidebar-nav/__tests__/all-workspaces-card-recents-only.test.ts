@@ -6,12 +6,11 @@ import {
   setWorkspaceEntity,
   setWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-slice';
-import {
-  setPinnedWorkspaceIds,
-  togglePinWorkspace,
-} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { hydrateSidebarNav, togglePinWorkspace } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { WorkspaceStatus, type Workspace, type WorkspaceId } from '$shared/types';
 import AllWorkspacesCardHarness from './mocks/AllWorkspacesCardHarness.svelte';
+
+const setPinnedWorkspaceIds = (ids: string[]) => hydrateSidebarNav({ pinnedWorkspaceIds: ids });
 
 vi.mock('$features/agent/services/active-streams-tracker', () => ({
   activeStreamsTracker: {

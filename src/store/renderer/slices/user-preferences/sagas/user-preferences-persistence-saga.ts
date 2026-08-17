@@ -23,7 +23,6 @@ import {
   selectSpellcheckEnabled,
 } from '../user-preferences-selectors';
 import {
-  cycleFontStyle,
   cycleNoteFontStyle,
   deleteActivityLogPreset,
   FONT_STYLES,
@@ -260,7 +259,7 @@ function* watchUserPreferenceWrites() {
     [setShowReasoningBlocks, toggleShowReasoningBlocks],
     persistShowReasoningBlocksWorker,
   );
-  yield* takeEvery([setAgentFontStyle, cycleFontStyle], persistAgentFontWorker);
+  yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);
   yield* takeEvery(setCodeFontFamily, persistCodeFontWorker);
   yield* takeEvery(

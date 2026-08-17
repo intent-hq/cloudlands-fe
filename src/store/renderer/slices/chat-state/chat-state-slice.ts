@@ -21,6 +21,7 @@ import {
 } from '../workspace-agents/workspace-agents-stream-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
+import { markAgentAsViewed } from '../unread-tracking/unread-tracking-slice';
 import {
   removeQueuedMessageFromAgentQueue,
   replaceAgentQueue,
@@ -690,6 +691,17 @@ export const chatLiveStreamPhaseChanged = createAction<
   [agentId: string, phase: LiveStreamPhase | null]
 >('chatState/liveStreamPhaseChanged');
 
+/**
+ * Bounded fallback for the switch-back transcript reveal gate: the subscribe
+ * saga's timer elapsed without a fresh seq-0 snapshot applying, so the gate
+ * clears and the retained transcript shows (today's behavior) instead of an
+ * indefinite skeleton. A no-op when the gate is not armed (snapshot already
+ * applied, subscription closed, or a stale timer from a superseded switch).
+ */
+export const chatSwitchBackRevealTimedOut = createAction<[agentId: string]>(
+  'chatState/switchBackRevealTimedOut',
+);
+
 // --- Initialize chat saga trigger (no reducer state change) ---
 
 /** Trigger the initialize-chat saga. Dispatched from ChatPanel to start chat initialization. */
@@ -938,6 +950,9 @@ chatStateReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId
   return updateAgent(state, agentId, {
     agentId,
     transcriptSnapshot: { ...meta, seq: (agent.transcriptSnapshot?.seq ?? 0) + 1 },
+    // A snapshot from the CURRENT subscription is exactly what the
+    // switch-back reveal gate waits for — reveal the transcript.
+    awaitingSwitchBackSnapshot: false,
   });
 });
 chatStateReducer.with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, phase] }) => {
@@ -945,15 +960,40 @@ chatStateReducer.with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, p
   // Phase null = subscription closed (teardown reset): the snapshot metadata
   // belongs to that subscription, so drop it — a reopen's hydration must wait
   // for the NEW subscription's snapshot, not settle on the stale one (whose
-  // truncated flag may no longer describe the conversation).
+  // truncated flag may no longer describe the conversation). The switch-back
+  // reveal gate clears too: with no open/opening subscription there is no
+  // snapshot to wait for, and a background panel whose subscription closed
+  // stays on its retained transcript.
   if (phase === null) {
     return updateAgent(state, agentId, {
       agentId,
       liveStreamPhase: null,
       transcriptSnapshot: undefined,
+      awaitingSwitchBackSnapshot: false,
     });
   }
   return updateAgent(state, agentId, { agentId, liveStreamPhase: phase });
+});
+// Switch-back transcript reveal gate: armed SYNCHRONOUSLY with the view
+// switch (same dispatch that triggers the subscribe saga's subscription
+// swap), so no frame can paint the retained stale transcript before the
+// reopening subscription's fresh seq-0 snapshot lands. Arms only for a
+// conversation that hydrated at least once (the first-hydration path keeps
+// its existing skeleton logic) and holds no snapshot from a current
+// subscription (an already-open live subscription keeps rendering). Never
+// materializes chat state for an agent whose chat was never opened.
+chatStateReducer.with(markAgentAsViewed, (state, { payload: [agentId] }) => {
+  const agent = state.byAgentId[agentId];
+  if (!agent) return state;
+  if (agent.transcriptHydratedOnce !== true) return state;
+  if (agent.transcriptSnapshot !== undefined) return state;
+  if (agent.awaitingSwitchBackSnapshot === true) return state;
+  return updateAgent(state, agentId, { awaitingSwitchBackSnapshot: true });
+});
+chatStateReducer.with(chatSwitchBackRevealTimedOut, (state, { payload: [agentId] }) => {
+  const agent = state.byAgentId[agentId];
+  if (agent?.awaitingSwitchBackSnapshot !== true) return state;
+  return updateAgent(state, agentId, { awaitingSwitchBackSnapshot: false });
 });
 chatStateReducer.with(eventReceived, (state, { payload: [, event] }) => {
   if (event.type !== 'agent:idle') return state;

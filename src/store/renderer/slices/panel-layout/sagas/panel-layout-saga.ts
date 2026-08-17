@@ -134,7 +134,6 @@ const PERSIST_ACTIONS = [
   openTab,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
-  openBlankWorkingPanel,
   collapseToReusablePanel,
   closeTab,
   closeActiveTab,
@@ -181,7 +180,6 @@ const PERSIST_ACTIONS = [
 
 const HISTORY_ACTIONS = [
   openTab,
-  openBlankWorkingPanel,
   openTabInAdjacentOrSplit,
   closeTab,
   closeActiveTab,
@@ -796,6 +794,13 @@ export function* panelLayoutSaga(options?: {
   }): SagaGenerator<void> {
     yield* queueHistorySave(historyMailboxes, action);
   }
+  function* handleBlankWorkingPanel(
+    action: ReturnType<typeof openBlankWorkingPanel>,
+  ): SagaGenerator<void> {
+    yield* fork(persistPanelLayout, action);
+    yield* fork(enforceReusablePanelInvariant, action);
+    yield* queueHistorySaveForAction(action);
+  }
   function* handleWorkspaceUnmountedAction(
     action: ReturnType<typeof workspaceUnmounted> | ReturnType<typeof panelLayoutScopeUnmounted>,
   ): SagaGenerator<void> {
@@ -817,6 +822,7 @@ export function* panelLayoutSaga(options?: {
     );
     yield* takeEvery(PERSIST_ACTIONS, persistPanelLayout);
     yield* takeEvery(PERSIST_ACTIONS, enforceReusablePanelInvariant);
+    yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
     yield* takeEvery(openTabWithPanelModeRequested, openTabWithPanelMode);
     yield* takeEvery([setPanelOpenMode, togglePanelOpenMode], collapseAllWorkspacesForPanelMode);
     yield* takeEvery(clearPanelLayout, clearPersistedLayout);

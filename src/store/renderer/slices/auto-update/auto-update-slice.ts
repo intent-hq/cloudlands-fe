@@ -1,7 +1,7 @@
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { AutoUpdateState } from './auto-update-types';
-import type { UpdateChannel, UpdateProgress, UpdateState } from '$features/auto-update/types';
+import type { UpdateProgress, UpdateState } from '$features/auto-update/types';
 import { m } from '$shared/paraglide/messages.js';
 
 export const initialState: AutoUpdateState = {
@@ -25,9 +25,6 @@ export const setProgress = createAction<[progress: UpdateProgress]>('autoUpdate/
 
 /** Set update error */
 export const setUpdateError = createAction<[error: string]>('autoUpdate/setUpdateError');
-
-/** Set the update channel */
-export const setChannel = createAction<[channel: UpdateChannel]>('autoUpdate/setChannel');
 
 /** Show the update toast */
 export const showToast = createAction('autoUpdate/showToast');
@@ -55,22 +52,11 @@ export const simulateSetState = createAction(
   (state: Partial<AutoUpdateState>) => state,
 );
 
-// --- Trigger-only actions (handled by sagas, not reducers) ---
-
-/** Trigger: check for updates */
-export const checkForUpdates = createAction('autoUpdate/checkForUpdates');
-
-/** Trigger: manual check for updates (shows toast) */
-export const checkForUpdatesManual = createAction('autoUpdate/checkForUpdatesManual');
-
 /** Trigger: download the available update */
 export const downloadUpdate = createAction('autoUpdate/downloadUpdate');
 
 /** Trigger: install the downloaded update */
 export const installUpdate = createAction('autoUpdate/installUpdate');
-
-/** Trigger: set the channel via IPC */
-export const setChannelIPC = createAction<[channel: UpdateChannel]>('autoUpdate/setChannelIPC');
 
 /** Trigger: initialize auto-update (IPC fetch + subscriptions) */
 export const initAutoUpdate = createAction('autoUpdate/initAutoUpdate');
@@ -96,10 +82,6 @@ autoUpdateReducer.with(setUpdateError, (state, { payload: [error] }) => ({
   ...state,
   status: 'error' as const,
   error,
-}));
-autoUpdateReducer.with(setChannel, (state, { payload: [channel] }) => ({
-  ...state,
-  channel,
 }));
 autoUpdateReducer.with(showToast, (state) => ({
   ...state,

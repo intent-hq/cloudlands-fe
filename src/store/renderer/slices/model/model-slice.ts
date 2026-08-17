@@ -115,13 +115,6 @@ export const setLoadingStateForProvider = createAction<
   ]
 >('model/setLoadingStateForProvider');
 
-export const clearLoadingStateForProvider = createAction<[providerId: string]>(
-  'model/clearLoadingStateForProvider',
-);
-
-export const setRetryAttempt =
-  createAction<[payload: { providerId: string; attempt: number }]>('model/setRetryAttempt');
-
 export const loadProviderModelsFromStorage = createAction<[models: Record<string, string>]>(
   'model/loadProviderModelsFromStorage',
 );
@@ -143,10 +136,6 @@ export const loadDefaultReasoningEffortFromStorage = createAction<[effort: strin
   'model/loadDefaultReasoningEffortFromStorage',
 );
 
-export const hydrateModelPickerCollapsedGroups = createAction<[groupKeys: string[]]>(
-  'model/hydrateModelPickerCollapsedGroups',
-);
-
 export const setModelPickerGroupCollapsed = createAction<[groupKey: string, collapsed: boolean]>(
   'model/setModelPickerGroupCollapsed',
 );
@@ -155,10 +144,6 @@ export const requestHydrateModelFallbackInfo = createAction<[agentId: string]>(
   'model/requestHydrateModelFallbackInfo',
 );
 
-export const hydrateModelFallbackInfo = createAction<
-  [agentId: string, info: ModelFallbackInfo | null]
->('model/hydrateModelFallbackInfo');
-
 export const setModelFallbackInfo = createAction<[agentId: string, info: ModelFallbackInfo]>(
   'model/setModelFallbackInfo',
 );
@@ -166,15 +151,9 @@ export const setModelFallbackInfo = createAction<[agentId: string, info: ModelFa
 export const clearModelFallbackInfo = createAction<[agentId: string]>(
   'model/clearModelFallbackInfo',
 );
-// ============================================================================
-// Saga Trigger Actions (dispatched by consumers, handled by sagas)
-// ============================================================================
-
-export const loadModels = createAction('model/loadModels');
 export const selectModel = createAction<[model: string]>('model/selectModel');
 export const reloadModelsForProvider = createAction('model/reloadModelsForProvider');
 export const retryLoadModels = createAction('model/retryLoadModels');
-export const resetToDefaults = createAction('model/resetToDefaults');
 
 // ============================================================================
 // Reducer
@@ -267,28 +246,6 @@ modelReducer.with(
     },
   }),
 );
-modelReducer.with(clearLoadingStateForProvider, (state, { payload: [providerId] }) => {
-  const { [providerId]: _removed, ...loadingState } = state.loadingState;
-
-  return {
-    ...state,
-    loadingState,
-  };
-});
-modelReducer.with(setRetryAttempt, (state, { payload: [{ providerId, attempt }] }) => {
-  const previous = state.loadingState[providerId];
-
-  return {
-    ...state,
-    loadingState: {
-      ...state.loadingState,
-      [providerId]: buildLoadingState(previous, {
-        status: previous?.status ?? 'loading',
-        retryAttempt: attempt,
-      }),
-    },
-  };
-});
 modelReducer.with(loadProviderModelsFromStorage, (state, { payload: [models] }) => ({
   ...state,
   providerModels: normalizeProviderModels(models, state.defaultProviderId),
@@ -301,10 +258,6 @@ modelReducer.with(loadDefaultReasoningEffortFromStorage, (state, { payload: [eff
   ...state,
   defaultReasoningEffort: effort,
 }));
-modelReducer.with(hydrateModelPickerCollapsedGroups, (state, { payload: [groupKeys] }) => ({
-  ...state,
-  modelPickerCollapsedGroups: [...new Set(groupKeys)],
-}));
 modelReducer.with(setModelPickerGroupCollapsed, (state, { payload: [groupKey, collapsed] }) => {
   const groups = new Set(state.modelPickerCollapsedGroups);
   if (collapsed) {
@@ -313,15 +266,6 @@ modelReducer.with(setModelPickerGroupCollapsed, (state, { payload: [groupKey, co
     groups.delete(groupKey);
   }
   return { ...state, modelPickerCollapsedGroups: [...groups] };
-});
-modelReducer.with(hydrateModelFallbackInfo, (state, { payload: [agentId, info] }) => {
-  const fallbackInfoByAgentId = { ...state.fallbackInfoByAgentId };
-  if (info) {
-    fallbackInfoByAgentId[agentId] = info;
-  } else {
-    delete fallbackInfoByAgentId[agentId];
-  }
-  return { ...state, fallbackInfoByAgentId };
 });
 modelReducer.with(setModelFallbackInfo, (state, { payload: [agentId, info] }) => ({
   ...state,

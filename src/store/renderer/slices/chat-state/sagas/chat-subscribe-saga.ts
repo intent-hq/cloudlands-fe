@@ -69,20 +69,34 @@
  * it, preserving the former post-action state-read semantics.
  */
 import { buffers, channel as createChannel, type Channel } from 'redux-saga';
-import { actionChannel, call, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
+import {
+  actionChannel,
+  call,
+  delay,
+  fork,
+  put,
+  race,
+  take,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import type { ChatLiveStreamPhase, ChatTranscript } from '$lib/client/app-client';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { appClient } from '$lib/client';
+import { INITIAL_RETRY_DELAY_MS, SNAPSHOT_TIMEOUT_MS } from '$lib/client/live/live-chat-client';
 import {
   chatLiveStreamPhaseChanged,
   chatSendStarted,
+  chatSwitchBackRevealTimedOut,
   chatTranscriptSnapshotApplied,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   refreshChatTranscriptRequested,
   transcriptHydrationSettled,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
-import { selectTranscriptHydration } from '$store/renderer/slices/chat-state/chat-state-selectors';
+import {
+  selectAwaitingSwitchBackSnapshot,
+  selectTranscriptHydration,
+} from '$store/renderer/slices/chat-state/chat-state-selectors';
 import {
   bulkUpsertSessions,
   clearAllSessions,
@@ -589,7 +603,19 @@ function* closeSubscription(
   coordinator.locallyStartedTurns.delete(agentId);
   if (clearResumeAnchor) resumeAnchors.delete(agentId);
   const entry = coordinator.subscriptions.get(agentId);
-  if (!entry) return;
+  if (!entry) {
+    // A close can land while the subscription is still being acquired (the
+    // enqueued open was cancelled before install): there are no store rows
+    // to normalize, but the teardown phase reset must still land — state
+    // gated on an open/opening subscription (the switch-back reveal gate)
+    // would otherwise stay set with no subscription left to satisfy it.
+    try {
+      yield* put(chatLiveStreamPhaseChanged(agentId, null));
+    } catch (error) {
+      logger.error('Failed to reset live stream phase', error);
+    }
+    return;
+  }
   coordinator.subscriptions.delete(agentId);
   yield* call(entry.acquisition.dispose);
   if (slot.acquisition === entry.acquisition) slot.acquisition = undefined;
@@ -773,6 +799,53 @@ function closeMatchingSlots(
 }
 
 /**
+ * Bounded fallback for the switch-back transcript reveal gate. Margin for the
+ * healed registration's fresh snapshot to arrive and apply (mirrors the
+ * chat-read saga's SNAPSHOT_HEAL_MARGIN_MS derivation).
+ */
+const SWITCH_BACK_REVEAL_MARGIN_MS = 2_000;
+/**
+ * Bounded wait for the switch-back reveal gate (armed by the
+ * `markAgentAsViewed` reducer case): if the reopening subscription's seq-0
+ * snapshot has not applied within this window, the gate clears and the
+ * retained transcript shows (today's behavior) rather than an indefinite
+ * skeleton. Derived from LiveChatClient's own constants — the same family as
+ * the chat-read saga's SNAPSHOT_WAIT_MS — so it stays strictly larger than
+ * one full self-heal cycle (seq-0 timeout + first retry delay + the fresh
+ * registration's snapshot RTT) and a subscription the client heals on its
+ * own reveals with the fresh snapshot, not the fallback.
+ */
+export const SWITCH_BACK_REVEAL_WAIT_MS =
+  SNAPSHOT_TIMEOUT_MS + INITIAL_RETRY_DELAY_MS + SWITCH_BACK_REVEAL_MARGIN_MS;
+
+/**
+ * Saga-owned fallback timer for one armed switch-back reveal gate: races the
+ * bounded wait against the gate's own clearing signals (snapshot applied, or
+ * subscription closed — both already clear the gate in the reducer). A
+ * re-dispatched `markAgentAsViewed` for the same agent also retires this
+ * watcher — the route handler forks a fresh one when the gate is (still)
+ * armed, so exactly one watcher runs per armed gate instead of duplicates
+ * racing. Only a timeout with the gate STILL armed dispatches the fallback
+ * clear; the reducer additionally no-ops a stale dispatch, so a superseded
+ * watcher can never re-clear a re-armed gate.
+ */
+function* switchBackRevealFallback(agentId: string): SagaGenerator<void> {
+  const clearsGate = (action: { type: string; payload?: unknown }): boolean => {
+    if (!Array.isArray(action.payload) || action.payload[0] !== agentId) return false;
+    if (action.type === chatTranscriptSnapshotApplied.type) return true;
+    if (action.type === markAgentAsViewed.type) return true;
+    return action.type === chatLiveStreamPhaseChanged.type && action.payload[1] === null;
+  };
+  const { timedOut } = yield* race({
+    cleared: take(clearsGate),
+    timedOut: delay(SWITCH_BACK_REVEAL_WAIT_MS),
+  });
+  if (timedOut && (yield* selectAwaitingSwitchBackSnapshot.effect(agentId))) {
+    yield* put(chatSwitchBackRevealTimedOut(agentId));
+  }
+}
+
+/**
  * The viewed-agent swap is global within its realm: all related closes settle
  * before the newly viewed agent opens. Chief and ordinary workspace realms
  * remain independent because their standing surfaces intentionally coexist.
@@ -919,6 +992,13 @@ function* routeLifecycleAction(
     if (coordinator.slots.has(agentId)) coordinator.locallyStartedTurns.add(agentId);
   } else if (action.type === markAgentAsViewed.type) {
     const [agentId] = action.payload as ReturnType<typeof markAgentAsViewed>['payload'];
+    // The reducer armed the switch-back reveal gate synchronously with this
+    // action (when the transcript hydrated before and no current-subscription
+    // snapshot exists); own its bounded fallback here so a snapshot that
+    // never arrives cannot leave an indefinite skeleton.
+    if (yield* selectAwaitingSwitchBackSnapshot.effect(agentId)) {
+      yield* fork(switchBackRevealFallback, agentId);
+    }
     yield* handleViewed(coordinator, agentId);
   } else if (action.type === transcriptHydrationSettled.type) {
     const [agentId] = action.payload as ReturnType<typeof transcriptHydrationSettled>['payload'];

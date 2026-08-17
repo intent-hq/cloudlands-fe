@@ -37,6 +37,12 @@
     confirm?: { title: string; message: string };
     /** Fired with the picked path, or '' when cleared. */
     onchange?: (path: string) => void;
+    /**
+     * Bindable: whether the remote picker modal is open. Parents that render
+     * this field inside a dismissable overlay (e.g. a dropdown menu) can bind
+     * it to keep their overlay mounted while the modal is up.
+     */
+    pickerOpen?: boolean;
   }
 
   let {
@@ -51,9 +57,9 @@
     clearAriaLabel,
     confirm,
     onchange,
+    pickerOpen = $bindable(false),
   }: Props = $props();
 
-  let modalOpen = $state(false);
   let confirmOpen = $state(false);
 
   const resolvedBrowseAriaLabel = $derived(
@@ -75,7 +81,7 @@
     const options = {
       title: pickerTitle,
       defaultPath: value || defaultPath || undefined,
-      openModal: () => (modalOpen = true),
+      openModal: () => (pickerOpen = true),
       onSelect: commit,
     };
     // eslint-disable-next-line intent/no-component-async-data-fetch -- fire-and-forget picker-dialog seam (native dialog vs in-app modal routing), not a domain data fetch; rule misfires on the '-service' import source.
@@ -141,13 +147,13 @@
 {/if}
 
 <DirectoryPickerModal
-  open={modalOpen}
+  open={pickerOpen}
   title={pickerTitle}
   initialPath={value}
   {mode}
   onSelect={(path) => {
-    modalOpen = false;
+    pickerOpen = false;
     commit(path);
   }}
-  onClose={() => (modalOpen = false)}
+  onClose={() => (pickerOpen = false)}
 />

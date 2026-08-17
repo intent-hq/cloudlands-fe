@@ -3,13 +3,7 @@ import {
   it,
   expect,
 } from "vitest";
-import {
-  featureCodesReducer,
-  fetchFeaturesSuccess,
-  initialState,
-  toggleFeatureCodeDialog,
-  type FeatureCodesState,
-} from "./feature-codes-slice";
+import { featureCodesReducer, initialState, toggleFeatureCodeDialog } from "./feature-codes-slice";
 import {
   selectActiveFeatures,
   selectFeatureCodeDialogOpen,
@@ -21,52 +15,6 @@ describe("featureCodesReducer", () => {
   it("should return initial state", () => {
     const state = featureCodesReducer(undefined, { type: "@@INIT" });
     expect(state).toEqual(initialState);
-  });
-
-  describe("fetchFeaturesSuccess", () => {
-    it("should set active features and mark as initialized", () => {
-      const features = ["feature-a", "feature-b"];
-      const state = featureCodesReducer(
-        initialState,
-        fetchFeaturesSuccess(features)
-      );
-      expect(state.activeFeatures).toEqual(features);
-      expect(state.initialized).toBe(true);
-    });
-
-    it("should replace existing features on subsequent fetch", () => {
-      const prev: FeatureCodesState = {
-        activeFeatures: ["old-feature"],
-        dialogOpen: false,
-        initialized: true,
-      };
-      const state = featureCodesReducer(
-        prev,
-        fetchFeaturesSuccess(["new-feature-1", "new-feature-2"])
-      );
-      expect(state.activeFeatures).toEqual(["new-feature-1", "new-feature-2"]);
-    });
-
-    it("should handle empty features array", () => {
-      const prev: FeatureCodesState = {
-        activeFeatures: ["feature-a"],
-        dialogOpen: false,
-        initialized: true,
-      };
-      const state = featureCodesReducer(prev, fetchFeaturesSuccess([]));
-      expect(state.activeFeatures).toEqual([]);
-      expect(state.initialized).toBe(true);
-    });
-
-    it("should not mutate previous state", () => {
-      const state = featureCodesReducer(
-        initialState,
-        fetchFeaturesSuccess(["feature-a"])
-      );
-      expect(initialState.activeFeatures).toEqual([]);
-      expect(initialState.initialized).toBe(false);
-      expect(state.activeFeatures).toHaveLength(1);
-    });
   });
 
   describe("toggleFeatureCodeDialog", () => {

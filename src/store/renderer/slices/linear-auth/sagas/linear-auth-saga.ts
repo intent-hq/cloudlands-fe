@@ -4,16 +4,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
-import {
-  connectLinear,
-  initializeLinearAuth,
-  logoutLinear,
-  refreshLinearAuth,
-  setLinearAuthState,
-  setLinearError,
-  setLinearIsAuthenticating,
-  startLinearAuth,
-} from '../linear-auth-slice';
+import { connectLinear, initializeLinearAuth, logoutLinear, setLinearAuthState, setLinearError, setLinearIsAuthenticating, startLinearAuth } from '../linear-auth-slice';
 
 const logger = createLogger('LinearAuthSaga');
 export const LINEAR_TOKEN_SETTING_PATH = 'linear.token';
@@ -86,12 +77,6 @@ function* initializeLinearWorker(
   yield* call(probe);
 }
 
-function* refreshLinearWorker(
-  _action: ReturnType<typeof refreshLinearAuth>,
-): SagaGenerator<void> {
-  yield* call(probe);
-}
-
 function* startLinearWorker(
   _action: ReturnType<typeof startLinearAuth>,
 ): SagaGenerator<void> {
@@ -112,7 +97,6 @@ function* logoutLinearWorker(
 
 export function* linearAuthSaga(): SagaGenerator<void> {
   yield* takeEvery(initializeLinearAuth, initializeLinearWorker);
-  yield* takeEvery(refreshLinearAuth, refreshLinearWorker);
   yield* takeEvery(startLinearAuth, startLinearWorker);
   yield* takeEvery(connectLinear, connectLinearWorker);
   yield* takeEvery(logoutLinear, logoutLinearWorker);

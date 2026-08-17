@@ -91,22 +91,6 @@ const removeTabFlag = (tabFlags: TabFlagMap, tabId: string): TabFlagMap => {
   return omitKey(tabFlags, tabId);
 };
 
-const replaceTabFlag = (tabFlags: TabFlagMap, fromId: string, toId: string): TabFlagMap => {
-  if (!tabFlags[fromId] || fromId === toId) {
-    return tabFlags;
-  }
-
-  const next = omitKey(tabFlags, fromId);
-  if (next[toId]) {
-    return next;
-  }
-
-  return {
-    ...next,
-    [toId]: true,
-  };
-};
-
 const withNextVersion = (state: TabState, updates: Partial<TabState>): TabState => ({
   ...state,
   ...updates,
@@ -231,8 +215,6 @@ export const setActiveHandleDrop = createAction<[info: HandleDropInfo | null]>(
 export const saveScrollPosition = createAction<[tabId: string, scrollTop: number]>(
   'tabState/saveScrollPosition',
 );
-export const removeScrollPosition = createAction<[tabId: string]>('tabState/removeScrollPosition');
-export const clearForWorkspace = createAction<[workspaceId: string]>('tabState/clearForWorkspace');
 export const loadScrollPositions = createAction<[positions: Record<string, number>]>(
   'tabState/loadScrollPositions',
 );
@@ -254,32 +236,10 @@ export const reopenLastClosedWorkspaceTab = createAction('tabState/reopenLastClo
 export const restoreWorkspaceTab = createAction<[workspaceId: string]>(
   'tabState/restoreWorkspaceTab',
 );
-export const clearCurrentWorkspaceTab = createAction('tabState/clearCurrentWorkspaceTab');
-export const cleanupInvalidWorkspaceTabs = createAction<[validIds: string[]]>(
-  'tabState/cleanupInvalidWorkspaceTabs',
-);
-export const toggleWorkspaceTabPin = createAction<[workspaceId: string]>(
-  'tabState/toggleWorkspaceTabPin',
-);
-export const markWorkspaceTabUnsaved = createAction<[workspaceId: string, unsaved: boolean]>(
-  'tabState/markWorkspaceTabUnsaved',
-);
-export const reorderWorkspaceTabs = createAction<[fromId: string, toId: string]>(
-  'tabState/reorderWorkspaceTabs',
-);
 export const moveWorkspace =
   createAction<[workspaceId: string, targetWorkspaceId: string, placement: WorkspaceDropPlacement]>(
     'tabState/moveWorkspace',
   );
-export const markWorkspaceTabOptimistic = createAction<[workspaceId: string]>(
-  'tabState/markWorkspaceTabOptimistic',
-);
-export const unmarkWorkspaceTabOptimistic = createAction<[workspaceId: string]>(
-  'tabState/unmarkWorkspaceTabOptimistic',
-);
-export const handleOptimisticWorkspaceTabTransition = createAction<
-  [optimisticId: string, realId: string]
->('tabState/handleOptimisticWorkspaceTabTransition');
 export const switchToNextWorkspaceTab = createAction('tabState/switchToNextWorkspaceTab');
 export const switchToPreviousWorkspaceTab = createAction('tabState/switchToPreviousWorkspaceTab');
 export const switchToWorkspaceTabByIndex = createAction<[index: number]>(
@@ -306,9 +266,6 @@ export const CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS = [
   openWorkspaceTab,
   closeWorkspaceTab,
   reopenLastClosedWorkspaceTab,
-  clearCurrentWorkspaceTab,
-  cleanupInvalidWorkspaceTabs,
-  handleOptimisticWorkspaceTabTransition,
   switchToNextWorkspaceTab,
   switchToPreviousWorkspaceTab,
   switchToWorkspaceTabByIndex,
@@ -340,36 +297,6 @@ tabStateReducer.with(saveScrollPosition, (state, { payload: [tabId, scrollTop] }
   return {
     ...state,
     scrollPositions: { ...state.scrollPositions, [tabId]: scrollTop },
-  };
-});
-tabStateReducer.with(removeScrollPosition, (state, { payload: [tabId] }) => {
-  if (!(tabId in state.scrollPositions)) {
-    return state;
-  }
-
-  return {
-    ...state,
-    scrollPositions: omitKey(state.scrollPositions, tabId),
-  };
-});
-tabStateReducer.with(clearForWorkspace, (state, { payload: [workspaceId] }) => {
-  const workspaceKeyPrefix = `${workspaceId}-`;
-  const keysToRemove = Object.keys(state.scrollPositions).filter((key) =>
-    key.startsWith(workspaceKeyPrefix),
-  );
-
-  if (keysToRemove.length === 0) {
-    return state;
-  }
-
-  const nextScrollPositions = { ...state.scrollPositions };
-  for (const key of keysToRemove) {
-    delete nextScrollPositions[key];
-  }
-
-  return {
-    ...state,
-    scrollPositions: nextScrollPositions,
   };
 });
 tabStateReducer.with(loadScrollPositions, (state, { payload: [scrollPositions] }) => ({
@@ -467,106 +394,6 @@ tabStateReducer.with(reopenLastClosedWorkspaceTab, (state) => {
     recentlyClosedTabAt: pruneClosedTabAt(state.recentlyClosedTabAt, nextRecentlyClosedTabIds),
   });
 });
-tabStateReducer.with(clearCurrentWorkspaceTab, (state) => {
-  if (state.currentTabId === null) {
-    return state;
-  }
-
-  return withNextVersion(state, {
-    currentTabId: null,
-  });
-});
-tabStateReducer.with(cleanupInvalidWorkspaceTabs, (state, { payload: [validIds] }) => {
-  const validIdLookup = createTabFlagMap(validIds);
-  let nextOpenTabs = state.openTabs;
-  let nextPinnedTabs = state.pinnedTabs;
-  let nextUnsavedTabs = state.unsavedTabs;
-  let nextCurrentTabId = state.currentTabId;
-  const nextRecentlyClosedTabIds = state.recentlyClosedTabIds.filter(
-    (tabId) => validIdLookup[tabId],
-  );
-  let changed = false;
-
-  if (nextRecentlyClosedTabIds.length !== state.recentlyClosedTabIds.length) {
-    changed = true;
-  }
-
-  for (const tabId of Object.keys(state.openTabs)) {
-    if (validIdLookup[tabId] || state.optimisticTabs[tabId]) {
-      continue;
-    }
-
-    nextOpenTabs = removeTabFlag(nextOpenTabs, tabId);
-    nextPinnedTabs = removeTabFlag(nextPinnedTabs, tabId);
-    nextUnsavedTabs = removeTabFlag(nextUnsavedTabs, tabId);
-    changed = true;
-  }
-
-  const nextWorkspaceStacks = state.workspaceStacks
-    .map((stack) => stack.filter((tabId) => validIdLookup[tabId] || state.optimisticTabs[tabId]))
-    .filter((stack) => stack.length > 0);
-  if (!areWorkspaceStacksEqual(nextWorkspaceStacks, state.workspaceStacks)) {
-    changed = true;
-  }
-
-  if (
-    nextCurrentTabId &&
-    !validIdLookup[nextCurrentTabId] &&
-    !state.optimisticTabs[nextCurrentTabId]
-  ) {
-    nextCurrentTabId = null;
-    changed = true;
-  }
-
-  if (!changed) {
-    return state;
-  }
-
-  return withNextVersion(state, {
-    openTabs: nextOpenTabs,
-    currentTabId: nextCurrentTabId,
-    pinnedTabs: nextPinnedTabs,
-    unsavedTabs: nextUnsavedTabs,
-    workspaceStacks: nextWorkspaceStacks,
-    recentlyClosedTabIds: nextRecentlyClosedTabIds,
-    recentlyClosedTabAt: pruneClosedTabAt(state.recentlyClosedTabAt, nextRecentlyClosedTabIds),
-  });
-});
-tabStateReducer.with(toggleWorkspaceTabPin, (state, { payload: [workspaceId] }) => ({
-  ...state,
-  pinnedTabs: state.pinnedTabs[workspaceId]
-    ? removeTabFlag(state.pinnedTabs, workspaceId)
-    : addTabFlag(state.pinnedTabs, workspaceId),
-  version: state.version + 1,
-}));
-tabStateReducer.with(markWorkspaceTabUnsaved, (state, { payload: [workspaceId, unsaved] }) => ({
-  ...state,
-  unsavedTabs: unsaved
-    ? addTabFlag(state.unsavedTabs, workspaceId)
-    : removeTabFlag(state.unsavedTabs, workspaceId),
-  version: state.version + 1,
-}));
-tabStateReducer.with(reorderWorkspaceTabs, (state, { payload: [fromId, toId] }) => {
-  const tabOrder = getWorkspaceTabOrder(state.workspaceStacks);
-  const fromIndex = tabOrder.indexOf(fromId);
-  const toIndex = tabOrder.indexOf(toId);
-
-  if (fromIndex === -1 || toIndex === -1) {
-    return state;
-  }
-
-  const nextWorkspaceStacks = moveWorkspaceInStacks(
-    state.workspaceStacks,
-    fromId,
-    toId,
-    fromIndex < toIndex ? 'after' : 'before',
-  );
-  if (!nextWorkspaceStacks) return state;
-
-  return withNextVersion(state, {
-    workspaceStacks: nextWorkspaceStacks,
-  });
-});
 tabStateReducer.with(moveWorkspace, (state, { payload: [workspaceId, targetId, placement] }) => {
   const nextWorkspaceStacks = moveWorkspaceInStacks(
     state.workspaceStacks,
@@ -579,88 +406,6 @@ tabStateReducer.with(moveWorkspace, (state, { payload: [workspaceId, targetId, p
     workspaceStacks: nextWorkspaceStacks,
   });
 });
-tabStateReducer.with(markWorkspaceTabOptimistic, (state, { payload: [workspaceId] }) => ({
-  ...state,
-  optimisticTabs: addTabFlag(state.optimisticTabs, workspaceId),
-  version: state.version + 1,
-}));
-tabStateReducer.with(unmarkWorkspaceTabOptimistic, (state, { payload: [workspaceId] }) => ({
-  ...state,
-  optimisticTabs: removeTabFlag(state.optimisticTabs, workspaceId),
-  version: state.version + 1,
-}));
-tabStateReducer.with(
-  handleOptimisticWorkspaceTabTransition,
-  (state, { payload: [optimisticId, realId] }) => {
-    let changed = false;
-    let nextOpenTabs = state.openTabs;
-    let nextCurrentTabId = state.currentTabId;
-    let nextPinnedTabs = state.pinnedTabs;
-    let nextUnsavedTabs = state.unsavedTabs;
-    let nextOptimisticTabs = state.optimisticTabs;
-    let nextWorkspaceStacks = state.workspaceStacks;
-    let nextRecentlyClosedTabIds = state.recentlyClosedTabIds;
-    let nextRecentlyClosedTabAt = state.recentlyClosedTabAt;
-
-    if (state.openTabs[optimisticId]) {
-      nextOpenTabs = addTabFlag(removeTabFlag(state.openTabs, optimisticId), realId);
-      changed = true;
-    }
-
-    if (getWorkspaceTabOrder(state.workspaceStacks).includes(optimisticId)) {
-      nextWorkspaceStacks = state.workspaceStacks.map((stack) =>
-        stack.map((tabId) => (tabId === optimisticId ? realId : tabId)),
-      );
-      changed = true;
-    }
-
-    if (state.currentTabId === optimisticId) {
-      nextCurrentTabId = realId;
-      changed = true;
-    }
-
-    if (state.pinnedTabs[optimisticId]) {
-      nextPinnedTabs = replaceTabFlag(state.pinnedTabs, optimisticId, realId);
-      changed = true;
-    }
-
-    if (state.unsavedTabs[optimisticId]) {
-      nextUnsavedTabs = replaceTabFlag(state.unsavedTabs, optimisticId, realId);
-      changed = true;
-    }
-
-    if (state.optimisticTabs[optimisticId]) {
-      nextOptimisticTabs = removeTabFlag(state.optimisticTabs, optimisticId);
-      changed = true;
-    }
-
-    if (state.recentlyClosedTabIds.includes(optimisticId)) {
-      nextRecentlyClosedTabIds = state.recentlyClosedTabIds.map((tabId) =>
-        tabId === optimisticId ? realId : tabId,
-      );
-      if (state.recentlyClosedTabAt[optimisticId] !== undefined) {
-        const { [optimisticId]: closedAt, ...rest } = state.recentlyClosedTabAt;
-        nextRecentlyClosedTabAt = { ...rest, [realId]: closedAt };
-      }
-      changed = true;
-    }
-
-    if (!changed) {
-      return state;
-    }
-
-    return withNextVersion(state, {
-      openTabs: nextOpenTabs,
-      currentTabId: nextCurrentTabId,
-      pinnedTabs: nextPinnedTabs,
-      unsavedTabs: nextUnsavedTabs,
-      optimisticTabs: nextOptimisticTabs,
-      workspaceStacks: nextWorkspaceStacks,
-      recentlyClosedTabIds: nextRecentlyClosedTabIds,
-      recentlyClosedTabAt: nextRecentlyClosedTabAt,
-    });
-  },
-);
 tabStateReducer.with(switchToNextWorkspaceTab, (state) => {
   const tabOrder = getWorkspaceTabOrder(state.workspaceStacks);
   if (tabOrder.length === 0) {

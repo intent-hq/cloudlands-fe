@@ -152,5 +152,16 @@ export const selectTranscriptSnapshotMeta = store.createSelector(
     getAgentChatState(state, agentId).transcriptSnapshot,
 );
 
+/**
+ * Switch-back transcript reveal gate: true while the viewed conversation is
+ * awaiting a fresh seq-0 snapshot from its (re)opening standing subscription.
+ * ChatPanel defers the transcript reveal while set (see
+ * `shouldDeferTranscriptReveal` in chat-panel-visibility.ts).
+ */
+export const selectAwaitingSwitchBackSnapshot = store.createSelector(
+  (state, agentId: string): boolean =>
+    getAgentChatState(state, agentId).awaitingSwitchBackSnapshot === true,
+);
+
 
 

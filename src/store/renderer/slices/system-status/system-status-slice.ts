@@ -1,4 +1,3 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 
 export type SystemStatusState = {
@@ -15,15 +14,4 @@ export const initialState: SystemStatusState = {
   binaryInstallAvailable: false,
 };
 
-export const setSystemStatus = createAction<[status: SystemStatusState]>(
-  "systemStatus/setSystemStatus"
-);
-
 export const systemStatusReducer = createReducer<SystemStatusState>(initialState);
-systemStatusReducer.with(
-  setSystemStatus,
-  (state, { payload: [status] }) => ({
-    ...state,
-    ...status,
-  })
-);

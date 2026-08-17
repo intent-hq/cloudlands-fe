@@ -94,6 +94,7 @@
     chatQueuedRetryRecordUpdated,
   } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
+    selectAwaitingSwitchBackSnapshot,
     selectChatError,
     selectChatLastChunkTime,
     selectChatModelUnavailable,
@@ -247,6 +248,7 @@
   import {
     deriveQueuedMessagesVisibility,
     hasAuthoritativeConversationEvidence,
+    shouldDeferTranscriptReveal,
     shouldShowEndOfListStreamingStatus,
     shouldShowPendingAssistantStatus,
     shouldShowSetupCardOnly,
@@ -355,6 +357,9 @@
   // true for the agent's lifetime — gates the indeterminate skeleton so a
   // partially-loaded transcript never renders as if complete.
   const transcriptHydratedOnce$ = selectTranscriptHydratedOnce(agentIdStore);
+  // Switch-back gate: true while a re-viewed conversation's (re)opening
+  // standing subscription has not yet delivered its fresh seq-0 snapshot.
+  const awaitingSwitchBackSnapshot$ = selectAwaitingSwitchBackSnapshot(agentIdStore);
   // Indeterminate first-hydration gate: while the INITIAL hydration is in
   // flight (never settled before for this agent), a partially-loaded message
   // list — e.g. the standing subscription's newest page landing ahead of the
@@ -1492,6 +1497,18 @@
   );
   // Alias for backward compatibility
   let pendingInitialPrompt = $derived(pendingInitialData.prompt);
+
+  // Switch-back reveal deferral: on re-view, keep the indeterminate skeleton
+  // up (and suppress everything that would paint stale conversation state)
+  // until the resubscribe snapshot applies, the subscription closes, or the
+  // saga-owned bounded fallback clears the gate — then reveal in one paint.
+  const deferTranscriptReveal = $derived(
+    shouldDeferTranscriptReveal({
+      awaitingSwitchBackSnapshot: $awaitingSwitchBackSnapshot$,
+      transcriptHydratedOnce: $transcriptHydratedOnce$,
+      hasPendingInitialPrompt: Boolean(pendingInitialPrompt),
+    }),
+  );
 
   // Provider/model lock — prevents changing provider or model after any message
   let canChangeProvider = $derived(
@@ -3323,7 +3340,9 @@
     // Win/Linux uses Alt because Ctrl+number is tab switching.
     // Gated on `isChatFocused` so only the focused chat reacts when multiple chats are
     // visible at once (split view, or Chief of Staff open alongside a workspace agent panel).
-    if (isActive && isChatFocused && suggestedPrompts.length > 0) {
+    // While the switch-back reveal is deferred the chips are hidden, so their
+    // shortcuts are inert too.
+    if (isActive && isChatFocused && suggestedPrompts.length > 0 && !deferTranscriptReveal) {
       // On macOS, Alt+number produces special characters (e.g. Alt+7 → ¶), so e.key is NOT
       // the digit. Use e.code to get the physical key when a modifier is held.
       let num = parseInt(e.key, 10);
@@ -3407,7 +3426,11 @@
       data-testid="pinned-prompt-overlay-host"
       aria-live="off"
     >
-      {#if pinnedPrompt}
+      <!-- Gated behind the switch-back reveal deferral: `pinnedPrompt` is
+           retained state from the pre-switch transcript (trackPinnedPrompt only
+           clears it on a later animation frame after the turns unmount), so it
+           would otherwise paint stale message content above the skeleton. -->
+      {#if pinnedPrompt && !deferTranscriptReveal}
         <!-- Mirror the conversation column's horizontal padding plus the chief
              variant's user-row inset so the pinned bubble aligns with
              in-conversation user bubbles. -->
@@ -3472,6 +3495,44 @@
           </a>
         {/if}
 
+        <!-- Indeterminate transcript skeleton rows — shared by the first-hydration
+             branch and the switch-back reveal deferral so both windows paint the
+             exact same visual. -->
+        {#snippet transcriptSkeletonRows()}
+          <div class="flex flex-col gap-4 p-4 w-full" data-testid="chat-transcript-skeleton">
+            <!-- User message skeleton -->
+            <div class="flex justify-end">
+              <div class="flex flex-col gap-1.5 max-w-[70%]">
+                <Skeleton class="h-4 w-48 ml-auto" />
+                <Skeleton class="h-4 w-32 ml-auto" />
+              </div>
+            </div>
+            <!-- Assistant message skeleton -->
+            <div class="flex gap-2">
+              <Skeleton class="h-6 w-6 rounded-full shrink-0" />
+              <div class="flex flex-col gap-1.5 flex-1">
+                <Skeleton class="h-4 w-full max-w-[300px]" />
+                <Skeleton class="h-4 w-full max-w-[250px]" />
+                <Skeleton class="h-4 w-full max-w-[280px]" />
+              </div>
+            </div>
+            <!-- Another user message skeleton -->
+            <div class="flex justify-end">
+              <div class="flex flex-col gap-1.5 max-w-[70%]">
+                <Skeleton class="h-4 w-36 ml-auto" />
+              </div>
+            </div>
+            <!-- Another assistant message skeleton -->
+            <div class="flex gap-2">
+              <Skeleton class="h-6 w-6 rounded-full shrink-0" />
+              <div class="flex flex-col gap-1.5 flex-1">
+                <Skeleton class="h-4 w-full max-w-[320px]" />
+                <Skeleton class="h-4 w-full max-w-[200px]" />
+              </div>
+            </div>
+          </div>
+        {/snippet}
+
         {#if transcriptHydrationFailed && $agentMessages$.length === 0}
           <div class="flex min-h-48 flex-col items-center justify-center gap-3 p-6 text-center">
             <p class="text-sm text-muted-foreground">{m.chat_shared_actionFailed_label()}</p>
@@ -3479,6 +3540,12 @@
               {m.chat_shared_retry_label()}
             </Button>
           </div>
+        {:else if deferTranscriptReveal}
+          <!-- Switch-back reveal deferral: the retained transcript may be stale
+               while the re-opened subscription's seq-0 snapshot is in flight —
+               hold the indeterminate skeleton so the transcript reveals in one
+               paint (snapshot applied, subscription closed, or bounded fallback). -->
+          {@render transcriptSkeletonRows()}
         {:else if isChiefWorkspace && !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && !authoritativeConversationEvidence}
           <ChiefStarterPrompts onSelect={handleSelectSuggestedPrompt} compact={isCompactMode} />
         {:else if !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && !authoritativeConversationEvidence}
@@ -3543,38 +3610,7 @@
             </div>
           {/if}
           <!-- Skeleton loading state when session is not yet initialized or transcript is loading -->
-          <div class="flex flex-col gap-4 p-4 w-full">
-            <!-- User message skeleton -->
-            <div class="flex justify-end">
-              <div class="flex flex-col gap-1.5 max-w-[70%]">
-                <Skeleton class="h-4 w-48 ml-auto" />
-                <Skeleton class="h-4 w-32 ml-auto" />
-              </div>
-            </div>
-            <!-- Assistant message skeleton -->
-            <div class="flex gap-2">
-              <Skeleton class="h-6 w-6 rounded-full shrink-0" />
-              <div class="flex flex-col gap-1.5 flex-1">
-                <Skeleton class="h-4 w-full max-w-[300px]" />
-                <Skeleton class="h-4 w-full max-w-[250px]" />
-                <Skeleton class="h-4 w-full max-w-[280px]" />
-              </div>
-            </div>
-            <!-- Another user message skeleton -->
-            <div class="flex justify-end">
-              <div class="flex flex-col gap-1.5 max-w-[70%]">
-                <Skeleton class="h-4 w-36 ml-auto" />
-              </div>
-            </div>
-            <!-- Another assistant message skeleton -->
-            <div class="flex gap-2">
-              <Skeleton class="h-6 w-6 rounded-full shrink-0" />
-              <div class="flex flex-col gap-1.5 flex-1">
-                <Skeleton class="h-4 w-full max-w-[320px]" />
-                <Skeleton class="h-4 w-full max-w-[200px]" />
-              </div>
-            </div>
-          </div>
+          {@render transcriptSkeletonRows()}
         {:else}
           <!-- Pending initial prompt - shown as optimistic UI immediately -->
           <!-- FIX: Keep showing pendingMessage until a USER message arrives in $agentMessages$ -->
@@ -4195,7 +4231,7 @@
           {/if}
         {/if}
         <!-- Aggregate File Changes Summary (show if more than one assistant message and it isn't redundant with the last turn's row, updates during streaming) -->
-        {#if showAggregateFileChangesSummary}
+        {#if showAggregateFileChangesSummary && !deferTranscriptReveal}
           <div class="w-full">
             <ChatFileChangesSummary
               workspaceId={workspace.id}
@@ -4209,7 +4245,7 @@
         {/if}
 
         <!-- Show suggested prompts for the last message only, when not streaming -->
-        {#if suggestedPrompts.length > 0}
+        {#if suggestedPrompts.length > 0 && !deferTranscriptReveal}
           <div class="w-full {isCompactMode ? 'pb-1 pt-2' : 'py-2'}">
             <SuggestedPrompts
               prompts={suggestedPrompts}

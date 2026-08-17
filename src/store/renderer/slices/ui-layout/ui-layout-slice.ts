@@ -106,11 +106,6 @@ export type UiLayoutState = {
   workspaceSidebarPanelLayout: WorkspaceSidebarPanelLayoutState;
 };
 
-type EditorSettingsFields = Pick<
-  UiLayoutState,
-  'lineWrapping' | 'foldUnchanged' | 'diffSideBySide' | 'diffIndicators'
->;
-
 export const SPACES_SIDEBAR_DEFAULT_WIDTH = 200;
 
 export const initialState: UiLayoutState = {
@@ -206,39 +201,6 @@ export const setSpacesSidebarWidth = createAction<[pixels: number]>(
 export const setSidebarSide = createAction<[side: SidebarSide]>('uiLayout/setSidebarSide');
 export const toggleSidebarSide = createAction('uiLayout/toggleSidebarSide');
 
-export const loadLayoutSettings = createAction<
-  [
-    settings: {
-      spacesSidebarWidth: number;
-      spacesSidebarCollapsed: boolean;
-      tabbedSidebarPinned: boolean;
-      sidebarSide: SidebarSide;
-    },
-  ]
->('uiLayout/loadLayoutSettings');
-
-export const resetLayoutSettings = createAction('uiLayout/resetLayoutSettings');
-
-// Bottom dock actions
-export const toggleBottomDock = createAction('uiLayout/toggleBottomDock');
-export const expandBottomDock = createAction('uiLayout/expandBottomDock');
-export const collapseBottomDock = createAction('uiLayout/collapseBottomDock');
-export const setBottomDockViewMode = createAction<[mode: DockViewMode]>(
-  'uiLayout/setBottomDockViewMode',
-);
-export const selectBottomDockTerminal = createAction<[terminalId: string]>(
-  'uiLayout/selectBottomDockTerminal',
-);
-export const showBottomDockAgents = createAction('uiLayout/showBottomDockAgents');
-export const setBottomDockHeight = createAction<[height: number]>('uiLayout/setBottomDockHeight');
-export const loadBottomDockState = createAction<[state: Omit<BottomDockState, 'isExpanded'>]>(
-  'uiLayout/loadBottomDockState',
-);
-
-export const loadEditorSettings = createAction<[settings: EditorSettingsFields]>(
-  'uiLayout/loadEditorSettings',
-);
-
 export const setWidth = createAction<[pixels: number]>('uiLayout/setWidth');
 export const setSidebarExpandedWidth = createAction<[pixels: number]>(
   'uiLayout/setSidebarExpandedWidth',
@@ -248,12 +210,6 @@ export const setCollapsed = createAction<[collapsed: boolean]>('uiLayout/setColl
 export const setPanelVisibility = createAction<
   [wsId: string, key: keyof PanelVisibilityState, value: boolean]
 >('uiLayout/setPanelVisibility');
-export const setPanelVisibilityBulk = createAction<
-  [wsId: string, updates: Partial<PanelVisibilityState>]
->('uiLayout/setPanelVisibilityBulk');
-export const loadSidebarState = createAction<
-  [width: number, collapsed: boolean, expandedWidth?: number]
->('uiLayout/loadSidebarState');
 export const requestResizablePanelSize = createAction<[key: string]>(
   'uiLayout/requestResizablePanelSize',
 );
@@ -281,9 +237,6 @@ export const hydrateCollapsiblePanelCollapsed = createAction<[key: string, colla
 export const setCollapsiblePanelCollapsed = createAction<[key: string, collapsed: boolean]>(
   'uiLayout/setCollapsiblePanelCollapsed',
 );
-export const loadWorkspaceSidebarPanelLayout = createAction<
-  [layout: WorkspaceSidebarPanelLayoutState]
->('uiLayout/loadWorkspaceSidebarPanelLayout');
 export const setWorkspaceSidebarPanelLayout = createAction<
   [layout: WorkspaceSidebarPanelLayoutState]
 >('uiLayout/setWorkspaceSidebarPanelLayout');
@@ -295,10 +248,6 @@ diffSideBySidePreference.register(uiLayoutReducer);
 diffIndicatorsPreference.register(uiLayoutReducer);
 spacesSidebarCollapsedPreference.register(uiLayoutReducer);
 tabbedSidebarPinnedPreference.register(uiLayoutReducer);
-uiLayoutReducer.with(loadEditorSettings, (state, { payload: [settings] }) => ({
-  ...state,
-  ...settings,
-}));
 uiLayoutReducer.with(setWidth, (state, { payload: [pixels] }) => {
   const newWidth = Math.round(Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, pixels)));
   return {
@@ -352,38 +301,11 @@ uiLayoutReducer.with(setPanelVisibility, (state, { payload: [wsId, key, value] }
     }),
   };
 });
-uiLayoutReducer.with(setPanelVisibilityBulk, (state, { payload: [wsId, updates] }) => {
-  const current = getPanelVisibility(state.panelVisibility, wsId);
-  let changed = false;
-  const updated = { ...current };
-
-  for (const key of Object.keys(updates) as (keyof PanelVisibilityState)[]) {
-    const value = updates[key];
-    if (value !== undefined && current[key] !== value) {
-      updated[key] = value;
-      changed = true;
-    }
-  }
-
-  if (!changed) return state;
-
-  return {
-    ...state,
-    panelVisibility: setPanelVisibilityState(state.panelVisibility, wsId, updated),
-  };
-});
 uiLayoutReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) => {
   const next = clearPanelVisibilityState(state.panelVisibility, wsId);
   if (next === state.panelVisibility) return state;
   return { ...state, panelVisibility: next };
 });
-uiLayoutReducer.with(loadSidebarState, (state, { payload: [width, collapsed, expandedWidth] }) => ({
-  ...state,
-  sidebarWidth: width,
-  sidebarExpandedWidth: expandedWidth ?? state.sidebarExpandedWidth,
-  sidebarWidthBeforeCollapse: width,
-  sidebarCollapsed: collapsed,
-}));
 uiLayoutReducer.with(hydrateResizablePanelSize, (state, { payload: [key, value] }) => ({
   ...state,
   resizablePanelSizes:
@@ -413,10 +335,6 @@ uiLayoutReducer.with(setCollapsiblePanelCollapsed, (state, { payload: [key, coll
   ...state,
   collapsiblePanelCollapsed: { ...state.collapsiblePanelCollapsed, [key]: collapsed },
 }));
-uiLayoutReducer.with(loadWorkspaceSidebarPanelLayout, (state, { payload: [layout] }) => ({
-  ...state,
-  workspaceSidebarPanelLayout: layout,
-}));
 uiLayoutReducer.with(setWorkspaceSidebarPanelLayout, (state, { payload: [layout] }) => ({
   ...state,
   workspaceSidebarPanelLayout: layout,
@@ -432,64 +350,4 @@ uiLayoutReducer.with(setSidebarSide, (state, { payload: [side] }) => {
 uiLayoutReducer.with(toggleSidebarSide, (state) => ({
   ...state,
   sidebarSide: state.sidebarSide === 'left' ? 'right' : 'left',
-}));
-uiLayoutReducer.with(loadLayoutSettings, (state, { payload: [settings] }) => ({
-  ...state,
-  ...settings,
-}));
-uiLayoutReducer.with(resetLayoutSettings, (state) => ({
-  ...state,
-  spacesSidebarWidth: SPACES_SIDEBAR_DEFAULT_WIDTH,
-  spacesSidebarCollapsed: false,
-  tabbedSidebarPinned: true,
-  sidebarSide: 'left' as SidebarSide,
-}));
-// Bottom dock reducers
-uiLayoutReducer.with(toggleBottomDock, (state) => ({
-  ...state,
-  bottomDock: { ...state.bottomDock, isExpanded: !state.bottomDock.isExpanded },
-}));
-uiLayoutReducer.with(expandBottomDock, (state) => {
-  if (state.bottomDock.isExpanded) return state;
-  return { ...state, bottomDock: { ...state.bottomDock, isExpanded: true } };
-});
-uiLayoutReducer.with(collapseBottomDock, (state) => {
-  if (!state.bottomDock.isExpanded) return state;
-  return { ...state, bottomDock: { ...state.bottomDock, isExpanded: false } };
-});
-uiLayoutReducer.with(setBottomDockViewMode, (state, { payload: [mode] }) => {
-  if (mode === state.bottomDock.viewMode) return state;
-  return { ...state, bottomDock: { ...state.bottomDock, viewMode: mode } };
-});
-uiLayoutReducer.with(selectBottomDockTerminal, (state, { payload: [terminalId] }) => ({
-  ...state,
-  bottomDock: {
-    ...state.bottomDock,
-    activeTerminalId: terminalId,
-    viewMode: 'terminal' as DockViewMode,
-    isExpanded: true,
-  },
-}));
-uiLayoutReducer.with(showBottomDockAgents, (state) => ({
-  ...state,
-  bottomDock: {
-    ...state.bottomDock,
-    viewMode: 'agents' as DockViewMode,
-    isExpanded: true,
-  },
-}));
-uiLayoutReducer.with(setBottomDockHeight, (state, { payload: [height] }) => {
-  const clamped = Math.max(MIN_DOCK_HEIGHT, Math.min(MAX_DOCK_HEIGHT, height));
-  if (clamped === state.bottomDock.height) return state;
-  return { ...state, bottomDock: { ...state.bottomDock, height: clamped } };
-});
-uiLayoutReducer.with(loadBottomDockState, (state, { payload: [loaded] }) => ({
-  ...state,
-  bottomDock: {
-    // Always start collapsed on load
-    isExpanded: false,
-    viewMode: loaded.viewMode ?? 'agents',
-    activeTerminalId: loaded.activeTerminalId ?? null,
-    height: loaded.height ?? DEFAULT_DOCK_HEIGHT,
-  },
 }));

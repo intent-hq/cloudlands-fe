@@ -92,13 +92,6 @@ export const pinWorkspaceToKey = createAction<[slot: number, workspaceId: string
   "hardwareConsole/pinWorkspaceToKey",
 );
 /**
- * Remove a workspace's pin from whichever slot holds it and exclude it from
- * future auto-fill (unassign = exclude; re-pinning clears the exclusion).
- */
-export const unpinWorkspaceFromKeys = createAction<[workspaceId: string]>(
-  "hardwareConsole/unpinWorkspaceFromKeys",
-);
-/**
  * Mark a slot sticky-unassigned (0-based): it stays empty and never
  * auto-fills. The evicted workspace (if any) joins the exclusion list.
  */
@@ -231,19 +224,6 @@ hardwareConsoleReducer.with(pinWorkspaceToKey, (state, { payload: [slot, workspa
     }
     const keyPins = state.keyPins.map((pin) => (pin === workspaceId ? null : pin));
     keyPins[slot] = workspaceId;
-    return { ...state, keyPins, excludedWorkspaceIds };
-  });
-hardwareConsoleReducer.with(unpinWorkspaceFromKeys, (state, { payload: [workspaceId] }) => {
-    if (!workspaceId) return state;
-    const pinned = state.keyPins.includes(workspaceId);
-    const excluded = state.excludedWorkspaceIds.includes(workspaceId);
-    if (!pinned && excluded) return state;
-    const keyPins = pinned
-      ? state.keyPins.map((pin) => (pin === workspaceId ? null : pin))
-      : state.keyPins;
-    const excludedWorkspaceIds = excluded
-      ? state.excludedWorkspaceIds
-      : [...state.excludedWorkspaceIds, workspaceId];
     return { ...state, keyPins, excludedWorkspaceIds };
   });
 hardwareConsoleReducer.with(markKeySlotUnassigned, (state, { payload: [slot] }) => {

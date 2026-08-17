@@ -4,6 +4,52 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.59.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.59.2...v2.59.3) (2026-08-17)
+
+
+### 🐛 Bug Fixes
+
+* keep remote file picker open when setting provider CLI path ([#1387](https://github.com/intent-hq/cloudlands-fe/issues/1387)) ([d181eb2](https://github.com/intent-hq/cloudlands-fe/commit/d181eb290295a5342a3398fc3a9e8142295cb066))
+
+## [2.59.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.59.1...v2.59.2) (2026-08-17)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** defer transcript reveal on switch-back until resubscribe snapshot applies ([#1384](https://github.com/intent-hq/cloudlands-fe/issues/1384)) ([00827f3](https://github.com/intent-hq/cloudlands-fe/commit/00827f37e633d86047073b34f81f1035a41ac219))
+* drop deleted/pending-delete agents from HUD and clean bridge state on agent:deleted ([#1385](https://github.com/intent-hq/cloudlands-fe/issues/1385)) ([dba8c52](https://github.com/intent-hq/cloudlands-fe/commit/dba8c520fba8863c2ab517e603d0e922757e2f04))
+
+## [2.59.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.59.0...v2.59.1) (2026-08-17)
+
+
+### 🐛 Bug Fixes
+
+* bridge window:set-theme and extend IPC audit to saga-style invoke sites ([#1380](https://github.com/intent-hq/cloudlands-fe/issues/1380)) ([e489dd4](https://github.com/intent-hq/cloudlands-fe/commit/e489dd48c2ab0c29fe051f6d2009cd52c7583ef3))
+* bump intentd sidecar to v0.7.14 ([#1382](https://github.com/intent-hq/cloudlands-fe/issues/1382)) ([f70a9cd](https://github.com/intent-hq/cloudlands-fe/commit/f70a9cd80ee0cc389f69affb16d07d4b2210fbdf))
+
+## [2.59.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.58.0...v2.59.0) (2026-08-17)
+
+
+### 🚀 Features
+
+* redesign the release notes dialog ([#1379](https://github.com/intent-hq/cloudlands-fe/issues/1379)) ([9f95a0b](https://github.com/intent-hq/cloudlands-fe/commit/9f95a0b8697ae1cdadf72dcd2144c3e3340f5466))
+
+## [2.58.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.57.1...v2.58.0) (2026-08-17)
+
+
+### 🚀 Features
+
+* **chat:** opt into incremental chat delta encoding (deltaEncoding: incremental) ([#1370](https://github.com/intent-hq/cloudlands-fe/issues/1370)) ([7f20011](https://github.com/intent-hq/cloudlands-fe/commit/7f200112c58041a54deed0b7fc495ef865bbc299))
+
+
+### 🐛 Bug Fixes
+
+* capitalize merge-blocked reason in sidebar PR tooltip ([#1365](https://github.com/intent-hq/cloudlands-fe/issues/1365)) ([5da5aab](https://github.com/intent-hq/cloudlands-fe/commit/5da5aab84aa7952a77b7de86cab4b4a01f036235))
+* make chat send animation reliable via retried pending-send matching ([#1367](https://github.com/intent-hq/cloudlands-fe/issues/1367)) ([4ddabd8](https://github.com/intent-hq/cloudlands-fe/commit/4ddabd80f2bc3d479403fc357d989d5a255b1c95))
+* rebuild the transcript when a divergent seq-0 snapshot races an idle stream ([#1364](https://github.com/intent-hq/cloudlands-fe/issues/1364)) ([7e58df2](https://github.com/intent-hq/cloudlands-fe/commit/7e58df2f9103e4f25809bbae62cc83401e2b5322))
+* stop doubling "blocked by" in Monitored PRs readiness line ([#1366](https://github.com/intent-hq/cloudlands-fe/issues/1366)) ([b3cd7eb](https://github.com/intent-hq/cloudlands-fe/commit/b3cd7eb2833591b5939bde7ce1b02e60033216a4))
+* track 4+-space-indented fences as code regions in tag scanning ([#1362](https://github.com/intent-hq/cloudlands-fe/issues/1362)) ([c600304](https://github.com/intent-hq/cloudlands-fe/commit/c6003045d3c8463146e8390aa73c16ef25e5defc))
+
 ## [2.57.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.57.0...v2.57.1) (2026-08-17)
 
 

@@ -125,6 +125,7 @@
  */
 import { m } from '$shared/paraglide/messages.js';
 import type {
+  AgentSession,
   ContentBlock,
   PullRequestInfo,
   PullRequestStatus,
@@ -2346,6 +2347,22 @@ function handleAgentDeleteScheduledEvent(event: WorkspaceEvent, workspaceId: str
   // on the row) can resolve after it; without an entry that stale read would
   // resurrect the agent. Snapshot-less entries restore via the cancel
   // handler's reconcile refetch instead of an instant snapshot.
+  registerAgentDeleteTombstone(workspaceId, agentId, tombstoneClearDelayMs(data?.deleteAt), snapshot);
+}
+
+/**
+ * Register (or replace) an agent's pending-deletion entry and arm the timer
+ * that lifts it after `clearDelayMs`. Shared by the schedule handler above and
+ * the immediate `agent:deleted` cleanup (which has no schedule event, so the
+ * entry is the only tombstone against a stale `agent.get`/`list` begun before
+ * the delete resolving after it).
+ */
+function registerAgentDeleteTombstone(
+  workspaceId: string,
+  agentId: string,
+  clearDelayMs: number,
+  snapshot?: AgentSession,
+): void {
   setPendingAgentDeletion({ wsId: workspaceId, agentId, snapshot });
   const existing = agentDeleteTombstoneTimers.get(agentId);
   if (existing) clearTimeout(existing);
@@ -2358,7 +2375,7 @@ function handleAgentDeleteScheduledEvent(event: WorkspaceEvent, workspaceId: str
     if (getPendingAgentDeletion(agentId) === entry) {
       removePendingAgentDeletion(agentId);
     }
-  }, tombstoneClearDelayMs(data?.deleteAt));
+  }, clearDelayMs);
   agentDeleteTombstoneTimers.set(agentId, timer);
 }
 
@@ -3008,6 +3025,25 @@ export function routeDaemonEventsNotification(
     const data = (event as { data?: Record<string, unknown> }).data;
     if (typeof data?.agentId === 'string') {
       removeAgentFailure(data.agentId);
+      // Drop the local slice state for the deleted agent — mirroring
+      // `handleAgentDeleteScheduledEvent` — so an immediate delete (no
+      // `agent:delete-scheduled` grace window) converges without waiting for
+      // a refetch.
+      appStore.dispatch(removeAgent(workspaceId, data.agentId));
+      appStore.dispatch(removeSession(data.agentId));
+      appStore.dispatch(removeWatchedAgent(workspaceId, data.agentId));
+      appStore.dispatch(pruneRecentlyClosed(workspaceId, { agentId: data.agentId }));
+      // Tombstone the id so an `agent.get`/`agent.list` begun before this
+      // event (returning the pre-delete row) cannot resurrect it after the
+      // removals above. An immediate delete has no schedule event, so no
+      // pending entry exists yet; a scheduled delete's existing entry is
+      // replaced, which re-arms its lift timer for the post-commit grace.
+      registerAgentDeleteTombstone(
+        workspaceId,
+        data.agentId,
+        DELETE_TOMBSTONE_TTL_MS,
+        getPendingAgentDeletion(data.agentId)?.snapshot,
+      );
     }
     // Refresh the workspace entity's BE-owned `agentSummary` aggregate so the
     // HUD card rows drop the deleted agent immediately — the `agent.list`

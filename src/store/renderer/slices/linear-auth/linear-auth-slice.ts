@@ -1,7 +1,6 @@
-import type { LinearIssueResult } from "$features/linear-auth/renderer/linear-auth.client";
 import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import type { LinearAuthSliceState, LinearIssueFilter } from "./linear-auth-types";
+import type { LinearAuthSliceState } from "./linear-auth-types";
 
 export const initialState: LinearAuthSliceState = {
   isAuthenticated: false,
@@ -36,19 +35,6 @@ export const startLinearAuth = createAction("linearAuth/startAuth");
 /** Trigger: logout — clears the daemon-held API key and re-probes */
 export const logoutLinear = createAction("linearAuth/logout");
 
-/** Trigger: refresh auth state */
-export const refreshLinearAuth = createAction("linearAuth/refresh");
-
-/** Trigger: fetch issues */
-export const fetchLinearIssues = createAction<[filter: LinearIssueFilter]>(
-  "linearAuth/fetchIssues",
-);
-
-/** Trigger: search issues */
-export const searchLinearIssues = createAction<[query: string]>(
-  "linearAuth/searchIssues",
-);
-
 /** Set auth state from IPC response */
 export const setLinearAuthState = createAction(
   "linearAuth/setAuthState",
@@ -69,16 +55,6 @@ export const setLinearError = createAction<[error: string | null]>(
   "linearAuth/setError",
 );
 
-/** Set issues loading state */
-export const setLinearIsLoadingIssues = createAction<[value: boolean]>(
-  "linearAuth/setIsLoadingIssues",
-);
-
-/** Set issues */
-export const setLinearIssues = createAction<[issues: LinearIssueResult[]]>(
-  "linearAuth/setIssues",
-);
-
 // --- Reducer ---
 
 export const linearAuthReducer = createReducer<LinearAuthSliceState>(initialState);
@@ -97,12 +73,4 @@ linearAuthReducer.with(setLinearIsAuthenticating, (state, { payload: [value] }) 
 linearAuthReducer.with(setLinearError, (state, { payload: [error] }) => ({
   ...state,
   error,
-}));
-linearAuthReducer.with(setLinearIsLoadingIssues, (state, { payload: [value] }) => ({
-  ...state,
-  isLoadingIssues: value,
-}));
-linearAuthReducer.with(setLinearIssues, (state, { payload: [issues] }) => ({
-  ...state,
-  issues,
 }));
