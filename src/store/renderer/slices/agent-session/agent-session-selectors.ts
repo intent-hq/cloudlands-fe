@@ -215,6 +215,41 @@ export const selectAgentMessages = store.createSelector(
   },
 );
 
+const EMPTY_HISTORY_MESSAGES: AgentMessage[] = [];
+
+/** Select the hydrated scrollback history segment rows for a given agent (ordered array). */
+export const selectAgentHistoryMessages = store.createSelector(
+  (state, agentId: string): AgentMessage[] => {
+    const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
+    return segment ? segment.messages : EMPTY_HISTORY_MESSAGES;
+  },
+);
+
+export interface HistorySegmentMeta {
+  /** true when a hole is open between history and the tail. */
+  gapToTail: boolean;
+  /** true once the conversation's true first message has been hydrated. */
+  oldestReached: boolean;
+  /** Number of hydrated history rows. */
+  historyCount: number;
+  /** Number of resident tail rows. */
+  tailCount: number;
+}
+
+/** Select scrollback history segment metadata (gap flag, oldestReached, counts). */
+export const selectHistorySegmentMeta = store.createSelector(
+  (state, agentId: string): HistorySegmentMeta => {
+    const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
+    const tailCount = state.agentSessions?.byAgentId[agentId]?.messages.length ?? 0;
+    return {
+      gapToTail: segment?.gapToTail === true,
+      oldestReached: segment?.oldestReached === true,
+      historyCount: segment?.messages.length ?? 0,
+      tailCount,
+    };
+  },
+);
+
 /**
  * Select a single message by id within an agent session.
  * Returns the live message reference from Redux state, so components that

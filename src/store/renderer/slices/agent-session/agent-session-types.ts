@@ -110,6 +110,29 @@ export type StoredAgentSession = Omit<AgentSession, "messages"> & {
 };
 
 /**
+ * Bounded, on-demand history segment for infinite scrollback.
+ *
+ * Holds rows OLDER than the always-resident tail (`session.messages`),
+ * hydrated page-by-page as the user scrolls up. Capped at
+ * `HISTORY_SEGMENT_MAX` rows; pruning past the cap can open a hole (gap)
+ * between history and tail that is refilled on demand.
+ */
+export interface AgentHistorySegment {
+  /** Hydrated older rows, ordered ascending by timestamp (same ordering as the tail). */
+  messages: AgentMessage[];
+  /**
+   * true when a hole is open between history's newest row and the tail's
+   * oldest retained row (newest-side pruning severed contiguity). When false
+   * and history is non-empty, history's newest row directly precedes the
+   * tail's oldest retained row, so the renderer may concatenate without a
+   * gap affordance.
+   */
+  gapToTail: boolean;
+  /** true once the conversation's true first message has been hydrated. */
+  oldestReached: boolean;
+}
+
+/**
  * Agent Session Slice State
  *
  * Flat, agent-keyed state for all AgentSession data.
@@ -121,5 +144,10 @@ export interface AgentSessionState {
   byAgentId: Record<string, StoredAgentSession>;
   /** Index: workspace ID → array of agent IDs belonging to that workspace */
   agentIdsByWorkspace: Record<string, string[]>;
+  /**
+   * On-demand scrollback history segments keyed by agentId. Absent/undefined
+   * means no agent has hydrated history (equivalent to an empty record).
+   */
+  historySegmentsByAgentId?: Record<string, AgentHistorySegment>;
 }
 

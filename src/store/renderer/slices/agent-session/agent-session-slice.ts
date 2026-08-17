@@ -5,6 +5,7 @@ import type { CanonicalAgentStatusFields, WorkspaceEvent } from '$features/event
 import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
+  AgentHistorySegment,
   AgentSessionForkOptions,
   AgentSessionLaunchConfig,
   AgentSessionLaunchOptions,
@@ -45,6 +46,8 @@ export {
 // ============================================================================
 
 const MAX_MESSAGES_PER_AGENT = 500;
+/** Cap for the on-demand scrollback history segment (rows older than the tail). */
+export const HISTORY_SEGMENT_MAX = 500;
 const USER_REPLY_ORDER_WINDOW_MS = 1_000;
 
 // ============================================================================
@@ -145,6 +148,86 @@ function normalizeSortPruneMessages(messages: AgentMessage[]): AgentMessage[] {
   return pruneMessages(
     orderMessagesForConversation(deduplicateAgentMessages(messages.map(normalizeAgentMessage))),
   );
+}
+
+// ============================================================================
+// History segment helpers (on-demand scrollback, bounded by HISTORY_SEGMENT_MAX)
+// ============================================================================
+
+const EMPTY_HISTORY_SEGMENT: AgentHistorySegment = {
+  messages: [],
+  gapToTail: false,
+  oldestReached: false,
+};
+
+/** History rows use the tail's normalize/dedup/sort pipeline, minus the tail prune. */
+function normalizeSortHistoryMessages(messages: AgentMessage[]): AgentMessage[] {
+  return orderMessagesForConversation(
+    deduplicateAgentMessages(messages.map(normalizeAgentMessage)),
+  );
+}
+
+/**
+ * Drop rows already present in the tail (identity by `id`/`appMessageId`, the
+ * same identity keys the dedup helpers use) so a row never renders twice
+ * across the two segments.
+ */
+function dropRowsPresentInTail(messages: AgentMessage[], tail: AgentMessage[]): AgentMessage[] {
+  if (messages.length === 0 || tail.length === 0) return messages;
+  const tailIds = new Set(tail.map((message) => message.id));
+  const tailAppMessageIds = new Set(
+    tail
+      .map((message) => message.appMessageId)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0),
+  );
+  const filtered = messages.filter(
+    (message) =>
+      !tailIds.has(message.id) &&
+      !(
+        typeof message.appMessageId === 'string' &&
+        message.appMessageId.length > 0 &&
+        tailAppMessageIds.has(message.appMessageId)
+      ),
+  );
+  return filtered.length === messages.length ? messages : filtered;
+}
+
+function getHistorySegment(
+  state: AgentSessionState,
+  agentId: string,
+): AgentHistorySegment | undefined {
+  return state.historySegmentsByAgentId?.[agentId];
+}
+
+function setHistorySegment(
+  state: AgentSessionState,
+  agentId: string,
+  segment: AgentHistorySegment,
+): AgentSessionState {
+  return {
+    ...state,
+    historySegmentsByAgentId: { ...state.historySegmentsByAgentId, [agentId]: segment },
+  };
+}
+
+function removeHistorySegment(state: AgentSessionState, agentId: string): AgentSessionState {
+  if (!state.historySegmentsByAgentId || !(agentId in state.historySegmentsByAgentId)) {
+    return state;
+  }
+  const { [agentId]: _, ...rest } = state.historySegmentsByAgentId;
+  return { ...state, historySegmentsByAgentId: rest };
+}
+
+/** Remove the history segments of every agent in `agentIds`; no-op when none is present. */
+function removeHistorySegmentsFor(
+  state: AgentSessionState,
+  agentIds: Iterable<string>,
+): AgentSessionState {
+  let next = state;
+  for (const agentId of agentIds) {
+    next = removeHistorySegment(next, agentId);
+  }
+  return next;
 }
 
 function isOptimisticUserMessage(message: AgentMessage): boolean {
@@ -1032,6 +1115,35 @@ export const removeWorkspaceSessions = createAction<[wsId: string]>(
 /** Clear all sessions */
 export const clearAllSessions = createAction('agentSessions/clearAllSessions');
 
+/**
+ * Prepend OLDER rows to the scrollback history segment (normalize/dedup/sort).
+ * Past `HISTORY_SEGMENT_MAX`, prunes from the NEWEST side of history and sets
+ * `gapToTail: true` — the pruned rows severed contiguity with the tail.
+ */
+export const prependHistoryMessages = createAction<[agentId: string, messages: AgentMessage[]]>(
+  'agentSessions/prependHistoryMessages',
+);
+
+/**
+ * Append NEWER rows to the scrollback history segment (hole refill;
+ * normalize/dedup/sort). Past `HISTORY_SEGMENT_MAX`, prunes from the OLDEST
+ * side. When appended rows overlap rows present in the tail, the overlap is
+ * dropped from history and `gapToTail` flips false (hole closed).
+ */
+export const appendHistoryMessages = createAction<[agentId: string, messages: AgentMessage[]]>(
+  'agentSessions/appendHistoryMessages',
+);
+
+/** Mark that the conversation's true first message has been hydrated into history. */
+export const setHistoryOldestReached = createAction<[agentId: string, oldestReached?: boolean]>(
+  'agentSessions/setHistoryOldestReached',
+);
+
+/** Drop an agent's scrollback history segment entirely. */
+export const clearHistorySegment = createAction<[agentId: string]>(
+  'agentSessions/clearHistorySegment',
+);
+
 // ============================================================================
 // Reducer
 // ============================================================================
@@ -1043,6 +1155,7 @@ agentSessionReducer.with(removeSession, (state, { payload: [agentId] }) => {
   const { [agentId]: _, ...rest } = state.byAgentId;
   let next: AgentSessionState = { ...state, byAgentId: rest };
   next = removeFromWorkspaceIndex(next, agentId);
+  next = removeHistorySegment(next, agentId);
   return next;
 });
 agentSessionReducer.with(addMessage, (state, { payload: [agentId, message] }) =>
@@ -1141,7 +1254,10 @@ agentSessionReducer.with(removeWorkspaceSessions, (state, { payload: [wsId] }) =
   }
 
   const { [wsId]: _, ...restWorkspaces } = state.agentIdsByWorkspace;
-  return { byAgentId, agentIdsByWorkspace: restWorkspaces };
+  return removeHistorySegmentsFor(
+    { ...state, byAgentId, agentIdsByWorkspace: restWorkspaces },
+    agentIds,
+  );
 });
 agentSessionReducer.with(workspaceDeleted, (state, { payload: [wsId, agentIds] }) => {
   const indexedAgentIds = state.agentIdsByWorkspace[wsId] ?? [];
@@ -1157,7 +1273,10 @@ agentSessionReducer.with(workspaceDeleted, (state, { payload: [wsId, agentIds] }
   }
   if (!byAgentIdChanged && !(wsId in state.agentIdsByWorkspace)) return state;
   const { [wsId]: _, ...restWorkspaces } = state.agentIdsByWorkspace;
-  return { byAgentId, agentIdsByWorkspace: restWorkspaces };
+  return removeHistorySegmentsFor(
+    { ...state, byAgentId, agentIdsByWorkspace: restWorkspaces },
+    doomed,
+  );
 });
 agentSessionReducer.with(clearAllSessions, () => initialState);
 // -----------------------------------------------------------------------
@@ -1230,11 +1349,14 @@ agentSessionReducer.with(chatStopCompleted, (state, { payload: [agentId] }) =>
   }),
 );
 agentSessionReducer.with(chatReset, (state, { payload: [agentId] }) =>
-  updateSessionFields(state, agentId, {
-    isStreaming: false,
-    isProcessing: false,
-    isResponding: false,
-  }),
+  removeHistorySegment(
+    updateSessionFields(state, agentId, {
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    }),
+    agentId,
+  ),
 );
 agentSessionReducer.with(chatStreamingReconciled, (state, { payload: { agentId } }) =>
   updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true }),
@@ -1277,4 +1399,63 @@ agentSessionReducer.with(clearProcessQueueHint, (state, { payload: [agentId] }) 
   updateSessionFields(state, agentId, {
     processQueueHint: undefined,
   }),
+);
+// -----------------------------------------------------------------------
+// Scrollback history segment (bounded, on-demand; tail semantics untouched)
+// -----------------------------------------------------------------------
+agentSessionReducer.with(prependHistoryMessages, (state, { payload: [agentId, messages] }) => {
+  const session = getSession(state, agentId);
+  if (!session) return state;
+  const existing = getHistorySegment(state, agentId) ?? EMPTY_HISTORY_SEGMENT;
+  const merged = dropRowsPresentInTail(
+    normalizeSortHistoryMessages([...existing.messages, ...messages]),
+    session.messages,
+  );
+  if (merged.length <= HISTORY_SEGMENT_MAX) {
+    return setHistorySegment(state, agentId, { ...existing, messages: merged });
+  }
+  // Past the cap: prune from the NEWEST side (viewport is walking up), which
+  // severs contiguity with the tail — a hole opens.
+  return setHistorySegment(state, agentId, {
+    ...existing,
+    messages: merged.slice(0, HISTORY_SEGMENT_MAX),
+    gapToTail: true,
+  });
+});
+agentSessionReducer.with(appendHistoryMessages, (state, { payload: [agentId, messages] }) => {
+  const session = getSession(state, agentId);
+  if (!session) return state;
+  const existing = getHistorySegment(state, agentId) ?? EMPTY_HISTORY_SEGMENT;
+  const incoming = normalizeSortHistoryMessages(messages);
+  const incomingWithoutTailRows = dropRowsPresentInTail(incoming, session.messages);
+  // Appended rows overlapping rows the tail already holds mean the refill
+  // reached the tail — the hole is closed (overlap itself stays in the tail).
+  const overlapsTail = incomingWithoutTailRows.length !== incoming.length;
+  const merged = dropRowsPresentInTail(
+    normalizeSortHistoryMessages([...existing.messages, ...incomingWithoutTailRows]),
+    session.messages,
+  );
+  const gapToTail = overlapsTail ? false : existing.gapToTail;
+  if (merged.length <= HISTORY_SEGMENT_MAX) {
+    return setHistorySegment(state, agentId, { ...existing, messages: merged, gapToTail });
+  }
+  // Past the cap: prune from the OLDEST side (viewport is walking down). The
+  // true first message may be evicted, so oldestReached no longer holds.
+  return setHistorySegment(state, agentId, {
+    messages: merged.slice(merged.length - HISTORY_SEGMENT_MAX),
+    gapToTail,
+    oldestReached: false,
+  });
+});
+agentSessionReducer.with(
+  setHistoryOldestReached,
+  (state, { payload: [agentId, oldestReached] }) => {
+    const existing = getHistorySegment(state, agentId) ?? EMPTY_HISTORY_SEGMENT;
+    const next = oldestReached ?? true;
+    if (existing.oldestReached === next && getHistorySegment(state, agentId)) return state;
+    return setHistorySegment(state, agentId, { ...existing, oldestReached: next });
+  },
+);
+agentSessionReducer.with(clearHistorySegment, (state, { payload: [agentId] }) =>
+  removeHistorySegment(state, agentId),
 );

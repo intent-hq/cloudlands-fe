@@ -31,11 +31,17 @@ import {
   hasCanonicalId,
   isTimestampClose,
   replaceMessageById,
+  HISTORY_SEGMENT_MAX,
+  prependHistoryMessages,
+  appendHistoryMessages,
+  setHistoryOldestReached,
+  clearHistorySegment,
 } from './agent-session-slice';
 import {
   chatSendFailed,
   chatSendStarted,
   chatInitialized,
+  chatReset,
   streamCompleted,
 } from '../chat-state/chat-state-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
@@ -44,6 +50,8 @@ import {
   selectAgentSession,
   selectAgentSessionsByIds,
   selectAgentMessages,
+  selectAgentHistoryMessages,
+  selectHistorySegmentMeta,
   selectAgentMessageById,
   selectAgentSessionExists,
   selectAgentSessionIsProcessing,
@@ -5409,5 +5417,253 @@ describe('stopReason hydration', () => {
     expect(state.byAgentId['a1'].status).toBe('error');
     expect(state.byAgentId['a1'].stopReason).toBe('JSON-RPC error -32603: invalid argument');
     expect(state.byAgentId['a1'].sessionCorrupted).toBe(true);
+  });
+});
+
+// ===========================================================================
+// Scrollback history segment (bounded, on-demand)
+// ===========================================================================
+
+describe('history segment (scrollback)', () => {
+  const BASE_MS = Date.parse('2024-01-01T00:00:00.000Z');
+  /** ISO timestamp `i` seconds after the base — keeps ordering deterministic. */
+  const ts = (i: number) => new Date(BASE_MS + i * 1000).toISOString();
+  const histMsg = (i: number) => makeUniqueMessage(`hist-${i}`, 'user', ts(i));
+
+  function getHistory(state: AgentSessionState, agentId: string) {
+    return state.historySegmentsByAgentId?.[agentId];
+  }
+
+  function withSession(agentId = 'a1', tail: AgentMessage[] = []) {
+    return agentSessionReducer(
+      initialState,
+      upsertSession(makeSession(agentId, 'ws-1', { messages: tail })),
+    );
+  }
+
+  describe('prependHistoryMessages', () => {
+    it('creates the segment with normalized, sorted, deduplicated rows', () => {
+      let state = withSession();
+      state = agentSessionReducer(
+        state,
+        prependHistoryMessages('a1', [histMsg(2), histMsg(0), histMsg(1), histMsg(1)]),
+      );
+      const segment = getHistory(state, 'a1');
+      expect(segment).toBeDefined();
+      expect(segment!.messages.map((m) => m.id)).toEqual(['hist-0', 'hist-1', 'hist-2']);
+      expect(segment!.gapToTail).toBe(false);
+      expect(segment!.oldestReached).toBe(false);
+    });
+
+    it('never duplicates rows already present in the tail (by id and appMessageId)', () => {
+      const tailRow = makeUniqueMessage('tail-1', 'user', ts(100));
+      const tailRowWithApp = {
+        ...makeUniqueMessage('tail-2', 'assistant', ts(101)),
+        appMessageId: 'app_tail_2',
+      };
+      let state = withSession('a1', [tailRow, tailRowWithApp]);
+      state = agentSessionReducer(
+        state,
+        prependHistoryMessages('a1', [
+          histMsg(0),
+          makeUniqueMessage('tail-1', 'user', ts(100)),
+          { ...makeUniqueMessage('other-id', 'assistant', ts(101)), appMessageId: 'app_tail_2' },
+        ]),
+      );
+      expect(getHistory(state, 'a1')!.messages.map((m) => m.id)).toEqual(['hist-0']);
+    });
+
+    it('prunes from the NEWEST side past the cap and opens the gap', () => {
+      let state = withSession();
+      const firstPage = Array.from({ length: HISTORY_SEGMENT_MAX }, (_, i) => histMsg(i + 100));
+      state = agentSessionReducer(state, prependHistoryMessages('a1', firstPage));
+      expect(getHistory(state, 'a1')!.messages).toHaveLength(HISTORY_SEGMENT_MAX);
+      expect(getHistory(state, 'a1')!.gapToTail).toBe(false);
+
+      const olderPage = Array.from({ length: 100 }, (_, i) => histMsg(i));
+      state = agentSessionReducer(state, prependHistoryMessages('a1', olderPage));
+      const segment = getHistory(state, 'a1')!;
+      expect(segment.messages).toHaveLength(HISTORY_SEGMENT_MAX);
+      // Oldest rows retained; the 100 newest history rows were pruned.
+      expect(segment.messages[0].id).toBe('hist-0');
+      expect(segment.messages[segment.messages.length - 1].id).toBe(
+        `hist-${HISTORY_SEGMENT_MAX - 1}`,
+      );
+      expect(segment.gapToTail).toBe(true);
+    });
+
+    it('is a no-op for an unknown agent', () => {
+      const state = agentSessionReducer(
+        initialState,
+        prependHistoryMessages('unknown', [histMsg(0)]),
+      );
+      expect(state).toBe(initialState);
+    });
+
+    it('does not touch the tail', () => {
+      const tail = [makeUniqueMessage('tail-1', 'user', ts(100))];
+      let state = withSession('a1', tail);
+      const tailBefore = state.byAgentId['a1'].messages;
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0)]));
+      expect(state.byAgentId['a1'].messages).toBe(tailBefore);
+    });
+  });
+
+  describe('appendHistoryMessages', () => {
+    it('appends newer rows into the hole and keeps the gap open without tail overlap', () => {
+      let state = withSession('a1', [makeUniqueMessage('tail-1', 'user', ts(1000))]);
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0), histMsg(1)]));
+      // The prepend-past-cap path that opens the gap is exercised above; here
+      // we seed an open gap directly and assert refill semantics.
+      state = {
+        ...state,
+        historySegmentsByAgentId: {
+          ...state.historySegmentsByAgentId,
+          a1: { ...state.historySegmentsByAgentId!.a1, gapToTail: true },
+        },
+      };
+      state = agentSessionReducer(state, appendHistoryMessages('a1', [histMsg(2), histMsg(3)]));
+      const segment = getHistory(state, 'a1')!;
+      expect(segment.messages.map((m) => m.id)).toEqual(['hist-0', 'hist-1', 'hist-2', 'hist-3']);
+      expect(segment.gapToTail).toBe(true);
+    });
+
+    it('closes the gap and drops the overlap when appended rows are present in the tail', () => {
+      const tailRow = makeUniqueMessage('tail-1', 'user', ts(1000));
+      let state = withSession('a1', [tailRow]);
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0), histMsg(1)]));
+      state = {
+        ...state,
+        historySegmentsByAgentId: {
+          ...state.historySegmentsByAgentId,
+          a1: { ...state.historySegmentsByAgentId!.a1, gapToTail: true },
+        },
+      };
+      state = agentSessionReducer(
+        state,
+        appendHistoryMessages('a1', [histMsg(2), makeUniqueMessage('tail-1', 'user', ts(1000))]),
+      );
+      const segment = getHistory(state, 'a1')!;
+      expect(segment.messages.map((m) => m.id)).toEqual(['hist-0', 'hist-1', 'hist-2']);
+      expect(segment.gapToTail).toBe(false);
+    });
+
+    it('prunes from the OLDEST side past the cap and resets oldestReached', () => {
+      let state = withSession();
+      const page = Array.from({ length: HISTORY_SEGMENT_MAX }, (_, i) => histMsg(i));
+      state = agentSessionReducer(state, prependHistoryMessages('a1', page));
+      state = agentSessionReducer(state, setHistoryOldestReached('a1'));
+      expect(getHistory(state, 'a1')!.oldestReached).toBe(true);
+
+      const newerPage = Array.from({ length: 100 }, (_, i) => histMsg(HISTORY_SEGMENT_MAX + i));
+      state = agentSessionReducer(state, appendHistoryMessages('a1', newerPage));
+      const segment = getHistory(state, 'a1')!;
+      expect(segment.messages).toHaveLength(HISTORY_SEGMENT_MAX);
+      // Newest rows retained; the 100 oldest history rows were pruned.
+      expect(segment.messages[0].id).toBe('hist-100');
+      expect(segment.messages[segment.messages.length - 1].id).toBe(
+        `hist-${HISTORY_SEGMENT_MAX + 99}`,
+      );
+      expect(segment.oldestReached).toBe(false);
+    });
+
+    it('is a no-op for an unknown agent', () => {
+      const state = agentSessionReducer(
+        initialState,
+        appendHistoryMessages('unknown', [histMsg(0)]),
+      );
+      expect(state).toBe(initialState);
+    });
+  });
+
+  describe('setHistoryOldestReached / clearHistorySegment', () => {
+    it('marks oldestReached (default true) and accepts an explicit flag', () => {
+      let state = withSession();
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0)]));
+      state = agentSessionReducer(state, setHistoryOldestReached('a1'));
+      expect(getHistory(state, 'a1')!.oldestReached).toBe(true);
+      state = agentSessionReducer(state, setHistoryOldestReached('a1', false));
+      expect(getHistory(state, 'a1')!.oldestReached).toBe(false);
+    });
+
+    it('clearHistorySegment drops the segment', () => {
+      let state = withSession();
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0)]));
+      state = agentSessionReducer(state, clearHistorySegment('a1'));
+      expect(getHistory(state, 'a1')).toBeUndefined();
+    });
+
+    it('clearHistorySegment is a no-op when no segment exists', () => {
+      const state = withSession();
+      expect(agentSessionReducer(state, clearHistorySegment('a1'))).toBe(state);
+    });
+  });
+
+  describe('cleanup paths', () => {
+    function withHistory(agentId = 'a1') {
+      return agentSessionReducer(
+        withSession(agentId),
+        prependHistoryMessages(agentId, [histMsg(0)]),
+      );
+    }
+
+    it('removeSession drops the history segment', () => {
+      const state = agentSessionReducer(withHistory(), removeSession('a1'));
+      expect(getHistory(state, 'a1')).toBeUndefined();
+    });
+
+    it('removeWorkspaceSessions drops history segments for the workspace agents', () => {
+      const state = agentSessionReducer(withHistory(), removeWorkspaceSessions('ws-1'));
+      expect(getHistory(state, 'a1')).toBeUndefined();
+    });
+
+    it('workspaceDeleted drops history segments for the doomed agents', () => {
+      const state = agentSessionReducer(withHistory(), workspaceDeleted('ws-1', ['a1']));
+      expect(getHistory(state, 'a1')).toBeUndefined();
+    });
+
+    it('clearAllSessions drops all history segments', () => {
+      const state = agentSessionReducer(withHistory(), clearAllSessions());
+      expect(state.historySegmentsByAgentId).toBeUndefined();
+      expect(state).toEqual(initialState);
+    });
+
+    it('chatReset drops the history segment', () => {
+      const state = agentSessionReducer(withHistory(), chatReset('a1'));
+      expect(getHistory(state, 'a1')).toBeUndefined();
+    });
+  });
+
+  describe('selectors', () => {
+    it('selectAgentHistoryMessages returns the segment rows, empty array otherwise', () => {
+      let state = withSession();
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0), histMsg(1)]));
+      const storeState = { agentSessions: state } as unknown as StoreState;
+      expect(selectAgentHistoryMessages.select(storeState, 'a1').map((m) => m.id)).toEqual([
+        'hist-0',
+        'hist-1',
+      ]);
+      expect(selectAgentHistoryMessages.select(storeState, 'missing')).toEqual([]);
+    });
+
+    it('selectHistorySegmentMeta reports gap flag, oldestReached, and counts', () => {
+      const tail = [makeUniqueMessage('tail-1', 'user', ts(1000))];
+      let state = withSession('a1', tail);
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0)]));
+      state = agentSessionReducer(state, setHistoryOldestReached('a1'));
+      const storeState = { agentSessions: state } as unknown as StoreState;
+      expect(selectHistorySegmentMeta.select(storeState, 'a1')).toEqual({
+        gapToTail: false,
+        oldestReached: true,
+        historyCount: 1,
+        tailCount: 1,
+      });
+      expect(selectHistorySegmentMeta.select(storeState, 'missing')).toEqual({
+        gapToTail: false,
+        oldestReached: false,
+        historyCount: 0,
+        tailCount: 0,
+      });
+    });
   });
 });
