@@ -1,0 +1,118 @@
+/**
+ * Pure helpers for the infinite-scrollback transcript (ChatPanel): compose
+ * the hydrated history segment with the live tail into date groups, expose
+ * where the gap affordance renders, and guard the older-history scroll
+ * trigger. Keep this module dependency-light (no stores, no side effects).
+ */
+import type { AgentMessage } from '$shared/types';
+import { groupMessagesByDate, type MessageGroup } from '$lib/utils/timeFormatting';
+
+export interface ComposedTranscriptGroup extends MessageGroup<AgentMessage> {
+  /**
+   * Stable turn-key base consumed by `indexConversationTurns` for orphan-turn
+   * keys. Present only when history rows are rendered: keyed by origin + day
+   * so tail turn keys survive history prepends (a positional groupIndex
+   * would shift on every prepended page and churn LazyTurn height caches).
+   * Absent for the tail-only transcript so keys match the historical
+   * `group-${groupIndex}` scheme exactly.
+   */
+  groupKey?: string;
+}
+
+export interface ComposedTranscript {
+  groups: ComposedTranscriptGroup[];
+  /**
+   * Index of the first tail group when the history→tail hole is open — the
+   * gap affordance renders immediately before this group. `null` when there
+   * is no gap (no history, or history is contiguous with the tail).
+   */
+  gapBeforeGroupIndex: number | null;
+}
+
+function dayKey(date: Date): string {
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
+
+/**
+ * Attach stable `groupKey`s. Keys are `${prefix}-${localDay}` with an
+ * occurrence suffix for the (out-of-order timestamp) case where
+ * `groupMessagesByDate` emits the same day twice.
+ */
+function withStableGroupKeys(
+  groups: MessageGroup<AgentMessage>[],
+  prefix: string,
+): ComposedTranscriptGroup[] {
+  const seen = new Map<string, number>();
+  return groups.map((group) => {
+    const base = `${prefix}-${dayKey(group.date)}`;
+    const occurrence = (seen.get(base) ?? 0) + 1;
+    seen.set(base, occurrence);
+    return { ...group, groupKey: occurrence === 1 ? base : `${base}-${occurrence}` };
+  });
+}
+
+/**
+ * Compose the rendered transcript from the scrollback history segment and
+ * the live tail.
+ *
+ * - No history hydrated → the tail-only grouping used today (no group keys,
+ *   no gap): the default path is byte-identical to the pre-scrollback UI.
+ * - History contiguous with the tail (`gapToTail` false) → one seamless
+ *   list; a turn MAY stitch across the junction (same-day rows merge into
+ *   one group, exactly as if the transcript had never been windowed).
+ * - Gap open → history groups then tail groups, kept as SEPARATE groups
+ *   even on the same day. `groupIntoTurns` runs per group, so the gap is a
+ *   hard turn boundary — no turn is stitched across the hole — and the gap
+ *   affordance renders before `gapBeforeGroupIndex`.
+ */
+export function composeTranscript(
+  history: AgentMessage[],
+  tail: AgentMessage[],
+  gapToTail: boolean,
+): ComposedTranscript {
+  if (history.length === 0) {
+    return { groups: groupMessagesByDate(tail), gapBeforeGroupIndex: null };
+  }
+  if (!gapToTail) {
+    return {
+      groups: withStableGroupKeys(groupMessagesByDate([...history, ...tail]), 'd'),
+      gapBeforeGroupIndex: null,
+    };
+  }
+  const historyGroups = withStableGroupKeys(groupMessagesByDate(history), 'h');
+  const tailGroups = withStableGroupKeys(groupMessagesByDate(tail), 't');
+  return {
+    groups: [...historyGroups, ...tailGroups],
+    gapBeforeGroupIndex: historyGroups.length,
+  };
+}
+
+export interface OlderHistoryTriggerParams {
+  /** Current scrollTop of the transcript scroll container. */
+  scrollTop: number;
+  /** Distance from the top (px) inside which the trigger fires. */
+  threshold: number;
+  /** Container is actually scrollable (scrollHeight > clientHeight). */
+  canScroll: boolean;
+  /** An older-history page fetch is already in flight. */
+  fetching: boolean;
+  /** The conversation's true first message is already hydrated. */
+  exhausted: boolean;
+  /** Number of hydrated history rows. */
+  historyCount: number;
+  /** Daemon `truncated` flag: older rows exist beyond the tail snapshot. */
+  tailTruncated: boolean;
+}
+
+/**
+ * Whether scrolling near the top should dispatch `olderHistoryPageRequested`.
+ * Never fires for short conversations (tail not truncated, no history rows)
+ * or before the transcript is tall enough to scroll.
+ */
+export function shouldRequestOlderHistory(params: OlderHistoryTriggerParams): boolean {
+  const { scrollTop, threshold, canScroll, fetching, exhausted, historyCount, tailTruncated } =
+    params;
+  if (!canScroll || scrollTop > threshold) return false;
+  if (fetching || exhausted) return false;
+  return historyCount > 0 || tailTruncated;
+}

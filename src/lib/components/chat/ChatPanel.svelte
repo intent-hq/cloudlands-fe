@@ -59,6 +59,8 @@
     selectAgentSessionIsStreaming,
     selectAgentSessionStreamingContent,
     selectAgentMessages,
+    selectAgentHistoryMessages,
+    selectHistorySegmentMeta,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
@@ -91,6 +93,8 @@
     chatErrorCleared,
     chatSendFailed,
     chatQueuedRetryRecordUpdated,
+    olderHistoryPageRequested,
+    historyGapFillRequested,
   } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
     selectChatError,
@@ -99,6 +103,9 @@
     selectChatReceivedFirstChunk,
     selectChatStatusEvents,
     selectChatStreamingStartTime,
+    selectFetchingGapFill,
+    selectFetchingOlderHistory,
+    selectHistoryExhausted,
     selectTranscriptHydratedOnce,
     selectTranscriptHydration,
     selectTranscriptSnapshotMeta,
@@ -141,10 +148,12 @@
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
   import { deriveWizardPendingQuestions } from './questions/wizard-gate';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
-  import { groupMessagesByDate } from '$lib/utils/timeFormatting';
+  import { composeTranscript, shouldRequestOlderHistory } from './chat-scrollback-composition';
   import {
     animateScrollTo,
+    captureScrollAnchor,
     followBottom,
+    restoreScrollAnchor,
     scrollToBottom as scrollToBottomUtil,
   } from '$lib/utils/smartScroll';
   import { getCachedChatScroll, setCachedChatScroll } from './chat-scroll-cache';
@@ -157,6 +166,7 @@
     faLock,
     faSquareCheck,
     faPaperclip,
+    faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
@@ -324,6 +334,12 @@
   const agentSession$ = selectAgentSession(agentIdStore);
   const agentSessionIsStreaming$ = selectAgentSessionIsStreaming(agentIdStore);
   const agentMessages$ = selectAgentMessages(agentIdStore);
+  // Scrollback history segment (older rows hydrated on demand) + paging state.
+  const agentHistoryMessages$ = selectAgentHistoryMessages(agentIdStore);
+  const historySegmentMeta$ = selectHistorySegmentMeta(agentIdStore);
+  const fetchingOlderHistory$ = selectFetchingOlderHistory(agentIdStore);
+  const fetchingGapFill$ = selectFetchingGapFill(agentIdStore);
+  const historyExhausted$ = selectHistoryExhausted(agentIdStore);
   const agentTasks$ = selectTasksForAgent(workspaceIdStore, agentIdStore);
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
@@ -1554,9 +1570,95 @@
       : null,
   );
 
-  // Grouped messages for display (include ALL messages)
-  // We'll handle the streaming state when rendering
-  let groupedMessages = $derived(groupMessagesByDate($agentMessages$));
+  // Grouped messages for display: scrollback history segment + live tail.
+  // With no history hydrated this is exactly the old tail-only grouping.
+  // NOTE: transcript search, sticky headers, pinned prompts, message
+  // navigation, and the unread divider intentionally keep operating on the
+  // tail ($agentMessages$) only for this iteration — history rows render but
+  // are not indexed by those features.
+  const composedTranscript = $derived(
+    composeTranscript($agentHistoryMessages$, $agentMessages$, $historySegmentMeta$.gapToTail),
+  );
+  let groupedMessages = $derived(composedTranscript.groups);
+  // Index of the first tail group when the history→tail hole is open; the
+  // gap affordance renders immediately before this group.
+  const historyGapBeforeGroupIndex = $derived(composedTranscript.gapBeforeGroupIndex);
+
+  // ── Infinite scrollback triggers + no-jump prepend anchoring ──────────
+  // Near-top px distance that requests one older-history page.
+  const SCROLLBACK_TOP_THRESHOLD_PX = 240;
+
+  function maybeRequestOlderHistory() {
+    const container = scrollContainer;
+    if (!container || !workspace?.id || !agentId) return;
+    const request = shouldRequestOlderHistory({
+      scrollTop: container.scrollTop,
+      threshold: SCROLLBACK_TOP_THRESHOLD_PX,
+      canScroll: container.scrollHeight > container.clientHeight,
+      fetching: $fetchingOlderHistory$,
+      exhausted: $historyExhausted$,
+      historyCount: $agentHistoryMessages$.length,
+      tailTruncated: $transcriptSnapshotMeta$?.truncated === true,
+    });
+    if (request) appStore.dispatch(olderHistoryPageRequested(workspace.id, agentId));
+  }
+
+  // Older-history scroll trigger. The saga sets the fetching flag
+  // synchronously on the first dispatch, deduping the scroll-event burst;
+  // the post-prepend anchor restore moves scrollTop past the threshold, so
+  // pages chain only while the user keeps scrolling up.
+  $effect(() => {
+    const container = scrollContainer;
+    if (!container) return;
+    const onScroll = () => maybeRequestOlderHistory();
+    container.addEventListener('scroll', onScroll, { passive: true });
+    return () => container.removeEventListener('scroll', onScroll);
+  });
+
+  function requestHistoryGapFill() {
+    if (!workspace?.id || !agentId) return;
+    if ($fetchingGapFill$ || !$historySegmentMeta$.gapToTail) return;
+    appStore.dispatch(historyGapFillRequested(workspace.id, agentId));
+  }
+
+  // Gap sentinel: scrolling near/into the history→tail hole requests a
+  // refill page (the affordance also offers a click-to-load fallback).
+  let historyGapSentinel = $state<HTMLElement>();
+  $effect(() => {
+    const sentinel = historyGapSentinel;
+    const root = scrollContainer;
+    if (!sentinel || !root) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) requestHistoryGapFill();
+      },
+      { root, rootMargin: '160px 0px' },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  });
+
+  // No-jump prepends/refills: history rows landing above the viewport would
+  // shift the reading position (native scroll anchoring is disabled on the
+  // container). Capture an element anchor BEFORE the DOM updates and restore
+  // it after — this composes with the LazyTurn height ledger, which only
+  // compensates height CHANGES of existing turns, never new siblings.
+  let anchoredHistoryLength = -1;
+  $effect.pre(() => {
+    const historyLength = $agentHistoryMessages$.length;
+    if (historyLength === anchoredHistoryLength) return;
+    const isFirstRun = anchoredHistoryLength === -1;
+    anchoredHistoryLength = historyLength;
+    const container = untrack(() => scrollContainer);
+    if (isFirstRun || !container) return;
+    const anchor = captureScrollAnchor(container);
+    tick().then(() => {
+      requestAnimationFrame(() => {
+        if (isComponentDestroyed || !scrollContainer) return;
+        restoreScrollAnchor(scrollContainer, anchor);
+      });
+    });
+  });
 
   // ── "New messages" divider (unread marker, PROTOCOL §5.5 agent.markSeen) ──
   // The divider is entry-only and frozen per viewing session: on the first
@@ -1610,6 +1712,9 @@
     // The unread-divider entry scroll is superseded — the user already had a
     // deliberate reading position when the panel was unmounted.
     hasAppliedNewMessagesEntryScroll = true;
+    // A cached position minted against since-pruned scrollback history rows
+    // (shorter document now) is clamped natively by the browser — the panel
+    // lands at the nearest valid position, never crashes.
     scrollContainer.scrollTop = cachedScrollRestoreTop;
     return true;
   }
@@ -3898,11 +4003,56 @@
                   <NewMessagesDivider />
                 {/if}
               {/snippet}
+              <!-- Older-history loading affordance: small top indicator while
+                   an on-demand scrollback page fetch is in flight. -->
+              {#if $fetchingOlderHistory$}
+                <div
+                  class="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
+                  data-testid="chat-older-history-loading"
+                  aria-live="polite"
+                >
+                  <Fa icon={faSpinner} class="animate-spin" size="xs" />
+                  <span>{m.chat_chatPanel_loadingOlderMessages_label()}</span>
+                </div>
+              {/if}
               <!-- PERF: Use keyed each blocks for efficient list diffing -->
               {#each conversationTurnIndex.groups as indexedGroup, groupIndex (indexedGroup.group.messages[0]?.id ?? groupIndex)}
                 {@const turns = indexedGroup.turns}
+                <!-- History→tail hole: affordance renders between the last
+                     history group and the first tail group. The sentinel
+                     dispatches a gap-refill page when scrolled near, and the
+                     button is the click-to-load fallback. -->
+                {#if groupIndex === historyGapBeforeGroupIndex}
+                  <div
+                    bind:this={historyGapSentinel}
+                    class="flex items-center justify-center py-3"
+                    data-testid="chat-history-gap"
+                  >
+                    {#if $fetchingGapFill$}
+                      <div
+                        class="flex items-center gap-2 text-xs text-muted-foreground"
+                        aria-live="polite"
+                      >
+                        <Fa icon={faSpinner} class="animate-spin" size="xs" />
+                        <span>{m.chat_chatPanel_historyGapLoading_label()}</span>
+                      </div>
+                    {:else}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        class="text-xs text-muted-foreground"
+                        data-testid="chat-history-gap-load-button"
+                        onclick={requestHistoryGapFill}
+                      >
+                        {m.chat_chatPanel_historyGapLoad_label()}
+                      </Button>
+                    {/if}
+                  </div>
+                {/if}
                 {#each turns as turn, turnIndex (turn.userMessage?.id ?? `turn-${turnIndex}`)}
-                  {@const turnKey = turn.userMessage?.id ?? `group-${groupIndex}-turn-${turnIndex}`}
+                  {@const turnKey =
+                    turn.userMessage?.id ??
+                    `group-${indexedGroup.group.groupKey ?? groupIndex}-turn-${turnIndex}`}
                   <!-- "Last" means last RENDERED turn (globalTurnIndexMap indexes the
                        turns groupIntoTurns produced), not the last raw date group — a
                        trailing group holding only skipped rows (system/error, non-model-

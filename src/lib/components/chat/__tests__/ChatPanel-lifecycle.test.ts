@@ -61,6 +61,13 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: mocks.selector(null),
   selectAgentSessionIsStreaming: mocks.selector(false),
   selectAgentMessages: Object.assign(() => mocks.agentMessages, { select: () => [] }),
+  selectAgentHistoryMessages: mocks.selector([]),
+  selectHistorySegmentMeta: mocks.selector({
+    gapToTail: false,
+    oldestReached: false,
+    historyCount: 0,
+    tailCount: 0,
+  }),
   selectAgentSessionStreamingContent: mocks.selector(''),
   selectAgentIsResponding: mocks.selector(false),
   selectAgentIsRunning: mocks.selector(false),
@@ -80,6 +87,9 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatReceivedFirstChunk: mocks.selector(false),
   selectChatStatusEvents: mocks.selector([]),
   selectChatStreamingStartTime: mocks.selector(null),
+  selectFetchingGapFill: mocks.selector(false),
+  selectFetchingOlderHistory: mocks.selector(false),
+  selectHistoryExhausted: mocks.selector(false),
   selectTranscriptHydration: mocks.selector('settled'),
   selectTranscriptHydratedOnce: mocks.selector(true),
   selectTranscriptSnapshotMeta: mocks.selector(undefined),
@@ -756,7 +766,8 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(frames.length).toBeGreaterThan(0);
     view.unmount();
 
-    expect(removeListener.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(2);
+    // followBottom + distance-from-bottom tracker + older-history scrollback trigger
+    expect(removeListener.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(3);
     expect(mocks.resizeDisconnect).toHaveBeenCalledTimes(2);
     expect(frames).toHaveLength(0);
   });
