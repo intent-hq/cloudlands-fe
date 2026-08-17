@@ -52,6 +52,7 @@ import type { AgentMessage, AgentSession } from '$shared/types';
 import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import {
+  MAX_MESSAGES_PER_AGENT,
   bulkUpsertSessions,
   replaceMessages,
   upsertSession,
@@ -104,8 +105,6 @@ const SNAPSHOT_WAIT_MS = SNAPSHOT_TIMEOUT_MS + INITIAL_RETRY_DELAY_MS + SNAPSHOT
  * to land; a truly dead subscription still reaches the retry surface.
  */
 const SNAPSHOT_WAIT_ATTEMPTS = 3;
-/** Mirror of the agent-session slice's message prune cap — paging past it is discarded. */
-const MAX_STORE_MESSAGES = 500;
 
 type ChatRequest = { wsId: string; agentId: string };
 type HydrationTails = Map<string, Promise<void>>;
@@ -253,7 +252,7 @@ function* fetchOlderHistorySaga(request: ChatRequest, windowAnchor?: string): Sa
     if (yield* call(isAgentDeletionPending, agentId)) return;
     const current: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
     const anchor = windowAnchor ?? oldestMessageId(current);
-    if (!anchor || current.length >= MAX_STORE_MESSAGES) return;
+    if (!anchor || current.length >= MAX_MESSAGES_PER_AGENT) return;
 
     const older: AgentMessage[] = [];
     const knownIds = identitySet(current);
@@ -282,7 +281,7 @@ function* fetchOlderHistorySaga(request: ChatRequest, windowAnchor?: string): Sa
       // Nothing new on a non-seek page means this history is already present
       // (e.g. resume onto retained rows) — stop paging.
       if (fresh.length === 0 && older.length > 0) break;
-      if (older.length + current.length >= MAX_STORE_MESSAGES) break;
+      if (older.length + current.length >= MAX_MESSAGES_PER_AGENT) break;
       page = yield* call(
         [appClient.agents, appClient.agents.getConversation],
         agentId,
