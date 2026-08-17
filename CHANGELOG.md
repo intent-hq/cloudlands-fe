@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.58.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.57.1...v2.58.0) (2026-08-17)
+
+
+### 🚀 Features
+
+* **chat:** opt into incremental chat delta encoding (deltaEncoding: incremental) ([#1370](https://github.com/intent-hq/cloudlands-fe/issues/1370)) ([7f20011](https://github.com/intent-hq/cloudlands-fe/commit/7f200112c58041a54deed0b7fc495ef865bbc299))
+
+
+### 🐛 Bug Fixes
+
+* capitalize merge-blocked reason in sidebar PR tooltip ([#1365](https://github.com/intent-hq/cloudlands-fe/issues/1365)) ([5da5aab](https://github.com/intent-hq/cloudlands-fe/commit/5da5aab84aa7952a77b7de86cab4b4a01f036235))
+* make chat send animation reliable via retried pending-send matching ([#1367](https://github.com/intent-hq/cloudlands-fe/issues/1367)) ([4ddabd8](https://github.com/intent-hq/cloudlands-fe/commit/4ddabd80f2bc3d479403fc357d989d5a255b1c95))
+* rebuild the transcript when a divergent seq-0 snapshot races an idle stream ([#1364](https://github.com/intent-hq/cloudlands-fe/issues/1364)) ([7e58df2](https://github.com/intent-hq/cloudlands-fe/commit/7e58df2f9103e4f25809bbae62cc83401e2b5322))
+* stop doubling "blocked by" in Monitored PRs readiness line ([#1366](https://github.com/intent-hq/cloudlands-fe/issues/1366)) ([b3cd7eb](https://github.com/intent-hq/cloudlands-fe/commit/b3cd7eb2833591b5939bde7ce1b02e60033216a4))
+* track 4+-space-indented fences as code regions in tag scanning ([#1362](https://github.com/intent-hq/cloudlands-fe/issues/1362)) ([c600304](https://github.com/intent-hq/cloudlands-fe/commit/c6003045d3c8463146e8390aa73c16ef25e5defc))
+
 ## [2.57.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.57.0...v2.57.1) (2026-08-17)
 
 
