@@ -157,8 +157,9 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
           pageLimit,
           nextToken || undefined,
         );
-        // getConversation returns oldest→newest within each page, so prepend
-        // each page to maintain overall newest-first order when accumulating.
+        // getConversation returns oldest→newest within each page and pages
+        // walk newest→oldest, so prepend each page to keep the accumulated
+        // list in overall oldest→newest order.
         allMessages.unshift(...page.messages);
         nextToken = page.nextToken;
       } while (nextToken !== null && allMessages.length < MAX_STORE_MESSAGES);
