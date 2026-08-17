@@ -1,0 +1,19 @@
+{
+  "note": "well-formed think block",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "thinking",
+      "content": "weighing two approaches here"
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Going with approach A."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "note": "suggested-prompts syntax quoted in a fence",
+  "KNOWN_BAD": "a suggested-prompts comment quoted inside a fenced code block is stripped and surfaced as prompts (fence-awareness gap)",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "The syntax is:"
+        },
+        {
+          "type": "code",
+          "content": "<!-- suggested-prompts\nExample prompt.\n-->",
+          "metadata": {
+            "language": "plaintext"
+          }
+        },
+        {
+          "type": "text",
+          "content": "Documented above, not a real block."
+        }
+      ]
+    }
+  ]
+}

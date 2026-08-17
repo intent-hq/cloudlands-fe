@@ -1,0 +1,62 @@
+{
+  "note": "GROUP_AND_THINK_TAG_REGEX source quoted in an augment-style fence",
+  "KNOWN_BAD": "regex source containing <group:…> alternatives inside a 4-backtick path= fence is scanned for tags (repro 2 shape from #2689)",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "The scanner regex is:"
+        },
+        {
+          "type": "code",
+          "content": "const GROUP_AND_THINK_TAG_REGEX =\n  /",
+          "metadata": {
+            "language": "typescript path=src/lib/utils/messageParser.ts mode=EXCERPT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "content_group",
+      "name": "([^",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "\\n<]+)>|<group:([^\\n<]+)\\n|"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "content_group",
+      "name": "([^",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "\\n<]+)$|.../g;"
+            },
+            {
+              "type": "code",
+              "content": "Because the second alternative accepts anything up to a newline, it misfires.",
+              "metadata": {
+                "language": "plaintext"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

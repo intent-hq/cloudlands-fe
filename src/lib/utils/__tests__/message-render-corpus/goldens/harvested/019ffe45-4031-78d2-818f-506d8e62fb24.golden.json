@@ -1,0 +1,69 @@
+{
+  "source": "local intentd.db agent_message 019ffe45-4031-78d2-818f-506d8e62fb24 (sanitized)",
+  "features": [
+    "group-open",
+    "group-close",
+    "prompts",
+    "fence3",
+    "mermaid"
+  ],
+  "prompts": [
+    "Keep it parked; continue with the rewrite work.",
+    "Turn the tunneling design into follow-up tasks in the spec.",
+    "File a monorepo issue for the tunneling follow-up linking the design."
+  ],
+  "tree": [
+    {
+      "type": "thinking",
+      "content": "The user is asking about how a tunneling fallback mechanism could work architecturally for an Electron frontend communicating with a Rust daemon. I'm …"
+    },
+    {
+      "type": "content_group",
+      "name": "Designing",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "Sub-agent status: the helper task is still running — no action needed there. Let me sketch the tunneling design and record it in a note."
+            }
+          ]
+        },
+        {
+          "type": "tool_use",
+          "name": "Create tunneling design note and link it from the spec",
+          "input": {
+            "code": "[omitted 4637 chars]",
+            "summary": "Create tunneling design note and link it from the spec",
+            "_acpTitle": "Create tunneling design note and link it from the spec"
+          }
+        },
+        {
+          "type": "tool_result",
+          "output": {
+            "output": "noteId: \"abfd1c9f-4fd5-4ffc-bba8-ac81bc83db41\"\nlink: \"[Tunneling fallback design sketch](intent://local/loopback-rewrite/note/abfd1c9f-4fd5-4ffc-bba8-ac81bc83db41)\""
+          }
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Here's how a tunneling fallback would look across the two components — full write-up in [Tunneling fallback design sketch](intent://local/loopback-rewrite/note/abfd1c9f-4fd5-4ffc-bba8-ac81bc83db41), now linked from the spec's non-goals."
+        },
+        {
+          "type": "mermaid",
+          "content": "flowchart LR\n  B[Embedded browser] -->|\"http://127.0.0.1:localPort\"| T[Electron main - TunnelManager<br/>net.createServer per port]\n  T -->|\"binary stream frames over wss://daemon/tunnel<br/>(same bearer token)\"| D[intentd tunnel route]\n  D -->|\"TcpStream to 127.0.0.1:remotePort<br/>(daemon loopback only)\"| S[Dev server on daemon host]"
+        },
+        {
+          "type": "text",
+          "content": "**Rust (intentd)** — a new `/tunnel` WS route beside the JSON-RPC endpoint, same bearer-token auth but **binary frames**, speaking a tiny mux: `[opcode][streamId u32][payload]` with `OPEN(port)/OPEN_OK/OPEN_ERR/DATA/EOF/CLOSE` (WS message boundaries make this ~6 opcodes; no need for yamux). Each `OPEN` does `TcpStream::connect((\"127.0.0.1\", port))` and runs two copy tasks with bounded channels for backpressure. Policy: daemon-loopback targets only, stream caps, agent/workspace attribution, idle timeouts.\n\n**Electron (FE main)** — a `TunnelManager` that lazily opens the single tunnel WS (reusing the existing transport's URL/token/cert pinning), and `forwardPort(remotePort) → localPort` via `net.createServer` on `127.0.0.1:0`, piping each accepted socket to a stream (`socket.pause/resume` against `ws.bufferedAmount`).\n\n**Why it's the right fallback shape:**\n- It slots behind the work already in flight: rewrite + probe first; **probe fails → `forwardPort()` and navigate to `127.0.0.1:localPort`** instead, result echoing `tunneled: true`. The model's URL convention doesn't change at all.\n- Raw TCP forwarding transparently carries WebSockets/HMR/SSE — an HTTP request/response proxy over JSON-RPC (the obvious simpler alternative) would break dev-server hot reload and stream bodies.\n- It fixes exactly the cases rewrite can't: servers bound to `127.0.0.1` on the daemon, firewalled ports — with zero daemon-network exposure, and the browser's `Host` header stays loopback (so Vite-style `allowedHosts` checks pass, which hostname rewrite can trip).\n\n**Protocol impact**: a new PROTOCOL.md section (tunnel endpoint + frame format), so the intentd-first merge rule applies.\n\nMeanwhile, the helper-task implementor is still running; I'll re-delegate the held tasks when it settles. Want me to turn the tunnel design into scheduled follow-up tasks now, or keep it parked until we see whether rewrite + probe covers real usage?"
+        }
+      ]
+    }
+  ]
+}

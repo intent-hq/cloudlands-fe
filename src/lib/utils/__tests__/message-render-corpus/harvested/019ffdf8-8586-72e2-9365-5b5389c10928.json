@@ -1,0 +1,41 @@
+[
+  {
+    "type": "thinking",
+    "id": "019ffdf8-8586-72e2-9365-5b5389c10928:0",
+    "text": "I'm wrapping up by updating the spec results and confirming the task is complete, then moving forward with small iterations guided by PR reviewers rat…"
+  },
+  {
+    "type": "text",
+    "id": "019ffdf8-8586-72e2-9365-5b5389c10928:1",
+    "text": "<group:Wrapping up</group:Prepping>\n"
+  },
+  {
+    "type": "tool_use",
+    "id": "019ffdf8-8586-72e2-9365-5b5389c10928:2",
+    "name": "Mark cleanup task complete; finalize spec and status",
+    "input": {
+      "code": "[omitted 1011 chars]",
+      "summary": "Mark cleanup task complete; finalize spec and status",
+      "_acpTitle": "Mark cleanup task complete; finalize spec and status"
+    },
+    "toolCallId": "toolu_vrtx_01JXzXngDzrqYZxKtct9Pg8z",
+    "metadata": {
+      "toolKind": "other",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019ffdf8-8586-72e2-9365-5b5389c10928:3",
+    "tool_use_id": "toolu_vrtx_01JXzXngDzrqYZxKtct9Pg8z",
+    "output": {
+      "output": "previousStatus: review_required"
+    },
+    "is_error": false
+  },
+  {
+    "type": "text",
+    "id": "019ffdf8-8586-72e2-9365-5b5389c10928:4",
+    "text": "</group>\n\n## All work complete\n\n[ios#110](https://github.com/intent-hq/ios/pull/110) merged (squash `b3bc026`) — the app-dead queued-entry attribution code is removed: `AgentMessageAttribution.swift` and `EventWakeSummary.swift` deleted, the `QueuedMessage` hook/PR-wake accessor extensions removed, and orphaned tests cleaned up (505 deletions). Transcript-rendering attribution code (`HookWakeAttribution`/`PrMonitorWakeAttribution` types and `ConversationMessage` accessors) was correctly kept; no behavior changes. CI green, reviewer clean, task note marked complete.\n\nFull ledger for this workspace:\n\n| Change | PR | Status |\n|---|---|---|\n| fe: user-only queue filter (+ `question_answers` exemption) | [cloudlands-fe#1167](https://github.com/intent-hq/cloudlands-fe/pull/1167) | merged, verified |\n| iOS: user-only queue filter | [ios#107](https://github.com/intent-hq/ios/pull/107) | merged, verified |\n| iOS: `question_answers` parity | [ios#108](https://github.com/intent-hq/ios/pull/108) | merged |\n| iOS: `fromAgentId` trim parity | [ios#109](https://github.com/intent-hq/ios/pull/109) | merged |\n| iOS: dead attribution-code cleanup | [ios#110](https://github.com/intent-hq/ios/pull/110) | merged |\n\nBoth platforms now show strictly user-authored queued messages with identical filter semantics. Monorepo pins advance automatically via auto-bump. One trivial pre-existing note is recorded in the spec (a missing row-vs-block test for `prMonitorWakeAttribution`, symmetric to the hook variant) — not worth acting on unless you want it.\n\n<!-- suggested-prompts\nAdd the missing prMonitorWakeAttribution row-vs-block test.\nArchive this workspace — everything is done.\n-->\n"
+  }
+]

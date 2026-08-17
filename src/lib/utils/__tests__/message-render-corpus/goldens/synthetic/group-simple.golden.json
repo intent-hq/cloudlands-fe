@@ -1,0 +1,31 @@
+{
+  "note": "well-formed group open/close around prose",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "content_group",
+      "name": "Investigating",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "looking at the parser now"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "All done."
+        }
+      ]
+    }
+  ]
+}

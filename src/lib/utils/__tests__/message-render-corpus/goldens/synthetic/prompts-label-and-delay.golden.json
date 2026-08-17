@@ -1,0 +1,19 @@
+{
+  "note": "label|prompt and delay:N| prompt syntaxes",
+  "prompts": [
+    "Check the deployment status.",
+    "Re-check CI in a minute.",
+    "Combined label and delay."
+  ],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Deployed."
+        }
+      ]
+    }
+  ]
+}

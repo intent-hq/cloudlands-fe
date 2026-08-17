@@ -1,0 +1,32 @@
+{
+  "note": "empty-name group literal in inline code (repro shape from #2689)",
+  "KNOWN_BAD": "inline-code `<group:>` matches the malformed-open fallback (name capture accepts `>` and backticks) and swallows the rest of the line into a group name",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "copies leaked suggested-prompts content and `"
+        }
+      ]
+    },
+    {
+      "type": "content_group",
+      "name": ">` tags. The fix mirrors the display pipeline.",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "Now waiting on the CI re-run."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

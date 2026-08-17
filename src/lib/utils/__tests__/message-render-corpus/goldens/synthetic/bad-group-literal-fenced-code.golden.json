@@ -1,0 +1,44 @@
+{
+  "note": "tags inside a ``` fence should stay literal",
+  "KNOWN_BAD": "group/think tag lines inside a fenced code block are treated as real tags, splitting the fence apart",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "The stream looks like:"
+        }
+      ]
+    },
+    {
+      "type": "content_group",
+      "name": "Working",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "doing things"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "code",
+          "content": "That fence should render verbatim.",
+          "metadata": {
+            "language": "plaintext"
+          }
+        }
+      ]
+    }
+  ]
+}

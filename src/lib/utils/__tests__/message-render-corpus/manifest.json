@@ -1,0 +1,729 @@
+[
+  {
+    "id": "01a00d53-81d7-7623-adbf-0c0a5c97c808",
+    "workspace": "show-something",
+    "size": 1810,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "inline-code-angle"
+    ],
+    "suspicious": true,
+    "why": "repro"
+  },
+  {
+    "id": "01a00d54-9ab6-7370-acc6-a2d79bf7ea44",
+    "workspace": "still-odd",
+    "size": 128403,
+    "features": [
+      "group-open",
+      "group-open-any",
+      "prompts",
+      "fence4",
+      "inline-code-angle"
+    ],
+    "suspicious": true,
+    "why": "repro"
+  },
+  {
+    "id": "01a0096f-bac9-7cb1-ba27-6fd4f0548fa7",
+    "workspace": "local-connect",
+    "size": 34359,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "fence3",
+      "cli"
+    ],
+    "suspicious": false,
+    "why": "sig:cli,fence3,group-close,group-open,prompts"
+  },
+  {
+    "id": "01a00d89-0a55-79e0-bfb5-e636bc30ea3d",
+    "workspace": "long-panda",
+    "size": 3792,
+    "features": [
+      "prompts",
+      "fence3",
+      "cli"
+    ],
+    "suspicious": false,
+    "why": "sig:cli,fence3,prompts"
+  },
+  {
+    "id": "019ffe45-4031-78d2-818f-506d8e62fb24",
+    "workspace": "loopback-rewrite",
+    "size": 11120,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "fence3",
+      "mermaid"
+    ],
+    "suspicious": false,
+    "why": "sig:fence3,group-close,group-open,mermaid,prompts"
+  },
+  {
+    "id": "01a00568-7f85-7833-8e25-285c47df7a28",
+    "workspace": "ids-add",
+    "size": 7078,
+    "features": [
+      "prompts",
+      "fence3",
+      "mermaid",
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:fence3,inline-code-angle,mermaid,prompts"
+  },
+  {
+    "id": "019ffa7c-4f89-7ba1-85cc-1a5d54ddf1c2",
+    "workspace": "hud-doesn",
+    "size": 41626,
+    "features": [
+      "fence4"
+    ],
+    "suspicious": false,
+    "why": "sig:fence4"
+  },
+  {
+    "id": "019ffdee-d645-7c33-9894-fda13ea28810",
+    "workspace": "messages-check",
+    "size": 29500,
+    "features": [
+      "fence4"
+    ],
+    "suspicious": false,
+    "why": "sig:fence4"
+  },
+  {
+    "id": "019fff85-3c98-7123-9869-a154b0e1c652",
+    "workspace": "cycle-unread",
+    "size": 36543,
+    "features": [
+      "group-open",
+      "group-close",
+      "fence4"
+    ],
+    "suspicious": false,
+    "why": "sig:fence4,group-close,group-open"
+  },
+  {
+    "id": "019fffe2-df64-78c0-a9c7-2f6277710cdc",
+    "workspace": "collapsed-view",
+    "size": 38399,
+    "features": [
+      "group-open",
+      "group-close",
+      "fence4",
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:fence4,group-close,group-open,inline-code-angle"
+  },
+  {
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214",
+    "workspace": "focus-ring",
+    "size": 22100,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "fence4",
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:fence4,group-close,group-open,inline-code-angle,prompts"
+  },
+  {
+    "id": "019ffb7e-463e-7ea1-8f9f-85860c32d125",
+    "workspace": "unread-status",
+    "size": 17729,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "fence4"
+    ],
+    "suspicious": false,
+    "why": "sig:fence4,group-close,group-open,prompts"
+  },
+  {
+    "id": "019ffda7-26b2-7b43-a1c8-03b9d53fbd7e",
+    "workspace": "messages-check",
+    "size": 42587,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "fence4"
+    ],
+    "suspicious": false,
+    "why": "sig:fence4,group-close,group-open,prompts"
+  },
+  {
+    "id": "019ffe27-48b0-7660-98ac-c5d03083a781",
+    "workspace": "hud-workspace",
+    "size": 30213,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "fence4"
+    ],
+    "suspicious": false,
+    "why": "sig:fence4,group-close,group-open,prompts"
+  },
+  {
+    "id": "019ffe3b-e5db-76a2-9293-701e94905db9",
+    "workspace": "runs-build",
+    "size": 10335,
+    "features": [
+      "group-open",
+      "fence4"
+    ],
+    "suspicious": false,
+    "why": "sig:fence4,group-open"
+  },
+  {
+    "id": "019ffe39-ed31-7f32-8929-b0b49d0a48aa",
+    "workspace": "runs-build",
+    "size": 7824,
+    "features": [
+      "group-open",
+      "prompts",
+      "fence4"
+    ],
+    "suspicious": false,
+    "why": "sig:fence4,group-open,prompts"
+  },
+  {
+    "id": "019fffe6-fcca-74a0-ade6-1963146242a2",
+    "workspace": "everywhere-update",
+    "size": 35805,
+    "features": [
+      "group-open",
+      "prompts",
+      "fence4"
+    ],
+    "suspicious": false,
+    "why": "sig:fence4,group-open,prompts"
+  },
+  {
+    "id": "019fff80-a06c-7383-8fdd-153b84cb2494",
+    "workspace": "chip-onboarding",
+    "size": 43647,
+    "features": [
+      "fence4",
+      "html-comment"
+    ],
+    "suspicious": false,
+    "why": "sig:fence4,html-comment"
+  },
+  {
+    "id": "019ffd76-3a07-7c33-bf7a-49b07411637e",
+    "workspace": "process-setup",
+    "size": 2514,
+    "features": [
+      "prompts",
+      "fence4",
+      "html-comment"
+    ],
+    "suspicious": false,
+    "why": "sig:fence4,html-comment,prompts"
+  },
+  {
+    "id": "019fffe3-6b17-7722-845b-88708676d3fa",
+    "workspace": "collapsed-view",
+    "size": 41297,
+    "features": [
+      "fence4",
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:fence4,inline-code-angle"
+  },
+  {
+    "id": "019ffe40-a49f-7a51-b8f7-bba4ab2eb6ab",
+    "workspace": "runs-build",
+    "size": 5189,
+    "features": [
+      "prompts",
+      "fence4"
+    ],
+    "suspicious": false,
+    "why": "sig:fence4,prompts"
+  },
+  {
+    "id": "019ffab1-0165-7ee1-b149-768e736369fa",
+    "workspace": "completely-setup",
+    "size": 55086,
+    "features": [
+      "group-close"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close"
+  },
+  {
+    "id": "019ffb5b-c689-71b2-8508-fe03f07dcb95",
+    "workspace": "falling-kangaroo",
+    "size": 30043,
+    "features": [
+      "group-close"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close"
+  },
+  {
+    "id": "019ffaa4-d338-72f2-b822-0be60413c062",
+    "workspace": "assignee-type",
+    "size": 14334,
+    "features": [
+      "group-open",
+      "group-close"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close,group-open"
+  },
+  {
+    "id": "019ffc52-9a42-7892-8d43-b45af6b2bd5b",
+    "workspace": "assignee-type",
+    "size": 8046,
+    "features": [
+      "group-open",
+      "group-close"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close,group-open"
+  },
+  {
+    "id": "019ffb39-5056-7b51-8400-f15d5eb5ee74",
+    "workspace": "completely-setup",
+    "size": 34473,
+    "features": [
+      "group-open",
+      "group-open-any",
+      "group-close"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close,group-open,group-open-any"
+  },
+  {
+    "id": "019ffba6-6711-7f92-881c-f61cddb361c1",
+    "workspace": "cnhoosing-start",
+    "size": 20580,
+    "features": [
+      "group-open",
+      "group-open-any",
+      "group-close"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close,group-open,group-open-any"
+  },
+  {
+    "id": "019ffb73-4e96-7ef2-b5f2-8ea08766a54d",
+    "workspace": "cnhoosing-start",
+    "size": 53753,
+    "features": [
+      "group-open",
+      "group-open-any",
+      "group-close",
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close,group-open,group-open-any,inline-code-angle"
+  },
+  {
+    "id": "019ffb83-b1de-72c3-ba6e-05e8c38811cd",
+    "workspace": "cnhoosing-start",
+    "size": 9085,
+    "features": [
+      "group-open",
+      "group-open-any",
+      "group-close",
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close,group-open,group-open-any,inline-code-angle"
+  },
+  {
+    "id": "01a00182-d783-78d3-b85b-ee66a52e19b8",
+    "workspace": "assignee-type",
+    "size": 47426,
+    "features": [
+      "group-open",
+      "group-open-any",
+      "group-close",
+      "prompts"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close,group-open,group-open-any,prompts"
+  },
+  {
+    "id": "019ffb8b-7cec-7573-b960-c7a5f9fb0212",
+    "workspace": "fit-add",
+    "size": 43581,
+    "features": [
+      "group-open",
+      "group-close",
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close,group-open,inline-code-angle"
+  },
+  {
+    "id": "019ffb8e-a5fb-7873-98fb-79f765ca2267",
+    "workspace": "task-dependency",
+    "size": 3896,
+    "features": [
+      "group-open",
+      "group-close",
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close,group-open,inline-code-angle"
+  },
+  {
+    "id": "019fffb3-17e1-71a3-a507-5b8e4f42ff63",
+    "workspace": "local-repo",
+    "size": 8930,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close,group-open,inline-code-angle,prompts"
+  },
+  {
+    "id": "019fffb9-7932-7bf0-8146-2cdc70be7f30",
+    "workspace": "automatically-unarchive",
+    "size": 6189,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close,group-open,inline-code-angle,prompts"
+  },
+  {
+    "id": "01a003e2-97d4-79e0-a5ee-495b3ea885d7",
+    "workspace": "feat-fix",
+    "size": 23871,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close,group-open,inline-code-angle,prompts"
+  },
+  {
+    "id": "019ffacd-ce04-7153-ab9c-791da1bd306f",
+    "workspace": "ui-since",
+    "size": 4891,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close,group-open,prompts"
+  },
+  {
+    "id": "01a00cfb-9392-74e3-8302-6cf204a0c3b9",
+    "workspace": "assignee-type",
+    "size": 52543,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close,group-open,prompts"
+  },
+  {
+    "id": "019ffdf8-8586-72e2-9365-5b5389c10928",
+    "workspace": "messages-check",
+    "size": 3763,
+    "features": [
+      "group-close",
+      "prompts"
+    ],
+    "suspicious": false,
+    "why": "sig:group-close,prompts"
+  },
+  {
+    "id": "019ffbc3-d043-7810-bb8d-8a9112a0eae4",
+    "workspace": "task-dependency",
+    "size": 5764,
+    "features": [
+      "group-open"
+    ],
+    "suspicious": false,
+    "why": "sig:group-open"
+  },
+  {
+    "id": "01a00a4d-2d54-7ef3-b0e3-1fa434102de3",
+    "workspace": "transfer-targets",
+    "size": 28324,
+    "features": [
+      "group-open"
+    ],
+    "suspicious": false,
+    "why": "sig:group-open"
+  },
+  {
+    "id": "019ffdef-fca9-7073-8fb6-79b97a736262",
+    "workspace": "messages-check",
+    "size": 41134,
+    "features": [
+      "group-open",
+      "group-open-any"
+    ],
+    "suspicious": false,
+    "why": "sig:group-open,group-open-any"
+  },
+  {
+    "id": "019ffe40-14e1-7a30-8459-9cd357f25b25",
+    "workspace": "runs-build",
+    "size": 3419,
+    "features": [
+      "group-open",
+      "group-open-any"
+    ],
+    "suspicious": false,
+    "why": "sig:group-open,group-open-any"
+  },
+  {
+    "id": "019ffb29-81bf-7182-99ff-07cc641c796c",
+    "workspace": "race-condition",
+    "size": 58332,
+    "features": [
+      "group-open",
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:group-open,inline-code-angle"
+  },
+  {
+    "id": "01a00403-2f8e-77a3-8449-8f10772a0e6c",
+    "workspace": "explicit-add",
+    "size": 28531,
+    "features": [
+      "group-open",
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:group-open,inline-code-angle"
+  },
+  {
+    "id": "01a00404-8dac-79b3-8dc8-aa2879941db8",
+    "workspace": "explicit-add",
+    "size": 5624,
+    "features": [
+      "group-open",
+      "prompts",
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:group-open,inline-code-angle,prompts"
+  },
+  {
+    "id": "019ffb35-44ca-74e3-8abc-3d1934ebacbc",
+    "workspace": "ui-since",
+    "size": 3676,
+    "features": [
+      "group-open",
+      "prompts"
+    ],
+    "suspicious": false,
+    "why": "sig:group-open,prompts"
+  },
+  {
+    "id": "019ffb7f-a301-7c52-854e-1258c0dc7186",
+    "workspace": "channle-update",
+    "size": 43973,
+    "features": [
+      "group-open",
+      "prompts"
+    ],
+    "suspicious": false,
+    "why": "sig:group-open,prompts"
+  },
+  {
+    "id": "019ffb6f-54e7-7192-916e-a405980315e6",
+    "workspace": "top-remove",
+    "size": 20012,
+    "features": [
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:inline-code-angle"
+  },
+  {
+    "id": "019fffa0-b939-7d53-9de0-e69d909e05cd",
+    "workspace": "local-repo",
+    "size": 54787,
+    "features": [
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:inline-code-angle"
+  },
+  {
+    "id": "01a004c2-4bb8-7503-93e9-f2bb35c90221",
+    "workspace": "assignee-type",
+    "size": 17415,
+    "features": [
+      "prompts",
+      "inline-code-angle"
+    ],
+    "suspicious": false,
+    "why": "sig:inline-code-angle,prompts"
+  },
+  {
+    "id": "019ffb2c-02a5-7d73-8893-f32d5d263b77",
+    "workspace": "race-condition",
+    "size": 1745,
+    "features": [
+      "prompts"
+    ],
+    "suspicious": false,
+    "why": "sig:prompts"
+  },
+  {
+    "id": "01a00453-9c0f-79d0-8fc4-53ccc67cc45f",
+    "workspace": "assignee-type",
+    "size": 12916,
+    "features": [
+      "prompts"
+    ],
+    "suspicious": false,
+    "why": "sig:prompts"
+  },
+  {
+    "id": "019ffa42-48f6-76d0-9601-d86008ceb3c9",
+    "workspace": "still-check",
+    "size": 72357,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "fence4",
+      "inline-code-angle"
+    ],
+    "suspicious": true,
+    "why": "suspicious"
+  },
+  {
+    "id": "019ffa45-4430-7572-b223-2e8346844f51",
+    "workspace": "still-check",
+    "size": 39517,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "inline-code-angle"
+    ],
+    "suspicious": true,
+    "why": "suspicious"
+  },
+  {
+    "id": "019ffa53-fd38-70e1-b0b1-3bad18fdbf54",
+    "workspace": "still-check",
+    "size": 153970,
+    "features": [
+      "group-close",
+      "inline-code-angle"
+    ],
+    "suspicious": true,
+    "why": "suspicious"
+  },
+  {
+    "id": "019ffa58-6757-7fb2-972f-cb0e1fcd738b",
+    "workspace": "still-check",
+    "size": 5584,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "inline-code-angle"
+    ],
+    "suspicious": true,
+    "why": "suspicious"
+  },
+  {
+    "id": "019ffa58-bbb4-7770-bf12-38b6881b2a83",
+    "workspace": "still-check",
+    "size": 91621,
+    "features": [
+      "group-open",
+      "group-close",
+      "think",
+      "inline-code-angle"
+    ],
+    "suspicious": true,
+    "why": "suspicious"
+  },
+  {
+    "id": "019ffa5c-e2a8-7eb2-b803-70248b74586c",
+    "workspace": "still-check",
+    "size": 5485,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "inline-code-angle"
+    ],
+    "suspicious": true,
+    "why": "suspicious"
+  },
+  {
+    "id": "019ffb75-1811-7f81-967b-069043c12d35",
+    "workspace": "still-check",
+    "size": 53312,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "fence3",
+      "inline-code-angle"
+    ],
+    "suspicious": true,
+    "why": "suspicious"
+  },
+  {
+    "id": "01a00d51-32a2-7981-93eb-ff202ec74c7e",
+    "workspace": "show-something",
+    "size": 57363,
+    "features": [
+      "group-open",
+      "group-close",
+      "inline-code-angle",
+      "digest"
+    ],
+    "suspicious": true,
+    "why": "suspicious"
+  },
+  {
+    "id": "01a00d57-d4c5-7583-84c6-ed2304ca2154",
+    "workspace": "show-something",
+    "size": 4562,
+    "features": [
+      "group-open",
+      "group-close",
+      "prompts",
+      "inline-code-angle"
+    ],
+    "suspicious": true,
+    "why": "suspicious"
+  }
+]

@@ -1,0 +1,48 @@
+[
+  {
+    "type": "thinking",
+    "id": "019ffe39-ed31-7f32-8929-b0b49d0a48aa:0",
+    "text": "The implementor has finished, so I need to show the user the final AGENTS.md file. They specifically asked to see it before opening a PR, so I'll pres…"
+  },
+  {
+    "type": "text",
+    "id": "019ffe39-ed31-7f32-8929-b0b49d0a48aa:1",
+    "text": "<group:Reviewing>\n"
+  },
+  {
+    "type": "tool_use",
+    "id": "019ffe39-ed31-7f32-8929-b0b49d0a48aa:2",
+    "name": "Run `git diff -- AGENTS.md`",
+    "input": {
+      "command": "git diff -- AGENTS.md",
+      "cwd": "/home/user/intent/workspaces/runs-build/monorepo",
+      "wait": true,
+      "max_wait_seconds": 30,
+      "_acpTitle": "Run `git diff -- AGENTS.md`"
+    },
+    "toolCallId": "toolu_vrtx_012Ff4HGpR5kBzwZArDTtSZ4",
+    "metadata": {
+      "toolKind": "terminal",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019ffe39-ed31-7f32-8929-b0b49d0a48aa:3",
+    "tool_use_id": "toolu_vrtx_012Ff4HGpR5kBzwZArDTtSZ4",
+    "output": {
+      "output": "[omitted 3984 chars]"
+    },
+    "is_error": false
+  },
+  {
+    "type": "thinking",
+    "id": "019ffe39-ed31-7f32-8929-b0b49d0a48aa:4",
+    "text": "I should summarize the key changes from the diff and point the user to where they can see the full details, since they asked to see the final AGENTS.m…"
+  },
+  {
+    "type": "text",
+    "id": "019ffe39-ed31-7f32-8929-b0b49d0a48aa:5",
+    "text": "The implementor finished; the change is an uncommitted edit to `AGENTS.md` only. The full diff is in the tool output above — here's a summary of the three changes:\n\n1. **New subsection** `### Hourly alpha cadence & tracking shipped work` (between \"Coordinated Release Ordering\" and \"Gotchas\"):\n   - The hourly pipeline: **:00** intentd auto-cut (release-plz Release PR → tag → alpha manifest), **:15** sidecar pin bump (`fix:`-typed, rolling `auto/intentd-pin` PR), **:30** cloudlands-fe auto-cut (deferred while a pin bump is in flight) → rolling `alpha` release on cloudlands-releases. Notes the ~1–2 hour ship time and the `hold-release` pause label.\n   - **Workspace obligation**: after all required PRs merge, the workspace must monitor the pipeline (intentd Release PR → pin-bump PR → fe Release PR, or just the fe Release PR for fe-only work) using background monitoring (`ws.pr.monitor` / hooks, never blocking polls), verify inclusion via `intentdVersion` in `release-manifest.json` for daemon changes, and set the workspace status message to e.g. \"Shipped in cloudlands-fe vX.Y.Z (alpha).\"\n\n2. **Release Process intro** — minimal touch-up: merging a release PR publishes to the rolling **alpha** channel (workflows are historically named \"beta\" but publish to alpha).\n\n3. **intentd bullet consistency fix** — \"beta manifest\" → \"alpha channel manifest (`alpha.json` on the `channel-alpha` release)\".\n\n````markdown path=AGENTS.md mode=EXCERPT\n### Hourly alpha cadence & tracking shipped work\n\nAlpha releases are cut automatically every hour — no manual click is needed at any\nstep:\n\n- **:00** — intentd `auto-cut-beta.yml` squash-merges the release-plz Release PR when\n````\n\n````markdown path=AGENTS.md mode=EXCERPT\n**Workspace obligation — track work until it ships.** After all required PRs for a\npiece of work are merged (intentd and/or cloudlands-fe), the workspace is NOT done: it\nmust monitor the release pipeline until the work ships in a cloudlands-fe alpha, then\nupdate the workspace status message to name that version.\n````\n\nAll claims were cross-checked against the four workflow files. If this looks right, I'll open a `docs:` PR on the monorepo. Any wording you'd like changed first?\n\n<!-- suggested-prompts\nLooks good — open the PR.\nDrop the intro/bullet beta→alpha touch-ups and keep only the new subsection.\nReword the workspace obligation to be less strict.\n-->\n"
+  }
+]

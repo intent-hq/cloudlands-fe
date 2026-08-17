@@ -1,0 +1,27 @@
+{
+  "note": "ws-block:reference with tilde fence",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "See:"
+        },
+        {
+          "type": "reference",
+          "content": "src/lib/utils/messageParser.ts#symbol:groupContentBlocks",
+          "metadata": {
+            "path": "src/lib/utils/messageParser.ts",
+            "referenceData": {
+              "semanticId": "src/lib/utils/messageParser.ts#symbol:groupContentBlocks",
+              "filePath": "src/lib/utils/messageParser.ts",
+              "description": ""
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
