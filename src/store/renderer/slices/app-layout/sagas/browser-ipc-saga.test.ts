@@ -1,8 +1,11 @@
 import { runSaga } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ isElectron: vi.fn(() => true) }));
-vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
+const mocks = vi.hoisted(() => ({
+  isElectron: vi.fn(() => true),
+  invoke: vi.fn(() => Promise.resolve()),
+}));
+vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron, invoke: mocks.invoke }));
 
 import { browserIpcSaga } from './browser-ipc-saga';
 
@@ -60,6 +63,8 @@ describe('browserIpcSaga', () => {
     expect(on.mock.calls).toEqual([
       ['browser:open-tab', handlers['browser:open-tab']],
       ['browser:close-tab', handlers['browser:close-tab']],
+      ['browser:focus-tab', handlers['browser:focus-tab']],
+      ['browser:list-tabs-request', handlers['browser:list-tabs-request']],
     ]);
 
     first.cancel();
@@ -67,10 +72,12 @@ describe('browserIpcSaga', () => {
     expect(offById.mock.calls).toEqual([
       ['browser:open-tab', 'browser:open-tab-listener'],
       ['browser:close-tab', 'browser:close-tab-listener'],
+      ['browser:focus-tab', 'browser:focus-tab-listener'],
+      ['browser:list-tabs-request', 'browser:list-tabs-request-listener'],
     ]);
 
     const restarted = start();
-    expect(on).toHaveBeenCalledTimes(4);
+    expect(on).toHaveBeenCalledTimes(8);
     restarted.cancel();
     await restarted.toPromise();
   });
@@ -331,6 +338,154 @@ describe('browserIpcSaga', () => {
     await emit({ tabId: 'browser-1' }, 'browser:close-tab');
 
     expect(actions).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('dispatches focusBrowserTabRequested for the payload workspace, active or not (monorepo#2756)', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({ tabId: 'browser-1', workspaceId: 'ws-background' }, 'browser:focus-tab');
+
+    expect(actions).toEqual([
+      {
+        type: 'appLayout/focusBrowserTabRequested',
+        payload: ['ws-background', 'browser-1'],
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('ignores browser:focus-tab without workspaceId or tabId', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({}, 'browser:focus-tab');
+    await emit({ tabId: 'browser-1' }, 'browser:focus-tab');
+    await emit({ tabId: 7, workspaceId: 'ws-1' }, 'browser:focus-tab');
+    await emit({ workspaceId: 'ws-1' }, 'browser:focus-tab');
+
+    expect(actions).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it("answers a list-tabs request with the requested workspace's browser tabs even when backgrounded", async () => {
+    const task = start();
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-active': {
+            panels: { one: { tabs: [{ id: 'browser-x', type: 'browser', browserUrl: 'http://x/' }] } },
+          },
+          'ws-background': {
+            panels: {
+              one: {
+                tabs: [
+                  { id: 'note-1', type: 'note' },
+                  {
+                    id: 'browser-1',
+                    type: 'browser',
+                    browserUrl: 'http://a/',
+                    title: 'A',
+                    closable: true,
+                  },
+                  { id: 'browser-pinned', type: 'browser', browserUrl: 'http://b/', closable: false },
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    await emit({ workspaceId: 'ws-background', requestId: 'req-1' }, 'browser:list-tabs-request');
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
+      requestId: 'req-1',
+      tabs: [
+        { tabId: 'browser-1', url: 'http://a/', title: 'A', closable: true },
+        { tabId: 'browser-pinned', url: 'http://b/', title: 'Browser', closable: false },
+      ],
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('never resolves a requestId for a workspace this window does not hold (monorepo#2602)', async () => {
+    const task = start();
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-here': {
+            panels: { one: { tabs: [{ id: 'browser-1', type: 'browser', browserUrl: 'http://a/' }] } },
+          },
+        },
+      },
+    };
+
+    await emit({ workspaceId: 'ws-elsewhere', requestId: 'req-2' }, 'browser:list-tabs-request');
+    await emit({ requestId: 'req-3' }, 'browser:list-tabs-request');
+
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('answers concurrent list requests for two workspaces with their own tabs and requestIds', async () => {
+    const task = start();
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-a': {
+            panels: {
+              one: { tabs: [{ id: 'tab-a', type: 'browser', browserUrl: 'http://a/', title: 'A' }] },
+            },
+          },
+          'ws-b': {
+            panels: {
+              one: { tabs: [{ id: 'tab-b', type: 'browser', browserUrl: 'http://b/', title: 'B' }] },
+            },
+          },
+        },
+      },
+    };
+
+    await emit({ workspaceId: 'ws-a', requestId: 'req-a' }, 'browser:list-tabs-request');
+    await emit({ workspaceId: 'ws-b', requestId: 'req-b' }, 'browser:list-tabs-request');
+
+    expect(mocks.invoke.mock.calls).toEqual([
+      [
+        'browser:list-tabs-response',
+        { requestId: 'req-a', tabs: [{ tabId: 'tab-a', url: 'http://a/', title: 'A', closable: true }] },
+      ],
+      [
+        'browser:list-tabs-response',
+        { requestId: 'req-b', tabs: [{ tabId: 'tab-b', url: 'http://b/', title: 'B', closable: true }] },
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('replies with an empty tab list for a held workspace with no browser tabs', async () => {
+    const task = start();
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': { panels: { one: { tabs: [{ id: 'note-1', type: 'note' }] } } },
+        },
+      },
+    };
+
+    await emit({ workspaceId: 'ws-1', requestId: 'req-4' }, 'browser:list-tabs-request');
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
+      requestId: 'req-4',
+      tabs: [],
+    });
     task.cancel();
     await task.toPromise();
   });

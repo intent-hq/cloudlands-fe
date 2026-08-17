@@ -328,8 +328,13 @@ class EmbeddedBrowserCdpService {
       throw new Error('workspaceId is required to focus a browser tab');
     }
 
-    // Send only to windows displaying the requested workspace.
-    const delivery = sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.FOCUS_TAB, { tabId });
+    // Send only to windows displaying the requested workspace. Include
+    // workspaceId so the renderer focuses the tab in the owning workspace's
+    // panel layout, not whichever workspace is currently visible.
+    const delivery = sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.FOCUS_TAB, {
+      tabId,
+      workspaceId,
+    });
     if (!delivery.delivered) {
       logger.warn('Focus request for browser tab reached no window', { tabId, workspaceId });
       return false;

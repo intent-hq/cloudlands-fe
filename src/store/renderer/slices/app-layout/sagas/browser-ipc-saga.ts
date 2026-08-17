@@ -1,14 +1,20 @@
 import type { Task } from 'redux-saga';
-import { all, join, put, type SagaGenerator } from 'typed-redux-saga';
+import { all, call, join, put, type SagaGenerator } from 'typed-redux-saga';
 
-import { isElectron } from '$lib/electron-bridge';
+import { invoke, isElectron } from '$lib/electron-bridge';
+import { m } from '$shared/paraglide/messages.js';
 import {
   isWorkspaceCommandPayload,
   type BrowserCloseTabPayload,
+  type BrowserFocusTabPayload,
+  type BrowserListTabsRequestPayload,
   type BrowserOpenTabPayload,
 } from '$shared/ipc/workspace-command-payloads';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
-import { selectAllTabs } from '../../panel-layout/panel-layout-selectors';
+import {
+  selectAllTabs,
+  selectPanelLayoutWorkspaces,
+} from '../../panel-layout/panel-layout-selectors';
 import {
   closeTab,
   openTab,
@@ -17,6 +23,7 @@ import {
   updateTabBrowserUrl,
 } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
+import { focusBrowserTabRequested } from '../app-layout-slice';
 
 let running = false;
 
@@ -91,6 +98,42 @@ function* closeBrowser(data: BrowserCloseTabPayload | null): SagaGenerator<void>
   yield* put(closeTab(workspaceId, data.tabId));
 }
 
+function* focusBrowser(data: BrowserFocusTabPayload | null): SagaGenerator<void> {
+  if (!isWorkspaceCommandPayload(data) || typeof data.tabId !== 'string' || data.tabId.length === 0)
+    return;
+  // Route by the payload's workspaceId so a request for a background
+  // workspace (or a non-focused window) still focuses the right layout's
+  // tab — the old PanelLayout listener gated on the active layout and
+  // answered with its own workspaceId (monorepo#2756 RC2).
+  yield* put(focusBrowserTabRequested(data.workspaceId, data.tabId));
+}
+
+function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGenerator<void> {
+  if (!isWorkspaceCommandPayload(data)) return;
+  const workspaceId = data.workspaceId;
+  const requestId = typeof data.requestId === 'string' ? data.requestId : undefined;
+
+  // Only answer for workspaces this window's layout state actually holds.
+  // A window that does not hold the requested workspace must never resolve
+  // the requestId: an empty wrong-workspace reply poisons main's
+  // per-workspace tab cache (monorepo#2756 RC1, #2602).
+  const layouts = yield* selectPanelLayoutWorkspaces.effect();
+  if (!(workspaceId in layouts)) return;
+
+  const browserTabs = (yield* selectAllTabs.effect(workspaceId))
+    .filter((tab) => tab.type === 'browser')
+    .map((tab) => ({
+      tabId: tab.id,
+      url: tab.browserUrl || '',
+      title: tab.title || m.layout_panelLayout_browser_fallback(),
+      closable: tab.closable !== false,
+    }));
+
+  // Echo the requestId back so main resolves the matching pending request
+  // (concurrent requests must not consume each other's replies).
+  yield* call(invoke, 'browser:list-tabs-response', { tabs: browserTabs, requestId });
+}
+
 export function* browserIpcSaga(): SagaGenerator<void> {
   if (!isElectron() || running) return;
   running = true;
@@ -113,6 +156,26 @@ export function* browserIpcSaga(): SagaGenerator<void> {
           bufferPolicy: {
             kind: 'lossless',
             rationale: 'Every requested browser tab close must be applied in arrival order.',
+          },
+        },
+      ),
+      yield* takeEveryFromElectronChannel<BrowserFocusTabPayload | null>(
+        'browser:focus-tab',
+        focusBrowser,
+        {
+          bufferPolicy: {
+            kind: 'lossless',
+            rationale: 'Every requested browser tab focus must be applied in arrival order.',
+          },
+        },
+      ),
+      yield* takeEveryFromElectronChannel<BrowserListTabsRequestPayload | null>(
+        'browser:list-tabs-request',
+        listBrowserTabs,
+        {
+          bufferPolicy: {
+            kind: 'lossless',
+            rationale: 'Every list request must be answered; main resolves replies by requestId.',
           },
         },
       ),

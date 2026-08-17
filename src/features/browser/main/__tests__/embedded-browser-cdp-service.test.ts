@@ -72,6 +72,17 @@ describe('embedded browser CDP workspace routing', () => {
     expect(embeddedBrowserCdp.focusTab('tab-1', 'ws-closed')).toBe(false);
   });
 
+  // The renderer saga routes browser:focus-tab by the payload's workspaceId
+  // (monorepo#2756), so the focus payload must carry it.
+  it('sends focus requests scoped to the workspace with workspaceId in the payload', () => {
+    expect(embeddedBrowserCdp.focusTab('tab-1', 'ws-2')).toBe(true);
+    expect(mocks.sendToWorkspaceWindows).toHaveBeenCalledExactlyOnceWith(
+      'ws-2',
+      IPC_CHANNELS.BROWSER.FOCUS_TAB,
+      { tabId: 'tab-1', workspaceId: 'ws-2' },
+    );
+  });
+
   it('fails a close with a clear error when the workspace is not open in any window', async () => {
     mocks.sendToWorkspaceWindows.mockImplementation(
       (workspaceId: string, channel: string, payload: { requestId?: string }) => {

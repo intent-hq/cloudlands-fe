@@ -2,7 +2,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ensureAgentSessionLoaded } from '../../workspace-agents/workspace-agents-slice';
-import { openAgentTabRequested } from '../app-layout-slice';
+import { focusBrowserTabRequested, openAgentTabRequested } from '../app-layout-slice';
 import { appLayoutNavigationSaga } from './app-layout-navigation-saga';
 
 const settle = async () => {
@@ -124,6 +124,50 @@ describe('appLayoutNavigationSaga', () => {
         },
       },
     });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('focuses the panel and activates the tab for focusBrowserTabRequested, ignoring unknown tabs', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      {
+        channel,
+        dispatch,
+        getState: () => ({
+          panelLayout: {
+            byWorkspaceId: {
+              'ws-1': {
+                panels: {
+                  'panel-a': { tabs: [{ id: 'note-1', type: 'note' }] },
+                  'panel-b': { tabs: [{ id: 'browser-1', type: 'browser' }] },
+                },
+              },
+            },
+          },
+        }),
+      },
+      appLayoutNavigationSaga,
+    );
+    channel.put(focusBrowserTabRequested('ws-1', 'browser-1'));
+    await settle();
+    expect(dispatch.mock.calls[0]?.[0]).toEqual({
+      type: 'panelLayout/focusPanel',
+      payload: ['ws-1', 'panel-b'],
+    });
+    expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
+      type: 'panelLayout/setActiveTab',
+      payload: { wsId: 'ws-1', tabId: 'browser-1', panelId: 'panel-b' },
+    });
+
+    dispatch.mockClear();
+    channel.put(focusBrowserTabRequested('ws-1', 'missing-tab'));
+    channel.put(focusBrowserTabRequested('', 'browser-1'));
+    channel.put(focusBrowserTabRequested('ws-1', ''));
+    await settle();
+    expect(dispatch).not.toHaveBeenCalled();
+
     task.cancel();
     await task.toPromise();
   });
