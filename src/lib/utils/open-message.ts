@@ -11,8 +11,9 @@
  *      dispatches `initializeChatRequested`, whose chat-read-service hydrates
  *      the full transcript into the agent-session slice.
  *   3. Wait for the message to appear in the store. The store prunes to the
- *      newest 500 messages, so a very old message can be absent even after a
- *      full hydrate — once hydration settles without it, seek the page
+ *      newest `MAX_MESSAGES_PER_AGENT` messages, so a very old message can be
+ *      absent even after a full hydrate — once hydration settles without it,
+ *      seek the page
  *      CONTAINING the message via `agent.getConversation`'s `aroundMessageId`
  *      (PROTOCOL §5.5) and `replaceMessages` the session with that page.
  *   4. Hand the DOM work to the mounted ChatPanel through the

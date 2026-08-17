@@ -216,4 +216,111 @@ export const syntheticFixtures: SyntheticFixture[] = [
       ),
     ],
   },
+
+  // -------------------------------------------------------------------------
+  // Indented fences with tag literals (intent-hq/monorepo#2713).
+  // 0-3 space indents are CommonMark fences (FENCE_LINE_REGEX) and were always
+  // healthy; the bad-* 4+-space variants were the residual divergence from
+  // #2689 and flipped to correct output when findCodeRegions switched to
+  // any-indent fence detection (CODE_REGION_FENCE_LINE_REGEX).
+  // -------------------------------------------------------------------------
+  {
+    id: 'fence-indent-0-blank-line',
+    note: 'unindented fence with interior blank line, tag literal stays literal',
+    blocks: [
+      text(
+        'Quoted stream:\n\n```\n<group:Working>\n\ndoing things\n</group>\n```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'fence-indent-1-blank-line',
+    note: '1-space-indented fence with interior blank line, tag literal stays literal',
+    blocks: [
+      text(
+        'Quoted stream:\n\n ```\n <group:Working>\n\n doing things\n </group>\n ```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'fence-indent-2-blank-line',
+    note: '2-space-indented fence with interior blank line, tag literal stays literal',
+    blocks: [
+      text(
+        'Quoted stream:\n\n  ```\n  <group:Working>\n\n  doing things\n  </group>\n  ```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'fence-indent-3-blank-line',
+    note: '3-space-indented fence with interior blank line, tag literal stays literal',
+    blocks: [
+      text(
+        'Quoted stream:\n\n   ```\n   <group:Working>\n\n   doing things\n   </group>\n   ```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'tilde-fence-indent-3-blank-line',
+    note: '3-space-indented tilde fence with interior blank line, tag literal stays literal',
+    blocks: [
+      text(
+        'Quoted stream:\n\n   ~~~\n   <group:Working>\n\n   doing things\n   </group>\n   ~~~\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'indented-fence-no-blank-line',
+    note: '4-space-indented fence WITHOUT a blank line: fence markers pair as an inline span, tag stays literal',
+    blocks: [
+      text(
+        'Quoted inside a list item:\n\n    ```\n    <group:Working>\n    doing things\n    </group>\n    ```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'bad-indented-fence-blank-line',
+    note: '4-space-indented fence with interior blank line, tag literal should stay literal',
+    blocks: [
+      text(
+        'Quoted inside a list item:\n\n    ```\n    <group:Working>\n\n    doing things\n    </group>\n    ```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'bad-indented-fence-deep-blank-line',
+    note: '6-space-indented fence with interior blank line, tag literal should stay literal',
+    blocks: [
+      text(
+        'Quoted in a nested list:\n\n      ```\n      <group:Working>\n\n      doing things\n      </group>\n      ```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'bad-indented-tilde-fence-blank-line',
+    note: '4-space-indented tilde fence with interior blank line, tag literal should stay literal',
+    blocks: [
+      text(
+        'Quoted inside a list item:\n\n    ~~~\n    <group:Working>\n\n    doing things\n    </group>\n    ~~~\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'tab-indented-fence-blank-line',
+    note: 'tab-indented fence with interior blank line, tag literal stays literal',
+    blocks: [
+      text(
+        'Quoted inside a list item:\n\n\t```\n\t<group:Working>\n\n\tdoing things\n\t</group>\n\t```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'asymmetric-indent-fence-close',
+    note: 'unindented opener closed by a 4-space-indented closer; the real tag after it forms a group (fence state ends at the indented closer, matching the renderer)',
+    blocks: [
+      text(
+        'Quoted stream:\n\n```\n<group:Working>\ndoing things\n    ```\n\n<group:After>\nreal group content\n</group>\ntail prose',
+      ),
+    ],
+  },
 ];

@@ -31,6 +31,7 @@ import {
   hasCanonicalId,
   isTimestampClose,
   replaceMessageById,
+  MAX_MESSAGES_PER_AGENT,
 } from './agent-session-slice';
 import {
   chatSendFailed,
@@ -4259,6 +4260,12 @@ describe('computeMessageContentHash — media blocks', () => {
       contentBlocks: [{ type: 'tool_use', name: 'search', input: { query: 'hi' } }],
     };
     expect(computeMessageContentHash(a)).toBe(computeMessageContentHash(b));
+  });
+});
+
+describe('MAX_MESSAGES_PER_AGENT shared transcript cap', () => {
+  it('is 500 — the prune cap the transcript pagers (chat-read-service, chat-read-saga) import as their fetch bound', () => {
+    expect(MAX_MESSAGES_PER_AGENT).toBe(500);
   });
 });
 
