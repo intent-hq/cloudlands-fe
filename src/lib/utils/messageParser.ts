@@ -1022,16 +1022,25 @@ interface CodeRegion {
 }
 
 /**
+ * Fence detection for code regions: like FENCE_LINE_REGEX but accepts ANY
+ * leading indentation. CommonMark would demote a 4+-space-indented "fence" to
+ * an indented code block, but this pipeline never applies that rule:
+ * processRegularContent deliberately renders ``` / ~~~ fences at any
+ * indentation as fenced code blocks (e.g. fences nested inside list items),
+ * so what the renderer displays as one code block must be one code region
+ * here — otherwise tag literals inside it get scanned as real tags
+ * (intent-hq/monorepo#2713). The indent class is \s* to match
+ * processRegularContent's fence regexes exactly (tabs, Unicode spaces, etc.).
+ */
+const CODE_REGION_FENCE_LINE_REGEX = /^\s*(`{3,}|~{3,})(.*)$/;
+
+/**
  * Find the offsets of code regions in a text block: fenced code blocks
  * (``` / ~~~, line-based, same fence-pairing rules as findSuggestedPromptsBlocks
- * via the shared FENCE_LINE_REGEX) and inline code spans (backtick runs paired
- * per CommonMark: a run of N backticks closes at the next run of exactly N
- * backticks; an unpaired run stays literal; spans do not cross blank lines).
- *
- * Known divergence: FENCE_LINE_REGEX accepts 0-3 leading spaces (CommonMark),
- * while processRegularContent renders fences at any indentation. A 4+-space
- * indented fence is usually still covered by the inline-span pass (the fence
- * markers pair as a span), except when a blank line falls inside it.
+ * but at any indentation — see CODE_REGION_FENCE_LINE_REGEX) and inline code
+ * spans (backtick runs paired per CommonMark: a run of N backticks closes at
+ * the next run of exactly N backticks; an unpaired run stays literal; spans
+ * do not cross blank lines).
  *
  * Group/think tag syntax inside these regions is a literal *mention* of the
  * syntax (documentation, quoted output), not a real tag, and must not be
@@ -1049,7 +1058,7 @@ function findCodeRegions(text: string): CodeRegion[] {
   for (const line of lines) {
     const lineStart = offset;
     offset += line.length + 1;
-    const fenceMatch = line.match(FENCE_LINE_REGEX);
+    const fenceMatch = line.match(CODE_REGION_FENCE_LINE_REGEX);
     if (!fenceMatch) continue;
     const marker = fenceMatch[1];
     if (!fence) {
