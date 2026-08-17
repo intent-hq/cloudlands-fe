@@ -216,4 +216,97 @@ export const syntheticFixtures: SyntheticFixture[] = [
       ),
     ],
   },
+
+  // -------------------------------------------------------------------------
+  // Indented fences with tag literals (intent-hq/monorepo#2713).
+  // 0-3 space indents are CommonMark fences (FENCE_LINE_REGEX) and healthy;
+  // the 4+-space variants exercise the residual divergence from #2689.
+  // -------------------------------------------------------------------------
+  {
+    id: 'fence-indent-0-blank-line',
+    note: 'unindented fence with interior blank line, tag literal stays literal',
+    blocks: [
+      text(
+        'Quoted stream:\n\n```\n<group:Working>\n\ndoing things\n</group>\n```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'fence-indent-1-blank-line',
+    note: '1-space-indented fence with interior blank line, tag literal stays literal',
+    blocks: [
+      text(
+        'Quoted stream:\n\n ```\n <group:Working>\n\n doing things\n </group>\n ```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'fence-indent-2-blank-line',
+    note: '2-space-indented fence with interior blank line, tag literal stays literal',
+    blocks: [
+      text(
+        'Quoted stream:\n\n  ```\n  <group:Working>\n\n  doing things\n  </group>\n  ```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'fence-indent-3-blank-line',
+    note: '3-space-indented fence with interior blank line, tag literal stays literal',
+    blocks: [
+      text(
+        'Quoted stream:\n\n   ```\n   <group:Working>\n\n   doing things\n   </group>\n   ```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'tilde-fence-indent-3-blank-line',
+    note: '3-space-indented tilde fence with interior blank line, tag literal stays literal',
+    blocks: [
+      text(
+        'Quoted stream:\n\n   ~~~\n   <group:Working>\n\n   doing things\n   </group>\n   ~~~\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'indented-fence-no-blank-line',
+    note: '4-space-indented fence WITHOUT a blank line: fence markers pair as an inline span, tag stays literal',
+    blocks: [
+      text(
+        'Quoted inside a list item:\n\n    ```\n    <group:Working>\n    doing things\n    </group>\n    ```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'bad-indented-fence-blank-line',
+    note: '4-space-indented fence with interior blank line, tag literal should stay literal',
+    knownBad:
+      'intent-hq/monorepo#2713: the blank line splits the backtick-span pairing and the 4-space indent escapes FENCE_LINE_REGEX, so the tag literal is scanned as a real group tag',
+    blocks: [
+      text(
+        'Quoted inside a list item:\n\n    ```\n    <group:Working>\n\n    doing things\n    </group>\n    ```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'bad-indented-fence-deep-blank-line',
+    note: '6-space-indented fence with interior blank line, tag literal should stay literal',
+    knownBad:
+      'intent-hq/monorepo#2713: same as bad-indented-fence-blank-line at a deeper indent',
+    blocks: [
+      text(
+        'Quoted in a nested list:\n\n      ```\n      <group:Working>\n\n      doing things\n      </group>\n      ```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'bad-indented-tilde-fence-blank-line',
+    note: '4-space-indented tilde fence with interior blank line, tag literal should stay literal',
+    knownBad:
+      'intent-hq/monorepo#2713: tilde fences have no backtick-span fallback, so a 4-space-indented tilde fence is never a code region and the tag literal is scanned',
+    blocks: [
+      text(
+        'Quoted inside a list item:\n\n    ~~~\n    <group:Working>\n\n    doing things\n    </group>\n    ~~~\n\nAfter the fence.',
+      ),
+    ],
+  },
 ];

@@ -1,0 +1,26 @@
+{
+  "note": "unindented fence with interior blank line, tag literal stays literal",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Quoted stream:"
+        },
+        {
+          "type": "code",
+          "content": "<group:Working>\n\ndoing things\n</group>",
+          "metadata": {
+            "language": "plaintext"
+          }
+        },
+        {
+          "type": "text",
+          "content": "After the fence."
+        }
+      ]
+    }
+  ]
+}

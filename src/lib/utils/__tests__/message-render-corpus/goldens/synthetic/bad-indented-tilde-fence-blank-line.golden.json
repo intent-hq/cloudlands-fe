@@ -1,0 +1,44 @@
+{
+  "note": "4-space-indented tilde fence with interior blank line, tag literal should stay literal",
+  "KNOWN_BAD": "intent-hq/monorepo#2713: tilde fences have no backtick-span fallback, so a 4-space-indented tilde fence is never a code region and the tag literal is scanned",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Quoted inside a list item:"
+        }
+      ]
+    },
+    {
+      "type": "content_group",
+      "name": "Working",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "doing things"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "code",
+          "content": "After the fence.",
+          "metadata": {
+            "language": "plaintext"
+          }
+        }
+      ]
+    }
+  ]
+}
