@@ -1230,6 +1230,21 @@ Some trailing content.`;
     expect(result.contentBlocks.map((block) => block.text ?? '').join('')).toBe('Done.');
   });
 
+  it('strips split blocks from legacy content aliases', () => {
+    const contentBlocks: ContentBlock[] = [
+      { type: 'text', content: 'Done.\n\n<!-- suggested-' },
+      { type: 'text', content: 'prompts\nRun tests.\nOpen PR.\n-->' },
+    ];
+    const result = parseSuggestedPromptsFromContentBlocks(contentBlocks, { isStreaming: true });
+    expect(result.prompts).toEqual(['Run tests.', 'Open PR.']);
+    expect(result.contentBlocks.map((block) => block.text ?? block.content ?? '').join('')).toBe(
+      'Done.',
+    );
+    expect(result.contentBlocks.map((block) => block.content ?? '').join('')).not.toContain(
+      'suggested-prompts',
+    );
+  });
+
   it('keeps fenced examples visible during streaming and after finalization', () => {
     const content = '```markdown\n<!-- suggested-prompts\nRun tests.\nOpen PR.\n-->\n```';
     expect(parseSuggestedPrompts(content, { isStreaming: true }).cleanedContent).toBe(content);

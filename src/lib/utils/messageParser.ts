@@ -1878,6 +1878,11 @@ export function parseSuggestedPromptsFromContentBlocks(
   }
 
   let textOffset = 0;
+  const withCleanedText = (block: ContentBlock, text: string): ContentBlock => ({
+    ...block,
+    ...(block.text !== undefined || block.content === undefined ? { text } : {}),
+    ...(block.content !== undefined ? { content: text } : {}),
+  });
   const nextBlocks = contentBlocks.map((block) => {
     if (block.type !== 'text') return block;
     const original = block.text ?? block.content ?? '';
@@ -1894,18 +1899,24 @@ export function parseSuggestedPromptsFromContentBlocks(
       localCursor = Math.max(localCursor, localEnd);
     }
     nextText += original.slice(localCursor);
-    return { ...block, text: nextText };
+    return withCleanedText(block, nextText);
   });
 
   const survivingTextIndices = nextBlocks
-    .map((block, index) => (block.type === 'text' && (block.text ?? '').length > 0 ? index : -1))
+    .map((block, index) =>
+      block.type === 'text' && (block.text ?? block.content ?? '').length > 0 ? index : -1,
+    )
     .filter((index) => index >= 0);
   const first = survivingTextIndices.at(0);
   const last = survivingTextIndices.at(-1);
-  if (first !== undefined)
-    nextBlocks[first] = { ...nextBlocks[first], text: nextBlocks[first].text?.trimStart() };
-  if (last !== undefined)
-    nextBlocks[last] = { ...nextBlocks[last], text: nextBlocks[last].text?.trimEnd() };
+  if (first !== undefined) {
+    const block = nextBlocks[first];
+    nextBlocks[first] = withCleanedText(block, (block.text ?? block.content ?? '').trimStart());
+  }
+  if (last !== undefined) {
+    const block = nextBlocks[last];
+    nextBlocks[last] = withCleanedText(block, (block.text ?? block.content ?? '').trimEnd());
+  }
   return { prompts: blocks.at(-1)?.prompts ?? [], contentBlocks: nextBlocks };
 }
 
