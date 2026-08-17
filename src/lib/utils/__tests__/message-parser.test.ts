@@ -4,6 +4,7 @@ import {
   parseAgentMessage,
   parseSuggestedPrompts,
   hasSuggestedPrompts,
+  parseSuggestedPromptsFromContentBlocks,
   groupParsedBlocks,
   groupContentBlocks,
 } from '../messageParser';
@@ -799,43 +800,47 @@ Review code
   it('should parse Label|prompt syntax', () => {
     const content = `<!-- suggested-prompts
 Label|Full prompt text
+Second prompt
 -->`;
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts).toEqual(['Full prompt text']);
+    expect(result.prompts).toEqual(['Full prompt text', 'Second prompt']);
   });
 
   it('should strip delay:N| prefix and return plain string', () => {
     const content = `<!-- suggested-prompts
 delay:60|Check deployment
+Review deployment logs
 -->`;
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts.length).toBe(1);
+    expect(result.prompts.length).toBe(2);
     expect(result.prompts[0]).toBe('Check deployment');
   });
 
   it('should strip Label|delay:N| prefix and return plain string', () => {
     const content = `<!-- suggested-prompts
 Label|delay:30|Check build
+Review build logs
 -->`;
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts.length).toBe(1);
+    expect(result.prompts.length).toBe(2);
     expect(result.prompts[0]).toBe('Check build');
   });
 
   it('should strip delay prefix case-insensitively', () => {
     const content = `<!-- suggested-prompts
 DELAY:120|Check CI
+Review CI logs
 -->`;
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts.length).toBe(1);
+    expect(result.prompts.length).toBe(2);
     expect(result.prompts[0]).toBe('Check CI');
   });
 
@@ -856,7 +861,7 @@ Another plain prompt
     expect(result.prompts[3]).toBe('Another plain prompt');
   });
 
-  it('should filter out empty delay text', () => {
+  it('should keep a block with an invalid prompt line visible', () => {
     const content = `<!-- suggested-prompts
 delay:60|
 Valid prompt
@@ -864,7 +869,8 @@ Valid prompt
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts).toEqual(['Valid prompt']);
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
   });
 
   it('should return empty array and unchanged content when no suggested-prompts block', () => {
@@ -922,12 +928,13 @@ Valid prompt
       '',
       '<!-- suggested-prompts',
       'Run tests',
+      'Review code',
       '-->',
     ].join('\r\n');
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts).toEqual(['Run tests']);
+    expect(result.prompts).toEqual(['Run tests', 'Review code']);
     expect(result.cleanedContent).toBe('Here is the response.');
   });
 
@@ -1024,6 +1031,7 @@ Valid prompt
     const content = [
       '<!-- suggested-prompts',
       'Run tests',
+      'Review code',
       '-->',
       '',
       'Body.',
@@ -1035,7 +1043,7 @@ Valid prompt
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts).toEqual(['Run tests']);
+    expect(result.prompts).toEqual(['Run tests', 'Review code']);
     // Only the accepted block is stripped; the rejected one stays as body text
     expect(result.cleanedContent).toContain('## Heading');
     expect(result.cleanedContent).not.toContain('Run tests');
@@ -1045,22 +1053,24 @@ Valid prompt
     const content = [
       '<!-- suggested-prompts',
       'Old prompt',
+      'Old follow-up',
       '-->',
       '',
       'More text.',
       '',
       '<!-- suggested-prompts',
       'New prompt',
+      'New follow-up',
       '-->',
     ].join('\n');
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts).toEqual(['New prompt']);
+    expect(result.prompts).toEqual(['New prompt', 'New follow-up']);
     expect(result.cleanedContent).toBe('More text.');
   });
 
-  it('should cap the number of prompts at 6', () => {
+  it('should keep blocks with more than four prompts visible', () => {
     const content = [
       '<!-- suggested-prompts',
       ...Array.from({ length: 10 }, (_, i) => `Prompt ${i + 1}`),
@@ -1069,17 +1079,18 @@ Valid prompt
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts.length).toBe(6);
-    expect(result.prompts[5]).toBe('Prompt 6');
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
   });
 
-  it('should drop prompts longer than 200 characters', () => {
+  it('should keep a block with an over-long prompt visible', () => {
     const long = 'x'.repeat(201);
     const content = ['<!-- suggested-prompts', long, 'Run tests', '-->'].join('\n');
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts).toEqual(['Run tests']);
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
   });
 
   it('should not treat an inline opener followed by prose as a block', () => {
@@ -1117,7 +1128,7 @@ Some trailing content.`;
     expect(result.cleanedContent).toBe('');
   });
 
-  it('should accept a trailing --> closer with the remainder as the final prompt', () => {
+  it('requires the --> closer to stand alone on its own line', () => {
     const content = [
       'Parked the rewrite.',
       '',
@@ -1129,24 +1140,9 @@ Some trailing content.`;
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts).toEqual([
-      'Resume the rewrite now.',
-      'Show the parked diff.',
-      'Leave rewrite parked for now.',
-    ]);
-    expect(result.cleanedContent).toBe('Parked the rewrite.');
-    expect(hasSuggestedPrompts(content)).toBe(true);
-  });
-
-  it('should apply Label| and delay:N| handling to a trailing-closer remainder', () => {
-    const content = ['<!-- suggested-prompts', 'Run tests', 'Label|delay:30|Check build -->'].join(
-      '\n',
-    );
-
-    const result = parseSuggestedPrompts(content);
-
-    expect(result.prompts).toEqual(['Run tests', 'Check build']);
-    expect(result.cleanedContent).toBe('');
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+    expect(hasSuggestedPrompts(content)).toBe(false);
   });
 
   it('should reject a trailing-closer remainder that looks like body text', () => {
@@ -1196,6 +1192,48 @@ Some trailing content.`;
 
     expect(result.prompts).toEqual([]);
     expect(result.cleanedContent).toBe(content);
+  });
+
+  it('withholds every prefix of an accepted streaming block without surfacing prompts early', () => {
+    const prose = 'The work is complete.\n\n';
+    const block = '<!-- suggested-prompts\nRun the tests.\nOpen the PR.\n-->';
+    for (let length = 1; length <= block.length; length++) {
+      const result = parseSuggestedPrompts(prose + block.slice(0, length), { isStreaming: true });
+      expect(result.cleanedContent).toBe('The work is complete.');
+      expect(result.prompts).toEqual(
+        length === block.length ? ['Run the tests.', 'Open the PR.'] : [],
+      );
+    }
+  });
+
+  it('restores malformed and incomplete blocks when streaming finalizes', () => {
+    const incomplete = 'Done.\n\n<!-- suggested-prompts\nOnly one prompt';
+    expect(parseSuggestedPrompts(incomplete, { isStreaming: true }).cleanedContent).toBe('Done.');
+    expect(parseSuggestedPrompts(incomplete).cleanedContent).toBe(incomplete);
+
+    const inlineCloser = 'Done.\n\n<!-- suggested-prompts\nRun tests -->\nOpen PR';
+    expect(parseSuggestedPrompts(inlineCloser, { isStreaming: true }).cleanedContent).toBe(
+      inlineCloser,
+    );
+    expect(parseSuggestedPrompts(inlineCloser).cleanedContent).toBe(inlineCloser);
+  });
+
+  it('reconstructs delimiters split across text content blocks', () => {
+    const contentBlocks: ContentBlock[] = [
+      { type: 'text', text: 'Done.\n\n<!' },
+      { type: 'text', text: '-- suggested-prompts\nRun tests.\nOpen' },
+      { type: 'text', text: ' PR.\n--' },
+      { type: 'text', text: '>' },
+    ];
+    const result = parseSuggestedPromptsFromContentBlocks(contentBlocks, { isStreaming: true });
+    expect(result.prompts).toEqual(['Run tests.', 'Open PR.']);
+    expect(result.contentBlocks.map((block) => block.text ?? '').join('')).toBe('Done.');
+  });
+
+  it('keeps fenced examples visible during streaming and after finalization', () => {
+    const content = '```markdown\n<!-- suggested-prompts\nRun tests.\nOpen PR.\n-->\n```';
+    expect(parseSuggestedPrompts(content, { isStreaming: true }).cleanedContent).toBe(content);
+    expect(parseSuggestedPrompts(content).cleanedContent).toBe(content);
   });
 });
 

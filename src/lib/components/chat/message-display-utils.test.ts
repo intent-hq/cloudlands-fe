@@ -251,7 +251,7 @@ describe('isQuestionOnlyContent', () => {
       isQuestionOnlyContent([
         {
           type: 'text',
-          text: '<!-- suggested-prompts\nRun the tests\n-->',
+          text: '<!-- suggested-prompts\nRun the tests\nReview the results\n-->',
         } as ContentBlock,
         question(),
       ]),

@@ -18,7 +18,7 @@ import {
   it,
   expect,
 } from 'vitest';
-import { parseSuggestedPrompts } from '$lib/utils/messageParser';
+import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
 import { derivePendingQuestions } from '../questions/pending-questions';
 import { buildAnswerMessageMetadata } from '../questions/answer-message';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
@@ -58,16 +58,7 @@ function computeSuggestedPrompts(
   if (derivePendingQuestions(messages, isRunning, showingPendingUserMessage)) {
     return [];
   }
-  // Parse each text block on its own, mirroring MessageContent's per-block
-  // stripping; the last block that yields prompts wins.
-  const textBlocks = (lastAssistantMessage.contentBlocks || []).filter(
-    (b): b is { type: 'text'; text: string } => b.type === 'text',
-  );
-  for (let i = textBlocks.length - 1; i >= 0; i--) {
-    const { prompts } = parseSuggestedPrompts(textBlocks[i].text);
-    if (prompts.length > 0) return prompts;
-  }
-  return [];
+  return parseSuggestedPromptsFromContentBlocks(lastAssistantMessage.contentBlocks || []).prompts;
 }
 
 function createAssistantMessage(content: string): AgentMessage {
@@ -144,6 +135,7 @@ New prompt 2
 
 <!-- suggested-prompts
 Test prompt
+Review test output
 -->
 `);
       const userMsg: AgentMessage = {
@@ -239,6 +231,7 @@ Test prompt
 
 <!-- suggested-prompts
 Continue
+Review the result
 -->
 `);
       const prompts = computeSuggestedPrompts(false, [
@@ -246,7 +239,7 @@ Continue
         answerMsg,
         followUp,
       ]);
-      expect(prompts).toEqual(['Continue']);
+      expect(prompts).toEqual(['Continue', 'Review the result']);
     });
 
     it('keeps prompts hidden while a PLAIN user message leaves the questions pending', () => {
@@ -260,6 +253,7 @@ Continue
 
 <!-- suggested-prompts
 Continue
+Review the result
 -->
 `);
       const prompts = computeSuggestedPrompts(false, [
@@ -291,21 +285,25 @@ Continue
   describe('per-text-block parsing', () => {
     /**
      * REGRESSION: MessageContent strips the prompts block per text block, so a
-     * marker split across two blocks must NOT yield chips here — otherwise the
-     * chips render while the raw marker lines stay in the transcript.
+     * The shared content-block parser reconstructs split markers, so prompt
+     * chips and transcript stripping must agree.
      */
-    it('does not surface prompts for a marker split across two text blocks', () => {
+    it('surfaces prompts for a marker split across text blocks', () => {
       const split: AgentMessage = {
         id: 'msg_split',
         role: 'assistant',
         contentBlocks: [
           { type: 'text', text: 'Here is the response.\n\n<!-- suggested-prompts\nRun the tests' },
-          { type: 'text', text: '-->\n' },
+          { type: 'text', text: '\nReview the output\n--' },
+          { type: 'text', text: '>\n' },
         ],
         timestamp: new Date().toISOString(),
       };
 
-      expect(computeSuggestedPrompts(false, [split])).toEqual([]);
+      expect(computeSuggestedPrompts(false, [split])).toEqual([
+        'Run the tests',
+        'Review the output',
+      ]);
     });
 
     it('surfaces prompts from the last text block that contains a complete block', () => {
@@ -313,13 +311,19 @@ Continue
         id: 'msg_multi',
         role: 'assistant',
         contentBlocks: [
-          { type: 'text', text: 'Intro.\n\n<!-- suggested-prompts\nOld prompt\n-->\n' },
-          { type: 'text', text: 'More.\n\n<!-- suggested-prompts\nNew prompt\n-->\n' },
+          {
+            type: 'text',
+            text: 'Intro.\n\n<!-- suggested-prompts\nOld prompt\nOld follow-up\n-->\n',
+          },
+          {
+            type: 'text',
+            text: 'More.\n\n<!-- suggested-prompts\nNew prompt\nNew follow-up\n-->\n',
+          },
         ],
         timestamp: new Date().toISOString(),
       };
 
-      expect(computeSuggestedPrompts(false, [multi])).toEqual(['New prompt']);
+      expect(computeSuggestedPrompts(false, [multi])).toEqual(['New prompt', 'New follow-up']);
     });
   });
 });
