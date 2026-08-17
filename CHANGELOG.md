@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.56.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.6...v2.56.7) (2026-08-17)
+
+
+### 🐛 Bug Fixes
+
+* stop hardwareConsole.state bag wipes on failed settings read ([#1351](https://github.com/intent-hq/cloudlands-fe/issues/1351)) ([390cfc5](https://github.com/intent-hq/cloudlands-fe/commit/390cfc5439b9f88da6866f4bc021d8cdc7e9ed8c))
+
 ## [2.56.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.5...v2.56.6) (2026-08-17)
 
 
