@@ -102,6 +102,31 @@ export function shouldShowTranscriptSkeleton(state: TranscriptSkeletonState): bo
   return (!state.hasSession || !state.hydrationSettled) && !state.hasMessages && !state.isStreaming;
 }
 
+type TranscriptRevealDeferralState = {
+  awaitingSwitchBackSnapshot: boolean;
+  transcriptHydratedOnce: boolean;
+  hasPendingInitialPrompt: boolean;
+};
+
+/**
+ * Switch-back transcript reveal gate. When the user switches back to a
+ * conversation whose standing subscription is (re)opening, the retained
+ * transcript may be stale — defer the reveal (render the skeleton) until the
+ * fresh seq-0 snapshot applies, the subscription closes, or the saga-owned
+ * bounded fallback clears the gate. Strictly scoped to re-views: the FIRST
+ * hydration keeps the existing `shouldShowTranscriptSkeleton` logic
+ * (`transcriptHydratedOnce` false never defers here), and a pending initial
+ * prompt (brand-new agent) never defers — there is no earlier transcript to
+ * paint stale.
+ */
+export function shouldDeferTranscriptReveal(state: TranscriptRevealDeferralState): boolean {
+  return (
+    state.awaitingSwitchBackSnapshot &&
+    state.transcriptHydratedOnce &&
+    !state.hasPendingInitialPrompt
+  );
+}
+
 /** Durable evidence that a session has been used before. */
 export function hasAuthoritativeConversationEvidence(
   session: AgentSession | null,

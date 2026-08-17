@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => {
     resizeDisconnect: vi.fn(),
     resizeConstructor: vi.fn(),
     agentMessages: mutableReadable<unknown[]>([]),
+    awaitingSwitchBackSnapshot: mutableReadable(false),
     animateMessageSend: vi.fn(),
     createMessageSendLaunchBubble: vi.fn(),
     pendingQuestions: null as { messageId: string; questions: unknown[] } | null,
@@ -72,6 +73,9 @@ vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-
   selectTasksForAgent: mocks.selector([]),
 }));
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
+  selectAwaitingSwitchBackSnapshot: Object.assign(() => mocks.awaitingSwitchBackSnapshot, {
+    select: () => false,
+  }),
   selectChatError: mocks.selector(null),
   selectChatIsStalled: mocks.selector(false),
   selectChatLastChunkTime: mocks.selector(null),
@@ -261,6 +265,7 @@ beforeEach(() => {
     return action;
   });
   mocks.agentMessages.set([]);
+  mocks.awaitingSwitchBackSnapshot.set(false);
   mocks.animateMessageSend.mockResolvedValue(undefined);
   mocks.createMessageSendLaunchBubble.mockImplementation(() => {
     const bubble = document.createElement('div');
@@ -844,5 +849,74 @@ describe('ChatPanel mounted lifecycle', () => {
     flushFrame();
 
     expect(scrollToBottomUtil).toHaveBeenCalled();
+  });
+
+  it('holds the indeterminate skeleton on switch-back until the resubscribe snapshot applies', async () => {
+    // Switch-back reveal gate: the retained transcript may be stale while the
+    // re-opened standing subscription's seq-0 snapshot is in flight — the
+    // skeleton must cover it, then the transcript reveals in one paint.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'stale hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    mocks.awaitingSwitchBackSnapshot.set(true);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    // Gate armed: skeleton up, retained message list suppressed.
+    expect(
+      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
+    ).not.toBeNull();
+    expect(view.container.querySelector('[data-conversation-turn]')).toBeNull();
+
+    // Snapshot applied (slice clears the flag) → transcript reveals.
+    mocks.awaitingSwitchBackSnapshot.set(false);
+    await tick();
+
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
+    expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
+  });
+
+  it('reveals the retained transcript when the bounded fallback clears the gate', async () => {
+    // The saga-owned fallback (no snapshot within the wait window) clears the
+    // same flag — the retained messages must come back rather than a
+    // permanently stuck skeleton.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'retained', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    mocks.awaitingSwitchBackSnapshot.set(true);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    expect(
+      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
+    ).not.toBeNull();
+
+    // Fallback timeout fires in the saga → flag cleared, retained list shown.
+    mocks.awaitingSwitchBackSnapshot.set(false);
+    await tick();
+
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
+    expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
+  });
+
+  it('does not defer the reveal when the gate is not armed', async () => {
+    // Baseline: a normal mount with retained messages and no switch-back gate
+    // renders the transcript immediately (no skeleton).
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
+    expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
   });
 });

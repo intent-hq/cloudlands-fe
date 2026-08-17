@@ -4,10 +4,15 @@ import type { StoreState } from '$store/renderer/types';
 import {
   chatStateReducer,
   initialState as chatStateInitialState,
+  chatLiveStreamPhaseChanged,
+  chatTranscriptSnapshotApplied,
   transcriptHydrationFailed,
   transcriptHydrationStarted,
+  transcriptHydrationSettled,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
+import { markAgentAsViewed } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
 import {
+  selectAwaitingSwitchBackSnapshot,
   selectTranscriptHydratedOnce,
   selectTranscriptHydration,
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
@@ -15,6 +20,7 @@ import {
 import {
   deriveQueuedMessagesVisibility,
   isSessionActivelyResponding,
+  shouldDeferTranscriptReveal,
   shouldShowEndOfListStreamingStatus,
   shouldShowPendingAssistantStatus,
   shouldShowSetupCardOnly,
@@ -425,6 +431,80 @@ describe('shouldShowTranscriptUtilityStack', () => {
     const loading = chatStateReducer(chatStateInitialState, transcriptHydrationStarted('agent-1'));
     const failed = chatStateReducer(loading, transcriptHydrationFailed('agent-1'));
     expect(shouldShowTranscriptUtilityStack(gateInputs(failed, 'agent-1'))).toBe(false);
+  });
+});
+
+describe('shouldDeferTranscriptReveal', () => {
+  const armedReView = {
+    awaitingSwitchBackSnapshot: true,
+    transcriptHydratedOnce: true,
+    hasPendingInitialPrompt: false,
+  };
+
+  it('defers the reveal while the switch-back gate is armed on a re-view', () => {
+    expect(shouldDeferTranscriptReveal(armedReView)).toBe(true);
+  });
+
+  it('never defers when the gate is not armed', () => {
+    expect(
+      shouldDeferTranscriptReveal({ ...armedReView, awaitingSwitchBackSnapshot: false }),
+    ).toBe(false);
+  });
+
+  it('never defers on the first-hydration path (skeleton logic owns it)', () => {
+    expect(shouldDeferTranscriptReveal({ ...armedReView, transcriptHydratedOnce: false })).toBe(
+      false,
+    );
+  });
+
+  it('never defers while a pending initial prompt renders optimistically', () => {
+    expect(shouldDeferTranscriptReveal({ ...armedReView, hasPendingInitialPrompt: true })).toBe(
+      false,
+    );
+  });
+
+  // Derive the gate's inputs from REAL reducer transitions (mapped exactly as
+  // ChatPanel maps its selectors), so a regression in how those states
+  // project onto the gate is caught — not just in the pure function itself.
+  const gateInputs = (state: ReturnType<typeof chatStateReducer>, agentId: string) => {
+    const storeState = { chatState: state } as unknown as StoreState;
+    return {
+      awaitingSwitchBackSnapshot: selectAwaitingSwitchBackSnapshot.select(storeState, agentId),
+      transcriptHydratedOnce: selectTranscriptHydratedOnce.select(storeState, agentId),
+      hasPendingInitialPrompt: false,
+    };
+  };
+
+  it('defers across the real switch-back reducer sequence and reveals on the fresh snapshot', () => {
+    const agentId = 'agent-reveal-1';
+    // Hydrated once, snapshot applied, then the subscription closed on a
+    // switch away (phase null drops the snapshot meta).
+    let state = chatStateReducer(chatStateInitialState, transcriptHydrationStarted(agentId));
+    state = chatStateReducer(state, transcriptHydrationSettled(agentId));
+    state = chatStateReducer(
+      state,
+      chatTranscriptSnapshotApplied(agentId, { truncated: false, totalMessages: 2 }),
+    );
+    state = chatStateReducer(state, chatLiveStreamPhaseChanged(agentId, null));
+    expect(shouldDeferTranscriptReveal(gateInputs(state, agentId))).toBe(false);
+
+    // Switch back: the gate arms synchronously with the view switch.
+    state = chatStateReducer(state, markAgentAsViewed(agentId));
+    expect(shouldDeferTranscriptReveal(gateInputs(state, agentId))).toBe(true);
+
+    // The reopening subscription's fresh seq-0 snapshot reveals.
+    state = chatStateReducer(
+      state,
+      chatTranscriptSnapshotApplied(agentId, { truncated: false, totalMessages: 3 }),
+    );
+    expect(shouldDeferTranscriptReveal(gateInputs(state, agentId))).toBe(false);
+  });
+
+  it('never defers the first hydration through the real reducer path', () => {
+    const agentId = 'agent-reveal-first';
+    const loading = chatStateReducer(chatStateInitialState, transcriptHydrationStarted(agentId));
+    const viewed = chatStateReducer(loading, markAgentAsViewed(agentId));
+    expect(shouldDeferTranscriptReveal(gateInputs(viewed, agentId))).toBe(false);
   });
 });
 

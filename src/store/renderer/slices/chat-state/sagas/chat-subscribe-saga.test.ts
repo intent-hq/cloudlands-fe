@@ -76,7 +76,10 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
-import { selectChatLiveStreamPhase } from '$store/renderer/slices/chat-state/chat-state-selectors';
+import {
+  selectAwaitingSwitchBackSnapshot,
+  selectChatLiveStreamPhase,
+} from '$store/renderer/slices/chat-state/chat-state-selectors';
 import {
   selectAgentMessages,
   selectAgentSession,
@@ -85,7 +88,7 @@ import {
   clearCurrentlyViewedAgent,
   markAgentAsViewed,
 } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
-import { chatSubscribeSaga } from './chat-subscribe-saga';
+import { chatSubscribeSaga, SWITCH_BACK_REVEAL_WAIT_MS } from './chat-subscribe-saga';
 import {
   clearPendingAgentDeletions,
   removePendingAgentDeletion,
@@ -1672,6 +1675,104 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       // A late report from the closed entry must not resurrect a phase.
       stale.onPhase!('delayed');
       expect(phaseOf(agentId)).toBeNull();
+    });
+  });
+
+  describe('switch-back transcript reveal gate (saga fallback)', () => {
+    const gateOf = (agentId: string) =>
+      selectAwaitingSwitchBackSnapshot.select(appStore.state, agentId);
+
+    /**
+     * Hydrated-once conversation whose subscription was closed by a switch
+     * away (transcriptSnapshot dropped) — the exact switch-back precondition.
+     */
+    function hydrateAndSwitchAway(agentId: string, otherId: string): FakeSubscription {
+      seedSession(agentId);
+      seedSession(otherId);
+      const sub = openChat(agentId);
+      appStore.dispatch(markAgentAsViewed(agentId));
+      sub.handler({ ...transcript([makeMessage('m-sb-1', 'hello')]), fromSnapshot: true });
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      appStore.dispatch(markAgentAsViewed(otherId));
+      expect(sub.unsubscribe).toHaveBeenCalledOnce();
+      expect(gateOf(agentId)).toBe(false);
+      return sub;
+    }
+
+    it('arms on switch-back and clears when the reopening subscription snapshot applies', async () => {
+      const agentId = 'agent-sub-swbk-snapshot';
+      hydrateAndSwitchAway(agentId, 'agent-sub-swbk-snapshot-other');
+
+      appStore.dispatch(markAgentAsViewed(agentId));
+      expect(gateOf(agentId)).toBe(true);
+
+      await vi.waitFor(() => {
+        expect(fakeSubscriptions.filter((s) => s.agentId === agentId)).toHaveLength(2);
+      });
+      const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentId)!;
+      reopened.handler({ ...transcript([makeMessage('m-sb-2', 'fresh')]), fromSnapshot: true });
+      expect(gateOf(agentId)).toBe(false);
+    });
+
+    it('clears via the bounded fallback timeout when no snapshot arrives', async () => {
+      vi.useFakeTimers();
+      try {
+        const agentId = 'agent-sub-swbk-timeout';
+        hydrateAndSwitchAway(agentId, 'agent-sub-swbk-timeout-other');
+
+        appStore.dispatch(markAgentAsViewed(agentId));
+        expect(gateOf(agentId)).toBe(true);
+
+        // Just before the bound: still deferring.
+        await vi.advanceTimersByTimeAsync(SWITCH_BACK_REVEAL_WAIT_MS - 50);
+        expect(gateOf(agentId)).toBe(true);
+        // The bound elapses: the gate clears (retained transcript shows).
+        await vi.advanceTimersByTimeAsync(100);
+        expect(gateOf(agentId)).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not arm a fallback timer when the gate did not arm (first hydration)', async () => {
+      vi.useFakeTimers();
+      try {
+        const agentId = 'agent-sub-swbk-first';
+        seedSession(agentId);
+        // First view: never hydrated — the reducer never arms the gate.
+        appStore.dispatch(markAgentAsViewed(agentId));
+        expect(gateOf(agentId)).toBe(false);
+        await vi.advanceTimersByTimeAsync(SWITCH_BACK_REVEAL_WAIT_MS + 100);
+        expect(gateOf(agentId)).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('a switch away (subscription close) clears the gate and retires the timer harmlessly', async () => {
+      vi.useFakeTimers();
+      try {
+        const agentId = 'agent-sub-swbk-away';
+        const otherId = 'agent-sub-swbk-away-other';
+        hydrateAndSwitchAway(agentId, otherId);
+
+        appStore.dispatch(markAgentAsViewed(agentId));
+        expect(gateOf(agentId)).toBe(true);
+
+        // Switch away again before any snapshot: phase-null teardown clears
+        // the gate (the backgrounded panel keeps its retained transcript).
+        // The close settles through the slot worker's queued transitions.
+        appStore.dispatch(markAgentAsViewed(otherId));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(gateOf(agentId)).toBe(false);
+
+        // The pending timer must not re-clear or throw after the bound.
+        await vi.advanceTimersByTimeAsync(SWITCH_BACK_REVEAL_WAIT_MS + 100);
+        expect(gateOf(agentId)).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });
