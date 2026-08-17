@@ -1598,7 +1598,9 @@
       fetching: $fetchingOlderHistory$,
       exhausted: $historyExhausted$,
       historyCount: $agentHistoryMessages$.length,
+      tailCount: $agentMessages$.length,
       tailTruncated: $transcriptSnapshotMeta$?.truncated === true,
+      totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
     });
     if (request) appStore.dispatch(olderHistoryPageRequested(workspace.id, agentId));
   }

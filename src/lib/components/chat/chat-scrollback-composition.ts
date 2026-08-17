@@ -100,19 +100,40 @@ export interface OlderHistoryTriggerParams {
   exhausted: boolean;
   /** Number of hydrated history rows. */
   historyCount: number;
+  /** Number of resident tail rows (post client-side cap pruning). */
+  tailCount: number;
   /** Daemon `truncated` flag: older rows exist beyond the tail snapshot. */
   tailTruncated: boolean;
+  /**
+   * Snapshot `totalMessages`: the conversation's full row count. Catches
+   * client-pruned rows the `truncated` flag cannot see — when the client cap
+   * is smaller than the daemon's snapshot page, rows are pruned locally
+   * while `truncated` stays false.
+   */
+  totalMessages: number;
 }
 
 /**
  * Whether scrolling near the top should dispatch `olderHistoryPageRequested`.
- * Never fires for short conversations (tail not truncated, no history rows)
- * or before the transcript is tall enough to scroll.
+ * Never fires for short conversations (all rows resident) or before the
+ * transcript is tall enough to scroll. Older rows exist when the daemon says
+ * the tail snapshot was truncated OR the snapshot's total row count exceeds
+ * the resident rows (tail + history) — the latter covers rows the client
+ * pruned locally under its own cap.
  */
 export function shouldRequestOlderHistory(params: OlderHistoryTriggerParams): boolean {
-  const { scrollTop, threshold, canScroll, fetching, exhausted, historyCount, tailTruncated } =
-    params;
+  const {
+    scrollTop,
+    threshold,
+    canScroll,
+    fetching,
+    exhausted,
+    historyCount,
+    tailCount,
+    tailTruncated,
+    totalMessages,
+  } = params;
   if (!canScroll || scrollTop > threshold) return false;
   if (fetching || exhausted) return false;
-  return historyCount > 0 || tailTruncated;
+  return historyCount > 0 || tailTruncated || totalMessages > tailCount + historyCount;
 }

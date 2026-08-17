@@ -76,7 +76,9 @@ describe('shouldRequestOlderHistory', () => {
     fetching: false,
     exhausted: false,
     historyCount: 0,
+    tailCount: 30,
     tailTruncated: true,
+    totalMessages: 30,
   };
 
   it('fires near the top when older rows exist beyond the tail', () => {
@@ -89,8 +91,32 @@ describe('shouldRequestOlderHistory', () => {
     ).toBe(true);
   });
 
-  it('never fires for short conversations (no history, tail not truncated)', () => {
+  it('fires on client-pruned rows: totalMessages > resident rows with truncated=false', () => {
+    // Client cap (30) < daemon snapshot page: rows pruned locally, daemon
+    // `truncated` stays false — totalMessages is the only evidence.
+    expect(
+      shouldRequestOlderHistory({ ...base, tailTruncated: false, totalMessages: 120 }),
+    ).toBe(true);
+    expect(
+      shouldRequestOlderHistory({
+        ...base,
+        tailTruncated: false,
+        historyCount: 10,
+        totalMessages: 41,
+      }),
+    ).toBe(true);
+  });
+
+  it('never fires for short conversations (all rows resident, tail not truncated)', () => {
     expect(shouldRequestOlderHistory({ ...base, tailTruncated: false })).toBe(false);
+    expect(
+      shouldRequestOlderHistory({
+        ...base,
+        tailTruncated: false,
+        tailCount: 12,
+        totalMessages: 12,
+      }),
+    ).toBe(false);
   });
 
   it('does not fire away from the top, while unscrollable, fetching, or exhausted', () => {
