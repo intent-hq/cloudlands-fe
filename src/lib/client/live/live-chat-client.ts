@@ -235,6 +235,24 @@ function mergeToolUseBlock(prior: ContentBlock, incoming: ContentBlock): Content
 }
 
 /**
+ * 32-bit FNV-1a hash of the serialized snapshot payload. Duplicate detection
+ * only: an exact re-delivery of the same wire push serializes identically, a
+ * divergent restart re-emit does not. A spurious mismatch (it is not a
+ * canonical serialization) just repeats an idempotent rebuild; a collision
+ * falls back to the pre-#2716 ignore, which self-heals at the next gap
+ * resnapshot.
+ */
+function fingerprintSnapshot(raw: unknown): number {
+  const s = JSON.stringify(raw) ?? '';
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+/**
  * Reduces `chat.subscribe` snapshot/delta pushes onto a message-keyed
  * transcript (PROTOCOL §7.1). A snapshot rebuilds the message list; a
  * contiguous delta upserts each entity's FULL block by `block.id` into its
@@ -250,6 +268,7 @@ export class ChatTranscriptReconciler {
   private streaming = false;
   private expectedSeq = 0;
   private seeded = false;
+  private snapshotFingerprint = 0;
 
   /** Forget all state so the next snapshot rebuilds from scratch. */
   reset(): void {
@@ -259,6 +278,7 @@ export class ChatTranscriptReconciler {
     this.streaming = false;
     this.expectedSeq = 0;
     this.seeded = false;
+    this.snapshotFingerprint = 0;
   }
 
   /**
@@ -268,10 +288,19 @@ export class ChatTranscriptReconciler {
    * expected seq is a daemon-side stream restart on the same subscription
    * (the daemon re-emits seq-0 and restarts deltas at 1 after a harness
    * restart) — it must rebuild, or every restarted delta is stale-dropped
-   * and the transcript freezes (intent-hq/monorepo#2627).
+   * and the transcript freezes (intent-hq/monorepo#2627). Seq alone cannot
+   * tell that restart apart from a duplicate when it races an idle stream
+   * (expectedSeq still 1, pre-first-delta), so the duplicate arm also
+   * compares payload fingerprints: a divergent re-emit carries rows
+   * persisted while the stream was down and must rebuild too, or they stay
+   * hidden until the next gap resnapshot (intent-hq/monorepo#2716).
    */
   applySnapshot(seq: number, raw: unknown): boolean {
-    if (this.seeded && seq + 1 === this.expectedSeq) return false;
+    const fingerprint = fingerprintSnapshot(raw);
+    if (this.seeded && seq + 1 === this.expectedSeq && fingerprint === this.snapshotFingerprint) {
+      return false;
+    }
+    this.snapshotFingerprint = fingerprint;
     const snap = extractSnapshot(raw);
     this.messages = snap.messages;
     this.truncated = snap.truncated;
