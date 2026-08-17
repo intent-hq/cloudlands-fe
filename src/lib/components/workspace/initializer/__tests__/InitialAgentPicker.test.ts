@@ -429,6 +429,52 @@ describe('InitialAgentPicker stale model override clearing', () => {
     expect(teamPickerSelected()).toBe('opus4.6');
   });
 
+  it('clears a restored override when the provider catalog loaded EMPTY', async () => {
+    // A successful models.list with zero models is still a loaded catalog —
+    // the provider provably has no models, so the override is invalid.
+    mocks.providerModelsByProviderId = {
+      auggie: {
+        models: [],
+        fetchedAt: '2026-08-15T00:00:00.000Z',
+      },
+    };
+    mocks.fileSpecialistsLoaded$.set(true);
+
+    const onModelChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: {
+        selectedSpecialist: 'spec-writer',
+        isTeamMode: true,
+        selectedModel: 'opus4.6',
+        modelWasOverridden: true,
+        onModelChange,
+      },
+    });
+
+    await waitFor(() => expect(onModelChange).toHaveBeenCalledWith(undefined));
+    expect(teamPickerSelected()).toBe('');
+  });
+
+  it('clears a restored override when the global catalog for its provider loaded EMPTY', async () => {
+    mocks.availableModels = [];
+    mocks.availableModelsProviderId = 'auggie';
+    mocks.fileSpecialistsLoaded$.set(true);
+
+    const onModelChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: {
+        selectedSpecialist: 'spec-writer',
+        isTeamMode: true,
+        selectedModel: 'opus4.6',
+        modelWasOverridden: true,
+        onModelChange,
+      },
+    });
+
+    await waitFor(() => expect(onModelChange).toHaveBeenCalledWith(undefined));
+    expect(teamPickerSelected()).toBe('');
+  });
+
   it('clears a restored override whose provider is reported unavailable', async () => {
     mocks.getProviderAvailability.mockImplementation(() =>
       Promise.resolve({

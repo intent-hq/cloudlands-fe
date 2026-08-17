@@ -349,15 +349,18 @@
 
   // Known model catalog for a provider: the session-lifetime provider-models
   // cache first, else the global availableModels catalog when it was loaded
-  // for that provider. `undefined` means no catalog evidence is loaded yet.
+  // for that provider. A LOADED catalog counts as evidence even when empty —
+  // a successful models.list response with zero models means the provider
+  // has no models, so any override for it is invalid. `undefined` means no
+  // catalog has been loaded for the provider yet (no evidence).
   function knownModelsForProvider(providerId: string): Array<{ value: string }> | undefined {
     const normalizedProviderId = selectNormalizedProviderId.select(appStore.state, providerId);
     const cachedModels = selectProviderModelsCacheEntry.select(
       appStore.state,
       normalizedProviderId,
     )?.models;
-    if (cachedModels && cachedModels.length > 0) return cachedModels;
-    if ($availableModelsProviderId$ === normalizedProviderId && $availableModels$.length > 0) {
+    if (cachedModels) return cachedModels;
+    if ($availableModelsProviderId$ === normalizedProviderId) {
       return $availableModels$;
     }
     return undefined;
