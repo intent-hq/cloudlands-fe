@@ -108,6 +108,8 @@ import {
   handleActionKeyPress,
   handleActionKeyRelease,
   installHardwareConsoleActionKeys,
+  persistHardwareConsoleActionMapping,
+  persistHardwareConsoleCycleScopes,
 } from '../action-key-service';
 import { actionKeySaga } from '$store/renderer/slices/hardware-console/sagas/action-key-saga';
 
@@ -826,6 +828,53 @@ describe('persistence key on the daemon bag', () => {
     });
   });
 
+  it('keeps hydrated values when the migrated-defaults persist fails on a read flap', async () => {
+    const priorDefaults = [
+      'new-workspace',
+      'new-agent',
+      'see-spec',
+      'switch-window-layouts',
+      'cycle-in-progress-agents',
+      'cycle-workspace-agents',
+      'cycle-unread-agents',
+    ];
+    const getMock = appClient.settings.get as ReturnType<typeof vi.fn>;
+    getMock
+      .mockResolvedValueOnce({
+        path: 'hardwareConsole.state',
+        value: { actionMappingByModel: { 'creator-micro-2': priorDefaults } },
+      })
+      // The migration persist's pre-write read flaps → readBagForPersist throws.
+      .mockResolvedValue(null);
+    const invoke = invokeActionKeySaga();
+
+    invoke({ type: 'any/action' });
+    await vi.waitFor(() => {
+      expect(dispatched).toContainEqual(
+        expect.objectContaining({
+          type: 'hardwareConsole/hydrateActionMapping',
+          payload: [
+            expect.objectContaining({
+              'creator-micro-2': [...DEFAULT_ACTION_MAPPINGS['creator-micro-2']],
+            }),
+          ],
+        }),
+      );
+    });
+    // Wait for the failed pre-write read of the migration persist.
+    await vi.waitFor(() => expect(getMock.mock.calls.length).toBeGreaterThanOrEqual(2));
+
+    expect(appClient.settings.update).not.toHaveBeenCalled();
+    // The hydrated in-memory values must stand: the failed persist must not
+    // re-dispatch defaults over them.
+    expect(
+      dispatched.filter((a) => a.type === 'hardwareConsole/hydrateActionMapping'),
+    ).toHaveLength(1);
+    expect(dispatched.filter((a) => a.type === 'hardwareConsole/hydrateCycleScopes')).toHaveLength(
+      1,
+    );
+  });
+
   it('does not write back when the persisted Codex mapping is customized', async () => {
     (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       path: 'hardwareConsole.state',
@@ -942,5 +991,21 @@ describe('persistence key on the daemon bag', () => {
         },
       ]);
     });
+  });
+});
+
+describe('action-key persist helpers on a failed bag read', () => {
+  it('persistHardwareConsoleActionMapping rejects and does not write', async () => {
+    (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await expect(
+      persistHardwareConsoleActionMapping(normalizeActionMappingsByModel(undefined)),
+    ).rejects.toThrow('hardwareConsole.state');
+    expect(appClient.settings.update).not.toHaveBeenCalled();
+  });
+
+  it('persistHardwareConsoleCycleScopes rejects and does not write', async () => {
+    (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await expect(persistHardwareConsoleCycleScopes({})).rejects.toThrow('hardwareConsole.state');
+    expect(appClient.settings.update).not.toHaveBeenCalled();
   });
 });

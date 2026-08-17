@@ -24,9 +24,15 @@ export async function readHardwareConsoleSettingsBag(): Promise<Record<string, u
   return isRecord(setting.value) ? setting.value : {};
 }
 
-/** Read-modify-write: replace only `enabled`, preserving sibling fields. */
+/** Read-modify-write: replace only `enabled`, preserving sibling fields.
+ * Fails when the pre-write bag read failed so a persist can never wipe sibling fields. */
 export async function persistHardwareConsoleEnabled(enabled: boolean): Promise<void> {
-  const bag = (await readHardwareConsoleSettingsBag()) ?? {};
+  const bag = await readHardwareConsoleSettingsBag();
+  if (bag === null) {
+    throw new Error(
+      `settings.get(${HARDWARE_CONSOLE_SETTINGS_PATH}) returned null — daemon read failed; skipping persist to avoid wiping the bag`,
+    );
+  }
   await appClient.settings.update([
     { path: HARDWARE_CONSOLE_SETTINGS_PATH, value: { ...bag, enabled } },
   ]);
