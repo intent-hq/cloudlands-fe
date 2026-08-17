@@ -52,8 +52,39 @@ function withStableGroupKeys(
 }
 
 /**
+ * Drop history rows the tail also holds (identity by `id` / `appMessageId`,
+ * the same keys the store dedup uses). The history reducer already dedups
+ * against the tail AT MERGE TIME, but the tail keeps moving afterwards: the
+ * chat-read older-history fetch tops the tail back up to the cap on every
+ * rehydration and a seq-0 snapshot replaces it wholesale, so a row paged
+ * into history can later re-enter the tail. Without this render-time guard
+ * each such row renders twice (duplicate sections after repeated
+ * scroll-up/scroll-down cycles).
+ */
+function dropTailResidentRows(history: AgentMessage[], tail: AgentMessage[]): AgentMessage[] {
+  if (history.length === 0 || tail.length === 0) return history;
+  const tailIds = new Set(tail.map((message) => message.id));
+  const tailAppMessageIds = new Set(
+    tail
+      .map((message) => message.appMessageId)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0),
+  );
+  const filtered = history.filter(
+    (message) =>
+      !tailIds.has(message.id) &&
+      !(
+        typeof message.appMessageId === 'string' &&
+        message.appMessageId.length > 0 &&
+        tailAppMessageIds.has(message.appMessageId)
+      ),
+  );
+  return filtered.length === history.length ? history : filtered;
+}
+
+/**
  * Compose the rendered transcript from the scrollback history segment and
- * the live tail.
+ * the live tail. History rows the tail re-acquired since the segment merge
+ * are dropped from the history side first (see `dropTailResidentRows`).
  *
  * - No history hydrated → the tail-only grouping used today (no group keys,
  *   no gap): the default path is byte-identical to the pre-scrollback UI.
@@ -70,6 +101,7 @@ export function composeTranscript(
   tail: AgentMessage[],
   gapToTail: boolean,
 ): ComposedTranscript {
+  history = dropTailResidentRows(history, tail);
   if (history.length === 0) {
     return { groups: groupMessagesByDate(tail), gapBeforeGroupIndex: null };
   }

@@ -256,14 +256,20 @@ export const selectHistorySegmentMeta = store.createSelector(
  * subscribe via this selector stay in sync during streaming updates instead
  * of depending on a possibly-stale prop.
  *
- * Bounded lookup over the stored ordered message list.
+ * Bounded lookup over the stored ordered message list; falls back to the
+ * scrollback history segment so paged-in history rows resolve too (they
+ * live in `historySegmentsByAgentId`, not the tail — without the fallback
+ * every history row renders as the "Loading..." placeholder).
  */
 export const selectAgentMessageById = store.createSelector(
   (state, agentId: string, messageId: string): AgentMessage | undefined => {
     if (!agentId || !messageId) return undefined;
     const stored = state.agentSessions?.byAgentId[agentId];
     if (!stored) return undefined;
-    return stored.messages.find((message) => message.id === messageId);
+    const tailMatch = stored.messages.find((message) => message.id === messageId);
+    if (tailMatch) return tailMatch;
+    const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
+    return segment?.messages.find((message) => message.id === messageId);
   },
 );
 

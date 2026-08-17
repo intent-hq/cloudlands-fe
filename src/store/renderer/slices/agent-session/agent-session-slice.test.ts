@@ -3490,6 +3490,29 @@ describe('agent-session selectors', () => {
       expect(selectAgentMessageById.select(state, '', 'm1')).toBeUndefined();
       expect(selectAgentMessageById.select(state, 'a1', '')).toBeUndefined();
     });
+
+    it('falls back to the scrollback history segment for paged-in history rows', () => {
+      // Regression: history rows live in historySegmentsByAgentId, not the
+      // tail — without the fallback ChatMessage rendered "Loading..." for
+      // every history row.
+      const tailRow = makeMessage('m-tail');
+      const histRow = makeUniqueMessage('m-hist', 'user', '2024-01-01T00:00:00.000Z');
+      const session = makeSession('a1', 'ws-1', { messages: [tailRow] });
+      const base = storeWith({ byAgentId: { a1: session } });
+      const state = {
+        ...base,
+        agentSessions: {
+          ...base.agentSessions,
+          historySegmentsByAgentId: {
+            a1: { messages: [histRow], gapToTail: false, oldestReached: false },
+          },
+        },
+      } as unknown as StoreState;
+      expect(selectAgentMessageById.select(state, 'a1', 'm-hist')).toEqual(histRow);
+      // Tail rows still win, and unknown ids still miss.
+      expect(selectAgentMessageById.select(state, 'a1', 'm-tail')).toEqual(tailRow);
+      expect(selectAgentMessageById.select(state, 'a1', 'nope')).toBeUndefined();
+    });
   });
 });
 

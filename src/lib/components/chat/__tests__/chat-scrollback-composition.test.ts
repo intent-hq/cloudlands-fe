@@ -66,6 +66,114 @@ describe('composeTranscript', () => {
     const keys = composed.groups.map((g) => g.groupKey);
     expect(new Set(keys).size).toBe(keys.length);
   });
+
+  // Regression (tiny-caps QA): repeated scroll-to-top → scroll-back-down
+  // cycles rendered the same sections 3-4x. History rows are deduped against
+  // the tail only when the history reducer runs; the TAIL later re-acquires
+  // rows already resident in history (chat-read's older-history fetch tops
+  // the tail up to the cap on every rehydration; seq-0 snapshots replace it
+  // wholesale). Composition must therefore drop tail-resident rows from the
+  // history side at render time, whichever path put them in the tail.
+  describe('history/tail dual residency (duplicate sections regression)', () => {
+    // Rows shaped as the real paging RPC returns them: daemon `msg_` ids,
+    // ISO timestamps, contentBlocks; user rows may carry an echoed
+    // appMessageId (PROTOCOL §5.5).
+    function wireRow(
+      id: string,
+      role: 'user' | 'assistant',
+      timestamp: string,
+      appMessageId?: string,
+    ): AgentMessage {
+      return {
+        id,
+        role,
+        timestamp,
+        ...(appMessageId ? { appMessageId } : {}),
+        contentBlocks: [{ type: 'text', text: `content of ${id}` }],
+      } as unknown as AgentMessage;
+    }
+
+    const h1 = wireRow('msg_h1', 'user', '2026-08-01T09:00:00Z');
+    const h2 = wireRow('msg_h2', 'assistant', '2026-08-01T09:01:00Z');
+    const shared = wireRow('msg_shared', 'user', '2026-08-01T09:02:00Z');
+    const appEcho = wireRow('msg_echo_hist', 'user', '2026-08-01T09:03:00Z', 'app_echo_1');
+
+    it('drops history rows the tail re-acquired (same id), closed gap', () => {
+      // Cycle: rows paged into history, then a tail refill (older-history
+      // fetch / snapshot replaceMessages) re-added `msg_shared` to the tail.
+      const history = [h1, h2, shared];
+      const tail = [
+        wireRow('msg_shared', 'user', '2026-08-01T09:02:00Z'),
+        wireRow('msg_t1', 'assistant', '2026-08-01T09:04:00Z'),
+      ];
+      const composed = composeTranscript(history, tail, false);
+      const ids = composed.groups.flatMap((g) => g.messages.map((m) => m.id));
+      expect(ids.filter((id) => id === 'msg_shared')).toHaveLength(1);
+      expect(ids).toEqual(['msg_h1', 'msg_h2', 'msg_shared', 'msg_t1']);
+    });
+
+    it('drops history rows the tail re-acquired (same id), open gap', () => {
+      const history = [h1, h2, shared];
+      const tail = [
+        wireRow('msg_shared', 'user', '2026-08-01T09:02:00Z'),
+        wireRow('msg_t1', 'assistant', '2026-08-01T09:04:00Z'),
+      ];
+      const composed = composeTranscript(history, tail, true);
+      const ids = composed.groups.flatMap((g) => g.messages.map((m) => m.id));
+      expect(ids.filter((id) => id === 'msg_shared')).toHaveLength(1);
+    });
+
+    it('drops history rows matching a tail row by appMessageId', () => {
+      // The daemon-canonical copy landed in the tail under a different row
+      // id but the same echoed appMessageId (optimistic-send identity).
+      const history = [h1, appEcho];
+      const tail = [wireRow('user-msg-echo-tail', 'user', '2026-08-01T09:03:05Z', 'app_echo_1')];
+      const composed = composeTranscript(history, tail, false);
+      const ids = composed.groups.flatMap((g) => g.messages.map((m) => m.id));
+      expect(ids).toEqual(['msg_h1', 'user-msg-echo-tail']);
+    });
+
+    it('collapses to tail-only composition when the tail re-acquired every history row', () => {
+      const history = [shared];
+      const tail = [
+        wireRow('msg_shared', 'user', '2026-08-01T09:02:00Z'),
+        wireRow('msg_t1', 'assistant', '2026-08-01T09:04:00Z'),
+      ];
+      const composed = composeTranscript(history, tail, true);
+      expect(composed.gapBeforeGroupIndex).toBeNull();
+      const ids = composed.groups.flatMap((g) => g.messages.map((m) => m.id));
+      expect(ids).toEqual(['msg_shared', 'msg_t1']);
+    });
+
+    it('stays duplicate-free across repeated prepend → tail-refill cycles', () => {
+      // Simulate three scroll-up/scroll-down cycles: each cycle pages more
+      // rows into history while the tail refill re-acquires the boundary
+      // rows history already holds (rows shaped as the paging RPC returns
+      // them). The composed output must never render an identity twice.
+      const mkRow = (i: number, role: 'user' | 'assistant') =>
+        wireRow(`msg_${String(i).padStart(3, '0')}`, role, ts(i));
+      const ts = (i: number) => new Date(Date.parse('2026-08-01T00:00:00Z') + i * 60_000).toISOString();
+      const all = Array.from({ length: 24 }, (_, i) => mkRow(i, i % 2 === 0 ? 'user' : 'assistant'));
+
+      let history: AgentMessage[] = [];
+      let tail = all.slice(18); // newest 6 resident
+      for (let cycle = 0; cycle < 3; cycle++) {
+        // Scroll up: an older page (6 rows) lands in history, overlapping
+        // one row the tail held at fetch time is dropped by the reducer —
+        // model that by just prepending disjoint rows.
+        const start = Math.max(0, 18 - (cycle + 1) * 6);
+        history = [...all.slice(start, start + 6), ...history].filter(
+          (row, index, rows) => rows.findIndex((other) => other.id === row.id) === index,
+        );
+        // Scroll down: the tail refill tops the tail back up with rows
+        // adjacent to (and overlapping) history's newest rows.
+        tail = all.slice(Math.max(0, 18 - (cycle + 1) * 3));
+        const composed = composeTranscript(history, tail, cycle % 2 === 0);
+        const ids = composed.groups.flatMap((g) => g.messages.map((m) => m.id));
+        expect(new Set(ids).size).toBe(ids.length);
+      }
+    });
+  });
 });
 
 describe('shouldRequestOlderHistory', () => {
