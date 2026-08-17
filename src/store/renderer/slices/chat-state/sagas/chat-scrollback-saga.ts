@@ -24,6 +24,16 @@
  *    has since pruned simply lands in history with the gap still open, and
  *    the persisted token keeps the walk moving on the next request.
  *
+ *  - SEEK (`historySeekRequested`): far-flick jump. ONE `aroundIndex`
+ *    (§5.5 ordinal seek, 0-based from oldest, clamped daemon-side) fetch
+ *    REPLACES the history segment with the landing page
+ *    (`seedHistoryAround`), and BOTH cursors the landing page mints persist
+ *    (backward `nextToken`, forward `prevToken`) so subsequent older/gap
+ *    walks continue from the landing without re-seeking. A daemon predating
+ *    `aroundIndex` rejects with INVALID_PARAMS (-32602): the settle latches
+ *    `historySeekUnsupported`, disabling seeks for the agent — deep scrolls
+ *    keep exactly the serial-walk behavior.
+ *
  * Each settle drops the OTHER direction's cursor: a prepend can cap-prune
  * history's newest side and an append its oldest side, so the other walk's
  * position may no longer border the segment — its next request re-seeks.
@@ -45,6 +55,7 @@ import {
   clearHistorySegment,
   prependHistoryMessages,
   removeSession,
+  seedHistoryAround,
   setHistoryOldestReached,
 } from '../../agent-session/agent-session-slice';
 import {
@@ -55,11 +66,13 @@ import {
 import {
   chatTranscriptSnapshotApplied,
   historyGapFillRequested,
+  historySeekRequested,
   olderHistoryPageRequested,
   scrollbackContinuationReset,
   scrollbackFetchStarted,
   scrollbackGapPageSettled,
   scrollbackOlderPageSettled,
+  scrollbackSeekSettled,
 } from '../chat-state-slice';
 import { selectChatAgentState } from '../chat-state-selectors';
 
@@ -174,6 +187,105 @@ function* fetchGapFillWorker(
 }
 
 /**
+ * INVALID_PARAMS (-32602) from either transport: a strict daemon rejecting
+ * the `aroundIndex` param it does not know.
+ */
+function isInvalidParamsError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { rpcCode?: unknown; code?: unknown };
+  return candidate.rpcCode === -32602 || candidate.code === 'INVALID_PARAMS';
+}
+
+/**
+ * Estimate the conversation ordinal of a seek landing page's FIRST row,
+ * mirroring the daemon's `page_window_around`: half the page budget goes to
+ * rows older than the (clamped) target, clamped at either edge so the page
+ * stays full. An estimate only — boundaries stay exact via `oldestReached`
+ * (`nextToken === null` ⇒ start is 0) and the tail-overlap gap close.
+ */
+function estimateSeekLandingStart(
+  targetOrdinal: number,
+  pageRows: number,
+  totalMessages: number,
+): number {
+  if (totalMessages <= 0) return 0;
+  const target = Math.min(totalMessages - 1, Math.max(0, Math.floor(targetOrdinal)));
+  const start = target - Math.floor(pageRows / 2);
+  return Math.min(Math.max(0, totalMessages - pageRows), Math.max(0, start));
+}
+
+function* historySeekWorker(
+  action: ReturnType<typeof historySeekRequested>,
+): SagaGenerator<void> {
+  const [, agentId, targetOrdinal] = action.payload;
+  if (yield* call(isAgentDeletionPending, agentId)) return;
+  const chat = yield* selectChatAgentState.effect(agentId);
+  if (chat.fetchingHistorySeek || chat.historySeekUnsupported) return;
+  // Never race a seek against an in-flight serial page: the landing REPLACES
+  // the segment, and a page settling afterwards would merge into the wrong
+  // segment. The panel re-classifies once the in-flight fetch settles.
+  if (chat.fetchingOlderHistory || chat.fetchingGapFill) return;
+  const target = Math.max(0, Math.round(targetOrdinal));
+  yield* put(scrollbackFetchStarted(agentId, 'seek'));
+  let tokens: { nextToken: string | null; prevToken: string | null } = {
+    nextToken: null,
+    prevToken: null,
+  };
+  let unsupported = false;
+  try {
+    const page: ConversationPage = yield* call(
+      [appClient.agents, appClient.agents.getConversation],
+      agentId,
+      PAGE_LIMIT,
+      undefined,
+      undefined,
+      target,
+    );
+    if (yield* call(isAgentDeletionPending, agentId)) return;
+    if (page.prevToken === null) {
+      // No forward cursor: either the daemon predates `aroundIndex` (its
+      // router ignores unknown params and returned the legacy NEWEST page),
+      // or the seek legitimately clamped at the newest edge. Distinguish by
+      // coverage — on both daemon generations the returned page is the
+      // newest slice here, so its start ordinal is exact.
+      const newestPageStart = Math.max(0, page.totalMessages - page.messages.length);
+      if (target >= newestPageStart && page.messages.length > 0) {
+        yield* put(seedHistoryAround(agentId, page.messages, newestPageStart));
+        tokens = { nextToken: page.nextToken, prevToken: null };
+        if (page.nextToken === null) yield* put(setHistoryOldestReached(agentId));
+      } else {
+        // The page cannot contain the target — old daemon. Discard it and
+        // disable seeks for this agent (serial walk keeps working).
+        unsupported = true;
+        logger.warn('Daemon ignored aroundIndex (predates the param); disabling seek', {
+          agentId,
+        });
+      }
+    } else if (page.messages.length > 0) {
+      yield* put(
+        seedHistoryAround(
+          agentId,
+          page.messages,
+          estimateSeekLandingStart(target, page.messages.length, page.totalMessages),
+        ),
+      );
+      tokens = { nextToken: page.nextToken, prevToken: page.prevToken };
+      if (page.nextToken === null) yield* put(setHistoryOldestReached(agentId));
+    }
+  } catch (error) {
+    if (isInvalidParamsError(error)) {
+      unsupported = true;
+      logger.warn('Daemon rejected aroundIndex (INVALID_PARAMS); disabling seek', { agentId });
+    } else {
+      logger.error('Failed to fetch scrollback seek page', error);
+    }
+  } finally {
+    yield* put(scrollbackSeekSettled(agentId, tokens, unsupported));
+    yield* dropContinuationIfSegmentGone(agentId);
+  }
+}
+
+/**
  * Post-settle hygiene: when the history segment was cleared out from under
  * an in-flight fetch (session removal / `resumed: false` rehydration), the
  * just-persisted cursor was minted against the discarded segment — drop it
@@ -212,6 +324,7 @@ export function* chatScrollbackSaga(): SagaGenerator<void> {
   yield* all([
     takeEvery(olderHistoryPageRequested, fetchOlderPageWorker),
     takeEvery(historyGapFillRequested, fetchGapFillWorker),
+    takeEvery(historySeekRequested, historySeekWorker),
     takeEvery(removeSession, continuationResetWorker),
     takeEvery(clearHistorySegment, continuationResetWorker),
     takeEvery(chatTranscriptSnapshotApplied, snapshotResetWorker),

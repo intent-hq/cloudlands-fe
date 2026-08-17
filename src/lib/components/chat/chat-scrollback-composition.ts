@@ -300,6 +300,12 @@ export interface VirtualSpacerReconcileParams extends VirtualSpacerParams {
   rowHeightEma: number | null;
   /** Container clientHeight — the absolute hysteresis threshold. */
   viewportHeight: number;
+  /**
+   * Explicit unloaded-row count for THIS spacer (dual-spacer mode: the
+   * above/below split from `splitUnloadedRows`). When omitted, the legacy
+   * single-spacer derivation `totalMessages - residentCount` applies.
+   */
+  unloadedRows?: number;
 }
 
 export interface VirtualSpacerReconcileResult {
@@ -345,11 +351,11 @@ export function reconcileVirtualSpacer(
   if (residentCount > 0 && residentContentHeight > 0) {
     rowHeightEma = smoothRowHeightEstimate(rowHeightEma, residentContentHeight / residentCount);
   }
-  const unloadedAbove = totalMessages - residentCount;
+  const unloadedRows = params.unloadedRows ?? totalMessages - residentCount;
   const atBoundary =
-    exhausted || totalMessages <= 0 || residentCount <= 0 || unloadedAbove <= 0;
+    exhausted || totalMessages <= 0 || residentCount <= 0 || unloadedRows <= 0;
   const target =
-    atBoundary || rowHeightEma === null ? 0 : Math.round(unloadedAbove * rowHeightEma);
+    atBoundary || rowHeightEma === null ? 0 : Math.round(unloadedRows * rowHeightEma);
   const drift = Math.abs(target - currentSpacerHeight);
   if (drift === 0) {
     return { spacerHeight: currentSpacerHeight, rowHeightEma, applied: false, scrollTopDelta: 0 };
@@ -368,6 +374,171 @@ export function reconcileVirtualSpacer(
     applied: true,
     scrollTopDelta: target - currentSpacerHeight,
   };
+}
+
+// ── Far-flick seek (aroundIndex) helpers ─────────────────────────────────
+
+/**
+ * Rows per scrollback page (mirrors the saga's request limit). Used by the
+ * gesture classifier to convert "pages of serial walking" into rows.
+ */
+export const SCROLLBACK_PAGE_ROWS = 200;
+
+/**
+ * A scroll position within this many PAGES of the resident segment's top
+ * edge keeps today's serial chaining; deeper positions switch to seek mode.
+ */
+export const SCROLLBACK_SEEK_NEAR_PAGES = 2;
+
+export interface ScrollbackGestureParams {
+  /** Current scrollTop of the transcript scroll container. */
+  scrollTop: number;
+  /** Height (px) of the virtual spacer above the resident rows. */
+  spacerAboveHeight: number;
+  /** Smoothed per-row height estimate; null before the first seed. */
+  rowHeightEstimate: number | null;
+  /** Rows per scrollback page (defaults to SCROLLBACK_PAGE_ROWS). */
+  pageSize?: number;
+  /** Near threshold in pages (defaults to SCROLLBACK_SEEK_NEAR_PAGES). */
+  nearPages?: number;
+}
+
+/**
+ * Classify a scroll position against the resident segment's top edge:
+ *
+ * - `'serial'` — the viewport is inside the resident rows, or inside the
+ *   spacer but within `nearPages` pages of the segment start: today's
+ *   one-page-at-a-time chaining reaches it quickly.
+ * - `'seek'` — the viewport is deeper inside the spacer than the serial
+ *   walk can reasonably cover: jump directly with one `aroundIndex` fetch.
+ *
+ * The row distance between the viewport top and the segment start is
+ * `(spacerAboveHeight - scrollTop) / rowHeight` — the same estimate the
+ * spacer itself was derived from, so classification and extent agree.
+ */
+export function classifyScrollbackGesture(params: ScrollbackGestureParams): 'serial' | 'seek' {
+  const {
+    scrollTop,
+    spacerAboveHeight,
+    rowHeightEstimate,
+    pageSize = SCROLLBACK_PAGE_ROWS,
+    nearPages = SCROLLBACK_SEEK_NEAR_PAGES,
+  } = params;
+  if (spacerAboveHeight <= 0 || scrollTop >= spacerAboveHeight) return 'serial';
+  const rowHeight = clampRowHeight(rowHeightEstimate ?? Number.NaN);
+  const rowsAboveSegmentStart = (spacerAboveHeight - Math.max(0, scrollTop)) / rowHeight;
+  return rowsAboveSegmentStart > nearPages * pageSize ? 'seek' : 'serial';
+}
+
+export interface ScrollToOrdinalParams {
+  /** Current scrollTop of the transcript scroll container. */
+  scrollTop: number;
+  /** Height (px) of the virtual spacer above the resident rows. */
+  spacerAboveHeight: number;
+  /**
+   * Estimated number of unloaded rows the above-spacer represents. These
+   * are conversation ordinals `[0, unloadedRowsAbove)` — 0-based from the
+   * OLDEST message, matching the daemon's `aroundIndex` coordinate.
+   */
+  unloadedRowsAbove: number;
+}
+
+/**
+ * Map a scroll position inside the above-spacer to the target conversation
+ * ordinal (0-based from oldest): the position's fraction into the spacer
+ * times the unloaded row count, clamped into `[0, unloadedRowsAbove - 1]`.
+ * The daemon clamps `aroundIndex` again server-side, so an estimate drifted
+ * past the true total still lands on a valid page.
+ */
+export function mapScrollTopToOrdinal(params: ScrollToOrdinalParams): number {
+  const { scrollTop, spacerAboveHeight, unloadedRowsAbove } = params;
+  if (unloadedRowsAbove <= 0 || spacerAboveHeight <= 0) return 0;
+  const fraction = Math.min(1, Math.max(0, scrollTop / spacerAboveHeight));
+  return Math.min(unloadedRowsAbove - 1, Math.max(0, Math.floor(fraction * unloadedRowsAbove)));
+}
+
+export interface UnloadedRowsSplitParams {
+  /** Snapshot `totalMessages` (0 when no snapshot has arrived yet). */
+  totalMessages: number;
+  /** Resident rows: hydrated history + live tail. */
+  residentCount: number;
+  /** The older walk hydrated the conversation's true first row. */
+  exhausted: boolean;
+  /**
+   * Estimated conversation ordinal of the history segment's FIRST row, or
+   * null for segments grown by the serial walk (which have no estimate —
+   * all unloaded rows are attributed above, today's single-spacer model).
+   */
+  startOrdinalEstimate: number | null;
+  /** A hole is open between the history segment and the live tail. */
+  gapToTail: boolean;
+}
+
+/**
+ * Split the estimated unloaded row count into the portion ABOVE the history
+ * segment (rows older than its first row) and the portion BELOW it (rows in
+ * the open history→tail hole). A seeded segment (seek landing) carries a
+ * `startOrdinalEstimate` that anchors the split; a serial-walk segment does
+ * not, and keeps the legacy all-above attribution. `exhausted` zeroes the
+ * above side exactly; a closed gap zeroes the below side exactly.
+ */
+export function splitUnloadedRows(params: UnloadedRowsSplitParams): {
+  above: number;
+  below: number;
+} {
+  const { totalMessages, residentCount, exhausted, startOrdinalEstimate, gapToTail } = params;
+  const unloaded = Math.max(0, totalMessages - residentCount);
+  if (unloaded === 0) return { above: 0, below: 0 };
+  if (startOrdinalEstimate === null || !gapToTail) {
+    return { above: exhausted ? 0 : unloaded, below: 0 };
+  }
+  const above = exhausted ? 0 : Math.min(unloaded, Math.max(0, Math.round(startOrdinalEstimate)));
+  return { above, below: unloaded - above };
+}
+
+/**
+ * Estimate the conversation ordinal of a seek landing page's FIRST row.
+ * Mirrors the daemon's `page_window_around`: half the page budget goes to
+ * rows older than the (clamped) target, clamped at either edge so the page
+ * stays full. An estimate only — boundaries stay exact via `oldestReached`
+ * (nextToken null ⇒ start is 0) and the gap-close overlap detection.
+ */
+export function estimateSeekLandingStartOrdinal(
+  targetOrdinal: number,
+  pageLimit: number,
+  totalMessages: number,
+): number {
+  if (totalMessages <= 0) return 0;
+  const target = Math.min(totalMessages - 1, Math.max(0, Math.floor(targetOrdinal)));
+  const start = target - Math.floor(pageLimit / 2);
+  return Math.min(Math.max(0, totalMessages - pageLimit), Math.max(0, start));
+}
+
+export interface SeekLandingScrollTopParams {
+  /** Above-spacer height (px) applied for the seeded segment. */
+  spacerAboveHeight: number;
+  /** The ordinal the user aimed at (the seek target). */
+  targetOrdinal: number;
+  /** Estimated ordinal of the seeded segment's first row. */
+  startOrdinal: number;
+  /** Per-row height estimate (px). */
+  rowHeight: number;
+  /** Container clientHeight (px). */
+  viewportHeight: number;
+}
+
+/**
+ * ScrollTop that puts the seek target row roughly mid-viewport after a
+ * landing: the segment starts at `spacerAboveHeight`, the target sits
+ * `(targetOrdinal - startOrdinal)` rows into it. Floor 0.
+ */
+export function seekLandingScrollTop(params: SeekLandingScrollTopParams): number {
+  const { spacerAboveHeight, targetOrdinal, startOrdinal, rowHeight, viewportHeight } = params;
+  const rowsIntoSegment = Math.max(0, targetOrdinal - startOrdinal);
+  return Math.max(
+    0,
+    Math.round(spacerAboveHeight + rowsIntoSegment * rowHeight - viewportHeight / 2),
+  );
 }
 
 export interface ConversationStartLoadedParams {

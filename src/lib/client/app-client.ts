@@ -482,12 +482,21 @@ export interface AgentsClient {
    * carry `prevToken` — an opaque FORWARD cursor toward the live tail (pass
    * it back as the `pageToken` input to fetch the next newer page); it is
    * normalized to `null` on legacy backward pages, which never carry the key.
+   *
+   * Ordinal seek (§5.5 `aroundIndex`, additive): the page containing the
+   * 0-based ordinal from the OLDEST message. Out-of-range values clamp
+   * daemon-side into `[0, totalMessages - 1]` (client estimates are
+   * approximate); negatives and supplying both seek params are rejected
+   * with -32602. Same dual-cursor page shape as `aroundMessageId`. Daemons
+   * predating the param reject it with -32602 (`INVALID_PARAMS`) — callers
+   * needing old-daemon compatibility must handle that rejection.
    */
   getConversation(
     agentId: string,
     limit?: number,
     pageToken?: string,
     aroundMessageId?: string,
+    aroundIndex?: number,
   ): Promise<{
     messages: AgentMessage[];
     truncated: boolean;

@@ -1338,6 +1338,39 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(page.prevToken).toBeNull();
   });
 
+  it('getConversation forwards aroundIndex (§5.5 ordinal seek) and surfaces both cursors', async () => {
+    backend.onRequest('agent.getConversation', () => ({
+      messages: [{ id: 'msg-500' }],
+      truncated: true,
+      totalMessages: 2000,
+      nextToken: 'older-tok',
+      prevToken: 'newer-tok',
+    }));
+    const client = new LiveAgentsClient();
+
+    const page = await client.getConversation('agent-1', 200, undefined, undefined, 500);
+
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.getConversation',
+      params: { agentId: 'agent-1', limit: 200, aroundIndex: 500 },
+    });
+    expect(page.nextToken).toBe('older-tok');
+    expect(page.prevToken).toBe('newer-tok');
+  });
+
+  it('getConversation omits the aroundIndex key entirely when undefined', async () => {
+    backend.onRequest('agent.getConversation', () => ({
+      messages: [],
+      truncated: false,
+      totalMessages: 0,
+      nextToken: null,
+    }));
+    const client = new LiveAgentsClient();
+
+    await client.getConversation('agent-1');
+    expect(backend.requests[0].params).not.toHaveProperty('aroundIndex');
+  });
+
   it('retries an explicit oversized conversation response with progressively smaller limits', async () => {
     let attempts = 0;
     backend.onRequest('agent.getConversation', () => {

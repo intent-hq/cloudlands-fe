@@ -166,6 +166,21 @@ export const selectFetchingGapFill = store.createSelector(
     getAgentChatState(state, agentId).fetchingGapFill,
 );
 
+/** True while an `aroundIndex` far-flick seek fetch is in flight. */
+export const selectFetchingHistorySeek = store.createSelector(
+  (state, agentId: string): boolean =>
+    getAgentChatState(state, agentId).fetchingHistorySeek,
+);
+
+/**
+ * True once the daemon rejected `aroundIndex` (INVALID_PARAMS) — a daemon
+ * predating the param. Far-flick seeks fall back to the serial walk.
+ */
+export const selectHistorySeekUnsupported = store.createSelector(
+  (state, agentId: string): boolean =>
+    getAgentChatState(state, agentId).historySeekUnsupported,
+);
+
 /**
  * True once the older scrollback walk hydrated the conversation's true first
  * message. Reads the history segment's `oldestReached` (agent-session slice)

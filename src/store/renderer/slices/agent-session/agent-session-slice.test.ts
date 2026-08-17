@@ -34,6 +34,7 @@ import {
   HISTORY_SEGMENT_MAX,
   prependHistoryMessages,
   appendHistoryMessages,
+  seedHistoryAround,
   setHistoryOldestReached,
   clearHistorySegment,
   MAX_MESSAGES_PER_AGENT,
@@ -5606,6 +5607,90 @@ describe('history segment (scrollback)', () => {
     });
   });
 
+  describe('seedHistoryAround (far-flick seek landing)', () => {
+    it('REPLACES an existing segment with the landing rows, gap open, start ordinal recorded', () => {
+      let state = withSession('a1', [makeUniqueMessage('tail-1', 'user', ts(1000))]);
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0), histMsg(1)]));
+      state = agentSessionReducer(
+        state,
+        seedHistoryAround('a1', [histMsg(500), histMsg(501)], 500),
+      );
+      const segment = getHistory(state, 'a1')!;
+      expect(segment.messages.map((m) => m.id)).toEqual(['hist-500', 'hist-501']);
+      expect(segment.gapToTail).toBe(true);
+      expect(segment.oldestReached).toBe(false);
+      expect(segment.startOrdinalEstimate).toBe(500);
+    });
+
+    it('landing rows overlapping the tail keep the segment contiguous (no gap)', () => {
+      const tailRow = makeUniqueMessage('tail-1', 'user', ts(1000));
+      let state = withSession('a1', [tailRow]);
+      state = agentSessionReducer(
+        state,
+        seedHistoryAround('a1', [histMsg(998), makeUniqueMessage('tail-1', 'user', ts(1000))], 998),
+      );
+      const segment = getHistory(state, 'a1')!;
+      expect(segment.messages.map((m) => m.id)).toEqual(['hist-998']);
+      expect(segment.gapToTail).toBe(false);
+    });
+
+    it('a landing fully resident in the tail drops the segment', () => {
+      const tailRow = makeUniqueMessage('tail-1', 'user', ts(1000));
+      let state = withSession('a1', [tailRow]);
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0)]));
+      state = agentSessionReducer(
+        state,
+        seedHistoryAround('a1', [makeUniqueMessage('tail-1', 'user', ts(1000))], 999),
+      );
+      expect(getHistory(state, 'a1')).toBeUndefined();
+    });
+
+    it('is a no-op for an unknown agent', () => {
+      const state = agentSessionReducer(
+        initialState,
+        seedHistoryAround('unknown', [histMsg(0)], 0),
+      );
+      expect(state).toBe(initialState);
+    });
+  });
+
+  describe('startOrdinalEstimate maintenance', () => {
+    it('a prepend shifts the estimate down by the rows added before the first row (floor 0)', () => {
+      let state = withSession('a1', [makeUniqueMessage('tail-1', 'user', ts(1000))]);
+      state = agentSessionReducer(state, seedHistoryAround('a1', [histMsg(500)], 500));
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(498), histMsg(499)]));
+      expect(getHistory(state, 'a1')!.startOrdinalEstimate).toBe(498);
+      // Overshooting prepend floors at 0.
+      const bigOlderPage = Array.from({ length: 499 }, (_, i) => histMsg(i));
+      state = agentSessionReducer(state, prependHistoryMessages('a1', bigOlderPage));
+      expect(getHistory(state, 'a1')!.startOrdinalEstimate).toBe(0);
+    });
+
+    it('an append pruning the oldest side shifts the estimate up by the pruned count', () => {
+      let state = withSession('a1', [makeUniqueMessage('tail-1', 'user', ts(5000))]);
+      const seed = Array.from({ length: HISTORY_SEGMENT_MAX }, (_, i) => histMsg(i + 100));
+      state = agentSessionReducer(state, seedHistoryAround('a1', seed, 100));
+      state = agentSessionReducer(state, appendHistoryMessages('a1', [histMsg(4000)]));
+      expect(getHistory(state, 'a1')!.startOrdinalEstimate).toBe(101);
+      expect(getHistory(state, 'a1')!.oldestReached).toBe(false);
+    });
+
+    it('serial-walk segments never grow an estimate', () => {
+      let state = withSession();
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0)]));
+      expect(getHistory(state, 'a1')!.startOrdinalEstimate).toBeUndefined();
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(1)]));
+      expect(getHistory(state, 'a1')!.startOrdinalEstimate).toBeUndefined();
+    });
+
+    it('oldestReached pins a tracked estimate to exactly 0', () => {
+      let state = withSession('a1', [makeUniqueMessage('tail-1', 'user', ts(1000))]);
+      state = agentSessionReducer(state, seedHistoryAround('a1', [histMsg(5)], 3));
+      state = agentSessionReducer(state, setHistoryOldestReached('a1'));
+      expect(getHistory(state, 'a1')!.startOrdinalEstimate).toBe(0);
+    });
+  });
+
   describe('setHistoryOldestReached / clearHistorySegment', () => {
     it('marks oldestReached (default true) and accepts an explicit flag', () => {
       let state = withSession();
@@ -5687,13 +5772,22 @@ describe('history segment (scrollback)', () => {
         oldestReached: true,
         historyCount: 1,
         tailCount: 1,
+        startOrdinalEstimate: null,
       });
       expect(selectHistorySegmentMeta.select(storeState, 'missing')).toEqual({
         gapToTail: false,
         oldestReached: false,
         historyCount: 0,
         tailCount: 0,
+        startOrdinalEstimate: null,
       });
+    });
+
+    it('selectHistorySegmentMeta surfaces the seek-seeded start ordinal', () => {
+      let state = withSession('a1', [makeUniqueMessage('tail-1', 'user', ts(1000))]);
+      state = agentSessionReducer(state, seedHistoryAround('a1', [histMsg(500)], 500));
+      const storeState = { agentSessions: state } as unknown as StoreState;
+      expect(selectHistorySegmentMeta.select(storeState, 'a1').startOrdinalEstimate).toBe(500);
     });
   });
 });

@@ -95,6 +95,7 @@
     chatQueuedRetryRecordUpdated,
     olderHistoryPageRequested,
     historyGapFillRequested,
+    historySeekRequested,
   } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
     selectChatError,
@@ -104,8 +105,10 @@
     selectChatStatusEvents,
     selectChatStreamingStartTime,
     selectFetchingGapFill,
+    selectFetchingHistorySeek,
     selectFetchingOlderHistory,
     selectHistoryExhausted,
+    selectHistorySeekUnsupported,
     selectTranscriptHydratedOnce,
     selectTranscriptHydration,
     selectTranscriptSnapshotMeta,
@@ -150,10 +153,14 @@
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
     absorbPrependedHeightIntoSpacer,
+    classifyScrollbackGesture,
     composeTranscript,
     isConversationStartLoaded,
+    mapScrollTopToOrdinal,
     reconcileVirtualSpacer,
     shouldRequestOlderHistory,
+    splitUnloadedRows,
+    VIRTUAL_ROW_HEIGHT_MIN_PX,
   } from './chat-scrollback-composition';
   import {
     animateScrollTo,
@@ -343,6 +350,8 @@
   const historySegmentMeta$ = selectHistorySegmentMeta(agentIdStore);
   const fetchingOlderHistory$ = selectFetchingOlderHistory(agentIdStore);
   const fetchingGapFill$ = selectFetchingGapFill(agentIdStore);
+  const fetchingHistorySeek$ = selectFetchingHistorySeek(agentIdStore);
+  const historySeekUnsupported$ = selectHistorySeekUnsupported(agentIdStore);
   const historyExhausted$ = selectHistoryExhausted(agentIdStore);
   const agentTasks$ = selectTasksForAgent(workspaceIdStore, agentIdStore);
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
@@ -1556,6 +1565,9 @@
   function maybeRequestOlderHistory() {
     const container = scrollContainer;
     if (!container || !workspace?.id || !agentId) return;
+    // A far-flick seek owns the transcript while in flight / landing: its
+    // landing REPLACES the segment, so no serial page may race it.
+    if ($fetchingHistorySeek$ || seekLandingPending) return;
     const request = shouldRequestOlderHistory({
       scrollTop: container.scrollTop,
       threshold: SCROLLBACK_TOP_THRESHOLD_PX,
@@ -1572,6 +1584,148 @@
     });
     if (request) appStore.dispatch(olderHistoryPageRequested(workspace.id, agentId));
   }
+
+  // ── Far-flick seek: jump instead of serial page walk ───────────────────
+  // A scroll position deep inside a virtual spacer (more than
+  // SCROLLBACK_SEEK_NEAR_PAGES pages from the resident edge) maps to a
+  // target ordinal and — once the thumb settles for SEEK_DEBOUNCE_MS — fires
+  // ONE aroundIndex seek that replaces the history segment with the landing
+  // page (saga: historySeekWorker). Near-edge positions keep today's serial
+  // chaining. Daemons without aroundIndex latch historySeekUnsupported and
+  // everything falls back to the serial walk.
+  const SEEK_DEBOUNCE_MS = 200;
+  let seekDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  // Set from debounce fire until the landing is applied: suppresses the
+  // serial trigger, the prepend anchor restore, and the frozen-phase
+  // absorption (the landing handler owns spacers + scroll position).
+  let seekLandingPending = false;
+  let pendingSeekTargetOrdinal: number | null = null;
+
+  // Estimated unloaded-row split for the current segment (above vs below).
+  function currentUnloadedSplit(): { above: number; below: number } {
+    return splitUnloadedRows({
+      totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
+      residentCount: $agentHistoryMessages$.length + $agentMessages$.length,
+      exhausted: $historyExhausted$,
+      startOrdinalEstimate: $historySegmentMeta$.startOrdinalEstimate,
+      gapToTail: $historySegmentMeta$.gapToTail,
+    });
+  }
+
+  /**
+   * Target ordinal (0-based from oldest) for a scroll position that
+   * classifies as a far-flick seek, or null for near/resident positions
+   * (serial paths apply). Covers both spacers: the above-spacer maps into
+   * `[0, unloadedAbove)`; the below-spacer (open gap) maps into the hole's
+   * ordinal range after the history segment.
+   */
+  function seekTargetOrdinalAt(scrollTop: number): number | null {
+    if ($historySeekUnsupported$ || !workspace?.id || !agentId) return null;
+    const total = $transcriptSnapshotMeta$?.totalMessages ?? 0;
+    if (total <= 0) return null;
+    const split = currentUnloadedSplit();
+    if (scrollTop < virtualSpacerHeight) {
+      const kind = classifyScrollbackGesture({
+        scrollTop,
+        spacerAboveHeight: virtualSpacerHeight,
+        rowHeightEstimate: spacerRowHeightEma,
+      });
+      if (kind !== 'seek') return null;
+      return mapScrollTopToOrdinal({
+        scrollTop,
+        spacerAboveHeight: virtualSpacerHeight,
+        unloadedRowsAbove: split.above,
+      });
+    }
+    // Below-spacer region (open history→tail hole): same near/far rule
+    // against the hole's top edge, mapped into the hole's ordinal range.
+    if (virtualSpacerBelowHeight > 0 && split.below > 0 && belowSpacerEl && scrollContainer) {
+      const containerTop = scrollContainer.getBoundingClientRect().top;
+      const spacerTop =
+        belowSpacerEl.getBoundingClientRect().top - containerTop + scrollContainer.scrollTop;
+      const intoSpacer = scrollTop - spacerTop;
+      if (intoSpacer < 0 || intoSpacer > virtualSpacerBelowHeight) return null;
+      const kind = classifyScrollbackGesture({
+        scrollTop: virtualSpacerBelowHeight - intoSpacer,
+        spacerAboveHeight: virtualSpacerBelowHeight,
+        rowHeightEstimate: spacerRowHeightEma,
+      });
+      if (kind !== 'seek') return null;
+      const fraction = Math.min(1, Math.max(0, intoSpacer / virtualSpacerBelowHeight));
+      const holeStart =
+        ($historySegmentMeta$.startOrdinalEstimate ?? 0) + $agentHistoryMessages$.length;
+      return Math.min(total - 1, holeStart + Math.floor(fraction * split.below));
+    }
+    return null;
+  }
+
+  function cancelSeekDebounce() {
+    if (seekDebounceTimer !== null) {
+      clearTimeout(seekDebounceTimer);
+      seekDebounceTimer = null;
+    }
+  }
+
+  // (Re)arm the settle debounce; the target is recomputed at fire time from
+  // the settled scrollTop, so intermediate drag positions never fire.
+  function armSeekDebounce() {
+    cancelSeekDebounce();
+    seekDebounceTimer = setTimeout(() => {
+      seekDebounceTimer = null;
+      if (isComponentDestroyed || !scrollContainer || !workspace?.id || !agentId) return;
+      if ($fetchingHistorySeek$ || seekLandingPending) return;
+      // Racing serial fetch: let it settle, the settle chain re-classifies.
+      if ($fetchingOlderHistory$ || $fetchingGapFill$) return;
+      const target = seekTargetOrdinalAt(scrollContainer.scrollTop);
+      if (target === null) {
+        maybeRequestOlderHistory();
+        return;
+      }
+      seekLandingPending = true;
+      pendingSeekTargetOrdinal = target;
+      appStore.dispatch(historySeekRequested(workspace.id, agentId, target));
+    }, SEEK_DEBOUNCE_MS);
+  }
+
+  // Seek settle: the saga replaced the segment (or failed / latched
+  // unsupported). Size both spacers for the seeded segment and put the
+  // target ordinal mid-viewport — the landing owns positioning, so the
+  // anchor-restore and absorption effects were suppressed for this update.
+  let wasFetchingHistorySeek = false;
+  $effect(() => {
+    const fetching = $fetchingHistorySeek$;
+    const settled = wasFetchingHistorySeek && !fetching;
+    wasFetchingHistorySeek = fetching;
+    if (!settled) return;
+    tick().then(() => {
+      if (isComponentDestroyed || !scrollContainer) return;
+      const target = pendingSeekTargetOrdinal;
+      pendingSeekTargetOrdinal = null;
+      seekLandingPending = false;
+      const startOrdinal = $historySegmentMeta$.startOrdinalEstimate;
+      if (target === null || startOrdinal === null) {
+        // Failed or unsupported seek: nothing landed. Fall back to the
+        // serial walk from the current position.
+        maybeRequestOlderHistory();
+        return;
+      }
+      const split = currentUnloadedSplit();
+      const rowHeight = spacerRowHeightEma ?? VIRTUAL_ROW_HEIGHT_MIN_PX;
+      const above = Math.round(split.above * rowHeight);
+      const below = Math.round(split.below * rowHeight);
+      virtualSpacerHeight = above;
+      virtualSpacerBelowHeight = below;
+      tick().then(() => {
+        if (isComponentDestroyed || !scrollContainer) return;
+        scrollContainer.scrollTop = Math.max(
+          0,
+          Math.round(
+            above + (target - startOrdinal) * rowHeight - scrollContainer.clientHeight / 2,
+          ),
+        );
+      });
+    });
+  });
 
   // ── Virtual scrollbar: spacer above the resident rows ─────────────────
   // Sized to the ESTIMATED unloaded extent (unloaded rows x smoothed average
@@ -1596,8 +1750,17 @@
   //   spacer immediately, bypassing hysteresis and the quiet window.
   // 0 (no spacer, today's behavior) when totalMessages is unknown or the
   // walk is exhausted.
+  //
+  // DUAL SPACERS (far-flick seek): a seek-seeded segment splits the unloaded
+  // extent into a spacer ABOVE the segment (rows older than its first row)
+  // and a spacer BELOW it (rows in the open history→tail hole,
+  // splitUnloadedRows). Serial-walk segments keep the legacy single
+  // above-spacer (below stays 0). Both share the same row-height EMA and
+  // reconcile at the same quiet points.
   const SPACER_QUIET_MS = 400;
   let virtualSpacerHeight = $state(0);
+  let virtualSpacerBelowHeight = $state(0);
+  let belowSpacerEl = $state<HTMLElement>();
   let spacerRowHeightEma: number | null = null;
   let spacerReconcileTimer: ReturnType<typeof setTimeout> | null = null;
   let lastScrollActivityAt = 0;
@@ -1614,34 +1777,80 @@
     if (isComponentDestroyed) return;
     const container = scrollContainer;
     if (!container) return;
+    // A seek in flight / landing owns the spacers — its settle handler sizes
+    // them for the seeded segment.
+    if ($fetchingHistorySeek$ || seekLandingPending) return;
     // Still interacting (fetch in flight or a scroll event landed inside the
     // quiet window): stay frozen and re-arm — unless forced at a boundary.
     if (
       !force &&
-      ($fetchingOlderHistory$ || performance.now() - lastScrollActivityAt < SPACER_QUIET_MS)
+      ($fetchingOlderHistory$ ||
+        $fetchingGapFill$ ||
+        performance.now() - lastScrollActivityAt < SPACER_QUIET_MS)
     ) {
       scheduleSpacerReconcile();
       return;
     }
+    const totalMessages = $transcriptSnapshotMeta$?.totalMessages ?? 0;
+    const residentCount = $agentHistoryMessages$.length + $agentMessages$.length;
+    const exhausted = $historyExhausted$;
+    const split = splitUnloadedRows({
+      totalMessages,
+      residentCount,
+      exhausted,
+      startOrdinalEstimate: $historySegmentMeta$.startOrdinalEstimate,
+      gapToTail: $historySegmentMeta$.gapToTail,
+    });
+    const residentContentHeight = Math.max(
+      0,
+      container.scrollHeight - virtualSpacerHeight - virtualSpacerBelowHeight,
+    );
     const result = reconcileVirtualSpacer({
-      totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
-      residentCount: $agentHistoryMessages$.length + $agentMessages$.length,
-      exhausted: $historyExhausted$,
-      residentContentHeight: Math.max(0, container.scrollHeight - virtualSpacerHeight),
+      totalMessages,
+      residentCount,
+      exhausted,
+      residentContentHeight,
       currentSpacerHeight: virtualSpacerHeight,
       rowHeightEma: spacerRowHeightEma,
       viewportHeight: container.clientHeight,
+      unloadedRows: split.above,
     });
     spacerRowHeightEma = result.rowHeightEma;
-    if (!result.applied) return;
-    // Same-flush scrollTop compensation: content above the viewport changes
-    // by exactly the spacer delta, so shifting scrollTop by it keeps both
-    // the visible content and the apparent thumb position stable.
+    // Below spacer (history→tail hole): same estimate + hysteresis, EMA
+    // already folded above so it is passed through unchanged.
+    const belowResult = reconcileVirtualSpacer({
+      totalMessages,
+      residentCount,
+      // The below extent zeroes when the hole closes (split.below 0), not on
+      // the older walk's exhaustion.
+      exhausted: false,
+      residentContentHeight: 0,
+      currentSpacerHeight: virtualSpacerBelowHeight,
+      rowHeightEma: spacerRowHeightEma,
+      viewportHeight: container.clientHeight,
+      unloadedRows: split.below,
+    });
+    if (!result.applied && !belowResult.applied) return;
+    // Same-flush scrollTop compensation: only the ABOVE spacer changes
+    // content above the viewport (the below spacer sits under the resident
+    // history the viewport is anchored in after a seek; when the viewport is
+    // in the tail below the hole, the below delta also shifts content above
+    // it — compensate for that case too).
     const previousScrollTop = container.scrollTop;
-    virtualSpacerHeight = result.spacerHeight;
+    let compensation = result.applied ? result.scrollTopDelta : 0;
+    if (belowResult.applied && belowSpacerEl) {
+      const spacerTopDoc =
+        belowSpacerEl.getBoundingClientRect().top -
+        container.getBoundingClientRect().top +
+        container.scrollTop;
+      if (previousScrollTop > spacerTopDoc) compensation += belowResult.scrollTopDelta;
+    }
+    if (result.applied) virtualSpacerHeight = result.spacerHeight;
+    if (belowResult.applied) virtualSpacerBelowHeight = belowResult.spacerHeight;
+    if (compensation === 0) return;
     tick().then(() => {
       if (isComponentDestroyed || !scrollContainer) return;
-      scrollContainer.scrollTop = Math.max(0, previousScrollTop + result.scrollTopDelta);
+      scrollContainer.scrollTop = Math.max(0, previousScrollTop + compensation);
     });
   }
 
@@ -1653,10 +1862,16 @@
     void ($agentHistoryMessages$.length + $agentMessages$.length);
     void $transcriptSnapshotMeta$?.totalMessages;
     const exhausted = $historyExhausted$;
+    const gapOpen = $historySegmentMeta$.gapToTail;
     void $fetchingOlderHistory$;
+    void $fetchingGapFill$;
+    void $fetchingHistorySeek$;
     if (!scrollContainer) return;
     untrack(() => {
-      if (exhausted && virtualSpacerHeight > 0) {
+      if (
+        (exhausted && virtualSpacerHeight > 0) ||
+        (!gapOpen && virtualSpacerBelowHeight > 0)
+      ) {
         runSpacerReconcile(true);
         return;
       }
@@ -1671,42 +1886,72 @@
   // below then finds the anchor at an unchanged document offset (rows added
   // ≙ spacer shrunk) and is a no-op.
   let absorbedHistoryLength = -1;
+  let absorbedHistoryFirstId: string | undefined;
   $effect.pre(() => {
     const historyLength = $agentHistoryMessages$.length;
-    if (historyLength === absorbedHistoryLength) return;
+    const firstId = $agentHistoryMessages$[0]?.id;
+    if (historyLength === absorbedHistoryLength && firstId === absorbedHistoryFirstId) return;
     const grew = absorbedHistoryLength !== -1 && historyLength > absorbedHistoryLength;
+    // Prepends change the segment's first row; a pure append keeps it — the
+    // added height then absorbs into the BELOW spacer (open hole shrinking)
+    // instead of the above one.
+    const isAppend = grew && firstId === absorbedHistoryFirstId;
     absorbedHistoryLength = historyLength;
+    absorbedHistoryFirstId = firstId;
     const container = untrack(() => scrollContainer);
     if (!grew || !container) return;
     untrack(() => {
-      if (virtualSpacerHeight <= 0) return;
-      const residentHeightBefore = container.scrollHeight - virtualSpacerHeight;
+      // A seek landing REPLACES the segment (not a prepend into the frozen
+      // extent): the seek settle handler sizes both spacers itself.
+      if (seekLandingPending || $fetchingHistorySeek$) return;
+      const targetIsBelow = isAppend && virtualSpacerBelowHeight > 0;
+      if (!targetIsBelow && virtualSpacerHeight <= 0) return;
+      const residentHeightBefore =
+        container.scrollHeight - virtualSpacerHeight - virtualSpacerBelowHeight;
       tick().then(() => {
         if (isComponentDestroyed || !scrollContainer) return;
         const added =
-          scrollContainer.scrollHeight - virtualSpacerHeight - residentHeightBefore;
-        virtualSpacerHeight = absorbPrependedHeightIntoSpacer(virtualSpacerHeight, added);
+          scrollContainer.scrollHeight -
+          virtualSpacerHeight -
+          virtualSpacerBelowHeight -
+          residentHeightBefore;
+        if (targetIsBelow) {
+          virtualSpacerBelowHeight = absorbPrependedHeightIntoSpacer(
+            virtualSpacerBelowHeight,
+            added,
+          );
+        } else {
+          virtualSpacerHeight = absorbPrependedHeightIntoSpacer(virtualSpacerHeight, added);
+        }
       });
     });
   });
 
-  // Clear the reconcile timer on destroy.
+  // Clear the reconcile + seek debounce timers on destroy.
   $effect(() => {
     return () => {
       if (spacerReconcileTimer !== null) clearTimeout(spacerReconcileTimer);
+      cancelSeekDebounce();
     };
   });
 
   // Older-history scroll trigger. The saga sets the fetching flag
   // synchronously on the first dispatch, deduping the scroll-event burst.
   // Scroll events also mark interaction activity, keeping the spacer frozen
-  // until the transcript goes quiet.
+  // until the transcript goes quiet. Positions deep inside a spacer arm the
+  // seek debounce INSTEAD of the serial trigger — the serial walk would
+  // load every intermediate page on the way to a far target.
   $effect(() => {
     const container = scrollContainer;
     if (!container) return;
     const onScroll = () => {
       lastScrollActivityAt = performance.now();
       scheduleSpacerReconcile();
+      if (seekTargetOrdinalAt(container.scrollTop) !== null) {
+        armSeekDebounce();
+        return;
+      }
+      cancelSeekDebounce();
       maybeRequestOlderHistory();
     };
     container.addEventListener('scroll', onScroll, { passive: true });
@@ -1775,6 +2020,10 @@
     anchoredHistoryLength = historyLength;
     const container = untrack(() => scrollContainer);
     if (isFirstRun || !container) return;
+    // A seek landing replaces the segment wholesale — the settle handler
+    // positions the viewport at the target; restoring the pre-landing
+    // anchor would fight it.
+    if (untrack(() => seekLandingPending || $fetchingHistorySeek$)) return;
     const anchor = captureScrollAnchor(container);
     tick().then(() => {
       requestAnimationFrame(() => {
@@ -4189,6 +4438,21 @@
                       </Button>
                     {/if}
                   </div>
+                  <!-- Virtual below-spacer: estimated extent of the unloaded
+                       rows inside the history→tail hole (seek-seeded
+                       segments), so the scrollbar keeps representing the
+                       full conversation after a far-flick landing. Renders
+                       AFTER the gap affordance: walking down from the
+                       landing refills via the sentinel above, while a far
+                       position inside this spacer re-seeks. -->
+                  {#if virtualSpacerBelowHeight > 0}
+                    <div
+                      bind:this={belowSpacerEl}
+                      style="height: {virtualSpacerBelowHeight}px;"
+                      data-testid="chat-virtual-scrollback-spacer-below"
+                      aria-hidden="true"
+                    ></div>
+                  {/if}
                 {/if}
                 {#each turns as turn, turnIndex (turn.userMessage?.id ?? `turn-${turnIndex}`)}
                   {@const turnKey =

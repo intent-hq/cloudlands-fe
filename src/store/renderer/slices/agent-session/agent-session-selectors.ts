@@ -234,6 +234,11 @@ export interface HistorySegmentMeta {
   historyCount: number;
   /** Number of resident tail rows. */
   tailCount: number;
+  /**
+   * Estimated conversation ordinal of the segment's first row (seek-seeded
+   * segments only); null for serial-walk segments (legacy all-above extent).
+   */
+  startOrdinalEstimate: number | null;
 }
 
 /** Select scrollback history segment metadata (gap flag, oldestReached, counts). */
@@ -246,6 +251,7 @@ export const selectHistorySegmentMeta = store.createSelector(
       oldestReached: segment?.oldestReached === true,
       historyCount: segment?.messages.length ?? 0,
       tailCount,
+      startOrdinalEstimate: segment?.startOrdinalEstimate ?? null,
     };
   },
 );

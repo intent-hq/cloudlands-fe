@@ -32,6 +32,9 @@ import {
   chatQueuedRetryRecordsCleared,
   chatLiveStreamPhaseChanged,
   chatTranscriptSnapshotApplied,
+  scrollbackFetchStarted,
+  scrollbackSeekSettled,
+  scrollbackContinuationReset,
 } from './chat-state-slice';
 import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-stream-slice';
 import {
@@ -1215,6 +1218,56 @@ describe('chatState selectors', () => {
     // the closed subscription, and a reopen must wait for a fresh snapshot.
     state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, null));
     expect(state.byAgentId[AGENT]?.transcriptSnapshot).toBeUndefined();
+  });
+
+  describe('far-flick seek state (aroundIndex)', () => {
+    it('initial state carries the seek flags off', () => {
+      expect(emptyChatAgentState.fetchingHistorySeek).toBe(false);
+      expect(emptyChatAgentState.historySeekUnsupported).toBe(false);
+    });
+
+    it('scrollbackFetchStarted seek direction sets only fetchingHistorySeek', () => {
+      const state = chatStateReducer(initialState, scrollbackFetchStarted(AGENT, 'seek'));
+      const agent = state.byAgentId[AGENT];
+      expect(agent.fetchingHistorySeek).toBe(true);
+      expect(agent.fetchingOlderHistory).toBe(false);
+      expect(agent.fetchingGapFill).toBe(false);
+    });
+
+    it('scrollbackSeekSettled clears the flag and persists BOTH landing cursors', () => {
+      let state = chatStateReducer(initialState, scrollbackFetchStarted(AGENT, 'seek'));
+      state = chatStateReducer(
+        state,
+        scrollbackSeekSettled(AGENT, { nextToken: 'older-1', prevToken: 'newer-1' }),
+      );
+      const agent = state.byAgentId[AGENT];
+      expect(agent.fetchingHistorySeek).toBe(false);
+      expect(agent.scrollbackOlderToken).toBe('older-1');
+      expect(agent.scrollbackGapToken).toBe('newer-1');
+      expect(agent.historySeekUnsupported).toBe(false);
+    });
+
+    it('scrollbackSeekSettled with unsupported latches historySeekUnsupported', () => {
+      const state = chatStateReducer(
+        initialState,
+        scrollbackSeekSettled(AGENT, { nextToken: null, prevToken: null }, true),
+      );
+      expect(state.byAgentId[AGENT].historySeekUnsupported).toBe(true);
+    });
+
+    it('scrollbackContinuationReset clears the seek fetching flag but keeps the unsupported latch', () => {
+      let state = chatStateReducer(
+        initialState,
+        scrollbackSeekSettled(AGENT, { nextToken: 'a', prevToken: 'b' }, true),
+      );
+      state = chatStateReducer(state, scrollbackFetchStarted(AGENT, 'seek'));
+      state = chatStateReducer(state, scrollbackContinuationReset(AGENT));
+      const agent = state.byAgentId[AGENT];
+      expect(agent.fetchingHistorySeek).toBe(false);
+      expect(agent.scrollbackOlderToken).toBeNull();
+      expect(agent.scrollbackGapToken).toBeNull();
+      expect(agent.historySeekUnsupported).toBe(true);
+    });
   });
 
 });

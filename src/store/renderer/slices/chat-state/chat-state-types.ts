@@ -202,6 +202,14 @@ export interface ChatAgentState {
    * pruned rows).
    */
   scrollbackGapToken: string | null;
+  /** True while an `aroundIndex` far-flick seek fetch is in flight. */
+  fetchingHistorySeek: boolean;
+  /**
+   * True once the daemon rejected `aroundIndex` with INVALID_PARAMS —
+   * a daemon predating the param. Seeks are disabled for this agent for the
+   * rest of the session (the serial walk covers deep scrolls instead).
+   */
+  historySeekUnsupported: boolean;
 }
 
 /**

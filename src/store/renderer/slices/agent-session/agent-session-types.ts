@@ -130,6 +130,16 @@ export interface AgentHistorySegment {
   gapToTail: boolean;
   /** true once the conversation's true first message has been hydrated. */
   oldestReached: boolean;
+  /**
+   * Estimated conversation ordinal (0-based from the OLDEST message) of the
+   * segment's FIRST row. Present only on segments seeded by an `aroundIndex`
+   * seek landing — it anchors the above/below split of the virtual scroll
+   * extent (`splitUnloadedRows`). Maintained as an estimate across
+   * prepends/appends (shifted by rows added/pruned at the older side) and
+   * pinned to exactly 0 when `oldestReached` flips true. Absent/undefined on
+   * serial-walk segments, which keep the legacy all-above attribution.
+   */
+  startOrdinalEstimate?: number;
 }
 
 /**

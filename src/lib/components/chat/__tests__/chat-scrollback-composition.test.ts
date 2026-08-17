@@ -3,13 +3,20 @@ import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import {
   absorbPrependedHeightIntoSpacer,
+  classifyScrollbackGesture,
   composeTranscript,
+  estimateSeekLandingStartOrdinal,
   estimateVirtualSpacerHeight,
   isConversationStartLoaded,
+  mapScrollTopToOrdinal,
   reconcileVirtualSpacer,
+  SCROLLBACK_PAGE_ROWS,
+  SCROLLBACK_SEEK_NEAR_PAGES,
+  seekLandingScrollTop,
   shouldChainOlderHistoryOnSettle,
   shouldRequestOlderHistory,
   smoothRowHeightEstimate,
+  splitUnloadedRows,
   VIRTUAL_ROW_EMA_ALPHA,
   VIRTUAL_ROW_HEIGHT_MAX_PX,
   VIRTUAL_ROW_HEIGHT_MIN_PX,
@@ -601,5 +608,275 @@ describe('reconcileVirtualSpacer (quiet-point reconcile)', () => {
   it('hysteresis ratio constant is meaningful (10-15% band)', () => {
     expect(VIRTUAL_SPACER_HYSTERESIS_RATIO).toBeGreaterThanOrEqual(0.1);
     expect(VIRTUAL_SPACER_HYSTERESIS_RATIO).toBeLessThanOrEqual(0.15);
+  });
+});
+
+describe('classifyScrollbackGesture (far-flick seek)', () => {
+  // rowHeight 100 (in-bounds), page 200 rows, near threshold 2 pages =
+  // 400 rows = 40000px from the segment start.
+  const base = {
+    scrollTop: 0,
+    spacerAboveHeight: 100_000,
+    rowHeightEstimate: 100,
+  };
+
+  it('resident positions (at/past the spacer) are serial', () => {
+    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 })).toBe('serial');
+    expect(classifyScrollbackGesture({ ...base, scrollTop: 150_000 })).toBe('serial');
+  });
+
+  it('no spacer means serial regardless of position', () => {
+    expect(classifyScrollbackGesture({ ...base, spacerAboveHeight: 0 })).toBe('serial');
+  });
+
+  it('inside the spacer but within the near threshold stays serial', () => {
+    // 300 rows above the segment start (< 400).
+    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 - 300 * 100 })).toBe('serial');
+    // Exactly at the threshold is NOT deeper than it — serial.
+    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 - 400 * 100 })).toBe('serial');
+  });
+
+  it('deeper than the near threshold seeks', () => {
+    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 - 401 * 100 })).toBe('seek');
+    expect(classifyScrollbackGesture({ ...base, scrollTop: 0 })).toBe('seek');
+  });
+
+  it('null row-height estimate falls back to the clamp minimum (conservative: more rows per px)', () => {
+    // With MIN 24px/row, 40000px spans ~1667 rows > 400 — still a seek.
+    expect(
+      classifyScrollbackGesture({
+        scrollTop: 100_000 - 40_000,
+        spacerAboveHeight: 100_000,
+        rowHeightEstimate: null,
+      }),
+    ).toBe('seek');
+  });
+
+  it('honors custom pageSize/nearPages', () => {
+    const result = classifyScrollbackGesture({
+      ...base,
+      scrollTop: 100_000 - 50 * 100,
+      pageSize: 10,
+      nearPages: 3,
+    });
+    expect(result).toBe('seek');
+  });
+
+  it('threshold constants: 2-3 pages of 200 rows', () => {
+    expect(SCROLLBACK_PAGE_ROWS).toBe(200);
+    expect(SCROLLBACK_SEEK_NEAR_PAGES).toBeGreaterThanOrEqual(2);
+    expect(SCROLLBACK_SEEK_NEAR_PAGES).toBeLessThanOrEqual(3);
+  });
+});
+
+describe('mapScrollTopToOrdinal (position → ordinal mapping)', () => {
+  it('maps the spacer fraction into the unloaded ordinal range (0-based from oldest)', () => {
+    expect(
+      mapScrollTopToOrdinal({ scrollTop: 0, spacerAboveHeight: 10_000, unloadedRowsAbove: 1000 }),
+    ).toBe(0);
+    expect(
+      mapScrollTopToOrdinal({
+        scrollTop: 5000,
+        spacerAboveHeight: 10_000,
+        unloadedRowsAbove: 1000,
+      }),
+    ).toBe(500);
+    expect(
+      mapScrollTopToOrdinal({
+        scrollTop: 9999,
+        spacerAboveHeight: 10_000,
+        unloadedRowsAbove: 1000,
+      }),
+    ).toBe(999);
+  });
+
+  it('clamps to the last unloaded ordinal at/past the spacer end', () => {
+    expect(
+      mapScrollTopToOrdinal({
+        scrollTop: 10_000,
+        spacerAboveHeight: 10_000,
+        unloadedRowsAbove: 1000,
+      }),
+    ).toBe(999);
+  });
+
+  it('negative scrollTop clamps to 0', () => {
+    expect(
+      mapScrollTopToOrdinal({
+        scrollTop: -50,
+        spacerAboveHeight: 10_000,
+        unloadedRowsAbove: 1000,
+      }),
+    ).toBe(0);
+  });
+
+  it('degenerate inputs return 0', () => {
+    expect(
+      mapScrollTopToOrdinal({ scrollTop: 100, spacerAboveHeight: 0, unloadedRowsAbove: 10 }),
+    ).toBe(0);
+    expect(
+      mapScrollTopToOrdinal({ scrollTop: 100, spacerAboveHeight: 1000, unloadedRowsAbove: 0 }),
+    ).toBe(0);
+  });
+});
+
+describe('splitUnloadedRows (dual-spacer extent split)', () => {
+  it('serial-walk segments (no start ordinal) keep the legacy all-above attribution', () => {
+    expect(
+      splitUnloadedRows({
+        totalMessages: 1000,
+        residentCount: 200,
+        exhausted: false,
+        startOrdinalEstimate: null,
+        gapToTail: true,
+      }),
+    ).toEqual({ above: 800, below: 0 });
+  });
+
+  it('closed gap keeps everything above even with a start ordinal', () => {
+    expect(
+      splitUnloadedRows({
+        totalMessages: 1000,
+        residentCount: 200,
+        exhausted: false,
+        startOrdinalEstimate: 800,
+        gapToTail: false,
+      }),
+    ).toEqual({ above: 800, below: 0 });
+  });
+
+  it('seek-seeded segment splits above/below at the start ordinal', () => {
+    // Segment seeded at ordinal 300 with 200 rows; 100 tail rows; 1000 total.
+    // Unloaded = 700: 300 above the segment, 400 in the hole below.
+    expect(
+      splitUnloadedRows({
+        totalMessages: 1000,
+        residentCount: 300,
+        exhausted: false,
+        startOrdinalEstimate: 300,
+        gapToTail: true,
+      }),
+    ).toEqual({ above: 300, below: 400 });
+  });
+
+  it('exhausted zeroes the above side exactly, remainder goes below', () => {
+    expect(
+      splitUnloadedRows({
+        totalMessages: 1000,
+        residentCount: 300,
+        exhausted: true,
+        startOrdinalEstimate: 0,
+        gapToTail: true,
+      }),
+    ).toEqual({ above: 0, below: 700 });
+  });
+
+  it('all rows resident returns zeros', () => {
+    expect(
+      splitUnloadedRows({
+        totalMessages: 300,
+        residentCount: 300,
+        exhausted: false,
+        startOrdinalEstimate: 100,
+        gapToTail: true,
+      }),
+    ).toEqual({ above: 0, below: 0 });
+  });
+
+  it('overshooting start ordinal clamps to the unloaded count (never negative below)', () => {
+    expect(
+      splitUnloadedRows({
+        totalMessages: 1000,
+        residentCount: 900,
+        exhausted: false,
+        startOrdinalEstimate: 5000,
+        gapToTail: true,
+      }),
+    ).toEqual({ above: 100, below: 0 });
+  });
+});
+
+describe('estimateSeekLandingStartOrdinal (daemon page_window_around mirror)', () => {
+  it('centers the page on the target (half budget older)', () => {
+    expect(estimateSeekLandingStartOrdinal(500, 200, 1000)).toBe(400);
+  });
+
+  it('clamps at the oldest edge (page stays full)', () => {
+    expect(estimateSeekLandingStartOrdinal(10, 200, 1000)).toBe(0);
+  });
+
+  it('clamps at the newest edge (page stays full)', () => {
+    expect(estimateSeekLandingStartOrdinal(990, 200, 1000)).toBe(800);
+  });
+
+  it('short conversations start at 0', () => {
+    expect(estimateSeekLandingStartOrdinal(50, 200, 120)).toBe(0);
+    expect(estimateSeekLandingStartOrdinal(0, 200, 0)).toBe(0);
+  });
+
+  it('out-of-range targets clamp into the conversation', () => {
+    expect(estimateSeekLandingStartOrdinal(5000, 200, 1000)).toBe(800);
+    expect(estimateSeekLandingStartOrdinal(-5, 200, 1000)).toBe(0);
+  });
+});
+
+describe('seekLandingScrollTop', () => {
+  it('puts the target row roughly mid-viewport below the above-spacer', () => {
+    expect(
+      seekLandingScrollTop({
+        spacerAboveHeight: 30_000,
+        targetOrdinal: 500,
+        startOrdinal: 400,
+        rowHeight: 100,
+        viewportHeight: 800,
+      }),
+    ).toBe(30_000 + 100 * 100 - 400);
+  });
+
+  it('floors at 0 for tiny extents', () => {
+    expect(
+      seekLandingScrollTop({
+        spacerAboveHeight: 0,
+        targetOrdinal: 1,
+        startOrdinal: 0,
+        rowHeight: 50,
+        viewportHeight: 800,
+      }),
+    ).toBe(0);
+  });
+});
+
+describe('reconcileVirtualSpacer with explicit unloadedRows (dual-spacer mode)', () => {
+  const base = {
+    totalMessages: 1000,
+    residentCount: 300,
+    exhausted: false,
+    residentContentHeight: 30_000, // avg 100px/row
+    currentSpacerHeight: 0,
+    rowHeightEma: 100,
+    viewportHeight: 800,
+  };
+
+  it('sizes from the explicit split instead of totalMessages - residentCount', () => {
+    const result = reconcileVirtualSpacer({ ...base, unloadedRows: 250 });
+    expect(result.applied).toBe(true);
+    expect(result.spacerHeight).toBe(250 * 100);
+  });
+
+  it('explicit 0 unloaded rows zeroes the spacer exactly (boundary)', () => {
+    const result = reconcileVirtualSpacer({
+      ...base,
+      currentSpacerHeight: 5000,
+      unloadedRows: 0,
+    });
+    expect(result.applied).toBe(true);
+    expect(result.spacerHeight).toBe(0);
+    expect(result.scrollTopDelta).toBe(-5000);
+  });
+
+  it('omitted unloadedRows keeps the legacy derivation', () => {
+    const result = reconcileVirtualSpacer(base);
+    expect(result.applied).toBe(true);
+    expect(result.spacerHeight).toBe(700 * 100);
   });
 });

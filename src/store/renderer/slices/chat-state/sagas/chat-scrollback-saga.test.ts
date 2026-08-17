@@ -24,6 +24,7 @@ import {
   chatStateReducer,
   chatTranscriptSnapshotApplied,
   historyGapFillRequested,
+  historySeekRequested,
   initialState as chatStateInitialState,
   olderHistoryPageRequested,
 } from '../chat-state-slice';
@@ -346,6 +347,196 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     expect(run.chat()?.scrollbackGapToken).toBeNull();
     expect(run.chat()?.fetchingOlderHistory).toBe(false);
     expect(run.chat()?.fetchingGapFill).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  // ── Far-flick seek (aroundIndex) ────────────────────────────────────────
+
+  it('seek REPLACES the segment with the landing page, opens the gap, persists both cursors', async () => {
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('m-tail', 2000)] })]));
+    // Pre-existing serial-walk segment that must be discarded wholesale.
+    run.dispatch(prependHistoryMessages(AGENT, [message('m-old-a', 1), message('m-old-b', 2)]));
+    expect(run.history()?.messages).toHaveLength(2);
+
+    mocks.getConversation.mockResolvedValueOnce(
+      page([message('m-500', 500), message('m-501', 501)], {
+        totalMessages: 2000,
+        nextToken: 'older-from-landing',
+        prevToken: 'newer-from-landing',
+      }),
+    );
+    run.channel.put(historySeekRequested(WS, AGENT, 500));
+    await settle();
+
+    // Page limit asserted loosely: the QA tiny-caps branch shrinks it.
+    expect(mocks.getConversation).toHaveBeenCalledWith(
+      AGENT,
+      expect.any(Number),
+      undefined,
+      undefined,
+      500,
+    );
+    expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-500', 'm-501']);
+    expect(run.history()?.gapToTail).toBe(true);
+    expect(run.history()?.oldestReached).toBe(false);
+    expect(run.history()?.startOrdinalEstimate).toBeGreaterThanOrEqual(0);
+    expect(run.chat()?.fetchingHistorySeek).toBe(false);
+    expect(run.chat()?.scrollbackOlderToken).toBe('older-from-landing');
+    expect(run.chat()?.scrollbackGapToken).toBe('newer-from-landing');
+    expect(run.chat()?.historySeekUnsupported).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('cursor walks continue BOTH directions from the landing page without re-seeking', async () => {
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('m-tail', 2000)] })]));
+    mocks.getConversation.mockResolvedValueOnce(
+      page([message('m-500', 500)], {
+        totalMessages: 2000,
+        nextToken: 'older-1',
+        prevToken: 'newer-1',
+      }),
+    );
+    run.channel.put(historySeekRequested(WS, AGENT, 500));
+    await settle();
+
+    // Older direction: continues from the landing's backward cursor.
+    mocks.getConversation.mockResolvedValueOnce(
+      page([message('m-499', 499)], { nextToken: 'older-2' }),
+    );
+    run.channel.put(olderHistoryPageRequested(WS, AGENT));
+    await settle();
+    expect(mocks.getConversation.mock.calls[1]).toEqual([AGENT, expect.any(Number), 'older-1']);
+    expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-499', 'm-500']);
+    // The prepend settle drops the forward cursor (cap-prune safety), so the
+    // next gap fill re-seeks at history's newest — standard walk semantics.
+    expect(run.chat()?.scrollbackGapToken).toBeNull();
+
+    // Forward direction: gap fill toward the tail from history's newest.
+    mocks.getConversation.mockResolvedValueOnce(
+      page([message('m-501', 501)], { prevToken: 'newer-2' }),
+    );
+    run.channel.put(historyGapFillRequested(WS, AGENT));
+    await settle();
+    expect(mocks.getConversation.mock.calls[2]).toEqual([
+      AGENT,
+      expect.any(Number),
+      undefined,
+      'm-500',
+    ]);
+    expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-499', 'm-500', 'm-501']);
+    expect(run.chat()?.scrollbackGapToken).toBe('newer-2');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('seek landing with nextToken null marks oldestReached (start ordinal exact 0)', async () => {
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('m-tail', 2000)] })]));
+    mocks.getConversation.mockResolvedValueOnce(
+      page([message('m-0', 0), message('m-1', 1)], {
+        totalMessages: 2000,
+        nextToken: null,
+        prevToken: 'newer-1',
+      }),
+    );
+    run.channel.put(historySeekRequested(WS, AGENT, 0));
+    await settle();
+
+    expect(run.history()?.oldestReached).toBe(true);
+    expect(run.history()?.startOrdinalEstimate).toBe(0);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('-32602 rejection latches historySeekUnsupported; later seeks are no-ops (serial fallback)', async () => {
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('m-10', 10)] })]));
+    mocks.getConversation.mockRejectedValueOnce(
+      Object.assign(new Error('invalid params'), { rpcCode: -32602 }),
+    );
+    run.channel.put(historySeekRequested(WS, AGENT, 500));
+    await settle();
+
+    expect(run.chat()?.fetchingHistorySeek).toBe(false);
+    expect(run.chat()?.historySeekUnsupported).toBe(true);
+    expect(run.history()).toBeUndefined();
+
+    // Latched: a second seek request never reaches the wire.
+    run.channel.put(historySeekRequested(WS, AGENT, 400));
+    await settle();
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+
+    // The serial walk still works exactly as before.
+    mocks.getConversation.mockResolvedValueOnce(page([message('m-09', 9)], { nextToken: null }));
+    run.channel.put(olderHistoryPageRequested(WS, AGENT));
+    await settle();
+    expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-09']);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('a daemon silently ignoring aroundIndex (legacy newest page, target far away) latches unsupported', async () => {
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('m-tail', 2000)] })]));
+    // Legacy response: newest page, no prevToken key (normalized to null),
+    // and the page cannot contain the far target ordinal.
+    mocks.getConversation.mockResolvedValueOnce(
+      page([message('m-1999', 1999)], { totalMessages: 2000, nextToken: 'older-1' }),
+    );
+    run.channel.put(historySeekRequested(WS, AGENT, 500));
+    await settle();
+
+    expect(run.chat()?.historySeekUnsupported).toBe(true);
+    expect(run.history()).toBeUndefined();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('a prevToken-null landing that DOES cover the target seeds at the newest page (edge clamp)', async () => {
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [] })]));
+    // Seek near the newest end: daemon clamps, page covers ordinals 1998-1999.
+    mocks.getConversation.mockResolvedValueOnce(
+      page([message('m-1998', 1998), message('m-1999', 1999)], {
+        totalMessages: 2000,
+        nextToken: 'older-1',
+      }),
+    );
+    run.channel.put(historySeekRequested(WS, AGENT, 1999));
+    await settle();
+
+    expect(run.chat()?.historySeekUnsupported).toBe(false);
+    expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-1998', 'm-1999']);
+    expect(run.history()?.startOrdinalEstimate).toBe(1998);
+    expect(run.chat()?.scrollbackOlderToken).toBe('older-1');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('dedupes concurrent seeks and refuses to race an in-flight serial fetch', async () => {
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('m-10', 10)] })]));
+    let resolveOlder!: (value: unknown) => void;
+    mocks.getConversation.mockReturnValueOnce(
+      new Promise((done) => {
+        resolveOlder = done;
+      }),
+    );
+    run.channel.put(olderHistoryPageRequested(WS, AGENT));
+    await settle();
+    expect(run.chat()?.fetchingOlderHistory).toBe(true);
+
+    // Seek while a serial page is in flight: dropped.
+    run.channel.put(historySeekRequested(WS, AGENT, 500));
+    await settle();
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+
+    resolveOlder(page([message('m-09', 9)], { nextToken: null }));
+    await settle();
     run.task.cancel();
     await run.task.toPromise();
   });

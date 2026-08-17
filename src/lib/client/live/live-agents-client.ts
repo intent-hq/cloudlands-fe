@@ -112,13 +112,17 @@ export class LiveAgentsClient implements AgentsClient {
   // additive) takes precedence over any token daemon-side and resolves to the
   // page containing that message; seek pages carry `prevToken` (forward cursor
   // toward the live tail — normalized to null on legacy backward pages, which
-  // never include the key). `messages` is returned raw; the agent-session
+  // never include the key). `aroundIndex` (§5.5 ordinal seek, additive) is the
+  // 0-based ordinal from the OLDEST message — out-of-range clamps daemon-side,
+  // and daemons predating the param reject it with -32602 (the scrollback saga
+  // handles the fallback). `messages` is returned raw; the agent-session
   // reducer normalizes/sorts/dedups/prunes on ingest.
   async getConversation(
     agentId: string,
     limit = 200,
     pageToken?: string,
     aroundMessageId?: string,
+    aroundIndex?: number,
   ): Promise<{
     messages: AgentMessage[];
     truncated: boolean;
@@ -139,6 +143,7 @@ export class LiveAgentsClient implements AgentsClient {
       const params: Record<string, unknown> = { agentId, limit: requestLimit };
       if (pageToken !== undefined) params.nextToken = pageToken;
       if (aroundMessageId !== undefined) params.aroundMessageId = aroundMessageId;
+      if (aroundIndex !== undefined) params.aroundIndex = aroundIndex;
       try {
         result = await backendRequest<ConversationResult>('agent.getConversation', params);
         break;

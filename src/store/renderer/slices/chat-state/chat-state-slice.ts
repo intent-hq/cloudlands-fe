@@ -52,6 +52,8 @@ export const emptyChatAgentState: ChatAgentState = {
   fetchingGapFill: false,
   scrollbackOlderToken: null,
   scrollbackGapToken: null,
+  fetchingHistorySeek: false,
+  historySeekUnsupported: false,
 };
 
 export const initialState: ChatStateSlice = {
@@ -741,10 +743,21 @@ export const historyGapFillRequested = createAction<[wsId: string, agentId: stri
   'chatState/historyGapFillRequested',
 );
 
+/**
+ * UI request: far-flick seek — jump the scrollback history segment to the
+ * page containing `targetOrdinal` (0-based from the OLDEST message) with ONE
+ * `aroundIndex` fetch, replacing the current segment. Deduped per agent by
+ * the `fetchingHistorySeek` flag; a no-op when the daemon already rejected
+ * `aroundIndex` (`historySeekUnsupported` — the serial walk applies instead).
+ */
+export const historySeekRequested = createAction<
+  [wsId: string, agentId: string, targetOrdinal: number]
+>('chatState/historySeekRequested');
+
 /** A scrollback page fetch entered flight for the given direction. */
-export const scrollbackFetchStarted = createAction<[agentId: string, direction: 'older' | 'gap']>(
-  'chatState/scrollbackFetchStarted',
-);
+export const scrollbackFetchStarted = createAction<
+  [agentId: string, direction: 'older' | 'gap' | 'seek']
+>('chatState/scrollbackFetchStarted');
 
 /**
  * An older scrollback page fetch settled (success or swallowed error).
@@ -769,6 +782,21 @@ export const scrollbackOlderPageSettled = createAction<[agentId: string, nextTok
 export const scrollbackGapPageSettled = createAction<[agentId: string, prevToken: string | null]>(
   'chatState/scrollbackGapPageSettled',
 );
+
+/**
+ * An `aroundIndex` seek fetch settled. Clears `fetchingHistorySeek` and — on
+ * success — persists BOTH continuation cursors minted by the landing page
+ * (backward `nextToken`, forward `prevToken`), so subsequent walks continue
+ * in either direction from the landing without re-seeking. `unsupported`
+ * latches `historySeekUnsupported` (daemon predates `aroundIndex`).
+ */
+export const scrollbackSeekSettled = createAction<
+  [
+    agentId: string,
+    tokens: { nextToken: string | null; prevToken: string | null },
+    unsupported?: boolean,
+  ]
+>('chatState/scrollbackSeekSettled');
 
 /**
  * Drop the agent's scrollback continuation state (both cursors + fetching
@@ -1030,7 +1058,11 @@ chatStateReducer.with(eventReceived, (state, { payload: [, event] }) => {
 chatStateReducer.with(scrollbackFetchStarted, (state, { payload: [agentId, direction] }) =>
   updateAgent(state, agentId, {
     agentId,
-    ...(direction === 'older' ? { fetchingOlderHistory: true } : { fetchingGapFill: true }),
+    ...(direction === 'older'
+      ? { fetchingOlderHistory: true }
+      : direction === 'gap'
+        ? { fetchingGapFill: true }
+        : { fetchingHistorySeek: true }),
   }),
 );
 chatStateReducer.with(scrollbackOlderPageSettled, (state, { payload: [agentId, nextToken] }) =>
@@ -1049,12 +1081,24 @@ chatStateReducer.with(scrollbackGapPageSettled, (state, { payload: [agentId, pre
     scrollbackOlderToken: null,
   }),
 );
+chatStateReducer.with(
+  scrollbackSeekSettled,
+  (state, { payload: [agentId, tokens, unsupported] }) =>
+    updateAgent(state, agentId, {
+      agentId,
+      fetchingHistorySeek: false,
+      scrollbackOlderToken: tokens.nextToken,
+      scrollbackGapToken: tokens.prevToken,
+      ...(unsupported ? { historySeekUnsupported: true } : {}),
+    }),
+);
 chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] }) => {
   const agent = state.byAgentId[agentId];
   if (!agent) return state;
   if (
     !agent.fetchingOlderHistory &&
     !agent.fetchingGapFill &&
+    !agent.fetchingHistorySeek &&
     agent.scrollbackOlderToken === null &&
     agent.scrollbackGapToken === null
   ) {
@@ -1063,6 +1107,7 @@ chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] 
   return updateAgent(state, agentId, {
     fetchingOlderHistory: false,
     fetchingGapFill: false,
+    fetchingHistorySeek: false,
     scrollbackOlderToken: null,
     scrollbackGapToken: null,
   });
