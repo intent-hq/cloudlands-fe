@@ -96,7 +96,10 @@ export function createPendingSendTransitions(
       existing.launchBubble?.remove();
     }
     pendings.set(key, { ...entry, expiry: setTimeout(() => expire(key), matchTimeoutMs) });
-    if (entry.launchBubble) setRowHidden(key, true);
+    // Hide the row only while a bubble covers it; a null bubble (reduced
+    // motion) must never hide the row — including when replacing an entry
+    // that had one.
+    setRowHidden(key, !!entry.launchBubble);
     retryTimer ??= setInterval(() => {
       attemptMatches();
     }, retryIntervalMs);

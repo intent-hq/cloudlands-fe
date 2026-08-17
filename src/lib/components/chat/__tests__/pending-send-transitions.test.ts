@@ -179,6 +179,76 @@ describe('pending send transitions controller', () => {
     expect(document.querySelector('[data-message-send-transition]')).toBeNull();
   });
 
+  it('keeps retrying while the scroll container is unbound and matches once it binds', async () => {
+    const animate = stubAnimate(() => ({ finished: Promise.resolve() }));
+    let scrollContainer: HTMLElement | null = null;
+    const setRowHidden = vi.fn();
+    const transitions = createPendingSendTransitions({
+      getScrollContainer: () => scrollContainer,
+      setRowHidden,
+    });
+    const bubble = createMessageSendLaunchBubble(origin(), 'Late container', 'panel-a')!;
+    transitions.add('app-msg-1', { origin: origin(), launchBubble: bubble, followBottom: true });
+
+    // Container binds only a few retry intervals later — the loop must survive
+    // the unbound-container early return instead of stopping.
+    await vi.advanceTimersByTimeAsync(MESSAGE_SEND_MATCH_RETRY_INTERVAL_MS * 3);
+    expect(transitions.hasPending()).toBe(true);
+
+    scrollContainer = document.createElement('div');
+    document.body.append(scrollContainer);
+    appendRow(scrollContainer, 'app-msg-1');
+    await vi.advanceTimersByTimeAsync(MESSAGE_SEND_MATCH_RETRY_INTERVAL_MS);
+
+    expect(animate).toHaveBeenCalled();
+    expect(transitions.hasPending()).toBe(false);
+    expect(setRowHidden).toHaveBeenLastCalledWith('app-msg-1', false);
+  });
+
+  it('tracks two concurrent keys independently: one matches, the other expires', async () => {
+    const animate = stubAnimate(() => ({ finished: Promise.resolve() }));
+    const { scrollContainer, transitions, setRowHidden } = setup();
+    const secondBubble = createMessageSendLaunchBubble(origin(), 'Overlap send', 'panel-a')!;
+    transitions.add('app-msg-2', {
+      origin: origin(),
+      launchBubble: secondBubble,
+      followBottom: true,
+    });
+
+    appendRow(scrollContainer, 'app-msg-2');
+    await vi.advanceTimersByTimeAsync(MESSAGE_SEND_MATCH_RETRY_INTERVAL_MS);
+
+    expect(animate).toHaveBeenCalledTimes(1);
+    expect(setRowHidden).toHaveBeenLastCalledWith('app-msg-2', false);
+    expect(transitions.hasPending()).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(MESSAGE_SEND_MATCH_TIMEOUT_MS);
+
+    expect(transitions.hasPending()).toBe(false);
+    expect(setRowHidden).toHaveBeenCalledWith('app-msg-1', false);
+    expect(document.querySelector('[data-message-send-transition]')).toBeNull();
+  });
+
+  it('never hides the row for a null launch bubble and still cleans up on expiry', async () => {
+    stubAnimate(() => ({ finished: Promise.resolve() }));
+    const scrollContainer = document.createElement('div');
+    document.body.append(scrollContainer);
+    const setRowHidden = vi.fn();
+    const transitions = createPendingSendTransitions({
+      getScrollContainer: () => scrollContainer,
+      setRowHidden,
+    });
+    transitions.add('app-msg-1', { origin: origin(), launchBubble: null, followBottom: false });
+
+    expect(setRowHidden).toHaveBeenCalledWith('app-msg-1', false);
+    expect(setRowHidden).not.toHaveBeenCalledWith('app-msg-1', true);
+
+    await vi.advanceTimersByTimeAsync(MESSAGE_SEND_MATCH_TIMEOUT_MS);
+
+    expect(transitions.hasPending()).toBe(false);
+    expect(setRowHidden).toHaveBeenLastCalledWith('app-msg-1', false);
+  });
+
   it('replaces a re-added key: the stale bubble is removed and its expiry cleared', async () => {
     const animate = stubAnimate(() => ({ finished: Promise.resolve() }));
     const { scrollContainer, transitions, bubble } = setup();
