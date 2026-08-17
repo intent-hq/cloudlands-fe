@@ -424,9 +424,7 @@
 
     <SettingsSidebarNav {activeTab} onSelect={setActiveTab} />
 
-    <div
-      class="shrink-0 border-t border-border dark:border-border px-5 py-4 text-xs text-subtle"
-    >
+    <div class="shrink-0 border-t border-border dark:border-border px-5 py-4 text-xs text-subtle">
       <div class="flex w-full items-baseline justify-between gap-2">
         <div class="flex items-baseline gap-1.5">
           <!-- i18n-ignore (brand name) -->
@@ -455,14 +453,12 @@
   </aside>
 
   <div class="flex min-w-0 flex-1 flex-col">
-    <header class="shrink-0 bg-sidebar pr-8 pl-6 pt-8 pb-6">
-      <h1 class="text-xl font-semibold tracking-[-0.02em] text-foreground">
-        {m.settings_page_title()}
-      </h1>
-    </header>
-
     <div class="min-h-0 flex-1 overflow-auto">
-      <main class="mx-auto flex min-h-full max-w-4xl flex-col pr-8 pl-6 pt-6 pb-8">
+      <main
+        class="mx-auto flex min-h-full max-w-4xl flex-col pr-8 pl-6 pt-6 pb-8"
+        aria-labelledby="settings-page-title"
+      >
+        <h1 id="settings-page-title" class="sr-only">{m.settings_page_title()}</h1>
         <!-- Providers -->
         {#if activeTab === 'providers'}
           <div id="providers" class="mb-12 scroll-mt-20">

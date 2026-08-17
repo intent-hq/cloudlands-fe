@@ -104,8 +104,11 @@
         ? 'bg-muted font-medium text-foreground shadow-xs'
         : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
     >
-      <span class="flex w-4 shrink-0 justify-center opacity-75">
-        <Fa icon={item.icon} size="xs" />
+      <span
+        data-slot="settings-sidebar-icon"
+        class="flex size-4 shrink-0 items-center justify-center opacity-75"
+      >
+        <Fa icon={item.icon} size="sm" />
       </span>
       <span>{item.label}</span>
     </button>

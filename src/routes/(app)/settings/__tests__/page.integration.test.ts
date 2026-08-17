@@ -491,6 +491,17 @@ describe('settings deterministic capture fixtures', () => {
 });
 
 describe('settings tab route and focus behavior', () => {
+  it('keeps an accessible page name without a visible content-area heading', () => {
+    const { container } = renderSettings('/settings?tab=general');
+    const main = container.querySelector('main');
+    const heading = screen.getByRole('heading', { level: 1, name: 'Settings' });
+
+    expect(heading.className).toContain('sr-only');
+    expect(heading.id).toBe('settings-page-title');
+    expect(main?.getAttribute('aria-labelledby')).toBe(heading.id);
+    expect(container.querySelector('main > header')).toBeNull();
+  });
+
   it.each([
     ['providers', null],
     ['agents', null],

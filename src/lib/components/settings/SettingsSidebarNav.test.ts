@@ -40,4 +40,18 @@ describe('SettingsSidebarNav', () => {
 
     expect(onSelect).toHaveBeenCalledWith('agents');
   });
+
+  it('uses larger icons in a fixed column without changing row geometry', () => {
+    const { container } = render(SettingsSidebarNav, { activeTab: 'tools', onSelect: vi.fn() });
+    const buttons = screen.getAllByRole('button');
+    const iconSlots = [...container.querySelectorAll('[data-slot="settings-sidebar-icon"]')];
+
+    expect(iconSlots).toHaveLength(buttons.length);
+    expect(buttons.every((button) => button.className.includes('py-2'))).toBe(true);
+    expect(iconSlots.every((slot) => slot.className.includes('size-4'))).toBe(true);
+    for (const icon of container.querySelectorAll('[data-slot="settings-sidebar-icon"] svg')) {
+      expect(icon.getAttribute('width')).toBe('0.875em');
+      expect(icon.getAttribute('height')).toBe('0.875em');
+    }
+  });
 });
