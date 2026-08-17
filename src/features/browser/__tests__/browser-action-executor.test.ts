@@ -405,6 +405,58 @@ describe('browser-action-executor', () => {
 
       expect(embeddedBrowserCdp.waitForTabRegistration).not.toHaveBeenCalled();
     });
+
+    // With position "replace" and an existing browser tab, the renderer
+    // updates that tab in place and never creates the pre-generated tabId —
+    // the executor must adopt the replaced tab's id, not wait on a phantom.
+    it('adopts the existing tab id on position replace instead of waiting on the phantom id', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+        tabs: [
+          { tabId: 'tab-existing', url: 'http://old.example', title: 'Old', mounted: true },
+        ] as any,
+        stale: false,
+      });
+      const openTabWithId = vi
+        .fn()
+        .mockReturnValue({ success: true, message: 'opened', tabId: 'tab-phantom' });
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://example.com', position: 'replace' }] },
+        openTabWithId,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.listAllTabs).toHaveBeenCalledWith('ws-1');
+      expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledExactlyOnceWith(
+        'tab-existing',
+      );
+      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-existing', 'agent-1');
+      expect(embeddedBrowserCdp.touchLease).not.toHaveBeenCalledWith('tab-phantom', 'agent-1');
+      expect(result.results[0]?.result).toMatchObject({ tabId: 'tab-existing', replaced: true });
+    });
+
+    it('waits on the pre-generated id for position replace when no browser tab exists', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({ tabs: [], stale: false });
+      const openTabWithId = vi
+        .fn()
+        .mockReturnValue({ success: true, message: 'opened', tabId: 'tab-new' });
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://example.com', position: 'replace' }] },
+        openTabWithId,
+        undefined,
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledExactlyOnceWith('tab-new');
+      expect(result.results[0]?.result).toMatchObject({ tabId: 'tab-new' });
+      expect(result.results[0]?.result).not.toMatchObject({ replaced: true });
+    });
   });
 
   describe('capture workspace boundaries', () => {

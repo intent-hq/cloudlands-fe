@@ -539,6 +539,21 @@ async function executeAction(
             error: 'openTab not available in this context',
           };
         }
+        // With position "replace" and an existing browser tab, the renderer
+        // updates that tab in place and never creates the pre-generated
+        // tabId — so resolve the adoption target up front and track it
+        // instead of a phantom id whose registration wait would always time
+        // out. The renderer replaces the first browser tab in the workspace
+        // layout, which is the first entry of the panel tab list here.
+        let replaceTargetTabId: string | undefined;
+        if (action.position === 'replace') {
+          try {
+            const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
+            replaceTargetTabId = tabs[0]?.tabId;
+          } catch {
+            // Tab list unavailable — assume the renderer creates a new tab.
+          }
+        }
         // For agent-driven opens the executor is the dedupe authority — it
         // already checked model-opened tabs above — so the renderer must
         // create a genuinely new tab rather than coalesce onto an equivalent
@@ -548,33 +563,42 @@ async function executeAction(
           action.position,
           agentId ? true : action.allowDuplicate,
         );
-        // Lease the new tab to the requesting agent right away so a repeat
+        // The id the caller can address: the adopted existing tab on a
+        // replace, otherwise the pre-generated id of the new tab.
+        const effectiveTabId =
+          result.success && replaceTargetTabId ? replaceTargetTabId : result.tabId;
+        // Lease the tab to the requesting agent right away so a repeat
         // openTab for the same URL dedupes onto it (intent-hq/monorepo#2541)
         // instead of treating it as an untouchable user-opened tab.
-        if (agentId && result.success && result.tabId) {
-          embeddedBrowserCdp.touchLease(result.tabId, agentId);
+        if (agentId && result.success && effectiveTabId) {
+          embeddedBrowserCdp.touchLease(effectiveTabId, agentId);
         }
-        // Await the renderer's registration of the pre-generated tabId so
-        // the returned handle is immediately addressable — returning before
-        // the webview mounts made follow-up actions fail with "not found"
-        // (RC3, intent-hq/monorepo#2756). Bounded wait; a timeout fails the
+        // Await the renderer's registration of the tab so the returned
+        // handle is immediately addressable — returning before the webview
+        // mounts made follow-up actions fail with "not found" (RC3,
+        // intent-hq/monorepo#2756). Bounded wait; a timeout fails the
         // action truthfully instead of handing back an unusable id.
-        if (result.success && result.tabId) {
-          const registered = await embeddedBrowserCdp.waitForTabRegistration(result.tabId);
+        if (result.success && effectiveTabId) {
+          const registered = await embeddedBrowserCdp.waitForTabRegistration(effectiveTabId);
           if (!registered) {
             return {
               action: 'openTab',
               success: false,
-              result: { ...result, ...echo },
+              result: { ...result, tabId: effectiveTabId, ...echo },
               // i18n-ignore (agent-facing protocol error, not user-facing)
-              error: `Tab ${result.tabId} was requested but its webview did not mount in time. The page may be very slow to load — retry with { action: "focusTab", tabId: "${result.tabId}" } or check { action: "listTabs" }.`,
+              error: `Tab ${effectiveTabId} was requested but its webview did not mount in time. The page may be very slow to load — retry with { action: "focusTab", tabId: "${effectiveTabId}" } or check { action: "listTabs" }.`,
             };
           }
         }
         return {
           action: 'openTab',
           success: result.success,
-          result: { ...result, ...echo },
+          result: {
+            ...result,
+            ...(effectiveTabId ? { tabId: effectiveTabId } : {}),
+            ...(result.success && replaceTargetTabId ? { replaced: true } : {}),
+            ...echo,
+          },
           // Surface the failure message (e.g. "workspace not open in any
           // window", intent-hq/monorepo#2602) as the action error so the
           // sequence-level error is descriptive instead of "undefined".

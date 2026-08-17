@@ -53,7 +53,10 @@ function* focusBrowserTab(
 
   const panels = yield* selectPanels.effect(wsId);
   for (const [panelId, panel] of Object.entries(panels)) {
-    if (panel.tabs.some((tab) => tab.id === tabId)) {
+    // Only browser tabs may be activated: focusTab is a browser-only action,
+    // so an arbitrary supplied id matching an agent/note/terminal tab must
+    // not bring that unrelated tab to the front.
+    if (panel.tabs.some((tab) => tab.id === tabId && tab.type === 'browser')) {
       yield* put(focusPanel(wsId, panelId));
       yield* put(setActiveTab(wsId, tabId, panelId));
       return;

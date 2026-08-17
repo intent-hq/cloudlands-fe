@@ -171,4 +171,43 @@ describe('appLayoutNavigationSaga', () => {
     task.cancel();
     await task.toPromise();
   });
+
+  // focusTab is a browser-only action: a supplied id that matches an agent,
+  // note, or terminal tab must not activate that unrelated tab.
+  it('never activates a non-browser tab for focusBrowserTabRequested', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      {
+        channel,
+        dispatch,
+        getState: () => ({
+          panelLayout: {
+            byWorkspaceId: {
+              'ws-1': {
+                panels: {
+                  'panel-a': {
+                    tabs: [
+                      { id: 'note-1', type: 'note' },
+                      { id: 'agent-1', type: 'agent' },
+                      { id: 'terminal-1', type: 'terminal' },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        }),
+      },
+      appLayoutNavigationSaga,
+    );
+    channel.put(focusBrowserTabRequested('ws-1', 'note-1'));
+    channel.put(focusBrowserTabRequested('ws-1', 'agent-1'));
+    channel.put(focusBrowserTabRequested('ws-1', 'terminal-1'));
+    await settle();
+    expect(dispatch).not.toHaveBeenCalled();
+
+    task.cancel();
+    await task.toPromise();
+  });
 });
