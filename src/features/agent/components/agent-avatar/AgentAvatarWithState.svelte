@@ -78,7 +78,7 @@
     content: '';
     position: absolute;
     inset: 0;
-    border: var(--agent-avatar-ring-width, 1px) solid hsl(var(--background) / 0.72);
+    border: var(--agent-avatar-ring-width, 1px) solid transparent;
     border-radius: inherit;
     pointer-events: none;
   }
@@ -93,13 +93,21 @@
   }
 
   .agent-avatar-with-state--running,
-  .agent-avatar-with-state--responding,
-  .agent-avatar-with-state--completed {
+  .agent-avatar-with-state--responding {
     background-color: hsl(var(--agent-avatar-surface-active));
+  }
+
+  .agent-avatar-with-state--completed {
+    background-color: hsl(var(--agent-avatar-surface-completed));
+    color: hsl(var(--agent-avatar-foreground-completed));
   }
 
   .agent-avatar-with-state--unread {
     background-color: hsl(var(--agent-avatar-surface-unread));
+  }
+
+  .agent-avatar-with-state--waiting {
+    background-color: hsl(var(--agent-avatar-surface-waiting));
   }
 
   .agent-avatar-with-state--failed,
@@ -113,17 +121,22 @@
     .agent-avatar-with-state {
       background-color: Canvas;
       color: CanvasText;
-    }
-    .agent-avatar-with-state::after {
-      border-color: CanvasText;
+      outline: 1px solid CanvasText;
+      outline-offset: -1px;
     }
     .agent-avatar-with-state--running,
-    .agent-avatar-with-state--responding,
-    .agent-avatar-with-state--completed {
+    .agent-avatar-with-state--responding {
       background-color: Highlight;
+    }
+    .agent-avatar-with-state--completed {
+      background-color: ButtonFace;
+      color: ButtonText;
     }
     .agent-avatar-with-state--unread {
       background-color: ButtonFace;
+    }
+    .agent-avatar-with-state--waiting {
+      background-color: Field;
     }
     .agent-avatar-with-state--failed,
     .agent-avatar-with-state--attention-blocker,
