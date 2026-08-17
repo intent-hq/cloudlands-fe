@@ -1029,9 +1029,10 @@ interface CodeRegion {
  * indentation as fenced code blocks (e.g. fences nested inside list items),
  * so what the renderer displays as one code block must be one code region
  * here — otherwise tag literals inside it get scanned as real tags
- * (intent-hq/monorepo#2713).
+ * (intent-hq/monorepo#2713). The indent class is \s* to match
+ * processRegularContent's fence regexes exactly (tabs, Unicode spaces, etc.).
  */
-const CODE_REGION_FENCE_LINE_REGEX = /^[ \t]*(`{3,}|~{3,})(.*)$/;
+const CODE_REGION_FENCE_LINE_REGEX = /^\s*(`{3,}|~{3,})(.*)$/;
 
 /**
  * Find the offsets of code regions in a text block: fenced code blocks

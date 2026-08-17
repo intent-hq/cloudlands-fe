@@ -305,4 +305,22 @@ export const syntheticFixtures: SyntheticFixture[] = [
       ),
     ],
   },
+  {
+    id: 'tab-indented-fence-blank-line',
+    note: 'tab-indented fence with interior blank line, tag literal stays literal',
+    blocks: [
+      text(
+        'Quoted inside a list item:\n\n\t```\n\t<group:Working>\n\n\tdoing things\n\t</group>\n\t```\n\nAfter the fence.',
+      ),
+    ],
+  },
+  {
+    id: 'asymmetric-indent-fence-close',
+    note: 'unindented opener closed by a 4-space-indented closer; the real tag after it forms a group (fence state ends at the indented closer, matching the renderer)',
+    blocks: [
+      text(
+        'Quoted stream:\n\n```\n<group:Working>\ndoing things\n    ```\n\n<group:After>\nreal group content\n</group>\ntail prose',
+      ),
+    ],
+  },
 ];
