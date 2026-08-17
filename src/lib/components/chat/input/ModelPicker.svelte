@@ -180,6 +180,17 @@
     // Trigger label when no explicit model and no defaultModelId resolve
     // (e.g. "Provider default" for daemon-resolved specialist previews).
     defaultModelLabel?: string;
+    // Opt-in display fallback for daemon-preview consumers: when no explicit
+    // model is selected and no defaultModelId preview resolved (preview fetch
+    // not landed yet / daemon catalog cache cold), show the effective
+    // provider's isDefault-marked catalog row instead of the generic
+    // defaultModelLabel. Display-only — the create path still omits the model.
+    fallbackToCatalogDefault?: boolean;
+    // Provider whose isDefault catalog row the fallback reads. Consumers that
+    // create with a provider other than the picker's effective one (e.g.
+    // InitialAgentPicker's selectedProvider) pass it so the fallback matches
+    // what the daemon would pin. Defaults to the effective provider.
+    fallbackProviderId?: string;
     showDefaultOption?: boolean;
     // Overrides for the "use default" dropdown option's label/description
     // (e.g. the specialist editor's "Inherit global default" wording).
@@ -230,6 +241,8 @@
     triggerClass = '',
     defaultModelId,
     defaultModelLabel,
+    fallbackToCatalogDefault = false,
+    fallbackProviderId,
     showDefaultOption = false,
     defaultOptionLabel,
     defaultOptionDescription,
@@ -774,10 +787,55 @@
     return undefined;
   }
 
+  // The provider's `isDefault`-marked catalog row, if its catalog is loaded
+  // (the daemon resolves the 'default' pseudo-row away and marks the real row
+  // `isDefault` instead). Undefined while the catalog is cold or when no row
+  // carries the flag.
+  function findCatalogDefaultOption(providerId: string): DropdownOption | undefined {
+    const normalizedId = normalizeProviderId(providerId);
+    if (!normalizedId) return undefined;
+    const fromAll = allProviderModels[normalizedId]?.find((opt) => Boolean(opt.data?.isDefault));
+    if (fromAll) return fromAll;
+    if (
+      availableModelsProviderId !== '' &&
+      normalizeProviderId(availableModelsProviderId) === normalizedId
+    ) {
+      const row = availableModels.find((model) => model.isDefault);
+      if (row) return toDropdownOptions([row])[0];
+    }
+    return undefined;
+  }
+
+  // Opt-in display fallback (fallbackToCatalogDefault): no explicit selection
+  // and no daemon-resolved preview (defaultModelId) — show the isDefault row
+  // of the provider the consumer creates with (fallbackProviderId, else the
+  // effective provider) while the preview is absent (daemon catalog cache
+  // cold / preview fetch not landed) instead of the generic defaultModelLabel.
+  const catalogDefaultFallbackOption = $derived.by(() =>
+    fallbackToCatalogDefault && !defaultModelId
+      ? findCatalogDefaultOption(fallbackProviderId ?? effectiveProviderId)
+      : undefined,
+  );
+
+  // Legacy persisted `<provider>:default` selections (picked while the daemon
+  // still listed a 'default' pseudo-row): with no catalog row of their own
+  // they map to the provider's isDefault row, rendering as that model instead
+  // of an unavailable selection. An actual `:default` catalog row (older
+  // daemon) still wins via the exact-id lookup.
+  const legacyDefaultMappedOption = $derived.by(() => {
+    if (!hasExplicitModel || !localModel) return undefined;
+    const { providerId: modelProviderId, modelId } = parseCompoundModelId(localModel);
+    if (modelId !== 'default') return undefined;
+    if (getModelLabel(localModel) !== undefined) return undefined;
+    return findCatalogDefaultOption(modelProviderId);
+  });
+
   const currentModelLabel = $derived.by(() => {
     if (hasExplicitModel) {
       return localModel
-        ? (getModelLabel(localModel) ?? parseCompoundModelId(localModel).modelId)
+        ? (getModelLabel(localModel) ??
+            legacyDefaultMappedOption?.label ??
+            parseCompoundModelId(localModel).modelId)
         : (defaultModelLabel ?? m.chat_modelPicker_defaultModel_label());
     }
 
@@ -790,6 +848,11 @@
         parseCompoundModelId(defaultModelId).modelId;
       return formatDefaultModelLabel ? formatDefaultModelLabel(resolvedLabel) : resolvedLabel;
     }
+    if (catalogDefaultFallbackOption) {
+      return formatDefaultModelLabel
+        ? formatDefaultModelLabel(catalogDefaultFallbackOption.label)
+        : catalogDefaultFallbackOption.label;
+    }
     return defaultModelLabel ?? m.chat_modelPicker_defaultModel_label();
   });
 
@@ -800,6 +863,9 @@
     if (explicitProviderId) return explicitProviderId;
     // No explicit provider or model — show the displayed default model's provider.
     if (defaultModelId) return parseCompoundModelId(defaultModelId).providerId;
+    if (catalogDefaultFallbackOption) {
+      return parseCompoundModelId(catalogDefaultFallbackOption.value).providerId;
+    }
     return $activeProviderId$;
   });
 
@@ -860,9 +926,12 @@
 
   const selectedCatalogOption = $derived.by(() => {
     const selectedId = hasExplicitModel ? localModel : defaultModelId;
-    if (!selectedId) return undefined;
-    return flatModelOptions.find(
-      (option) => normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(selectedId),
+    if (!selectedId) return catalogDefaultFallbackOption;
+    return (
+      flatModelOptions.find(
+        (option) =>
+          normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(selectedId),
+      ) ?? (hasExplicitModel ? legacyDefaultMappedOption : undefined)
     );
   });
 
@@ -996,9 +1065,11 @@
   // The value bound to the dropdown (convert undefined to USE_DEFAULT_VALUE).
   // Bound state rather than derived so a rejected confirmModelChange can
   // revert the dropdown's internal selection back to the current model.
+  // A legacy `<provider>:default` selection has no catalog row of its own,
+  // so the mapped isDefault row shows as selected instead.
   let dropdownValue = $state(untrack(() => localModel ?? USE_DEFAULT_VALUE));
   $effect(() => {
-    dropdownValue = localModel ?? USE_DEFAULT_VALUE;
+    dropdownValue = legacyDefaultMappedOption?.value ?? localModel ?? USE_DEFAULT_VALUE;
   });
 
   // Provider the explicitly selected model belongs to ('' when inheriting).
@@ -1072,6 +1143,9 @@
   const isSelectedModelMissingFromCatalog = $derived.by(() => {
     if (!hasExplicitModel) return false;
     if (!localModel) return false;
+    // Legacy `<provider>:default` mapped to the provider's isDefault row —
+    // not missing, it renders as that model.
+    if (legacyDefaultMappedOption) return false;
 
     const values = new Set(
       flatModelOptions.map((opt) => normalizeModelIdForMatch(opt.value, effectiveProviderId)),
@@ -1615,7 +1689,7 @@
   <Dropdown
     bind:this={dropdownRef}
     bind:value={dropdownValue}
-    defaultHighlightValue={defaultModelId}
+    defaultHighlightValue={defaultModelId ?? catalogDefaultFallbackOption?.value}
     bind:open={dropdownOpen}
     groups={displayGroups}
     onchange={handleModelChange}
