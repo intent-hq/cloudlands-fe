@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.56.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.5...v2.56.6) (2026-08-17)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.12 ([#1352](https://github.com/intent-hq/cloudlands-fe/issues/1352)) ([eadd6cd](https://github.com/intent-hq/cloudlands-fe/commit/eadd6cdb0f6f7492d60b11da950e856bcff9c78c))
+* only clear genuinely invalid restored model overrides in InitialAgentPicker ([#1350](https://github.com/intent-hq/cloudlands-fe/issues/1350)) ([9e0a7c4](https://github.com/intent-hq/cloudlands-fe/commit/9e0a7c4053fa303df3cfb9087c1cd2cb9b35a91c))
+
 ## [2.56.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.4...v2.56.5) (2026-08-17)
 
 
