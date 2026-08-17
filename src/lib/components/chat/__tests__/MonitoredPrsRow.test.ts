@@ -369,21 +369,49 @@ describe('MonitoredPrsRow', () => {
     expect(document.querySelector('[data-tooltip-trigger]')).toBeNull();
   });
 
-  it('inline details prefer the merge-blocked reason over the mergeable line', async () => {
+  it('prefers localized blocker fragments over the raw wire merge-blocked reason', async () => {
     monitorsState.monitors = [
       makeMonitor({
         lastSnapshot: {
           ...makeMonitor().lastSnapshot!,
           mergeable: false,
-          mergeBlockedReason: 'required checks failing',
+          mergeBlockedReason: 'blocked by required checks or reviews',
         },
       }),
     ];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     const card = await openDetails();
-    expect(card.textContent).toContain('Open, but blocked by required checks failing.');
+    expect(card.textContent).toContain('Open, but blocked by required checks still running.');
+    expect(card.textContent).not.toContain('blocked by blocked by');
     expect(card.textContent).not.toContain('Not mergeable');
+  });
+
+  it('falls back to unmet merge requirements when only the wire merge-blocked reason is set', async () => {
+    const base = makeMonitor().lastSnapshot!;
+    monitorsState.monitors = [
+      makeMonitor({
+        lastSnapshot: {
+          ...base,
+          mergeBlockedReason: 'blocked by required checks or reviews',
+          checks: {
+            ...base.checks,
+            passed: 4,
+            failed: 0,
+            pending: 0,
+            failingRequired: 0,
+            pendingRequired: 0,
+          },
+          approvals: { decision: 'APPROVED', have: 1, needed: 1, changesRequested: 0 },
+          threads: { unresolved: 0, resolutionRequired: true },
+        },
+      }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const card = await openDetails();
+    expect(card.textContent).toContain('Open, but blocked by unmet merge requirements.');
+    expect(card.textContent).not.toContain('blocked by blocked by');
   });
 
   it('uses the custom kebab before the disclosure and keeps their actions isolated', async () => {
