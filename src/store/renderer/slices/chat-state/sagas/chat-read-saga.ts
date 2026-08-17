@@ -11,9 +11,12 @@
  *     counts only) and upsert it so the subscription's snapshot can apply.
  *  2. Wait (bounded) for the standing subscription's snapshot to apply —
  *     `chatTranscriptSnapshotApplied` is dispatched only after the snapshot's
- *     messages AND stream-accumulator seed have landed. If none arrives
- *     within the wait, hydration fails (`transcriptHydrationFailed`) and the
- *     existing error/retry surface shows — never a silent partial paint.
+ *     messages AND stream-accumulator seed have landed. A timed-out window
+ *     re-requests the snapshot from the subscribe saga
+ *     (`chatTranscriptSnapshotRerequested`, up to `SNAPSHOT_WAIT_ATTEMPTS`
+ *     windows, intent-hq/monorepo#2692); only after every attempt times out
+ *     does hydration fail (`transcriptHydrationFailed`) and the existing
+ *     error/retry surface show — never a silent partial paint.
  *  3. Settle (`transcriptHydrationSettled`) — first paint gates on this.
  *  4. OFF the critical path: when older history exists beyond the snapshot
  *     window (`truncated`), page it in the background via the §5.5
@@ -60,6 +63,7 @@ import {
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   chatTranscriptSnapshotApplied,
+  chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   refreshChatTranscriptRequested,
   transcriptHydrationFailed,
@@ -84,6 +88,16 @@ const SNAPSHOT_HEAL_MARGIN_MS = 2_000;
  * the recovery watcher (`snapshotRecoveryWorker`).
  */
 const SNAPSHOT_WAIT_MS = SNAPSHOT_TIMEOUT_MS + INITIAL_RETRY_DELAY_MS + SNAPSHOT_HEAL_MARGIN_MS;
+/**
+ * Bounded-wait attempts before hydration fails (intent-hq/monorepo#2692).
+ * A timed-out window no longer fails the load outright: between attempts the
+ * saga dispatches `chatTranscriptSnapshotRerequested`, which the subscribe
+ * saga answers by replaying a held/last snapshot or force-cycling the
+ * registration (fresh `chat.subscribe` → fresh seq-0 snapshot) — so a
+ * dropped initial push heals without a manual retry. Only after every
+ * attempt times out does hydration fail to the error/retry surface.
+ */
+const SNAPSHOT_WAIT_ATTEMPTS = 3;
 /** Mirror of the agent-session slice's message prune cap — paging past it is discarded. */
 const MAX_STORE_MESSAGES = 500;
 
@@ -177,11 +191,20 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
       // a fresh application.
       if (!(meta && (meta.totalMessages === 0 || visible.length > 0))) {
         meta = undefined;
-        const { applied } = yield* race({
-          applied: take(snapshotChannel),
-          timedOut: delay(SNAPSHOT_WAIT_MS),
-        });
-        if (applied) meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
+        for (let attempt = 1; attempt <= SNAPSHOT_WAIT_ATTEMPTS && !meta; attempt += 1) {
+          const { applied } = yield* race({
+            applied: take(snapshotChannel),
+            timedOut: delay(SNAPSHOT_WAIT_MS),
+          });
+          if (applied) {
+            meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
+          } else if (attempt < SNAPSHOT_WAIT_ATTEMPTS) {
+            logger.warn(
+              `No transcript snapshot within wait window (attempt ${attempt}/${SNAPSHOT_WAIT_ATTEMPTS}); re-requesting`,
+            );
+            yield* put(chatTranscriptSnapshotRerequested(wsId, agentId));
+          }
+        }
       }
       if (!meta) throw new Error('No transcript snapshot arrived within the hydration wait');
       succeeded = true;

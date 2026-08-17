@@ -59,6 +59,7 @@ import { takeEvery } from 'typed-redux-saga';
 import { store as appStore } from '$store/renderer/store';
 import {
   chatSendStarted,
+  chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   refreshChatTranscriptRequested,
   transcriptHydrationFailed,
@@ -615,6 +616,74 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     // The §7.1 resumed:false rehydration dispatches this same action right
     // after its snapshot applied — it must never cycle the registration.
     appStore.dispatch(refreshChatTranscriptRequested(WS, agentId));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(1);
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
+  });
+
+  // Regression (intent-hq/monorepo#2692): the chat-read saga's bounded wait
+  // timed out a window mid-hydration and dispatches
+  // chatTranscriptSnapshotRerequested — the subscribe saga must give the next
+  // window something to settle on while hydration still sits in `loading`.
+  it('snapshot re-request force-cycles a silent registration while hydration is loading', async () => {
+    const agentId = 'agent-sub-rereq-cycle';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    // The registration never emitted a snapshot; the first wait window
+    // timed out but hydration has NOT failed yet.
+    appStore.dispatch(transcriptHydrationStarted(agentId));
+
+    appStore.dispatch(chatTranscriptSnapshotRerequested(WS, agentId));
+
+    await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+    await vi.waitFor(() => {
+      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(2);
+    });
+    // The fresh registration's seq-0 snapshot heals the transcript.
+    const healed = fakeSubscriptions.filter((s) => s.agentId === agentId).at(-1)!;
+    healed.handler({ ...transcript([makeMessage('m-rereq', 'ok')]), fromSnapshot: true });
+    await vi.waitFor(() => {
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
+    });
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      'm-rereq',
+    ]);
+  });
+
+  it('snapshot re-request re-emits the last reconciled snapshot without cycling the registration', async () => {
+    const agentId = 'agent-sub-rereq-reapply';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler({ ...transcript([makeMessage('m-rr1', 'one')]), fromSnapshot: true });
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
+    // The snapshot applied but the read saga's wait missed it (e.g. it
+    // applied between windows); hydration still sits in loading.
+    appStore.dispatch(transcriptHydrationStarted(agentId));
+
+    appStore.dispatch(chatTranscriptSnapshotRerequested(WS, agentId));
+
+    // Re-applied through the same event pipeline: meta re-records (seq
+    // bumps), giving the read saga's next window a fresh application.
+    await vi.waitFor(() => {
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(2);
+    });
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(1);
+  });
+
+  it('ignores a snapshot re-request outside the loading state (no registration cycling)', async () => {
+    const agentId = 'agent-sub-rereq-noop';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler({ ...transcript([makeMessage('m-rn1', 'one')]), fromSnapshot: true });
+    appStore.dispatch(transcriptHydrationStarted(agentId));
+    appStore.dispatch(transcriptHydrationSettled(agentId));
+
+    // A stale re-request delivered after hydration settled (or failed) must
+    // never cycle a healthy registration.
+    appStore.dispatch(chatTranscriptSnapshotRerequested(WS, agentId));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(sub.unsubscribe).not.toHaveBeenCalled();

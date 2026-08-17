@@ -24,6 +24,10 @@
  *    pre-session snapshot or the last reconciled snapshot — or force-cycles
  *    the registration for a fresh seq-0 snapshot, so a manual retry can heal
  *    a subscription that will never re-emit on its own.
+ *  - `chatTranscriptSnapshotRerequested` is the same escalation gated on
+ *    hydration `loading`: the chat-read saga's bounded wait timed out a
+ *    window and re-requests the snapshot before failing the load
+ *    (monorepo#2692).
  *  - `clearCurrentlyViewedAgent` (chat close / panel destroy) closes all
  *    non-chief subscriptions — but only when the clear actually applied (no
  *    agent remains viewed after the reducer). A background panel's trailing
@@ -73,6 +77,7 @@ import {
   chatLiveStreamPhaseChanged,
   chatSendStarted,
   chatTranscriptSnapshotApplied,
+  chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   refreshChatTranscriptRequested,
   transcriptHydrationSettled,
@@ -840,6 +845,33 @@ function* handleTranscriptRefresh(
 ): SagaGenerator<void> {
   const hydration = yield* selectTranscriptHydration.effect(agentId);
   if (hydration !== 'error') return;
+  yield* emitOrCycleSnapshot(coordinator, agentId, wsId);
+}
+
+/**
+ * Mid-hydration snapshot re-request (intent-hq/monorepo#2692): the chat-read
+ * saga's bounded seq-0 wait timed out a window while hydration still sits in
+ * `loading` — before failing the load it asks for something to settle on.
+ * Same escalation as the manual retry, but gated on `loading` so a stale
+ * dispatch (hydration already settled or failed by delivery time) is a
+ * strict no-op and never cycles a healthy registration.
+ */
+function* handleSnapshotRerequest(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+  wsId: string,
+): SagaGenerator<void> {
+  const hydration = yield* selectTranscriptHydration.effect(agentId);
+  if (hydration !== 'loading') return;
+  yield* emitOrCycleSnapshot(coordinator, agentId, wsId);
+}
+
+/** Shared escalation: replay held → re-emit last snapshot → force-cycle. */
+function* emitOrCycleSnapshot(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+  wsId: string,
+): SagaGenerator<void> {
   const entry = coordinator.subscriptions.get(agentId);
   if (entry?.pendingSnapshot) {
     replayPendingSnapshot(coordinator, agentId);
@@ -864,6 +896,7 @@ type ChatSubscribeAction =
   | ReturnType<typeof markAgentAsViewed>
   | ReturnType<typeof transcriptHydrationSettled>
   | ReturnType<typeof refreshChatTranscriptRequested>
+  | ReturnType<typeof chatTranscriptSnapshotRerequested>
   | ReturnType<typeof clearCurrentlyViewedAgent>
   | ReturnType<typeof upsertSession>
   | ReturnType<typeof bulkUpsertSessions>
@@ -895,6 +928,11 @@ function* routeLifecycleAction(
       typeof refreshChatTranscriptRequested
     >['payload'];
     yield* handleTranscriptRefresh(coordinator, agentId, wsId);
+  } else if (action.type === chatTranscriptSnapshotRerequested.type) {
+    const [wsId, agentId] = action.payload as ReturnType<
+      typeof chatTranscriptSnapshotRerequested
+    >['payload'];
+    yield* handleSnapshotRerequest(coordinator, agentId, wsId);
   } else if (action.type === clearCurrentlyViewedAgent.type) {
     const [scopeAgentId] = action.payload as ReturnType<
       typeof clearCurrentlyViewedAgent
@@ -965,6 +1003,7 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
       markAgentAsViewed,
       transcriptHydrationSettled,
       refreshChatTranscriptRequested,
+      chatTranscriptSnapshotRerequested,
       clearCurrentlyViewedAgent,
       upsertSession,
       bulkUpsertSessions,
