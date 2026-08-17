@@ -2180,11 +2180,11 @@ function parseAgentCreationResult(
   }
 
   // Legacy prose fallback. Both alternatives match full `agent-<uuid>` ids
-  // only (quotes stripped), so neither can capture a truncated or
-  // quote-wrapped id from TOON/JSON-ish text.
+  // only, and the bare-key alternative rejects quote-wrapped values, so a
+  // TOON/JSON `agentId: "agent-…"` key can never produce a match.
   const idMatch =
     result.match(/\bAgent\s+ID:\s*"?(agent-[0-9a-f-]{36})"?/i) ||
-    result.match(/agentId["':\s]*(agent-[0-9a-f-]{36})/i);
+    result.match(/\bagentId[:\s]+(agent-[0-9a-f-]{36})/i);
   if (idMatch) {
     parsed.agentId = idMatch[1];
   }

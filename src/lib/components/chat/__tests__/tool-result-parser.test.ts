@@ -626,6 +626,17 @@ describe('tool-result-parser', () => {
       expect(result.type).toBe('delegate-task');
       expect(result.agentId).toBeUndefined();
     });
+
+    it('never captures a quote-wrapped agentId key from undecodable TOON-ish text', () => {
+      // Regression: the alternate bare-key fallback consumed the colon AND
+      // the opening quote, so a malformed TOON create/wakeOrCreate response
+      // rendered an agent card from the embedded `agentId: "agent-…"` key.
+      const text = `Creation failed after starting.\nagentId: "${AGENT_ID}"`;
+      const result = parseToolResult('create_agent', {}, text);
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.agentId).toBeUndefined();
+    });
   });
 
   describe('agent delegate/create TOON results', () => {
