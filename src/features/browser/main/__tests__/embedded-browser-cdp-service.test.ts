@@ -172,22 +172,116 @@ describe('embedded browser CDP workspace routing', () => {
         return DELIVERED;
       },
     );
-    await embeddedBrowserCdp.requestPanelBrowserTabs('ws-cache');
+    await expect(embeddedBrowserCdp.requestPanelBrowserTabs('ws-cache')).resolves.toEqual({
+      tabs: [{ tabId: 'tab-cached', url: 'https://cached.test', title: 'Cached' }],
+      stale: false,
+    });
 
     vi.useFakeTimers();
     try {
       mocks.sendToWorkspaceWindows.mockReturnValue(DROPPED);
       // Resolves from the cache immediately — no timer advancement — instead
-      // of burning the 500 ms reply timeout.
-      const tabs = await embeddedBrowserCdp.requestPanelBrowserTabs('ws-cache');
-      expect(tabs).toEqual([{ tabId: 'tab-cached', url: 'https://cached.test', title: 'Cached' }]);
+      // of burning the 500 ms reply timeout. Cached fallbacks are flagged
+      // stale so callers can tell them from a fresh renderer reply.
+      const result = await embeddedBrowserCdp.requestPanelBrowserTabs('ws-cache');
+      expect(result).toEqual({
+        tabs: [{ tabId: 'tab-cached', url: 'https://cached.test', title: 'Cached' }],
+        stale: true,
+      });
 
-      // The fallback only consults the SAME workspace's cache entry.
-      const otherTabs = await embeddedBrowserCdp.requestPanelBrowserTabs('ws-other');
-      expect(otherTabs).toEqual([]);
+      // The fallback only consults the SAME workspace's cache entry — and
+      // with no entry it rejects instead of fabricating an empty list
+      // (monorepo#2756 RC4).
+      await expect(embeddedBrowserCdp.requestPanelBrowserTabs('ws-other')).rejects.toThrow(
+        'Cannot list browser tabs: workspace ws-other is not open in any window.',
+      );
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // RC4 (monorepo#2756): a delivered request the renderer never answers used
+  // to resolve `[]` after the timeout — indistinguishable from "zero tabs".
+  describe('list request timeout semantics (monorepo#2756 RC4)', () => {
+    it('rejects on timeout when no cached tab list exists for the workspace', async () => {
+      mocks.sendToWorkspaceWindows.mockReturnValue(DELIVERED); // delivered, never answered
+      vi.useFakeTimers();
+      try {
+        const pending = embeddedBrowserCdp.requestPanelBrowserTabs('ws-silent');
+        pending.catch(() => {}); // avoid unhandled rejection before assertion
+        await vi.advanceTimersByTimeAsync(500);
+        await expect(pending).rejects.toThrow(
+          'Tab list for workspace ws-silent is unavailable: the renderer did not respond and no cached tab list exists.',
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('resolves stale cached data on timeout when a same-workspace cache entry exists', async () => {
+      // Seed the cache for ws-slow via a delivered round-trip.
+      mocks.sendToWorkspaceWindows.mockImplementation(
+        (workspaceId: string, channel: string, payload: { requestId?: string }) => {
+          if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+          responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+            {},
+            {
+              tabs: [{ tabId: 'tab-slow', url: 'https://slow.test', title: 'Slow' }],
+              requestId: payload.requestId,
+            },
+          );
+          return DELIVERED;
+        },
+      );
+      await embeddedBrowserCdp.requestPanelBrowserTabs('ws-slow');
+
+      // Renderer stops answering: delivered but silent.
+      mocks.sendToWorkspaceWindows.mockReturnValue(DELIVERED);
+      vi.useFakeTimers();
+      try {
+        const pending = embeddedBrowserCdp.requestPanelBrowserTabs('ws-slow');
+        await vi.advanceTimersByTimeAsync(500);
+        await expect(pending).resolves.toEqual({
+          tabs: [{ tabId: 'tab-slow', url: 'https://slow.test', title: 'Slow' }],
+          stale: true,
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('closeTab refuses to report "already closed" from a stale tab list missing the tab', async () => {
+      // Seed a ws-stale cache WITHOUT tab-x, then go silent.
+      mocks.sendToWorkspaceWindows.mockImplementation(
+        (workspaceId: string, channel: string, payload: { requestId?: string }) => {
+          if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+          responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+            {},
+            { tabs: [], requestId: payload.requestId },
+          );
+          return DELIVERED;
+        },
+      );
+      await embeddedBrowserCdp.requestPanelBrowserTabs('ws-stale');
+
+      mocks.sendToWorkspaceWindows.mockReturnValue(DELIVERED); // delivered, never answered
+      vi.useFakeTimers();
+      try {
+        const pending = embeddedBrowserCdp.closeTab('tab-x', 'ws-stale');
+        pending.catch(() => {}); // avoid unhandled rejection before assertion
+        await vi.advanceTimersByTimeAsync(500);
+        await expect(pending).rejects.toThrow(
+          'Cannot close tab tab-x: the tab list for workspace ws-stale is unavailable (the renderer did not respond), so whether the tab exists cannot be determined.',
+        );
+        // The close request itself must never have been sent.
+        const closeCalls = mocks.sendToWorkspaceWindows.mock.calls.filter(
+          ([, channel]) => channel === IPC_CHANNELS.BROWSER.CLOSE_TAB,
+        );
+        expect(closeCalls).toHaveLength(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it('routes tab discovery and close through exact workspace-scoped channels and params', async () => {

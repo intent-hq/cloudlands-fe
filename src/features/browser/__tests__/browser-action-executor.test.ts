@@ -24,7 +24,7 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     closeTab: vi.fn().mockResolvedValue({ tabId: 'tab-1' }),
     touchLease: vi.fn(),
     releaseLease: vi.fn(),
-    listAllTabs: vi.fn().mockResolvedValue([]),
+    listAllTabs: vi.fn().mockResolvedValue({ tabs: [], stale: false }),
     screenshot: vi.fn().mockResolvedValue({ base64: '', width: 0, height: 0 }),
     getAccessibilityTree: vi.fn().mockResolvedValue(''),
     snapshot: vi.fn().mockResolvedValue(''),
@@ -210,7 +210,85 @@ describe('browser-action-executor', () => {
       );
 
       expect(result.success).toBe(true);
+      expect(result.results[0]).toEqual({ action: 'listTabs', success: true, result: [] });
       expect(embeddedBrowserCdp.listAllTabs).toHaveBeenCalledWith('workspace-a');
+    });
+
+    // RC4 (monorepo#2756): a renderer that never answered used to be
+    // indistinguishable from a workspace with zero tabs.
+    it('flags a stale cached listTabs result with a warning instead of passing it off as fresh', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      const cachedTabs = [
+        { tabId: 'tab-1', webContentsId: -1, url: 'http://a/', title: 'A', mounted: false },
+      ];
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+        tabs: cachedTabs,
+        stale: true,
+      });
+
+      const result = await executeActions(
+        { actions: [{ action: 'listTabs' }] },
+        undefined,
+        undefined,
+        'ws-slow',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.results[0]).toEqual({
+        action: 'listTabs',
+        success: true,
+        result: cachedTabs,
+        warning:
+          'The renderer did not answer the tab list request for workspace ws-slow; this list is from a cached snapshot and may be outdated.',
+      });
+    });
+
+    it('surfaces "tab list unavailable" as a listTabs error instead of a silent empty list', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockRejectedValueOnce(
+        new Error(
+          'Tab list for workspace ws-silent is unavailable: the renderer did not respond and no cached tab list exists.',
+        ),
+      );
+
+      const result = await executeActions(
+        { actions: [{ action: 'listTabs' }] },
+        undefined,
+        undefined,
+        'ws-silent',
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.results[0]).toMatchObject({
+        action: 'listTabs',
+        success: false,
+        error:
+          'Tab list for workspace ws-silent is unavailable: the renderer did not respond and no cached tab list exists.',
+      });
+    });
+
+    it('surfaces the closeTab tab-list-unavailable error instead of "already closed"', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.closeTab).mockRejectedValueOnce(
+        new Error(
+          'Cannot close tab tab-x: the tab list for workspace ws-silent is unavailable (the renderer did not respond), so whether the tab exists cannot be determined.',
+        ),
+      );
+
+      const result = await executeActions(
+        { actions: [{ action: 'closeTab', tabId: 'tab-x' }] },
+        undefined,
+        undefined,
+        'ws-silent',
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.results[0]).toMatchObject({
+        action: 'closeTab',
+        success: false,
+        error:
+          'Cannot close tab tab-x: the tab list for workspace ws-silent is unavailable (the renderer did not respond), so whether the tab exists cannot be determined.',
+      });
     });
 
     // Regression (intent-hq/monorepo#2602): zero-delivery failures used to be

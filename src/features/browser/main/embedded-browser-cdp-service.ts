@@ -123,8 +123,17 @@ class EmbeddedBrowserCdpService {
    * Requires a workspaceId: an untargeted request used to broadcast to ALL
    * windows, letting a caller enumerate tabs in unrelated workspaces'
    * windows (intent-hq/monorepo#2602).
+   *
+   * Resolves `{ tabs, stale: false }` on a fresh renderer reply. When no
+   * reply is coming (nothing received the request, or it timed out), the
+   * same-workspace cache answers with `stale: true`; with no cache entry
+   * either, this REJECTS instead of fabricating an empty list — "renderer
+   * never answered" and "zero tabs" are different answers
+   * (intent-hq/monorepo#2756 RC4).
    */
-  async requestPanelBrowserTabs(workspaceId?: string): Promise<PanelBrowserTab[]> {
+  async requestPanelBrowserTabs(
+    workspaceId?: string,
+  ): Promise<{ tabs: PanelBrowserTab[]; stale: boolean }> {
     if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
       // i18n-ignore (agent-facing protocol error, not user-facing)
       throw new Error('workspaceId is required to list browser tabs');
@@ -134,8 +143,11 @@ class EmbeddedBrowserCdpService {
     const requestId = `req-${++this.listTabsRequestCounter}-${Date.now()}`;
 
     // Create promise that will be resolved when response arrives
-    const requestPromise = new Promise<PanelBrowserTab[]>((resolve) => {
-      this.pendingListTabsRequests.set(requestId, { workspaceId, resolve });
+    const requestPromise = new Promise<{ tabs: PanelBrowserTab[]; stale: boolean }>((resolve) => {
+      this.pendingListTabsRequests.set(requestId, {
+        workspaceId,
+        resolve: (tabs) => resolve({ tabs, stale: false }),
+      });
     });
 
     // Send only to windows displaying the requested workspace. The renderer
@@ -149,29 +161,52 @@ class EmbeddedBrowserCdpService {
       // Nothing received the request, so no reply is coming — answer from the
       // same-workspace cache right away instead of waiting for the timeout.
       this.pendingListTabsRequests.delete(requestId);
+      const cached = this.panelBrowserTabsCache.get(workspaceId);
+      if (!cached) {
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        throw new Error(
+          `Cannot list browser tabs: workspace ${workspaceId} is not open in any window.`,
+        );
+      }
       logger.warn('LIST_TABS_REQUEST reached no window; using cached data', {
         workspaceId,
         requestId,
       });
-      return this.panelBrowserTabsCache.get(workspaceId) ?? [];
+      return { tabs: cached, stale: true };
     }
     logger.debug('Sent LIST_TABS_REQUEST', { workspaceId, requestId });
 
     // Create per-request timeout promise. The fallback only consults the
     // cache entry for the SAME workspace target, so a timed-out request
-    // never answers with another workspace's tab list.
-    const timeoutPromise = new Promise<PanelBrowserTab[]>((resolve) => {
-      setTimeout(() => {
-        if (this.pendingListTabsRequests.has(requestId)) {
-          logger.warn('Browser tab list request timed out, using cached data', {
+    // never answers with another workspace's tab list; without a cache
+    // entry it rejects instead of fabricating an empty list.
+    const timeoutPromise = new Promise<{ tabs: PanelBrowserTab[]; stale: boolean }>(
+      (resolve, reject) => {
+        setTimeout(() => {
+          if (!this.pendingListTabsRequests.has(requestId)) return;
+          this.pendingListTabsRequests.delete(requestId);
+          const cached = this.panelBrowserTabsCache.get(workspaceId);
+          if (cached) {
+            logger.warn('Browser tab list request timed out, using cached data', {
+              requestId,
+              workspaceId,
+            });
+            resolve({ tabs: cached, stale: true });
+            return;
+          }
+          logger.warn('Browser tab list request timed out with no cached data', {
             requestId,
             workspaceId,
           });
-          this.pendingListTabsRequests.delete(requestId);
-          resolve(this.panelBrowserTabsCache.get(workspaceId ?? '') ?? []);
-        }
-      }, 500);
-    });
+          reject(
+            // i18n-ignore (agent-facing protocol error, not user-facing)
+            new Error(
+              `Tab list for workspace ${workspaceId} is unavailable: the renderer did not respond and no cached tab list exists.`,
+            ),
+          );
+        }, 500);
+      },
+    );
 
     // Race between response and timeout - each request gets independent timeout
     return Promise.race([requestPromise, timeoutPromise]);
@@ -312,13 +347,20 @@ class EmbeddedBrowserCdpService {
    * listed: appending them used to resurrect UI-closed tabs as
    * `mounted: true` entries that closeTab then rejected as not found.
    *
-   * Returns tabs with:
+   * Returns `{ tabs, stale }`: `stale: true` means the renderer did not
+   * answer and the tabs came from the same-workspace cache. Rejects when
+   * the tab list is unavailable (no reply AND no cache) — callers must not
+   * treat that as "zero tabs" (intent-hq/monorepo#2756 RC4).
+   *
+   * Each tab carries:
    * - webContentsId: number if mounted (can run CDP commands)
    * - webContentsId: -1 if unmounted (need to focusTab first)
    */
-  async listAllTabs(workspaceId?: string): Promise<(TabInfo & { mounted: boolean })[]> {
+  async listAllTabs(
+    workspaceId?: string,
+  ): Promise<{ tabs: (TabInfo & { mounted: boolean })[]; stale: boolean }> {
     // Get panel layout tabs (includes unmounted)
-    const panelTabs = await this.requestPanelBrowserTabs(workspaceId);
+    const { tabs: panelTabs, stale } = await this.requestPanelBrowserTabs(workspaceId);
 
     // Get mounted webviews
     const mountedTabs = this.listTabs();
@@ -332,7 +374,7 @@ class EmbeddedBrowserCdpService {
     }
 
     // Panel tabs only, marking whether each is backed by a live webview
-    return panelTabs.map((panelTab) => {
+    const tabs = panelTabs.map((panelTab) => {
       const mounted = mountedTabs.find((t) => t.tabId === panelTab.tabId);
       if (mounted) {
         return { ...mounted, mounted: true };
@@ -345,6 +387,7 @@ class EmbeddedBrowserCdpService {
         mounted: false,
       };
     });
+    return { tabs, stale };
   }
 
   /**
@@ -426,9 +469,17 @@ class EmbeddedBrowserCdpService {
     if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
       throw new Error('workspaceId is required to close a browser tab');
     }
-    const panelTabs = await this.requestPanelBrowserTabs(workspaceId);
+    const { tabs: panelTabs, stale } = await this.requestPanelBrowserTabs(workspaceId);
     const tab = panelTabs.find((t) => t.tabId === tabId);
     if (!tab) {
+      if (stale) {
+        // A stale cache that lacks the tab proves nothing about whether it
+        // is closed — only a fresh renderer reply can (monorepo#2756 RC4).
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        throw new Error(
+          `Cannot close tab ${tabId}: the tab list for workspace ${workspaceId} is unavailable (the renderer did not respond), so whether the tab exists cannot be determined.`,
+        );
+      }
       // i18n-ignore (agent-facing protocol error, not user-facing)
       throw new Error(`Tab ${tabId} not found. It may already be closed.`);
     }
@@ -454,11 +505,12 @@ class EmbeddedBrowserCdpService {
     // Confirm the renderer removed the tab. If no window received the event,
     // the fresh list request times out to the (still-uncleaned) cache; if the
     // renderer ignored the close, the tab is still in the reply — either way
-    // the tab remains listed and we fail instead of claiming success.
+    // the tab remains listed and we fail instead of claiming success. Only a
+    // fresh (non-stale) reply without the tab counts as confirmation.
     let confirmed = false;
     for (let attempt = 0; attempt < 3; attempt++) {
       const after = await this.requestPanelBrowserTabs(workspaceId);
-      if (!after.some((t) => t.tabId === tabId)) {
+      if (!after.stale && !after.tabs.some((t) => t.tabId === tabId)) {
         confirmed = true;
         break;
       }
@@ -720,7 +772,18 @@ class EmbeddedBrowserCdpService {
     requestingAgentId: string,
     workspaceId?: string,
   ): Promise<string | undefined> {
-    const tabs = await this.listAllTabs(workspaceId);
+    // Dedupe is best-effort: an unavailable tab list just means no reusable
+    // tab was found — it must not fail the enclosing openTab.
+    let tabs: (TabInfo & { mounted: boolean })[];
+    try {
+      ({ tabs } = await this.listAllTabs(workspaceId));
+    } catch (error) {
+      logger.debug('Tab list unavailable during openTab dedupe; skipping reuse', {
+        workspaceId,
+        error: (error as Error).message,
+      });
+      return undefined;
+    }
     for (const tab of tabs) {
       if (!tab.mounted || tab.url !== url) continue;
       const lease = this.tabLeases.get(tab.tabId);

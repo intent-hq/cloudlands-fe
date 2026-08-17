@@ -268,6 +268,8 @@ export interface ActionResult {
   success: boolean;
   result?: unknown;
   error?: string;
+  /** Successful result with a caveat (e.g. listTabs answered from a stale cache). */
+  warning?: string;
 }
 
 export interface ExecutionResult {
@@ -307,8 +309,20 @@ async function executeAction(
   try {
     switch (action.action) {
       case 'listTabs': {
-        const result = await embeddedBrowserCdp.listAllTabs(workspaceId);
-        return { action: 'listTabs', success: true, result };
+        // listAllTabs rejects when the tab list is unavailable (renderer
+        // never answered and no cache) — the catch below surfaces that as an
+        // action error instead of a silent empty list (monorepo#2756 RC4).
+        const { tabs, stale } = await embeddedBrowserCdp.listAllTabs(workspaceId);
+        if (stale) {
+          return {
+            action: 'listTabs',
+            success: true,
+            result: tabs,
+            // i18n-ignore (agent-facing protocol error, not user-facing)
+            warning: `The renderer did not answer the tab list request for workspace ${workspaceId}; this list is from a cached snapshot and may be outdated.`,
+          };
+        }
+        return { action: 'listTabs', success: true, result: tabs };
       }
 
       case 'focusTab': {

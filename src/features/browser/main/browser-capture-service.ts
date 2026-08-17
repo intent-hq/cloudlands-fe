@@ -249,7 +249,7 @@ class BrowserCaptureService {
     const { tabId, workspaceId, name, reload, waitFor } = options;
 
     // Get tab info
-    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
+    const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabId ? tabs.find((t) => t.tabId === tabId) : tabs[0];
 
     if (!tab) {
@@ -361,7 +361,7 @@ class BrowserCaptureService {
     const { tabId, workspaceId, name } = options;
 
     // Get tab info
-    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
+    const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabId ? tabs.find((t) => t.tabId === tabId) : tabs[0];
 
     if (!tab) {
@@ -422,7 +422,7 @@ class BrowserCaptureService {
     }
 
     // Get webContentsId for the tab
-    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
+    const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === session.tabId);
 
     if (!tab || !tab.mounted) {
@@ -454,7 +454,7 @@ class BrowserCaptureService {
     }
 
     // Get webContentsId for the tab
-    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
+    const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === session.tabId);
 
     if (tab) {
@@ -516,7 +516,7 @@ class BrowserCaptureService {
     );
 
     // Write step metadata
-    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
+    const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === session.tabId);
     await fs.writeFile(
       path.join(stepDir, 'metadata.json'),
@@ -549,7 +549,7 @@ class BrowserCaptureService {
     }
 
     // Get webContentsId for the tab
-    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
+    const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === session.tabId);
 
     if (!tab || !tab.mounted) {
@@ -612,7 +612,7 @@ class BrowserCaptureService {
     }
 
     // Get webContentsId for the tab
-    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
+    const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === session.tabId);
 
     if (!tab || !tab.mounted) {
@@ -686,7 +686,7 @@ class BrowserCaptureService {
     await writeJsonl(networkPath, session.networkBuffer);
 
     // Get current tab info for metadata
-    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
+    const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === session.tabId);
 
     // Write session metadata
@@ -761,7 +761,7 @@ class BrowserCaptureService {
     tabId?: string,
     workspaceId?: string,
   ): Promise<{ reset: boolean; tabId: string; details: string[] }> {
-    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
+    const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabId ? tabs.find((t) => t.tabId === tabId) : tabs.find((t) => t.mounted);
 
     if (!tab) {
@@ -987,7 +987,7 @@ class BrowserCaptureService {
     timeout: number,
     workspaceId?: string,
   ): Promise<void> {
-    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
+    const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === tabId);
     if (!tab || !tab.mounted) {
       throw new Error(`Tab ${tabId} is not mounted`);
@@ -1028,7 +1028,7 @@ class BrowserCaptureService {
     timeout: number,
     workspaceId?: string,
   ): Promise<void> {
-    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
+    const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === tabId);
     if (!tab || !tab.mounted) {
       throw new Error(`Tab ${tabId} is not mounted`);
