@@ -348,7 +348,9 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     await flush();
 
     snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
-    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+    // A distinct object with identical content: the duplicate check is
+    // content-based (payload fingerprint), not reference identity.
+    snapshotPush('sub-1', 0, structuredClone(SEEDED_SNAPSHOT));
 
     expect(seen).toHaveLength(1);
     expect(seen[0].totalMessages).toBe(1);
@@ -1814,8 +1816,8 @@ describe('LiveChatClient.subscribe daemon stream restart (intent-hq/monorepo#262
     expect(seen).toHaveLength(1);
 
     // Duplicate re-delivery before any delta advanced the stream: no repeat
-    // hydration edge.
-    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+    // hydration edge. A clone, so equality is content-based, not identity.
+    snapshotPush('sub-1', 0, structuredClone(SEEDED_SNAPSHOT));
     expect(seen).toHaveLength(1);
 
     // The stream continues at seq 1 and applies normally either way.
