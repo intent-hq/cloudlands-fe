@@ -86,7 +86,7 @@
 
   // Swap-out settle window: while follow-bottom re-pins the scroller every
   // streaming frame, a turn sitting at the IntersectionObserver boundary
-  // (rootMargin '50% 0px') can be reported alternately inside/outside on
+  // (rootMargin '100% 0px') can be reported alternately inside/outside on
   // consecutive frames. Swapping out immediately on each notification turns
   // that jitter into a per-frame content↔placeholder DOM swap (60fps
   // flicker). Instead every swap-out is deferred through this window and a

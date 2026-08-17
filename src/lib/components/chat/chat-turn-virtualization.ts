@@ -1,5 +1,10 @@
-export const LAZY_TURN_THRESHOLD = 10;
-export const FORCE_VISIBLE_TURN_COUNT = 1;
+// Keep normal conversations fully materialized. Virtualization has a larger
+// payoff only after the transcript is long enough to offset placeholder swaps.
+export const LAZY_TURN_THRESHOLD = 20;
+
+// Keep a small tail mounted so streaming and short upward reads near the
+// bottom do not cross the materialization boundary on every turn.
+export const FORCE_VISIBLE_TURN_COUNT = 3;
 
 export function shouldVirtualizeTurns(turnCount: number): boolean {
   return turnCount > LAZY_TURN_THRESHOLD;
