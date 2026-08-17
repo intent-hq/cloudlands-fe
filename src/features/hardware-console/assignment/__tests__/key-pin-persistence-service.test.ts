@@ -69,6 +69,7 @@ vi.mock('$lib/client', () => ({
 
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
+import { persistHardwareConsoleKeyPins } from '../key-pin-persistence-service';
 import { keyPinPersistenceSaga } from '$store/renderer/slices/hardware-console/sagas/key-pin-persistence-saga';
 
 function ws(id: string, lastActivity: string): MockWorkspace {
@@ -288,5 +289,49 @@ describe('keyPinPersistenceSaga (sticky assignments)', () => {
         null,
       ]),
     );
+  });
+
+  it('skips the persist instead of wiping the bag when the pre-write read fails', async () => {
+    seedBag({ keyPins: ['ws-1'], sibling: 'kept' });
+    seedWorkspaces([ws('ws-1', '2026-07-01T00:00:00Z')]);
+    const invoke = invokeChain();
+
+    invoke({ type: 'any/action' });
+    await vi.waitFor(() => expect(mockState.hardwareConsole.hydrated).toBe(true));
+    (appClient.settings.update as ReturnType<typeof vi.fn>).mockClear();
+    const getMock = appClient.settings.get as ReturnType<typeof vi.fn>;
+    const readsBefore = getMock.mock.calls.length;
+
+    seedBag(null); // transient daemon read failure
+    invoke({ type: 'hardwareConsole/pinWorkspaceToKey' });
+
+    await vi.waitFor(() => expect(getMock.mock.calls.length).toBeGreaterThan(readsBefore));
+    expect(appClient.settings.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('persistHardwareConsoleKeyPins', () => {
+  it('rejects and does not write when the bag read fails', async () => {
+    seedBag(null);
+    await expect(
+      persistHardwareConsoleKeyPins(['ws-1', null, null, null, null, null], []),
+    ).rejects.toThrow('hardwareConsole.state');
+    expect(appClient.settings.update).not.toHaveBeenCalled();
+  });
+
+  it('writes the merged bag preserving sibling fields on a successful read', async () => {
+    seedBag({ promptUsage: ['p'], enabled: false });
+    await persistHardwareConsoleKeyPins(['ws-1', null, null, null, null, null], ['ws-x']);
+    expect(appClient.settings.update).toHaveBeenCalledWith([
+      {
+        path: 'hardwareConsole.state',
+        value: {
+          promptUsage: ['p'],
+          enabled: false,
+          keyPins: ['ws-1', null, null, null, null, null],
+          excludedWorkspaceIds: ['ws-x'],
+        },
+      },
+    ]);
   });
 });

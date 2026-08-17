@@ -108,6 +108,8 @@ import {
   handleActionKeyPress,
   handleActionKeyRelease,
   installHardwareConsoleActionKeys,
+  persistHardwareConsoleActionMapping,
+  persistHardwareConsoleCycleScopes,
 } from '../action-key-service';
 import { actionKeySaga } from '$store/renderer/slices/hardware-console/sagas/action-key-saga';
 
@@ -942,5 +944,21 @@ describe('persistence key on the daemon bag', () => {
         },
       ]);
     });
+  });
+});
+
+describe('action-key persist helpers on a failed bag read', () => {
+  it('persistHardwareConsoleActionMapping rejects and does not write', async () => {
+    (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await expect(
+      persistHardwareConsoleActionMapping(normalizeActionMappingsByModel(undefined)),
+    ).rejects.toThrow('hardwareConsole.state');
+    expect(appClient.settings.update).not.toHaveBeenCalled();
+  });
+
+  it('persistHardwareConsoleCycleScopes rejects and does not write', async () => {
+    (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await expect(persistHardwareConsoleCycleScopes({})).rejects.toThrow('hardwareConsole.state');
+    expect(appClient.settings.update).not.toHaveBeenCalled();
   });
 });
