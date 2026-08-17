@@ -262,13 +262,16 @@ export class ChatTranscriptReconciler {
   }
 
   /**
-   * Seed from a snapshot push (a full rebuild). Returns `false` for a stale or
-   * duplicate re-delivery on an already-seeded transcript. A registration has
-   * exactly one snapshot, so reapplying the same seq would either repeat the
-   * hydration edge or rewind deltas already reduced past it.
+   * Seed from a snapshot push (a full rebuild). Returns `false` only for an
+   * exact duplicate re-delivery on an already-seeded transcript (reapplying
+   * the same seq would repeat the hydration edge). A snapshot BEHIND the
+   * expected seq is a daemon-side stream restart on the same subscription
+   * (the daemon re-emits seq-0 and restarts deltas at 1 after a harness
+   * restart) — it must rebuild, or every restarted delta is stale-dropped
+   * and the transcript freezes (intent-hq/monorepo#2627).
    */
   applySnapshot(seq: number, raw: unknown): boolean {
-    if (this.seeded && seq + 1 <= this.expectedSeq) return false;
+    if (this.seeded && seq + 1 === this.expectedSeq) return false;
     const snap = extractSnapshot(raw);
     this.messages = snap.messages;
     this.truncated = snap.truncated;
@@ -455,6 +458,11 @@ export class LiveChatClient implements ChatClient {
       retryTimer = setTimeout(() => {
         retryTimer = undefined;
         if (disposed) return;
+        // Reset like the other re-registration paths so the fresh
+        // registration's seq-0 snapshot can never be stale-rejected
+        // (hardening — hydration cancels the retry, so the reconciler is
+        // never seeded here on any known path).
+        reconciler.reset();
         // Best-effort release of a stale acked registration (its seq-0 never
         // arrived) before the fresh `chat.subscribe`; after a rejected
         // registration there is no id and this only bumps the generation.
