@@ -1,6 +1,5 @@
 {
   "note": "think tag inside inline code",
-  "KNOWN_BAD": "inline-code `<think>` literal opens a think context and swallows the rest of the message into a thinking block",
   "prompts": [],
   "tree": [
     {
@@ -8,13 +7,9 @@
       "blocks": [
         {
           "type": "text",
-          "content": "The scanner also matches `"
+          "content": "The scanner also matches `<think>` in backticks, hiding everything after it."
         }
       ]
-    },
-    {
-      "type": "thinking",
-      "content": "` in backticks, hiding everything after it."
     }
   ]
 }

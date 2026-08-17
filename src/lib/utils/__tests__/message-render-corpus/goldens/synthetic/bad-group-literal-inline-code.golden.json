@@ -1,6 +1,5 @@
 {
   "note": "group tag inside inline code should stay literal",
-  "KNOWN_BAD": "inline-code `<group:Name>` literal is treated as a real group open: the message splits into a group and the literal is lost from the text",
   "prompts": [],
   "tree": [
     {
@@ -8,23 +7,7 @@
       "blocks": [
         {
           "type": "text",
-          "content": "The parser mishandles the `"
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Example",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "` tag when it appears in backticks like this."
-            }
-          ]
+          "content": "The parser mishandles the `<group:Example>` tag when it appears in backticks like this."
         }
       ]
     }

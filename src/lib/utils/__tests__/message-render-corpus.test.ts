@@ -227,33 +227,13 @@ describe('message render corpus — synthetic', () => {
 // ---------------------------------------------------------------------------
 
 /**
- * Messages whose CURRENT rendering is broken (intent-hq/monorepo#2689):
- * group/think/prompt tag literals inside inline code or fenced code are
- * scanned as real tags. Goldens lock in the broken output; the fix PR is
- * expected to change them and shrink this list.
+ * Messages whose CURRENT rendering is broken. Goldens lock in the broken
+ * output; a fix PR is expected to change them and shrink this list.
+ * The intent-hq/monorepo#2689 entries (tag literals inside inline code or
+ * fenced code scanned as real tags) were removed when the code-region-aware
+ * scanner landed; their goldens now double as regression coverage.
  */
-const KNOWN_BAD_HARVESTED = new Map<string, string>([
-  [
-    '01a00d53-81d7-7623-adbf-0c0a5c97c808',
-    'repro 1: inline-code `<group:>` literal splits the message',
-  ],
-  [
-    '01a00d54-9ab6-7370-acc6-a2d79bf7ea44',
-    'repro 2: tag regex source inside fenced code is scanned as real tags',
-  ],
-  ['019ffa42-48f6-76d0-9601-d86008ceb3c9', 'tag literals in inline code + regex source in fences'],
-  ['019ffa45-4430-7572-b223-2e8346844f51', 'fused tag literals quoted in inline code'],
-  ['019ffa53-fd38-70e1-b0b1-3bad18fdbf54', 'tag literals in inline code discussing the tag regex'],
-  ['019ffa58-6757-7fb2-972f-cb0e1fcd738b', 'tag literals in inline code (verifier report)'],
-  [
-    '019ffa58-bbb4-7770-bf12-38b6881b2a83',
-    'tag + think literals in inline code (acceptance checklist)',
-  ],
-  ['019ffa5c-e2a8-7eb2-b803-70248b74586c', 'tag literals in inline code'],
-  ['019ffb75-1811-7f81-967b-069043c12d35', 'doubled interleaved group tag quoted in a fence'],
-  ['01a00d51-32a2-7981-93eb-ff202ec74c7e', 'inline-code `<group:…>` literal'],
-  ['01a00d57-d4c5-7583-84c6-ed2304ca2154', 'inline-code `<group:>` literal'],
-]);
+const KNOWN_BAD_HARVESTED = new Map<string, string>([]);
 
 describe('message render corpus — harvested', () => {
   for (const entry of manifest) {

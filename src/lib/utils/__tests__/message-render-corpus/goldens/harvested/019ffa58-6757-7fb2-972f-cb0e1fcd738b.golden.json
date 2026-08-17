@@ -6,7 +6,6 @@
     "prompts",
     "inline-code-angle"
   ],
-  "KNOWN_BAD": "tag literals in inline code (verifier report)",
   "prompts": [
     "If the verifier approves, merge the PR.",
     "Show me the verifier's findings when it reports.",
@@ -72,16 +71,7 @@
       "blocks": [
         {
           "type": "text",
-          "content": "Implementation is done and under review:\n\n- **PR**: [cloudlands-fe#1122](https://github.com/intent-hq/cloudlands-fe/pull/1122) — regression tests written first (4 failed pre-fix), now 169/169 message-parser tests pass, `pnpm run check` and `tsc` clean, and the body carries `Fixes intent-hq/monorepo#2216`.\n- **Verifier spawned** to review the diff against the required semantics (fused form = single open tag, `"
-        }
-      ]
-    },
-    {
-      "type": "text",
-      "blocks": [
-        {
-          "type": "text",
-          "content": "` accepted as close, `a < b` unaffected), re-run the test suite and typechecks, probe edge cases, and post any findings as PR comments. It will not merge.\n\nI'll be woken when the verifier reports; if it approves, I'll come back to you before merging."
+          "content": "Implementation is done and under review:\n\n- **PR**: [cloudlands-fe#1122](https://github.com/intent-hq/cloudlands-fe/pull/1122) — regression tests written first (4 failed pre-fix), now 169/169 message-parser tests pass, `pnpm run check` and `tsc` clean, and the body carries `Fixes intent-hq/monorepo#2216`.\n- **Verifier spawned** to review the diff against the required semantics (fused form = single open tag, `</group:>` accepted as close, `a < b` unaffected), re-run the test suite and typechecks, probe edge cases, and post any findings as PR comments. It will not merge.\n\nI'll be woken when the verifier reports; if it approves, I'll come back to you before merging."
         }
       ]
     }

@@ -6,7 +6,6 @@
     "prompts",
     "inline-code-angle"
   ],
-  "KNOWN_BAD": "inline-code `<group:>` literal",
   "prompts": [
     "Cut a new iOS TestFlight build with these fixes.",
     "Archive this workspace."
@@ -69,23 +68,7 @@
       "blocks": [
         {
           "type": "text",
-          "content": "[intent-hq/ios#120](https://github.com/intent-hq/ios/pull/120) is merged — squash commit `0e6a8a7` at 01:31 UTC, following the verifier's approval per your standing authorization.\n\nThat closes out everything in this workspace:\n\n| PR | Scope | Status |\n|----|-------|--------|\n| [#118](https://github.com/intent-hq/ios/pull/118) | `@context` chips, optional initial message, square thumbnails + zoom/pan lightbox | Merged (`9f4e421`) |\n| [#120](https://github.com/intent-hq/ios/pull/120) | Long-press Copy on user/assistant rows, mirroring the rendered text with decoded context titles | Merged (`0e6a8a7`) |\n\nThe verifier confirmed #120's copy output matches the display pipelines line-for-line on both row types (no base64 tokens, no suggested-prompts/`agent_digest`/`"
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": ">` leakage), all 3 review-bot threads were genuinely fixed with regression tests, and CI passed 1008 tests at the merged head.",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "What happens automatically from here:\n- The monorepo's `packages/ios` pin advances via `auto-bump-submodules` — no manual bump PR.\n- These are iOS-only changes, so they don't ride the cloudlands-fe alpha channel; they reach your device with the next iOS build/TestFlight cut.\n\nAll five task notes are complete and the [Spec](intent://local/note/spec) records both merges. Nothing further is pending on my side."
-            }
-          ]
+          "content": "[intent-hq/ios#120](https://github.com/intent-hq/ios/pull/120) is merged — squash commit `0e6a8a7` at 01:31 UTC, following the verifier's approval per your standing authorization.\n\nThat closes out everything in this workspace:\n\n| PR | Scope | Status |\n|----|-------|--------|\n| [#118](https://github.com/intent-hq/ios/pull/118) | `@context` chips, optional initial message, square thumbnails + zoom/pan lightbox | Merged (`9f4e421`) |\n| [#120](https://github.com/intent-hq/ios/pull/120) | Long-press Copy on user/assistant rows, mirroring the rendered text with decoded context titles | Merged (`0e6a8a7`) |\n\nThe verifier confirmed #120's copy output matches the display pipelines line-for-line on both row types (no base64 tokens, no suggested-prompts/`agent_digest`/`<group:>` leakage), all 3 review-bot threads were genuinely fixed with regression tests, and CI passed 1008 tests at the merged head.\n\nWhat happens automatically from here:\n- The monorepo's `packages/ios` pin advances via `auto-bump-submodules` — no manual bump PR.\n- These are iOS-only changes, so they don't ride the cloudlands-fe alpha channel; they reach your device with the next iOS build/TestFlight cut.\n\nAll five task notes are complete and the [Spec](intent://local/note/spec) records both merges. Nothing further is pending on my side."
         }
       ]
     }

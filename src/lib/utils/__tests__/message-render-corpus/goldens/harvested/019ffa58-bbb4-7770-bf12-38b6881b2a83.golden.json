@@ -6,7 +6,6 @@
     "think",
     "inline-code-angle"
   ],
-  "KNOWN_BAD": "tag + think literals in inline code (acceptance checklist)",
   "prompts": [],
   "tree": [
     {
@@ -382,127 +381,7 @@
       "blocks": [
         {
           "type": "text",
-          "content": "### Verification Summary\n- **Verdict: ✅ APPROVED** — do not merge (per instructions); review comment posted on [PR #1122](https://github.com/intent-hq/cloudlands-fe/pull/1122#issuecomment-5278261668)\n- **Confidence: High** (all verification commands run locally on the PR branch)\n\n### Acceptance Criteria Checklist\n\n- ✅ VERIFIED — `"
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Wrapping up",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "` never renders as literal text\n  - Evidence: `GROUP_AND_THINK_TAG_REGEX` (messageParser.ts:1018) gained a fused-open alternative (capture group 4) consuming `"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Name",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "` / `"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Name",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "` as one match treated as a group OPEN; close alternative relaxed to `([^>\\n<]*)` (capture 5) so `"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "text",
-      "blocks": [
-        {
-          "type": "text",
-          "content": "` matches. `match[1..4]` open checks in `groupContentBlocks` updated correctly; the fused close-suffix is non-capturing so no further index shifts. Strip regexes in `text-utils.ts` and `graph-helpers.ts` now consume `"
-        }
-      ]
-    },
-    {
-      "type": "text",
-      "blocks": [
-        {
-          "type": "text",
-          "content": "` (fused form already consumed whole since `[^>]` matches `<`). Grep confirmed no other group-tag regexes exist in the repo.\n  - Verification: regression test mirroring DB message 019ff9fc passes; reverting the 3 source files to `origin/main` makes 5 of the new tests fail — tests are meaningful.\n- ✅ VERIFIED — no regression in existing group/think tag parsing\n  - Verification: 169/169 tests pass (message-parser, text-utils, graph-helpers); `pnpm run check` 0 errors/warnings; `pnpm tsc -p tsconfig.json --noEmit` clean.\n\n### Edge-case probes (temp test file, all 7 passed, removed after)\n- Fused tag mid-text: prose before stays outside, prose after grouped under \"Name\"\n- Streaming last block ending in `</group:` prefix: withheld, no raw tag leak; once settled, opens a streaming group\n- Fused tag inside `"
-        }
-      ]
-    },
-    {
-      "type": "thinking",
-      "content": "…"
-    },
-    {
-      "type": "text",
-      "blocks": [
-        {
-          "type": "text",
-          "content": "`: stays think content, no spurious group\n- `"
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Name",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "`: opens named \"Name\"\n- Well-formed `"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Work",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "doing stuff"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "text",
-      "blocks": [
-        {
-          "type": "text",
-          "content": "` on one line is not swallowed by the fused alternative\n- `a < b and 3 <= 4`: untouched\n\n### Tests/Commands Run\n- `pnpm vitest run` (3 test files) → **PASS 169/169**\n- Pre-fix check (sources reverted to main) → **5 new tests FAIL** (expected)\n- `pnpm run check` → **PASS** (0 errors, 0 warnings)\n- `pnpm tsc -p tsconfig.json --noEmit` → **PASS**\n\n### PR hygiene\n- Body carries `Fixes intent-hq/monorepo#2216`; title `fix(chat): recover fused group open tags and empty-name close tags` is a valid conventional commit (Validate PR Title check green). Existing Augment bot review had no suggestions. Some CI jobs (build/tests/typecheck) were still pending at review time — worth confirming green before merge.\n\nTask note marked `complete`; verdict reported to parent."
+          "content": "### Verification Summary\n- **Verdict: ✅ APPROVED** — do not merge (per instructions); review comment posted on [PR #1122](https://github.com/intent-hq/cloudlands-fe/pull/1122#issuecomment-5278261668)\n- **Confidence: High** (all verification commands run locally on the PR branch)\n\n### Acceptance Criteria Checklist\n\n- ✅ VERIFIED — `<group:Wrapping up</group:>` never renders as literal text\n  - Evidence: `GROUP_AND_THINK_TAG_REGEX` (messageParser.ts:1018) gained a fused-open alternative (capture group 4) consuming `<group:Name</group:>` / `<group:Name</group>` as one match treated as a group OPEN; close alternative relaxed to `([^>\\n<]*)` (capture 5) so `</group:>` matches. `match[1..4]` open checks in `groupContentBlocks` updated correctly; the fused close-suffix is non-capturing so no further index shifts. Strip regexes in `text-utils.ts` and `graph-helpers.ts` now consume `</group:>` (fused form already consumed whole since `[^>]` matches `<`). Grep confirmed no other group-tag regexes exist in the repo.\n  - Verification: regression test mirroring DB message 019ff9fc passes; reverting the 3 source files to `origin/main` makes 5 of the new tests fail — tests are meaningful.\n- ✅ VERIFIED — no regression in existing group/think tag parsing\n  - Verification: 169/169 tests pass (message-parser, text-utils, graph-helpers); `pnpm run check` 0 errors/warnings; `pnpm tsc -p tsconfig.json --noEmit` clean.\n\n### Edge-case probes (temp test file, all 7 passed, removed after)\n- Fused tag mid-text: prose before stays outside, prose after grouped under \"Name\"\n- Streaming last block ending in `</group:` prefix: withheld, no raw tag leak; once settled, opens a streaming group\n- Fused tag inside `<think>…</think>`: stays think content, no spurious group\n- `<group:Name</group:Other>`: opens named \"Name\"\n- Well-formed `<group:Work>doing stuff</group>` on one line is not swallowed by the fused alternative\n- `a < b and 3 <= 4`: untouched\n\n### Tests/Commands Run\n- `pnpm vitest run` (3 test files) → **PASS 169/169**\n- Pre-fix check (sources reverted to main) → **5 new tests FAIL** (expected)\n- `pnpm run check` → **PASS** (0 errors, 0 warnings)\n- `pnpm tsc -p tsconfig.json --noEmit` → **PASS**\n\n### PR hygiene\n- Body carries `Fixes intent-hq/monorepo#2216`; title `fix(chat): recover fused group open tags and empty-name close tags` is a valid conventional commit (Validate PR Title check green). Existing Augment bot review had no suggestions. Some CI jobs (build/tests/typecheck) were still pending at review time — worth confirming green before merge.\n\nTask note marked `complete`; verdict reported to parent."
         }
       ]
     }

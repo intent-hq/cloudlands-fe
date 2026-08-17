@@ -4,7 +4,6 @@
     "group-close",
     "inline-code-angle"
   ],
-  "KNOWN_BAD": "tag literals in inline code discussing the tag regex",
   "prompts": [],
   "tree": [
     {
@@ -666,75 +665,7 @@
       "blocks": [
         {
           "type": "text",
-          "content": "Task complete. Summary of what was delivered:\n\n**PR**: [intent-hq/cloudlands-fe#1122](https://github.com/intent-hq/cloudlands-fe/pull/1122) — `fix(chat): recover fused group open tags and empty-name close tags`, carrying `Fixes intent-hq/monorepo#2216`, branched from latest main (db98489).\n\n**Changes** (tests written first — 4 failed before the fix):\n- `messageParser.ts`: `GROUP_AND_THINK_TAG_REGEX` gained a fused-open alternative that consumes `"
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Name",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "` (and `"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Name",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "`) as a single match treated as a group OPEN, so following tool calls are grouped as the model intended; the standalone close alternative now accepts the empty-name `"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "text",
-      "blocks": [
-        {
-          "type": "text",
-          "content": "`. The `match[N]` open-tag checks in `groupContentBlocks` and the pattern-priority comment were updated for the new capture group.\n- `text-utils.ts` / `graph-helpers.ts`: strip regexes relaxed (`(?::[^>]*)?`) so `"
-        }
-      ]
-    },
-    {
-      "type": "text",
-      "blocks": [
-        {
-          "type": "text",
-          "content": "` is stripped from previews/snippets; the fused form was already consumed whole by the open alternative.\n- Regression tests in `message-parser.test.ts` (fused form mirroring DB message 019ff9fc, `"
-        }
-      ]
-    },
-    {
-      "type": "text",
-      "blocks": [
-        {
-          "type": "text",
-          "content": "` variant, `"
-        }
-      ]
-    },
-    {
-      "type": "text",
-      "blocks": [
-        {
-          "type": "text",
-          "content": "` close, stray close, `a < b` prose unaffected) plus `stripGroupTags` coverage in the existing `text-utils.test.ts`.\n\n**Verification**: targeted vitest run 169/169 passed; `pnpm run check` 0 errors/warnings; `pnpm tsc -p tsconfig.json --noEmit` clean.\n\nReported to the coordinator; the remaining review-and-merge round is theirs to drive (implementor role does not delegate a PR Reviewer)."
+          "content": "Task complete. Summary of what was delivered:\n\n**PR**: [intent-hq/cloudlands-fe#1122](https://github.com/intent-hq/cloudlands-fe/pull/1122) — `fix(chat): recover fused group open tags and empty-name close tags`, carrying `Fixes intent-hq/monorepo#2216`, branched from latest main (db98489).\n\n**Changes** (tests written first — 4 failed before the fix):\n- `messageParser.ts`: `GROUP_AND_THINK_TAG_REGEX` gained a fused-open alternative that consumes `<group:Name</group:>` (and `<group:Name</group>`) as a single match treated as a group OPEN, so following tool calls are grouped as the model intended; the standalone close alternative now accepts the empty-name `</group:>`. The `match[N]` open-tag checks in `groupContentBlocks` and the pattern-priority comment were updated for the new capture group.\n- `text-utils.ts` / `graph-helpers.ts`: strip regexes relaxed (`(?::[^>]*)?`) so `</group:>` is stripped from previews/snippets; the fused form was already consumed whole by the open alternative.\n- Regression tests in `message-parser.test.ts` (fused form mirroring DB message 019ff9fc, `</group>` variant, `</group:>` close, stray close, `a < b` prose unaffected) plus `stripGroupTags` coverage in the existing `text-utils.test.ts`.\n\n**Verification**: targeted vitest run 169/169 passed; `pnpm run check` 0 errors/warnings; `pnpm tsc -p tsconfig.json --noEmit` clean.\n\nReported to the coordinator; the remaining review-and-merge round is theirs to drive (implementor role does not delegate a PR Reviewer)."
         }
       ]
     }

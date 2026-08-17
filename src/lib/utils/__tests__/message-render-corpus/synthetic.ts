@@ -3,10 +3,12 @@ import type { ContentBlock } from '$shared/types/content-block';
 /**
  * Synthetic fixtures for the message render corpus.
  *
- * `knownBad` marks fixtures whose CURRENT rendering is a documented bug
- * (intent-hq/monorepo#2689): tag literals inside inline code / fenced code are
- * treated as real group/think tags. Their goldens lock in today's broken
- * output and are expected to change when the parser fix lands.
+ * `knownBad` marks fixtures whose CURRENT rendering is a documented bug.
+ * Their goldens lock in the broken output and are expected to change when the
+ * corresponding fix lands (update the golden + drop the marker in the fix PR).
+ * The `bad-*` fixtures below were the intent-hq/monorepo#2689 cases (tag
+ * literals inside code regions scanned as real tags); the parser fix flipped
+ * their goldens to correct output and they now double as regression coverage.
  */
 export interface SyntheticFixture {
   id: string;
@@ -161,8 +163,6 @@ export const syntheticFixtures: SyntheticFixture[] = [
   // -------------------------------------------------------------------------
   {
     id: 'bad-group-literal-inline-code',
-    knownBad:
-      'inline-code `<group:Name>` literal is treated as a real group open: the message splits into a group and the literal is lost from the text',
     note: 'group tag inside inline code should stay literal',
     blocks: [
       text(
@@ -172,8 +172,6 @@ export const syntheticFixtures: SyntheticFixture[] = [
   },
   {
     id: 'bad-group-empty-literal-inline-code',
-    knownBad:
-      'inline-code `<group:>` matches the malformed-open fallback (name capture accepts `>` and backticks) and swallows the rest of the line into a group name',
     note: 'empty-name group literal in inline code (repro shape from #2689)',
     blocks: [
       text(
@@ -183,22 +181,16 @@ export const syntheticFixtures: SyntheticFixture[] = [
   },
   {
     id: 'bad-group-close-literal-inline-code',
-    knownBad:
-      'inline-code `</group>` literal is consumed as a stray close tag instead of staying literal',
     note: 'group close tag inside inline code',
     blocks: [text('A stray close such as `</group>` in prose gets consumed by the scanner.')],
   },
   {
     id: 'bad-think-literal-inline-code',
-    knownBad:
-      'inline-code `<think>` literal opens a think context and swallows the rest of the message into a thinking block',
     note: 'think tag inside inline code',
     blocks: [text('The scanner also matches `<think>` in backticks, hiding everything after it.')],
   },
   {
     id: 'bad-group-literal-fenced-code',
-    knownBad:
-      'group/think tag lines inside a fenced code block are treated as real tags, splitting the fence apart',
     note: 'tags inside a ``` fence should stay literal',
     blocks: [
       text(
@@ -208,8 +200,6 @@ export const syntheticFixtures: SyntheticFixture[] = [
   },
   {
     id: 'bad-regex-source-fenced-code',
-    knownBad:
-      'regex source containing <group:…> alternatives inside a 4-backtick path= fence is scanned for tags (repro 2 shape from #2689)',
     note: 'GROUP_AND_THINK_TAG_REGEX source quoted in an augment-style fence',
     blocks: [
       text(
@@ -219,9 +209,7 @@ export const syntheticFixtures: SyntheticFixture[] = [
   },
   {
     id: 'bad-prompts-literal-fenced-code',
-    knownBad:
-      'a suggested-prompts comment quoted inside a fenced code block is stripped and surfaced as prompts (fence-awareness gap)',
-    note: 'suggested-prompts syntax quoted in a fence',
+    note: 'suggested-prompts syntax quoted in a fence stays literal (parseSuggestedPrompts is fence-aware)',
     blocks: [
       text(
         'The syntax is:\n\n```\n<!-- suggested-prompts\nExample prompt.\n-->\n```\n\nDocumented above, not a real block.',

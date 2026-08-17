@@ -7,7 +7,6 @@
     "fence3",
     "inline-code-angle"
   ],
-  "KNOWN_BAD": "doubled interleaved group tag quoted in a fence",
   "prompts": [
     "Approve — file the issue and start the fix.",
     "Show me the exact regex alternative you'd add first.",
@@ -268,49 +267,14 @@
         },
         {
           "type": "code",
-          "content": "<group",
+          "content": "<group<group:Researching>:Researching>\\n",
           "metadata": {
             "language": "plaintext"
           }
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Researching",
-      "isStreaming": false,
-      "children": [
+        },
         {
           "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": ":Researching>\\n"
-            },
-            {
-              "type": "code",
-              "content": "That's two interleaved copies of the open tag: prefix `<group` + a full well-formed tag + suffix `:Researching>`. The parser correctly matches the inner well-formed tag (so a \"Researching\" group does form), but the `<group` prefix and `:Researching>` suffix fall outside any match and render as literal text.\n\n**Provenance is settled**: I traced the exact string back to the provider's raw session transcript on disk (`~/.augment/sessions/abe11a8c….json`) — the model (fable-5) emitted it verbatim. intentd stored it faithfully; this is not a daemon delta-accumulation bug. It's the model glitching mid-tag and restarting the tag inside itself. Only 1 genuine instance exists in the whole DB so far.\n\n## Plan\n\nOne task added to the spec:\n\n- Add a regex alternative that consumes the full doubled form `<group",
-              "metadata": {
-                "language": "plaintext"
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Name",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": ":Name>` as a single group OPEN, fix capture-group index handling, update both strip regexes, check streaming partial-tag withholding covers the doubled prefix, regression tests first (pinned to the exact DB string), file a new monorepo issue (dedup search found nothing existing) and reference it with `Fixes intent-hq/monorepo#N` in the PR.\n\nPlease review and approve the plan above."
-            }
-          ]
+          "content": "That's two interleaved copies of the open tag: prefix `<group` + a full well-formed tag + suffix `:Researching>`. The parser correctly matches the inner well-formed tag (so a \"Researching\" group does form), but the `<group` prefix and `:Researching>` suffix fall outside any match and render as literal text.\n\n**Provenance is settled**: I traced the exact string back to the provider's raw session transcript on disk (`~/.augment/sessions/abe11a8c….json`) — the model (fable-5) emitted it verbatim. intentd stored it faithfully; this is not a daemon delta-accumulation bug. It's the model glitching mid-tag and restarting the tag inside itself. Only 1 genuine instance exists in the whole DB so far.\n\n## Plan\n\nOne task added to the spec:\n\n- Add a regex alternative that consumes the full doubled form `<group<group:Name>:Name>` as a single group OPEN, fix capture-group index handling, update both strip regexes, check streaming partial-tag withholding covers the doubled prefix, regression tests first (pinned to the exact DB string), file a new monorepo issue (dedup search found nothing existing) and reference it with `Fixes intent-hq/monorepo#N` in the PR.\n\nPlease review and approve the plan above."
         }
       ]
     }

@@ -7,7 +7,6 @@
     "fence4",
     "inline-code-angle"
   ],
-  "KNOWN_BAD": "tag literals in inline code + regex source in fences",
   "prompts": [
     "Approve the plan and start the fix.",
     "Also check whether intentd stores these tags anywhere it shouldn't.",
@@ -279,103 +278,20 @@
       "blocks": [
         {
           "type": "text",
-          "content": "## Why it's still happening\n\nThe previous fixes (PRs #1068 and #1080) addressed **streaming** partial-tag withholding and two other malformed-open shapes (`<group:Name\\n` and `<group:Name` at end of block). The string you saw — `"
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Wrapping up",
-      "isStreaming": false,
-      "children": [
+          "content": "## Why it's still happening\n\nThe previous fixes (PRs #1068 and #1080) addressed **streaming** partial-tag withholding and two other malformed-open shapes (`<group:Name\\n` and `<group:Name` at end of block). The string you saw — `<group:Wrapping up</group:>` — is composed of two shapes the parser regex still doesn't recognize. I verified against the exact regex in 2.30.0: it produces **zero matches**, so the whole thing renders as literal text."
+        },
+        {
+          "type": "augment_code_snippet",
+          "content": "const GROUP_AND_THINK_TAG_REGEX =\n  /<group:([^>\\n<]+)>|<group:([^\\n<]+)\\n|<group:([^>\\n<]+)$|<\\/group(?::([^>\\n<]+))?>|.../g;",
+          "metadata": {
+            "path": "packages/cloudlands-fe/src/lib/utils/messageParser.ts",
+            "mode": "EXCERPT",
+            "language": "ts"
+          }
+        },
         {
           "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "` — is composed of two shapes the parser regex still doesn't recognize. I verified against the exact regex in 2.30.0: it produces **zero matches**, so the whole thing renders as literal text."
-            },
-            {
-              "type": "code",
-              "content": "const GROUP_AND_THINK_TAG_REGEX =\n  /",
-              "metadata": {
-                "language": "ts path=packages/cloudlands-fe/src/lib/utils/messageParser.ts mode=EXCERPT"
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "([^",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "\\n<]+)>|<group:([^\\n<]+)\\n|"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "([^",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "\\n<]+)$|<\\/group(?::([^>\\n<]+))?>|.../g;"
-            },
-            {
-              "type": "code",
-              "content": "The two gaps:\n\n1. **Malformed open followed by `<`** — `",
-              "metadata": {
-                "language": "plaintext"
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Wrapping up` immediately followed by another tag. The open alternatives require `",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "`, a newline, or end-of-block after the name; a following `<` matches none.\n2. **Empty-name close** — `"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "text",
-      "blocks": [
-        {
-          "type": "text",
-          "content": "`. The close alternative `</group(?::([^>\\n<]+))?>` requires at least one character after the colon, so `"
-        }
-      ]
-    },
-    {
-      "type": "text",
-      "blocks": [
-        {
-          "type": "text",
-          "content": "` never matches. (The strip regexes in `text-utils.ts` and `graph-helpers.ts` have the same empty-name gap.)\n\n## Plan\n\nOne ~30-min task in the spec: add a `<group:Name(?=<)` open alternative, allow empty-name closes, fix the shifted capture-group indices in `groupContentBlocks`, drop the resulting empty group instead of rendering an empty row, update the two strip regexes, and write regression tests first (including the exact reported string). File a monorepo issue and reference it in the PR.\n\nPlease review and approve the plan above."
+          "content": "The two gaps:\n\n1. **Malformed open followed by `<`** — `<group:Wrapping up` immediately followed by another tag. The open alternatives require `>`, a newline, or end-of-block after the name; a following `<` matches none.\n2. **Empty-name close** — `</group:>`. The close alternative `</group(?::([^>\\n<]+))?>` requires at least one character after the colon, so `</group:>` never matches. (The strip regexes in `text-utils.ts` and `graph-helpers.ts` have the same empty-name gap.)\n\n## Plan\n\nOne ~30-min task in the spec: add a `<group:Name(?=<)` open alternative, allow empty-name closes, fix the shifted capture-group indices in `groupContentBlocks`, drop the resulting empty group instead of rendering an empty row, update the two strip regexes, and write regression tests first (including the exact reported string). File a monorepo issue and reference it in the PR.\n\nPlease review and approve the plan above."
         }
       ]
     }

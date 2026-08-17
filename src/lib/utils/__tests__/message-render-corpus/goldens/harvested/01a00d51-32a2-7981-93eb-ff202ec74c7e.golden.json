@@ -6,7 +6,6 @@
     "inline-code-angle",
     "digest"
   ],
-  "KNOWN_BAD": "inline-code `<group:…>` literal",
   "prompts": [],
   "tree": [
     {
@@ -289,23 +288,7 @@
       "blocks": [
         {
           "type": "text",
-          "content": "Review round addressed. Summary of this turn:\n\n- **CI**: first run was green (2/2 checks, including the required \"iOS Build & Test\").\n- **Review comments**: the Augment bot filed 3 valid comments. All fixed in commit f1770a3 on [intent-hq/ios#120](https://github.com/intent-hq/ios/pull/120):\n  1. User-row copy now uses `userCopyText`, restricted to the text blocks the row actually renders — code/file blocks in user payloads can no longer leak into copies.\n  2. Assistant-row copy now cleans each text block with the same `ContentBlockView.stripSuggestedPrompts` used for rendering (made `static` to share it), so suggested-prompts blocks, HTML comments, `<agent_digest>` and supervisor tags are removed.\n  3. Assistant-row copy is built from the `groupContentBlocks` display pipeline, so `"
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "…",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "` tags never appear in copied text.\n- Added 5 tests covering the new helpers, replied to each review comment with the fix, and resolved all 3 threads.\n\nThe PR monitor remains active and will wake me when CI settles on f1770a3; I'll confirm green and mark the task complete then. Not merging — that stays with a human."
-            }
-          ]
+          "content": "Review round addressed. Summary of this turn:\n\n- **CI**: first run was green (2/2 checks, including the required \"iOS Build & Test\").\n- **Review comments**: the Augment bot filed 3 valid comments. All fixed in commit f1770a3 on [intent-hq/ios#120](https://github.com/intent-hq/ios/pull/120):\n  1. User-row copy now uses `userCopyText`, restricted to the text blocks the row actually renders — code/file blocks in user payloads can no longer leak into copies.\n  2. Assistant-row copy now cleans each text block with the same `ContentBlockView.stripSuggestedPrompts` used for rendering (made `static` to share it), so suggested-prompts blocks, HTML comments, `<agent_digest>` and supervisor tags are removed.\n  3. Assistant-row copy is built from the `groupContentBlocks` display pipeline, so `<group:…>` tags never appear in copied text.\n- Added 5 tests covering the new helpers, replied to each review comment with the fix, and resolved all 3 threads.\n\nThe PR monitor remains active and will wake me when CI settles on f1770a3; I'll confirm green and mark the task complete then. Not merging — that stays with a human."
         }
       ]
     }

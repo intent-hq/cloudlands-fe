@@ -1,6 +1,5 @@
 {
-  "note": "suggested-prompts syntax quoted in a fence",
-  "KNOWN_BAD": "a suggested-prompts comment quoted inside a fenced code block is stripped and surfaced as prompts (fence-awareness gap)",
+  "note": "suggested-prompts syntax quoted in a fence stays literal (parseSuggestedPrompts is fence-aware)",
   "prompts": [],
   "tree": [
     {

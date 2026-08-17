@@ -1,6 +1,5 @@
 {
   "note": "group close tag inside inline code",
-  "KNOWN_BAD": "inline-code `</group>` literal is consumed as a stray close tag instead of staying literal",
   "prompts": [],
   "tree": [
     {
@@ -8,16 +7,7 @@
       "blocks": [
         {
           "type": "text",
-          "content": "A stray close such as `"
-        }
-      ]
-    },
-    {
-      "type": "text",
-      "blocks": [
-        {
-          "type": "text",
-          "content": "` in prose gets consumed by the scanner."
+          "content": "A stray close such as `</group>` in prose gets consumed by the scanner."
         }
       ]
     }

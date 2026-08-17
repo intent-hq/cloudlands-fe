@@ -6,7 +6,6 @@
     "prompts",
     "inline-code-angle"
   ],
-  "KNOWN_BAD": "fused tag literals quoted in inline code",
   "prompts": [
     "Approve the plan and delegate the fix.",
     "Also file the monorepo issue now before implementation starts.",
@@ -298,89 +297,7 @@
       "blocks": [
         {
           "type": "text",
-          "content": "## Why the model does this\n\nThe raw DB rules out any pipeline corruption — the string is stored exactly as the model streamed it, in one settled text block:\n\n- `agent_message 019ff9fc…` (Coordinator, model **fable-5**): block `:1` is literally `\""
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Wrapping up",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "\\n\"`, followed by tool_use blocks, then closing prose. No matching close tag anywhere later.\n- `agent_message 019ff841…` (same model/specialist): `\""
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Checking review",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "\\n\"`, same pattern.\n\nSo this is a token-level slip by fable-5: it starts an **open** tag (`"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Name`) and completes it with the **close-tag suffix** (`",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "`) instead of `>`. It's plausibly primed by the specialist instructions, which document the `"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "text",
-      "blocks": [
-        {
-          "type": "text",
-          "content": "` closing variant — after emitting a group name, the close-suffix token sequence is highly probable. It's rare (2 genuine instances in the whole DB, both from Coordinator turn-openers like \"Wrapping up\"/\"Checking review\"), which is why it slipped past the earlier fixes — those addressed streaming partial tags and other malformed shapes, not this fused one.\n\nOne nuance the raw data settled: in every genuine instance the model **meant to open a group** (tools follow immediately). So I've updated the task: the parser should treat the fused `"
-        }
-      ]
-    },
-    {
-      "type": "content_group",
-      "name": "Name",
-      "isStreaming": false,
-      "children": [
-        {
-          "type": "text",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "` as a single open tag — grouping the subsequent blocks as intended — rather than open-then-immediately-close, plus accept standalone `"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "text",
-      "blocks": [
-        {
-          "type": "text",
-          "content": "` as a close. Prompt-tweaking the specialist to avoid priming would be marginal; parser leniency is the durable fix.\n\n(One known limitation worth flagging: the parser runs on raw text and ignores code spans, so a message that *quotes* these tag strings — like my own analysis message, which showed up as the third DB hit — gets its quoted tags consumed. That's pre-existing and out of scope.)\n\nThe spec and task are updated. Please review and approve the plan, and I'll delegate the fix."
+          "content": "## Why the model does this\n\nThe raw DB rules out any pipeline corruption — the string is stored exactly as the model streamed it, in one settled text block:\n\n- `agent_message 019ff9fc…` (Coordinator, model **fable-5**): block `:1` is literally `\"<group:Wrapping up</group:>\\n\"`, followed by tool_use blocks, then closing prose. No matching close tag anywhere later.\n- `agent_message 019ff841…` (same model/specialist): `\"<group:Checking review</group:>\\n\"`, same pattern.\n\nSo this is a token-level slip by fable-5: it starts an **open** tag (`<group:Name`) and completes it with the **close-tag suffix** (`</group:>`) instead of `>`. It's plausibly primed by the specialist instructions, which document the `</group:Name>` closing variant — after emitting a group name, the close-suffix token sequence is highly probable. It's rare (2 genuine instances in the whole DB, both from Coordinator turn-openers like \"Wrapping up\"/\"Checking review\"), which is why it slipped past the earlier fixes — those addressed streaming partial tags and other malformed shapes, not this fused one.\n\nOne nuance the raw data settled: in every genuine instance the model **meant to open a group** (tools follow immediately). So I've updated the task: the parser should treat the fused `<group:Name</group:>` as a single open tag — grouping the subsequent blocks as intended — rather than open-then-immediately-close, plus accept standalone `</group:>` as a close. Prompt-tweaking the specialist to avoid priming would be marginal; parser leniency is the durable fix.\n\n(One known limitation worth flagging: the parser runs on raw text and ignores code spans, so a message that *quotes* these tag strings — like my own analysis message, which showed up as the third DB hit — gets its quoted tags consumed. That's pre-existing and out of scope.)\n\nThe spec and task are updated. Please review and approve the plan, and I'll delegate the fix."
         }
       ]
     }
