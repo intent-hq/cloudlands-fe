@@ -1,0 +1,24 @@
+{
+  "note": "stray </group> in prose is silently consumed (current behavior)",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Before the stray tag."
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "After the stray tag."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "note": "plain code fence and diff fence",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Change:"
+        },
+        {
+          "type": "diff",
+          "content": "- const a = 1;\n+ const a = 2;"
+        },
+        {
+          "type": "text",
+          "content": "Usage:"
+        },
+        {
+          "type": "code",
+          "content": "const a = 2;",
+          "metadata": {
+            "language": "typescript"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -11,9 +11,12 @@
  *     counts only) and upsert it so the subscription's snapshot can apply.
  *  2. Wait (bounded) for the standing subscription's snapshot to apply —
  *     `chatTranscriptSnapshotApplied` is dispatched only after the snapshot's
- *     messages AND stream-accumulator seed have landed. If none arrives
- *     within the wait, hydration fails (`transcriptHydrationFailed`) and the
- *     existing error/retry surface shows — never a silent partial paint.
+ *     messages AND stream-accumulator seed have landed. A timed-out window
+ *     re-requests the snapshot from the subscribe saga
+ *     (`chatTranscriptSnapshotRerequested`, up to `SNAPSHOT_WAIT_ATTEMPTS`
+ *     windows, intent-hq/monorepo#2692); only after every attempt times out
+ *     does hydration fail (`transcriptHydrationFailed`) and the existing
+ *     error/retry surface show — never a silent partial paint.
  *  3. Settle (`transcriptHydrationSettled`) — first paint gates on this.
  *  4. OFF the critical path: when older history exists beyond the snapshot
  *     window (`truncated`), page it in the background via the §5.5
@@ -26,7 +29,7 @@
  *     backward from the window's oldest traverses the gap first and the
  *     nothing-new stop condition halts on already-retained pages. Merged
  *     with current-wins dedup; stops early when a page contributes nothing
- *     new or the store's 500-message prune cap is reached (fetching beyond
+ *     new or the store's `MAX_MESSAGES_PER_AGENT` prune cap is reached (fetching beyond
  *     it would be discarded anyway).
  */
 import {
@@ -49,6 +52,7 @@ import type { AgentMessage, AgentSession } from '$shared/types';
 import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import {
+  MAX_MESSAGES_PER_AGENT,
   bulkUpsertSessions,
   replaceMessages,
   upsertSession,
@@ -60,6 +64,7 @@ import {
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   chatTranscriptSnapshotApplied,
+  chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   refreshChatTranscriptRequested,
   transcriptHydrationFailed,
@@ -84,8 +89,22 @@ const SNAPSHOT_HEAL_MARGIN_MS = 2_000;
  * the recovery watcher (`snapshotRecoveryWorker`).
  */
 const SNAPSHOT_WAIT_MS = SNAPSHOT_TIMEOUT_MS + INITIAL_RETRY_DELAY_MS + SNAPSHOT_HEAL_MARGIN_MS;
-/** Mirror of the agent-session slice's message prune cap — paging past it is discarded. */
-const MAX_STORE_MESSAGES = 500;
+/**
+ * Bounded-wait attempts before hydration fails (intent-hq/monorepo#2692).
+ * A timed-out window no longer fails the load outright: between attempts the
+ * saga dispatches `chatTranscriptSnapshotRerequested`, which the subscribe
+ * saga answers by replaying a held/last snapshot or force-cycling the
+ * registration (fresh `chat.subscribe` → fresh seq-0 snapshot) — so a
+ * dropped initial push heals without a manual retry. Only after every
+ * attempt times out does hydration fail to the error/retry surface.
+ *
+ * Deliberate UX tradeoff: time-to-error for a genuinely dead subscription is
+ * 3 × SNAPSHOT_WAIT_MS (~24s) instead of one window (~8s). The error surface
+ * is the failure mode #2692 exists to avoid, so the extended ceiling buys the
+ * second re-request's force-cycle a full window for its fresh seq-0 snapshot
+ * to land; a truly dead subscription still reaches the retry surface.
+ */
+const SNAPSHOT_WAIT_ATTEMPTS = 3;
 
 type ChatRequest = { wsId: string; agentId: string };
 type HydrationTails = Map<string, Promise<void>>;
@@ -177,11 +196,25 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
       // a fresh application.
       if (!(meta && (meta.totalMessages === 0 || visible.length > 0))) {
         meta = undefined;
-        const { applied } = yield* race({
-          applied: take(snapshotChannel),
-          timedOut: delay(SNAPSHOT_WAIT_MS),
-        });
-        if (applied) meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
+        for (let attempt = 1; attempt <= SNAPSHOT_WAIT_ATTEMPTS && !meta; attempt += 1) {
+          const { applied } = yield* race({
+            applied: take(snapshotChannel),
+            timedOut: delay(SNAPSHOT_WAIT_MS),
+          });
+          if (applied) {
+            meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
+          }
+          // Escalate on ANY non-final iteration that ends without valid meta
+          // (window timed out, or an application raced a session reset and
+          // left no recorded meta) so every window after the first opens with
+          // a re-request in flight.
+          if (!meta && attempt < SNAPSHOT_WAIT_ATTEMPTS) {
+            logger.warn(
+              `No transcript snapshot recorded within wait window (attempt ${attempt}/${SNAPSHOT_WAIT_ATTEMPTS}); re-requesting`,
+            );
+            yield* put(chatTranscriptSnapshotRerequested(wsId, agentId));
+          }
+        }
       }
       if (!meta) throw new Error('No transcript snapshot arrived within the hydration wait');
       succeeded = true;
@@ -219,7 +252,7 @@ function* fetchOlderHistorySaga(request: ChatRequest, windowAnchor?: string): Sa
     if (yield* call(isAgentDeletionPending, agentId)) return;
     const current: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
     const anchor = windowAnchor ?? oldestMessageId(current);
-    if (!anchor || current.length >= MAX_STORE_MESSAGES) return;
+    if (!anchor || current.length >= MAX_MESSAGES_PER_AGENT) return;
 
     const older: AgentMessage[] = [];
     const knownIds = identitySet(current);
@@ -248,7 +281,7 @@ function* fetchOlderHistorySaga(request: ChatRequest, windowAnchor?: string): Sa
       // Nothing new on a non-seek page means this history is already present
       // (e.g. resume onto retained rows) — stop paging.
       if (fresh.length === 0 && older.length > 0) break;
-      if (older.length + current.length >= MAX_STORE_MESSAGES) break;
+      if (older.length + current.length >= MAX_MESSAGES_PER_AGENT) break;
       page = yield* call(
         [appClient.agents, appClient.agents.getConversation],
         agentId,

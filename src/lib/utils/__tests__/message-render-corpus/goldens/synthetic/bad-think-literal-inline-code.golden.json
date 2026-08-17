@@ -1,0 +1,15 @@
+{
+  "note": "think tag inside inline code",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "The scanner also matches `<think>` in backticks, hiding everything after it."
+        }
+      ]
+    }
+  ]
+}

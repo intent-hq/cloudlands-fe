@@ -1,0 +1,19 @@
+{
+  "note": "<thinking> alias tags",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "thinking",
+      "content": "internal reasoning"
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Visible answer."
+        }
+      ]
+    }
+  ]
+}

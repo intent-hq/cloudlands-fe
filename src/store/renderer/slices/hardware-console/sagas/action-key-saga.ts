@@ -76,20 +76,31 @@ function* persistScopes(_action: ReturnType<typeof setCycleScope>): SagaGenerato
 }
 
 function* hydrateActionKeys(): SagaGenerator<boolean> {
+  let hydrated: Awaited<ReturnType<typeof loadHardwareConsoleActionKeySettings>>;
   try {
-    const hydrated = yield* call(loadHardwareConsoleActionKeySettings);
+    hydrated = yield* call(loadHardwareConsoleActionKeySettings);
     yield* put(hydrateHardwareConsoleActionMapping(hydrated.actionMappingByModel));
     yield* put(hydrateHardwareConsoleCycleScopes(hydrated.cycleScopeByFamily));
-    if (hydrated.migratedDefaults) {
-      yield* call(persistHardwareConsoleActionMapping, hydrated.actionMappingByModel);
-    }
-    return true;
   } catch (error) {
     logger.error('Action-mapping hydration failed; dispatching defaults', { error });
     yield* put(hydrateHardwareConsoleActionMapping(normalizeActionMappingsByModel(undefined)));
     yield* put(hydrateHardwareConsoleCycleScopes(normalizeCycleScopeByFamily(undefined)));
     return false;
   }
+  if (hydrated.migratedDefaults) {
+    // Kept outside the hydration try: the persist can throw on a transient bag-read
+    // flap, and that must not overwrite the just-hydrated in-memory values with
+    // defaults. The bag is untouched, so the migration simply re-runs next boot.
+    try {
+      yield* call(persistHardwareConsoleActionMapping, hydrated.actionMappingByModel);
+    } catch (error) {
+      logger.error(
+        `Failed to persist migrated ${HARDWARE_CONSOLE_SETTINGS_PATH} actionMappingByModel; keeping hydrated values`,
+        { error },
+      );
+    }
+  }
+  return true;
 }
 
 function* waitForActionHudHidden(): SagaGenerator<void> {

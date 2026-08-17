@@ -1,0 +1,15 @@
+{
+  "note": "group close tag inside inline code",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "A stray close such as `</group>` in prose gets consumed by the scanner."
+        }
+      ]
+    }
+  ]
+}

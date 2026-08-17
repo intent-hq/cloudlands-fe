@@ -1,0 +1,15 @@
+{
+  "note": "group tag inside inline code should stay literal",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "The parser mishandles the `<group:Example>` tag when it appears in backticks like this."
+        }
+      ]
+    }
+  ]
+}

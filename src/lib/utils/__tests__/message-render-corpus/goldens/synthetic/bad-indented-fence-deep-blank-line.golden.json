@@ -1,0 +1,26 @@
+{
+  "note": "6-space-indented fence with interior blank line, tag literal should stay literal",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Quoted in a nested list:"
+        },
+        {
+          "type": "code",
+          "content": "<group:Working>\n\n      doing things\n      </group>",
+          "metadata": {
+            "language": "plaintext"
+          }
+        },
+        {
+          "type": "text",
+          "content": "After the fence."
+        }
+      ]
+    }
+  ]
+}

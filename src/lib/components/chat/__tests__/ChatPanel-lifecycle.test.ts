@@ -142,6 +142,10 @@ vi.mock('../message-send-transition', () => ({
   captureMessageSendOrigin: () => ({ left: 0, top: 600, width: 320, borderRadius: '8px' }),
   createMessageSendLaunchBubble: mocks.createMessageSendLaunchBubble,
   animateMessageSend: mocks.animateMessageSend,
+  dismissMessageSendLaunchBubble: (bubble: HTMLElement | null) => {
+    bubble?.remove();
+    return Promise.resolve();
+  },
   MESSAGE_SEND_MATCH_TIMEOUT_MS: 3000,
   MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS: 600,
 }));

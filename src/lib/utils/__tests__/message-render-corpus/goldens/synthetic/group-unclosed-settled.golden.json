@@ -1,0 +1,22 @@
+{
+  "note": "unclosed group in a settled message",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "content_group",
+      "name": "Working",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "still inside the group at end of message"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

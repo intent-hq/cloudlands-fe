@@ -14,6 +14,7 @@ import type {
 } from '$lib/components/file-tracking/accept-changes/types';
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger } from '$lib/i18n/format';
+import { capitalize } from '$shared/utils-client';
 
 /**
  * Validate a git branch name according to git-check-ref-format rules.
@@ -661,7 +662,7 @@ export function getPRStatusTooltip(pr: PRInfo): string {
     }
     if (snapshot.mergeBlockedReason) {
       // i18n-ignore (BE-provided human-readable reason)
-      lines.push(snapshot.mergeBlockedReason);
+      lines.push(capitalize(snapshot.mergeBlockedReason));
     }
   }
   return lines.join('\n');

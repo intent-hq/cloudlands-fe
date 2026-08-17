@@ -1,0 +1,51 @@
+{
+  "note": "group spanning tool_use/tool_result blocks",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "content_group",
+      "name": "Running checks",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "kicking off the build"
+            }
+          ]
+        },
+        {
+          "type": "tool_use",
+          "name": "launch-process",
+          "input": {
+            "command": "make check"
+          }
+        },
+        {
+          "type": "tool_result",
+          "output": "ok"
+        },
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "build passed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Summary: everything green."
+        }
+      ]
+    }
+  ]
+}

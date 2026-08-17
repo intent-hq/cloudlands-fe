@@ -11,6 +11,7 @@
 
   import {
     selectAvailableModels,
+    selectAvailableModelsProviderId,
     selectModelEffortLevels,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
@@ -29,7 +30,10 @@
     selectNormalizedProviderId,
     selectProviderCatalogEntries,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { selectProviderModelsCacheEntry } from '$store/renderer/slices/provider-models/provider-models-selectors';
+  import {
+    selectProviderModelsCacheEntry,
+    selectProviderModelsCacheMap,
+  } from '$store/renderer/slices/provider-models/provider-models-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { appClient } from '$lib/client';
   import { createLogger } from '$lib/utils/client-logger';
@@ -52,6 +56,8 @@
   const activeProviderId$ = selectActiveProviderId();
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
+  const availableModelsProviderId$ = selectAvailableModelsProviderId();
+  const providerModelsCacheMap$ = selectProviderModelsCacheMap();
 
   interface Props {
     /** Selected specialist ID - null means blank agent */
@@ -125,27 +131,34 @@
   // Provider availability state (for auto-selection only, no UI picker)
   let providerAvailability = $state<ProviderAvailabilityResult | null>(null);
 
+  // Map provider IDs to keys used in ProviderAvailabilityResult
+  const providerAvailabilityKeyMap: Record<
+    string,
+    keyof ProviderAvailabilityResult['providers']
+  > = {
+    auggie: 'auggie',
+    'claude-code': 'claudeCode',
+    codex: 'codex',
+    mock: 'mock',
+    opencode: 'opencode',
+    droid: 'droid',
+    grok: 'grok',
+    unsloth: 'unsloth',
+    cortex: 'cortex',
+    pi: 'pi',
+  };
+
+  // The availability entry for a provider, or undefined when the check has
+  // not completed or the result carries no entry for it (unknown provider).
+  function providerAvailabilityEntry(providerId: string) {
+    if (!providerAvailability) return undefined;
+    const key = providerAvailabilityKeyMap[providerId];
+    return key ? providerAvailability.providers[key] : undefined;
+  }
+
   // Helper to get provider availability from result (handles different key formats)
   function getProviderAvailable(providerId: string): boolean {
-    if (!providerAvailability) return false;
-    // Map provider IDs to keys used in ProviderAvailabilityResult
-    const keyMap: Record<string, keyof typeof providerAvailability.providers> = {
-      auggie: 'auggie',
-      'claude-code': 'claudeCode',
-      codex: 'codex',
-      mock: 'mock',
-      opencode: 'opencode',
-      droid: 'droid',
-      grok: 'grok',
-      unsloth: 'unsloth',
-      cortex: 'cortex',
-      pi: 'pi',
-    };
-    const key = keyMap[providerId];
-    if (key && providerAvailability.providers[key]) {
-      return providerAvailability.providers[key].available;
-    }
-    return false;
+    return providerAvailabilityEntry(providerId)?.available ?? false;
   }
 
   // Available providers derived from availability check - dynamically from the catalog
@@ -345,16 +358,46 @@
     if (defaultPreviewReady) reconcileReasoningEffort(activeModelForReasoning);
   });
 
-  // Clear stale model overrides restored from saved state.
-  // When the user changes specialist defaults in Settings (e.g., spec-writer → sonnet4.5),
-  // the form may still have a saved selectedModel (e.g., "opus4.6") marked as overridden
-  // from a previous session when that was the default. This runs reactively (not onMount)
-  // so it waits until file specialists and the parent's persisted form state are
-  // loaded — comparing before then is meaningless — and re-runs if hydration
-  // re-applies a stale override after mount. A persisted "override" that matches the
-  // current specialist default is not a real override; one that differs is stale. Either
-  // way it is cleared so the daemon-resolved default drives the picker (and a no-model
-  // create). Overrides the user made in this session are never cleared.
+  // Known model catalog for a provider: the session-lifetime provider-models
+  // cache first, else the global availableModels catalog when it was loaded
+  // for that provider. A LOADED catalog counts as evidence even when empty —
+  // a successful models.list response with zero models means the provider
+  // has no models, so any override for it is invalid. `undefined` means no
+  // catalog has been loaded for the provider yet (no evidence). Reads the
+  // reactive cache-map readable so the clearing $effect re-runs when a
+  // catalog lands after its last run.
+  function knownModelsForProvider(providerId: string): Array<{ value: string }> | undefined {
+    const normalizedProviderId = selectNormalizedProviderId.select(appStore.state, providerId);
+    const cachedModels = $providerModelsCacheMap$[normalizedProviderId]?.models;
+    if (cachedModels) return cachedModels;
+    if ($availableModelsProviderId$ === normalizedProviderId) {
+      return $availableModels$;
+    }
+    return undefined;
+  }
+
+  // Whether a restored override is provably invalid: its provider carries an
+  // availability entry reporting it unavailable, or a loaded catalog for its
+  // provider lacks the model (e.g. it was retired). With no evidence either
+  // way (availability check pending, provider absent from the availability
+  // result, no catalog loaded for the provider) the override is kept.
+  function isRestoredOverrideInvalid(model: string): boolean {
+    const { providerId, modelId } = parseCompoundModelId(model, $defaultProviderId$);
+    if (providerAvailabilityEntry(providerId)?.available === false) return true;
+    const knownModels = knownModelsForProvider(providerId);
+    if (!knownModels) return false;
+    return !knownModels.some((row) => row.value === model || row.value === modelId);
+  }
+
+  // Clear invalid model overrides restored from saved state
+  // (intent-hq/monorepo#2678). A persisted override is cleared only on
+  // positive evidence it is invalid (see isRestoredOverrideInvalid) — a valid
+  // restored override survives hydration so an explicit pick persists across
+  // sessions and is submitted as the initial agent's model. This runs
+  // reactively (not onMount) so it waits until file specialists and the
+  // parent's persisted form state are loaded — comparing before then is
+  // meaningless — and re-runs if hydration re-applies a stale override after
+  // mount. Overrides the user made in this session are never cleared.
   $effect(() => {
     const dataReady = $fileSpecialistsLoaded$ && $initializerHydrated$;
     if (!dataReady || modelOverriddenThisSession) return;
@@ -366,8 +409,8 @@
       onModelChange?.(undefined);
       return;
     }
-    if (modelWasOverridden && selectedModel) {
-      logger.debug('Clearing stale persisted model override:', { selectedModel });
+    if (modelWasOverridden && selectedModel && isRestoredOverrideInvalid(selectedModel)) {
+      logger.debug('Clearing invalid persisted model override:', { selectedModel });
       selectedModel = undefined;
       modelWasOverridden = false;
       onModelChange?.(undefined);
@@ -571,6 +614,8 @@
           showManageLink={true}
           defaultModelId={teamModeModel}
           defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
+          fallbackToCatalogDefault
+          fallbackProviderId={selectedProvider}
           noticeClass="basis-full w-full max-w-full mt-1.5"
           silentFallback
           portal={false}
@@ -728,6 +773,8 @@
           showManageLink={true}
           defaultModelId={singleAgentModel}
           defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
+          fallbackToCatalogDefault
+          fallbackProviderId={selectedProvider}
           noticeClass="basis-full w-full max-w-full mt-1.5"
           silentFallback
           portal={false}

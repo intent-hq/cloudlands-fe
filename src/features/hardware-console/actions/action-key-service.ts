@@ -278,11 +278,22 @@ async function readBag(): Promise<Record<string, unknown> | null> {
   return isRecord(setting.value) ? setting.value : {};
 }
 
+/** Read the bag for a read-modify-write, failing when the read failed so a persist can never wipe sibling fields. */
+async function readBagForPersist(): Promise<Record<string, unknown>> {
+  const bag = await readBag();
+  if (bag === null) {
+    throw new Error(
+      `settings.get(${HARDWARE_CONSOLE_SETTINGS_PATH}) returned null — daemon read failed; skipping persist to avoid wiping the bag`,
+    );
+  }
+  return bag;
+}
+
 /** Read-modify-write: replace only `actionMappingByModel`, preserving sibling fields. */
 export async function persistHardwareConsoleActionMapping(
   actionMappingByModel: Record<HardwareDeviceModel, ActionKeyActionId[]>,
 ): Promise<void> {
-  const bag = (await readBag()) ?? {};
+  const bag = await readBagForPersist();
   await appClient.settings.update([
     { path: HARDWARE_CONSOLE_SETTINGS_PATH, value: { ...bag, actionMappingByModel } },
   ]);
@@ -292,7 +303,7 @@ export async function persistHardwareConsoleActionMapping(
 export async function persistHardwareConsoleCycleScopes(
   cycleScopeByFamily: Record<string, string>,
 ): Promise<void> {
-  const bag = (await readBag()) ?? {};
+  const bag = await readBagForPersist();
   await appClient.settings.update([
     { path: HARDWARE_CONSOLE_SETTINGS_PATH, value: { ...bag, cycleScopeByFamily } },
   ]);

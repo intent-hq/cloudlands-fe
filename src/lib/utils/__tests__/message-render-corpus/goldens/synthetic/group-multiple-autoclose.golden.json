@@ -1,0 +1,47 @@
+{
+  "note": "second group open auto-closes the first",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "content_group",
+      "name": "First",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "alpha work"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "content_group",
+      "name": "Second",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "beta work"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "tail prose"
+        }
+      ]
+    }
+  ]
+}

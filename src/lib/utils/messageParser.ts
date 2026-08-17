@@ -994,19 +994,17 @@ function mergeConsecutiveTextBlocks(blocks: ParsedContent[]): ParsedContent[] {
   return merged;
 }
 
-// Combined pattern to find any group tag (open or close) in a single pass
-// Note: Group name capture uses [^>\n<]+ to avoid capturing across newlines or into
-// nested tags like <think> that may appear immediately after the group name.
-// The second alternative (<group:([^<\n]+)\n) handles malformed tags without closing >
-// (e.g., "<group:Prepping\n<think>..." where the model omits the closing bracket).
-
 // Combined pattern to find group tags AND think tags in a single pass.
+// Group name captures use [^>\n<]+ to avoid capturing across newlines or into
+// nested tags like <think> that may appear immediately after the group name.
 // Think tags are used by some external providers (e.g., opencode) that embed
 // model thinking directly in text rather than as separate thinking content blocks.
 // Supports both <think>/<thinking> variants (different models use different tags).
 // Pattern priority (left to right):
 //   1. <group:Name> — standard group open
-//   2. <group:Name\n — malformed group open (missing closing >)
+//   2. <group:Name\n — malformed group open (missing closing >); the name
+//      capture excludes `>` so a literal like `<group:>` never opens a group
+//      that swallows the rest of the line as its name
 //   3. <group:Name at end of block — malformed group open (missing both > and \n)
 //   4. <group:Name</group:> or <group:Name</group> — fused open+close glitch
 //      (the model finishes the open tag with a close-tag suffix instead of >);
@@ -1015,7 +1013,115 @@ function mergeConsecutiveTextBlocks(blocks: ParsedContent[]): ParsedContent[] {
 //   6. <think> or <thinking> — think open
 //   7. </think> or </thinking> — think close
 const GROUP_AND_THINK_TAG_REGEX =
-  /<group:([^>\n<]+)>|<group:([^\n<]+)\n|<group:([^>\n<]+)$|<group:([^>\n<]+)<\/group(?::[^>\n<]*)?>|<\/group(?::([^>\n<]*))?>|<think(?:ing)?>|<\/think(?:ing)?>/g;
+  /<group:([^>\n<]+)>|<group:([^>\n<]+)\n|<group:([^>\n<]+)$|<group:([^>\n<]+)<\/group(?::[^>\n<]*)?>|<\/group(?::([^>\n<]*))?>|<think(?:ing)?>|<\/think(?:ing)?>/g;
+
+/** A [start, end) offset range within a text block that is code formatting. */
+interface CodeRegion {
+  start: number;
+  end: number;
+}
+
+/**
+ * Fence detection for code regions: like FENCE_LINE_REGEX but accepts ANY
+ * leading indentation. CommonMark would demote a 4+-space-indented "fence" to
+ * an indented code block, but this pipeline never applies that rule:
+ * processRegularContent deliberately renders ``` / ~~~ fences at any
+ * indentation as fenced code blocks (e.g. fences nested inside list items),
+ * so what the renderer displays as one code block must be one code region
+ * here — otherwise tag literals inside it get scanned as real tags
+ * (intent-hq/monorepo#2713). The indent class is \s* to match
+ * processRegularContent's fence regexes exactly (tabs, Unicode spaces, etc.).
+ */
+const CODE_REGION_FENCE_LINE_REGEX = /^\s*(`{3,}|~{3,})(.*)$/;
+
+/**
+ * Find the offsets of code regions in a text block: fenced code blocks
+ * (``` / ~~~, line-based, same fence-pairing rules as findSuggestedPromptsBlocks
+ * but at any indentation — see CODE_REGION_FENCE_LINE_REGEX) and inline code
+ * spans (backtick runs paired per CommonMark: a run of N backticks closes at
+ * the next run of exactly N backticks; an unpaired run stays literal; spans
+ * do not cross blank lines).
+ *
+ * Group/think tag syntax inside these regions is a literal *mention* of the
+ * syntax (documentation, quoted output), not a real tag, and must not be
+ * consumed by the group/think scanner (intent-hq/monorepo#2689).
+ */
+function findCodeRegions(text: string): CodeRegion[] {
+  const regions: CodeRegion[] = [];
+  const lines = text.split('\n');
+
+  // Pass 1: fenced code blocks. Track the gaps between them for pass 2.
+  const gaps: CodeRegion[] = [];
+  let offset = 0;
+  let gapStart = 0;
+  let fence: { char: string; length: number; start: number } | null = null;
+  for (const line of lines) {
+    const lineStart = offset;
+    offset += line.length + 1;
+    const fenceMatch = line.match(CODE_REGION_FENCE_LINE_REGEX);
+    if (!fenceMatch) continue;
+    const marker = fenceMatch[1];
+    if (!fence) {
+      fence = { char: marker[0], length: marker.length, start: lineStart };
+      if (lineStart > gapStart) gaps.push({ start: gapStart, end: lineStart });
+    } else if (
+      marker[0] === fence.char &&
+      marker.length >= fence.length &&
+      fenceMatch[2].trim() === ''
+    ) {
+      regions.push({ start: fence.start, end: Math.min(offset, text.length) });
+      gapStart = Math.min(offset, text.length);
+      fence = null;
+    }
+  }
+  if (fence) {
+    // An unclosed fence consumes the rest of the block (processRegularContent
+    // renders everything after it as code).
+    regions.push({ start: fence.start, end: text.length });
+  } else if (gapStart < text.length) {
+    gaps.push({ start: gapStart, end: text.length });
+  }
+
+  // Pass 2: inline code spans in the text outside fenced blocks.
+  const paragraphBreakRegex = /\n[ \t]*\n/g;
+  const backtickRunRegex = /`+/g;
+  for (const gap of gaps) {
+    const segment = text.slice(gap.start, gap.end);
+    const paragraphs: CodeRegion[] = [];
+    let paragraphStart = 0;
+    paragraphBreakRegex.lastIndex = 0;
+    let breakMatch;
+    while ((breakMatch = paragraphBreakRegex.exec(segment)) !== null) {
+      paragraphs.push({ start: paragraphStart, end: breakMatch.index });
+      paragraphStart = breakMatch.index + breakMatch[0].length;
+    }
+    paragraphs.push({ start: paragraphStart, end: segment.length });
+
+    for (const paragraph of paragraphs) {
+      const runs: Array<{ pos: number; len: number }> = [];
+      backtickRunRegex.lastIndex = paragraph.start;
+      let runMatch;
+      while (
+        (runMatch = backtickRunRegex.exec(segment)) !== null &&
+        runMatch.index < paragraph.end
+      ) {
+        runs.push({ pos: runMatch.index, len: runMatch[0].length });
+      }
+      for (let i = 0; i < runs.length; i++) {
+        const closer = runs.findIndex((run, j) => j > i && run.len === runs[i].len);
+        if (closer === -1) continue;
+        regions.push({
+          start: gap.start + runs[i].pos,
+          end: gap.start + runs[closer].pos + runs[closer].len,
+        });
+        i = closer;
+      }
+    }
+  }
+
+  regions.sort((a, b) => a.start - b.start);
+  return regions;
+}
 
 // Trailing prefix of any tag GROUP_AND_THINK_TAG_REGEX scans for, i.e. one a
 // streamed text block can pause on. Anchored to the end of the block, so it
@@ -1258,10 +1364,24 @@ export function groupContentBlocks(
     let match;
     let hasTags = insideThink; // if we're continuing a think from a previous block, mark as having tags
 
+    // Tag syntax inside code formatting (fences / inline code spans) is a
+    // literal mention, not a real tag — skip those matches entirely
+    // (intent-hq/monorepo#2689). Regex matches advance monotonically, so a
+    // single pointer walks the sorted regions.
+    const codeRegions = findCodeRegions(blockText);
+    let regionIndex = 0;
+
     while ((match = GROUP_AND_THINK_TAG_REGEX.exec(blockText)) !== null) {
       const matchStart = match.index;
       const matchEnd = match.index + match[0].length;
       const matchStr = match[0];
+
+      while (regionIndex < codeRegions.length && codeRegions[regionIndex].end <= matchStart) {
+        regionIndex++;
+      }
+      if (regionIndex < codeRegions.length && codeRegions[regionIndex].start < matchEnd) {
+        continue;
+      }
 
       if (matchStr === '<think>' || matchStr === '<thinking>') {
         hasTags = true;

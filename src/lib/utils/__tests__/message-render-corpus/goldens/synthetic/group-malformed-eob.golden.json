@@ -1,0 +1,21 @@
+{
+  "note": "malformed open <group:Name at end of settled block",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "prose before"
+        }
+      ]
+    },
+    {
+      "type": "content_group",
+      "name": "Wrapping up",
+      "isStreaming": false,
+      "children": []
+    }
+  ]
+}

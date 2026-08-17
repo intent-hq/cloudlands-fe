@@ -1591,6 +1591,16 @@ describe('getPRStatusTooltip', () => {
     expect(tooltip).toContain('Merge conflict must be resolved');
   });
 
+  it('capitalizes a lowercase merge-blocked reason', () => {
+    const tooltip = getPRStatusTooltip(
+      makePR({
+        monitorSnapshot: makeSnapshot({ mergeBlockedReason: 'branch behind base' }),
+      }),
+    );
+    expect(tooltip).toContain('Branch behind base');
+    expect(tooltip).not.toContain('branch behind base');
+  });
+
   it('omits snapshot detail lines on merged and closed rows', () => {
     const snapshot = makeSnapshot({
       approvals: { decision: 'REVIEW_REQUIRED', have: 0, needed: 2, changesRequested: 0 },

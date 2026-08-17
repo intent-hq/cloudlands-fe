@@ -24,6 +24,7 @@ import {
   chatLiveStreamPhaseChanged,
   chatStateReducer,
   chatTranscriptSnapshotApplied,
+  chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   initialState as chatStateInitialState,
   refreshChatTranscriptRequested,
@@ -454,7 +455,7 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     }
   });
 
-  it('exposes retryable error when no snapshot arrives within the bounded wait', async () => {
+  it('exposes retryable error only after every bounded wait window times out', async () => {
     vi.useFakeTimers();
     try {
       mocks.get.mockResolvedValue(session());
@@ -464,8 +465,66 @@ describe('chatReadSaga (single-transfer hydration)', () => {
       // saga's wait is wider so a client self-heal can land in-window.
       await vi.advanceTimersByTimeAsync(5_050);
       expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
-      await vi.advanceTimersByTimeAsync(7_050);
+      // First window times out (8s): no failure yet — a re-request is
+      // dispatched and a second window opens (monorepo#2692).
+      await vi.advanceTimersByTimeAsync(3_050);
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
+      expect(
+        run.dispatch.mock.calls.filter(
+          ([action]) => action.type === chatTranscriptSnapshotRerequested.type,
+        ),
+      ).toHaveLength(1);
+      // Second window times out: still loading, second re-request.
+      await vi.advanceTimersByTimeAsync(8_050);
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
+      expect(
+        run.dispatch.mock.calls.filter(
+          ([action]) => action.type === chatTranscriptSnapshotRerequested.type,
+        ),
+      ).toHaveLength(2);
+      // Third (final) window times out: hydration fails — no further
+      // re-request rides the failure.
+      await vi.advanceTimersByTimeAsync(8_050);
       expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('error');
+      expect(
+        run.dispatch.mock.calls.filter(
+          ([action]) => action.type === chatTranscriptSnapshotRerequested.type,
+        ),
+      ).toHaveLength(2);
+      expect(mocks.getConversation).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Regression (intent-hq/monorepo#2692): the daemon/network dropped the
+  // initial seq-0 push, so the first wait window closed empty. The saga must
+  // re-request a snapshot and settle when the retry window's snapshot
+  // arrives — never fail the load after a single missed window.
+  it('settles from a snapshot arriving in a retry window after the first wait timed out', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.get.mockResolvedValue(session());
+      const run = harness();
+      run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+      // First window (8s) times out; the re-request went out.
+      await vi.advanceTimersByTimeAsync(8_100);
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
+      expect(
+        run.dispatch.mock.calls.filter(
+          ([action]) => action.type === chatTranscriptSnapshotRerequested.type,
+        ),
+      ).toHaveLength(1);
+
+      // The re-requested snapshot lands mid second window.
+      await vi.advanceTimersByTimeAsync(2_000);
+      applySnapshot(run, [message('m-retry', 'healed')]);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+      expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual(['m-retry']);
       expect(mocks.getConversation).not.toHaveBeenCalled();
       run.task.cancel();
       await run.task.toPromise();
@@ -519,7 +578,8 @@ describe('chatReadSaga (single-transfer hydration)', () => {
       mocks.get.mockResolvedValue(session());
       const run = harness();
       run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
-      await vi.advanceTimersByTimeAsync(12_050);
+      // All bounded wait windows (3 × 8s) time out.
+      await vi.advanceTimersByTimeAsync(24_150);
       expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('error');
 
       // The healed registration's seq-0 snapshot applies late.

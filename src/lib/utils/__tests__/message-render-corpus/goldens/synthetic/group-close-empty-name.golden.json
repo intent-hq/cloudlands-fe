@@ -1,0 +1,31 @@
+{
+  "note": "</group:> empty-name close variant",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "content_group",
+      "name": "Checking",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "inside"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "after close"
+        }
+      ]
+    }
+  ]
+}
