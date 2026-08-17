@@ -3,6 +3,7 @@
   import Fa from 'svelte-fa';
   import { faList } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
+  import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
   import ScrollToBottomButton from './ScrollToBottomButton.svelte';
@@ -23,9 +24,11 @@
   let searchInput: HTMLInputElement | null = $state(null);
   let triggerElement: HTMLElement | null = $state(null);
   let contentElement: HTMLElement | null = $state(null);
+  let collisionBoundary: Element[] = $state([]);
   let pointerDownOnTrigger = $state(false);
   let preserveOutsideFocusOnClose = $state(false);
   let reopenOnNextPointerIntent = $state(false);
+  let suppressNextTriggerClick = $state(false);
   let lastTriggerPointerPosition: { pointerId: number; x: number; y: number } | null = $state(null);
   const navigatorId = $props.id();
   const listboxId = `chat-message-navigator-listbox-${navigatorId}`;
@@ -40,8 +43,12 @@
 
   function handleOpenChange(nextOpen: boolean) {
     open = nextOpen;
-    if (!nextOpen) return;
-    preserveOutsideFocusOnClose = false;
+    if (!nextOpen) {
+      suppressNextTriggerClick = false;
+      return;
+    }
+    const panel = triggerElement?.closest('[data-panel-id]');
+    collisionBoundary = panel ? [panel] : [];
     reopenOnNextPointerIntent = false;
     query = '';
     activeIndex = 0;
@@ -74,9 +81,16 @@
     searchInput?.focus();
   }
 
+  function isNavigatorContentTarget(target: Node): boolean {
+    if (contentElement?.contains(target)) return true;
+    if (!(target instanceof Element)) return false;
+    const ownerContent = target.closest<HTMLElement>('[data-chat-message-navigator-content]');
+    return ownerContent?.dataset.chatMessageNavigatorContent === navigatorId;
+  }
+
   function handleWindowFocusIn(event: FocusEvent) {
     if (!open || !(event.target instanceof Node)) return;
-    if (triggerElement?.contains(event.target) || contentElement?.contains(event.target)) return;
+    if (triggerElement?.contains(event.target) || isNavigatorContentTarget(event.target)) return;
     pointerDownOnTrigger = false;
     preserveOutsideFocusOnClose = true;
     reopenOnNextPointerIntent = true;
@@ -91,12 +105,30 @@
     };
   }
 
+  function reopenFromPointerIntent() {
+    pointerDownOnTrigger = true;
+    triggerElement?.focus({ preventScroll: true });
+    pointerDownOnTrigger = false;
+    handleOpenChange(true);
+  }
+
   function handleTriggerPointerOver(event: PointerEvent) {
     if (event.pointerType === 'touch') return;
     const enteredFromOutside =
       !(event.relatedTarget instanceof Node) || !triggerElement?.contains(event.relatedTarget);
     rememberTriggerPointerPosition(event);
-    if (reopenOnNextPointerIntent && enteredFromOutside) handleOpenChange(true);
+    if (reopenOnNextPointerIntent && enteredFromOutside) {
+      reopenFromPointerIntent();
+      suppressNextTriggerClick = true;
+    }
+  }
+
+  function handleTriggerPointerDown() {
+    pointerDownOnTrigger = true;
+    if (suppressNextTriggerClick) {
+      suppressNextTriggerClick = false;
+      open = false;
+    }
   }
 
   function handleTriggerPointerEnter(event: PointerEvent) {
@@ -112,11 +144,14 @@
         lastTriggerPointerPosition.x !== event.clientX ||
         lastTriggerPointerPosition.y !== event.clientY);
     rememberTriggerPointerPosition(event);
-    if (reopenOnNextPointerIntent && moved) handleOpenChange(true);
+    if (reopenOnNextPointerIntent && moved) reopenFromPointerIntent();
   }
 
   function handleTriggerPointerLeave(event: PointerEvent) {
-    if (event.pointerType !== 'touch') lastTriggerPointerPosition = null;
+    if (event.pointerType !== 'touch') {
+      lastTriggerPointerPosition = null;
+      suppressNextTriggerClick = false;
+    }
   }
 
   function handleCloseAutoFocus(event: Event) {
@@ -156,7 +191,7 @@
   }
 </script>
 
-<svelte:window onfocusin={handleWindowFocusIn} />
+<svelte:window onfocusincapture={handleWindowFocusIn} />
 
 <div class="flex shrink-0 items-center gap-0.5" data-testid="chat-header-navigation-controls">
   <Popover.Root bind:open onOpenChange={handleOpenChange}>
@@ -181,7 +216,7 @@
           aria-expanded={open}
           onfocus={handleTriggerFocus}
           onkeydown={handleTriggerKeydown}
-          onpointerdown={() => (pointerDownOnTrigger = true)}
+          onpointerdown={handleTriggerPointerDown}
           onpointerup={() => (pointerDownOnTrigger = false)}
           onpointercancel={() => (pointerDownOnTrigger = false)}
           data-testid="chat-message-navigator-trigger"
@@ -198,13 +233,18 @@
         align="end"
         side="bottom"
         sideOffset={4}
+        {collisionBoundary}
         collisionPadding={8}
         trapFocus={false}
         onOpenAutoFocus={handleOpenAutoFocus}
         onCloseAutoFocus={handleCloseAutoFocus}
-        class="z-(--layer-popover) flex max-h-[var(--bits-popover-content-available-height)] w-[28rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-(--radius-medium) border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none"
+        data-chat-message-navigator-content={navigatorId}
+        class="z-(--layer-popover) flex min-w-0 max-h-[var(--bits-popover-content-available-height)] w-[28rem] max-w-[min(calc(100vw-var(--space-4)),calc(var(--bits-popover-content-available-width)-var(--space-2)))] flex-col overflow-hidden rounded-(--radius-medium) border border-border bg-popover p-[var(--space-1)] text-popover-foreground shadow-(--elevation-overlay) outline-none"
       >
-        <div class="flex min-h-0 min-w-0 flex-col" data-testid="chat-message-navigator-panel">
+        <div
+          class="flex min-h-0 min-w-0 max-h-full flex-1 flex-col overflow-hidden"
+          data-testid="chat-message-navigator-panel"
+        >
           <input
             bind:this={searchInput}
             value={query}
@@ -218,42 +258,53 @@
             aria-activedescendant={activeOptionId}
             autocomplete="off"
             placeholder={m.chat_messageNavigator_search_placeholder()}
-            class="type-caption h-8 w-full shrink-0 rounded-(--radius-small) border border-border bg-card px-2 text-foreground outline-none placeholder:text-muted-foreground/70 hover:border-input focus-visible:border-foreground/40 focus-visible:ring-0"
+            class="type-caption h-(--control-height-medium) w-full min-w-0 shrink-0 rounded-(--radius-small) border border-border bg-card px-[var(--space-2)] text-foreground caret-foreground outline-none placeholder:text-muted-foreground/70"
             data-testid="chat-message-navigator-search"
           />
           {#if filteredMessages.length > 0}
             <div
               id={listboxId}
               role="listbox"
-              class="mt-1 min-h-0 min-w-0 flex-1 max-h-72 overflow-y-auto overscroll-contain"
+              class="mt-[var(--space-1)] min-h-0 min-w-0 flex-1 max-h-72 overflow-x-hidden overflow-y-auto overscroll-contain"
             >
               {#each filteredMessages as message, index (message.id)}
-                <button
-                  type="button"
-                  id={`${listboxId}-option-${index}`}
-                  role="option"
-                  tabindex="-1"
-                  aria-selected={index === activeIndex}
-                  class={cn(
-                    'type-caption flex min-h-(--control-height-compact) min-w-0 cursor-pointer items-center overflow-hidden rounded-(--radius-small) px-2 py-1 font-normal text-muted-foreground outline-none transition-colors duration-(--motion-fast)',
-                    index === activeIndex && 'bg-muted text-foreground',
-                  )}
-                  onclick={() => void selectMessage(message.id)}
-                  onkeydown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      void selectMessage(message.id);
-                    }
-                  }}
-                  onpointerenter={() => (activeIndex = index)}
-                  title={message.text}
-                  data-testid="chat-message-navigator-result"
-                  data-navigation-message-id={message.id}
+                <Tooltip
+                  content={message.text}
+                  side="left"
+                  align="center"
+                  delayDuration={300}
+                  size="sm"
+                  class="block h-(--control-height-large) w-full min-w-0 max-w-full"
+                  contentClass="max-w-[min(28rem,calc(100vw-var(--space-4)))] break-words text-left"
                 >
-                  <span class="block min-w-0 flex-1 truncate whitespace-nowrap font-normal">
-                    {message.text}
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    id={`${listboxId}-option-${index}`}
+                    role="option"
+                    tabindex="-1"
+                    aria-selected={index === activeIndex}
+                    class={cn(
+                      'type-caption flex h-(--control-height-large) min-h-(--control-height-large) max-h-(--control-height-large) w-full min-w-0 max-w-full cursor-pointer items-center overflow-hidden rounded-(--radius-small) px-[var(--space-2)] text-left font-normal text-muted-foreground outline-none transition-[background-color,color,box-shadow] duration-(--motion-fast) hover:bg-accent/60 hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 motion-reduce:transition-none',
+                      index === activeIndex && 'bg-accent text-accent-foreground',
+                    )}
+                    onclick={() => void selectMessage(message.id)}
+                    onkeydown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        void selectMessage(message.id);
+                      }
+                    }}
+                    onpointerenter={() => (activeIndex = index)}
+                    data-testid="chat-message-navigator-result"
+                    data-navigation-message-id={message.id}
+                  >
+                    <span
+                      class="block min-w-0 max-w-full flex-1 overflow-hidden whitespace-nowrap text-left text-ellipsis font-normal"
+                    >
+                      {message.text}
+                    </span>
+                  </button>
+                </Tooltip>
               {/each}
             </div>
           {:else}

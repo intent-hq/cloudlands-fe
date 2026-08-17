@@ -153,6 +153,7 @@ test.describe('chat message navigator production path', () => {
         screenHeight: state.height,
       });
       await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: state.theme });
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
       const component = await mount(ChatMessageNavigatorIntegrationHost, {
         props: { theme: state.theme },
       });
@@ -214,9 +215,9 @@ test.describe('chat message navigator production path', () => {
       );
       expect(listIconBox.width).toBeCloseTo(12, 0);
       expect(listIconBox.height).toBeCloseTo(12, 0);
-      expect(arrowIconBox.width).toBeCloseTo(11, 0);
-      expect(arrowIconBox.height).toBeCloseTo(11, 0);
-      await expect(downButton).toHaveAttribute('data-icon-size', '11');
+      expect(arrowIconBox.width).toBeCloseTo(20, 0);
+      expect(arrowIconBox.height).toBeCloseTo(20, 0);
+      await expect(downButton).toHaveAttribute('data-icon-size', '20');
 
       const target = page.locator('[data-message-id="user-6"]');
       await expect(target).toHaveCount(0);
@@ -229,24 +230,46 @@ test.describe('chat message navigator production path', () => {
       await expectUniqueVisible(search);
       await expect(search).toBeFocused();
       await expect(dialog.getByRole('listbox')).toHaveCount(1);
-      await expect(options).toHaveCount(14);
+      await expect(options).toHaveCount(15);
       const optionDetails = await options.evaluateAll((nodes) =>
         nodes.map((node) => ({
           text: node.textContent?.trim(),
           title: node.getAttribute('title'),
           ariaLabel: node.getAttribute('aria-label'),
+          height: node.getBoundingClientRect().height,
+          textAlign: getComputedStyle(node).textAlign,
         })),
       );
-      expect(optionDetails).toHaveLength(14);
-      expect(optionDetails.some((item) => item.text?.includes('[SYSTEM NOTE]'))).toBe(false);
-      expect(optionDetails.some((item) => item.title?.includes('[SYSTEM NOTE]'))).toBe(false);
-      expect(optionDetails.some((item) => item.ariaLabel?.includes('[SYSTEM NOTE]'))).toBe(false);
+      expect(optionDetails).toHaveLength(15);
+      expect(optionDetails.some((item) => item.text?.includes('queued at'))).toBe(false);
+      expect(optionDetails.some((item) => item.text?.includes('queued before you completed'))).toBe(
+        false,
+      );
+      expect(optionDetails.every((item) => item.title === null)).toBe(true);
+      expect(
+        optionDetails.some((item) => item.ariaLabel?.includes('queued before you completed')),
+      ).toBe(false);
       expect(optionDetails).toContainEqual({
         text: 'Virtualized target six',
-        title: 'Virtualized target six',
+        title: null,
         ariaLabel: null,
+        height: 36,
+        textAlign: 'left',
       });
-      await expect(dialog.getByRole('option', { name: 'Internal-only picker row' })).toHaveCount(0);
+      expect(optionDetails.every((item) => item.height === 36)).toBe(true);
+      expect(optionDetails.every((item) => item.textAlign === 'left')).toBe(true);
+      expect(optionDetails.some((item) => item.text === 'OK')).toBe(true);
+      expect(optionDetails.some((item) => item.text === 'Duplicate prefix — short sibling')).toBe(
+        true,
+      );
+      expect(
+        optionDetails.some(
+          (item) => item.text === 'Multilingual: こんにちは Привет مرحبا café नमस्ते 😀',
+        ),
+      ).toBe(true);
+      await expect(
+        dialog.getByRole('option', { name: 'Authored literal [SYSTEM NOTE] must stay visible' }),
+      ).toHaveCount(1);
       const initialOption = options.first();
       await expect(initialOption).toHaveAttribute('aria-selected', 'true');
       expect(
@@ -256,12 +279,29 @@ test.describe('chat message navigator production path', () => {
       ).toBe('400');
       const searchFocus = await search.evaluate((element) => {
         const style = getComputedStyle(element);
-        return { boxShadow: style.boxShadow, outline: style.outlineStyle };
+        return {
+          backgroundColor: style.backgroundColor,
+          borderColor: style.borderColor,
+          boxShadow: style.boxShadow,
+          outline: style.outlineStyle,
+        };
       });
       expect(hasVisibleBoxShadow(searchFocus.boxShadow)).toBe(false);
       expect(searchFocus.outline).toBe('none');
+      await search.press('ArrowDown');
+      await search.press('ArrowUp');
       await initialOption.focus();
       await expect(initialOption).toBeFocused();
+      const searchBlur = await search.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          backgroundColor: style.backgroundColor,
+          borderColor: style.borderColor,
+          boxShadow: style.boxShadow,
+          outline: style.outlineStyle,
+        };
+      });
+      expect(searchFocus).toEqual(searchBlur);
       const rowFocus = await initialOption.evaluate((element) => {
         const style = getComputedStyle(element);
         return {
@@ -270,26 +310,80 @@ test.describe('chat message navigator production path', () => {
           backgroundColor: style.backgroundColor,
         };
       });
-      expect(hasVisibleBoxShadow(rowFocus.boxShadow)).toBe(false);
+      expect(hasVisibleBoxShadow(rowFocus.boxShadow)).toBe(true);
       expect(rowFocus.outline).toBe('none');
       expect(rowFocus.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
       await search.focus();
+      await expect(search).toBeFocused();
+
+      const pointerOption = options.nth(1);
+      await pointerOption.hover();
+      await expect(pointerOption).toHaveAttribute('aria-selected', 'true');
+      expect(await pointerOption.evaluate((element) => getComputedStyle(element).textAlign)).toBe(
+        'left',
+      );
+      await search.focus();
+      await search.press('End');
+      const keyboardOption = options.last();
+      await expect(keyboardOption).toHaveAttribute('aria-selected', 'true');
+      expect(await keyboardOption.evaluate((element) => getComputedStyle(element).textAlign)).toBe(
+        'left',
+      );
+      await search.press('Home');
 
       const dialogBox = await dialog.boundingBox();
       if (!dialogBox) throw new Error('Expected the message picker dialog');
+      const panelBox = await component.locator('[data-panel-id="chat-panel"]').boundingBox();
+      if (!panelBox) throw new Error('Expected the production panel boundary');
       expect(dialogBox.width).toBeLessThanOrEqual(Math.min(448, viewport.width - 16) + 0.5);
-      expect(dialogBox.x).toBeGreaterThanOrEqual(7.5);
-      expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(viewport.width - 7.5);
+      expect(dialogBox.x).toBeGreaterThanOrEqual(Math.max(7.5, panelBox.x + 7.5));
+      expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(
+        Math.min(viewport.width - 7.5, panelBox.x + panelBox.width - 7.5),
+      );
       expect(dialogBox.y).toBeGreaterThanOrEqual(0);
       expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(viewport.height + 0.5);
+      const longOption = dialog.getByRole('option', { name: /deliberately long message preview/ });
+      const longLabel = longOption.locator('span').last();
+      const overflowContract = await longLabel.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          overflowX: style.overflowX,
+          whiteSpace: style.whiteSpace,
+          textOverflow: style.textOverflow,
+          clientWidth: element.clientWidth,
+          scrollWidth: element.scrollWidth,
+        };
+      });
+      expect(overflowContract).toMatchObject({
+        overflowX: 'hidden',
+        whiteSpace: 'nowrap',
+        textOverflow: 'ellipsis',
+      });
+      expect(overflowContract.scrollWidth).toBeGreaterThan(overflowContract.clientWidth);
+      for (const target of [dialog, dialog.getByRole('listbox'), longOption]) {
+        expect(
+          await target.evaluate((element) => element.scrollWidth - element.clientWidth),
+        ).toBeLessThanOrEqual(0);
+      }
+      const alignedBoxes = await Promise.all([search.boundingBox(), initialOption.boundingBox()]);
+      for (const box of alignedBoxes) {
+        if (!box) throw new Error('Expected aligned navigator geometry');
+        for (const value of [box.x, box.y, box.width, box.height]) {
+          expect(Math.abs(value * state.zoom - Math.round(value * state.zoom))).toBeLessThanOrEqual(
+            0.5,
+          );
+        }
+      }
 
       await search.pressSequentially('hidden picker suffix');
       await expect(search).toHaveValue('hidden picker suffix');
       await expect(options).toHaveCount(0);
+      await search.fill('queued before you completed');
+      await expect(options).toHaveCount(0);
       await search.fill('Virtualized target six');
       const option = dialog.getByRole('option', { name: 'Virtualized target six', exact: true });
       await expect(option).toHaveCount(1);
-      await expect(option).toHaveAttribute('title', 'Virtualized target six');
+      await expect(option).not.toHaveAttribute('title', 'Virtualized target six');
       await expect(option).toHaveAttribute('data-navigation-message-id', 'user-6');
       expect(await classifyMessageIdentityNodes(page, 'user-6')).toEqual([
         {
@@ -304,6 +398,7 @@ test.describe('chat message navigator production path', () => {
 
       await expect(dialog).toHaveCount(0);
       await expect(target).toHaveCount(1);
+      await expect(target).toHaveClass(/message-highlight-flash/);
       await expect(target).toHaveAttribute('data-message-role', 'user');
       expect(await duplicateLiveMessageIdentityPairs(page)).toEqual([]);
       expect(await classifyMessageIdentityNodes(page, 'user-6')).toEqual([
@@ -315,8 +410,18 @@ test.describe('chat message navigator production path', () => {
           visible: true,
         },
       ]);
-      await expect(target).toContainText('hidden picker suffix');
-      await expect(target).toHaveClass(/message-highlight-flash/);
+      await expect(target).toContainText('Virtualized target six');
+      await expect(target).not.toContainText('[SYSTEM NOTE]');
+      await expect(target.getByTestId('queued-message-notice-text')).toHaveText(
+        'Waited in queue for 37s',
+      );
+      await expect(target.getByTestId('queued-message-notice')).toHaveAttribute('title', /2026/);
+      expect(await target.ariaSnapshot()).not.toContain('[SYSTEM NOTE]');
+      await target.hover();
+      await target.getByRole('button', { name: 'Copy message' }).click();
+      await expect
+        .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+        .toBe('Virtualized target six');
       await expect(downButton).toBeEnabled();
       const transcript = component.locator('.conversation-column');
       await expectUniqueVisible(transcript);
@@ -332,7 +437,9 @@ test.describe('chat message navigator production path', () => {
       expect(Math.abs(targetBox.y - scrollBox.y)).toBeLessThanOrEqual(3);
 
       const selectedScrollTop = await scrollContainer.evaluate((element) => element.scrollTop);
-      await component.getByTestId('append-streaming-message').click();
+      await component
+        .getByTestId('append-streaming-message')
+        .evaluate((element: HTMLButtonElement) => element.click());
       await expect
         .poll(() => scrollContainer.evaluate((element) => element.scrollTop))
         .toBeCloseTo(selectedScrollTop, 0);
@@ -374,6 +481,25 @@ test.describe('chat message navigator production path', () => {
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
 
+    await trigger.press('Enter');
+    dialog = await pickerForTrigger(page, trigger);
+    await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+
+    await page.mouse.move(0, 0);
+    await trigger.click();
+    dialog = await pickerForTrigger(page, trigger);
+    await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
+    await title.click();
+    await expect(dialog).toHaveCount(0);
+
+    await trigger.click();
+    dialog = await pickerForTrigger(page, trigger);
+    await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+
     await outside.focus();
     await trigger.focus();
     dialog = await pickerForTrigger(page, trigger);
@@ -384,10 +510,12 @@ test.describe('chat message navigator production path', () => {
     await outside.focus();
     await expect(dialog).toHaveCount(0);
 
+    await page.mouse.move(0, 0);
     await startNavigatorPointerTrace(trigger);
     await trigger.hover();
     await expect.poll(() => readNavigatorPointerState(trigger)).toMatchObject({ expanded: 'true' });
     dialog = await pickerForTrigger(page, trigger);
+    await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
     await dialog.hover();
     await page.waitForTimeout(200);
     await expect(dialog).toBeVisible();

@@ -1,6 +1,6 @@
 export const CHAT_ICON_SIZE = {
   header: 12,
-  navigationArrow: 11,
+  navigationArrow: 20,
   compact: 16,
   default: 20,
   emphasized: 24,

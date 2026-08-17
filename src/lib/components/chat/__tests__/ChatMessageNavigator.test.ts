@@ -38,7 +38,7 @@ describe('ChatMessageNavigator', () => {
     expect(buttons[1]).toBe(screen.getByTestId('chat-scroll-to-bottom-button'));
     expect((buttons[1] as HTMLButtonElement).disabled).toBe(true);
     expect(buttons[0].querySelector('[data-icon]')?.classList.contains('size-3!')).toBe(true);
-    expect(buttons[1].querySelector('[data-icon]')?.classList.contains('size-[11px]!')).toBe(true);
+    expect(buttons[1].querySelector('[data-icon]')?.classList.contains('size-5!')).toBe(true);
   });
 
   it('opens a valid searchable listbox and autofocuses its quiet field', async () => {
@@ -57,27 +57,43 @@ describe('ChatMessageNavigator', () => {
     expect(results.every((result) => !result.hasAttribute('data-message-id'))).toBe(true);
     expect(input.getAttribute('aria-controls')).toBe(listbox.id);
     expect(input.getAttribute('aria-activedescendant')).toBe(results[0].id);
-    expect(input.className).toContain('focus-visible:ring-0');
-    expect(input.className).toContain('focus-visible:border-foreground/40');
+    expect(input.className).toContain('h-(--control-height-medium)');
+    expect(input.className).toContain('outline-none');
+    expect(input.className).toContain('caret-foreground');
+    expect(input.className).not.toMatch(/focus(?:-visible)?:|hover:border|ring-|shadow-/);
 
     const panel = screen.getByTestId('chat-message-navigator-panel').parentElement!;
     expect(panel.className).toContain('w-[28rem]');
-    expect(panel.className).toContain('max-w-[calc(100vw-1rem)]');
+    expect(panel.className).toContain('--bits-popover-content-available-width');
     expect(panel.className).toContain('max-h-[var(--bits-popover-content-available-height)]');
     expect(panel.className).toContain('overflow-hidden');
     expect(screen.getByTestId('chat-message-navigator-panel').className).toContain('min-h-0');
     expect(listbox.className).toContain('min-h-0');
     expect(listbox.className).toContain('flex-1');
     expect(listbox.className).toContain('max-h-72');
+    expect(listbox.className).toContain('overflow-x-hidden');
 
     const longResult = results.at(-1)!;
-    expect(longResult.getAttribute('title')).toBe(messages.at(-1)!.text);
-    expect(results[0].className).toContain('bg-muted');
-    expect(results[0].className).toContain('text-foreground');
+    expect(longResult.getAttribute('title')).toBeNull();
+    expect(results[0].className).toContain('bg-accent');
+    expect(results[0].className).toContain('text-accent-foreground');
     expect(longResult.className).toContain('type-caption');
     expect(longResult.className).toContain('font-normal');
-    expect(longResult.querySelector('span')?.className).toContain('truncate');
+    expect(longResult.className).toContain('h-(--control-height-large)');
+    expect(results.every((result) => result.className.includes('text-left'))).toBe(true);
+    expect(longResult.className).toContain('focus-visible:ring-inset');
+    expect(longResult.querySelector('span')?.className).toContain('overflow-hidden');
     expect(longResult.querySelector('span')?.className).toContain('whitespace-nowrap');
+    expect(longResult.querySelector('span')?.className).toContain('text-ellipsis');
+    expect(longResult.querySelector('span')?.className).toContain('text-left');
+
+    longResult.focus();
+    await fireEvent.focus(longResult);
+    const tooltip = await screen.findByRole('tooltip', {
+      name: messages.at(-1)!.text,
+      hidden: true,
+    });
+    await waitFor(() => expect(longResult.getAttribute('aria-describedby')).toBe(tooltip.id));
   });
 
   it('keeps printable input in the search field and filters sanitized previews', async () => {
