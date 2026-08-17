@@ -96,6 +96,12 @@ const SNAPSHOT_WAIT_MS = SNAPSHOT_TIMEOUT_MS + INITIAL_RETRY_DELAY_MS + SNAPSHOT
  * registration (fresh `chat.subscribe` → fresh seq-0 snapshot) — so a
  * dropped initial push heals without a manual retry. Only after every
  * attempt times out does hydration fail to the error/retry surface.
+ *
+ * Deliberate UX tradeoff: time-to-error for a genuinely dead subscription is
+ * 3 × SNAPSHOT_WAIT_MS (~24s) instead of one window (~8s). The error surface
+ * is the failure mode #2692 exists to avoid, so the extended ceiling buys the
+ * second re-request's force-cycle a full window for its fresh seq-0 snapshot
+ * to land; a truly dead subscription still reaches the retry surface.
  */
 const SNAPSHOT_WAIT_ATTEMPTS = 3;
 /** Mirror of the agent-session slice's message prune cap — paging past it is discarded. */
@@ -198,9 +204,14 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
           });
           if (applied) {
             meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
-          } else if (attempt < SNAPSHOT_WAIT_ATTEMPTS) {
+          }
+          // Escalate on ANY non-final iteration that ends without valid meta
+          // (window timed out, or an application raced a session reset and
+          // left no recorded meta) so every window after the first opens with
+          // a re-request in flight.
+          if (!meta && attempt < SNAPSHOT_WAIT_ATTEMPTS) {
             logger.warn(
-              `No transcript snapshot within wait window (attempt ${attempt}/${SNAPSHOT_WAIT_ATTEMPTS}); re-requesting`,
+              `No transcript snapshot recorded within wait window (attempt ${attempt}/${SNAPSHOT_WAIT_ATTEMPTS}); re-requesting`,
             );
             yield* put(chatTranscriptSnapshotRerequested(wsId, agentId));
           }
