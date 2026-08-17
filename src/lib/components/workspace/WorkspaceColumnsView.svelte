@@ -116,6 +116,7 @@
   let anchorSettleTimer: ReturnType<typeof setTimeout> | null = null;
   let lastAnchorScrollLeft = 0;
   const layoutRevealScheduler = createLayoutStableRevealScheduler();
+  const pendingPanelRevealScheduler = createLayoutStableRevealScheduler();
   let visibleWorkspaceIds = $state<ReadonlySet<string>>(new Set());
   let columnVisibilityTracker = $state.raw<ColumnVisibilityTracker | null>(null);
   const UNMOUNT_HYSTERESIS_MS = 300;
@@ -229,7 +230,7 @@
     const scroller = columnsScroller;
     const entries = Object.entries(requests);
     if (!scroller || entries.length === 0) {
-      layoutRevealScheduler.cancel();
+      pendingPanelRevealScheduler.cancel();
       if (entries.length === 0) materializingWorkspaceId = null;
       return;
     }
@@ -256,6 +257,7 @@
           appStore.dispatch(consumePanelReveal(workspaceId, request.requestId));
           if (materializingWorkspaceId === workspaceId) materializingWorkspaceId = null;
         },
+        pendingPanelRevealScheduler,
       );
     });
   });
@@ -354,12 +356,13 @@
     behaviorOverride?: ScrollBehavior,
     isCurrent: () => boolean = () => true,
     onTargetRemoved?: () => void,
+    scheduler: ReturnType<typeof createLayoutStableRevealScheduler> = layoutRevealScheduler,
   ) {
     const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const behavior: ScrollBehavior = prefersReducedMotion
       ? 'auto'
       : (behaviorOverride ?? (lifecycleMotionReady ? 'smooth' : 'auto'));
-    layoutRevealScheduler.schedule({
+    scheduler.schedule({
       resolveElements: () => {
         const container = columnsScroller;
         const target = resolveTarget();
@@ -570,6 +573,7 @@
     for (const timer of unmountHysteresisTimers.values()) clearTimeout(timer);
     unmountHysteresisTimers.clear();
     layoutRevealScheduler.cancel();
+    pendingPanelRevealScheduler.cancel();
   });
 
   function updateSidebarWidth(workspaceId: string, width: number) {

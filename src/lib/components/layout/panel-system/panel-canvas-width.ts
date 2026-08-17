@@ -41,9 +41,16 @@ export function getPanelCanvasWidths(
     persistedWidth,
     persistedWidthSource,
   );
+  const explicitCanvasWidth =
+    persistedWidthSource === 'explicit' &&
+    persistedWidth !== null &&
+    Number.isFinite(persistedWidth) &&
+    persistedWidth > 0
+      ? persistedWidth
+      : null;
   const allocation = allocatePanelWidths(
     preferredWidths,
-    sizing === 'viewport' ? viewportWidth : 0,
+    sizing === 'viewport' ? (explicitCanvasWidth ?? viewportWidth) : 0,
   );
   const resetPreferredWidths =
     typeof resetPanelColumns === 'number'

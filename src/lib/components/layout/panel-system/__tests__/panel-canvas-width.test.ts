@@ -60,12 +60,12 @@ describe('panel canvas width', () => {
     });
   });
 
-  it('uses explicit widths as preferences and equalizes them when they fit', () => {
+  it('preserves explicit widths in viewport and content sizing', () => {
     expect(getPanelCanvasWidths(1200, 2, 'viewport', 1080)).toEqual({
-      defaultWidth: 1200,
+      defaultWidth: 1080,
       resetWidth: 1008,
       minWidth: 280,
-      panelWidths: [596, 596],
+      panelWidths: [536, 536],
       overflows: false,
     });
     expect(getPanelCanvasWidths(1200, 2, 'content', 1080)).toEqual({
@@ -79,7 +79,7 @@ describe('panel canvas width', () => {
 
   it('recomputes automatic widths while preserving explicit width provenance', () => {
     expect(getPanelCanvasWidths(1200, [720], 'viewport', 500, null).defaultWidth).toBe(1200);
-    expect(getPanelCanvasWidths(1200, [720], 'viewport', 500, 'explicit').defaultWidth).toBe(1200);
+    expect(getPanelCanvasWidths(1200, [720], 'viewport', 500, 'explicit').defaultWidth).toBe(500);
     expect(getPanelCanvasWidths(480, [720], 'viewport', 500, 'explicit').defaultWidth).toBe(500);
   });
 

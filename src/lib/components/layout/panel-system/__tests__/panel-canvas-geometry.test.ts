@@ -76,6 +76,17 @@ describe('mounted panel canvas geometry', () => {
     expect(geometryWidth(canvas(result.container))).toBe(600);
   });
 
+  it('rehydrates an explicit width when the viewport is wider and then resizes', async () => {
+    const result = render(PanelCanvasGeometryHarness, {
+      props: { ...ordinaryProps, viewportWidth: 1000, canvasWidth: 600 },
+      context: new Map([[STORE_CONTEXT, storeContext]]),
+    });
+    expect(geometryWidth(canvas(result.container))).toBe(600);
+
+    await result.rerender({ ...ordinaryProps, viewportWidth: 1200, canvasWidth: 600 });
+    expect(geometryWidth(canvas(result.container))).toBe(600);
+  });
+
   it('ignores long content, sidebar viewport, zoom, and tab-stack mode changes', async () => {
     const result = render(PanelCanvasGeometryHarness, {
       props: { ...ordinaryProps, longContent: true },
@@ -99,7 +110,7 @@ describe('mounted panel canvas geometry', () => {
       sizing: 'viewport',
       canvasWidth: 720,
     });
-    expect(geometryWidth(canvas(result.container))).toBe(1600);
+    expect(geometryWidth(canvas(result.container))).toBe(720);
     await result.rerender({
       ...ordinaryProps,
       longContent: true,
