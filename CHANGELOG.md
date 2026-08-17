@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.59.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.59.2...v2.59.3) (2026-08-17)
+
+
+### 🐛 Bug Fixes
+
+* keep remote file picker open when setting provider CLI path ([#1387](https://github.com/intent-hq/cloudlands-fe/issues/1387)) ([d181eb2](https://github.com/intent-hq/cloudlands-fe/commit/d181eb290295a5342a3398fc3a9e8142295cb066))
+
 ## [2.59.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.59.1...v2.59.2) (2026-08-17)
 
 
