@@ -864,7 +864,7 @@ export const initialState: AgentSessionState = {
 // Actions
 // ============================================================================
 
-/** Upsert a session — normalize dates, order/prune messages to 500, register in workspace index */
+/** Upsert a session — normalize dates, order/prune messages to `MAX_MESSAGES_PER_AGENT`, register in workspace index */
 export const upsertSession = createAction<[session: AgentSession]>('agentSessions/upsertSession');
 
 /** Remove a session by agentId (from byAgentId and agentIdsByWorkspace) */

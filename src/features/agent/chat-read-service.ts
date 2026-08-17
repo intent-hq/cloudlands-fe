@@ -5,7 +5,7 @@
  * `agent.getConversation` (PROTOCOL §5.5, up to 200 messages per page, looping
  * on `nextToken`). Paging walks from the newest page backwards and stops once
  * `MAX_MESSAGES_PER_AGENT` messages have accumulated — the agent-session slice
- * prunes to the newest 500 anyway, so pages past the cap would be fetched only
+ * prunes to that same cap anyway, so pages past it would be fetched only
  * to be discarded (intent-hq/monorepo#2627). The daemon's
  * AgentLite projection (from `agents.get`) returns only message COUNTS, so
  * `getConversation` is the sole source of the actual message content.

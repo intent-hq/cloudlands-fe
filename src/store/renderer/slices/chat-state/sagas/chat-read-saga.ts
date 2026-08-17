@@ -29,7 +29,7 @@
  *     backward from the window's oldest traverses the gap first and the
  *     nothing-new stop condition halts on already-retained pages. Merged
  *     with current-wins dedup; stops early when a page contributes nothing
- *     new or the store's 500-message prune cap is reached (fetching beyond
+ *     new or the store's `MAX_MESSAGES_PER_AGENT` prune cap is reached (fetching beyond
  *     it would be discarded anyway).
  */
 import {
