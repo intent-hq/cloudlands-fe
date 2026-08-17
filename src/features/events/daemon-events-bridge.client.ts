@@ -2994,6 +2994,14 @@ export function routeDaemonEventsNotification(
     const data = (event as { data?: Record<string, unknown> }).data;
     if (typeof data?.agentId === 'string') {
       removeAgentFailure(data.agentId);
+      // Drop the local slice state for the deleted agent — mirroring
+      // `handleAgentDeleteScheduledEvent` — so an immediate delete (no
+      // `agent:delete-scheduled` grace window) converges without waiting for
+      // a refetch.
+      appStore.dispatch(removeAgent(workspaceId, data.agentId));
+      appStore.dispatch(removeSession(data.agentId));
+      appStore.dispatch(removeWatchedAgent(workspaceId, data.agentId));
+      appStore.dispatch(pruneRecentlyClosed(workspaceId, { agentId: data.agentId }));
     }
     // Refresh the workspace entity's BE-owned `agentSummary` aggregate so the
     // HUD card rows drop the deleted agent immediately — the `agent.list`
