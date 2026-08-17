@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.59.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.59.1...v2.59.2) (2026-08-17)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** defer transcript reveal on switch-back until resubscribe snapshot applies ([#1384](https://github.com/intent-hq/cloudlands-fe/issues/1384)) ([00827f3](https://github.com/intent-hq/cloudlands-fe/commit/00827f37e633d86047073b34f81f1035a41ac219))
+* drop deleted/pending-delete agents from HUD and clean bridge state on agent:deleted ([#1385](https://github.com/intent-hq/cloudlands-fe/issues/1385)) ([dba8c52](https://github.com/intent-hq/cloudlands-fe/commit/dba8c520fba8863c2ab517e603d0e922757e2f04))
+
 ## [2.59.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.59.0...v2.59.1) (2026-08-17)
 
 
