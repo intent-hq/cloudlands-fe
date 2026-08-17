@@ -2120,6 +2120,48 @@ describe('LiveChatClient.subscribe incremental delta encoding (§7.1 deltaEncodi
     off();
   });
 
+  it('same-subscription lag-recovery snapshot (seq > 0) re-arms and fragments append onto its prefix', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, INCREMENTAL_SNAPSHOT);
+    deltaPush('sub-1', 1, textFragment('added', 'text', 'early'));
+
+    // Daemon-side lag recovery: the SAME subscription emits an echoed
+    // snapshot at the next seq, carrying the in-flight message's accumulated
+    // prefix (the daemon reseeds its mapper from this snapshot).
+    snapshotPush('sub-1', 2, {
+      ...INCREMENTAL_SNAPSHOT,
+      messages: [
+        ...SEEDED_SNAPSHOT.messages,
+        {
+          id: '0190a200-asst',
+          agentId: 'agent-1',
+          seq: 1,
+          role: 'assistant',
+          contentBlocks: [{ type: 'text', id: '0190a200-asst:0', text: 'early recovery' }],
+          timestamp: '2026-06-27T01:00:01.000Z',
+          isStreaming: true,
+        },
+      ],
+      totalMessages: 2,
+    });
+
+    // Post-recovery fragments arrive in `updated` on the same subscription
+    // and append onto the recovery snapshot's prefix, not the pre-lag state.
+    deltaPush('sub-1', 3, textFragment('updated', 'text', ' prefix'));
+    const last = seen[seen.length - 1];
+    expect(last.messages[1].contentBlocks?.[0]).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: 'early recovery prefix',
+    });
+    off();
+  });
+
   it('re-arms from each snapshot echo: a recovery snapshot decides the mode anew', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();

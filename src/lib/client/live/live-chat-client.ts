@@ -57,11 +57,12 @@ interface ChatSnapshotPayload {
   resumed?: boolean;
   /**
    * Incremental-encoding echo (§7.1, monorepo#2675): `"incremental"` on every
-   * snapshot an incremental subscription emits (seq-0 AND lag recovery).
-   * Absent in full mode and from older daemons that ignore the request param
-   * — the echo, not the request, decides the reducer.
+   * snapshot an incremental subscription emits (seq-0 AND lag recovery) — the
+   * only value the daemon ever stamps (full mode stamps nothing). Absent in
+   * full mode and from older daemons that ignore the request param — the
+   * echo, not the request, decides the reducer.
    */
-  deltaEncoding?: string;
+  deltaEncoding?: 'incremental';
 }
 
 /** Decoded seq-0 snapshot page (mirrors `agent.getConversation` shape). */
