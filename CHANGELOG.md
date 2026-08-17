@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.57.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.7...v2.57.0) (2026-08-17)
+
+
+### 🚀 Features
+
+* show the actual default model when the daemon preview is absent ([#1355](https://github.com/intent-hq/cloudlands-fe/issues/1355)) ([3ea5712](https://github.com/intent-hq/cloudlands-fe/commit/3ea57128bec8893aa8fe13909614dd39bd5f3345))
+
+
+### 🐛 Bug Fixes
+
+* retry seq-0 snapshot wait in transcript hydration instead of failing the load ([#1356](https://github.com/intent-hq/cloudlands-fe/issues/1356)) ([0bc7a83](https://github.com/intent-hq/cloudlands-fe/commit/0bc7a832325c0989cc3e9293908f131bd08a1dfa))
+
 ## [2.56.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.56.6...v2.56.7) (2026-08-17)
 
 
