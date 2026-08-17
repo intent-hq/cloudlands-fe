@@ -5,7 +5,7 @@ import { cleanup, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { writable } from 'svelte/store';
 
-type ModelOption = { value: string; label: string; description?: string };
+type ModelOption = { value: string; label: string; description?: string; isDefault?: boolean };
 type Session = {
   id: string;
   workspaceId: string;
@@ -500,5 +500,92 @@ describe('ModelPicker trigger label regressions', () => {
     });
 
     expect(screen.queryByTestId('provider-icon')).toBeNull();
+  });
+
+  it('falls back to the catalog isDefault row when the daemon preview is absent (opt-in)', () => {
+    availableModels$.set([
+      { value: 'auggie:butler', label: 'Auggie Butler' },
+      { value: 'auggie:sonnet-4.6', label: 'Sonnet 4.6', isDefault: true },
+    ]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelLabel: 'Provider default',
+        fallbackToCatalogDefault: true,
+        isLocked: true,
+      },
+    });
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Sonnet 4.6');
+    expect(text).not.toContain('Provider default');
+  });
+
+  it('keeps the defaultModelLabel when no catalog row is marked isDefault', () => {
+    availableModels$.set([{ value: 'auggie:butler', label: 'Auggie Butler' }]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelLabel: 'Provider default',
+        fallbackToCatalogDefault: true,
+        isLocked: true,
+      },
+    });
+
+    expect(screen.getByRole('button').textContent ?? '').toContain('Provider default');
+  });
+
+  it('does not use the catalog isDefault fallback when a daemon preview (defaultModelId) resolves', () => {
+    availableModels$.set([
+      { value: 'auggie:butler', label: 'Auggie Butler' },
+      { value: 'auggie:sonnet-4.6', label: 'Sonnet 4.6', isDefault: true },
+    ]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelId: 'auggie:butler',
+        defaultModelLabel: 'Provider default',
+        fallbackToCatalogDefault: true,
+        isLocked: true,
+      },
+    });
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Auggie Butler');
+    expect(text).not.toContain('Sonnet 4.6');
+  });
+
+  it('maps a legacy <provider>:default selection to the catalog isDefault row', () => {
+    availableModels$.set([
+      { value: 'auggie:butler', label: 'Auggie Butler' },
+      { value: 'auggie:sonnet-4.6', label: 'Sonnet 4.6', isDefault: true },
+    ]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:default',
+        isLocked: true,
+      },
+    });
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Sonnet 4.6');
+    expect(text).not.toContain('default');
+  });
+
+  it('renders the raw id for a legacy <provider>:default selection with no isDefault row', () => {
+    availableModels$.set([{ value: 'auggie:butler', label: 'Auggie Butler' }]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:default',
+        isLocked: true,
+      },
+    });
+
+    expect(screen.getByRole('button').textContent ?? '').toContain('default');
   });
 });
