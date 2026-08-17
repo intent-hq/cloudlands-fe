@@ -5,6 +5,7 @@
  * Handles view, str-replace-editor, codebase-retrieval, save-file, and terminal tools.
  */
 
+import { decode as decodeToon } from '@toon-format/toon';
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger } from '$lib/i18n/format';
 
@@ -1283,93 +1284,117 @@ function parseDirectoryListingResult(
 }
 
 /**
- * Extract agent fields from a JSON tool result (daemon shape:
- * `{ "ok": true, "agentId": "agent-<uuid>", "name": "...", "taskNoteId": "...", "provider": "..." }`).
- * Returns null when the result is not a JSON object.
+ * Decode a structured workspace_api result. The daemon emits either JSON
+ * (`workspaceApi.toonOutput = false`) or TOON text (the default; see
+ * `render_workspace_api_value` in intentd). Tries JSON first, then TOON, and
+ * returns a plain object — or null when the text is neither (e.g. legacy
+ * prose, which the callers handle with their own regex fallbacks).
  */
-function parseAgentResultJson(result: string): {
+function decodeStructuredResult(result: string): Record<string, unknown> | null {
+  const trimmed = result.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('{')) {
+    try {
+      const data = JSON.parse(trimmed);
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        return data as Record<string, unknown>;
+      }
+    } catch {
+      // Truncated/invalid JSON — TOON never starts with '{', so stop here
+    }
+    return null;
+  }
+  try {
+    const data = decodeToon(trimmed);
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      return data as Record<string, unknown>;
+    }
+  } catch {
+    // Not TOON — leave the text for the prose fallbacks
+  }
+  return null;
+}
+
+/**
+ * Extract agent fields from a structured (JSON or TOON) tool result (daemon
+ * shape: `{ "ok": true, "agentId": "agent-<uuid>", "name": "...",
+ * "taskNoteId": "...", "provider": "..." }`).
+ * Returns null when the result is not a structured object carrying an
+ * `agentId` (prose that happens to TOON-decode into an unrelated object must
+ * not short-circuit the callers' prose fallbacks).
+ */
+function parseAgentResult(result: string): {
   agentId?: string;
   name?: string;
   taskNoteId?: string;
   provider?: string;
 } | null {
-  const trimmed = result.trim();
-  if (!trimmed.startsWith('{')) return null;
-  try {
-    const data = JSON.parse(trimmed);
-    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
-    return {
-      agentId: typeof data.agentId === 'string' ? data.agentId : undefined,
-      name: typeof data.name === 'string' ? data.name : undefined,
-      taskNoteId: typeof data.taskNoteId === 'string' ? data.taskNoteId : undefined,
-      provider: typeof data.provider === 'string' ? data.provider : undefined,
-    };
-  } catch {
-    return null;
-  }
+  const data = decodeStructuredResult(result);
+  if (!data) return null;
+  if (typeof data.agentId !== 'string') return null;
+  return {
+    agentId: data.agentId,
+    name: typeof data.name === 'string' ? data.name : undefined,
+    taskNoteId: typeof data.taskNoteId === 'string' ? data.taskNoteId : undefined,
+    provider: typeof data.provider === 'string' ? data.provider : undefined,
+  };
 }
 
 /**
- * Extract a disposition summary from a batch delegate JSON result (daemon
- * shape: `{ "ok": true, "greedy": false, "tasks": [{ "taskNoteId", "title",
- * "disposition", "agentId"?, "agentName"?, ... }], "startedTaskIds": [...],
- * "unlockPlan": {...} }`). Dispositions are `started` / `held:blocked-on-deps`
- * / `held:conflict` / `skipped` / `error`. Returns null when the result is not
- * the batch shape (e.g. the single-agent result, which carries a top-level
- * `agentId`).
+ * Extract a disposition summary from a structured (JSON or TOON) batch
+ * delegate result (daemon shape: `{ "ok": true, "greedy": false, "tasks":
+ * [{ "taskNoteId", "title", "disposition", "agentId"?, "agentName"?, ... }],
+ * "startedTaskIds": [...], "unlockPlan": {...} }`). Dispositions are `started`
+ * / `held:blocked-on-deps` / `held:conflict` / `skipped` / `error`. Returns
+ * null when the result is not the batch shape (e.g. the single-agent result,
+ * which carries a top-level `agentId`).
  */
-function parseDelegateBatchJson(result: string): DelegateBatchSummary | null {
-  const trimmed = result.trim();
-  if (!trimmed.startsWith('{')) return null;
-  try {
-    const data = JSON.parse(trimmed);
-    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
-    if (typeof data.agentId === 'string') return null;
-    if (!Array.isArray(data.tasks)) return null;
-    const rows = (data.tasks as unknown[]).filter(
-      (row): row is Record<string, unknown> => typeof row === 'object' && row !== null,
-    );
-    if (rows.length > 0 && !rows.some((row) => typeof row.disposition === 'string')) return null;
-    const summary: DelegateBatchSummary = {
-      started: 0,
-      held: 0,
-      skipped: 0,
-      errors: 0,
-      startedRows: [],
-    };
-    for (const row of rows) {
-      const disposition = typeof row.disposition === 'string' ? row.disposition : '';
-      if (disposition === 'started') {
-        summary.started++;
-        if (typeof row.agentId === 'string') {
-          summary.startedRows.push({
-            agentId: row.agentId,
-            agentName: typeof row.agentName === 'string' ? row.agentName : undefined,
-            taskNoteId: typeof row.taskNoteId === 'string' ? row.taskNoteId : undefined,
-            title: typeof row.title === 'string' ? row.title : undefined,
-          });
-        }
-      } else if (disposition.startsWith('held:')) {
-        summary.held++;
-      } else if (disposition === 'skipped') {
-        summary.skipped++;
-      } else if (disposition === 'error') {
-        summary.errors++;
+function parseDelegateBatchResult(result: string): DelegateBatchSummary | null {
+  const data = decodeStructuredResult(result);
+  if (!data) return null;
+  if (typeof data.agentId === 'string') return null;
+  if (!Array.isArray(data.tasks)) return null;
+  const rows = (data.tasks as unknown[]).filter(
+    (row): row is Record<string, unknown> => typeof row === 'object' && row !== null,
+  );
+  if (rows.length > 0 && !rows.some((row) => typeof row.disposition === 'string')) return null;
+  const summary: DelegateBatchSummary = {
+    started: 0,
+    held: 0,
+    skipped: 0,
+    errors: 0,
+    startedRows: [],
+  };
+  for (const row of rows) {
+    const disposition = typeof row.disposition === 'string' ? row.disposition : '';
+    if (disposition === 'started') {
+      summary.started++;
+      if (typeof row.agentId === 'string') {
+        summary.startedRows.push({
+          agentId: row.agentId,
+          agentName: typeof row.agentName === 'string' ? row.agentName : undefined,
+          taskNoteId: typeof row.taskNoteId === 'string' ? row.taskNoteId : undefined,
+          title: typeof row.title === 'string' ? row.title : undefined,
+        });
       }
+    } else if (disposition.startsWith('held:')) {
+      summary.held++;
+    } else if (disposition === 'skipped') {
+      summary.skipped++;
+    } else if (disposition === 'error') {
+      summary.errors++;
     }
-    return summary;
-  } catch {
-    return null;
   }
+  return summary;
 }
 
 /**
  * Parse delegate task result
  *
- * JSON format (daemon):
+ * Structured format (daemon; JSON or TOON-encoded):
  *   '{ "ok": true, "agentId": "agent-<uuid>", "name": "...", "taskNoteId": "...", "provider": "..." }'
- * Batch JSON format (daemon, `tasks: [...]` input): per-task dispositions —
- * see parseDelegateBatchJson.
+ * Batch structured format (daemon, `tasks: [...]` input): per-task
+ * dispositions — see parseDelegateBatchResult.
  * Legacy prose format:
  *   'Task "{name}" delegated to new agent.\nAgent ID: {agentId}\nTask Note ID: {noteId}'
  */
@@ -1396,20 +1421,21 @@ function parseDelegateTaskResult(
 
   // Batch delegate (tasks/dispositions array, no top-level agentId): expose a
   // truthful disposition summary instead of the single-agent fields.
-  const batch = parseDelegateBatchJson(result);
+  const batch = parseDelegateBatchResult(result);
   if (batch) {
     parsed.delegateBatch = batch;
     parsed.content = result;
     return parsed;
   }
 
-  // JSON-first: the daemon returns a JSON object with agentId/name/taskNoteId/provider
-  const json = parseAgentResultJson(result);
-  if (json) {
-    if (json.agentId) parsed.agentId = json.agentId;
-    if (json.name) parsed.delegatedAgentName = json.name;
-    if (json.taskNoteId) parsed.taskNoteId = json.taskNoteId;
-    if (json.provider) parsed.delegatedAgentProvider = json.provider;
+  // Structured-first: the daemon returns a JSON or TOON object with
+  // agentId/name/taskNoteId/provider
+  const structured = parseAgentResult(result);
+  if (structured) {
+    if (structured.agentId) parsed.agentId = structured.agentId;
+    if (structured.name) parsed.delegatedAgentName = structured.name;
+    if (structured.taskNoteId) parsed.taskNoteId = structured.taskNoteId;
+    if (structured.provider) parsed.delegatedAgentProvider = structured.provider;
     parsed.content = result;
     return parsed;
   }
@@ -1420,14 +1446,16 @@ function parseDelegateTaskResult(
     parsed.delegatedTaskName = taskMatch[1];
   }
 
-  // Parse agent ID
-  const agentMatch = result.match(/Agent\s*ID:\s*(\S+)/i);
+  // Parse agent ID. Requires the "Agent ID" word gap so a TOON/JSON-ish
+  // `agentId:` key can never match, and validates the captured value as a
+  // full unquoted `agent-<uuid>`.
+  const agentMatch = result.match(/\bAgent\s+ID:\s*"?(agent-[0-9a-f-]{36})"?/i);
   if (agentMatch) {
     parsed.agentId = agentMatch[1];
   }
 
-  // Parse task note ID
-  const noteMatch = result.match(/Task\s*Note\s*ID:\s*(\S+)/i);
+  // Parse task note ID (word gaps required, quotes stripped — same hardening)
+  const noteMatch = result.match(/\bTask\s+Note\s+ID:\s*"?([A-Za-z0-9_-]+)"?/i);
   if (noteMatch) {
     parsed.taskNoteId = noteMatch[1];
   }
@@ -2114,7 +2142,7 @@ function parseGitResult(
  * Parse agent creation / wake_or_create results → delegate-task display.
  * Extracts agentId, agent name, and task name from the result.
  *
- * JSON format (daemon):
+ * Structured format (daemon; JSON or TOON-encoded):
  *   '{ "ok": true, "agentId": "agent-<uuid>", "name": "AgentName", "provider": "..." }'
  * Legacy prose format examples:
  *   "Created new agent "AgentName" for task "TaskTitle".\nAgent ID: agent-uuid\n..."
@@ -2131,14 +2159,15 @@ function parseAgentCreationResult(
 
   if (!result) return parsed;
 
-  // JSON-first: the daemon returns a JSON object with agentId/name/taskNoteId/provider
-  const json = parseAgentResultJson(result);
-  if (json) {
-    if (json.agentId) parsed.agentId = json.agentId;
-    if (json.name) parsed.delegatedAgentName = json.name;
-    if (json.provider) parsed.delegatedAgentProvider = json.provider;
-    if (json.taskNoteId) {
-      parsed.taskNoteId = json.taskNoteId;
+  // Structured-first: the daemon returns a JSON or TOON object with
+  // agentId/name/taskNoteId/provider
+  const structured = parseAgentResult(result);
+  if (structured) {
+    if (structured.agentId) parsed.agentId = structured.agentId;
+    if (structured.name) parsed.delegatedAgentName = structured.name;
+    if (structured.provider) parsed.delegatedAgentProvider = structured.provider;
+    if (structured.taskNoteId) {
+      parsed.taskNoteId = structured.taskNoteId;
     } else if (typeof input.taskNoteId === 'string') {
       parsed.taskNoteId = input.taskNoteId;
     }
@@ -2150,10 +2179,12 @@ function parseAgentCreationResult(
     return parsed;
   }
 
-  // Legacy prose fallback. The bare-id fallback matches full `agent-<uuid>` ids
-  // only, so it can never capture a truncated id.
+  // Legacy prose fallback. Both alternatives match full `agent-<uuid>` ids
+  // only (quotes stripped), so neither can capture a truncated or
+  // quote-wrapped id from TOON/JSON-ish text.
   const idMatch =
-    result.match(/Agent ID:\s*(\S+)/i) || result.match(/agentId["':\s]*(agent-[0-9a-f-]{36})/i);
+    result.match(/\bAgent\s+ID:\s*"?(agent-[0-9a-f-]{36})"?/i) ||
+    result.match(/agentId["':\s]*(agent-[0-9a-f-]{36})/i);
   if (idMatch) {
     parsed.agentId = idMatch[1];
   }

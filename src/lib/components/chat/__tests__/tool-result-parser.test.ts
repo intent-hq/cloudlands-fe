@@ -627,4 +627,123 @@ describe('tool-result-parser', () => {
       expect(result.agentId).toBeUndefined();
     });
   });
+
+  describe('agent delegate/create TOON results', () => {
+    // Fixtures mirror the daemon's toon-format v0.5 `encode_default` output
+    // (`render_workspace_api_value` in intentd): hyphenated strings are
+    // quoted, arrays use the `tasks[N]:` list / inline syntax.
+    const AGENT_ID = 'agent-12345678-1234-1234-1234-123456789abc';
+    const delegateInput = {
+      code: 'return await ws.agent.delegate({ taskNoteId: "note-1" })',
+      summary: 'Delegate task',
+    };
+    const batchInput = {
+      code: 'return await ws.agent.delegate({ tasks: ["n-1", "n-2", "n-3", "n-4"] })',
+      summary: 'Delegate batch',
+    };
+
+    const TOON_BATCH = [
+      'ok: true',
+      'greedy: false',
+      'tasks[4]:',
+      '  - taskNoteId: "n-1"',
+      '    title: Task A',
+      '    disposition: started',
+      `    agentId: "${AGENT_ID}"`,
+      '    agentName: Implementor #1',
+      '  - taskNoteId: "n-2"',
+      '    title: Task B',
+      '    disposition: "held:blocked-on-deps"',
+      '    reason: "waiting on incomplete dependencies: n-1"',
+      '  - taskNoteId: "n-3"',
+      '    title: Task C',
+      '    disposition: "held:conflict"',
+      '    reason: "conflictsWith intersects the running/starting set (n-1)"',
+      '  - taskNoteId: "n-4"',
+      '    title: Task D',
+      '    disposition: skipped',
+      '    reason: already complete',
+      'startedTaskIds[1]: "n-1"',
+      'unlockPlan:',
+      '  unlockedBySettlement[1]: "n-2"',
+      '  message: msg',
+    ].join('\n');
+
+    it('parses a TOON batch delegate result into a disposition summary', () => {
+      const result = parseToolResult('workspace_api_workspace-mcp', batchInput, TOON_BATCH);
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.agentId).toBeUndefined();
+      expect(result.delegateBatch).toEqual({
+        started: 1,
+        held: 2,
+        skipped: 1,
+        errors: 0,
+        startedRows: [
+          { agentId: AGENT_ID, agentName: 'Implementor #1', taskNoteId: 'n-1', title: 'Task A' },
+        ],
+      });
+    });
+
+    it('never captures a quote-wrapped agentId from TOON batch text', () => {
+      // Regression: before TOON decoding, the batch text fell through to the
+      // legacy prose regex, which matched `agentId: "agent-…"` inside the
+      // TOON body and set a bogus quote-wrapped single agentId.
+      const result = parseToolResult('workspace_api_workspace-mcp', batchInput, TOON_BATCH);
+
+      expect(result.agentId).toBeUndefined();
+      expect(result.delegateBatch?.startedRows[0].agentId).toBe(AGENT_ID);
+      expect(result.delegateBatch?.startedRows[0].agentId).not.toContain('"');
+    });
+
+    it('parses a TOON single delegate result', () => {
+      const toon = [
+        'ok: true',
+        `agentId: "${AGENT_ID}"`,
+        'name: Implementor #1',
+        'taskNoteId: "note-1"',
+        'provider: claude-code',
+      ].join('\n');
+      const result = parseToolResult('workspace_api_workspace-mcp', delegateInput, toon);
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.agentId).toBe(AGENT_ID);
+      expect(result.delegatedAgentName).toBe('Implementor #1');
+      expect(result.taskNoteId).toBe('note-1');
+      expect(result.delegatedAgentProvider).toBe('claude-code');
+      expect(result.delegateBatch).toBeUndefined();
+    });
+
+    it('parses a TOON wakeOrCreate result', () => {
+      const toon = [
+        'ok: true',
+        `agentId: "${AGENT_ID}"`,
+        'name: Helper',
+        'taskNoteId: "note-2"',
+        'provider: auggie',
+      ].join('\n');
+      const wakeInput = {
+        code: 'return await ws.agent.wakeOrCreate("note-2", "resume work")',
+        summary: 'Wake or create agent',
+      };
+      const result = parseToolResult('workspace_api_workspace-mcp', wakeInput, toon);
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.agentId).toBe(AGENT_ID);
+      expect(result.delegatedAgentName).toBe('Helper');
+      expect(result.taskNoteId).toBe('note-2');
+      expect(result.delegatedAgentProvider).toBe('auggie');
+    });
+
+    it('does not capture an agentId from undecodable TOON-ish text', () => {
+      // Prose prefix makes the text invalid TOON; the hardened prose regex
+      // must not match the `agentId:` key either.
+      const text = `Delegation failed after starting.\nagentId: "${AGENT_ID}"`;
+      const result = parseToolResult('workspace_api_workspace-mcp', delegateInput, text);
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.agentId).toBeUndefined();
+      expect(result.content).toBe(text);
+    });
+  });
 });
