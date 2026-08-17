@@ -3,9 +3,12 @@ import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import {
   composeTranscript,
+  estimateVirtualSpacerHeight,
   isConversationStartLoaded,
   shouldChainOlderHistoryOnSettle,
   shouldRequestOlderHistory,
+  VIRTUAL_ROW_HEIGHT_MAX_PX,
+  VIRTUAL_ROW_HEIGHT_MIN_PX,
 } from '../chat-scrollback-composition';
 import { indexConversationTurns } from '../conversation-turns';
 
@@ -235,6 +238,20 @@ describe('shouldRequestOlderHistory', () => {
     expect(shouldRequestOlderHistory({ ...base, fetching: true })).toBe(false);
     expect(shouldRequestOlderHistory({ ...base, exhausted: true })).toBe(false);
   });
+
+  it('extends the near-top threshold by the virtual spacer height (thumb drag)', () => {
+    // Thumb dragged INTO the estimated region: scrollTop is far beyond the
+    // resident threshold but inside spacer + threshold — fires.
+    expect(
+      shouldRequestOlderHistory({ ...base, scrollTop: 5000, spacerAbove: 10000 }),
+    ).toBe(true);
+    // Below the spacer region: does not fire.
+    expect(
+      shouldRequestOlderHistory({ ...base, scrollTop: 10500, spacerAbove: 10000 }),
+    ).toBe(false);
+    // No spacer keeps the resident-only behavior byte-identical.
+    expect(shouldRequestOlderHistory({ ...base, scrollTop: 500, spacerAbove: 0 })).toBe(false);
+  });
 });
 
 describe('shouldChainOlderHistoryOnSettle (continuous paging)', () => {
@@ -369,5 +386,63 @@ describe('isConversationStartLoaded (conversation-start header gate)', () => {
         totalMessages: 200,
       }),
     ).toBe(false);
+  });
+});
+
+describe('estimateVirtualSpacerHeight (virtual scrollbar)', () => {
+  // 30 resident rows at 100px average, 200 total → 170 unloaded above.
+  const base = {
+    totalMessages: 200,
+    residentCount: 30,
+    exhausted: false,
+    residentContentHeight: 3000,
+  };
+
+  it('sizes the spacer as unloaded rows x average resident row height', () => {
+    expect(estimateVirtualSpacerHeight(base)).toBe(170 * 100);
+  });
+
+  it('keeps total extent ~stable as pages land (spacer shrinks by the rows loaded)', () => {
+    // A 10-row page lands at the same average height: resident content grows
+    // by 1000px while the spacer shrinks by exactly the same 1000px.
+    const before = estimateVirtualSpacerHeight(base);
+    const after = estimateVirtualSpacerHeight({
+      ...base,
+      residentCount: 40,
+      residentContentHeight: 4000,
+    });
+    expect(before - after).toBe(1000);
+    expect(before + base.residentContentHeight).toBe(after + 4000);
+  });
+
+  it('returns 0 when the walk is exhausted (true start resident)', () => {
+    expect(estimateVirtualSpacerHeight({ ...base, exhausted: true })).toBe(0);
+  });
+
+  it('returns 0 when totalMessages is unknown (graceful fallback)', () => {
+    expect(estimateVirtualSpacerHeight({ ...base, totalMessages: 0 })).toBe(0);
+  });
+
+  it('returns 0 when everything is resident and never goes negative', () => {
+    expect(estimateVirtualSpacerHeight({ ...base, residentCount: 200 })).toBe(0);
+    // Estimate overshoot: more resident rows than the (stale) snapshot total.
+    expect(estimateVirtualSpacerHeight({ ...base, residentCount: 240 })).toBe(0);
+  });
+
+  it('returns 0 before any rows are resident (nothing to average over)', () => {
+    expect(
+      estimateVirtualSpacerHeight({ ...base, residentCount: 0, residentContentHeight: 0 }),
+    ).toBe(0);
+  });
+
+  it('clamps degenerate average row heights', () => {
+    // Zero-height measurement (container mid-layout) → min clamp, not 0.
+    expect(
+      estimateVirtualSpacerHeight({ ...base, residentContentHeight: 0 }),
+    ).toBe(170 * VIRTUAL_ROW_HEIGHT_MIN_PX);
+    // One enormous turn skewing the mean → max clamp.
+    expect(
+      estimateVirtualSpacerHeight({ ...base, residentContentHeight: 300000 }),
+    ).toBe(170 * VIRTUAL_ROW_HEIGHT_MAX_PX);
   });
 });

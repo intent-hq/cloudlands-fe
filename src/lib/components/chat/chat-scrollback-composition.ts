@@ -143,6 +143,15 @@ export interface OlderHistoryTriggerParams {
    * while `truncated` stays false.
    */
   totalMessages: number;
+  /**
+   * Height (px) of the virtual scrollback spacer currently rendered above
+   * the resident rows (see `estimateVirtualSpacerHeight`). The near-top
+   * threshold extends by this amount so any viewport position INSIDE the
+   * estimated region — reached by dragging the scrollbar thumb up — drives
+   * the same paging walk as scrolling to the resident top. Omitted/0 keeps
+   * the resident-only behavior.
+   */
+  spacerAbove?: number;
 }
 
 /**
@@ -164,8 +173,9 @@ export function shouldRequestOlderHistory(params: OlderHistoryTriggerParams): bo
     tailCount,
     tailTruncated,
     totalMessages,
+    spacerAbove = 0,
   } = params;
-  if (!canScroll || scrollTop > threshold) return false;
+  if (!canScroll || scrollTop > threshold + spacerAbove) return false;
   if (fetching || exhausted) return false;
   return historyCount > 0 || tailTruncated || totalMessages > tailCount + historyCount;
 }
@@ -185,6 +195,53 @@ export function shouldChainOlderHistoryOnSettle(
   params: OlderHistoryTriggerParams,
 ): boolean {
   return settled && shouldRequestOlderHistory(params);
+}
+
+export interface VirtualSpacerParams {
+  /** Snapshot `totalMessages` (0 when no snapshot has arrived yet). */
+  totalMessages: number;
+  /** Resident rows: hydrated history + live tail. */
+  residentCount: number;
+  /** The older walk hydrated the conversation's true first row. */
+  exhausted: boolean;
+  /**
+   * Measured pixel height of the RESIDENT rows (the scroll content minus any
+   * currently applied spacer). Used to derive the average resident row
+   * height that scales the unloaded extent.
+   */
+  residentContentHeight: number;
+}
+
+/**
+ * Bounds on the per-row height estimate. Guard degenerate measurements (a
+ * zero-height container mid-layout, or one enormous turn skewing the mean)
+ * from collapsing the spacer or exploding the scrollbar.
+ */
+export const VIRTUAL_ROW_HEIGHT_MIN_PX = 24;
+export const VIRTUAL_ROW_HEIGHT_MAX_PX = 320;
+
+/**
+ * Height of the virtual spacer rendered ABOVE the resident rows so the
+ * scrollbar represents the estimated FULL conversation instead of only the
+ * resident window: (rows above the resident window) x (average resident row
+ * height, clamped). As pages land, `residentCount`/`residentContentHeight`
+ * grow while the unloaded row count shrinks, so total scrollHeight stays
+ * roughly stable — the scrollbar does not grow as the walk progresses.
+ *
+ * Returns 0 (today's behavior, no spacer) when the walk is exhausted, when
+ * `totalMessages` is unknown, when nothing is resident yet to average over,
+ * or when every row is already resident. Never negative.
+ */
+export function estimateVirtualSpacerHeight(params: VirtualSpacerParams): number {
+  const { totalMessages, residentCount, exhausted, residentContentHeight } = params;
+  if (exhausted || totalMessages <= 0 || residentCount <= 0) return 0;
+  const unloadedAbove = totalMessages - residentCount;
+  if (unloadedAbove <= 0) return 0;
+  const average = residentContentHeight / residentCount;
+  const clamped = Number.isFinite(average)
+    ? Math.min(VIRTUAL_ROW_HEIGHT_MAX_PX, Math.max(VIRTUAL_ROW_HEIGHT_MIN_PX, average))
+    : VIRTUAL_ROW_HEIGHT_MIN_PX;
+  return Math.round(unloadedAbove * clamped);
 }
 
 export interface ConversationStartLoadedParams {

@@ -150,6 +150,7 @@
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
     composeTranscript,
+    estimateVirtualSpacerHeight,
     isConversationStartLoaded,
     shouldRequestOlderHistory,
   } from './chat-scrollback-composition';
@@ -1564,9 +1565,56 @@
       tailCount: $agentMessages$.length,
       tailTruncated: $transcriptSnapshotMeta$?.truncated === true,
       totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
+      // Any viewport position inside the virtual spacer (reached by dragging
+      // the scrollbar thumb up) drives the same older-history walk.
+      spacerAbove: virtualSpacerHeight,
     });
     if (request) appStore.dispatch(olderHistoryPageRequested(workspace.id, agentId));
   }
+
+  // ── Virtual scrollbar: spacer above the resident rows ─────────────────
+  // Sized to the ESTIMATED unloaded extent (unloaded rows x average resident
+  // row height — see estimateVirtualSpacerHeight) so the scrollbar
+  // represents the full conversation: it stops growing as pages load (the
+  // spacer shrinks as real rows replace estimate, keeping scrollHeight
+  // roughly stable) and dragging the thumb to the very top lands in the
+  // spacer region, where the extended trigger above pages toward the true
+  // first message. 0 (no spacer, today's behavior) when totalMessages is
+  // unknown or the walk is exhausted.
+  let virtualSpacerHeight = $state(0);
+  $effect(() => {
+    // Reactive deps: resident row counts + snapshot meta + exhaustion + the
+    // container binding. The measurement and the spacer state itself are
+    // read untracked so the effect never retriggers off its own write.
+    const residentCount = $agentHistoryMessages$.length + $agentMessages$.length;
+    const totalMessages = $transcriptSnapshotMeta$?.totalMessages ?? 0;
+    const exhausted = $historyExhausted$;
+    const container = scrollContainer;
+    if (!container) return;
+    untrack(() => {
+      const target = estimateVirtualSpacerHeight({
+        totalMessages,
+        residentCount,
+        exhausted,
+        residentContentHeight: Math.max(0, container.scrollHeight - virtualSpacerHeight),
+      });
+      if (target === virtualSpacerHeight) return;
+      // Bracket the spacer resize with the same anchor capture/restore the
+      // prepend path uses: the anchor element sits BELOW the spacer, so the
+      // restore compensates the height delta and the estimate refining as
+      // rows land never visibly jumps the viewport. (When the viewport is
+      // inside the blank spacer region there is no visible anchor element
+      // and scrollTop is intentionally left alone.)
+      const anchor = captureScrollAnchor(container);
+      virtualSpacerHeight = target;
+      tick().then(() => {
+        requestAnimationFrame(() => {
+          if (isComponentDestroyed || !scrollContainer) return;
+          restoreScrollAnchor(scrollContainer, anchor);
+        });
+      });
+    });
+  });
 
   // Older-history scroll trigger. The saga sets the fetching flag
   // synchronously on the first dispatch, deduping the scroll-event burst.
@@ -3958,6 +4006,18 @@
           {#if messagesCondition && !pendingCondition}
             <!-- Messages container (removed in:fly to test duplicate flash issue) -->
             <div class="w-full">
+              <!-- Virtual scrollback spacer: estimated extent of the unloaded
+                   rows above the resident window, so the scrollbar represents
+                   the full conversation (see estimateVirtualSpacerHeight).
+                   Shrinks as real rows land; absent when everything is
+                   resident or totalMessages is unknown. -->
+              {#if virtualSpacerHeight > 0}
+                <div
+                  style="height: {virtualSpacerHeight}px;"
+                  data-testid="chat-virtual-scrollback-spacer"
+                  aria-hidden="true"
+                ></div>
+              {/if}
               <!-- Workspace intro card: conversation-start chrome. Gated on
                    the TRUE START being resident — mid-history (older rows
                    still above the resident window) it must not render, or it
