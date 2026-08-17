@@ -229,7 +229,9 @@ vi.mock('$store/renderer/slices/model/model-utils', () => ({
     const models =
       providerId === 'anthropic'
         ? [{ value: 'anthropic:claude-opus-4-7', label: 'Claude Opus 4.7' }]
-        : [{ value: 'auggie:butler', label: 'Auggie Butler' }];
+        : providerId === 'claude-code'
+          ? [{ value: 'claude-code:claude-opus-4-8', label: 'Claude Opus 4.8', isDefault: true }]
+          : [{ value: 'auggie:butler', label: 'Auggie Butler' }];
     return Promise.resolve({ models });
   }),
 }));
@@ -556,6 +558,34 @@ describe('ModelPicker trigger label regressions', () => {
     const text = screen.getByRole('button').textContent ?? '';
     expect(text).toContain('Auggie Butler');
     expect(text).not.toContain('Sonnet 4.6');
+  });
+
+  it('reads the fallbackProviderId provider for the catalog isDefault fallback, not the active provider', async () => {
+    enabledProviderIds$.set(['auggie', 'claude-code']);
+    availableModels$.set([
+      { value: 'auggie:butler', label: 'Auggie Butler' },
+      { value: 'auggie:sonnet-4.6', label: 'Sonnet 4.6', isDefault: true },
+    ]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelLabel: 'Provider default',
+        fallbackToCatalogDefault: true,
+        fallbackProviderId: 'claude-code',
+        isLocked: true,
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await tick();
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Claude Opus 4.8');
+    expect(text).not.toContain('Sonnet 4.6');
+    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
+      'claude-code',
+    );
   });
 
   it('maps a legacy <provider>:default selection to the catalog isDefault row', () => {

@@ -689,6 +689,7 @@
             defaultModelId={coordinatorDefaultModel}
             defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
             fallbackToCatalogDefault
+            fallbackProviderId={onboardingProvider}
             silentFallback
           />
         {/key}

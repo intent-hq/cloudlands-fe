@@ -186,6 +186,11 @@
     // provider's isDefault-marked catalog row instead of the generic
     // defaultModelLabel. Display-only — the create path still omits the model.
     fallbackToCatalogDefault?: boolean;
+    // Provider whose isDefault catalog row the fallback reads. Consumers that
+    // create with a provider other than the picker's effective one (e.g.
+    // InitialAgentPicker's selectedProvider) pass it so the fallback matches
+    // what the daemon would pin. Defaults to the effective provider.
+    fallbackProviderId?: string;
     showDefaultOption?: boolean;
     // Overrides for the "use default" dropdown option's label/description
     // (e.g. the specialist editor's "Inherit global default" wording).
@@ -237,6 +242,7 @@
     defaultModelId,
     defaultModelLabel,
     fallbackToCatalogDefault = false,
+    fallbackProviderId,
     showDefaultOption = false,
     defaultOptionLabel,
     defaultOptionDescription,
@@ -801,13 +807,13 @@
   }
 
   // Opt-in display fallback (fallbackToCatalogDefault): no explicit selection
-  // and no daemon-resolved preview (defaultModelId) — show the effective
-  // provider's isDefault row while the preview is absent (daemon catalog
-  // cache cold / preview fetch not landed) instead of the generic
-  // defaultModelLabel.
+  // and no daemon-resolved preview (defaultModelId) — show the isDefault row
+  // of the provider the consumer creates with (fallbackProviderId, else the
+  // effective provider) while the preview is absent (daemon catalog cache
+  // cold / preview fetch not landed) instead of the generic defaultModelLabel.
   const catalogDefaultFallbackOption = $derived.by(() =>
     fallbackToCatalogDefault && !defaultModelId
-      ? findCatalogDefaultOption(effectiveProviderId)
+      ? findCatalogDefaultOption(fallbackProviderId ?? effectiveProviderId)
       : undefined,
   );
 
