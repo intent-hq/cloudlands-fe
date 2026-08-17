@@ -3,13 +3,7 @@ import {
   it,
   expect,
 } from "vitest";
-import {
-  prStatusReducer,
-  initialState,
-  prStatusRefreshStarted,
-  prStatusRefreshCompleted,
-  cleanupPRStatusWorkspace,
-} from "./pr-status-slice";
+import { prStatusReducer, initialState, prStatusRefreshStarted, prStatusRefreshCompleted } from "./pr-status-slice";
 
 describe("prStatusReducer", () => {
   it("returns initial state", () => {
@@ -50,15 +44,6 @@ describe("prStatusReducer", () => {
       prStatusRefreshCompleted("ws-1", false, "err"),
     );
     expect(state.byWorkspaceId["ws-1"].lastRefreshTime).toBeNull();
-  });
-
-  it("clears workspace state on cleanup", () => {
-    let state = prStatusReducer(initialState, prStatusRefreshStarted("ws-1"));
-    state = prStatusReducer(state, prStatusRefreshCompleted("ws-1", true));
-    state = prStatusReducer(state, cleanupPRStatusWorkspace("ws-1"));
-    // After cleanup, workspace state should be the default empty state
-    const ws = state.byWorkspaceId["ws-1"];
-    expect(ws).toBeUndefined();
   });
 
   it("handles multiple workspaces independently", () => {

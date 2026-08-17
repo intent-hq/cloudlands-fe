@@ -15,7 +15,6 @@ import type {
   FileExplorerTreeNode,
 } from './file-explorer-types';
 import { sortNodesRecursive } from './file-explorer-utils';
-import type { StoreAction } from '@augmentcode/themis/types';
 
 export type { FileExplorerWorkspaceState, FileExplorerState };
 
@@ -47,7 +46,7 @@ export const initialState: FileExplorerState = {
   byWorkspaceId: {},
 };
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
+const { getWorkspaceState, setWorkspaceState } = createWorkspaceScopedHelpers(
   emptyFileExplorerWorkspaceState,
 );
 
@@ -58,10 +57,6 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWork
 export const initializeFileExplorer = createAction<
   [wsId: string, options: { workspacePath: string; workspaceId?: string }]
 >('fileExplorer/initializeFileExplorer');
-
-export const setWorkspacePathRequested = createAction<[wsId: string, path: string]>(
-  'fileExplorer/setWorkspacePathRequested',
-);
 
 export const toggleDirectoryRequested = createAction<[wsId: string, nodePath: string]>(
   'fileExplorer/toggleDirectoryRequested',
@@ -103,34 +98,8 @@ export const refreshDirectoryRequested = createAction<[wsId: string, filePath: s
   'fileExplorer/refreshDirectoryRequested',
 );
 
-export const refreshGitStatusRequested = createAction<[wsId: string]>(
-  'fileExplorer/refreshGitStatusRequested',
-);
-
-export const refreshAgentFileEditsRequested = createAction<[wsId: string]>(
-  'fileExplorer/refreshAgentFileEditsRequested',
-);
-
 export const syncGitStatusFromStoresRequested = createAction<[wsId: string]>(
   'fileExplorer/syncGitStatusFromStoresRequested',
-);
-
-/**
- * Wrapper action used by the file-explorer saga to debounce rapid
- * file-tracking IPC events. Dispatch as
- * `debouncedFileTrackingSync(syncGitStatusFromStoresRequested(wsId))` — the
- * inner action is fired after the debounce window elapses.
- */
-export const debouncedFileTrackingSync = createAction<[inner: StoreAction<any>]>(
-  'fileExplorer/debouncedFileTrackingSync',
-);
-
-export const debouncedDirectoryRefresh = createAction<[inner: StoreAction<any>]>(
-  'fileExplorer/debouncedDirectoryRefresh',
-);
-
-export const debouncedAgentFileEditsRefresh = createAction<[inner: StoreAction<any>]>(
-  'fileExplorer/debouncedAgentFileEditsRefresh',
 );
 
 // ---------------------------------------------------------------------------
@@ -155,32 +124,9 @@ export const setChildrenAtPathAction = createAction<
   [wsId: string, parentPath: string, children: FileNode[]]
 >('fileExplorer/setChildrenAtPath');
 
-export const setGitignorePatterns = createAction<[wsId: string, patterns: string[]]>(
-  'fileExplorer/setGitignorePatterns',
-);
-
 export const setGitStatusMap = createAction<
   [wsId: string, gitStatus: Record<string, FileGitStatus>]
 >('fileExplorer/setGitStatusMap');
-
-/**
- * Shallow-merge per-entry git-status updates into ws.gitStatus.
- * - No-op (returns identical state ref) when every provided key's value deep-equals existing.
- * - Does NOT increment treeVersion — selectors recompute off the gitStatus reference.
- * - Keys absent from `entries` are NOT deleted; use removeGitStatusEntries for that.
- */
-export const updateGitStatusEntries = createAction<
-  [wsId: string, entries: Record<string, FileGitStatus>]
->('fileExplorer/updateGitStatusEntries');
-
-/**
- * Remove the listed paths from ws.gitStatus.
- * No-op (returns identical state ref) when none of the paths exist.
- * Does NOT increment treeVersion.
- */
-export const removeGitStatusEntries = createAction<[wsId: string, paths: string[]]>(
-  'fileExplorer/removeGitStatusEntries',
-);
 
 /**
  * Shallow-merge per-entry agent-file-edits updates into ws.agentFileEdits.
@@ -232,22 +178,6 @@ export const setFileExplorerWorkspacePath = createAction<[wsId: string, path: st
 
 export const setFileExplorerFileCount = createAction<[wsId: string, count: number]>(
   'fileExplorer/setFileCount',
-);
-
-export const setRemoteConnectionIdAction = createAction<[wsId: string, id: string | null]>(
-  'fileExplorer/setRemoteConnectionId',
-);
-
-export const setIsRemoteInitializedAction = createAction<[wsId: string, value: boolean]>(
-  'fileExplorer/setIsRemoteInitialized',
-);
-
-export const setIsStoreActive = createAction<[wsId: string, value: boolean]>(
-  'fileExplorer/setIsStoreActive',
-);
-
-export const clearFileExplorerForWorkspace = createAction<[wsId: string]>(
-  'fileExplorer/clearForWorkspace',
 );
 
 // ---------------------------------------------------------------------------
@@ -409,9 +339,6 @@ function replaceChildrenInCollection(
 // ---------------------------------------------------------------------------
 
 export const fileExplorerReducer = createReducer<FileExplorerState>(initialState);
-fileExplorerReducer.with(clearFileExplorerForWorkspace, (state, { payload: [wsId] }) =>
-  clearWorkspaceState(state, wsId),
-);
 fileExplorerReducer.with(setFileExplorerLoading, (state, { payload: [wsId, isLoading] }) => {
   const ws = getWorkspaceState(state, wsId);
   if (ws.isLoading === isLoading) return state;
@@ -459,24 +386,8 @@ fileExplorerReducer.with(
     });
   },
 );
-fileExplorerReducer.with(setGitignorePatterns, (state, { payload: [wsId, patterns] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, { ...ws, gitignorePatterns: patterns });
-});
 fileExplorerReducer.with(setGitStatusMap, (state, { payload: [wsId, gitStatus] }) => {
   const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, { ...ws, gitStatus });
-});
-fileExplorerReducer.with(updateGitStatusEntries, (state, { payload: [wsId, entries] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  const gitStatus = mergeRecordEntries(ws.gitStatus, entries, shallowEqual);
-  if (gitStatus === ws.gitStatus) return state;
-  return setWorkspaceState(state, wsId, { ...ws, gitStatus });
-});
-fileExplorerReducer.with(removeGitStatusEntries, (state, { payload: [wsId, paths] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  const gitStatus = removeRecordKeys(ws.gitStatus, paths);
-  if (gitStatus === ws.gitStatus) return state;
   return setWorkspaceState(state, wsId, { ...ws, gitStatus });
 });
 fileExplorerReducer.with(updateAgentFileEditsEntries, (state, { payload: [wsId, entries] }) => {
@@ -560,18 +471,4 @@ fileExplorerReducer.with(setFileExplorerWorkspacePath, (state, { payload: [wsId,
 fileExplorerReducer.with(setFileExplorerFileCount, (state, { payload: [wsId, count] }) => {
   const ws = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, { ...ws, fileCount: count });
-});
-fileExplorerReducer.with(setRemoteConnectionIdAction, (state, { payload: [wsId, id] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  if (ws.remoteConnectionId === id) return state;
-  return setWorkspaceState(state, wsId, { ...ws, remoteConnectionId: id });
-});
-fileExplorerReducer.with(setIsRemoteInitializedAction, (state, { payload: [wsId, value] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  if (ws.isRemoteInitialized === value) return state;
-  return setWorkspaceState(state, wsId, { ...ws, isRemoteInitialized: value });
-});
-fileExplorerReducer.with(setIsStoreActive, (state, { payload: [wsId, value] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, { ...ws, isStoreActive: value });
 });

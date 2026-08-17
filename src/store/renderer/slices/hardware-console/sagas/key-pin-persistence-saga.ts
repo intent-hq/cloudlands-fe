@@ -12,13 +12,7 @@ import {
   reconcileKeyPins,
 } from '$features/hardware-console/assignment/key-assignment';
 import { createLogger } from '$lib/utils/client-logger';
-import {
-  hydrateHardwareConsoleKeyPins,
-  keyPinsReconciled,
-  markKeySlotUnassigned,
-  pinWorkspaceToKey,
-  unpinWorkspaceFromKeys,
-} from '../hardware-console-slice';
+import { hydrateHardwareConsoleKeyPins, keyPinsReconciled, markKeySlotUnassigned, pinWorkspaceToKey } from '../hardware-console-slice';
 import {
   selectHardwareConsoleExcludedWorkspaceIds,
   selectHardwareConsoleKeyPins,
@@ -136,7 +130,7 @@ export function* keyPinPersistenceSaga(): SagaGenerator<void> {
   yield* all([
     call(hydrateKeyPins, gate),
     takeEvery(
-      [pinWorkspaceToKey, unpinWorkspaceFromKeys, markKeySlotUnassigned],
+      [pinWorkspaceToKey, markKeySlotUnassigned],
       persistPinMutation,
       gate,
     ),

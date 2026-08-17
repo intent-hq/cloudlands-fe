@@ -19,7 +19,7 @@ import {
   openGitCredentialsModal,
   openGitHubAuthModal,
 } from '../../global-modals/global-modals-slice';
-import { clearCurrentWorkspaceTab, openWorkspaceTab } from '../../tab-state/tab-state-slice';
+import { loadWorkspaceTabsState, openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { gitEventsIpcSaga } from './git-events-ipc-saga';
 
 const settle = async () => {
@@ -52,7 +52,11 @@ function startSaga(dispatch: ReturnType<typeof vi.fn>, current = state()) {
   const setWorkspaceId = (workspaceId: string | null) => {
     current.tabState.currentTabId = workspaceId;
     channel.put(
-      workspaceId ? openWorkspaceTab(workspaceId) : clearCurrentWorkspaceTab(),
+      workspaceId
+        ? openWorkspaceTab(workspaceId)
+        : loadWorkspaceTabsState({
+            openTabs: [], currentTabId: null, pinnedTabs: [], unsavedTabs: [], optimisticTabs: [], tabOrder: [],
+          }),
     );
     listeners.forEach((listener) => listener());
   };

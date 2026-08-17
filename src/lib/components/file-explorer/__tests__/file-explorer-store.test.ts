@@ -3,19 +3,7 @@ import {
   it,
   expect,
 } from 'vitest';
-import {
-  fileExplorerReducer,
-  initialState,
-  setFileExplorerWorkspacePath,
-  setRootNode,
-  addExpandedPath,
-  removeExpandedPath,
-  setGitStatusMap,
-  setFileExplorerLoading,
-  clearExpandedPathsExceptRoot,
-  setChildrenAtPathAction,
-  clearFileExplorerForWorkspace,
-} from '$store/renderer/slices/file-explorer/file-explorer-slice';
+import { fileExplorerReducer, initialState, setFileExplorerWorkspacePath, setRootNode, addExpandedPath, removeExpandedPath, setGitStatusMap, setFileExplorerLoading, clearExpandedPathsExceptRoot, setChildrenAtPathAction } from '$store/renderer/slices/file-explorer/file-explorer-slice';
 import {
   selectFileExplorerNodeMap,
   selectFileExplorerRootNode,
@@ -86,13 +74,6 @@ describe('FileExplorerReducer', () => {
     const state = fileExplorerReducer(initialState, setFileExplorerLoading(wsId, true));
     expect(state.byWorkspaceId[wsId].isLoading).toBe(true);
     expect(state.byWorkspaceId[wsId].error).toBeNull();
-  });
-
-  it('should clear workspace state', () => {
-    let state = fileExplorerReducer(initialState, setFileExplorerWorkspacePath(wsId, '/test'));
-    state = fileExplorerReducer(state, addExpandedPath(wsId, '/test'));
-    state = fileExplorerReducer(state, clearFileExplorerForWorkspace(wsId));
-    expect(state.byWorkspaceId[wsId]).toBeUndefined();
   });
 
   it('should collapse all except root', () => {

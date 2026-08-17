@@ -1,15 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  closeReleaseNotesModal,
-  initialState,
-  releaseNotesReducer,
-  setError,
-  setInitialized,
-  setLoading,
-  showReleaseNotes,
-  showReleaseNotesSuccess,
-  showReleaseNotesUnavailable,
-} from "./release-notes-slice";
+import { closeReleaseNotesModal, initialState, releaseNotesReducer, showReleaseNotes, showReleaseNotesSuccess, showReleaseNotesUnavailable } from "./release-notes-slice";
 import type { ReleaseNotes } from "./release-notes-types";
 
 const NOTES: ReleaseNotes = {
@@ -70,11 +60,5 @@ describe("releaseNotesReducer", () => {
 
     expect(state.showModal).toBe(false);
     expect(state.releaseNotes).toEqual(NOTES);
-  });
-
-  it("tracks loading, error, and initialized flags", () => {
-    expect(releaseNotesReducer(initialState, setLoading(true)).loading).toBe(true);
-    expect(releaseNotesReducer(initialState, setError("nope")).error).toBe("nope");
-    expect(releaseNotesReducer(initialState, setInitialized()).initialized).toBe(true);
   });
 });
