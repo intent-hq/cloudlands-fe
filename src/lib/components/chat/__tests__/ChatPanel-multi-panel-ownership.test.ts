@@ -92,6 +92,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentMessages: testState.selector([]),
 }));
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
+  selectAwaitingSwitchBackSnapshot: testState.selector(false),
   selectChatError: testState.selector(null),
   selectChatLastChunkTime: testState.selector(null),
   selectChatLiveStreamPhase: testState.selector(null),
