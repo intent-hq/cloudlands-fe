@@ -46,7 +46,7 @@
     getPanelLayoutManager,
     hasPanelLayoutManager,
   } from '$features/layout/panel-layout-adapter';
-  import type { Workspace } from '$shared/types';
+  import type { AgentSession, Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
 
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
@@ -87,6 +87,8 @@
     hidePreview?: boolean;
     /** Render as a compact single row (used by event wake-up banners). */
     inline?: boolean;
+    /** Use the stable single-line row grammar for the workspace Agents panel. */
+    panelRow?: boolean;
     /** Optional row typography override supplied by compact parent disclosures. */
     typographyClass?: string;
     /** Optional inline-row geometry supplied by compact parent disclosures. */
@@ -107,6 +109,8 @@
     headerActions?: Snippet;
     openPanelCount?: number;
     activeInPanel?: boolean;
+    /** Optional timestamp supplied by list data before the session selector is hydrated. */
+    updatedAt?: AgentSession['updatedAt'];
     /** Disable navigation, mutation, editing, and file operations in isolated previews. */
     readOnly?: boolean;
   }
@@ -124,6 +128,7 @@
     showStateBorder = false,
     hidePreview = false,
     inline = false,
+    panelRow = false,
     typographyClass = '',
     inlineRowClass = 'px-1.5 py-1',
     statusLabel,
@@ -133,11 +138,12 @@
     headerActions,
     openPanelCount = 0,
     activeInPanel = false,
+    updatedAt: updatedAtProp = undefined,
     readOnly = false,
   }: Props = $props();
 
   const logger = createLogger('AgentCard');
-  const INLINE_PEEK_TYPOGRAPHY_CLASS = 'font-normal! text-muted-foreground/70';
+  const INLINE_PEEK_TYPOGRAPHY_CLASS = 'font-normal! text-muted-foreground';
 
   // svelte-ignore state_referenced_locally -- selectors are initialized with the current agent; the effect below mirrors prop changes.
   const agentIdStore = writable(agentId);
@@ -539,7 +545,7 @@
       !hasRenderableLiveTool,
   );
 
-  const updatedAt = $derived($agent$?.updatedAt);
+  const updatedAt = $derived(updatedAtProp ?? $agent$?.updatedAt);
 
   // Border color based on state - only show colored border if showStateBorder is true
   const isRunning = $derived(avatarState === 'running' || avatarState === 'responding');
@@ -658,24 +664,35 @@
   >
     <button
       type="button"
-      class="flex w-full min-w-0 max-w-full overflow-hidden text-left gap-2 transition-colors duration-150 cursor-pointer group border {inline
-        ? `type-body items-center rounded-md ${inlineRowClass}`
-        : 'px-1.75 pt-1.25 pb-1.5'} {selected || showBorder
-        ? `bg-background border-border ${glowClass} shadow-xs`
-        : 'border-transparent'} {typographyClass}"
+      class="flex w-full min-w-0 max-w-full overflow-hidden text-left gap-2 transition-colors duration-150 cursor-pointer group border {panelRow
+        ? 'h-10 items-center rounded-md border-transparent px-2 py-2 type-body font-normal hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
+        : inline
+          ? `type-body items-center rounded-md ${inlineRowClass}`
+          : 'px-1.75 pt-1.25 pb-1.5'} {panelRow
+        ? selected
+          ? 'bg-muted/70 text-foreground'
+          : 'bg-transparent'
+        : selected || showBorder
+          ? `bg-background border-border ${glowClass} shadow-xs`
+          : 'border-transparent'} {typographyClass}"
       onclick={handleClick}
       onkeydown={handleCardKeydown}
       oncontextmenu={handleContextMenu}
       aria-disabled={readOnly}
       tabindex={readOnly ? -1 : undefined}
+      data-agent-panel-row={panelRow ? agentId : undefined}
     >
       <div
-        class="agent-card-avatar-wrapper relative shrink-0 {inline ? '' : 'mt-[-0.8px] -mb-1'}"
+        class="agent-card-avatar-wrapper relative shrink-0 {panelRow
+          ? 'agent-card-avatar-wrapper--panel'
+          : inline
+            ? ''
+            : 'mt-[-0.8px] -mb-1'}"
         data-testid="agent-card-avatar-wrapper"
       >
         <AgentAvatarWithState
           {agentId}
-          variant="standard"
+          variant={panelRow ? 'emphasized' : 'standard'}
           state={avatarState}
           specialist={specialist as import('$lib/constants/specialists').BuiltinSpecialistId | null}
           {provider}
@@ -685,20 +702,28 @@
       <div
         class="agent-card-content flex min-w-0 max-w-full flex-1 overflow-hidden {headerActions
           ? 'mr-14'
-          : ''} {inline ? 'flex-row items-center gap-2' : 'flex-col'}"
+          : ''} {inline || panelRow ? 'flex-row items-center gap-2' : 'flex-col'}"
       >
         <!-- Header row -->
         <div
           class="agent-card-header flex w-full min-w-0 max-w-full items-center gap-1.5 overflow-hidden {inline
             ? 'inline-agent-card-header'
-            : 'pr-1.5'}"
+            : panelRow
+              ? 'agent-panel-row-header'
+              : 'pr-1.5'}"
         >
           <!-- Avatar with streaming indicator -->
 
           <div
-            class="flex-1 min-w-0 flex items-center {inline ? 'gap-0' : 'gap-1.5'} {typographyClass
+            class="flex-1 min-w-0 flex items-center {panelRow
+              ? 'gap-1.5 overflow-hidden'
+              : inline
+                ? 'gap-0'
+                : 'gap-1.5'} {typographyClass
               ? 'font-normal'
-              : 'font-medium'} {inline ? 'overflow-hidden' : ''}"
+              : panelRow
+                ? 'font-normal'
+                : 'font-medium'} {inline ? 'overflow-hidden' : ''}"
           >
             {#if isEditing}
               <!-- svelte-ignore a11y_autofocus -->
@@ -714,14 +739,25 @@
             {:else}
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <h3
-                class="shrink-0 whitespace-nowrap font-normal text-foreground {inline
-                  ? 'type-body'
-                  : 'text-sm'}"
+                class="whitespace-nowrap {panelRow
+                  ? 'min-w-0 flex-1 truncate type-body font-normal text-foreground'
+                  : inline
+                    ? 'shrink-0 type-body font-normal text-foreground'
+                    : 'shrink-0 text-sm font-normal text-foreground'}"
                 data-testid="agent-card-name"
+                data-agent-row-name={panelRow ? '' : undefined}
                 ondblclick={handleNameDoubleClick}
               >
                 {displayName}
               </h3>
+            {/if}
+            {#if statusLabel}
+              <span
+                class="type-body shrink-0 truncate whitespace-nowrap font-normal text-muted-foreground"
+                data-testid="agent-card-status"
+              >
+                {statusLabel}
+              </span>
             {/if}
             <!-- {#if specialist}
             <span
@@ -733,14 +769,16 @@
               {specialistDisplayName}
             </span>
           {/if} -->
-            {#if delegatedByName && !inline}
+            {#if delegatedByName && (!inline || panelRow)}
               <span
-                class="delegated-by-text ml-1 min-w-0 shrink truncate whitespace-nowrap text-ui text-subtle"
+                class="delegated-by-text min-w-0 shrink truncate whitespace-nowrap text-ui text-subtle {panelRow
+                  ? 'max-w-[40%]'
+                  : 'ml-1'}"
               >
                 {m.chat_agentCard_delegatedBy_label({ name: delegatedByName })}
               </span>
             {/if}
-            {#if isBackground}
+            {#if isBackground && !panelRow}
               <div class="ml-auto px-1 py-0.5 text-ui font-bold bg-muted text-subtle rounded mr-1">
                 {m.chat_agentCard_background_badge()}
               </div>
@@ -772,10 +810,21 @@
             {/if}
           </div>
 
-          {#if !inline}
-            <div class="flex items-center gap-2 shrink-0">
+          {#if !inline || panelRow}
+            <div
+              class="flex shrink-0 items-center gap-1.5"
+              data-agent-row-trailing={panelRow ? '' : undefined}
+            >
               <OpenPanelIndicator count={openPanelCount} active={activeInPanel} />
-              {#if $lineChanges$ && ($lineChanges$.additions > 0 || $lineChanges$.deletions > 0)}
+              {#if panelRow && isBackground}
+                <span
+                  class="shrink-0 rounded bg-muted px-1 py-0.5 text-ui font-bold text-subtle"
+                  data-agent-background-badge
+                >
+                  {m.chat_agentCard_background_badge()}
+                </span>
+              {/if}
+              {#if !panelRow && $lineChanges$ && ($lineChanges$.additions > 0 || $lineChanges$.deletions > 0)}
                 <LineChangeStats
                   additions={$lineChanges$.additions}
                   deletions={$lineChanges$.deletions}
@@ -783,7 +832,13 @@
                 />
               {/if}
               {#if updatedAt && !headerActions}
-                <RelativeTime date={updatedAt} compact class="text-ui text-subtle" />
+                <span class="shrink-0" data-agent-row-time={panelRow ? '' : undefined}>
+                  <RelativeTime
+                    date={updatedAt}
+                    compact
+                    class="text-ui text-subtle {panelRow ? 'tabular-nums' : ''}"
+                  />
+                </span>
               {/if}
             </div>
           {/if}
@@ -881,6 +936,12 @@
     justify-content: center;
     border-radius: var(--agent-avatar-standard-corner-radius);
     line-height: 0;
+  }
+
+  .agent-card-avatar-wrapper--panel {
+    width: var(--agent-avatar-emphasized-surface-size);
+    height: var(--agent-avatar-emphasized-surface-size);
+    border-radius: var(--agent-avatar-emphasized-corner-radius);
   }
 
   /* Hide text content when container is too narrow (< 80px) */
