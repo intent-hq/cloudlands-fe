@@ -175,12 +175,10 @@
   import { parseSuggestedPrompts } from '$lib/utils/messageParser';
   import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
   import {
-    animateMessageSend,
     captureMessageSendOrigin,
     createMessageSendLaunchBubble,
-    MESSAGE_SEND_MATCH_TIMEOUT_MS,
-    type MessageSendOrigin,
   } from './message-send-transition';
+  import { createPendingSendTransitions } from './pending-send-transitions';
 
   import LazyTurn from './LazyTurn.svelte';
   import PinnedUserPrompt from './PinnedUserPrompt.svelte';
@@ -465,15 +463,6 @@
     lazyTurnHeightCache = createLazyTurnHeightCache(scope);
   });
 
-  interface PendingSendTransition {
-    origin: MessageSendOrigin;
-    launchBubble: HTMLElement | null;
-    followBottom: boolean;
-    expiry: ReturnType<typeof setTimeout>;
-  }
-
-  const pendingSendTransitions = new Map<string, PendingSendTransition>();
-  const activeSendTransitions = new Map<string, AbortController>();
   let pendingSendMessageIds = $state.raw<Set<string>>(new Set());
 
   function setPendingSendMessage(key: string, pending: boolean): void {
@@ -483,20 +472,17 @@
     pendingSendMessageIds = next;
   }
 
-  function cancelPendingSendTransition(key: string, pending: PendingSendTransition): void {
-    if (pendingSendTransitions.get(key) !== pending) return;
-    clearTimeout(pending.expiry);
-    pending.launchBubble?.remove();
-    pendingSendTransitions.delete(key);
-    setPendingSendMessage(key, false);
-  }
+  // The controller retries matching on its own interval until the match
+  // timeout, so a transcript row that appears late (or without a message-count
+  // increase) still gets its transition; on timeout the bubble fades out and
+  // the row is un-hidden.
+  const sendTransitions = createPendingSendTransitions({
+    getScrollContainer: () => scrollContainer,
+    setRowHidden: setPendingSendMessage,
+  });
 
   function cancelAllSendTransitions(): void {
-    for (const [key, pending] of pendingSendTransitions) {
-      cancelPendingSendTransition(key, pending);
-    }
-    for (const controller of activeSendTransitions.values()) controller.abort();
-    activeSendTransitions.clear();
+    sendTransitions.cancelAll();
   }
 
   function prepareMessageSendTransition(
@@ -504,7 +490,7 @@
     options: { enabled: boolean; followBottom: boolean; allowOverlap?: boolean },
   ): string {
     const userAppMessageId = createAppMessageId();
-    if (!options.enabled || (!options.allowOverlap && pendingSendTransitions.size > 0)) {
+    if (!options.enabled || (!options.allowOverlap && sendTransitions.hasPending())) {
       return userAppMessageId;
     }
     if (!composerElement) return userAppMessageId;
@@ -516,52 +502,12 @@
       text,
       `${workspace?.id ?? 'workspace'}:${agentId}:${instanceId}`,
     );
-    const pending: PendingSendTransition = {
-      origin,
-      launchBubble,
-      followBottom: options.followBottom,
-      expiry: setTimeout(
-        () => cancelPendingSendTransition(key, pending),
-        MESSAGE_SEND_MATCH_TIMEOUT_MS,
-      ),
-    };
-    pendingSendTransitions.set(key, pending);
-    if (launchBubble) setPendingSendMessage(key, true);
+    sendTransitions.add(key, { origin, launchBubble, followBottom: options.followBottom });
     return userAppMessageId;
   }
 
   function startPendingSendTransitions(): boolean {
-    if (!scrollContainer || pendingSendTransitions.size === 0) return false;
-    let started = false;
-    for (const message of $agentMessages$) {
-      const key = message.role === 'user' ? String(message.appMessageId ?? '') : '';
-      const pending = pendingSendTransitions.get(key);
-      if (!pending) continue;
-      const row = Array.from(
-        scrollContainer.querySelectorAll<HTMLElement>('[data-send-app-message-id]'),
-      ).find((candidate) => candidate.dataset.sendAppMessageId === key);
-      if (!row) continue;
-      clearTimeout(pending.expiry);
-      pendingSendTransitions.delete(key);
-      const target = row.querySelector<HTMLElement>('[data-testid="user-message-surface"]') ?? row;
-      activeSendTransitions.get(key)?.abort();
-      const controller = new AbortController();
-      activeSendTransitions.set(key, controller);
-      const settle = () => {
-        if (activeSendTransitions.get(key) === controller) activeSendTransitions.delete(key);
-        setPendingSendMessage(key, false);
-      };
-      void animateMessageSend({
-        origin: pending.origin,
-        target,
-        scrollContainer,
-        launchBubble: pending.launchBubble,
-        followBottom: pending.followBottom,
-        signal: controller.signal,
-      }).then(settle, settle);
-      started = true;
-    }
-    return started;
+    return sendTransitions.attemptMatches();
   }
 
   let pinnedPrompt = $state<PinnedPromptState | null>(null);
