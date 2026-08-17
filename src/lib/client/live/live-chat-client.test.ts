@@ -340,7 +340,7 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     off();
   });
 
-  it('ignores a duplicate seq-0 snapshot before the first delta', async () => {
+  it('ignores an exact-duplicate seq-0 snapshot before the first delta', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();
     const seen: Array<{ totalMessages: number }> = [];
@@ -348,7 +348,7 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     await flush();
 
     snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
-    snapshotPush('sub-1', 0, { ...SEEDED_SNAPSHOT, totalMessages: 99 });
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
 
     expect(seen).toHaveLength(1);
     expect(seen[0].totalMessages).toBe(1);
@@ -1821,6 +1821,57 @@ describe('LiveChatClient.subscribe daemon stream restart (intent-hq/monorepo#262
     // The stream continues at seq 1 and applies normally either way.
     deltaPush('sub-1', 1, assistantDelta('a1', 'hi'));
     expect(seen).toHaveLength(2);
+    off();
+  });
+
+  it('rebuilds from a divergent seq-0 re-emit before the first delta (intent-hq/monorepo#2716)', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{
+      messages: Array<{ id: string; contentBlocks?: Array<{ text?: string }> }>;
+      totalMessages: number;
+    }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t as never));
+    await flush();
+
+    // Hydrated, no delta applied yet: expectedSeq is still 1.
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+    expect(seen).toHaveLength(1);
+
+    // Daemon-side stream restart racing the idle stream: the re-emitted seq-0
+    // carries a row persisted while the stream was down (it got no delta and
+    // exists only in this snapshot). Treating it as a duplicate hides that
+    // row until the next gap resnapshot.
+    const divergent = {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        ...SEEDED_SNAPSHOT.messages,
+        {
+          id: '0190a1c0-asst',
+          agentId: 'agent-1',
+          seq: 1,
+          role: 'assistant',
+          contentBlocks: [{ type: 'text', id: '0190a1c0-asst:0', text: 'persisted while down' }],
+          timestamp: '2026-06-27T01:00:05.000Z',
+        },
+      ],
+      totalMessages: 2,
+    };
+    snapshotPush('sub-1', 0, divergent);
+    expect(seen).toHaveLength(2);
+    expect(seen[1].messages.map((m) => m.id)).toEqual(['0190a1b2-user', '0190a1c0-asst']);
+    expect(seen[1].totalMessages).toBe(2);
+
+    // The restarted delta stream at seq 1 applies onto the rebuilt state.
+    deltaPush('sub-1', 1, assistantDelta('b1', 'next turn'));
+    expect(seen).toHaveLength(3);
+    const last = seen[seen.length - 1];
+    expect(last.messages.map((m) => m.id)).toEqual(['0190a1b2-user', '0190a1c0-asst', 'b1']);
+    expect(last.messages[2].contentBlocks?.[0]).toMatchObject({ text: 'next turn' });
+
+    // In-place rebuild: no unsubscribe/subscribe churn.
+    expect(subscribeCalls()).toHaveLength(1);
+    expect(mockedRequest).not.toHaveBeenCalledWith('chat.unsubscribe', expect.anything());
     off();
   });
 });
