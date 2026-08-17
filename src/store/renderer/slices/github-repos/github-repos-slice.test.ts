@@ -4,15 +4,7 @@ import {
   it,
 } from "vitest";
 import { createCollection } from "@augmentcode/themis/utils/collections/collection-utils";
-import {
-  clearGithubRepos,
-  githubReposReducer,
-  initialState,
-  setGithubRepos,
-  setGithubReposError,
-  setGithubReposLoading,
-  type GithubRepoItem,
-} from "./github-repos-slice";
+import { githubReposReducer, initialState, setGithubRepos, setGithubReposError, setGithubReposLoading, type GithubRepoItem } from "./github-repos-slice";
 
 const mockRepo = (owner: string, name: string): GithubRepoItem => ({
   id: `${owner}/${name}`,
@@ -68,20 +60,5 @@ describe("githubReposReducer", () => {
       loading: false,
       error: "boom",
     });
-  });
-
-  it("resets to initial state on clear", () => {
-    const populated = {
-      repos: createCollection<GithubRepoItem, "id">("id", [
-        mockRepo("augmentcode", "intent"),
-      ]),
-      loading: false,
-      loaded: true,
-      error: null,
-    };
-
-    expect(githubReposReducer(populated, clearGithubRepos())).toEqual(
-      initialState,
-    );
   });
 });

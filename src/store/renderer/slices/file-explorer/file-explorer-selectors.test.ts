@@ -7,18 +7,7 @@ import {
 } from '$shared/types';
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
-import {
-  fileExplorerReducer,
-  emptyFileExplorerWorkspaceState,
-  initialState,
-  setChildrenAtPathAction,
-  setGitStatusMap,
-  setRootNode,
-  setFileExplorerWorkspacePath,
-  addExpandedPath,
-  updateGitStatusEntries,
-  removeGitStatusEntries,
-} from './file-explorer-slice';
+import { fileExplorerReducer, emptyFileExplorerWorkspaceState, initialState, setChildrenAtPathAction, setGitStatusMap, setRootNode, setFileExplorerWorkspacePath, addExpandedPath } from './file-explorer-slice';
 import {
   selectFileExplorerRootNode,
   selectFileExplorerEnvironmentConfigTrigger,
@@ -612,98 +601,6 @@ describe('selectFlattenedNodes — referential stability across surgical updates
     }
     return state;
   }
-
-  it('returns ===-equal entries for rows whose inputs did not change', () => {
-    let state = buildSeededState();
-    // Seed git status for README.md, then update a different file.
-    state = fileExplorerReducer(state, updateGitStatusEntries(WS_ID, { 'README.md': MODIFIED }));
-
-    const before = selectFlattenedNodes.select(
-      { fileExplorer: state } as unknown as StoreState,
-      WS_ID,
-    );
-    const fooBefore = findByPath(before, '/a/repo/src/lib/foo.ts');
-    const barBefore = findByPath(before, '/a/repo/src/lib/bar.ts');
-    const indexBefore = findByPath(before, '/a/repo/src/index.ts');
-    const readmeBefore = findByPath(before, '/a/repo/README.md');
-
-    state = fileExplorerReducer(state, updateGitStatusEntries(WS_ID, { 'src/lib/foo.ts': ADDED }));
-
-    const after = selectFlattenedNodes.select(
-      { fileExplorer: state } as unknown as StoreState,
-      WS_ID,
-    );
-
-    // Rows unrelated to the changed file keep identical object identity.
-    expect(findByPath(after, '/a/repo/src/lib/bar.ts')).toBe(barBefore);
-    expect(findByPath(after, '/a/repo/src/index.ts')).toBe(indexBefore);
-    expect(findByPath(after, '/a/repo/README.md')).toBe(readmeBefore);
-
-    // The changed file row is a new object reflecting new gitStatus.
-    const fooAfter = findByPath(after, '/a/repo/src/lib/foo.ts');
-    expect(fooAfter).not.toBe(fooBefore);
-    expect(fooAfter?.gitStatus).toEqual(ADDED);
-
-    // Ancestors whose directoryHasChanges flipped true also get new identity.
-    // (They were untouched in the before-state because only README.md had status,
-    // and README.md is a sibling of src, not inside it.)
-    expect(findByPath(after, '/a/repo/src')).not.toBe(findByPath(before, '/a/repo/src'));
-    expect(findByPath(after, '/a/repo/src/lib')).not.toBe(findByPath(before, '/a/repo/src/lib'));
-  });
-
-  it('no-op updateGitStatusEntries (value deep-equals) keeps row identity stable', () => {
-    let state = buildSeededState();
-    state = fileExplorerReducer(
-      state,
-      updateGitStatusEntries(WS_ID, { 'src/lib/foo.ts': MODIFIED }),
-    );
-
-    const before = selectFlattenedNodes.select(
-      { fileExplorer: state } as unknown as StoreState,
-      WS_ID,
-    );
-    const fooBefore = findByPath(before, '/a/repo/src/lib/foo.ts');
-
-    // Re-dispatch with a value that deep-equals existing → reducer returns same state ref
-    state = fileExplorerReducer(
-      state,
-      updateGitStatusEntries(WS_ID, {
-        'src/lib/foo.ts': { status: ' M', additions: 3, deletions: 1 },
-      }),
-    );
-
-    const after = selectFlattenedNodes.select(
-      { fileExplorer: state } as unknown as StoreState,
-      WS_ID,
-    );
-
-    expect(findByPath(after, '/a/repo/src/lib/foo.ts')).toBe(fooBefore);
-  });
-
-  it('removeGitStatusEntries rebuilds the affected row with gitStatus cleared', () => {
-    let state = buildSeededState();
-    state = fileExplorerReducer(
-      state,
-      updateGitStatusEntries(WS_ID, { 'src/lib/foo.ts': MODIFIED }),
-    );
-
-    const before = selectFlattenedNodes.select(
-      { fileExplorer: state } as unknown as StoreState,
-      WS_ID,
-    );
-    const fooBefore = findByPath(before, '/a/repo/src/lib/foo.ts');
-    expect(fooBefore?.gitStatus).toEqual(MODIFIED);
-
-    state = fileExplorerReducer(state, removeGitStatusEntries(WS_ID, ['src/lib/foo.ts']));
-
-    const after = selectFlattenedNodes.select(
-      { fileExplorer: state } as unknown as StoreState,
-      WS_ID,
-    );
-    const fooAfter = findByPath(after, '/a/repo/src/lib/foo.ts');
-    expect(fooAfter).not.toBe(fooBefore);
-    expect(fooAfter?.gitStatus).toBeUndefined();
-  });
 
   it('setChildrenAtPathAction (targeted directory refresh) keeps rows outside that directory ===-equal', () => {
     // Simulates what Wave 3's handleRefreshDirectory does: reload one

@@ -5,7 +5,7 @@ import {
   getPaletteMruEntries,
   normalizePaletteMruState,
 } from './palette-normalization';
-import type { PaletteMruEntry, PaletteMruEntryType, PaletteState } from './palette-types';
+import type { PaletteMruEntryType, PaletteState } from './palette-types';
 
 export const initialState: PaletteState = {
   isOpen: false,
@@ -19,13 +19,8 @@ export const openPalette = createAction('palette/open');
 export const closePalette = createAction('palette/close');
 export const openGoToLine = createAction('palette/openGoToLine');
 export const togglePalette = createAction('palette/toggle');
-export const hydratePaletteMruEntries = createAction<[entries: PaletteMruEntry[]]>(
-  'palette/hydrateMruEntries',
-);
 export const recordPaletteMruItem =
   createAction<[type: PaletteMruEntryType, id: string, timestamp: number]>('palette/recordMruItem');
-export const hydratePaletteFileMru =
-  createAction<[fileMru: Record<string, number>]>('palette/hydrateFileMru');
 export const recordPaletteFileMru =
   createAction<[path: string, timestamp: number]>('palette/recordFileMru');
 
@@ -51,17 +46,9 @@ paletteReducer.with(togglePalette, (state) => {
     }
     return { ...state, isOpen: true, query: '' };
   });
-paletteReducer.with(hydratePaletteMruEntries, (state, { payload: [entries] }) => ({
-    ...state,
-    ...normalizePaletteMruState(entries),
-  }));
 paletteReducer.with(recordPaletteMruItem, (state, { payload: [type, id, timestamp] }) => ({
     ...state,
     ...normalizePaletteMruState([{ type, id, timestamp }, ...getPaletteMruEntries(state)]),
-  }));
-paletteReducer.with(hydratePaletteFileMru, (state, { payload: [fileMru] }) => ({
-    ...state,
-    fileMru: normalizePaletteFileMru(fileMru),
   }));
 paletteReducer.with(recordPaletteFileMru, (state, { payload: [path, timestamp] }) => ({
     ...state,

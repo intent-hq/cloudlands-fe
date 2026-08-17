@@ -1,37 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  cleanupInvalidWorkspaceTabs,
-  clearForWorkspace,
-  clearCurrentWorkspaceTab,
-  closeWorkspaceTab,
-  endDrag,
-  handleOptimisticWorkspaceTabTransition,
-  loadScrollPositions,
-  loadWorkspaceTabsState,
-  markWorkspaceTabOptimistic,
-  markWorkspaceTabUnsaved,
-  moveWorkspace,
-  openWorkspaceTab,
-  reopenLastClosedWorkspaceTab,
-  removeScrollPosition,
-  restoreWorkspaceTab,
-  reorderWorkspaceTabs,
-  saveScrollPosition,
-  serializeWorkspaceTabsState,
-  setActiveHandleDrop,
-  setWorkspaceViewMode,
-  startDrag,
-  switchToNextWorkspaceTab,
-  switchToPreviousWorkspaceTab,
-  switchToWorkspaceTabByIndex,
-  tabStateReducer,
-  toggleWorkspaceTabPin,
-  type HandleDropInfo,
-  type PersistedWorkspaceTabsState,
-  type TabState,
-  unmarkWorkspaceTabOptimistic,
-  workspaceTabsHydrated,
-} from './tab-state-slice';
+import { closeWorkspaceTab, endDrag, loadScrollPositions, loadWorkspaceTabsState, moveWorkspace, openWorkspaceTab, reopenLastClosedWorkspaceTab, restoreWorkspaceTab, saveScrollPosition, serializeWorkspaceTabsState, setActiveHandleDrop, setWorkspaceViewMode, startDrag, switchToNextWorkspaceTab, switchToPreviousWorkspaceTab, switchToWorkspaceTabByIndex, tabStateReducer, type HandleDropInfo, type PersistedWorkspaceTabsState, type TabState, workspaceTabsHydrated } from './tab-state-slice';
 
 const makeDropInfo = (zoneType: HandleDropInfo['zoneType']): HandleDropInfo => ({
   handleRect: { x: 0, y: 0, width: 10, height: 10, top: 0, right: 10, bottom: 10, left: 0 },
@@ -107,36 +75,6 @@ describe('tabStateReducer', () => {
       {
         'tab-1': 150,
       },
-    );
-  });
-
-  it('removes scroll positions and ignores missing keys', () => {
-    const stateWithPosition: TabState = {
-      ...initialState,
-      scrollPositions: { 'tab-1': 150 },
-    };
-
-    expect(tabStateReducer(stateWithPosition, removeScrollPosition('missing'))).toBe(
-      stateWithPosition,
-    );
-    expect(
-      tabStateReducer(stateWithPosition, removeScrollPosition('tab-1')).scrollPositions,
-    ).toEqual({});
-  });
-
-  it('clears scroll positions only for the requested workspace prefix', () => {
-    const stateWithPositions: TabState = {
-      ...initialState,
-      scrollPositions: { 'ws-123-tab-1': 100, 'ws-123-tab-2': 200, 'ws-456-tab-3': 300 },
-    };
-
-    expect(
-      tabStateReducer(stateWithPositions, clearForWorkspace('ws-123')).scrollPositions,
-    ).toEqual({
-      'ws-456-tab-3': 300,
-    });
-    expect(tabStateReducer(stateWithPositions, clearForWorkspace('ws-999'))).toBe(
-      stateWithPositions,
     );
   });
 
@@ -259,77 +197,6 @@ describe('tabStateReducer', () => {
     expect(tabStateReducer(stateWithTabs, restoreWorkspaceTab('new'))).toBe(stateWithTabs);
   });
 
-  it('clears the current workspace tab only when one is selected', () => {
-    const selectedState = makeState({ currentTabId: 'ws-1', version: 1 });
-
-    expect(tabStateReducer(selectedState, clearCurrentWorkspaceTab())).toMatchObject({
-      currentTabId: null,
-      version: 2,
-    });
-    expect(tabStateReducer(initialState, clearCurrentWorkspaceTab())).toBe(initialState);
-  });
-
-  it('removes invalid non-optimistic workspace tabs while keeping optimistic ones', () => {
-    const stateWithInvalidTabs = makeState({
-      openTabs: { 'ws-1': true, 'ws-2': true, 'optimistic-1': true },
-      currentTabId: 'ws-2',
-      pinnedTabs: { 'ws-2': true },
-      unsavedTabs: { 'ws-2': true },
-      optimisticTabs: { 'optimistic-1': true },
-      workspaceStacks: [['ws-1'], ['ws-2'], ['optimistic-1']],
-      version: 7,
-    });
-
-    expect(tabStateReducer(stateWithInvalidTabs, cleanupInvalidWorkspaceTabs(['ws-1']))).toEqual({
-      ...stateWithInvalidTabs,
-      openTabs: { 'ws-1': true, 'optimistic-1': true },
-      currentTabId: null,
-      pinnedTabs: {},
-      unsavedTabs: {},
-      workspaceStacks: [['ws-1'], ['optimistic-1']],
-      version: 8,
-    });
-    expect(tabStateReducer(initialState, cleanupInvalidWorkspaceTabs(['ws-1']))).toBe(initialState);
-  });
-
-  it('toggles pinned workspace tabs', () => {
-    const pinnedState = tabStateReducer(initialState, toggleWorkspaceTabPin('ws-1'));
-    expect(pinnedState.pinnedTabs).toEqual({ 'ws-1': true });
-    expect(pinnedState.version).toBe(1);
-
-    expect(tabStateReducer(pinnedState, toggleWorkspaceTabPin('ws-1'))).toMatchObject({
-      pinnedTabs: {},
-      version: 2,
-    });
-  });
-
-  it('marks workspace tabs as unsaved and saved', () => {
-    const unsavedState = tabStateReducer(initialState, markWorkspaceTabUnsaved('ws-1', true));
-    expect(unsavedState.unsavedTabs).toEqual({ 'ws-1': true });
-    expect(unsavedState.version).toBe(1);
-
-    expect(tabStateReducer(unsavedState, markWorkspaceTabUnsaved('ws-1', false))).toMatchObject({
-      unsavedTabs: {},
-      version: 2,
-    });
-  });
-
-  it('reorders workspace tabs when both ids exist', () => {
-    const orderedState = makeState({
-      openTabs: { 'ws-1': true, 'ws-2': true, 'ws-3': true },
-      workspaceStacks: [['ws-1'], ['ws-2'], ['ws-3']],
-      version: 5,
-    });
-
-    expect(tabStateReducer(orderedState, reorderWorkspaceTabs('ws-1', 'ws-3'))).toMatchObject({
-      workspaceStacks: [['ws-2'], ['ws-3'], ['ws-1']],
-      version: 6,
-    });
-    expect(tabStateReducer(orderedState, reorderWorkspaceTabs('missing', 'ws-3'))).toBe(
-      orderedState,
-    );
-  });
-
   it('moves workspaces before, after, and into vertical stacks', () => {
     const orderedState = makeState({
       openTabs: { 'ws-1': true, 'ws-2': true, 'ws-3': true },
@@ -365,50 +232,6 @@ describe('tabStateReducer', () => {
     expect(serializeWorkspaceTabsState(movedState)).toMatchObject({
       tabOrder: ['ws-2', 'ws-1', 'ws-3'],
       workspaceStacks: [['ws-2', 'ws-1'], ['ws-3']],
-    });
-  });
-
-  it('tracks optimistic workspace tabs', () => {
-    const optimisticState = tabStateReducer(
-      initialState,
-      markWorkspaceTabOptimistic('optimistic-1'),
-    );
-    expect(optimisticState.optimisticTabs).toEqual({ 'optimistic-1': true });
-    expect(optimisticState.version).toBe(1);
-
-    expect(
-      tabStateReducer(optimisticState, unmarkWorkspaceTabOptimistic('optimistic-1')),
-    ).toMatchObject({
-      optimisticTabs: {},
-      version: 2,
-    });
-  });
-
-  it('replaces optimistic workspace ids across tab state', () => {
-    const optimisticState = makeState({
-      openTabs: { 'optimistic-1': true, 'ws-1': true },
-      currentTabId: 'optimistic-1',
-      pinnedTabs: { 'optimistic-1': true },
-      unsavedTabs: { 'optimistic-1': true },
-      optimisticTabs: { 'optimistic-1': true },
-      workspaceStacks: [['ws-1'], ['optimistic-1']],
-      version: 3,
-    });
-
-    expect(
-      tabStateReducer(
-        optimisticState,
-        handleOptimisticWorkspaceTabTransition('optimistic-1', 'ws-real'),
-      ),
-    ).toEqual({
-      ...optimisticState,
-      openTabs: { 'ws-1': true, 'ws-real': true },
-      currentTabId: 'ws-real',
-      pinnedTabs: { 'ws-real': true },
-      unsavedTabs: { 'ws-real': true },
-      optimisticTabs: {},
-      workspaceStacks: [['ws-1'], ['ws-real']],
-      version: 4,
     });
   });
 

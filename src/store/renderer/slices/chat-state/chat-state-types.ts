@@ -210,6 +210,17 @@ export interface ChatAgentState {
    * rest of the session (the serial walk covers deep scrolls instead).
    */
   historySeekUnsupported: boolean;
+  /**
+   * Switch-back transcript reveal gate: true while the VIEWED conversation is
+   * awaiting a fresh seq-0 snapshot from its (re)opening standing
+   * subscription. Armed synchronously by the `markAgentAsViewed` reducer case
+   * (only when the transcript hydrated at least once and no snapshot from the
+   * current subscription exists) so no frame can paint the retained stale
+   * transcript; cleared when a snapshot applies, when the subscription
+   * closes (the retained transcript is then the right thing to show), or by
+   * the subscribe saga's bounded fallback timeout.
+   */
+  awaitingSwitchBackSnapshot?: boolean;
 }
 
 /**

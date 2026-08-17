@@ -46,6 +46,7 @@ import {
   selectAgentIsWaiting,
 } from '../agent-session/agent-session-selectors';
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
+import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
 import { deriveAgentPreviewLine } from '$lib/utils/text-utils';
 import { selectHardwareConsoleKeySlots } from '../hardware-console/hardware-console-selectors';
@@ -167,13 +168,23 @@ export const selectHudWorkspaceStateCounts = store.createSelector(
  * on the FE `Workspace`, but the daemon emits the richer
  * `{ count, agents, agentIds }` form (PROTOCOL §5.1) and `normalizeWorkspace`
  * spreads it through verbatim. Read `agents` structurally when present.
+ *
+ * Rows whose wire `status` is `deleted` (PROTOCOL §5.5 AgentStatus) and rows
+ * inside the delete grace window (`isAgentDeletionPending`, the transient
+ * pending-deletions registry consulted by every rehydration path) are dropped
+ * here so no HUD surface — attention panel, card rows, AGENTS counters —
+ * renders a deleted or soft-hidden agent.
  */
 function agentInfosOf(workspace: Workspace): WorkspaceAgentInfo[] {
   const summary = workspace.agentSummary as { agents?: unknown; agentIds?: string[] } | undefined;
   if (!summary || !Array.isArray(summary.agents)) return [];
   return summary.agents.filter(
     (agent): agent is WorkspaceAgentInfo =>
-      !!agent && typeof agent === 'object' && typeof (agent as { id?: unknown }).id === 'string',
+      !!agent &&
+      typeof agent === 'object' &&
+      typeof (agent as { id?: unknown }).id === 'string' &&
+      (agent as { status?: unknown }).status !== 'deleted' &&
+      !isAgentDeletionPending((agent as { id: string }).id),
   );
 }
 

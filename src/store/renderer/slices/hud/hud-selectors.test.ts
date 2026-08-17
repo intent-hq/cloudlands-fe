@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { Workspace, WorkspaceDisplayStatus, WorkspaceId } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
 import type { StoreState } from '../../types';
@@ -39,6 +39,10 @@ import { initialState as hardwareConsoleInitialState } from '../hardware-console
 import { mapEventToFeedEntry } from '$features/hud/hud-feed-mapper';
 import { toHudAgentStateBucket } from './hud-types';
 import type { WorkspaceEvent } from '$features/events/types';
+import {
+  removePendingAgentDeletion,
+  setPendingAgentDeletion,
+} from '$features/agent/utils/pending-agent-deletions';
 
 function makeWorkspace(id: string, overrides: Partial<Workspace> = {}): Workspace {
   return {
@@ -573,6 +577,75 @@ describe('selectHudAgentStateCounts', () => {
     );
     expect(selectHudAgentStateCounts.select(state)['needs-attention']).toBe(1);
     expect(selectHudAgentStateCounts.select(state).idle).toBe(0);
+  });
+});
+
+describe('deleted / pending-delete agents are dropped from every HUD surface', () => {
+  afterEach(() => {
+    removePendingAgentDeletion('gone');
+  });
+
+  /** ws-1 with one live agent and one deleted/pending-delete agent (`gone`). */
+  function deletedState(goneStatus: string, questions: HudCapturedQuestion[] = []): StoreState {
+    return mockState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 2,
+            agentIds: ['live', 'gone'],
+            agents: [
+              { id: 'live', name: 'Coordinator', status: 'active' },
+              { id: 'gone', name: 'Reaped', status: goneStatus },
+            ],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      [],
+      questions,
+    );
+  }
+
+  it('a summary row with wire status deleted yields no counts, card rows, or attention items', () => {
+    const question = {
+      workspaceId: 'ws-1',
+      agentId: 'gone',
+      header: 'Stale question',
+      question: 'Should this still surface?',
+      ts: RAISED_TS,
+    };
+    const state = deletedState('deleted', [question]);
+    // Counters: only the live agent is bucketed (deleted would bucket idle).
+    expect(selectHudAgentStateCounts.select(state)).toEqual({
+      running: 1,
+      'needs-attention': 0,
+      done: 0,
+      failed: 0,
+      idle: 0,
+    });
+    // Card rows: only live agents survive the tree ordering.
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.map((agent) => agent.id)).toEqual(['live']);
+    // Attention: the deleted agent's captured question raises nothing.
+    expect(selectHudAttentionItems.select(state)).toEqual([]);
+    expect(selectHudAttnCount.select(state)).toBe(0);
+  });
+
+  it('a summary row inside the delete grace window (pending deletion) is excluded', () => {
+    // `error` would otherwise bucket `failed` and raise a card row.
+    const state = deletedState('error');
+    setPendingAgentDeletion({ wsId: 'ws-1', agentId: 'gone' });
+    expect(selectHudAgentStateCounts.select(state)).toEqual({
+      running: 1,
+      'needs-attention': 0,
+      done: 0,
+      failed: 0,
+      idle: 0,
+    });
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.map((agent) => agent.id)).toEqual(['live']);
+    expect(selectHudAttentionItems.select(state)).toEqual([]);
   });
 });
 

@@ -17,10 +17,8 @@ import {
   resetWorkspaceState,
   setWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
-import {
-  bulkUpsertSessions,
-  clearAllSessions,
-} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   connectionStatusChanged,
   heartbeatFailed,
@@ -112,7 +110,9 @@ function failCounter(): HTMLElement {
 
 beforeEach(() => {
   appStore.dispatch(resetWorkspaceState());
-  appStore.dispatch(clearAllSessions());
+  for (const [workspaceId, agentIds] of Object.entries(appStore.state.agentSessions.agentIdsByWorkspace)) {
+    appStore.dispatch(workspaceDeleted(workspaceId, agentIds));
+  }
   appStore.dispatch(connectionStatusChanged('disconnected'));
 });
 afterEach(() => {

@@ -37,10 +37,15 @@ const mocks = vi.hoisted(() => {
     resizeDisconnect: vi.fn(),
     resizeConstructor: vi.fn(),
     agentMessages: mutableReadable<unknown[]>([]),
+    awaitingSwitchBackSnapshot: mutableReadable(false),
     animateMessageSend: vi.fn(),
     createMessageSendLaunchBubble: vi.fn(),
     pendingQuestions: null as { messageId: string; questions: unknown[] } | null,
     followBottomOptions: null as { onFollowChange?: (follow: boolean) => void } | null,
+    pinnedPromptOptions: null as {
+      enabled: boolean;
+      onChange: (prompt: { id: string; message: unknown } | null) => void;
+    } | null,
     selector,
   };
 });
@@ -79,6 +84,9 @@ vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-
   selectTasksForAgent: mocks.selector([]),
 }));
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
+  selectAwaitingSwitchBackSnapshot: Object.assign(() => mocks.awaitingSwitchBackSnapshot, {
+    select: () => false,
+  }),
   selectChatError: mocks.selector(null),
   selectChatIsStalled: mocks.selector(false),
   selectChatLastChunkTime: mocks.selector(null),
@@ -140,6 +148,28 @@ vi.mock('$lib/utils/smartScroll', () => ({
   },
   scrollToBottom: vi.fn(),
 }));
+// Pass-through wrapper around the real tracker that additionally captures the
+// options so tests can drive `onChange` (set a pinned prompt) directly.
+vi.mock('../pinned-prompt', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../pinned-prompt')>();
+  return {
+    ...actual,
+    trackPinnedPrompt: (
+      container: HTMLElement,
+      options: NonNullable<typeof mocks.pinnedPromptOptions>,
+    ) => {
+      mocks.pinnedPromptOptions = options;
+      const real = actual.trackPinnedPrompt(container, options);
+      return {
+        update: (next: NonNullable<typeof mocks.pinnedPromptOptions>) => {
+          mocks.pinnedPromptOptions = next;
+          real.update(next);
+        },
+        destroy: real.destroy,
+      };
+    },
+  };
+});
 vi.mock('../message-send-transition', () => ({
   captureMessageSendOrigin: () => ({ left: 0, top: 600, width: 320, borderRadius: '8px' }),
   createMessageSendLaunchBubble: mocks.createMessageSendLaunchBubble,
@@ -273,6 +303,7 @@ beforeEach(() => {
     return action;
   });
   mocks.agentMessages.set([]);
+  mocks.awaitingSwitchBackSnapshot.set(false);
   mocks.animateMessageSend.mockResolvedValue(undefined);
   mocks.createMessageSendLaunchBubble.mockImplementation(() => {
     const bubble = document.createElement('div');
@@ -282,6 +313,7 @@ beforeEach(() => {
   });
   mocks.pendingQuestions = null;
   mocks.followBottomOptions = null;
+  mocks.pinnedPromptOptions = null;
 });
 
 afterEach(() => {
@@ -857,5 +889,117 @@ describe('ChatPanel mounted lifecycle', () => {
     flushFrame();
 
     expect(scrollToBottomUtil).toHaveBeenCalled();
+  });
+
+  it('holds the indeterminate skeleton on switch-back until the resubscribe snapshot applies', async () => {
+    // Switch-back reveal gate: the retained transcript may be stale while the
+    // re-opened standing subscription's seq-0 snapshot is in flight — the
+    // skeleton must cover it, then the transcript reveals in one paint.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'stale hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    mocks.awaitingSwitchBackSnapshot.set(true);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    // Gate armed: skeleton up, retained message list suppressed.
+    expect(
+      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
+    ).not.toBeNull();
+    expect(view.container.querySelector('[data-conversation-turn]')).toBeNull();
+
+    // Snapshot applied (slice clears the flag) → transcript reveals.
+    mocks.awaitingSwitchBackSnapshot.set(false);
+    await tick();
+
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
+    expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
+  });
+
+  it('reveals the retained transcript when the bounded fallback clears the gate', async () => {
+    // The saga-owned fallback (no snapshot within the wait window) clears the
+    // same flag — the retained messages must come back rather than a
+    // permanently stuck skeleton.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'retained', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    mocks.awaitingSwitchBackSnapshot.set(true);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    expect(
+      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
+    ).not.toBeNull();
+
+    // Fallback timeout fires in the saga → flag cleared, retained list shown.
+    mocks.awaitingSwitchBackSnapshot.set(false);
+    await tick();
+
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
+    expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
+  });
+
+  it('hides the pinned-prompt overlay while the switch-back reveal is deferred', async () => {
+    // The overlay renders from retained `pinnedPrompt` state that
+    // trackPinnedPrompt only clears on a later animation frame after the
+    // turns unmount — it must not paint stale message content above the
+    // skeleton while the gate holds.
+    mocks.draftGet.mockResolvedValue(null);
+    const message = {
+      id: 'm1',
+      role: 'user',
+      content: 'stale pinned prompt',
+      timestamp: '2026-01-01T00:00:00.000Z',
+    };
+    mocks.agentMessages.set([message]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    // The user is scrolled into a pinned user prompt.
+    mocks.pinnedPromptOptions?.onChange({ id: 'm1', message });
+    await tick();
+    expect(
+      view.container.querySelector('[data-testid="pinned-prompt-overlay-lane"]'),
+    ).not.toBeNull();
+
+    // Gate arms (switch-back): the skeleton and the overlay swap in the same
+    // paint — no stale pinned content above the skeleton.
+    mocks.awaitingSwitchBackSnapshot.set(true);
+    await tick();
+    expect(
+      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
+    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="pinned-prompt-overlay-lane"]')).toBeNull();
+
+    // Snapshot applies (slice clears the flag) → transcript and overlay return.
+    mocks.awaitingSwitchBackSnapshot.set(false);
+    await tick();
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="pinned-prompt-overlay-lane"]'),
+    ).not.toBeNull();
+  });
+
+  it('does not defer the reveal when the gate is not armed', async () => {
+    // Baseline: a normal mount with retained messages and no switch-back gate
+    // renders the transcript immediately (no skeleton).
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
+    expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
   });
 });

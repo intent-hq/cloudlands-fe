@@ -14,23 +14,7 @@ import {
 } from 'typed-redux-saga';
 
 import { selectGitHubAuthDeviceFlow } from '../github-auth-selectors';
-import {
-  authCancelled,
-  authCompleted,
-  cancelGitHubAuth,
-  checkGitHubAuthStatus,
-  githubAuthChanged,
-  initializeGitHubAuth,
-  logoutCompleted,
-  logoutGitHub,
-  refreshGitHubAuth,
-  setAuthenticating,
-  setDeviceFlowInfo,
-  setGitHubAuthError,
-  setGitHubAuthState,
-  setOAuthInfo,
-  startGitHubAuth,
-} from '../github-auth-slice';
+import { authCancelled, authCompleted, cancelGitHubAuth, checkGitHubAuthStatus, githubAuthChanged, initializeGitHubAuth, logoutCompleted, logoutGitHub, setAuthenticating, setDeviceFlowInfo, setGitHubAuthError, setGitHubAuthState, setOAuthInfo, startGitHubAuth } from '../github-auth-slice';
 
 const logger = createLogger('GitHubAuthSaga');
 export const AUTH_POLL_INTERVAL_MS = 5_000;
@@ -208,12 +192,6 @@ function* initializeGitHubAuthWorker(
   yield* call(initialize);
 }
 
-function* refreshGitHubAuthWorker(
-  _action: ReturnType<typeof refreshGitHubAuth>,
-): SagaGenerator<void> {
-  yield* call(initialize);
-}
-
 function* startGitHubAuthWorker(
   _action: ReturnType<typeof startGitHubAuth>,
 ): SagaGenerator<void> {
@@ -246,7 +224,6 @@ function* githubAuthChangedWorker(
 
 export function* githubAuthSaga(): SagaGenerator<void> {
   yield* takeEvery(initializeGitHubAuth, initializeGitHubAuthWorker);
-  yield* takeEvery(refreshGitHubAuth, refreshGitHubAuthWorker);
   yield* takeEvery(startGitHubAuth, startGitHubAuthWorker);
   yield* takeEvery(checkGitHubAuthStatus, checkGitHubAuthStatusWorker);
   yield* takeEvery(cancelGitHubAuth, cancelGitHubAuthWorker);

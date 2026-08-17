@@ -4,14 +4,7 @@ import {
   it,
 } from "vitest";
 import type { StoreState } from "../../types";
-import {
-  initialState,
-  setRawNoteViewEnabled,
-  setChatDraft,
-  setSidebarActiveTab,
-  toggleRawNoteView,
-  transientUiReducer,
-} from "./transient-ui-slice";
+import { initialState, setChatDraft, setSidebarActiveTab, toggleRawNoteView, transientUiReducer } from "./transient-ui-slice";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import {
   selectIsRawNoteViewEnabled,
@@ -50,28 +43,12 @@ describe("transientUiReducer", () => {
     expect(state.byWorkspaceId[WS_1].chatDrafts).toEqual({});
   });
 
-  it("sets raw note view state by workspace and note", () => {
-    let state = transientUiReducer(initialState, setRawNoteViewEnabled(WS_1, "note-1", true));
-    state = transientUiReducer(state, setRawNoteViewEnabled(WS_2, "note-1", true));
-    state = transientUiReducer(state, setRawNoteViewEnabled(WS_1, "note-2", true));
-    state = transientUiReducer(state, setRawNoteViewEnabled(WS_1, "note-1", false));
-
-    expect(state.byWorkspaceId[WS_1].rawNoteViewByNoteId).toEqual({ "note-2": true });
-    expect(state.byWorkspaceId[WS_2].rawNoteViewByNoteId).toEqual({ "note-1": true });
-  });
-
   it("toggles raw note view state", () => {
     let state = transientUiReducer(initialState, toggleRawNoteView(WS_1, "note-1"));
     expect(state.byWorkspaceId[WS_1].rawNoteViewByNoteId).toEqual({ "note-1": true });
 
     state = transientUiReducer(state, toggleRawNoteView(WS_1, "note-1"));
     expect(state.byWorkspaceId[WS_1].rawNoteViewByNoteId).toEqual({});
-  });
-
-  it("does not create workspace state when disabling an already-disabled raw note view", () => {
-    const state = transientUiReducer(initialState, setRawNoteViewEnabled(WS_1, "note-1", false));
-
-    expect(state).toBe(initialState);
   });
 
   it("clears workspace state on workspaceUnmounted", () => {

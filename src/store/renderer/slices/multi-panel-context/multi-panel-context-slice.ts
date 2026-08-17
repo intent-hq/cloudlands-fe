@@ -57,35 +57,6 @@ export type MultiPanelContextState = {
   workspaceId: string | null;
 };
 
-function mapCollectionItems<ITEM extends object, K extends keyof ITEM & string>(
-  collection: Collection<ITEM, K>,
-  mapItem: (item: ITEM) => ITEM
-): Collection<ITEM, K> {
-  let changed = false;
-  const items = getItems(collection).map((item) => {
-    const nextItem = mapItem(item);
-    if (nextItem !== item) {
-      changed = true;
-    }
-    return nextItem;
-  });
-
-  return changed ? createCollection<ITEM, K>(collection.idField, items) : collection;
-}
-
-function setCheckedState<ITEM extends { checked: boolean }, K extends keyof ITEM & string>(
-  collection: Collection<ITEM, K>,
-  checked: boolean
-): Collection<ITEM, K> {
-  return mapCollectionItems(collection, (item) => {
-    if (item.checked === checked) {
-      return item;
-    }
-
-    return { ...item, checked };
-  });
-}
-
 const initialState: MultiPanelContextState = {
   panels: createCollection<PanelContextItem, "id">("id"),
   selections: createCollection<SelectionContextItem, "id">("id"),
@@ -103,7 +74,6 @@ export const togglePanel = createAction<[id: string]>("multiPanelContext/toggleP
 export const setSelection = createAction<[selection: Omit<SelectionContextItem, 'id' | 'checked'> & { timestamp: number }]>("multiPanelContext/setSelection");
 export const clearSelection = createAction<[panelId: string, tabId: string]>("multiPanelContext/clearSelection");
 export const toggleSelection = createAction<[id: string]>("multiPanelContext/toggleSelection");
-export const uncheckAllSelections = createAction("multiPanelContext/uncheckAllSelections");
 export const addSearchedItem = createAction<[item: { id: string; type: PanelContextItem['type']; label: string; filePath?: string; noteId?: string }]>("multiPanelContext/addSearchedItem");
 
 
@@ -195,10 +165,6 @@ multiPanelContextReducer.with(toggleSelection, (state, { payload: [id] }) => {
     selections,
   };
 });
-multiPanelContextReducer.with(uncheckAllSelections, (state) => ({
-  ...state,
-  selections: setCheckedState(state.selections, false),
-}));
 multiPanelContextReducer.with(addSearchedItem, (state, { payload: [item] }) => {
   const existing = getItem(state.panels, item.id);
   if (existing) {

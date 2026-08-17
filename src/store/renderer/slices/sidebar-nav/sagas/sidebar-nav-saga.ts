@@ -15,45 +15,15 @@ import {
   selectChiefActiveAgentId,
   selectCombinedPanelSplit,
   selectIsCardPinned,
-  selectMultiSelectSidebarTabOrder,
   selectPanelItem,
   selectPanelWidth,
   selectPinnedWorkspaceIds,
   selectShowArchivedWorkspaces,
 } from '../sidebar-nav-selectors';
-import {
-  CARD_PINNED_KEY,
-  CHIEF_ACTIVE_AGENT_ID_KEY,
-  COMBINED_PANEL_SPLIT_KEY,
-  closeAll,
-  closeHoverCards,
-  closePanel,
-  hydrateSidebarNav,
-  LEGACY_HOME_PANEL_SPLIT_KEY,
-  MULTISELECT_SIDEBAR_TAB_ORDER_KEY,
-  openPanel,
-  PANEL_ITEM_KEY,
-  PANEL_WIDTH_KEY,
-  pinWorkspace,
-  PINNED_WORKSPACES_KEY,
-  setAllSpacesViewMode,
-  setCardPinned,
-  setChiefActiveAgentId,
-  setCombinedPanelSplit,
-  setMultiSelectSidebarTabOrder,
-  setPanelWidth,
-  setPinnedWorkspaceIds,
-  setShowArchivedWorkspaces,
-  SHOW_ARCHIVED_KEY,
-  toggleCardPinned,
-  togglePanel,
-  togglePinWorkspace,
-  unpinWorkspace,
-  VIEW_MODE_KEY,
-} from '../sidebar-nav-slice';
+import { CARD_PINNED_KEY, CHIEF_ACTIVE_AGENT_ID_KEY, COMBINED_PANEL_SPLIT_KEY, closeAll, closeHoverCards, closePanel, hydrateSidebarNav, LEGACY_HOME_PANEL_SPLIT_KEY, MULTISELECT_SIDEBAR_TAB_ORDER_KEY, openPanel, PANEL_ITEM_KEY, PANEL_WIDTH_KEY, PINNED_WORKSPACES_KEY, setAllSpacesViewMode, setCardPinned, setChiefActiveAgentId, setCombinedPanelSplit, setPanelWidth, setShowArchivedWorkspaces, SHOW_ARCHIVED_KEY, toggleCardPinned, togglePanel, togglePinWorkspace, VIEW_MODE_KEY } from '../sidebar-nav-slice';
 import type { AllSpacesViewMode, SidebarNavItem } from '../sidebar-nav-types';
 
-const PINNED_ACTIONS = [setPinnedWorkspaceIds, pinWorkspace, unpinWorkspace, togglePinWorkspace];
+const PINNED_ACTIONS = [togglePinWorkspace];
 const PANEL_ITEM_ACTIONS = [openPanel, closePanel, togglePanel, closeAll];
 const CARD_PINNED_ACTIONS = [setCardPinned, toggleCardPinned, closeHoverCards];
 
@@ -251,18 +221,6 @@ function* persistChiefActiveAgentId(): SagaGenerator<void> {
   }
 }
 
-function* persistMultiSelectTabOrder(): SagaGenerator<void> {
-  try {
-    yield* call(
-      setLocalStorageJSON,
-      multiSelectTabOrderKey(yield* selectActiveBackendId()),
-      yield* selectMultiSelectSidebarTabOrder.effect(),
-    );
-  } catch {
-    // Storage failures are non-fatal and must not terminate the watcher.
-  }
-}
-
 /**
  * Backend switched (activeId flips via the boot connections:list refresh after
  * the window reloads): re-hydrate the per-backend keys from the incoming
@@ -312,5 +270,4 @@ export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* takeEvery(PANEL_ITEM_ACTIONS, persistPanelAndCardState);
   yield* takeEvery(CARD_PINNED_ACTIONS, persistCardPinned);
   yield* takeEvery(setChiefActiveAgentId, persistChiefActiveAgentId);
-  yield* takeEvery(setMultiSelectSidebarTabOrder, persistMultiSelectTabOrder);
 }

@@ -35,7 +35,9 @@ import {
   scrollbackFetchStarted,
   scrollbackSeekSettled,
   scrollbackContinuationReset,
+  chatSwitchBackRevealTimedOut,
 } from './chat-state-slice';
+import { markAgentAsViewed } from '../unread-tracking/unread-tracking-slice';
 import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-stream-slice';
 import {
   removeQueuedMessageFromAgentQueue,
@@ -43,6 +45,7 @@ import {
 } from '../agent-queue/agent-queue-slice';
 import type { QueuedMessage } from '$shared/types';
 import {
+  selectAwaitingSwitchBackSnapshot,
   selectChatAgentState,
   selectChatError,
   selectChatLastMessageTime,
@@ -1267,6 +1270,91 @@ describe('chatState selectors', () => {
       expect(agent.scrollbackOlderToken).toBeNull();
       expect(agent.scrollbackGapToken).toBeNull();
       expect(agent.historySeekUnsupported).toBe(true);
+    });
+  });
+
+  // Switch-back transcript reveal gate (awaitingSwitchBackSnapshot)
+  describe('switch-back transcript reveal gate', () => {
+    /** Hydrated-once agent whose subscription closed (transcriptSnapshot dropped). */
+    function switchedAwayState() {
+      let state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
+      state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
+      state = chatStateReducer(
+        state,
+        chatTranscriptSnapshotApplied(AGENT, { truncated: false, totalMessages: 2 }),
+      );
+      return chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, null));
+    }
+
+    it('arms on markAgentAsViewed for a hydrated agent with no current-subscription snapshot', () => {
+      const state = chatStateReducer(switchedAwayState(), markAgentAsViewed(AGENT));
+      expect(selectAwaitingSwitchBackSnapshot.select(asStoreState(state), AGENT)).toBe(true);
+    });
+
+    it('never arms for an agent whose chat was never opened (no entry materialized)', () => {
+      const state = chatStateReducer(initialState, markAgentAsViewed(AGENT));
+      expect(state).toBe(initialState);
+      expect(state.byAgentId[AGENT]).toBeUndefined();
+    });
+
+    it('never arms during the first hydration (transcriptHydratedOnce false)', () => {
+      const loading = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
+      const state = chatStateReducer(loading, markAgentAsViewed(AGENT));
+      expect(selectAwaitingSwitchBackSnapshot.select(asStoreState(state), AGENT)).toBe(false);
+    });
+
+    it('never arms while a snapshot from the current subscription exists (live view)', () => {
+      let state = chatStateReducer(initialState, transcriptHydrationSettled(AGENT));
+      state = chatStateReducer(
+        state,
+        chatTranscriptSnapshotApplied(AGENT, { truncated: false, totalMessages: 1 }),
+      );
+      state = chatStateReducer(state, markAgentAsViewed(AGENT));
+      expect(selectAwaitingSwitchBackSnapshot.select(asStoreState(state), AGENT)).toBe(false);
+    });
+
+    it('never arms for other (non-viewed) agents', () => {
+      const state = chatStateReducer(switchedAwayState(), markAgentAsViewed('agent-other'));
+      expect(selectAwaitingSwitchBackSnapshot.select(asStoreState(state), AGENT)).toBe(false);
+    });
+
+    it('clears when a fresh snapshot applies', () => {
+      let state = chatStateReducer(switchedAwayState(), markAgentAsViewed(AGENT));
+      state = chatStateReducer(
+        state,
+        chatTranscriptSnapshotApplied(AGENT, { truncated: false, totalMessages: 3 }),
+      );
+      expect(selectAwaitingSwitchBackSnapshot.select(asStoreState(state), AGENT)).toBe(false);
+    });
+
+    it('clears when the subscription closes (phase null) — background panels keep retained transcripts', () => {
+      let state = chatStateReducer(switchedAwayState(), markAgentAsViewed(AGENT));
+      state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, null));
+      expect(selectAwaitingSwitchBackSnapshot.select(asStoreState(state), AGENT)).toBe(false);
+    });
+
+    it('clears on the bounded fallback timeout', () => {
+      let state = chatStateReducer(switchedAwayState(), markAgentAsViewed(AGENT));
+      state = chatStateReducer(state, chatSwitchBackRevealTimedOut(AGENT));
+      expect(selectAwaitingSwitchBackSnapshot.select(asStoreState(state), AGENT)).toBe(false);
+    });
+
+    it('timeout is a no-op when the gate is not armed', () => {
+      const before = switchedAwayState();
+      const state = chatStateReducer(before, chatSwitchBackRevealTimedOut(AGENT));
+      expect(state).toBe(before);
+    });
+
+    it('clears on chatReset', () => {
+      let state = chatStateReducer(switchedAwayState(), markAgentAsViewed(AGENT));
+      state = chatStateReducer(state, chatReset(AGENT));
+      expect(selectAwaitingSwitchBackSnapshot.select(asStoreState(state), AGENT)).toBe(false);
+    });
+
+    it('re-view while already armed keeps state identity (no churn)', () => {
+      const armed = chatStateReducer(switchedAwayState(), markAgentAsViewed(AGENT));
+      const again = chatStateReducer(armed, markAgentAsViewed(AGENT));
+      expect(again).toBe(armed);
     });
   });
 
