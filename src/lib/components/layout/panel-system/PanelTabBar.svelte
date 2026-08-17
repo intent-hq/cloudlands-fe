@@ -46,6 +46,7 @@
   import Portal from '$lib/components/ui/Portal.svelte';
   import { onDestroy, tick } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { startDrag, endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
@@ -1940,9 +1941,10 @@
                           size="xs"
                           class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
                         />
-                        <input
+                        <Input
                           bind:value={identitySearchQuery}
                           type="search"
+                          noFocusStyle
                           aria-label={m.ui_searchableSelect_search_placeholder()}
                           placeholder={m.ui_searchableSelect_search_placeholder()}
                           class="h-7 w-full rounded-md border border-border bg-transparent pl-7 pr-2 text-xs outline-none focus:border-input focus:ring-1 focus:ring-border"

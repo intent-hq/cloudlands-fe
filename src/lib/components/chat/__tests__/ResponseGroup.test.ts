@@ -121,7 +121,7 @@ describe('ResponseGroup - collapse state model', () => {
     expect(header(container).querySelectorAll('button')).toHaveLength(0);
   });
 
-  it('keeps one aligned operational icon and 4px expanded content spacing', async () => {
+  it('keeps one aligned operational icon and zero expanded operational spacing', async () => {
     const { container } = render(ResponseGroup, {
       props: { name: 'Group title', children },
     });
@@ -130,8 +130,8 @@ describe('ResponseGroup - collapse state model', () => {
     expect(button.querySelector('[data-operational-icon-box]')).toBeTruthy();
     expect(button.querySelector('[data-icon="arrows-in-line-vertical"]')).toBeTruthy();
     await fireEvent.click(button);
-    expect(container.querySelector('[data-operational-expanded-content]')?.className).toContain(
-      'pt-1',
+    expect(container.querySelector('[data-operational-expanded-content]')?.className).not.toMatch(
+      /\bpt-/,
     );
   });
 
@@ -387,7 +387,7 @@ describe('MessageContent - top-level response rows', () => {
     expect(container.querySelectorAll('.border.border-border').length).toBe(2);
   });
 
-  it('keeps parent-owned 4px seams and zero nested child margins', async () => {
+  it('keeps adjacent operational seams and nested child margins at zero', async () => {
     const MessageContent = (await import('../MessageContent.svelte')).default;
     const content: ContentBlock[] = [
       {
@@ -399,10 +399,11 @@ describe('MessageContent - top-level response rows', () => {
     const { container } = render(MessageContent, { props: { content } });
     const button = container.querySelector('button')!;
     const group = button.closest('[data-testid="response-group"]');
-    expect(container.firstElementChild?.className).toContain('gap-1');
+    expect(container.firstElementChild?.className).toContain('gap-0');
     expect(group?.className).not.toContain('mb-1.5');
     await fireEvent.click(button);
-    await waitFor(() => expect(group?.querySelector('[class~="gap-1"]')).toBeTruthy());
+    await waitFor(() => expect(group?.querySelector('[data-response-group-content]')).toBeTruthy());
+    expect(group?.querySelector('[data-response-group-content]')?.className).toContain('gap-0');
     const groupContent = group?.querySelector('[data-response-group-content]');
     expect(groupContent?.firstElementChild?.className ?? '').not.toMatch(/\bm[trblxy]?-/);
   });

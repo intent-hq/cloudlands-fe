@@ -10,8 +10,9 @@ const panel = readFileSync(
 describe('chat content column contracts', () => {
   it('caps the transcript without changing the scroll owner', () => {
     expect(panel).toMatch(
-      /class="conversation-column[^\"]*w-full[^\"]*min-w-0[^\"]*max-w-\[70em\][^\"]*"[\s\S]*?data-testid="chat-transcript-inner"/,
+      /class="conversation-column chat-content-measure[^\"]*w-full[^\"]*min-w-0[^\"]*"[\s\S]*?data-testid="chat-transcript-inner"/,
     );
+    expect(panel).toContain('max-width: 70em');
     expect(panel).toContain('data-testid="chat-transcript-scroll-viewport"');
     expect(panel).not.toMatch(/data-testid="chat-transcript-inner"[^>]*overflow-y-auto/);
   });
@@ -22,7 +23,7 @@ describe('chat content column contracts', () => {
     );
     expect(panel).toContain('style:padding-inline-end="{scrollbarGutterWidth}px"');
     expect(panel).toMatch(
-      /class="mx-auto w-full min-w-0 max-w-\[70em\]"[\s\S]*?data-testid="chat-composer-controls-inner"/,
+      /class="chat-content-measure mx-auto w-full min-w-0"[\s\S]*?data-testid="chat-composer-controls-inner"/,
     );
     expect(panel).toContain('.composer-prompt-layer :global(.rich-input-container)');
   });
@@ -30,7 +31,7 @@ describe('chat content column contracts', () => {
   it('caps the pinned prompt lane while its overlay host stays full width', () => {
     expect(panel).toContain('data-testid="pinned-prompt-overlay-host"');
     expect(panel).toMatch(
-      /class="mx-auto w-full min-w-0 max-w-\[70em\][^\"]*"[\s\S]*?data-testid="pinned-prompt-overlay-lane"/,
+      /class="chat-content-measure mx-auto w-full min-w-0[^\"]*"[\s\S]*?data-testid="pinned-prompt-overlay-lane"/,
     );
   });
 });

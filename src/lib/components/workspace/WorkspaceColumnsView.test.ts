@@ -1097,7 +1097,7 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 450));
 
-    expect(scroller.scrollLeft).toBe(588);
+    expect(scroller.scrollLeft).toBeCloseTo(588, 3);
   });
 
   it('does not scroll a newly opened panel that is already visible', async () => {

@@ -26,6 +26,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/components/file-explorer/file-explorer-sidebar.svelte',
     'src/lib/components/file-tracking/accept-changes/ChangeTimeline.svelte',
     'src/lib/components/layout/panel-system/LayoutPresetDropdown.svelte',
+    'src/lib/components/layout/panel-system/PanelTabBar.svelte',
     'src/lib/components/settings/AIBehaviorEditor.svelte',
     'src/lib/components/settings/AgentBackendSettings.svelte',
     'src/lib/components/settings/AgentFeaturesSettings.svelte',

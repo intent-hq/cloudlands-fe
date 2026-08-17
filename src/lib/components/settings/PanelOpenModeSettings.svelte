@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { Toggle } from '$lib/components/ui/toggle';
   import { m } from '$shared/paraglide/messages.js';
   import { selectPanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { togglePanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-slice';

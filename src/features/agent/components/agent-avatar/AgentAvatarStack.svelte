@@ -169,12 +169,13 @@
 
 <style>
   .agent-avatar-stack {
+    --agent-avatar-stack-overflow-gap: 0.25rem;
     display: inline-flex;
     width: max-content;
     min-width: 0;
     flex: none;
     align-items: center;
-    gap: var(--agent-avatar-stack-overflow-gap, 0.25rem);
+    gap: var(--agent-avatar-stack-overflow-gap);
     height: var(--agent-avatar-surface-size);
     line-height: 1;
   }

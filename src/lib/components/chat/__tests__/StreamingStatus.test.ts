@@ -44,7 +44,7 @@ describe('StreamingStatus rendered UI', () => {
     const spinner = screen.getByRole('status');
     const label = screen.getByTestId('streaming-status-thinking');
 
-    expect(row.className).toContain('h-9');
+    expect(row.className).toContain('h-7');
     expect(row.className).toContain('px-[var(--operational-row-inline-padding)]');
     expect(row.className).toContain(
       'grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto]',

@@ -235,7 +235,7 @@
             <ResourceIconTile kind={action.resourceKind} variant="emphasized" />
           {:else}
             <span
-              class="flex size-6 shrink-0 items-center justify-center rounded-[7px] bg-background/70 text-muted-foreground"
+              class="flex size-6 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground"
               data-panel-empty-leading-surface
             >
               <Fa icon={action.icon} class="size-4" />

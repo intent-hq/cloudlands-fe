@@ -134,7 +134,8 @@ describe('editorial workspace shell presentation contract', () => {
       'rounded-lg border border-border bg-sidebar p-2 text-foreground',
     );
     expect(sidebar).toContain('<AgentAvatar');
-    expect(launcherMarkup).toContain('data-sidebar-agent={agent.id}');
+    expect(sidebar).toContain('data-sidebar-agent={agent.id}');
+    expect(launcherMarkup).toContain('itemContent={launcherAgentAvatar}');
     expect(launcherMarkup).toContain('data-sidebar-context={note.id}');
     expect(launcherMarkup).toContain('data-sidebar-changes-resource');
     expect(launcherMarkup).not.toContain('data-sidebar-change=');

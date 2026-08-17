@@ -10,12 +10,12 @@ describe('chat typography contract', () => {
   it('caps transcript and composer content at the approved 70em measure', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     expect(panel).toContain(
-      'conversation-column mx-auto flex min-h-full w-full min-w-0 max-w-[70em] flex-col',
+      'conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col',
     );
     expect(panel).toContain('conversation-composer relative z-20 w-full');
-    expect(panel).toContain(
-      'mx-auto w-full min-w-0 max-w-[70em]" data-testid="chat-composer-controls-inner',
-    );
+    expect(panel).toContain('class="chat-content-measure mx-auto w-full min-w-0"');
+    expect(panel).toContain('data-testid="chat-composer-controls-inner"');
+    expect(panel).toContain('max-width: 70em');
     expect(panel).not.toContain('max-w-[var(--content-measure-');
   });
 

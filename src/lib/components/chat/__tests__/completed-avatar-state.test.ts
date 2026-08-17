@@ -12,7 +12,21 @@ const makeReadable = <T>(value: T) => ({
 const agentFlags = vi.hoisted(() => ({ isResponding: false, isBlockedWaiting: false }));
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: () => makeReadable(null),
+  selectAgentSession: () =>
+    makeReadable(
+      agentFlags.isResponding || agentFlags.isBlockedWaiting
+        ? {
+            id: 'agent-1',
+            backendSessionId: null,
+            workspaceId: 'workspace-1',
+            name: 'Agent',
+            status: agentFlags.isBlockedWaiting ? 'waiting' : 'active',
+            messages: [],
+            isResponding: agentFlags.isResponding,
+            isWaitingForOtherAgents: agentFlags.isBlockedWaiting,
+          }
+        : null,
+    ),
   selectAgentIsResponding: () => makeReadable(agentFlags.isResponding),
   selectAgentIsWaiting: () => makeReadable(agentFlags.isBlockedWaiting),
   selectAgentIsBlockedWaiting: () => makeReadable(agentFlags.isBlockedWaiting),
@@ -161,7 +175,6 @@ describe('isCompleted avatar state wiring', () => {
   });
 
   it('AgentCard renders waiting for a genuinely blocked agent', () => {
-    agentFlags.isResponding = true;
     agentFlags.isBlockedWaiting = true;
 
     render(AgentCard, { props: { agentId: 'agent-1' } });

@@ -46,6 +46,7 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
   endDrag: () => ({ type: 'tabState/endDrag' }),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectRecentlyClosed: () => readable([]),
   selectPanelLayoutWorkspace: {
     select: () => mocks.state.panelLayout.byWorkspaceId['workspace-1'],
   },

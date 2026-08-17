@@ -33,11 +33,20 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     }),
   selectAgentSessionsByIds: () =>
     readable([
-      { id: 'agent-a', updatedAt: '2026-08-13T10:00:00Z' },
+      { id: 'agent-a', status: 'active', updatedAt: '2026-08-13T10:00:00Z' },
       { id: 'agent-b', updatedAt: '2026-08-13T11:00:00Z' },
+      { id: 'agent-c', updatedAt: '2026-08-13T12:00:00Z' },
     ]),
+  selectAgentSessionsById: Object.assign(() => readable({}), {
+    select: () => ({
+      'agent-a': { id: 'agent-a', status: 'active' },
+      'agent-b': { id: 'agent-b', status: 'completed' },
+      'agent-c': { id: 'agent-c', status: 'completed' },
+    }),
+  }),
   selectAgentIsResponding: () => readable(false),
   selectAgentIsWaiting: () => readable(false),
+  selectAgentIsBlockedWaiting: () => readable(false),
   selectAgentSessionStreamingContent: () => readable(''),
   selectAgentSessionHasStreamOwnedMessage: () => readable(false),
 }));
@@ -60,13 +69,13 @@ vi.mock('$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-sele
         id: 'watch-1',
         workspaceId: 'ws-1',
         agentId: 'agent-parent',
-        actorIds: ['agent-a', 'agent-b'],
+        actorIds: ['agent-a', 'agent-b', 'agent-c'],
         eventTypes: ['agent:idle'],
         createdAt: '2026-08-13T09:00:00Z',
       },
     ]),
   selectAgentSubscriptionStatuses: () =>
-    readable({ 'agent-a': 'completed', 'agent-b': 'completed' }),
+    readable({ 'agent-a': 'running', 'agent-b': 'completed', 'agent-c': 'completed' }),
   selectDelegationGroups: () => readable([]),
   selectWokenUpInfo: () => readable(null),
   selectWaitingState: () => readable('waiting'),

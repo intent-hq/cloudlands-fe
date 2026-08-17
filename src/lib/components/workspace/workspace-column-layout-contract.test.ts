@@ -92,7 +92,8 @@ describe('workspace column layout contract', () => {
       "import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte'",
     );
     expect(columns).not.toContain('w-[22.5rem]');
-    expect(columns).toContain('gap-3 p-2');
+    expect(columns).toContain('flex h-full min-h-0 w-max min-w-full gap-3');
+    expect(columns).toContain('style:padding="var(--workspace-reveal-inset)"');
     expect(columns).toContain('scrollbar-none h-full min-h-0 w-full overflow-x-auto');
     expect(columns).toContain('selectPanelCanvasWidthsByWorkspaceId');
     expect(columns).toContain('livePanelCanvasWidths[workspaceId]');

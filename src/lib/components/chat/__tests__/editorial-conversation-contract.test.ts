@@ -41,16 +41,15 @@ describe('editorial conversation presentation contract', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
 
     expect(panel).toContain(
-      'conversation-column mx-auto flex min-h-full w-full min-w-0 max-w-[70em] flex-col',
+      'conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col',
     );
     expect(panel).not.toContain('max-w-[var(--content-measure-wide)]');
     expect(panel).toContain('<div class="w-full" data-testid="question-wizard-slot">');
     expect(panel).toContain("? 'w-full px-1.5!'");
     expect(panel).toContain(": 'w-full px-4 sm:px-6'");
     expect(panel).toContain('conversation-composer relative z-20 w-full');
-    expect(panel).toContain(
-      'mx-auto w-full min-w-0 max-w-[70em]" data-testid="chat-composer-controls-inner',
-    );
+    expect(panel).toContain('class="chat-content-measure mx-auto w-full min-w-0"');
+    expect(panel).toContain('data-testid="chat-composer-controls-inner"');
     expect(panel).toContain('edgeDocked');
     expect(panel).not.toContain("'px-[5%]'");
   });
@@ -278,7 +277,7 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toMatch(
       /data-message-index=\{globalIndex\}[\s\S]{0,220}message-nav-target relative z-10[\s\S]{0,280}class:bg-sidebar=\{isChiefWorkspace\}[\s\S]{0,80}class:bg-card=\{!isChiefWorkspace\}/,
     );
-    expect(panel).toContain('class:mb-6={turn.assistantMessages.length > 0}');
+    expect(panel).toContain('class:mb-8={turn.assistantMessages.length > 0}');
     expect(panel).toContain('class:mb-5={isAutomatedMessage(message)}');
     expect(panel).toContain('class:mb-7={!isAutomatedMessage(message)}');
     expect(panel).not.toContain('data-testid="chat-scroll-to-bottom-button"');

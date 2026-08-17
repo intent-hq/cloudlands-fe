@@ -3435,7 +3435,9 @@
              variant's user-row inset so the pinned bubble aligns with
              in-conversation user bubbles. -->
         <div
-          class="mx-auto w-full min-w-0 max-w-[70em] {isChiefWorkspace ? 'px-0' : 'px-4 sm:px-6'}"
+          class="chat-content-measure mx-auto w-full min-w-0 {isChiefWorkspace
+            ? 'px-0'
+            : 'px-4 sm:px-6'}"
           data-testid="pinned-prompt-overlay-lane"
         >
           <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
@@ -3475,7 +3477,7 @@
       data-testid="chat-transcript-scroll-viewport"
     >
       <div
-        class="conversation-column mx-auto flex min-h-full w-full min-w-0 max-w-[70em] flex-col {isChiefWorkspace
+        class="conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col {isChiefWorkspace
           ? 'px-0'
           : 'px-4 pt-8 sm:px-6'} {transcriptBottomInsetClass}"
         data-testid="chat-transcript-inner"
@@ -4357,7 +4359,10 @@
       style:padding-inline-end="{scrollbarGutterWidth}px"
       data-testid="composer-prompt-layer"
     >
-      <div class="mx-auto w-full min-w-0 max-w-[70em]" data-testid="chat-composer-controls-inner">
+      <div
+        class="chat-content-measure mx-auto w-full min-w-0"
+        data-testid="chat-composer-controls-inner"
+      >
         {#if pendingQuestions}
           {#key pendingQuestions.messageId}
             <div class="w-full" data-testid="question-wizard-slot">
@@ -4412,6 +4417,10 @@
 </div>
 
 <style>
+  .chat-content-measure {
+    max-width: 70em;
+  }
+
   /* Keep style invalidation local without paint-containing sticky descendants. */
   /* Chromium can flash sticky layers as they cross a paint-containment boundary. */
   :global(.conversation-turn) {
