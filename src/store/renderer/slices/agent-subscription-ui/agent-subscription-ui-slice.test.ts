@@ -13,6 +13,7 @@ import {
   clearWokenUp,
   resetSubscriptionUI,
   removeWatchedAgent,
+  subscriptionSnapshotFetchFailed,
 } from './agent-subscription-ui-slice';
 import {
   selectAgentSubscriptions,
@@ -20,6 +21,7 @@ import {
   selectWaitingState,
   selectWokenUpInfo,
   selectCompletionStatus,
+  selectSubscriptionSnapshotFetched,
 } from './agent-subscription-ui-selectors';
 import type { AgentSubscriptionUIState, Subscription, DelegationGroupStatus } from './agent-subscription-ui-types';
 
@@ -98,6 +100,41 @@ describe('agentSubscriptionUIReducer', () => {
       expect(second.entries[key].subscriptions).toEqual([]);
       expect(second.entries[key].delegationGroups).toEqual([group]);
       expect(second.entries[key].waitingState).toBe('waiting');
+    });
+
+    it('latches snapshotFetched on success', () => {
+      const state = agentSubscriptionUIReducer(
+        initialState,
+        setSubscriptionSnapshot(WS, AGENT, {
+          subscriptions: [],
+          delegationGroups: [],
+          agentStatuses: {},
+          waitingState: 'idle',
+        }),
+      );
+      expect(state.entries[makeKey(WS, AGENT)].snapshotFetched).toBe(true);
+    });
+  });
+
+  describe('subscriptionSnapshotFetchFailed', () => {
+    it('latches snapshotFetched for a new key (ready-with-empty)', () => {
+      const state = agentSubscriptionUIReducer(
+        initialState,
+        subscriptionSnapshotFetchFailed(WS, AGENT),
+      );
+      const key = makeKey(WS, AGENT);
+      expect(state.entries[key].snapshotFetched).toBe(true);
+      expect(state.entries[key].subscriptions).toHaveLength(0);
+      expect(state.entries[key].waitingState).toBe('idle');
+    });
+
+    it('returns same reference when already latched', () => {
+      const first = agentSubscriptionUIReducer(
+        initialState,
+        subscriptionSnapshotFetchFailed(WS, AGENT),
+      );
+      const second = agentSubscriptionUIReducer(first, subscriptionSnapshotFetchFailed(WS, AGENT));
+      expect(second).toBe(first);
     });
   });
 
@@ -376,6 +413,20 @@ describe('agentSubscriptionUIReducer', () => {
       const state = agentSubscriptionUIReducer(initialState, resetSubscriptionUI('no', 'exist'));
       expect(state).toBe(initialState);
     });
+
+    it('preserves the snapshotFetched readiness latch', () => {
+      let state = agentSubscriptionUIReducer(
+        initialState,
+        setSubscriptionSnapshot(WS, AGENT, {
+          subscriptions: [sub],
+          delegationGroups: [],
+          agentStatuses: {},
+          waitingState: 'waiting',
+        }),
+      );
+      state = agentSubscriptionUIReducer(state, resetSubscriptionUI(WS, AGENT));
+      expect(state.entries[makeKey(WS, AGENT)].snapshotFetched).toBe(true);
+    });
   });
 });
 
@@ -402,6 +453,17 @@ describe('agentSubscriptionUI selectors', () => {
 
   it('selectWokenUpInfo returns null for missing entries', () => {
     expect(selectWokenUpInfo.select(stateWith(initialState), WS, AGENT)).toBeNull();
+  });
+
+  it('selectSubscriptionSnapshotFetched returns false for missing entries and true once latched', () => {
+    expect(selectSubscriptionSnapshotFetched.select(stateWith(initialState), WS, AGENT)).toBe(
+      false,
+    );
+    const latched = agentSubscriptionUIReducer(
+      initialState,
+      subscriptionSnapshotFetchFailed(WS, AGENT),
+    );
+    expect(selectSubscriptionSnapshotFetched.select(stateWith(latched), WS, AGENT)).toBe(true);
   });
 
   it('selectWaitingState returns completed when set', () => {

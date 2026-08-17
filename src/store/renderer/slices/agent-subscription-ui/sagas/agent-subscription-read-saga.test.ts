@@ -16,6 +16,8 @@ import {
   workspaceDeleted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { initializeChatRequested } from '../../chat-state/chat-state-slice';
+import { markAgentAsViewed } from '../../unread-tracking/unread-tracking-slice';
 import {
   agentSubscriptionReadSaga,
   COMPLETED_DISPLAY_DURATION_MS,
@@ -64,14 +66,14 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function harness(seed = initialState) {
+function harness(seed = initialState, extraState: Record<string, unknown> = {}) {
   const channel = stdChannel();
   let state = seed;
   const dispatch = vi.fn((action) => {
     state = agentSubscriptionUIReducer(state, action);
   });
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ agentSubscriptionUI: state }) },
+    { channel, dispatch, getState: () => ({ agentSubscriptionUI: state, ...extraState }) },
     agentSubscriptionReadSaga,
   );
   return { channel, dispatch, task, state: () => state };
@@ -118,6 +120,7 @@ describe('agentSubscriptionReadSaga', () => {
         },
       ],
       wokenUpInfo: null,
+      snapshotFetched: true,
     });
     run.task.cancel();
     await run.task.toPromise();
@@ -231,6 +234,77 @@ describe('agentSubscriptionReadSaga', () => {
     await settle();
 
     expect(run.state()).toEqual(seeded);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('latches snapshotFetched as ready-with-empty when the first read fails', async () => {
+    mocks.request.mockRejectedValue(new Error('read failed'));
+    const run = harness();
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    await settle();
+
+    const entry = run.state().entries[makeKey(WS, AGENT)];
+    expect(entry.snapshotFetched).toBe(true);
+    expect(entry.subscriptions).toHaveLength(0);
+    expect(entry.waitingState).toBe('idle');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('prefetches the snapshot when chat initialization begins', async () => {
+    mocks.request.mockResolvedValue(empty());
+    const run = harness();
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    await settle();
+
+    expect(mocks.request).toHaveBeenCalledWith('agent.getSubscriptions', {
+      workspaceId: WS,
+      agentId: AGENT,
+    });
+    expect(run.state().entries[makeKey(WS, AGENT)].snapshotFetched).toBe(true);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('prefetches on markAgentAsViewed via the session workspace, skipping unknown sessions', async () => {
+    mocks.request.mockResolvedValue(empty());
+    const run = harness(initialState, {
+      agentSessions: { byAgentId: { [AGENT]: { id: AGENT, workspaceId: WS } } },
+    });
+    run.channel.put(markAgentAsViewed('agent-unknown'));
+    await settle();
+    expect(mocks.request).not.toHaveBeenCalled();
+
+    run.channel.put(markAgentAsViewed(AGENT));
+    await settle();
+    expect(mocks.request).toHaveBeenCalledWith('agent.getSubscriptions', {
+      workspaceId: WS,
+      agentId: AGENT,
+    });
+    expect(run.state().entries[makeKey(WS, AGENT)].snapshotFetched).toBe(true);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('coalesces the view-time prefetch with the card mount fetch (single-flight)', async () => {
+    const first = deferred<ReturnType<typeof empty>>();
+    const trailing = deferred<ReturnType<typeof empty>>();
+    mocks.request.mockReturnValueOnce(first.promise).mockReturnValueOnce(trailing.promise);
+    const run = harness(initialState, {
+      agentSessions: { byAgentId: { [AGENT]: { id: AGENT, workspaceId: WS } } },
+    });
+    run.channel.put(markAgentAsViewed(AGENT));
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    await settle();
+
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    first.resolve(empty());
+    await settle();
+    trailing.resolve(empty());
+    await settle();
+    expect(mocks.request).toHaveBeenCalledTimes(2);
     run.task.cancel();
     await run.task.toPromise();
   });

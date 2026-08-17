@@ -30,6 +30,7 @@ export const emptyEntry: AgentSubscriptionUIEntry = {
   agentStatuses: {},
   waitingState: 'idle',
   wokenUpInfo: null,
+  snapshotFetched: false,
 };
 
 export const initialState: AgentSubscriptionUIState = {
@@ -92,6 +93,13 @@ export const requestSubscriptionFetch = createAction<[workspaceId: string, agent
   'agentSubscriptionUI/requestSubscriptionFetch',
 );
 
+/** Saga → reducer: a snapshot read failed. Latches `snapshotFetched` so the
+ *  utility-footer readiness gate treats the failure as ready-with-empty and
+ *  never wedges the transcript reveal on subscription data. */
+export const subscriptionSnapshotFetchFailed = createAction<[workspaceId: string, agentId: string]>(
+  'agentSubscriptionUI/subscriptionSnapshotFetchFailed',
+);
+
 export const cancelAgentSubscriptionsRequested = createAsyncAction<
   [workspaceId: string, agentId: string, scope?: { subscriptionId?: string; groupId?: string }],
   void
@@ -123,10 +131,29 @@ agentSubscriptionUIReducer.with(setSubscriptionSnapshot, (state, { payload }) =>
         delegationGroups: payload.data.delegationGroups,
         agentStatuses: payload.data.agentStatuses,
         waitingState: payload.data.waitingState,
+        snapshotFetched: true,
       },
     },
   };
 });
+agentSubscriptionUIReducer.with(
+  subscriptionSnapshotFetchFailed,
+  (state, { payload: [workspaceId, agentId] }) => {
+    const key = makeKey(workspaceId, agentId);
+    const existing = state.entries[key] ?? emptyEntry;
+    if (existing.snapshotFetched) return state;
+    return {
+      ...state,
+      entries: {
+        ...state.entries,
+        [key]: {
+          ...existing,
+          snapshotFetched: true,
+        },
+      },
+    };
+  },
+);
 agentSubscriptionUIReducer.with(setWokenUp, (state, { payload }) => {
   const key = makeKey(payload.workspaceId, payload.agentId);
   const existing = state.entries[key] ?? emptyEntry;
@@ -185,6 +212,8 @@ agentSubscriptionUIReducer.with(
     // STAB-23: keep an idle entry instead of deleting so future
     // refreshWorkspaceSubscriptionEntries fan-outs still reach this agent.
     // Actual deletion happens on workspace deleted (via deleteSubscriptionUI).
+    // The snapshotFetched readiness latch survives the reset: the reset means
+    // "back to empty", which is still a settled snapshot.
     return {
       ...state,
       entries: {
@@ -192,6 +221,7 @@ agentSubscriptionUIReducer.with(
         [key]: {
           ...emptyEntry,
           waitingState: 'idle',
+          snapshotFetched: existing.snapshotFetched,
         },
       },
     };

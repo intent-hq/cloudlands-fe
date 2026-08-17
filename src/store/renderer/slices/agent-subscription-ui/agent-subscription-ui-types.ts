@@ -47,6 +47,13 @@ export interface AgentSubscriptionUIEntry {
   agentStatuses: Record<string, AgentStatus>;
   waitingState: WaitingState;
   wokenUpInfo: WokenUpInfo | null;
+  /**
+   * Utility-footer readiness latch: true once an `agent.getSubscriptions`
+   * snapshot read has settled for this (workspace, agent) — success OR
+   * failure (a failed read renders the same as empty, so it still counts
+   * as ready). Never cleared by `resetSubscriptionUI`.
+   */
+  snapshotFetched: boolean;
 }
 
 export interface AgentSubscriptionUIState {

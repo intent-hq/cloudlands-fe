@@ -28,9 +28,13 @@ import {
   requestSubscriptionFetch,
   resetSubscriptionUI,
   setSubscriptionSnapshot,
+  subscriptionSnapshotFetchFailed,
 } from '../agent-subscription-ui-slice';
 import { selectTrackedAgentIds, selectWaitingState } from '../agent-subscription-ui-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { initializeChatRequested } from '../../chat-state/chat-state-slice';
+import { markAgentAsViewed } from '../../unread-tracking/unread-tracking-slice';
+import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 
 export const COMPLETED_DISPLAY_DURATION_MS = 3000;
 const logger = createLogger('AgentSubscriptionReadSaga');
@@ -136,6 +140,9 @@ function* fetchSnapshotSaga(wsId: string, agentId: string) {
     return completed;
   } catch (error) {
     logger.error(`Failed to fetch agent subscriptions for ${key}`, error);
+    // Latch readiness anyway: a failed read renders the same as empty, and
+    // the utility-footer reveal gate must never wedge on subscription data.
+    yield* put(subscriptionSnapshotFetchFailed(wsId, agentId));
     return false;
   }
 }
@@ -237,6 +244,32 @@ function* requestSubscriptionFetchWorker(
   yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
 }
 
+/** View-time prefetch: start the snapshot read as soon as chat initialization
+ *  begins for an agent, so `agent.getSubscriptions` races the transcript
+ *  snapshot instead of starting after the card mounts post-reveal. */
+function* initializeChatPrefetchWorker(
+  coordinator: ReadCoordinator,
+  action: ReturnType<typeof initializeChatRequested>,
+) {
+  const { agentId, wsId } = action.payload;
+  if (!wsId || !agentId) return;
+  yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+}
+
+/** View-time prefetch on agent switch (`markAgentAsViewed` carries only the
+ *  agentId — the workspace is resolved from the session; a not-yet-upserted
+ *  session skips silently and the card's mount-time fetch backstops). */
+function* markAgentAsViewedPrefetchWorker(
+  coordinator: ReadCoordinator,
+  action: ReturnType<typeof markAgentAsViewed>,
+) {
+  const [agentId] = action.payload;
+  if (!agentId) return;
+  const session = yield* selectAgentSession.effect(agentId);
+  if (!session?.workspaceId) return;
+  yield* startSnapshotRead(coordinator, session.workspaceId, agentId, 'snapshot');
+}
+
 function* refreshWorkspaceSubscriptionsWorker(
   coordinator: ReadCoordinator,
   action: ReturnType<typeof refreshWorkspaceSubscriptionEntriesRequested>,
@@ -264,6 +297,8 @@ export function* agentSubscriptionReadSaga() {
   };
   yield* all([
     takeEvery(requestSubscriptionFetch, requestSubscriptionFetchWorker, coordinator),
+    takeEvery(initializeChatRequested, initializeChatPrefetchWorker, coordinator),
+    takeEvery(markAgentAsViewed, markAgentAsViewedPrefetchWorker, coordinator),
     takeEvery(
       refreshWorkspaceSubscriptionEntriesRequested,
       refreshWorkspaceSubscriptionsWorker,
