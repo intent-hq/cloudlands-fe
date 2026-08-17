@@ -39,6 +39,7 @@ import {
   nextAllSpacesViewMode,
   orderWorkspacesForCycling,
 } from './workspace-cycle';
+import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 
 const logger = createLogger('HardwareConsoleEncoder');
 
@@ -52,6 +53,8 @@ export interface EncoderDeps {
   dispatch?: (action: unknown) => void;
   /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
   isOwner?: () => boolean;
+  /** Current workspace-tab seam. */
+  getCurrentWorkspaceId?: () => string | null;
 }
 
 function resolveDeps(deps: EncoderDeps): Required<EncoderDeps> {
@@ -59,6 +62,8 @@ function resolveDeps(deps: EncoderDeps): Required<EncoderDeps> {
     navigate: deps.navigate ?? navigateToRoute,
     dispatch: deps.dispatch ?? ((action: unknown) => appStore.dispatch(action as never)),
     isOwner: deps.isOwner ?? isConsoleOwner,
+    getCurrentWorkspaceId:
+      deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state)),
   };
 }
 
@@ -87,11 +92,11 @@ export function handleEncoderRotate(
   direction: EncoderDirection,
   deps: EncoderDeps = {},
 ): string | null {
-  const { navigate, dispatch } = resolveDeps(deps);
+  const { navigate, dispatch, getCurrentWorkspaceId } = resolveDeps(deps);
   const state = appStore.state;
 
   const ordered = orderWorkspacesForCycling(cyclableWorkspaces());
-  const cursor = state.hardwareConsole.encoderHudWorkspaceId ?? state.workspace.activeWorkspaceId;
+  const cursor = state.hardwareConsole.encoderHudWorkspaceId ?? getCurrentWorkspaceId();
   const target = cycleWorkspaceId(
     ordered.map((workspace) => workspace.id),
     cursor,

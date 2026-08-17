@@ -7,10 +7,10 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { withSyntheticDiffHeaders } from '$lib/utils/diff-patch-utils';
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   const logger = createLogger('MarkdownRenderer');
-  const activeWorkspaceId = selectActiveWorkspaceId();
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
   interface Props {
     content?: string;
@@ -254,7 +254,7 @@
 
     event.preventDefault();
     event.stopPropagation();
-    await handleLink(href, { workspaceId: $activeWorkspaceId ?? undefined, event });
+    await handleLink(href, { workspaceId, event });
   }
 </script>
 

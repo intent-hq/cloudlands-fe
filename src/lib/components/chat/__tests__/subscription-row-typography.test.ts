@@ -127,7 +127,10 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 });
 
 import EventSubscriptionsCard from '../EventSubscriptionsCard.svelte';
-import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
+import {
+  resetAgentSubscriptionsViewStateForTests,
+  setEventSubscriptionsExpanded,
+} from '../agent-subscriptions-view-state';
 
 const originalInnerWidth = window.innerWidth;
 const typographyStyle = document.createElement('style');
@@ -173,13 +176,13 @@ describe('subscription row typography', () => {
     document.documentElement.classList.add(theme);
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
     document.body.style.zoom = zoom;
+    setEventSubscriptionsExpanded('ws-1', 'agent-parent', true);
     render(EventSubscriptionsCard, {
       props: { workspaceId: 'ws-1', agentId: 'agent-parent' },
     });
 
     await waitFor(() => expect(screen.getByTestId('event-subscriptions-summary')).toBeTruthy());
-    await fireEvent.click(screen.getByTestId('event-subscriptions-summary'));
-    await fireEvent.click(screen.getByTestId('one-shot-summary-toggle'));
+    await fireEvent.click(await screen.findByTestId('one-shot-summary-toggle'));
     const finishedSummary = screen.getByTestId('finished-agent-summary');
     if (finishedSummary.getAttribute('aria-expanded') === 'false') {
       await fireEvent.click(finishedSummary);

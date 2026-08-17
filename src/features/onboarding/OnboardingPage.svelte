@@ -102,8 +102,8 @@
   import {
   hasStagedFileItems,
   redeemStagedAttachments,
+  sendHeldFirstMessage,
 } from '$lib/components/workspace/initializer/staged-attachments';
-  import { backendRequest } from '$lib/client/live/backend-transport';
   import {
     SETUP_SCRIPT_TEMPLATES,
     getTemplateContent,
@@ -913,25 +913,31 @@
         onboardingCreationError = m.onboarding_page_attachmentPlacementFailed_error();
         return;
       }
-      if (pending.agentId) {
-        // `backendRequest` resolves normal daemon send failures as
-        // `{ success: false, error }` rather than rejecting — check it, or a
-        // failed send would silently drop the held prompt and its retry path.
-        const sendResult = await backendRequest<{ success?: boolean; error?: string }>(
-          'agent.sendMessage',
-          {
-            agentId: pending.agentId,
-            workspaceId: pending.workspaceId,
-            content: pending.prompt,
-            imageBlocks: pending.imageBlocks.length > 0 ? pending.imageBlocks : undefined,
-            fileBlocks: redemption.fileBlocks.length > 0 ? redemption.fileBlocks : undefined,
-            contextReferences:
-              pending.contextReferences.length > 0 ? pending.contextReferences : undefined,
-          },
+      // `sendHeldFirstMessage` rebuilds the wire params as plain JSON: this
+      // pending state is a Svelte $state deep-reactive Proxy tree, which
+      // Electron's structured clone rejects — passing it through verbatim
+      // made the held send fail before reaching the daemon (monorepo#2576).
+      const snapshot = $state.snapshot(pending);
+      const sendResult = await sendHeldFirstMessage(
+        {
+          workspaceId: snapshot.workspaceId,
+          agentId: snapshot.agentId,
+          content: snapshot.prompt,
+          imageBlocks: snapshot.imageBlocks,
+          contextReferences: snapshot.contextReferences,
+        },
+        redemption.fileBlocks,
+      );
+      if (!sendResult.sent) {
+        // Framed like the compact initializer: the workspace already exists,
+        // Create resumes this flow — with the daemon's detail when available.
+        throw new Error(
+          sendResult.errorDetail
+            ? m.onboarding_page_firstMessageSendFailedDetail_error({
+                detail: sendResult.errorDetail,
+              })
+            : m.onboarding_page_firstMessageSendFailed_error(),
         );
-        if (sendResult?.success === false) {
-          throw new Error(sendResult.error || m.onboarding_page_createFailed_error());
-        }
       }
       onboardingPendingSend = null;
       onboardingStagedItems = [];
@@ -1140,26 +1146,31 @@
           onboardingCreationErrorCode = null;
           throw new Error(m.onboarding_page_attachmentPlacementFailed_error());
         }
-        if (agentId) {
-          // `backendRequest` resolves normal daemon send failures as
-          // `{ success: false, error }` rather than rejecting — check it, or
-          // a failed send would silently drop the held prompt/attachments
-          // and their retry path (`onboardingPendingSend` must stay set).
-          const sendResult = await backendRequest<{ success?: boolean; error?: string }>(
-            'agent.sendMessage',
-            {
-              agentId,
-              workspaceId: workspace.id,
-              content: prompt,
-              imageBlocks: imageBlocks.length > 0 ? imageBlocks : undefined,
-              fileBlocks: redemption.fileBlocks.length > 0 ? redemption.fileBlocks : undefined,
-              contextReferences: contextReferences.length > 0 ? contextReferences : undefined,
-            },
+        // `sendHeldFirstMessage` rebuilds the wire params as plain JSON so
+        // reactive Proxies from $state never reach Electron's structured
+        // clone (monorepo#2576); on failure `onboardingPendingSend` stays
+        // set so submit resumes this flow.
+        const sendResult = await sendHeldFirstMessage(
+          {
+            workspaceId: workspace.id,
+            agentId,
+            content: prompt,
+            imageBlocks,
+            contextReferences,
+          },
+          redemption.fileBlocks,
+        );
+        if (!sendResult.sent) {
+          onboardingCreationErrorCode = null;
+          // Framed like the compact initializer: the workspace already
+          // exists, submit resumes — with the daemon's detail when available.
+          throw new Error(
+            sendResult.errorDetail
+              ? m.onboarding_page_firstMessageSendFailedDetail_error({
+                  detail: sendResult.errorDetail,
+                })
+              : m.onboarding_page_firstMessageSendFailed_error(),
           );
-          if (sendResult?.success === false) {
-            onboardingCreationErrorCode = null;
-            throw new Error(sendResult.error || m.onboarding_page_createFailed_error());
-          }
         }
         onboardingPendingSend = null;
         onboardingStagedItems = [];

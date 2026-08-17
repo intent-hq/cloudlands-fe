@@ -149,10 +149,17 @@
     followBottom,
     type FollowBottomState,
   } from '$lib/utils/smartScroll';
+  import { getCachedChatScroll, setCachedChatScroll } from './chat-scroll-cache';
+  import { createScrollBottomButtonVisibility } from './scroll-bottom-button-visibility';
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
-  import { faLock, faSquareCheck, faPaperclip } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faArrowDown,
+    faLock,
+    faPaperclip,
+    faSquareCheck,
+  } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
@@ -175,12 +182,10 @@
   import { parseSuggestedPrompts } from '$lib/utils/messageParser';
   import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
   import {
-    animateMessageSend,
     captureMessageSendOrigin,
     createMessageSendLaunchBubble,
-    MESSAGE_SEND_MATCH_TIMEOUT_MS,
-    type MessageSendOrigin,
   } from './message-send-transition';
+  import { createPendingSendTransitions } from './pending-send-transitions';
 
   import LazyTurn from './LazyTurn.svelte';
   import PinnedUserPrompt from './PinnedUserPrompt.svelte';
@@ -246,6 +251,7 @@
     shouldShowPendingAssistantStatus,
     shouldShowSetupCardOnly,
     shouldShowTranscriptSkeleton,
+    shouldShowTranscriptUtilityStack,
   } from './chat-panel-visibility';
   import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
@@ -358,6 +364,15 @@
     !$transcriptHydratedOnce$ && $transcriptHydration$ === 'loading',
   );
   const transcriptHydrationFailed = $derived($transcriptHydration$ === 'error');
+  // Utility stack gate: the hooks/monitors/subscriptions card never renders
+  // before the transcript reveal — hidden until this agent's first hydration
+  // settles (data prefetch is unaffected; only the render is gated).
+  const showTranscriptUtilityCard = $derived(
+    shouldShowTranscriptUtilityStack({
+      transcriptHydratedOnce: $transcriptHydratedOnce$,
+      hydrationSettled: $transcriptHydration$ === 'settled',
+    }),
+  );
   const authoritativeConversationEvidence = $derived(
     hasAuthoritativeConversationEvidence(
       $agentSession$ ?? null,
@@ -415,7 +430,22 @@
   let scrollContainer = $state<HTMLDivElement>();
   let composerElement = $state<HTMLDivElement>();
   let inputComponent = $state<SimpleRichInput>();
-  let shouldFollowBottom = $state(true);
+  // Rehydrate the transcript scroll state cached by the previous instance's
+  // destroy (column windowing unmounts off-screen panels) so a remount keeps
+  // the user's reading position instead of re-entering at the bottom.
+  // svelte-ignore state_referenced_locally -- mount-time snapshot of the identity props.
+  const cachedScroll =
+    workspace?.id && agentId ? getCachedChatScroll(workspace.id, agentId) : undefined;
+  // Non-null when the previous instance was scrolled away from the bottom;
+  // consumed by the entry-scroll paths below instead of scrolling to bottom.
+  const cachedScrollRestoreTop =
+    cachedScroll && !cachedScroll.shouldFollowBottom ? cachedScroll.scrollTop : null;
+  let shouldFollowBottom = $state(cachedScroll?.shouldFollowBottom ?? true);
+  // Committed (damped) visibility for the scroll-to-bottom button. Driven by
+  // the hysteresis + settle-window controller below so per-frame
+  // distance-from-bottom jitter (transient scrollHeight changes: lazy-turn
+  // placeholder swaps, image loads) can never strobe the button.
+  let scrollButtonVisible = $state(false);
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
   const userMessageNavigationItems = $derived(getUserMessageNavigationItems($agentMessages$));
 
@@ -427,16 +457,10 @@
   });
 
   function handleBottomStateChange(state: FollowBottomState) {
-    const previousDistance = distanceFromBottom;
     distanceFromBottom = state.distanceFromBottom;
-    if (
-      previousDistance > SCROLL_BOTTOM_THRESHOLD &&
-      state.distanceFromBottom <= SCROLL_BOTTOM_THRESHOLD &&
-      state.isFollowing
-    ) {
-      flashLockConfirmation();
-    }
+    scrollButtonVisibility?.update(state.distanceFromBottom);
   }
+  let scrollButtonVisibility: ReturnType<typeof createScrollBottomButtonVisibility> | null = null;
   // Transient "scroll re-locked" confirmation: a lock icon briefly flashes when
   // scrolling crosses back to the bottom and auto-follow re-engages. Purely
   // decorative (aria-hidden, pointer-events-none) so it can never intercept
@@ -469,15 +493,6 @@
     lazyTurnHeightCache = createLazyTurnHeightCache(scope);
   });
 
-  interface PendingSendTransition {
-    origin: MessageSendOrigin;
-    launchBubble: HTMLElement | null;
-    followBottom: boolean;
-    expiry: ReturnType<typeof setTimeout>;
-  }
-
-  const pendingSendTransitions = new Map<string, PendingSendTransition>();
-  const activeSendTransitions = new Map<string, AbortController>();
   let pendingSendMessageIds = $state.raw<Set<string>>(new Set());
 
   function setPendingSendMessage(key: string, pending: boolean): void {
@@ -487,20 +502,17 @@
     pendingSendMessageIds = next;
   }
 
-  function cancelPendingSendTransition(key: string, pending: PendingSendTransition): void {
-    if (pendingSendTransitions.get(key) !== pending) return;
-    clearTimeout(pending.expiry);
-    pending.launchBubble?.remove();
-    pendingSendTransitions.delete(key);
-    setPendingSendMessage(key, false);
-  }
+  // The controller retries matching on its own interval until the match
+  // timeout, so a transcript row that appears late (or without a message-count
+  // increase) still gets its transition; on timeout the bubble fades out and
+  // the row is un-hidden.
+  const sendTransitions = createPendingSendTransitions({
+    getScrollContainer: () => scrollContainer,
+    setRowHidden: setPendingSendMessage,
+  });
 
   function cancelAllSendTransitions(): void {
-    for (const [key, pending] of pendingSendTransitions) {
-      cancelPendingSendTransition(key, pending);
-    }
-    for (const controller of activeSendTransitions.values()) controller.abort();
-    activeSendTransitions.clear();
+    sendTransitions.cancelAll();
   }
 
   function prepareMessageSendTransition(
@@ -508,7 +520,7 @@
     options: { enabled: boolean; followBottom: boolean; allowOverlap?: boolean },
   ): string {
     const userAppMessageId = createAppMessageId();
-    if (!options.enabled || (!options.allowOverlap && pendingSendTransitions.size > 0)) {
+    if (!options.enabled || (!options.allowOverlap && sendTransitions.hasPending())) {
       return userAppMessageId;
     }
     if (!composerElement) return userAppMessageId;
@@ -520,52 +532,12 @@
       text,
       `${workspace?.id ?? 'workspace'}:${agentId}:${instanceId}`,
     );
-    const pending: PendingSendTransition = {
-      origin,
-      launchBubble,
-      followBottom: options.followBottom,
-      expiry: setTimeout(
-        () => cancelPendingSendTransition(key, pending),
-        MESSAGE_SEND_MATCH_TIMEOUT_MS,
-      ),
-    };
-    pendingSendTransitions.set(key, pending);
-    if (launchBubble) setPendingSendMessage(key, true);
+    sendTransitions.add(key, { origin, launchBubble, followBottom: options.followBottom });
     return userAppMessageId;
   }
 
   function startPendingSendTransitions(): boolean {
-    if (!scrollContainer || pendingSendTransitions.size === 0) return false;
-    let started = false;
-    for (const message of $agentMessages$) {
-      const key = message.role === 'user' ? String(message.appMessageId ?? '') : '';
-      const pending = pendingSendTransitions.get(key);
-      if (!pending) continue;
-      const row = Array.from(
-        scrollContainer.querySelectorAll<HTMLElement>('[data-send-app-message-id]'),
-      ).find((candidate) => candidate.dataset.sendAppMessageId === key);
-      if (!row) continue;
-      clearTimeout(pending.expiry);
-      pendingSendTransitions.delete(key);
-      const target = row.querySelector<HTMLElement>('[data-testid="user-message-surface"]') ?? row;
-      activeSendTransitions.get(key)?.abort();
-      const controller = new AbortController();
-      activeSendTransitions.set(key, controller);
-      const settle = () => {
-        if (activeSendTransitions.get(key) === controller) activeSendTransitions.delete(key);
-        setPendingSendMessage(key, false);
-      };
-      void animateMessageSend({
-        origin: pending.origin,
-        target,
-        scrollContainer,
-        launchBubble: pending.launchBubble,
-        followBottom: pending.followBottom,
-        signal: controller.signal,
-      }).then(settle, settle);
-      started = true;
-    }
-    return started;
+    return sendTransitions.attemptMatches();
   }
 
   let pinnedPrompt = $state<PinnedPromptState | null>(null);
@@ -1607,6 +1579,23 @@
   // One-shot guard: the divider entry-positioning happens once per panel mount
   // (first transcript availability), never again on later marker convergence.
   let hasAppliedNewMessagesEntryScroll = false;
+  // One-shot guard: the cached scroll position is applied once on the first
+  // transcript availability after remount, never again on later hydrations.
+  let hasConsumedCachedScrollRestore = false;
+  // Reapply the previous instance's scroll position (see cachedScrollRestoreTop
+  // above). Returns true when the cached position was consumed.
+  function applyCachedScrollRestore(): boolean {
+    if (cachedScrollRestoreTop === null || hasConsumedCachedScrollRestore) return false;
+    // Not consumed until the container is bound, so a premature call cannot
+    // silently drop the cached position.
+    if (!scrollContainer) return false;
+    hasConsumedCachedScrollRestore = true;
+    // The unread-divider entry scroll is superseded — the user already had a
+    // deliberate reading position when the panel was unmounted.
+    hasAppliedNewMessagesEntryScroll = true;
+    scrollContainer.scrollTop = cachedScrollRestoreTop;
+    return true;
+  }
   // Get the auggie session ID from the most recent assistant message's metadata
   // This is the raw UUID format that auggie uses, needed for debugging/support
   let auggieSessionId = $derived.by(() => {
@@ -1667,7 +1656,14 @@
       // disabled when the unseen tail is taller than the viewport; when it
       // fits on screen, scroll to the bottom with follow enabled instead
       // (decided inside scrollToNewMessagesDivider).
-      if (
+      if (isFirstMessage && cachedScrollRestoreTop !== null && !hasConsumedCachedScrollRestore) {
+        // Remount after column windowing: land at the previous instance's
+        // reading position instead of the divider/bottom entry scroll.
+        tick().then(() => {
+          if (isComponentDestroyed) return;
+          applyCachedScrollRestore();
+        });
+      } else if (
         shouldScroll &&
         isFirstMessage &&
         !hasAppliedNewMessagesEntryScroll &&
@@ -1912,9 +1908,22 @@
     // Empty chats start at the top and unlock until the first send. Non-empty
     // chats are positioned by the follow action itself.
     const initialScrollFrame = requestAnimationFrame(() => {
-      if (scrollContainer && $agentMessages$.length === 0) {
-        scrollContainer.scrollTop = 0;
-        shouldFollowBottom = false;
+      if (scrollContainer) {
+        if ($agentMessages$.length > 0) {
+          if (cachedScrollRestoreTop !== null) {
+            // Remount after column windowing: restore the previous instance's
+            // reading position (no-op when the hydration effect already did).
+            applyCachedScrollRestore();
+          } else {
+            shouldFollowBottom = true;
+            followToBottom(scrollContainer);
+          }
+        } else {
+          // Scroll to top for empty panel (shows specialist switcher)
+          scrollContainer.scrollTop = 0;
+          // Don't auto-follow until user sends a message
+          shouldFollowBottom = false;
+        }
       }
     });
 
@@ -2474,6 +2483,23 @@
     };
   });
 
+  // The followBottom action is the only scroll authority. Its geometry callback
+  // drives this damped control state without adding a second scroll listener.
+  onMount(() => {
+    scrollButtonVisibility = createScrollBottomButtonVisibility({
+      atBottomThreshold: SCROLL_BOTTOM_THRESHOLD,
+      onVisibilityChange: (visible) => {
+        scrollButtonVisible = visible;
+      },
+      onRelock: flashLockConfirmation,
+    });
+    scrollButtonVisibility.update(distanceFromBottom);
+
+    return () => {
+      scrollButtonVisibility?.destroy();
+      scrollButtonVisibility = null;
+    };
+  });
   function setPinnedPrompt(next: PinnedPromptState | null) {
     if (next?.id === pinnedPrompt?.id && next?.message === pinnedPrompt?.message) return;
     pinnedPrompt = next;
@@ -2623,6 +2649,16 @@
     if (lockConfirmationTimer !== null) {
       clearTimeout(lockConfirmationTimer);
       lockConfirmationTimer = null;
+    }
+
+    // Cache the transcript scroll state so a remount after column windowing
+    // (WorkspaceColumnsView unmounting off-screen surfaces) restores the
+    // user's reading position instead of re-entering at the bottom.
+    if (workspace?.id && agentId && scrollContainer && $agentMessages$.length > 0) {
+      setCachedChatScroll(workspace.id, agentId, {
+        scrollTop: scrollContainer.scrollTop,
+        shouldFollowBottom,
+      });
     }
 
     // Clear currently viewed agent so other agents can properly be marked as
@@ -3306,6 +3342,8 @@
 <div
   bind:this={panelElement}
   class="group/panel flex flex-col h-full w-full min-w-0 relative z-20"
+  role="region"
+  aria-label={agentName}
   data-agent-model={agentModel}
   onfocusin={() => {
     isInternallyFocused = true;
@@ -4167,8 +4205,10 @@
              It collapses naturally when transcript or expanded disclosure content overflows. -->
         <div class="mt-auto" data-testid="transcript-utility-stack">
           <!-- {#key} forces a full remount when workspace or agent changes,
-             preventing stale subscription UI from leaking across switches. -->
-          {#if workspace?.id}
+             preventing stale subscription UI from leaking across switches.
+             Hidden until the transcript hydration settles so the card never
+             pops in ahead of (or during) the transcript skeleton. -->
+          {#if workspace?.id && showTranscriptUtilityCard}
             {#key `${workspace.id}::${agentId}`}
               <EventSubscriptionsCard
                 workspaceId={workspace.id}
@@ -4203,7 +4243,24 @@
         <div class={CHAT_SCROLL_END_MARKER_CLASS} data-testid="chat-scroll-end-marker"></div>
       </div>
     </div>
-    {#if showLockConfirmation}
+    <!-- Scroll-to-bottom button: rendered only while scrolled up so no
+         invisible control overlaps the message actions bar or lingers in the
+         tab order while at the bottom. Auto-follow re-locks on click or on
+         scrolling back to the bottom; scrolling up unlocks it. Visibility is
+         the damped (hysteresis + settle window) state, not the raw distance,
+         so per-frame scroll-metric jitter cannot strobe the button. -->
+    {#if $agentMessages$.length > 0 && scrollButtonVisible}
+      <Button
+        variant="outline"
+        size="icon-xs"
+        data-testid="chat-scroll-to-bottom-button"
+        onclick={() => scrollToBottom()}
+        class="absolute bottom-2 right-2 text-muted-foreground bg-sidebar rounded-sm transition-all opacity-0 group-hover/panel:opacity-100 focus-visible:opacity-100 active:scale-95"
+        title={m.chat_chatPanel_scrollToBottom_tooltip()}
+      >
+        <Fa icon={faArrowDown} class="w-3! h-3!" />
+      </Button>
+    {:else if showLockConfirmation}
       <!-- Transient re-lock confirmation: purely decorative feedback that
            auto-follow re-engaged on reaching the bottom. Never interactive:
            aria-hidden keeps it out of the accessibility tree and

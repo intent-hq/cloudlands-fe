@@ -41,6 +41,12 @@ describe('integration-toggle settings helpers', () => {
     });
   });
 
+  it('rejects the persist and does not write when the bag read fails', async () => {
+    (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await expect(persistHardwareConsoleEnabled(false)).rejects.toThrow('hardwareConsole.state');
+    expect(appClient.settings.update).not.toHaveBeenCalled();
+  });
+
   it('persists read-modify-write while preserving sibling fields', async () => {
     (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       path: 'hardwareConsole.state',

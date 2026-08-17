@@ -14,6 +14,18 @@ describe('workspace column layout contract', () => {
     expect(surface).not.toContain('getWorkspaceColumnLayoutId');
   });
 
+  it('scopes each surface context to its explicit workspace ID and remounts on switches', () => {
+    const surface = fs.readFileSync(
+      path.join(SRC_ROOT, 'routes/(app)/workspace/[id]/WorkspaceSurface.svelte'),
+      'utf8',
+    );
+    expect(surface).toContain('WorkspaceRouteContextProvider');
+    expect(surface).toContain('const surfaceWorkspaceId = $derived(');
+    expect(surface).toContain('{#key surfaceWorkspaceId}');
+    expect(surface).toContain('<WorkspaceRouteContextProvider workspaceId={surfaceWorkspaceId}>');
+    expect(surface).not.toContain('window.location.pathname');
+  });
+
   it('hides title-bar tabs and starts column layouts without panel chrome', () => {
     const titleBar = fs.readFileSync(
       path.join(SRC_ROOT, 'lib/components/layout/WindowTitleBar.svelte'),
@@ -114,7 +126,7 @@ describe('workspace column layout contract', () => {
     expect(columns).not.toContain('w-[26rem]');
     expect(columns).not.toContain('class:ring-1');
     expect(surface).toContain('data-loading={!$workspace}');
-    expect(surface).toContain('{columnMode}\n        disableSidebarWidthTransition={columnMode}');
+    expect(surface).toContain('disableSidebarWidthTransition={columnMode}');
     expect(titleBar).toContain('class:workspace-columns-titlebar={overlayWorkspaceColumns}');
     expect(titleBar).toContain('.window-title-bar-wrapper.workspace-columns-titlebar');
     expect(titleBar).toContain('pointer-events: none');
@@ -132,7 +144,11 @@ describe('workspace column layout contract', () => {
     expect(columns).not.toContain('data-titlebar-clearance');
     expect(columns).not.toContain('globalSidebarOpen');
     expect(columns).not.toContain('titlebarClearance');
+    expect(columns).toContain('<WorkspaceSurface\n        {workspaceId}');
+    expect(columns).toContain('retainWorkspaceSessionOnUnmount={true}');
     expect(appLayout).toContain('<WorkspaceColumnsView');
+    expect(appLayout).not.toContain('getWorkspaceRouteContext');
+    expect(appLayout).toContain('workspaceIdFromRoute(routePathname, routeWorkspaceId)');
     expect(appLayout).not.toContain('globalSidebarOpen');
     expect(appLayout).not.toContain('selectPanelItem');
     expect(appLayout).toContain('useSelectedWorkspace: showWorkspaceColumns');

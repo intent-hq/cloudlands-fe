@@ -1,0 +1,69 @@
+{
+  "source": "local intentd.db agent_message 01a00d89-0a55-79e0-bfb5-e636bc30ea3d (sanitized)",
+  "features": [
+    "prompts",
+    "fence3",
+    "cli"
+  ],
+  "prompts": [
+    "QA passed — file the real feature PR and close the test PR.",
+    "I found an issue during testing, let me describe it."
+  ],
+  "tree": [
+    {
+      "type": "tool_use",
+      "name": "Run `gh run view 31987283414 --repo intent-hq/cloudlands-fe --json status,conclusion,...`",
+      "input": {
+        "command": "[omitted 223 chars]",
+        "cwd": "/home/user/intent/workspaces/long-panda/monorepo",
+        "wait": true,
+        "max_wait_seconds": 60,
+        "_acpTitle": "Run `gh run view 31987283414 --repo intent-hq/cloudlands-fe --json status,conclusion,...`"
+      }
+    },
+    {
+      "type": "tool_result",
+      "output": {
+        "output": "[omitted 307 chars]"
+      }
+    },
+    {
+      "type": "tool_use",
+      "name": "Cancel build-watch hook; mark test-build task complete",
+      "input": {
+        "code": "[omitted 486 chars]",
+        "summary": "Cancel build-watch hook; mark test-build task complete",
+        "_acpTitle": "Cancel build-watch hook; mark test-build task complete"
+      }
+    },
+    {
+      "type": "tool_result",
+      "output": {
+        "output": "cancelled: true"
+      }
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "The build finished successfully. Download the artifact here:\n\n**https://github.com/intent-hq/cloudlands-fe/actions/runs/31987283414/artifacts/9274316248**\n\n(That's the `manual-macos-dmg` artifact, ~250 MB, from the [run page](https://github.com/intent-hq/cloudlands-fe/actions/runs/31987283414) — it downloads as a zip; extract it to get the signed arm64 DMG.)\n\nOr from a terminal with `gh`:"
+        },
+        {
+          "type": "cli",
+          "content": "gh run download 31987283414 --repo intent-hq/cloudlands-fe --name manual-macos-dmg --dir ~/Downloads/scrollback-test && open ~/Downloads/scrollback-test",
+          "metadata": {
+            "cliData": {
+              "command": "gh run download 31987283414 --repo intent-hq/cloudlands-fe --name manual-macos-dmg --dir ~/Downloads/scrollback-test && open ~/Downloads/scrollback-test",
+              "description": "Download and reveal the tiny-caps test DMG"
+            }
+          }
+        },
+        {
+          "type": "text",
+          "content": "The build is signed and notarized, so it installs without Gatekeeper warnings. With the tiny caps (tail 30 / history 30 / page 10), any conversation over ~30 messages exercises the feature:\n\n1. Open a long conversation → scroll to the top → older 10-row pages should load with a spinner and no viewport jump.\n2. Keep walking up past ~60 rows → history prunes and the **gap affordance** appears between history and tail.\n3. Scroll back down toward the gap (or click it) → refill pages close the hole.\n4. While scrolled back, let an agent stream → viewport must not move; scroll-to-bottom jumps to the live tail instantly."
+        }
+      ]
+    }
+  ]
+}

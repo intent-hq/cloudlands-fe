@@ -35,7 +35,11 @@
 
 <!-- Pull Request Creator -->
 {#if showPRCreator}
-  <PullRequestCreator onClose={() => onPRCreatorClose?.()} onCreated={(pr) => onPRCreated?.(pr)} />
+  <PullRequestCreator
+    workspaceId={_workspace?.id}
+    onClose={() => onPRCreatorClose?.()}
+    onCreated={(pr) => onPRCreated?.(pr)}
+  />
 {/if}
 
 <!-- Create Agent Modal -->

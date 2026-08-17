@@ -21,12 +21,12 @@ vi.mock('$lib/client', () => ({
 vi.mock('$store/renderer/store', async () => {
   const { scriptsReducer } = await import('$store/renderer/slices/scripts/scripts-slice');
   let scriptsState = scriptsReducer(undefined, { type: '@@INIT' });
-  let activeWorkspaceId: string | null = null;
+  let currentTabId: string | null = null;
   const dispatched: Array<{ type: string; payload?: unknown }> = [];
   const store: any = {
     get state() {
       return {
-        workspace: { activeWorkspaceId },
+        tabState: { currentTabId },
         scripts: scriptsState,
         terminals: { height: 30, workspaces: {} },
       };
@@ -53,12 +53,12 @@ vi.mock('$store/renderer/store', async () => {
       },
     }),
     __dispatched: dispatched,
-    __setActiveWorkspace: (id: string | null) => {
-      activeWorkspaceId = id;
+    __setCurrentTab: (id: string | null) => {
+      currentTabId = id;
     },
     __reset: () => {
       scriptsState = scriptsReducer(undefined, { type: '@@INIT' });
-      activeWorkspaceId = null;
+      currentTabId = null;
       dispatched.length = 0;
     },
   };
@@ -147,7 +147,7 @@ describe('QuakeTerminalOverlay createNewTerminal (PR #705 review)', () => {
   });
 
   it('issues a single terminal.create for a rapid double-click (in-flight guard)', async () => {
-    (appStore as any).__setActiveWorkspace(WS_A);
+    (appStore as any).__setCurrentTab(WS_A);
     let resolveCreate: (value: unknown) => void = () => {};
     clientMocks.mockTerminalsCreate.mockReturnValue(
       new Promise((resolve) => {
@@ -170,7 +170,7 @@ describe('QuakeTerminalOverlay createNewTerminal (PR #705 review)', () => {
   });
 
   it('allows a new create after the previous one settles', async () => {
-    (appStore as any).__setActiveWorkspace(WS_A);
+    (appStore as any).__setCurrentTab(WS_A);
     clientMocks.mockTerminalsCreate.mockResolvedValue({ success: true, id: 'pty-1' });
 
     const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
@@ -188,7 +188,7 @@ describe('QuakeTerminalOverlay createNewTerminal (PR #705 review)', () => {
   });
 
   it('does not mutate the departed workspace after a mid-create switch', async () => {
-    (appStore as any).__setActiveWorkspace(WS_A);
+    (appStore as any).__setCurrentTab(WS_A);
     let resolveCreate: (value: unknown) => void = () => {};
     clientMocks.mockTerminalsCreate.mockReturnValue(
       new Promise((resolve) => {
@@ -205,7 +205,7 @@ describe('QuakeTerminalOverlay createNewTerminal (PR #705 review)', () => {
     );
 
     // Switch workspaces while the create is in flight.
-    (appStore as any).__setActiveWorkspace(WS_B);
+    (appStore as any).__setCurrentTab(WS_B);
     await rerender({ workspaceId: WS_B });
 
     resolveCreate({ success: true, id: 'pty-1' });

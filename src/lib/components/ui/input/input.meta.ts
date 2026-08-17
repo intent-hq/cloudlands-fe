@@ -19,6 +19,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
     'src/lib/components/browser/BrowserPanel.svelte',
     'src/lib/components/browser/EmbeddedBrowser.svelte',
+    'src/lib/components/chat/ChatMessageNavigator.svelte',
     'src/lib/components/chat/input/ContextPickerButton.svelte',
     'src/lib/components/chat/proposals/ProposalCard.svelte',
     'src/lib/components/debug/DebugPanel.svelte',

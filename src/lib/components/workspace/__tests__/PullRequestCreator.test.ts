@@ -39,7 +39,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspace: mocks.selector(() => mocks.workspace),
+  selectWorkspaceById: mocks.selector(() => mocks.workspace),
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
@@ -62,7 +62,9 @@ async function renderCreator() {
   const PullRequestCreator = (await import('../PullRequestCreator.svelte')).default;
   const onCreated = vi.fn();
   const onClose = vi.fn();
-  const result = render(PullRequestCreator, { props: { onClose, onCreated } });
+  const result = render(PullRequestCreator, {
+    props: { workspaceId: 'ws-1', onClose, onCreated },
+  });
   return { ...result, onCreated, onClose };
 }
 

@@ -232,6 +232,18 @@ let protocolMismatchNotified = false;
 let activeProtocolMismatch: ConnectionProtocolMismatchEvent | null = null;
 
 /**
+ * Origin of the flow that pinned the CURRENT client to a remote, stamped onto
+ * any protocol-mismatch payload it latches (`ConnectionProtocolMismatchEvent.origin`).
+ * `'boot'` while {@link reconcileActiveConnectionOnBoot} restores a persisted
+ * remote — the renderer can then suppress the advisory modal (menu warning
+ * only) since the user did not just initiate a switch. `'switch'` for an
+ * explicit {@link switchBackend} — modal-worthy, current behavior. Reset to
+ * `'switch'` on every {@link disposeBackendClient} (each explicit switch
+ * disposes before rebuilding), so only the boot path re-tags it.
+ */
+let protocolMismatchOrigin: 'boot' | 'switch' = 'switch';
+
+/**
  * Sticky auth-rejection for the CURRENTLY active backend, or `null` when its
  * auth is good (or it is local). Persisted here in main and replayed on
  * {@link listConnections} so a renderer/window created or reloaded AFTER the
@@ -333,6 +345,7 @@ export function __resetBackendProtocolStateForTesting(): void {
   localProtocolVersion = null;
   protocolMismatchNotified = false;
   activeProtocolMismatch = null;
+  protocolMismatchOrigin = 'switch';
   activeConnectionMeta = null;
   bootFallbackNotice = null;
   activeAuthRejected = null;
@@ -647,6 +660,9 @@ function handleHelloProtocolVersion(protocolVersion: string | null): void {
     // Both are non-null: `compareProtocolMajor` only returns 'mismatch' when both parse.
     localProtocolVersion: localBaseline as string,
     remoteProtocolVersion: protocolVersion as string,
+    // 'boot' when this client was pinned by boot restore (suppresses the
+    // renderer modal), 'switch' for an explicit backend switch.
+    origin: protocolMismatchOrigin,
   };
   // Latch BEFORE broadcasting so a renderer that fetches `connections:list`
   // between the broadcast and its own listener registration still replays it.
@@ -768,6 +784,10 @@ export async function reconcileActiveConnectionOnBoot(): Promise<void> {
   disposeBackendClient();
   currentConfig = meta ? config : null;
   activeConnectionMeta = meta;
+  // Any protocol mismatch this boot-pinned client's hello latches is boot-origin
+  // (advisory only — no modal); a later explicit switch disposes the client,
+  // which resets the origin back to 'switch'.
+  protocolMismatchOrigin = 'boot';
   logger.info('Restoring last-used remote backend at boot', { id: activeId });
   const reachable = await probeBackendReachable(getBackendClient(), bootReconnectTimeoutMs);
   if (reachable) {
@@ -1579,6 +1599,9 @@ export function disposeBackendClient(): void {
   // In-flight per-transfer connections target the same (outgoing) backend as
   // the shared client, so they can no longer complete — tear them down too.
   disposeAllTransferConnections();
+  // The next client is switch-origin unless the boot-restore path re-tags it
+  // (see {@link protocolMismatchOrigin}).
+  protocolMismatchOrigin = 'switch';
   client?.dispose();
   client = null;
 }

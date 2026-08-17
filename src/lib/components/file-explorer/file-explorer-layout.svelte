@@ -62,7 +62,7 @@
     error = null;
 
     try {
-      const result = (await invoke('file:open', { path: filePath })) as any;
+      const result = (await invoke('file:open', { path: filePath, workspaceId })) as any;
       if (result?.success) {
         const fileData = { content: result.content, modified: false };
         openFiles.set(filePath, fileData);
@@ -84,7 +84,11 @@
     if (!fileData || !fileData.modified) return;
 
     try {
-      const result = (await invoke('file:save', { filePath, content: fileData.content })) as any;
+      const result = (await invoke('file:save', {
+        filePath,
+        content: fileData.content,
+        workspaceId,
+      })) as any;
       if (result?.success) {
         fileData.modified = false;
         openFiles.set(filePath, fileData);

@@ -2,7 +2,11 @@
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { faCheck, faChevronRight } from '@fortawesome/free-solid-svg-icons';
-  import { isSeparator, type SidebarMenuEntry, type SidebarMenuItem } from './types';
+  import {
+    isSeparator,
+    type SidebarMenuEntry,
+    type SidebarMenuItem,
+  } from '$lib/components/ui/sidebar-context-menu/types';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 

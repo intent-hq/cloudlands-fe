@@ -28,6 +28,7 @@
 
   import { markWorkspaceSeen } from '$features/workspace/mark-workspace-seen';
   import { focusFirstUnreadAgent } from '$features/agent/focus-first-unread-agent';
+  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
     compareWorkspaceActivityDisplayTimeDesc,
     isWorkspaceActivityWithin,
@@ -209,7 +210,10 @@
     keyboardNavActive = false;
     highlightedIndex = -1;
     void markWorkspaceSeen(workspaceId);
-    goto(route);
+    // Keep tab state in sync with the route so columns mode tracks the
+    // clicked workspace (matches AllWorkspacesCard).
+    appStore.dispatch(openWorkspaceTab(workspaceId));
+    await goto(route);
   }
 
   /**

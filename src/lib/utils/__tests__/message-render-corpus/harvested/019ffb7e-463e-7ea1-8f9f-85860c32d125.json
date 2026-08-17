@@ -1,0 +1,108 @@
+[
+  {
+    "type": "thinking",
+    "id": "019ffb7e-463e-7ea1-8f9f-85860c32d125:0",
+    "text": "The user wants unread workspaces in the HUD to show a blinking blue border instead of being a separate status —…"
+  },
+  {
+    "type": "text",
+    "id": "019ffb7e-463e-7ea1-8f9f-85860c32d125:1",
+    "text": "<group:Researching>\n"
+  },
+  {
+    "type": "tool_use",
+    "id": "019ffb7e-463e-7ea1-8f9f-85860c32d125:2",
+    "name": "Run `cd packages/cloudlands-fe && sed -n '1,110p' src/features/hud/grid/hud-card-meta...`",
+    "input": {
+      "command": "[omitted 208 chars]",
+      "cwd": "/home/user/intent/workspaces/unread-status/monorepo",
+      "max_wait_seconds": 30,
+      "wait": true,
+      "_acpTitle": "Run `cd packages/cloudlands-fe && sed -n '1,110p' src/features/hud/grid/hud-card-meta...`"
+    },
+    "toolCallId": "toolu_01ALEgRRG4Me66Zqw4g71LAG",
+    "metadata": {
+      "toolKind": "terminal",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019ffb7e-463e-7ea1-8f9f-85860c32d125:3",
+    "tool_use_id": "toolu_01ALEgRRG4Me66Zqw4g71LAG",
+    "output": {
+      "output": "[omitted 5678 chars]"
+    },
+    "is_error": false
+  },
+  {
+    "type": "thinking",
+    "id": "019ffb7e-463e-7ea1-8f9f-85860c32d125:4",
+    "text": "Looking at the HudWorkspaceCard component, I see it currently uses `hud-anim-blink` for the border/banner with a yellow attention state. The requireme…"
+  },
+  {
+    "type": "tool_use",
+    "id": "019ffb7e-463e-7ea1-8f9f-85860c32d125:5",
+    "name": "Run `cd packages/cloudlands-fe && grep -n \"unread\\|attention\" src/store/renderer/slic...`",
+    "input": {
+      "command": "[omitted 410 chars]",
+      "cwd": "/home/user/intent/workspaces/unread-status/monorepo",
+      "max_wait_seconds": 30,
+      "wait": true,
+      "_acpTitle": "Run `cd packages/cloudlands-fe && grep -n \"unread\\|attention\" src/store/renderer/slic...`"
+    },
+    "toolCallId": "toolu_01MZHhM7T7eT8DWia5H33Zqw",
+    "metadata": {
+      "toolKind": "terminal",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019ffb7e-463e-7ea1-8f9f-85860c32d125:6",
+    "tool_use_id": "toolu_01MZHhM7T7eT8DWia5H33Zqw",
+    "output": {
+      "output": "[omitted 3928 chars]"
+    },
+    "is_error": false
+  },
+  {
+    "type": "thinking",
+    "id": "019ffb7e-463e-7ea1-8f9f-85860c32d125:7",
+    "text": "The HUD already tracks unread attention states, and there's a mapping function that converts display status to card states. Instead of showing an UNRE…"
+  },
+  {
+    "type": "text",
+    "id": "019ffb7e-463e-7ea1-8f9f-85860c32d125:8",
+    "text": "</group>\n\n<group:Updating spec>\n"
+  },
+  {
+    "type": "tool_use",
+    "id": "019ffb7e-463e-7ea1-8f9f-85860c32d125:9",
+    "name": "Add HUD blue border-blink requirement to fe task + spec",
+    "input": {
+      "code": "[omitted 2570 chars]",
+      "summary": "Add HUD blue border-blink requirement to fe task + spec",
+      "_acpTitle": "Add HUD blue border-blink requirement to fe task + spec"
+    },
+    "toolCallId": "toolu_012Zn5myxbQf65qCvZSnDMHJ",
+    "metadata": {
+      "toolKind": "other",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019ffb7e-463e-7ea1-8f9f-85860c32d125:10",
+    "tool_use_id": "toolu_012Zn5myxbQf65qCvZSnDMHJ",
+    "output": {
+      "output": "\"updated\""
+    },
+    "is_error": false
+  },
+  {
+    "type": "text",
+    "id": "019ffb7e-463e-7ea1-8f9f-85860c32d125:11",
+    "text": "</group>\n\nAdded to the plan. The HUD is well set up for this: the HUD slice already tracks unread separately in `attentionByWorkspaceId` (from `workspace:attention-changed`), and the card already has a blink animation used for attention:\n\n````svelte path=packages/cloudlands-fe/src/features/hud/grid/HudWorkspaceCard.svelte mode=EXCERPT\n      class:hud-anim-pulse={card.stateKey === 'in_progress'}\n      class:hud-anim-blink={isAttention}\n````\n\nI updated the cloudlands-fe task (still held behind the intentd task, so the implementor will pick this up when it starts) to:\n\n- Retire `unread` as a HUD card state entirely (`HUD_CARD_STATE_KEYS` / `toHudCardStateKey`) — the card banner always shows the real state (e.g. COMPLETE).\n- Add a **blue border blink** (`HUD_STATE_COLORS.unread`) when `workspace.attention === 'unread'`, exactly analogous to the yellow attention blink, with attention taking precedence, unread staying passive for takeovers, and the `prefers-reduced-motion` guard respected.\n\nThe spec's acceptance criteria now include this HUD behavior. Meanwhile the intentd and iOS agents are still working; the fe task starts once intentd settles. I'll report back at settlement.\n\n<!-- suggested-prompts\nHow are the delegated tasks progressing?\nShow me the intentd PR once it's open.\n-->\n"
+  }
+]

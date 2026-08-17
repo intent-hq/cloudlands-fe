@@ -3,6 +3,10 @@ import type { Task } from 'redux-saga';
 import { all, call, join, put, type SagaGenerator } from 'typed-redux-saga';
 
 import { isElectron } from '$lib/electron-bridge';
+import {
+  isWorkspaceCommandPayload,
+  type WorkspaceCommandPayload,
+} from '$shared/ipc/workspace-command-payloads';
 import { createLogger } from '$lib/utils/client-logger';
 import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
 import { navigateToRoute } from '$lib/utils/navigation.client';
@@ -25,7 +29,6 @@ import {
 import { setShowCreateModal } from '../../sidebar-nav/sidebar-nav-slice';
 import { createTerminalRequested } from '../../terminals/terminals-slice';
 import { createAgentRequested } from '../../workspace-agents/workspace-agents-slice';
-import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
 
 const logger = createLogger('MenuIpcSaga');
 const bufferPolicy = {
@@ -33,11 +36,6 @@ const bufferPolicy = {
   rationale: 'Discrete menu commands must retain arrival order and must not be dropped.',
 };
 let running = false;
-
-function* activeWorkspaceId(): SagaGenerator<string | null> {
-  const workspaceId = yield* selectActiveWorkspaceId.effect();
-  return typeof workspaceId === 'string' && workspaceId.length > 0 ? workspaceId : null;
-}
 
 function* navigate(path: string | null): SagaGenerator<void> {
   if (typeof path !== 'string' || path.length === 0) return;
@@ -52,16 +50,16 @@ function* navigate(path: string | null): SagaGenerator<void> {
   }
 }
 
-function* putForActiveWorkspace(
+function* putForWorkspace(
+  data: WorkspaceCommandPayload | null,
   makeAction: (workspaceId: string) => GenericAction,
 ): SagaGenerator<void> {
-  const workspaceId = yield* activeWorkspaceId();
-  if (workspaceId) yield* put(makeAction(workspaceId));
+  if (isWorkspaceCommandPayload(data)) yield* put(makeAction(data.workspaceId));
 }
 
-function* newAgent(): SagaGenerator<void> {
-  const workspaceId = yield* activeWorkspaceId();
-  if (!workspaceId) return;
+function* newAgent(data: WorkspaceCommandPayload | null): SagaGenerator<void> {
+  if (!isWorkspaceCommandPayload(data)) return;
+  const workspaceId = data.workspaceId;
   const focusInTerminal = yield* call(isFocusInTerminal);
   if (focusInTerminal) {
     yield* call(() => dispatchWindowEvent('workspace:new-terminal', { workspaceId }));
@@ -70,9 +68,9 @@ function* newAgent(): SagaGenerator<void> {
   yield* put(createAgentRequested(workspaceId));
 }
 
-function* newBrowser(): SagaGenerator<void> {
-  const workspaceId = yield* activeWorkspaceId();
-  if (!workspaceId) return;
+function* newBrowser(data: WorkspaceCommandPayload | null): SagaGenerator<void> {
+  if (!isWorkspaceCommandPayload(data)) return;
+  const workspaceId = data.workspaceId;
   yield* put(
     openTab(workspaceId, {
       type: 'browser',
@@ -83,9 +81,12 @@ function* newBrowser(): SagaGenerator<void> {
   );
 }
 
-function* zoom(action: BrowserZoomAction): SagaGenerator<void> {
-  const workspaceId = yield* activeWorkspaceId();
-  if (!workspaceId) return;
+function* zoom(
+  data: WorkspaceCommandPayload | null,
+  action: BrowserZoomAction,
+): SagaGenerator<void> {
+  if (!isWorkspaceCommandPayload(data)) return;
+  const workspaceId = data.workspaceId;
   const panelId = yield* selectFocusedPanelId.effect(workspaceId);
   if (!panelId) return;
   const tab = yield* selectActiveTabInPanel.effect(workspaceId, panelId);
@@ -99,68 +100,76 @@ export function* menuIpcSaga(): SagaGenerator<void> {
   try {
     const tasks: Task[] = [
       yield* takeEveryFromElectronChannel<string | null>('navigate', navigate, options),
-      yield* takeEveryFromElectronChannel<null>('menu:new-agent', newAgent, options),
-      yield* takeEveryFromElectronChannel<null>(
+      yield* takeEveryFromElectronChannel<WorkspaceCommandPayload | null>(
+        'menu:new-agent',
+        newAgent,
+        options,
+      ),
+      yield* takeEveryFromElectronChannel<WorkspaceCommandPayload | null>(
         'menu:new-note',
-        function* () {
-          yield* putForActiveWorkspace(createNoteRequested);
+        function* (data) {
+          yield* putForWorkspace(data, createNoteRequested);
         },
         options,
       ),
-      yield* takeEveryFromElectronChannel<null>(
+      yield* takeEveryFromElectronChannel<WorkspaceCommandPayload | null>(
         'menu:new-terminal',
-        function* () {
-          yield* putForActiveWorkspace(createTerminalRequested);
+        function* (data) {
+          yield* putForWorkspace(data, createTerminalRequested);
         },
         options,
       ),
-      yield* takeEveryFromElectronChannel<null>('menu:new-browser', newBrowser, options),
-      yield* takeEveryFromElectronChannel<null>(
+      yield* takeEveryFromElectronChannel<WorkspaceCommandPayload | null>(
+        'menu:new-browser',
+        newBrowser,
+        options,
+      ),
+      yield* takeEveryFromElectronChannel<WorkspaceCommandPayload | null>(
         'menu:close-tab',
-        function* () {
-          yield* putForActiveWorkspace(closeActiveTab);
+        function* (data) {
+          yield* putForWorkspace(data, closeActiveTab);
         },
         options,
       ),
-      yield* takeEveryFromElectronChannel<null>(
+      yield* takeEveryFromElectronChannel<WorkspaceCommandPayload | null>(
         'menu:reopen-closed-tab',
-        function* () {
-          yield* putForActiveWorkspace(reopenClosedTab);
+        function* (data) {
+          yield* putForWorkspace(data, reopenClosedTab);
         },
         options,
       ),
-      yield* takeEveryFromElectronChannel<null>(
+      yield* takeEveryFromElectronChannel<WorkspaceCommandPayload | null>(
         'menu:select-previous-tab',
-        function* () {
-          yield* putForActiveWorkspace(selectPreviousTab);
+        function* (data) {
+          yield* putForWorkspace(data, selectPreviousTab);
         },
         options,
       ),
-      yield* takeEveryFromElectronChannel<null>(
+      yield* takeEveryFromElectronChannel<WorkspaceCommandPayload | null>(
         'menu:select-next-tab',
-        function* () {
-          yield* putForActiveWorkspace(selectNextTab);
+        function* (data) {
+          yield* putForWorkspace(data, selectNextTab);
         },
         options,
       ),
-      yield* takeEveryFromElectronChannel<null>(
+      yield* takeEveryFromElectronChannel<WorkspaceCommandPayload | null>(
         'menu:zoom-in',
-        function* () {
-          yield* zoom('in');
+        function* (data) {
+          yield* zoom(data, 'in');
         },
         options,
       ),
-      yield* takeEveryFromElectronChannel<null>(
+      yield* takeEveryFromElectronChannel<WorkspaceCommandPayload | null>(
         'menu:zoom-out',
-        function* () {
-          yield* zoom('out');
+        function* (data) {
+          yield* zoom(data, 'out');
         },
         options,
       ),
-      yield* takeEveryFromElectronChannel<null>(
+      yield* takeEveryFromElectronChannel<WorkspaceCommandPayload | null>(
         'menu:reset-zoom',
-        function* () {
-          yield* zoom('reset');
+        function* (data) {
+          yield* zoom(data, 'reset');
         },
         options,
       ),

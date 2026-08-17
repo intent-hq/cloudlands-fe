@@ -174,7 +174,7 @@ describe('closing a panel that collapses a split', () => {
     // The exiting 8px horizontal gutter must not be subtracted from the
     // re-measured reference size: nothing re-measures after its outro ends,
     // which would leave the survivor permanently short by the gutter width.
-    const expectedReference = VIEWPORT_WIDTH / 2;
+    const expectedReference = VIEWPORT_WIDTH;
     await waitFor(() =>
       expect(flexBasis(survivorWrapper('p2'))).toBeCloseTo(expectedReference, 3),
     );

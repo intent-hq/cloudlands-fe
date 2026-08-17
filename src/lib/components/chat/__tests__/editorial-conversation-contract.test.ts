@@ -174,7 +174,6 @@ describe('editorial conversation presentation contract', () => {
 
   it('uses the soft secondary user prompt surface and semantic body typography', () => {
     const message = source('src/lib/components/chat/ChatMessage.svelte');
-    const surface = source('src/lib/components/chat/user-message-surface.ts');
     const markdown = source('src/lib/components/markdown/MarkdownViewer.svelte');
 
     expect(message).toContain(
@@ -202,7 +201,13 @@ describe('editorial conversation presentation contract', () => {
     expect(staticContent).toContain(
       'isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleOperationalBlock)',
     );
+    expect(staticContent).toContain(
+      'getOperationalClusterSpacingClass(\n                    group.children,\n                    childIndex,\n                    isVisibleOperationalBlock,',
+    );
     expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
+    expect(streamingContent).toContain(
+      "getOperationalClusterSpacingClass(\n                    group.children,\n                    childIndex,\n                    (candidate) => candidate.type !== 'tool_result',",
+    );
     expect(streamingContent).toContain('isAdjacentOperationalClusterRow(');
     expect(streamingContent).toContain('isVisibleTopLevelBlock,');
     expect(streamingContent).toContain('data-operational-cluster-row=');

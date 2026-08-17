@@ -24,10 +24,11 @@ const logger = new Logger('LoopbackUrlResolver');
 export const REMOTE_REWRITE_PROBE_TIMEOUT_MS = 1500;
 
 /**
- * Minimal tunnel surface the resolver needs for the probe-failure fallback:
- * `TunnelManager` (`features/backend/main/tunnel-manager.ts`) satisfies it,
- * and tests inject a mock so the resolver stays testable without a real
- * `/tunnel` WebSocket.
+ * Minimal tunnel surface the resolver and the `browser.exec` tunnel actions
+ * need: `TunnelManager` (`features/backend/main/tunnel-manager.ts`, remote
+ * `/tunnel` mux) and `DirectRelay` (`features/backend/main/direct-relay.ts`,
+ * local transports) both satisfy it, and tests inject a mock so the resolver
+ * stays testable without a real `/tunnel` WebSocket.
  */
 export interface TunnelProvider {
   /** Forward daemon-loopback `remotePort`; resolves with the local port. */
@@ -39,6 +40,26 @@ export interface TunnelProvider {
    * satisfy the interface; absent means "no active forwards known".
    */
   activeForwards?(): Array<{ remotePort: number; localPort: number }>;
+  /**
+   * Close the forward for `remotePort`; true when a forward existed.
+   * Optional so minimal mocks satisfy the interface; the `closeTunnel`
+   * action reports an error when absent.
+   */
+  closeForward?(remotePort: number): boolean;
+  /**
+   * Which backend this provider forwards through: `"tunnel"` (daemon
+   * `/tunnel` mux, remote transports) or `"direct"` (FE-side loopback relay,
+   * local transports). Echoed in tunnel action results; absent on minimal
+   * mocks defaults to `"tunnel"`.
+   */
+  backend?: 'tunnel' | 'direct';
+  /**
+   * Hook invoked with the remote port whenever the provider drops a forward
+   * itself (e.g. a definitively refused connect/OPEN) or via `closeForward`.
+   * Mutable so the ownership wrapper can keep its registry in sync with
+   * internal drops; optional so minimal mocks satisfy the interface.
+   */
+  onForwardDropped?: ((remotePort: number) => void) | null;
 }
 
 /** Outcome of {@link resolveRewrittenRemoteTarget}. */

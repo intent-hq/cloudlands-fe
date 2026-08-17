@@ -17,12 +17,10 @@
     getPrMonitorWakeUrl,
   } from '$lib/utils/pr-monitor-wake-attribution';
   import { handleLink } from '$features/navigation/link-handler';
-  import {
-    selectActiveWorkspaceId,
-    selectWorkspaceById,
-  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   interface Props {
     attribution: PrMonitorWakeAttribution;
@@ -34,7 +32,7 @@
 
   // One-time reads: the workspace repo only shapes the chip label
   // (cross-repo prefix), so a live subscription is unnecessary.
-  const workspaceId = selectActiveWorkspaceId.select(appStore.state);
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
   const workspace = workspaceId
     ? selectWorkspaceById.select(appStore.state, workspaceId)
     : undefined;
@@ -48,9 +46,8 @@
   function handleOpenPr(e: MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    const wsId = selectActiveWorkspaceId.select(appStore.state);
     void handleLink(getPrMonitorWakeUrl(attribution), {
-      workspaceId: (wsId ?? undefined) as WorkspaceId | undefined,
+      workspaceId: workspaceId as WorkspaceId | undefined,
       forceExternal: true,
     });
   }

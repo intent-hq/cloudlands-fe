@@ -59,8 +59,10 @@ import { takeEvery } from 'typed-redux-saga';
 import { store as appStore } from '$store/renderer/store';
 import {
   chatSendStarted,
+  chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   refreshChatTranscriptRequested,
+  transcriptHydrationFailed,
   transcriptHydrationSettled,
   transcriptHydrationStarted,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -451,6 +453,242 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       fromSnapshot: true,
     });
     expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
+  });
+
+  // Ordering lock (atomic first-paint): the chat-read saga settles hydration
+  // (the reveal gate) on `chatTranscriptSnapshotApplied`, so that action must
+  // be dispatched only AFTER the snapshot's messages replaced the store rows
+  // AND the stream accumulator was seeded from the in-flight assistant
+  // message — otherwise the reveal frame could miss the live turn.
+  it('dispatches chatTranscriptSnapshotApplied only after messages applied and stream seeded', () => {
+    const agentId = 'agent-sub-order';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+
+    const observedAtSeed: {
+      messageIds: string[];
+      metaRecorded: boolean;
+    }[] = [];
+    vi.mocked(seedStreamFromSnapshot).mockImplementationOnce(() => {
+      observedAtSeed.push({
+        messageIds: selectAgentMessages.select(appStore.state, agentId).map((m) => m.id),
+        metaRecorded: selectTranscriptSnapshotMeta.select(appStore.state, agentId) !== undefined,
+      });
+    });
+
+    const inFlight = makeMessage('m-order-live', 'partial...', {
+      isStreaming: true,
+    } as Partial<AgentMessage>);
+    sub.handler({
+      ...transcript([makeMessage('m-order-user', 'question', { role: 'user' }), inFlight], true),
+      fromSnapshot: true,
+    });
+
+    // At seed time the snapshot messages were already in the store, but the
+    // snapshot-applied signal had NOT yet been recorded.
+    expect(observedAtSeed).toEqual([
+      { messageIds: ['m-order-user', 'm-order-live'], metaRecorded: false },
+    ]);
+    // The applied signal followed the seed.
+    expect(seedStreamFromSnapshot).toHaveBeenCalledOnce();
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toMatchObject({
+      totalMessages: 2,
+      seq: 1,
+    });
+  });
+
+  // Regression (PR #1327 finding 1): the seq-0 snapshot can beat the
+  // chat-read saga's `agents.get` (both start on initializeChatRequested).
+  // Applying it pre-session would record snapshot meta with NO store rows to
+  // back it (applyTranscript no-ops without a session), stranding the read
+  // saga on a second snapshot that never comes. The snapshot must instead be
+  // deferred whole and replayed on the session shell's upsert — meta and
+  // messages land together.
+  it('defers a pre-session seq-0 snapshot and replays it on the session upsert', async () => {
+    const agentId = 'agent-sub-presession';
+    // No seedSession: the snapshot arrives before agents.get resolves.
+    const sub = openChat(agentId);
+
+    sub.handler({
+      ...transcript([makeMessage('m-pre-1', 'one'), makeMessage('m-pre-2', 'two')]),
+      fromSnapshot: true,
+    });
+
+    // Held back in full: no meta recorded, no rows written.
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toBeUndefined();
+    expect(selectAgentMessages.select(appStore.state, agentId)).toEqual([]);
+
+    // The read saga's shell upsert lands → the deferred snapshot replays.
+    seedSession(agentId);
+    await vi.waitFor(() => {
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toMatchObject({
+        totalMessages: 2,
+        seq: 1,
+      });
+    });
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      'm-pre-1',
+      'm-pre-2',
+    ]);
+  });
+
+  it('replays the newest deferred delta after the pre-session snapshot on session upsert', async () => {
+    const agentId = 'agent-sub-presession-delta';
+    const sub = openChat(agentId);
+
+    sub.handler({ ...transcript([makeMessage('m-a', 'a')]), fromSnapshot: true });
+    // Deltas that also arrived pre-session (no-ops at the time).
+    sub.handler(transcript([makeMessage('m-a', 'a'), makeMessage('m-b', 'b')]));
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toBeUndefined();
+
+    seedSession(agentId);
+    await vi.waitFor(() => {
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
+    });
+    // The store ends on the newest reconciled transcript, not the snapshot.
+    await vi.waitFor(() => {
+      expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+        'm-a',
+        'm-b',
+      ]);
+    });
+  });
+
+  // Regression (PR #1327 review): the error surface's retry dispatches
+  // refreshChatTranscriptRequested, which only re-entered the read saga's
+  // bounded wait — against a registration that would never (re-)emit, the
+  // retry looped error → wait → error forever. When hydration sits in
+  // error, the subscribe saga must give the wait something to settle on.
+  it('manual retry force-cycles a dead registration into a fresh chat.subscribe', async () => {
+    const agentId = 'agent-sub-retry-dead';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    // The registration never emitted a snapshot; the bounded wait failed.
+    appStore.dispatch(transcriptHydrationStarted(agentId));
+    appStore.dispatch(transcriptHydrationFailed(agentId));
+
+    appStore.dispatch(refreshChatTranscriptRequested(WS, agentId));
+
+    await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+    await vi.waitFor(() => {
+      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(2);
+    });
+    // The fresh registration's seq-0 snapshot heals the transcript.
+    const healed = fakeSubscriptions.filter((s) => s.agentId === agentId).at(-1)!;
+    healed.handler({ ...transcript([makeMessage('m-healed', 'ok')]), fromSnapshot: true });
+    await vi.waitFor(() => {
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
+    });
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      'm-healed',
+    ]);
+  });
+
+  it('manual retry re-applies the last reconciled snapshot without cycling the registration', async () => {
+    const agentId = 'agent-sub-retry-reapply';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler({ ...transcript([makeMessage('m-r1', 'one')]), fromSnapshot: true });
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
+    // Hydration failed anyway (e.g. the snapshot applied after the wait
+    // closed on a slower machine).
+    appStore.dispatch(transcriptHydrationFailed(agentId));
+
+    appStore.dispatch(refreshChatTranscriptRequested(WS, agentId));
+
+    // Re-applied through the same event pipeline: meta re-records (seq
+    // bumps), giving the read saga's re-entered wait a fresh application.
+    await vi.waitFor(() => {
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(2);
+    });
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(1);
+  });
+
+  it('ignores refreshChatTranscriptRequested outside the error state (no registration cycling)', async () => {
+    const agentId = 'agent-sub-retry-noop';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler({ ...transcript([makeMessage('m-n1', 'one')]), fromSnapshot: true });
+    appStore.dispatch(transcriptHydrationStarted(agentId));
+    appStore.dispatch(transcriptHydrationSettled(agentId));
+
+    // The §7.1 resumed:false rehydration dispatches this same action right
+    // after its snapshot applied — it must never cycle the registration.
+    appStore.dispatch(refreshChatTranscriptRequested(WS, agentId));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(1);
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
+  });
+
+  // Regression (intent-hq/monorepo#2692): the chat-read saga's bounded wait
+  // timed out a window mid-hydration and dispatches
+  // chatTranscriptSnapshotRerequested — the subscribe saga must give the next
+  // window something to settle on while hydration still sits in `loading`.
+  it('snapshot re-request force-cycles a silent registration while hydration is loading', async () => {
+    const agentId = 'agent-sub-rereq-cycle';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    // The registration never emitted a snapshot; the first wait window
+    // timed out but hydration has NOT failed yet.
+    appStore.dispatch(transcriptHydrationStarted(agentId));
+
+    appStore.dispatch(chatTranscriptSnapshotRerequested(WS, agentId));
+
+    await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+    await vi.waitFor(() => {
+      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(2);
+    });
+    // The fresh registration's seq-0 snapshot heals the transcript.
+    const healed = fakeSubscriptions.filter((s) => s.agentId === agentId).at(-1)!;
+    healed.handler({ ...transcript([makeMessage('m-rereq', 'ok')]), fromSnapshot: true });
+    await vi.waitFor(() => {
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
+    });
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      'm-rereq',
+    ]);
+  });
+
+  it('snapshot re-request re-emits the last reconciled snapshot without cycling the registration', async () => {
+    const agentId = 'agent-sub-rereq-reapply';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler({ ...transcript([makeMessage('m-rr1', 'one')]), fromSnapshot: true });
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
+    // The snapshot applied but the read saga's wait missed it (e.g. it
+    // applied between windows); hydration still sits in loading.
+    appStore.dispatch(transcriptHydrationStarted(agentId));
+
+    appStore.dispatch(chatTranscriptSnapshotRerequested(WS, agentId));
+
+    // Re-applied through the same event pipeline: meta re-records (seq
+    // bumps), giving the read saga's next window a fresh application.
+    await vi.waitFor(() => {
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(2);
+    });
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(1);
+  });
+
+  it('ignores a snapshot re-request outside the loading state (no registration cycling)', async () => {
+    const agentId = 'agent-sub-rereq-noop';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler({ ...transcript([makeMessage('m-rn1', 'one')]), fromSnapshot: true });
+    appStore.dispatch(transcriptHydrationStarted(agentId));
+    appStore.dispatch(transcriptHydrationSettled(agentId));
+
+    // A stale re-request delivered after hydration settled (or failed) must
+    // never cycle a healthy registration.
+    appStore.dispatch(chatTranscriptSnapshotRerequested(WS, agentId));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(1);
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
   });
 
   it('discards retained store-only rows on a resumed: false fallback snapshot (§7.1)', () => {

@@ -93,35 +93,10 @@ export function getOperationalClusterSpacingClass<T extends OperationalClusterBl
 
   let previousIndex = index - 1;
   while (previousIndex >= 0 && !isVisible(blocks[previousIndex])) previousIndex -= 1;
-  let nextIndex = index + 1;
-  while (nextIndex < blocks.length && !isVisible(blocks[nextIndex])) nextIndex += 1;
-
   const previousIsOperational =
     previousIndex >= 0 && isOperationalClusterBlock(blocks[previousIndex]);
-  if (!isOperationalClusterBlock(block)) {
-    return previousIndex >= 0 && !previousIsOperational ? 'pt-2.5' : '';
-  }
-
-  const nextIsOperational =
-    nextIndex < blocks.length && isOperationalClusterBlock(blocks[nextIndex]);
-  const topSpacing =
-    block.type === 'thinking' && previousIndex < 0
-      ? ''
-      : previousIsOperational
-        ? block.type === 'thinking' && blocks[previousIndex]?.type === 'tool_use'
-          ? 'pt-2'
-          : ''
-        : previousIndex < 0
-          ? 'pt-4'
-          : block.type === 'thinking' && blocks[previousIndex]?.type === 'notice'
-            ? 'pt-2'
-            : 'pt-[var(--chat-operational-text-gap,1rem)]';
-  const bottomSpacing = nextIsOperational
-    ? ''
-    : nextIndex < blocks.length
-      ? 'pb-[var(--chat-operational-text-gap,1rem)]'
-      : 'pb-4';
-  return [topSpacing, bottomSpacing].filter(Boolean).join(' ');
+  if (block.type !== 'thinking' || previousIndex < 0) return '';
+  return !previousIsOperational || blocks[previousIndex]?.type === 'tool_use' ? 'pt-2' : '';
 }
 
 /** Tool-only collapsed row: fixed icon, one truncating sentence, optional trailing state/action. */

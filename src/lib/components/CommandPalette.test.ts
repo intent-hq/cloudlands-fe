@@ -148,7 +148,6 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       workspaceNotes: { byWorkspaceId: {} },
       workspaceAgents: { byWorkspaceId: {} },
-      workspace: { activeWorkspaceId: 'ws-1' },
     }),
     dispatch: reduxDispatchMock,
   });

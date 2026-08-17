@@ -19,13 +19,21 @@
 
   interface Props {
     comment: ReviewComment;
+    workspaceId: string;
     workspacePath?: string;
     onViewInDiff?: (comment: ReviewComment) => void;
     onFix?: (comment: ReviewComment) => void;
     class?: string;
   }
 
-  let { comment, workspacePath, onViewInDiff, onFix, class: className }: Props = $props();
+  let {
+    comment,
+    workspaceId,
+    workspacePath,
+    onViewInDiff,
+    onFix,
+    class: className,
+  }: Props = $props();
 
   let isFixing = $state(false);
   let isCodeExpanded = $state(false);
@@ -46,7 +54,7 @@
         success: boolean;
         data?: { content: string } | string;
         error?: string;
-      }>('file:read', { path: filePath });
+      }>('file:read', { path: filePath, workspaceId });
       if (response.success && response.data) {
         const content = typeof response.data === 'string' ? response.data : response.data.content;
         const lines = content.split('\n');

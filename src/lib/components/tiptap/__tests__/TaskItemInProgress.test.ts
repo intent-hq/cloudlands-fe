@@ -12,10 +12,6 @@ const mockReadable = (value: any) => ({
   },
 });
 
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: () => mockReadable(null),
-}));
-
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectWorkspaceNotesState: () => mockReadable({ initialized: true }),
   selectNoteById: Object.assign(() => mockReadable(undefined), {

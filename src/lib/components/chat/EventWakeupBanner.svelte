@@ -66,7 +66,7 @@
     metadata,
     asDivider = false,
     embedded = false,
-    compact = false,
+    compact: _compact = false,
     messageText = '',
     showSummary = true,
     showAgentCards = true,

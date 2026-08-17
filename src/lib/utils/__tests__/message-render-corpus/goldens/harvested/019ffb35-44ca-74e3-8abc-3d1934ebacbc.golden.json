@@ -1,0 +1,66 @@
+{
+  "source": "local intentd.db agent_message 019ffb35-44ca-74e3-8abc-3d1934ebacbc (sanitized)",
+  "features": [
+    "group-open",
+    "prompts"
+  ],
+  "prompts": [
+    "Squash-merge it once checks are green.",
+    "Wait for CI and ask me before merging."
+  ],
+  "tree": [
+    {
+      "type": "content_group",
+      "name": "Checking PR",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "tool_use",
+          "name": "Check PR #1133 state after merge",
+          "input": {
+            "code": "[omitted 354 chars]",
+            "summary": "Check PR #1133 state after merge",
+            "_acpTitle": "Check PR #1133 state after merge"
+          }
+        },
+        {
+          "type": "tool_result",
+          "output": {
+            "output": "[omitted 298 chars]"
+          }
+        },
+        {
+          "type": "thinking",
+          "content": "The merge conflicts are resolved and checks are running, though some are still pending. I'm deciding whether to ask the user now about enabling auto-m…"
+        },
+        {
+          "type": "tool_use",
+          "name": "Ask merge preference",
+          "input": {
+            "code": "[omitted 486 chars]",
+            "summary": "Ask merge preference",
+            "_acpTitle": "Ask merge preference"
+          }
+        },
+        {
+          "type": "tool_result",
+          "output": {
+            "output": "\"asked\""
+          }
+        },
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "The PR monitor stays armed and will wake me when CI settles either way. Ending my turn pending your answer."
+            }
+          ]
+        },
+        {
+          "type": "resource"
+        }
+      ]
+    }
+  ]
+}

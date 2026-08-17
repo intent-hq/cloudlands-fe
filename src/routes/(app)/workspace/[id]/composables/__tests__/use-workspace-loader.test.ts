@@ -1,36 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
-import {
-  workspaceMounted,
-  workspaceUnmounted,
-} from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { emptyWorkspaceAgentState } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   removeWorkspaceEntity,
-  setActiveWorkspaceId,
   setWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import TestUseWorkspaceLoader from './TestUseWorkspaceLoader.test.svelte';
 
-const {
-  dispatchMock,
-  openMock,
-  selectWorkspaceByIdMock,
-  selectActiveWorkspaceMock,
-  storeStateRef,
-} = vi.hoisted(() => {
+const { dispatchMock, openMock, selectWorkspaceByIdMock, storeStateRef } = vi.hoisted(() => {
   const dispatchMock = vi.fn();
   const openMock = vi.fn();
   const selectWorkspaceByIdMock = vi.fn();
-  const selectActiveWorkspaceMock = vi.fn();
   const storeStateRef = { current: {} as Record<string, unknown> };
 
   return {
     dispatchMock,
     openMock,
     selectWorkspaceByIdMock,
-    selectActiveWorkspaceMock,
     storeStateRef,
   };
 });
@@ -38,9 +26,6 @@ const {
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: {
     select: (_state: unknown, workspaceId: string) => selectWorkspaceByIdMock(workspaceId),
-  },
-  selectActiveWorkspace: {
-    select: () => selectActiveWorkspaceMock(),
   },
 }));
 
@@ -106,7 +91,6 @@ describe('useWorkspaceLoader', () => {
       },
     };
     selectWorkspaceByIdMock.mockReturnValue(null);
-    selectActiveWorkspaceMock.mockReturnValue(null);
   });
 
   it('hydrates Redux from cached workspace data before open completes', async () => {
@@ -163,7 +147,7 @@ describe('useWorkspaceLoader', () => {
     ]);
   });
 
-  it('mounts an inactive column without replacing the active workspace', async () => {
+  it('mounts a workspace without synchronizing a global active workspace', async () => {
     const workspace = makeWorkspace({ id: 'loader-inactive-column' });
     selectWorkspaceByIdMock.mockReturnValue(workspace);
     openMock.mockResolvedValue({ ok: true, data: workspace });
@@ -172,13 +156,11 @@ describe('useWorkspaceLoader', () => {
       props: {
         workspaceId: workspace.id,
         workspaceState: createWorkspaceState(),
-        activateWorkspace: false,
       },
     });
 
     await waitFor(() => expect(openMock).toHaveBeenCalledTimes(1));
     expect(dispatchMock).toHaveBeenCalledWith(workspaceMounted(workspace.id));
-    expect(dispatchMock).not.toHaveBeenCalledWith(setActiveWorkspaceId(workspace.id));
   });
 
   it('dispatches setWorkspaceEntity → workspaceMounted for a cached workspace without touching initial-agent-config state', async () => {
@@ -392,12 +374,12 @@ describe('useWorkspaceLoader', () => {
     const actions = dispatchMock.mock.calls.map(([action]) => action);
     expect(actions).toContainEqual(removeWorkspaceEntity(cachedWorkspace.id));
 
-    // workspaceMounted (pre-population) must be paired with workspaceUnmounted.
+    // Route loading must not dispatch workspace-scoped cleanup; tab removal owns that boundary.
     const mountedIndex = actions.findIndex((action) => action.type === workspaceMounted.type);
-    const unmountedIndex = actions.findIndex((action) => action.type === workspaceUnmounted.type);
     expect(actions[mountedIndex]).toEqual(workspaceMounted(cachedWorkspace.id));
-    expect(actions[unmountedIndex]).toEqual(workspaceUnmounted(cachedWorkspace.id));
-    expect(unmountedIndex).toBeGreaterThan(mountedIndex);
+    expect(actions.some((action) => action.type === 'workspace-lifecycle/workspaceUnmounted')).toBe(
+      false,
+    );
 
     expect(workspaceState.updateState).toHaveBeenCalledWith({
       workspace: { id: cachedWorkspace.id, status: 'error' },
@@ -435,7 +417,9 @@ describe('useWorkspaceLoader', () => {
 
     const actions = dispatchMock.mock.calls.map(([action]) => action);
     expect(actions.filter((action) => action.type === removeWorkspaceEntity.type)).toEqual([]);
-    expect(actions.filter((action) => action.type === workspaceUnmounted.type)).toEqual([]);
+    expect(
+      actions.filter((action) => action.type === 'workspace-lifecycle/workspaceUnmounted'),
+    ).toEqual([]);
     expect(screen.getByTestId('load-error-kind').textContent).toBe('');
     expect(workspaceState.updateState).not.toHaveBeenCalledWith(
       expect.objectContaining({
@@ -562,7 +546,6 @@ describe('useWorkspaceLoader', () => {
     expect(stateA.markInitialized).not.toHaveBeenCalled();
     expect(dispatchMock).not.toHaveBeenCalledWith(setWorkspaceEntity(workspaceA));
     expect(dispatchMock).not.toHaveBeenCalledWith(workspaceMounted(workspaceA.id));
-    expect(dispatchMock).not.toHaveBeenCalledWith(setActiveWorkspaceId(workspaceA.id));
   });
 
   it('invalidates an outstanding workspace load when the loader is destroyed', async () => {

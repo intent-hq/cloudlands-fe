@@ -128,6 +128,18 @@ the success signal, the forward is minted regardless) — and restart dev:web wi
 `VITE_INTENTD_WS_URL=ws://127.0.0.1:<client-local-port>/ws`.
 Expect a slow cold load over the tunnel (dev mode serves ~250 module requests).
 
+Tunnel forwards are **persistent** — the minted `localPort` is stable, so baking it into
+`VITE_INTENTD_WS_URL` is safe. Whether minted explicitly (`openTunnel`) or implicitly
+(the `openTab`/`navigate` fallback above), a forward has no idle expiry and survives
+`/tunnel` WebSocket drops: the local listener (and its port) stays open and the next
+accepted connection lazily reconnects the tunnel. A forward closes only on explicit
+`closeTunnel`, a backend switch (forwards target the old daemon's loopback), app quit,
+or — for forwards minted on behalf of a workspace — when every owning workspace has been
+archived or deleted (refcounted; a port shared by several workspaces closes with the
+last owner, and forwards minted with no workspace are app-lifetime). One exception: a
+definitively connection-refused daemon-side port (e.g. the bridge process died) drops
+that forward immediately — re-run `openTunnel` (or the openTab probe) to re-mint it.
+
 ### Loop B — dev Electron FE + CDP (Electron shell work)
 
 When the change touches Electron main/preload/native/sidecar, Loop A cannot see it —

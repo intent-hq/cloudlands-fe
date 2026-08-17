@@ -230,24 +230,6 @@ function sentenceSegments(
   return segments;
 }
 
-/**
- * Check if a result is truly empty (null, undefined, whitespace-only string,
- * empty array, or empty object).
- */
-function isEmptyResult(result: unknown): boolean {
-  if (result === null || result === undefined) return true;
-  if (typeof result === 'string') return result.trim() === '';
-  if (Array.isArray(result)) return result.length === 0;
-  if (typeof result === 'object') {
-    const entries = Object.entries(result);
-    // Empty object is empty
-    if (entries.length === 0) return true;
-    // Single { ok: true } is handled by isOkOnlyResult, not considered empty here
-    return false;
-  }
-  return false;
-}
-
 export function buildToolDisplayModel({
   toolName,
   display,
@@ -267,8 +249,6 @@ export function buildToolDisplayModel({
   const okOnly = isOkOnlyResult(result) && isWorkspaceMutation(toolName, input, display);
   const hasPayload = result !== null && result !== undefined;
   const hasInput = Object.keys(input || {}).some((key) => !key.startsWith('_'));
-  const isEmpty = isEmptyResult(result) && !hasInput;
-
   return {
     sentence,
     sentenceSegments: sentenceSegments(display, input, sentence),

@@ -1,0 +1,18 @@
+{
+  "note": "suggested prompts block stripped, prompts surfaced",
+  "prompts": [
+    "Run the tests.",
+    "Open a PR."
+  ],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Work is done."
+        }
+      ]
+    }
+  ]
+}

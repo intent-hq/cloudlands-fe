@@ -18,8 +18,8 @@ describe('panel content insets', () => {
     );
     expect(panel).not.toContain('max-w-[var(--content-measure-');
     expect(panel).toContain(": 'px-4 pt-2 sm:px-6'");
-    expect(panel).toContain('class:pb-3={!isChiefWorkspace && isCompactMode}');
-    expect(panel).toContain('class:pb-6={!isChiefWorkspace && !isCompactMode}');
+    expect(panel).toContain('chatTranscriptBottomInsetClass({');
+    expect(panel).toContain('{transcriptBottomInsetClass}');
     expect(panel).not.toContain('eventSubscriptionsOwnEndGap');
     expect(panel).toContain("? 'w-full px-1.5!'");
     expect(panel).toContain(": 'w-full px-4! sm:px-6!'");

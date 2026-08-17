@@ -14,6 +14,10 @@ export interface MockSeederContext {
   store: Store<any, any>;
   /** The mock-backed client fixtures are pulled from. */
   client: AppClient;
+  /** Explicit workspace ID for seeders that need the current workspace selection. */
+  workspaceId: string | null;
+  /** Optional live workspace-ID provider for seeders that await mock RPCs. */
+  getWorkspaceId?: () => string | null;
 }
 
 /** Seeds one domain's slice state from the `AppClient`. May be async. */
@@ -57,8 +61,14 @@ export function clearMockSeeders(): void {
 export async function seedMockStore(
   store: Store<any, any>,
   client: AppClient = appClient,
+  workspaceId: string | null | (() => string | null) = null,
 ): Promise<void> {
+  const getWorkspaceId = typeof workspaceId === 'function' ? workspaceId : undefined;
+  const initialWorkspaceId = typeof workspaceId === 'function' ? workspaceId() : workspaceId;
   for (const { seed } of [...seeders]) {
-    await seed({ store, client });
+    const context: MockSeederContext = getWorkspaceId
+      ? { store, client, workspaceId: initialWorkspaceId, getWorkspaceId }
+      : { store, client, workspaceId: initialWorkspaceId };
+    await seed(context);
   }
 }

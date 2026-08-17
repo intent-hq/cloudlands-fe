@@ -1,0 +1,122 @@
+[
+  {
+    "type": "text",
+    "id": "019fffe6-fcca-74a0-ade6-1963146242a2:0",
+    "text": "<group:Investigating>\n\nLet me check which sidebar view that screenshot shows and whether it got the waiting treatment — the implementation touched `ActiveWorkspacesCard`, and this \"All workspaces\" grouped list may be a different surface.\n"
+  },
+  {
+    "type": "tool_use",
+    "id": "019fffe6-fcca-74a0-ade6-1963146242a2:1",
+    "name": "codebase-retrieval",
+    "input": {
+      "information_request": "[omitted 373 chars]",
+      "workspace_folder": "/home/user/intent/workspaces/everywhere-update/monorepo",
+      "_acpTitle": "[omitted 391 chars]"
+    },
+    "toolCallId": "toolu_vrtx_01Aj6tnWEMwBCo6xZGtBDFcc",
+    "metadata": {
+      "toolKind": "search",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019fffe6-fcca-74a0-ade6-1963146242a2:2",
+    "tool_use_id": "toolu_vrtx_01Aj6tnWEMwBCo6xZGtBDFcc",
+    "output": {
+      "output": "[omitted 20095 chars]"
+    },
+    "is_error": false
+  },
+  {
+    "type": "thinking",
+    "id": "019fffe6-fcca-74a0-ade6-1963146242a2:3",
+    "text": "Looking at the workspace card components, I see that `AllWorkspacesCard` is passing `isRunning` and `isUnread` to `WorkspaceCard`, but it's missing th…"
+  },
+  {
+    "type": "text",
+    "id": "019fffe6-fcca-74a0-ade6-1963146242a2:4",
+    "text": "<group:Investigating>\n\nLet me confirm which `WorkspaceCard` call sites pass `isWaiting` — the retrieval shows `AllWorkspacesCard` passes only `isRunning`/`isUnread`.\n"
+  },
+  {
+    "type": "tool_use",
+    "id": "019fffe6-fcca-74a0-ade6-1963146242a2:5",
+    "name": "Run `cd packages/cloudlands-fe && grep -rn \"isWaiting\" src/ --include=\"*.svelte\" --in...`",
+    "input": {
+      "command": "cd packages/cloudlands-fe && grep -rn \"isWaiting\" src/ --include=\"*.svelte\" --include=\"*.ts\" | grep -v \"\\.test\\.\" | head -30; echo =====; grep -rln \"<WorkspaceCard\" src/ --include=\"*.svelte\"",
+      "cwd": "/home/user/intent/workspaces/everywhere-update/monorepo",
+      "wait": true,
+      "max_wait_seconds": 60,
+      "_acpTitle": "Run `cd packages/cloudlands-fe && grep -rn \"isWaiting\" src/ --include=\"*.svelte\" --in...`"
+    },
+    "toolCallId": "toolu_vrtx_014MZBXoRpgxvuNRAHCNLQLE",
+    "metadata": {
+      "toolKind": "terminal",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019fffe6-fcca-74a0-ade6-1963146242a2:6",
+    "tool_use_id": "toolu_vrtx_014MZBXoRpgxvuNRAHCNLQLE",
+    "output": {
+      "output": "[omitted 3949 chars]"
+    },
+    "is_error": false
+  },
+  {
+    "type": "tool_use",
+    "id": "019fffe6-fcca-74a0-ade6-1963146242a2:7",
+    "name": "Run `cd packages/cloudlands-fe && grep -n \"isRunning\\|isUnread\\|isWaiting\\|_isRunning...`",
+    "input": {
+      "command": "[omitted 291 chars]",
+      "cwd": "/home/user/intent/workspaces/everywhere-update/monorepo",
+      "wait": true,
+      "max_wait_seconds": 60,
+      "_acpTitle": "Run `cd packages/cloudlands-fe && grep -n \"isRunning\\|isUnread\\|isWaiting\\|_isRunning...`"
+    },
+    "toolCallId": "toolu_vrtx_01Y8YHk9XRWfM3nUyENSgdQ6",
+    "metadata": {
+      "toolKind": "terminal",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019fffe6-fcca-74a0-ade6-1963146242a2:8",
+    "tool_use_id": "toolu_vrtx_01Y8YHk9XRWfM3nUyENSgdQ6",
+    "output": {
+      "output": "[omitted 845 chars]"
+    },
+    "is_error": false
+  },
+  {
+    "type": "tool_use",
+    "id": "019fffe6-fcca-74a0-ade6-1963146242a2:9",
+    "name": "Add All-workspaces waiting-dot task to spec and delegate it",
+    "input": {
+      "code": "[omitted 2601 chars]",
+      "summary": "Add All-workspaces waiting-dot task to spec and delegate it",
+      "_acpTitle": "Add All-workspaces waiting-dot task to spec and delegate it"
+    },
+    "toolCallId": "toolu_vrtx_01LSqFVBu3tC3kSA7a8xwa7w",
+    "metadata": {
+      "toolKind": "other",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019fffe6-fcca-74a0-ade6-1963146242a2:10",
+    "tool_use_id": "toolu_vrtx_01LSqFVBu3tC3kSA7a8xwa7w",
+    "output": {
+      "output": "[omitted 441 chars]"
+    },
+    "is_error": false
+  },
+  {
+    "type": "text",
+    "id": "019fffe6-fcca-74a0-ade6-1963146242a2:11",
+    "text": "You're right — that's a gap. The \"All workspaces\" view never got the waiting treatment.\n\n**Root cause:** `WorkspaceCard` itself already supports the grey waiting dot (precedence running > unread > waiting), but `AllWorkspacesCard.svelte` only passes `isRunning` and `isUnread` at all four of its call sites (recents, recent view, repo-grouped, status-grouped) — it never passes `isWaiting`. Only the Active card's dedicated Waiting section sets it. So a workspace that is idle-with-waiting (or in-progress-with-waiting, like your screenshot) shows no dot in the All list:\n\n````svelte path=packages/cloudlands-fe/src/lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte mode=EXCERPT\n<WorkspaceCard\n  {workspace}\n  variant=\"compact\"\n  isRunning={_isRunning(workspace)}\n  isUnread={_isUnread(workspace)}\n````\n\n**Fix delegated:** I added a task to the spec and delegated it — pass `isWaiting={workspace.waiting === true}` at every `WorkspaceCard` call site in `AllWorkspacesCard` (and check `ChatWorkspaceCard` for the same gap), with unit tests covering the dot in the All view and the running/unread precedence. The implementor will file a cloudlands-fe PR, spawn a reviewer, and report back green — I'll merge it and it rides the next hourly alpha.\n\nOne note on your screenshot: if that row's workspace has a *running* agent, the daemon reports `in_progress` and the dot should be the green pulse (running wins over waiting) — but either way, today the All view drops the waiting dot entirely, which is the bug being fixed. Ending my turn to wait for the fix PR.\n\n<!-- suggested-prompts\nShow the fix PR status.\nMerge it once green and review-clean.\n-->\n"
+  }
+]

@@ -21,14 +21,13 @@
     WalkthroughCategory,
   } from './types';
   import type { TrackedChange } from '$features/file-tracking/types';
-  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { m } from '$shared/paraglide/messages.js';
-
-  const activeWorkspace = selectActiveWorkspace();
+  import * as m from '$shared/paraglide/messages.js';
 
   interface Props {
     walkthrough: CodeWalkthrough | null;
     status: WalkthroughStatus;
+    /** Workspace owning this review tab and all of its diff reads. */
+    workspaceId: string;
     error?: string;
     /** Path to the workspace for loading file contents */
     workspacePath?: string;
@@ -46,6 +45,7 @@
   let {
     walkthrough,
     status,
+    workspaceId,
     error = '',
     workspacePath,
     changes = [],
@@ -140,9 +140,6 @@
   $effect(() => {
     if (!walkthrough || !workspacePath) return;
 
-    const workspace = $activeWorkspace;
-    if (!workspace?.id) return;
-
     // Get all unique file paths
     const allFiles = new Set([...mentionedFiles, ...otherFiles.map((c) => c.relativePath)]);
 
@@ -154,7 +151,7 @@
       // Staged diff via the daemon `git.diffs` batcher (PROTOCOL §5.6); the
       // enriched chunk carries the full old/new file sides, from which the
       // unified patch is generated (the legacy `git:diff` IPC is retired).
-      const promise = batchedGitDiff(workspace.id, true, filePath)
+      const promise = batchedGitDiff(workspaceId, true, filePath)
         .then((diffChunk) => {
           if (
             diffChunk &&

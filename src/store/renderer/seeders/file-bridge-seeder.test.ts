@@ -10,17 +10,9 @@
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-// FAKE transport only: the daemon bridge is mocked so no IPC ever fires. The
-// store + selector are mocked so the active-workspace fallback is exercised
-// without booting the real store.
+// FAKE transport only: the daemon bridge is mocked so no IPC ever fires.
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
-}));
-vi.mock('$store/renderer/store', () => ({
-  store: { state: {} },
-}));
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: { select: vi.fn(() => 'ws-active') },
 }));
 
 import { backendRequest } from '$lib/client/live/backend-transport';
@@ -57,15 +49,14 @@ describe('file-bridge-seeder', () => {
       });
     });
 
-    it('resolves the active workspace when the call site omits workspaceId', async () => {
-      mockedRequest.mockResolvedValueOnce('body');
+    it('returns the shaped missing-workspace error when workspaceId is omitted', async () => {
+      const result = await mockInvoke(IPC_CHANNELS.FILE.READ, { path: '/ws/notes/a.md' });
 
-      await mockInvoke(IPC_CHANNELS.FILE.READ, { path: '/ws/notes/a.md' });
-
-      expect(mockedRequest).toHaveBeenCalledWith('file.read', {
-        workspaceId: 'ws-active',
-        path: '/ws/notes/a.md',
+      expect(result).toEqual({
+        success: false,
+        error: { code: 'NO_WORKSPACE', message: 'No workspace available for file.read' },
       });
+      expect(mockedRequest).not.toHaveBeenCalled();
     });
 
     it('folds a daemon error into the legacy IpcResponse error object', async () => {
@@ -80,6 +71,88 @@ describe('file-bridge-seeder', () => {
         success: false,
         error: { code: 'FILE_READ_FAILED', message: 'Access denied: path outside workspace' },
       });
+    });
+
+    it('prefers the structured data.detail over a bare -32603 "Internal error" message', async () => {
+      // BackendError shape (PROTOCOL §1.4): a -32603's message is the opaque
+      // "Internal error"; the actionable reason rides in `data.detail`.
+      const daemonError = Object.assign(new Error('Internal error'), {
+        code: 'INTERNAL_ERROR',
+        data: { code: 'INTERNAL_ERROR', detail: 'Access denied: path outside workspace' },
+        rpcCode: -32603,
+      });
+      mockedRequest.mockRejectedValueOnce(daemonError);
+
+      const result = await mockInvoke(IPC_CHANNELS.FILE.READ, {
+        path: '/etc/passwd',
+        workspaceId: 'ws-1',
+      });
+
+      expect(result).toEqual({
+        success: false,
+        error: { code: 'FILE_READ_FAILED', message: 'Access denied: path outside workspace' },
+      });
+    });
+  });
+
+  describe('file:read base64 → real preload bridge (remote attachment host read, monorepo#2495)', () => {
+    const originalElectronAPI = (window as { electronAPI?: unknown }).electronAPI;
+
+    afterEach(() => {
+      (window as { electronAPI?: unknown }).electronAPI = originalElectronAPI;
+    });
+
+    it('forwards an encoding:base64 read verbatim to the preload bridge, never the daemon', async () => {
+      // Regression (monorepo#2495): the remote-attachment data arm reads the
+      // dragged file's bytes off the FE HOST via `file:read` with
+      // `encoding: 'base64'`. Routing that to the daemon `file.read` fails
+      // every ≤25MB remote attachment: the host path is outside the workspace
+      // root, so the daemon answers -32603 "Internal error" (detail: "Access
+      // denied: path outside workspace") — folded into the generic toast.
+      const response = { success: true, data: { content: 'aGVsbG8=', isBinary: false } };
+      const invokeSpy = vi.fn(async () => response);
+      (window as { electronAPI?: unknown }).electronAPI = {
+        versions: { electron: '35.0.0' },
+        invoke: invokeSpy,
+      };
+
+      const request = {
+        path: '/host/Downloads/notes.md',
+        encoding: 'base64',
+        maxSize: 25 * 1024 * 1024,
+        truncateIfLarge: false,
+      };
+      const result = await mockInvoke(IPC_CHANNELS.FILE.READ, request);
+
+      expect(invokeSpy).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.FILE.READ, request);
+      expect(result).toEqual(response);
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it('rejects a base64 read loudly on web (no native bridge)', async () => {
+      (window as { electronAPI?: unknown }).electronAPI = undefined;
+
+      await expect(
+        mockInvoke(IPC_CHANNELS.FILE.READ, { path: '/host/notes.md', encoding: 'base64' }),
+      ).rejects.toThrow(/requires the native Electron bridge/);
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it('keeps utf8 (default-encoding) reads on the daemon file.read', async () => {
+      const invokeSpy = vi.fn();
+      (window as { electronAPI?: unknown }).electronAPI = {
+        versions: { electron: '35.0.0' },
+        invoke: invokeSpy,
+      };
+      mockedRequest.mockResolvedValueOnce('text body');
+
+      await mockInvoke(IPC_CHANNELS.FILE.READ, { path: '/ws/src/x.ts', workspaceId: 'ws-1' });
+
+      expect(mockedRequest).toHaveBeenCalledWith('file.read', {
+        workspaceId: 'ws-1',
+        path: '/ws/src/x.ts',
+      });
+      expect(invokeSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -113,16 +186,32 @@ describe('file-bridge-seeder', () => {
       expect(result.error.code).toBe('UNSUPPORTED_ENCODING');
       expect(mockedRequest).not.toHaveBeenCalled();
     });
+
+    it('returns the shaped missing-workspace error when workspaceId is omitted', async () => {
+      const result = await mockInvoke(IPC_CHANNELS.FILE.WRITE, {
+        path: '/ws/x.ts',
+        content: 'hello',
+      });
+
+      expect(result).toEqual({
+        success: false,
+        error: { code: 'NO_WORKSPACE', message: 'No workspace available for file.write' },
+      });
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
   });
 
   describe('file:open / file:save (file-explorer route)', () => {
     it('open reads via file.read and returns top-level content', async () => {
       mockedRequest.mockResolvedValueOnce('file body');
 
-      const result = await mockInvoke('file:open', { path: '/ws/readme.md' });
+      const result = await mockInvoke('file:open', {
+        path: '/ws/readme.md',
+        workspaceId: 'ws-1',
+      });
 
       expect(mockedRequest).toHaveBeenCalledWith('file.read', {
-        workspaceId: 'ws-active',
+        workspaceId: 'ws-1',
         path: '/ws/readme.md',
       });
       expect(result).toEqual({ success: true, content: 'file body' });
@@ -134,14 +223,30 @@ describe('file-bridge-seeder', () => {
       const result = await mockInvoke('file:save', {
         filePath: '/ws/readme.md',
         content: 'updated',
+        workspaceId: 'ws-1',
       });
 
       expect(mockedRequest).toHaveBeenCalledWith('file.write', {
-        workspaceId: 'ws-active',
+        workspaceId: 'ws-1',
         path: '/ws/readme.md',
         content: 'updated',
       });
       expect(result).toEqual({ success: true });
+    });
+
+    it('returns the established string error when workspaceId is omitted', async () => {
+      const result = await mockInvoke('file:open', { path: '/ws/readme.md' });
+      expect(result).toEqual({ success: false, error: 'No workspace available for file.read' });
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it('requires workspaceId for file:save', async () => {
+      const result = await mockInvoke('file:save', {
+        filePath: '/ws/readme.md',
+        content: 'updated',
+      });
+      expect(result).toEqual({ success: false, error: 'No workspace available for file.write' });
+      expect(mockedRequest).not.toHaveBeenCalled();
     });
   });
 
@@ -192,23 +297,39 @@ describe('file-bridge-seeder', () => {
 
       expect(result).toEqual({ success: false, error: 'No such file' });
     });
+
+    it('requires workspaceId', async () => {
+      const result = await mockInvoke(IPC_CHANNELS.FILE.DELETE, { path: '/ws/x' });
+      expect(result).toEqual({ success: false, error: 'No workspace available for file.delete' });
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
   });
 
   describe('file:move → file.rename (§5.9)', () => {
-    it('forwards oldPath/newPath with the resolved workspace', async () => {
+    it('forwards oldPath/newPath with the explicit workspace', async () => {
       mockedRequest.mockResolvedValueOnce({ ok: true, oldPath: '/ws/a', newPath: '/ws/b' });
 
       const result = await mockInvoke(IPC_CHANNELS.FILE.MOVE, {
         oldPath: '/ws/a',
         newPath: '/ws/b',
+        workspaceId: 'ws-1',
       });
 
       expect(mockedRequest).toHaveBeenCalledWith('file.rename', {
-        workspaceId: 'ws-active',
+        workspaceId: 'ws-1',
         oldPath: '/ws/a',
         newPath: '/ws/b',
       });
       expect(result).toEqual({ success: true, data: undefined });
+    });
+
+    it('requires workspaceId', async () => {
+      const result = await mockInvoke(IPC_CHANNELS.FILE.MOVE, {
+        oldPath: '/ws/a',
+        newPath: '/ws/b',
+      });
+      expect(result).toEqual({ success: false, error: 'No workspace available for file.rename' });
+      expect(mockedRequest).not.toHaveBeenCalled();
     });
   });
 
@@ -220,14 +341,15 @@ describe('file-bridge-seeder', () => {
       const result = await mockInvoke(IPC_CHANNELS.FILE.COPY, {
         sourcePath: '/ws/a.txt',
         destinationPath: '/ws/b.txt',
+        workspaceId: 'ws-1',
       });
 
       expect(mockedRequest).toHaveBeenNthCalledWith(1, 'file.read', {
-        workspaceId: 'ws-active',
+        workspaceId: 'ws-1',
         path: '/ws/a.txt',
       });
       expect(mockedRequest).toHaveBeenNthCalledWith(2, 'file.write', {
-        workspaceId: 'ws-active',
+        workspaceId: 'ws-1',
         path: '/ws/b.txt',
         content: 'source body',
       });
@@ -240,10 +362,23 @@ describe('file-bridge-seeder', () => {
       const result = await mockInvoke(IPC_CHANNELS.FILE.COPY, {
         sourcePath: '/ws/dir',
         destinationPath: '/ws/dir-copy',
+        workspaceId: 'ws-1',
       });
 
       expect(result).toEqual({ success: false, error: 'Is a directory (os error 21)' });
       expect(mockedRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('requires workspaceId', async () => {
+      const result = await mockInvoke(IPC_CHANNELS.FILE.COPY, {
+        sourcePath: '/ws/a.txt',
+        destinationPath: '/ws/b.txt',
+      });
+      expect(result).toEqual({
+        success: false,
+        error: 'No workspace available for file.read/write',
+      });
+      expect(mockedRequest).not.toHaveBeenCalled();
     });
   });
 

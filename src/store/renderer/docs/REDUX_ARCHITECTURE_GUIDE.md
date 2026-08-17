@@ -60,18 +60,16 @@ Use the configured Store and shim-owned primitives instead of local wrappers:
 - Treat package internals, including internal reducer domains and the saga manager,
   as implementation details unless a public package export says otherwise.
 
-Small app-shape example:
+## Workspace identity boundary
 
-```ts
-import { store as appStore } from '$store/renderer/store';
-import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
-import { openPalette } from '$store/renderer/slices/palette/palette-slice';
+Workspace-rendered components do not own or synchronize a global active-workspace
+pointer. They receive a readonly ID from `getWorkspaceRouteContext()` at the
+route boundary, or an explicit `workspaceId` prop when a reusable tree is mounted
+outside that boundary; pass that ID to workspace-keyed selectors and actions.
 
-const activeWorkspaceId = selectActiveWorkspaceId.select(appStore.state);
-if (activeWorkspaceId) {
-  appStore.dispatch(openPalette());
-}
-```
+This is a component boundary only. The non-component Redux ownership guidance above
+remains unchanged: services and sagas follow their existing explicit-ID and selector
+rules rather than moving domain state into component context.
 
 For full action, reducer, selector, saga, collection, channel, and testing
 examples, read the shim source rather than expanding this guide.

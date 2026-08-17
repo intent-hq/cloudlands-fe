@@ -1,9 +1,10 @@
 <script lang="ts">
   import { Popover } from 'bits-ui';
+  import { Input } from '$lib/components/ui/input';
   import Fa from 'svelte-fa';
   import { faList } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
-  import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
   import ScrollToBottomButton from './ScrollToBottomButton.svelte';
@@ -245,8 +246,8 @@
           class="flex min-h-0 min-w-0 max-h-full flex-1 flex-col overflow-hidden"
           data-testid="chat-message-navigator-panel"
         >
-          <input
-            bind:this={searchInput}
+          <Input
+            bind:ref={searchInput}
             value={query}
             oninput={handleInput}
             onkeydown={handleSearchKeydown}

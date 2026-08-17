@@ -29,8 +29,9 @@
     selectSpecialistName,
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
-  import { faCheck, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faCircleInfo, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
+  import HarnessFeaturesModal from '$lib/components/chat/HarnessFeaturesModal.svelte';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
   import { m } from '$shared/paraglide/messages.js';
   import { deleteAgentWithUndoRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -104,6 +105,15 @@
   const agentTaskNoteId = $derived(
     agentSession?.metadata?.taskNoteId || agentSession?.agentMetadata?.taskNoteId || null,
   );
+
+  // Read-only harness version stamp (PROTOCOL §5.5). Mirrors the AgentCard
+  // context-menu entry: hidden for sessions from daemons that predate the
+  // field; selecting the item opens the read-only harness-features modal
+  // (monorepo#2459). Legacy sessions without a harnessFeatures snapshot
+  // still open the modal — every catalog feature renders OFF.
+  const harnessVersion = $derived($agent$?.harnessVersion ?? null);
+  const harnessFeatures = $derived($agent$?.harnessFeatures ?? null);
+  let harnessModalOpen = $state(false);
 
   // Copy/delete state
   let agentCopyFeedback = $state<string | null>(null);
@@ -219,7 +229,23 @@
     disabled={isAgentDeleting}
     destructive
   />
+  {#if harnessVersion}
+    <Menu.Separator />
+    <Menu.CommandItem
+      icon={faCircleInfo}
+      label={m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion })}
+      onclick={() => (harnessModalOpen = true)}
+    />
+  {/if}
 {/snippet}
+
+{#if harnessVersion}
+  <HarnessFeaturesModal
+    bind:open={harnessModalOpen}
+    version={harnessVersion}
+    features={harnessFeatures}
+  />
+{/if}
 
 {#if tab.agentId}
   {#if $workspace}

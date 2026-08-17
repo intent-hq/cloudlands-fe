@@ -7,6 +7,8 @@
  * Augment/Auggie leaks as default provider & model".
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { flushSync } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -41,8 +43,24 @@ const mocks = vi.hoisted(() => {
     effectivePrompt: { value: '' },
     explicitEffort: { value: undefined as string | undefined },
     isFileBased: { value: false },
-    fileSpecialist: { value: undefined as Record<string, unknown> | undefined },
+    fileSpecialist: {
+      value: undefined as {
+        id: string;
+        name: string;
+        description: string;
+        codingAgent?: string;
+        model?: string;
+        roleReminder?: string;
+        modelOptions?: unknown[];
+        reasoningEffort?: string;
+        behaviorPrompt: string;
+        source: 'project' | 'user';
+      } | undefined,
+    },
     effortLevels: { value: {} as Record<string, string[] | undefined> },
+    workspace: undefined as
+      { path?: string; worktreePath?: string; repositoryPath?: string } | undefined,
+    workspaceSelectCalls: [] as string[],
     // Model ids the loaded `availableModels` catalog knows about — drives the
     // selectModelDisplayName lookup that gates default-effort clearing.
     catalogModels: { value: [] as string[] },
@@ -64,23 +82,42 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: Object.assign(() => mocks.specialists$, { select: () => [] }),
   selectFileSpecialists: () => mocks.fileSpecialists$,
-  selectIsBuiltIn: { select: () => true },
-  selectIsFileBased: { select: () => mocks.isFileBased.value },
+  selectIsBuiltIn: {
+    select: (_state: unknown, id: string) => mocks.fileSpecialist.value?.id !== id,
+  },
+  selectIsFileBased: {
+    select: (_state: unknown, id: string) => mocks.fileSpecialist.value?.id === id,
+  },
   selectEffectiveModel: { select: () => '' },
   selectExplicitModel: { select: () => undefined },
   selectEffectiveBehaviorPrompt: { select: () => mocks.effectivePrompt.value },
-  selectGetFileSpecialist: { select: () => mocks.fileSpecialist.value },
+  selectGetFileSpecialist: {
+    select: (_state: unknown, id: string) =>
+      mocks.fileSpecialist.value?.id === id ? mocks.fileSpecialist.value : undefined,
+  },
   selectHasOverrides: { select: () => false },
   selectBundledSpecialists: { select: () => [] },
   selectSpecialistFilePath: { select: () => undefined },
-  selectSpecialistSourceLabel: { select: () => null },
+  selectSpecialistSourceLabel: {
+    select: (_state: unknown, id: string) =>
+      mocks.fileSpecialist.value?.id === id
+        ? mocks.fileSpecialist.value.source === 'project'
+          ? 'Project'
+          : 'User'
+        : 'Built-in',
+  },
   selectSpecialistsFolderPath: () => mocks.readable(''),
   selectEffectiveCodingAgent: { select: () => '' },
   selectExplicitReasoningEffort: { select: () => mocks.explicitEffort.value },
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspace: { select: () => undefined },
+  selectWorkspaceById: {
+    select: (_state: unknown, id: string) => {
+      mocks.workspaceSelectCalls.push(id);
+      return mocks.workspace;
+    },
+  },
 }));
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
@@ -160,6 +197,108 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import AIBehaviorEditor from './AIBehaviorEditor.svelte';
+
+const editorSource = readFileSync(
+  join(process.cwd(), 'src/lib/components/settings/AIBehaviorEditor.svelte'),
+  'utf8',
+);
+
+describe('AIBehaviorEditor workspace ownership', () => {
+  it('accepts an explicit owner without reading the legacy active workspace', () => {
+    expect(editorSource).toContain('workspaceId?: WorkspaceId | null');
+    expect(editorSource).toContain('workspaceId !== undefined ? workspaceId');
+    expect(editorSource).not.toContain('selectActiveWorkspace');
+  });
+
+  const projectSpecialist = {
+    id: 'implementor',
+    name: 'Implementor',
+    description: 'Implements tasks',
+    defaultBehaviorPrompt: 'bundled prompt',
+  };
+
+  afterEach(() => {
+    cleanup();
+    mocks.specialists$.set([]);
+    mocks.fileSpecialists$.set([]);
+    mocks.fileSpecialist.value = undefined;
+    mocks.workspace = undefined;
+    mocks.workspaceSelectCalls.length = 0;
+    mocks.dispatched.length = 0;
+  });
+
+  function renderProjectSpecialist(workspaceId?: string) {
+    mocks.fileSpecialist.value = {
+      id: 'implementor',
+      name: 'Implementor',
+      description: 'Implements tasks',
+      codingAgent: 'auggie',
+      behaviorPrompt: 'project prompt',
+      source: 'project',
+    };
+    mocks.specialists$.set([projectSpecialist]);
+    mocks.fileSpecialists$.set([mocks.fileSpecialist.value]);
+    render(AIBehaviorEditor, {
+      activeView: { type: 'specialist', id: 'implementor' },
+      ...(workspaceId === undefined ? {} : { workspaceId }),
+    });
+  }
+
+  async function savePrompt(prompt: string) {
+    const textarea = screen
+      .getAllByRole('textbox')
+      .find((element) => element.tagName === 'TEXTAREA') as HTMLTextAreaElement | undefined;
+    if (!textarea) throw new Error('Expected specialist prompt textarea');
+    await fireEvent.input(textarea, { target: { value: prompt } });
+    await fireEvent.keyDown(textarea, { key: 's', ctrlKey: true });
+  }
+
+  it('sends the explicit project workspace path when saving a project specialist', async () => {
+    mocks.workspace = { path: '/projects/example' };
+    renderProjectSpecialist('workspace-project');
+
+    await savePrompt('updated project prompt');
+
+    expect(mocks.workspaceSelectCalls).toEqual(['workspace-project']);
+    expect(mocks.dispatched.at(-1)).toEqual({
+      type: 'specialists/saveFileSpecialist',
+      payload: [
+        {
+          id: 'implementor',
+          name: 'Implementor',
+          description: 'Implements tasks',
+          codingAgent: 'auggie',
+          model: undefined,
+          roleReminder: undefined,
+          modelOptions: undefined,
+          reasoningEffort: undefined,
+          behaviorPrompt: 'updated project prompt',
+          scope: 'project',
+          workspacePath: '/projects/example',
+        },
+      ],
+    });
+  });
+
+  it('omits project workspacePath when no explicit or route owner exists', async () => {
+    mocks.workspace = { path: '/projects/should-not-be-used' };
+    renderProjectSpecialist();
+
+    await savePrompt('updated prompt without owner');
+
+    expect(mocks.workspaceSelectCalls).toEqual([]);
+    expect(mocks.dispatched.at(-1)).toEqual({
+      type: 'specialists/saveFileSpecialist',
+      payload: [
+        expect.objectContaining({
+          scope: 'project',
+          behaviorPrompt: 'updated prompt without owner',
+          workspacePath: undefined,
+        }),
+      ],
+    });
+  });
+});
 
 describe('AIBehaviorEditor Default model picker', () => {
   afterEach(() => {

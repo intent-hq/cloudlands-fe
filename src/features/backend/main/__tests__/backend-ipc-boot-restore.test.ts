@@ -16,7 +16,7 @@
  * socket. `electron` is globally mocked in `src/test-setup.ts`.
  */
 
-import { app, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // ---------------------------------------------------------------------------
 
 const lifecycle = vi.hoisted(() => ({ events: [] as Array<{ type: string; seq: number }> }));
+const ctorOpts = vi.hoisted(() => ({ list: [] as Array<Record<string, unknown>> }));
 const boot = vi.hoisted(() => ({
   probe: 'resolve' as 'resolve' | 'reject' | 'hang',
   certMismatch: false,
@@ -42,6 +43,7 @@ vi.mock('../json-rpc-client', () => {
     private readonly listeners = new Map<string, Array<(arg: unknown) => void>>();
     constructor(opts: { config: unknown }) {
       this.config = opts.config;
+      ctorOpts.list.push(opts as unknown as Record<string, unknown>);
       lifecycle.events.push({ type: 'construct', seq: this.id });
     }
     on(event: string, handler: (arg: unknown) => void): this {
@@ -165,6 +167,7 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   lifecycle.events = [];
+  ctorOpts.list = [];
   boot.probe = 'resolve';
   boot.certMismatch = false;
   store.getActiveId.mockResolvedValue('remote-1');
@@ -324,5 +327,78 @@ describe('reconcileActiveConnectionOnBoot — activeId/transport agreement', () 
     expect(store.setActiveId).toHaveBeenCalledWith('local');
     const live = mod.getBackendClient();
     expect(liveTargetId(live.getConfig() as { transport?: string; host?: string })).toBe('local');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Boot-origin protocol mismatch: a mismatch latched while boot restore pins the
+// client to a persisted remote is tagged `origin: 'boot'` (renderer suppresses
+// the advisory modal), and the tag survives the sticky `connections:list`
+// replay. An explicit switch afterwards re-tags as 'switch' (modal-worthy).
+// ---------------------------------------------------------------------------
+
+describe('reconcileActiveConnectionOnBoot — boot-origin protocol mismatch', () => {
+  /** Invoke the onHelloResult observer captured from the Nth client construction. */
+  function fireHello(index: number, result: unknown): void {
+    const onHelloResult = ctorOpts.list[index]?.onHelloResult as (r: unknown) => void;
+    onHelloResult(result);
+  }
+
+  it('tags a mismatch from the boot-restored remote as boot-origin and replays it on connections:list', async () => {
+    boot.probe = 'resolve';
+    const mod = await loadModule();
+    mod.__setLocalProtocolVersionForTesting('1');
+
+    await mod.reconcileActiveConnectionOnBoot();
+    fireHello(0, { clientId: 'c', protocolVersion: '2' }); // restored remote's handshake
+
+    expect(mod.__getActiveProtocolMismatchForTesting()).toEqual({
+      id: 'remote-1',
+      host: '10.0.0.5',
+      port: 8443,
+      localProtocolVersion: '1',
+      remoteProtocolVersion: '2',
+      origin: 'boot',
+    });
+    // The sticky replay carries the tag too.
+    const list = await mod.__listConnectionsForTesting();
+    expect(list.protocolMismatch?.origin).toBe('boot');
+  });
+
+  it('does not re-broadcast or re-tag on reconnect re-hellos (one-shot guard preserved)', async () => {
+    boot.probe = 'resolve';
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+    const mod = await loadModule();
+    mod.__setLocalProtocolVersionForTesting('1');
+
+    await mod.reconcileActiveConnectionOnBoot();
+    fireHello(0, { protocolVersion: '2' });
+    fireHello(0, { protocolVersion: '2' }); // reconnect re-runs hello
+    fireHello(0, { protocolVersion: '2' });
+
+    const mismatchCalls = send.mock.calls.filter(
+      ([channel]) => channel === 'connections:protocol-mismatch',
+    );
+    expect(mismatchCalls).toHaveLength(1);
+    expect((mismatchCalls[0]?.[1] as { origin?: string }).origin).toBe('boot');
+  });
+
+  it('re-tags as switch-origin on an explicit switch after a boot restore', async () => {
+    boot.probe = 'resolve';
+    const mod = await loadModule();
+    mod.__setBackendWindowHooksForTesting({
+      captureAndClose: vi.fn(async () => {}),
+      restore: vi.fn(() => {}),
+    });
+    mod.__setLocalProtocolVersionForTesting('1');
+
+    await mod.reconcileActiveConnectionOnBoot(); // client #0 (boot-pinned remote)
+    await mod.switchBackend('remote-1'); // client #1 (explicit switch)
+    fireHello(1, { protocolVersion: '2' });
+
+    expect(mod.__getActiveProtocolMismatchForTesting()?.origin).toBe('switch');
   });
 });

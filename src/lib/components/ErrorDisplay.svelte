@@ -15,10 +15,10 @@
     type SvelteErrorInfo,
   } from '$lib/utils/svelte-error-resolver';
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { m } from '$shared/paraglide/messages.js';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
-  const activeWorkspaceId = selectActiveWorkspaceId();
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
   interface Props {
     error: string | Error | any;
@@ -168,10 +168,7 @@
               class="inline-flex items-center gap-2 text-xs text-primary hover:underline"
               onclick={(e) => {
                 e.preventDefault();
-                handleLink(svelteErrorInfo.docsUrl, {
-                  workspaceId: $activeWorkspaceId ?? undefined,
-                  event: e,
-                });
+                handleLink(svelteErrorInfo.docsUrl, { workspaceId, event: e });
               }}
             >
               <Fa icon={faExternalLinkAlt} size="xs" />

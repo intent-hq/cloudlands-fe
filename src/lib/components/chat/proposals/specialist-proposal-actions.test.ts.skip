@@ -41,7 +41,7 @@ function makeState(overrides: Partial<StoreState> = {}): StoreState {
     specialists: specialistsInitialState,
     model: { ...modelInitialState, providerModels: { auggie: 'auggie:sonnet4.5' } },
     providerSettings: { ...providerSettingsInitialState, activeProviderId: 'auggie' },
-    workspace: { activeWorkspaceId: null, workspaces: createCollection('id') },
+    workspace: { workspaces: createCollection('id') },
     specialistProposalHistory: { entries: {} },
     githubAuth: { status: 'unauthenticated' },
     agentSessions: { byAgentId: {} },

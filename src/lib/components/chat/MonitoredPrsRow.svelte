@@ -216,7 +216,6 @@
   function inferredBlocker(monitor: PrMonitorRow): string | undefined {
     const snapshot = monitor.lastSnapshot;
     if (!snapshot) return undefined;
-    if (snapshot.mergeBlockedReason) return snapshot.mergeBlockedReason;
     if (snapshot.hasConflicts) return m.chat_monitoredPrs_blocker_conflicts();
     if (snapshot.isBehind) return m.chat_monitoredPrs_blocker_behind();
     if ((snapshot.checks.failingRequired ?? 0) > 0 || snapshot.checks.failed > 0) {
@@ -234,7 +233,9 @@
     if (snapshot.threads.resolutionRequired && snapshot.threads.unresolved > 0) {
       return m.chat_monitoredPrs_blocker_threads();
     }
-    if (snapshot.mergeable === false) return m.chat_monitoredPrs_blocker_requirements();
+    if (snapshot.mergeable === false || snapshot.mergeBlockedReason) {
+      return m.chat_monitoredPrs_blocker_requirements();
+    }
     return undefined;
   }
 

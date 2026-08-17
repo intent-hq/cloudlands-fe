@@ -40,6 +40,7 @@ import {
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { getItem, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
@@ -93,7 +94,6 @@ function getToast() {
 /** The narrow slice of the app store state the context gathering reads. */
 interface VoiceContextState {
   workspace: {
-    activeWorkspaceId: string | null;
     workspaces: Collection<Workspace, 'id'>;
   };
   workspaceAgents: {
@@ -105,15 +105,18 @@ interface VoiceContextState {
   agentSessions: { byAgentId: Record<string, { name?: string }> };
 }
 
-function activeWorkspaceId(state: VoiceContextState): string | null {
-  const wsId = state.workspace.activeWorkspaceId;
+function normalizedWorkspaceId(workspaceId: string | null): string | null {
+  const wsId = workspaceId;
   if (typeof wsId !== 'string' || wsId.length === 0 || wsId === CHIEF_WORKSPACE_ID) return null;
   return wsId;
 }
 
 /** The insertion target: the active workspace's active agent, if any. */
-export function resolveTargetAgentId(state: VoiceContextState): string | null {
-  const wsId = activeWorkspaceId(state);
+export function resolveTargetAgentId(
+  state: VoiceContextState,
+  workspaceId: string | null,
+): string | null {
+  const wsId = normalizedWorkspaceId(workspaceId);
   if (wsId === null) return null;
   return state.workspaceAgents.byWorkspaceId[wsId]?.activeAgentId ?? null;
 }
@@ -127,8 +130,9 @@ export function resolveTargetAgentId(state: VoiceContextState): string | null {
  */
 export function gatherTranscriptionContext(
   state: VoiceContextState,
+  workspaceId: string | null,
 ): VoiceTranscribeContext | undefined {
-  const wsId = activeWorkspaceId(state);
+  const wsId = normalizedWorkspaceId(workspaceId);
   if (wsId === null) return undefined;
   const workspace = getItem(state.workspace.workspaces, wsId as Workspace['id']);
   const keyterms: string[] = [];
@@ -174,6 +178,8 @@ export interface TranscriptionDeps {
   sendComposer?: () => boolean;
   /** Dispatch into the app store. Defaults to `appStore.dispatch`. */
   dispatch?: (action: unknown) => void;
+  /** Current workspace-tab seam. */
+  getCurrentWorkspaceId?: () => string | null;
 }
 
 /** Per-run flow options (gesture-decided, orthogonal to the injected deps). */
@@ -429,13 +435,16 @@ export async function handleFinishedRecording(
   const dialogFocused = isFocusInsideDialog();
 
   const state = appStore.state as unknown as VoiceContextState;
+  const routeWorkspaceId = (
+    deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state))
+  )();
   // A focused modal keeps the insertion: null target → focused-editable
   // caret path, never `focusAgentComposer` stealing focus from the modal.
-  const targetAgentId = dialogFocused ? null : resolveTargetAgentId(state);
-  const context = gatherTranscriptionContext(state);
+  const targetAgentId = dialogFocused ? null : resolveTargetAgentId(state, routeWorkspaceId);
+  const context = gatherTranscriptionContext(state, routeWorkspaceId);
   // The active workspace (chief excluded, same rule as the context) opts the
   // call into workspace-vocabulary biasing on both engines (§5.41 v5.1).
-  const workspaceId = activeWorkspaceId(state) ?? undefined;
+  const workspaceId = normalizedWorkspaceId(routeWorkspaceId) ?? undefined;
 
   const hudLabel = m.hardwareConsole_voice_transcribing_label();
   dispatch(voiceTranscriptionStarted());
@@ -561,7 +570,10 @@ export async function runTranscriptionFlow(
   if (recording === null) {
     if (!options.autoSend || isFocusInsideDialog()) return;
     const state = appStore.state as unknown as VoiceContextState;
-    await triggerComposerSend(resolveTargetAgentId(state), deps);
+    const workspaceId = (
+      deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state))
+    )();
+    await triggerComposerSend(resolveTargetAgentId(state, workspaceId), deps);
     return;
   }
   await handleFinishedRecording(recording, deps, options);

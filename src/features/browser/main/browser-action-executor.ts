@@ -155,6 +155,32 @@ const CloseTabActionSchema = z.object({
   tabId: z.string(),
 });
 
+const TunnelPortSchema = z.number().int().min(1).max(65535);
+
+// Programmatic tunnel actions (intent-hq/monorepo#2537): explicit, tab-free
+// control of daemon-port forwards. Uniform semantics regardless of transport
+// — remote ws/wss forwards ride the daemon /tunnel mux ("tunnel" backend),
+// local UDS/TCP get a direct FE-side loopback relay ("direct" backend).
+const OpenTunnelActionSchema = z
+  .object({
+    action: z.literal('openTunnel'),
+    remotePort: TunnelPortSchema,
+  })
+  .strict();
+
+const ListTunnelsActionSchema = z
+  .object({
+    action: z.literal('listTunnels'),
+  })
+  .strict();
+
+const CloseTunnelActionSchema = z
+  .object({
+    action: z.literal('closeTunnel'),
+    remotePort: TunnelPortSchema,
+  })
+  .strict();
+
 // Union of all action schemas
 const BrowserActionSchema = z.discriminatedUnion('action', [
   ListTabsActionSchema,
@@ -175,6 +201,9 @@ const BrowserActionSchema = z.discriminatedUnion('action', [
   OpenTabActionSchema,
   NavigateActionSchema,
   CloseTabActionSchema,
+  OpenTunnelActionSchema,
+  ListTunnelsActionSchema,
+  CloseTunnelActionSchema,
 ]);
 
 export type BrowserAction = z.infer<typeof BrowserActionSchema>;
@@ -287,6 +316,12 @@ async function executeAction(
 
       case 'focusTab': {
         const result = embeddedBrowserCdp.focusTab(tabId || '', workspaceId);
+        if (!result) {
+          const error = tabId
+            ? `Could not focus tab ${tabId}: workspace ${workspaceId} is not open in any window.` // i18n-ignore (agent-facing protocol error, not user-facing)
+            : 'focusTab requires a tabId.'; // i18n-ignore (agent-facing protocol error, not user-facing)
+          return { action: 'focusTab', success: false, error };
+        }
         return { action: 'focusTab', success: true, result };
       }
 
@@ -513,7 +548,15 @@ async function executeAction(
         if (agentId && result.success && result.tabId) {
           embeddedBrowserCdp.touchLease(result.tabId, agentId);
         }
-        return { action: 'openTab', success: result.success, result: { ...result, ...echo } };
+        return {
+          action: 'openTab',
+          success: result.success,
+          result: { ...result, ...echo },
+          // Surface the failure message (e.g. "workspace not open in any
+          // window", intent-hq/monorepo#2602) as the action error so the
+          // sequence-level error is descriptive instead of "undefined".
+          ...(result.success ? {} : { error: result.message }),
+        };
       }
 
       case 'closeTab': {
@@ -567,6 +610,69 @@ async function executeAction(
             url: navigateTarget.rewrite.url,
             ...rewriteEcho(navigateTarget.rewrite, navigateTarget.tunneled),
           },
+        };
+      }
+
+      case 'openTunnel': {
+        const tunnel = getTunnelProvider?.() ?? null;
+        if (!tunnel) {
+          return {
+            action: 'openTunnel',
+            success: false,
+            // i18n-ignore (agent-facing protocol error, not user-facing)
+            error: 'Tunneling is not available in this context (no tunnel provider).',
+          };
+        }
+        const backend = tunnel.backend ?? 'tunnel';
+        // Best-effort echo: true when a READY forward for the port already
+        // existed when the action ran. Concurrent openTunnel calls racing
+        // forward creation share one forward (the providers dedupe pending
+        // creates) but may each report reused: false, and a provider without
+        // activeForwards always reports false — don't branch on this flag
+        // for correctness, only for diagnostics.
+        const reused =
+          tunnel.activeForwards?.().some((f) => f.remotePort === action.remotePort) ?? false;
+        const localPort = await tunnel.forwardPort(action.remotePort);
+        return {
+          action: 'openTunnel',
+          success: true,
+          result: { remotePort: action.remotePort, localPort, backend, reused },
+        };
+      }
+
+      case 'listTunnels': {
+        const tunnel = getTunnelProvider?.() ?? null;
+        if (!tunnel) {
+          return { action: 'listTunnels', success: true, result: { tunnels: [] } };
+        }
+        const backend = tunnel.backend ?? 'tunnel';
+        const tunnels = (tunnel.activeForwards?.() ?? []).map((f) => ({ ...f, backend }));
+        return { action: 'listTunnels', success: true, result: { tunnels } };
+      }
+
+      case 'closeTunnel': {
+        const tunnel = getTunnelProvider?.() ?? null;
+        if (!tunnel?.closeForward) {
+          return {
+            action: 'closeTunnel',
+            success: false,
+            // i18n-ignore (agent-facing protocol error, not user-facing)
+            error: 'Tunneling is not available in this context (no tunnel provider).',
+          };
+        }
+        const closed = tunnel.closeForward(action.remotePort);
+        if (!closed) {
+          return {
+            action: 'closeTunnel',
+            success: false,
+            // i18n-ignore (agent-facing protocol error, not user-facing)
+            error: `No active tunnel forward for remote port ${action.remotePort}. Use { action: "listTunnels" } to see active forwards.`,
+          };
+        }
+        return {
+          action: 'closeTunnel',
+          success: true,
+          result: { remotePort: action.remotePort, closed: true },
         };
       }
 

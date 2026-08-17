@@ -21,6 +21,24 @@ const mocks = vi.hoisted(() => {
 
   const specialists$ = writable([
     {
+      id: 'spec-writer',
+      name: 'Coordinator',
+      description: 'Coordinates work across agents.',
+      source: 'bundled',
+    },
+    {
+      id: 'implementor',
+      name: 'Implementor',
+      description: 'Implements scoped tasks.',
+      source: 'bundled',
+    },
+    {
+      id: 'verifier',
+      name: 'Verifier',
+      description: 'Verifies completed work.',
+      source: 'bundled',
+    },
+    {
       id: 'ui-designer',
       name: 'UI Designer',
       description: 'Designs polished, accessible product interfaces.',
@@ -95,6 +113,32 @@ describe('RegularAgentWelcome specialist picker', () => {
     await fireEvent.click(option!);
     expect(onSpecialistChange).toHaveBeenCalledWith('ui-designer');
     expect(document.querySelector('[data-specialist-option="ui-designer"]')).toBeNull();
+  });
+
+  it('lists and selects each team specialist', async () => {
+    const onSpecialistChange = vi.fn();
+    render(RegularAgentWelcome, { props: { session: session(), onSpecialistChange } });
+
+    const trigger = screen.getByTestId('specialist-picker-trigger');
+    const teamSpecialists = [
+      ['spec-writer', 'Coordinator'],
+      ['implementor', 'Implementor'],
+      ['verifier', 'Verifier'],
+    ] as const;
+
+    await fireEvent.click(trigger);
+    for (const [id, name] of teamSpecialists) {
+      const option = document.querySelector<HTMLButtonElement>(`[data-specialist-option="${id}"]`);
+      expect(option).not.toBeNull();
+      expect(option?.textContent).toContain(name);
+    }
+
+    for (const [id] of teamSpecialists) {
+      const option = document.querySelector<HTMLButtonElement>(`[data-specialist-option="${id}"]`);
+      await fireEvent.click(option!);
+      expect(onSpecialistChange).toHaveBeenLastCalledWith(id);
+      await fireEvent.click(trigger);
+    }
   });
 
   it('marks the current specialist as selected', async () => {

@@ -33,7 +33,6 @@ const WS = 'ws-1';
 
 function stateWith(terminals: TerminalTab[]): unknown {
   return {
-    workspace: { activeWorkspaceId: WS },
     terminals: {
       height: 50,
       workspaces: {

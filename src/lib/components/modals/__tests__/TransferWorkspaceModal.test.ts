@@ -4,6 +4,7 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { ConnectionRecord } from '$store/renderer/slices/connections/connections-types';
 import type { TransferPlan } from '$store/renderer/slices/workspace-transfer/workspace-transfer-types';
 
@@ -22,6 +23,15 @@ const remote = (id: string, host: string): ConnectionRecord => ({
   fingerprint: 'AA:BB',
   isLocal: false,
 });
+
+const local: ConnectionRecord = {
+  id: LOCAL_CONNECTION_ID,
+  label: 'This machine (local)',
+  host: null,
+  port: null,
+  fingerprint: null,
+  isLocal: true,
+};
 
 const plan: TransferPlan = {
   manifest: {
@@ -71,6 +81,35 @@ describe('TransferWorkspaceModal — destination step', () => {
 
     await fireEvent.click(screen.getByTestId('transfer-download-option'));
     expect(onSelectDestination).toHaveBeenCalledWith({ kind: 'download' });
+  });
+
+  it('renders a local entry with the laptop icon as a selectable destination', async () => {
+    const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
+    const onSelectDestination = vi.fn();
+
+    render(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        workspaceTitle: 'My Space',
+        step: 'destination',
+        connections: [local, remote('conn-2', '10.0.0.3')],
+        onSelectDestination,
+      },
+    });
+
+    const localOption = screen.getByTestId(`transfer-server-${LOCAL_CONNECTION_ID}`);
+    expect(localOption.textContent).toContain('This machine (local)');
+    expect(localOption.querySelector('.fa-icon')?.getAttribute('data-icon')).toBe('laptop');
+    // Remotes keep the server icon.
+    expect(
+      screen.getByTestId('transfer-server-conn-2').querySelector('.fa-icon')?.getAttribute('data-icon'),
+    ).toBe('server');
+
+    await fireEvent.click(localOption);
+    expect(onSelectDestination).toHaveBeenCalledWith({
+      kind: 'server',
+      connectionId: LOCAL_CONNECTION_ID,
+    });
   });
 
   it('option rows are not height-constrained so two-line labels render fully', async () => {

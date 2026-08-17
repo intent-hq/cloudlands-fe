@@ -3,7 +3,6 @@ import EventWakeupAvatarHost from './EventWakeupAvatarHost.svelte';
 
 test('keeps named standard wake-up avatars optically centered at every required geometry', async ({
   mount,
-  page,
 }) => {
   const component = await mount(EventWakeupAvatarHost);
 

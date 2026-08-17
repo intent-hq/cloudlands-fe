@@ -31,6 +31,20 @@
     "ko",
     "de"
   ],
+  "chat_agentCard_menu_harnessVersion_label": [
+    "zh-CN",
+    "zh-TW",
+    "de",
+    "fr",
+    "es"
+  ],
+  "chat_harnessFeaturesModal_title": [
+    "zh-CN",
+    "zh-TW",
+    "de",
+    "fr",
+    "es"
+  ],
   "chat_agentThread_assistant_label": [
     "fr"
   ],

@@ -261,6 +261,44 @@ describe('workspaceOperationsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('removes the selected workspace entity when deletion is scheduled', async () => {
+    vi.useFakeTimers();
+    mocks.deleteWorkspace.mockResolvedValue({
+      ok: true,
+      data: { scheduled: true, deleteAt: new Date(Date.now() + 15_000).toISOString() },
+    });
+    const run = harness([workspace('ws-1'), workspace('ws-2')]);
+    run.send(requestDeleteWorkspace('ws-1'));
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
+    expect(mocks.deleteWorkspace).toHaveBeenCalledExactlyOnceWith('ws-1', {
+      undoDelayMs: WORKSPACE_OPERATION_UNDO_DURATION_MS,
+    });
+
+    run.task.cancel();
+    await run.task.toPromise();
+    await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
+  });
+
+  it('preserves other workspace entities when deleting one workspace', async () => {
+    vi.useFakeTimers();
+    mocks.deleteWorkspace.mockResolvedValue({
+      ok: true,
+      data: { scheduled: true, deleteAt: new Date(Date.now() + 15_000).toISOString() },
+    });
+    const run = harness([workspace('ws-1'), workspace('ws-2')]);
+    run.send(requestDeleteWorkspace('ws-1'));
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
+    expect(getItem(run.state().workspace.workspaces, 'ws-2')).toMatchObject({ id: 'ws-2' });
+
+    run.task.cancel();
+    await run.task.toPromise();
+    await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
+  });
+
   it('leaves the daemon-owned commit alone when the root is cancelled mid-window', async () => {
     vi.useFakeTimers();
     mocks.navigate.mockResolvedValue(undefined);

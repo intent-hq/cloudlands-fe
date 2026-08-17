@@ -46,7 +46,6 @@
   } from '$store/renderer/slices/terminals/terminals-slice';
 
   import {
-    selectActiveWorkspaceId,
     selectWorkspaceById,
     selectWorkspaceActivePullRequest,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -136,7 +135,7 @@
   const gitStatusStore = selectGitStatus(workspaceIdStore);
 
   // File tracking from Redux
-  const ftCurrentWsId$ = selectActiveWorkspaceId();
+  const fileTrackingWorkspaceId = $derived($workspaceIdStore);
   const ftStagedChanges$ = selectFtStagedChanges(workspaceIdStore);
   const ftUnstagedChanges$ = selectFtUnstagedChanges(workspaceIdStore);
   const ftCommits$ = selectFtCommits(workspaceIdStore);
@@ -144,10 +143,10 @@
   const ftChangesTruncated$ = selectFtChangesTruncated(workspaceIdStore);
   const ftTotalChangesCount$ = selectFtTotalChangesCount(workspaceIdStore);
 
-  const isLoading = $derived($ftLoading$ || (workspaceId && $ftCurrentWsId$ !== workspaceId));
+  const isLoading = $derived($ftLoading$ || fileTrackingWorkspaceId !== workspaceId);
 
   // Only use store data if workspace IDs match - prevents showing stale data during rapid switches
-  const storeHasCorrectWorkspace = $derived($ftCurrentWsId$ === workspaceId);
+  const storeHasCorrectWorkspace = $derived(fileTrackingWorkspaceId === workspaceId);
 
   // Get data from Redux - use defensive checks for reactive updates
   // CRITICAL: Only use data when it's for the correct workspace
@@ -323,7 +322,7 @@
 
     // Check if store is already loaded for this workspace on mount
     // This handles the case where the accordion is expanded after the store has already initialized
-    const storeWsId = selectActiveWorkspaceId.select(appStore.state);
+    const storeWsId = fileTrackingWorkspaceId;
     const storeLoading = selectFtLoading.select(appStore.state, workspaceId);
     if (!storeLoading && storeWsId === workspaceId) {
       logger.debug(
@@ -338,14 +337,13 @@
     }
   });
 
-  // Note: git:status-changed listener has been moved to the git Redux saga,
-  // which listens to the IPC channel and dispatches loadGitStatus.
+  // Daemon Git events dispatch the lifecycle-owned broad changes refresh.
 
   // Consolidated effect for managing hasLoadedForWorkspace
   // This single effect handles both workspace changes AND load state changes
   // to avoid race conditions between separate effects
   $effect(() => {
-    const storeWsId = $ftCurrentWsId$;
+    const storeWsId = fileTrackingWorkspaceId;
     const storeLoading = $ftLoading$;
     const workspaceChanged = lastWorkspaceId !== workspaceId;
 
@@ -388,13 +386,13 @@
       // Loading finished for current workspace
       hasLoadedForWorkspace = true;
     } else if (!storeLoading && storeWsId !== workspaceId && !hasLoadedForWorkspace) {
-      // Recovery: Store completed loading for a DIFFERENT workspace than ours.
-      // This can happen when stale callers (e.g., file-explorer-store during cleanup)
-      // call setWorkspace() with an old workspace ID, hijacking the singleton store.
-      // Re-trigger setWorkspace for our workspace to recover.
+      // Recovery: the singleton store completed loading a DIFFERENT workspace
+      // than this panel's explicit workspace ID. Stale callers (e.g.,
+      // file-explorer-store during cleanup) can leave that store on an old ID;
+      // this panel must keep its own workspace scope authoritative.
       logger.warn(
         // i18n-ignore (log line)
-        '[SidebarChangesPanel] Store on wrong workspace, skipping recovery (activeWorkspaceId is source of truth)',
+        '[SidebarChangesPanel] Store on wrong workspace; explicit panel workspace ID is authoritative',
         {
           expected: workspaceId,
           actual: storeWsId,

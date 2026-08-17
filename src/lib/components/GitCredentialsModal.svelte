@@ -1,11 +1,11 @@
 <script lang="ts">
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import { faExternalLink, faKey, faTerminal } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   interface Props {
     open?: boolean;
@@ -17,6 +17,7 @@
     operation?: string;
     command?: string;
     cwd?: string;
+    workspaceId?: string;
   }
 
   let {
@@ -29,9 +30,8 @@
     operation = 'push',
     command,
     cwd,
+    workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined,
   }: Props = $props();
-
-  const activeWorkspaceId = selectActiveWorkspaceId();
 
   // Determine error type for conditional display
   // Use raw error for display if available, otherwise fall back to user-friendly message
@@ -45,19 +45,17 @@
   }
 
   function openGitHubSSHDocs() {
-    const wsId = $activeWorkspaceId;
-    if (wsId) {
+    if (workspaceId) {
       handleLink('https://docs.github.com/en/authentication/connecting-to-github-with-ssh', {
-        workspaceId: WorkspaceId(wsId),
+        workspaceId: WorkspaceId(workspaceId),
       });
     }
   }
 
   function openGitCredentialManagerDocs() {
-    const wsId = $activeWorkspaceId;
-    if (wsId) {
+    if (workspaceId) {
       handleLink('https://github.com/git-ecosystem/git-credential-manager', {
-        workspaceId: WorkspaceId(wsId),
+        workspaceId: WorkspaceId(workspaceId),
       });
     }
   }

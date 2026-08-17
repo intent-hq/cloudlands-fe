@@ -12,7 +12,8 @@
     removeScript,
     upsertScript,
   } from '$store/renderer/slices/scripts/scripts-slice';
-  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { writable } from 'svelte/store';
 
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -30,8 +31,6 @@
   } from '$store/renderer/slices/terminals/terminals-selectors';
   import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
   import { terminalDisplayName } from '$lib/utils/terminal-display-name';
-
-  const activeWorkspace = selectActiveWorkspace();
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { getNavigationContext } from '$lib/components/layout/panel-system/panel-context';
@@ -72,6 +71,10 @@
     onCreateTerminal,
     class: className,
   }: Props = $props();
+
+  const workspaceIdStore = writable('');
+  $effect(() => workspaceIdStore.set(workspaceId));
+  const activeWorkspace = selectWorkspaceById(workspaceIdStore);
 
   const logger = createLogger('TerminalSidebar');
 
@@ -118,7 +121,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   let pendingScrollScriptId = $state<string | null>(null);
 
   async function handleDetectionResult(parsed: any): Promise<void> {
-    const snapshot = selectScriptEntries.select(appStore.state).map((s) => {
+    const snapshot = selectScriptEntries.select(appStore.state, workspaceId).map((s) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { runtime, ...scriptDef } = s;
       return { ...scriptDef };
@@ -133,7 +136,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       let addedCount = 0;
       let updatedCount = 0;
       let removedCount = 0;
-      const scriptEntries = selectScriptEntries.select(appStore.state);
+      const scriptEntries = selectScriptEntries.select(appStore.state, workspaceId);
       const autoDetectedIds = new Set(
         scriptEntries.filter((s) => s.source === 'auto-detected').map((s) => s.id),
       );
@@ -220,14 +223,14 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       if (removedCount > 0)
         parts.push(m.terminal_sidebar_detectRemoved_part({ count: removedCount }));
 
-      showAgentAssist = selectScriptEntries.select(appStore.state).length === 0;
+      showAgentAssist = selectScriptEntries.select(appStore.state, workspaceId).length === 0;
 
       if (parts.length > 0) {
         toast.success(m.terminal_sidebar_scriptsUpdated_success({ changes: parts.join(', ') }), {
           action: {
             label: m.terminal_sidebar_undo_label(),
             onClick: async () => {
-              for (const s of selectScriptEntries.select(appStore.state)) {
+              for (const s of selectScriptEntries.select(appStore.state, workspaceId)) {
                 await scriptsClient.remove(workspaceId, s.id);
               }
               for (const s of snapshot) {
@@ -268,7 +271,9 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     // Fallback: old flat array format — deduplicate
     if (Array.isArray(parsed)) {
       const existingKeys = new Set(
-        selectScriptEntries.select(appStore.state).map((s) => `${s.name}::${s.command}`),
+        selectScriptEntries
+          .select(appStore.state, workspaceId)
+          .map((s) => `${s.name}::${s.command}`),
       );
 
       let createdCount = 0;
@@ -293,7 +298,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         }
       }
 
-      showAgentAssist = selectScriptEntries.select(appStore.state).length === 0;
+      showAgentAssist = selectScriptEntries.select(appStore.state, workspaceId).length === 0;
 
       if (createdCount > 0) {
         toast.success(
@@ -412,7 +417,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         );
       }
       logger.info('Local detection complete', {
-        totalScripts: selectScriptEntries.select(appStore.state).length,
+        totalScripts: selectScriptEntries.select(appStore.state, workspaceId).length,
         detectedCount,
         source: options.source ?? 'primary',
       });
@@ -429,7 +434,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   }
 
   function buildExistingScriptsContext(): string {
-    const existingScripts = selectScriptEntries.select(appStore.state).map((s) => ({
+    const existingScripts = selectScriptEntries.select(appStore.state, workspaceId).map((s) => ({
       id: s.id,
       name: s.name,
       command: s.command,
@@ -467,16 +472,11 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   const COLLAPSED_SCRIPT_LIMIT = 6;
 
   // Store bindings
-  const _sidebarTerminals = selectTerminalsSelector();
-  const _sidebarActiveTerminalId = selectActiveTerminalIdSelector();
-  const scriptEntries$ = selectScriptEntries();
-  // Background agent executor state via direct selector subscriptions.
-  // Selector readables must be created at component init; workspaceId is
-  // stable for the lifetime of this sidebar.
-  // svelte-ignore state_referenced_locally
-  const _scriptDetectIsRunning$ = selectExecutorIsRunning(workspaceId, 'script-detect');
-  // svelte-ignore state_referenced_locally
-  const _scriptDetectAgentId$ = selectExecutorAgentId(workspaceId, 'script-detect');
+  const _sidebarTerminals = selectTerminalsSelector(workspaceIdStore);
+  const _sidebarActiveTerminalId = selectActiveTerminalIdSelector(workspaceIdStore);
+  const scriptEntries$ = selectScriptEntries(workspaceIdStore);
+  const _scriptDetectIsRunning$ = selectExecutorIsRunning(workspaceIdStore, 'script-detect');
+  const _scriptDetectAgentId$ = selectExecutorAgentId(workspaceIdStore, 'script-detect');
 
   // Derived
   const hasScripts = $derived($scriptEntries$.length > 0);
@@ -680,7 +680,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     // Range select with Shift+click
     if (event && event.shiftKey && lastClickedScriptId) {
       event.preventDefault();
-      const scripts = sortScripts(selectScriptEntries.select(appStore.state));
+      const scripts = sortScripts(selectScriptEntries.select(appStore.state, workspaceId));
       const lastIndex = scripts.findIndex((s) => s.id === lastClickedScriptId);
       const currentIndex = scripts.findIndex((s) => s.id === scriptId);
       if (lastIndex !== -1 && currentIndex !== -1) {
@@ -850,7 +850,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   $effect(() => {
     if (pendingScrollScriptId) {
       const script = selectScriptEntries
-        .select(appStore.state)
+        .select(appStore.state, workspaceId)
         .find((s) => s.id === pendingScrollScriptId);
       if (script?.runtime.status === 'running') {
         const id = pendingScrollScriptId;

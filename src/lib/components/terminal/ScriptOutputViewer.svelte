@@ -8,6 +8,7 @@
    * On re-open, loads buffered output from the store.
    */
   import { onDestroy, untrack } from 'svelte';
+  import { writable } from 'svelte/store';
   import { Terminal } from '@xterm/xterm';
   import { FitAddon } from '@xterm/addon-fit';
   import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -43,6 +44,11 @@
 
   let { scriptId, workspaceId, class: className = '', onDelete }: Props = $props();
 
+  const workspaceIdStore = writable('');
+  const scriptIdStore = writable('');
+  $effect(() => workspaceIdStore.set(workspaceId));
+  $effect(() => scriptIdStore.set(scriptId));
+
   // xterm state
   let xtermContainer: HTMLDivElement;
   let xterm: Terminal | null = null;
@@ -52,14 +58,11 @@
   let initRafId: number | null = null;
   let fitRafId: number | null = null;
 
-  // Reactive state from Redux store. Selector readables must be created at
-  // component init; scriptId is stable for the lifetime of this viewer.
-  // svelte-ignore state_referenced_locally
-  const script$ = selectScriptById(scriptId);
-  // svelte-ignore state_referenced_locally
-  const runtime$ = selectScriptRuntime(scriptId);
-  // svelte-ignore state_referenced_locally
-  const output$ = selectScriptOutput(scriptId);
+  // Reactive state from Redux store. Selector readables are created once at
+  // component init and follow route-driven prop changes through readable args.
+  const script$ = selectScriptById(workspaceIdStore, scriptIdStore);
+  const runtime$ = selectScriptRuntime(workspaceIdStore, scriptIdStore);
+  const output$ = selectScriptOutput(workspaceIdStore, scriptIdStore);
   // Canonical code-font preference: used to construct the read-only xterm
   // and to update its font option later without disposing/replaying output.
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
@@ -160,7 +163,7 @@
 
   function loadBufferedOutput(): void {
     if (!xterm) return;
-    const buffer = selectScriptOutput.select(appStore.state, scriptId);
+    const buffer = selectScriptOutput.select(appStore.state, workspaceId, scriptId);
     if (buffer.chunks.length > 0) {
       // Replay the raw stream verbatim — plain concatenation, no separators.
       xterm.write(buffer.chunks.map((c) => c.text).join(''));
@@ -242,7 +245,7 @@
       return;
     }
 
-    const buffer = selectScriptOutput.select(appStore.state, scriptId);
+    const buffer = selectScriptOutput.select(appStore.state, workspaceId, scriptId);
     const lastLines = scriptOutputTailText(buffer, 100);
     const exitCode = $runtime$.exitCode;
     const failedText =

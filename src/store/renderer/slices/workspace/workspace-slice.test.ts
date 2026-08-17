@@ -14,7 +14,6 @@ import {
   completeWorkspaceTitleMutation,
   failWorkspaceTitleMutation,
   cleanupRecency,
-  clearActiveWorkspace,
   clearPendingCreation,
   clearWorkspacePendingDeletion,
   initialState,
@@ -24,7 +23,6 @@ import {
   recordWorkspaceView,
   resetWorkspaceState,
   removeWorkspaceEntity,
-  setActiveWorkspaceId,
   setPendingCreation,
   setWorkspaceCreating,
   setWorkspaceEntity,
@@ -35,9 +33,6 @@ import {
   workspaceReducer,
 } from './workspace-slice';
 import {
-  selectActiveWorkspace,
-  selectActiveWorkspaceId,
-  selectCurrentWorkspace,
   selectWorkspacesSortedByRecency,
   selectWorkspaceById,
   selectWorkspaceHasLoaded,
@@ -84,11 +79,6 @@ describe('workspaceReducer', () => {
     expect(workspaceReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
 
-  it('stores the active workspace id explicitly', () => {
-    const next = workspaceReducer(initialState, setActiveWorkspaceId('ws-1'));
-    expect(next.activeWorkspaceId).toBe('ws-1');
-  });
-
   describe('workspace recency tracking', () => {
     it('loads persisted recency data', () => {
       const recency = { lastViewedAt: { 'ws-1': 100, 'ws-2': 200 } };
@@ -122,22 +112,12 @@ describe('workspaceReducer', () => {
     });
   });
 
-  it('tracks the workspace opened in terminal overlay actions', () => {
-    expect(workspaceReducer(initialState, openTerminalOverlay('ws-2')).activeWorkspaceId).toBe(
-      'ws-2',
-    );
-    expect(workspaceReducer(initialState, toggleTerminalOverlay('ws-3')).activeWorkspaceId).toBe(
-      'ws-3',
-    );
+  it('does not store terminal overlay workspace state', () => {
+    expect(workspaceReducer(initialState, openTerminalOverlay('ws-2'))).toBe(initialState);
+    expect(workspaceReducer(initialState, toggleTerminalOverlay('ws-3'))).toBe(initialState);
   });
 
   describe('workspace request state', () => {
-    it('clears the active workspace explicitly', () => {
-      const withActive = workspaceReducer(initialState, setActiveWorkspaceId('ws-1'));
-      const next = workspaceReducer(withActive, clearActiveWorkspace());
-      expect(next.activeWorkspaceId).toBeNull();
-    });
-
     it('tracks loading, error, loaded, and creating flags', () => {
       let state = workspaceReducer(initialState, setWorkspaceLoading(true));
       state = workspaceReducer(state, setWorkspaceError('boom'));
@@ -263,13 +243,11 @@ describe('workspaceReducer', () => {
     it('resets workspace migration state including recency', () => {
       const ws = makeWorkspace({ id: 'ws-1' });
       let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
-      state = workspaceReducer(state, setActiveWorkspaceId('ws-1'));
       state = workspaceReducer(state, setWorkspaceLoading(true));
       state = workspaceReducer(state, markWorkspacePendingDeletion('ws-1'));
       state = workspaceReducer(state, recordWorkspaceView('ws-1', 123));
 
       const reset = workspaceReducer(state, resetWorkspaceState());
-      expect(reset.activeWorkspaceId).toBeNull();
       expect(reset.workspaces).toEqual(createCollection('id'));
       expect(reset.loading).toBe(false);
       expect(reset.pendingDeletions).toEqual({});
@@ -582,6 +560,12 @@ describe('workspaceReducer', () => {
       expect(state).toBe(initialState);
     });
 
+    it('preserves state identity when removing an absent non-active workspace', () => {
+      expect(workspaceReducer(initialState, removeWorkspaceEntity('ws-missing'))).toBe(
+        initialState,
+      );
+    });
+
     it('does not affect other workspace entities', () => {
       const ws1 = makeWorkspace({ id: 'ws-1' });
       const ws2 = makeWorkspace({ id: 'ws-2' });
@@ -592,107 +576,12 @@ describe('workspaceReducer', () => {
       expect(getItem(state.workspaces, 'ws-2')).toEqual(ws2);
     });
 
-    it('also removes the workspace from the ordered list and clears active if needed', () => {
+    it('also removes the workspace from the ordered list', () => {
       const ws = makeWorkspace({ id: 'ws-1' });
       let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
-      state = workspaceReducer(state, setActiveWorkspaceId('ws-1'));
 
       state = workspaceReducer(state, removeWorkspaceEntity('ws-1'));
       expect(state.workspaces.ids).toEqual([]);
-      expect(state.activeWorkspaceId).toBeNull();
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // Regression: active-workspace Redux hydration
-  // -----------------------------------------------------------------------
-
-  describe('active-workspace hydration regression', () => {
-    it('workspace switch cycle: Redux holds both entities and active pointer resolves to the new workspace', () => {
-      const wsA = makeWorkspace({ id: 'ws-A', title: 'Workspace A' });
-      const wsB = makeWorkspace({ id: 'ws-B', title: 'Workspace B' });
-
-      // Simulate opening ws-A: hydrate entity + set active
-      let state = workspaceReducer(initialState, setWorkspaceEntity(wsA));
-      state = workspaceReducer(state, setActiveWorkspaceId('ws-A'));
-
-      expect(getItem(state.workspaces, 'ws-A')).toEqual(wsA);
-      expect(state.activeWorkspaceId).toBe('ws-A');
-
-      // Simulate switching to ws-B: hydrate entity + set active
-      state = workspaceReducer(state, setWorkspaceEntity(wsB));
-      state = workspaceReducer(state, setActiveWorkspaceId('ws-B'));
-
-      // Active pointer moved to ws-B
-      expect(state.activeWorkspaceId).toBe('ws-B');
-      // ws-B entity is present
-      expect(getItem(state.workspaces, 'ws-B')).toEqual(wsB);
-      // ws-A entity is still retained (not cleared on switch)
-      expect(getItem(state.workspaces, 'ws-A')).toEqual(wsA);
-    });
-
-    it('switching workspaces does not leave stale data as the active Redux value', () => {
-      const wsA = makeWorkspace({ id: 'ws-A', title: 'Stale Workspace' });
-      const wsB = makeWorkspace({ id: 'ws-B', title: 'Fresh Workspace' });
-
-      // Open ws-A
-      let state = workspaceReducer(initialState, setWorkspaceEntity(wsA));
-      state = workspaceReducer(state, setActiveWorkspaceId('ws-A'));
-
-      // Switch to ws-B
-      state = workspaceReducer(state, setWorkspaceEntity(wsB));
-      state = workspaceReducer(state, setActiveWorkspaceId('ws-B'));
-
-      // selectActiveWorkspace must resolve to ws-B, not ws-A
-      const fullState = { workspace: state } as any;
-      const active = selectActiveWorkspace.select(fullState);
-      expect(active).toEqual(wsB);
-      expect(active?.title).toBe('Fresh Workspace');
-    });
-
-    it('updateWorkspaceEntity keeps the active workspace entity current after IPC update', () => {
-      const ws = makeWorkspace({ id: 'ws-1', title: 'Original Title' });
-
-      // Hydrate and activate
-      let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
-      state = workspaceReducer(state, setActiveWorkspaceId('ws-1'));
-
-      // Simulate batched workspace:updated IPC storage
-      state = workspaceReducer(
-        state,
-        bulkUpdateWorkspaceEntities([updateWorkspaceEntity('ws-1', { title: 'Updated Title' })]),
-      );
-
-      // Active workspace selector should reflect the update
-      const fullState = { workspace: state } as any;
-      const active = selectActiveWorkspace.select(fullState);
-      expect(active?.title).toBe('Updated Title');
-      // Other fields untouched
-      expect(active?.branch).toBe('main');
-    });
-
-    it('setWorkspaceEntity re-hydration overwrites stale cached entity for the active workspace', () => {
-      const wsOld = makeWorkspace({ id: 'ws-1', title: 'Cached' });
-      const wsFresh = makeWorkspace({ id: 'ws-1', title: 'From Backend' });
-
-      // Pre-populate from cache
-      let state = workspaceReducer(initialState, setWorkspaceEntity(wsOld));
-      state = workspaceReducer(state, setActiveWorkspaceId('ws-1'));
-
-      // Post-open confirmation overwrites with fresher data
-      state = workspaceReducer(state, setWorkspaceEntity(wsFresh));
-
-      const fullState = { workspace: state } as any;
-      expect(selectActiveWorkspace.select(fullState)?.title).toBe('From Backend');
-    });
-
-    it('active workspace is undefined when entity has not been hydrated yet', () => {
-      // Only activeWorkspaceId is set, but no entity stored
-      const state = workspaceReducer(initialState, setActiveWorkspaceId('ws-1'));
-      const fullState = { workspace: state } as any;
-      expect(selectActiveWorkspace.select(fullState)).toBeUndefined();
-      // selectWorkspaceById also returns undefined
-      expect(selectWorkspaceById.select(fullState, 'ws-1')).toBeUndefined();
     });
   });
 });
@@ -704,12 +593,6 @@ describe('workspaceReducer', () => {
 describe('workspace selectors', () => {
   const stateWith = (ws: Partial<typeof initialState>) => ({
     workspace: { ...initialState, ...ws },
-  });
-
-  it('selectActiveWorkspaceId returns the active workspace id', () => {
-    expect(selectActiveWorkspaceId.select(stateWith({ activeWorkspaceId: 'ws-1' }) as any)).toBe(
-      'ws-1',
-    );
   });
 
   it('exposes workspace request-state selectors', () => {
@@ -775,33 +658,6 @@ describe('workspace selectors', () => {
     expect(selectWorkspaceIsEmpty.select(state as any)).toBe(false);
   });
 
-  it('selectActiveWorkspace resolves active workspace from the collection', () => {
-    const ws = makeWorkspace({ id: 'ws-1', title: 'Active' });
-    const state = stateWith({
-      activeWorkspaceId: 'ws-1',
-      workspaces: createCollection('id', [ws]),
-    });
-    expect(selectActiveWorkspace.select(state as any)).toEqual(ws);
-  });
-
-  it('selectActiveWorkspace returns undefined when no active id', () => {
-    expect(selectActiveWorkspace.select(stateWith({}) as any)).toBeUndefined();
-  });
-
-  it('selectActiveWorkspace returns undefined when active id not hydrated', () => {
-    const state = stateWith({ activeWorkspaceId: 'ws-1', workspaces: createCollection('id') });
-    expect(selectActiveWorkspace.select(state as any)).toBeUndefined();
-  });
-
-  it('selectCurrentWorkspace aliases the active workspace selector', () => {
-    const ws = makeWorkspace({ id: 'ws-1', title: 'Current' });
-    const state = stateWith({
-      activeWorkspaceId: 'ws-1',
-      workspaces: createCollection('id', [ws]),
-    });
-    expect(selectCurrentWorkspace.select(state as any)).toEqual(ws);
-  });
-
   describe('workspaceDeleted', () => {
     it('removes the workspace entity from the collection', () => {
       const ws1 = makeWorkspace({ id: 'ws-1' as WorkspaceId });
@@ -811,24 +667,6 @@ describe('workspace selectors', () => {
       state = workspaceReducer(state, workspaceDeleted('ws-1', []));
       expect(getItem(state.workspaces, 'ws-1')).toBeUndefined();
       expect(getItem(state.workspaces, 'ws-2')).toBeDefined();
-    });
-
-    it('clears activeWorkspaceId if it matches the deleted workspace', () => {
-      const ws = makeWorkspace({ id: 'ws-1' as WorkspaceId });
-      let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
-      state = workspaceReducer(state, setActiveWorkspaceId('ws-1'));
-      state = workspaceReducer(state, workspaceDeleted('ws-1', []));
-      expect(state.activeWorkspaceId).toBeNull();
-    });
-
-    it('does not clear activeWorkspaceId if it does not match the deleted workspace', () => {
-      const ws1 = makeWorkspace({ id: 'ws-1' as WorkspaceId });
-      const ws2 = makeWorkspace({ id: 'ws-2' as WorkspaceId });
-      let state = workspaceReducer(initialState, setWorkspaceEntity(ws1));
-      state = workspaceReducer(state, setWorkspaceEntity(ws2));
-      state = workspaceReducer(state, setActiveWorkspaceId('ws-2'));
-      state = workspaceReducer(state, workspaceDeleted('ws-1', []));
-      expect(state.activeWorkspaceId).toBe('ws-2');
     });
 
     it('preserves the deletion tombstone so late refetches stay blocked', () => {

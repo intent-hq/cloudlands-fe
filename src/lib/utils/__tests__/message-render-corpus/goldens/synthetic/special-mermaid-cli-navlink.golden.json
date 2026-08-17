@@ -1,0 +1,47 @@
+{
+  "note": "mermaid + ws-block:cli + nav-link fenced blocks",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Flow:"
+        },
+        {
+          "type": "mermaid",
+          "content": "flowchart LR\n  A --> B"
+        },
+        {
+          "type": "text",
+          "content": "Run this:"
+        },
+        {
+          "type": "cli",
+          "content": "pnpm run check",
+          "metadata": {
+            "cliData": {
+              "command": "pnpm run check",
+              "description": "typecheck"
+            }
+          }
+        },
+        {
+          "type": "text",
+          "content": "Open settings:"
+        },
+        {
+          "type": "nav_link",
+          "content": "Settings",
+          "metadata": {
+            "navLinkData": {
+              "target": "/settings",
+              "label": "Settings"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

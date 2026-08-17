@@ -90,7 +90,8 @@ describe('LazyTurn lifecycle', () => {
         children,
       });
       MockResizeObserver.instances[0].fire(320, 800);
-      await vi.advanceTimersByTimeAsync(60);
+      // 50ms measurement debounce + the swap-out settle window.
+      await vi.advanceTimersByTimeAsync(60 + 250);
       await tick();
 
       expect(view.queryByTestId('turn-content')).toBeNull();
@@ -155,5 +156,69 @@ describe('LazyTurn lifecycle', () => {
     expect(heightCache.get('turn-after', 640)).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
     view.unmount();
+  });
+
+  it('does not thrash content↔placeholder when the intersection state jitters at the boundary', async () => {
+    // Repro regime: follow-bottom pinned during streaming. Every frame the
+    // tail mutates and the scroller re-pins, so a turn sitting at the
+    // IntersectionObserver boundary (rootMargin '50% 0px') is reported
+    // alternately inside/outside the extended viewport on consecutive
+    // frames. Without a settle window on the swap-out edge, each
+    // notification performs a full content↔placeholder DOM swap — a 60fps
+    // flicker (and, with a stale cached placeholder height, a per-frame
+    // scrollHeight perturbation that feeds the jitter).
+    vi.useFakeTimers();
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(320);
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(800);
+    const heightCache = createLazyTurnHeightCache('boundary-jitter');
+    // Previously measured turn (placeholder height available → swap-out eligible).
+    heightCache.set('turn-osc', 200, 800);
+    const scrollRoot = document.createElement('div');
+    const view = render(LazyTurn, {
+      props: { turnKey: 'turn-osc', heightCache, scrollRoot, children },
+    });
+    try {
+      await tick();
+      const io = MockIntersectionObserver.instances[0];
+      const container = view.container.querySelector<HTMLElement>('.lazy-turn');
+      if (!container) throw new Error('missing .lazy-turn container');
+      let swaps = 0;
+      let last = container.getAttribute('data-lazy-visible');
+      const sample = async () => {
+        await tick();
+        const current = container.getAttribute('data-lazy-visible');
+        if (current !== last) {
+          swaps++;
+          last = current;
+        }
+      };
+
+      // ~half a second of per-frame boundary jitter at 60fps.
+      for (let frame = 0; frame < 30; frame++) {
+        io.fire(frame % 2 === 0);
+        await sample();
+        await vi.advanceTimersByTimeAsync(16);
+        await sample();
+      }
+
+      // Jitter stops with the turn outside the boundary; let things settle.
+      io.fire(false);
+      await vi.advanceTimersByTimeAsync(1000);
+      await sample();
+
+      // One swap-in when the turn first entered, one settled swap-out after
+      // the noise stops. Pre-fix this swapped on every notification (30+).
+      expect(swaps).toBeLessThanOrEqual(3);
+      expect(view.queryByTestId('turn-content')).toBeNull();
+      // The settled placeholder carries the freshly measured content height
+      // (320px), not the stale seeded one (200px) — geometry-neutral swap.
+      expect(
+        view.container.querySelector<HTMLElement>('.lazy-turn-placeholder')?.style.height,
+      ).toBe('320px');
+    } finally {
+      view.unmount();
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    }
   });
 });

@@ -1,0 +1,26 @@
+{
+  "note": "tags inside a ``` fence should stay literal",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "The stream looks like:"
+        },
+        {
+          "type": "code",
+          "content": "<group:Working>\ndoing things\n</group>",
+          "metadata": {
+            "language": "plaintext"
+          }
+        },
+        {
+          "type": "text",
+          "content": "That fence should render verbatim."
+        }
+      ]
+    }
+  ]
+}

@@ -8,7 +8,7 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { Badge } from '$lib/components/ui/badge';
 
-  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { updateWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 
   import {
@@ -26,14 +26,17 @@
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { toStore } from 'svelte/store';
 
   interface Props {
+    workspaceId?: WorkspaceId | null;
     onClose?: () => void;
     onCreated?: (pr: PullRequestInfo) => void;
   }
 
-  let { onClose, onCreated }: Props = $props();
-  const activeWorkspace = selectActiveWorkspace();
+  let { workspaceId, onClose, onCreated }: Props = $props();
+  const workspaceId$ = toStore(() => workspaceId ?? '');
+  const workspace$ = selectWorkspaceById(workspaceId$);
 
   // Form state
   let generatingContent = $state(false);
@@ -51,7 +54,7 @@
   let autoCreatePending = $state(false);
 
   async function generatePRContent() {
-    const workspace = selectActiveWorkspace.select(appStore.state);
+    const workspace = selectWorkspaceById.select(appStore.state, workspaceId ?? '');
     if (!workspace) return;
 
     generatingContent = true;
@@ -92,7 +95,7 @@
   }
 
   async function createPullRequest() {
-    const workspace = selectActiveWorkspace.select(appStore.state);
+    const workspace = selectWorkspaceById.select(appStore.state, workspaceId ?? '');
     if (!workspace) return;
     if (!formData.title.value) {
       error = m.workspace_prCreator_titleRequired_error();
@@ -159,10 +162,10 @@
     <div class="flex items-center gap-3">
       <Fa icon={faCodePullRequest} size="lg" />
       <h2 class="text-lg font-semibold">{m.workspace_prCreator_title()}</h2>
-      {#if $activeWorkspace?.branch}
+      {#if $workspace$?.branch}
         <Badge variant="secondary" class="text-xs">
           <Fa icon={faCodeBranch} size="xs" class="mr-1" />
-          {$activeWorkspace.branch}
+          {$workspace$.branch}
         </Badge>
       {/if}
     </div>

@@ -43,10 +43,7 @@ import {
 import { clearChatDraft } from '../../transient-ui/transient-ui-slice';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { createChiefVirtualWorkspace } from '../../workspace-agents/chief-virtual-workspace';
-import {
-  workspaceDeleted,
-  workspaceUnmounted,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   chatErrorCleared,
   chatLastAttemptedMessageSet,
@@ -93,12 +90,11 @@ type LifecycleSendOptions = {
 
 function* waitForTranscriptRefresh(agentId: string, wsId: string): SagaGenerator<void> {
   while (true) {
-    const { settled, unmounted, deleted } = yield* race({
+    const { settled, unmounted } = yield* race({
       settled: take(transcriptHydrationSettled),
       unmounted: take(workspaceUnmounted),
-      deleted: take(workspaceDeleted),
     });
-    if (unmounted?.payload[0] === wsId || deleted?.payload[0] === wsId) return;
+    if (unmounted?.payload[0] === wsId) return;
     if (!settled || settled.payload[0] !== agentId) continue;
     yield* delay(0);
     const status = yield* selectTranscriptHydration.effect(agentId);

@@ -7,14 +7,14 @@ import {
 const blocks = (...types: string[]) => types.map((type) => ({ type }));
 
 describe('operational cluster spacing', () => {
-  it('leaves adjacent spacing to the parent stack and owns 16px cluster boundaries', () => {
+  it('uses the 4px parent seam and adds 8px only before Thinking after prose or a tool', () => {
     const content = blocks('text', 'thinking', 'tool_use', 'tool_use', 'text');
 
     expect(content.map((_, index) => getOperationalClusterSpacingClass(content, index))).toEqual([
       '',
-      'pt-[var(--chat-operational-text-gap,1rem)]',
+      'pt-2',
       '',
-      'pb-[var(--chat-operational-text-gap,1rem)]',
+      '',
       '',
     ]);
   });
@@ -38,56 +38,52 @@ describe('operational cluster spacing', () => {
   });
 
   it.each(['attention_card', 'text', 'message', 'resource', 'proposal', 'image'])(
-    'puts exactly 16px above Thinking when it follows %s',
+    'adds 8px before Thinking after %s for a 12px total seam',
     (previousType) => {
-      expect(getOperationalClusterSpacingClass(blocks(previousType, 'thinking'), 1)).toBe(
-        'pt-[var(--chat-operational-text-gap,1rem)] pb-4',
-      );
+      expect(getOperationalClusterSpacingClass(blocks(previousType, 'thinking'), 1)).toBe('pt-2');
       expect(isAdjacentOperationalClusterRow(blocks(previousType, 'thinking'), 1)).toBe(false);
     },
   );
 
-  it('combines the notice bottom margin with 8px seam space for one 16px boundary', () => {
-    expect(getOperationalClusterSpacingClass(blocks('notice', 'thinking'), 1)).toBe('pt-2 pb-4');
+  it('adds 8px before Thinking after a notice for a 12px total seam', () => {
+    expect(getOperationalClusterSpacingClass(blocks('notice', 'thinking'), 1)).toBe('pt-2');
     expect(isAdjacentOperationalClusterRow(blocks('notice', 'thinking'), 1)).toBe(false);
   });
 
   it('does not apply the Thinking seam adjustment to a tool row after a notice', () => {
-    expect(getOperationalClusterSpacingClass(blocks('notice', 'tool_use'), 1)).toBe(
-      'pt-[var(--chat-operational-text-gap,1rem)] pb-4',
-    );
+    expect(getOperationalClusterSpacingClass(blocks('notice', 'tool_use'), 1)).toBe('');
   });
 
   it('does not add synthetic top space to first-child Thinking', () => {
-    expect(getOperationalClusterSpacingClass(blocks('thinking'), 0)).toBe('pb-4');
+    expect(getOperationalClusterSpacingClass(blocks('thinking'), 0)).toBe('');
   });
 
   it.each(['thinking', 'content_group'])(
     'leaves %s-to-Thinking adjacency to the shared 4px row contract',
     (previousType) => {
       const content = blocks(previousType, 'thinking');
-      expect(getOperationalClusterSpacingClass(content, 1)).toBe('pb-4');
+      expect(getOperationalClusterSpacingClass(content, 1)).toBe('');
       expect(isAdjacentOperationalClusterRow(content, 1)).toBe(true);
     },
   );
 
   it('adds 8px to the parent-owned 4px seam from tool to Thinking', () => {
     const content = blocks('tool_use', 'thinking');
-    expect(getOperationalClusterSpacingClass(content, 1)).toBe('pt-2 pb-4');
+    expect(getOperationalClusterSpacingClass(content, 1)).toBe('pt-2');
     expect(isAdjacentOperationalClusterRow(content, 1)).toBe(true);
   });
 
-  it('gives a one-row boundary both outer margins', () => {
-    expect(getOperationalClusterSpacingClass(blocks('tool_use'), 0)).toBe('pt-4 pb-4');
+  it('leaves a one-row boundary to its parent stack', () => {
+    expect(getOperationalClusterSpacingClass(blocks('tool_use'), 0)).toBe('');
   });
 
-  it('keeps the generic 10px rhythm between non-operational blocks', () => {
+  it('leaves non-operational seams to the 4px parent stack', () => {
     const content = blocks('text', 'image', 'proposal');
 
     expect(content.map((_, index) => getOperationalClusterSpacingClass(content, index))).toEqual([
       '',
-      'pt-2.5',
-      'pt-2.5',
+      '',
+      '',
     ]);
   });
 
@@ -99,9 +95,9 @@ describe('operational cluster spacing', () => {
       content.map((_, index) => getOperationalClusterSpacingClass(content, index, visible)),
     ).toEqual([
       '',
-      'pt-[var(--chat-operational-text-gap,1rem)]',
       '',
-      'pt-2 pb-[var(--chat-operational-text-gap,1rem)]',
+      '',
+      'pt-2',
       '',
     ]);
     expect(

@@ -4,6 +4,7 @@ import {
   it,
 } from 'vitest';
 import {
+  mapDaemonMcpState,
   normalizeDisabledServers,
   normalizeMcpServerStatus,
   normalizeMcpServersPayload,
@@ -11,6 +12,15 @@ import {
 } from './mcp-settings-normalization';
 
 describe('mcp-settings normalization', () => {
+  it('maps daemon states (PROTOCOL §5.22) to FE badge statuses', () => {
+    expect(mapDaemonMcpState('running')).toBe('connected');
+    expect(mapDaemonMcpState('starting')).toBe('configured');
+    expect(mapDaemonMcpState('stopped')).toBe('stopped');
+    expect(mapDaemonMcpState('error')).toBe('error');
+    expect(mapDaemonMcpState('warming-up')).toBeNull();
+    expect(mapDaemonMcpState(undefined)).toBeNull();
+  });
+
   it('converts object-shaped errors into stable string messages', () => {
     expect(toMcpErrorMessage({ message: 'Main process failed' }, 'fallback')).toBe(
       'Main process failed',

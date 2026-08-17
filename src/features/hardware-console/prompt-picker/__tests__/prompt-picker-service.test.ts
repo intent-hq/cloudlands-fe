@@ -56,6 +56,8 @@ import {
   DEFAULT_CENTER_DWELL_MS,
   extractSubmittedPromptText,
   installHardwareConsolePromptPickerJoystick,
+  persistHardwareConsolePromptPickerLimit,
+  persistHardwareConsolePromptUsage,
 } from '../prompt-picker-service';
 import { promptPickerSaga } from '$store/renderer/slices/hardware-console/sagas/prompt-picker-saga';
 import {
@@ -293,5 +295,35 @@ describe('promptPickerSaga limit persistence', () => {
         },
       ]);
     });
+  });
+});
+
+describe('prompt persist helpers on a failed bag read', () => {
+  it('persistHardwareConsolePromptUsage rejects and does not write', async () => {
+    (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await expect(persistHardwareConsolePromptUsage([])).rejects.toThrow('hardwareConsole.state');
+    expect(appClient.settings.update).not.toHaveBeenCalled();
+  });
+
+  it('persistHardwareConsolePromptPickerLimit rejects and does not write', async () => {
+    (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await expect(persistHardwareConsolePromptPickerLimit(8)).rejects.toThrow(
+      'hardwareConsole.state',
+    );
+    expect(appClient.settings.update).not.toHaveBeenCalled();
+  });
+
+  it('writes the merged bag preserving sibling fields on a successful read', async () => {
+    (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      path: 'hardwareConsole.state',
+      value: { keyPins: ['ws-1'], enabled: false },
+    });
+    await persistHardwareConsolePromptUsage([]);
+    expect(appClient.settings.update).toHaveBeenCalledWith([
+      {
+        path: 'hardwareConsole.state',
+        value: { keyPins: ['ws-1'], enabled: false, promptUsage: [] },
+      },
+    ]);
   });
 });

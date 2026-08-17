@@ -40,11 +40,12 @@ describe('workspace creation auto-open contract', () => {
 
     expect(columns).toContain('const workspaceId = $currentWorkspaceId$;');
     expect(columns).toContain('void tick().then(() => {');
-    expect(columns).toContain('scheduleRevealAfterLayout((behavior) => {');
+    expect(columns).toContain('scheduleWorkspaceReveal(workspaceId);');
+    expect(columns).toContain('scheduleRevealAfterLayout(');
     expect(columns).toContain('LAYOUT_WIDTH_SETTLE_MS');
     expect(columns).toContain(
       'scrollWorkspaceColumnIntoView(scroller, workspaceId, resolvedBehavior, inline)',
     );
-    expect(columns.match(/reveal\(behavior\)/g)).toHaveLength(1);
+    expect(columns.match(/scheduleWorkspaceReveal\(workspaceId\);/g)).toHaveLength(1);
   });
 });

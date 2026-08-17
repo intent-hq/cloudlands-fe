@@ -48,6 +48,7 @@ vi.mock('svelte-fa', async () => ({
 }));
 vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faCheck: { iconName: 'check' },
+  faCircleInfo: { iconName: 'circle-info' },
   faCopy: { iconName: 'copy' },
   faSliders: { iconName: 'sliders' },
   faTrash: { iconName: 'trash' },

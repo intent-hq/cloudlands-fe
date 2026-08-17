@@ -1,0 +1,26 @@
+{
+  "note": "suggested-prompts syntax quoted in a fence stays literal (parseSuggestedPrompts is fence-aware)",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "The syntax is:"
+        },
+        {
+          "type": "code",
+          "content": "<!-- suggested-prompts\nExample prompt.\n-->",
+          "metadata": {
+            "language": "plaintext"
+          }
+        },
+        {
+          "type": "text",
+          "content": "Documented above, not a real block."
+        }
+      ]
+    }
+  ]
+}

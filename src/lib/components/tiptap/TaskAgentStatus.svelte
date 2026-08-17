@@ -4,10 +4,7 @@
     selectAgentSessionStreamingContent,
     selectAgentSession,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import {
-    selectActiveWorkspaceId,
-    selectWorkspaceById,
-  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { restoreAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { createLogger } from '$lib/utils/client-logger';
@@ -22,6 +19,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   const logger = createLogger('TaskAgentStatus');
 
@@ -48,7 +46,7 @@
     compact?: boolean;
   } = $props();
 
-  const activeWorkspaceId$ = selectActiveWorkspaceId();
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
   const serviceAgent$ = selectAgentSession(agentId);
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
@@ -91,8 +89,9 @@
 
     try {
       const reduxState = appStore.state;
-      const wsId = selectActiveWorkspaceId.select(reduxState);
-      const currentWorkspace = wsId ? selectWorkspaceById.select(reduxState, wsId) : undefined;
+      const currentWorkspace = workspaceId
+        ? selectWorkspaceById.select(reduxState, workspaceId)
+        : undefined;
       if (currentWorkspace) {
         logger.debug('[TaskAgentStatus] Attempting to load agent from disk', {
           agentId,
@@ -137,9 +136,8 @@
     function pollCallback() {
       pollCount++;
       const pollState = appStore.state;
-      const pollWsId = selectActiveWorkspaceId.select(pollState);
       const session = selectAgentSession.select(pollState, agentId);
-      const reduxAgent = pollWsId ? selectAgentSession.select(pollState, agentId) : undefined;
+      const reduxAgent = workspaceId ? selectAgentSession.select(pollState, agentId) : undefined;
 
       if (session || reduxAgent) {
         let needsUpdate = false;
@@ -229,11 +227,10 @@
 
   // React to Redux agent state through the readable selector initialized above.
   $effect(() => {
-    const activeWorkspaceId = $activeWorkspaceId$;
     const currentAgent = $serviceAgent$;
     const currentResponding = $agentIsResponding$;
     if (
-      !activeWorkspaceId ||
+      !workspaceId ||
       !currentAgent ||
       (currentAgent === prevAgentRef && currentResponding === prevAgentResponding)
     )
@@ -294,7 +291,7 @@
   // Reactive Redux subscription — replaces the previous non-reactive
   // service lookup so the component re-renders when the agent session
   // changes in the store.
-  const storeAgent = $derived((void version, $activeWorkspaceId$ ? $serviceAgent$ : undefined));
+  const storeAgent = $derived((void version, workspaceId ? $serviceAgent$ : undefined));
   const serviceAgent = $derived((void version, $serviceAgent$));
 
   // Use either source - store takes precedence for live state
@@ -493,10 +490,9 @@
       const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-      const wsId = selectActiveWorkspaceId.select(appStore.state);
-      if (wsId) {
+      if (workspaceId) {
         appStore.dispatch(
-          openAgentTabRequested(wsId, {
+          openAgentTabRequested(workspaceId, {
             agentId,
             sourcePanelId,
             openInAdjacentPanel,

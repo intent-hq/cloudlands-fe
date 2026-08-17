@@ -42,11 +42,20 @@ vi.mock('$lib/client', () => ({
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { mockInvoke, UNBRIDGED_INVOKE_ALLOWLIST } from '$shared/ipc-mock-router';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
+import type { Workspace } from '$shared/types';
 import { seedMockStore } from '../mock-bootstrap';
 import { appClient } from '$lib/client';
 
 const mockedRequest = vi.mocked(backendRequest);
 const mockedAppClient = vi.mocked(appClient);
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
 interface CommandResponse<T> {
   success: boolean;
@@ -464,13 +473,9 @@ describe('workspaces-seeder legacy IPC bridges', () => {
   });
 
   describe('seeder respects existing route-driven state', () => {
-    it('does not override activeWorkspaceId when one is already set', async () => {
-      const { setActiveWorkspaceId } = await import('../slices/workspace/workspace-slice');
-
-      // Simulate route loader setting activeWorkspaceId = "ws-2" before seeder runs
+    it('does not auto-select over an existing route workspace', async () => {
       const store = new StreamingStore(reducers, []);
       store.init();
-      store.dispatch(setActiveWorkspaceId('ws-2'));
 
       // Mock workspace.list returning ws-1 first, ws-2 second
       mockedAppClient.workspaces.list.mockResolvedValueOnce([
@@ -498,10 +503,49 @@ describe('workspaces-seeder legacy IPC bridges', () => {
       mockedAppClient.workspaces.recentViews.mockResolvedValueOnce({ 'ws-1': 100, 'ws-2': 200 });
 
       // Run the seeder
-      await seedMockStore(store, appClient);
+      await seedMockStore(store, appClient, 'ws-2');
 
-      // Assert: activeWorkspaceId stays "ws-2", not clobbered to "ws-1"
-      expect(store.state.workspace.activeWorkspaceId).toBe('ws-2');
+      expect(store.state.tabState.currentTabId).toBeNull();
+      expect(store.state.tabState.openTabs['ws-1']).toBeUndefined();
+    });
+
+    it('does not auto-select over a route choice made while RPCs are pending', async () => {
+      const store = new StreamingStore(reducers, []);
+      store.init();
+
+      const list = deferred<Workspace[]>();
+      const recentViews = deferred<Record<string, number>>();
+      mockedAppClient.workspaces.list.mockReturnValueOnce(list.promise);
+      mockedAppClient.workspaces.recentViews.mockReturnValueOnce(recentViews.promise);
+
+      let routeWorkspaceId: string | null = null;
+      const seeding = seedMockStore(store, appClient, () => routeWorkspaceId);
+      expect(mockedAppClient.workspaces.list).toHaveBeenCalledWith({ includeArchived: true });
+
+      // Simulate a route navigation completing while the initial list RPC is still pending.
+      routeWorkspaceId = 'ws-2';
+
+      list.resolve([
+        {
+          id: 'ws-1',
+          title: 'First Workspace',
+          branch: 'main',
+          status: 'Active',
+          path: '/tmp/ws-1',
+          repositoryPath: '/tmp/ws-1',
+          createdAt: '2026-07-01T00:00:00Z',
+          updatedAt: '2026-07-02T00:00:00Z',
+        },
+      ]);
+      await vi.waitFor(() => {
+        expect(mockedAppClient.workspaces.recentViews).toHaveBeenCalledOnce();
+      });
+      recentViews.resolve({});
+
+      await seeding;
+
+      expect(store.state.tabState.currentTabId).toBeNull();
+      expect(store.state.tabState.openTabs['ws-1']).toBeUndefined();
     });
 
     it('does not force-open ws-1 tab when a currentTabId is already set', async () => {
@@ -538,7 +582,7 @@ describe('workspaces-seeder legacy IPC bridges', () => {
       mockedAppClient.workspaces.recentViews.mockResolvedValueOnce({});
 
       // Run the seeder
-      await seedMockStore(store, appClient);
+      await seedMockStore(store, appClient, null);
 
       // Assert: currentTabId stays "ws-2", not clobbered; ws-1 tab NOT opened
       expect(store.state.tabState.currentTabId).toBe('ws-2');
@@ -565,10 +609,9 @@ describe('workspaces-seeder legacy IPC bridges', () => {
       mockedAppClient.workspaces.recentViews.mockResolvedValueOnce({});
 
       // Run the seeder
-      await seedMockStore(store, appClient);
+      await seedMockStore(store, appClient, null);
 
-      // Assert: first workspace auto-selected
-      expect(store.state.workspace.activeWorkspaceId).toBe('ws-1');
+      // Assert: first workspace tab is opened
       expect(store.state.tabState.currentTabId).toBe('ws-1');
       expect(store.state.tabState.openTabs['ws-1']).toBe(true);
     });
@@ -604,10 +647,9 @@ describe('workspaces-seeder legacy IPC bridges', () => {
       mockedAppClient.workspaces.recentViews.mockResolvedValueOnce({});
 
       // Run the seeder
-      await seedMockStore(store, appClient);
+      await seedMockStore(store, appClient, null);
 
-      // Assert: skipped archived ws-archived, selected active ws-active instead
-      expect(store.state.workspace.activeWorkspaceId).toBe('ws-active');
+      // Assert: skipped archived ws-archived, opened active ws-active instead
       expect(store.state.tabState.currentTabId).toBe('ws-active');
       expect(store.state.tabState.openTabs['ws-active']).toBe(true);
       expect(store.state.tabState.openTabs['ws-archived']).toBeUndefined();
@@ -626,7 +668,7 @@ describe('workspaces-seeder legacy IPC bridges', () => {
 
       try {
         // Run the seeder
-        await seedMockStore(store, appClient);
+        await seedMockStore(store, appClient, null);
 
         // Assert: hasLoaded is true despite the error, preventing infinite skeletons
         expect(store.state.workspace.hasLoaded).toBe(true);

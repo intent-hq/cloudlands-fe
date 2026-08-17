@@ -10,9 +10,9 @@
   import type { AgentAttribution } from '$features/file-tracking/types';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   const logger = createLogger('AgentAttributionBadge');
 
@@ -27,6 +27,8 @@
   }
 
   let { attribution, size = 'sm', compact = false, class: className = '' }: Props = $props();
+
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
   // Avatar size based on badge size
   const avatarSize = $derived(size === 'xs' ? 12 : size === 'sm' ? 14 : 16);
@@ -47,10 +49,9 @@
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
 
     // First, open the agent in panel
-    const wsId = selectActiveWorkspaceId.select(appStore.state);
-    if (wsId) {
+    if (workspaceId) {
       appStore.dispatch(
-        openAgentTabRequested(wsId, {
+        openAgentTabRequested(workspaceId, {
           agentId: attribution.agentId,
           sourcePanelId,
           openInAdjacentPanel,

@@ -1,0 +1,12 @@
+[
+  {
+    "type": "thinking",
+    "id": "019ffd76-3a07-7c33-bf7a-49b07411637e:0",
+    "text": "Looking at the WindowTitleBar layout, hiding the tab strip wouldn't affect the daemon status indicator or settings button since they're controlled sep…"
+  },
+  {
+    "type": "text",
+    "id": "019ffd76-3a07-7c33-bf7a-49b07411637e:1",
+    "text": "No — they're independent. Looking at the `WindowTitleBar.svelte` layout:\n\n````svelte path=packages/cloudlands-fe/src/lib/components/layout/WindowTitleBar.svelte mode=EXCERPT\n<WorkspaceViewModeToggle />\n{#if $workspaceViewMode$ === 'single'}\n  <WorkspaceTabStrip ... />\n  <WorkspaceRepoLauncher />\n{/if}\n{#if $workspaceViewMode$ === 'columns'}\n  {@render titlebarUtilities(false)}\n{/if}\n...\n<!-- Right column: global status and settings -->\n{#if $workspaceViewMode$ === 'single'}\n  {@render titlebarUtilities(true)}\n{/if}\n````\n\nIn the normal single (tab) view — which is what onboarding uses — the daemon status indicator and settings button live in a **separate right-side block** (`titlebarUtilities(true)`), completely outside the left workspace-controls container. Hiding the view toggle, the \"+\" button, or even the whole tab strip does not touch them.\n\nThe one caveat: in **columns** view mode, the settings button is rendered inside the left controls container (`titlebarUtilities(false)`). That's why the spec task deliberately hides only the two specific components (`WorkspaceViewModeToggle` and `WorkspaceRepoLauncher`) rather than the entire `data-titlebar-workspace-controls` container — so the settings button would survive even in that mode. Daemon status only renders in single mode either way.\n\nSo with the plan as written: view toggle and \"+\" disappear during onboarding; daemon status and settings stay visible. Ready to delegate on your approval.\n\n<!-- suggested-prompts\nApprove the plan and start implementation.\nAlso hide the tab strip itself during onboarding.\n-->\n"
+  }
+]

@@ -88,10 +88,11 @@ describe('ResponseGroup - collapse state model', () => {
       props: { name: 'Group title', blocks, children },
     });
     const btn = header(container);
+    const row = container.querySelector('[data-testid="response-group"]')!;
 
-    expect(btn.className).toContain('type-body');
-    expect(btn.className).toContain('text-muted-foreground');
-    expect(btn.className).not.toContain('text-base');
+    expect(row.className).toContain('type-body');
+    expect(row.className).toContain('text-muted-foreground');
+    expect(row.className).not.toContain('text-base');
     expect(btn.className).not.toContain('px-1');
     await waitFor(() => expect(queryByText('Collapsed preview text')).not.toBeNull());
 
@@ -101,7 +102,7 @@ describe('ResponseGroup - collapse state model', () => {
     const name = container.querySelector('[data-testid="response-group-name"]')!;
     expect(name.className).toContain('font-normal');
     expect(name.className).not.toContain('font-medium');
-    expect(container.querySelector('[data-operational-expanded-guide]')).toBeTruthy();
+    expect(container.querySelector('[data-operational-expanded-content]')).toBeTruthy();
   });
 
   it('renders the collapsed text preview as inert inline Markdown', async () => {
@@ -120,7 +121,7 @@ describe('ResponseGroup - collapse state model', () => {
     expect(header(container).querySelectorAll('button')).toHaveLength(0);
   });
 
-  it('keeps one aligned operational icon and a centered expanded guide', async () => {
+  it('keeps one aligned operational icon and 4px expanded content spacing', async () => {
     const { container } = render(ResponseGroup, {
       props: { name: 'Group title', children },
     });
@@ -130,10 +131,7 @@ describe('ResponseGroup - collapse state model', () => {
     expect(button.querySelector('[data-icon="arrows-in-line-vertical"]')).toBeTruthy();
     await fireEvent.click(button);
     expect(container.querySelector('[data-operational-expanded-content]')?.className).toContain(
-      'pt-1.5',
-    );
-    expect(container.querySelector('[data-operational-expanded-guide]')?.className).toContain(
-      'left-[calc(var(--operational-row-inline-padding)+var(--operational-leading-half-slot-size))]',
+      'pt-1',
     );
   });
 
@@ -389,7 +387,7 @@ describe('MessageContent - top-level response rows', () => {
     expect(container.querySelectorAll('.border.border-border').length).toBe(2);
   });
 
-  it('keeps a 10px prose stack without changing the 6px group internals', async () => {
+  it('keeps parent-owned 4px seams and zero nested child margins', async () => {
     const MessageContent = (await import('../MessageContent.svelte')).default;
     const content: ContentBlock[] = [
       {
@@ -400,13 +398,12 @@ describe('MessageContent - top-level response rows', () => {
 
     const { container } = render(MessageContent, { props: { content } });
     const button = container.querySelector('button')!;
-    const group = button.parentElement;
-    expect(container.firstElementChild?.className).not.toContain('gap-2.5');
-    expect(container.querySelector('[data-message-content-block="text"]')?.className).toContain(
-      'mt-2.5',
-    );
+    const group = button.closest('[data-testid="response-group"]');
+    expect(container.firstElementChild?.className).toContain('gap-1');
     expect(group?.className).not.toContain('mb-1.5');
     await fireEvent.click(button);
-    await waitFor(() => expect(group?.querySelector('[class~="gap-1.5"]')).toBeTruthy());
+    await waitFor(() => expect(group?.querySelector('[class~="gap-1"]')).toBeTruthy());
+    const groupContent = group?.querySelector('[data-response-group-content]');
+    expect(groupContent?.firstElementChild?.className ?? '').not.toMatch(/\bm[trblxy]?-/);
   });
 });

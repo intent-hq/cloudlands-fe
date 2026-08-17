@@ -1,6 +1,5 @@
 <script lang="ts">
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectSentryIsAuthenticated,
     selectSentryOrganization,
@@ -22,6 +21,7 @@
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   interface Props {
     /** Skip initialization if parent already initialized the store */
@@ -29,7 +29,7 @@
   }
 
   let { skipInitialize = false }: Props = $props();
-  const activeWorkspaceId = selectActiveWorkspaceId();
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
   const isAuthenticated$ = selectSentryIsAuthenticated();
   const organization$ = selectSentryOrganization();
   const storeIsConnecting$ = selectSentryIsConnecting();
@@ -181,7 +181,7 @@
           type="button"
           onclick={() => {
             handleLink('https://sentry.io/settings/account/api/auth-tokens/', {
-              workspaceId: $activeWorkspaceId ?? undefined,
+              workspaceId,
             });
           }}
           class="text-primary hover:underline cursor-pointer"

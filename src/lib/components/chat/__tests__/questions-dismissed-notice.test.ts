@@ -21,16 +21,6 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   },
 }));
 
-// Mock workspace selectors
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: () => ({
-    subscribe: (fn: (value: any) => void) => {
-      fn(null);
-      return () => {};
-    },
-  }),
-}));
-
 // Delivered wire shape (agent.dismissQuestions): user-role row tagged on the
 // row's metadata AND the persisted text block's messageMetadata.
 const DISMISSAL_METADATA = {

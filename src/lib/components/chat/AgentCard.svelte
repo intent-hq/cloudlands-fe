@@ -48,10 +48,12 @@
   } from '$features/layout/panel-layout-adapter';
   import type { AgentSession, Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
+  import HarnessFeaturesModal from './HarnessFeaturesModal.svelte';
 
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     faArrowUpRightFromSquare,
+    faCircleInfo,
     faFolderOpen,
     faPen,
     faStop,
@@ -167,6 +169,9 @@
 
   // Context menu state
   let contextMenu: { x: number; y: number } | null = $state(null);
+
+  // Read-only harness-features modal (opened from the context menu).
+  let harnessModalOpen = $state(false);
 
   // Platform file-manager label (locality-gated reveal ⇒ daemon host is this
   // machine, so the client platform matches; PanelTabBar idiom).
@@ -406,6 +411,25 @@
         }
       },
     });
+
+    // Read-only harness version stamp (PROTOCOL §5.5). Selecting the item
+    // opens the harness-features modal (monorepo#2459) — legacy sessions
+    // without a harnessFeatures snapshot open it too (every catalog feature
+    // renders OFF); sessions from daemons that predate the field omit the
+    // item entirely.
+    const harnessVersion = $agent$?.harnessVersion;
+    if (harnessVersion) {
+      items.push({ type: 'separator' });
+      items.push({
+        id: 'harness-version',
+        label: m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion }),
+        icon: faCircleInfo,
+        onClick: () => {
+          harnessModalOpen = true;
+          closeContextMenu();
+        },
+      });
+    }
 
     return items;
   }
@@ -924,6 +948,14 @@
     y={contextMenu.y}
     items={getContextMenuItems()}
     onClickOutside={closeContextMenu}
+  />
+{/if}
+
+{#if $agent$?.harnessVersion}
+  <HarnessFeaturesModal
+    bind:open={harnessModalOpen}
+    version={$agent$.harnessVersion}
+    features={$agent$?.harnessFeatures ?? null}
   />
 {/if}
 

@@ -473,6 +473,8 @@ describe('daemonHealthReducer', () => {
         uptimeSeconds: 120,
         cpuPercent: 12.34,
         memoryBytes: 104857600,
+        workspacesDiskAvailableBytes: 453316378624,
+        workspacesDiskTotalBytes: 1099511627776,
         fingerprint: 'abc123',
         protocolVersion: '2.0',
         host: {
@@ -498,6 +500,8 @@ describe('daemonHealthReducer', () => {
         uptimeSeconds: 120,
         cpuPercent: 12.34,
         memoryBytes: 104857600,
+        workspacesDiskAvailableBytes: 453316378624,
+        workspacesDiskTotalBytes: 1099511627776,
         os: 'macos',
         arch: 'aarch64',
         transport: undefined,
@@ -514,7 +518,8 @@ describe('daemonHealthReducer', () => {
         port: 9000,
         clients: 1,
         agents: 0,
-        // maxAgents, version, uptimeSeconds, cpuPercent, memoryBytes missing (older daemon)
+        // maxAgents, version, uptimeSeconds, cpuPercent, memoryBytes,
+        // workspacesDisk* missing (older daemon)
         fingerprint: null,
         protocolVersion: '2.0',
         host: {
@@ -542,6 +547,8 @@ describe('daemonHealthReducer', () => {
         uptimeSeconds: undefined,
         cpuPercent: undefined,
         memoryBytes: undefined,
+        workspacesDiskAvailableBytes: undefined,
+        workspacesDiskTotalBytes: undefined,
         os: 'linux',
         arch: 'x86_64',
         transport: undefined,

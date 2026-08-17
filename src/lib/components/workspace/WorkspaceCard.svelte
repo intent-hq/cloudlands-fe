@@ -39,7 +39,6 @@
   import { PullRequestStatus } from '$shared/types';
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
-  import { selectWorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import {
     requestArchiveWorkspace,
@@ -135,9 +134,9 @@
     phase,
     stats,
     variant = 'compact',
-    isRunning = false,
+    isRunning: _isRunning = false,
     isUnread = false,
-    isWaiting,
+    isWaiting: _isWaiting,
     isPinned = false,
     streamingAgentIds = [],
     hasSpec = false,
@@ -165,8 +164,6 @@
   $effect(() => {
     workspaceIdStore.set(workspace?.id ?? '');
   });
-  const workspaceTaskProgress$ = selectWorkspaceTaskProgress(workspaceIdStore);
-
   // Agent PR monitors (PROTOCOL §6.9): all monitors (active + completed) feed
   // the primary-PR pool and the "+N" other-monitored-PRs indicator — the same
   // pool every primary-PR surface uses, so pill and Overview never disagree.

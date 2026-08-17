@@ -706,6 +706,17 @@ export const refreshChatTranscriptRequested = createAction<[wsId: string, agentI
   'chatState/refreshChatTranscriptRequested',
 );
 
+/**
+ * Mid-hydration snapshot re-request: the chat-read saga's bounded seq-0 wait
+ * timed out a window with hydration still `loading`, and asks the subscribe
+ * saga to give the next window something to settle on (replay a held
+ * snapshot, re-emit the last reconciled one, or force-cycle the
+ * registration). Saga trigger only — no reducer state change.
+ */
+export const chatTranscriptSnapshotRerequested = createAction<[wsId: string, agentId: string]>(
+  'chatState/transcriptSnapshotRerequested',
+);
+
 // --- Send message saga trigger (no reducer state change) ---
 
 /** Trigger the send-message saga. Dispatched from ChatPanel after DOM serialization. */

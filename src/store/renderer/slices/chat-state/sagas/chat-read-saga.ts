@@ -2,27 +2,34 @@
  * Chat read saga — SINGLE-TRANSFER hydration. Opening a chat transfers the
  * conversation once: the standing `chat.subscribe` subscription's seq-0
  * snapshot (which already merges the in-flight assistant message, CS-0 D5) is
- * the hydration seed. This saga no longer fetches a throwaway
- * `subscribeSnapshot` nor pages the full history on the critical path:
+ * the SOLE hydration source. No `agent.getConversation` call happens on the
+ * critical path — a direct read cannot carry the in-flight assistant message,
+ * so settling from it would reveal a transcript missing the live turn (the
+ * user-message-then-chunks flicker):
  *
  *  1. `transcriptHydrationStarted`, fetch the session shell (`agents.get`,
  *     counts only) and upsert it so the subscription's snapshot can apply.
- *  2. Race the standing subscription snapshot against a direct newest-page
- *     `agent.getConversation` read. The first successful source paints; a
- *     rejected direct read gives the subscription one bounded grace period.
+ *  2. Wait (bounded) for the standing subscription's snapshot to apply —
+ *     `chatTranscriptSnapshotApplied` is dispatched only after the snapshot's
+ *     messages AND stream-accumulator seed have landed. A timed-out window
+ *     re-requests the snapshot from the subscribe saga
+ *     (`chatTranscriptSnapshotRerequested`, up to `SNAPSHOT_WAIT_ATTEMPTS`
+ *     windows, intent-hq/monorepo#2692); only after every attempt times out
+ *     does hydration fail (`transcriptHydrationFailed`) and the existing
+ *     error/retry surface show — never a silent partial paint.
  *  3. Settle (`transcriptHydrationSettled`) — first paint gates on this.
  *  4. OFF the critical path: when older history exists beyond the snapshot
  *     window (`truncated`), page it in the background via the §5.5
  *     `aroundMessageId` seek anchored at the AUTHORITATIVE window's oldest
  *     row — the snapshot page's oldest (`TranscriptSnapshotMeta.
- *     oldestMessageId`) or the fallback read's oldest — NOT the store's
+ *     oldestMessageId`) — NOT the store's
  *     oldest retained row: retained history can sit BELOW an interior gap
- *     (§7.1 `resumed: false` fallback, degraded direct read), and anchoring
+ *     (§7.1 `resumed: false` fallback), and anchoring
  *     below the gap would walk strictly older and never fill it. Walking
  *     backward from the window's oldest traverses the gap first and the
  *     nothing-new stop condition halts on already-retained pages. Merged
  *     with current-wins dedup; stops early when a page contributes nothing
- *     new or the store's 500-message prune cap is reached (fetching beyond
+ *     new or the store's `MAX_MESSAGES_PER_AGENT` prune cap is reached (fetching beyond
  *     it would be discarded anyway).
  */
 import {
@@ -39,38 +46,65 @@ import {
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { INITIAL_RETRY_DELAY_MS, SNAPSHOT_TIMEOUT_MS } from '$lib/client/live/live-chat-client';
 import { createLogger } from '$lib/utils/client-logger';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import {
+  MAX_MESSAGES_PER_AGENT,
   bulkUpsertSessions,
   replaceMessages,
   upsertSession,
 } from '../../agent-session/agent-session-slice';
-import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
 import {
-  workspaceDeleted,
-  workspaceUnmounted,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+  selectAgentMessages,
+  selectAgentSession,
+} from '../../agent-session/agent-session-selectors';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   chatTranscriptSnapshotApplied,
+  chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   refreshChatTranscriptRequested,
   transcriptHydrationFailed,
   transcriptHydrationSettled,
   transcriptHydrationStarted,
 } from '../chat-state-slice';
-import { selectTranscriptSnapshotMeta } from '../chat-state-selectors';
+import { selectTranscriptHydration, selectTranscriptSnapshotMeta } from '../chat-state-selectors';
 
 const logger = createLogger('ChatReadSaga');
 const PAGE_LIMIT = 200;
-/** Brief hedge that preserves the single-transfer fast path without delaying a missing snapshot. */
-const DIRECT_READ_HEDGE_MS = 50;
-/** Bounded grace for a late snapshot only after the prompt direct read rejects. */
-const SNAPSHOT_RECOVERY_WAIT_MS = 1_000;
-/** Mirror of the agent-session slice's message prune cap — paging past it is discarded. */
-const MAX_STORE_MESSAGES = 500;
+/** Margin for the healed registration's fresh snapshot to arrive and apply. */
+const SNAPSHOT_HEAL_MARGIN_MS = 2_000;
+/**
+ * Bounded wait for the standing subscription's seq-0 snapshot — the SOLE
+ * hydration source. It normally applies within tens of milliseconds; the
+ * bound only converts a broken subscription into the error/retry surface
+ * instead of a permanent skeleton. Derived from LiveChatClient's own
+ * constants so it stays strictly larger than one full self-heal cycle (seq-0
+ * timeout + first retry delay + the fresh registration's snapshot RTT) and
+ * the relationship cannot silently invert: a subscription the client heals
+ * on its own settles in-window; a snapshot landing even later is caught by
+ * the recovery watcher (`snapshotRecoveryWorker`).
+ */
+const SNAPSHOT_WAIT_MS = SNAPSHOT_TIMEOUT_MS + INITIAL_RETRY_DELAY_MS + SNAPSHOT_HEAL_MARGIN_MS;
+/**
+ * Bounded-wait attempts before hydration fails (intent-hq/monorepo#2692).
+ * A timed-out window no longer fails the load outright: between attempts the
+ * saga dispatches `chatTranscriptSnapshotRerequested`, which the subscribe
+ * saga answers by replaying a held/last snapshot or force-cycling the
+ * registration (fresh `chat.subscribe` → fresh seq-0 snapshot) — so a
+ * dropped initial push heals without a manual retry. Only after every
+ * attempt times out does hydration fail to the error/retry surface.
+ *
+ * Deliberate UX tradeoff: time-to-error for a genuinely dead subscription is
+ * 3 × SNAPSHOT_WAIT_MS (~24s) instead of one window (~8s). The error surface
+ * is the failure mode #2692 exists to avoid, so the extended ceiling buys the
+ * second re-request's force-cycle a full window for its fresh seq-0 snapshot
+ * to land; a truly dead subscription still reaches the retry surface.
+ */
+const SNAPSHOT_WAIT_ATTEMPTS = 3;
 
 type ChatRequest = { wsId: string; agentId: string };
 type HydrationTails = Map<string, Promise<void>>;
@@ -81,8 +115,6 @@ type HydrateResult = {
   /** Older-walk seek anchor: the authoritative window's oldest row id. */
   anchor?: string;
 };
-type NewestWindowResult =
-  { succeeded: true; fetchOlder: boolean; anchor?: string } | { succeeded: false; error: unknown };
 
 function identitySet(messages: AgentMessage[]): Set<string> {
   const ids = new Set<string>();
@@ -106,56 +138,6 @@ function* hydrateAfterPrevious(
 ): SagaGenerator<HydrateResult> {
   yield* call(() => previous);
   return yield* call(hydrateChatTranscriptSaga, request);
-}
-
-/**
- * Degraded-path direct read: the subscription's snapshot never arrived, so
- * fetch the newest `agent.getConversation` page and merge it (fetched copies
- * win for shared ids; store-only rows — optimistic sends, prior history —
- * are preserved). Returns whether older history remains beyond the page and
- * the page's oldest row id (the older-walk anchor).
- */
-function* fallbackNewestPageRead(
-  agentId: string,
-): SagaGenerator<{ fetchOlder: boolean; anchor?: string }> {
-  const page: Awaited<ReturnType<typeof appClient.agents.getConversation>> = yield* call(
-    [appClient.agents, appClient.agents.getConversation],
-    agentId,
-    PAGE_LIMIT,
-  );
-  if (yield* call(isAgentDeletionPending, agentId)) return { fetchOlder: false };
-  const current: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
-  const pageIds = identitySet(page.messages);
-  const storeOnly = current.filter(
-    (message) =>
-      !(typeof message.id === 'string' && pageIds.has(message.id)) &&
-      !(typeof message.appMessageId === 'string' && pageIds.has(message.appMessageId)),
-  );
-  const merged =
-    storeOnly.length === 0
-      ? page.messages
-      : deduplicateAgentMessages([...page.messages, ...storeOnly]);
-  yield* put(replaceMessages(agentId, merged));
-  return { fetchOlder: page.nextToken !== null, anchor: oldestMessageId(page.messages) };
-}
-
-function* tryFallbackNewestPageRead(agentId: string): SagaGenerator<NewestWindowResult> {
-  try {
-    return { succeeded: true, ...(yield* call(fallbackNewestPageRead, agentId)) };
-  } catch (error) {
-    return { succeeded: false, error };
-  }
-}
-
-function snapshotResult(meta: {
-  truncated: boolean;
-  oldestMessageId?: string;
-}): NewestWindowResult {
-  return {
-    succeeded: true,
-    fetchOlder: meta.truncated === true,
-    anchor: meta.oldestMessageId,
-  };
 }
 
 function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<HydrateResult> {
@@ -194,57 +176,50 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
     yield* put(bulkUpsertSessions([hydrated]));
     yield* put(upsertSession(hydrated));
 
-    // HEDGED FIRST WINDOW: briefly prefer the standing subscription's seq-0
-    // snapshot, then race it against a direct newest-page read.
-    // The channel is opened BEFORE the state read so a dispatch landing
-    // between the two cannot be missed.
+    // SOLE SOURCE: wait (bounded) for the standing subscription's seq-0
+    // snapshot. `chatTranscriptSnapshotApplied` is dispatched by the
+    // subscribe saga only AFTER the snapshot's messages replaced the store
+    // rows and the stream accumulator was seeded from the in-flight
+    // assistant message — so settling on it can never reveal a frame
+    // missing the live turn. The channel is opened BEFORE the state read so
+    // a dispatch landing between the two cannot be missed.
     const isSnapshotForAgent = (action: { type: string; payload?: unknown }) =>
       action.type === chatTranscriptSnapshotApplied.type &&
       Array.isArray(action.payload) &&
       action.payload[0] === agentId;
     const snapshotChannel = yield* actionChannel(isSnapshotForAgent);
     try {
-      const meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
+      let meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
       const visible: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
-      let source: NewestWindowResult | undefined;
-      if (meta && (meta.totalMessages === 0 || visible.length > 0)) {
-        source = snapshotResult(meta);
-      } else {
-        const early = yield* race({
-          applied: take(snapshotChannel),
-          hedgeElapsed: delay(DIRECT_READ_HEDGE_MS),
-        });
-        if (early.applied) {
-          const appliedMeta = yield* selectTranscriptSnapshotMeta.effect(agentId);
-          if (appliedMeta) source = snapshotResult(appliedMeta);
-        }
-      }
-      if (!source) {
-        const first = yield* race({
-          applied: take(snapshotChannel),
-          direct: call(tryFallbackNewestPageRead, agentId),
-        });
-        if (first.applied) {
-          const appliedMeta = yield* selectTranscriptSnapshotMeta.effect(agentId);
-          if (appliedMeta) source = snapshotResult(appliedMeta);
-        } else if (first.direct?.succeeded) {
-          source = first.direct;
-        } else {
+      // Re-settle instantly only when the already-applied snapshot is still
+      // reflected in the store (refresh with live meta); otherwise wait for
+      // a fresh application.
+      if (!(meta && (meta.totalMessages === 0 || visible.length > 0))) {
+        meta = undefined;
+        for (let attempt = 1; attempt <= SNAPSHOT_WAIT_ATTEMPTS && !meta; attempt += 1) {
           const { applied } = yield* race({
             applied: take(snapshotChannel),
-            timedOut: delay(SNAPSHOT_RECOVERY_WAIT_MS),
+            timedOut: delay(SNAPSHOT_WAIT_MS),
           });
           if (applied) {
-            const appliedMeta = yield* selectTranscriptSnapshotMeta.effect(agentId);
-            if (appliedMeta) source = snapshotResult(appliedMeta);
+            meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
           }
-          if (!source) throw first.direct?.error ?? new Error('No transcript source succeeded');
+          // Escalate on ANY non-final iteration that ends without valid meta
+          // (window timed out, or an application raced a session reset and
+          // left no recorded meta) so every window after the first opens with
+          // a re-request in flight.
+          if (!meta && attempt < SNAPSHOT_WAIT_ATTEMPTS) {
+            logger.warn(
+              `No transcript snapshot recorded within wait window (attempt ${attempt}/${SNAPSHOT_WAIT_ATTEMPTS}); re-requesting`,
+            );
+            yield* put(chatTranscriptSnapshotRerequested(wsId, agentId));
+          }
         }
       }
-      if (!source?.succeeded) throw source?.error ?? new Error('No transcript source succeeded');
+      if (!meta) throw new Error('No transcript snapshot arrived within the hydration wait');
       succeeded = true;
-      fetchOlder = source.fetchOlder;
-      anchor = source.anchor;
+      fetchOlder = meta.truncated === true;
+      anchor = meta.oldestMessageId;
     } finally {
       yield* flush(snapshotChannel);
       snapshotChannel.close();
@@ -258,12 +233,12 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
 /**
  * Background older-history fetch (OFF the hydration critical path). Anchors a
  * §5.5 `aroundMessageId` seek at the AUTHORITATIVE window's oldest row (the
- * snapshot page's / fallback page's oldest — falling back to the store's
+ * snapshot page's oldest — falling back to the store's
  * oldest when none was recorded), then walks `nextToken` backward,
  * accumulating rows the store does not hold. Anchoring at the window rather
  * than the store's oldest retained row matters when retained history sits
- * BELOW an interior gap (§7.1 `resumed: false` fallback, degraded direct
- * read): the backward walk traverses the gap first, and the nothing-new stop
+ * BELOW an interior gap (§7.1 `resumed: false` fallback): the backward walk
+ * traverses the gap first, and the nothing-new stop
  * condition halts once it reaches already-retained pages. Each page merges
  * as `[...older, ...current]` with current-wins dedup so live rows that
  * arrived meanwhile are never clobbered. Stops when: no token remains, a
@@ -277,7 +252,7 @@ function* fetchOlderHistorySaga(request: ChatRequest, windowAnchor?: string): Sa
     if (yield* call(isAgentDeletionPending, agentId)) return;
     const current: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
     const anchor = windowAnchor ?? oldestMessageId(current);
-    if (!anchor || current.length >= MAX_STORE_MESSAGES) return;
+    if (!anchor || current.length >= MAX_MESSAGES_PER_AGENT) return;
 
     const older: AgentMessage[] = [];
     const knownIds = identitySet(current);
@@ -306,7 +281,7 @@ function* fetchOlderHistorySaga(request: ChatRequest, windowAnchor?: string): Sa
       // Nothing new on a non-seek page means this history is already present
       // (e.g. resume onto retained rows) — stop paging.
       if (fresh.length === 0 && older.length > 0) break;
-      if (older.length + current.length >= MAX_STORE_MESSAGES) break;
+      if (older.length + current.length >= MAX_MESSAGES_PER_AGENT) break;
       page = yield* call(
         [appClient.agents, appClient.agents.getConversation],
         agentId,
@@ -333,16 +308,11 @@ function* fetchOlderHistorySaga(request: ChatRequest, windowAnchor?: string): Sa
   }
 }
 
-function matchesChatCleanup({ wsId, agentId }: ChatRequest) {
+function matchesChatCleanup({ wsId }: ChatRequest) {
   return (action: { type: string; payload?: unknown }) => {
-    if (action.type !== workspaceDeleted.type && action.type !== workspaceUnmounted.type)
-      return false;
+    if (action.type !== workspaceUnmounted.type) return false;
     if (!Array.isArray(action.payload)) return false;
-    const [cleanupWorkspaceId, deletedAgentIds = []] = action.payload;
-    return (
-      cleanupWorkspaceId === wsId ||
-      (Array.isArray(deletedAgentIds) && deletedAgentIds.includes(agentId))
-    );
+    return action.payload[0] === wsId;
   };
 }
 
@@ -404,12 +374,38 @@ function* refreshChatWorker(
   yield* hydrateChatWorker({ wsId, agentId }, hydrationTails);
 }
 
+/**
+ * Late-snapshot recovery: LiveChatClient self-heals a broken registration
+ * (unsubscribe + re-register) on its own schedule, so a seq-0 snapshot can
+ * apply AFTER the bounded wait already failed hydration and the worker
+ * exited. When that happens, settle hydration off the applied snapshot —
+ * the atomic-reveal invariant holds because `chatTranscriptSnapshotApplied`
+ * is only ever dispatched after the messages landed and the stream
+ * accumulator was seeded — and kick the background older-history walk the
+ * failed worker never ran. No-op unless hydration sits in `error`.
+ */
+function* snapshotRecoveryWorker(action: ReturnType<typeof chatTranscriptSnapshotApplied>) {
+  const [agentId, meta] = action.payload;
+  const hydration = yield* selectTranscriptHydration.effect(agentId);
+  if (hydration !== 'error') return;
+  yield* put(transcriptHydrationSettled(agentId));
+  if (meta.truncated !== true) return;
+  const session = yield* selectAgentSession.effect(agentId);
+  if (!session) return;
+  const request: ChatRequest = { wsId: String(session.workspaceId), agentId };
+  yield* race({
+    fetch: call(fetchOlderHistorySaga, request, meta.oldestMessageId),
+    cleanup: take(matchesChatCleanup(request)),
+  });
+}
+
 export function* chatReadSaga() {
   const hydrationTails: HydrationTails = new Map();
   try {
     yield* all([
       takeEvery(initializeChatRequested, initializeChatWorker, hydrationTails),
       takeEvery(refreshChatTranscriptRequested, refreshChatWorker, hydrationTails),
+      takeEvery(chatTranscriptSnapshotApplied, snapshotRecoveryWorker),
     ]);
   } finally {
     hydrationTails.clear();

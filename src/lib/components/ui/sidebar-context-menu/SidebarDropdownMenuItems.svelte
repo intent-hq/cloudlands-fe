@@ -2,7 +2,10 @@
   import Fa from 'svelte-fa';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import * as Menu from '$lib/components/ui/menu';
-  import { isSeparator, type SidebarMenuEntry } from './types';
+  import {
+    isSeparator,
+    type SidebarMenuEntry,
+  } from '$lib/components/ui/sidebar-context-menu/types';
 
   let { items }: { items: SidebarMenuEntry[] } = $props();
 </script>

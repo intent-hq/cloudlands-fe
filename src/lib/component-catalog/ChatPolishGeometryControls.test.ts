@@ -55,8 +55,8 @@ describe('ChatPolishGeometryControls', () => {
     }
 
     expect(screen.queryByRole('combobox')).toBeNull();
-    expect(screen.getByRole('checkbox', { name: 'Compact mode' })).toBeTruthy();
-    expect(screen.getByRole('checkbox', { name: 'Simulate sticky user messages' })).toBeTruthy();
+    expect(screen.getByRole('switch', { name: 'Compact mode' })).toBeTruthy();
+    expect(screen.getByRole('switch', { name: 'Simulate sticky user messages' })).toBeTruthy();
     expect(screen.getByLabelText('Nested group spacing').textContent).toContain('6px fixed');
     expect(screen.getByLabelText('Expanded content bottom gap').textContent).toContain(
       '16px fixed',
@@ -71,8 +71,8 @@ describe('ChatPolishGeometryControls', () => {
     const operationalGap = screen.getByRole('slider', { name: 'Operational row gap' });
     await fireEvent.input(width, { target: { value: '640' } });
     await fireEvent.input(operationalGap, { target: { value: '12' } });
-    await fireEvent.click(screen.getByRole('checkbox', { name: 'Compact mode' }));
-    await fireEvent.click(screen.getByRole('checkbox', { name: 'Simulate sticky user messages' }));
+    await fireEvent.click(screen.getByRole('switch', { name: 'Compact mode' }));
+    await fireEvent.click(screen.getByRole('switch', { name: 'Simulate sticky user messages' }));
 
     expect(screen.getAllByTestId('chat-polish-preview')).toHaveLength(1);
     expect((width as HTMLInputElement).value).toBe('640');
@@ -103,9 +103,9 @@ describe('ChatPolishGeometryControls', () => {
     expect((screen.getByRole('slider', { name: 'Panel width' }) as HTMLInputElement).value).toBe(
       String(defaultChatPolishGeometry.panelWidth),
     );
-    expect(
-      (screen.getByRole('checkbox', { name: 'Compact mode' }) as HTMLInputElement).checked,
-    ).toBe(false);
+    expect(screen.getByRole('switch', { name: 'Compact mode' }).getAttribute('aria-checked')).toBe(
+      'false',
+    );
     expect((screen.getByRole('slider', { name: 'Operational row gap' }) as HTMLInputElement).value)
       .toBe(String(defaultChatPolishGeometry.operationalRowGap));
     expect(screen.getAllByTestId('chat-polish-preview')).toHaveLength(entry.fixtures.length);

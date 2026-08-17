@@ -22,7 +22,9 @@ describe('composer Aurora softening layer', () => {
     expect(canvas).toBeGreaterThan(host);
     expect(softening).toBeGreaterThan(canvas);
     expect(prompt).toBeGreaterThan(softening);
-    expect(panel).toContain('class="relative z-10" data-testid="composer-prompt-layer"');
+    expect(panel).toContain(
+      'class="composer-prompt-layer relative z-10 w-full border-t border-border"',
+    );
     expect(softeningLayer).toContain('aria-hidden="true"');
     expect(softeningLayer).toContain('aurora-softening-layer pointer-events-none');
   });

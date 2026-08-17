@@ -26,12 +26,28 @@ export interface DirectoryPickerEntry {
   isGitRepo: boolean;
 }
 
+/**
+ * One daemon-validated favorite riding the `host.listDirectory` result:
+ * a standard user directory that exists on the daemon host.
+ */
+export interface DirectoryPickerListingFavorite {
+  id: string;
+  path: string;
+}
+
 /** Directory listing returned by `host.listDirectory`. */
 export interface DirectoryPickerListing {
   path: string;
   parent: string | null;
   home: string;
   entries: DirectoryPickerEntry[];
+  /**
+   * Existence-checked standard user directories on the daemon host, in the
+   * fixed order `home` / `desktop` / `documents` / `downloads` (`home` always
+   * leads; missing directories are omitted). Absent on daemons predating the
+   * additive field.
+   */
+  favorites?: DirectoryPickerListingFavorite[];
 }
 
 export type DirectoryPickerState = {

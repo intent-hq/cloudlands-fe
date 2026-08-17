@@ -10,10 +10,6 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({ state: () => ({}), dispatch: vi.fn() });
 });
 
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: { select: () => 'ws-1' },
-}));
-
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: { select: () => undefined },
 }));
@@ -82,7 +78,6 @@ import {
   CHAT_OPERATIONAL_SUMMARY_TONE_CLASS,
   OPERATIONAL_EXPANDED_CONTENT_CLASS,
   OPERATIONAL_GROUP_CONTENT_CLASS,
-  OPERATIONAL_ICON_BOX_CLASS,
   OPERATIONAL_PRIMARY_CLASS,
   OPERATIONAL_ROW_LINE_CLASS,
   OPERATIONAL_SECONDARY_CLASS,

@@ -45,7 +45,7 @@ describe('menuIpcSaga', () => {
 
   const start = (dispatch: (action: unknown) => void = vi.fn()) =>
     runSaga({ dispatch, getState: () => state }, menuIpcSaga);
-  const emit = async (channel: string, payload: unknown = {}) => {
+  const emit = async (channel: string, payload: unknown = { workspaceId: 'ws-1' }) => {
     handlers.get(channel)?.(payload);
     await settle();
   };
@@ -61,7 +61,7 @@ describe('menuIpcSaga', () => {
     });
     offById = vi.fn();
     window.electronAPI = { ...window.electronAPI, on, offById };
-    state = { workspace: { activeWorkspaceId: 'ws-1' }, panelLayout: { byWorkspaceId: {} } };
+    state = { panelLayout: { byWorkspaceId: {} } };
     mocks.isElectron.mockReturnValue(true);
     mocks.isFocusInTerminal.mockReturnValue(false);
   });
@@ -92,7 +92,6 @@ describe('menuIpcSaga', () => {
   it('maps every successful menu command to exact actions in arrival order', async () => {
     const actions: unknown[] = [];
     state = {
-      workspace: { activeWorkspaceId: 'ws-1' },
       panelLayout: {
         byWorkspaceId: {
           'ws-1': {
@@ -176,10 +175,9 @@ describe('menuIpcSaga', () => {
       ['Failed to navigate from menu IPC', { path: '/broken', error: failure }],
     ]);
 
-    state = { workspace: { activeWorkspaceId: null }, panelLayout: { byWorkspaceId: {} } };
-    for (const channel of CHANNELS.slice(1)) await emit(channel);
+    state = { panelLayout: { byWorkspaceId: {} } };
+    for (const channel of CHANNELS.slice(1)) await emit(channel, {});
     state = {
-      workspace: { activeWorkspaceId: 'ws-1' },
       panelLayout: {
         byWorkspaceId: {
           'ws-1': {
@@ -193,6 +191,31 @@ describe('menuIpcSaga', () => {
     };
     await emit('menu:zoom-in');
     expect(actions).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('routes a menu command to its payload workspace after the active workspace changes', async () => {
+    const actions: unknown[] = [];
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-2': {
+            focusedPanelId: 'panel-2',
+            panels: {
+              'panel-2': { activeTabId: 'browser-2', tabs: [{ id: 'browser-2', type: 'browser' }] },
+            },
+          },
+        },
+      },
+    };
+    const task = start((action) => actions.push(action));
+
+    await emit('menu:zoom-in', { workspaceId: 'ws-2' });
+
+    expect(actions).toEqual([
+      { type: 'browser/tabZoomRequested', payload: ['ws-2', 'browser-2', 'in'] },
+    ]);
     task.cancel();
     await task.toPromise();
   });

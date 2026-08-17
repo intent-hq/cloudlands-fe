@@ -1,4 +1,6 @@
 <script lang="ts" module>
+  import { formatNumber } from '$lib/i18n/format';
+
   /**
    * Format raw sysinfo CPU percent (may exceed 100% on multi-core hosts)
    * with one decimal, e.g. `12.3%`.
@@ -8,15 +10,52 @@
   }
 
   /**
-   * Format a byte count as human-readable MB/GB, e.g. `512.0 MB` or `1.25 GB`.
+   * Format a byte count as human-readable MB/GB/TB, e.g. `512.0 MB`,
+   * `1.25 GB` or `1.00 TB`.
    */
   export function formatMemory(bytes: number): string {
+    const TB = 1024 ** 4;
     const GB = 1024 ** 3;
     const MB = 1024 ** 2;
+    if (bytes >= TB) {
+      return `${(bytes / TB).toFixed(2)} TB`;
+    }
     if (bytes >= GB) {
       return `${(bytes / GB).toFixed(2)} GB`;
     }
     return `${(bytes / MB).toFixed(1)} MB`;
+  }
+
+  /**
+   * Format a disk byte count with decimal (SI) units — TB = 1000^4 — so
+   * values match what the OS (e.g. macOS Finder) reports for the same
+   * volume. At most 3 significant figures, trailing zeros trimmed:
+   * 2,000,000,000,000 B → `2 TB`; 1,070,000,000,000 B → `1.07 TB`;
+   * 994,080,000,000 B → `994 GB`. Units are chosen with a half-step
+   * threshold so rounding can never produce a 4-digit value — the whole
+   * [999.5 GB, 1 TB) window renders `1 TB`, not `1000 GB` — and sub-MB
+   * values clamp to `0 MB`. The numeric part is locale-formatted via
+   * `$lib/i18n/format`.
+   */
+  export function formatDiskSize(bytes: number): string {
+    const TB = 1000 ** 4;
+    const GB = 1000 ** 3;
+    const MB = 1000 ** 2;
+    // i18n-ignore (SI unit suffixes are technical notation)
+    const [value, unit] =
+      bytes >= 999.5 * GB
+        ? [bytes / TB, 'TB']
+        : bytes >= 999.5 * MB
+          ? [bytes / GB, 'GB']
+          : [bytes / MB, 'MB'];
+    // A nearly-full disk can report sub-MB free space, which would render
+    // like "0.0005 MB" — floor the MB tier to two decimals so tiny values
+    // clamp to "0 MB".
+    const rounded =
+      unit === 'MB'
+        ? Math.round(Number(value.toPrecision(3)) * 100) / 100
+        : Number(value.toPrecision(3));
+    return `${formatNumber(rounded, { maximumSignificantDigits: 3, useGrouping: false })} ${unit}`;
   }
 
   /**
@@ -142,10 +181,34 @@
     return cmp && (cmp.comparison === 'older' || cmp.comparison === 'newer') ? cmp : null;
   });
 
-  // A version mismatch turns an otherwise-healthy dot yellow; degraded
-  // (already yellow) and down (red) are unchanged.
+  // Low workspaces-volume disk space (< 10% free, both fields present) is a
+  // derived display-only warning — it never mutates the health state itself.
+  const workspaceDiskLow = $derived.by(() => {
+    const available = $stats$?.workspacesDiskAvailableBytes;
+    const total = $stats$?.workspacesDiskTotalBytes;
+    return available !== undefined && total !== undefined && total > 0 && available / total < 0.1;
+  });
+
+  // Formatted workspace-disk value: "free of total", or just the free part
+  // when the daemon omits the total. Null hides the row entirely.
+  const workspaceDiskValue = $derived.by(() => {
+    const available = $stats$?.workspacesDiskAvailableBytes;
+    if (available === undefined) return null;
+    const total = $stats$?.workspacesDiskTotalBytes;
+    return total !== undefined
+      ? m.layout_daemonStatus_workspaceDiskFreeOfTotal_label({
+          free: formatDiskSize(available),
+          total: formatDiskSize(total),
+        })
+      : m.layout_daemonStatus_workspaceDiskFree_label({ free: formatDiskSize(available) });
+  });
+
+  // A version mismatch or low workspace disk turns an otherwise-healthy dot
+  // yellow; degraded (already yellow) and down (red) are unchanged.
   const dotColorClass = $derived(
-    $health$ === 'healthy' && versionMismatch ? 'bg-yellow-500' : healthColors[$health$],
+    $health$ === 'healthy' && (versionMismatch || workspaceDiskLow)
+      ? 'bg-yellow-500'
+      : healthColors[$health$],
   );
 
   const triggerLabel = $derived(
@@ -385,13 +448,18 @@
   {/snippet}
 
   {#snippet content()}
-    <div class="w-56">
+    <!--
+      Intrinsic width: grow to fit the widest stat row (no value wrapping)
+      between the 224px floor and a 320px cap. At the cap the Connection
+      row's min-w-0 truncate takes over instead of widening the menu.
+    -->
+    <div class="min-w-56 w-max max-w-80">
       <Header class="px-3 pt-1.5 pb-1" size={6}>{m.layout_daemonStatus_header()}</Header>
 
       {#if $health$ === 'down'}
         <!-- Down state: show placeholders -->
         <div class="px-3 py-2 space-y-1.5">
-          <div class="flex justify-between text-xs">
+          <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
             <span class="text-subtle">{m.layout_daemonStatus_status_label()}</span>
             <span class="text-error-foreground font-medium"
               >{m.layout_daemonStatus_notRunning_label()}</span
@@ -405,12 +473,12 @@
       {:else}
         <!-- Healthy/Degraded state: show stats -->
         <div class="px-3 py-2 space-y-1.5">
-          <div class="flex justify-between text-xs">
+          <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
             <span class="text-subtle">{m.layout_daemonStatus_status_label()}</span>
             <span
               class={cn(
                 'font-medium',
-                $health$ === 'healthy' ? 'text-green-500' : 'text-yellow-500',
+                $health$ === 'healthy' && !workspaceDiskLow ? 'text-green-500' : 'text-yellow-500',
               )}
             >
               {$health$ === 'healthy'
@@ -423,7 +491,7 @@
             <div class="h-px bg-border my-1"></div>
 
             <!-- Agent slots -->
-            <div class="flex justify-between text-xs">
+            <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
               <span class="text-subtle">{m.layout_daemonStatus_agentSlots_label()}</span>
               <span class="font-mono">
                 {$stats$.agents}/{$stats$.maxAgents ?? '?'}
@@ -431,15 +499,15 @@
             </div>
 
             <!-- Connected clients -->
-            <div class="flex justify-between text-xs">
+            <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
               <span class="text-subtle">{m.layout_daemonStatus_wssClients_label()}</span>
               <span class="font-mono">{$stats$.clients}</span>
             </div>
 
             <!-- Transport -->
-            <div class="flex justify-between text-xs">
-              <span class="text-subtle">{m.layout_daemonStatus_transport_label()}</span>
-              <span class="font-mono text-xs">
+            <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+              <span class="text-subtle shrink-0">{m.layout_daemonStatus_transport_label()}</span>
+              <span class="font-mono text-xs min-w-0 truncate">
                 {$stats$.listenMode}{$stats$.port ? `:${$stats$.port}` : ''}
               </span>
             </div>
@@ -451,9 +519,9 @@
                   {#snippet content()}
                     <span>{versionMismatchTooltip}</span>
                   {/snippet}
-                  <div class="flex justify-between text-xs w-full">
-                    <span class="text-subtle">{m.layout_daemonStatus_version_label()}</span>
-                    <span class="flex items-center gap-1.5">
+                  <div class="flex justify-between gap-2 text-xs w-full whitespace-nowrap">
+                    <span class="text-subtle shrink-0">{m.layout_daemonStatus_version_label()}</span>
+                    <span class="flex items-center gap-1.5 min-w-0">
                       <!--
                         Keyboard focus inside the menu is menu-managed (bits-ui
                         closes on Tab; arrow keys visit only menu items), so the
@@ -468,21 +536,25 @@
                       >
                         <Fa icon={faTriangleExclamation} />
                       </span>
-                      <span class="font-mono text-xs">{$stats$.version}</span>
+                      <span class="font-mono text-xs min-w-0 truncate" title={$stats$.version}
+                        >{$stats$.version}</span
+                      >
                     </span>
                   </div>
                 </Tooltip>
               {:else}
-                <div class="flex justify-between text-xs">
-                  <span class="text-subtle">{m.layout_daemonStatus_version_label()}</span>
-                  <span class="font-mono text-xs">{$stats$.version}</span>
+                <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                  <span class="text-subtle shrink-0">{m.layout_daemonStatus_version_label()}</span>
+                  <span class="font-mono text-xs min-w-0 truncate" title={$stats$.version}
+                    >{$stats$.version}</span
+                  >
                 </div>
               {/if}
             {/if}
 
             <!-- Protocol version -->
             {#if $stats$.protocolVersion !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_protocol_label()}</span>
                 <span class="font-mono text-xs">{$stats$.protocolVersion}</span>
               </div>
@@ -490,7 +562,7 @@
 
             <!-- Uptime -->
             {#if liveUptimeSeconds !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
                 <span class="font-mono text-xs" aria-live="off"
                   >{formatUptime(liveUptimeSeconds)}</span
@@ -500,7 +572,7 @@
 
             <!-- CPU (only when the daemon reports it) -->
             {#if $stats$.cpuPercent !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
                 <span class="font-mono text-xs" aria-live="off"
                   >{formatCpu($stats$.cpuPercent)}</span
@@ -510,7 +582,7 @@
 
             <!-- Memory (only when the daemon reports it) -->
             {#if $stats$.memoryBytes !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
                 <span class="font-mono text-xs" aria-live="off"
                   >{formatMemory($stats$.memoryBytes)}</span
@@ -518,10 +590,44 @@
               </div>
             {/if}
 
+            <!-- Workspace disk (only when the daemon reports it) -->
+            {#if workspaceDiskValue !== null}
+              {#if workspaceDiskLow}
+                <Tooltip side="left" contentClass="z-[10001]" class="w-full">
+                  {#snippet content()}
+                    <span>{m.layout_daemonStatus_workspaceDiskLow_tooltip()}</span>
+                  {/snippet}
+                  <div class="flex justify-between gap-2 text-xs w-full whitespace-nowrap">
+                    <span class="text-subtle">{m.layout_daemonStatus_workspaceDisk_label()}</span>
+                    <span class="flex items-center gap-1.5">
+                      <!--
+                        Same pattern as the version-mismatch icon above: menu
+                        focus management prevents keyboard-triggered tooltips,
+                        so expose the warning as the icon's accessible name.
+                      -->
+                      <span
+                        class="text-warning"
+                        role="img"
+                        aria-label={m.layout_daemonStatus_workspaceDiskLow_tooltip()}
+                      >
+                        <Fa icon={faTriangleExclamation} />
+                      </span>
+                      <span class="font-mono text-xs" aria-live="off">{workspaceDiskValue}</span>
+                    </span>
+                  </div>
+                </Tooltip>
+              {:else}
+                <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                  <span class="text-subtle">{m.layout_daemonStatus_workspaceDisk_label()}</span>
+                  <span class="font-mono text-xs" aria-live="off">{workspaceDiskValue}</span>
+                </div>
+              {/if}
+            {/if}
+
             <!-- Host OS/Arch -->
-            <div class="flex justify-between text-xs">
-              <span class="text-subtle">{m.layout_daemonStatus_host_label()}</span>
-              <span class="font-mono text-xs">{$stats$.os}/{$stats$.arch}</span>
+            <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+              <span class="text-subtle shrink-0">{m.layout_daemonStatus_host_label()}</span>
+              <span class="font-mono text-xs min-w-0 truncate">{$stats$.os}/{$stats$.arch}</span>
             </div>
 
             <!-- FE connection mode -->
@@ -557,7 +663,7 @@
 
             <!-- Model (HF repo id, shortened) -->
             {#if $unslothStatus$.repoId}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_model_label()}</span>
                 <Tooltip side="left" contentClass="z-[10001]">
                   {#snippet content()}
@@ -570,7 +676,7 @@
 
             <!-- Phase -->
             {#if $unslothStatus$.phase}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_phase_label()}</span>
                 <span
                   class={cn(
@@ -585,7 +691,7 @@
 
             <!-- Port -->
             {#if $unslothStatus$.port !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_port_label()}</span>
                 <span class="font-mono text-xs">{$unslothStatus$.port}</span>
               </div>
@@ -593,7 +699,7 @@
 
             <!-- Uptime -->
             {#if $unslothStatus$.uptimeSecs !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
                 <span class="font-mono text-xs" aria-live="off"
                   >{formatUptime($unslothStatus$.uptimeSecs)}</span
@@ -603,7 +709,7 @@
 
             <!-- CPU (process tree) -->
             {#if $unslothStatus$.cpuPercent !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
                 <span class="font-mono text-xs" aria-live="off"
                   >{formatCpu($unslothStatus$.cpuPercent)}</span
@@ -613,7 +719,7 @@
 
             <!-- Memory (process tree) -->
             {#if $unslothStatus$.memoryBytes !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
                 <span class="font-mono text-xs" aria-live="off"
                   >{formatMemory($unslothStatus$.memoryBytes)}</span
@@ -623,7 +729,7 @@
 
             <!-- Attached agents (omitted when the agent manager is not attached) -->
             {#if $unslothStatus$.attachedAgentCount !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_attachedAgents_label()}</span>
                 <span class="font-mono text-xs">{$unslothStatus$.attachedAgentCount}</span>
               </div>

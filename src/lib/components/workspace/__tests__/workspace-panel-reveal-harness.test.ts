@@ -39,7 +39,7 @@ describe('WorkspaceColumnsRevealHarness readiness contract', () => {
     expect(mountedTestSource).not.toContain("component.locator('[data-reveal-host]')");
     expect(mountedTestSource).toContain('await expect(host).toBeVisible();');
     expect(mountedTestSource).toContain(
-      'await expect(ready.or(initializationError)).toBeAttached();',
+      'await expect(ready.or(initializationError)).toBeAttached(',
     );
     expect(mountedTestSource).toContain('WorkspaceColumnsRevealHarness initialization failed:');
     expect(mountedTestSource.indexOf('requireReadyHarness(component, page)')).toBeLessThan(

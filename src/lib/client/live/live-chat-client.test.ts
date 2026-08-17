@@ -107,7 +107,10 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     const off = client.subscribe('agent-1', (t) => seen.push(t));
     await flush();
 
-    expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', { agentId: 'agent-1' });
+    expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
+      agentId: 'agent-1',
+      deltaEncoding: 'incremental',
+    });
     snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
 
     expect(seen).toHaveLength(1);
@@ -340,7 +343,7 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     off();
   });
 
-  it('ignores a duplicate seq-0 snapshot before the first delta', async () => {
+  it('ignores an exact-duplicate seq-0 snapshot before the first delta', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();
     const seen: Array<{ totalMessages: number }> = [];
@@ -348,7 +351,9 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     await flush();
 
     snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
-    snapshotPush('sub-1', 0, { ...SEEDED_SNAPSHOT, totalMessages: 99 });
+    // A distinct object with identical content: the duplicate check is
+    // content-based (payload fingerprint), not reference identity.
+    snapshotPush('sub-1', 0, structuredClone(SEEDED_SNAPSHOT));
 
     expect(seen).toHaveLength(1);
     expect(seen[0].totalMessages).toBe(1);
@@ -1321,7 +1326,9 @@ describe('LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)', (
     await vi.advanceTimersByTimeAsync(0);
 
     // First registration rejected: exactly one wire attempt, phase delayed.
-    expect(subscribeCalls()).toEqual([['chat.subscribe', { agentId: 'agent-1' }]]);
+    expect(subscribeCalls()).toEqual([
+      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental' }],
+    ]);
     expect(phases).toEqual(['connecting', 'delayed']);
 
     // Nothing fires before the 1s initial backoff elapses.
@@ -1329,8 +1336,8 @@ describe('LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)', (
     expect(subscribeCalls()).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(subscribeCalls()).toEqual([
-      ['chat.subscribe', { agentId: 'agent-1' }],
-      ['chat.subscribe', { agentId: 'agent-1' }],
+      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental' }],
+      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental' }],
     ]);
     // A rejected registration acked no id — no unsubscribe frame on retry.
     expect(unsubscribeCalls()).toEqual([]);
@@ -1414,7 +1421,9 @@ describe('LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)', (
       (p) => phases.push(p),
     );
     await vi.advanceTimersByTimeAsync(0);
-    expect(subscribeCalls()).toEqual([['chat.subscribe', { agentId: 'agent-1' }]]);
+    expect(subscribeCalls()).toEqual([
+      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental' }],
+    ]);
 
     // Acked but no seq-0 within SNAPSHOT_TIMEOUT_MS: delayed + retry armed.
     await vi.advanceTimersByTimeAsync(5_000);
@@ -1425,8 +1434,8 @@ describe('LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)', (
     await vi.advanceTimersByTimeAsync(1_000);
     expect(unsubscribeCalls()).toEqual([['chat.unsubscribe', { subscriptionId: 'sub-1' }]]);
     expect(subscribeCalls()).toEqual([
-      ['chat.subscribe', { agentId: 'agent-1' }],
-      ['chat.subscribe', { agentId: 'agent-1' }],
+      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental' }],
+      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental' }],
     ]);
 
     // The recovery seq-0 snapshot (§7.1) hydrates the transcript.
@@ -1611,6 +1620,7 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
 
     expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
       agentId: 'agent-1',
+      deltaEncoding: 'incremental',
       sinceMessageId: '0190a1b2-user',
     });
 
@@ -1680,7 +1690,10 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
     const off = client.subscribe('agent-1', (t) => seen.push(t));
     await flush();
 
-    expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', { agentId: 'agent-1' });
+    expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
+      agentId: 'agent-1',
+      deltaEncoding: 'incremental',
+    });
     snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
     expect(seen).toHaveLength(1);
     expect('resumed' in (seen[0] as object)).toBe(false);
@@ -1704,7 +1717,7 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
 
     const subscribes = mockedRequest.mock.calls.filter(([m]) => m === 'chat.subscribe');
     expect(subscribes).toHaveLength(2);
-    expect(subscribes[1][1]).toEqual({ agentId: 'agent-1' });
+    expect(subscribes[1][1]).toEqual({ agentId: 'agent-1', deltaEncoding: 'incremental' });
     off();
   });
 
@@ -1730,8 +1743,449 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
     await vi.advanceTimersByTimeAsync(1_000);
     const subscribes = mockedRequest.mock.calls.filter(([m]) => m === 'chat.subscribe');
     expect(subscribes).toHaveLength(2);
-    expect(subscribes[1][1]).toEqual({ agentId: 'agent-1', sinceMessageId: '0190a1b2-user' });
+    expect(subscribes[1][1]).toEqual({
+      agentId: 'agent-1',
+      deltaEncoding: 'incremental',
+      sinceMessageId: '0190a1b2-user',
+    });
     vi.useRealTimers();
+    off();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Daemon-side stream restart (intent-hq/monorepo#2627): a harness restart
+// re-emits the seq-0 snapshot and restarts the delta seq counter on the SAME
+// subscriptionId. The reconciler must rebuild from that snapshot — rejecting
+// it as a stale duplicate leaves expectedSeq ahead of the restarted stream,
+// so every following delta is silently dropped as 'stale' and the transcript
+// freezes until an unrelated seq jump (the user's next message) finally
+// forces a gap resnapshot.
+// ---------------------------------------------------------------------------
+
+describe('LiveChatClient.subscribe daemon stream restart (intent-hq/monorepo#2627)', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    reset();
+  });
+
+  const subscribeCalls = () => mockedRequest.mock.calls.filter(([m]) => m === 'chat.subscribe');
+
+  const assistantDelta = (messageId: string, text: string) => ({
+    added: [
+      {
+        messageId,
+        role: 'assistant',
+        block: { type: 'text', id: `${messageId}:0`, text },
+        blockIndex: 0,
+        streamingComplete: false,
+      },
+    ],
+    updated: [],
+    removedIds: [],
+  });
+
+  it('rebuilds from a re-emitted seq-0 snapshot and applies the restarted delta stream', async () => {
+    vi.useFakeTimers();
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{
+      messages: Array<{ id: string; contentBlocks?: Array<{ text?: string }> }>;
+    }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t as never));
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Hydrated and advanced: expectedSeq is now 3.
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+    deltaPush('sub-1', 1, assistantDelta('a1', 'hello'));
+    deltaPush('sub-1', 2, assistantDelta('a1', 'hello world'));
+    expect(seen).toHaveLength(3);
+
+    // Harness restart: the daemon re-emits seq-0 and restarts deltas at 1 on
+    // the same subscription. The snapshot must re-seed the transcript…
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+    expect(seen).toHaveLength(4);
+
+    // …and the restarted deltas must render (the frozen-transcript black
+    // hole dropped every one of these as 'stale').
+    deltaPush('sub-1', 1, assistantDelta('b1', 'recovered'));
+    deltaPush('sub-1', 2, assistantDelta('b1', 'recovered turn'));
+    expect(seen).toHaveLength(6);
+    const last = seen[seen.length - 1];
+    expect(last.messages.map((m) => m.id)).toEqual(['0190a1b2-user', 'b1']);
+    expect(last.messages[1].contentBlocks?.[0]).toMatchObject({ text: 'recovered turn' });
+
+    // The rebuild is in-place: no unsubscribe/subscribe churn afterwards.
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(subscribeCalls()).toHaveLength(1);
+    off();
+  });
+
+  it('still ignores an exact duplicate re-delivery of the hydration snapshot', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: unknown[] = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+    expect(seen).toHaveLength(1);
+
+    // Duplicate re-delivery before any delta advanced the stream: no repeat
+    // hydration edge. A clone, so equality is content-based, not identity.
+    snapshotPush('sub-1', 0, structuredClone(SEEDED_SNAPSHOT));
+    expect(seen).toHaveLength(1);
+
+    // The stream continues at seq 1 and applies normally either way.
+    deltaPush('sub-1', 1, assistantDelta('a1', 'hi'));
+    expect(seen).toHaveLength(2);
+    off();
+  });
+
+  it('rebuilds from a divergent seq-0 re-emit before the first delta (intent-hq/monorepo#2716)', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{
+      messages: Array<{ id: string; contentBlocks?: Array<{ text?: string }> }>;
+      totalMessages: number;
+    }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t as never));
+    await flush();
+
+    // Hydrated, no delta applied yet: expectedSeq is still 1.
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+    expect(seen).toHaveLength(1);
+
+    // Daemon-side stream restart racing the idle stream: the re-emitted seq-0
+    // carries a row persisted while the stream was down (it got no delta and
+    // exists only in this snapshot). Treating it as a duplicate hides that
+    // row until the next gap resnapshot.
+    const divergent = {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        ...SEEDED_SNAPSHOT.messages,
+        {
+          id: '0190a1c0-asst',
+          agentId: 'agent-1',
+          seq: 1,
+          role: 'assistant',
+          contentBlocks: [{ type: 'text', id: '0190a1c0-asst:0', text: 'persisted while down' }],
+          timestamp: '2026-06-27T01:00:05.000Z',
+        },
+      ],
+      totalMessages: 2,
+    };
+    snapshotPush('sub-1', 0, divergent);
+    expect(seen).toHaveLength(2);
+    expect(seen[1].messages.map((m) => m.id)).toEqual(['0190a1b2-user', '0190a1c0-asst']);
+    expect(seen[1].totalMessages).toBe(2);
+
+    // The restarted delta stream at seq 1 applies onto the rebuilt state.
+    deltaPush('sub-1', 1, assistantDelta('b1', 'next turn'));
+    expect(seen).toHaveLength(3);
+    const last = seen[seen.length - 1];
+    expect(last.messages.map((m) => m.id)).toEqual(['0190a1b2-user', '0190a1c0-asst', 'b1']);
+    expect(last.messages[2].contentBlocks?.[0]).toMatchObject({ text: 'next turn' });
+
+    // In-place rebuild: no unsubscribe/subscribe churn.
+    expect(subscribeCalls()).toHaveLength(1);
+    expect(mockedRequest).not.toHaveBeenCalledWith('chat.unsubscribe', expect.anything());
+    off();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Incremental delta encoding (PROTOCOL §7.1 `deltaEncoding`, monorepo#2675):
+// the registration opts in, but the SNAPSHOT ECHO decides the reducer — with
+// `deltaEncoding: "incremental"` echoed, `textDelta`-bearing text/thinking
+// entities APPEND their fragment; without the echo (older daemon ignoring
+// the param) every block reduces full-text as before.
+// ---------------------------------------------------------------------------
+
+describe('LiveChatClient.subscribe incremental delta encoding (§7.1 deltaEncoding)', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    reset();
+  });
+
+  const INCREMENTAL_SNAPSHOT = { ...SEEDED_SNAPSHOT, deltaEncoding: 'incremental' };
+
+  function textFragment(kind: 'added' | 'updated', blockType: string, fragment: string) {
+    return {
+      [kind]: [
+        {
+          agentId: 'agent-1',
+          messageId: '0190a200-asst',
+          role: 'assistant',
+          block: { type: blockType, id: '0190a200-asst:0', textDelta: fragment },
+        },
+      ],
+      ...(kind === 'added' ? { updated: [] } : { added: [] }),
+      removedIds: [],
+    };
+  }
+
+  it('appends textDelta fragments: added creates the block, updated appends in seq order', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ id: string; contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, INCREMENTAL_SNAPSHOT);
+
+    // First chunk arrives in `added` carrying only its fragment — the block
+    // is created with text equal to the fragment (append onto empty).
+    deltaPush('sub-1', 1, textFragment('added', 'text', 'Reading'));
+    expect(seen[1].messages[1].contentBlocks?.[0]).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: 'Reading',
+    });
+
+    // Growth frames arrive in `updated` carrying only the new fragment.
+    deltaPush('sub-1', 2, textFragment('updated', 'text', ' the'));
+    deltaPush('sub-1', 3, textFragment('updated', 'text', ' logs'));
+    expect(seen[3].messages[1].contentBlocks?.[0]).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: 'Reading the logs',
+    });
+    off();
+  });
+
+  it('thinking fragments share the encoding and append exactly like text', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, INCREMENTAL_SNAPSHOT);
+    deltaPush('sub-1', 1, textFragment('added', 'thinking', 'Let me '));
+    deltaPush('sub-1', 2, textFragment('updated', 'thinking', 'check.'));
+
+    expect(seen[2].messages[1].contentBlocks?.[0]).toEqual({
+      type: 'thinking',
+      id: '0190a200-asst:0',
+      text: 'Let me check.',
+    });
+    off();
+  });
+
+  it('reduces full-text (no append) when the snapshot carries NO encoding echo', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    // Older daemon: the request param was ignored, no echo on the snapshot.
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+    deltaPush('sub-1', 1, {
+      added: [
+        {
+          agentId: 'agent-1',
+          messageId: '0190a200-asst',
+          role: 'assistant',
+          block: { type: 'text', id: '0190a200-asst:0', text: 'Reading' },
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    });
+    deltaPush('sub-1', 2, {
+      added: [],
+      updated: [
+        {
+          agentId: 'agent-1',
+          messageId: '0190a200-asst',
+          role: 'assistant',
+          block: { type: 'text', id: '0190a200-asst:0', text: 'Reading the logs' },
+        },
+      ],
+      removedIds: [],
+    });
+
+    // Latest-entity-wins on the full accumulated text — never doubled.
+    expect(seen[2].messages[1].contentBlocks?.[0]).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: 'Reading the logs',
+    });
+    off();
+  });
+
+  it('mid-turn snapshot composes: fragments append after the snapshot prefix', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    // The merged in-flight message carries the text accumulated so far.
+    snapshotPush('sub-1', 0, {
+      ...INCREMENTAL_SNAPSHOT,
+      messages: [
+        ...SEEDED_SNAPSHOT.messages,
+        {
+          id: '0190a200-asst',
+          agentId: 'agent-1',
+          seq: 1,
+          role: 'assistant',
+          contentBlocks: [{ type: 'text', id: '0190a200-asst:0', text: 'Reading the' }],
+          timestamp: '2026-06-27T01:00:01.000Z',
+          isStreaming: true,
+        },
+      ],
+      totalMessages: 2,
+    });
+
+    // Post-snapshot fragments arrive in `updated` — the block is known.
+    deltaPush('sub-1', 1, textFragment('updated', 'text', ' logs'));
+    expect(seen[1].messages[1].contentBlocks?.[0]).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: 'Reading the logs',
+    });
+    off();
+  });
+
+  it('terminal reconcile stays authoritative full-text over the appended state', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{
+      isStreaming: boolean;
+      messages: Array<{ contentBlocks?: unknown[] }>;
+    }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, INCREMENTAL_SNAPSHOT);
+    deltaPush('sub-1', 1, textFragment('added', 'text', 'Readin'));
+    expect(seen[1].isStreaming).toBe(true);
+
+    // Terminal reconcile: FULL block with authoritative `text`, no textDelta
+    // — upserted verbatim in both encodings (convergence checkpoint).
+    deltaPush('sub-1', 2, {
+      added: [],
+      updated: [
+        {
+          agentId: 'agent-1',
+          messageId: '0190a200-asst',
+          role: 'assistant',
+          block: { type: 'text', id: '0190a200-asst:0', text: 'Reading done.' },
+          messageSeq: 1,
+          timestamp: '2026-06-27T01:00:02.000Z',
+          streamingComplete: true,
+        },
+      ],
+      removedIds: [],
+    });
+    const last = seen[seen.length - 1];
+    expect(last.isStreaming).toBe(false);
+    expect(last.messages[1].contentBlocks?.[0]).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: 'Reading done.',
+    });
+    off();
+  });
+
+  it('keeps latest-wins for a non-text block carrying its own textDelta field', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, INCREMENTAL_SNAPSHOT);
+    // A passthrough block whose payload happens to include a `textDelta`
+    // string must NOT take the append path (the daemon gates the fragment
+    // encoding on the mapper-owned text/thinking types).
+    const foreign = {
+      agentId: 'agent-1',
+      messageId: '0190a200-asst',
+      role: 'assistant',
+      block: { type: 'resource', id: '0190a200-asst:0', textDelta: 'not-a-fragment' },
+    };
+    deltaPush('sub-1', 1, { added: [foreign], updated: [], removedIds: [] });
+    deltaPush('sub-1', 2, { added: [], updated: [foreign], removedIds: [] });
+
+    expect(seen[2].messages[1].contentBlocks?.[0]).toEqual({
+      type: 'resource',
+      id: '0190a200-asst:0',
+      textDelta: 'not-a-fragment',
+    });
+    off();
+  });
+
+  it('same-subscription lag-recovery snapshot (seq > 0) re-arms and fragments append onto its prefix', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, INCREMENTAL_SNAPSHOT);
+    deltaPush('sub-1', 1, textFragment('added', 'text', 'early'));
+
+    // Daemon-side lag recovery: the SAME subscription emits an echoed
+    // snapshot at the next seq, carrying the in-flight message's accumulated
+    // prefix (the daemon reseeds its mapper from this snapshot).
+    snapshotPush('sub-1', 2, {
+      ...INCREMENTAL_SNAPSHOT,
+      messages: [
+        ...SEEDED_SNAPSHOT.messages,
+        {
+          id: '0190a200-asst',
+          agentId: 'agent-1',
+          seq: 1,
+          role: 'assistant',
+          contentBlocks: [{ type: 'text', id: '0190a200-asst:0', text: 'early recovery' }],
+          timestamp: '2026-06-27T01:00:01.000Z',
+          isStreaming: true,
+        },
+      ],
+      totalMessages: 2,
+    });
+
+    // Post-recovery fragments arrive in `updated` on the same subscription
+    // and append onto the recovery snapshot's prefix, not the pre-lag state.
+    deltaPush('sub-1', 3, textFragment('updated', 'text', ' prefix'));
+    const last = seen[seen.length - 1];
+    expect(last.messages[1].contentBlocks?.[0]).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: 'early recovery prefix',
+    });
+    off();
+  });
+
+  it('re-arms from each snapshot echo: a recovery snapshot decides the mode anew', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, INCREMENTAL_SNAPSHOT);
+    deltaPush('sub-1', 1, textFragment('added', 'text', 'first'));
+
+    // seq gap → resnapshot; the recovery registration's snapshot echoes the
+    // encoding again and the append reducer stays armed on the new state.
+    deltaPush('sub-1', 3, { added: [], updated: [], removedIds: [] });
+    await flush();
+    snapshotPush('sub-2', 0, INCREMENTAL_SNAPSHOT);
+    deltaPush('sub-2', 1, textFragment('added', 'text', 'fresh'));
+    deltaPush('sub-2', 2, textFragment('updated', 'text', ' start'));
+
+    const last = seen[seen.length - 1];
+    expect(last.messages[1].contentBlocks?.[0]).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: 'fresh start',
+    });
     off();
   });
 });

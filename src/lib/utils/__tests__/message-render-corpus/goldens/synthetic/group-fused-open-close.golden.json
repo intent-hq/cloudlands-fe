@@ -1,0 +1,31 @@
+{
+  "note": "fused <group:Name</group:> treated as a single group OPEN",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "content_group",
+      "name": "Wrapping up",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "work inside"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "after"
+        }
+      ]
+    }
+  ]
+}

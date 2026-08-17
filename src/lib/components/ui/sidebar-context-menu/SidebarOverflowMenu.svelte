@@ -2,7 +2,7 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import SidebarDropdownMenuItems from './SidebarDropdownMenuItems.svelte';
-  import type { SidebarMenuEntry } from './types';
+  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
 
   let {
     items,

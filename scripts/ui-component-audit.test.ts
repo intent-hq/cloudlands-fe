@@ -1,5 +1,6 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -7,14 +8,15 @@ import {
   parseUiComponentInventory,
   parseUiComponentMetadata,
 } from '../src/lib/components/ui/component-metadata';
+import { runUiComponentAudit } from './ui-component-audit';
 import { buildUiComponentInventory } from './ui-component-inventory';
 
 const auditScript = path.resolve(process.cwd(), 'scripts/ui-component-audit.ts');
 
 function audit(mode: string): string {
-  return execFileSync('pnpm', ['exec', 'tsx', auditScript, mode], {
-    encoding: 'utf8',
-  }).trim();
+  const result = runUiComponentAudit(mode);
+  expect(result).toMatchObject({ exitCode: 0, stderr: '' });
+  return result.stdout.trim();
 }
 
 describe('UI component metadata schema', () => {
@@ -128,7 +130,7 @@ describe('UI component inventory gate', () => {
       'src/lib/components/file-tracking/CodeChangesPanel.svelte',
       'src/lib/components/settings/ColorThemeSettings.svelte',
     ]);
-    expect(dropdownMenu?.callers).toHaveLength(16);
+    expect(dropdownMenu?.callers).toHaveLength(17);
     expect(dropdownMenu?.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');
     expect(buildUiComponentInventory().components).toEqual(components);
   });
@@ -160,7 +162,7 @@ describe('UI component inventory gate', () => {
     expect(output).toContain('repair=$lib/components/ui/<component>');
   });
 
-  it('enforces actionable primitive, pattern, and product boundaries', () => {
+  it('enforces actionable primitive, pattern, and product boundaries through the CLI', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'ui-component-audit-'));
     try {
       const files = {
@@ -178,9 +180,11 @@ describe('UI component inventory gate', () => {
         writeFileSync(target, source);
       }
 
-      const result = spawnSync('pnpm', ['exec', 'tsx', auditScript, 'check'], {
+      const tsxCli = createRequire(import.meta.url).resolve('tsx/cli');
+      const result = spawnSync(process.execPath, [tsxCli, auditScript, 'check'], {
         encoding: 'utf8',
         env: { ...process.env, UI_COMPONENT_AUDIT_ROOT: directory },
+        timeout: 120_000,
       });
       expect(result.status).toBe(1);
       expect(result.stderr).toContain(
@@ -197,5 +201,5 @@ describe('UI component inventory gate', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
-  });
+  }, 120_000);
 });

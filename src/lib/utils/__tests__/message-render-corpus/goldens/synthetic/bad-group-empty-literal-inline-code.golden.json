@@ -1,0 +1,15 @@
+{
+  "note": "empty-name group literal in inline code (repro shape from #2689)",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "copies leaked suggested-prompts content and `<group:>` tags. The fix mirrors the display pipeline.\n\nNow waiting on the CI re-run."
+        }
+      ]
+    }
+  ]
+}

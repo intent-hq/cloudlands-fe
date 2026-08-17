@@ -1,0 +1,194 @@
+[
+  {
+    "type": "thinking",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:0",
+    "text": "I need to check the other onboarding inputs like LocalRepoTab, NewProjectTab, DirectoryPickerModal, and OnboardingGitHubStep to see if they have the s…"
+  },
+  {
+    "type": "text",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:1",
+    "text": "<group:Researching>\n"
+  },
+  {
+    "type": "tool_use",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:2",
+    "name": "Run `cd packages/cloudlands-fe && git fetch origin main -q && git checkout -q origin/...`",
+    "input": {
+      "command": "[omitted 249 chars]",
+      "cwd": "/home/user/intent/workspaces/focus-ring/monorepo",
+      "wait": true,
+      "max_wait_seconds": 60,
+      "_acpTitle": "Run `cd packages/cloudlands-fe && git fetch origin main -q && git checkout -q origin/...`"
+    },
+    "toolCallId": "toolu_vrtx_01X2X52niwqR8Eg3JNtt47g9",
+    "metadata": {
+      "toolKind": "git",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:3",
+    "tool_use_id": "toolu_vrtx_01X2X52niwqR8Eg3JNtt47g9",
+    "output": {
+      "output": "[omitted 902 chars]"
+    },
+    "is_error": false
+  },
+  {
+    "type": "thinking",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:4",
+    "text": "I ran a git checkout command to move to origin/main, but I'm second-guessing whether the syntax was correct — the `--` with no paths after it might be…"
+  },
+  {
+    "type": "tool_use",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:5",
+    "name": "view",
+    "input": {
+      "path": "packages/cloudlands-fe/src/features/onboarding/steps/OnboardingPromptStep.svelte",
+      "view_range": [
+        375,
+        415
+      ],
+      "_acpTitle": "Read `packages/cloudlands-fe/src/features/onboarding/steps/OnboardingPromptStep.svelte` (lines 375-415)"
+    },
+    "toolCallId": "toolu_vrtx_01Qsopj9sWZJFbr5hXTour6M",
+    "metadata": {
+      "toolKind": "file",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:6",
+    "tool_use_id": "toolu_vrtx_01Qsopj9sWZJFbr5hXTour6M",
+    "output": {
+      "output": "[omitted 2001 chars]"
+    },
+    "is_error": false
+  },
+  {
+    "type": "tool_use",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:7",
+    "name": "Read `packages/cloudlands-fe/src/features/onboarding/messages/DirectoryPickerView.svelte` (search: \"<input|focus-within|focus-visible\")",
+    "input": {
+      "path": "packages/cloudlands-fe/src/features/onboarding/messages/DirectoryPickerView.svelte",
+      "search_query_regex": "<input|focus-within|focus-visible",
+      "context_lines_before": 8,
+      "context_lines_after": 10,
+      "_acpTitle": "Read `packages/cloudlands-fe/src/features/onboarding/messages/DirectoryPickerView.svelte` (search: \"<input|focus-within|focus-visible\")"
+    },
+    "toolCallId": "toolu_vrtx_01VehiZreWu5wE65yvvkNB7S",
+    "metadata": {
+      "toolKind": "file",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:8",
+    "tool_use_id": "toolu_vrtx_01VehiZreWu5wE65yvvkNB7S",
+    "output": {
+      "output": "[omitted 3151 chars]"
+    },
+    "is_error": false
+  },
+  {
+    "type": "thinking",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:9",
+    "text": "Looking at the OnboardingPromptStep component around line 393, I see there's a hidden file input that shouldn't cause focus issues, but I need to chec…"
+  },
+  {
+    "type": "tool_use",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:10",
+    "name": "Run `cd packages/cloudlands-fe && grep -n \"RichTextarea\\|Textarea\\|contenteditable\\|T...`",
+    "input": {
+      "command": "[omitted 356 chars]",
+      "cwd": "/home/user/intent/workspaces/focus-ring/monorepo",
+      "wait": true,
+      "max_wait_seconds": 60,
+      "_acpTitle": "Run `cd packages/cloudlands-fe && grep -n \"RichTextarea\\|Textarea\\|contenteditable\\|T...`"
+    },
+    "toolCallId": "toolu_vrtx_01XinQMKvxqo69EmUkZVptvk",
+    "metadata": {
+      "toolKind": "terminal",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:11",
+    "tool_use_id": "toolu_vrtx_01XinQMKvxqo69EmUkZVptvk",
+    "output": {
+      "output": "[omitted 2110 chars]"
+    },
+    "is_error": false
+  },
+  {
+    "type": "thinking",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:12",
+    "text": "I need to investigate how RichTextarea handles focus, particularly whether its contenteditable element or the container itself is suppressing the glob…"
+  },
+  {
+    "type": "tool_use",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:13",
+    "name": "Run `cd packages/cloudlands-fe && grep -n \"outline\\|focus\\|class=\" src/lib/components...`",
+    "input": {
+      "command": "cd packages/cloudlands-fe && grep -n \"outline\\|focus\\|class=\" src/lib/components/ui/RichTextarea.svelte | head -30",
+      "cwd": "/home/user/intent/workspaces/focus-ring/monorepo",
+      "wait": true,
+      "max_wait_seconds": 30,
+      "_acpTitle": "Run `cd packages/cloudlands-fe && grep -n \"outline\\|focus\\|class=\" src/lib/components...`"
+    },
+    "toolCallId": "toolu_vrtx_018WU3im7icADz84t46Z25FU",
+    "metadata": {
+      "toolKind": "terminal",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:14",
+    "tool_use_id": "toolu_vrtx_018WU3im7icADz84t46Z25FU",
+    "output": {
+      "output": "[omitted 513 chars]"
+    },
+    "is_error": false
+  },
+  {
+    "type": "tool_use",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:15",
+    "name": "Run `cd packages/cloudlands-fe && grep -n \"outline\\|ProseMirror.*focus\\|focus\" src/li...`",
+    "input": {
+      "command": "cd packages/cloudlands-fe && grep -n \"outline\\|ProseMirror.*focus\\|focus\" src/lib/styles/tiptap-editor.css | head -15; echo ===; grep -rn \"rich-textarea\" src/app.css src/lib/styles/*.css | head",
+      "cwd": "/home/user/intent/workspaces/focus-ring/monorepo",
+      "wait": true,
+      "max_wait_seconds": 30,
+      "_acpTitle": "Run `cd packages/cloudlands-fe && grep -n \"outline\\|ProseMirror.*focus\\|focus\" src/li...`"
+    },
+    "toolCallId": "toolu_vrtx_01HuEmTXbmVu83p448hsVkfR",
+    "metadata": {
+      "toolKind": "terminal",
+      "status": "completed"
+    }
+  },
+  {
+    "type": "tool_result",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:16",
+    "tool_use_id": "toolu_vrtx_01HuEmTXbmVu83p448hsVkfR",
+    "output": {
+      "output": "[omitted 674 chars]"
+    },
+    "is_error": false
+  },
+  {
+    "type": "thinking",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:17",
+    "text": "The tiptap editor removes its outline via unlayered CSS that overrides the base layer, which works fine either way. The DirectoryPickerView uses Tailw…"
+  },
+  {
+    "type": "text",
+    "id": "019fffdd-a57b-7e61-93fa-087b19c72214:18",
+    "text": "</group>\n\n## Findings\n\nI audited every input in the onboarding flow on the shipped `v2.39.0` (`origin/main`):\n\n**Already fixed (shipped in v2.39.0)**\n- `GitHubRepoTab` — wrapper has `focus-within:border-ring` ✅\n- `NewProjectTab` — wrapper has `focus-within:border-ring` ✅\n- `LocalRepoTab` — input itself carries `focus-visible:border-ring` (it is the visible field there) ✅\n\n**No issue**\n- `OnboardingPromptStep` — the only raw `<input>` is a hidden file input; the prompt field is a `RichTextarea` (TipTap) that suppresses the outline via its own unlayered CSS and has its own `is-focused` treatment. Same behavior before and after the fix, and shared with the chat input.\n- `OnboardingGitHubStep` / `OnboardingRequirementsStep` — buttons only; they get the standard global keyboard-focus outline, which is correct for standalone controls.\n\n**One follow-up candidate: `DirectoryPickerView` (the directory-picker modal)**\nThree raw `<input>`s (path editor, search, new-folder name) use the `outline-none` utility with only a subtle `focus:border-*` color shift, e.g.:\n\n````svelte path=packages/cloudlands-fe/src/features/onboarding/messages/DirectoryPickerView.svelte mode=EXCERPT\nclass=\"w-full rounded-md border border-border/50 bg-background py-1 pl-7 pr-2\n  text-xs outline-none placeholder:text-muted-foreground/70 focus:border-border\"\n````\n\nThese are standalone fields, so they never had the \"odd geometry\" problem — but the layering fix changed their behavior: before, the global ring drew on them anyway (double indication); now `outline-none` wins, leaving only the faint border shift (`border/50 → border`) as the keyboard-focus indicator. Functional, but weak and inconsistent with the `border-ring` treatment the repo inputs now use.\n\n**Recommendation**: a small follow-up task to give those three inputs `focus-visible:border-ring` (matching the LocalRepoTab pattern). Want me to spec and delegate it?\n\n<!-- suggested-prompts\nYes, delegate the DirectoryPickerView follow-up fix.\nLeave it as is — the border shift is enough.\nShow me a screenshot of the directory picker focus state first.\n-->\n"
+  }
+]

@@ -70,14 +70,21 @@ function* reconcileCurrentKeyPins(gate: HydrationGate): SagaGenerator<boolean> {
   return true;
 }
 
-function* hydrateKeyPins(gate: HydrationGate): SagaGenerator<void> {
+function* attemptHydration(gate: HydrationGate): SagaGenerator<boolean> {
   try {
     const hydrated = yield* call(loadHardwareConsoleKeyPins);
     yield* put(hydrateHardwareConsoleKeyPins(hydrated.keyPins, hydrated.excludedWorkspaceIds));
     gate.succeeded = true;
+    return true;
   } catch (error) {
-    logger.error('Key-pin hydration failed; dispatching defaults', { error });
-    yield* put(hydrateHardwareConsoleKeyPins([]));
+    logger.error('Key-pin hydration failed', { error });
+    return false;
+  }
+}
+
+function* hydrateKeyPins(gate: HydrationGate): SagaGenerator<void> {
+  try {
+    if (!(yield* attemptHydration(gate))) yield* put(hydrateHardwareConsoleKeyPins([]));
   } finally {
     gate.settled = true;
     const queued = gate.persistQueued;
@@ -89,12 +96,34 @@ function* hydrateKeyPins(gate: HydrationGate): SagaGenerator<void> {
   }
 }
 
-function* persistPinMutation(gate: HydrationGate): SagaGenerator<void> {
+type PinMutationAction =
+  | ReturnType<typeof pinWorkspaceToKey>
+  | ReturnType<typeof unpinWorkspaceFromKeys>
+  | ReturnType<typeof markKeySlotUnassigned>;
+
+function* persistPinMutation(gate: HydrationGate, action: PinMutationAction): SagaGenerator<void> {
   if (!gate.settled) {
     gate.persistQueued = true;
     return;
   }
-  if (gate.succeeded) yield* reconcileCurrentKeyPins(gate);
+  if (!gate.succeeded) {
+    // Hydration failed, so the in-memory pins are boot defaults — persisting them
+    // would overwrite the real bag. Retry hydration and re-apply the mutation on
+    // top of the restored pins; if the retry fails too, skip the persist.
+    // Known limitation: only the latest mutation is re-applied. Earlier mutations
+    // made while hydration kept failing were already skipped, so the recovery
+    // hydrate silently reverts them in the UI — the accepted trade-off versus
+    // wiping the bag. A follow-up could queue all skipped mutations instead.
+    if (yield* attemptHydration(gate)) {
+      yield* put(action);
+    } else {
+      logger.warn(
+        `Skipped ${HARDWARE_CONSOLE_SETTINGS_PATH} keyPins persist: hydration has not succeeded`,
+      );
+    }
+    return;
+  }
+  yield* reconcileCurrentKeyPins(gate);
   yield* persistKeyPins(gate);
 }
 

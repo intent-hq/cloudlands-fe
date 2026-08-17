@@ -28,7 +28,7 @@
   import {
     buildDirectoryPickerBreadcrumbs,
     collapseDirectoryPickerPath,
-    favoritesFromHome,
+    directoryPickerFavorites,
     filterDirectoryPickerEntries,
     findActiveFavoriteId,
     type DirectoryPickerFavorite,
@@ -96,7 +96,7 @@
 
   const defaultFavorites = $derived(
     favorites ??
-      favoritesFromHome(listing?.home, {
+      directoryPickerFavorites(listing, {
         home: m.onboarding_dirPicker_home_label(),
         desktop: m.onboarding_dirPicker_desktop_label(),
         documents: m.onboarding_dirPicker_documents_label(),

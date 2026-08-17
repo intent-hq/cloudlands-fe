@@ -20,9 +20,9 @@
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import {
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
@@ -51,6 +51,7 @@
     class: className = '',
   }: Props = $props();
 
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
   // The component is keyed by message sender in the transcript. Initialize all
   // selector readables once so identity and semantic state stay live while the
   // message row remains mounted.
@@ -93,10 +94,9 @@
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
 
-    const wsId = selectActiveWorkspaceId.select(appStore.state);
-    if (wsId) {
+    if (workspaceId) {
       appStore.dispatch(
-        openAgentTabRequested(wsId, {
+        openAgentTabRequested(workspaceId, {
           agentId: attribution.fromAgentId,
           sourcePanelId,
           openInAdjacentPanel,

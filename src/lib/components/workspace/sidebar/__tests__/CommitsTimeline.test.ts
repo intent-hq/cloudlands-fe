@@ -385,6 +385,17 @@ describe('CommitsTimeline', () => {
         }),
       ),
     );
+    expect(
+      reduxDispatch.mock.calls
+        .map(([action]) => action)
+        .filter(
+          (action) =>
+            action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
+        ),
+    ).toEqual([
+      { type: 'git/loadStatus', payload: ['ws-1', true] },
+      { type: 'changes/refreshRequested', payload: 'ws-1' },
+    ]);
   });
 
   it('toggleCommitExpanded shows file list for commit when commit has files', async () => {

@@ -52,12 +52,14 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspace: Object.assign(() => mocks.readable(mocks.activeWorkspace), {
-    select: () => mocks.activeWorkspace,
-  }),
-  selectActiveWorkspaceId: Object.assign(() => mocks.readable('ws-1'), {
-    select: () => 'ws-1',
-  }),
+  selectWorkspaceById: Object.assign(
+    (_workspaceId: string | { subscribe: unknown }) => mocks.readable(mocks.activeWorkspace),
+    { select: () => mocks.activeWorkspace },
+  ),
+}));
+
+vi.mock('$lib/utils/workspace-route-context', () => ({
+  getWorkspaceRouteContext: () => ({ workspaceId: 'ws-1' }),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({

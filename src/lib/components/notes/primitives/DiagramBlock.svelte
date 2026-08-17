@@ -16,7 +16,7 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { toast } from '$lib/components/ui/toast';
-  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import {
@@ -27,7 +27,7 @@
   import { getNavigationContext } from '$lib/components/layout/panel-system/panel-context';
   import { m } from '$shared/paraglide/messages.js';
 
-  const activeWorkspace = selectActiveWorkspace();
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId;
 
   // TipTap NodeViewProps
   let { node, updateAttributes }: NodeViewProps = $props();
@@ -70,7 +70,7 @@
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-    const wsId = $activeWorkspace?.id;
+    const wsId = workspaceId;
     if (!wsId) return;
     const { type, target } = binding;
     if (type === 'file' && target) {
@@ -422,7 +422,7 @@
             type="button"
             class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
             onclick={(event) => {
-              const agentWsId = $activeWorkspace?.id;
+              const agentWsId = workspaceId;
               if (agentWsId) {
                 appStore.dispatch(
                   openAgentTabRequested(agentWsId, {

@@ -114,12 +114,11 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
     }));
 
     const square = container.querySelector('.legacy-spinner-square-0')!;
-    const computedStyle = getComputedStyle(square);
-    
+
     // In reduced motion mode, animation should be none (verified via CSS @media rule)
     // The test validates the CSS is present; actual animation:none requires DOM render
     expect(square.className).toContain('legacy-spinner-square');
-    
+
     window.matchMedia = originalMatchMedia;
   });
 

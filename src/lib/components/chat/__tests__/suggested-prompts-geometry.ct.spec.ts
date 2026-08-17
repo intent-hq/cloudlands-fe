@@ -17,7 +17,6 @@ for (const scenario of scenarios) {
       name: 'Review the implementation and verify the focused behavior.',
     });
     const label = row.locator('[data-suggested-prompt-label]');
-    const hint = row.locator('[data-suggested-prompt-hint]');
     const promptSlot = row.locator('[data-suggested-prompt-icon]');
     const promptGlyph = promptSlot.locator('svg');
     const toolSlot = component.locator('[data-tool-icon]').first();

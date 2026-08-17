@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { UiComponentInventory } from '../src/lib/components/ui/component-metadata';
 import { canonicalComponentManifest } from '../src/lib/components/ui/manifest';
 import {
   buildUiInternalImportLedger,
@@ -12,13 +13,7 @@ import {
 } from './ui-component-manifest';
 import { buildUiComponentInventory } from './ui-component-inventory';
 
-const root = process.env.UI_COMPONENT_AUDIT_ROOT
-  ? path.resolve(process.env.UI_COMPONENT_AUDIT_ROOT)
-  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const usesProjectManifest = root === projectRoot;
-const inventory = buildUiComponentInventory(root);
-const mode = process.argv[2] ?? 'check';
 const sortText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 function walk(directory: string): string[] {
@@ -44,7 +39,7 @@ function matchesForbiddenImport(specifier: string, forbidden: string): boolean {
   return new RegExp(`^${pattern}`).test(specifier);
 }
 
-function boundaryFailures(): string[] {
+function boundaryFailures(root: string, inventory: UiComponentInventory): string[] {
   const failures: string[] = [];
   for (const rule of inventory.dependencyRules) {
     for (const component of inventory.components.filter((entry) => entry.category === rule.layer)) {
@@ -72,7 +67,7 @@ function boundaryFailures(): string[] {
   return [...new Set(failures)].sort(sortText);
 }
 
-function unresolvedUiImports(): string[] {
+function unresolvedUiImports(root: string, inventory: UiComponentInventory): string[] {
   const knownImports = new Set(
     inventory.components.flatMap((component) => [
       component.publicImport,
@@ -99,7 +94,11 @@ function unresolvedUiImports(): string[] {
   return [...new Set(failures)].sort(sortText);
 }
 
-function checkFailures(): string[] {
+function checkFailures(
+  root: string,
+  inventory: UiComponentInventory,
+  usesProjectManifest: boolean,
+): string[] {
   const failures: string[] = [];
   const ids = new Set<string>();
   const imports = new Set<string>();
@@ -161,59 +160,91 @@ function checkFailures(): string[] {
   }
   return [
     ...failures,
-    ...unresolvedUiImports(),
-    ...boundaryFailures(),
+    ...unresolvedUiImports(root, inventory),
+    ...boundaryFailures(root, inventory),
     ...(usesProjectManifest ? structuralGuardrailFailures(root) : []),
   ].sort(sortText);
 }
 
-if (mode === 'inventory') {
-  console.log(
-    inventory.components
-      .map(
-        (component) =>
-          `${component.publicImport}\t${component.category}\towner=${component.owner}\texports=${component.exports.join(',')}\tcallers=${component.callers.length}\treplacement=${component.replacement ?? '-'}\ttest=${component.characterizationTest ?? 'missing'}\tgate=${component.removalGate}`,
-      )
-      .sort(sortText)
-      .join('\n'),
-  );
-} else if (mode === 'dynamic') {
-  console.log(
-    inventory.components
-      .filter((component) => component.category === 'deletion-candidate')
-      .map(
-        (component) =>
-          `${component.publicImport}\tstatic=${component.callers.length}\tdynamic=${component.dynamicImports.length}`,
-      )
-      .sort(sortText)
-      .join('\n'),
-  );
-} else if (mode === 'boundaries') {
-  console.log(
-    inventory.dependencyRules
-      .map(
-        (rule) =>
-          `${rule.layer}\tallowed=${rule.allowed.join(',')}\tforbidden=${rule.forbidden.join(',')}\trepair=${rule.repair}`,
-      )
-      .sort(sortText)
-      .join('\n'),
-  );
-} else if (mode === 'json') {
-  console.log(JSON.stringify(inventory, null, 2));
-} else if (mode === 'manifest') {
-  console.log(JSON.stringify(canonicalComponentManifest, null, 2));
-} else if (mode === 'migrations') {
-  console.log(JSON.stringify(buildUiMigrationLedger(root), null, 2));
-} else if (mode === 'internal-imports') {
-  console.log(JSON.stringify(buildUiInternalImportLedger(root), null, 2));
-} else if (mode === 'raw-controls') {
-  console.log(JSON.stringify(countRawUiControls(root), null, 2));
-} else if (mode === 'check') {
-  const failures = checkFailures();
-  if (failures.length) {
-    console.error(failures.join('\n'));
-    process.exitCode = 1;
-  } else {
+export interface UiComponentAuditResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiComponentAuditResult {
+  const root = rootOverride ? path.resolve(rootOverride) : projectRoot;
+  const usesProjectManifest = root === projectRoot;
+  const inventory = buildUiComponentInventory(root);
+
+  if (mode === 'inventory') {
+    return {
+      stdout: inventory.components
+        .map(
+          (component) =>
+            `${component.publicImport}\t${component.category}\towner=${component.owner}\texports=${component.exports.join(',')}\tcallers=${component.callers.length}\treplacement=${component.replacement ?? '-'}\ttest=${component.characterizationTest ?? 'missing'}\tgate=${component.removalGate}`,
+        )
+        .sort(sortText)
+        .join('\n'),
+      stderr: '',
+      exitCode: 0,
+    };
+  }
+  if (mode === 'dynamic') {
+    return {
+      stdout: inventory.components
+        .filter((component) => component.category === 'deletion-candidate')
+        .map(
+          (component) =>
+            `${component.publicImport}\tstatic=${component.callers.length}\tdynamic=${component.dynamicImports.length}`,
+        )
+        .sort(sortText)
+        .join('\n'),
+      stderr: '',
+      exitCode: 0,
+    };
+  }
+  if (mode === 'boundaries') {
+    return {
+      stdout: inventory.dependencyRules
+        .map(
+          (rule) =>
+            `${rule.layer}\tallowed=${rule.allowed.join(',')}\tforbidden=${rule.forbidden.join(',')}\trepair=${rule.repair}`,
+        )
+        .sort(sortText)
+        .join('\n'),
+      stderr: '',
+      exitCode: 0,
+    };
+  }
+  if (mode === 'json') {
+    return { stdout: JSON.stringify(inventory, null, 2), stderr: '', exitCode: 0 };
+  }
+  if (mode === 'manifest') {
+    return { stdout: JSON.stringify(canonicalComponentManifest, null, 2), stderr: '', exitCode: 0 };
+  }
+  if (mode === 'migrations') {
+    return {
+      stdout: JSON.stringify(buildUiMigrationLedger(root), null, 2),
+      stderr: '',
+      exitCode: 0,
+    };
+  }
+  if (mode === 'internal-imports') {
+    return {
+      stdout: JSON.stringify(buildUiInternalImportLedger(root), null, 2),
+      stderr: '',
+      exitCode: 0,
+    };
+  }
+  if (mode === 'raw-controls') {
+    return { stdout: JSON.stringify(countRawUiControls(root), null, 2), stderr: '', exitCode: 0 };
+  }
+  if (mode === 'check') {
+    const failures = checkFailures(root, inventory, usesProjectManifest);
+    if (failures.length) {
+      return { stdout: '', stderr: failures.join('\n'), exitCode: 1 };
+    }
     const exports = inventory.components.reduce(
       (total, component) => total + component.exports.length,
       0,
@@ -225,13 +256,41 @@ if (mode === 'inventory') {
     const deletionCandidates = inventory.components.filter(
       (component) => component.category === 'deletion-candidate',
     ).length;
-    console.log(
-      `UI component audit passed; modules=${inventory.components.length}; exports=${exports}; callers=${callers}; deletionCandidates=${deletionCandidates}; boundaryViolations=0`,
-    );
+    return {
+      stdout: `UI component audit passed; modules=${inventory.components.length}; exports=${exports}; callers=${callers}; deletionCandidates=${deletionCandidates}; boundaryViolations=0`,
+      stderr: '',
+      exitCode: 0,
+    };
   }
-} else {
-  console.error(
-    'usage: ui-component-audit.ts [inventory|dynamic|boundaries|json|manifest|migrations|internal-imports|raw-controls|check]',
+  return {
+    stdout: '',
+    stderr:
+      'usage: ui-component-audit.ts [inventory|dynamic|boundaries|json|manifest|migrations|internal-imports|raw-controls|check]',
+    exitCode: 2,
+  };
+}
+
+function invokedAsCli(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    return (
+      fs.realpathSync(path.resolve(process.argv[1])) ===
+      fs.realpathSync(fileURLToPath(import.meta.url))
+    );
+  } catch {
+    return false;
+  }
+}
+
+if (invokedAsCli()) {
+  const result = runUiComponentAudit(
+    process.argv[2] ?? 'check',
+    process.env.UI_COMPONENT_AUDIT_ROOT,
   );
-  process.exitCode = 2;
+  if (result.exitCode === 0) {
+    console.log(result.stdout);
+  } else {
+    console.error(result.stderr);
+  }
+  process.exitCode = result.exitCode;
 }

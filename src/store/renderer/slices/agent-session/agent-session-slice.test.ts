@@ -31,6 +31,7 @@ import {
   hasCanonicalId,
   isTimestampClose,
   replaceMessageById,
+  MAX_MESSAGES_PER_AGENT,
 } from './agent-session-slice';
 import {
   chatSendFailed,
@@ -387,6 +388,59 @@ describe('agent-session-slice reducer', () => {
 
       expect(next).not.toBe(state);
       expect(next.byAgentId['a1'].hasUnread).toBe(false);
+    });
+
+    // Harness stamp (§5.5): a daemon upgrade backfills harnessVersion on
+    // legacy rows, and first activation materializes harnessFeatures — an
+    // upsert whose only change is one of these must not be swallowed, or the
+    // AgentCard "Harness vX.Y" menu item would never appear for already-loaded
+    // sessions.
+    it('applies an upsert when only harnessVersion appears on an otherwise-equivalent session (backfill)', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1', { harnessVersion: '1.0' })),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].harnessVersion).toBe('1.0');
+    });
+
+    it('applies an upsert when only harnessFeatures materializes on an otherwise-equivalent session', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { harnessVersion: '1.0' })),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            harnessVersion: '1.0',
+            harnessFeatures: { structuredQuestions: true },
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].harnessFeatures).toEqual({ structuredQuestions: true });
+    });
+
+    it('returns same state reference when harness fields are unchanged', () => {
+      const seed = () =>
+        makeSession('a1', 'ws-1', {
+          harnessVersion: '1.0',
+          harnessFeatures: { structuredQuestions: true, agentActions: false },
+        });
+      const state = agentSessionReducer(initialState, upsertSession(seed()));
+
+      const next = agentSessionReducer(state, upsertSession(seed()));
+
+      expect(next).toBe(state);
     });
 
     it('applies an upsert when only lastAgentResponse changes on an otherwise-equivalent session', () => {
@@ -4206,6 +4260,12 @@ describe('computeMessageContentHash — media blocks', () => {
       contentBlocks: [{ type: 'tool_use', name: 'search', input: { query: 'hi' } }],
     };
     expect(computeMessageContentHash(a)).toBe(computeMessageContentHash(b));
+  });
+});
+
+describe('MAX_MESSAGES_PER_AGENT shared transcript cap', () => {
+  it('is 500 — the prune cap the transcript pagers (chat-read-service, chat-read-saga) import as their fetch bound', () => {
+    expect(MAX_MESSAGES_PER_AGENT).toBe(500);
   });
 });
 

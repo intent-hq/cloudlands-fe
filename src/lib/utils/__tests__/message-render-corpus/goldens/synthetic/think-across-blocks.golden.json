@@ -1,0 +1,35 @@
+{
+  "note": "think opened in one text block, closed in a later one, tool between",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "thinking",
+      "content": "first half of the thought"
+    },
+    {
+      "type": "tool_use",
+      "name": "view",
+      "input": {
+        "path": "foo.ts"
+      }
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "second half"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Done thinking."
+        }
+      ]
+    }
+  ]
+}

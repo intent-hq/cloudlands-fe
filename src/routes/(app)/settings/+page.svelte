@@ -69,6 +69,7 @@
   import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
   import { getHardwareConsoleManager } from '$features/hardware-console/instance';
   import { navigateBackFromSettings } from '$lib/utils/workspace-navigation';
+  import { workspaceIdFromRouteParam } from '$lib/utils/workspace-route-context';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { onMount, untrack } from 'svelte';
   import Fa from 'svelte-fa';
@@ -210,6 +211,9 @@
 
   // Get specialist ID from URL query parameter for auto-selecting
   const initialSpecialistId = $derived(page.url.searchParams.get('specialist'));
+  const settingsWorkspaceId = $derived(
+    workspaceIdFromRouteParam(page.url.searchParams.get('workspaceId') ?? undefined),
+  );
   // Get view parameter for direct navigation (e.g., ?view=create-specialist)
   const initialView = $derived(page.url.searchParams.get('view'));
 
@@ -350,9 +354,24 @@
   }
 
   const updateChannelOptions = [
-    { value: 'stable', get label() { return m.settings_updateChannel_stable_label(); } },
-    { value: 'beta', get label() { return m.settings_updateChannel_beta_label(); } },
-    { value: 'alpha', get label() { return m.settings_updateChannel_alpha_label(); } },
+    {
+      value: 'stable',
+      get label() {
+        return m.settings_updateChannel_stable_label();
+      },
+    },
+    {
+      value: 'beta',
+      get label() {
+        return m.settings_updateChannel_beta_label();
+      },
+    },
+    {
+      value: 'alpha',
+      get label() {
+        return m.settings_updateChannel_alpha_label();
+      },
+    },
   ];
 
   const updateChannelLabel = $derived(
@@ -494,6 +513,7 @@
             />
             <AIBehaviorEditor
               activeView={aiBehaviorView}
+              workspaceId={settingsWorkspaceId}
               onSpecialistCreated={(id) => (aiBehaviorView = { type: 'specialist', id })}
               onSpecialistDeleted={() => (aiBehaviorView = { type: 'system-prompt' })}
               onDiscard={() => (aiBehaviorView = { type: 'system-prompt' })}

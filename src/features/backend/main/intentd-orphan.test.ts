@@ -152,6 +152,15 @@ describe('isExecutableInsideResources', () => {
     expect(isExecutableInsideResources(exe(gone, true), resources)).toBe(true);
   });
 
+  it('resolves a deleted executable through a symlinked resources path', () => {
+    const realResources = path.join(tmpDir, 'real-resources');
+    const resources = path.join(tmpDir, 'resources-link');
+    fs.mkdirSync(realResources, { recursive: true });
+    fs.symlinkSync(realResources, resources);
+    const gone = path.join(resources, 'intentd', 'intentd');
+    expect(isExecutableInsideResources(exe(gone, true), resources)).toBe(true);
+  });
+
   it('fails containment for an unresolvable path NOT flagged deleted', () => {
     // An unverified (e.g. macOS) path claiming to live inside resources but
     // not realpath-resolvable must not classify as ours.

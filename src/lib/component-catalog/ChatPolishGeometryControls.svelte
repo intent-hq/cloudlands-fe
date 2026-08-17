@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { Slider } from '$lib/components/ui/slider';
+  import { Switch } from '$lib/components/ui/switch';
   import {
     chatPolishGeometryControls,
     clearChatPolishPreferences,
@@ -48,12 +51,12 @@
     storageStatus = 'idle';
   }
 
-  function updateNumber(key: keyof ChatPolishGeometry, event: Event) {
-    update({ ...geometry, [key]: Number((event.currentTarget as HTMLInputElement).value) });
+  function updateNumber(key: keyof ChatPolishGeometry, value: number) {
+    update({ ...geometry, [key]: value });
   }
 
-  function updateBoolean(key: 'compact' | 'stickySimulation', event: Event) {
-    update({ ...geometry, [key]: (event.currentTarget as HTMLInputElement).checked });
+  function updateBoolean(key: 'compact' | 'stickySimulation', checked: boolean) {
+    update({ ...geometry, [key]: checked });
   }
 
   function save() {
@@ -85,18 +88,18 @@
 
   <div class="state-controls">
     <label class="check-control">
-      <input
-        type="checkbox"
+      <Switch
         checked={geometry.compact}
-        onchange={(event) => updateBoolean('compact', event)}
+        ariaLabel="Compact mode"
+        onCheckedChange={(checked) => updateBoolean('compact', checked)}
       />
       <span>Compact mode</span>
     </label>
     <label class="check-control">
-      <input
-        type="checkbox"
+      <Switch
         checked={geometry.stickySimulation}
-        onchange={(event) => updateBoolean('stickySimulation', event)}
+        ariaLabel="Simulate sticky user messages"
+        onCheckedChange={(checked) => updateBoolean('stickySimulation', checked)}
       />
       <span>Simulate sticky user messages</span>
     </label>
@@ -106,16 +109,15 @@
     {#each chatPolishGeometryControls as control (control.key)}
       <label class="range-control">
         <span>{control.label}</span>
-        <input
+        <Slider
           id={`chat-polish-${control.key}`}
-          type="range"
           min={control.min}
           max={control.max}
           step={control.step}
           value={geometry[control.key] as number}
           aria-label={control.label}
           aria-valuetext={`${geometry[control.key]} ${control.unit}`}
-          oninput={(event) => updateNumber(control.key, event)}
+          onValueChange={(value) => updateNumber(control.key, value)}
         />
         <output for={`chat-polish-${control.key}`}>{geometry[control.key]}{control.unit}</output>
       </label>
@@ -130,14 +132,14 @@
     </div>
   </div>
 
-  <output class="values-readout" aria-label="Current geometry values" aria-live="polite">
+  <output class="values-readout type-code" aria-label="Current geometry values" aria-live="polite">
     {formatChatPolishGeometry(geometry)}
   </output>
   <div class="save-actions">
-    <button type="button" class="save-button" disabled={!hydrated || !dirty} onclick={save}>
+    <Button class="save-button" disabled={!hydrated || !dirty} onclick={save}>
       Save tweaks
-    </button>
-    <button type="button" class="reset-button" onclick={reset}>Reset production defaults</button>
+    </Button>
+    <Button variant="outline" class="reset-button" onclick={reset}>Reset production defaults</Button>
   </div>
   <p class:dirty class="save-feedback" role="status" aria-label="Save status" aria-live="polite">
     {feedback}
@@ -194,7 +196,6 @@
     cursor: not-allowed;
     opacity: 0.5;
   }
-  input:focus-visible,
   .save-button:focus-visible,
   .reset-button:focus-visible {
     outline: 2px solid hsl(var(--ring));
@@ -215,14 +216,13 @@
     font-size: var(--text-caption-size);
     color: hsl(var(--muted-foreground));
   }
-  .range-control input {
+  .range-control :global(.operate-slider) {
     grid-column: 1 / -1;
     width: 100%;
   }
   .range-control output {
     width: 3.25rem;
     text-align: end;
-    font: var(--text-code-size)/1 var(--font-mono);
   }
   .fixed-readout {
     display: flex;
@@ -233,7 +233,6 @@
     font-size: var(--text-caption-size);
   }
   .fixed-readout output {
-    font: var(--text-code-size)/1 var(--font-mono);
   }
   .values-readout {
     overflow-wrap: anywhere;
@@ -241,7 +240,6 @@
     background: hsl(var(--muted));
     padding: 0.375rem 0.5rem;
     color: hsl(var(--muted-foreground));
-    font: var(--text-code-size)/1.4 var(--font-mono);
   }
   .save-actions {
     display: grid;

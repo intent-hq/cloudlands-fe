@@ -7,23 +7,21 @@
   import type { CommitInfo, TrackedChange } from '$features/file-tracking/types';
   import type { PRInfo } from '$lib/components/file-tracking/accept-changes/types';
   import {
-  refreshRequested,
-  clearOlderCommits as ftClearOlderCommits,
-  setSidebarMergeWhenReady,
-} from '$store/renderer/slices/changes/changes-slice';
-
+    refreshRequested,
+    clearOlderCommits as ftClearOlderCommits,
+    setSidebarMergeWhenReady,
+  } from '$store/renderer/slices/changes/changes-slice';
   import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
   import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
-  cancelExecution,
-  executeBackgroundAgent,
-} from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
+    cancelExecution,
+    executeBackgroundAgent,
+  } from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
 
   import { refreshPRStatusRequested } from '$store/renderer/slices/pr-status/pr-status-slice';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
-
 
   import { selectSidebarMergeWhenReady } from '$store/renderer/slices/changes/changes-selectors';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
@@ -35,20 +33,16 @@
   import { m } from '$shared/paraglide/messages.js';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
-  faCheck,
-  faCodeMerge,
-  faEye,
-  faRobot,
-  faSpinner,
-  faStop,
-} from '@fortawesome/free-solid-svg-icons';
-  import {
-  readable,
-  writable,
-} from 'svelte/store';
+    faCheck,
+    faCodeMerge,
+    faEye,
+    faRobot,
+    faSpinner,
+    faStop,
+  } from '@fortawesome/free-solid-svg-icons';
+  import { readable, writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-	import { store as appStore } from '$store/renderer/store';
-
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId: string;
@@ -217,12 +211,16 @@
             Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
             appStore.dispatch(refreshRequested(workspaceId, true)),
           ]);
-        } catch { /* Refresh failed but merge succeeded */ }
+        } catch {
+          /* Refresh failed but merge succeeded */
+        }
         if (result.result?.autoRebased && result.result?.newBaseSha) {
           try {
             await persistWorkspaceChanges({ baseCommitSha: result.result.newBaseSha });
             appStore.dispatch(ftClearOlderCommits(workspaceId));
-          } catch { console.error('Failed to update baseCommitSha after auto-rebase'); }
+          } catch {
+            console.error('Failed to update baseCommitSha after auto-rebase');
+          }
         }
         if (result.result?.autoRebased) {
           toast.success(m.workspace_mergePanel_rebasedAndMerged_label({ branch: targetBranch }));
@@ -232,8 +230,13 @@
         celebrateMerge();
       } else {
         const errorMsg = result.error || '';
-        // i18n-ignore (matching backend error strings)
-        const needsRebase = errorMsg.includes('Conflicts detected') || errorMsg.includes('behind') || errorMsg.includes('Please rebase');
+        const needsRebase =
+          // i18n-ignore (matching backend error strings)
+          errorMsg.includes('Conflicts detected') ||
+          // i18n-ignore (matching backend error strings)
+          errorMsg.includes('behind') ||
+          // i18n-ignore (matching backend error strings)
+          errorMsg.includes('Please rebase');
         if (needsRebase && !options?.rebaseFirst) {
           toast.error(m.workspace_mergePanel_conflicts_error(), {
             description: m.workspace_mergePanel_conflicts_description(),
@@ -257,7 +260,10 @@
   async function handleMergePROnGitHub(options?: { mergeMethod?: 'merge' | 'squash' | 'rebase' }) {
     if (!workspaceId) return;
     const openPR = pullRequests.find((pr) => pr.status === 'open' || pr.status === 'draft');
-    if (!openPR) { toast.error(m.workspace_mergePanel_noOpenPr_error()); return; }
+    if (!openPR) {
+      toast.error(m.workspace_mergePanel_noOpenPr_error());
+      return;
+    }
 
     mergeOptions.mergingPR = true;
     try {
@@ -276,7 +282,9 @@
             appStore.dispatch(refreshRequested(workspaceId, true)),
             Promise.resolve(appStore.dispatch(refreshPRStatusRequested(workspaceId, true, false))),
           ]);
-        } catch { /* Refresh failed but merge succeeded */ }
+        } catch {
+          /* Refresh failed but merge succeeded */
+        }
         toast.success(m.workspace_mergePanel_prMergedOnGithub_label({ number: openPR.number }));
         celebrateMerge();
       } else {
@@ -291,16 +299,32 @@
 
   function celebrateMerge() {
     // Dynamic import to avoid loading confetti until needed
-    import('canvas-confetti').then(({ default: confetti }) => {
-      const duration = 2000;
-      const end = Date.now() + duration;
-      const frame = () => {
-        confetti({ particleCount: 2, angle: 60, spread: 55, origin: { x: 0, y: 0.7 }, colors: ['#10b981', '#34d399', '#6ee7b7', '#a7f3d0'] });
-        confetti({ particleCount: 2, angle: 120, spread: 55, origin: { x: 1, y: 0.7 }, colors: ['#10b981', '#34d399', '#6ee7b7', '#a7f3d0'] });
-        if (Date.now() < end) requestAnimationFrame(frame);
-      };
-      frame();
-    }).catch(() => { /* confetti not available */ });
+    import('canvas-confetti')
+      .then(({ default: confetti }) => {
+        const duration = 2000;
+        const end = Date.now() + duration;
+        const frame = () => {
+          confetti({
+            particleCount: 2,
+            angle: 60,
+            spread: 55,
+            origin: { x: 0, y: 0.7 },
+            colors: ['#10b981', '#34d399', '#6ee7b7', '#a7f3d0'],
+          });
+          confetti({
+            particleCount: 2,
+            angle: 120,
+            spread: 55,
+            origin: { x: 1, y: 0.7 },
+            colors: ['#10b981', '#34d399', '#6ee7b7', '#a7f3d0'],
+          });
+          if (Date.now() < end) requestAnimationFrame(frame);
+        };
+        frame();
+      })
+      .catch(() => {
+        /* confetti not available */
+      });
   }
 </script>
 
@@ -328,15 +352,12 @@
 
 {#if mergeOptions.viaPR && hasOpenPR && hasRemote}
   <!-- GitHub merge: merge the PR via the GitHub API -->
-  {@const openPR = pullRequests.find(
-    (pr) => pr.status === 'open' || pr.status === 'draft',
-  )}
+  {@const openPR = pullRequests.find((pr) => pr.status === 'open' || pr.status === 'draft')}
   {#if openPR}
     <p class="text-xs text-subtle">
       {m.workspace_mergePanel_prMergedInto_before({ number: openPR.number })}
-      <span class="font-medium text-foreground"
-        >{targetBranch || trunkBranch || 'main' /* i18n-ignore (git branch name) */}</span
-      >.
+      <!-- i18n-ignore (intentional default branch fallback) -->
+      <span class="font-medium text-foreground">{targetBranch || trunkBranch || 'main'}</span>.
     </p>
 
     <!-- Squash toggle -->
@@ -423,7 +444,9 @@
   <!-- Commit message for staged changes -->
   {#if hasStaged}
     <div>
-      <span class="text-xs text-subtle mb-1 block">{m.workspace_mergePanel_commitMessage_label()}</span>
+      <span class="text-xs text-subtle mb-1 block"
+        >{m.workspace_mergePanel_commitMessage_label()}</span
+      >
       <div class="relative">
         <Textarea
           value={commitMessage}
@@ -431,7 +454,10 @@
           onkeydown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
-              handleMergeToTrunk({ squash: mergeOptions.squash, localOnly: !mergeOptions.pushAfter });
+              handleMergeToTrunk({
+                squash: mergeOptions.squash,
+                localOnly: !mergeOptions.pushAfter,
+              });
             }
           }}
           placeholder={m.workspace_mergePanel_commitMessage_placeholder()}
@@ -479,10 +505,7 @@
             disabled={isMergingToTrunk || (isGeneratingMerge && $mergeWhenReady$)}
             size="sm"
           />
-          <label
-            for="squash-merge-toggle"
-            class="text-xs text-subtle cursor-pointer select-none"
-          >
+          <label for="squash-merge-toggle" class="text-xs text-subtle cursor-pointer select-none">
             {m.workspace_mergePanel_squashCommits_label()}
           </label>
         </div>

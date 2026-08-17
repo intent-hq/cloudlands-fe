@@ -19,7 +19,7 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     findModelTabByExactUrl: vi.fn().mockResolvedValue(undefined),
     getFirstTab: vi.fn().mockReturnValue(null),
     evaluate: vi.fn().mockResolvedValue(undefined),
-    focusTab: vi.fn(),
+    focusTab: vi.fn().mockReturnValue(true),
     closeTab: vi.fn().mockResolvedValue({ tabId: 'tab-1' }),
     touchLease: vi.fn(),
     releaseLease: vi.fn(),
@@ -215,6 +215,69 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(true);
       expect(result.results).toHaveLength(2);
     });
+
+    it('routes listTabs through the explicit workspace context', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+
+      const result = await executeActions(
+        { actions: [{ action: 'listTabs' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.listAllTabs).toHaveBeenCalledWith('workspace-a');
+    });
+
+    // Regression (intent-hq/monorepo#2602): zero-delivery failures used to be
+    // invisible — focusTab returned success and openTab produced a
+    // sequence-level "failed: undefined".
+    it('surfaces a descriptive focusTab error when the workspace is not open in any window', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.focusTab).mockReturnValue(false);
+
+      const result = await executeActions(
+        { actions: [{ action: 'focusTab', tabId: 'tab-9' }] },
+        undefined,
+        undefined,
+        'ws-closed',
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.results[0]).toMatchObject({
+        action: 'focusTab',
+        success: false,
+        error: 'Could not focus tab tab-9: workspace ws-closed is not open in any window.',
+      });
+      expect(result.error).toBe(
+        "Action 'focusTab' failed: Could not focus tab tab-9: workspace ws-closed is not open in any window.",
+      );
+    });
+
+    it('surfaces the openTab failure message as the action and sequence error', async () => {
+      const failingOpenTabFn = vi.fn().mockReturnValue({
+        success: false,
+        message: 'Cannot open browser tab: workspace ws-closed is not open in any window.',
+      });
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://example.com' }] },
+        failingOpenTabFn,
+        undefined,
+        'ws-closed',
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.results[0]).toMatchObject({
+        action: 'openTab',
+        success: false,
+        error: 'Cannot open browser tab: workspace ws-closed is not open in any window.',
+      });
+      expect(result.error).toBe(
+        "Action 'openTab' failed: Cannot open browser tab: workspace ws-closed is not open in any window.",
+      );
+    });
   });
 
   describe('capture workspace boundaries', () => {
@@ -390,7 +453,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x?q=1' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(true);
@@ -415,7 +478,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/', undefined, undefined);
@@ -429,7 +492,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://client.localhost:5173/' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:5173/', undefined, undefined);
@@ -476,7 +539,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'navigate', url: 'http://[::1]:8080/page' }] },
         undefined,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(true);
@@ -504,7 +567,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'navigate', url: 'http://127.0.0.1:8080/page' }] },
         undefined,
         undefined,
-        undefined,
+        'workspace-a',
         localContext,
       );
       // Byte-identical result for non-rewritten URLs: no rewrite echo fields.
@@ -521,7 +584,7 @@ describe('browser-action-executor', () => {
           { actions: [{ action: 'openTab', url }] },
           mockOpenTabFn,
           undefined,
-          undefined,
+          'workspace-a',
           localContext,
         );
         expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:3000/', undefined, undefined);
@@ -547,7 +610,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'https://example.com/x' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(mockOpenTabFn).toHaveBeenCalledWith('https://example.com/x', undefined, undefined);
@@ -579,7 +642,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(false);
@@ -622,7 +685,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'navigate', url: 'http://daemon.localhost:8080/page' }] },
         undefined,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(false);
@@ -637,7 +700,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x?q=1' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(true);
@@ -659,7 +722,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(true);
@@ -671,7 +734,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'https://example.com/x' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(true);
@@ -683,7 +746,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         localContext,
       );
       expect(result.success).toBe(true);
@@ -702,7 +765,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'navigate', url: 'http://client.localhost:5173/' }] },
         undefined,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
       );
       expect(result.success).toBe(true);
@@ -742,7 +805,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x?q=1' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
         tunnelProvider,
       );
@@ -778,7 +841,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'navigate', url: 'http://daemon.localhost:8080/page' }] },
         undefined,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
         tunnelProvider,
       );
@@ -808,7 +871,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
         tunnelProvider,
       );
@@ -827,7 +890,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
         tunnelProvider,
       );
@@ -842,7 +905,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         localContext,
         tunnelProvider,
       );
@@ -860,13 +923,227 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x' }] },
         mockOpenTabFn,
         undefined,
-        undefined,
+        'workspace-a',
         remoteContext,
         () => null,
       );
       expect(result.success).toBe(false);
       expect(result.results[0]?.error).toContain('0.0.0.0');
       expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // Programmatic tunnel actions (intent-hq/monorepo#2537)
+  // =========================================================================
+  describe('tunnel actions (openTunnel / listTunnels / closeTunnel)', () => {
+    let forwardPort: ReturnType<typeof vi.fn>;
+    let activeForwards: ReturnType<typeof vi.fn>;
+    let closeForward: ReturnType<typeof vi.fn>;
+    let provider: {
+      forwardPort: (port: number) => Promise<number>;
+      activeForwards: () => Array<{ remotePort: number; localPort: number }>;
+      closeForward: (port: number) => boolean;
+      backend?: 'tunnel' | 'direct';
+    };
+
+    beforeEach(() => {
+      forwardPort = vi.fn().mockResolvedValue(45678);
+      activeForwards = vi.fn().mockReturnValue([]);
+      closeForward = vi.fn().mockReturnValue(true);
+      provider = { forwardPort, activeForwards, closeForward, backend: 'tunnel' };
+    });
+
+    it('openTunnel forwards the port and echoes { remotePort, localPort, backend, reused: false }', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(true);
+      expect(forwardPort).toHaveBeenCalledWith(3000);
+      expect(result.results[0]).toEqual({
+        action: 'openTunnel',
+        success: true,
+        result: { remotePort: 3000, localPort: 45678, backend: 'tunnel', reused: false },
+      });
+    });
+
+    it('openTunnel reports reused: true when a forward for the remote port already exists', async () => {
+      activeForwards.mockReturnValue([{ remotePort: 3000, localPort: 45678 }]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.result).toEqual({
+        remotePort: 3000,
+        localPort: 45678,
+        backend: 'tunnel',
+        reused: true,
+      });
+    });
+
+    it('openTunnel echoes the direct backend for local-transport providers', async () => {
+      provider.backend = 'direct';
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 8080 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.result).toMatchObject({ backend: 'direct', reused: false });
+    });
+
+    it('openTunnel surfaces forward failures as action errors, not throws', async () => {
+      forwardPort.mockRejectedValue(new Error('tunnel connect timed out after 10000ms'));
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('timed out');
+    });
+
+    it('openTunnel fails with a clear error when no tunnel provider is available', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => null,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('no tunnel provider');
+    });
+
+    it('openTunnel surfaces a throwing provider getter as an action error (unreadable backend state)', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => {
+          throw new Error(
+            'Cannot select a tunnel backend: the backend connection state is unreadable.',
+          );
+        },
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('Cannot select a tunnel backend');
+    });
+
+    it('openTunnel rejects out-of-range and non-integer ports via schema validation', async () => {
+      for (const remotePort of [0, 65536, 1.5, -1]) {
+        const result = await executeActions(
+          { actions: [{ action: 'openTunnel', remotePort }] },
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          () => provider,
+        );
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Invalid action sequence');
+      }
+      expect(forwardPort).not.toHaveBeenCalled();
+    });
+
+    it('listTunnels returns active forwards tagged with the backend', async () => {
+      activeForwards.mockReturnValue([
+        { remotePort: 3000, localPort: 45678 },
+        { remotePort: 8080, localPort: 50123 },
+      ]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'listTunnels' }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.result).toEqual({
+        tunnels: [
+          { remotePort: 3000, localPort: 45678, backend: 'tunnel' },
+          { remotePort: 8080, localPort: 50123, backend: 'tunnel' },
+        ],
+      });
+    });
+
+    it('listTunnels returns an empty list when no provider is available', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'listTunnels' }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => null,
+      );
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.result).toEqual({ tunnels: [] });
+    });
+
+    it('closeTunnel closes an existing forward', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'closeTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(true);
+      expect(closeForward).toHaveBeenCalledWith(3000);
+      expect(result.results[0]?.result).toEqual({ remotePort: 3000, closed: true });
+    });
+
+    it('closeTunnel fails with a clear error when no such forward exists', async () => {
+      closeForward.mockReturnValue(false);
+
+      const result = await executeActions(
+        { actions: [{ action: 'closeTunnel', remotePort: 9999 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('No active tunnel forward for remote port 9999');
+    });
+
+    it('closeTunnel fails with a clear error when no tunnel provider is available', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'closeTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => null,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('no tunnel provider');
     });
   });
 

@@ -122,8 +122,12 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
-  import { hasStagedFileItems, redeemStagedAttachments } from './initializer/staged-attachments';
-  import { backendRequest } from '$lib/client/live/backend-transport';
+  import {
+    hasStagedFileItems,
+    redeemStagedAttachments,
+    sendHeldFirstMessage,
+    type HeldFirstMessage,
+  } from './initializer/staged-attachments';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
   import {
     clearNewWorkspaceDraft,
@@ -577,9 +581,16 @@
   let didApplyHydratedLastSelectedRepo = $state(false);
   let hasInitialPrefillData = $state(hasWorkspacePrefillData());
 
+  // Whether the user explicitly picked a model in this form session. Late
+  // hydration (the applyAgentSettings re-application below) must not
+  // overwrite an in-session pick with restored state (intent-hq/monorepo#2678).
+  let modelPickedThisSession = $state(false);
+
   function applyAgentSettings(settings: CompactWorkspaceInitializerFormState | null | undefined) {
     if (!settings) return;
     if (settings.selectedSpecialist !== undefined) selectedSpecialist = settings.selectedSpecialist;
+    if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
+    if (modelPickedThisSession) return;
     const model = settings.selectedModel;
     const savedModelAccepted =
       !!model &&
@@ -589,7 +600,6 @@
       selectedModel = model;
       modelWasOverridden = settings.modelWasOverridden ?? modelWasOverridden;
     }
-    if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
     selectedReasoningEffort =
       !model || savedModelAccepted ? settings.selectedReasoningEffort : undefined;
   }
@@ -604,7 +614,11 @@
     scope =
       formState.scope && formState.repoPath === formState.scopeRepoPath ? formState.scope : scope;
     remoteSetup = formState.remoteSetup ?? remoteSetup;
-    selectedProvider = formState.selectedProvider ?? selectedProvider;
+    // Keep the provider paired with an in-session pick: restoring a different
+    // provider would trip the picker's provider-mismatch effect and clear it.
+    if (!modelPickedThisSession) {
+      selectedProvider = formState.selectedProvider ?? selectedProvider;
+    }
     skipIsolation = readSkipIsolation(formState) ?? skipIsolation;
     applyAgentSettings(formState);
   }
@@ -1839,10 +1853,13 @@
               await import('$store/renderer/slices/scripts/scripts-selectors');
             const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
             const scriptId = mention.id;
+            const wsId = (mention.meta?.workspaceId as string) || null;
             const state = appStore.state;
-            const outputLines = scriptOutputToLines(selectScriptOutput.select(state, scriptId));
-            const script = selectScriptById.select(state, scriptId);
-            const runtime = selectScriptRuntime.select(state, scriptId);
+            const outputLines = scriptOutputToLines(
+              selectScriptOutput.select(state, wsId, scriptId),
+            );
+            const script = selectScriptById.select(state, wsId, scriptId);
+            const runtime = selectScriptRuntime.select(state, wsId, scriptId);
 
             let content = `Script: ${script?.name || mention.label}\n`;
             content += `Command: ${script?.command || 'unknown'}\n`;
@@ -2511,13 +2528,7 @@
   // the first-message send) failed: the workspace exists, the modal stays
   // open with failed pills, and the create button resumes this flow instead
   // of creating a second workspace.
-  let pendingFirstMessage = $state<{
-    workspaceId: string;
-    agentId?: string;
-    content: string;
-    imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }>;
-    contextReferences: any[];
-  } | null>(null);
+  let pendingFirstMessage = $state<HeldFirstMessage | null>(null);
 
   /**
    * Place all staged attachments into the created workspace (sourcePath-only,
@@ -2538,35 +2549,22 @@
       return false;
     }
 
-    if (pending.agentId && (pending.content || redemption.fileBlocks.length > 0)) {
-      try {
-        // `backendRequest` resolves normal daemon send failures as
-        // `{ success: false, error }` rather than rejecting — check it, or a
-        // failed send would silently drop the held message and its retry path.
-        const sendResult = await backendRequest<{ success?: boolean; error?: string }>(
-          'agent.sendMessage',
-          {
-            agentId: pending.agentId,
-            workspaceId: pending.workspaceId,
-            content: pending.content,
-            imageBlocks: pending.imageBlocks.length > 0 ? pending.imageBlocks : undefined,
-            fileBlocks: redemption.fileBlocks.length > 0 ? redemption.fileBlocks : undefined,
-            contextReferences:
-              pending.contextReferences.length > 0 ? pending.contextReferences : undefined,
-          },
-        );
-        if (sendResult?.success === false) {
-          logger.error('First-message send rejected after attachment placement', {
-            error: sendResult.error,
-          });
-          error = m.workspace_compactInitializer_firstMessageSendFailed_error();
-          return false;
-        }
-      } catch (err) {
-        logger.error('First-message send failed after attachment placement', { error: err });
-        error = m.workspace_compactInitializer_firstMessageSendFailed_error();
-        return false;
-      }
+    // `sendHeldFirstMessage` rebuilds the wire params as plain JSON: this
+    // pending state is a Svelte $state deep-reactive Proxy tree, which
+    // Electron's structured clone rejects outright — passing it through
+    // verbatim made every staged-attachment first send fail before reaching
+    // the daemon (monorepo#2576).
+    const sendResult = await sendHeldFirstMessage($state.snapshot(pending), redemption.fileBlocks);
+    if (!sendResult.sent) {
+      logger.error('First-message send failed after attachment placement', {
+        error: sendResult.errorDetail,
+      });
+      error = sendResult.errorDetail
+        ? m.workspace_compactInitializer_firstMessageSendFailedDetail_error({
+            detail: sendResult.errorDetail,
+          })
+        : m.workspace_compactInitializer_firstMessageSendFailed_error();
+      return false;
     }
     pendingFirstMessage = null;
     return true;
@@ -3235,6 +3233,9 @@
             {selectedModel}
             onModelChange={(model) => {
               selectedModel = model;
+              // An explicit pick pins the model for this form session so late
+              // hydration cannot overwrite it (intent-hq/monorepo#2678).
+              if (model) modelPickedThisSession = true;
             }}
             bind:selectedReasoningEffort
             bind:modelWasOverridden

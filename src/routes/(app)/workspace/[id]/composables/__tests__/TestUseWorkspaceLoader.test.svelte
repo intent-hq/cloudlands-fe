@@ -6,13 +6,11 @@
     workspaceState,
     state = null,
     previousWorkspaceId = null,
-    activateWorkspace = true,
   }: {
     workspaceId: string;
     workspaceState: any;
     state?: any;
     previousWorkspaceId?: string | null;
-    activateWorkspace?: boolean;
   } = $props();
 
   const loader = useWorkspaceLoader({
@@ -27,9 +25,6 @@
     },
     get previousWorkspaceId() {
       return previousWorkspaceId;
-    },
-    get activateWorkspace() {
-      return activateWorkspace;
     },
   });
 </script>

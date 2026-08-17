@@ -22,8 +22,8 @@ interface MockSession {
 }
 
 const mockState = {
+  tabState: { currentTabId: 'ws-other' as string | null },
   workspace: {
-    activeWorkspaceId: 'ws-other' as string | null,
     workspaces: createCollection('id', [{ id: 'ws-1' } as never]),
   },
   hardwareConsole: {
@@ -52,6 +52,9 @@ vi.mock('$store/renderer/store', () => ({
     dispatch: vi.fn((action: { type: string }) => {
       dispatched.push(action);
       return action;
+    }),
+    createSelector: (selector: (state: typeof mockState) => unknown) => ({
+      select: (state: typeof mockState) => selector(state),
     }),
   },
 }));
@@ -129,7 +132,7 @@ function openWorkspaceTabCalls(): unknown[] {
 
 beforeEach(() => {
   dispatched.length = 0;
-  mockState.workspace.activeWorkspaceId = 'ws-other';
+  mockState.tabState.currentTabId = 'ws-other';
   mockState.hardwareConsole.keyPins = [null, null, null, null, null, null];
   mockState.panelLayout.byWorkspaceId = {};
   mockState.agentSessions.byAgentId = {};
@@ -251,7 +254,18 @@ describe('focusWorkspaceSlot — first press (workspace not active)', () => {
 
 describe('focusWorkspaceSlot — subsequent presses (workspace active)', () => {
   beforeEach(() => {
-    mockState.workspace.activeWorkspaceId = WS;
+    mockState.tabState.currentTabId = WS;
+  });
+
+  it('uses the current workspace tab to cycle the focused panel', () => {
+    seedLayout('panel-1', { 'panel-1': 't1', 'panel-2': 't4' });
+
+    focusWorkspaceSlot(WS);
+
+    expect(navigateToRoute).not.toHaveBeenCalled();
+    expect(setActiveTabCalls()).toEqual([
+      expect.objectContaining({ wsId: WS, tabId: 't2', panelId: 'panel-1' }),
+    ]);
   });
 
   it('cycles to the next tab within the focused panel', () => {

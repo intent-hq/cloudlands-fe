@@ -65,16 +65,16 @@ describe('mounted new workspace layout', () => {
     });
 
     await waitFor(() => expect(mountedPanels()).toHaveLength(2));
-    expect(mountedPanels().map((panel) => panel.textContent)).toEqual([
-      expect.stringContaining('Coordinator'),
-      expect.not.stringContaining('Spec'),
-    ]);
+    expect(mountedPanels()[0].textContent).not.toContain('Coordinator');
+    expect(mountedPanels()[0].textContent).not.toContain('Spec');
+    expect(mountedPanels()[1].textContent).toContain('Coordinator');
+    expect(mountedPanels()[1].textContent).not.toContain('Spec');
 
     appStore.dispatch(revealDeferredSpecTab(workspaceId, 'spec:created', 'Spec', 10));
     await waitFor(() =>
       expect(mountedPanels().map((panel) => panel.textContent)).toEqual([
-        expect.stringContaining('Coordinator'),
         expect.stringContaining('Spec'),
+        expect.stringContaining('Coordinator'),
       ]),
     );
 

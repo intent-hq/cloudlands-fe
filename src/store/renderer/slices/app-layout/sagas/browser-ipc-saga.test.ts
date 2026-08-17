@@ -42,7 +42,7 @@ describe('browserIpcSaga', () => {
     });
     offById = vi.fn();
     window.electronAPI = { ...window.electronAPI, on, offById };
-    state = { workspace: { activeWorkspaceId: 'ws-1' }, panelLayout: { byWorkspaceId: {} } };
+    state = { panelLayout: { byWorkspaceId: {} } };
     mocks.isElectron.mockReturnValue(true);
   });
 
@@ -79,12 +79,11 @@ describe('browserIpcSaga', () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));
 
-    await emit({ url: 'https://one.test' });
-    await emit({ url: 'https://two.test', position: 'adjacent' });
-    await emit({ url: 'https://three.test', position: 'same' });
+    await emit({ url: 'https://one.test', workspaceId: 'ws-1' });
+    await emit({ url: 'https://two.test', position: 'adjacent', workspaceId: 'ws-1' });
+    await emit({ url: 'https://three.test', position: 'same', workspaceId: 'ws-1' });
     await emit({ url: 'https://four.test', workspaceId: 'ws-2', workspace_id: 'wire-only' });
     state = {
-      workspace: { activeWorkspaceId: 'ws-1' },
       panelLayout: {
         byWorkspaceId: {
           'ws-1': {
@@ -96,14 +95,13 @@ describe('browserIpcSaga', () => {
         },
       },
     };
-    await emit({ url: 'https://replace.test', position: 'replace' });
+    await emit({ url: 'https://replace.test', position: 'replace', workspaceId: 'ws-1' });
     state = {
-      workspace: { activeWorkspaceId: 'ws-1' },
       panelLayout: {
         byWorkspaceId: { 'ws-1': { panels: { one: { tabs: [{ id: 'note-1', type: 'note' }] } } } },
       },
     };
-    await emit({ url: 'https://new.test', position: 'replace' });
+    await emit({ url: 'https://new.test', position: 'replace', workspaceId: 'ws-1' });
 
     expect(actions).toMatchObject([
       {
@@ -178,14 +176,25 @@ describe('browserIpcSaga', () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));
 
-    await emit({ url: 'https://one.test', tabId: 'tab-main-1', allowDuplicate: true });
+    await emit({
+      url: 'https://one.test',
+      workspaceId: 'ws-1',
+      tabId: 'tab-main-1',
+      allowDuplicate: true,
+    });
     await emit({
       url: 'https://two.test',
       position: 'same',
+      workspaceId: 'ws-1',
       tabId: 'tab-main-2',
       allowDuplicate: true,
     });
-    await emit({ url: 'https://three.test', position: 'replace', tabId: 'tab-main-3' });
+    await emit({
+      url: 'https://three.test',
+      position: 'replace',
+      workspaceId: 'ws-1',
+      tabId: 'tab-main-3',
+    });
 
     expect(actions).toMatchObject([
       {
@@ -244,7 +253,7 @@ describe('browserIpcSaga', () => {
       }
     });
 
-    await emit({ url: 'https://pinned.test', tabId: 'request-1', pin: true });
+    await emit({ url: 'https://pinned.test', workspaceId: 'ws-1', tabId: 'request-1', pin: true });
 
     expect(actions.map((action) => action.type)).toEqual([
       'panelLayout/openTabInNewRootColumn',
@@ -273,7 +282,7 @@ describe('browserIpcSaga', () => {
       }
     });
 
-    await emit({ url: 'https://stale.test', tabId: 'request-1', pin: true });
+    await emit({ url: 'https://stale.test', workspaceId: 'ws-1', tabId: 'request-1', pin: true });
 
     expect(actions.map((action) => action.type)).toEqual(['panelLayout/openTabInNewRootColumn']);
     task.cancel();
@@ -285,7 +294,7 @@ describe('browserIpcSaga', () => {
     const task = start((action) => actions.push(action));
     await emit({});
     await emit({ url: 7 });
-    state = { workspace: { activeWorkspaceId: null }, panelLayout: { byWorkspaceId: {} } };
+    state = { panelLayout: { byWorkspaceId: {} } };
     await emit({ url: 'https://ignored.test' });
     expect(actions).toEqual([]);
     task.cancel();
@@ -296,7 +305,6 @@ describe('browserIpcSaga', () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));
     state = {
-      workspace: { activeWorkspaceId: 'ws-1' },
       panelLayout: {
         byWorkspaceId: {
           'ws-2': {
@@ -320,11 +328,10 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
-  it('falls back to the active workspace when browser:close-tab has no workspaceId', async () => {
+  it('rejects browser:close-tab when workspaceId is missing', async () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));
     state = {
-      workspace: { activeWorkspaceId: 'ws-1' },
       panelLayout: {
         byWorkspaceId: {
           'ws-1': {
@@ -338,12 +345,7 @@ describe('browserIpcSaga', () => {
 
     await emit({ tabId: 'browser-1' }, 'browser:close-tab');
 
-    expect(actions).toEqual([
-      {
-        type: 'panelLayout/closeTab',
-        payload: { wsId: 'ws-1', tabId: 'browser-1', panelId: undefined, timestamp: NOW },
-      },
-    ]);
+    expect(actions).toEqual([]);
     task.cancel();
     await task.toPromise();
   });
@@ -352,7 +354,6 @@ describe('browserIpcSaga', () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));
     state = {
-      workspace: { activeWorkspaceId: 'ws-1' },
       panelLayout: {
         byWorkspaceId: {
           'ws-1': {
@@ -374,7 +375,7 @@ describe('browserIpcSaga', () => {
     await emit({ tabId: 'missing-tab' }, 'browser:close-tab');
     await emit({ tabId: 'note-1' }, 'browser:close-tab');
     await emit({ tabId: 'browser-pinned' }, 'browser:close-tab');
-    state = { workspace: { activeWorkspaceId: null }, panelLayout: { byWorkspaceId: {} } };
+    state = { panelLayout: { byWorkspaceId: {} } };
     await emit({ tabId: 'browser-1' }, 'browser:close-tab');
 
     expect(actions).toEqual([]);

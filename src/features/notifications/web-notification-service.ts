@@ -38,6 +38,7 @@ import { store as appStore } from '$store/renderer/store';
 import type { StoreState } from '$store/renderer/types';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
+import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { AgentIdleEvent } from '$features/events/types';
@@ -200,14 +201,18 @@ async function showWebNotification(
 
   try {
     const tag = workspaceId && agentId ? `${workspaceId}:${agentId}` : undefined;
-    const notification = new Notification(content.title, { body: content.body, ...(tag ? { tag } : {}) });
+    const notification = new Notification(content.title, {
+      body: content.body,
+      ...(tag ? { tag } : {}),
+    });
     const previous = tag ? activeNotificationsByTag.get(tag) : undefined;
     if (previous) activeNotifications.delete(previous);
     activeNotifications.add(notification);
     if (tag) activeNotificationsByTag.set(tag, notification);
     notification.onclick = () => {
       activeNotifications.delete(notification);
-      if (tag && activeNotificationsByTag.get(tag) === notification) activeNotificationsByTag.delete(tag);
+      if (tag && activeNotificationsByTag.get(tag) === notification)
+        activeNotificationsByTag.delete(tag);
       try {
         window.focus();
       } catch {
@@ -224,11 +229,13 @@ async function showWebNotification(
     };
     notification.onclose = () => {
       activeNotifications.delete(notification);
-      if (tag && activeNotificationsByTag.get(tag) === notification) activeNotificationsByTag.delete(tag);
+      if (tag && activeNotificationsByTag.get(tag) === notification)
+        activeNotificationsByTag.delete(tag);
     };
     notification.onerror = () => {
       activeNotifications.delete(notification);
-      if (tag && activeNotificationsByTag.get(tag) === notification) activeNotificationsByTag.delete(tag);
+      if (tag && activeNotificationsByTag.get(tag) === notification)
+        activeNotificationsByTag.delete(tag);
       logger.warn('Web notification failed to show', { title: content.title });
     };
   } catch (error) {
@@ -240,7 +247,10 @@ async function showWebNotification(
  * Handle a relayed `agent:idle` event — a port of the main-process
  * `NotificationService.handleAgentIdle` decision logic.
  */
-export async function handleWebAgentIdle(event: AgentIdleEvent): Promise<void> {
+export async function handleWebAgentIdle(
+  event: AgentIdleEvent,
+  activeWorkspaceId: string | null = selectCurrentWorkspaceTabId.select(appStore.state),
+): Promise<void> {
   try {
     const workspaceId = event.workspaceId;
     if (typeof workspaceId !== 'string' || workspaceId.length === 0) return;
@@ -355,9 +365,6 @@ export async function handleWebAgentIdle(event: AgentIdleEvent): Promise<void> {
     // runs regardless of focus (Electron parity: `notification:show` is
     // always sent). Electron's per-window focus check collapses to
     // `document.hasFocus()` + the active workspace id on the single web tab.
-    const activeWorkspaceId =
-      (appStore.state as { workspace?: { activeWorkspaceId?: string | null } }).workspace
-        ?.activeWorkspaceId ?? null;
     const focusedViewingWorkspace =
       typeof document !== 'undefined' && document.hasFocus() && activeWorkspaceId === workspaceId;
     if (focusedViewingWorkspace && soundOnlyWhenUnfocused) {

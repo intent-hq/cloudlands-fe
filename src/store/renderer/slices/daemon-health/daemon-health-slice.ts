@@ -273,6 +273,8 @@ daemonHealthReducer.with(systemStatusSuccess, (state, { payload: [wirePayload, r
     uptimeSeconds: wirePayload.uptimeSeconds,
     cpuPercent: wirePayload.cpuPercent,
     memoryBytes: wirePayload.memoryBytes,
+    workspacesDiskAvailableBytes: wirePayload.workspacesDiskAvailableBytes,
+    workspacesDiskTotalBytes: wirePayload.workspacesDiskTotalBytes,
     os: wirePayload.host.os,
     arch: wirePayload.host.arch,
     transport: state.stats?.transport ?? state.transport ?? undefined,

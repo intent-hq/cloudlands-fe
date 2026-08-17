@@ -24,8 +24,8 @@ import {
   setAgentsLoaded,
 } from '../slices/workspace-agents/workspace-agents-slice';
 
-registerMockSeeder('agents', async ({ store, client }) => {
-  const wsId = store.state.workspace.activeWorkspaceId;
+registerMockSeeder('agents', async ({ store, client, workspaceId, getWorkspaceId }) => {
+  const wsId = getWorkspaceId?.() ?? workspaceId;
   if (!wsId) return;
 
   // Drop agents hidden by either the local tombstone or the daemon-owned

@@ -1,0 +1,47 @@
+{
+  "note": "unindented opener closed by a 4-space-indented closer; the real tag after it forms a group (fence state ends at the indented closer, matching the renderer)",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Quoted stream:"
+        },
+        {
+          "type": "code",
+          "content": "<group:Working>\ndoing things",
+          "metadata": {
+            "language": "plaintext"
+          }
+        }
+      ]
+    },
+    {
+      "type": "content_group",
+      "name": "After",
+      "isStreaming": false,
+      "children": [
+        {
+          "type": "text",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "real group content"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "tail prose"
+        }
+      ]
+    }
+  ]
+}

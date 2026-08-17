@@ -11,6 +11,7 @@ export const switchMetadata = {
   owner: '007-B2',
   callers: [
     'src/lib/component-catalog/CatalogControls.svelte',
+    'src/lib/component-catalog/ChatPolishGeometryControls.svelte',
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
     'src/lib/components/debug/DebugPanel.svelte',
     'src/lib/components/file-tracking/CodeChangesPanel.svelte',

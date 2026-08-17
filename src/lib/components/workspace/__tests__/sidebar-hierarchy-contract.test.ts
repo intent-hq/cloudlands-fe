@@ -134,7 +134,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('data-testid="sidebar-launchers"');
     expect(sidebar).toContain('data-launcher-layout="tiles"');
     expect(sidebar).toContain('h-56 w-full auto-rows-fr grid-cols-2 gap-3');
-    expect(sidebar).toContain('rounded-lg border border-border bg-card p-2 text-foreground');
+    expect(sidebar).toContain('rounded-lg border border-border bg-sidebar p-2 text-foreground');
     expect(sidebar).toContain('data-sidebar-overlay');
     expect(sidebar).toContain('sidebar-expanded-card relative');
     expect(tabs).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
@@ -175,7 +175,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('onclick={() => handleOpenAgentInPanel(agent.id)}');
     expect(sidebar).toContain('onclick={() => handleOpenNoteInPanel(note.id as string)}');
     expect(sidebar).toContain('rounded-sm outline-none transition-colors');
-    expect(sidebar).toContain('rounded-lg border border-border bg-card');
+    expect(sidebar).toContain('rounded-lg border border-border bg-sidebar');
     expect(sidebar).not.toContain('focus-visible:ring-0');
   });
 

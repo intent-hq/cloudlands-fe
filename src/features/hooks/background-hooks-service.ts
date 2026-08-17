@@ -23,7 +23,7 @@ export interface BackgroundHook {
   delayMs: number;
   state: 'scheduled' | 'running' | 'dispatched' | 'evicted' | 'cancelled' | 'expired';
   createdAt: string;
-  /** TTL deadline (v3.1): `createdAt` + clamped `ttlMs` (≤ 60 minutes).
+  /** TTL deadline (v3.1): `createdAt` + clamped `ttlMs` (≤ 24 hours).
    * Absent only on pre-TTL legacy rows, which never expire. */
   expiresAt?: string;
   lastRunAt?: string;

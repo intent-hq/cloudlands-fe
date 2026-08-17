@@ -1,0 +1,28 @@
+{
+  "note": "augment_code_snippet XML block with 4-backtick fence",
+  "prompts": [],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Here is the relevant code:"
+        },
+        {
+          "type": "augment_code_snippet",
+          "content": "export function foo(): number {\n  return 42;\n}",
+          "metadata": {
+            "path": "src/lib/utils/foo.ts",
+            "mode": "EXCERPT",
+            "language": "typescript"
+          }
+        },
+        {
+          "type": "text",
+          "content": "That is the function."
+        }
+      ]
+    }
+  ]
+}

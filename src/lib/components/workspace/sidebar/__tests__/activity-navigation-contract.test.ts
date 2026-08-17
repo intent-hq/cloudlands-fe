@@ -28,7 +28,7 @@ describe('activity navigation contract', () => {
     expect(preview).toContain('onShowAgent?.(agentId, event)');
     expect(chat).toContain("addEventListener('agent:scroll-to-activity'");
     expect(chat).toContain('[data-tool-call-id=');
-    expect(toolCall).toContain('data-tool-call-id={toolUse.toolCallId || undefined}');
+    expect(toolCall).toContain('toolCallId={toolUse.toolCallId || undefined}');
   });
 
   it('keeps compact Activity rows out of the sidebar launcher overview', () => {

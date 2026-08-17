@@ -67,9 +67,9 @@ describe('resource icon tile source contract', () => {
     expect(tabBar).toContain('<KebabIcon class="pointer-events-none size-3!" />');
     expect(tabBar).toContain('<Fa icon={faXmark} size={12} class="size-3!" />');
     expect(navigator).toContain('size={CHAT_ICON_SIZE.header} class="size-3!"');
-    expect(scrollButton).toContain('size={CHAT_ICON_SIZE.navigationArrow} class="size-[11px]!"');
+    expect(scrollButton).toContain('size={CHAT_ICON_SIZE.navigationArrow} class="size-5!"');
     expect(chatSizes).toContain('header: 12');
-    expect(chatSizes).toContain('navigationArrow: 11');
+    expect(chatSizes).toContain('navigationArrow: 20');
     expect(tabBar).not.toContain('pl-4 pr-2.5 sm:pl-6');
     expect(tabBar).toContain(
       '(var(--panel-header-height) - var(--agent-avatar-standard-surface-size)) / 2',

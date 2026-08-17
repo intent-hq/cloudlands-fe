@@ -19,11 +19,11 @@ import {
   prMonitorReducer,
 } from '../pr-monitor-slice';
 import {
-  clearActiveWorkspace,
-  initialState as workspaceInitialState,
-  setActiveWorkspaceId,
-  workspaceReducer,
-} from '../../workspace/workspace-slice';
+  clearCurrentWorkspaceTab,
+  openWorkspaceTab,
+  tabStateReducer,
+} from '../../tab-state/tab-state-slice';
+import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { cancelPrMonitorWorker, flushPrMonitorWorker, prMonitorSaga } from './pr-monitor-saga';
 
 const settle = async () => {
@@ -32,16 +32,14 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function createHarness(activeWorkspaceId: string | null = null) {
-  const initialWorkspaceState = activeWorkspaceId
-    ? workspaceReducer(workspaceInitialState, setActiveWorkspaceId(activeWorkspaceId))
-    : workspaceInitialState;
-  let state = { workspace: initialWorkspaceState, prMonitor: initialState };
+function createHarness(currentTabId: string | null = null) {
+  const initialTabState = tabStateReducer(undefined, { type: '@@INIT' });
+  let state = { tabState: initialTabState, prMonitor: initialState };
   const channel = stdChannel();
   const listeners = new Set<() => void>();
   const dispatch = vi.fn((action: Parameters<typeof prMonitorReducer>[1]) => {
     state = {
-      workspace: workspaceReducer(state.workspace, action),
+      tabState: tabStateReducer(state.tabState, action),
       prMonitor: prMonitorReducer(state.prMonitor, action),
     };
     channel.put(action);
@@ -59,7 +57,8 @@ function createHarness(activeWorkspaceId: string | null = null) {
     { channel, dispatch, getState: reduxStore.getState, context: { reduxStore } },
     prMonitorSaga,
   );
-  return { dispatch, getState: reduxStore.getState, listeners, task };
+  if (currentTabId !== null) dispatch(openWorkspaceTab(currentTabId));
+  return { dispatch, getState: () => state, task };
 }
 
 async function advanceReconciliation() {
@@ -106,7 +105,7 @@ describe('prMonitorSaga', () => {
     expect(cancelEffect.payload.args).toEqual(['ws-1', 'mon-1']);
   });
 
-  it('registers selector reconciliation and command watchers', () => {
+  it('registers action-driven reconciliation and command watchers', () => {
     const iterator = prMonitorSaga();
     const effect = iterator.next().value as {
       type: string;
@@ -129,9 +128,23 @@ describe('prMonitorSaga', () => {
       'watchCancel',
     ]);
     expect(childEffects[0].payload.args[0]).toBeInstanceOf(Map);
+    expect(childEffects[0].payload.args).toHaveLength(1);
   });
 
-  it('subscribes to the initial active workspace after 100 ms and forwards rows', async () => {
+  it.each([null, ''])(
+    'does not subscribe for an initial %s workspace context',
+    async (workspaceId) => {
+      const harness = createHarness(workspaceId);
+      await settle();
+      await advanceReconciliation();
+
+      expect(mocks.subscribePrMonitors).not.toHaveBeenCalled();
+      harness.task.cancel();
+      await harness.task.toPromise();
+    },
+  );
+
+  it('subscribes to the first explicitly selected workspace after 100 ms and forwards rows', async () => {
     const harness = createHarness('ws-A');
     await settle();
 
@@ -159,7 +172,7 @@ describe('prMonitorSaga', () => {
       typeof vi.fn
     >;
 
-    harness.dispatch(setActiveWorkspaceId('ws-B'));
+    harness.dispatch(openWorkspaceTab('ws-B'));
     await settle();
     await vi.advanceTimersByTimeAsync(99);
     expect(disposeA).not.toHaveBeenCalled();
@@ -176,6 +189,35 @@ describe('prMonitorSaga', () => {
     await harness.task.toPromise();
   });
 
+  it('restarts the trailing delay when a final transition arrives near the window end', async () => {
+    const harness = createHarness('ws-A');
+    await settle();
+    await advanceReconciliation();
+    const disposeA = mocks.subscribePrMonitors.mock.results[0].value.dispose as ReturnType<
+      typeof vi.fn
+    >;
+
+    harness.dispatch(openWorkspaceTab('ws-B'));
+    await settle();
+    await vi.advanceTimersByTimeAsync(99);
+    harness.dispatch(openWorkspaceTab('ws-C'));
+    await settle();
+
+    await vi.advanceTimersByTimeAsync(99);
+    expect(disposeA).not.toHaveBeenCalled();
+    expect(mocks.subscribePrMonitors).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await settle();
+
+    expect(disposeA).toHaveBeenCalledOnce();
+    expect(mocks.subscribePrMonitors.mock.calls.map(([workspaceId]) => workspaceId)).toEqual([
+      'ws-A',
+      'ws-C',
+    ]);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
   it('avoids churn when an A to B to A burst restores the live workspace', async () => {
     const harness = createHarness('ws-A');
     await settle();
@@ -184,10 +226,10 @@ describe('prMonitorSaga', () => {
       typeof vi.fn
     >;
 
-    harness.dispatch(setActiveWorkspaceId('ws-B'));
+    harness.dispatch(openWorkspaceTab('ws-B'));
     await settle();
     await vi.advanceTimersByTimeAsync(50);
-    harness.dispatch(setActiveWorkspaceId('ws-A'));
+    harness.dispatch(openWorkspaceTab('ws-A'));
     await settle();
     await advanceReconciliation();
 
@@ -205,7 +247,7 @@ describe('prMonitorSaga', () => {
       typeof vi.fn
     >;
 
-    harness.dispatch(clearActiveWorkspace());
+    harness.dispatch(clearCurrentWorkspaceTab());
     await settle();
     await advanceReconciliation();
 
@@ -236,7 +278,46 @@ describe('prMonitorSaga', () => {
     await harness.task.toPromise();
   });
 
-  it('closes the live subscription and selector listener on root cancellation', async () => {
+  it('ignores workspace mount lifecycle that does not select the workspace', async () => {
+    const harness = createHarness('ws-A');
+    await settle();
+    await advanceReconciliation();
+    const disposeA = mocks.subscribePrMonitors.mock.results[0].value.dispose as ReturnType<
+      typeof vi.fn
+    >;
+
+    harness.dispatch(workspaceMounted('chief'));
+    await settle();
+    await advanceReconciliation();
+
+    expect(mocks.subscribePrMonitors).toHaveBeenCalledTimes(1);
+    expect(disposeA).not.toHaveBeenCalled();
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
+  it('does not route a retired workspace channel into the replacement workspace', async () => {
+    const harness = createHarness('ws-A');
+    await settle();
+    await advanceReconciliation();
+    const emitA = mocks.subscribePrMonitors.mock.calls[0][1] as (rows: PrMonitorRow[]) => void;
+
+    harness.dispatch(openWorkspaceTab('ws-B'));
+    await settle();
+    await advanceReconciliation();
+    const emitB = mocks.subscribePrMonitors.mock.calls[1][1] as (rows: PrMonitorRow[]) => void;
+
+    emitA([{ monitorId: 'mon-A', workspaceId: 'ws-A', state: 'active' } as PrMonitorRow]);
+    emitB([{ monitorId: 'mon-B', workspaceId: 'ws-B', state: 'active' } as PrMonitorRow]);
+    await settle();
+
+    expect(harness.getState().prMonitor.byWorkspaceId['ws-A']).toBeUndefined();
+    expect(harness.getState().prMonitor.byWorkspaceId['ws-B'].monitors.map['mon-B']).toBeDefined();
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
+  it('closes the live subscription on root cancellation', async () => {
     const harness = createHarness('ws-A');
     await settle();
     await advanceReconciliation();
@@ -245,6 +326,5 @@ describe('prMonitorSaga', () => {
     await harness.task.toPromise();
 
     expect(mocks.subscribePrMonitors.mock.results[0].value.dispose).toHaveBeenCalledOnce();
-    expect(harness.listeners.size).toBe(0);
   });
 });

@@ -1,5 +1,5 @@
 <script lang="ts">
-import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /**
    * NoteCodeChangesCard - A sleek,
   compact card showing code changes from agents
@@ -10,40 +10,33 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
    */
 
   import Fa from 'svelte-fa';
-  import {
-  faChevronDown,
-  faChevronRight,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import { faFile } from '@fortawesome/free-regular-svg-icons';
-  import type { Note,
-  AgentMessage,
-  AgentSession } from '$shared/types';
+  import type { Note, AgentMessage, AgentSession } from '$shared/types';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import { createLogger } from '$lib/utils/client-logger';
   import { selectCurrentChanges } from '$store/renderer/slices/changes/changes-selectors';
-  import {
-  ChangeStage,
-  type TrackedChange,
-} from '$features/file-tracking/types';
+  import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
 
-  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { restoreAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
-  getFileChangesFromMessages,
-  type ChatFileChange,
-} from '$lib/utils/get-file-changes-from-messages';
+    getFileChangesFromMessages,
+    type ChatFileChange,
+  } from '$lib/utils/get-file-changes-from-messages';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import { slide } from 'svelte/transition';
   import { untrack } from 'svelte';
   import {
-  openWorkspaceChatChanges,
-  openWorkspaceDiff,
-  type JsonValue,
-} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+    openWorkspaceChatChanges,
+    openWorkspaceDiff,
+    type JsonValue,
+  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { toStore } from 'svelte/store';
 
   const logger = createLogger('NoteCodeChangesCard');
 
@@ -54,7 +47,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   let { workspaceId, note }: Props = $props();
 
-  const ftChanges$ = selectCurrentChanges();
+  const workspaceId$ = toStore(() => workspaceId as string);
+  const ftChanges$ = selectCurrentChanges(workspaceId$);
 
   // State
   let isExpanded = $state(false);
@@ -86,7 +80,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     isLoading = true;
     try {
       const allMessages: AgentMessage[] = [];
-      const workspace = selectActiveWorkspace.select(appStore.state);
+      const workspace = selectWorkspaceById.select(appStore.state, workspaceId);
 
       for (const agentId of assignedAgentIds) {
         try {
@@ -254,11 +248,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               <LineChangesBadge additions={totalAdditions} deletions={totalDeletions} size="xs" />
             {/if}
           </div>
-          <Fa
-            icon={isExpanded ? faChevronDown : faChevronRight}
-            class="text-subtle"
-            size="xs"
-          />
+          <Fa icon={isExpanded ? faChevronDown : faChevronRight} class="text-subtle" size="xs" />
         </button>
 
         <!-- File List -->
@@ -276,9 +266,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                       {getFileName(change.filePath)}
                     </span>
                     {#if getDirectory(change.filePath)}
-                      <span
-                        class="flex-1 text-xs text-subtle truncate hidden sm:inline"
-                      >
+                      <span class="flex-1 text-xs text-subtle truncate hidden sm:inline">
                         {getDirectory(change.filePath)}
                       </span>
                     {/if}

@@ -12,18 +12,19 @@ import { resetActionKeyCycleCursors, type ActionKeyState } from '../action-key-r
 import { normalizeCycleScopeByFamily } from '../cycle-scope';
 
 const mockState: {
+  tabState: { currentTabId: string | null };
   hardwareConsole: {
     actionMappingByModel: Record<string, string[]>;
     isConsoleOwner: boolean;
   } & ActionKeyState['hardwareConsole'];
 } & ActionKeyState = {
+  tabState: { currentTabId: 'ws-1' },
   hardwareConsole: {
     actionMappingByModel: normalizeActionMappingsByModel(undefined),
     cycleScopeByFamily: normalizeCycleScopeByFamily(undefined),
     isConsoleOwner: true,
   },
   workspace: {
-    activeWorkspaceId: 'ws-1',
     workspaces: createCollection('id', [{ id: 'ws-1' } as never]),
   },
   workspaceAgents: { byWorkspaceId: {} },
@@ -107,6 +108,8 @@ import {
   handleActionKeyPress,
   handleActionKeyRelease,
   installHardwareConsoleActionKeys,
+  persistHardwareConsoleActionMapping,
+  persistHardwareConsoleCycleScopes,
 } from '../action-key-service';
 import { actionKeySaga } from '$store/renderer/slices/hardware-console/sagas/action-key-saga';
 
@@ -137,10 +140,11 @@ function makeFakeManager(initialStatus: HardwareConsoleStatus = 'disconnected') 
 }
 
 beforeEach(() => {
+  window.history.replaceState({}, '', '/');
   dispatched.length = 0;
   mockState.hardwareConsole.actionMappingByModel = normalizeActionMappingsByModel(undefined);
   mockState.hardwareConsole.cycleScopeByFamily = normalizeCycleScopeByFamily(undefined);
-  mockState.workspace.activeWorkspaceId = 'ws-1';
+  mockState.tabState.currentTabId = 'ws-1';
   mockState.workspace.workspaces = createCollection('id', [{ id: 'ws-1' } as never]);
   mockState.workspaceAgents.byWorkspaceId = {};
   mockState.agentSessions.byAgentId = {};
@@ -212,7 +216,7 @@ describe('handleActionKeyPress', () => {
 
   it('no-ops with the generic hint for other unavailable actions', () => {
     // Slot 2 (ACT08) = see-spec; no active workspace → generic hint.
-    mockState.workspace.activeWorkspaceId = null;
+    mockState.tabState.currentTabId = null;
     const showUnavailableHint = vi.fn();
     const result = handleActionKeyPress('ACT08', { showUnavailableHint });
     expect(result).toBeNull();
@@ -312,6 +316,7 @@ describe('handleActionKeyPress', () => {
   });
 
   it('shows the single-candidate toast when the only in-progress agent is focused', () => {
+    window.history.replaceState({}, '', '/workspace/ws-1');
     mockState.workspaceAgents.byWorkspaceId = {
       'ws-1': { agentIds: ['a-1'], foregroundAgentIds: ['a-1'], activeAgentId: 'a-1' },
     };
@@ -326,6 +331,37 @@ describe('handleActionKeyPress', () => {
       m.hardwareConsole_actionKey_noOtherInProgressAgents_message(),
     );
     expect(dispatched).toHaveLength(0);
+  });
+
+  it('scopes the cycle cursor to the current workspace tab', () => {
+    window.history.replaceState({}, '', '/workspace/ws-2');
+    mockState.tabState.currentTabId = 'ws-2';
+    mockState.workspace.workspaces = createCollection('id', [
+      { id: 'ws-1' } as never,
+      { id: 'ws-2' } as never,
+    ]);
+    mockState.workspaceAgents.byWorkspaceId = {
+      'ws-1': { agentIds: ['agent-a'], foregroundAgentIds: ['agent-a'], activeAgentId: 'agent-a' },
+      'ws-2': { agentIds: ['agent-b'], foregroundAgentIds: ['agent-b'], activeAgentId: 'agent-b' },
+    };
+    mockState.agentSessions.byAgentId = {
+      'agent-a': { id: 'agent-a', status: 'active', isProcessing: true, messages: [] } as never,
+      'agent-b': { id: 'agent-b', status: 'active', isProcessing: true, messages: [] } as never,
+    };
+    const navigate = vi.fn(() => Promise.resolve());
+    const focusComposer = vi.fn();
+
+    expect(handleActionKeyPress('ACT11', { navigate, focusComposer })).toBe(
+      'cycle-in-progress-agents',
+    );
+    expect(navigate).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(focusComposer).toHaveBeenCalledWith('agent-a');
+    expect(dispatched).toContainEqual(
+      expect.objectContaining({
+        type: 'workspaceAgents/setActiveAgentId',
+        payload: ['ws-1', 'agent-a'],
+      }),
+    );
   });
 
   it('a successful cycle press shows the action HUD with the action label', () => {
@@ -439,6 +475,7 @@ describe('composer focus', () => {
   });
 
   it('new-agent press arms a one-shot composer focus fired on the next agent-tab open', async () => {
+    window.history.replaceState({}, '', '/workspace/ws-1');
     vi.useFakeTimers();
     try {
       (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -791,6 +828,53 @@ describe('persistence key on the daemon bag', () => {
     });
   });
 
+  it('keeps hydrated values when the migrated-defaults persist fails on a read flap', async () => {
+    const priorDefaults = [
+      'new-workspace',
+      'new-agent',
+      'see-spec',
+      'switch-window-layouts',
+      'cycle-in-progress-agents',
+      'cycle-workspace-agents',
+      'cycle-unread-agents',
+    ];
+    const getMock = appClient.settings.get as ReturnType<typeof vi.fn>;
+    getMock
+      .mockResolvedValueOnce({
+        path: 'hardwareConsole.state',
+        value: { actionMappingByModel: { 'creator-micro-2': priorDefaults } },
+      })
+      // The migration persist's pre-write read flaps → readBagForPersist throws.
+      .mockResolvedValue(null);
+    const invoke = invokeActionKeySaga();
+
+    invoke({ type: 'any/action' });
+    await vi.waitFor(() => {
+      expect(dispatched).toContainEqual(
+        expect.objectContaining({
+          type: 'hardwareConsole/hydrateActionMapping',
+          payload: [
+            expect.objectContaining({
+              'creator-micro-2': [...DEFAULT_ACTION_MAPPINGS['creator-micro-2']],
+            }),
+          ],
+        }),
+      );
+    });
+    // Wait for the failed pre-write read of the migration persist.
+    await vi.waitFor(() => expect(getMock.mock.calls.length).toBeGreaterThanOrEqual(2));
+
+    expect(appClient.settings.update).not.toHaveBeenCalled();
+    // The hydrated in-memory values must stand: the failed persist must not
+    // re-dispatch defaults over them.
+    expect(
+      dispatched.filter((a) => a.type === 'hardwareConsole/hydrateActionMapping'),
+    ).toHaveLength(1);
+    expect(dispatched.filter((a) => a.type === 'hardwareConsole/hydrateCycleScopes')).toHaveLength(
+      1,
+    );
+  });
+
   it('does not write back when the persisted Codex mapping is customized', async () => {
     (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       path: 'hardwareConsole.state',
@@ -907,5 +991,21 @@ describe('persistence key on the daemon bag', () => {
         },
       ]);
     });
+  });
+});
+
+describe('action-key persist helpers on a failed bag read', () => {
+  it('persistHardwareConsoleActionMapping rejects and does not write', async () => {
+    (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await expect(
+      persistHardwareConsoleActionMapping(normalizeActionMappingsByModel(undefined)),
+    ).rejects.toThrow('hardwareConsole.state');
+    expect(appClient.settings.update).not.toHaveBeenCalled();
+  });
+
+  it('persistHardwareConsoleCycleScopes rejects and does not write', async () => {
+    (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await expect(persistHardwareConsoleCycleScopes({})).rejects.toThrow('hardwareConsole.state');
+    expect(appClient.settings.update).not.toHaveBeenCalled();
   });
 });

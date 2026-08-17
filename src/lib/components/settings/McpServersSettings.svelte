@@ -25,8 +25,8 @@
   import { formatInteger } from '$lib/i18n/format';
   import Header from '../ui/Header.svelte';
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import {
     selectMcpServersWithStatus,
     selectMcpLoading,
@@ -49,7 +49,7 @@
     saveAdvancedJson,
   } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 
-  const activeWorkspaceId = selectActiveWorkspaceId();
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
   const servers$ = selectMcpServersWithStatus();
   const loading$ = selectMcpLoading();
   const error$ = selectMcpError();
@@ -357,7 +357,7 @@
             class="text-primary hover:underline cursor-pointer"
             onclick={(e) => {
               handleLink('https://docs.augmentcode.com/setup-augment/mcp', {
-                workspaceId: $activeWorkspaceId ?? undefined,
+                workspaceId,
                 event: e,
               });
             }}>{m.settings_mcpServers_learnMore()}</button
@@ -556,7 +556,7 @@
                   class="text-primary hover:underline cursor-pointer"
                   onclick={(e) => {
                     handleLink('https://docs.augmentcode.com/setup-augment/mcp', {
-                      workspaceId: $activeWorkspaceId ?? undefined,
+                      workspaceId,
                       event: e,
                     });
                   }}>{m.settings_mcpServers_learnHow()}</button
@@ -755,7 +755,7 @@
                     e.preventDefault();
                     handleLink(
                       'https://docs.augmentcode.com/cli/integrations#configure-mcp-via-settings-json',
-                      { workspaceId: $activeWorkspaceId ?? undefined, event: e },
+                      { workspaceId, event: e },
                     );
                   }}
                 >

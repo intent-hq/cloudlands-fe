@@ -29,7 +29,7 @@ describe('panel header view settings consolidation', () => {
       const contents = source(fileName);
       expect(contents).toMatch(/(?:Note|Agent)ViewSettingsDropdown/);
       expect(contents).toContain('embedded');
-      expect(contents).toContain('registerActions({ display:');
+      expect(contents).toMatch(/display:\s+\w+DisplayActions/);
     },
   );
 

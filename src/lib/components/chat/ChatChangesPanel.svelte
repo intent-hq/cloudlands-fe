@@ -205,10 +205,7 @@
     selectLineWrapping,
   } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
 
-  import {
-    selectActiveWorkspace,
-    selectActiveWorkspaceId,
-  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { gitClient } from '$features/git/git.client';
   import { gitCache } from '$features/git/git-cache';
@@ -238,12 +235,13 @@
   import { selectViewedFiles } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { setViewedFiles } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
+  const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? '';
   const foldUnchanged = selectFoldUnchanged();
   const lineWrapping = selectLineWrapping();
-  const activeWorkspace = selectActiveWorkspace();
-  const activeWorkspaceId = selectActiveWorkspaceId();
-  const agentFileRefreshes = selectAgentFileRefreshes(activeWorkspaceId);
+  const workspace$ = selectWorkspaceById(routeWorkspaceId);
+  const agentFileRefreshes = selectAgentFileRefreshes(routeWorkspaceId);
 
   // Re-export types from types.ts for backward compatibility
   export type { ChangeCategory, LocalFileChange, DiffHunk } from './types';
@@ -357,7 +355,7 @@
   let groupByCommit = $state(initialGroupByCommit);
 
   // File tracking state from Redux
-  const ftCommits$ = selectCurrentCommits();
+  const ftCommits$ = selectCurrentCommits(routeWorkspaceId);
 
   // Helper to check if a file is locked
   function isFileLocked(filePath: string): boolean {
@@ -368,9 +366,8 @@
   const instanceId = Math.random().toString(36).substring(2, 8);
 
   function getStoredViewedFilesRecord() {
-    const workspaceId = $activeWorkspaceId;
-    if (!workspaceId) return {};
-    return selectViewedFiles.select(appStore.state, workspaceId);
+    if (!routeWorkspaceId) return {};
+    return selectViewedFiles.select(appStore.state, routeWorkspaceId);
   }
 
   /**
@@ -395,9 +392,9 @@
 
   // Restore viewed files from transient store when mergedChanges first loads
   $effect(() => {
-    // Depend on mergedChanges and active workspace identity
+    // Depend on mergedChanges and the immutable route workspace identity
     const currentMergedChanges = mergedChanges;
-    const currentWorkspaceId = $activeWorkspaceId;
+    const currentWorkspaceId = routeWorkspaceId;
 
     if (!currentWorkspaceId || currentMergedChanges.length === 0) return;
     if (hasRestoredViewedFiles) return;
@@ -461,7 +458,7 @@
   $effect(() => {
     if (!showStagingControls) return;
 
-    const wsId = $activeWorkspaceId;
+    const wsId = routeWorkspaceId;
     if (!wsId) return;
 
     if (lastSeenRefreshWorkspaceId !== wsId) {
@@ -536,7 +533,7 @@
   function getDisplayPath(filePath: string): string {
     // If it's a workspace-relative absolute path, extract the relative part
     // e.g., /Users/foo/intent/uuid/repo/src/file.ts -> src/file.ts
-    const workspace = $activeWorkspace;
+    const workspace = $workspace$;
     const workspacePath = workspace?.worktreePath || workspace?.repositoryPath;
 
     if (workspacePath) {
@@ -610,7 +607,9 @@
         // Gitlink (submodule) pin SHAs are included because a pin-only update
         // changes neither category nor line stats — without them a moved pin
         // would keep the stale entry (#1739).
-        const gitlinkKey = c.gitlink ? `|gl:${c.gitlink.oldSha || ''}:${c.gitlink.newSha || ''}` : '';
+        const gitlinkKey = c.gitlink
+          ? `|gl:${c.gitlink.oldSha || ''}:${c.gitlink.newSha || ''}`
+          : '';
         return `${c.filePath}|${c.category || c.staged}|${c.commitHash || ''}${gitlinkKey}`;
       })
       .sort()
@@ -640,7 +639,7 @@
     const currentBranchBaseRef = branchBaseRef ?? undefined;
     const currentBranchBaseCommitSha = branchBaseCommitSha ?? undefined;
     const currentGitRootId = gitRootId;
-    const workspaceId = $activeWorkspaceId;
+    const workspaceId = routeWorkspaceId;
 
     if (!workspaceId || currentChanges.length === 0) {
       // Only update if enrichedChanges is not already empty (avoid unnecessary reactivity)
@@ -1258,7 +1257,7 @@
       return;
     }
 
-    const workspaceId = $activeWorkspaceId;
+    const workspaceId = routeWorkspaceId;
     if (!workspaceId || reactiveChanges.length === 0) {
       // Only update if not already matching
       const currentLength = untrack(() => gitDiffChanges.length);
@@ -1571,7 +1570,7 @@
       ? (event.target as HTMLElement)?.closest('[data-panel-id]')
       : null;
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-    const wsId = $activeWorkspaceId;
+    const wsId = routeWorkspaceId;
     if (!wsId) return;
     const category = change ? getChangeCategory(change) : undefined;
     const diffChange = change
@@ -1616,7 +1615,7 @@
       ? (event.target as HTMLElement)?.closest('[data-panel-id]')
       : null;
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-    const wsId = $activeWorkspaceId;
+    const wsId = routeWorkspaceId;
     if (!wsId) return;
     appStore.dispatch(openWorkspaceFile(wsId, filePath, { openInAdjacentPanel, sourcePanelId }));
   }
@@ -1624,7 +1623,7 @@
   // Refresh diff for a single file after staging/unstaging
   // This is more performant than refreshing all file tracking data
   async function refreshFileDiff(filePath: string) {
-    const workspaceId = $activeWorkspaceId;
+    const workspaceId = routeWorkspaceId;
     if (!workspaceId) return;
 
     // Track that this file is being refreshed (for loading indicator)
@@ -1752,7 +1751,7 @@
 
   // Hunk staging handlers for inline diffs
   async function handleStageHunk(filePath: string, hunkPatch: string) {
-    const workspaceId = $activeWorkspaceId;
+    const workspaceId = routeWorkspaceId;
     if (!workspaceId) {
       toast.error(m.chat_changesPanel_noSpaceAvailable_error());
       return;
@@ -1788,7 +1787,7 @@
   }
 
   async function handleUnstageHunk(filePath: string, hunkPatch: string) {
-    const workspaceId = $activeWorkspaceId;
+    const workspaceId = routeWorkspaceId;
     if (!workspaceId) {
       toast.error(m.chat_changesPanel_noSpaceAvailable_error());
       return;
@@ -1825,7 +1824,7 @@
 
   // Handle opening a commit changeset view
   function handleOpenCommit(commitHash: string) {
-    const wsId = $activeWorkspaceId;
+    const wsId = routeWorkspaceId;
     if (!wsId) return;
     appStore.dispatch(
       openWorkspaceCommitChangeset(wsId, commitHash, undefined, gitRootId ? { gitRootId } : undefined)
@@ -1944,12 +1943,12 @@
     }
 
     // Persist to transient store
-    if ($activeWorkspaceId) {
+    if (routeWorkspaceId) {
       const newStoredViewed: Record<string, string> = {};
       for (const fp of newViewed) {
         newStoredViewed[fp] = getCommitFingerprint(fp);
       }
-      appStore.dispatch(setViewedFiles($activeWorkspaceId, newStoredViewed));
+      appStore.dispatch(setViewedFiles(routeWorkspaceId, newStoredViewed));
     }
   }
 
@@ -2445,7 +2444,7 @@
   // Open commit in an embedded browser panel tab
   function openCommitInBrowser() {
     if (!commitInfo?.hash) return;
-    const workspace = $activeWorkspace;
+    const workspace = $workspace$;
     const repoOwner = workspace?.repositoryOwner;
     const repoName = workspace?.repositoryName;
     const wsId = workspace?.id;
@@ -2464,7 +2463,7 @@
 
   // Derive commit GitHub URL availability
   const hasCommitUrl = $derived(() => {
-    const workspace = $activeWorkspace;
+    const workspace = $workspace$;
     return !!(commitInfo?.hash && workspace?.repositoryOwner && workspace?.repositoryName);
   });
 
@@ -2813,7 +2812,7 @@
             {#if commitInfo?.agentId || agentId}
               {@const displayAgentId = commitInfo?.agentId || agentId}
               {@const ccpState = appStore.state}
-              {@const currentWsId = selectActiveWorkspaceId.select(ccpState)}
+              {@const currentWsId = routeWorkspaceId}
               {@const agentSession =
                 displayAgentId && currentWsId
                   ? selectAgentSession.select(ccpState, displayAgentId)
@@ -2837,7 +2836,7 @@
             {#if commitInfo?.linkedNoteId && onOpenNote}
               {@const linkedNote = selectNoteById.select(
                 appStore.state,
-                $activeWorkspaceId ?? '',
+                routeWorkspaceId,
                 commitInfo.linkedNoteId,
               )}
               {@const noteName = linkedNote?.title || m.chat_changesPanel_note_fallback()}

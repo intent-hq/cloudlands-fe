@@ -5,6 +5,7 @@ export const MESSAGE_SEND_TRANSITION_DURATION_MS = 280;
 export const MESSAGE_SEND_TRANSITION_EASING = 'cubic-bezier(0.2, 0, 0, 1)';
 export const MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS = 600;
 export const MESSAGE_SEND_MATCH_TIMEOUT_MS = 3000;
+export const MESSAGE_SEND_DISMISS_DURATION_MS = 160;
 
 interface TargetTransitionOwner {
   cancel: () => void;
@@ -76,6 +77,52 @@ export function createMessageSendLaunchBubble(
   });
   document.body.append(bubble);
   return bubble;
+}
+
+/**
+ * Gracefully retires a launch bubble whose transcript row never appeared
+ * (match timeout). Fades the bubble out in place instead of yanking it, and
+ * always removes it from the DOM before resolving.
+ */
+export function dismissMessageSendLaunchBubble(bubble: HTMLElement | null): Promise<void> {
+  if (!bubble) return Promise.resolve();
+  if (
+    !bubble.isConnected ||
+    prefersReducedMotion() ||
+    document.hidden ||
+    typeof bubble.animate !== 'function'
+  ) {
+    bubble.remove();
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    let watchdog: ReturnType<typeof setTimeout> | null = null;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (watchdog !== null) clearTimeout(watchdog);
+      bubble.remove();
+      resolve();
+    };
+    watchdog = setTimeout(finish, MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS);
+    try {
+      const animation = bubble.animate(
+        [
+          { opacity: 1, transform: 'translate3d(0, 0, 0)' },
+          { opacity: 0, transform: 'translate3d(0, 8px, 0)' },
+        ],
+        {
+          duration: MESSAGE_SEND_DISMISS_DURATION_MS,
+          easing: MESSAGE_SEND_TRANSITION_EASING,
+          fill: 'forwards',
+        },
+      );
+      void animation.finished.then(finish, finish);
+    } catch {
+      finish();
+    }
+  });
 }
 
 export function settleFollowedSendAtBottom(
