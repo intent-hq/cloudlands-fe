@@ -6,7 +6,6 @@ import type {
   OpenAgentTabDetail,
   OpenNewSpaceModalDetail,
   OpenTerminalTabDetail,
-  ShowAgentDetail,
   SidebarLocateTarget,
 } from "./app-layout-types";
 
@@ -18,10 +17,6 @@ export const initialState: AppLayoutState = {
 export const createFileRequested = createAction<
   [wsId: string, folderPath: string, fileName: string]
 >("appLayout/createFileRequested");
-
-export const showAgentRequested = createAction<[wsId: string, detail: ShowAgentDetail]>(
-  "appLayout/showAgentRequested"
-);
 
 export const openAgentTabRequested = createAction<[wsId: string, detail: OpenAgentTabDetail]>(
   "appLayout/openAgentTabRequested"

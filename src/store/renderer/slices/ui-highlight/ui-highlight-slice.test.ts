@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  clearUiHighlight,
-  initialState,
-  requestUiHighlight,
-  uiHighlightReducer,
-} from './ui-highlight-slice';
+import { initialState, requestUiHighlight, uiHighlightReducer } from './ui-highlight-slice';
 
 describe('uiHighlightReducer', () => {
   it('returns initial state', () => {
@@ -43,33 +38,6 @@ describe('uiHighlightReducer', () => {
 
     expect(state.activeById.theme).toBe(2);
     expect(state.durationMsById.theme).toBeUndefined();
-  });
-
-  it('clears a matching token', () => {
-    const active = uiHighlightReducer(initialState, requestUiHighlight('theme'));
-    const cleared = uiHighlightReducer(active, clearUiHighlight('theme', 1));
-
-    expect(cleared.activeById.theme).toBeUndefined();
-  });
-
-  it('clears custom highlight duration with the active token', () => {
-    const active = uiHighlightReducer(
-      initialState,
-      requestUiHighlight('theme', { durationMs: 1200 }),
-    );
-    const cleared = uiHighlightReducer(active, clearUiHighlight('theme', 1));
-
-    expect(cleared.activeById.theme).toBeUndefined();
-    expect(cleared.durationMsById.theme).toBeUndefined();
-  });
-
-  it('keeps newer highlights when an older token clears', () => {
-    const once = uiHighlightReducer(initialState, requestUiHighlight('theme'));
-    const twice = uiHighlightReducer(once, requestUiHighlight('theme'));
-    const state = uiHighlightReducer(twice, clearUiHighlight('theme', 1));
-
-    expect(state).toBe(twice);
-    expect(state.activeById.theme).toBe(2);
   });
 
   it('ignores blank highlight ids', () => {

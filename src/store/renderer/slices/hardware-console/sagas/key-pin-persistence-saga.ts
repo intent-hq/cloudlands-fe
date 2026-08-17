@@ -92,7 +92,6 @@ function* hydrateKeyPins(gate: HydrationGate): SagaGenerator<void> {
 
 type PinMutationAction =
   | ReturnType<typeof pinWorkspaceToKey>
-  | ReturnType<typeof unpinWorkspaceFromKeys>
   | ReturnType<typeof markKeySlotUnassigned>;
 
 function* persistPinMutation(gate: HydrationGate, action: PinMutationAction): SagaGenerator<void> {
