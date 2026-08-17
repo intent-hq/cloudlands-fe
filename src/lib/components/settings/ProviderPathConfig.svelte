@@ -104,9 +104,25 @@
   const placeholderText = $derived(
     resolvedPath ? resolvedPath : m.settings_providerPath_placeholder({ command: cliCommand }),
   );
+
+  // Remote daemons route browsing to the in-app DirectoryPickerModal, which
+  // portals outside this menu; while it is open the menu must neither close
+  // on outside interaction/Escape/focus loss nor unmount the subtree that
+  // renders the modal.
+  let pickerOpen = $state(false);
 </script>
 
-<Menu.Root bind:open>
+<Menu.Root
+  bind:open={
+    () => open,
+    (next) => {
+      // The remote picker modal lives inside this menu's subtree; refuse to
+      // close (and unmount it) while the modal is open.
+      if (!next && pickerOpen) return;
+      open = next;
+    }
+  }
+>
   {#if showTrigger}
     <Menu.Trigger>
       {#snippet child({ props })}
@@ -124,7 +140,17 @@
       {/snippet}
     </Menu.Trigger>
   {/if}
-  <Menu.Content align="end" side="bottom" portal={true} aria-label={m.ui_dropdownMenu_ariaLabel()}>
+  <Menu.Content
+    align="end"
+    side="bottom"
+    portal={true}
+    interactOutsideBehavior={pickerOpen ? 'ignore' : 'close'}
+    escapeKeydownBehavior={pickerOpen ? 'ignore' : 'close'}
+    onFocusOutside={(event) => {
+      if (pickerOpen) event.preventDefault();
+    }}
+    aria-label={m.ui_dropdownMenu_ariaLabel()}
+  >
     <div class="w-80 p-3 space-y-3 overflow-hidden">
       <!-- Header with helpful copy -->
       <div class="space-y-1">
@@ -152,6 +178,7 @@
         ariaLabel={m.settings_providerPath_header({ name: providerName })}
         pickerTitle={m.settings_providerPath_pickerTitle({ command: cliCommand })}
         onchange={savePath}
+        bind:pickerOpen
       />
 
       <!-- Status indicator: full (wrapped) auto-detected paths; the primary
