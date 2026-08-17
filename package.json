@@ -268,6 +268,7 @@
     "@tiptap/pm": "^3.29.2",
     "@tiptap/starter-kit": "^3.29.2",
     "@tiptap/suggestion": "^3.29.2",
+    "@toon-format/toon": "^4.1.1",
     "@types/cheerio": "^1.0.0",
     "@types/ssh2": "^1.15.5",
     "@types/ws": "^8.18.1",
