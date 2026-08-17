@@ -757,4 +757,286 @@ describe('tool-result-parser', () => {
       expect(result.content).toBe(text);
     });
   });
+
+  describe('workspace_api TOON results (generalized renderers)', () => {
+    // Fixtures mirror the daemon's toon-format v0.5 `encode_default` output
+    // (`render_workspace_api_value` in intentd), verified against the npm
+    // `@toon-format/toon` decoder.
+    const wsInput = (code: string) => ({ code, summary: 'ws call' });
+
+    it('parses a TOON agent list (tabular array) into agent rows', () => {
+      const toon = [
+        '[2]{id,name,status,isActive}:',
+        '  agent-11111111-1111-1111-1111-111111111111,Coordinator,idle,true',
+        '  agent-22222222-2222-2222-2222-222222222222,Implementor #1,responding,true',
+      ].join('\n');
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        wsInput('return await ws.agent.list()'),
+        toon,
+      );
+
+      expect(result.type).toBe('agent-list');
+      expect(result.agents).toEqual([
+        {
+          name: 'Coordinator',
+          agentId: 'agent-11111111-1111-1111-1111-111111111111',
+          status: 'idle',
+        },
+        {
+          name: 'Implementor #1',
+          agentId: 'agent-22222222-2222-2222-2222-222222222222',
+          status: 'responding',
+        },
+      ]);
+    });
+
+    it('still parses the legacy prose agent list', () => {
+      const prose = '- Coordinator (agent-1)\n  Status: idle\n- Helper (agent-2)\n  Status: responding';
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        wsInput('return await ws.agent.list()'),
+        prose,
+      );
+
+      expect(result.type).toBe('agent-list');
+      expect(result.agents).toEqual([
+        { name: 'Coordinator', agentId: 'agent-1', status: 'idle' },
+        { name: 'Helper', agentId: 'agent-2', status: 'responding' },
+      ]);
+    });
+
+    it('parses a TOON note list (list array) into note rows', () => {
+      const toon = [
+        '[2]:',
+        '  - id: note-1',
+        '    title: Design Doc',
+        '    tags[2]: design,v2',
+        '    createdAt: "2026-08-17T00:00:00Z"',
+        '  - id: spec',
+        '    title: Spec',
+        '    tags: []',
+        '    createdAt: "2026-08-16T00:00:00Z"',
+      ].join('\n');
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        wsInput('return await ws.note.list()'),
+        toon,
+      );
+
+      expect(result.type).toBe('note-list');
+      expect(result.notes).toEqual([
+        { id: 'note-1', title: 'Design Doc', tags: ['design', 'v2'] },
+        { id: 'spec', title: 'Spec', tags: [] },
+      ]);
+    });
+
+    it('parses a TOON note read result via rawContent', () => {
+      const toon = [
+        'id: spec',
+        'title: My Spec',
+        'tags[1]: spec',
+        'content: "   1 | # Heading\\n   2 | body line"',
+        'rawContent: "# Heading\\nbody line"',
+        'totalLines: 2',
+        'imageCount: 0',
+        'images: []',
+      ].join('\n');
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        wsInput('return await ws.note.read("spec")'),
+        toon,
+      );
+
+      expect(result.type).toBe('note-view');
+      expect(result.content).toBe('# Heading\nbody line');
+      expect(result.lineCount).toBe(2);
+    });
+
+    it('still parses the legacy line-numbered note read text', () => {
+      const text = 'Note: My Spec\n\n   1 | # Heading\n   2 | body line';
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        wsInput('return await ws.note.read("spec")'),
+        text,
+      );
+
+      expect(result.type).toBe('note-view');
+      expect(result.content).toBe('# Heading\nbody line');
+    });
+
+    it('parses a TOON note edit result into an old/new diff', () => {
+      const toon = [
+        'ok: true',
+        'noteId: spec',
+        'oldTextLength: 5',
+        'newTextLength: 9',
+        'matchPosition: 10',
+        'oldContent: "# Spec\\nold line"',
+        'newContent: "# Spec\\nnew line"',
+        'convertedCount: 0',
+        'createdTaskNoteIds: []',
+      ].join('\n');
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        wsInput('return await ws.note.edit("spec", { old: "old line", new: "new line" })'),
+        toon,
+      );
+
+      expect(result.type).toBe('note-edit');
+      expect(result.oldContent).toBe('# Spec\nold line');
+      expect(result.newContent).toBe('# Spec\nnew line');
+    });
+
+    it('parses a TOON getMyTask result', () => {
+      const toon = [
+        'noteId: task-1',
+        'title: Fix the bug',
+        'content: Repro steps here',
+        'status: in_progress',
+        'rev: 3',
+      ].join('\n');
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        wsInput('return await ws.task.getMyTask("task-1")'),
+        toon,
+      );
+
+      expect(result.type).toBe('task');
+      expect(result.taskTitle).toBe('Fix the bug');
+      expect(result.taskStatus).toBe('in_progress');
+      expect(result.taskContent).toBe('Repro steps here');
+    });
+
+    it('parses a TOON task updateStatus result', () => {
+      const toon = ['ok: true', 'noteId: note-9', 'taskText: Write tests', 'status: done'].join(
+        '\n',
+      );
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        wsInput('return await ws.task.updateStatus("note-9", "Write tests", "done")'),
+        toon,
+      );
+
+      expect(result.type).toBe('task-update');
+      expect(result.taskTitle).toBe('Write tests');
+      expect(result.taskStatus).toBe('done');
+    });
+
+    it('still parses the legacy prose task update text', () => {
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        wsInput('return await ws.task.updateStatus("note-9", "Write tests", "done")'),
+        "Task status updated to 'done': Write tests",
+      );
+
+      expect(result.type).toBe('task-update');
+      expect(result.taskStatus).toBe('done');
+    });
+
+    it('parses a TOON comment add result', () => {
+      const toon = [
+        'success: true',
+        'message: "Comment successfully anchored to \\"Section 3\\""',
+        'commentId: comment-abc',
+        'anchored: true',
+        'noteRev: 7',
+        'location:',
+        '  line: 12',
+        '  anchoredText: Section 3',
+      ].join('\n');
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        wsInput('return await ws.comment.add("spec", { comment: "hi" })'),
+        toon,
+      );
+
+      expect(result.type).toBe('comment-add');
+      expect(result.commentMessage).toBe('Comment successfully anchored to "Section 3"');
+      expect(result.commentId).toBe('comment-abc');
+      expect(result.commentAnchorText).toBe('Section 3');
+    });
+
+    it('parses a TOON comment list result', () => {
+      const toon = [
+        'threads[1]{threadId,noteId,targetedText,status,createdAt,lastActivity,latestCommentAuthor,latestCommentAuthorType,latestCommentAt,commentCount}:',
+        '  thread-1,spec,Section 3,open,"2026-08-17T01:00:00Z","2026-08-17T02:00:00Z",Clement,user,"2026-08-17T02:00:00Z",2',
+        'totalThreads: 1',
+        'totalComments: 2',
+      ].join('\n');
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        wsInput('return await ws.comment.list("spec")'),
+        toon,
+      );
+
+      expect(result.type).toBe('comment-list');
+      expect(result.totalComments).toBe(2);
+      expect(result.commentThreads).toEqual([
+        {
+          threadId: 'thread-1',
+          targetedText: 'Section 3',
+          status: 'open',
+          commentCount: 2,
+          latestAuthor: 'Clement',
+          lastActivity: '2026-08-17T02:00:00Z',
+        },
+      ]);
+    });
+
+    it('falls back to raw content for non-structured comment list text', () => {
+      const text = 'No comment threads found.';
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        wsInput('return await ws.comment.list("spec")'),
+        text,
+      );
+
+      expect(result.type).toBe('comment-list');
+      expect(result.commentThreads).toEqual([]);
+      expect(result.content).toBe(text);
+    });
+
+    it('parses a TOON browser screenshot result', () => {
+      const toon = ['assetUrl: "workspace-asset://shot-1.png"', 'width: 1280', 'height: 800'].join(
+        '\n',
+      );
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        wsInput('return await ws.browser.exec([{ action: "screenshot" }])'),
+        toon,
+      );
+
+      expect(result.type).toBe('browser');
+      expect(result.screenshotUrl).toBe('workspace-asset://shot-1.png');
+      expect(result.screenshotWidth).toBe(1280);
+      expect(result.screenshotHeight).toBe(800);
+    });
+
+    it('parses a TOON multi-action browser result', () => {
+      const toon = [
+        '[2]:',
+        '  - action: evaluate',
+        '    success: true',
+        '    result: ok',
+        '  - action: screenshot',
+        '    success: true',
+        '    result:',
+        '      assetUrl: "workspace-asset://shot-2.png"',
+        '      width: 640',
+        '      height: 480',
+      ].join('\n');
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        wsInput(
+          'return await ws.browser.exec([{ action: "evaluate" }, { action: "screenshot" }])',
+        ),
+        toon,
+      );
+
+      expect(result.type).toBe('browser');
+      expect(result.evaluateResult).toBe('ok');
+      expect(result.screenshotUrl).toBe('workspace-asset://shot-2.png');
+    });
+  });
 });

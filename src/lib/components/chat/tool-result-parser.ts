@@ -1088,17 +1088,13 @@ function parseNoteUpdateResult(
     language: 'markdown',
   };
 
-  // Try to extract old/new content from result (if it's JSON)
+  // Try to extract old/new content from a structured (JSON or TOON) result
   if (result && typeof result === 'string') {
-    try {
-      const resultData = JSON.parse(result);
-      if (resultData.oldContent !== undefined && resultData.newContent !== undefined) {
-        parsed.oldContent = resultData.oldContent || '';
-        parsed.newContent = resultData.newContent || '';
-        return parsed;
-      }
-    } catch {
-      // Result is not JSON - continue to extract from input
+    const resultData = decodeStructuredObject(result);
+    if (resultData && resultData.oldContent !== undefined && resultData.newContent !== undefined) {
+      parsed.oldContent = typeof resultData.oldContent === 'string' ? resultData.oldContent : '';
+      parsed.newContent = typeof resultData.newContent === 'string' ? resultData.newContent : '';
+      return parsed;
     }
   }
 
@@ -1155,7 +1151,18 @@ function parseNoteReadResult(
 
   if (!result) return parsed;
 
-  const lines = result.split('\n');
+  // Structured (JSON or TOON) daemon result: `ws.note.read` returns
+  // { id, title, content, rawContent, totalLines, ... }
+  const data = decodeStructuredObject(result);
+  if (data && typeof data.rawContent === 'string') {
+    parsed.content = data.rawContent;
+    parsed.lineCount =
+      typeof data.totalLines === 'number' ? data.totalLines : data.rawContent.split('\n').length;
+    return parsed;
+  }
+  const sourceText = data && typeof data.content === 'string' ? data.content : result;
+
+  const lines = sourceText.split('\n');
   const contentLines: string[] = [];
   let inTaskMetadata = false;
 
@@ -1201,15 +1208,20 @@ function parseTaskResult(
 
   if (!result) return parsed;
 
-  // Try to parse as JSON first
-  try {
-    const data = JSON.parse(result);
-    parsed.taskTitle = data.title || data.name;
-    parsed.taskStatus = data.status;
-    parsed.taskContent = data.content || data.description;
-    return parsed;
-  } catch {
-    // Not JSON, try to parse the text format
+  // Structured (JSON or TOON) daemon result — e.g. `ws.task.getMyTask`.
+  // Only short-circuits when a recognized field decoded, so prose like
+  // "Task: X\nStatus: y" (which TOON-decodes into an unrelated object)
+  // still reaches the text-format fallback below.
+  const data = decodeStructuredObject(result);
+  if (data) {
+    if (typeof data.title === 'string') parsed.taskTitle = data.title;
+    else if (typeof data.name === 'string') parsed.taskTitle = data.name;
+    if (typeof data.status === 'string') parsed.taskStatus = data.status;
+    if (typeof data.content === 'string') parsed.taskContent = data.content;
+    else if (typeof data.description === 'string') parsed.taskContent = data.description;
+    if (parsed.taskTitle || parsed.taskStatus || parsed.taskContent) {
+      return parsed;
+    }
   }
 
   // Parse text format: "Task: ...\nStatus: ...\nContent: ..."
@@ -1290,29 +1302,42 @@ function parseDirectoryListingResult(
  * returns a plain object — or null when the text is neither (e.g. legacy
  * prose, which the callers handle with their own regex fallbacks).
  */
-function decodeStructuredResult(result: string): Record<string, unknown> | null {
+function decodeStructuredResult(result: string): Record<string, unknown> | unknown[] | null {
   const trimmed = result.trim();
   if (!trimmed) return null;
-  if (trimmed.startsWith('{')) {
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     try {
       const data = JSON.parse(trimmed);
-      if (data && typeof data === 'object' && !Array.isArray(data)) {
-        return data as Record<string, unknown>;
+      if (data && typeof data === 'object') {
+        return data as Record<string, unknown> | unknown[];
       }
+      return null;
     } catch {
-      // Truncated/invalid JSON — TOON never starts with '{', so stop here
+      // Truncated/invalid JSON. TOON never starts with '{', but a TOON
+      // top-level array header does start with '[' (`items[N]:` syntax),
+      // so only the '[' prefix falls through to the TOON decoder.
+      if (trimmed.startsWith('{')) return null;
     }
-    return null;
   }
   try {
     const data = decodeToon(trimmed);
-    if (data && typeof data === 'object' && !Array.isArray(data)) {
-      return data as Record<string, unknown>;
+    if (data && typeof data === 'object') {
+      return data as Record<string, unknown> | unknown[];
     }
   } catch {
     // Not TOON — leave the text for the prose fallbacks
   }
   return null;
+}
+
+/**
+ * Like {@link decodeStructuredResult}, but only accepts object (non-array)
+ * shapes — for callers that expect a single result record.
+ */
+function decodeStructuredObject(result: string): Record<string, unknown> | null {
+  const data = decodeStructuredResult(result);
+  if (!data || Array.isArray(data)) return null;
+  return data;
 }
 
 /**
@@ -1329,7 +1354,7 @@ function parseAgentResult(result: string): {
   taskNoteId?: string;
   provider?: string;
 } | null {
-  const data = decodeStructuredResult(result);
+  const data = decodeStructuredObject(result);
   if (!data) return null;
   if (typeof data.agentId !== 'string') return null;
   return {
@@ -1350,7 +1375,7 @@ function parseAgentResult(result: string): {
  * which carries a top-level `agentId`).
  */
 function parseDelegateBatchResult(result: string): DelegateBatchSummary | null {
-  const data = decodeStructuredResult(result);
+  const data = decodeStructuredObject(result);
   if (!data) return null;
   if (typeof data.agentId === 'string') return null;
   if (!Array.isArray(data.tasks)) return null;
@@ -1508,6 +1533,25 @@ function parseTaskUpdateResult(
 
   // Try to extract status from result message
   if (result) {
+    // Structured (JSON or TOON) daemon result: `ws.task.updateStatus` /
+    // `updateNoteStatus` / `update` return `{ ok, noteId, status, ... }`.
+    // Gated on `ok: true` so prose that happens to TOON-decode into an
+    // unrelated object still reaches the regex fallbacks below.
+    const data = decodeStructuredObject(result);
+    if (data && data.ok === true) {
+      if (!parsed.taskTitle && typeof data.taskText === 'string') {
+        parsed.taskTitle = data.taskText;
+      }
+      if (!parsed.taskTitle && typeof data.newText === 'string') {
+        parsed.taskTitle = data.newText;
+      }
+      if (!parsed.taskStatus && typeof data.status === 'string') {
+        parsed.taskStatus = data.status;
+      }
+      parsed.content = result;
+      return parsed;
+    }
+
     // Match: "Task status updated to 'done':" or "Task Note status updated to 'complete'"
     const statusMatch = result.match(/status updated to ['"]?([^'":\s]+)['"]?/i);
     if (statusMatch && !parsed.taskStatus) {
@@ -1660,19 +1704,23 @@ function parseCommentAddResult(
 
   if (!result) return parsed;
 
-  try {
-    const data = JSON.parse(result);
-    if (data.message) {
+  // Structured (JSON or TOON) daemon result. Gated on the `comment.add`
+  // fields so prose that happens to TOON-decode into an unrelated object
+  // still falls back to raw content.
+  const data = decodeStructuredObject(result);
+  if (data && (typeof data.message === 'string' || typeof data.commentId === 'string')) {
+    if (typeof data.message === 'string') {
       parsed.commentMessage = data.message;
     }
-    if (data.commentId) {
+    if (typeof data.commentId === 'string') {
       parsed.commentId = data.commentId;
     }
-    if (data.location?.anchoredText) {
-      parsed.commentAnchorText = data.location.anchoredText;
+    const location = data.location as { anchoredText?: string } | undefined;
+    if (location && typeof location === 'object' && typeof location.anchoredText === 'string') {
+      parsed.commentAnchorText = location.anchoredText;
     }
-  } catch {
-    // If not valid JSON, just show raw content
+  } else {
+    // Not a structured result — just show raw content
     parsed.content = result;
   }
 
@@ -1699,32 +1747,38 @@ function parseCommentListResult(
 
   if (!result) return parsed;
 
-  try {
-    const data = JSON.parse(result);
+  // Structured (JSON or TOON) daemon result. Gated on the `comment.list` /
+  // `comment.getThread` fields so prose that happens to TOON-decode into an
+  // unrelated object still falls back to raw content.
+  const data = decodeStructuredObject(result);
+  if (data && (Array.isArray(data.threads) || typeof data.totalComments === 'number')) {
     if (data.threads && Array.isArray(data.threads)) {
-      parsed.commentThreads = data.threads.map(
-        (thread: {
-          threadId: string;
-          targetedText?: string;
-          status?: string;
-          commentCount?: number;
-          latestCommentAuthor?: string;
-          lastActivity?: string;
-        }) => ({
-          threadId: thread.threadId,
-          targetedText: thread.targetedText || undefined,
-          status: thread.status || 'open',
-          commentCount: thread.commentCount || 1,
-          latestAuthor: thread.latestCommentAuthor || undefined,
-          lastActivity: thread.lastActivity || undefined,
-        }),
-      );
+      parsed.commentThreads = (data.threads as unknown[])
+        .filter((t): t is Record<string, unknown> => typeof t === 'object' && t !== null)
+        .map((t) => {
+          const thread = t as {
+            threadId: string;
+            targetedText?: string;
+            status?: string;
+            commentCount?: number;
+            latestCommentAuthor?: string;
+            lastActivity?: string;
+          };
+          return {
+            threadId: thread.threadId,
+            targetedText: thread.targetedText || undefined,
+            status: thread.status || 'open',
+            commentCount: thread.commentCount || 1,
+            latestAuthor: thread.latestCommentAuthor || undefined,
+            lastActivity: thread.lastActivity || undefined,
+          };
+        });
     }
     if (typeof data.totalComments === 'number') {
       parsed.totalComments = data.totalComments;
     }
-  } catch {
-    // If not valid JSON, just show raw content
+  } else {
+    // Not a structured result — just show raw content
     parsed.content = result;
   }
 
@@ -1752,17 +1806,23 @@ function parseNoteListResult(
 
   if (!result) return parsed;
 
-  try {
-    const data = JSON.parse(result);
-    if (Array.isArray(data)) {
-      parsed.notes = data.map((note: { id: string; title?: string; tags?: string[] }) => ({
-        id: note.id,
-        title: note.title || m.chat_toolResultParser_untitledNote_fallback(),
-        tags: note.tags || [],
-      }));
-    }
-  } catch {
-    // If not valid JSON, just show raw content
+  // Structured (JSON or TOON) daemon result: array of note rows. Anything
+  // else (including prose that TOON-decodes into an unrelated object) falls
+  // back to raw content.
+  const data = decodeStructuredResult(result);
+  if (Array.isArray(data)) {
+    parsed.notes = data
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .map((item) => {
+        const note = item as { id?: string; title?: string; tags?: string[] };
+        return {
+          id: note.id || '',
+          title: note.title || m.chat_toolResultParser_untitledNote_fallback(),
+          tags: note.tags || [],
+        };
+      });
+  } else {
+    // Not a structured array result — just show raw content
     parsed.content = result;
   }
 
@@ -1846,6 +1906,49 @@ function parseBrowserResult(input: Record<string, any>, result: unknown): Parsed
       // Truncated multi-action array — extract what we can with regex
       const extracted = extractFromTruncatedActions(parsed, resultText);
       if (extracted) return parsed;
+    }
+
+    // TOON-encoded workspace_api result (`ws.browser.exec`): the daemon
+    // TOON-encodes object/array success values, so JSON.parse fails on them.
+    // Only unambiguous shapes are handled; everything else falls through to
+    // the plain-text handling below.
+    const decoded = decodeStructuredResult(resultText);
+    if (decoded) {
+      if (
+        !Array.isArray(decoded) &&
+        (typeof decoded.base64 === 'string' || typeof decoded.assetUrl === 'string')
+      ) {
+        // Screenshot result: { base64 | assetUrl, width, height }
+        if (typeof decoded.base64 === 'string') parsed.screenshotBase64 = decoded.base64;
+        if (typeof decoded.assetUrl === 'string') parsed.screenshotUrl = decoded.assetUrl;
+        if (typeof decoded.width === 'number') parsed.screenshotWidth = decoded.width;
+        if (typeof decoded.height === 'number') parsed.screenshotHeight = decoded.height;
+        parsed.browserAction = parsed.browserAction || 'screenshot';
+        return parsed;
+      }
+      if (Array.isArray(decoded) && decoded.length > 0) {
+        const rows = decoded.filter(
+          (item): item is Record<string, unknown> => typeof item === 'object' && item !== null,
+        );
+        if (rows.length === decoded.length) {
+          if (
+            rows.every((row) => typeof row.action === 'string' && typeof row.success === 'boolean')
+          ) {
+            // Multi-action result: ActionResult[]
+            return parseMultiActionResults(parsed, rows);
+          }
+          if (rows.every((row) => row.tabId !== undefined)) {
+            // listTabs result: [ { tabId, url, title, mounted }, ... ]
+            parsed.browserTabs = rows.map((tab) => ({
+              tabId: typeof tab.tabId === 'string' ? tab.tabId : '',
+              url: typeof tab.url === 'string' ? tab.url : '',
+              title: typeof tab.title === 'string' ? tab.title : '',
+              mounted: typeof tab.mounted === 'boolean' ? tab.mounted : true,
+            }));
+            return parsed;
+          }
+        }
+      }
     }
 
     // Plain text fallback
@@ -1936,8 +2039,9 @@ function parseUnwrappedBrowserAction(parsed: ParsedToolResult, resultText: strin
       const trimmed = resultText.trimStart();
       if (
         trimmed.startsWith('[') &&
-        trimmed.includes('"action"') &&
-        trimmed.includes('"success"')
+        ((trimmed.includes('"action"') && trimmed.includes('"success"')) ||
+          // TOON multi-action array: `[N]:` header with unquoted keys
+          (/^\[\d+\]/.test(trimmed) && trimmed.includes('action:') && trimmed.includes('success:')))
       ) {
         // Looks like a multi-action result array (valid or truncated) — don't handle here
         return false;
@@ -2064,23 +2168,20 @@ function parseAgentListResult(
 
   if (!result) return parsed;
 
-  // Try JSON first
-  try {
-    const data = JSON.parse(result);
-    if (Array.isArray(data)) {
-      parsed.agents = data
-        .filter(
-          (item): item is Record<string, unknown> => typeof item === 'object' && item !== null,
-        )
-        .map((agent: { name?: string; id?: string; agentId?: string; status?: string }) => ({
+  // Structured (JSON or TOON) daemon result: array of agent rows
+  const data = decodeStructuredResult(result);
+  if (Array.isArray(data)) {
+    parsed.agents = data
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .map((item) => {
+        const agent = item as { name?: string; id?: string; agentId?: string; status?: string };
+        return {
           name: agent.name || m.chat_shared_agentName_fallback(),
           agentId: agent.id || agent.agentId || '',
           status: agent.status,
-        }));
-      return parsed;
-    }
-  } catch {
-    // Not JSON — parse text format
+        };
+      });
+    return parsed;
   }
 
   // Parse text format: "- Name (agent-id)\n  Status: status"
