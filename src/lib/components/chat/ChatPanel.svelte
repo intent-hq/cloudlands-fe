@@ -148,7 +148,11 @@
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
   import { deriveWizardPendingQuestions } from './questions/wizard-gate';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
-  import { composeTranscript, shouldRequestOlderHistory } from './chat-scrollback-composition';
+  import {
+    composeTranscript,
+    isConversationStartLoaded,
+    shouldRequestOlderHistory,
+  } from './chat-scrollback-composition';
   import {
     animateScrollTo,
     captureScrollAnchor,
@@ -1529,6 +1533,19 @@
   // Index of the first tail group when the history→tail hole is open; the
   // gap affordance renders immediately before this group.
   const historyGapBeforeGroupIndex = $derived(composedTranscript.gapBeforeGroupIndex);
+  // True only when the conversation's TRUE START is resident — gates the
+  // top-of-transcript workspace intro card so it never renders mid-history
+  // (falsely signalling "you've reached the beginning" while older rows
+  // still exist above the resident window).
+  const conversationStartLoaded = $derived(
+    isConversationStartLoaded({
+      exhausted: $historyExhausted$,
+      historyCount: $agentHistoryMessages$.length,
+      tailCount: $agentMessages$.length,
+      tailTruncated: $transcriptSnapshotMeta$?.truncated === true,
+      totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
+    }),
+  );
 
   // ── Infinite scrollback triggers + no-jump prepend anchoring ──────────
   // Near-top px distance that requests one older-history page.
@@ -1552,15 +1569,39 @@
   }
 
   // Older-history scroll trigger. The saga sets the fetching flag
-  // synchronously on the first dispatch, deduping the scroll-event burst;
-  // the post-prepend anchor restore moves scrollTop past the threshold, so
-  // pages chain only while the user keeps scrolling up.
+  // synchronously on the first dispatch, deduping the scroll-event burst.
   $effect(() => {
     const container = scrollContainer;
     if (!container) return;
     const onScroll = () => maybeRequestOlderHistory();
     container.addEventListener('scroll', onScroll, { passive: true });
     return () => container.removeEventListener('scroll', onScroll);
+  });
+
+  // Continuous paging: the scroll listener above is edge-triggered, and a
+  // prepend + anchor restore emits no scroll event — without this settle
+  // re-evaluation the walk strands after one page while the user holds the
+  // viewport at the top. On the fetching flag's true→false transition,
+  // re-run the trigger guard AFTER the anchor restore has landed (tick +
+  // double rAF orders behind the restore's tick + rAF in the prepend
+  // anchoring effect below) so it measures the post-restore scrollTop.
+  // Runaway-loop guards are the trigger guard's own stop conditions: the
+  // restore moving the viewport past the threshold, exhaustion, or all rows
+  // resident stop the chain (shouldChainOlderHistoryOnSettle).
+  let wasFetchingOlderHistory = false;
+  $effect(() => {
+    const fetching = $fetchingOlderHistory$;
+    const settled = wasFetchingOlderHistory && !fetching;
+    wasFetchingOlderHistory = fetching;
+    if (!settled) return;
+    tick().then(() => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (isComponentDestroyed || !scrollContainer) return;
+          maybeRequestOlderHistory();
+        });
+      });
+    });
   });
 
   function requestHistoryGapFill() {
@@ -3917,7 +3958,12 @@
           {#if messagesCondition && !pendingCondition}
             <!-- Messages container (removed in:fly to test duplicate flash issue) -->
             <div class="w-full">
-              {#if isInitialWorkspaceAgent && onboardingContext}
+              <!-- Workspace intro card: conversation-start chrome. Gated on
+                   the TRUE START being resident — mid-history (older rows
+                   still above the resident window) it must not render, or it
+                   falsely signals the beginning of the conversation; the
+                   older-history loading affordance below renders instead. -->
+              {#if isInitialWorkspaceAgent && onboardingContext && conversationStartLoaded}
                 <div class="pt-16 pb-6">
                   <WorkspaceSetupCard
                     repoName={onboardingContext.projectName ||

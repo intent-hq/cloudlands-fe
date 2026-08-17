@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import {
   composeTranscript,
+  isConversationStartLoaded,
+  shouldChainOlderHistoryOnSettle,
   shouldRequestOlderHistory,
 } from '../chat-scrollback-composition';
 import { indexConversationTurns } from '../conversation-turns';
@@ -232,5 +234,140 @@ describe('shouldRequestOlderHistory', () => {
     expect(shouldRequestOlderHistory({ ...base, canScroll: false })).toBe(false);
     expect(shouldRequestOlderHistory({ ...base, fetching: true })).toBe(false);
     expect(shouldRequestOlderHistory({ ...base, exhausted: true })).toBe(false);
+  });
+});
+
+describe('shouldChainOlderHistoryOnSettle (continuous paging)', () => {
+  // Post-settle state: the prepend landed (history hydrated), the fetching
+  // flag just cleared, and the anchor restore kept the viewport near the top.
+  const afterSettle = {
+    scrollTop: 100,
+    threshold: 240,
+    canScroll: true,
+    fetching: false,
+    exhausted: false,
+    historyCount: 10,
+    tailCount: 30,
+    tailTruncated: true,
+    totalMessages: 200,
+  };
+
+  it('chains the next page when the settle leaves the viewport within the threshold', () => {
+    expect(shouldChainOlderHistoryOnSettle(true, afterSettle)).toBe(true);
+  });
+
+  it('does not fire without a settle transition (edge, not level)', () => {
+    expect(shouldChainOlderHistoryOnSettle(false, afterSettle)).toBe(false);
+  });
+
+  it('stops when the anchor restore moved the viewport past the threshold', () => {
+    expect(shouldChainOlderHistoryOnSettle(true, { ...afterSettle, scrollTop: 800 })).toBe(false);
+  });
+
+  it('stops when the walk exhausted history (oldest row hydrated)', () => {
+    expect(shouldChainOlderHistoryOnSettle(true, { ...afterSettle, exhausted: true })).toBe(false);
+  });
+
+  it('stops when everything is resident (nothing older to fetch)', () => {
+    expect(
+      shouldChainOlderHistoryOnSettle(true, {
+        ...afterSettle,
+        historyCount: 0,
+        tailTruncated: false,
+        totalMessages: 30,
+      }),
+    ).toBe(false);
+  });
+
+  it('does not re-enter while the next fetch is already in flight', () => {
+    expect(shouldChainOlderHistoryOnSettle(true, { ...afterSettle, fetching: true })).toBe(false);
+  });
+
+  it('chains repeatedly until exhaustion, then stops (simulated walk)', () => {
+    // Simulate holding the viewport at the top through a 3-page walk: each
+    // settle re-evaluates; the last settle sets exhausted and the chain ends.
+    const pages = [
+      { ...afterSettle, historyCount: 10 },
+      { ...afterSettle, historyCount: 20 },
+      { ...afterSettle, historyCount: 30, exhausted: true },
+    ];
+    const fired = pages.map((page) => shouldChainOlderHistoryOnSettle(true, page));
+    expect(fired).toEqual([true, true, false]);
+  });
+});
+
+describe('isConversationStartLoaded (conversation-start header gate)', () => {
+  it('true when the older walk exhausted history (oldestReached)', () => {
+    expect(
+      isConversationStartLoaded({
+        exhausted: true,
+        historyCount: 40,
+        tailCount: 30,
+        tailTruncated: true,
+        totalMessages: 200,
+      }),
+    ).toBe(true);
+  });
+
+  it('true for a short conversation fully resident in the tail', () => {
+    expect(
+      isConversationStartLoaded({
+        exhausted: false,
+        historyCount: 0,
+        tailCount: 12,
+        tailTruncated: false,
+        totalMessages: 12,
+      }),
+    ).toBe(true);
+    // No snapshot yet (totalMessages 0) and no truncation evidence: the
+    // resident tail is all there is.
+    expect(
+      isConversationStartLoaded({
+        exhausted: false,
+        historyCount: 0,
+        tailCount: 5,
+        tailTruncated: false,
+        totalMessages: 0,
+      }),
+    ).toBe(true);
+  });
+
+  it('false while older rows exist beyond the tail (truncated snapshot)', () => {
+    expect(
+      isConversationStartLoaded({
+        exhausted: false,
+        historyCount: 0,
+        tailCount: 30,
+        tailTruncated: true,
+        totalMessages: 200,
+      }),
+    ).toBe(false);
+  });
+
+  it('false on client-pruned rows: totalMessages > tail with truncated=false', () => {
+    expect(
+      isConversationStartLoaded({
+        exhausted: false,
+        historyCount: 0,
+        tailCount: 30,
+        tailTruncated: false,
+        totalMessages: 120,
+      }),
+    ).toBe(false);
+  });
+
+  it('false mid-history: hydrated history segment without oldestReached', () => {
+    // Even when the counts happen to cover totalMessages (cap-pruned rows
+    // above the segment are invisible to them), a non-exhausted walk means
+    // the true start is NOT proven resident.
+    expect(
+      isConversationStartLoaded({
+        exhausted: false,
+        historyCount: 170,
+        tailCount: 30,
+        tailTruncated: false,
+        totalMessages: 200,
+      }),
+    ).toBe(false);
   });
 });

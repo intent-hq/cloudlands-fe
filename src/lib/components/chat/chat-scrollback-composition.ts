@@ -169,3 +169,53 @@ export function shouldRequestOlderHistory(params: OlderHistoryTriggerParams): bo
   if (fetching || exhausted) return false;
   return historyCount > 0 || tailTruncated || totalMessages > tailCount + historyCount;
 }
+
+/**
+ * Whether an older-history page settle should CHAIN into the next request.
+ * The scroll listener is edge-triggered: a prepend + anchor restore produces
+ * no scroll event, so without this re-evaluation the walk strands after one
+ * page even while the viewport is held near the top. `settled` is the
+ * fetching flag's true→false transition; the trigger guard then re-runs
+ * against the POST-RESTORE scrollTop, so the chain stops on its own when the
+ * restore moved the viewport past the threshold, the walk is exhausted, or
+ * everything is resident — the same stop conditions as the scroll trigger.
+ */
+export function shouldChainOlderHistoryOnSettle(
+  settled: boolean,
+  params: OlderHistoryTriggerParams,
+): boolean {
+  return settled && shouldRequestOlderHistory(params);
+}
+
+export interface ConversationStartLoadedParams {
+  /** The older scrollback walk hydrated the conversation's true first row. */
+  exhausted: boolean;
+  /** Number of hydrated history rows. */
+  historyCount: number;
+  /** Number of resident tail rows (post client-side cap pruning). */
+  tailCount: number;
+  /** Daemon `truncated` flag: older rows exist beyond the tail snapshot. */
+  tailTruncated: boolean;
+  /** Snapshot `totalMessages` (0 when no snapshot has arrived yet). */
+  totalMessages: number;
+}
+
+/**
+ * Whether the conversation's TRUE START is resident — gates top-of-transcript
+ * chrome (the workspace-setup intro card) that would otherwise falsely signal
+ * "you've reached the beginning" while older rows still exist above the
+ * resident window:
+ *
+ * - History exhausted (`oldestReached`) → the walk hydrated the first row.
+ * - No history segment and the tail holds the whole conversation (not
+ *   truncated, snapshot total within the resident tail) → nothing older
+ *   exists. A hydrated-but-not-exhausted history segment means the walk is
+ *   mid-history — the start is NOT loaded even if the counts happen to line
+ *   up (cap-pruned rows above the segment are invisible to them).
+ */
+export function isConversationStartLoaded(params: ConversationStartLoadedParams): boolean {
+  const { exhausted, historyCount, tailCount, tailTruncated, totalMessages } = params;
+  if (exhausted) return true;
+  if (historyCount > 0) return false;
+  return !tailTruncated && totalMessages <= tailCount;
+}
