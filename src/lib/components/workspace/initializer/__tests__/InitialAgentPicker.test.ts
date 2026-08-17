@@ -148,6 +148,10 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import InitialAgentPicker from '../InitialAgentPicker.svelte';
+import { store as mockAppStore } from '$store/renderer/store';
+
+const emitStoreState = () =>
+  (mockAppStore as unknown as { emitState: () => void }).emitState();
 
 /** The team-mode card renders first; its picker is index 0. */
 function teamPickerSelected(): string {
@@ -494,6 +498,72 @@ describe('InitialAgentPicker stale model override clearing', () => {
         onModelChange,
       },
     });
+
+    await waitFor(() => expect(onModelChange).toHaveBeenCalledWith(undefined));
+    expect(teamPickerSelected()).toBe('');
+  });
+
+  it('keeps a restored override for a provider absent from the availability result', async () => {
+    // No availability entry for the override's provider (unknown provider id)
+    // is UNKNOWN, not unavailable — without catalog evidence the override is
+    // kept, matching the positive-evidence-only design. Known providers are
+    // reported unavailable so the auto-select effect stays inert and the
+    // stale-override path is isolated.
+    mocks.getProviderAvailability.mockImplementation(() =>
+      Promise.resolve({
+        hasAnyProvider: false,
+        providers: { auggie: { available: false } },
+      }),
+    );
+    mocks.fileSpecialistsLoaded$.set(true);
+
+    const onModelChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: {
+        selectedSpecialist: 'spec-writer',
+        isTeamMode: true,
+        selectedProvider: 'some-new-provider',
+        selectedModel: 'some-new-provider:some-model',
+        modelWasOverridden: true,
+        onModelChange,
+      },
+    });
+
+    await flush();
+    await flush();
+    expect(onModelChange).not.toHaveBeenCalled();
+    expect(teamPickerSelected()).toBe('some-new-provider:some-model');
+  });
+
+  it('clears an invalid override when its provider catalog lands after the effect ran', async () => {
+    // No evidence at mount — the override is kept. Then the provider-models
+    // cache populates WITHOUT the model; the clearing effect must re-run
+    // reactively and clear the override.
+    mocks.fileSpecialistsLoaded$.set(true);
+
+    const onModelChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: {
+        selectedSpecialist: 'spec-writer',
+        isTeamMode: true,
+        selectedModel: 'retired-model',
+        modelWasOverridden: true,
+        onModelChange,
+      },
+    });
+
+    await flush();
+    await flush();
+    expect(onModelChange).not.toHaveBeenCalled();
+    expect(teamPickerSelected()).toBe('retired-model');
+
+    mocks.providerModelsByProviderId = {
+      auggie: {
+        models: [{ value: 'fable-5' }],
+        fetchedAt: '2026-08-15T00:00:00.000Z',
+      },
+    };
+    emitStoreState();
 
     await waitFor(() => expect(onModelChange).toHaveBeenCalledWith(undefined));
     expect(teamPickerSelected()).toBe('');

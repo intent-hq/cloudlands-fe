@@ -30,7 +30,10 @@
     selectNormalizedProviderId,
     selectProviderCatalogEntries,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { selectProviderModelsCacheEntry } from '$store/renderer/slices/provider-models/provider-models-selectors';
+  import {
+    selectProviderModelsCacheEntry,
+    selectProviderModelsCacheMap,
+  } from '$store/renderer/slices/provider-models/provider-models-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { appClient } from '$lib/client';
   import { createLogger } from '$lib/utils/client-logger';
@@ -54,6 +57,7 @@
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
   const availableModelsProviderId$ = selectAvailableModelsProviderId();
+  const providerModelsCacheMap$ = selectProviderModelsCacheMap();
 
   interface Props {
     /** Selected specialist ID - null means blank agent */
@@ -127,27 +131,34 @@
   // Provider availability state (for auto-selection only, no UI picker)
   let providerAvailability = $state<ProviderAvailabilityResult | null>(null);
 
+  // Map provider IDs to keys used in ProviderAvailabilityResult
+  const providerAvailabilityKeyMap: Record<
+    string,
+    keyof ProviderAvailabilityResult['providers']
+  > = {
+    auggie: 'auggie',
+    'claude-code': 'claudeCode',
+    codex: 'codex',
+    mock: 'mock',
+    opencode: 'opencode',
+    droid: 'droid',
+    grok: 'grok',
+    unsloth: 'unsloth',
+    cortex: 'cortex',
+    pi: 'pi',
+  };
+
+  // The availability entry for a provider, or undefined when the check has
+  // not completed or the result carries no entry for it (unknown provider).
+  function providerAvailabilityEntry(providerId: string) {
+    if (!providerAvailability) return undefined;
+    const key = providerAvailabilityKeyMap[providerId];
+    return key ? providerAvailability.providers[key] : undefined;
+  }
+
   // Helper to get provider availability from result (handles different key formats)
   function getProviderAvailable(providerId: string): boolean {
-    if (!providerAvailability) return false;
-    // Map provider IDs to keys used in ProviderAvailabilityResult
-    const keyMap: Record<string, keyof typeof providerAvailability.providers> = {
-      auggie: 'auggie',
-      'claude-code': 'claudeCode',
-      codex: 'codex',
-      mock: 'mock',
-      opencode: 'opencode',
-      droid: 'droid',
-      grok: 'grok',
-      unsloth: 'unsloth',
-      cortex: 'cortex',
-      pi: 'pi',
-    };
-    const key = keyMap[providerId];
-    if (key && providerAvailability.providers[key]) {
-      return providerAvailability.providers[key].available;
-    }
-    return false;
+    return providerAvailabilityEntry(providerId)?.available ?? false;
   }
 
   // Available providers derived from availability check - dynamically from the catalog
@@ -352,13 +363,12 @@
   // for that provider. A LOADED catalog counts as evidence even when empty —
   // a successful models.list response with zero models means the provider
   // has no models, so any override for it is invalid. `undefined` means no
-  // catalog has been loaded for the provider yet (no evidence).
+  // catalog has been loaded for the provider yet (no evidence). Reads the
+  // reactive cache-map readable so the clearing $effect re-runs when a
+  // catalog lands after its last run.
   function knownModelsForProvider(providerId: string): Array<{ value: string }> | undefined {
     const normalizedProviderId = selectNormalizedProviderId.select(appStore.state, providerId);
-    const cachedModels = selectProviderModelsCacheEntry.select(
-      appStore.state,
-      normalizedProviderId,
-    )?.models;
+    const cachedModels = $providerModelsCacheMap$[normalizedProviderId]?.models;
     if (cachedModels) return cachedModels;
     if ($availableModelsProviderId$ === normalizedProviderId) {
       return $availableModels$;
@@ -366,13 +376,14 @@
     return undefined;
   }
 
-  // Whether a restored override is provably invalid: its provider is reported
-  // unavailable, or a loaded catalog for its provider lacks the model (e.g.
-  // it was retired). With no evidence either way (availability check pending,
-  // no catalog loaded for the provider) the override is kept.
+  // Whether a restored override is provably invalid: its provider carries an
+  // availability entry reporting it unavailable, or a loaded catalog for its
+  // provider lacks the model (e.g. it was retired). With no evidence either
+  // way (availability check pending, provider absent from the availability
+  // result, no catalog loaded for the provider) the override is kept.
   function isRestoredOverrideInvalid(model: string): boolean {
     const { providerId, modelId } = parseCompoundModelId(model, $defaultProviderId$);
-    if (providerAvailability && !getProviderAvailable(providerId)) return true;
+    if (providerAvailabilityEntry(providerId)?.available === false) return true;
     const knownModels = knownModelsForProvider(providerId);
     if (!knownModels) return false;
     return !knownModels.some((row) => row.value === model || row.value === modelId);
