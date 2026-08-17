@@ -18,6 +18,13 @@ const logger = new Logger('EmbeddedBrowserCdp');
 /** How long (ms) before a tab lease is considered idle and the tab can be reused by another agent */
 const IDLE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
 
+/**
+ * How long (ms) to wait for a tab's webview to mount and register after an
+ * openTab/focusTab request. Registration fires on the webview's dom-ready,
+ * so slow page loads (e.g. dev servers over a tunnel) need a generous bound.
+ */
+const TAB_REGISTRATION_TIMEOUT_MS = 15_000;
+
 interface TabInfo {
   tabId: string;
   webContentsId: number;
@@ -75,6 +82,9 @@ class EmbeddedBrowserCdpService {
 
   /** Tracks which agent is using which tab. Key is tabId. */
   private tabLeases = new Map<string, TabLease>();
+
+  /** Pending resolvers waiting for a tabId to register, keyed by tabId. */
+  private registrationWaiters = new Map<string, Set<(registered: boolean) => void>>();
 
   constructor() {
     // Listen for browser tab list responses from renderer
@@ -174,6 +184,13 @@ class EmbeddedBrowserCdpService {
     logger.info('Registering browser tab', { tabId, webContentsId });
     this.tabRegistry.set(tabId, webContentsId);
 
+    // Resolve any callers waiting for this tab to mount (openTab/focusTab).
+    const waiters = this.registrationWaiters.get(tabId);
+    if (waiters) {
+      this.registrationWaiters.delete(tabId);
+      for (const resolve of waiters) resolve(true);
+    }
+
     // Automatically clean up when webContents is destroyed
     const wc = webContents.fromId(webContentsId);
     if (wc && !wc.isDestroyed()) {
@@ -184,6 +201,44 @@ class EmbeddedBrowserCdpService {
         this.tabLeases.delete(tabId);
       });
     }
+  }
+
+  /**
+   * Wait for a tabId to register (its webview to mount and fire dom-ready).
+   *
+   * Resolves immediately when the tab is already registered with a live
+   * webContents. Otherwise resolves `true` on the next `registerTab(tabId)`
+   * call, or `false` after `timeoutMs` — never rejects, so callers can
+   * degrade to a truthful failure message.
+   */
+  waitForTabRegistration(
+    tabId: string,
+    timeoutMs: number = TAB_REGISTRATION_TIMEOUT_MS,
+  ): Promise<boolean> {
+    if (this.resolveTabId(tabId) !== undefined) {
+      return Promise.resolve(true);
+    }
+    return new Promise<boolean>((resolve) => {
+      let waiters = this.registrationWaiters.get(tabId);
+      if (!waiters) {
+        waiters = new Set();
+        this.registrationWaiters.set(tabId, waiters);
+      }
+      const settle = (registered: boolean) => {
+        clearTimeout(timer);
+        resolve(registered);
+      };
+      const timer = setTimeout(() => {
+        const pending = this.registrationWaiters.get(tabId);
+        if (pending) {
+          pending.delete(settle);
+          if (pending.size === 0) this.registrationWaiters.delete(tabId);
+        }
+        logger.warn('Timed out waiting for browser tab registration', { tabId, timeoutMs });
+        settle(false);
+      }, timeoutMs);
+      waiters.add(settle);
+    });
   }
 
   /**
@@ -301,24 +356,28 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Focus a browser tab (bring it to the front in the UI)
+   * Focus a browser tab (bring it to the front in the UI) and wait for its
+   * webview to actually mount and register.
    *
-   * This sends an IPC message to the renderer to activate the tab.
-   * Useful when a tab's webContents has been garbage collected and
-   * needs to be remounted.
+   * This sends an IPC message to the renderer to activate the tab, then
+   * awaits the tab's `registerTab` (fired on the webview's dom-ready) so a
+   * successful focus means the tab is genuinely addressable — remounting
+   * unmounted tabs is the whole point of focusTab() (RC3,
+   * intent-hq/monorepo#2756).
    *
    * Note: We don't validate the tabId here because the renderer's panel
-   * layout knows about all tabs (including unmounted ones). The whole point
-   * of focusTab() is to remount unmounted tabs that aren't in our registry.
+   * layout knows about all tabs (including unmounted ones), so unknown tabs
+   * simply never register and resolve false after the bounded wait.
    *
    * Requires a workspaceId: an untargeted focus used to broadcast to ALL
    * windows, so any window whose layout knew the tabId acted on it
    * regardless of the calling agent's workspace (intent-hq/monorepo#2602).
    *
-   * @returns true if the message was delivered to at least one window (or
-   *          browser-mode client); throws when workspaceId is missing
+   * @returns true when the tab is mounted and registered; false when the
+   *          message reached no window or the tab never mounted within the
+   *          bounded wait; throws when workspaceId is missing
    */
-  focusTab(tabId: string, workspaceId?: string): boolean {
+  async focusTab(tabId: string, workspaceId?: string): Promise<boolean> {
     if (!tabId) {
       logger.warn('Cannot focus tab - no tabId provided');
       return false;
@@ -340,7 +399,11 @@ class EmbeddedBrowserCdpService {
       return false;
     }
     logger.info('Sent focus request for browser tab', { tabId, workspaceId });
-    return true;
+
+    // Success means "the tab is now addressable": already-mounted tabs
+    // resolve immediately, unmounted-but-listed tabs resolve when the
+    // remounted webview registers, and nonexistent tabs time out to false.
+    return this.waitForTabRegistration(tabId);
   }
 
   /**
@@ -764,7 +827,7 @@ class EmbeddedBrowserCdpService {
     if (webContentsId === undefined) {
       throw new Error(
         tabId
-          ? `Tab ${tabId} not found. The tab may have been garbage collected. Try { action: "focusTab", tabId: "${tabId}" } to remount it.` // i18n-ignore (agent-facing protocol error, not user-facing)
+          ? `Tab ${tabId} is not mounted. If it exists (check { action: "listTabs" }), { action: "focusTab", tabId: "${tabId}" } will remount it; if focusTab also fails, no tab with this id exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
           : 'No browser tabs available. Open a browser tab in the app first.', // i18n-ignore (agent-facing protocol error, not user-facing)
       );
     }
@@ -842,7 +905,7 @@ class EmbeddedBrowserCdpService {
     if (webContentsId === undefined) {
       throw new Error(
         tabId
-          ? `Tab ${tabId} not found. The tab may have been garbage collected. Try { action: "focusTab", tabId: "${tabId}" } to remount it.` // i18n-ignore (agent-facing protocol error, not user-facing)
+          ? `Tab ${tabId} is not mounted. If it exists (check { action: "listTabs" }), { action: "focusTab", tabId: "${tabId}" } will remount it; if focusTab also fails, no tab with this id exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
           : 'No browser tabs available. Open a browser tab in the app first.', // i18n-ignore (agent-facing protocol error, not user-facing)
       );
     }
@@ -905,7 +968,7 @@ class EmbeddedBrowserCdpService {
     if (webContentsId === undefined) {
       throw new Error(
         tabId
-          ? `Tab ${tabId} not found. The tab may have been garbage collected. Try { action: "focusTab", tabId: "${tabId}" } to remount it.` // i18n-ignore (agent-facing protocol error, not user-facing)
+          ? `Tab ${tabId} is not mounted. If it exists (check { action: "listTabs" }), { action: "focusTab", tabId: "${tabId}" } will remount it; if focusTab also fails, no tab with this id exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
           : 'No browser tabs available. Open a browser tab in the app first.', // i18n-ignore (agent-facing protocol error, not user-facing)
       );
     }

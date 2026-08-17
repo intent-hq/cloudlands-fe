@@ -3,11 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
   sendToWorkspaceWindows: vi.fn(),
+  fromId: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
   ipcMain: { handle: mocks.handle },
-  webContents: { fromId: vi.fn() },
+  webContents: { fromId: mocks.fromId },
 }));
 
 vi.mock('../../../system/main/system.ipc', () => ({
@@ -47,10 +48,10 @@ describe('embedded browser CDP workspace routing', () => {
   // focus/enumerate tabs in unrelated workspaces' windows.
   it.each([undefined, null, ''])(
     'rejects tab focus without workspace context instead of broadcasting: %j',
-    (workspaceId) => {
-      expect(() => embeddedBrowserCdp.focusTab('tab-1', workspaceId as unknown as string)).toThrow(
-        'workspaceId is required',
-      );
+    async (workspaceId) => {
+      await expect(
+        embeddedBrowserCdp.focusTab('tab-1', workspaceId as unknown as string),
+      ).rejects.toThrow('workspaceId is required');
       expect(mocks.sendToWorkspaceWindows).not.toHaveBeenCalled();
     },
   );
@@ -67,20 +68,71 @@ describe('embedded browser CDP workspace routing', () => {
 
   // Regression (intent-hq/monorepo#2602): focusTab used to return true after
   // sending, even when zero windows received the message.
-  it('reports focus failure when the workspace is not open in any window', () => {
+  it('reports focus failure when the workspace is not open in any window', async () => {
     mocks.sendToWorkspaceWindows.mockReturnValue(DROPPED);
-    expect(embeddedBrowserCdp.focusTab('tab-1', 'ws-closed')).toBe(false);
+    await expect(embeddedBrowserCdp.focusTab('tab-1', 'ws-closed')).resolves.toBe(false);
   });
 
   // The renderer saga routes browser:focus-tab by the payload's workspaceId
-  // (monorepo#2756), so the focus payload must carry it.
-  it('sends focus requests scoped to the workspace with workspaceId in the payload', () => {
-    expect(embeddedBrowserCdp.focusTab('tab-1', 'ws-2')).toBe(true);
+  // (monorepo#2756), so the focus payload must carry it. Focus success also
+  // requires the tab to actually mount and register (RC3): the renderer's
+  // registerTab resolves the pending focus.
+  it('sends focus requests scoped to the workspace and resolves once the tab registers', async () => {
+    mocks.fromId.mockReturnValue({ isDestroyed: () => false, once: vi.fn() });
+    mocks.sendToWorkspaceWindows.mockImplementation((_ws: string, channel: string) => {
+      if (channel === IPC_CHANNELS.BROWSER.FOCUS_TAB) {
+        // Simulate the renderer remounting the webview and registering it.
+        queueMicrotask(() => embeddedBrowserCdp.registerTab('tab-1', 42));
+      }
+      return DELIVERED;
+    });
+
+    await expect(embeddedBrowserCdp.focusTab('tab-1', 'ws-2')).resolves.toBe(true);
     expect(mocks.sendToWorkspaceWindows).toHaveBeenCalledExactlyOnceWith(
       'ws-2',
       IPC_CHANNELS.BROWSER.FOCUS_TAB,
       { tabId: 'tab-1', workspaceId: 'ws-2' },
     );
+  });
+
+  // RC3 (monorepo#2756): a delivered focus for a tab that never mounts (e.g.
+  // a nonexistent tabId) must resolve false after the bounded wait, not
+  // report success on mere delivery.
+  it('reports focus failure when the tab never registers within the bounded wait', async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = embeddedBrowserCdp.focusTab('tab-nonexistent', 'ws-2');
+      await vi.advanceTimersByTimeAsync(15_000);
+      await expect(pending).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  describe('waitForTabRegistration', () => {
+    it('resolves immediately for an already-registered tab with live webContents', async () => {
+      mocks.fromId.mockReturnValue({ isDestroyed: () => false, once: vi.fn() });
+      embeddedBrowserCdp.registerTab('tab-live', 7);
+      await expect(embeddedBrowserCdp.waitForTabRegistration('tab-live')).resolves.toBe(true);
+    });
+
+    it('resolves true when the tab registers before the timeout', async () => {
+      mocks.fromId.mockReturnValue({ isDestroyed: () => false, once: vi.fn() });
+      const pending = embeddedBrowserCdp.waitForTabRegistration('tab-late');
+      embeddedBrowserCdp.registerTab('tab-late', 8);
+      await expect(pending).resolves.toBe(true);
+    });
+
+    it('resolves false when the tab never registers within the timeout', async () => {
+      vi.useFakeTimers();
+      try {
+        const pending = embeddedBrowserCdp.waitForTabRegistration('tab-never', 1_000);
+        await vi.advanceTimersByTimeAsync(1_000);
+        await expect(pending).resolves.toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it('fails a close with a clear error when the workspace is not open in any window', async () => {

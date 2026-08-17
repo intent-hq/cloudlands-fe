@@ -312,10 +312,13 @@ async function executeAction(
       }
 
       case 'focusTab': {
-        const result = embeddedBrowserCdp.focusTab(tabId || '', workspaceId);
+        // Resolves true only once the tab's webview is mounted and
+        // registered (bounded wait) — not merely when the focus message was
+        // delivered (intent-hq/monorepo#2756).
+        const result = await embeddedBrowserCdp.focusTab(tabId || '', workspaceId);
         if (!result) {
           const error = tabId
-            ? `Could not focus tab ${tabId}: workspace ${workspaceId} is not open in any window.` // i18n-ignore (agent-facing protocol error, not user-facing)
+            ? `Could not focus tab ${tabId}: the tab never mounted. Either workspace ${workspaceId} is not open in any window, or no tab with this id exists — check { action: "listTabs" }.` // i18n-ignore (agent-facing protocol error, not user-facing)
             : 'focusTab requires a tabId.'; // i18n-ignore (agent-facing protocol error, not user-facing)
           return { action: 'focusTab', success: false, error };
         }
@@ -469,7 +472,7 @@ async function executeAction(
               requestedUrl: action.url,
               agentId,
             });
-            const focused = embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId);
+            const focused = await embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId);
             return {
               action: 'openTab',
               success: true,
@@ -499,7 +502,7 @@ async function executeAction(
                 idleTabId,
                 `window.location.href = ${JSON.stringify(finalRewrite.url)}`,
               );
-              embeddedBrowserCdp.focusTab(idleTabId, workspaceId);
+              await embeddedBrowserCdp.focusTab(idleTabId, workspaceId);
               return {
                 action: 'openTab',
                 success: true,
@@ -536,6 +539,23 @@ async function executeAction(
         // instead of treating it as an untouchable user-opened tab.
         if (agentId && result.success && result.tabId) {
           embeddedBrowserCdp.touchLease(result.tabId, agentId);
+        }
+        // Await the renderer's registration of the pre-generated tabId so
+        // the returned handle is immediately addressable — returning before
+        // the webview mounts made follow-up actions fail with "not found"
+        // (RC3, intent-hq/monorepo#2756). Bounded wait; a timeout fails the
+        // action truthfully instead of handing back an unusable id.
+        if (result.success && result.tabId) {
+          const registered = await embeddedBrowserCdp.waitForTabRegistration(result.tabId);
+          if (!registered) {
+            return {
+              action: 'openTab',
+              success: false,
+              result: { ...result, ...echo },
+              // i18n-ignore (agent-facing protocol error, not user-facing)
+              error: `Tab ${result.tabId} was requested but its webview did not mount in time. The page may be very slow to load — retry with { action: "focusTab", tabId: "${result.tabId}" } or check { action: "listTabs" }.`,
+            };
+          }
         }
         return {
           action: 'openTab',

@@ -19,7 +19,8 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     findModelTabByExactUrl: vi.fn().mockResolvedValue(undefined),
     getFirstTab: vi.fn().mockReturnValue(null),
     evaluate: vi.fn().mockResolvedValue(undefined),
-    focusTab: vi.fn().mockReturnValue(true),
+    focusTab: vi.fn().mockResolvedValue(true),
+    waitForTabRegistration: vi.fn().mockResolvedValue(true),
     closeTab: vi.fn().mockResolvedValue({ tabId: 'tab-1' }),
     touchLease: vi.fn(),
     releaseLease: vi.fn(),
@@ -215,9 +216,9 @@ describe('browser-action-executor', () => {
     // Regression (intent-hq/monorepo#2602): zero-delivery failures used to be
     // invisible — focusTab returned success and openTab produced a
     // sequence-level "failed: undefined".
-    it('surfaces a descriptive focusTab error when the workspace is not open in any window', async () => {
+    it('surfaces a descriptive focusTab error when the tab never mounts', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
-      vi.mocked(embeddedBrowserCdp.focusTab).mockReturnValue(false);
+      vi.mocked(embeddedBrowserCdp.focusTab).mockResolvedValue(false);
 
       const result = await executeActions(
         { actions: [{ action: 'focusTab', tabId: 'tab-9' }] },
@@ -230,10 +231,12 @@ describe('browser-action-executor', () => {
       expect(result.results[0]).toMatchObject({
         action: 'focusTab',
         success: false,
-        error: 'Could not focus tab tab-9: workspace ws-closed is not open in any window.',
+        error:
+          'Could not focus tab tab-9: the tab never mounted. Either workspace ws-closed is not open in any window, or no tab with this id exists — check { action: "listTabs" }.',
       });
       expect(result.error).toBe(
-        "Action 'focusTab' failed: Could not focus tab tab-9: workspace ws-closed is not open in any window.",
+        "Action 'focusTab' failed: Could not focus tab tab-9: the tab never mounted. " +
+          'Either workspace ws-closed is not open in any window, or no tab with this id exists — check { action: "listTabs" }.',
       );
     });
 
@@ -259,6 +262,70 @@ describe('browser-action-executor', () => {
       expect(result.error).toBe(
         "Action 'openTab' failed: Cannot open browser tab: workspace ws-closed is not open in any window.",
       );
+    });
+  });
+
+  // ===========================================================================
+  // openTab registration await (RC3, intent-hq/monorepo#2756)
+  // ===========================================================================
+  describe('openTab registration await', () => {
+    it('awaits registration of the returned tabId before reporting success', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.waitForTabRegistration).mockResolvedValueOnce(true);
+      const openTabWithId = vi
+        .fn()
+        .mockReturnValue({ success: true, message: 'opened', tabId: 'tab-new' });
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://example.com' }] },
+        openTabWithId,
+        undefined,
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledWith('tab-new');
+      expect(result.results[0]?.result).toMatchObject({ tabId: 'tab-new' });
+    });
+
+    it('fails the action truthfully when the webview never registers in time', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.waitForTabRegistration).mockResolvedValueOnce(false);
+      const openTabWithId = vi
+        .fn()
+        .mockReturnValue({ success: true, message: 'opened', tabId: 'tab-slow' });
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://example.com' }] },
+        openTabWithId,
+        undefined,
+        'ws-1',
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.action).toBe('openTab');
+      expect(result.results[0]?.error).toContain('did not mount in time');
+      expect(result.results[0]?.error).toContain('tab-slow');
+    });
+
+    it('does not wait when openTabFn reports failure or returns no tabId', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.waitForTabRegistration).mockClear();
+
+      await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://example.com' }] },
+        vi.fn().mockReturnValue({ success: true, message: 'opened' }),
+        undefined,
+        'ws-1',
+      );
+      await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://example.com' }] },
+        vi.fn().mockReturnValue({ success: false, message: 'nope', tabId: 'tab-x' }),
+        undefined,
+        'ws-1',
+      );
+
+      expect(embeddedBrowserCdp.waitForTabRegistration).not.toHaveBeenCalled();
     });
   });
 
