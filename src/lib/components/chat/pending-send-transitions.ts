@@ -56,6 +56,7 @@ export function createPendingSendTransitions(
   } = options;
   const pendings = new Map<string, InternalPendingSendEntry>();
   const activeTransitions = new Map<string, AbortController>();
+  const dismissingBubbles = new Set<HTMLElement>();
   let retryTimer: ReturnType<typeof setInterval> | null = null;
 
   function stopRetryLoopIfIdle(): void {
@@ -78,7 +79,13 @@ export function createPendingSendTransitions(
         scrollContainer.scrollHeight - scrollContainer.clientHeight,
       );
     }
-    void dismissMessageSendLaunchBubble(pending.launchBubble);
+    const bubble = pending.launchBubble;
+    if (bubble) {
+      // Track the in-flight dismissal so cancelAll() (unmount, workspace
+      // switch) can still yank the body-level bubble mid-fade.
+      dismissingBubbles.add(bubble);
+      void dismissMessageSendLaunchBubble(bubble).finally(() => dismissingBubbles.delete(bubble));
+    }
     stopRetryLoopIfIdle();
   }
 
@@ -140,6 +147,8 @@ export function createPendingSendTransitions(
     pendings.clear();
     for (const controller of activeTransitions.values()) controller.abort();
     activeTransitions.clear();
+    for (const bubble of dismissingBubbles) bubble.remove();
+    dismissingBubbles.clear();
     stopRetryLoopIfIdle();
   }
 

@@ -166,6 +166,19 @@ describe('pending send transitions controller', () => {
     expect(document.querySelector('[data-message-send-transition]')).toBeNull();
   });
 
+  it('cancelAll removes a bubble that is mid-dismissal fade after expiry', async () => {
+    stubAnimate(() => ({ finished: new Promise(() => {}) }));
+    const { transitions, bubble } = setup();
+
+    await vi.advanceTimersByTimeAsync(MESSAGE_SEND_MATCH_TIMEOUT_MS);
+    expect(bubble.isConnected).toBe(true);
+
+    transitions.cancelAll();
+
+    expect(bubble.isConnected).toBe(false);
+    expect(document.querySelector('[data-message-send-transition]')).toBeNull();
+  });
+
   it('replaces a re-added key: the stale bubble is removed and its expiry cleared', async () => {
     const animate = stubAnimate(() => ({ finished: Promise.resolve() }));
     const { scrollContainer, transitions, bubble } = setup();
