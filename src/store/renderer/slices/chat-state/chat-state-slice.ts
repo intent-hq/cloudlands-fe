@@ -48,6 +48,10 @@ export const emptyChatAgentState: ChatAgentState = {
   lastMessageTime: 0,
   lastChunkReceivedAt: 0,
   liveStreamPhase: null,
+  fetchingOlderHistory: false,
+  fetchingGapFill: false,
+  scrollbackOlderToken: null,
+  scrollbackGapToken: null,
 };
 
 export const initialState: ChatStateSlice = {
@@ -706,6 +710,65 @@ export const refreshChatTranscriptRequested = createAction<[wsId: string, agentI
   'chatState/refreshChatTranscriptRequested',
 );
 
+// --- Scrollback paging actions (on-demand history segment fetches) ---
+
+/**
+ * UI request: fetch ONE older-history page (200 rows) into the scrollback
+ * history segment. Deduped per agent by the `fetchingOlderHistory` flag
+ * (takeLeading semantics per agent); a no-op once `oldestReached`.
+ */
+export const olderHistoryPageRequested = createAction<[wsId: string, agentId: string]>(
+  'chatState/olderHistoryPageRequested',
+);
+
+/**
+ * UI request: fetch ONE page (200 rows) refilling the hole between the
+ * scrollback history segment and the live tail. Deduped per agent by the
+ * `fetchingGapFill` flag; a no-op unless the segment's `gapToTail` is open.
+ */
+export const historyGapFillRequested = createAction<[wsId: string, agentId: string]>(
+  'chatState/historyGapFillRequested',
+);
+
+/** A scrollback page fetch entered flight for the given direction. */
+export const scrollbackFetchStarted = createAction<[agentId: string, direction: 'older' | 'gap']>(
+  'chatState/scrollbackFetchStarted',
+);
+
+/**
+ * An older scrollback page fetch settled (success or swallowed error).
+ * Clears `fetchingOlderHistory` and persists the backward continuation
+ * cursor (`null` on error or exhaustion ⇒ the next request re-seeks). Also
+ * drops the gap-refill cursor: the prepend may have cap-pruned history's
+ * newest side, so a forward walk continuing from the old position would
+ * skip the pruned rows.
+ */
+export const scrollbackOlderPageSettled = createAction<[agentId: string, nextToken: string | null]>(
+  'chatState/scrollbackOlderPageSettled',
+);
+
+/**
+ * A gap-refill scrollback page fetch settled (success or swallowed error).
+ * Clears `fetchingGapFill` and persists the forward continuation cursor
+ * (`null` on error or tail reached ⇒ the next request re-seeks). Also drops
+ * the older cursor: the append may have cap-pruned history's oldest side,
+ * so a backward walk continuing from the old position would skip the
+ * pruned rows.
+ */
+export const scrollbackGapPageSettled = createAction<[agentId: string, prevToken: string | null]>(
+  'chatState/scrollbackGapPageSettled',
+);
+
+/**
+ * Drop the agent's scrollback continuation state (both cursors + fetching
+ * flags). Dispatched by the scrollback saga whenever the history segment is
+ * cleared out from under the walk (session removal, explicit segment clear,
+ * §7.1 `resumed: false` rehydration).
+ */
+export const scrollbackContinuationReset = createAction<[agentId: string]>(
+  'chatState/scrollbackContinuationReset',
+);
+
 // --- Send message saga trigger (no reducer state change) ---
 
 /** Trigger the send-message saga. Dispatched from ChatPanel after DOM serialization. */
@@ -952,6 +1015,46 @@ chatStateReducer.with(eventReceived, (state, { payload: [, event] }) => {
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || agentId.length === 0) return state;
   return reduceAgentIdleReconcile(state, agentId, event.timestamp);
+});
+chatStateReducer.with(scrollbackFetchStarted, (state, { payload: [agentId, direction] }) =>
+  updateAgent(state, agentId, {
+    agentId,
+    ...(direction === 'older' ? { fetchingOlderHistory: true } : { fetchingGapFill: true }),
+  }),
+);
+chatStateReducer.with(scrollbackOlderPageSettled, (state, { payload: [agentId, nextToken] }) =>
+  updateAgent(state, agentId, {
+    agentId,
+    fetchingOlderHistory: false,
+    scrollbackOlderToken: nextToken,
+    scrollbackGapToken: null,
+  }),
+);
+chatStateReducer.with(scrollbackGapPageSettled, (state, { payload: [agentId, prevToken] }) =>
+  updateAgent(state, agentId, {
+    agentId,
+    fetchingGapFill: false,
+    scrollbackGapToken: prevToken,
+    scrollbackOlderToken: null,
+  }),
+);
+chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] }) => {
+  const agent = state.byAgentId[agentId];
+  if (!agent) return state;
+  if (
+    !agent.fetchingOlderHistory &&
+    !agent.fetchingGapFill &&
+    agent.scrollbackOlderToken === null &&
+    agent.scrollbackGapToken === null
+  ) {
+    return state;
+  }
+  return updateAgent(state, agentId, {
+    fetchingOlderHistory: false,
+    fetchingGapFill: false,
+    scrollbackOlderToken: null,
+    scrollbackGapToken: null,
+  });
 });
 chatStateReducer.with(workspaceDeleted, (state, { payload: [, agentIds] }) => {
   if (agentIds.length === 0) return state;

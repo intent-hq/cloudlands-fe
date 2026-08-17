@@ -152,5 +152,30 @@ export const selectTranscriptSnapshotMeta = store.createSelector(
     getAgentChatState(state, agentId).transcriptSnapshot,
 );
 
+// --- Scrollback paging (on-demand history segment fetches) ---
+
+/** True while an on-demand older-history scrollback page fetch is in flight. */
+export const selectFetchingOlderHistory = store.createSelector(
+  (state, agentId: string): boolean =>
+    getAgentChatState(state, agentId).fetchingOlderHistory,
+);
+
+/** True while an on-demand gap-refill scrollback page fetch is in flight. */
+export const selectFetchingGapFill = store.createSelector(
+  (state, agentId: string): boolean =>
+    getAgentChatState(state, agentId).fetchingGapFill,
+);
+
+/**
+ * True once the older scrollback walk hydrated the conversation's true first
+ * message. Reads the history segment's `oldestReached` (agent-session slice)
+ * so exhaustion lives and dies with the segment itself — a cleared segment
+ * (chat reset, §7.1 `resumed: false` rehydration) is never falsely exhausted.
+ */
+export const selectHistoryExhausted = store.createSelector(
+  (state, agentId: string): boolean =>
+    state.agentSessions?.historySegmentsByAgentId?.[agentId]?.oldestReached === true,
+);
+
 
 
