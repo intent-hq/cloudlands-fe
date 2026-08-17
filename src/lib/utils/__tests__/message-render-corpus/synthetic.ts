@@ -118,7 +118,7 @@ export const syntheticFixtures: SyntheticFixture[] = [
     note: 'trailing text block containing only a prompts comment is dropped from render',
     blocks: [
       text('<group:Finishing>\nfinal work\n</group>\n'),
-      text('<!-- suggested-prompts\nArchive the workspace.\n-->\n'),
+      text('<!-- suggested-prompts\nArchive the workspace.\nReview the archive.\n-->\n'),
     ],
   },
   {
