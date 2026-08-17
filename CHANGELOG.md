@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.59.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.59.0...v2.59.1) (2026-08-17)
+
+
+### 🐛 Bug Fixes
+
+* bridge window:set-theme and extend IPC audit to saga-style invoke sites ([#1380](https://github.com/intent-hq/cloudlands-fe/issues/1380)) ([e489dd4](https://github.com/intent-hq/cloudlands-fe/commit/e489dd48c2ab0c29fe051f6d2009cd52c7583ef3))
+* bump intentd sidecar to v0.7.14 ([#1382](https://github.com/intent-hq/cloudlands-fe/issues/1382)) ([f70a9cd](https://github.com/intent-hq/cloudlands-fe/commit/f70a9cd80ee0cc389f69affb16d07d4b2210fbdf))
+
 ## [2.59.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.58.0...v2.59.0) (2026-08-17)
 
 
