@@ -162,9 +162,10 @@ test('composes sticky crossings with slow wheel, fast wheel, and keyboard scroll
 
   await scroll.evaluate((node, top) => node.scrollTo(0, top as number), entry - 20);
   await scroll.focus();
+  await expect(scroll).toBeFocused();
   const keyBefore = await scroll.evaluate((node) => node.scrollTop);
-  await page.keyboard.press('ArrowDown');
-  await settle(page);
+  await scroll.press('ArrowDown');
+  await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(keyBefore);
   const keyAfter = await scroll.evaluate((node) => node.scrollTop);
   expect(keyAfter).toBeGreaterThan(keyBefore);
   expect(keyAfter - keyBefore).toBeLessThanOrEqual(80);
