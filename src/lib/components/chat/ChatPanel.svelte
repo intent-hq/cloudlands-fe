@@ -149,9 +149,10 @@
   import { deriveWizardPendingQuestions } from './questions/wizard-gate';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
+    absorbPrependedHeightIntoSpacer,
     composeTranscript,
-    estimateVirtualSpacerHeight,
     isConversationStartLoaded,
+    reconcileVirtualSpacer,
     shouldRequestOlderHistory,
   } from './chat-scrollback-composition';
   import {
@@ -1573,55 +1574,141 @@
   }
 
   // ── Virtual scrollbar: spacer above the resident rows ─────────────────
-  // Sized to the ESTIMATED unloaded extent (unloaded rows x average resident
-  // row height — see estimateVirtualSpacerHeight) so the scrollbar
-  // represents the full conversation: it stops growing as pages load (the
-  // spacer shrinks as real rows replace estimate, keeping scrollHeight
-  // roughly stable) and dragging the thumb to the very top lands in the
-  // spacer region, where the extended trigger above pages toward the true
-  // first message. 0 (no spacer, today's behavior) when totalMessages is
-  // unknown or the walk is exhausted.
+  // Sized to the ESTIMATED unloaded extent (unloaded rows x smoothed average
+  // row height) so the scrollbar represents the full conversation. The
+  // estimate is deliberately STABLE while the user interacts — the invariant
+  // is that the total scroll extent only changes at quiet reconcile points
+  // or boundaries:
+  //
+  // - FROZEN during interaction: while scroll events or older-history
+  //   fetches are active the spacer height is locked. History prepends add
+  //   real height at the top, and the absorption effect below subtracts
+  //   exactly that height from the locked spacer (floor 0), keeping
+  //   scrollHeight — and thus the thumb size/position — constant through a
+  //   paging chain (absorbPrependedHeightIntoSpacer).
+  // - RECONCILED when quiet: no scroll events and no fetch in flight for
+  //   SPACER_QUIET_MS. The measured average row height folds into a
+  //   slow-moving EMA, and the retarget applies only past a hysteresis
+  //   threshold (reconcileVirtualSpacer); an applied change compensates
+  //   scrollTop by the same delta in the same flush so neither the viewport
+  //   nor the apparent thumb position jumps.
+  // - BOUNDARIES are exact: exhaustion (or all rows resident) zeroes the
+  //   spacer immediately, bypassing hysteresis and the quiet window.
+  // 0 (no spacer, today's behavior) when totalMessages is unknown or the
+  // walk is exhausted.
+  const SPACER_QUIET_MS = 400;
   let virtualSpacerHeight = $state(0);
-  $effect(() => {
-    // Reactive deps: resident row counts + snapshot meta + exhaustion + the
-    // container binding. The measurement and the spacer state itself are
-    // read untracked so the effect never retriggers off its own write.
-    const residentCount = $agentHistoryMessages$.length + $agentMessages$.length;
-    const totalMessages = $transcriptSnapshotMeta$?.totalMessages ?? 0;
-    const exhausted = $historyExhausted$;
+  let spacerRowHeightEma: number | null = null;
+  let spacerReconcileTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastScrollActivityAt = 0;
+
+  function scheduleSpacerReconcile() {
+    if (spacerReconcileTimer !== null) clearTimeout(spacerReconcileTimer);
+    spacerReconcileTimer = setTimeout(() => {
+      spacerReconcileTimer = null;
+      runSpacerReconcile(false);
+    }, SPACER_QUIET_MS);
+  }
+
+  function runSpacerReconcile(force: boolean) {
+    if (isComponentDestroyed) return;
     const container = scrollContainer;
     if (!container) return;
+    // Still interacting (fetch in flight or a scroll event landed inside the
+    // quiet window): stay frozen and re-arm — unless forced at a boundary.
+    if (
+      !force &&
+      ($fetchingOlderHistory$ || performance.now() - lastScrollActivityAt < SPACER_QUIET_MS)
+    ) {
+      scheduleSpacerReconcile();
+      return;
+    }
+    const result = reconcileVirtualSpacer({
+      totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
+      residentCount: $agentHistoryMessages$.length + $agentMessages$.length,
+      exhausted: $historyExhausted$,
+      residentContentHeight: Math.max(0, container.scrollHeight - virtualSpacerHeight),
+      currentSpacerHeight: virtualSpacerHeight,
+      rowHeightEma: spacerRowHeightEma,
+      viewportHeight: container.clientHeight,
+    });
+    spacerRowHeightEma = result.rowHeightEma;
+    if (!result.applied) return;
+    // Same-flush scrollTop compensation: content above the viewport changes
+    // by exactly the spacer delta, so shifting scrollTop by it keeps both
+    // the visible content and the apparent thumb position stable.
+    const previousScrollTop = container.scrollTop;
+    virtualSpacerHeight = result.spacerHeight;
+    tick().then(() => {
+      if (isComponentDestroyed || !scrollContainer) return;
+      scrollContainer.scrollTop = Math.max(0, previousScrollTop + result.scrollTopDelta);
+    });
+  }
+
+  // Reconcile scheduling: any estimate input changing (re)arms the quiet
+  // timer; the exhaustion boundary reconciles immediately (target 0 exactly,
+  // no hysteresis). The spacer state itself is never a dep — the effect
+  // only re-arms off external inputs.
+  $effect(() => {
+    void ($agentHistoryMessages$.length + $agentMessages$.length);
+    void $transcriptSnapshotMeta$?.totalMessages;
+    const exhausted = $historyExhausted$;
+    void $fetchingOlderHistory$;
+    if (!scrollContainer) return;
     untrack(() => {
-      const target = estimateVirtualSpacerHeight({
-        totalMessages,
-        residentCount,
-        exhausted,
-        residentContentHeight: Math.max(0, container.scrollHeight - virtualSpacerHeight),
-      });
-      if (target === virtualSpacerHeight) return;
-      // Bracket the spacer resize with the same anchor capture/restore the
-      // prepend path uses: the anchor element sits BELOW the spacer, so the
-      // restore compensates the height delta and the estimate refining as
-      // rows land never visibly jumps the viewport. (When the viewport is
-      // inside the blank spacer region there is no visible anchor element
-      // and scrollTop is intentionally left alone.)
-      const anchor = captureScrollAnchor(container);
-      virtualSpacerHeight = target;
+      if (exhausted && virtualSpacerHeight > 0) {
+        runSpacerReconcile(true);
+        return;
+      }
+      scheduleSpacerReconcile();
+    });
+  });
+
+  // Frozen-phase absorption: a history prepend adds real height at the top
+  // while the spacer is locked — subtract the measured added height from the
+  // spacer in the same update cycle (floor 0), so the total extent stays
+  // constant through the chain. The anchor restore in the prepend effect
+  // below then finds the anchor at an unchanged document offset (rows added
+  // ≙ spacer shrunk) and is a no-op.
+  let absorbedHistoryLength = -1;
+  $effect.pre(() => {
+    const historyLength = $agentHistoryMessages$.length;
+    if (historyLength === absorbedHistoryLength) return;
+    const grew = absorbedHistoryLength !== -1 && historyLength > absorbedHistoryLength;
+    absorbedHistoryLength = historyLength;
+    const container = untrack(() => scrollContainer);
+    if (!grew || !container) return;
+    untrack(() => {
+      if (virtualSpacerHeight <= 0) return;
+      const residentHeightBefore = container.scrollHeight - virtualSpacerHeight;
       tick().then(() => {
-        requestAnimationFrame(() => {
-          if (isComponentDestroyed || !scrollContainer) return;
-          restoreScrollAnchor(scrollContainer, anchor);
-        });
+        if (isComponentDestroyed || !scrollContainer) return;
+        const added =
+          scrollContainer.scrollHeight - virtualSpacerHeight - residentHeightBefore;
+        virtualSpacerHeight = absorbPrependedHeightIntoSpacer(virtualSpacerHeight, added);
       });
     });
   });
 
+  // Clear the reconcile timer on destroy.
+  $effect(() => {
+    return () => {
+      if (spacerReconcileTimer !== null) clearTimeout(spacerReconcileTimer);
+    };
+  });
+
   // Older-history scroll trigger. The saga sets the fetching flag
   // synchronously on the first dispatch, deduping the scroll-event burst.
+  // Scroll events also mark interaction activity, keeping the spacer frozen
+  // until the transcript goes quiet.
   $effect(() => {
     const container = scrollContainer;
     if (!container) return;
-    const onScroll = () => maybeRequestOlderHistory();
+    const onScroll = () => {
+      lastScrollActivityAt = performance.now();
+      scheduleSpacerReconcile();
+      maybeRequestOlderHistory();
+    };
     container.addEventListener('scroll', onScroll, { passive: true });
     return () => container.removeEventListener('scroll', onScroll);
   });

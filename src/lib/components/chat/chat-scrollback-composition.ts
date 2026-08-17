@@ -237,11 +237,137 @@ export function estimateVirtualSpacerHeight(params: VirtualSpacerParams): number
   if (exhausted || totalMessages <= 0 || residentCount <= 0) return 0;
   const unloadedAbove = totalMessages - residentCount;
   if (unloadedAbove <= 0) return 0;
-  const average = residentContentHeight / residentCount;
-  const clamped = Number.isFinite(average)
-    ? Math.min(VIRTUAL_ROW_HEIGHT_MAX_PX, Math.max(VIRTUAL_ROW_HEIGHT_MIN_PX, average))
+  return Math.round(unloadedAbove * clampRowHeight(residentContentHeight / residentCount));
+}
+
+function clampRowHeight(value: number): number {
+  return Number.isFinite(value)
+    ? Math.min(VIRTUAL_ROW_HEIGHT_MAX_PX, Math.max(VIRTUAL_ROW_HEIGHT_MIN_PX, value))
     : VIRTUAL_ROW_HEIGHT_MIN_PX;
-  return Math.round(unloadedAbove * clamped);
+}
+
+/**
+ * EMA smoothing factor for the per-row height estimate. Small on purpose:
+ * one page of unusually tall/short messages moves the estimate by at most
+ * alpha x (its deviation), so the spacer target drifts slowly instead of
+ * churning as every page lands.
+ */
+export const VIRTUAL_ROW_EMA_ALPHA = 0.2;
+
+/**
+ * Relative drift below which a reconciled spacer target is NOT applied
+ * (hysteresis) — the residual error is absorbed at the boundaries instead
+ * (walk exhausted → spacer 0 exactly).
+ */
+export const VIRTUAL_SPACER_HYSTERESIS_RATIO = 0.12;
+
+/**
+ * Slow-moving per-row height estimator: seeds from the first (clamped)
+ * sample, then folds later samples in via EMA with `VIRTUAL_ROW_EMA_ALPHA`.
+ * Samples are clamped to [MIN, MAX] BEFORE mixing, so a degenerate
+ * measurement cannot drag the estimate outside the bounds either.
+ */
+export function smoothRowHeightEstimate(
+  previous: number | null,
+  sample: number,
+  alpha: number = VIRTUAL_ROW_EMA_ALPHA,
+): number {
+  const clamped = clampRowHeight(sample);
+  if (previous === null || !Number.isFinite(previous)) return clamped;
+  return previous + alpha * (clamped - previous);
+}
+
+/**
+ * Frozen-phase invariant: while a scroll gesture / paging chain is active
+ * the spacer height is LOCKED — rows landing above the viewport add real
+ * height, so the locked spacer shrinks by exactly that added height
+ * (floor 0) and the TOTAL scroll extent stays constant through the chain.
+ * The estimate is never re-derived here; that only happens at reconcile
+ * points (`reconcileVirtualSpacer`) or boundaries.
+ */
+export function absorbPrependedHeightIntoSpacer(
+  lockedSpacerHeight: number,
+  addedResidentHeight: number,
+): number {
+  if (addedResidentHeight <= 0) return lockedSpacerHeight;
+  return Math.max(0, lockedSpacerHeight - Math.round(addedResidentHeight));
+}
+
+export interface VirtualSpacerReconcileParams extends VirtualSpacerParams {
+  /** Spacer height currently applied (possibly locked through a chain). */
+  currentSpacerHeight: number;
+  /** Current smoothed per-row estimate; `null` before the first seed. */
+  rowHeightEma: number | null;
+  /** Container clientHeight — the absolute hysteresis threshold. */
+  viewportHeight: number;
+}
+
+export interface VirtualSpacerReconcileResult {
+  /** Spacer height to render (unchanged when `applied` is false). */
+  spacerHeight: number;
+  /** Updated smoothed estimate — carry into the next reconcile. */
+  rowHeightEma: number | null;
+  /** The target drifted enough (or hit a boundary) to be applied. */
+  applied: boolean;
+  /**
+   * Same-frame scrollTop compensation for an applied change: shifting
+   * scrollTop by this delta keeps the resident content at the same viewport
+   * offset AND the apparent thumb position stable (content above the
+   * viewport changed by exactly this amount).
+   */
+  scrollTopDelta: number;
+}
+
+/**
+ * Quiet-point reconcile for the virtual spacer (run only when the
+ * transcript has settled: no scroll events and no fetch in flight):
+ *
+ * 1. Fold the current measured average row height into the EMA.
+ * 2. Derive the spacer target from the SMOOTHED estimate.
+ * 3. Hysteresis: keep the current height unless the target drifts more
+ *    than `VIRTUAL_SPACER_HYSTERESIS_RATIO` of it or more than one
+ *    viewport. Boundaries are exact and bypass hysteresis: exhaustion /
+ *    all-resident / unknown total zero the spacer, and a first-ever spacer
+ *    (current 0) applies immediately.
+ */
+export function reconcileVirtualSpacer(
+  params: VirtualSpacerReconcileParams,
+): VirtualSpacerReconcileResult {
+  const {
+    totalMessages,
+    residentCount,
+    exhausted,
+    residentContentHeight,
+    currentSpacerHeight,
+    viewportHeight,
+  } = params;
+  let rowHeightEma = params.rowHeightEma;
+  if (residentCount > 0 && residentContentHeight > 0) {
+    rowHeightEma = smoothRowHeightEstimate(rowHeightEma, residentContentHeight / residentCount);
+  }
+  const unloadedAbove = totalMessages - residentCount;
+  const atBoundary =
+    exhausted || totalMessages <= 0 || residentCount <= 0 || unloadedAbove <= 0;
+  const target =
+    atBoundary || rowHeightEma === null ? 0 : Math.round(unloadedAbove * rowHeightEma);
+  const drift = Math.abs(target - currentSpacerHeight);
+  if (drift === 0) {
+    return { spacerHeight: currentSpacerHeight, rowHeightEma, applied: false, scrollTopDelta: 0 };
+  }
+  const meaningful =
+    target === 0 ||
+    currentSpacerHeight === 0 ||
+    drift > currentSpacerHeight * VIRTUAL_SPACER_HYSTERESIS_RATIO ||
+    (viewportHeight > 0 && drift > viewportHeight);
+  if (!meaningful) {
+    return { spacerHeight: currentSpacerHeight, rowHeightEma, applied: false, scrollTopDelta: 0 };
+  }
+  return {
+    spacerHeight: target,
+    rowHeightEma,
+    applied: true,
+    scrollTopDelta: target - currentSpacerHeight,
+  };
 }
 
 export interface ConversationStartLoadedParams {

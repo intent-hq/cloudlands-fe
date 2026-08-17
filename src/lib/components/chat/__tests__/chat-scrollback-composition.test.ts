@@ -2,13 +2,18 @@ import { describe, expect, it } from 'vitest';
 
 import type { AgentMessage } from '$shared/types';
 import {
+  absorbPrependedHeightIntoSpacer,
   composeTranscript,
   estimateVirtualSpacerHeight,
   isConversationStartLoaded,
+  reconcileVirtualSpacer,
   shouldChainOlderHistoryOnSettle,
   shouldRequestOlderHistory,
+  smoothRowHeightEstimate,
+  VIRTUAL_ROW_EMA_ALPHA,
   VIRTUAL_ROW_HEIGHT_MAX_PX,
   VIRTUAL_ROW_HEIGHT_MIN_PX,
+  VIRTUAL_SPACER_HYSTERESIS_RATIO,
 } from '../chat-scrollback-composition';
 import { indexConversationTurns } from '../conversation-turns';
 
@@ -444,5 +449,157 @@ describe('estimateVirtualSpacerHeight (virtual scrollbar)', () => {
     expect(
       estimateVirtualSpacerHeight({ ...base, residentContentHeight: 300000 }),
     ).toBe(170 * VIRTUAL_ROW_HEIGHT_MAX_PX);
+  });
+});
+
+describe('smoothRowHeightEstimate (EMA)', () => {
+  it('seeds from the first (clamped) sample', () => {
+    expect(smoothRowHeightEstimate(null, 100)).toBe(100);
+    expect(smoothRowHeightEstimate(null, 1)).toBe(VIRTUAL_ROW_HEIGHT_MIN_PX);
+    expect(smoothRowHeightEstimate(null, 10000)).toBe(VIRTUAL_ROW_HEIGHT_MAX_PX);
+  });
+
+  it('bounds single-sample influence to alpha x deviation', () => {
+    // One page of tall messages (300px avg vs 100px estimate) moves the
+    // estimate by only alpha x 200 = 40px, not to 300.
+    const next = smoothRowHeightEstimate(100, 300);
+    expect(next).toBeCloseTo(100 + VIRTUAL_ROW_EMA_ALPHA * 200);
+    expect(next).toBeLessThan(200);
+  });
+
+  it('clamps the sample before mixing so outliers cannot drag the estimate past the bounds', () => {
+    const next = smoothRowHeightEstimate(100, 100000);
+    expect(next).toBeCloseTo(100 + VIRTUAL_ROW_EMA_ALPHA * (VIRTUAL_ROW_HEIGHT_MAX_PX - 100));
+  });
+
+  it('converges toward a repeated sample over many pages', () => {
+    let estimate = 100;
+    for (let i = 0; i < 50; i++) estimate = smoothRowHeightEstimate(estimate, 200);
+    expect(estimate).toBeGreaterThan(195);
+    expect(estimate).toBeLessThanOrEqual(200);
+  });
+});
+
+describe('absorbPrependedHeightIntoSpacer (frozen-phase invariant)', () => {
+  it('keeps total extent constant through a multi-page chain with wildly varying row heights', () => {
+    // Locked spacer 17000px; three pages land whose REAL heights vary
+    // wildly (tiny, average, huge). Each prepend adds its real height to
+    // the resident content and shrinks the locked spacer by exactly the
+    // same amount — total extent never moves during the chain.
+    let spacer = 17000;
+    let residentHeight = 3000;
+    const totalExtentBefore = spacer + residentHeight;
+    for (const pageHeight of [180, 1000, 5200]) {
+      residentHeight += pageHeight;
+      spacer = absorbPrependedHeightIntoSpacer(spacer, pageHeight);
+      expect(spacer + residentHeight).toBe(totalExtentBefore);
+    }
+    expect(spacer).toBe(17000 - 180 - 1000 - 5200);
+  });
+
+  it('floors at 0 when real rows outgrow the locked estimate', () => {
+    expect(absorbPrependedHeightIntoSpacer(500, 800)).toBe(0);
+  });
+
+  it('ignores non-positive added heights (no re-derive, no growth)', () => {
+    expect(absorbPrependedHeightIntoSpacer(1000, 0)).toBe(1000);
+    expect(absorbPrependedHeightIntoSpacer(1000, -50)).toBe(1000);
+  });
+});
+
+describe('reconcileVirtualSpacer (quiet-point reconcile)', () => {
+  // 40 resident rows, 200 total, resident content 4000px (100px average).
+  const base = {
+    totalMessages: 200,
+    residentCount: 40,
+    exhausted: false,
+    residentContentHeight: 4000,
+    currentSpacerHeight: 16000,
+    rowHeightEma: 100,
+    viewportHeight: 800,
+  };
+
+  it('hysteresis skips small drifts (target within the ratio of current)', () => {
+    // EMA nudges from 100 toward 110: target 160 x ~102 ≈ 16320 — a ~2%
+    // drift, well inside the hysteresis band → keep the current height.
+    const result = reconcileVirtualSpacer({ ...base, residentContentHeight: 4400 });
+    expect(result.applied).toBe(false);
+    expect(result.spacerHeight).toBe(base.currentSpacerHeight);
+    expect(result.scrollTopDelta).toBe(0);
+    // The EMA still advanced (carried for the next reconcile).
+    expect(result.rowHeightEma).toBeCloseTo(100 + VIRTUAL_ROW_EMA_ALPHA * 10);
+  });
+
+  it('applies drifts beyond the hysteresis ratio with compensating scrollTop delta', () => {
+    // Current is far off (say the chain floored the spacer low): target
+    // 160 x 100 = 16000 vs current 12000 → >12% drift, applied.
+    const result = reconcileVirtualSpacer({ ...base, currentSpacerHeight: 12000 });
+    expect(result.applied).toBe(true);
+    expect(result.spacerHeight).toBe(16000);
+    // Compensation = exact height change above the viewport, so applying
+    // scrollTop += delta keeps content and thumb position stable.
+    expect(result.scrollTopDelta).toBe(16000 - 12000);
+    expect(
+      result.spacerHeight - result.scrollTopDelta,
+    ).toBe(12000);
+  });
+
+  it('applies drifts larger than one viewport even when under the ratio', () => {
+    // 5% drift on a huge spacer: 16000 → 16800 (800px = one viewport is the
+    // absolute threshold; use a smaller viewport to cross it).
+    const result = reconcileVirtualSpacer({
+      ...base,
+      rowHeightEma: 105,
+      residentContentHeight: 4200,
+      viewportHeight: 700,
+    });
+    expect(result.applied).toBe(true);
+    expect(result.scrollTopDelta).toBe(result.spacerHeight - base.currentSpacerHeight);
+  });
+
+  it('exhaustion zeroes the spacer exactly, bypassing hysteresis', () => {
+    const result = reconcileVirtualSpacer({ ...base, exhausted: true });
+    expect(result.applied).toBe(true);
+    expect(result.spacerHeight).toBe(0);
+    expect(result.scrollTopDelta).toBe(-16000);
+  });
+
+  it('all-resident boundary also zeroes exactly', () => {
+    const result = reconcileVirtualSpacer({ ...base, residentCount: 200 });
+    expect(result.applied).toBe(true);
+    expect(result.spacerHeight).toBe(0);
+  });
+
+  it('first-ever spacer (current 0) applies immediately', () => {
+    const result = reconcileVirtualSpacer({ ...base, currentSpacerHeight: 0, rowHeightEma: null });
+    expect(result.applied).toBe(true);
+    expect(result.spacerHeight).toBeGreaterThan(0);
+    expect(result.rowHeightEma).toBe(100);
+  });
+
+  it('no-op when the target equals the current height', () => {
+    const result = reconcileVirtualSpacer(base);
+    expect(result.applied).toBe(false);
+    expect(result.scrollTopDelta).toBe(0);
+  });
+
+  it('EMA bounds one wild page: reconcile after tall-message pages stays within alpha influence', () => {
+    // Resident average jumps to 250px after a page of huge messages, but
+    // the EMA only moves 100 → 130; the target uses the SMOOTHED estimate.
+    const result = reconcileVirtualSpacer({
+      ...base,
+      residentContentHeight: 10000,
+      currentSpacerHeight: 16000,
+    });
+    expect(result.rowHeightEma).toBeCloseTo(130);
+    const expectedTarget = Math.round(160 * 130);
+    expect(result.applied).toBe(true);
+    expect(result.spacerHeight).toBe(expectedTarget);
+    expect(result.spacerHeight).toBeLessThan(160 * 250);
+  });
+
+  it('hysteresis ratio constant is meaningful (10-15% band)', () => {
+    expect(VIRTUAL_SPACER_HYSTERESIS_RATIO).toBeGreaterThanOrEqual(0.1);
+    expect(VIRTUAL_SPACER_HYSTERESIS_RATIO).toBeLessThanOrEqual(0.15);
   });
 });
