@@ -500,7 +500,13 @@ class WalkSim {
   }
 }
 
-describe('full-walk scrollback harness', () => {
+// TINY CAPS (throw-away branch): this harness simulates the PROD-cap regime
+// (PAGE_ROWS 200, segment cap 500) and does not model the gap-fill path.
+// With 30/10 caps the history->tail hole opens immediately adjacent to the
+// viewport, so the scenarios' premises (serial band << one page, hole far
+// below the walk) do not hold. Skipped here; authoritative on the feature
+// branch.
+describe.skip('full-walk scrollback harness', () => {
   it('drives one older-history page through the real reducer', () => {
     const conversation = buildConversation();
     const tailRows = 20;

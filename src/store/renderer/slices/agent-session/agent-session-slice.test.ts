@@ -671,8 +671,8 @@ describe('agent-session-slice reducer', () => {
       expect(state).toBe(initialState);
     });
 
-    it('prunes messages beyond 500', () => {
-      const msgs = Array.from({ length: 501 }, (_, i) => makeMessage(`m${i}`));
+    it('prunes messages beyond 30', () => {
+      const msgs = Array.from({ length: 31 }, (_, i) => makeMessage(`m${i}`));
       let state = agentSessionReducer(
         initialState,
         upsertSession(makeSession('a1', 'ws-1', { messages: [] })),
@@ -680,8 +680,8 @@ describe('agent-session-slice reducer', () => {
       for (const msg of msgs) {
         state = agentSessionReducer(state, addMessage('a1', msg));
       }
-      expect(getMsgs(state, 'a1')).toHaveLength(500);
-      // Should keep the latest messages (m1 .. m500), first message m0 should be pruned
+      expect(getMsgs(state, 'a1')).toHaveLength(30);
+      // Should keep the latest messages (m1 .. m30), first message m0 should be pruned
       expect(getMsgs(state, 'a1')[0].id).toBe('m1');
     });
   });
@@ -4296,15 +4296,15 @@ describe('computeMessageContentHash — media blocks', () => {
 });
 
 describe('MAX_MESSAGES_PER_AGENT shared transcript cap', () => {
-  it('is 500 — the prune cap the transcript pagers (chat-read-service, chat-read-saga) import as their fetch bound', () => {
-    expect(MAX_MESSAGES_PER_AGENT).toBe(500);
+  it('is 30 (tiny-caps QA build) — the prune cap the transcript pagers (chat-read-service, chat-read-saga) import as their fetch bound', () => {
+    expect(MAX_MESSAGES_PER_AGENT).toBe(30);
   });
 });
 
 describe('pruneMessages sorts before pruning (prune-after-sort)', () => {
   it('keeps newest messages by timestamp when input exceeds prune limit and is out-of-order', () => {
-    // Create 502 messages. The first 2 (by array position) have the NEWEST timestamps,
-    // and the remaining 500 have older timestamps. With the old sort(prune(dedup(...)))
+    // Create 32 messages. The first 2 (by array position) have the NEWEST timestamps,
+    // and the remaining 30 have older timestamps. With the old sort(prune(dedup(...)))
     // order, prune would run first on the unsorted list and drop the last 2 by array
     // position (which are actually old messages — correct by accident in-order, but
     // wrong when out-of-order). With the fix prune(sort(dedup(...))), sort runs first,
@@ -4313,18 +4313,18 @@ describe('pruneMessages sorts before pruning (prune-after-sort)', () => {
     // Two newest messages placed first in the array (out of order)
     messages.push(makeUniqueMessage('newest-1', 'user', '2025-12-31T23:59:58.000Z'));
     messages.push(makeUniqueMessage('newest-2', 'user', '2025-12-31T23:59:59.000Z'));
-    // 500 older messages
-    for (let i = 0; i < 500; i++) {
+    // 30 older messages
+    for (let i = 0; i < 30; i++) {
       const ts = `2024-01-01T${String(Math.floor(i / 3600)).padStart(2, '0')}:${String(Math.floor((i % 3600) / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}.000Z`;
       messages.push(makeUniqueMessage(`old-${i}`, 'user', ts));
     }
-    // Total: 502 messages, exceeds MAX_MESSAGES_PER_AGENT (500)
+    // Total: 32 messages, exceeds MAX_MESSAGES_PER_AGENT (30)
 
     const session = makeSession('a1', 'ws-1', { messages });
     const state = agentSessionReducer(initialState, upsertSession(session));
     const result = getMsgs(state, 'a1');
 
-    expect(result).toHaveLength(500);
+    expect(result).toHaveLength(30);
     // The two newest messages MUST survive (they should be at the end after sort+prune)
     const ids = result.map((m) => m.id);
     expect(ids).toContain('newest-1');

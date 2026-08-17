@@ -77,7 +77,7 @@ import {
 import { selectChatAgentState } from '../chat-state-selectors';
 
 const logger = createLogger('ChatScrollbackSaga');
-const PAGE_LIMIT = 200;
+const PAGE_LIMIT = 10;
 
 type ConversationPage = Awaited<ReturnType<typeof appClient.agents.getConversation>>;
 

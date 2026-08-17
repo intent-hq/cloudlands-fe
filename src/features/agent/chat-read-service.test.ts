@@ -379,76 +379,67 @@ describe('chatReadService (fake seam, real store)', () => {
     const agentId = 'agent-pagination';
     agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
 
-    // Simulate a conversation with 125 messages (3 pages).
-    // The first call (no token) returns the NEWEST page, then nextToken walks
-    // backward to older pages (PROTOCOL §5.5, app-client.ts:287-288).
+    // Simulate a conversation with 125 messages. TINY-CAPS QA BUILD: with
+    // MAX_MESSAGES_PER_AGENT=30 the newest-first walk stops after page 2
+    // (25 + 50 = 75 >= 30) — page 3 is never requested (do NOT queue it:
+    // clearAllMocks does not drain once-queues, a leftover page would bleed
+    // into the next test).
     // Page 1 (no token): messages 101-125 (newest 25, nextToken="page2")
     // Page 2 (token="page2"): messages 51-100 (middle 50, nextToken="page3")
-    // Page 3 (token="page3"): messages 1-50 (oldest 50, nextToken=null)
     const page1Newest = Array.from({ length: 25 }, (_, i) =>
       makeMessage(`msg-${i + 101}`, `message ${i + 101}`),
     );
     const page2Middle = Array.from({ length: 50 }, (_, i) =>
       makeMessage(`msg-${i + 51}`, `message ${i + 51}`),
     );
-    const page3Oldest = Array.from({ length: 50 }, (_, i) =>
-      makeMessage(`msg-${i + 1}`, `message ${i + 1}`),
-    );
 
-    // getConversation is called three times with the pagination token.
     agentsApi.getConversation
       .mockResolvedValueOnce({ ...conversation(page1Newest, 'page2') } as never)
-      .mockResolvedValueOnce({ ...conversation(page2Middle, 'page3') } as never)
-      .mockResolvedValueOnce({ ...conversation(page3Oldest, null) } as never);
+      .mockResolvedValueOnce({ ...conversation(page2Middle, 'page3') } as never);
 
     await loadChatTranscript(agentId);
 
-    // Verify three calls with correct pagination.
-    expect(agentsApi.getConversation).toHaveBeenCalledTimes(3);
+    // Two calls: the 30-cap bound stops the walk after page 2.
+    expect(agentsApi.getConversation).toHaveBeenCalledTimes(2);
     expect(agentsApi.getConversation).toHaveBeenNthCalledWith(1, agentId, 50, undefined);
     expect(agentsApi.getConversation).toHaveBeenNthCalledWith(2, agentId, 50, 'page2');
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(3, agentId, 50, 'page3');
 
-    // All 125 messages should be in the store, oldest-first.
+    // The store keeps the newest 30 (tiny-caps prune), oldest-first.
     const stored = selectAgentMessages.select(appStore.state, agentId);
-    expect(stored.length).toBe(125);
-    expect(stored.map((m) => m.id)).toEqual(Array.from({ length: 125 }, (_, i) => `msg-${i + 1}`));
+    expect(stored.length).toBe(30);
+    expect(stored.map((m) => m.id)).toEqual(Array.from({ length: 30 }, (_, i) => `msg-${i + 96}`));
   });
 
   // Pager bound (intent-hq/monorepo#2627): the agent-session slice prunes to
-  // the newest 500 messages, so paging past that cap fetches rows only to
-  // discard them. The newest-first walk must stop once 500 messages have
-  // accumulated instead of draining every page of a huge transcript.
-  it('stops paging at the 500-message store cap instead of draining the full transcript', async () => {
+  // the newest MAX_MESSAGES_PER_AGENT messages (30 in this tiny-caps QA
+  // build), so paging past that cap fetches rows only to discard them. The
+  // newest-first walk must stop once the cap has accumulated instead of
+  // draining every page of a huge transcript.
+  it('stops paging at the store cap instead of draining the full transcript', async () => {
     const agentId = 'agent-pagination-cap';
     agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
 
-    // An 800-message conversation served in conforming 50-message pages,
-    // newest page first: Page 1 (no token): messages 751-800, Page 2:
-    // 701-750, …, Page 10: 301-350. Page 10 still advertises
-    // nextToken="page11" — the bound must stop there (the page-11 mock is
+    // An 800-message conversation in 50-message pages, newest page first:
+    // Page 1 (no token): messages 751-800. It advertises nextToken="page2" —
+    // the tiny-caps bound (50 >= 30) must stop there (the page-2 mock is
     // deliberately NOT queued; an unbounded pager would fetch the afterEach
     // default empty page instead and fail the call-count assertion below).
     const page = (start: number) =>
       Array.from({ length: 50 }, (_, i) => makeMessage(`msg-${start + i}`, `m ${start + i}`));
-    for (let n = 1; n <= 10; n++) {
-      const start = 800 - n * 50 + 1;
-      agentsApi.getConversation.mockResolvedValueOnce({
-        ...conversation(page(start), `page${n + 1}`),
-      } as never);
-    }
+    agentsApi.getConversation.mockResolvedValueOnce({
+      ...conversation(page(751), 'page2'),
+    } as never);
 
     await loadChatTranscript(agentId);
 
-    // 10 pages accumulate 500 >= 500 — the eleventh page is never requested.
-    expect(agentsApi.getConversation).toHaveBeenCalledTimes(10);
+    // 1 page accumulates 50 >= 30 — the second page is never requested.
+    expect(agentsApi.getConversation).toHaveBeenCalledTimes(1);
     expect(agentsApi.getConversation).toHaveBeenNthCalledWith(1, agentId, 50, undefined);
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(10, agentId, 50, 'page10');
 
-    // The store keeps the newest 500 (the slice's prune cap), oldest-first.
+    // The store keeps the newest 30 (tiny-caps prune cap), oldest-first.
     const stored = selectAgentMessages.select(appStore.state, agentId);
-    expect(stored.length).toBe(500);
-    expect(stored[0].id).toBe('msg-301');
+    expect(stored.length).toBe(30);
+    expect(stored[0].id).toBe('msg-771');
     expect(stored[stored.length - 1].id).toBe('msg-800');
   });
 

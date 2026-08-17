@@ -52,10 +52,11 @@ export {
  * bound — pages past it would only be sliced off by the prune
  * (intent-hq/monorepo#2627). Keep pager bound and prune cap coupled by
  * importing this constant rather than mirroring the value.
+ * TINY-CAPS QA BUILD (DO NOT MERGE): 500 -> 30.
  */
-export const MAX_MESSAGES_PER_AGENT = 500;
+export const MAX_MESSAGES_PER_AGENT = 30;
 /** Cap for the on-demand scrollback history segment (rows older than the tail). */
-export const HISTORY_SEGMENT_MAX = 500;
+export const HISTORY_SEGMENT_MAX = 30;
 const USER_REPLY_ORDER_WINDOW_MS = 1_000;
 
 // ============================================================================

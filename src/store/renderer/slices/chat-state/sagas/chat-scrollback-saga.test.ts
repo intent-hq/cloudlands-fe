@@ -135,8 +135,8 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     await settle();
 
     expect(mocks.getConversation.mock.calls).toEqual([
-      [AGENT, 200, undefined, 'm-10'],
-      [AGENT, 200, 'older-1'],
+      [AGENT, 10, undefined, 'm-10'],
+      [AGENT, 10, 'older-1'],
     ]);
     expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-06', 'm-07', 'm-08', 'm-09']);
     expect(run.history()?.oldestReached).toBe(true);
@@ -161,7 +161,7 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     run.channel.put(olderHistoryPageRequested(WS, AGENT));
     await settle();
 
-    expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 200, undefined, 'm-05');
+    expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 10, undefined, 'm-05');
     expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-04', 'm-05']);
     expect(run.history()?.oldestReached).toBe(true);
     run.task.cancel();
@@ -210,8 +210,8 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     run.channel.put(olderHistoryPageRequested(WS, AGENT));
     await settle();
     expect(mocks.getConversation.mock.calls).toEqual([
-      [AGENT, 200, undefined, 'm-10'],
-      [AGENT, 200, undefined, 'm-10'],
+      [AGENT, 10, undefined, 'm-10'],
+      [AGENT, 10, undefined, 'm-10'],
     ]);
     expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-09']);
     run.task.cancel();
@@ -244,7 +244,7 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     run.channel.put(historyGapFillRequested(WS, AGENT));
     await settle();
 
-    expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 200, undefined, newest);
+    expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 10, undefined, newest);
     expect(run.history()?.gapToTail).toBe(false);
     expect(run.chat()?.fetchingGapFill).toBe(false);
     expect(run.chat()?.scrollbackGapToken).toBeNull();
@@ -278,7 +278,7 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     run.channel.put(historyGapFillRequested(WS, AGENT));
     await settle();
 
-    expect(mocks.getConversation.mock.calls[1]).toEqual([AGENT, 200, 'fwd-1']);
+    expect(mocks.getConversation.mock.calls[1]).toEqual([AGENT, 10, 'fwd-1']);
     expect(run.history()?.gapToTail).toBe(false);
     run.task.cancel();
     await run.task.toPromise();
