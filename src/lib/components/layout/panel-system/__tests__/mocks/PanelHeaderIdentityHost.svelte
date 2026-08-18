@@ -9,6 +9,7 @@
   import { store } from '$store/renderer/store';
   import PanelEmptyState from '../../PanelEmptyState.svelte';
   import PanelTabBar from '../../PanelTabBar.svelte';
+  import { setPanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
   type IdentityType = PanelTabType | 'empty';
 
@@ -19,6 +20,7 @@
     height = 320,
     zoom = 1,
     pinned = true,
+    pinMode = true,
   }: {
     identityType?: IdentityType;
     theme?: 'light' | 'dark';
@@ -26,11 +28,15 @@
     height?: number;
     zoom?: number;
     pinned?: boolean;
+    pinMode?: boolean;
   } = $props();
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   registerAllTabTypes();
   onDestroy(disposeStore);
+  $effect(() => {
+    store.dispatch(setPanelOpenMode(pinMode ? 'pin' : 'normal'));
+  });
 
   const tab = $derived<PanelTab | null>(
     identityType === 'empty'

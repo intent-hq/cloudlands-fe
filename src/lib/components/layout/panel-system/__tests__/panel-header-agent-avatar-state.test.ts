@@ -90,6 +90,9 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
   startDrag: () => ({ type: 'tabState/startDrag' }),
   endDrag: () => ({ type: 'tabState/endDrag' }),
 }));
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectPanelOpenMode: () => constantReadable('pin'),
+}));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectRecentlyClosed: () => constantReadable([]),
   selectPanelLayoutWorkspace: { select: () => ({ panels: {} }) },

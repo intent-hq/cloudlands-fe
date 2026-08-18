@@ -68,6 +68,9 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: () => readable([]),
 }));
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectPanelOpenMode: () => readable('pin'),
+}));
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));

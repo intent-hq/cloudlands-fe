@@ -93,6 +93,7 @@
   } from '$features/agent/components/agent-avatar/avatar-state';
   import { getAgentAvatarStateLabel } from '$features/agent/components/agent-avatar/avatar-state-label';
   import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
+  import { selectPanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
   import { toNativePath } from '$lib/utils/path-utils';
@@ -111,6 +112,8 @@
     getPanelIdentityContext,
     PANEL_IDENTITY_SEARCH_THRESHOLD,
   } from './panel-identity-history';
+
+  const panelOpenMode$ = selectPanelOpenMode();
 
   // Detect platform for file manager labels
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -1782,7 +1785,9 @@
         class="panel-actions flex items-center gap-0 px-1 opacity-30 group-hover/tabbar:opacity-100 focus-within:opacity-100 transition-opacity z-20"
         data-panel-header-actions
       >
-        {@render panelPinButton()}
+        {#if $panelOpenMode$ === 'pin'}
+          {@render panelPinButton()}
+        {/if}
         {@render contentActions?.primary?.()}
         {@render panelActionsDropdown()}
         {@render panelCloseButton()}
@@ -2051,7 +2056,9 @@
 
       <!-- Right: stable content controls, grouped actions, and close. -->
       <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
-        {@render panelPinButton()}
+        {#if $panelOpenMode$ === 'pin'}
+          {@render panelPinButton()}
+        {/if}
         {@render contentActions?.primary?.()}
         {@render panelActionsDropdown()}
         {@render panelCloseButton()}

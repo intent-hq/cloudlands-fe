@@ -5,6 +5,7 @@ import type { PanelState, PanelTab } from '$store/renderer/slices/panel-layout/p
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
+  panelOpenMode: 'pin' as 'normal' | 'pin',
   state: {
     panelLayout: {
       byWorkspaceId: {
@@ -81,6 +82,9 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: () => readable([]),
+}));
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectPanelOpenMode: () => readable(mocks.panelOpenMode),
 }));
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -169,6 +173,7 @@ function renderTabBar(props: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   mocks.dispatch.mockClear();
+  mocks.panelOpenMode = 'pin';
   setDraggedPanelId(null);
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     callback(0);
@@ -415,6 +420,13 @@ describe('panel and tab drag MIME routing', () => {
 });
 
 describe('panel context menu routing', () => {
+  it('hides the direct pin control while pin mode is off', () => {
+    mocks.panelOpenMode = 'normal';
+    const { container } = renderTabBar({ onClosePanel: vi.fn() });
+
+    expect(container.querySelector('[data-panel-pin]')).toBeNull();
+  });
+
   it('keeps pin, kebab, and Close visible while grouping other panel controls in the menu', async () => {
     const { container } = renderTabBar({ onClosePanel: vi.fn() });
     const directActions = container.querySelector<HTMLElement>('.panel-actions')!;

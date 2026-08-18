@@ -118,7 +118,9 @@ test('uses the same larger leading identity geometry in the empty panel actions'
 
 test('rotates the thumbtack only for the pressed pinned state', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  const component = await mount(PanelHeaderIdentityHost, { props: { pinned: false } });
+  const component = await mount(PanelHeaderIdentityHost, {
+    props: { pinned: false, pinMode: true },
+  });
   const pin = component.locator('[data-panel-pin]:visible').first();
   const icon = pin.locator('[data-panel-pin-icon]');
 
@@ -134,4 +136,12 @@ test('rotates the thumbtack only for the pressed pinned state', async ({ mount, 
     Number.parseFloat(getComputedStyle(node).transitionDuration),
   );
   expect(reducedDuration).toBeLessThanOrEqual(0.00001);
+});
+
+test('hides the panel header thumbtack while pin mode is off', async ({ mount }) => {
+  const component = await mount(PanelHeaderIdentityHost, {
+    props: { pinned: true, pinMode: false },
+  });
+
+  await expect(component.locator('[data-panel-pin]')).toHaveCount(0);
 });
