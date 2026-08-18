@@ -9,7 +9,10 @@ import {
   setActiveTab,
   setPanelPinned,
 } from '../../panel-layout/panel-layout-slice';
-import { selectPanelOpenMode } from '../../user-preferences/user-preferences-selectors';
+import {
+  selectPanelOpenMode,
+  selectPanelStackDirection,
+} from '../../user-preferences/user-preferences-selectors';
 import { ensureAgentSessionLoaded } from '../../workspace-agents/workspace-agents-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { focusBrowserTabRequested, openAgentTabRequested } from '../app-layout-slice';
@@ -45,6 +48,7 @@ function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGe
       : { sourcePanelId: detail.sourcePanelId }),
     force: true,
     panelOpenMode,
+    panelStackDirection: yield* selectPanelStackDirection.effect(),
   });
   yield* put(openAction);
   if (detail.pin === true) {

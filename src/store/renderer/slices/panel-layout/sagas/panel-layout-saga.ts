@@ -34,10 +34,15 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { selectPanelOpenMode } from '../../user-preferences/user-preferences-selectors';
+import {
+  selectPanelOpenMode,
+  selectPanelStackDirection,
+} from '../../user-preferences/user-preferences-selectors';
 import {
   setPanelOpenMode,
+  setPanelStackDirection,
   togglePanelOpenMode,
+  togglePanelStackDirection,
 } from '../../user-preferences/user-preferences-slice';
 import {
   resolveCanonicalInitialAgent,
@@ -279,14 +284,17 @@ function* enforceReusablePanelInvariant(action: { payload?: unknown }): SagaGene
   if (!wsId) return;
   const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
   if (workspace !== emptyWorkspaceState && workspaceNeedsReusablePanelCollapse(workspace)) {
-    yield* put(collapseToReusablePanel(wsId));
+    yield* put(collapseToReusablePanel(wsId, undefined, yield* selectPanelStackDirection.effect()));
   }
 }
 
 function* collapseAllWorkspacesForPanelMode(): SagaGenerator<void> {
   if ((yield* selectPanelOpenMode.effect()) !== 'pin') return;
+  const panelStackDirection = yield* selectPanelStackDirection.effect();
   const workspaceIds = yield* selectPanelLayoutWorkspaceIds.effect();
-  for (const wsId of workspaceIds) yield* put(collapseToReusablePanel(wsId));
+  for (const wsId of workspaceIds) {
+    yield* put(collapseToReusablePanel(wsId, undefined, panelStackDirection));
+  }
 }
 
 function* openTabWithPanelMode(
@@ -297,7 +305,11 @@ function* openTabWithPanelMode(
     openTabInNewRootColumn(
       wsId,
       tab,
-      { ...options, panelOpenMode: yield* selectPanelOpenMode.effect() },
+      {
+        ...options,
+        panelOpenMode: yield* selectPanelOpenMode.effect(),
+        panelStackDirection: yield* selectPanelStackDirection.effect(),
+      },
       timestamp,
     ),
   );
@@ -840,6 +852,10 @@ export function* panelLayoutSaga(options?: {
     yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
     yield* takeEvery(openTabWithPanelModeRequested, openTabWithPanelMode);
     yield* takeEvery([setPanelOpenMode, togglePanelOpenMode], collapseAllWorkspacesForPanelMode);
+    yield* takeEvery(
+      [setPanelStackDirection, togglePanelStackDirection],
+      collapseAllWorkspacesForPanelMode,
+    );
     yield* takeEvery(clearPanelLayout, clearPersistedLayout);
     const historyWatcher = yield* takeEvery(HISTORY_ACTIONS, queueHistorySaveForAction);
     yield* takeLatest(initializeLayout, loadHistoryForWorkspace);

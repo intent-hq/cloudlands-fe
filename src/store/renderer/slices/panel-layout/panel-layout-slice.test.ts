@@ -1020,6 +1020,40 @@ describe('panelLayoutReducer', () => {
       });
     });
 
+    it('prepends a new root column when panels stack from the left', () => {
+      const state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
+      state.byWorkspaceId[WS] = {
+        ...state.byWorkspaceId[WS],
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'p1' },
+            { type: 'panel', panelId: 'p2' },
+          ],
+          sizes: [60, 40],
+        },
+        panels: {
+          ...state.byWorkspaceId[WS].panels,
+          p2: { id: 'p2', tabs: [], activeTabId: null },
+        },
+        canvasWidth: 1000,
+      };
+
+      const action = openTabInNewRootColumn(
+        WS,
+        agentTab,
+        { force: true, panelStackDirection: 'left' },
+        10,
+      );
+      const result = panelLayoutReducer(state, action).byWorkspaceId[WS];
+
+      expect(result.root).toMatchObject({
+        children: [{ panelId: action.payload.newPanelId }, { panelId: 'p1' }, { panelId: 'p2' }],
+      });
+      expect(result.focusedPanelId).toBe(action.payload.newPanelId);
+    });
+
     it('reveals an existing canonical agent instead of adding a column', () => {
       let state = stateWithPanel('p1', [
         { id: 'agent-tab', type: 'agent', title: 'Ada', agentId: 'agent-1' } as any,
@@ -1069,7 +1103,12 @@ describe('panelLayoutReducer', () => {
 
       const result = panelLayoutReducer(
         state,
-        openTabInNewRootColumn(WS, agentTab, { force: true, panelOpenMode: 'pin' }, 10),
+        openTabInNewRootColumn(
+          WS,
+          agentTab,
+          { force: true, panelOpenMode: 'pin', panelStackDirection: 'left' },
+          10,
+        ),
       ).byWorkspaceId[WS];
 
       expect(Object.keys(result.panels)).toEqual(['pinned', 'reuse']);
@@ -1081,6 +1120,53 @@ describe('panelLayoutReducer', () => {
         expect.objectContaining({ type: 'agent', agentId: 'agent-1' }),
       ]);
       expect(result.recentlyClosed[0].tab.id).toBe('old');
+    });
+
+    it('keeps the reusable panel on the right in pin mode when configured', () => {
+      const state = emptyState();
+      state.byWorkspaceId[WS] = {
+        ...emptyWorkspaceState,
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'reuse' },
+            { type: 'panel', panelId: 'pinned' },
+          ],
+          sizes: [50, 50],
+        },
+        panels: {
+          reuse: {
+            id: 'reuse',
+            tabs: [{ id: 'old', type: 'note', title: 'Old', closable: true } as any],
+            activeTabId: 'old',
+          },
+          pinned: {
+            id: 'pinned',
+            tabs: [{ id: 'keep', type: 'note', title: 'Keep', closable: true } as any],
+            activeTabId: 'keep',
+            pinned: true,
+          },
+        },
+        focusedPanelId: 'reuse',
+      };
+
+      const result = panelLayoutReducer(
+        state,
+        openTabInNewRootColumn(
+          WS,
+          agentTab,
+          { force: true, panelOpenMode: 'pin', panelStackDirection: 'right' },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.root).toMatchObject({
+        children: [{ panelId: 'pinned' }, { panelId: 'reuse' }],
+      });
+      expect(result.panels.reuse.tabs).toEqual([
+        expect.objectContaining({ type: 'agent', agentId: 'agent-1' }),
+      ]);
     });
   });
 
@@ -1113,7 +1199,7 @@ describe('panelLayoutReducer', () => {
         { id: 'keep', type: 'note', title: 'Keep', filePath: 'keep.md' },
       ]);
       state.byWorkspaceId[WS].panels.pinned.pinned = true;
-      const action = openBlankWorkingPanel(WS, 10);
+      const action = openBlankWorkingPanel(WS, 10, 'left');
 
       const result = panelLayoutReducer(state, action).byWorkspaceId[WS];
 
@@ -1216,7 +1302,7 @@ describe('panelLayoutReducer', () => {
         canvasWidthSource: 'explicit',
       };
 
-      const result = panelLayoutReducer(state, setPanelPinned(WS, 'target', false, 10))
+      const result = panelLayoutReducer(state, setPanelPinned(WS, 'target', false, 10, 'left'))
         .byWorkspaceId[WS];
 
       expect(Object.keys(result.panels)).toEqual(['target', 'newer', 'older']);
@@ -1271,7 +1357,12 @@ describe('panelLayoutReducer', () => {
         openTabInNewRootColumn(
           WS,
           { type: 'note', title: 'Next', noteId: 'next', closable: true },
-          { panelOpenMode: 'pin', force: true, newTabId: 'next-tab' },
+          {
+            panelOpenMode: 'pin',
+            panelStackDirection: 'left',
+            force: true,
+            newTabId: 'next-tab',
+          },
           2,
         ),
       ).byWorkspaceId[WS];

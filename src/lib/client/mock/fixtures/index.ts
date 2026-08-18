@@ -238,6 +238,7 @@ export const mockWorkspaceSettings: SingleWorkspaceSettings = {
 /** User-facing preferences surfaced by the settings panel. */
 export const mockUserPreferences: UserPreferencesState = {
   panelOpenMode: 'normal',
+  panelStackDirection: 'right',
   updateChannel: 'stable',
   spellcheckEnabled: true,
   zoomFactor: 1.0,

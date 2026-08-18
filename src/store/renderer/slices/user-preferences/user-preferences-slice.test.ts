@@ -12,6 +12,7 @@ import {
   setHasCompletedProviderSetup,
   setNotificationEnabled,
   setPanelOpenMode,
+  setPanelStackDirection,
   setNoteFontStyle,
   setLanguagePreference,
   setShowArchived,
@@ -30,6 +31,7 @@ import {
   setUpdateChannel,
   toggleSpellcheck,
   togglePanelOpenMode,
+  togglePanelStackDirection,
   type UserPreferencesState,
   userPreferencesReducer,
 } from './user-preferences-slice';
@@ -52,6 +54,7 @@ import {
   selectNotificationEnabled,
   selectNotificationVolume,
   selectPanelOpenMode,
+  selectPanelStackDirection,
   selectShowArchived,
   selectShowReasoningBlocks,
   selectSoundEnabled,
@@ -126,6 +129,21 @@ describe('userPreferencesReducer', () => {
 
     it('selects normal for legacy state without the preference', () => {
       expect(selectPanelOpenMode.select({ userPreferences: undefined } as any)).toBe('normal');
+    });
+  });
+
+  describe('panel stack direction', () => {
+    it('defaults to right and supports set and toggle actions', () => {
+      expect(initialState.panelStackDirection).toBe('right');
+      const left = userPreferencesReducer(initialState, setPanelStackDirection('left'));
+      expect(left.panelStackDirection).toBe('left');
+      expect(userPreferencesReducer(left, togglePanelStackDirection()).panelStackDirection).toBe(
+        'right',
+      );
+    });
+
+    it('selects right for legacy state without the preference', () => {
+      expect(selectPanelStackDirection.select({ userPreferences: undefined } as any)).toBe('right');
     });
   });
 

@@ -12,6 +12,7 @@ export type FontStyle = 'sans' | 'monospace';
 export type AgentFontStyle = FontStyle;
 export type NoteFontStyle = FontStyle | 'serif';
 export type PanelOpenMode = 'normal' | 'pin';
+export type PanelStackDirection = 'left' | 'right';
 
 export const FONT_STYLES: FontStyle[] = ['sans', 'monospace'];
 export const NOTE_FONT_STYLES: NoteFontStyle[] = ['sans', 'serif', 'monospace'];
@@ -60,6 +61,8 @@ export type UserPreferencesState = {
   githubLinkDefaultAction: GithubLinkDefaultAction;
   /** Global content-open policy shared by every workspace. */
   panelOpenMode: PanelOpenMode;
+  /** Edge where newly opened or reusable panels are placed. */
+  panelStackDirection: PanelStackDirection;
 };
 
 export type FontSettingsState = Pick<
@@ -100,6 +103,7 @@ export const initialState: UserPreferencesState = {
   languagePreference: SYSTEM_LANGUAGE_PREFERENCE,
   githubLinkDefaultAction: 'show-choices',
   panelOpenMode: 'normal',
+  panelStackDirection: 'right',
 };
 
 export const setUpdateChannel = createAction<[channel: UpdateChannel]>(
@@ -178,6 +182,12 @@ export const setPanelOpenMode = createAction<[mode: PanelOpenMode]>(
 );
 
 export const togglePanelOpenMode = createAction('userPreferences/togglePanelOpenMode');
+
+export const setPanelStackDirection = createAction<[direction: PanelStackDirection]>(
+  'userPreferences/setPanelStackDirection',
+);
+
+export const togglePanelStackDirection = createAction('userPreferences/togglePanelStackDirection');
 
 const showArchivedPreference = createBooleanPreference<UserPreferencesState>({
   sliceName: 'userPreferences',
@@ -305,4 +315,11 @@ userPreferencesReducer.with(setPanelOpenMode, (state, { payload: [mode] }) =>
 userPreferencesReducer.with(togglePanelOpenMode, (state) => ({
   ...state,
   panelOpenMode: state.panelOpenMode === 'pin' ? 'normal' : 'pin',
+}));
+userPreferencesReducer.with(setPanelStackDirection, (state, { payload: [direction] }) =>
+  state.panelStackDirection === direction ? state : { ...state, panelStackDirection: direction },
+);
+userPreferencesReducer.with(togglePanelStackDirection, (state) => ({
+  ...state,
+  panelStackDirection: state.panelStackDirection === 'right' ? 'left' : 'right',
 }));

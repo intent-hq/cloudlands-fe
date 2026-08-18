@@ -85,6 +85,7 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectPanelOpenMode: () => readable(mocks.panelOpenMode),
+  selectPanelStackDirection: () => readable('right'),
 }));
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },

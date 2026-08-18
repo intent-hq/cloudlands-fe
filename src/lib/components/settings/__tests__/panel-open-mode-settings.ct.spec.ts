@@ -16,3 +16,21 @@ test('toggles the global panel open mode from the keyboard', async ({ mount, pag
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await expect(component).toHaveAttribute('data-panel-open-mode', 'normal');
 });
+
+test('toggles panel stacking between right and left in every open mode', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(PanelOpenModeSettingsHost, {
+    props: { initialMode: 'pin', initialDirection: 'right' },
+  });
+  const toggle = component.getByRole('switch', { name: 'Panel stacking direction' });
+
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await expect(component).toHaveAttribute('data-panel-stack-direction', 'right');
+  await toggle.focus();
+  await page.keyboard.press('Space');
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await expect(component).toHaveAttribute('data-panel-stack-direction', 'left');
+  await expect(component).toHaveAttribute('data-panel-open-mode', 'pin');
+});

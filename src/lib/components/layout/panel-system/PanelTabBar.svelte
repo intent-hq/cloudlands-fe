@@ -93,7 +93,10 @@
   } from '$features/agent/components/agent-avatar/avatar-state';
   import { getAgentAvatarStateLabel } from '$features/agent/components/agent-avatar/avatar-state-label';
   import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
-  import { selectPanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import {
+    selectPanelOpenMode,
+    selectPanelStackDirection,
+  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
   import { toNativePath } from '$lib/utils/path-utils';
@@ -114,6 +117,7 @@
   } from './panel-identity-history';
 
   const panelOpenMode$ = selectPanelOpenMode();
+  const panelStackDirection$ = selectPanelStackDirection();
 
   // Detect platform for file manager labels
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -1345,7 +1349,10 @@
       variant="ghost-light"
       size="icon-sm"
       class={pinned ? 'text-primary' : 'text-muted-foreground opacity-40 hover:opacity-100'}
-      onclick={() => appStore.dispatch(setPanelPinned(workspaceId, panelId, !pinned))}
+      onclick={() =>
+        appStore.dispatch(
+          setPanelPinned(workspaceId, panelId, !pinned, undefined, $panelStackDirection$),
+        )}
       aria-label={pinned
         ? m.layout_panelTabBar_unpinPanel_label()
         : m.layout_panelTabBar_pinPanel_label()}
@@ -1412,7 +1419,9 @@
             ? m.layout_panelTabBar_unpinPanel_label()
             : m.layout_panelTabBar_pinPanel_label()}
           onclick={() => {
-            appStore.dispatch(setPanelPinned(workspaceId, panelId, !pinned));
+            appStore.dispatch(
+              setPanelPinned(workspaceId, panelId, !pinned, undefined, $panelStackDirection$),
+            );
             close();
           }}
         />

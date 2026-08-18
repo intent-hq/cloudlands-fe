@@ -27,7 +27,10 @@ import {
   updateTabBrowserUrl,
 } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
-import { selectPanelOpenMode } from '../../user-preferences/user-preferences-selectors';
+import {
+  selectPanelOpenMode,
+  selectPanelStackDirection,
+} from '../../user-preferences/user-preferences-selectors';
 import { focusBrowserTabRequested } from '../app-layout-slice';
 
 let running = false;
@@ -94,6 +97,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       newTabId,
       allowDuplicate,
       panelOpenMode,
+      panelStackDirection: yield* selectPanelStackDirection.effect(),
     });
     yield* put(openAction);
     if (pin) yield* pinRevealedPanel(workspaceId, openAction.payload.newTabId);

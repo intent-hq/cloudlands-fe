@@ -21,7 +21,10 @@ import {
 } from '../../agent-session/agent-session-slice';
 import { selectSelectedModel } from '../../model/model-selectors';
 import { openTab, openTabInNewRootColumn } from '../../panel-layout/panel-layout-slice';
-import { selectPanelOpenMode } from '../../user-preferences/user-preferences-selectors';
+import {
+  selectPanelOpenMode,
+  selectPanelStackDirection,
+} from '../../user-preferences/user-preferences-selectors';
 import { selectEffectiveDefaultProviderId } from '../../provider-catalog/provider-catalog-selectors';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
 import {
@@ -93,6 +96,7 @@ function* openCreatedAgent(
     yield* put(
       openTabInNewRootColumn(wsId, tab, {
         panelOpenMode: yield* selectPanelOpenMode.effect(),
+        panelStackDirection: yield* selectPanelStackDirection.effect(),
       }),
     );
   } else if (options.panelId) {

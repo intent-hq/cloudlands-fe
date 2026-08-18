@@ -57,7 +57,10 @@ import {
   resolveUserPanelCanvasResize,
 } from './panel-layout-width-provenance';
 import { findEquivalentPanelTab, type EquivalentPanelTab } from './panel-tab-identity';
-import type { PanelOpenMode } from '../user-preferences/user-preferences-slice';
+import type {
+  PanelOpenMode,
+  PanelStackDirection,
+} from '../user-preferences/user-preferences-slice';
 
 // ============================================================================
 // ID Generation Helpers (used in payload modifiers)
@@ -245,6 +248,7 @@ export const openTabInNewRootColumn = createAction(
       adaptiveFirstChat?: boolean;
       force?: boolean;
       panelOpenMode?: PanelOpenMode;
+      panelStackDirection?: PanelStackDirection;
       allowDuplicate?: boolean;
       newPanelId?: string;
       newTabId?: string;
@@ -258,6 +262,7 @@ export const openTabInNewRootColumn = createAction(
     adaptiveFirstChat: options?.adaptiveFirstChat ?? false,
     force: options?.force ?? false,
     panelOpenMode: options?.panelOpenMode ?? 'normal',
+    panelStackDirection: options?.panelStackDirection ?? 'right',
     ...(options?.allowDuplicate === undefined ? {} : { allowDuplicate: options.allowDuplicate }),
     sourcePanelId: options?.sourcePanelId,
     newPanelId: options?.newPanelId ?? generatePanelId(),
@@ -490,9 +495,10 @@ export const splitPanel = createAction(
 
 export const openBlankWorkingPanel = createAction(
   'panelLayout/openBlankWorkingPanel',
-  (wsId: string, timestamp?: number) => ({
+  (wsId: string, timestamp?: number, panelStackDirection: PanelStackDirection = 'right') => ({
     wsId,
     newPanelId: generatePanelId(),
+    panelStackDirection,
     timestamp: timestamp ?? Date.now(),
   }),
 );
@@ -508,15 +514,26 @@ export const closePanel = createAction(
 
 export const collapseToReusablePanel = createAction(
   'panelLayout/collapseToReusablePanel',
-  (wsId: string, timestamp?: number) => ({ wsId, timestamp: timestamp ?? Date.now() }),
+  (wsId: string, timestamp?: number, panelStackDirection: PanelStackDirection = 'right') => ({
+    wsId,
+    panelStackDirection,
+    timestamp: timestamp ?? Date.now(),
+  }),
 );
 
 export const setPanelPinned = createAction(
   'panelLayout/setPanelPinned',
-  (wsId: string, panelId: string, pinned: boolean, timestamp?: number) => ({
+  (
+    wsId: string,
+    panelId: string,
+    pinned: boolean,
+    timestamp?: number,
+    panelStackDirection: PanelStackDirection = 'right',
+  ) => ({
     wsId,
     panelId,
     pinned,
+    panelStackDirection,
     requestId: generateTabId(),
     timestamp: timestamp ?? Date.now(),
   }),
@@ -849,6 +866,7 @@ function collapseWorkspaceToReusablePanel(
   timestamp: number,
   preferredReusableId?: string,
   dropEmptyReusable = false,
+  panelStackDirection: PanelStackDirection = 'right',
 ): WorkspacePanelLayoutState {
   const order = getPanelOrder(workspace.root);
   const unpinnedIds = order.filter((panelId) => {
@@ -873,7 +891,11 @@ function collapseWorkspaceToReusablePanel(
   ) {
     return closePanelHelper(next, reusableId, timestamp);
   }
-  const root = movePanelToRootEdgeInLayout(next.root, reusableId, 'before');
+  const root = movePanelToRootEdgeInLayout(
+    next.root,
+    reusableId,
+    panelStackDirection === 'left' ? 'before' : 'after',
+  );
   return root ? { ...next, root } : next;
 }
 
@@ -1246,6 +1268,7 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
     adaptiveFirstChat,
     force,
     panelOpenMode,
+    panelStackDirection,
     newPanelId,
     newTabId,
     timestamp,
@@ -1268,7 +1291,7 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
   if (panelOpenMode === 'pin') {
     const newTab: PanelTab = { ...tab, id: newTabId };
     ws = saveToHistory(ws, timestamp);
-    ws = collapseWorkspaceToReusablePanel(ws, timestamp);
+    ws = collapseWorkspaceToReusablePanel(ws, timestamp, undefined, false, panelStackDirection);
     const reusablePanelId = getPanelOrder(ws.root).find((panelId) => {
       const panel = ws.panels[panelId];
       return panel && !panelIsPinned(panel);
@@ -1279,7 +1302,11 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
       const closed = panel.tabs
         .filter((oldTab) => oldTab.closable !== false)
         .map((oldTab) => ({ tab: { ...oldTab }, panelId: reusablePanelId, closedAt: timestamp }));
-      const root = movePanelToRootEdgeInLayout(ws.root, reusablePanelId, 'before');
+      const root = movePanelToRootEdgeInLayout(
+        ws.root,
+        reusablePanelId,
+        panelStackDirection === 'left' ? 'before' : 'after',
+      );
       ws = {
         ...ws,
         ...(root ? { root } : {}),
@@ -1310,7 +1337,12 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
       existingCanvasWidth,
       newPanelWidth,
     );
-    const root = movePanelToRootEdgeInLayout(appendedRoot, newPanelId, 'before') ?? appendedRoot;
+    const root =
+      movePanelToRootEdgeInLayout(
+        appendedRoot,
+        newPanelId,
+        panelStackDirection === 'left' ? 'before' : 'after',
+      ) ?? appendedRoot;
     ws = {
       ...ws,
       root,
@@ -1391,9 +1423,20 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
   const existingCanvasWidth =
     ws.canvasWidth ?? getAutomaticPanelLayoutCanvasWidth(ws.root, ws.panels, 'content');
   const newPanelWidth = getPanelCreationWidthForType(tab.type);
+  const appendedRoot = appendHorizontalPanelToLayout(
+    ws.root,
+    newPanelId,
+    existingCanvasWidth,
+    newPanelWidth,
+  );
   ws = {
     ...ws,
-    root: appendHorizontalPanelToLayout(ws.root, newPanelId, existingCanvasWidth, newPanelWidth),
+    root:
+      movePanelToRootEdgeInLayout(
+        appendedRoot,
+        newPanelId,
+        panelStackDirection === 'left' ? 'before' : 'after',
+      ) ?? appendedRoot,
     panels: {
       ...ws.panels,
       [newPanelId]: { id: newPanelId, tabs: [newTab], activeTabId: newTabId },
@@ -1973,7 +2016,7 @@ panelLayoutReducer.with(splitPanel, (state, { payload }) => {
   return setWorkspaceState(state, wsId, ws);
 });
 panelLayoutReducer.with(openBlankWorkingPanel, (state, { payload }) => {
-  const { wsId, newPanelId, timestamp } = payload;
+  const { wsId, newPanelId, timestamp, panelStackDirection } = payload;
   const current = restoreExpandedWorkspaceLayout(getWorkspaceState(state, wsId));
   const currentReusableId = getPanelOrder(current.root).find((panelId) => {
     const panel = current.panels[panelId];
@@ -1991,7 +2034,13 @@ panelLayoutReducer.with(openBlankWorkingPanel, (state, { payload }) => {
     });
   }
 
-  const ws = collapseWorkspaceToReusablePanel(saveToHistory(current, timestamp), timestamp);
+  const ws = collapseWorkspaceToReusablePanel(
+    saveToHistory(current, timestamp),
+    timestamp,
+    undefined,
+    false,
+    panelStackDirection,
+  );
   const reusablePanelId = getPanelOrder(ws.root).find((panelId) => {
     const panel = ws.panels[panelId];
     return panel && !panelIsPinned(panel);
@@ -2004,7 +2053,11 @@ panelLayoutReducer.with(openBlankWorkingPanel, (state, { payload }) => {
       panelId: reusablePanelId,
       closedAt: timestamp,
     }));
-    const root = movePanelToRootEdgeInLayout(ws.root, reusablePanelId, 'before');
+    const root = movePanelToRootEdgeInLayout(
+      ws.root,
+      reusablePanelId,
+      panelStackDirection === 'left' ? 'before' : 'after',
+    );
     return setWorkspaceState(state, wsId, {
       ...ws,
       ...(root ? { root } : {}),
@@ -2033,7 +2086,12 @@ panelLayoutReducer.with(openBlankWorkingPanel, (state, { payload }) => {
     existingCanvasWidth,
     DEFAULT_PANEL_WIDTH,
   );
-  const root = movePanelToRootEdgeInLayout(appendedRoot, newPanelId, 'before') ?? appendedRoot;
+  const root =
+    movePanelToRootEdgeInLayout(
+      appendedRoot,
+      newPanelId,
+      panelStackDirection === 'left' ? 'before' : 'after',
+    ) ?? appendedRoot;
   return setWorkspaceState(state, wsId, {
     ...ws,
     root,
@@ -2069,18 +2127,19 @@ panelLayoutReducer.with(closePanel, (state, { payload }) => {
   return setWorkspaceState(state, wsId, updatedWs);
 });
 panelLayoutReducer.with(collapseToReusablePanel, (state, { payload }) => {
-  const { wsId, timestamp } = payload;
+  const { wsId, timestamp, panelStackDirection } = payload;
   const ws = getWorkspaceState(state, wsId);
   const collapsed = collapseWorkspaceToReusablePanel(
     saveToHistory(ws, timestamp),
     timestamp,
     undefined,
     true,
+    panelStackDirection,
   );
   return collapsed === ws ? state : setWorkspaceState(state, wsId, collapsed);
 });
 panelLayoutReducer.with(setPanelPinned, (state, { payload }) => {
-  const { wsId, panelId, pinned, requestId, timestamp } = payload;
+  const { wsId, panelId, pinned, requestId, timestamp, panelStackDirection } = payload;
   const ws = getWorkspaceState(state, wsId);
   const panel = ws.panels[panelId];
   if (!panel || panel.pinned === pinned) return state;
@@ -2093,6 +2152,8 @@ panelLayoutReducer.with(setPanelPinned, (state, { payload }) => {
       },
       timestamp,
       panelId,
+      false,
+      panelStackDirection,
     );
     return setWorkspaceState(state, wsId, {
       ...unpinned,
