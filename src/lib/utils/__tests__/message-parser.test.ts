@@ -3,6 +3,7 @@ import {
   cleanAgentMessage,
   parseAgentMessage,
   parseSuggestedPrompts,
+  hasSuggestedPrompts,
   groupParsedBlocks,
   groupContentBlocks,
 } from '../messageParser';
@@ -1114,6 +1115,87 @@ Some trailing content.`;
 
     expect(result.prompts).toEqual([]);
     expect(result.cleanedContent).toBe('');
+  });
+
+  it('should accept a trailing --> closer with the remainder as the final prompt', () => {
+    const content = [
+      'Parked the rewrite.',
+      '',
+      '<!-- suggested-prompts',
+      'Resume the rewrite now.',
+      'Show the parked diff.',
+      'Leave rewrite parked for now. -->',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([
+      'Resume the rewrite now.',
+      'Show the parked diff.',
+      'Leave rewrite parked for now.',
+    ]);
+    expect(result.cleanedContent).toBe('Parked the rewrite.');
+    expect(hasSuggestedPrompts(content)).toBe(true);
+  });
+
+  it('should apply Label| and delay:N| handling to a trailing-closer remainder', () => {
+    const content = ['<!-- suggested-prompts', 'Run tests', 'Label|delay:30|Check build -->'].join(
+      '\n',
+    );
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual(['Run tests', 'Check build']);
+    expect(result.cleanedContent).toBe('');
+  });
+
+  it('should reject a trailing-closer remainder that looks like body text', () => {
+    const content = ['<!-- suggested-prompts', 'Run tests', 'A --> B -->'].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+    expect(hasSuggestedPrompts(content)).toBe(false);
+  });
+
+  it('should not close a block on an opener-shaped trailing-closer remainder', () => {
+    const content = [
+      '<!-- suggested-prompts',
+      'Some real response text here.',
+      '<!-- suggested-prompts -->',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+    expect(hasSuggestedPrompts(content)).toBe(false);
+  });
+
+  it('should not close an open block on an embedded --> mid-line', () => {
+    const content = ['<!-- suggested-prompts', 'A --> B', 'Run tests'].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+  });
+
+  it('should not close an open block on a trailing --> inside a fenced region', () => {
+    const content = [
+      '<!-- suggested-prompts',
+      'Run tests',
+      '```mermaid',
+      'flowchart LR',
+      '  A -->',
+      '```',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
   });
 });
 
