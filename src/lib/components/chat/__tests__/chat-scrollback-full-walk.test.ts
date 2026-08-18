@@ -15,8 +15,8 @@ import {
   selectHistorySegmentMeta,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import {
-  absorbPrependedHeightIntoSpacer,
   reconcileVirtualSpacer,
+  restateFrozenSpacers,
   shouldRequestOlderHistory,
   splitUnloadedRows,
 } from '../chat-scrollback-composition';
@@ -25,12 +25,11 @@ import {
 // Deterministic full-walk scrollback harness
 //
 // Simulates the ChatPanel scrollback pipeline end-to-end WITHOUT a DOM:
-// wire-shaped rows drive the REAL reducer + selectors, and (in later
-// increments) the real spacer math (splitUnloadedRows / reconcileVirtualSpacer
-// / absorbPrependedHeightIntoSpacer) against a simulated viewport with a
-// deterministic per-row height table. Ground truth is the full conversation,
-// so extent error, blank-viewport overlap, and exhaustion snap are all
-// directly assertable.
+// wire-shaped rows drive the REAL reducer + selectors and the real spacer
+// math (splitUnloadedRows / reconcileVirtualSpacer / restateFrozenSpacers)
+// against a simulated viewport with a deterministic per-row height table.
+// Ground truth is the full conversation, so extent error, blank-viewport
+// overlap, and exhaustion snap are all directly assertable.
 // ============================================================================
 
 /**
@@ -199,24 +198,51 @@ class WalkSim {
     if (Math.abs(offsetDifference) > 5) this.scrollTop += offsetDifference;
   }
 
+  /** The above/below unloaded split for the current segment state. */
+  currentSplit(): { above: number; below: number } {
+    const meta = this.meta;
+    return splitUnloadedRows({
+      totalMessages: this.conversation.length,
+      residentCount: meta.historyCount + meta.tailCount,
+      exhausted: meta.oldestReached,
+      startOrdinalEstimate: meta.startOrdinalEstimate,
+      gapToTail: meta.gapToTail,
+      holeRowsEstimate: meta.holeRowsEstimate,
+    });
+  }
+
   /**
    * One older-history page: capture anchor, prepend through the real
-   * reducer, frozen-phase absorption of the measured added height into the
-   * locked above-spacer, then anchor restore — the ChatPanel effect order.
+   * reducer, frozen-phase COUNT-derived restatement of both spacers
+   * (split x frozen EMA, with the ChatPanel effect's same-frame scrollTop
+   * compensation), then anchor restore — the ChatPanel effect order.
    */
   fetchOlderPage(): void {
     const end = this.fetchCursor;
     const start = Math.max(0, end - PAGE_ROWS);
     const page = this.conversation.slice(start, end);
-    const residentBefore = this.residentHeight();
     const anchor = this.captureAnchor();
     this.state = agentSessionReducer(this.state, prependHistoryMessages(AGENT_ID, page));
     this.fetchCursor = start;
     if (start === 0) {
       this.state = agentSessionReducer(this.state, setHistoryOldestReached(AGENT_ID));
     }
-    const added = this.residentHeight() - residentBefore;
-    if (this.above > 0) this.above = absorbPrependedHeightIntoSpacer(this.above, added);
+    if (this.above > 0 || this.below > 0) {
+      const restated = restateFrozenSpacers(this.currentSplit(), this.ema);
+      const previousAbove = this.above;
+      const previousBelow = this.below;
+      let compensation = 0;
+      // Above delta shifts content above the viewport — unless the viewport
+      // is parked INSIDE the above spacer (resident window must rise to it).
+      if (this.scrollTop >= previousAbove) compensation += restated.above - previousAbove;
+      const spacerTopDoc = restated.above + heightOf(this.history);
+      if (previousBelow > 0 && this.scrollTop > spacerTopDoc) {
+        compensation += restated.below - previousBelow;
+      }
+      this.above = restated.above;
+      this.below = restated.below;
+      if (compensation !== 0) this.scrollTop = Math.max(0, this.scrollTop + compensation);
+    }
     this.restoreAnchor(anchor);
   }
 
@@ -429,9 +455,10 @@ describe('full-walk scrollback harness', () => {
   // ── Frozen-phase walk: the QA repro ─────────────────────────────────────
   // Continuous scrolling keeps the interaction quiet-window open, so
   // runSpacerReconcile early-returns and re-arms for the WHOLE walk: the
-  // only spacer mutation is the frozen-phase absorb in the prepend effect.
-  // The forced boundary reconcile (exhausted && spacer > 0) is the first
-  // reconcile that actually applies — at the very top of the walk.
+  // only spacer mutation is the frozen-phase count-derived restatement in
+  // the prepend effect. The forced boundary reconcile (exhausted &&
+  // spacer > 0) is the first reconcile that actually applies — at the very
+  // top of the walk.
   it('continuous-scroll (frozen) walk: no blank viewport mid-walk, no thumb snap at exhaustion', () => {
     const conversation = buildConversation();
     const sim = new WalkSim(conversation, 20);
@@ -455,8 +482,12 @@ describe('full-walk scrollback harness', () => {
     const blankViolations: StepTrace[] = [];
     let steps = 0;
     const MAX_STEPS = 2000;
+    let previousAbove = sim.above;
+    let maxAboveGrowth = 0;
+    let maxStepThumbDelta = 0;
     while (!sim.meta.oldestReached && steps < MAX_STEPS) {
       steps += 1;
+      const thumbBeforeStep = sim.scrollTop / Math.max(1, sim.scrollHeight() - VIEWPORT_PX);
       sim.scrollTop = Math.max(0, sim.scrollTop - VIEWPORT_PX);
       // ONE page per step: a saga fetch + render + settle takes about as
       // long as a scroll tick, so the walk lands pages at fetch latency
@@ -468,7 +499,19 @@ describe('full-walk scrollback harness', () => {
         sim.fetchOlderPage();
       }
       // NO reconcile: the user is still scrolling, the quiet window never
-      // elapses (runSpacerReconcile re-arms). Spacer stays locked.
+      // elapses (runSpacerReconcile re-arms). EMA stays locked; the
+      // restatement in fetchOlderPage is the only spacer mutation.
+      maxAboveGrowth = Math.max(maxAboveGrowth, sim.above - previousAbove);
+      previousAbove = sim.above;
+      // Thumb movement per step beyond the user's own scroll: restatement
+      // must not fling the thumb around mid-walk (micro-jump guard). The
+      // user's own step moves the thumb by ~VIEWPORT_PX of extent.
+      const thumbAfterStep = sim.scrollTop / Math.max(1, sim.scrollHeight() - VIEWPORT_PX);
+      const userOwnDelta = VIEWPORT_PX / Math.max(1, sim.scrollHeight() - VIEWPORT_PX);
+      maxStepThumbDelta = Math.max(
+        maxStepThumbDelta,
+        Math.abs(thumbAfterStep - thumbBeforeStep) - userOwnDelta,
+      );
       if (sim.spacerOverlapPx() > 0) {
         const meta = sim.meta;
         blankViolations.push({
@@ -485,6 +528,15 @@ describe('full-walk scrollback harness', () => {
       }
     }
     expect(sim.meta.oldestReached).toBe(true);
+
+    // Monotonic convergence: the frozen above spacer never grows mid-walk.
+    expect(maxAboveGrowth, `above spacer grew ${maxAboveGrowth}px mid-walk`).toBeLessThanOrEqual(0);
+    // No micro-jumps: per-step thumb movement beyond the user's own scroll
+    // stays within a few percent of the bar.
+    expect(
+      maxStepThumbDelta,
+      `restatement moved the thumb ${(maxStepThumbDelta * 100).toFixed(1)}% beyond the user's own step`,
+    ).toBeLessThan(0.05);
 
     // Exhaustion boundary: the effect forces a reconcile (target exact 0 for
     // the above spacer). Measure the apparent thumb position across it — a
@@ -514,10 +566,10 @@ describe('full-walk scrollback harness', () => {
   // Symptom 1 in isolation: the viewport parked INSIDE the above spacer
   // (a short thumb nudge / fast flick still classified serial — no anchor
   // row is visible, so no restore repositions the viewport). Serial pages
-  // keep landing at the resident top edge; once cap pruning starts the
-  // frozen-phase absorb measures net-zero added height, the spacer never
-  // shrinks, the resident window never rises to meet the viewport — blank
-  // space for the whole hydration.
+  // land at the resident top edge; the count-derived restatement shrinks
+  // the above spacer with every page (no scrollTop compensation while the
+  // viewport is inside it), so the resident window rises to meet the
+  // parked viewport — the blank clears within one landed page.
   it('viewport parked inside the spacer is reached by landing pages (no persistent blank)', () => {
     const conversation = buildConversation();
     const sim = new WalkSim(conversation, 20);
@@ -557,5 +609,8 @@ describe('full-walk scrollback harness', () => {
       `viewport still blank after ${pages} landed pages (oldestReached=${sim.meta.oldestReached}); ` +
         `trace: ${JSON.stringify(trace)}`,
     ).toBe(0);
+    // The blank must clear within ONE landed page (a page's worth of rows
+    // far exceeds the serial band the viewport can park in).
+    expect(pages, `blank persisted through ${pages} pages: ${JSON.stringify(trace)}`).toBe(1);
   });
 });

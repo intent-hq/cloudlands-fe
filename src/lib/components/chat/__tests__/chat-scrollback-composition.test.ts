@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import type { AgentMessage } from '$shared/types';
 import {
-  absorbPrependedHeightIntoSpacer,
   classifyScrollbackGesture,
   composeTranscript,
   estimateSeekLandingStartOrdinal,
@@ -10,6 +9,7 @@ import {
   isConversationStartLoaded,
   mapScrollTopToOrdinal,
   reconcileVirtualSpacer,
+  restateFrozenSpacers,
   SCROLLBACK_PAGE_ROWS,
   SCROLLBACK_SEEK_NEAR_PAGES,
   seekLandingScrollTop,
@@ -487,30 +487,46 @@ describe('smoothRowHeightEstimate (EMA)', () => {
   });
 });
 
-describe('absorbPrependedHeightIntoSpacer (frozen-phase invariant)', () => {
-  it('keeps total extent constant through a multi-page chain with wildly varying row heights', () => {
-    // Locked spacer 17000px; three pages land whose REAL heights vary
-    // wildly (tiny, average, huge). Each prepend adds its real height to
-    // the resident content and shrinks the locked spacer by exactly the
-    // same amount — total extent never moves during the chain.
-    let spacer = 17000;
-    let residentHeight = 3000;
-    const totalExtentBefore = spacer + residentHeight;
-    for (const pageHeight of [180, 1000, 5200]) {
-      residentHeight += pageHeight;
-      spacer = absorbPrependedHeightIntoSpacer(spacer, pageHeight);
-      expect(spacer + residentHeight).toBe(totalExtentBefore);
+describe('restateFrozenSpacers (frozen-phase invariant)', () => {
+  it('derives both spacers from the split counts x the frozen EMA', () => {
+    expect(restateFrozenSpacers({ above: 100, below: 40 }, 72)).toEqual({
+      above: 7200,
+      below: 2880,
+    });
+  });
+
+  it('shrinks the above spacer monotonically through a cap-pruned chain', () => {
+    // Cap-pruned regime: each page moves rows from above into the hole, so
+    // measured resident height is ~constant — but the counts still move.
+    // The restatement tracks the counts with a locked EMA, so above shrinks
+    // monotonically while below grows, page after page.
+    const ema = 72;
+    let previous = restateFrozenSpacers({ above: 600, below: 0 }, ema);
+    for (let page = 1; page <= 3; page++) {
+      const next = restateFrozenSpacers({ above: 600 - page * 200, below: page * 200 }, ema);
+      expect(next.above).toBeLessThan(previous.above);
+      expect(next.below).toBeGreaterThan(previous.below);
+      expect(next.above + next.below).toBe(previous.above + previous.below);
+      previous = next;
     }
-    expect(spacer).toBe(17000 - 180 - 1000 - 5200);
+    expect(previous.above).toBe(0);
   });
 
-  it('floors at 0 when real rows outgrow the locked estimate', () => {
-    expect(absorbPrependedHeightIntoSpacer(500, 800)).toBe(0);
+  it('zeroes exactly at the boundaries (exhausted split / closed gap)', () => {
+    expect(restateFrozenSpacers({ above: 0, below: 120 }, 72)).toEqual({ above: 0, below: 8640 });
+    expect(restateFrozenSpacers({ above: 0, below: 0 }, 72)).toEqual({ above: 0, below: 0 });
   });
 
-  it('ignores non-positive added heights (no re-derive, no growth)', () => {
-    expect(absorbPrependedHeightIntoSpacer(1000, 0)).toBe(1000);
-    expect(absorbPrependedHeightIntoSpacer(1000, -50)).toBe(1000);
+  it('clamps a degenerate/missing EMA into the row-height bounds', () => {
+    expect(restateFrozenSpacers({ above: 10, below: 0 }, null)).toEqual({
+      above: 10 * VIRTUAL_ROW_HEIGHT_MIN_PX,
+      below: 0,
+    });
+    expect(restateFrozenSpacers({ above: 10, below: 0 }, 10_000)).toEqual({
+      above: 10 * VIRTUAL_ROW_HEIGHT_MAX_PX,
+      below: 0,
+    });
+    expect(restateFrozenSpacers({ above: -5, below: -2 }, 72)).toEqual({ above: 0, below: 0 });
   });
 });
 

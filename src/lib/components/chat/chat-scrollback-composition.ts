@@ -278,19 +278,30 @@ export function smoothRowHeightEstimate(
 }
 
 /**
- * Frozen-phase invariant: while a scroll gesture / paging chain is active
- * the spacer height is LOCKED — rows landing above the viewport add real
- * height, so the locked spacer shrinks by exactly that added height
- * (floor 0) and the TOTAL scroll extent stays constant through the chain.
- * The estimate is never re-derived here; that only happens at reconcile
+ * Frozen-phase restatement: while a scroll gesture / paging chain is active
+ * the row-height EMA is LOCKED, and every history-segment change restates
+ * both spacers COUNT-derived — the unloaded above/below split x the frozen
+ * EMA — instead of absorbing measured height deltas. Measured absorption is
+ * blind to cap pruning: once the segment sits at its cap, a prepend prunes
+ * as many rows as it adds (net measured height ~0), which left the above
+ * spacer frozen at a stale height while the true above-row count shrank
+ * with every page — the viewport walked into blank spacer territory
+ * mid-chain and the deferred correction landed as a single thumb snap at
+ * the exhaustion boundary. Counts see pruning exactly, the split's
+ * boundaries are exact (`exhausted` zeroes above, a closed gap zeroes
+ * below), and the frozen EMA keeps the restatement stable across a rapid
+ * landing chain. The estimate itself is only re-derived at reconcile
  * points (`reconcileVirtualSpacer`) or boundaries.
  */
-export function absorbPrependedHeightIntoSpacer(
-  lockedSpacerHeight: number,
-  addedResidentHeight: number,
-): number {
-  if (addedResidentHeight <= 0) return lockedSpacerHeight;
-  return Math.max(0, lockedSpacerHeight - Math.round(addedResidentHeight));
+export function restateFrozenSpacers(
+  split: { above: number; below: number },
+  frozenRowHeightEma: number | null,
+): { above: number; below: number } {
+  const rowHeight = clampRowHeight(frozenRowHeightEma ?? Number.NaN);
+  return {
+    above: Math.round(Math.max(0, split.above) * rowHeight),
+    below: Math.round(Math.max(0, split.below) * rowHeight),
+  };
 }
 
 export interface VirtualSpacerReconcileParams extends VirtualSpacerParams {

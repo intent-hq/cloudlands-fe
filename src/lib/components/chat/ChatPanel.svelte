@@ -153,12 +153,12 @@
   import { deriveWizardPendingQuestions } from './questions/wizard-gate';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
-    absorbPrependedHeightIntoSpacer,
     classifyScrollbackGesture,
     composeTranscript,
     isConversationStartLoaded,
     mapScrollTopToOrdinal,
     reconcileVirtualSpacer,
+    restateFrozenSpacers,
     shouldRequestOlderHistory,
     splitUnloadedRows,
     VIRTUAL_ROW_HEIGHT_MIN_PX,
@@ -1755,11 +1755,12 @@
   // or boundaries:
   //
   // - FROZEN during interaction: while scroll events or older-history
-  //   fetches are active the spacer height is locked. History prepends add
-  //   real height at the top, and the absorption effect below subtracts
-  //   exactly that height from the locked spacer (floor 0), keeping
-  //   scrollHeight — and thus the thumb size/position — constant through a
-  //   paging chain (absorbPrependedHeightIntoSpacer).
+  //   fetches are active the row-height EMA is locked. Every history-segment
+  //   change restates both spacers count-derived — the unloaded above/below
+  //   split x the frozen EMA (restateFrozenSpacers) — so cap pruning (which
+  //   keeps measured height constant but moves rows out of the above
+  //   extent) still shrinks the above spacer monotonically through a paging
+  //   chain, with same-frame scrollTop compensation.
   // - RECONCILED when quiet: no scroll events and no fetch in flight for
   //   SPACER_QUIET_MS. The measured average row height folds into a
   //   slow-moving EMA, and the retarget applies only past a hysteresis
@@ -1901,50 +1902,73 @@
     });
   });
 
-  // Frozen-phase absorption: a history prepend adds real height at the top
-  // while the spacer is locked — subtract the measured added height from the
-  // spacer in the same update cycle (floor 0), so the total extent stays
-  // constant through the chain. The anchor restore in the prepend effect
-  // below then finds the anchor at an unchanged document offset (rows added
-  // ≙ spacer shrunk) and is a no-op.
-  let absorbedHistoryLength = -1;
-  let absorbedHistoryFirstId: string | undefined;
+  // Frozen-phase restatement: any history-segment change (prepend, cap
+  // pruning, gap refill) restates BOTH spacers COUNT-derived — the unloaded
+  // above/below split x the FROZEN row-height EMA (restateFrozenSpacers) —
+  // in the same flush as the row change. The old measured-delta absorption
+  // was blind to cap pruning: a capped prepend adds about as much height as
+  // it prunes (and keeps the segment length constant), so the above spacer
+  // froze at a stale height while the true above count shrank with every
+  // page — blank viewport mid-chain, then one big thumb snap at the forced
+  // exhaustion reconcile. Counts see pruning exactly, so the above spacer
+  // shrinks monotonically toward the boundary; the EMA is only refreshed at
+  // quiet reconcile points, keeping the restatement stable across a chain.
+  let restatedHistoryLength = -1;
+  let restatedHistoryFirstId: string | undefined;
+  let restatedHistoryLastId: string | undefined;
   $effect.pre(() => {
     const historyLength = $agentHistoryMessages$.length;
     const firstId = $agentHistoryMessages$[0]?.id;
-    if (historyLength === absorbedHistoryLength && firstId === absorbedHistoryFirstId) return;
-    const grew = absorbedHistoryLength !== -1 && historyLength > absorbedHistoryLength;
-    // Prepends change the segment's first row; a pure append keeps it — the
-    // added height then absorbs into the BELOW spacer (open hole shrinking)
-    // instead of the above one.
-    const isAppend = grew && firstId === absorbedHistoryFirstId;
-    absorbedHistoryLength = historyLength;
-    absorbedHistoryFirstId = firstId;
+    const lastId = $agentHistoryMessages$[historyLength - 1]?.id;
+    if (
+      historyLength === restatedHistoryLength &&
+      firstId === restatedHistoryFirstId &&
+      lastId === restatedHistoryLastId
+    ) {
+      return;
+    }
+    const isFirstRun = restatedHistoryLength === -1;
+    restatedHistoryLength = historyLength;
+    restatedHistoryFirstId = firstId;
+    restatedHistoryLastId = lastId;
     const container = untrack(() => scrollContainer);
-    if (!grew || !container) return;
+    if (isFirstRun || !container) return;
     untrack(() => {
-      // A seek landing REPLACES the segment (not a prepend into the frozen
+      // A seek landing REPLACES the segment (not a change to the frozen
       // extent): the seek settle handler sizes both spacers itself.
       if (seekLandingPending || $fetchingHistorySeek$) return;
-      const targetIsBelow = isAppend && virtualSpacerBelowHeight > 0;
-      if (!targetIsBelow && virtualSpacerHeight <= 0) return;
-      const residentHeightBefore =
-        container.scrollHeight - virtualSpacerHeight - virtualSpacerBelowHeight;
+      // No spacer active: nothing frozen to restate — the quiet reconcile
+      // owns sizing from scratch.
+      if (virtualSpacerHeight <= 0 && virtualSpacerBelowHeight <= 0) return;
+      if (($transcriptSnapshotMeta$?.totalMessages ?? 0) <= 0) return;
+      const restated = restateFrozenSpacers(currentUnloadedSplit(), spacerRowHeightEma);
+      const previousAbove = virtualSpacerHeight;
+      const previousBelow = virtualSpacerBelowHeight;
+      if (restated.above === previousAbove && restated.below === previousBelow) return;
+      const previousScrollTop = container.scrollTop;
+      // Same-frame scrollTop compensation (the reconcile pattern): an above
+      // delta shifts content above the viewport — EXCEPT when the viewport
+      // is parked INSIDE the above spacer, where scrollTop must stay put so
+      // the resident window rises toward it (rows materialize at the
+      // resident edge, not at the viewport's ordinal). A below delta shifts
+      // content above the viewport only when the viewport sits below the
+      // hole. The prepended rows' own height is handled by the anchor
+      // restore effect below, exactly as before.
+      let compensation = 0;
+      if (previousScrollTop >= previousAbove) compensation += restated.above - previousAbove;
+      if (restated.below !== previousBelow && belowSpacerEl) {
+        const spacerTopDoc =
+          belowSpacerEl.getBoundingClientRect().top -
+          container.getBoundingClientRect().top +
+          container.scrollTop;
+        if (previousScrollTop > spacerTopDoc) compensation += restated.below - previousBelow;
+      }
+      virtualSpacerHeight = restated.above;
+      virtualSpacerBelowHeight = restated.below;
+      if (compensation === 0) return;
       tick().then(() => {
         if (isComponentDestroyed || !scrollContainer) return;
-        const added =
-          scrollContainer.scrollHeight -
-          virtualSpacerHeight -
-          virtualSpacerBelowHeight -
-          residentHeightBefore;
-        if (targetIsBelow) {
-          virtualSpacerBelowHeight = absorbPrependedHeightIntoSpacer(
-            virtualSpacerBelowHeight,
-            added,
-          );
-        } else {
-          virtualSpacerHeight = absorbPrependedHeightIntoSpacer(virtualSpacerHeight, added);
-        }
+        scrollContainer.scrollTop = Math.max(0, previousScrollTop + compensation);
       });
     });
   });
