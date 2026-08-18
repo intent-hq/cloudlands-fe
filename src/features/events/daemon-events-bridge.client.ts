@@ -196,6 +196,7 @@ import { markWorkspaceSeenIfViewing } from '$features/workspace/mark-workspace-s
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import { ensureAgentSession } from '$features/agent/agent-read-service';
+import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
 import {
   getPendingAgentDeletion,
   isAgentDeletionPending,
@@ -242,7 +243,6 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import { mapDaemonMcpState } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
-import { loadChatTranscript } from '$features/agent/chat-read-service';
 import {
   hydrateAgentQueue,
   noteAgentQueueEventSnapshotApplied,
@@ -315,6 +315,41 @@ const streamsByAgent = new Map<string, StreamState>();
  * `handleStreamEndEvent`.
  */
 const previewTurnMessageIdByAgent = new Map<string, string>();
+
+/**
+ * True once this bridge has delivered an `agent:last-message` event — the
+ * §6.5 content-bearing companion the daemon emits alongside EVERY
+ * `agent:message`. While false (older daemon), the lean id-only
+ * `agent:message` echo falls back to a light `agent.get` refresh
+ * (`refreshAgentSessionCoalesced`) so previews still converge; once true, the
+ * companion carries the preview projections directly and the fallback
+ * retires. Reset with the rest of the routing state (the next daemon after a
+ * backend switch may be older).
+ */
+let daemonEmitsLastMessage = false;
+
+/**
+ * Single-flight + trailing-coalesce wrapper over `ensureAgentSession` for the
+ * `agent:message` back-compat refresh (per the event-driven refetch rule):
+ * triggers during an in-flight fetch collapse into at most ONE follow-up
+ * fetch after it settles. `ensureAgentSession` never rejects, so the chain
+ * always advances.
+ */
+const agentSessionRefreshInFlight = new Set<string>();
+const agentSessionRefreshFollowUpWanted = new Set<string>();
+function refreshAgentSessionCoalesced(agentId: string): void {
+  if (agentSessionRefreshInFlight.has(agentId)) {
+    agentSessionRefreshFollowUpWanted.add(agentId);
+    return;
+  }
+  agentSessionRefreshInFlight.add(agentId);
+  void ensureAgentSession(agentId).then(() => {
+    agentSessionRefreshInFlight.delete(agentId);
+    if (agentSessionRefreshFollowUpWanted.delete(agentId)) {
+      refreshAgentSessionCoalesced(agentId);
+    }
+  });
+}
 
 /**
  * Debounce timers for changes-slice refresh per workspace. Change events can
@@ -1284,6 +1319,98 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   // open modal listing this agent re-checks agent.listInterrupted (debounced;
   // no-op when the modal is closed or the agent is not listed).
   notifyInterruptedAgentUpdated(agentId);
+}
+
+/**
+ * Parse the persisted `lastToolUse` preview carried on `agent:last-message`
+ * (§6.5) / `AgentLite` (§5.5): `{ name, input?, inputTruncated?, inputBytes? }`
+ * with `input` bounded by the slim-projection budget. `name` is required and
+ * non-empty; a payload diverging from the documented shape is rejected whole.
+ */
+function readPersistedLastToolUse(
+  value: unknown,
+):
+  | { name: string; input?: Record<string, unknown>; inputTruncated?: boolean; inputBytes?: number }
+  | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { name, input, inputTruncated, inputBytes } = value as {
+    name?: unknown;
+    input?: unknown;
+    inputTruncated?: unknown;
+    inputBytes?: unknown;
+  };
+  if (typeof name !== 'string' || name.trim().length === 0) return undefined;
+  if (
+    input !== undefined &&
+    (typeof input !== 'object' || input === null || Array.isArray(input))
+  ) {
+    return undefined;
+  }
+  if (inputTruncated !== undefined && typeof inputTruncated !== 'boolean') return undefined;
+  if (inputBytes !== undefined && typeof inputBytes !== 'number') return undefined;
+  return {
+    name,
+    ...(input !== undefined ? { input: input as Record<string, unknown> } : {}),
+    ...(inputTruncated !== undefined ? { inputTruncated } : {}),
+    ...(inputBytes !== undefined ? { inputBytes } : {}),
+  };
+}
+
+/**
+ * `agent:last-message` (§6.5, additive) — the content-bearing companion the
+ * daemon emits alongside EVERY `agent:message`, carrying the persisted
+ * preview projections the write just computed (the same values the §5.5
+ * `AgentLite` projection serves). A user/assistant row's echo carries
+ * `lastMessageRole` + `lastMessageId` plus its role-specific preview —
+ * `lastAgentResponse` (assistant) or `lastUserMessage` (user) — and
+ * `lastToolUse`, whose ABSENCE means the persisted preview is now cleared
+ * (the newest message carries no tool call). System (and other) rows keep the
+ * base id-only echo shape (the preview columns were not touched), so they
+ * only flip the daemon-capability flag. The apply is a metadata-only
+ * `updateSession` merge — ZERO follow-up RPCs, and a loaded transcript is
+ * never clobbered (`updateSession` leaves `messages` untouched). `hasUnread`
+ * is re-derived from the freshness fields so the unread badge converges
+ * without an `agent.get` (same derivation as wire ingest, monorepo#1597).
+ */
+function handleAgentLastMessageEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  if (typeof agentId !== 'string' || agentId.length === 0) return;
+  // The daemon emits this companion event: retire the `agent:message`
+  // back-compat `agent.get` refresh for the rest of this bridge's lifetime.
+  daemonEmitsLastMessage = true;
+  const role = data.role;
+  if (role !== 'user' && role !== 'assistant') return;
+  const updates: Partial<AgentSession> = {
+    lastToolUse: readPersistedLastToolUse(data.lastToolUse),
+  };
+  if (data.lastMessageRole === 'user' || data.lastMessageRole === 'assistant') {
+    updates.lastMessageRole = data.lastMessageRole;
+  }
+  if (typeof data.lastMessageId === 'string' && data.lastMessageId.length > 0) {
+    updates.lastMessageId = data.lastMessageId;
+  }
+  if (typeof data.lastAgentResponse === 'string') {
+    updates.lastAgentResponse = data.lastAgentResponse;
+  }
+  if (typeof data.lastUserMessage === 'string') {
+    updates.lastUserMessage = data.lastUserMessage;
+  }
+  withHydratedSession(agentId, () => {
+    const session = appStore.state.agentSessions?.byAgentId[agentId];
+    if (!session) return;
+    appStore.dispatch(
+      updateSession(agentId, {
+        ...updates,
+        hasUnread: deriveAgentHasUnread({
+          lastMessageRole: updates.lastMessageRole ?? session.lastMessageRole,
+          lastMessageId: updates.lastMessageId ?? session.lastMessageId,
+          metadata: session.metadata as { lastSeenMessageId?: string } | undefined,
+        }),
+      }),
+    );
+  });
 }
 
 /**
@@ -2333,7 +2460,12 @@ function handleAgentDeleteScheduledEvent(event: WorkspaceEvent, workspaceId: str
   // on the row) can resolve after it; without an entry that stale read would
   // resurrect the agent. Snapshot-less entries restore via the cancel
   // handler's reconcile refetch instead of an instant snapshot.
-  registerAgentDeleteTombstone(workspaceId, agentId, tombstoneClearDelayMs(data?.deleteAt), snapshot);
+  registerAgentDeleteTombstone(
+    workspaceId,
+    agentId,
+    tombstoneClearDelayMs(data?.deleteAt),
+    snapshot,
+  );
 }
 
 /**
@@ -3264,38 +3396,28 @@ export function routeDaemonEventsNotification(
   if (type === 'agent:attention-requested') {
     handleAgentUpdatedEvent(event);
   }
-  // STAB-22: agent:message events with role="assistant" should trigger a
-  // conversation refetch so AgentCard preview updates for watched agents whose
-  // tab was never opened. The event payload is { agentId, messageId, role }.
-  // Guard for role="assistant": refetch when the session is missing or the
-  // persisted row's messageId is absent from the transcript (checking both
-  // `id` and `appMessageId`, matching the message-dedup merge identity) —
-  // this self-heals transcripts that hydrated before the row persisted
-  // (#1019). When the event carries no messageId, only refetch for an
-  // empty session (avoid redundant fetches for already-hydrated transcripts).
-  // QUEUED-MESSAGES: also handle role="user" — if the session is missing or its
-  // messages do not contain the messageId, refetch to fold in dequeued and
-  // agent-to-agent messages.
-  if (type === 'agent:message') {
-    const { agentId, messageId, role } = event.data ?? {};
-    if (typeof agentId === 'string') {
-      if (role === 'assistant') {
-        const session = appStore.state.agentSessions.byAgentId[agentId];
-        const hasMessage =
-          typeof messageId === 'string'
-            ? (session?.messages.some((m) => m.id === messageId || m.appMessageId === messageId) ??
-              false)
-            : (session?.messages.length ?? 0) > 0;
-        if (!session || !hasMessage) {
-          void loadChatTranscript(agentId);
-        }
-      } else if (role === 'user' && typeof messageId === 'string') {
-        const session = appStore.state.agentSessions.byAgentId[agentId];
-        // Trigger refetch if session doesn't exist OR messageId is not present
-        if (!session || !session.messages.some((m) => m.id === messageId)) {
-          void loadChatTranscript(agentId);
-        }
-      }
+  // `agent:last-message` (§6.5, additive) — content-bearing companion of
+  // every `agent:message`: applies the persisted preview projections straight
+  // off the payload (ZERO follow-up RPCs) and marks the daemon as emitting
+  // the event, retiring the back-compat refresh below. Returns early: the
+  // paired `agent:message` already records the row in the activity timeline,
+  // so the companion falling through would double-count every message.
+  if (type === 'agent:last-message') {
+    handleAgentLastMessageEvent(event);
+    return;
+  }
+  // STAB-22 (rewired): `agent:message` no longer triggers a transcript fetch.
+  // Non-viewed agents' previews ride `agent:last-message` (above) and viewed
+  // transcripts ride the standing `chat.subscribe` delta stream (§7.1) —
+  // paging the whole conversation per persisted row multiplied every message
+  // into O(pages) `agent.getConversation` calls. Back-compat: until the
+  // daemon proves it emits the companion event, fall back to a light
+  // metadata-only `agent.get` refresh (single-flight + trailing-coalesce,
+  // transcript preserved) so previews on older daemons still converge.
+  if (type === 'agent:message' && !daemonEmitsLastMessage) {
+    const { agentId, role } = event.data ?? {};
+    if (typeof agentId === 'string' && (role === 'assistant' || role === 'user')) {
+      refreshAgentSessionCoalesced(agentId);
     }
   }
   // Process-queue events (§6.5): agent:process:queued sets the hint,
@@ -3420,10 +3542,13 @@ export async function refreshDaemonEventsAfterReconnect(
     const activeAgentId =
       state.workspaceAgents?.byWorkspaceId[activeWorkspaceId]?.activeAgentId ?? null;
     if (activeAgentId) {
-      void loadChatTranscript(activeAgentId);
-      // Queue rows drained while the connection was down never re-emit
-      // `agent:queue:updated`; reconcile the mirror from `agent.getQueue`
-      // (monorepo#1749).
+      // NO transcript fetch here: the standing `chat.subscribe` registration
+      // re-registers on the same reconnect signal and its fresh seq-0
+      // snapshot (§7.1) IS the reconciled transcript — an eager
+      // `agent.getConversation` page walk would duplicate that transfer on
+      // every reconnect. Queue rows drained while the connection was down
+      // never re-emit `agent:queue:updated`; reconcile the mirror from
+      // `agent.getQueue` (monorepo#1749).
       void hydrateAgentQueue(activeAgentId);
     }
   }
@@ -3432,6 +3557,9 @@ export async function refreshDaemonEventsAfterReconnect(
 export function disposeDaemonEventsRoutingState(): void {
   streamsByAgent.clear();
   previewTurnMessageIdByAgent.clear();
+  daemonEmitsLastMessage = false;
+  agentSessionRefreshInFlight.clear();
+  agentSessionRefreshFollowUpWanted.clear();
   for (const timer of changesRefreshTimersByWorkspace.values()) {
     clearTimeout(timer);
   }

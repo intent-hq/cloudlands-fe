@@ -102,7 +102,7 @@ describe('chatReadService (fake seam, real store)', () => {
     await loadChatTranscript(AGENT);
 
     expect(agentsApi.get).toHaveBeenCalledWith(AGENT);
-    expect(agentsApi.getConversation).toHaveBeenCalledWith(AGENT, 200, undefined);
+    expect(agentsApi.getConversation).toHaveBeenCalledWith(AGENT, 50, undefined);
     expect(selectAgentMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual(['m1']);
   });
 
@@ -373,7 +373,7 @@ describe('chatReadService (fake seam, real store)', () => {
   // has > 50 messages. Root cause: loadChatTranscript was using
   // chat.subscribeSnapshot (which returns only the newest ~50 messages, one
   // page) instead of agent.getConversation with pagination. Fix: page through
-  // getConversation with limit=200 per page, looping on nextToken until the
+  // getConversation with limit=50 per page, looping on nextToken until the
   // complete conversation is assembled.
   it('pages through getConversation to assemble full transcript (>50 messages regression)', async () => {
     const agentId = 'agent-pagination';
@@ -405,9 +405,9 @@ describe('chatReadService (fake seam, real store)', () => {
 
     // Verify three calls with correct pagination.
     expect(agentsApi.getConversation).toHaveBeenCalledTimes(3);
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(1, agentId, 200, undefined);
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(2, agentId, 200, 'page2');
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(3, agentId, 200, 'page3');
+    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(1, agentId, 50, undefined);
+    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(2, agentId, 50, 'page2');
+    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(3, agentId, 50, 'page3');
 
     // All 125 messages should be in the store, oldest-first.
     const stored = selectAgentMessages.select(appStore.state, agentId);
@@ -423,12 +423,12 @@ describe('chatReadService (fake seam, real store)', () => {
     const agentId = 'agent-pagination-cap';
     agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
 
-    // An 800-message conversation in 200-message pages, newest page first:
-    // Page 1 (no token): messages 601-800, Page 2: 401-600, Page 3: 201-400.
-    // Page 3 still advertises nextToken="page4" — the bound must stop there
-    // (the page-4 mock is deliberately NOT queued; an unbounded pager would
-    // fetch the afterEach default empty page instead and fail the call-count
-    // assertion below).
+    // An 800-message conversation served in 200-message pages, newest page
+    // first: Page 1 (no token): messages 601-800, Page 2: 401-600, Page 3:
+    // 201-400. Page 3 still advertises nextToken="page4" — the bound must stop
+    // there (the page-4 mock is deliberately NOT queued; an unbounded pager
+    // would fetch the afterEach default empty page instead and fail the
+    // call-count assertion below).
     const page = (start: number) =>
       Array.from({ length: 200 }, (_, i) => makeMessage(`msg-${start + i}`, `m ${start + i}`));
     agentsApi.getConversation
@@ -440,7 +440,7 @@ describe('chatReadService (fake seam, real store)', () => {
 
     // 3 pages accumulate 600 >= 500 — the fourth page is never requested.
     expect(agentsApi.getConversation).toHaveBeenCalledTimes(3);
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(3, agentId, 200, 'page3');
+    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(3, agentId, 50, 'page3');
 
     // The store keeps the newest 500 (the slice's prune cap), oldest-first.
     const stored = selectAgentMessages.select(appStore.state, agentId);

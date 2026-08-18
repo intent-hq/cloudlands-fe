@@ -113,9 +113,10 @@ vi.mock('$features/workspace/mark-workspace-seen', () => ({
 // The bridge now dispatches refreshWorkspaceSubscriptionEntriesRequested instead
 // of calling the service directly — the saga handles the actual fetch. No mock needed.
 
-// RESUB-1: mock chat-read-service so the bridge's reconnect refresh path can
-// assert `loadChatTranscript(activeAgentId)` fires without touching the real
-// `appClient.agents.getConversation` seam.
+// Negative seam: the bridge must NEVER page a transcript (reconnect rides the
+// standing chat.subscribe seq-0 snapshot; agent:message rides
+// agent:last-message / the light agent.get fallback). The mock keeps the spy
+// observable so the suites can assert it stays uncalled.
 const { loadChatTranscriptSpy } = vi.hoisted(() => ({
   loadChatTranscriptSpy: vi.fn(() => Promise.resolve()),
 }));
@@ -7428,7 +7429,7 @@ describe('daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle trigg
   });
 });
 
-describe('daemonEventsBridge (STAB-22 — agent:message triggers transcript hydration for unopened agents)', () => {
+describe('daemonEventsBridge (agent:last-message §6.5 — preview projections applied with zero RPCs)', () => {
   beforeAll(() => {
     appStore.init();
   });
@@ -7439,10 +7440,227 @@ describe('daemonEventsBridge (STAB-22 — agent:message triggers transcript hydr
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
     loadChatTranscriptSpy.mockClear();
+    ensureAgentSessionSpy.mockClear();
   });
 
-  it('agent:message with role=assistant triggers loadChatTranscript when session has no messages', async () => {
-    // Seed a session with no messages (unopened agent)
+  it('applies ALL preview projections from an assistant echo with zero follow-up RPCs', async () => {
+    seedSession({
+      lastAgentResponse: 'old response',
+      lastUserMessage: 'old user line',
+      lastMessageRole: 'user',
+    });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a1',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a1',
+        lastAgentResponse: 'fresh assistant text',
+        lastToolUse: { name: 'view', input: { path: 'src/a.ts' } },
+      }),
+    );
+    await flush();
+
+    const session = appStore.state.agentSessions.byAgentId[AGENT]!;
+    expect(session.lastAgentResponse).toBe('fresh assistant text');
+    expect(session.lastMessageRole).toBe('assistant');
+    expect(session.lastMessageId).toBe('msg-a1');
+    expect(session.lastToolUse).toEqual({ name: 'view', input: { path: 'src/a.ts' } });
+    // ZERO RPCs: no transcript page walk, no agent.get refresh.
+    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+    expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
+  });
+
+  it('applies the user-row echo (lastUserMessage + role) and derives hasUnread=false', async () => {
+    seedSession({
+      lastAgentResponse: 'prior response',
+      lastMessageRole: 'assistant',
+      lastMessageId: 'msg-a0',
+      hasUnread: true,
+    });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-u1',
+        role: 'user',
+        lastMessageRole: 'user',
+        lastMessageId: 'msg-u1',
+        lastUserMessage: 'follow-up question',
+      }),
+    );
+    await flush();
+
+    const session = appStore.state.agentSessions.byAgentId[AGENT]!;
+    expect(session.lastUserMessage).toBe('follow-up question');
+    expect(session.lastMessageRole).toBe('user');
+    expect(session.lastMessageId).toBe('msg-u1');
+    // Newest message is the user's own — not unread.
+    expect(session.hasUnread).toBe(false);
+    // The prior assistant preview is untouched (metadata-only merge).
+    expect(session.lastAgentResponse).toBe('prior response');
+    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+    expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
+  });
+
+  it('derives hasUnread=true from an assistant echo when no seen marker matches', async () => {
+    seedSession({ hasUnread: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a2',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a2',
+        lastAgentResponse: 'done',
+      }),
+    );
+    await flush();
+
+    expect(appStore.state.agentSessions.byAgentId[AGENT]!.hasUnread).toBe(true);
+  });
+
+  it('clears lastToolUse when the echo omits it (persisted preview cleared)', async () => {
+    seedSession({ lastToolUse: { name: 'str-replace-editor' } });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a3',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a3',
+        lastAgentResponse: 'plain text answer',
+      }),
+    );
+    await flush();
+
+    expect(appStore.state.agentSessions.byAgentId[AGENT]!.lastToolUse).toBeUndefined();
+  });
+
+  it('does not clobber a loaded transcript (metadata-only merge)', async () => {
+    const loaded: AgentMessage[] = [
+      {
+        id: 'msg-old',
+        role: 'assistant',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        contentBlocks: [{ type: 'text', text: 'loaded transcript row' }],
+      } as AgentMessage,
+    ];
+    seedSession({ messages: loaded });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a4',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a4',
+        lastAgentResponse: 'newer preview',
+      }),
+    );
+    await flush();
+
+    const session = appStore.state.agentSessions.byAgentId[AGENT]!;
+    expect(session.messages.map((message) => message.id)).toEqual(['msg-old']);
+    expect(session.lastAgentResponse).toBe('newer preview');
+  });
+
+  it('defers the apply through ensureAgentSession for an unknown session', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: 'agent-unknown',
+        messageId: 'msg-a5',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a5',
+        lastAgentResponse: 'hello',
+      }),
+    );
+    await flush();
+
+    // The withHydratedSession seam fetches the session shell once — never a
+    // transcript page walk.
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith('agent-unknown');
+    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+  });
+
+  it('ignores a system-role echo beyond flipping the daemon-capability flag', async () => {
+    seedSession({ lastAgentResponse: 'kept' });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-sys',
+        role: 'system',
+      }),
+    );
+    await flush();
+
+    expect(appStore.state.agentSessions.byAgentId[AGENT]!.lastAgentResponse).toBe('kept');
+    // The flag flipped: a subsequent agent:message no longer refreshes.
+    handler(
+      notification('agent:message', { agentId: AGENT, messageId: 'msg-x', role: 'assistant' }),
+    );
+    await flush();
+    expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
+    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed lastToolUse payload whole (missing name)', async () => {
+    seedSession({ lastToolUse: { name: 'old-tool' } });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a6',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a6',
+        lastToolUse: { input: { path: 'x' } },
+      }),
+    );
+    await flush();
+
+    expect(appStore.state.agentSessions.byAgentId[AGENT]!.lastToolUse).toBeUndefined();
+  });
+});
+
+describe('daemonEventsBridge (STAB-22 back-compat — agent:message falls back to a light agent.get refresh)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(() => {
+    appStore.init();
+    appStore.dispatch(clearAllSessions());
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    loadChatTranscriptSpy.mockClear();
+    ensureAgentSessionSpy.mockClear();
+  });
+
+  it('agent:message on an older daemon triggers the ensureAgentSession refresh — never a transcript walk', async () => {
     seedSession({ messages: [] });
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -7450,173 +7668,77 @@ describe('daemonEventsBridge (STAB-22 — agent:message triggers transcript hydr
     handler(
       notification('agent:message', { agentId: AGENT, messageId: 'msg-1', role: 'assistant' }),
     );
+    await flush();
 
-    expect(loadChatTranscriptSpy).toHaveBeenCalledWith(AGENT);
-    expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it('agent:message with role=assistant skips loadChatTranscript when the messageId is already present', async () => {
-    // Seed a session already holding the persisted assistant row.
-    const existingMessage: AgentMessage = {
-      id: 'msg-2',
-      role: 'assistant',
-      timestamp: '2026-01-01T00:00:00.000Z',
-      contentBlocks: [{ type: 'text', text: 'existing message' }],
-    } as AgentMessage;
-    seedSession({ messages: [existingMessage] });
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    handler(
-      notification('agent:message', { agentId: AGENT, messageId: 'msg-2', role: 'assistant' }),
-    );
-
-    // Should not call loadChatTranscript because the messageId is already present
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
   });
 
-  it('agent:message with role=assistant refetches when the session holds only the user message (#1019)', async () => {
-    // Hydration race: the transcript hydrated before the assistant row
-    // persisted, so the session holds only the user message.
-    const userMessage: AgentMessage = {
-      id: 'msg-user-1',
-      role: 'user',
-      timestamp: '2026-01-01T00:00:00.000Z',
-      contentBlocks: [{ type: 'text', text: 'hello' }],
-    } as AgentMessage;
-    seedSession({ messages: [userMessage] });
+  it('coalesces refreshes single-flight: N events during one in-flight fetch produce at most 1 follow-up', async () => {
+    seedSession({ messages: [] });
+    let resolveFirst: (() => void) | undefined;
+    ensureAgentSessionSpy.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveFirst = () => resolve();
+        }) as never,
+    );
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
     handler(
-      notification('agent:message', {
+      notification('agent:message', { agentId: AGENT, messageId: 'msg-1', role: 'assistant' }),
+    );
+    handler(notification('agent:message', { agentId: AGENT, messageId: 'msg-2', role: 'user' }));
+    handler(
+      notification('agent:message', { agentId: AGENT, messageId: 'msg-3', role: 'assistant' }),
+    );
+    expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(1);
+
+    resolveFirst?.();
+    await flush();
+    // Trailing coalesce: the burst collapsed into exactly one follow-up.
+    expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(2);
+    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+  });
+
+  it('retires the fallback once the daemon emits agent:last-message', async () => {
+    seedSession({ messages: [] });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
         agentId: AGENT,
-        messageId: 'msg_assistant-1',
-        role: 'assistant',
-      }),
-    );
-
-    // The persisted assistant row is missing from the transcript — refetch.
-    expect(loadChatTranscriptSpy).toHaveBeenCalledWith(AGENT);
-    expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it('agent:message with role=assistant skips loadChatTranscript when the messageId matches an appMessageId', async () => {
-    // The persisted row can land in the transcript under its logical
-    // appMessageId (message-dedup merges compare both ids).
-    const existingMessage: AgentMessage = {
-      id: 'optimistic-1',
-      appMessageId: 'msg_assistant-1',
-      role: 'assistant',
-      timestamp: '2026-01-01T00:00:00.000Z',
-      contentBlocks: [{ type: 'text', text: 'existing message' }],
-    } as AgentMessage;
-    seedSession({ messages: [existingMessage] });
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    handler(
-      notification('agent:message', {
-        agentId: AGENT,
-        messageId: 'msg_assistant-1',
-        role: 'assistant',
-      }),
-    );
-
-    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
-  });
-
-  it('agent:message with role=assistant and no messageId skips refetch for a non-empty session', async () => {
-    // Without a messageId there is nothing to verify against the transcript;
-    // preserve the empty-session-only refetch to avoid refetch storms.
-    const existingMessage: AgentMessage = {
-      id: 'msg-existing',
-      role: 'assistant',
-      timestamp: '2026-01-01T00:00:00.000Z',
-      contentBlocks: [{ type: 'text', text: 'existing message' }],
-    } as AgentMessage;
-    seedSession({ messages: [existingMessage] });
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    handler(notification('agent:message', { agentId: AGENT, role: 'assistant' }));
-
-    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
-  });
-
-  it("agent:message with role=assistant loads transcript when session doesn't exist yet", async () => {
-    // Don't seed any session - agent doesn't exist in state yet
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    handler(
-      notification('agent:message', {
-        agentId: 'agent-new',
         messageId: 'msg-1',
         role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-1',
+        lastAgentResponse: 'text',
       }),
     );
+    await flush();
+    ensureAgentSessionSpy.mockClear();
 
-    // Should call loadChatTranscript because session doesn't exist (undefined check)
-    expect(loadChatTranscriptSpy).toHaveBeenCalledWith('agent-new');
-    expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
-  });
+    handler(
+      notification('agent:message', { agentId: AGENT, messageId: 'msg-1', role: 'assistant' }),
+    );
+    await flush();
 
-  it('agent:message with role=user and messageId not in session triggers loadChatTranscript', async () => {
-    // Seed a session with one existing user message
-    const existingMessage: AgentMessage = {
-      id: 'msg-existing',
-      role: 'user',
-      timestamp: '2026-01-01T00:00:00.000Z',
-      contentBlocks: [{ type: 'text', text: 'existing user message' }],
-    } as AgentMessage;
-    seedSession({ messages: [existingMessage] });
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    // New user message with a different messageId (not in transcript)
-    handler(notification('agent:message', { agentId: AGENT, messageId: 'msg-new', role: 'user' }));
-
-    // Should call loadChatTranscript because messageId is not present in session
-    expect(loadChatTranscriptSpy).toHaveBeenCalledWith(AGENT);
-    expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it('agent:message with role=user and present messageId skips loadChatTranscript', async () => {
-    // Seed a session with a user message that has the same messageId
-    const existingMessage: AgentMessage = {
-      id: 'msg-1',
-      role: 'user',
-      timestamp: '2026-01-01T00:00:00.000Z',
-      contentBlocks: [{ type: 'text', text: 'existing user message' }],
-    } as AgentMessage;
-    seedSession({ messages: [existingMessage] });
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    // User message event with messageId that already exists in transcript
-    handler(notification('agent:message', { agentId: AGENT, messageId: 'msg-1', role: 'user' }));
-
-    // Should not call loadChatTranscript because messageId is already present
+    expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
   });
 
-  it("agent:message with role=user loads transcript when session doesn't exist yet", async () => {
-    // Don't seed any session - agent doesn't exist in state yet
+  it('ignores system-role agent:message echoes (no refresh)', async () => {
+    seedSession({ messages: [] });
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
-    handler(
-      notification('agent:message', {
-        agentId: 'agent-new',
-        messageId: 'msg-1',
-        role: 'user',
-      }),
-    );
+    handler(notification('agent:message', { agentId: AGENT, messageId: 'msg-1', role: 'system' }));
+    await flush();
 
-    // Should call loadChatTranscript because session doesn't exist (undefined check)
-    expect(loadChatTranscriptSpy).toHaveBeenCalledWith('agent-new');
-    expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
+    expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
+    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -7702,13 +7824,12 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
 
   afterEach(() => vi.clearAllMocks());
 
-  it('fires loadChatTranscript for the active agent after reconnect (LEAK-1: pinned to active-at-completion)', async () => {
+  it('issues NO transcript fetch on reconnect — the standing chat.subscribe seq-0 snapshot owns it', async () => {
     // Seed enough store state for the reconnect refresh to have a target:
     // an active workspace and an active agent in that workspace. The
-    // hydrateAgentsRequested dispatch is fire-and-forget (saga-only trigger,
-    // no reducer entry — AGENTS.md §8), so we assert the observable seam:
-    // `loadChatTranscript` runs against the active agent. The workspace-less
-    // The sibling below proves the whole refresh path is gated on the current tab.
+    // standing chat.subscribe registration re-registers on the same reconnect
+    // signal and its fresh seq-0 snapshot IS the reconciled transcript, so
+    // the refresh path must not page agent.getConversation on top of it.
     const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
     const { setActiveAgentId } =
       await import('$store/renderer/slices/workspace-agents/workspace-agents-slice');
@@ -7717,8 +7838,7 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
 
     await refreshDaemonEventsAfterReconnect(WS);
 
-    expect(loadChatTranscriptSpy).toHaveBeenCalledWith(AGENT);
-    expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
+    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
   });
 
   it('skips coarse-state refresh when no workspace is active (nothing to hydrate)', async () => {
