@@ -220,22 +220,26 @@ describe('seed staleness regression (monorepo#2818)', () => {
     expect(toolUse.metadata?.status).toBe('in_progress');
   });
 
-  it('seeding survives snapshot interleaving where array position ≠ daemon blockIndex', () => {
+  it('seeding keys by the id suffix even when array position diverges from daemon blockIndex', () => {
     const handler = capturedHandlers[0]!;
 
     // Rejoin AFTER the first tool completed LATE: text (:2) and a second
     // tool_use (:3) streamed before toolu_01's output arrived, so its
     // tool_result persisted at daemon index 4 (§7.1: the result never derives
     // from its use — resultBlockId is whatever index the durable transcript
-    // actually assigned; monorepo#2029). The snapshot page interleaves the
-    // result right after its use (§7.1 synthesized pairing), so ARRAY
-    // POSITION DIVERGES FROM THE ID SUFFIX from position 2 onward:
+    // actually assigned; monorepo#2029). The daemon's index space is shared
+    // by all block kinds (text, tool_use, tool_result, resource —
+    // `Transcript::block_id`, agent_session.rs), so a faithful snapshot array
+    // has position == id suffix; this fixture deliberately reorders the
+    // result next to its paired use to prove seeding keys by the STABLE ID
+    // and stays correct even if a snapshot array is ever partial or reordered
+    // relative to daemon indices:
     //
     //   position: 0        1          2            3         4
     //   id:       :0 text  :1 use     :4 result    :2 text   :3 use
     //
-    // Pre-fix positional seeding keyed blocksByIndex by position, so the
-    // mid-flight toolu_02 sat at key 4 while its live ticks carry
+    // Positional seeding keyed blocksByIndex by position: under this ordering
+    // the mid-flight toolu_02 sat at key 4 while its live ticks carry
     // blockIndex 3 (where the seeded text block sat) — a progress-only tick
     // then found no prior tool_use and collapsed the name; and the seeded
     // tool_result lived in blocksByIndex, duplicating against the live

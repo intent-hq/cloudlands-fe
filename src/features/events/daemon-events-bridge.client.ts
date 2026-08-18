@@ -383,9 +383,9 @@ function ensureStream(agentId: string, messageId: string, workspaceId: string): 
 
 /**
  * Parse the daemon blockIndex out of a stable `{messageId}:{blockIndex}` block
- * id (PROTOCOL §7.1). Bare unsigned decimal only — mirrors the daemon's
- * `usize::parse` in `next_block_id` (subscriptions.rs). Returns undefined for
- * id-less or foreign-shaped ids.
+ * id (PROTOCOL §7.1). Bare unsigned decimal only — mirrors the
+ * `{messageId}:{index}` scheme produced by the daemon's `Transcript::block_id`
+ * (agent_session.rs). Returns undefined for id-less or foreign-shaped ids.
  */
 function parseBlockIndexFromId(blockId: unknown): number | undefined {
   if (typeof blockId !== 'string') return undefined;
@@ -413,8 +413,12 @@ function parseBlockIndexFromId(blockId: unknown): number | undefined {
  *
  * tool_use blocks seed under their daemon blockIndex (parsed from the stable
  * `{messageId}:{blockIndex}` id, PROTOCOL §7.1) so a later agent:tool:call
- * tick for the same toolCallId merges into the seeded block instead of a
- * misaligned array position. tool_result blocks ride `toolResultsByUseIndex`
+ * tick — whose blockIndex is the daemon's — merges into the seeded block. The
+ * daemon's index space is shared by all block kinds (text, tool_use,
+ * tool_result, resource; `Transcript::block_id` in agent_session.rs), so a
+ * faithful snapshot array has position == id suffix; parsing from the id
+ * keeps seeding correct even if the array is ever partial or reordered
+ * relative to daemon indices. tool_result blocks ride `toolResultsByUseIndex`
  * keyed by their paired tool_use (tool_use_id ↔ toolCallId, §7.1 synthesized
  * pairing), matching how live completions land — never `blocksByIndex`, so
  * `buildContentBlocks` cannot emit them twice. Blocks whose pairing cannot be
@@ -627,9 +631,9 @@ function liftProposalResourceItem(output: unknown): Record<string, unknown> | nu
 /**
  * Predict a standalone attachment block's stable id from the `tool_use`
  * blockId: the daemon appends `tool_result` at index + 1 and the Nth
- * attachment block at index + 2 + N (`{messageId}:{index}` scheme, §7.1
- * tool_delta — each attachment chains off the previous block's id via
- * `next_block_id`). Returns undefined when the blockId does not follow that
+ * attachment block at index + 2 + N (the `{messageId}:{index}` scheme
+ * produced by the daemon's `Transcript::block_id`, agent_session.rs; §7.1
+ * tool_delta). Returns undefined when the blockId does not follow that
  * scheme.
  */
 function predictAttachmentBlockId(
@@ -639,8 +643,8 @@ function predictAttachmentBlockId(
   if (typeof toolUseBlockId !== 'string') return undefined;
   const separator = toolUseBlockId.lastIndexOf(':');
   if (separator < 0) return undefined;
-  // Bare unsigned decimal only — mirrors the daemon's `usize::parse` in
-  // `next_block_id` (subscriptions.rs), which rejects empty/hex/exponent forms.
+  // Bare unsigned decimal only — mirrors the `{messageId}:{index}` scheme
+  // produced by the daemon's `Transcript::block_id` (agent_session.rs).
   const suffix = toolUseBlockId.slice(separator + 1);
   if (!/^[0-9]+$/.test(suffix)) return undefined;
   return `${toolUseBlockId.slice(0, separator)}:${Number(suffix) + 2 + attachmentOrdinal}`;
