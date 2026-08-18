@@ -732,12 +732,19 @@ export interface AgentsClient {
    * `redriven: true`: the redriven head entry's turn-correlation id — the
    * SAME id the original send/enqueue RPC returned (preserved across the
    * terminal-failure requeue), so the redrive's lifecycle events correlate
-   * with the record the client already keyed.
+   * with the record the client already keyed. `notFound: true` on an
+   * `ok: false` result marks the daemon's not-found rejection (-32602,
+   * data.code "not-found", §5.5) — the agent was deleted, so callers should
+   * drop stale failure state instead of keeping a Retry affordance
+   * (monorepo#2806).
    */
   retry(
     agentId: string,
     workspaceId: string,
-  ): Promise<{ ok: true; redriven?: boolean; turnId?: string } | { ok: false; error: string }>;
+  ): Promise<
+    | { ok: true; redriven?: boolean; turnId?: string }
+    | { ok: false; notFound?: boolean; error: string }
+  >;
   /**
    * Resolve an outstanding interactive permission prompt
    * (`agent.respondPermission`, PROTOCOL §8). The daemon forwards the chosen
