@@ -1800,7 +1800,7 @@
             try {
               if (editor && !editor.isDestroyed && editor.view) {
                 editor.view.focus();
-                editor.commands.focus('end');
+                editor.commands.focus('start');
               }
             } catch {
               // Editor view may not be fully mounted yet - safe to ignore

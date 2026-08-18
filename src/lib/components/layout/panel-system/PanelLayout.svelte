@@ -64,6 +64,8 @@
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { animatePanelPreviewPositions, capturePanelPositions } from './panel-reorder-animation';
+  import { findPanelElement, scrollPanelIntoView } from './panel-layout-scroll';
+  import { createLayoutStableRevealScheduler } from '$lib/components/workspace/utils/layout-stable-reveal';
 
   import {
     selectPanelLayoutRoot,
@@ -77,6 +79,7 @@
     selectPanelColumnDefaultWidthTiers,
     selectPanelCanvasWidth,
     selectPanelCanvasWidthSource,
+    selectPendingPanelReveal,
     selectRestoreStatus,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
@@ -86,6 +89,7 @@
     movePanelToRootEdge,
     panelLayoutScopeMounted,
     panelLayoutScopeUnmounted,
+    consumePanelReveal,
     resizePanelLayoutRightEdge,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -162,6 +166,7 @@
   );
   const panelCanvasWidth$ = selectPanelCanvasWidth(workspaceIdStore);
   const panelCanvasWidthSource$ = selectPanelCanvasWidthSource(workspaceIdStore);
+  const pendingPanelReveal$ = selectPendingPanelReveal(workspaceIdStore);
   const restoreStatus$ = selectRestoreStatus(workspaceIdStore);
   const isDragging$ = selectIsDragging();
   // Keep the root renderer on the split branch when the first adjacent panel
@@ -189,6 +194,52 @@
   >(null);
   let panelLayoutMotionElement = $state.raw<HTMLDivElement | null>(null);
   let panelWorkspaceInset = $state.raw<HTMLDivElement | null>(null);
+  const panelRevealScheduler = createLayoutStableRevealScheduler();
+  $effect(() => {
+    const request = $pendingPanelReveal$;
+    const container = panelWorkspaceInset;
+    const targetLayoutId = effectiveLayoutId;
+    if (contained || !active || !request || !container) {
+      panelRevealScheduler.cancel();
+      return;
+    }
+
+    const isCurrent = () =>
+      panelWorkspaceInset === container &&
+      selectPendingPanelReveal.select(appStore.state, targetLayoutId)?.requestId ===
+        request.requestId;
+    void tick().then(() => {
+      if (!isCurrent()) return;
+      panelRevealScheduler.schedule({
+        resolveElements: () => {
+          const target = findPanelElement(container, request.panelId);
+          return target ? { container, target } : null;
+        },
+        isCurrent,
+        reveal: () => {
+          if (!isCurrent()) return;
+          const moved = scrollPanelIntoView(container, request.panelId, 'smooth');
+          appStore.dispatch(consumePanelReveal(targetLayoutId, request.requestId));
+          setTimeout(
+            () => {
+              if (
+                active &&
+                selectFocusedPanelId.select(appStore.state, targetLayoutId) === request.panelId
+              ) {
+                dispatchFocusPanelContent(request.panelId);
+              }
+            },
+            moved ? 300 : 0,
+          );
+        },
+        onTargetRemoved: () => {
+          if (isCurrent()) appStore.dispatch(consumePanelReveal(targetLayoutId, request.requestId));
+        },
+      });
+    });
+
+    return () => panelRevealScheduler.cancel();
+  });
   let panelViewportWidth = $state(0);
   $effect(() => {
     panelDefaultWidthViewport.set(canvasSizing === 'viewport' ? panelViewportWidth : 0);
