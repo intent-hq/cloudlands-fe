@@ -1626,6 +1626,7 @@
       exhausted: $historyExhausted$,
       startOrdinalEstimate: $historySegmentMeta$.startOrdinalEstimate,
       gapToTail: $historySegmentMeta$.gapToTail,
+      holeRowsEstimate: $historySegmentMeta$.holeRowsEstimate,
     });
   }
 
@@ -1669,8 +1670,10 @@
       });
       if (kind !== 'seek') return null;
       const fraction = Math.min(1, Math.max(0, intoSpacer / virtualSpacerBelowHeight));
-      const holeStart =
-        ($historySegmentMeta$.startOrdinalEstimate ?? 0) + $agentHistoryMessages$.length;
+      // Hole start ordinal = rows above the segment + the segment itself —
+      // `split.above` covers both seek-seeded (start-ordinal-anchored) and
+      // serial-walk (hole-estimate-anchored) segments.
+      const holeStart = split.above + $agentHistoryMessages$.length;
       return Math.min(total - 1, holeStart + Math.floor(fraction * split.below));
     }
     return null;
@@ -1768,12 +1771,13 @@
   // 0 (no spacer, today's behavior) when totalMessages is unknown or the
   // walk is exhausted.
   //
-  // DUAL SPACERS (far-flick seek): a seek-seeded segment splits the unloaded
-  // extent into a spacer ABOVE the segment (rows older than its first row)
-  // and a spacer BELOW it (rows in the open history→tail hole,
-  // splitUnloadedRows). Serial-walk segments keep the legacy single
-  // above-spacer (below stays 0). Both share the same row-height EMA and
-  // reconcile at the same quiet points.
+  // DUAL SPACERS: an open history→tail hole splits the unloaded extent into
+  // a spacer ABOVE the segment (rows older than its first row) and a spacer
+  // BELOW it (rows in the hole, splitUnloadedRows). Seek-seeded segments
+  // anchor the split on startOrdinalEstimate; serial-walk segments on the
+  // reducer-tracked holeRowsEstimate (cap-pruned rows — attributing them
+  // above used to overestimate the above extent by up to 2x mid-walk). Both
+  // share the same row-height EMA and reconcile at the same quiet points.
   const SPACER_QUIET_MS = 400;
   let virtualSpacerHeight = $state(0);
   let virtualSpacerBelowHeight = $state(0);
@@ -1817,6 +1821,7 @@
       exhausted,
       startOrdinalEstimate: $historySegmentMeta$.startOrdinalEstimate,
       gapToTail: $historySegmentMeta$.gapToTail,
+      holeRowsEstimate: $historySegmentMeta$.holeRowsEstimate,
     });
     const residentContentHeight = Math.max(
       0,

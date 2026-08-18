@@ -5521,6 +5521,47 @@ describe('history segment (scrollback)', () => {
         `hist-${HISTORY_SEGMENT_MAX - 1}`,
       );
       expect(segment.gapToTail).toBe(true);
+      // Serial-walk segment: the pruned rows are counted into the hole so
+      // the virtual extent attributes them below (extent 2x regression).
+      expect(segment.holeRowsEstimate).toBe(100);
+    });
+
+    it('accumulates the hole estimate across successive cap prunes (serial walk)', () => {
+      let state = withSession();
+      const firstPage = Array.from({ length: HISTORY_SEGMENT_MAX }, (_, i) => histMsg(i + 500));
+      state = agentSessionReducer(state, prependHistoryMessages('a1', firstPage));
+      state = agentSessionReducer(
+        state,
+        prependHistoryMessages(
+          'a1',
+          Array.from({ length: 100 }, (_, i) => histMsg(i + 400)),
+        ),
+      );
+      expect(getHistory(state, 'a1')!.holeRowsEstimate).toBe(100);
+      state = agentSessionReducer(
+        state,
+        prependHistoryMessages(
+          'a1',
+          Array.from({ length: 150 }, (_, i) => histMsg(i + 250)),
+        ),
+      );
+      expect(getHistory(state, 'a1')!.holeRowsEstimate).toBe(250);
+    });
+
+    it('does not track a hole estimate on seek-seeded segments (start ordinal anchors the split)', () => {
+      let state = withSession();
+      const landing = Array.from({ length: HISTORY_SEGMENT_MAX }, (_, i) => histMsg(i + 500));
+      state = agentSessionReducer(state, seedHistoryAround('a1', landing, 500));
+      state = agentSessionReducer(
+        state,
+        prependHistoryMessages(
+          'a1',
+          Array.from({ length: 100 }, (_, i) => histMsg(i + 400)),
+        ),
+      );
+      const segment = getHistory(state, 'a1')!;
+      expect(segment.startOrdinalEstimate).toBe(400);
+      expect(segment.holeRowsEstimate).toBeUndefined();
     });
 
     it('is a no-op for an unknown agent', () => {
@@ -5577,6 +5618,48 @@ describe('history segment (scrollback)', () => {
       const segment = getHistory(state, 'a1')!;
       expect(segment.messages.map((m) => m.id)).toEqual(['hist-0', 'hist-1', 'hist-2']);
       expect(segment.gapToTail).toBe(false);
+    });
+
+    it('a gap refill shrinks the serial-walk hole estimate by the rows moved into history', () => {
+      let state = withSession('a1', [makeUniqueMessage('tail-1', 'user', ts(1000))]);
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0), histMsg(1)]));
+      state = {
+        ...state,
+        historySegmentsByAgentId: {
+          ...state.historySegmentsByAgentId,
+          a1: { ...state.historySegmentsByAgentId!.a1, gapToTail: true, holeRowsEstimate: 5 },
+        },
+      };
+      state = agentSessionReducer(state, appendHistoryMessages('a1', [histMsg(2), histMsg(3)]));
+      const segment = getHistory(state, 'a1')!;
+      expect(segment.holeRowsEstimate).toBe(3);
+      expect(segment.gapToTail).toBe(true);
+    });
+
+    it('closing the hole drops the estimate (floor 0 on over-refill while open)', () => {
+      let state = withSession('a1', [makeUniqueMessage('tail-1', 'user', ts(1000))]);
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0)]));
+      state = {
+        ...state,
+        historySegmentsByAgentId: {
+          ...state.historySegmentsByAgentId,
+          a1: { ...state.historySegmentsByAgentId!.a1, gapToTail: true, holeRowsEstimate: 1 },
+        },
+      };
+      // Over-refill: 3 rows land while the estimate said 1 — floor 0, gap open.
+      state = agentSessionReducer(
+        state,
+        appendHistoryMessages('a1', [histMsg(1), histMsg(2), histMsg(3)]),
+      );
+      expect(getHistory(state, 'a1')!.holeRowsEstimate).toBe(0);
+      // Tail-overlapping refill closes the gap and drops the estimate.
+      state = agentSessionReducer(
+        state,
+        appendHistoryMessages('a1', [histMsg(4), makeUniqueMessage('tail-1', 'user', ts(1000))]),
+      );
+      const segment = getHistory(state, 'a1')!;
+      expect(segment.gapToTail).toBe(false);
+      expect(segment.holeRowsEstimate).toBeUndefined();
     });
 
     it('prunes from the OLDEST side past the cap and resets oldestReached', () => {
@@ -5773,6 +5856,7 @@ describe('history segment (scrollback)', () => {
         historyCount: 1,
         tailCount: 1,
         startOrdinalEstimate: null,
+        holeRowsEstimate: null,
       });
       expect(selectHistorySegmentMeta.select(storeState, 'missing')).toEqual({
         gapToTail: false,
@@ -5780,6 +5864,7 @@ describe('history segment (scrollback)', () => {
         historyCount: 0,
         tailCount: 0,
         startOrdinalEstimate: null,
+        holeRowsEstimate: null,
       });
     });
 
@@ -5788,6 +5873,21 @@ describe('history segment (scrollback)', () => {
       state = agentSessionReducer(state, seedHistoryAround('a1', [histMsg(500)], 500));
       const storeState = { agentSessions: state } as unknown as StoreState;
       expect(selectHistorySegmentMeta.select(storeState, 'a1').startOrdinalEstimate).toBe(500);
+    });
+
+    it('selectHistorySegmentMeta surfaces the serial-walk hole estimate', () => {
+      let state = withSession('a1', [makeUniqueMessage('tail-1', 'user', ts(1000))]);
+      const firstPage = Array.from({ length: HISTORY_SEGMENT_MAX }, (_, i) => histMsg(i + 100));
+      state = agentSessionReducer(state, prependHistoryMessages('a1', firstPage));
+      state = agentSessionReducer(
+        state,
+        prependHistoryMessages(
+          'a1',
+          Array.from({ length: 50 }, (_, i) => histMsg(i)),
+        ),
+      );
+      const storeState = { agentSessions: state } as unknown as StoreState;
+      expect(selectHistorySegmentMeta.select(storeState, 'a1').holeRowsEstimate).toBe(50);
     });
   });
 });

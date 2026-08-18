@@ -1457,12 +1457,18 @@ agentSessionReducer.with(prependHistoryMessages, (state, { payload: [agentId, me
     return setHistorySegment(state, agentId, { ...existing, messages: merged, startOrdinalEstimate });
   }
   // Past the cap: prune from the NEWEST side (viewport is walking up), which
-  // severs contiguity with the tail — a hole opens.
+  // severs contiguity with the tail — a hole opens. Serial-walk segments
+  // (untracked start ordinal) count the pruned rows into the hole estimate so
+  // the virtual extent attributes them BELOW the segment, not above.
+  const prunedNewer = merged.length - HISTORY_SEGMENT_MAX;
   return setHistorySegment(state, agentId, {
     ...existing,
     messages: merged.slice(0, HISTORY_SEGMENT_MAX),
     gapToTail: true,
     startOrdinalEstimate,
+    ...(startOrdinalEstimate === undefined
+      ? { holeRowsEstimate: (existing.holeRowsEstimate ?? 0) + prunedNewer }
+      : {}),
   });
 });
 agentSessionReducer.with(appendHistoryMessages, (state, { payload: [agentId, messages] }) => {
@@ -1479,8 +1485,20 @@ agentSessionReducer.with(appendHistoryMessages, (state, { payload: [agentId, mes
     session.messages,
   );
   const gapToTail = overlapsTail ? false : existing.gapToTail;
+  // Refilled rows moved OUT of the hole into history: shrink the serial-walk
+  // hole estimate by the actual row gain (floor 0); a closed hole drops it.
+  const holeRowsEstimate =
+    !gapToTail || existing.holeRowsEstimate === undefined
+      ? undefined
+      : Math.max(0, existing.holeRowsEstimate - (merged.length - existing.messages.length));
   if (merged.length <= HISTORY_SEGMENT_MAX) {
-    return setHistorySegment(state, agentId, { ...existing, messages: merged, gapToTail });
+    const { holeRowsEstimate: _dropped, ...rest } = existing;
+    return setHistorySegment(state, agentId, {
+      ...rest,
+      messages: merged,
+      gapToTail,
+      ...(holeRowsEstimate !== undefined ? { holeRowsEstimate } : {}),
+    });
   }
   // Past the cap: prune from the OLDEST side (viewport is walking down). The
   // true first message may be evicted, so oldestReached no longer holds; a
@@ -1493,6 +1511,7 @@ agentSessionReducer.with(appendHistoryMessages, (state, { payload: [agentId, mes
     ...(existing.startOrdinalEstimate !== undefined
       ? { startOrdinalEstimate: existing.startOrdinalEstimate + prunedOlder }
       : {}),
+    ...(holeRowsEstimate !== undefined ? { holeRowsEstimate } : {}),
   });
 });
 agentSessionReducer.with(

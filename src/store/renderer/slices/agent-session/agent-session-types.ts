@@ -137,9 +137,21 @@ export interface AgentHistorySegment {
    * extent (`splitUnloadedRows`). Maintained as an estimate across
    * prepends/appends (shifted by rows added/pruned at the older side) and
    * pinned to exactly 0 when `oldestReached` flips true. Absent/undefined on
-   * serial-walk segments, which keep the legacy all-above attribution.
+   * serial-walk segments, which are split by `holeRowsEstimate` instead.
    */
   startOrdinalEstimate?: number;
+  /**
+   * Estimated number of rows inside the open history→tail hole for a
+   * SERIAL-walk segment: grown by the exact newest-side prune count when a
+   * prepend passes the cap, shrunk by the rows a gap refill moves back into
+   * history, and dropped when the hole closes. Anchors the below side of
+   * `splitUnloadedRows` so hole rows never inflate the above extent (they
+   * used to be attributed all-above, overestimating the virtual extent by up
+   * to 2x mid-walk). Absent on seek-seeded segments (`startOrdinalEstimate`
+   * anchors their split) and while the segment is contiguous with the tail.
+   * An estimate: rows the TAIL prunes into the hole are not observed here.
+   */
+  holeRowsEstimate?: number;
 }
 
 /**

@@ -466,21 +466,32 @@ export interface UnloadedRowsSplitParams {
   exhausted: boolean;
   /**
    * Estimated conversation ordinal of the history segment's FIRST row, or
-   * null for segments grown by the serial walk (which have no estimate —
-   * all unloaded rows are attributed above, today's single-spacer model).
+   * null for segments grown by the serial walk (which are split by
+   * `holeRowsEstimate` instead).
    */
   startOrdinalEstimate: number | null;
   /** A hole is open between the history segment and the live tail. */
   gapToTail: boolean;
+  /**
+   * Reducer-tracked estimate of the rows inside the open history→tail hole
+   * (rows cap-pruned off the segment's newest side, minus gap refills).
+   * Splits SERIAL-walk segments, whose hole rows sit BELOW the viewport and
+   * must not inflate the above extent (they used to be attributed all-above,
+   * which overestimated the extent by up to 2x mid-walk and snapped the
+   * thumb at the exhaustion boundary). Ignored when `startOrdinalEstimate`
+   * anchors the split; null/omitted falls back to 0 (legacy all-above).
+   */
+  holeRowsEstimate?: number | null;
 }
 
 /**
  * Split the estimated unloaded row count into the portion ABOVE the history
  * segment (rows older than its first row) and the portion BELOW it (rows in
  * the open history→tail hole). A seeded segment (seek landing) carries a
- * `startOrdinalEstimate` that anchors the split; a serial-walk segment does
- * not, and keeps the legacy all-above attribution. `exhausted` zeroes the
- * above side exactly; a closed gap zeroes the below side exactly.
+ * `startOrdinalEstimate` that anchors the split; a serial-walk segment is
+ * split by the reducer-tracked `holeRowsEstimate` (rows its cap pruning
+ * moved into the hole). `exhausted` zeroes the above side exactly; a closed
+ * gap zeroes the below side exactly.
  */
 export function splitUnloadedRows(params: UnloadedRowsSplitParams): {
   above: number;
@@ -489,11 +500,16 @@ export function splitUnloadedRows(params: UnloadedRowsSplitParams): {
   const { totalMessages, residentCount, exhausted, startOrdinalEstimate, gapToTail } = params;
   const unloaded = Math.max(0, totalMessages - residentCount);
   if (unloaded === 0) return { above: 0, below: 0 };
-  if (startOrdinalEstimate === null || !gapToTail) {
+  if (!gapToTail) {
     return { above: exhausted ? 0 : unloaded, below: 0 };
   }
-  const above = exhausted ? 0 : Math.min(unloaded, Math.max(0, Math.round(startOrdinalEstimate)));
-  return { above, below: unloaded - above };
+  if (exhausted) return { above: 0, below: unloaded };
+  if (startOrdinalEstimate !== null) {
+    const above = Math.min(unloaded, Math.max(0, Math.round(startOrdinalEstimate)));
+    return { above, below: unloaded - above };
+  }
+  const below = Math.min(unloaded, Math.max(0, Math.round(params.holeRowsEstimate ?? 0)));
+  return { above: unloaded - below, below };
 }
 
 /**

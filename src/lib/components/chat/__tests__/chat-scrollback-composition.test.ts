@@ -721,7 +721,7 @@ describe('mapScrollTopToOrdinal (position → ordinal mapping)', () => {
 });
 
 describe('splitUnloadedRows (dual-spacer extent split)', () => {
-  it('serial-walk segments (no start ordinal) keep the legacy all-above attribution', () => {
+  it('serial-walk segments without a hole estimate fall back to all-above attribution', () => {
     expect(
       splitUnloadedRows({
         totalMessages: 1000,
@@ -731,6 +731,61 @@ describe('splitUnloadedRows (dual-spacer extent split)', () => {
         gapToTail: true,
       }),
     ).toEqual({ above: 800, below: 0 });
+  });
+
+  it('serial-walk segments split by the hole estimate (extent 2x-overestimate regression)', () => {
+    // Mid-walk on a 1000-row conversation: 200 resident, the cap pruning has
+    // moved 400 rows into the hole below the viewport. Attributing them
+    // above used to double the above extent (800 instead of 400).
+    expect(
+      splitUnloadedRows({
+        totalMessages: 1000,
+        residentCount: 200,
+        exhausted: false,
+        startOrdinalEstimate: null,
+        gapToTail: true,
+        holeRowsEstimate: 400,
+      }),
+    ).toEqual({ above: 400, below: 400 });
+  });
+
+  it('a drifted hole estimate clamps to the unloaded count (never negative above)', () => {
+    expect(
+      splitUnloadedRows({
+        totalMessages: 1000,
+        residentCount: 900,
+        exhausted: false,
+        startOrdinalEstimate: null,
+        gapToTail: true,
+        holeRowsEstimate: 5000,
+      }),
+    ).toEqual({ above: 0, below: 100 });
+  });
+
+  it('serial-walk exhausted with an open hole puts the whole remainder below', () => {
+    expect(
+      splitUnloadedRows({
+        totalMessages: 1000,
+        residentCount: 300,
+        exhausted: true,
+        startOrdinalEstimate: null,
+        gapToTail: true,
+        holeRowsEstimate: 500,
+      }),
+    ).toEqual({ above: 0, below: 700 });
+  });
+
+  it('start ordinal wins over a hole estimate when both are present', () => {
+    expect(
+      splitUnloadedRows({
+        totalMessages: 1000,
+        residentCount: 300,
+        exhausted: false,
+        startOrdinalEstimate: 300,
+        gapToTail: true,
+        holeRowsEstimate: 650,
+      }),
+    ).toEqual({ above: 300, below: 400 });
   });
 
   it('closed gap keeps everything above even with a start ordinal', () => {
