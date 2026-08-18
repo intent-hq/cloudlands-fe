@@ -117,6 +117,11 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
       return;
     }
     const metadata = finalizedMetadata(payload);
+    // For a covered agent this placeholder is deliberately EMPTY-content
+    // (blocks were dropped above): a terminal `complete` racing ahead of the
+    // §7.1 reconcile still surfaces its metadata live (Stopped badge /
+    // finishReason notice) on a transient row the reconcile then replaces by
+    // id — not dropped content.
     const placeholder: AgentMessage = {
       id: assistantMessageId,
       ...(assistantAppMessageId ? { appMessageId: assistantAppMessageId } : {}),

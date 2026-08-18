@@ -654,8 +654,11 @@ function* closeSubscription(
   }
   coordinator.subscriptions.delete(agentId);
   // Sole-writer handoff back: the firehose stream path resumes writing
-  // message content for this agent (its accumulator kept accumulating the
-  // whole time, so a mid-turn close loses nothing).
+  // message content for this agent. Its accumulator kept accumulating the
+  // whole time, so a mid-turn close loses nothing the fallback writer would
+  // normally carry (post-intentd#775 it never carries assistant text —
+  // text streamed after the close renders on the next snapshot/reconcile,
+  // same as any non-covered agent).
   clearStandingChatSubscription(agentId);
   yield* call(entry.acquisition.dispose);
   if (slot.acquisition === entry.acquisition) slot.acquisition = undefined;
