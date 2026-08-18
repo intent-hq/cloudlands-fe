@@ -10,6 +10,7 @@ import {
   type BrowserFocusTabPayload,
   type BrowserListTabsRequestPayload,
   type BrowserOpenTabPayload,
+  type BrowserTabNavigatedPayload,
 } from '$shared/ipc/workspace-command-payloads';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import {
@@ -35,14 +36,20 @@ let running = false;
 
 const logger = createLogger('BrowserIpcSaga');
 
-function browserTab(url: string): Omit<PanelTab, 'id'> {
-  return { type: 'browser', title: 'Browser', browserUrl: url, closable: true };
+function browserTab(url: string, requestedUrl?: string): Omit<PanelTab, 'id'> {
+  return {
+    type: 'browser',
+    title: 'Browser',
+    browserUrl: url,
+    closable: true,
+    // Persist the pre-rewrite URL so a restart can re-run the rewrite
+    // (monorepo#2789).
+    ...(requestedUrl === undefined ? {} : { browserRequestedUrl: requestedUrl }),
+  };
 }
 
 type LayoutReadiness =
-  | { status: 'ready' }
-  | { status: 'not-hosted' }
-  | { status: 'hydration-failed'; message: string };
+  { status: 'ready' } | { status: 'not-hosted' } | { status: 'hydration-failed'; message: string };
 
 /**
  * Ensure the workspace's panel-layout state is usable for a browser IPC
@@ -58,9 +65,31 @@ type LayoutReadiness =
  * hydration failure is reported as a result so one poisoned persisted layout
  * cannot abort the whole browser IPC saga for the window.
  */
+
+/**
+ * The workspace this window's route currently displays, or null outside
+ * `/workspace/{id}` (and on `/workspace/new`). Main targets workspace-scoped
+ * IPC at windows by this same signal (`windowWorkspaceIds`, fed from the
+ * route in `afterNavigate`), so hostedness here must accept it too: a window
+ * routed to a workspace can receive a request while that workspace has no
+ * layout entry and is missing from the tab strip (e.g. columns-mode
+ * route/stack divergence), and judging it not-hosted would leave the request
+ * to time out as "renderer did not respond" (monorepo#2789).
+ */
+function routedWorkspaceId(): string | null {
+  if (typeof window === 'undefined') return null;
+  const match = window.location.pathname.match(/^\/workspace\/([^/?]+)/);
+  const id = match?.[1];
+  return id && id !== 'new' ? id : null;
+}
+
 function* ensureWorkspaceLayoutForRequest(workspaceId: string): SagaGenerator<LayoutReadiness> {
   const held = workspaceId in (yield* selectPanelLayoutWorkspaces.effect());
-  if (!held && !(yield* selectWorkspaceTabOrder.effect()).includes(workspaceId)) {
+  if (
+    !held &&
+    !(yield* selectWorkspaceTabOrder.effect()).includes(workspaceId) &&
+    routedWorkspaceId() !== workspaceId
+  ) {
     return { status: 'not-hosted' };
   }
   try {
@@ -109,20 +138,23 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   // of dedupe so the panel layout's equivalent-tab reuse doesn't override it.
   const newTabId = typeof data.tabId === 'string' && data.tabId.length > 0 ? data.tabId : undefined;
   const allowDuplicate = data.allowDuplicate === true ? true : undefined;
+  // Pre-rewrite URL for rewritten opens; persisted with the tab so a restart
+  // can re-run the rewrite (monorepo#2789).
+  const requestedUrl = typeof data.requestedUrl === 'string' ? data.requestedUrl : undefined;
 
   const position = data.position ?? 'adjacent';
   if (position === 'replace') {
     const tabs = yield* selectAllTabs.effect(workspaceId);
     const existing = tabs.find((tab) => tab.type === 'browser');
     if (existing) {
-      yield* put(updateTabBrowserUrl(workspaceId, existing.id, data.url));
+      yield* put(updateTabBrowserUrl(workspaceId, existing.id, data.url, requestedUrl ?? null));
       yield* put(setActiveTab(workspaceId, existing.id));
       return;
     }
     yield* put(
       openTab(
         workspaceId,
-        browserTab(data.url),
+        browserTab(data.url, requestedUrl),
         undefined,
         newTabId,
         undefined,
@@ -134,7 +166,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   }
   if (position === 'adjacent') {
     yield* put(
-      openTabInAdjacentOrSplit(workspaceId, browserTab(data.url), undefined, {
+      openTabInAdjacentOrSplit(workspaceId, browserTab(data.url, requestedUrl), undefined, {
         newTabId,
         allowDuplicate,
       }),
@@ -144,7 +176,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   yield* put(
     openTab(
       workspaceId,
-      browserTab(data.url),
+      browserTab(data.url, requestedUrl),
       undefined,
       newTabId,
       undefined,
@@ -201,13 +233,44 @@ function* focusBrowser(data: BrowserFocusTabPayload | null): SagaGenerator<void>
   yield* put(focusBrowserTabRequested(data.workspaceId, data.tabId));
 }
 
+function* tabNavigated(data: BrowserTabNavigatedPayload | null): SagaGenerator<void> {
+  if (
+    !isWorkspaceCommandPayload(data) ||
+    typeof data.tabId !== 'string' ||
+    data.tabId.length === 0 ||
+    typeof data.url !== 'string'
+  )
+    return;
+  const workspaceId = data.workspaceId;
+  // The navigated tab may live in a hosted-but-unvisited workspace's
+  // persisted layout (monorepo#2789). A workspace this window does not host
+  // is left alone (the hosting window applies the update), and when
+  // hydration fails the tab cannot be in state so the update is dropped.
+  const readiness = yield* call(ensureWorkspaceLayoutForRequest, workspaceId);
+  if (readiness.status === 'not-hosted') return;
+  if (readiness.status === 'hydration-failed') {
+    logger.warn('Layout hydration failed before browser:tab-navigated; ignoring update', {
+      workspaceId,
+      tabId: data.tabId,
+      error: readiness.message,
+    });
+    return;
+  }
+  // Main navigated the tab through the rewrite pipeline, so it is the
+  // authority on the requested URL: present records it, absent clears it
+  // (the tab no longer shows rewritten content) — mirroring the executor's
+  // lease-identity semantics (monorepo#2789).
+  const requestedUrl = typeof data.requestedUrl === 'string' ? data.requestedUrl : null;
+  yield* put(updateTabBrowserUrl(workspaceId, data.tabId, data.url, requestedUrl));
+}
+
 function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGenerator<void> {
   if (!isWorkspaceCommandPayload(data)) return;
   const workspaceId = data.workspaceId;
   const requestId = typeof data.requestId === 'string' ? data.requestId : undefined;
 
-  // Only answer for workspaces this window actually hosts (layout state or
-  // tab bar). A window that does not host the requested workspace must never
+  // Only answer for workspaces this window actually hosts (layout state,
+  // tab bar, or route). A window that does not host the requested workspace must never
   // resolve the requestId: an empty wrong-workspace reply poisons main's
   // per-workspace tab cache (monorepo#2756 RC1, #2602). A hosted workspace
   // that was never visited this session is hydrated on demand so its
@@ -283,6 +346,17 @@ export function* browserIpcSaga(): SagaGenerator<void> {
           bufferPolicy: {
             kind: 'lossless',
             rationale: 'Every list request must be answered; main resolves replies by requestId.',
+          },
+        },
+      ),
+      yield* takeEveryFromElectronChannel<BrowserTabNavigatedPayload | null>(
+        'browser:tab-navigated',
+        tabNavigated,
+        {
+          bufferPolicy: {
+            kind: 'lossless',
+            rationale:
+              'Every main-driven navigation must update the persisted tab URL in arrival order.',
           },
         },
       ),

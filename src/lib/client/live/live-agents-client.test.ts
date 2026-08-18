@@ -1266,7 +1266,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
     expect(backend.requests[0]).toEqual({
       method: 'agent.getConversation',
-      params: { agentId: 'agent-1', limit: 200 },
+      params: { agentId: 'agent-1', limit: 50, projection: 'slim' },
     });
     expect(page.nextToken).toBe('tok-2');
     expect(page.truncated).toBe(true);
@@ -1287,7 +1287,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
     expect(backend.requests[0]).toEqual({
       method: 'agent.getConversation',
-      params: { agentId: 'agent-1', limit: 100, nextToken: 'tok-2' },
+      params: { agentId: 'agent-1', limit: 100, nextToken: 'tok-2', projection: 'slim' },
     });
     expect(page.nextToken).toBeNull();
   });
@@ -1314,11 +1314,16 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     }));
     const client = new LiveAgentsClient();
 
-    const page = await client.getConversation('agent-1', 200, undefined, 'msg-target');
+    const page = await client.getConversation('agent-1', 50, undefined, 'msg-target');
 
     expect(backend.requests[0]).toEqual({
       method: 'agent.getConversation',
-      params: { agentId: 'agent-1', limit: 200, aroundMessageId: 'msg-target' },
+      params: {
+        agentId: 'agent-1',
+        limit: 50,
+        aroundMessageId: 'msg-target',
+        projection: 'slim',
+      },
     });
     expect(page.nextToken).toBe('older-tok');
     expect(page.prevToken).toBe('newer-tok');

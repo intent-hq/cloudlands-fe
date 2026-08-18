@@ -293,6 +293,7 @@ async function executeAction(
     url: string,
     position?: 'adjacent' | 'replace' | 'same',
     allowDuplicate?: boolean,
+    requestedUrl?: string,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,
@@ -533,6 +534,14 @@ async function executeAction(
                 requestedTabId,
                 `window.location.href = ${JSON.stringify(finalRewrite.url)}`,
               );
+              // Persist the navigated tab's new URL + requested URL in the
+              // panel layout so a restart re-runs the rewrite (monorepo#2789).
+              embeddedBrowserCdp.notifyTabNavigated(
+                requestedTabId,
+                workspaceId,
+                finalRewrite.url,
+                finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
+              );
               const focused = await embeddedBrowserCdp.focusTab(requestedTabId, workspaceId);
               return {
                 action: 'openTab',
@@ -569,6 +578,14 @@ async function executeAction(
               await embeddedBrowserCdp.evaluate(
                 idleTabId,
                 `window.location.href = ${JSON.stringify(finalRewrite.url)}`,
+              );
+              // Persist the repurposed tab's new URL + requested URL in the
+              // panel layout so a restart re-runs the rewrite (monorepo#2789).
+              embeddedBrowserCdp.notifyTabNavigated(
+                idleTabId,
+                workspaceId,
+                finalRewrite.url,
+                finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
               );
               // Record the repurposed tab's new identity: tunneled opens set
               // the requested URL so a later repeat after a forward re-mint
@@ -621,10 +638,14 @@ async function executeAction(
         // already checked model-opened tabs above — so the renderer must
         // create a genuinely new tab rather than coalesce onto an equivalent
         // one (which could silently hand the agent a user-opened tab).
+        // Rewritten opens pass the original requested URL so the renderer
+        // persists it with the tab and a restart can re-run the rewrite
+        // (intent-hq/monorepo#2789).
         const result = openTabFn(
           finalRewrite.url,
           action.position,
           agentId ? true : action.allowDuplicate,
+          finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
         );
         // The id the caller can address: the adopted existing tab on a
         // replace, otherwise the pre-generated id of the new tab.
@@ -719,6 +740,15 @@ async function executeAction(
         await embeddedBrowserCdp.evaluate(
           resolvedTabId,
           `window.location.href = ${JSON.stringify(navigateTarget.rewrite.url)}`,
+        );
+        // Persist the navigated tab's new URL + requested URL in the panel
+        // layout so a restart re-runs the rewrite instead of restoring a
+        // dead ephemeral forward port (monorepo#2789).
+        embeddedBrowserCdp.notifyTabNavigated(
+          resolvedTabId,
+          workspaceId,
+          navigateTarget.rewrite.url,
+          navigateTarget.rewrite.rewritten ? navigateTarget.rewrite.requestedUrl : undefined,
         );
         // The tab's content changed, so refresh its lease identity: tunneled
         // navigations record the requested URL (a later openTab for it can
@@ -850,6 +880,7 @@ export async function executeActions(
     url: string,
     position?: 'adjacent' | 'replace' | 'same',
     allowDuplicate?: boolean,
+    requestedUrl?: string,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,

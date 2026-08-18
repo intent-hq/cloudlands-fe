@@ -59,11 +59,14 @@
  * An authoritative idle snapshot also clears retained flags after reconnect or
  * HMR, except for one snapshot that races a locally observed `chatSendStarted`.
  *
- * SOLE-WRITER INVARIANT: the standing subscription is the sole writer of an
- * agent's transcript MESSAGE state — the firehose events carry no content
- * (the daemon events bridge dispatches content-free chat-state bookkeeping
- * only), and the initial hydration (`chat-read-saga`) writes only the
- * persisted history.
+ * CANONICAL-WRITER INVARIANT: the standing subscription is the CANONICAL
+ * writer of an agent's transcript MESSAGE state. The `agent:tool:call`
+ * firehose path co-writes tool-status previews onto the in-flight assistant
+ * message, but its updates are merged by block identity
+ * (`mergeStreamContentBlocks`, monorepo#2814) so they can never delete
+ * subscription-owned blocks — the next subscription emit remains the
+ * authoritative arbiter. The initial hydration (`chat-read-saga`) writes only
+ * the persisted history.
  *
  * The root-owned saga takes each lifecycle action after reducers have applied
  * it, preserving the former post-action state-read semantics.
@@ -456,8 +459,8 @@ function* handleSubscriptionEvent(
     yield* applyTranscript(coordinator, event.agentId, entry, event.transcript, discardStoreOnly);
     // Seq-0 snapshot applied (single-transfer hydration): seed the firehose
     // stream accumulator with the snapshot's in-flight assistant message so
-    // subsequent agent:stream:chunk events pass the regression guard, then
-    // record the snapshot metadata for the chat-read saga (it settles
+    // subsequent agent:stream:chunk dispatches carry the full block prefix,
+    // then record the snapshot metadata for the chat-read saga (it settles
     // hydration on it and anchors the background older-history fetch).
     if (event.transcript.fromSnapshot === true) {
       const session = yield* selectAgentSession.effect(event.agentId);

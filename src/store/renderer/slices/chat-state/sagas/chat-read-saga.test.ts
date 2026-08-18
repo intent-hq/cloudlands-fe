@@ -196,7 +196,7 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     await settle();
 
     expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
-    expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 200, undefined, 'm-snap-1');
+    expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 50, undefined, 'm-snap-1');
     expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
       'm-old-1',
       'm-old-2',
@@ -252,8 +252,8 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     await settle();
 
     expect(mocks.getConversation.mock.calls).toEqual([
-      [AGENT, 200, undefined, 'm-snap'],
-      [AGENT, 200, 'older'],
+      [AGENT, 50, undefined, 'm-snap'],
+      [AGENT, 50, 'older'],
     ]);
     expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
       'm-r1',
@@ -341,8 +341,8 @@ describe('chatReadSaga (single-transfer hydration)', () => {
 
     expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
     expect(mocks.getConversation.mock.calls).toEqual([
-      [AGENT, 200, undefined, 'm4'],
-      [AGENT, 200, 'older'],
+      [AGENT, 50, undefined, 'm4'],
+      [AGENT, 50, 'older'],
     ]);
     // Complete transcript — no middle gap.
     expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
@@ -371,8 +371,8 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     await settle();
 
     expect(mocks.getConversation.mock.calls).toEqual([
-      [AGENT, 200, undefined, 'm-snap'],
-      [AGENT, 200, 'older'],
+      [AGENT, 50, undefined, 'm-snap'],
+      [AGENT, 50, 'older'],
     ]);
     expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
       'm-old-1',

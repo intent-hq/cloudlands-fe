@@ -183,11 +183,9 @@ describe('selectWorkspaceTabStatuses', () => {
     // Regression: an unopened workspace's agentSummary carries agents, but no
     // session is hydrated locally — the BE `activity: 'agent_running'` flag
     // must still raise the running category (the green dot).
-    const workspace = withAgents(
-      'ws-1',
-      [{ id: 'root', name: 'Coordinator', status: 'active' }],
-      { activity: 'agent_running' },
-    );
+    const workspace = withAgents('ws-1', [{ id: 'root', name: 'Coordinator', status: 'active' }], {
+      activity: 'agent_running',
+    });
     const state = stateWithSessions([workspace]);
     expect(selectWorkspaceTabStatuses.select(state)['ws-1']).toEqual({
       agentCount: 0,
@@ -222,11 +220,9 @@ describe('selectWorkspaceTabStatuses', () => {
   });
 
   it('keeps named running agents from tracked sessions over the BE activity fallback', () => {
-    const workspace = withAgents(
-      'ws-1',
-      [{ id: 'root', name: 'Coordinator', status: 'active' }],
-      { activity: 'agent_running' },
-    );
+    const workspace = withAgents('ws-1', [{ id: 'root', name: 'Coordinator', status: 'active' }], {
+      activity: 'agent_running',
+    });
     const state = stateWithSessions([workspace], {
       root: { status: 'active', isResponding: true },
     });
@@ -236,11 +232,9 @@ describe('selectWorkspaceTabStatuses', () => {
   });
 
   it('raises no running category when activity is idle and no tracked agent runs', () => {
-    const workspace = withAgents(
-      'ws-1',
-      [{ id: 'root', name: 'Coordinator', status: 'idle' }],
-      { activity: 'idle' },
-    );
+    const workspace = withAgents('ws-1', [{ id: 'root', name: 'Coordinator', status: 'idle' }], {
+      activity: 'idle',
+    });
     const state = stateWithSessions([workspace], { root: { status: 'idle' } });
     expect(categories(state)).toEqual([]);
   });
@@ -1378,6 +1372,39 @@ describe('selectHudWorkspaceCards', () => {
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.agents.find((agent) => agent.id === 'a1')?.line).toBe('Please fix the panel focus');
     expect(card.agents.find((agent) => agent.id === 'a2')?.line).toBe('Verifying panel focus fix');
+  });
+
+  it('card agent line falls back to the wire lastToolUse preview (agent:last-message apply)', () => {
+    const state = cardState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 1,
+            agentIds: ['a1'],
+            agents: [{ id: 'a1', name: 'Developer', status: 'active' }],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      {
+        agentSessions: {
+          byAgentId: {
+            // Session fields exactly as the bridge's agent:last-message apply
+            // writes them for a tool-only newest message: no response text,
+            // the persisted lastToolUse preview carries the tool name.
+            a1: {
+              lastMessageRole: 'assistant',
+              lastMessageId: 'msg-a1',
+              lastToolUse: { name: 'str-replace-editor', input: { path: 'src/x.ts' } },
+            },
+          },
+          agentIdsByWorkspace: {},
+        },
+      },
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.find((agent) => agent.id === 'a1')?.line).toBe('str-replace-editor');
   });
 
   it('a merely-waiting agent (no attention) buckets idle and drops off the card rows', () => {

@@ -81,7 +81,7 @@ import {
 } from '../chat-state-selectors';
 
 const logger = createLogger('ChatReadSaga');
-const PAGE_LIMIT = 200;
+const PAGE_LIMIT = 50;
 /** Margin for the healed registration's fresh snapshot to arrive and apply. */
 const SNAPSHOT_HEAL_MARGIN_MS = 2_000;
 /**

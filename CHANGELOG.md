@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.64.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.64.1...v2.64.2) (2026-08-18)
+
+
+### 🐛 Bug Fixes
+
+* merge stream updates by block identity instead of replacing contentBlocks ([#1418](https://github.com/intent-hq/cloudlands-fe/issues/1418)) ([8cac051](https://github.com/intent-hq/cloudlands-fe/commit/8cac051a0e0928a7800f969b9c9a069e3920eb27))
+
 ## [2.64.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.64.0...v2.64.1) (2026-08-18)
 
 

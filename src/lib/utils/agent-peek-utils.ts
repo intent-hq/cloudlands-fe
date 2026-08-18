@@ -132,6 +132,21 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
     if (!digest && agent.digest) {
       digest = agent.digest;
     }
+    // Persisted tool-call preview (AgentLite `lastToolUse`, §5.5 — also
+    // applied by `agent:last-message`): a never-opened agent whose newest
+    // message ended on a tool call has no response text to preview, so the
+    // wire preview drives the tool chip the same way a loaded transcript's
+    // trailing tool_use block would. Response text keeps precedence
+    // (mirrors the card's last-response > last-tool order); the streaming
+    // overlay below still wins while a turn is in flight.
+    if (!lastResponse && !agent.isStreaming && agent.lastToolUse?.name) {
+      lastToolUse = {
+        type: 'tool_use',
+        id: `wire-tool:${agent.id}`,
+        name: agent.lastToolUse.name,
+        input: agent.lastToolUse.input ?? {},
+      };
+    }
   }
   // The daemon's in-flight activity overlay is fresher than the loaded
   // transcript. It is cleared at turn boundaries, so only use it while the

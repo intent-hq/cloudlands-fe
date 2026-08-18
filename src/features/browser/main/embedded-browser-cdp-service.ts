@@ -492,6 +492,30 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
+   * Tell the renderer that main navigated an existing tab (agent `navigate`
+   * or an openTab reuse branch) so the panel layout persists the new URL and
+   * its pre-rewrite requested URL — otherwise only the webview's
+   * `did-navigate` fires and a rewritten navigation would persist just the
+   * ephemeral tunneled URL, restoring a dead port after restart
+   * (monorepo#2789). Fire-and-forget: an undelivered event only means the
+   * layout keeps the webview-reported URL, matching pre-notify behavior.
+   */
+  notifyTabNavigated(
+    tabId: string,
+    workspaceId?: string,
+    url?: string,
+    requestedUrl?: string,
+  ): void {
+    if (!tabId || typeof workspaceId !== 'string' || workspaceId.length === 0 || !url) return;
+    sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.TAB_NAVIGATED, {
+      tabId,
+      workspaceId,
+      url,
+      ...(requestedUrl === undefined ? {} : { requestedUrl }),
+    });
+  }
+
+  /**
    * Close a browser tab (remove it from the panel layout in the UI).
    *
    * Validates against the panel layout's tab list first so unknown /
@@ -729,9 +753,7 @@ class EmbeddedBrowserCdpService {
    */
   touchLease(tabId: string, agentId: string, requestedUrl?: string | null): void {
     const recorded =
-      requestedUrl === null
-        ? undefined
-        : (requestedUrl ?? this.tabLeases.get(tabId)?.requestedUrl);
+      requestedUrl === null ? undefined : (requestedUrl ?? this.tabLeases.get(tabId)?.requestedUrl);
     this.tabLeases.set(tabId, {
       agentId,
       lastUsedAt: Date.now(),
