@@ -66,7 +66,12 @@ describe('browser-action-executor', () => {
         mockOpenTabFn,
       );
       expect(result.success).toBe(true);
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://localhost:3000', undefined, undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://localhost:3000',
+        undefined,
+        undefined,
+        undefined,
+      );
     });
 
     it('should allow https:// URLs', async () => {
@@ -85,6 +90,7 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(true);
       expect(mockOpenTabFn).toHaveBeenCalledWith(
         'file:///Users/me/index.html',
+        undefined,
         undefined,
         undefined,
       );
@@ -645,6 +651,7 @@ describe('browser-action-executor', () => {
         'http://10.0.0.5:3000/x?q=1',
         undefined,
         undefined,
+        'http://127.0.0.1:3000/x?q=1',
       );
       expect(result.results[0]?.result).toMatchObject({
         requestedUrl: 'http://127.0.0.1:3000/x?q=1',
@@ -665,7 +672,12 @@ describe('browser-action-executor', () => {
         'workspace-a',
         remoteContext,
       );
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/', undefined, undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://10.0.0.5:3000/',
+        undefined,
+        undefined,
+        'http://daemon.localhost:3000/',
+      );
       const payload = result.results[0]?.result as Record<string, unknown>;
       expect(payload.rewritten).toBe(true);
       expect(payload.warning).toBeUndefined();
@@ -679,7 +691,12 @@ describe('browser-action-executor', () => {
         'workspace-a',
         remoteContext,
       );
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:5173/', undefined, undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://127.0.0.1:5173/',
+        undefined,
+        undefined,
+        'http://client.localhost:5173/',
+      );
       const payload = result.results[0]?.result as Record<string, unknown>;
       expect(payload.rewritten).toBe(true);
       expect(payload.warning).toBeUndefined();
@@ -771,7 +788,12 @@ describe('browser-action-executor', () => {
           'workspace-a',
           localContext,
         );
-        expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:3000/', undefined, undefined);
+        expect(mockOpenTabFn).toHaveBeenCalledWith(
+          'http://127.0.0.1:3000/',
+          undefined,
+          undefined,
+          url,
+        );
         expect(result.results[0]?.result).toMatchObject({
           requestedUrl: url,
           finalUrl: 'http://127.0.0.1:3000/',
@@ -785,7 +807,12 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://localhost:3000/' }] },
         mockOpenTabFn,
       );
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://localhost:3000/', undefined, undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://localhost:3000/',
+        undefined,
+        undefined,
+        undefined,
+      );
       expect(result.results[0]?.result).toEqual({ success: true, message: 'opened' });
     });
 
@@ -797,7 +824,12 @@ describe('browser-action-executor', () => {
         'workspace-a',
         remoteContext,
       );
-      expect(mockOpenTabFn).toHaveBeenCalledWith('https://example.com/x', undefined, undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'https://example.com/x',
+        undefined,
+        undefined,
+        undefined,
+      );
       expect(result.results[0]?.result).toEqual({ success: true, message: 'opened' });
     });
   });
@@ -896,6 +928,7 @@ describe('browser-action-executor', () => {
         'http://10.0.0.5:3000/x?q=1',
         undefined,
         undefined,
+        'http://127.0.0.1:3000/x?q=1',
       );
     });
 
@@ -910,7 +943,12 @@ describe('browser-action-executor', () => {
         remoteContext,
       );
       expect(result.success).toBe(true);
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/', undefined, undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://10.0.0.5:3000/',
+        undefined,
+        undefined,
+        'http://daemon.localhost:3000/',
+      );
     });
 
     it('never probes non-rewritten URLs in remote mode', async () => {
@@ -935,7 +973,12 @@ describe('browser-action-executor', () => {
       );
       expect(result.success).toBe(true);
       expect(fetchMock).not.toHaveBeenCalled();
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:3000/', undefined, undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://127.0.0.1:3000/',
+        undefined,
+        undefined,
+        'http://daemon.localhost:3000/',
+      );
     });
 
     it('never probes client.localhost rewrites in remote mode (target is this machine)', async () => {
@@ -999,6 +1042,7 @@ describe('browser-action-executor', () => {
         'http://127.0.0.1:45678/x?q=1',
         undefined,
         undefined,
+        'http://127.0.0.1:3000/x?q=1',
       );
       expect(result.results[0]?.result).toMatchObject({
         tunneled: true,
@@ -1080,7 +1124,12 @@ describe('browser-action-executor', () => {
       );
       expect(result.success).toBe(true);
       expect(forwardPort).not.toHaveBeenCalled();
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/', undefined, undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://10.0.0.5:3000/',
+        undefined,
+        undefined,
+        'http://daemon.localhost:3000/',
+      );
       expect(result.results[0]?.result).not.toHaveProperty('tunneled');
     });
 
@@ -1096,7 +1145,12 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(true);
       expect(fetchMock).not.toHaveBeenCalled();
       expect(forwardPort).not.toHaveBeenCalled();
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:3000/', undefined, undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://127.0.0.1:3000/',
+        undefined,
+        undefined,
+        'http://daemon.localhost:3000/',
+      );
       expect(result.results[0]?.result).not.toHaveProperty('tunneled');
     });
 
@@ -1405,7 +1459,12 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(true);
       expect(embeddedBrowserCdp.findModelTabByExactUrl).not.toHaveBeenCalled();
       expect(embeddedBrowserCdp.findIdleTab).not.toHaveBeenCalled();
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://localhost:3000/board', undefined, true);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://localhost:3000/board',
+        undefined,
+        true,
+        undefined,
+      );
     });
 
     it('does not dedupe when no agentId is provided (non-agent opens)', async () => {
@@ -1421,6 +1480,7 @@ describe('browser-action-executor', () => {
       expect(embeddedBrowserCdp.findModelTabByExactUrl).not.toHaveBeenCalled();
       expect(mockOpenTabFn).toHaveBeenCalledWith(
         'http://localhost:3000/board',
+        undefined,
         undefined,
         undefined,
       );
@@ -1474,7 +1534,12 @@ describe('browser-action-executor', () => {
       expect(first.success).toBe(true);
       // Agent opens force a genuinely new tab in the renderer — the executor
       // is the dedupe authority.
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://localhost:3000/board', undefined, true);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://localhost:3000/board',
+        undefined,
+        true,
+        undefined,
+      );
       // The new tab is leased at open time so it counts as model-opened; a
       // non-tunneled open clears any stale requested-URL identity.
       expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-new', 'agent-1', null);

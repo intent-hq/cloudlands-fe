@@ -293,6 +293,7 @@ async function executeAction(
     url: string,
     position?: 'adjacent' | 'replace' | 'same',
     allowDuplicate?: boolean,
+    requestedUrl?: string,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,
@@ -621,10 +622,14 @@ async function executeAction(
         // already checked model-opened tabs above — so the renderer must
         // create a genuinely new tab rather than coalesce onto an equivalent
         // one (which could silently hand the agent a user-opened tab).
+        // Rewritten opens pass the original requested URL so the renderer
+        // persists it with the tab and a restart can re-run the rewrite
+        // (intent-hq/monorepo#2789).
         const result = openTabFn(
           finalRewrite.url,
           action.position,
           agentId ? true : action.allowDuplicate,
+          finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
         );
         // The id the caller can address: the adopted existing tab on a
         // replace, otherwise the pre-generated id of the new tab.
@@ -850,6 +855,7 @@ export async function executeActions(
     url: string,
     position?: 'adjacent' | 'replace' | 'same',
     allowDuplicate?: boolean,
+    requestedUrl?: string,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,

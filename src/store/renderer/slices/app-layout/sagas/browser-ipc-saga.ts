@@ -35,8 +35,16 @@ let running = false;
 
 const logger = createLogger('BrowserIpcSaga');
 
-function browserTab(url: string): Omit<PanelTab, 'id'> {
-  return { type: 'browser', title: 'Browser', browserUrl: url, closable: true };
+function browserTab(url: string, requestedUrl?: string): Omit<PanelTab, 'id'> {
+  return {
+    type: 'browser',
+    title: 'Browser',
+    browserUrl: url,
+    closable: true,
+    // Persist the pre-rewrite URL so a restart can re-run the rewrite
+    // (monorepo#2789).
+    ...(requestedUrl === undefined ? {} : { browserRequestedUrl: requestedUrl }),
+  };
 }
 
 type LayoutReadiness =
@@ -109,20 +117,23 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   // of dedupe so the panel layout's equivalent-tab reuse doesn't override it.
   const newTabId = typeof data.tabId === 'string' && data.tabId.length > 0 ? data.tabId : undefined;
   const allowDuplicate = data.allowDuplicate === true ? true : undefined;
+  // Pre-rewrite URL for rewritten opens; persisted with the tab so a restart
+  // can re-run the rewrite (monorepo#2789).
+  const requestedUrl = typeof data.requestedUrl === 'string' ? data.requestedUrl : undefined;
 
   const position = data.position ?? 'adjacent';
   if (position === 'replace') {
     const tabs = yield* selectAllTabs.effect(workspaceId);
     const existing = tabs.find((tab) => tab.type === 'browser');
     if (existing) {
-      yield* put(updateTabBrowserUrl(workspaceId, existing.id, data.url));
+      yield* put(updateTabBrowserUrl(workspaceId, existing.id, data.url, requestedUrl ?? null));
       yield* put(setActiveTab(workspaceId, existing.id));
       return;
     }
     yield* put(
       openTab(
         workspaceId,
-        browserTab(data.url),
+        browserTab(data.url, requestedUrl),
         undefined,
         newTabId,
         undefined,
@@ -134,7 +145,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   }
   if (position === 'adjacent') {
     yield* put(
-      openTabInAdjacentOrSplit(workspaceId, browserTab(data.url), undefined, {
+      openTabInAdjacentOrSplit(workspaceId, browserTab(data.url, requestedUrl), undefined, {
         newTabId,
         allowDuplicate,
       }),
@@ -144,7 +155,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   yield* put(
     openTab(
       workspaceId,
-      browserTab(data.url),
+      browserTab(data.url, requestedUrl),
       undefined,
       newTabId,
       undefined,

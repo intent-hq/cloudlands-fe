@@ -9,6 +9,12 @@ export type BrowserOpenTabPayload = WorkspaceCommandPayload & {
   tabId?: string;
   /** Skip the panel layout's equivalent-tab dedupe and always create a new tab. */
   allowDuplicate?: boolean;
+  /**
+   * Pre-rewrite URL when `url` came out of the loopback/tunnel rewrite;
+   * persisted with the tab so a restart can re-run the rewrite
+   * (monorepo#2789).
+   */
+  requestedUrl?: string;
 };
 
 export type BrowserCloseTabPayload = WorkspaceCommandPayload & {

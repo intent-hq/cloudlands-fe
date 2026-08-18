@@ -199,7 +199,7 @@ describe('browserIpcSaga', () => {
       },
       {
         type: 'panelLayout/updateTabBrowserUrl',
-        payload: ['ws-1', 'browser-1', 'https://replace.test'],
+        payload: ['ws-1', 'browser-1', 'https://replace.test', null],
       },
       {
         type: 'panelLayout/setActiveTab',
@@ -281,6 +281,58 @@ describe('browserIpcSaga', () => {
           force: false,
           timestamp: NOW,
         },
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('persists the payload requestedUrl on the opened tab (monorepo#2789)', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({
+      url: 'http://127.0.0.1:52345/',
+      workspaceId: 'ws-1',
+      requestedUrl: 'http://daemon.localhost:3000/',
+    });
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': { panels: { one: { tabs: [{ id: 'browser-1', type: 'browser' }] } } },
+        },
+      },
+    };
+    await emit({
+      url: 'http://127.0.0.1:52345/',
+      position: 'replace',
+      workspaceId: 'ws-1',
+      requestedUrl: 'http://daemon.localhost:3000/',
+    });
+
+    expect(actions).toEqual([
+      {
+        type: 'panelLayout/openTabInAdjacentOrSplit',
+        payload: {
+          wsId: 'ws-1',
+          tab: {
+            ...TAB('http://127.0.0.1:52345/'),
+            browserRequestedUrl: 'http://daemon.localhost:3000/',
+          },
+          sourcePanelId: undefined,
+          animated: false,
+          force: false,
+          newTabId: `tab-${NOW}-i`,
+          timestamp: NOW,
+        },
+      },
+      {
+        type: 'panelLayout/updateTabBrowserUrl',
+        payload: ['ws-1', 'browser-1', 'http://127.0.0.1:52345/', 'http://daemon.localhost:3000/'],
+      },
+      {
+        type: 'panelLayout/setActiveTab',
+        payload: { wsId: 'ws-1', tabId: 'browser-1', panelId: undefined, timestamp: NOW },
       },
     ]);
     task.cancel();
@@ -651,7 +703,7 @@ describe('browserIpcSaga', () => {
 
       expect(actions).toContainEqual({
         type: 'panelLayout/updateTabBrowserUrl',
-        payload: ['ws-hyd-6', 'browser-1', 'http://replaced/'],
+        payload: ['ws-hyd-6', 'browser-1', 'http://replaced/', null],
       });
       expect(actions).toContainEqual(
         expect.objectContaining({
