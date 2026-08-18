@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.61.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.60.0...v2.61.0) (2026-08-18)
+
+
+### 🚀 Features
+
+* hydrate per-workspace auto-commit toggle from the daemon ([#1399](https://github.com/intent-hq/cloudlands-fe/issues/1399)) ([18d5427](https://github.com/intent-hq/cloudlands-fe/commit/18d5427a8c500013517092d8b8fca315ec4b17cc))
+
 ## [2.60.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.59.5...v2.60.0) (2026-08-18)
 
 
