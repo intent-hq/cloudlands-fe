@@ -75,6 +75,14 @@ export function mergeStreamContentBlocks(
   // id-less chunk paired with its subscription-written block). Two blocks that
   // BOTH carry (necessarily differing — strong matches ran first) identities
   // are distinct blocks and must both survive.
+  //
+  // KNOWN CONSTRAINT: an id-less incoming block pairs with the FIRST unmatched
+  // same-type existing block, with no way to tell which daemon block it
+  // belongs to — so a legacy content-bearing `agent:stream:chunk` without
+  // `blockId` could overwrite the wrong text block when several exist. Only
+  // that dead wire hits this (post-intentd#775 no daemon emits content-bearing
+  // chunks; id-stamped blocks always strong-match first); characterized in
+  // stream-content-blocks.test.ts should the chunk wire ever return.
   const unmatchedIncomingByType = new Map<string, number[]>();
   incoming.forEach((block, index) => {
     if (incomingMatched[index]) return;
