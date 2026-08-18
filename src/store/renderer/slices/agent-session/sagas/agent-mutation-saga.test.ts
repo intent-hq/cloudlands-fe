@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
+  updateSpecialist: vi.fn(),
   rename: vi.fn(),
   deleteAgent: vi.fn(),
   cancelDelete: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock('$lib/client', () => ({
   appClient: {
     agents: {
       get: mocks.get,
+      updateSpecialist: mocks.updateSpecialist,
       rename: mocks.rename,
       delete: mocks.deleteAgent,
       cancelDelete: mocks.cancelDelete,
@@ -41,6 +43,7 @@ import {
   deleteAgentSessionRequested,
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
+  saveAgentSessionRequested,
   undoAgentDeletionRequested,
 } from '../../workspace-agents/workspace-agents-slice';
 import { agentSessionDismissQuestionsRequested, bulkUpsertSessions } from '../agent-session-slice';
@@ -143,6 +146,46 @@ describe('agentMutationSaga', () => {
         }),
       ]),
     );
+    await stop(task);
+  });
+
+  it('persists a specialist picker change through the agent.update client wrapper', async () => {
+    mocks.updateSpecialist.mockResolvedValue({ success: true });
+    const { channel, task } = start();
+    const action = saveAgentSessionRequested(WS, A1, true, {
+      specialistUpdate: {
+        specialist: 'spec-writer',
+        model: 'grok4.6',
+        systemPrompt: 'Coordinate the work.',
+      },
+    });
+    channel.put(action);
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.updateSpecialist).toHaveBeenCalledWith({
+      agentId: A1,
+      workspaceId: WS,
+      specialist: 'spec-writer',
+      model: 'grok4.6',
+      systemPrompt: 'Coordinate the work.',
+    });
+    await stop(task);
+  });
+
+  it('persists clearing the specialist as an explicit null', async () => {
+    mocks.updateSpecialist.mockResolvedValue({ success: true });
+    const { channel, task } = start();
+    const action = saveAgentSessionRequested(WS, A1, true, {
+      specialistUpdate: { specialist: null },
+    });
+    channel.put(action);
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.updateSpecialist).toHaveBeenCalledWith({
+      agentId: A1,
+      workspaceId: WS,
+      specialist: null,
+    });
     await stop(task);
   });
 

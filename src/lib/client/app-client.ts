@@ -678,6 +678,14 @@ export interface AgentsClient {
     workspaceId: string;
     reasoningEffort: string | null;
   }): Promise<MutationResult>;
+  /** Persist a specialist picker change through the `agent.update` partial writer. */
+  updateSpecialist(params: {
+    agentId: string;
+    workspaceId: string;
+    specialist: string | null;
+    model?: string | null;
+    systemPrompt?: string | null;
+  }): Promise<MutationResult>;
   /**
    * Rename an agent session (`agent.rename`, §5.5). The daemon persists the
    * new name and an applied rename emits `agent:renamed` (in

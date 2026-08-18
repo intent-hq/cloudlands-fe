@@ -202,7 +202,35 @@ function* activateAgent(action: ReturnType<typeof activateAgentRequested>): Saga
 }
 
 function* saveAgent(action: ReturnType<typeof saveAgentSessionRequested>): SagaGenerator<void> {
-  yield* put(action.success(undefined as never));
+  const [wsId, agentId, , options] = action.payload;
+  const specialistUpdate = options?.specialistUpdate;
+  if (!specialistUpdate) {
+    yield* put(action.success(undefined as never));
+    return;
+  }
+
+  let settled = false;
+  try {
+    const result = yield* call([appClient.agents, appClient.agents.updateSpecialist], {
+      agentId,
+      workspaceId: wsId,
+      ...specialistUpdate,
+    });
+    if (!result.success) {
+      throw new Error(result.error || m.errors_catalog_storageWriteFailed_friendly());
+    }
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    yield* put(
+      action.failure(mutationError(error, m.errors_catalog_storageWriteFailed_friendly())),
+    );
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.errors_catalog_storageWriteFailed_friendly())));
+    }
+  }
 }
 
 function* renameAgent(action: ReturnType<typeof renameAgentSessionRequested>): SagaGenerator<void> {

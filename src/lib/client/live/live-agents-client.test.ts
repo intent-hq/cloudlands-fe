@@ -883,6 +883,50 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result.error).toContain('unsupported reasoningEffort');
   });
 
+  it('updateSpecialist forwards the resolved specialist fields through agent.update', async () => {
+    backend.onRequest('agent.update', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.updateSpecialist({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      specialist: 'spec-writer',
+      model: 'grok4.6',
+      systemPrompt: 'Coordinate the work.',
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.update',
+      params: {
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        changes: {
+          specialist: 'spec-writer',
+          model: 'grok4.6',
+          systemPrompt: 'Coordinate the work.',
+        },
+      },
+    });
+  });
+
+  it('updateSpecialist forwards null to clear the specialist and omits unresolved fields', async () => {
+    backend.onRequest('agent.update', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    await client.updateSpecialist({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      specialist: null,
+    });
+
+    expect(backend.requests[0]?.params).toEqual({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      changes: { specialist: null },
+    });
+  });
+
   it('rename forwards agent.rename with §5.5 params and folds the ack into success', async () => {
     // PROTOCOL §5.5: agent.rename takes `{ agentId, name }` (name non-empty)
     // and returns `{ success: true, name }`; an applied rename emits
