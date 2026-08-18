@@ -2887,6 +2887,13 @@
     followBottom?: boolean;
     historyText?: string | null;
   }) {
+    // Scroll + follow re-lock must run synchronously, before any await: a
+    // stalled or rejecting drafts.clear must never delay or skip them.
+    if (options.followBottom) {
+      shouldFollowBottom = true;
+      if (scrollContainer) scrollToBottomUtil(scrollContainer);
+    }
+
     if (options.historyText) {
       addToInputHistory(options.historyText);
     }
@@ -2903,11 +2910,6 @@
       if (workspace && agentId) {
         await appClient.drafts.clear(workspace.id, agentId);
       }
-    }
-
-    if (options.followBottom) {
-      shouldFollowBottom = true;
-      if (scrollContainer) scrollToBottomUtil(scrollContainer);
     }
   }
 
