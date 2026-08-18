@@ -165,19 +165,20 @@ for (const theme of ['light', 'dark'] as const) {
           await expect(message.locator('[data-operational-expanded-guide]')).toHaveCount(1);
 
           if (messageId === 'assistant-finished') {
+            // Measure relative to the message container: expanding can toggle
+            // the transcript scrollbar, which shifts absolute coordinates.
             const staticRow = message.getByTestId('reasoning-tool-call').first();
-            const beforeExpansion = await staticRow.evaluate((element) => {
-              const row = element.querySelector('[data-operational-disclosure-row]')!;
-              const box = row.getBoundingClientRect();
-              return [box.left, box.right, box.height];
-            });
+            const measureRow = () =>
+              staticRow.evaluate((element) => {
+                const row = element.querySelector('[data-operational-disclosure-row]')!;
+                const box = row.getBoundingClientRect();
+                const host = element.closest('[data-message-id]')!.getBoundingClientRect();
+                return [box.left - host.left, box.right - host.left, box.height];
+              });
+            const beforeExpansion = await measureRow();
             await staticRow.getByTestId('reasoning-disclosure').click();
             await expect(staticRow.locator('[data-operational-expanded-content]')).toBeVisible();
-            const afterExpansion = await staticRow.evaluate((element) => {
-              const row = element.querySelector('[data-operational-disclosure-row]')!;
-              const box = row.getBoundingClientRect();
-              return [box.left, box.right, box.height];
-            });
+            const afterExpansion = await measureRow();
             expect(afterExpansion).toEqual(beforeExpansion);
           }
         }

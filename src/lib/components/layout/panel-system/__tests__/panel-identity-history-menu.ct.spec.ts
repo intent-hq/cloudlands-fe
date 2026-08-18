@@ -30,6 +30,12 @@ test('opens by click, focus, and hover and activates the stable ordered history'
   await search.fill('preview browser');
   await expect(menu.locator('[data-panel-identity-item]')).toHaveCount(1);
   await search.press('ArrowDown');
+  // Wait for the keyboard highlight to land on the filtered item before
+  // activating it, otherwise Enter can fire before the highlight applies.
+  await expect(menu.locator('[data-panel-identity-item][data-highlighted]')).toHaveAttribute(
+    'data-panel-identity-item',
+    'browser-history',
+  );
   await page.keyboard.press('Enter');
   await expect(component).toHaveAttribute('data-active-tab', 'browser-history');
 
@@ -162,18 +168,21 @@ test('uses the neutral menu highlight for visible keyboard focus', async ({ moun
   const menu = page.getByRole('menu', { name: 'Panel history' });
   const focusedBack = menu.locator('[data-panel-identity-back]');
   await expect(focusedBack).toBeFocused();
-  expect(await focusedBack.evaluate((node) => getComputedStyle(node).backgroundColor)).not.toBe(
-    'rgba(0, 0, 0, 0)',
-  );
-  expect(await focusedBack.evaluate((node) => getComputedStyle(node).borderColor)).not.toBe(
-    'rgba(0, 0, 0, 0)',
-  );
+  // The focus highlight transitions in; poll until it has painted.
+  await expect
+    .poll(() => focusedBack.evaluate((node) => getComputedStyle(node).backgroundColor))
+    .not.toBe('rgba(0, 0, 0, 0)');
+  await expect
+    .poll(() => focusedBack.evaluate((node) => getComputedStyle(node).borderColor))
+    .not.toBe('rgba(0, 0, 0, 0)');
   expect(await focusedBack.evaluate((node) => getComputedStyle(node).boxShadow)).not.toMatch(
     /[1-9][0-9.]*(?:px)/,
   );
   await expect(menu).toHaveClass(/focus-visible:border-border/);
   await expect(menu).not.toHaveClass(/focus-visible:border-input/);
-  await expect(menu).not.toHaveClass(/focus-visible:ring-ring/);
+  // The base menu keeps the ring color token; the consumer neutralizes the
+  // ring by forcing its width to zero.
+  await expect(menu).toHaveClass(/focus-visible:ring-0/);
   await expect(trigger).not.toHaveClass(/focus-visible:ring-ring/);
 });
 

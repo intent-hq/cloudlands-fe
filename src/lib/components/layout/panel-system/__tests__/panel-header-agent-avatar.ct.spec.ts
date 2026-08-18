@@ -12,7 +12,7 @@ for (const theme of ['light', 'dark'] as const) {
     const avatar = slot.locator('[data-agent-avatar-with-state]');
 
     await expect(avatar).toHaveAttribute('data-avatar-state', 'idle');
-    await expect(avatar).toHaveAttribute('data-avatar-variant', 'standard');
+    await expect(avatar).toHaveAttribute('data-avatar-variant', 'emphasized');
     await expect(avatar.locator('svg[data-agent-avatar]')).toHaveCount(1);
     await expect(avatar.locator('[data-testid="mock-avatar"]')).toHaveCount(0);
     const geometry = await avatar.evaluate((element) => {
@@ -80,7 +80,7 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(avatar).toHaveAttribute('data-avatar-state', 'running');
     await avatar.evaluate((element) => element.setAttribute('data-completion-proof', 'same-node'));
     await component.update({ props: { theme, width: 260, zoom: 2, scenario: 'completed' } });
-    await expect(avatar).toHaveAttribute('data-avatar-state', 'idle');
+    await expect(avatar).toHaveAttribute('data-avatar-state', 'completed');
     await expect(avatar).toHaveAttribute('data-completion-proof', 'same-node');
 
     const oppositeTheme = theme === 'light' ? 'dark' : 'light';

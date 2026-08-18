@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/experimental-ct-svelte';
+import type { CDPSession } from '@playwright/test';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
 
 const cases = [
@@ -137,6 +138,18 @@ async function duplicateLiveMessageIdentityPairs(page: Page) {
 }
 
 test.describe('chat message navigator production path', () => {
+  // The CT page is reused across tests and CDP emulation overrides are
+  // per-session, so clear the override on the SAME session and detach it to
+  // keep the metrics from leaking into later specs in this worker.
+  let activeCdp: CDPSession | null = null;
+
+  test.afterEach(async () => {
+    if (!activeCdp) return;
+    await activeCdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {});
+    await activeCdp.detach().catch(() => {});
+    activeCdp = null;
+  });
+
   for (const state of cases) {
     test(`keeps the real header, picker, and transcript contract in ${state.label}`, async ({
       context,
@@ -145,6 +158,7 @@ test.describe('chat message navigator production path', () => {
     }) => {
       const viewport = { width: state.width / state.zoom, height: state.height / state.zoom };
       const cdp = await context.newCDPSession(page);
+      activeCdp = cdp;
       await cdp.send('Emulation.setDeviceMetricsOverride', {
         ...viewport,
         deviceScaleFactor: state.zoom,
@@ -482,6 +496,12 @@ test.describe('chat message navigator production path', () => {
       await expect(downButton).toBeEnabled();
       await pinButton.focus();
       await page.keyboard.press('Tab');
+      const focusDialog = await pickerForTrigger(page, listButton);
+      await expect(
+        focusDialog.getByRole('combobox', { name: 'Filter user messages' }),
+      ).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(focusDialog).toHaveCount(0);
       await expect(listButton).toBeFocused();
       await page.keyboard.press('Tab');
       await expect(downButton).toBeFocused();

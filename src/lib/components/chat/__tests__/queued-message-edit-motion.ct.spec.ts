@@ -133,8 +133,14 @@ test('completes reduced motion immediately and removes rows without residual spa
   const row = component.locator('[data-message-id="motion-0"]');
   await row.getByTestId('queued-message-content').click();
   await expect(row.locator('textarea')).toBeFocused();
-  expect(await row.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
+  // Reduced motion completes animations immediately, but finished transitions
+  // can linger in getAnimations() for a frame or two under load — poll.
+  await expect
+    .poll(() => row.evaluate((node) => node.getAnimations({ subtree: true }).length))
+    .toBe(0);
   await component.getByTestId('queued-edit-remove').click();
   await expect(component.locator('[data-message-id="motion-1"]')).toHaveCount(0);
-  expect(await component.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
+  await expect
+    .poll(() => component.evaluate((node) => node.getAnimations({ subtree: true }).length))
+    .toBe(0);
 });

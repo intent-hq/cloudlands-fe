@@ -9,7 +9,9 @@ test('keeps the complete waiting count before the adaptive avatar stack', async 
   for (const theme of ['light', 'dark'] as const) {
     for (const zoom of [1, 2]) {
       let previousVisible = Number.POSITIVE_INFINITY;
-      for (const width of [340, 270, 220]) {
+      // Narrowest width still fitting the untruncated count, the overflow
+      // badge, and the chevron: the title alone spans ~185px of content box.
+      for (const width of [340, 300, 270]) {
         await component.update({
           props: { agentCount: 27, width, initiallyExpanded: false, theme, zoom },
         });
@@ -26,7 +28,22 @@ test('keeps the complete waiting count before the adaptive avatar stack', async 
           .poll(() => title.evaluate((node) => node.scrollWidth <= node.clientWidth))
           .toBe(true);
 
-        const visible = await stack.locator('[data-agent-avatar-stack-item]').count();
+        // The adaptive stack re-measures via ResizeObserver, so wait until the
+        // rendered count is stable across spaced readings before asserting.
+        const readVisible = () => stack.locator('[data-agent-avatar-stack-item]').count();
+        let visible = await readVisible();
+        let stableReads = 0;
+        await expect
+          .poll(
+            async () => {
+              const next = await readVisible();
+              stableReads = next === visible ? stableReads + 1 : 0;
+              visible = next;
+              return stableReads >= 2;
+            },
+            { intervals: [100] },
+          )
+          .toBe(true);
         expect(visible).toBeLessThanOrEqual(previousVisible);
         previousVisible = visible;
         const geometry = await Promise.all([

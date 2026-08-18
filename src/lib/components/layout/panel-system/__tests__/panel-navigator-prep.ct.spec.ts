@@ -110,17 +110,23 @@ test('renders distinct panel glyphs, one active tile, and the native button keyb
   await expect(segments.nth(1)).toHaveAttribute('aria-current', 'page');
   await expect(segments.nth(0)).not.toHaveAttribute('aria-current', 'page');
 
-  const [activeBackground, inactiveBackground] = await Promise.all([
-    segments
-      .nth(1)
-      .locator('.panel-navigator-tile')
-      .evaluate((node) => getComputedStyle(node).backgroundColor),
-    segments
-      .nth(2)
-      .locator('.panel-navigator-tile')
-      .evaluate((node) => getComputedStyle(node).backgroundColor),
-  ]);
-  expect(activeBackground).not.toBe(inactiveBackground);
+  // The tile background transitions over 120ms; poll until the active tile
+  // has settled on a background distinct from the inactive one.
+  await expect
+    .poll(async () => {
+      const [activeBackground, inactiveBackground] = await Promise.all([
+        segments
+          .nth(1)
+          .locator('.panel-navigator-tile')
+          .evaluate((node) => getComputedStyle(node).backgroundColor),
+        segments
+          .nth(2)
+          .locator('.panel-navigator-tile')
+          .evaluate((node) => getComputedStyle(node).backgroundColor),
+      ]);
+      return activeBackground !== inactiveBackground;
+    })
+    .toBe(true);
 });
 
 test('covers fit, one-pixel overflow, mixed widths, narrow layout, and 200% zoom', async ({

@@ -119,10 +119,14 @@ for (const theme of ['light', 'dark'] as const) {
     const middleTrigger = middle.getByTestId('response-group-disclosure');
     await middleTrigger.click();
     await expect(middleTrigger).toHaveAttribute('aria-expanded', 'true');
-    expect(
-      await middle
-        .locator('[data-operational-expanded-content]')
-        .evaluate((element) => element.getAnimations().map((animation) => animation.playState)),
-    ).toEqual([]);
+    // Reduced motion should leave no lingering animations; poll because a
+    // finishing animation may briefly report `running` under load.
+    await expect
+      .poll(() =>
+        middle
+          .locator('[data-operational-expanded-content]')
+          .evaluate((element) => element.getAnimations().map((animation) => animation.playState)),
+      )
+      .toEqual([]);
   });
 }

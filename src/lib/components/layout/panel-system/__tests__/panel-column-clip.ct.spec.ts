@@ -2,6 +2,15 @@ import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { Locator } from '@playwright/test';
 import PanelWorkspaceColumnClipHarness from './mocks/PanelWorkspaceColumnClipHarness.svelte';
 
+// Earlier specs in the shared CT page may leave a resized viewport behind;
+// the geometry below assumes the default 1280x720 viewport, so pin it. The
+// intermediate size forces a real resize even when Playwright's cached
+// viewport already matches, so stale emulation state is flushed.
+test.beforeEach(async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 719 });
+  await page.setViewportSize({ width: 1280, height: 720 });
+});
+
 function measureGeometry(component: Locator) {
   return component.evaluate(() => {
     const column = document.querySelector('[data-testid="workspace-column"]') as HTMLElement;

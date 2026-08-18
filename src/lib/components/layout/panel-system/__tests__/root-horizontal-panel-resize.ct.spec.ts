@@ -115,6 +115,13 @@ for (const mode of ['contained', 'uncontained'] as const) {
         const handles = component.locator(ROOT_HANDLE_SELECTOR);
         await expect(handles).toHaveCount(2);
         const widths = [...viewport.widths];
+        // The canvas settles to the persisted width asynchronously; wait for
+        // it before asserting the strict initial geometry.
+        const expectedCanvasWidth =
+          widths.reduce((sum, width) => sum + width, 0) + GUTTER_WIDTH * (widths.length - 1);
+        await expect
+          .poll(async () => (await readGeometry(component)).canvasWidth)
+          .toBeCloseTo(expectedCanvasWidth, 0);
         expectGeometry(await readGeometry(component), widths, zoomFactor);
 
         for (const dividerIndex of [0, 1]) {

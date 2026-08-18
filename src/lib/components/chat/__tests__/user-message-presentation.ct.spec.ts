@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
+import type { CDPSession } from '@playwright/test';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
 
 const cases = [
@@ -8,6 +9,18 @@ const cases = [
   { theme: 'dark', label: 'dark 200%', zoom: 2, width: 680 },
 ] as const;
 
+// The CT page is reused across tests and CDP emulation overrides are
+// per-session, so clear the override on the SAME session and detach it to
+// keep the metrics from leaking into later specs in this worker.
+let activeCdp: CDPSession | null = null;
+
+test.afterEach(async () => {
+  if (!activeCdp) return;
+  await activeCdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {});
+  await activeCdp.detach().catch(() => {});
+  activeCdp = null;
+});
+
 for (const state of cases) {
   test(`hides delivery notes through the real ChatPanel at ${state.label}`, async ({
     context,
@@ -16,6 +29,7 @@ for (const state of cases) {
   }) => {
     const viewport = { width: state.width / state.zoom, height: 760 / state.zoom };
     const cdp = await context.newCDPSession(page);
+    activeCdp = cdp;
     await cdp.send('Emulation.setDeviceMetricsOverride', {
       ...viewport,
       deviceScaleFactor: state.zoom,

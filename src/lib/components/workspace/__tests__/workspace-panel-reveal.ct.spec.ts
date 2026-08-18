@@ -33,18 +33,34 @@ async function expectFocusedPanelVisible(component: Locator) {
     `[data-workspace-column="${workspaceId}"] [data-panel-id="${panelId}"]`,
   );
   await expect(target).toBeVisible();
+  // The reveal logic aligns panels to the inset content box declared through
+  // data-workspace-reveal-inset / scroll-padding-inline, so measure against
+  // that reveal viewport rather than the raw scroller edges.
+  const inset = await scroller.evaluate((node) => {
+    const explicit = Number.parseFloat((node as HTMLElement).dataset.workspaceRevealInset ?? '');
+    if (!Number.isFinite(explicit)) return 0;
+    const scale = node.getBoundingClientRect().width / (node as HTMLElement).offsetWidth || 1;
+    return explicit * scale;
+  });
   await expect
     .poll(async () => {
-      const [viewport, panel] = await Promise.all([scroller.boundingBox(), target.boundingBox()]);
-      const viewportRight = viewport!.x + viewport!.width;
+      const [scrollerBox, panel] = await Promise.all([
+        scroller.boundingBox(),
+        target.boundingBox(),
+      ]);
+      const viewport = {
+        x: scrollerBox!.x + inset,
+        width: scrollerBox!.width - inset * 2,
+      };
+      const viewportRight = viewport.x + viewport.width;
       const panelRight = panel!.x + panel!.width;
-      if (panel!.width > viewport!.width) {
-        if (panel!.x < viewport!.x && panelRight > viewportRight) return 0;
-        if (panelRight > viewportRight) return panel!.x - viewport!.x;
-        if (panel!.x < viewport!.x) return panelRight - viewportRight;
+      if (panel!.width > viewport.width) {
+        if (panel!.x < viewport.x && panelRight > viewportRight) return 0;
+        if (panelRight > viewportRight) return panel!.x - viewport.x;
+        if (panel!.x < viewport.x) return panelRight - viewportRight;
         return 0;
       }
-      if (panel!.x < viewport!.x) return panel!.x - viewport!.x;
+      if (panel!.x < viewport.x) return panel!.x - viewport.x;
       if (panelRight > viewportRight) return panelRight - viewportRight;
       return 0;
     })
