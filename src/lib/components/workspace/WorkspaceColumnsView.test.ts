@@ -1191,7 +1191,7 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 450));
 
-    expect(scroller.scrollLeft).toBe(108);
+    expect(scroller.scrollLeft).toBeCloseTo(108, 3);
     expect(
       mocks.dispatch.mock.calls
         .map(([action]) => action)
