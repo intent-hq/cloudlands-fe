@@ -191,9 +191,14 @@ const restoredUnderBackendIds = new Set<string>();
 // every mounted workspace (not just the active one): with the columns UI
 // several workspaces mount at boot, and their initial restore may have read
 // the wrong backend namespace when it ran before the boot connections:list.
-// (retroactiveRestore also adds the active workspace here without a real
-// mount event; harmless — a later real unmount removes it.)
+// (retroactiveRestore and hydrateWorkspaceLayout also add workspaces here
+// without a real mount event; harmless — a later real unmount removes it, and
+// membership keeps backend switches re-restoring their layouts too.)
 const mountedWorkspaceIds = new Set<string>();
+// Restores currently in flight, so on-demand hydration callers can await a
+// restore another trigger already started instead of answering with
+// pre-restore state (monorepo#2789).
+const inflightRestores: Map<string, Promise<void>> = new Map();
 
 type HistorySaveMessage = {
   action: { type: string; payload?: unknown };
@@ -364,17 +369,72 @@ export function* handleWorkspaceMountedRestore(
   mountedWorkspaceIds.add(wsId);
   if (restoredWorkspaceIds.has(wsId)) return;
   restoredWorkspaceIds.add(wsId);
-  yield* put(setRestoreStatus(wsId, 'pending'));
-  const stored = yield* call(loadLayoutFromStorage, wsId);
-  if (stored === null) {
-    yield* put(setRestoreStatus(wsId, 'empty'));
-  } else if (stored === 'invalid') {
-    yield* put(setRestoreStatus(wsId, 'invalid'));
-  } else {
-    yield* put(initializeLayout(wsId, normalizeLayoutForWorkspace(wsId, stored)));
-    yield* put(setRestoreStatus(wsId, 'restored'));
+  let settleInflight!: () => void;
+  inflightRestores.set(
+    wsId,
+    new Promise<void>((resolve) => {
+      settleInflight = resolve;
+    }),
+  );
+  let completed = false;
+  try {
+    yield* put(setRestoreStatus(wsId, 'pending'));
+    const stored = yield* call(loadLayoutFromStorage, wsId);
+    if (stored === null) {
+      yield* put(setRestoreStatus(wsId, 'empty'));
+    } else if (stored === 'invalid') {
+      yield* put(setRestoreStatus(wsId, 'invalid'));
+    } else {
+      yield* put(initializeLayout(wsId, normalizeLayoutForWorkspace(wsId, stored)));
+      yield* put(setRestoreStatus(wsId, 'restored'));
+    }
+    restoredUnderBackendIds.add(wsId);
+    completed = true;
+  } finally {
+    // A failed or cancelled restore releases the dedup guard so a later
+    // trigger can retry instead of trusting a restore that never finished.
+    // The inflight promise resolves (never rejects) even then: waiters must
+    // re-read the restore state afterwards — a workspace left on
+    // restoreStatus 'pending' with no inflight restore was never restored,
+    // and hydration callers retry it instead of answering from it.
+    if (!completed) restoredWorkspaceIds.delete(wsId);
+    inflightRestores.delete(wsId);
+    settleInflight();
   }
-  restoredUnderBackendIds.add(wsId);
+}
+
+/**
+ * Wait for a restore of this workspace's layout that another trigger (mount,
+ * hydration, backend switch) already has in flight. No-op when none is
+ * running. Callers that read the layout right after a
+ * `setRestoreStatus('pending')` entry appeared use this to answer with
+ * post-restore state (monorepo#2789). Resolves even when the restore failed
+ * or was cancelled — callers judge success by re-reading the restore status,
+ * not by this returning.
+ */
+export function* waitForWorkspaceLayoutRestore(wsId: string): SagaGenerator<void> {
+  const inflight = inflightRestores.get(wsId);
+  if (inflight) yield* call(() => inflight);
+}
+
+/**
+ * Restore a workspace's persisted layout on demand, without a UI mount — for
+ * a workspace sitting in this window's tab bar that has not been visited this
+ * session (monorepo#2789). Idempotent: an already-restored workspace is left
+ * untouched, and a restore another trigger has in flight is awaited instead
+ * of duplicated. Reuses the mount-restore path, so the workspace also joins
+ * mountedWorkspaceIds and backend switches re-restore its layout.
+ */
+export function* hydrateWorkspaceLayout(wsId: string): SagaGenerator<void> {
+  if (!isValidWorkspaceId(wsId)) return;
+  // Wait out any restore already in flight (mount, another hydration, or a
+  // backend switch that pre-registered this workspace) before judging state:
+  // starting a second restore concurrently would duplicate work against the
+  // same namespace. After the wait, membership in restoredWorkspaceIds tells
+  // whether that restore delivered — a failed one released it, so retry.
+  yield* call(waitForWorkspaceLayoutRestore, wsId);
+  if (restoredWorkspaceIds.has(wsId)) return;
+  yield* call(handleWorkspaceMountedRestore, panelLayoutScopeMounted(wsId));
 }
 
 export function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void> {
@@ -634,17 +694,25 @@ function* retroactiveRestore(activeWsId: string | null): SagaGenerator<void> {
 function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
   if (!isValidWorkspaceId(wsId)) return;
   restoredWorkspaceIds.add(wsId);
-  yield* put(setRestoreStatus(wsId, 'pending'));
-  const stored = yield* call(loadLayoutFromStorage, wsId);
-  if (stored === null || stored === 'invalid') {
-    yield* put(resetLayout(wsId));
-    yield* put(loadLayoutHistory(wsId, [], 0));
-    yield* put(setRestoreStatus(wsId, stored === null ? 'empty' : 'invalid'));
-  } else {
-    yield* put(initializeLayout(wsId, normalizeLayoutForWorkspace(wsId, stored)));
-    yield* put(setRestoreStatus(wsId, 'restored'));
+  let completed = false;
+  try {
+    yield* put(setRestoreStatus(wsId, 'pending'));
+    const stored = yield* call(loadLayoutFromStorage, wsId);
+    if (stored === null || stored === 'invalid') {
+      yield* put(resetLayout(wsId));
+      yield* put(loadLayoutHistory(wsId, [], 0));
+      yield* put(setRestoreStatus(wsId, stored === null ? 'empty' : 'invalid'));
+    } else {
+      yield* put(initializeLayout(wsId, normalizeLayoutForWorkspace(wsId, stored)));
+      yield* put(setRestoreStatus(wsId, 'restored'));
+    }
+    restoredUnderBackendIds.add(wsId);
+    completed = true;
+  } finally {
+    // Mirror the mount path: a failed or cancelled re-restore releases the
+    // dedup guard so a later trigger (hydration) can retry it.
+    if (!completed) restoredWorkspaceIds.delete(wsId);
   }
-  restoredUnderBackendIds.add(wsId);
 }
 
 /**
@@ -661,8 +729,41 @@ function* handleBackendSwitch(lastBackend: { id: string }): SagaGenerator<void> 
   lastBackend.id = backendId;
   restoredWorkspaceIds.clear();
   restoredUnderBackendIds.clear();
+  // Register every re-restore as in flight up front: until a workspace's
+  // turn in the loop completes, the store still holds the OUTGOING backend's
+  // layout, so an on-demand hydration caller (browser IPC) must wait here
+  // rather than answer with the previous backend's tabs (monorepo#2789).
+  const pending = new Map<string, { promise: Promise<void>; settle: () => void }>();
   for (const wsId of [...mountedWorkspaceIds]) {
-    yield* call(restoreAfterBackendSwitch, wsId);
+    if (!isValidWorkspaceId(wsId)) continue;
+    let settle!: () => void;
+    const promise = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    pending.set(wsId, { promise, settle });
+    inflightRestores.set(wsId, promise);
+  }
+  // Settle one workspace's entry; only remove the map slot when it still
+  // holds OUR promise — a concurrent mount restore may have replaced it.
+  const release = (wsId: string) => {
+    const entry = pending.get(wsId);
+    if (!entry) return;
+    pending.delete(wsId);
+    if (inflightRestores.get(wsId) === entry.promise) inflightRestores.delete(wsId);
+    entry.settle();
+  };
+  try {
+    for (const wsId of [...pending.keys()]) {
+      try {
+        yield* call(restoreAfterBackendSwitch, wsId);
+      } finally {
+        release(wsId);
+      }
+    }
+  } finally {
+    // A restore that threw or was cancelled mid-loop must not leave the
+    // remaining workspaces' waiters hanging forever.
+    for (const wsId of [...pending.keys()]) release(wsId);
   }
 }
 
