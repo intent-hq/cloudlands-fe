@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.63.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.62.1...v2.63.0) (2026-08-18)
+
+
+### 🚀 Features
+
+* **browser:** background-hydrate workspace layout for browser IPC ([#1405](https://github.com/intent-hq/cloudlands-fe/issues/1405)) ([8c3f739](https://github.com/intent-hq/cloudlands-fe/commit/8c3f739b535fe6db403fbc2d34065047eeb34b90))
+
+
+### 🐛 Bug Fixes
+
+* always scroll to end and lock follow on message send and edit-and-regenerate ([#1409](https://github.com/intent-hq/cloudlands-fe/issues/1409)) ([9e940ca](https://github.com/intent-hq/cloudlands-fe/commit/9e940ca3a1550e99a68c5898439b1d65b1652a19))
+* bump intentd sidecar to v0.7.17 ([#1411](https://github.com/intent-hq/cloudlands-fe/issues/1411)) ([35d1caa](https://github.com/intent-hq/cloudlands-fe/commit/35d1caa8732bb87e143bfcb564211aa7ada9fc7d))
+* dedupe openTab across tunnel forwards on remote daemons ([#1402](https://github.com/intent-hq/cloudlands-fe/issues/1402)) ([d5825a0](https://github.com/intent-hq/cloudlands-fe/commit/d5825a019a2620c9c248edd3aef531d07aedc3d2))
+
 ## [2.62.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.62.0...v2.62.1) (2026-08-18)
 
 
