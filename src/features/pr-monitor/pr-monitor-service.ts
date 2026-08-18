@@ -255,6 +255,11 @@ export function subscribePrMonitors(
       })
       .catch((error) => {
         logger.warn('prMonitor.list failed', { workspaceId, error });
+        // Still emit the cached list (empty on a failed initial seed) so the
+        // consumer's workspace entry exists: the utility-footer readiness
+        // gate treats a failed seed as ready-with-empty and never wedges
+        // the reveal.
+        emit();
       })
       .finally(() => {
         refetchInFlight = false;

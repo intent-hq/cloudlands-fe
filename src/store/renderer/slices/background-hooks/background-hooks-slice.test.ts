@@ -12,6 +12,7 @@ import {
   backgroundHooksUpdated,
   initialState,
 } from "./background-hooks-slice";
+import { selectBackgroundHooksSnapshotDelivered } from "./background-hooks-selectors";
 
 function makeHook(overrides: Partial<BackgroundHook> = {}): BackgroundHook {
   return {
@@ -123,5 +124,15 @@ describe("backgroundHooksReducer", () => {
     let state = backgroundHooksReducer(initialState, backgroundHooksUpdated("ws-1", [makeHook()]));
     state = backgroundHooksReducer(state, removeWorkspaceEntity("ws-1"));
     expect(state.byWorkspaceId["ws-1"]).toBeUndefined();
+  });
+
+  it("selectBackgroundHooksSnapshotDelivered flips once any list (even empty) is delivered", () => {
+    expect(
+      selectBackgroundHooksSnapshotDelivered.select({ backgroundHooks: initialState }, "ws-1"),
+    ).toBe(false);
+    const state = backgroundHooksReducer(initialState, backgroundHooksUpdated("ws-1", []));
+    expect(
+      selectBackgroundHooksSnapshotDelivered.select({ backgroundHooks: state }, "ws-1"),
+    ).toBe(true);
   });
 });

@@ -692,14 +692,25 @@ export const chatLiveStreamPhaseChanged = createAction<
 >('chatState/liveStreamPhaseChanged');
 
 /**
- * Bounded fallback for the switch-back transcript reveal gate: the subscribe
- * saga's timer elapsed without a fresh seq-0 snapshot applying, so the gate
- * clears and the retained transcript shows (today's behavior) instead of an
- * indefinite skeleton. A no-op when the gate is not armed (snapshot already
- * applied, subscription closed, or a stale timer from a superseded switch).
+ * Bounded fallback for the transcript reveal gates: the subscribe saga's
+ * timer elapsed with the switch-back snapshot gate and/or the utility-footer
+ * gate still armed, so BOTH clear and the transcript reveals (without the
+ * footer, which pops in later — today's behavior) instead of an indefinite
+ * skeleton. A no-op when neither gate is armed (snapshot applied and footer
+ * ready, subscription closed, or a stale timer from a superseded switch).
  */
 export const chatSwitchBackRevealTimedOut = createAction<[agentId: string]>(
   'chatState/switchBackRevealTimedOut',
+);
+
+/**
+ * The subscribe saga observed the utility-footer data sources settle
+ * (`isUtilityFooterReady` composed true for the agent's workspace) — clear
+ * the footer reveal gate so transcript and footer flip in the same paint.
+ * A no-op when the gate is not armed.
+ */
+export const chatUtilityFooterReady = createAction<[agentId: string]>(
+  'chatState/utilityFooterReady',
 );
 
 // --- Initialize chat saga trigger (no reducer state change) ---
@@ -935,13 +946,20 @@ chatStateReducer.with(chatTrackedWorkspaceSet, (state, { payload: [agentId, trac
 chatStateReducer.with(transcriptHydrationStarted, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { agentId, transcriptHydration: 'loading' }),
 );
-chatStateReducer.with(transcriptHydrationSettled, (state, { payload: [agentId] }) =>
-  updateAgent(state, agentId, {
+chatStateReducer.with(transcriptHydrationSettled, (state, { payload: [agentId] }) => {
+  const agent = getAgent(state, agentId);
+  return updateAgent(state, agentId, {
     agentId,
     transcriptHydration: 'settled',
     transcriptHydratedOnce: true,
-  }),
-);
+    // First settle only (latch rising edge): hold the reveal until the
+    // utility-footer data sources settle too, so transcript and footer flip
+    // in the same paint. The subscribe saga clears it (footer ready) or its
+    // bounded fallback does — never wedges. Refresh re-hydrations keep the
+    // transcript visible and must not re-arm.
+    awaitingUtilityFooter: agent.transcriptHydratedOnce === true ? agent.awaitingUtilityFooter : true,
+  });
+});
 chatStateReducer.with(transcriptHydrationFailed, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { agentId, transcriptHydration: 'error' }),
 );
@@ -970,6 +988,9 @@ chatStateReducer.with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, p
       liveStreamPhase: null,
       transcriptSnapshot: undefined,
       awaitingSwitchBackSnapshot: false,
+      // No open/opening subscription means no pending reveal either — a
+      // backgrounded panel must not re-skeleton for footer readiness.
+      awaitingUtilityFooter: false,
     });
   }
   return updateAgent(state, agentId, { agentId, liveStreamPhase: phase });
@@ -982,18 +1003,35 @@ chatStateReducer.with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, p
 // its existing skeleton logic) and holds no snapshot from a current
 // subscription (an already-open live subscription keeps rendering). Never
 // materializes chat state for an agent whose chat was never opened.
+// The utility-footer gate arms alongside it (same preconditions) so the
+// re-view reveals transcript AND footer in one paint; when the footer data
+// is already settled in the store the subscribe saga clears it in the same
+// dispatch cascade, before any frame paints.
 chatStateReducer.with(markAgentAsViewed, (state, { payload: [agentId] }) => {
   const agent = state.byAgentId[agentId];
   if (!agent) return state;
   if (agent.transcriptHydratedOnce !== true) return state;
   if (agent.transcriptSnapshot !== undefined) return state;
   if (agent.awaitingSwitchBackSnapshot === true) return state;
-  return updateAgent(state, agentId, { awaitingSwitchBackSnapshot: true });
+  return updateAgent(state, agentId, {
+    awaitingSwitchBackSnapshot: true,
+    awaitingUtilityFooter: true,
+  });
 });
 chatStateReducer.with(chatSwitchBackRevealTimedOut, (state, { payload: [agentId] }) => {
   const agent = state.byAgentId[agentId];
-  if (agent?.awaitingSwitchBackSnapshot !== true) return state;
-  return updateAgent(state, agentId, { awaitingSwitchBackSnapshot: false });
+  if (agent?.awaitingSwitchBackSnapshot !== true && agent?.awaitingUtilityFooter !== true) {
+    return state;
+  }
+  return updateAgent(state, agentId, {
+    awaitingSwitchBackSnapshot: false,
+    awaitingUtilityFooter: false,
+  });
+});
+chatStateReducer.with(chatUtilityFooterReady, (state, { payload: [agentId] }) => {
+  const agent = state.byAgentId[agentId];
+  if (agent?.awaitingUtilityFooter !== true) return state;
+  return updateAgent(state, agentId, { awaitingUtilityFooter: false });
 });
 chatStateReducer.with(eventReceived, (state, { payload: [, event] }) => {
   if (event.type !== 'agent:idle') return state;
