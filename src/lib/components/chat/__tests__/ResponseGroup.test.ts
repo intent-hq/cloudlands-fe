@@ -424,7 +424,8 @@ describe('MessageContent - top-level response rows', () => {
     expect(proseChild?.getAttribute('style')).toContain(
       'padding-left: calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))',
     );
-    expect(operationalChild?.className).toContain('operational-group-child-row');
+    expect(operationalChild?.className).not.toContain('operational-group-child-row');
+    expect(operationalChild?.getAttribute('style')).toBeNull();
 
     const streaming = render(StreamingMessageContent, {
       props: { content, isStreaming: true },
@@ -437,6 +438,7 @@ describe('MessageContent - top-level response rows', () => {
       expect(child).toBeTruthy();
       return child;
     });
-    expect(streamingChild?.className).toContain('operational-group-child-row');
+    expect(streamingChild?.className).not.toContain('operational-group-child-row');
+    expect(streamingChild?.getAttribute('style')).toBeNull();
   });
 });

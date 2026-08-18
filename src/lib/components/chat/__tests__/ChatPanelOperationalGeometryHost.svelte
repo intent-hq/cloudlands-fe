@@ -67,6 +67,10 @@
         text: '<group:Response group with a deliberately long summary>',
       },
       {
+        type: 'text',
+        text: 'Nested prose alignment reference.',
+      },
+      {
         type: 'thinking',
         id: `${prefix}-grouped-thinking-before-tool`,
         text: 'Compare the grouped tool row',

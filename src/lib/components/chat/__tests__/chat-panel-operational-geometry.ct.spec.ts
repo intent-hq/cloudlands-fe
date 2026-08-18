@@ -148,17 +148,17 @@ for (const theme of ['light', 'dark'] as const) {
             await expect(streamingRow.locator('[data-operational-expanded-content]')).toBeVisible();
           }
 
-          const groupedX = await message
+          const groupedLabelStart = await message
             .locator(
               `[data-tool-use-id="${messageId === 'assistant-finished' ? 'finished' : 'streaming'}-grouped-tool"]`,
             )
+            .locator('[data-operational-summary]')
             .evaluate((element) => element.getBoundingClientRect().x);
-          const ungroupedX = await message
-            .locator(
-              `[data-tool-use-id="${messageId === 'assistant-finished' ? 'finished' : 'streaming'}-view"]`,
-            )
+          const nestedProseStart = await message
+            .locator('[data-response-group-child][data-message-content-block="text"] p')
+            .first()
             .evaluate((element) => element.getBoundingClientRect().x);
-          expect(groupedX - ungroupedX).toBeCloseTo(18 * zoom, 1);
+          expect(groupedLabelStart).toBeCloseTo(nestedProseStart, 1);
           await expect(message.locator('[data-operational-expanded-guide]')).toHaveCount(1);
 
           if (messageId === 'assistant-finished') {
