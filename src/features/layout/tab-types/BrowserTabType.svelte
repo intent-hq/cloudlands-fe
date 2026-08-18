@@ -19,7 +19,7 @@
     $props();
 
   // Browser URL from tab data
-  const browserUrl = $derived(tab.browserUrl ?? 'https://google.com');
+  const browserUrl = $derived(tab.browserUrl ?? 'about:blank');
   const panelLayoutId = $derived(layoutId ?? workspaceId);
 </script>
 
