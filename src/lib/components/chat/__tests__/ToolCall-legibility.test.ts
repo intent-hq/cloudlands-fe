@@ -87,4 +87,38 @@ describe('ToolCall conversation legibility', () => {
     expect(container.querySelector('[data-operational-chevron]')).toBeNull();
     expect(container.querySelector('[data-conversation-layer="tool-activity"]')).toBeTruthy();
   });
+
+  it('makes a running tool call with input expandable while it awaits a result', async () => {
+    const { container } = render(ToolCall, {
+      props: {
+        toolUse: { id: 'tool-2', name: 'shell', input: { command: 'pnpm test\n  --run' } } as any,
+        toolState: 'running',
+      },
+    });
+
+    const disclosure = screen.getByRole('button', {
+      name: /Run tests with an exceptionally long descriptive target/,
+    });
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelector('#tool-details-tool-2')).toBeNull();
+
+    await fireEvent.keyDown(disclosure, { key: 'Enter' });
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(container.querySelector('#tool-details-tool-2')).toBeTruthy();
+
+    await fireEvent.keyDown(disclosure, { key: 'Enter' });
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelector('#tool-details-tool-2')).toBeNull();
+  });
+
+  it('does not make a running tool call without input expandable', () => {
+    render(ToolCall, {
+      props: {
+        toolUse: { id: 'tool-3', name: 'shell', input: {} } as any,
+        toolState: 'running',
+      },
+    });
+
+    expect(screen.queryByRole('button')).toBeNull();
+  });
 });

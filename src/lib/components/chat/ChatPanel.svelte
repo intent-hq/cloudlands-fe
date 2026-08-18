@@ -257,6 +257,10 @@
     shouldShowTranscriptUtilityStack,
   } from './chat-panel-visibility';
   import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
+  import {
+    findPreviousUserMessage,
+    isAutomatedChatMessage,
+  } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
 
@@ -1155,30 +1159,14 @@
   let historyInitialized = $state(false);
 
   /**
-   * Check if a message is automated (system-initiated, not user-typed)
-   * User-typed messages never have metadata.type set.
-   * All automated messages (event notifications, task wakes, agent messages, etc.)
-   * have metadata.type defined.
+   * Check if a message is automated (system-initiated, not user-typed).
+   * Delegates to the pure helper in previous-user-message.ts: string
+   * metadata.type (except the user-authored `question_answers` tag),
+   * non-empty fromAgentId, or source === 'system' — plus the legacy
+   * text-prefix fallback for messages that lost metadata.
    */
   function isAutomatedMessage(message: AgentMessage): boolean {
-    // Primary check: User-typed messages never have metadata.type
-    // All automated messages have metadata.type set
-    if (message.metadata?.type) {
-      return true;
-    }
-
-    // Fallback check for legacy messages that lost metadata during persistence
-    // Check if the message content starts with known automated message patterns
-    const text = extractAllContent(message);
-    if (
-      text.startsWith('[WORKSPACE EVENTS]') ||
-      text.startsWith('[TASK WAKE]') ||
-      text.startsWith('[AGENT MESSAGE]')
-    ) {
-      return true;
-    }
-
-    return false;
+    return isAutomatedChatMessage(message);
   }
 
   function isEventWakeMessage(message?: AgentMessage): boolean {
@@ -2572,22 +2560,20 @@
     };
   });
 
-  // Scroll to previous user message from the current sticky one
+  // Scroll to previous user-authored message from the current sticky one.
+  // Automated rows (wakes, system, agent-origin) are skipped; when the
+  // current message is itself automated, the walk starts from its position
+  // in the full message order. No preceding user message → scroll to top.
   function scrollToPreviousUserMessage(currentMessageId: string) {
     if (!scrollContainer) return;
 
-    // Get all user messages
-    const userMessages = $agentMessages$.filter((m) => m.role === 'user');
-    const currentIndex = userMessages.findIndex((m) => m.id === currentMessageId);
+    const previousMessage = findPreviousUserMessage($agentMessages$, currentMessageId);
 
-    if (currentIndex <= 0) {
-      // At first message or not found - scroll to top
+    if (!previousMessage) {
+      // No preceding user-authored message - scroll to top
       smoothScrollToPosition(0);
       return;
     }
-
-    // Find the previous user message
-    const previousMessage = userMessages[currentIndex - 1];
     const targetElement = scrollContainer.querySelector(
       `[data-message-id="${previousMessage.id}"]`,
     ) as HTMLElement;
