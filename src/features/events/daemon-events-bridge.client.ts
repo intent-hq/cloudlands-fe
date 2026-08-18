@@ -173,7 +173,6 @@ import {
   updateAgentDigest,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
-import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   hydrateAgentsRequested,
@@ -714,25 +713,6 @@ function dispatchStreamUpdate(
   // registration install.
   const covered = hasStandingChatSubscription(agentId);
 
-  let contentBlocksPatch: { contentBlocks?: ContentBlock[] } = {};
-  if (!covered) {
-    const candidateBlocks = buildContentBlocks(state);
-    const canonicalBlocks = selectAgentMessageById.select(appStore.state, agentId, state.messageId)
-      ?.contentBlocks;
-    const candidateIds = new Set(
-      candidateBlocks.flatMap((block) => (typeof block.id === 'string' ? [block.id] : [])),
-    );
-    const dropsCanonicalBlock = canonicalBlocks?.some(
-      (block) => typeof block.id === 'string' && !candidateIds.has(block.id),
-    );
-    // PROTOCOL §7 makes chat.subscribe the canonical transcript writer. The
-    // legacy event accumulator may add blocks for older daemons, but it must
-    // never erase stable blocks that the canonical channel already supplied.
-    contentBlocksPatch = {
-      contentBlocks: dropsCanonicalBlock ? canonicalBlocks : candidateBlocks,
-    };
-  }
-
   appStore.dispatch(
     agentStreamUpdateReceived({
       workspaceId: state.workspaceId,
@@ -741,7 +721,7 @@ function dispatchStreamUpdate(
       source: 'sendMessage',
       eventType,
       assistantMessageId: state.messageId,
-      ...contentBlocksPatch,
+      ...(covered ? {} : { contentBlocks: buildContentBlocks(state) }),
       ...(stopReason ? { stopReason } : {}),
       ...(finishReason ? { finishReason } : {}),
     }),
