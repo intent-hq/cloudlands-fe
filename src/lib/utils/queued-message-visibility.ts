@@ -13,6 +13,7 @@
  */
 
 import type { QueuedMessage } from '$shared/types';
+import { isUserAuthoredMetadata } from './message-authorship';
 
 /**
  * Canonical queue-visibility predicate: true when a queued entry is
@@ -22,25 +23,10 @@ import type { QueuedMessage } from '$shared/types';
  * tag), `fromAgentId` is a non-empty string, or `source === 'system'`.
  * Every daemon-origin entry — agent-to-agent sends, event-notification
  * wakes, hook wakes, PR-monitor wakes, `questions_dismissed`,
- * `source: 'system'` — stays hidden.
+ * `source: 'system'` — stays hidden. The rules live in the shared
+ * authorship core (message-authorship.ts), also used by the transcript
+ * predicate in previous-user-message.ts.
  */
 export function isUserQueuedMessage(message: QueuedMessage): boolean {
-  const metadata = message.messageMetadata;
-  if (!metadata || typeof metadata !== 'object') return true;
-  const md = metadata as Record<string, unknown>;
-  // Explicit contract pin for dismissal notifications (`agent.dismissQuestions`,
-  // `{ type: 'questions_dismissed', source: 'system', dismissedQuestionsMessageId }`):
-  // the undelivered entry never renders in the queued-message list. Redundant
-  // with the generic string-`type` rule below, kept as belt-and-braces.
-  if (md.type === 'questions_dismissed') return false;
-  // The Q&A wizard's answer message is USER-authored despite its tag
-  // (`{ type: 'question_answers', answeredQuestionsMessageId }`, see
-  // questions/answer-message.ts): it travels through the ordinary send path
-  // and can be auto-queued during the turn-startup race, so it must stay
-  // visible (editable/removable/sendable) in the queue.
-  if (md.type === 'question_answers') return true;
-  if (typeof md.type === 'string') return false;
-  if (typeof md.fromAgentId === 'string' && md.fromAgentId.trim() !== '') return false;
-  if (md.source === 'system') return false;
-  return true;
+  return isUserAuthoredMetadata(message.messageMetadata);
 }
