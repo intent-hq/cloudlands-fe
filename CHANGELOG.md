@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.64.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.63.0...v2.64.0) (2026-08-18)
+
+
+### 🚀 Features
+
+* **browser:** keep background-workspace webviews alive offscreen for content-level ops ([c799f96](https://github.com/intent-hq/cloudlands-fe/commit/c799f96c67bda00e1461aeb259819ef0d3cd5468))
+
 ## [2.63.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.62.1...v2.63.0) (2026-08-18)
 
 
