@@ -434,8 +434,12 @@ describe('browser-action-executor', () => {
       expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledExactlyOnceWith(
         'tab-existing',
       );
-      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-existing', 'agent-1');
-      expect(embeddedBrowserCdp.touchLease).not.toHaveBeenCalledWith('tab-phantom', 'agent-1');
+      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-existing', 'agent-1', null);
+      expect(embeddedBrowserCdp.touchLease).not.toHaveBeenCalledWith(
+        'tab-phantom',
+        'agent-1',
+        null,
+      );
       expect(result.results[0]?.result).toMatchObject({ tabId: 'tab-existing', replaced: true });
     });
 
@@ -1471,8 +1475,9 @@ describe('browser-action-executor', () => {
       // Agent opens force a genuinely new tab in the renderer — the executor
       // is the dedupe authority.
       expect(mockOpenTabFn).toHaveBeenCalledWith('http://localhost:3000/board', undefined, true);
-      // The new tab is leased at open time so it counts as model-opened.
-      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-new', 'agent-1');
+      // The new tab is leased at open time so it counts as model-opened; a
+      // non-tunneled open clears any stale requested-URL identity.
+      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-new', 'agent-1', null);
 
       // Second openTab for the same URL now finds the leased tab and reuses it.
       vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-new');
@@ -1526,24 +1531,32 @@ describe('browser-action-executor', () => {
     });
 
     /**
-     * Tunnel provider that mints a fresh local port on every forwardPort
-     * call (the remote-daemon behavior from the issue) while exposing the
-     * minted forwards through activeForwards, like the real providers.
+     * Tunnel provider mirroring the real ones (TunnelManager, DirectRelay):
+     * forwardPort is idempotent — a repeat call for an already-forwarded
+     * remote port returns the existing forward's local port — and minted
+     * forwards are exposed through activeForwards.
      */
-    function freshPortTunnelProvider() {
-      const forwards: Array<{ remotePort: number; localPort: number }> = [];
+    function idempotentTunnelProvider() {
+      const forwards = new Map<number, number>();
       let nextPort = 55001;
       const forwardPort = vi.fn(async (remotePort: number) => {
-        const localPort = nextPort++;
-        forwards.push({ remotePort, localPort });
+        let localPort = forwards.get(remotePort);
+        if (localPort === undefined) {
+          localPort = nextPort++;
+          forwards.set(remotePort, localPort);
+        }
         return localPort;
       });
-      return { forwardPort, activeForwards: () => [...forwards] };
+      return {
+        forwardPort,
+        activeForwards: () =>
+          [...forwards.entries()].map(([remotePort, localPort]) => ({ remotePort, localPort })),
+      };
     }
 
     it('repeat identical openTab calls converge on one tab instead of minting duplicates', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
-      const provider = freshPortTunnelProvider();
+      const provider = idempotentTunnelProvider();
       // Simulate the live tab registry: exact-URL dedupe matches once a tab
       // is open on that URL.
       const openedUrls: string[] = [];
@@ -1575,20 +1588,22 @@ describe('browser-action-executor', () => {
 
       const second = await exec();
       expect(second.success).toBe(true);
-      // The same requested URL resolves to the same tunnel URL, so the
-      // exact-URL dedupe finds the first tab instead of opening another.
+      // The same requested URL resolves to the same tunnel URL (forwardPort
+      // is idempotent), so the exact-URL dedupe finds the first tab instead
+      // of opening another. forwardPort is called each time so the ownership
+      // wrapper seam records the caller.
       expect(second.results[0]?.result).toMatchObject({
         reused: true,
         tabId: 'tab-1',
         url: 'http://127.0.0.1:55001/',
       });
-      expect(provider.forwardPort).toHaveBeenCalledTimes(1);
+      expect(provider.forwardPort).toHaveBeenCalledTimes(2);
       expect(mockOpenTabFn).toHaveBeenCalledTimes(1);
     });
 
     it('records the requested URL on the lease of a newly opened tunneled tab', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
-      const provider = freshPortTunnelProvider();
+      const provider = idempotentTunnelProvider();
       mockOpenTabFn.mockReturnValueOnce({ success: true, message: 'opened', tabId: 'tab-new' });
 
       await executeActions(
@@ -1601,6 +1616,29 @@ describe('browser-action-executor', () => {
       );
 
       expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-new', 'agent-1', REQUESTED);
+    });
+
+    it('records the requested URL when a tunneled open reuses an idle tab', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      const provider = idempotentTunnelProvider();
+      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle' as never);
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: REQUESTED }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+        remoteContext,
+        () => provider,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.result).toMatchObject({ reused: true, tabId: 'tab-idle' });
+      // The repurposed tab's lease must carry the requested URL so a later
+      // repeat after a forward re-mint can dedupe onto it (the idle-reuse
+      // branch is a fresh agent's common first-open path).
+      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-idle', 'agent-1', REQUESTED);
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
     });
 
     it('falls back to requestedUrl dedupe when the old forward died and a new port was minted', async () => {
@@ -1665,7 +1703,7 @@ describe('browser-action-executor', () => {
 
     it('allowDuplicate: true bypasses the requestedUrl fallback too', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
-      const provider = freshPortTunnelProvider();
+      const provider = idempotentTunnelProvider();
       vi.mocked(embeddedBrowserCdp.findModelTabByRequestedUrl).mockResolvedValue('tab-old');
 
       const result = await executeActions(
@@ -1696,8 +1734,8 @@ describe('browser-action-executor', () => {
 
       expect(result.success).toBe(true);
       expect(embeddedBrowserCdp.findModelTabByRequestedUrl).not.toHaveBeenCalled();
-      // Non-tunneled leases carry no requested URL.
-      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-new', 'agent-1');
+      // Non-tunneled opens clear the lease's requested URL (null).
+      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-new', 'agent-1', null);
     });
   });
 });

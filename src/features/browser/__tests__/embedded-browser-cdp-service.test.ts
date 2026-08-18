@@ -350,6 +350,19 @@ describe('findModelTabByRequestedUrl (#2787)', () => {
     );
   });
 
+  it('touchLease with null clears the recorded requested URL (tab repurposed)', async () => {
+    const service = await loadService();
+    wireRenderer([{ tabId: 'tab-a', url: TUNNELED_OLD, title: 'A' }]);
+    mocks.getAllWebContents.mockReturnValue([fakeWebview(58, TUNNELED_OLD)]);
+    service.registerTab('tab-a', 58);
+    service.touchLease('tab-a', 'agent-1', REQUESTED);
+    service.touchLease('tab-a', 'agent-1', null); // repurposed for a non-tunneled open
+
+    await expect(
+      service.findModelTabByRequestedUrl(REQUESTED, 'agent-1', 'ws-1'),
+    ).resolves.toBeUndefined();
+  });
+
   it("never returns a matching tab from another workspace's panel layout", async () => {
     const service = await loadService();
     wireRenderer([]);

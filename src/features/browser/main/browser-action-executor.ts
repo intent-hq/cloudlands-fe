@@ -486,6 +486,15 @@ async function executeAction(
               requestedUrl: action.url,
               agentId,
             });
+            // Re-record the lease identity for this open: tunneled opens set
+            // the requested URL backing the requested-URL dedupe fallback
+            // below; non-tunneled opens clear any stale identity from the
+            // tab's prior use (intent-hq/monorepo#2787).
+            embeddedBrowserCdp.touchLease(
+              duplicateTabId,
+              agentId,
+              openTabTarget.tunneled ? action.url : null,
+            );
             const focused = await embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId);
             return {
               action: 'openTab',
@@ -561,6 +570,15 @@ async function executeAction(
                 idleTabId,
                 `window.location.href = ${JSON.stringify(finalRewrite.url)}`,
               );
+              // Record the repurposed tab's new identity: tunneled opens set
+              // the requested URL so a later repeat after a forward re-mint
+              // can dedupe onto this tab; non-tunneled opens clear any stale
+              // identity from the tab's prior use (intent-hq/monorepo#2787).
+              embeddedBrowserCdp.touchLease(
+                idleTabId,
+                agentId,
+                openTabTarget.tunneled ? action.url : null,
+              );
               await embeddedBrowserCdp.focusTab(idleTabId, workspaceId);
               return {
                 action: 'openTab',
@@ -615,14 +633,16 @@ async function executeAction(
         // Lease the tab to the requesting agent right away so a repeat
         // openTab for the same URL dedupes onto it (intent-hq/monorepo#2541)
         // instead of treating it as an untouchable user-opened tab. Tunneled
-        // opens also record the original requested URL, backing the
-        // requested-URL dedupe fallback above (intent-hq/monorepo#2787).
+        // opens record the original requested URL, backing the requested-URL
+        // dedupe fallback above; non-tunneled opens clear any stale identity
+        // (a replace-position open adopts an existing tab whose lease may
+        // carry one) (intent-hq/monorepo#2787).
         if (agentId && result.success && effectiveTabId) {
-          if (openTabTarget.tunneled) {
-            embeddedBrowserCdp.touchLease(effectiveTabId, agentId, action.url);
-          } else {
-            embeddedBrowserCdp.touchLease(effectiveTabId, agentId);
-          }
+          embeddedBrowserCdp.touchLease(
+            effectiveTabId,
+            agentId,
+            openTabTarget.tunneled ? action.url : null,
+          );
         }
         // Await the renderer's registration of the tab so the returned
         // handle is immediately addressable — returning before the webview

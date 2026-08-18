@@ -216,21 +216,15 @@ export async function resolveRewrittenRemoteTarget(
     if (tunnel) {
       try {
         const remotePort = Number(port);
-        // Reuse an existing forward for this remote port instead of minting
-        // a fresh one: forwards are persistent, and a stable local port keeps
-        // the final URL identical across repeat resolutions so openTab's
-        // exact-URL dedupe can match (intent-hq/monorepo#2787). A throwing
-        // activeForwards means "no known forwards" — mint as before.
-        let localPort: number | undefined;
-        try {
-          localPort = tunnel.activeForwards?.().find((f) => f.remotePort === remotePort)?.localPort;
-        } catch {
-          localPort = undefined;
-        }
-        const reusedForward = localPort !== undefined;
-        if (localPort === undefined) {
-          localPort = await tunnel.forwardPort(remotePort);
-        }
+        // forwardPort is idempotent on both real providers (TunnelManager,
+        // DirectRelay): a repeat call for an already-forwarded remote port
+        // returns the existing forward's local port, so repeat resolutions of
+        // the same requested URL yield an identical final URL and openTab's
+        // exact-URL dedupe can match (intent-hq/monorepo#2787). Always call
+        // it — never shortcut via activeForwards — so the ownership wrapper
+        // seam records the requesting workspace as a co-owner of the forward
+        // (refcounted cleanup, cloudlands-fe#1325).
+        const localPort = await tunnel.forwardPort(remotePort);
         // Known limitation: an `https` URL keeps its scheme with the host
         // swapped to 127.0.0.1, so the origin server's cert fails hostname
         // verification in the embedded browser. Nothing better is possible
@@ -244,7 +238,6 @@ export async function resolveRewrittenRemoteTarget(
           rewrittenUrl: rewrite.url,
           remotePort,
           localPort,
-          reusedForward,
         });
         return {
           rewrite: {

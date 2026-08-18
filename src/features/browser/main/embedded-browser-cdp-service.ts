@@ -687,15 +687,20 @@ class EmbeddedBrowserCdpService {
    * Call this on every action that targets a tab to keep the lease fresh.
    *
    * `requestedUrl` records the agent's original requested URL (tunneled
-   * opens); when omitted, a previously recorded value is preserved so plain
-   * refreshes (screenshots, evaluates) don't erase it.
+   * opens): a string sets it, `null` clears it (the tab was repurposed for a
+   * new non-tunneled target, so a stale identity must not linger), and
+   * omitting it preserves a previously recorded value so plain refreshes
+   * (screenshots, evaluates) don't erase it.
    */
-  touchLease(tabId: string, agentId: string, requestedUrl?: string): void {
-    const preserved = requestedUrl ?? this.tabLeases.get(tabId)?.requestedUrl;
+  touchLease(tabId: string, agentId: string, requestedUrl?: string | null): void {
+    const recorded =
+      requestedUrl === null
+        ? undefined
+        : (requestedUrl ?? this.tabLeases.get(tabId)?.requestedUrl);
     this.tabLeases.set(tabId, {
       agentId,
       lastUsedAt: Date.now(),
-      ...(preserved !== undefined ? { requestedUrl: preserved } : {}),
+      ...(recorded !== undefined ? { requestedUrl: recorded } : {}),
     });
   }
 
