@@ -12,29 +12,28 @@
 
 import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
+import { isUserAuthoredMetadata } from './message-authorship';
 
 const LEGACY_AUTOMATED_PREFIXES = ['[WORKSPACE EVENTS]', '[TASK WAKE]', '[AGENT MESSAGE]'];
 
 /**
  * True when a transcript message is automated (system-initiated, not
- * user-typed). A message is automated iff its `metadata` carries a string
- * `type` (except the user-authored `question_answers` wizard tag, matching
- * `isUserQueuedMessage`), a non-empty `fromAgentId`, or `source === 'system'`
- * — or, as a legacy fallback for rows that lost metadata, its text starts
- * with a known automated-message prefix.
+ * user-typed). A message is automated iff the shared authorship core
+ * (message-authorship.ts, also used by `isUserQueuedMessage`) classifies its
+ * `metadata` as non-user — string `type` except the user-authored
+ * `question_answers` wizard tag, non-empty `fromAgentId`, or
+ * `source === 'system'` — or, as a legacy fallback for rows that lost
+ * metadata, its text starts with a known automated-message prefix.
  */
 export function isAutomatedChatMessage(message: AgentMessage): boolean {
   const metadata = message.metadata;
   if (metadata && typeof metadata === 'object') {
     const md = metadata as Record<string, unknown>;
-    // The Q&A wizard's answer message is USER-authored despite its tag
-    // (`{ type: 'question_answers', answeredQuestionsMessageId }`): it
-    // travels through the ordinary send path, so it stays user-authored.
-    if (md.type !== 'question_answers') {
-      if (typeof md.type === 'string') return true;
-      if (typeof md.fromAgentId === 'string' && md.fromAgentId.trim() !== '') return true;
-      if (md.source === 'system') return true;
-    }
+    // Strict parity with the canonical predicate (which has no text
+    // fallback): a `question_answers` row is user-authored, pinned even
+    // against the legacy prefix fallback below.
+    if (md.type === 'question_answers') return false;
+    if (!isUserAuthoredMetadata(metadata)) return true;
   }
 
   // Fallback for legacy messages that lost metadata during persistence

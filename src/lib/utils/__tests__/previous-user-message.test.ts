@@ -45,6 +45,29 @@ describe('isAutomatedChatMessage', () => {
     ).toBe(false);
   });
 
+  it('keeps question_answers user-authored even alongside system/fromAgentId markers', () => {
+    // Pins the gate ordering shared with isUserQueuedMessage: the
+    // question_answers exception is applied before the other checks.
+    expect(
+      isAutomatedChatMessage(
+        msg('m1', 'user', 'answers', { type: 'question_answers', source: 'system' }),
+      ),
+    ).toBe(false);
+    expect(
+      isAutomatedChatMessage(
+        msg('m2', 'user', 'answers', { type: 'question_answers', fromAgentId: 'agent-123' }),
+      ),
+    ).toBe(false);
+  });
+
+  it('exempts question_answers from the legacy text-prefix fallback', () => {
+    expect(
+      isAutomatedChatMessage(
+        msg('m1', 'user', '[AGENT MESSAGE] quoted text', { type: 'question_answers' }),
+      ),
+    ).toBe(false);
+  });
+
   it('flags agent-origin (fromAgentId) and system-source messages as automated', () => {
     expect(
       isAutomatedChatMessage(msg('m1', 'user', 'from agent', { fromAgentId: 'agent-123' })),
@@ -58,6 +81,12 @@ describe('isAutomatedChatMessage', () => {
     expect(isAutomatedChatMessage(msg('m2', 'user', '[TASK WAKE] resume'))).toBe(true);
     expect(isAutomatedChatMessage(msg('m3', 'user', '[AGENT MESSAGE] hi'))).toBe(true);
     expect(isAutomatedChatMessage(msg('m4', 'user', 'normal text'))).toBe(false);
+  });
+
+  it('applies the legacy prefix fallback when metadata exists but carries no markers', () => {
+    expect(
+      isAutomatedChatMessage(msg('m1', 'user', '[WORKSPACE EVENTS] file changed', { model: 'x' })),
+    ).toBe(true);
   });
 });
 
