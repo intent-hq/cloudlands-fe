@@ -860,6 +860,40 @@ describe('SidebarChangesPanel', () => {
       });
     });
 
+    it('orders PR rows newest-updated first in the primary view', async () => {
+      const workspace = makeWorkspace({
+        pullRequests: [
+          {
+            number: 41,
+            title: 'Older PR',
+            url: 'https://github.com/testorg/testrepo/pull/41',
+            status: 'Open',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-02T00:00:00Z',
+          },
+          {
+            number: 42,
+            title: 'Newer PR',
+            url: 'https://github.com/testorg/testrepo/pull/42',
+            status: 'Open',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-02-02T00:00:00Z',
+          },
+        ],
+      });
+      mockWorkspaceStore.findById.mockReturnValue(workspace);
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        const text = container.textContent || '';
+        expect(text).toContain('Older PR');
+        expect(text).toContain('Newer PR');
+        // Recency sort: the newest-updated PR renders first
+        expect(text.indexOf('Newer PR')).toBeLessThan(text.indexOf('Older PR'));
+      });
+    });
+
     it('renders PR section with merged PR', async () => {
       const workspace = makeWorkspace({
         pullRequests: [

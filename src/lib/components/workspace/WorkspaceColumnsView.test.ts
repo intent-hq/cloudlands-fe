@@ -277,6 +277,31 @@ describe('WorkspaceColumnsView', () => {
     }
   });
 
+  it('reports the surface-mounted workspace set as visibility changes', async () => {
+    stubIntersectionObserver();
+    try {
+      currentWorkspaceId.set('ws-1');
+      workspaceStacks.set([['ws-1'], ['ws-2'], ['ws-3']]);
+      let reported: ReadonlySet<string> = new Set();
+      render(WorkspaceColumnsView, {
+        props: {
+          onMountedWorkspaceIdsChange: (mounted: ReadonlySet<string>) => (reported = mounted),
+        },
+      });
+      await tick();
+      expect([...reported].sort()).toEqual(['ws-1']);
+
+      const observer = MockIntersectionObserver.instances[0]!;
+      observer.fire([
+        { target: document.querySelector('[data-workspace-stack="ws-2"]')!, isIntersecting: true },
+      ]);
+      await tick();
+      expect([...reported].sort()).toEqual(['ws-1', 'ws-2']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('keeps each workspace width independent when stack membership changes', async () => {
     panelCounts.set({ 'ws-2': 1 });
     render(WorkspaceColumnsView);

@@ -135,6 +135,45 @@ describe('embedded browser CDP workspace routing', () => {
     });
   });
 
+  // Offscreen keep-alive handoff (monorepo#2789 slice 2): a tab moving
+  // between hosts (offscreen container ↔ visible panel) re-registers with a
+  // new webContentsId before the superseded guest's destroyed event fires.
+  // The destroyed hook must not clobber the newer registration.
+  describe('registerTab destroyed-hook handoff guard', () => {
+    function registerWithDestroyCapture(tabId: string, webContentsId: number): () => void {
+      let destroyedCallback: (() => void) | undefined;
+      mocks.fromId.mockReturnValueOnce({
+        isDestroyed: () => false,
+        once: (event: string, cb: () => void) => {
+          if (event === 'destroyed') destroyedCallback = cb;
+        },
+      });
+      embeddedBrowserCdp.registerTab(tabId, webContentsId);
+      return () => destroyedCallback?.();
+    }
+
+    it('keeps the newer registration when a superseded webContents is destroyed', async () => {
+      const fireOldDestroyed = registerWithDestroyCapture('tab-handoff', 210);
+      registerWithDestroyCapture('tab-handoff', 211);
+      fireOldDestroyed();
+      mocks.fromId.mockReturnValue({ isDestroyed: () => false, once: vi.fn() });
+      await expect(embeddedBrowserCdp.waitForTabRegistration('tab-handoff')).resolves.toBe(true);
+    });
+
+    it('still cleans the registry when the current webContents is destroyed', async () => {
+      const fireDestroyed = registerWithDestroyCapture('tab-gone', 220);
+      fireDestroyed();
+      vi.useFakeTimers();
+      try {
+        const pending = embeddedBrowserCdp.waitForTabRegistration('tab-gone', 1_000);
+        await vi.advanceTimersByTimeAsync(1_000);
+        await expect(pending).resolves.toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it('fails a close with a clear error when the workspace is not open in any window', async () => {
     mocks.sendToWorkspaceWindows.mockImplementation(
       (workspaceId: string, channel: string, payload: { requestId?: string }) => {
@@ -248,6 +287,33 @@ describe('embedded browser CDP workspace routing', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    // monorepo#2789: a renderer whose background layout hydration failed
+    // reports a truthful error; the request rejects with it instead of
+    // timing out as "renderer did not respond".
+    it('rejects with the renderer-reported error instead of waiting out the timeout', async () => {
+      mocks.sendToWorkspaceWindows.mockImplementation(
+        (workspaceId: string, channel: string, payload: { requestId?: string }) => {
+          if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+          responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+            {},
+            { error: 'layout hydration failed: storage exploded', requestId: payload.requestId },
+          );
+          return DELIVERED;
+        },
+      );
+
+      await expect(embeddedBrowserCdp.requestPanelBrowserTabs('ws-hydfail')).rejects.toThrow(
+        'layout hydration failed: storage exploded',
+      );
+    });
+
+    it('ignores a nullish list-tabs response payload without throwing', () => {
+      const handler = responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE);
+      expect(handler).toBeDefined();
+      expect(() => handler?.({}, null)).not.toThrow();
+      expect(() => handler?.({}, undefined)).not.toThrow();
     });
 
     it('closeTab refuses to report "already closed" from a stale tab list missing the tab', async () => {

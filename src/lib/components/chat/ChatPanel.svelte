@@ -2889,6 +2889,13 @@
     followBottom?: boolean;
     historyText?: string | null;
   }) {
+    // Scroll + follow re-lock must run synchronously, before any await: a
+    // stalled or rejecting drafts.clear must never delay or skip them.
+    if (options.followBottom) {
+      shouldFollowBottom = true;
+      if (scrollContainer) followToBottom(scrollContainer);
+    }
+
     if (options.historyText) {
       addToInputHistory(options.historyText);
     }
@@ -2905,11 +2912,6 @@
       if (workspace && agentId) {
         await appClient.drafts.clear(workspace.id, agentId);
       }
-    }
-
-    if (options.followBottom) {
-      shouldFollowBottom = true;
-      if (scrollContainer) followToBottom(scrollContainer);
     }
   }
 
@@ -2950,10 +2952,9 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
-    const followAfterSend = $agentMessages$.length === 0 || shouldFollowBottom;
     const userAppMessageId = prepareMessageSendTransition(text, {
       enabled: !$agentIsResponding$ && imageBlocks.length === 0 && fileBlocks.length === 0,
-      followBottom: followAfterSend,
+      followBottom: true,
     });
 
     // Dispatch all orchestration to the send-message saga
@@ -2975,7 +2976,7 @@
 
     void performLocalSendCleanup({
       clearInput: true,
-      followBottom: followAfterSend,
+      followBottom: true,
       historyText: text,
     });
   }
@@ -3118,10 +3119,9 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
-    const followAfterSend = $agentMessages$.length === 0 || shouldFollowBottom;
     const userAppMessageId = prepareMessageSendTransition(text, {
       enabled: imageBlocks.length === 0 && fileBlocks.length === 0,
-      followBottom: followAfterSend,
+      followBottom: true,
       allowOverlap: true,
     });
 
@@ -3144,7 +3144,7 @@
 
     void performLocalSendCleanup({
       clearInput: true,
-      followBottom: followAfterSend,
+      followBottom: true,
       historyText: text,
     });
   }
@@ -3190,6 +3190,9 @@
     // Failures are surfaced via toast by the edit-regenerate middleware;
     // swallow the rejection here to avoid an unhandled-rejection warning.
     action.promise.catch(() => {});
+    // No launch-bubble transition on this path (there is no composer origin);
+    // just re-engage auto-follow and scroll so the regeneration is visible.
+    void performLocalSendCleanup({ followBottom: true });
   }
 
   // Handle regenerating from a specific assistant message

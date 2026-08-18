@@ -78,9 +78,16 @@
 
   interface Props {
     onHorizontalOverlapChange?: (overlap: boolean) => void;
+    /**
+     * Reports which workspaces currently render a real WorkspaceSurface
+     * (virtualized columns render placeholders instead), so the offscreen
+     * webview host can keep the placeholder-only workspaces' browser tabs
+     * alive (monorepo#2789 slice 2).
+     */
+    onMountedWorkspaceIdsChange?: (mounted: ReadonlySet<string>) => void;
   }
 
-  let { onHorizontalOverlapChange = () => {} }: Props = $props();
+  let { onHorizontalOverlapChange = () => {}, onMountedWorkspaceIdsChange }: Props = $props();
 
   const currentWorkspaceId$ = selectCurrentWorkspaceTabId();
   const workspaceStacks$ = selectWorkspaceStacks();
@@ -181,6 +188,10 @@
       if (columnsScroller !== scroller || $currentWorkspaceId$ !== workspaceId) return;
       navigatorPanelRoot = findWorkspaceColumn(scroller, workspaceId);
     });
+  });
+
+  $effect(() => {
+    onMountedWorkspaceIdsChange?.(mountedWorkspaceIds);
   });
 
   $effect(() => {

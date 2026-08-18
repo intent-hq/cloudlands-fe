@@ -45,6 +45,13 @@ interface PanelBrowserTab {
 interface TabLease {
   agentId: string;
   lastUsedAt: number;
+  /**
+   * Original URL the agent asked to open, recorded when it differs from the
+   * final URL (tunneled opens, where the final URL embeds an ephemeral
+   * forward port). Backs the openTab requested-URL dedupe fallback
+   * (intent-hq/monorepo#2787).
+   */
+  requestedUrl?: string;
 }
 
 /**
@@ -74,7 +81,11 @@ class EmbeddedBrowserCdpService {
   /** Pending resolvers for list-tabs requests, keyed by request ID */
   private pendingListTabsRequests = new Map<
     string,
-    { workspaceId?: string; resolve: (tabs: PanelBrowserTab[]) => void }
+    {
+      workspaceId?: string;
+      resolve: (tabs: PanelBrowserTab[]) => void;
+      reject: (error: Error) => void;
+    }
   >();
 
   /** Counter for generating unique request IDs */
@@ -90,11 +101,32 @@ class EmbeddedBrowserCdpService {
     // Listen for browser tab list responses from renderer
     ipcMain.handle(
       IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE,
-      (_event, data: { tabs: PanelBrowserTab[]; requestId?: string }) => {
+      (_event, data: { tabs?: PanelBrowserTab[]; requestId?: string; error?: string } | null) => {
+        if (!data || typeof data !== 'object') return;
         logger.debug('Received browser tab list from renderer', {
-          count: data.tabs.length,
+          count: data.tabs?.length,
           requestId: data.requestId,
+          error: data.error,
         });
+        if (typeof data.error === 'string') {
+          // Truthful error from the renderer (e.g. background layout
+          // hydration failed, monorepo#2789): reject the matching request
+          // instead of letting it time out as "renderer did not respond".
+          // The cache is left untouched. Unlike the resolve path below, an
+          // error without a requestId is deliberately dropped (no
+          // reject-all-pending semantics): one window's hydration failure
+          // must not fail other windows' healthy pending requests.
+          if (data.requestId) {
+            const pending = this.pendingListTabsRequests.get(data.requestId);
+            if (pending) {
+              this.pendingListTabsRequests.delete(data.requestId);
+              pending.reject(new Error(data.error));
+            }
+          }
+          return;
+        }
+        if (!Array.isArray(data.tabs)) return;
+        const tabs = data.tabs;
         if (data.requestId) {
           // Resolve only the request this reply answers, so concurrent
           // requests for different workspaces never consume each other's
@@ -102,15 +134,15 @@ class EmbeddedBrowserCdpService {
           const pending = this.pendingListTabsRequests.get(data.requestId);
           if (pending) {
             this.pendingListTabsRequests.delete(data.requestId);
-            this.panelBrowserTabsCache.set(pending.workspaceId ?? '', data.tabs);
-            pending.resolve(data.tabs);
+            this.panelBrowserTabsCache.set(pending.workspaceId ?? '', tabs);
+            pending.resolve(tabs);
           }
         } else {
           // Reply without a requestId — resolve all pending requests
           for (const [requestId, pending] of this.pendingListTabsRequests) {
             this.pendingListTabsRequests.delete(requestId);
-            this.panelBrowserTabsCache.set(pending.workspaceId ?? '', data.tabs);
-            pending.resolve(data.tabs);
+            this.panelBrowserTabsCache.set(pending.workspaceId ?? '', tabs);
+            pending.resolve(tabs);
           }
         }
       },
@@ -142,13 +174,17 @@ class EmbeddedBrowserCdpService {
     // Generate unique request ID to avoid race conditions
     const requestId = `req-${++this.listTabsRequestCounter}-${Date.now()}`;
 
-    // Create promise that will be resolved when response arrives
-    const requestPromise = new Promise<{ tabs: PanelBrowserTab[]; stale: boolean }>((resolve) => {
-      this.pendingListTabsRequests.set(requestId, {
-        workspaceId,
-        resolve: (tabs) => resolve({ tabs, stale: false }),
-      });
-    });
+    // Create promise that will be resolved when response arrives (or
+    // rejected when the renderer reports a truthful error, monorepo#2789).
+    const requestPromise = new Promise<{ tabs: PanelBrowserTab[]; stale: boolean }>(
+      (resolve, reject) => {
+        this.pendingListTabsRequests.set(requestId, {
+          workspaceId,
+          resolve: (tabs) => resolve({ tabs, stale: false }),
+          reject,
+        });
+      },
+    );
 
     // Send only to windows displaying the requested workspace. The renderer
     // echoes requestId back so the reply resolves this request specifically,
@@ -226,14 +262,20 @@ class EmbeddedBrowserCdpService {
       for (const resolve of waiters) resolve(true);
     }
 
-    // Automatically clean up when webContents is destroyed
+    // Automatically clean up when webContents is destroyed. Only drop the
+    // registry entry/lease if the tab still points at THIS webContents — a
+    // tab handed off between hosts (offscreen keep-alive ↔ visible panel,
+    // monorepo#2789) re-registers with a new webContentsId before the old
+    // guest's destroyed event fires, and that newer mapping must survive.
     const wc = webContents.fromId(webContentsId);
     if (wc && !wc.isDestroyed()) {
       wc.once('destroyed', () => {
         logger.info('WebContents destroyed, cleaning up tab registry', { tabId, webContentsId });
-        this.tabRegistry.delete(tabId);
+        if (this.tabRegistry.get(tabId) === webContentsId) {
+          this.tabRegistry.delete(tabId);
+          this.tabLeases.delete(tabId);
+        }
         this.attachedDebuggers.delete(webContentsId);
-        this.tabLeases.delete(tabId);
       });
     }
   }
@@ -679,9 +721,23 @@ class EmbeddedBrowserCdpService {
   /**
    * Record that an agent is actively using a tab.
    * Call this on every action that targets a tab to keep the lease fresh.
+   *
+   * `requestedUrl` records the agent's original requested URL (tunneled
+   * opens): a string sets it, `null` clears it (the tab was repurposed for a
+   * new non-tunneled target, so a stale identity must not linger), and
+   * omitting it preserves a previously recorded value so plain refreshes
+   * (screenshots, evaluates) don't erase it.
    */
-  touchLease(tabId: string, agentId: string): void {
-    this.tabLeases.set(tabId, { agentId, lastUsedAt: Date.now() });
+  touchLease(tabId: string, agentId: string, requestedUrl?: string | null): void {
+    const recorded =
+      requestedUrl === null
+        ? undefined
+        : (requestedUrl ?? this.tabLeases.get(tabId)?.requestedUrl);
+    this.tabLeases.set(tabId, {
+      agentId,
+      lastUsedAt: Date.now(),
+      ...(recorded !== undefined ? { requestedUrl: recorded } : {}),
+    });
   }
 
   /**
@@ -793,6 +849,54 @@ class EmbeddedBrowserCdpService {
       logger.info('Found model-opened tab with exact URL match', {
         tabId: tab.tabId,
         url,
+        previousAgentId: lease.agentId,
+        requestingAgentId,
+        workspaceId,
+      });
+      this.touchLease(tab.tabId, requestingAgentId);
+      return tab.tabId;
+    }
+    return undefined;
+  }
+
+  /**
+   * Find a mounted, model-opened tab whose lease recorded the given
+   * requested URL, and claim it for the requesting agent.
+   *
+   * Fallback for openTab dedupe on tunneled opens (intent-hq/monorepo#2787):
+   * when the tunnel forward was re-minted, the final URL differs per call and
+   * {@link findModelTabByExactUrl} can never match — but the agent's original
+   * requested URL is stable, so the lease-recorded requestedUrl identifies
+   * the logical duplicate. Same safety rules as the exact-URL variant:
+   * candidates come from the requesting workspace's panel layout only,
+   * user-opened tabs (no lease) are never returned, and a tab actively
+   * leased by a different agent is skipped.
+   */
+  async findModelTabByRequestedUrl(
+    requestedUrl: string,
+    requestingAgentId: string,
+    workspaceId?: string,
+  ): Promise<string | undefined> {
+    // Dedupe is best-effort: an unavailable tab list just means no reusable
+    // tab was found — it must not fail the enclosing openTab.
+    let tabs: (TabInfo & { mounted: boolean })[];
+    try {
+      ({ tabs } = await this.listAllTabs(workspaceId));
+    } catch (error) {
+      logger.debug('Tab list unavailable during requestedUrl dedupe; skipping reuse', {
+        workspaceId,
+        error: (error as Error).message,
+      });
+      return undefined;
+    }
+    for (const tab of tabs) {
+      if (!tab.mounted) continue;
+      const lease = this.tabLeases.get(tab.tabId);
+      if (!lease || lease.requestedUrl !== requestedUrl) continue;
+      if (lease.agentId !== requestingAgentId && this.isTabLeased(tab.tabId)) continue;
+      logger.info('Found model-opened tab with matching requested URL', {
+        tabId: tab.tabId,
+        requestedUrl,
         previousAgentId: lease.agentId,
         requestingAgentId,
         workspaceId,

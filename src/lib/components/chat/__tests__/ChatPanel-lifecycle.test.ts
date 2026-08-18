@@ -242,7 +242,7 @@ vi.mock('../questions/QuestionWizard.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../ChatMessage.svelte', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/MockChatMessage.svelte')).default,
 }));
 vi.mock('../questions/wizard-gate', () => ({
   deriveWizardPendingQuestions: () => mocks.pendingQuestions,
@@ -677,6 +677,108 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(document.querySelectorAll('[data-message-send-transition]')).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(3000);
     expect(document.querySelector('[data-message-send-transition]')).toBeNull();
+  });
+
+  it('re-engages follow and scrolls to the bottom on send even when scrolled up', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+
+    // Simulate the user scrolling up mid-conversation: auto-follow disengages.
+    mocks.followBottomOptions?.onFollowChange?.(false);
+    await tick();
+    vi.mocked(scrollToBottomUtil).mockClear();
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'sent from a scrolled-up transcript' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    expect(vi.mocked(scrollToBottomUtil)).toHaveBeenCalledWith(scrollContainer);
+
+    // Follow was re-engaged: the unmount-time cache records follow=true.
+    view.unmount();
+    expect(getCachedChatScroll('workspace-a', 'agent-a')).toMatchObject({
+      shouldFollowBottom: true,
+    });
+  });
+
+  it('re-engages follow and scrolls to the bottom on send even when drafts.clear never settles', async () => {
+    // Regression: the followBottom branch of performLocalSendCleanup used to
+    // run after `await appClient.drafts.clear(...)`, so a stalled (or
+    // rejecting) clear delayed or skipped the scroll + follow re-lock. It must
+    // run synchronously, before the drafts round-trip.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.draftClear.mockReturnValue(new Promise(() => {}));
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+
+    // Simulate the user scrolling up mid-conversation: auto-follow disengages.
+    mocks.followBottomOptions?.onFollowChange?.(false);
+    await tick();
+    vi.mocked(scrollToBottomUtil).mockClear();
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'sent while drafts.clear hangs' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await tick();
+
+    // The clear is still pending, yet the scroll + re-lock already happened.
+    expect(mocks.draftClear).toHaveBeenCalledWith('workspace-a', 'agent-a');
+    expect(vi.mocked(scrollToBottomUtil)).toHaveBeenCalledWith(scrollContainer);
+
+    // Follow was re-engaged: the unmount-time cache records follow=true.
+    view.unmount();
+    expect(getCachedChatScroll('workspace-a', 'agent-a')).toMatchObject({
+      shouldFollowBottom: true,
+    });
+  });
+
+  it('re-engages follow and scrolls to the bottom on edit-and-regenerate when scrolled up', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'u1', role: 'user', content: 'original prompt', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+
+    // Simulate the user scrolling up mid-conversation: auto-follow disengages.
+    mocks.followBottomOptions?.onFollowChange?.(false);
+    await tick();
+    vi.mocked(scrollToBottomUtil).mockClear();
+
+    // Confirm an edit-and-regenerate on the user message.
+    await fireEvent.click(screen.getByTestId('mock-edit-submit'));
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    expect(vi.mocked(scrollToBottomUtil)).toHaveBeenCalledWith(scrollContainer);
+
+    // Follow was re-engaged: the unmount-time cache records follow=true.
+    view.unmount();
+    expect(getCachedChatScroll('workspace-a', 'agent-a')).toMatchObject({
+      shouldFollowBottom: true,
+    });
   });
 
   it('keeps draft restore and save ownership with the rebound workspace and agent', async () => {

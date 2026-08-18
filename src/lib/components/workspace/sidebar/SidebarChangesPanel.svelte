@@ -212,8 +212,8 @@
   // PR sections reorder to follow the selection.
   let selectedSecondaryRoot = $state<WorkspaceGitRootEntry | null>(null);
   const isBrowsingSecondaryRoot = $derived(selectedSecondaryRoot !== null);
-  // Visual PR section ordering only — primary selection passes sectionedPRs
-  // through unchanged.
+  // Visual PR section ordering only — with the primary selected these are
+  // the same sections as recency-sorted copies (newest-updated first).
   const orderedPRSections = $derived(
     orderPRSectionsForSelection(sectionedPRs, workspaceRepo, selectedSecondaryRoot),
   );
@@ -1228,9 +1228,9 @@
             <PRSection
               {...prSectionSharedProps}
               {hasPRs}
-              {pullRequests}
-              otherRootPRs={sectionedPRs.otherRoots}
-              otherTrackedPRs={sectionedPRs.otherTracked}
+              pullRequests={orderedPRSections.selected}
+              otherRootPRs={orderedPRSections.others}
+              otherTrackedPRs={orderedPRSections.otherTracked}
               {mergeDrawerOpen}
               onMergeDrawerToggle={(open) => {
                 mergeDrawerOpen = open;

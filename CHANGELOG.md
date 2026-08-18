@@ -4,6 +4,41 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.64.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.63.0...v2.64.0) (2026-08-18)
+
+
+### 🚀 Features
+
+* **browser:** keep background-workspace webviews alive offscreen for content-level ops ([c799f96](https://github.com/intent-hq/cloudlands-fe/commit/c799f96c67bda00e1461aeb259819ef0d3cd5468))
+
+## [2.63.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.62.1...v2.63.0) (2026-08-18)
+
+
+### 🚀 Features
+
+* **browser:** background-hydrate workspace layout for browser IPC ([#1405](https://github.com/intent-hq/cloudlands-fe/issues/1405)) ([8c3f739](https://github.com/intent-hq/cloudlands-fe/commit/8c3f739b535fe6db403fbc2d34065047eeb34b90))
+
+
+### 🐛 Bug Fixes
+
+* always scroll to end and lock follow on message send and edit-and-regenerate ([#1409](https://github.com/intent-hq/cloudlands-fe/issues/1409)) ([9e940ca](https://github.com/intent-hq/cloudlands-fe/commit/9e940ca3a1550e99a68c5898439b1d65b1652a19))
+* bump intentd sidecar to v0.7.17 ([#1411](https://github.com/intent-hq/cloudlands-fe/issues/1411)) ([35d1caa](https://github.com/intent-hq/cloudlands-fe/commit/35d1caa8732bb87e143bfcb564211aa7ada9fc7d))
+* dedupe openTab across tunnel forwards on remote daemons ([#1402](https://github.com/intent-hq/cloudlands-fe/issues/1402)) ([d5825a0](https://github.com/intent-hq/cloudlands-fe/commit/d5825a019a2620c9c248edd3aef531d07aedc3d2))
+
+## [2.62.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.62.0...v2.62.1) (2026-08-18)
+
+
+### 🐛 Bug Fixes
+
+* sort Changes tab PR sections by most recent update ([#1407](https://github.com/intent-hq/cloudlands-fe/issues/1407)) ([af90b4e](https://github.com/intent-hq/cloudlands-fe/commit/af90b4e7488d683c89b9b19d152dbf0581271708))
+
+## [2.62.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.61.1...v2.62.0) (2026-08-18)
+
+
+### 🚀 Features
+
+* make running tool calls expandable to show input ([#1404](https://github.com/intent-hq/cloudlands-fe/issues/1404)) ([16d4087](https://github.com/intent-hq/cloudlands-fe/commit/16d4087623b944eab86b348b58cd343bfcb7e028))
+
 ## [2.61.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.61.0...v2.61.1) (2026-08-18)
 
 
