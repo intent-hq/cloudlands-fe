@@ -149,8 +149,8 @@ for (const theme of ['light', 'dark'] as const) {
           eventToolHeight: eventTool.height,
         };
       });
-      expect(eventSpacing.beforeEvent).toBeCloseTo(16 * zoom, 1);
-      expect(eventSpacing.afterEvent).toBeCloseTo(24 * zoom, 1);
+      expect(eventSpacing.beforeEvent).toBeCloseTo(32 * zoom, 1);
+      expect(eventSpacing.afterEvent).toBeCloseTo(32 * zoom, 1);
       expect(eventSpacing.eventToolHeight).toBeCloseTo(28 * zoom, 1);
 
       const userSpacing = await component.evaluate((root) => {
@@ -176,7 +176,11 @@ for (const theme of ['light', 'dark'] as const) {
         return assistantRow.top - userMessage.bottom;
       });
       expect(userBottomSpacing).toBeCloseTo(28 * zoom, 1);
-      await expect(component.getByTestId('chat-scroll-to-bottom-button')).toHaveCount(0);
+      await expect(
+        component
+          .getByTestId('chat-transcript-scroll-viewport')
+          .getByTestId('chat-scroll-to-bottom-button'),
+      ).toHaveCount(0);
     });
   }
 }

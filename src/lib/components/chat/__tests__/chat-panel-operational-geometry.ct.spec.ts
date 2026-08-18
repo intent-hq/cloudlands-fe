@@ -161,7 +161,7 @@ for (const theme of ['light', 'dark'] as const) {
             .locator('[data-response-group-child][data-message-content-block="text"] p')
             .first()
             .evaluate((element) => element.getBoundingClientRect().x);
-          expect(groupedIconCenter).toBeCloseTo(nestedProseStart, 1);
+          expect(groupedIconCenter).toBeCloseTo(nestedProseStart + 8 * zoom, 1);
           await expect(message.locator('[data-operational-expanded-guide]')).toHaveCount(1);
 
           if (messageId === 'assistant-finished') {

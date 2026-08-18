@@ -16,6 +16,7 @@
     initializeLayout,
     setRestoreStatus,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { setPanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
@@ -23,6 +24,7 @@
   const agentId = 'message-navigator-agent';
   const timestamp = '2026-08-16T04:00:00.000Z';
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  store.dispatch(setPanelOpenMode('pin'));
   let { theme = 'light' }: { theme?: 'light' | 'dark' } = $props();
 
   $effect(() => {
@@ -58,7 +60,7 @@
     } as AgentMessage;
   }
 
-  const messages = Array.from({ length: 15 }, (_, index) => {
+  const messages = Array.from({ length: 25 }, (_, index) => {
     const number = index + 1;
     const userText =
       number === 1

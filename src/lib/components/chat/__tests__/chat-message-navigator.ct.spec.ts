@@ -246,10 +246,10 @@ test.describe('chat message navigator production path', () => {
       expect(arrowComputedSize).toEqual({ width: 16, height: 16 });
       expect(pinButtonBox.width).toBeCloseTo(28, 0);
       expect(pinButtonBox.height).toBeCloseTo(28, 0);
-      expect(listButtonBox.width).toBeCloseTo(36, 0);
-      expect(listButtonBox.height).toBeCloseTo(36, 0);
-      expect(downButtonBox.width).toBeCloseTo(36, 0);
-      expect(downButtonBox.height).toBeCloseTo(36, 0);
+      expect(listButtonBox.width).toBeCloseTo(28, 0);
+      expect(listButtonBox.height).toBeCloseTo(28, 0);
+      expect(downButtonBox.width).toBeCloseTo(28, 0);
+      expect(downButtonBox.height).toBeCloseTo(28, 0);
       await expect(downButton).toHaveAttribute('data-icon-size', '16');
 
       const target = page.locator('[data-message-id="user-6"]');
@@ -263,7 +263,7 @@ test.describe('chat message navigator production path', () => {
       await expectUniqueVisible(search);
       await expect(search).toBeFocused();
       await expect(dialog.getByRole('listbox')).toHaveCount(1);
-      await expect(options).toHaveCount(15);
+      await expect(options).toHaveCount(25);
       const optionDetails = await options.evaluateAll((nodes) =>
         nodes.map((node) => ({
           text: node.textContent?.trim(),
@@ -273,7 +273,7 @@ test.describe('chat message navigator production path', () => {
           textAlign: getComputedStyle(node).textAlign,
         })),
       );
-      expect(optionDetails).toHaveLength(15);
+      expect(optionDetails).toHaveLength(25);
       expect(optionDetails.some((item) => item.text?.includes('queued at'))).toBe(false);
       expect(optionDetails.some((item) => item.text?.includes('queued before you completed'))).toBe(
         false,
@@ -522,12 +522,16 @@ test.describe('chat message navigator production path', () => {
     await pinButton.focus();
     await expect(pinButton).toBeFocused();
     await page.keyboard.press('Tab');
+    let dialog = await pickerForTrigger(page, trigger);
+    await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
     await expect(trigger).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(outside).toBeFocused();
 
     await trigger.press('Space');
-    let dialog = await pickerForTrigger(page, trigger);
+    dialog = await pickerForTrigger(page, trigger);
     await expect(dialog).toHaveRole('dialog', { name: 'Browse user messages' });
     await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
     await page.keyboard.press('Escape');
