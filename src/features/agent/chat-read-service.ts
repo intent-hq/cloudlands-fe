@@ -2,7 +2,7 @@
  * Reusable on-demand transcript read seam used by the daemon event router
  * (reconnect / event-driven refetches). `loadChatTranscript(agentId)` fetches
  * the session (`appClient.agents.get`) AND the transcript by paging through
- * `agent.getConversation` (PROTOCOL §5.5, up to 200 messages per page, looping
+ * `agent.getConversation` (PROTOCOL §5.5, 50 messages per page, looping
  * on `nextToken`). Paging walks from the newest page backwards and stops once
  * `MAX_MESSAGES_PER_AGENT` messages have accumulated — the agent-session slice
  * prunes to that same cap anyway, so pages past it would be fetched only
@@ -64,8 +64,8 @@ function readCurrentMessages(agentId: string): AgentMessage[] {
 /**
  * Fetch a single agent's session AND its FULL transcript from the seam, then
  * hydrate the store with `{ ...session, messages }`. Pages through
- * agent.getConversation to assemble the complete transcript (the daemon
- * returns up to 200 messages per page). Errors are swallowed (logged only) so
+ * agent.getConversation to assemble the complete transcript (50 messages per
+ * page). Errors are swallowed (logged only) so
  * a failed read never clears an existing transcript. Concurrent calls for the
  * same agent share one fetch.
  */
@@ -141,14 +141,14 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       if (isAgentDeletionPending(agentId)) return;
 
       // Fetch the transcript by paging through agent.getConversation.
-      // Request 200 messages per page (daemon max) and loop on nextToken.
+      // Request 50 messages per page and loop on nextToken.
       // Paging walks newest→oldest, so stopping at MAX_MESSAGES_PER_AGENT keeps
       // exactly the newest messages the store's prune cap would retain —
       // older pages would be fetched only to be sliced off by the
       // agent-session slice (intent-hq/monorepo#2627).
       const allMessages: AgentMessage[] = [];
       let nextToken: string | null = null;
-      const pageLimit = 200;
+      const pageLimit = 50;
 
       do {
         const page = await appClient.agents.getConversation(

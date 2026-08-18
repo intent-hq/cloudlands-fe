@@ -112,11 +112,16 @@ export class LiveAgentsClient implements AgentsClient {
   // additive) takes precedence over any token daemon-side and resolves to the
   // page containing that message; seek pages carry `prevToken` (forward cursor
   // toward the live tail — normalized to null on legacy backward pages, which
-  // never include the key). `messages` is returned raw; the agent-session
-  // reducer normalizes/sorts/dedups/prunes on ingest.
+  // never include the key). Every read opts into the §5.5 slim projection
+  // (`projection: "slim"`, additive within v7.1): oversized tool/image block
+  // bodies arrive as bounded previews with `*Truncated`/`*Bytes` flags so a
+  // large transcript never produces multi-MB frames (an older daemon ignores
+  // the unknown param and serves full blocks — same additive convention as
+  // `chat.subscribe`'s `deltaEncoding`). `messages` is returned raw; the
+  // agent-session reducer normalizes/sorts/dedups/prunes on ingest.
   async getConversation(
     agentId: string,
-    limit = 200,
+    limit = 50,
     pageToken?: string,
     aroundMessageId?: string,
   ): Promise<{
@@ -136,7 +141,11 @@ export class LiveAgentsClient implements AgentsClient {
     let requestLimit = limit;
     let result: ConversationResult;
     for (;;) {
-      const params: Record<string, unknown> = { agentId, limit: requestLimit };
+      const params: Record<string, unknown> = {
+        agentId,
+        limit: requestLimit,
+        projection: 'slim',
+      };
       if (pageToken !== undefined) params.nextToken = pageToken;
       if (aroundMessageId !== undefined) params.aroundMessageId = aroundMessageId;
       try {

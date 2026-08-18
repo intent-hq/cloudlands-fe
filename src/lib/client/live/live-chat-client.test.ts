@@ -110,6 +110,7 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
       agentId: 'agent-1',
       deltaEncoding: 'incremental',
+      projection: 'slim',
     });
     snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
 
@@ -1327,7 +1328,7 @@ describe('LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)', (
 
     // First registration rejected: exactly one wire attempt, phase delayed.
     expect(subscribeCalls()).toEqual([
-      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental' }],
+      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental', projection: 'slim' }],
     ]);
     expect(phases).toEqual(['connecting', 'delayed']);
 
@@ -1336,8 +1337,8 @@ describe('LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)', (
     expect(subscribeCalls()).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(subscribeCalls()).toEqual([
-      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental' }],
-      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental' }],
+      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental', projection: 'slim' }],
+      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental', projection: 'slim' }],
     ]);
     // A rejected registration acked no id — no unsubscribe frame on retry.
     expect(unsubscribeCalls()).toEqual([]);
@@ -1422,7 +1423,7 @@ describe('LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)', (
     );
     await vi.advanceTimersByTimeAsync(0);
     expect(subscribeCalls()).toEqual([
-      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental' }],
+      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental', projection: 'slim' }],
     ]);
 
     // Acked but no seq-0 within SNAPSHOT_TIMEOUT_MS: delayed + retry armed.
@@ -1434,8 +1435,8 @@ describe('LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)', (
     await vi.advanceTimersByTimeAsync(1_000);
     expect(unsubscribeCalls()).toEqual([['chat.unsubscribe', { subscriptionId: 'sub-1' }]]);
     expect(subscribeCalls()).toEqual([
-      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental' }],
-      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental' }],
+      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental', projection: 'slim' }],
+      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental', projection: 'slim' }],
     ]);
 
     // The recovery seq-0 snapshot (§7.1) hydrates the transcript.
@@ -1621,6 +1622,7 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
     expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
       agentId: 'agent-1',
       deltaEncoding: 'incremental',
+      projection: 'slim',
       sinceMessageId: '0190a1b2-user',
     });
 
@@ -1693,6 +1695,7 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
     expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
       agentId: 'agent-1',
       deltaEncoding: 'incremental',
+      projection: 'slim',
     });
     snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
     expect(seen).toHaveLength(1);
@@ -1717,7 +1720,11 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
 
     const subscribes = mockedRequest.mock.calls.filter(([m]) => m === 'chat.subscribe');
     expect(subscribes).toHaveLength(2);
-    expect(subscribes[1][1]).toEqual({ agentId: 'agent-1', deltaEncoding: 'incremental' });
+    expect(subscribes[1][1]).toEqual({
+      agentId: 'agent-1',
+      deltaEncoding: 'incremental',
+      projection: 'slim',
+    });
     off();
   });
 
@@ -1746,6 +1753,7 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
     expect(subscribes[1][1]).toEqual({
       agentId: 'agent-1',
       deltaEncoding: 'incremental',
+      projection: 'slim',
       sinceMessageId: '0190a1b2-user',
     });
     vi.useRealTimers();
