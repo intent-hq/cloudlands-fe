@@ -1888,12 +1888,24 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       appStore.dispatch(markAgentAsViewed(otherId));
       expect(footerGateOf(agentId)).toBe(false);
 
-      // Switch back: both gates arm; the footer sources are still settled in
-      // the store, so the watcher clears the footer gate synchronously while
-      // the snapshot gate keeps deferring until the fresh seq-0 arrives.
+      // Switch back: both gates arm, and the view switch dropped the
+      // agent's snapshotFetched latch — the cached subscriptions data
+      // cannot clear the footer gate; it waits for the FRESH view-time
+      // read (the workspace-scoped hooks/pr-monitor entries stay settled).
       appStore.dispatch(markAgentAsViewed(agentId));
-      expect(footerGateOf(agentId)).toBe(false);
+      expect(footerGateOf(agentId)).toBe(true);
       expect(snapshotGateOf(agentId)).toBe(true);
+
+      // The fresh agent.getSubscriptions read lands → footer gate clears.
+      appStore.dispatch(
+        setSubscriptionSnapshot(WS, agentId, {
+          subscriptions: [],
+          delegationGroups: [],
+          agentStatuses: {},
+          waitingState: 'idle',
+        }),
+      );
+      expect(footerGateOf(agentId)).toBe(false);
 
       await vi.waitFor(() => {
         expect(fakeSubscriptions.filter((s) => s.agentId === agentId)).toHaveLength(2);
@@ -1901,6 +1913,20 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentId)!;
       reopened.handler({ ...transcript([makeMessage('m-fsb-2', 'fresh')]), fromSnapshot: true });
       expect(snapshotGateOf(agentId)).toBe(false);
+    });
+
+    it('chief-workspace threads are exempt from the footer gate (no tab-keyed seeds exist)', () => {
+      const agentId = 'agent-sub-footer-chief';
+      seedSession(agentId, { workspaceId: CHIEF_WORKSPACE_ID });
+      appStore.dispatch(initializeChatRequested(agentId, { wsId: CHIEF_WORKSPACE_ID }));
+      appStore.dispatch(markAgentAsViewed(agentId));
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      // No footer source ever settled for the chief virtual workspace, yet
+      // the watcher clears the gate in the same dispatch cascade: chief is
+      // never currentTabId, so its hook/pr-monitor seeds cannot arrive
+      // pre-reveal and gating would only ever resolve via the 8s fallback.
+      expect(footerGateOf(agentId)).toBe(false);
     });
 
     it('switch-back: the shared bounded fallback clears BOTH gates when nothing settles', async () => {

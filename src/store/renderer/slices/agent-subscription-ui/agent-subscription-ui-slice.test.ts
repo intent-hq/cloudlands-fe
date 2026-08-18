@@ -15,6 +15,7 @@ import {
   removeWatchedAgent,
   subscriptionSnapshotFetchFailed,
 } from './agent-subscription-ui-slice';
+import { markAgentAsViewed } from '../unread-tracking/unread-tracking-slice';
 import {
   selectAgentSubscriptions,
   selectDelegationGroups,
@@ -135,6 +136,55 @@ describe('agentSubscriptionUIReducer', () => {
       );
       const second = agentSubscriptionUIReducer(first, subscriptionSnapshotFetchFailed(WS, AGENT));
       expect(second).toBe(first);
+    });
+  });
+
+  describe('markAgentAsViewed', () => {
+    it('drops the snapshotFetched latch so the reveal gate waits for the fresh view-time read', () => {
+      let state = agentSubscriptionUIReducer(
+        initialState,
+        setSubscriptionSnapshot(WS, AGENT, {
+          subscriptions: [sub],
+          delegationGroups: [],
+          agentStatuses: {},
+          waitingState: 'waiting',
+        }),
+      );
+      state = agentSubscriptionUIReducer(state, markAgentAsViewed(AGENT));
+      const entry = state.entries[makeKey(WS, AGENT)];
+      expect(entry.snapshotFetched).toBe(false);
+      // Cached data is retained for the card render — only readiness drops.
+      expect(entry.subscriptions).toEqual([sub]);
+      expect(entry.waitingState).toBe('waiting');
+    });
+
+    it('re-latches when the fresh read lands after a view switch', () => {
+      let state = agentSubscriptionUIReducer(
+        initialState,
+        subscriptionSnapshotFetchFailed(WS, AGENT),
+      );
+      state = agentSubscriptionUIReducer(state, markAgentAsViewed(AGENT));
+      expect(state.entries[makeKey(WS, AGENT)].snapshotFetched).toBe(false);
+      state = agentSubscriptionUIReducer(
+        state,
+        setSubscriptionSnapshot(WS, AGENT, {
+          subscriptions: [],
+          delegationGroups: [],
+          agentStatuses: {},
+          waitingState: 'idle',
+        }),
+      );
+      expect(state.entries[makeKey(WS, AGENT)].snapshotFetched).toBe(true);
+    });
+
+    it('leaves other agents untouched and no-ops without a latched entry', () => {
+      const latched = agentSubscriptionUIReducer(
+        initialState,
+        subscriptionSnapshotFetchFailed(WS, 'agent-other'),
+      );
+      const afterView = agentSubscriptionUIReducer(latched, markAgentAsViewed(AGENT));
+      expect(afterView).toBe(latched);
+      expect(afterView.entries[makeKey(WS, 'agent-other')].snapshotFetched).toBe(true);
     });
   });
 

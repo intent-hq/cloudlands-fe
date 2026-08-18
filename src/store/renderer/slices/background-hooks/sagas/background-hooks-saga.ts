@@ -292,6 +292,18 @@ const SUBSCRIPTION_RECONCILIATION_DELAY_MS = 100;
  * drops (clearing when the card is unmounted too), the new one seeds.
  * Auto-forks (selector-channel helper); on root cancellation the root saga's
  * own finally closes every active workspace, lease included.
+ *
+ * Asymmetry with pr-monitors — intentional: the swap CLEARS the outgoing
+ * workspace's entry (`backgroundHooksCleared` drops the delivered latch),
+ * while the pr-monitor saga retains its entry on reconcile. Hooks favor
+ * freshness because consumers read the entry as authoritative-when-present
+ * (`getActiveHookNames` skips its `hook.list` fallback whenever an entry
+ * exists), so a retained entry would silently serve stale hooks while
+ * unsubscribed; pr-monitor consumers have no such existence-keyed fallback
+ * and re-seed on activation regardless. Cost: a cross-workspace switch-back
+ * re-arms the footer reveal gate for the ~100ms reconciliation delay + one
+ * `hook.list` RTT (overlapping the agent's own view-time
+ * `agent.getSubscriptions` re-read, and bounded by the reveal fallback).
  */
 function* watchActiveWorkspaceLease(): SagaGenerator<void> {
   let leasedWorkspaceId: string | null = null;

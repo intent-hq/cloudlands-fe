@@ -840,9 +840,21 @@ export const SWITCH_BACK_REVEAL_WAIT_MS =
  * Composed utility-footer readiness for one (workspace, agent): the agent's
  * `agent.getSubscriptions` read plus the workspace's `hook.list` and
  * `prMonitor.list` seeds have all settled (success or failure both latch —
- * a failed read renders the same as empty).
+ * a failed read renders the same as empty). The chief virtual workspace is
+ * EXEMPT (always ready): its footer seeds come only from the two
+ * active-workspace watchers keyed on `currentTabId`, and the Chief panel is
+ * a standing surface outside the tab strip — the seeds would never arrive
+ * ahead of the card mount, so gating a chief thread on them could only ever
+ * resolve via the bounded fallback (a full-length skeleton on every open).
+ * Chief threads keep the pre-gate behavior: reveal on transcript readiness,
+ * with the footer populating from the card's own mount-time fetches. The
+ * same short-circuit is deliberately NOT applied to ordinary non-active-tab
+ * workspaces (multi-panel layouts): their entries seed on tab activation and
+ * are retained (pr-monitors) or re-seeded by the card mount (hooks), so the
+ * gate still converges without the fallback in the common case.
  */
 function* isFooterReadyForReveal(wsId: string, agentId: string): SagaGenerator<boolean> {
+  if (wsId === CHIEF_WORKSPACE_ID) return true;
   const subscriptionSnapshotFetched = yield* selectSubscriptionSnapshotFetched.effect(
     wsId,
     agentId,
@@ -941,7 +953,19 @@ function* startRevealGateWatcher(
   }
   const existing = coordinator.revealGateWatchers.get(agentId);
   if (existing?.isRunning()) yield* cancel(existing);
-  const task = yield* fork(revealGateWatcher, agentId, wsId);
+  const task = yield* fork(function* runWatcher(): SagaGenerator<void> {
+    try {
+      yield* call(revealGateWatcher, agentId, wsId);
+    } finally {
+      // Self-prune on completion (settled, timed out, or cancelled) so the
+      // map holds only live watchers; a superseded watcher's cancellation
+      // runs before the fresh task is stored, so the identity check keeps
+      // it from deleting its successor.
+      if (coordinator.revealGateWatchers.get(agentId) === task) {
+        coordinator.revealGateWatchers.delete(agentId);
+      }
+    }
+  });
   coordinator.revealGateWatchers.set(agentId, task);
 }
 

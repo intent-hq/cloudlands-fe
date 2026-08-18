@@ -7,6 +7,7 @@
 
 import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { markAgentAsViewed } from '../unread-tracking/unread-tracking-slice';
 import type {
   AgentSubscriptionUIState,
   AgentSubscriptionUIEntry,
@@ -154,6 +155,25 @@ agentSubscriptionUIReducer.with(
     };
   },
 );
+// Switch-back freshness: drop the readiness latch the moment the agent is
+// (re)viewed, so an armed utility-footer reveal gate waits for the VIEW-TIME
+// `agent.getSubscriptions` read (the read saga starts it on this same action)
+// instead of clearing on a cached snapshot that a post-reveal refresh would
+// then update. The fresh read re-latches on success AND failure, and the
+// reveal gate's bounded fallback caps a slow read — this can never wedge.
+// The payload carries only the agentId; entries are keyed `${wsId}:${agentId}`,
+// so every workspace entry of the agent drops (an agent has one workspace).
+agentSubscriptionUIReducer.with(markAgentAsViewed, (state, { payload: [agentId] }) => {
+  const suffix = `:${agentId}`;
+  let changed = false;
+  const entries = { ...state.entries };
+  for (const [key, entry] of Object.entries(state.entries)) {
+    if (!key.endsWith(suffix) || !entry.snapshotFetched) continue;
+    changed = true;
+    entries[key] = { ...entry, snapshotFetched: false };
+  }
+  return changed ? { ...state, entries } : state;
+});
 agentSubscriptionUIReducer.with(setWokenUp, (state, { payload }) => {
   const key = makeKey(payload.workspaceId, payload.agentId);
   const existing = state.entries[key] ?? emptyEntry;
