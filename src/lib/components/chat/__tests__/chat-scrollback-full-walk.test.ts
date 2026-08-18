@@ -425,4 +425,137 @@ describe('full-walk scrollback harness', () => {
         `first: ${JSON.stringify(violations[0])}; last: ${JSON.stringify(violations.at(-1))}`,
     ).toEqual([]);
   });
+
+  // ── Frozen-phase walk: the QA repro ─────────────────────────────────────
+  // Continuous scrolling keeps the interaction quiet-window open, so
+  // runSpacerReconcile early-returns and re-arms for the WHOLE walk: the
+  // only spacer mutation is the frozen-phase absorb in the prepend effect.
+  // The forced boundary reconcile (exhausted && spacer > 0) is the first
+  // reconcile that actually applies — at the very top of the walk.
+  it('continuous-scroll (frozen) walk: no blank viewport mid-walk, no thumb snap at exhaustion', () => {
+    const conversation = buildConversation();
+    const sim = new WalkSim(conversation, 20);
+    // Seed like the real panel: the transcript settles once BEFORE the user
+    // starts the gesture, sizing the spacer + seeding the EMA.
+    sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
+    sim.reconcile();
+    expect(sim.above).toBeGreaterThan(0);
+
+    interface StepTrace {
+      step: number;
+      scrollTop: number;
+      above: number;
+      below: number;
+      blankFraction: number;
+      historyCount: number;
+      holeRowsEstimate: number | null;
+      gapToTail: boolean;
+      pagesFetched: number;
+    }
+    const blankViolations: StepTrace[] = [];
+    let steps = 0;
+    const MAX_STEPS = 2000;
+    while (!sim.meta.oldestReached && steps < MAX_STEPS) {
+      steps += 1;
+      sim.scrollTop = Math.max(0, sim.scrollTop - VIEWPORT_PX);
+      // ONE page per step: a saga fetch + render + settle takes about as
+      // long as a scroll tick, so the walk lands pages at fetch latency
+      // while the user keeps scrolling — unlike the idealized test above,
+      // pages do not land synchronously under the gesture.
+      let pagesFetched = 0;
+      if (sim.triggerFires()) {
+        pagesFetched = 1;
+        sim.fetchOlderPage();
+      }
+      // NO reconcile: the user is still scrolling, the quiet window never
+      // elapses (runSpacerReconcile re-arms). Spacer stays locked.
+      if (sim.spacerOverlapPx() > 0) {
+        const meta = sim.meta;
+        blankViolations.push({
+          step: steps,
+          scrollTop: sim.scrollTop,
+          above: sim.above,
+          below: sim.below,
+          blankFraction: Number(sim.blankFraction().toFixed(3)),
+          historyCount: meta.historyCount,
+          holeRowsEstimate: meta.holeRowsEstimate,
+          gapToTail: meta.gapToTail,
+          pagesFetched,
+        });
+      }
+    }
+    expect(sim.meta.oldestReached).toBe(true);
+
+    // Exhaustion boundary: the effect forces a reconcile (target exact 0 for
+    // the above spacer). Measure the apparent thumb position across it — a
+    // snap is a discontinuity the user sees as the thumb jumping to the top.
+    const thumbBefore = sim.scrollTop / Math.max(1, sim.scrollHeight() - VIEWPORT_PX);
+    const extentBefore = sim.scrollHeight();
+    sim.reconcile();
+    const thumbAfter = sim.scrollTop / Math.max(1, sim.scrollHeight() - VIEWPORT_PX);
+    const extentAfter = sim.scrollHeight();
+    const thumbJump = Math.abs(thumbAfter - thumbBefore);
+
+    const summary =
+      `walk: ${steps} steps; blank-viewport violations: ${blankViolations.length} ` +
+      `(first: ${JSON.stringify(blankViolations[0])}; last: ${JSON.stringify(blankViolations.at(-1))}); ` +
+      `exhaustion: above ${sim.above}px below ${sim.below}px, ` +
+      `extent ${extentBefore}→${extentAfter} (truth ${sim.groundTruthHeight()}), ` +
+      `thumb ${thumbBefore.toFixed(3)}→${thumbAfter.toFixed(3)} (jump ${thumbJump.toFixed(3)})`;
+
+    // Symptom 1 — blank swaths: the frozen spacer must never swallow the
+    // viewport mid-walk.
+    expect(blankViolations, summary).toEqual([]);
+    // Symptom 2 — snap at exhaustion: the boundary reconcile must not move
+    // the apparent thumb position by more than a whisker.
+    expect(thumbJump, summary).toBeLessThan(0.05);
+  });
+
+  // Symptom 1 in isolation: the viewport parked INSIDE the above spacer
+  // (a short thumb nudge / fast flick still classified serial — no anchor
+  // row is visible, so no restore repositions the viewport). Serial pages
+  // keep landing at the resident top edge; once cap pruning starts the
+  // frozen-phase absorb measures net-zero added height, the spacer never
+  // shrinks, the resident window never rises to meet the viewport — blank
+  // space for the whole hydration.
+  it('viewport parked inside the spacer is reached by landing pages (no persistent blank)', () => {
+    const conversation = buildConversation();
+    const sim = new WalkSim(conversation, 20);
+    sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
+    sim.reconcile();
+
+    // Serial-walk until cap pruning has opened the hole (frozen regime).
+    let guard = 0;
+    while (!sim.meta.gapToTail && guard < 20) {
+      guard += 1;
+      sim.fetchOlderPage();
+    }
+    expect(sim.meta.gapToTail).toBe(true);
+
+    // Park the viewport just above the resident top edge — inside the
+    // spacer, but well within the serial classification band (< 2 pages).
+    sim.scrollTop = Math.max(0, sim.above - 2 * VIEWPORT_PX);
+    expect(sim.spacerOverlapPx()).toBeGreaterThan(0);
+    expect(sim.captureAnchor()).toBeNull();
+
+    // Let the serial chain land page after page while the user holds still
+    // (still inside the interaction freeze — no reconcile).
+    const trace: { page: number; above: number; blankFraction: number }[] = [];
+    let pages = 0;
+    while (sim.spacerOverlapPx() > 0 && !sim.meta.oldestReached && pages < 20) {
+      pages += 1;
+      sim.fetchOlderPage();
+      trace.push({
+        page: pages,
+        above: sim.above,
+        blankFraction: Number(sim.blankFraction().toFixed(3)),
+      });
+    }
+
+    expect(
+      sim.spacerOverlapPx(),
+      `viewport still blank after ${pages} landed pages (oldestReached=${sim.meta.oldestReached}); ` +
+        `trace: ${JSON.stringify(trace)}`,
+    ).toBe(0);
+  });
 });
