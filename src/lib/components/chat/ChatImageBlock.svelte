@@ -1,5 +1,6 @@
 <script lang="ts">
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faImage } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
@@ -71,10 +72,11 @@
   {:else if dataTruncated}
     <!-- Legacy slim row with no persisted thumbnail: placeholder chip with
          the same on-demand fetch. -->
-    <button
-      type="button"
-      class="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-subtle transition-colors hover:text-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-      class:animate-pulse={hydrationLoading}
+    <Button
+      variant="outline"
+      class="h-auto gap-2 rounded-lg bg-muted/30 px-3 py-2 text-subtle hover:text-foreground {hydrationLoading
+        ? 'animate-pulse'
+        : ''}"
       onclick={handleClick}
       disabled={!onHydrate}
       aria-label={m.chat_imageBlock_loadFullImage_ariaLabel({ alt })}
@@ -86,7 +88,7 @@
           ? m.chat_imageBlock_loadingImage_label()
           : m.chat_imageBlock_loadImage_label()}
       </span>
-    </button>
+    </Button>
   {/if}
 </div>
 
