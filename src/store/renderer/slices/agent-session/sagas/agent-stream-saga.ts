@@ -9,6 +9,7 @@ import {
 } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
+import { hasStandingChatSubscription } from '$features/agent/utils/chat-subscription-registry';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { streamCompleted, streamTimedOut } from '../../chat-state/chat-state-slice';
 import { selectChatAgentState } from '../../chat-state/chat-state-selectors';
@@ -79,8 +80,17 @@ function* clearSessionStreaming(
 }
 
 function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<void> {
-  const { agentId, eventType, contentBlocks, assistantMessageId, assistantAppMessageId } = payload;
+  const { agentId, eventType, assistantMessageId, assistantAppMessageId } = payload;
   if (!agentId) return;
+  // SOLE-WRITER INVARIANT (PROTOCOL §7.1): while a standing chat.subscribe
+  // registration covers the agent, the subscription owns message CONTENT —
+  // drop the firehose payload's blocks and keep only the bookkeeping writes
+  // (streaming flags, interrupted/finishReason metadata, session flag
+  // clearing). The bridge already omits blocks at dispatch time; this
+  // apply-time re-check covers dispatches buffered across a registration
+  // install (e.g. the terminal flush in the saga's finally block), so a stale
+  // accumulator set can never replace the reconciled transcript.
+  const contentBlocks = hasStandingChatSubscription(agentId) ? undefined : payload.contentBlocks;
   const isFinalize = eventType === 'complete' || eventType === 'error' || eventType === 'timeout';
   const session: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
   const existing = findStreamTargetAssistantMessage(
