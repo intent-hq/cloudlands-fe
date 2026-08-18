@@ -135,6 +135,45 @@ describe('embedded browser CDP workspace routing', () => {
     });
   });
 
+  // Offscreen keep-alive handoff (monorepo#2789 slice 2): a tab moving
+  // between hosts (offscreen container ↔ visible panel) re-registers with a
+  // new webContentsId before the superseded guest's destroyed event fires.
+  // The destroyed hook must not clobber the newer registration.
+  describe('registerTab destroyed-hook handoff guard', () => {
+    function registerWithDestroyCapture(tabId: string, webContentsId: number): () => void {
+      let destroyedCallback: (() => void) | undefined;
+      mocks.fromId.mockReturnValueOnce({
+        isDestroyed: () => false,
+        once: (event: string, cb: () => void) => {
+          if (event === 'destroyed') destroyedCallback = cb;
+        },
+      });
+      embeddedBrowserCdp.registerTab(tabId, webContentsId);
+      return () => destroyedCallback?.();
+    }
+
+    it('keeps the newer registration when a superseded webContents is destroyed', async () => {
+      const fireOldDestroyed = registerWithDestroyCapture('tab-handoff', 210);
+      registerWithDestroyCapture('tab-handoff', 211);
+      fireOldDestroyed();
+      mocks.fromId.mockReturnValue({ isDestroyed: () => false, once: vi.fn() });
+      await expect(embeddedBrowserCdp.waitForTabRegistration('tab-handoff')).resolves.toBe(true);
+    });
+
+    it('still cleans the registry when the current webContents is destroyed', async () => {
+      const fireDestroyed = registerWithDestroyCapture('tab-gone', 220);
+      fireDestroyed();
+      vi.useFakeTimers();
+      try {
+        const pending = embeddedBrowserCdp.waitForTabRegistration('tab-gone', 1_000);
+        await vi.advanceTimersByTimeAsync(1_000);
+        await expect(pending).resolves.toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it('fails a close with a clear error when the workspace is not open in any window', async () => {
     mocks.sendToWorkspaceWindows.mockImplementation(
       (workspaceId: string, channel: string, payload: { requestId?: string }) => {

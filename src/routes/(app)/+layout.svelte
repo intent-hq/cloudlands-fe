@@ -54,6 +54,7 @@
   import { TooltipProvider } from '$lib/components/ui/tooltip';
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
   import LinkActionMenu from '$features/navigation/LinkActionMenu.svelte';
+  import OffscreenWebviewHost from '$lib/components/browser/OffscreenWebviewHost.svelte';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { invoke } from '$lib/electron-bridge';
@@ -190,6 +191,16 @@
   const featureCodeDialogOpen = selectFeatureCodeDialogOpen();
   const isPaletteOpen$ = selectIsPaletteOpen();
   const paletteQuery$ = selectPaletteQuery();
+
+  // Workspaces whose surfaces render their own webviews. In single-workspace
+  // mode only the routed workspace is displayed; in columns mode any hosted
+  // workspace's surface may mount while scrolling, so all of them are
+  // excluded from offscreen keep-alive (monorepo#2789 slice 2).
+  const offscreenExcludedWorkspaceIds = $derived<ReadonlySet<string>>(
+    showWorkspaceColumns
+      ? new Set($workspaceTabOrder)
+      : new Set(workspaceId ? [workspaceId] : []),
+  );
 
   // Interrupted agents modal state
   let showInterruptedAgentsModal = $state(false);
@@ -987,6 +998,9 @@
 
   <!-- Link Action Menu (singleton — anchored menu for GitHub issue/PR links) -->
   <LinkActionMenu />
+
+  <!-- Offscreen keep-alive host for background-workspace browser tabs (monorepo#2789) -->
+  <OffscreenWebviewHost excludedWorkspaceIds={offscreenExcludedWorkspaceIds} />
 
   <!-- Auto-Update Notification -->
   {#await import('$lib/components/UpdateNotification.svelte') then { default: UpdateNotification }}
