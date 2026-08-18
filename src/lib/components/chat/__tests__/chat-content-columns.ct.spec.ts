@@ -49,7 +49,17 @@ test('uses the same available width and gutters without a nested narrow scroll o
   for (const theme of ['light', 'dark'] as const) {
     for (const zoom of [1, 2]) {
       await component.update({ props: { theme, zoom, width: 360 } });
-      await expect.poll(async () => (await transcript.boundingBox())!.width).toBeGreaterThan(0);
+      // Wait until the transcript/composer widths converge: the scrollbar
+      // gutter can lag the resize by a frame and skew the transcript width.
+      await expect
+        .poll(async () => {
+          const [transcriptWidth, composerWidth] = await Promise.all([
+            transcript.boundingBox().then((box) => box?.width ?? 0),
+            composer.boundingBox().then((box) => box?.width ?? 0),
+          ]);
+          return transcriptWidth > 0 ? Math.abs(transcriptWidth - composerWidth) : Infinity;
+        })
+        .toBeLessThanOrEqual(0.05);
       const [transcriptBox, composerBox] = await Promise.all([
         transcript.boundingBox(),
         composer.boundingBox(),

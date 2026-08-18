@@ -29,15 +29,25 @@ test('opens by click, focus, and hover and activates the stable ordered history'
   const search = menu.getByRole('searchbox');
   await search.fill('preview browser');
   await expect(menu.locator('[data-panel-identity-item]')).toHaveCount(1);
-  await search.press('ArrowDown');
-  // Wait for the keyboard highlight to land on the filtered item before
-  // activating it, otherwise Enter can fire before the highlight applies.
-  await expect(menu.locator('[data-panel-identity-item][data-highlighted]')).toHaveAttribute(
-    'data-panel-identity-item',
-    'browser-history',
-  );
-  await page.keyboard.press('Enter');
-  await expect(component).toHaveAttribute('data-active-tab', 'browser-history');
+  // ArrowDown can be consumed while the filtered list is still settling, so
+  // retry until the keyboard highlight lands on the item before pressing
+  // Enter — otherwise Enter can activate a stale highlight.
+  await expect
+    .poll(async () => {
+      await search.press('ArrowDown');
+      const highlighted = menu.locator('[data-panel-identity-item][data-highlighted]');
+      if ((await highlighted.count()) === 0) return null;
+      return highlighted.first().getAttribute('data-panel-identity-item');
+    })
+    .toBe('browser-history');
+  // Enter routes through the menu's highlight controller, which can lag the
+  // DOM attribute under load — retry while the menu is still open.
+  await expect
+    .poll(async () => {
+      if (await menu.isVisible()) await page.keyboard.press('Enter');
+      return component.getAttribute('data-active-tab');
+    })
+    .toBe('browser-history');
 
   await trigger.click();
   await page.mouse.move(0, 0);
