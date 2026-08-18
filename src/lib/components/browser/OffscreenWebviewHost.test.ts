@@ -123,6 +123,31 @@ describe('OffscreenWebviewHost', () => {
     );
   });
 
+  it('syncs full and in-page navigation back into the persisted tab URL', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
+    const webview = container.querySelector('[data-offscreen-webview-tab="tab-bg"]')!;
+
+    const navigate = new Event('did-navigate') as Event & { url?: string };
+    navigate.url = 'https://example.test/next';
+    webview.dispatchEvent(navigate);
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'panelLayout/updateTabBrowserUrl',
+      payload: ['ws-bg', 'tab-bg', 'https://example.test/next'],
+    });
+
+    const inPage = new Event('did-navigate-in-page') as Event & { url?: string };
+    inPage.url = 'https://example.test/next#section';
+    webview.dispatchEvent(inPage);
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'panelLayout/updateTabBrowserUrl',
+      payload: ['ws-bg', 'tab-bg', 'https://example.test/next#section'],
+    });
+  });
+
   it('unmounts a tab when its workspace becomes displayed and when its layout is removed', async () => {
     layoutsStore.set({
       'ws-a': browserLayout([{ id: 'tab-a' }]),

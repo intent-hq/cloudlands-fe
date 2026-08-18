@@ -193,12 +193,14 @@
   const paletteQuery$ = selectPaletteQuery();
 
   // Workspaces whose surfaces render their own webviews. In single-workspace
-  // mode only the routed workspace is displayed; in columns mode any hosted
-  // workspace's surface may mount while scrolling, so all of them are
-  // excluded from offscreen keep-alive (monorepo#2789 slice 2).
+  // mode only the routed workspace is displayed; in columns mode the columns
+  // view reports which workspaces render a real surface (virtualized columns
+  // render placeholders, so their tabs still need offscreen keep-alive)
+  // (monorepo#2789 slice 2).
+  let columnsMountedWorkspaceIds = $state<ReadonlySet<string>>(new Set());
   const offscreenExcludedWorkspaceIds = $derived<ReadonlySet<string>>(
     showWorkspaceColumns
-      ? new Set($workspaceTabOrder)
+      ? columnsMountedWorkspaceIds
       : new Set(workspaceId ? [workspaceId] : []),
   );
 
@@ -944,7 +946,9 @@
               class:overflow-auto={!showWorkspaceColumns}
             >
               {#if showWorkspaceColumns}
-                <WorkspaceColumnsView />
+                <WorkspaceColumnsView
+                  onMountedWorkspaceIdsChange={(mounted) => (columnsMountedWorkspaceIds = mounted)}
+                />
               {:else}
                 {@render children?.()}
               {/if}

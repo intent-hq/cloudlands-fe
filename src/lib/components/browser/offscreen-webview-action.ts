@@ -62,11 +62,15 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
 
   webview.addEventListener('dom-ready', handleDomReady);
   webview.addEventListener('did-navigate', handleDidNavigate);
+  // Hash/history navigation does not fire did-navigate; the visible
+  // EmbeddedBrowser syncs it too, so mirror it here.
+  webview.addEventListener('did-navigate-in-page', handleDidNavigate);
 
   return {
     destroy() {
       webview.removeEventListener('dom-ready', handleDomReady);
       webview.removeEventListener('did-navigate', handleDidNavigate);
+      webview.removeEventListener('did-navigate-in-page', handleDidNavigate);
     },
   };
 }
