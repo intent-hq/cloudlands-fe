@@ -1132,6 +1132,26 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     });
   });
 
+  it('list and get preserve the AgentLite specialist metadata and model verbatim', async () => {
+    const coordinator = {
+      id: 'agent-coordinator',
+      workspaceId: 'ws-1',
+      name: 'Coordinator',
+      status: 'idle',
+      model: 'grok4.6',
+      metadata: { specialist: 'spec-writer' },
+    };
+    backend.onRequest('agent.list', () => ({ agents: [coordinator] }));
+    backend.onRequest('agent.get', () => ({ agent: coordinator }));
+    const client = new LiveAgentsClient();
+
+    const [listed] = await client.list('ws-1');
+    const fetched = await client.get('agent-coordinator');
+
+    expect(listed).toMatchObject({ model: 'grok4.6', metadata: { specialist: 'spec-writer' } });
+    expect(fetched).toMatchObject({ model: 'grok4.6', metadata: { specialist: 'spec-writer' } });
+  });
+
   it('does not synthesize activity flags the daemon omits (no healing)', async () => {
     backend.onRequest('agent.get', () => ({
       agent: { id: 'agent-1', workspaceId: 'ws-1', name: 'A1', status: 'completed' },
