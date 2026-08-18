@@ -7549,6 +7549,64 @@ describe('daemonEventsBridge (agent:last-message §6.5 — preview projections a
     expect(appStore.state.agentSessions.byAgentId[AGENT]!.lastToolUse).toBeUndefined();
   });
 
+  it('clears a stale lastAgentResponse on a tool-only assistant echo (absence means cleared)', async () => {
+    // A text-free assistant row (tool_use only) omits lastAgentResponse on the
+    // echo because the daemon overwrote the persisted preview column with an
+    // empty derivation. Retaining the previous turn's response here would
+    // outrank the fresh tool chip on every preview surface.
+    seedSession({
+      lastAgentResponse: 'previous turn response',
+      lastUserMessage: 'kept user line',
+      lastMessageRole: 'assistant',
+    });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-tool-only',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-tool-only',
+        lastToolUse: { name: 'launch-process', input: { command: 'ls' } },
+      }),
+    );
+    await flush();
+
+    const session = appStore.state.agentSessions.byAgentId[AGENT]!;
+    expect(session.lastAgentResponse).toBeUndefined();
+    expect(session.lastToolUse).toEqual({ name: 'launch-process', input: { command: 'ls' } });
+    // The user preview column was untouched by the assistant append.
+    expect(session.lastUserMessage).toBe('kept user line');
+  });
+
+  it('leaves lastUserMessage alone on an assistant echo and vice versa (other-role column untouched)', async () => {
+    seedSession({
+      lastAgentResponse: 'assistant kept',
+      lastUserMessage: 'user kept',
+    });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // A user echo omitting lastUserMessage (text-free user row) clears the
+    // user preview but never the assistant one.
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-u-empty',
+        role: 'user',
+        lastMessageRole: 'user',
+        lastMessageId: 'msg-u-empty',
+      }),
+    );
+    await flush();
+
+    const session = appStore.state.agentSessions.byAgentId[AGENT]!;
+    expect(session.lastUserMessage).toBeUndefined();
+    expect(session.lastAgentResponse).toBe('assistant kept');
+  });
+
   it('does not clobber a loaded transcript (metadata-only merge)', async () => {
     const loaded: AgentMessage[] = [
       {

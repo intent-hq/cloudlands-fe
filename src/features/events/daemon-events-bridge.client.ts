@@ -1368,7 +1368,15 @@ function readPersistedLastToolUse(
  * `lastMessageRole` + `lastMessageId` plus its role-specific preview —
  * `lastAgentResponse` (assistant) or `lastUserMessage` (user) — and
  * `lastToolUse`, whose ABSENCE means the persisted preview is now cleared
- * (the newest message carries no tool call). System (and other) rows keep the
+ * (the newest message carries no tool call). The role-specific preview has
+ * the same absence-means-cleared semantics: the daemon overwrites the
+ * persisted preview column unconditionally on every user/assistant append,
+ * deriving the payload field from the appended row itself, so an assistant
+ * echo WITHOUT `lastAgentResponse` (a tool-only / text-free row) means the
+ * persisted preview is now empty — clear it so a stale previous response
+ * cannot outrank the fresh tool chip (same outcome as the `agent.get`
+ * replace-ingest path). The OTHER role's preview column was not touched by
+ * the append, so it is left alone. System (and other) rows keep the
  * base id-only echo shape (the preview columns were not touched), so they
  * only flip the daemon-capability flag. The apply is a metadata-only
  * `updateSession` merge — ZERO follow-up RPCs, and a loaded transcript is
@@ -1395,11 +1403,12 @@ function handleAgentLastMessageEvent(event: WorkspaceEvent): void {
   if (typeof data.lastMessageId === 'string' && data.lastMessageId.length > 0) {
     updates.lastMessageId = data.lastMessageId;
   }
-  if (typeof data.lastAgentResponse === 'string') {
-    updates.lastAgentResponse = data.lastAgentResponse;
-  }
-  if (typeof data.lastUserMessage === 'string') {
-    updates.lastUserMessage = data.lastUserMessage;
+  if (role === 'assistant') {
+    updates.lastAgentResponse =
+      typeof data.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined;
+  } else {
+    updates.lastUserMessage =
+      typeof data.lastUserMessage === 'string' ? data.lastUserMessage : undefined;
   }
   withHydratedSession(agentId, () => {
     const session = appStore.state.agentSessions?.byAgentId[agentId];
