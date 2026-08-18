@@ -305,6 +305,88 @@ describe('resolveBrowserUrl', () => {
     });
   });
 
+  describe('tunnel forward reuse (intent-hq/monorepo#2787)', () => {
+    let activeForwards: ReturnType<typeof vi.fn>;
+    let forwardAwareProvider: () => {
+      forwardPort: (port: number) => Promise<number>;
+      activeForwards: () => Array<{ remotePort: number; localPort: number }>;
+    };
+
+    beforeEach(() => {
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+      activeForwards = vi.fn().mockReturnValue([]);
+      forwardAwareProvider = () => ({ forwardPort, activeForwards });
+    });
+
+    it('reuses an existing active forward for the same remote port instead of minting a new one', async () => {
+      activeForwards.mockReturnValue([{ remotePort: 8080, localPort: 55001 }]);
+      const result = await resolveBrowserUrl(
+        'http://daemon.localhost:8080/page',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      expect(result.url).toBe('http://127.0.0.1:55001/page');
+      expect(result.tunneled).toBe(true);
+      expect(result.reason).toContain('tunnel');
+      expect(result.error).toBeUndefined();
+      expect(forwardPort).not.toHaveBeenCalled();
+    });
+
+    it('repeated resolutions of the same requested URL yield an identical final URL', async () => {
+      // First resolution mints a forward; the provider then reports it active
+      // (real providers keep forwards open — see browser docs on persistence).
+      const forwards: Array<{ remotePort: number; localPort: number }> = [];
+      let nextPort = 55001;
+      forwardPort.mockImplementation(async (remotePort: number) => {
+        const localPort = nextPort++;
+        forwards.push({ remotePort, localPort });
+        return localPort;
+      });
+      activeForwards.mockImplementation(() => [...forwards]);
+
+      const first = await resolveBrowserUrl(
+        'http://127.0.0.1:5190/',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      const second = await resolveBrowserUrl(
+        'http://127.0.0.1:5190/',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      expect(first.tunneled).toBe(true);
+      expect(second.tunneled).toBe(true);
+      expect(second.url).toBe(first.url);
+      expect(forwardPort).toHaveBeenCalledTimes(1);
+    });
+
+    it('mints a new forward when no active forward matches the remote port', async () => {
+      activeForwards.mockReturnValue([{ remotePort: 9999, localPort: 55009 }]);
+      const result = await resolveBrowserUrl(
+        'http://daemon.localhost:8080/page',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      expect(forwardPort).toHaveBeenCalledWith(8080);
+      expect(result.url).toBe('http://127.0.0.1:45678/page');
+      expect(result.tunneled).toBe(true);
+    });
+
+    it('mints a new forward when activeForwards throws', async () => {
+      activeForwards.mockImplementation(() => {
+        throw new Error('forwards unavailable');
+      });
+      const result = await resolveBrowserUrl(
+        'http://daemon.localhost:8080/page',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      expect(forwardPort).toHaveBeenCalledWith(8080);
+      expect(result.url).toBe('http://127.0.0.1:45678/page');
+      expect(result.tunneled).toBe(true);
+    });
+  });
+
   describe('rewriteOnly mode', () => {
     it('applies the remote rewrite with no probe and no tunnel', async () => {
       const result = await resolveBrowserUrl(

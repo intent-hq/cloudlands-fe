@@ -501,6 +501,51 @@ async function executeAction(
           }
         }
 
+        // Tunneled opens: the final URL embeds the tunnel-local forward
+        // port, so if the forward was re-minted since the first open the
+        // exact-URL match above can never hit. Fall back to matching the
+        // lease-recorded original requested URL and re-point the tab at the
+        // fresh tunnel URL (intent-hq/monorepo#2787).
+        if (agentId && !action.allowDuplicate && openTabTarget.tunneled) {
+          const requestedTabId = await embeddedBrowserCdp.findModelTabByRequestedUrl(
+            action.url,
+            agentId,
+            workspaceId,
+          );
+          if (requestedTabId) {
+            logger.info('Reusing existing model-opened tab with matching requested URL', {
+              tabId: requestedTabId,
+              url: finalRewrite.url,
+              requestedUrl: action.url,
+              agentId,
+            });
+            try {
+              await embeddedBrowserCdp.evaluate(
+                requestedTabId,
+                `window.location.href = ${JSON.stringify(finalRewrite.url)}`,
+              );
+              const focused = await embeddedBrowserCdp.focusTab(requestedTabId, workspaceId);
+              return {
+                action: 'openTab',
+                success: true,
+                result: {
+                  reused: true,
+                  focused,
+                  tabId: requestedTabId,
+                  url: finalRewrite.url,
+                  ...echo,
+                },
+              };
+            } catch (err) {
+              logger.warn('Failed to reuse requested-URL tab, falling back to opening new tab', {
+                tabId: requestedTabId,
+                error: (err as Error).message,
+              });
+              embeddedBrowserCdp.releaseLease(requestedTabId);
+            }
+          }
+        }
+
         // When called by an agent, try to reuse an idle browser tab instead of opening a new one
         if (agentId && !action.allowDuplicate) {
           const idleTabId = embeddedBrowserCdp.findIdleTab(agentId);
@@ -569,9 +614,15 @@ async function executeAction(
           result.success && replaceTargetTabId ? replaceTargetTabId : result.tabId;
         // Lease the tab to the requesting agent right away so a repeat
         // openTab for the same URL dedupes onto it (intent-hq/monorepo#2541)
-        // instead of treating it as an untouchable user-opened tab.
+        // instead of treating it as an untouchable user-opened tab. Tunneled
+        // opens also record the original requested URL, backing the
+        // requested-URL dedupe fallback above (intent-hq/monorepo#2787).
         if (agentId && result.success && effectiveTabId) {
-          embeddedBrowserCdp.touchLease(effectiveTabId, agentId);
+          if (openTabTarget.tunneled) {
+            embeddedBrowserCdp.touchLease(effectiveTabId, agentId, action.url);
+          } else {
+            embeddedBrowserCdp.touchLease(effectiveTabId, agentId);
+          }
         }
         // Await the renderer's registration of the tab so the returned
         // handle is immediately addressable — returning before the webview
