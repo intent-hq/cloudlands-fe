@@ -637,6 +637,64 @@ describe('browserIpcSaga', () => {
       await task.toPromise();
     });
 
+    it('answers listTabs for the ROUTED workspace even with no layout entry and no tab-strip membership', async () => {
+      // Main routes LIST_TABS_REQUEST at windows by the routed workspace
+      // (windowWorkspaceIds) as well as the tab strip, so a window routed to
+      // /workspace/{id} must answer even when the workspace is missing from
+      // workspaceStacks — staying silent times the request out as "renderer
+      // did not respond" (monorepo#2789 live regression in v2.64.0).
+      const { task } = startWithReducer();
+      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
+      seedStorage('ws-routed-1', [
+        { id: 'browser-1', type: 'browser', title: 'A', browserUrl: 'http://a/', closable: true },
+      ]);
+      window.history.pushState({}, '', '/workspace/ws-routed-1');
+      try {
+        await emit({ workspaceId: 'ws-routed-1', requestId: 'req-r1' }, 'browser:list-tabs-request');
+      } finally {
+        window.history.pushState({}, '', '/');
+      }
+
+      expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
+        requestId: 'req-r1',
+        tabs: [{ tabId: 'browser-1', url: 'http://a/', title: 'A', closable: true }],
+      });
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('stays silent when the route is /workspace/new and the workspace is otherwise unhosted', async () => {
+      const { actions, task } = startWithReducer();
+      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
+      window.history.pushState({}, '', '/workspace/new');
+      try {
+        await emit({ workspaceId: 'new', requestId: 'req-r2' }, 'browser:list-tabs-request');
+      } finally {
+        window.history.pushState({}, '', '/');
+      }
+
+      expect(mocks.invoke).not.toHaveBeenCalled();
+      expect(actions).toEqual([]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('stays silent for a non-routed workspace when the window is routed to a different one', async () => {
+      const { actions, task } = startWithReducer();
+      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
+      window.history.pushState({}, '', '/workspace/ws-routed-other');
+      try {
+        await emit({ workspaceId: 'ws-not-here', requestId: 'req-r3' }, 'browser:list-tabs-request');
+      } finally {
+        window.history.pushState({}, '', '/');
+      }
+
+      expect(mocks.invoke).not.toHaveBeenCalled();
+      expect(actions).toEqual([]);
+      task.cancel();
+      await task.toPromise();
+    });
+
     it('opens with position "replace" against the hydrated layout, reusing the persisted browser tab', async () => {
       const { actions, task } = startWithReducer();
       hostedState('ws-hyd-6');

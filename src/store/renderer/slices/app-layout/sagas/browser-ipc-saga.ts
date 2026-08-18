@@ -58,9 +58,31 @@ type LayoutReadiness =
  * hydration failure is reported as a result so one poisoned persisted layout
  * cannot abort the whole browser IPC saga for the window.
  */
+
+/**
+ * The workspace this window's route currently displays, or null outside
+ * `/workspace/{id}` (and on `/workspace/new`). Main targets workspace-scoped
+ * IPC at windows by this same signal (`windowWorkspaceIds`, fed from the
+ * route in `afterNavigate`), so hostedness here must accept it too: a window
+ * routed to a workspace can receive a request while that workspace has no
+ * layout entry and is missing from the tab strip (e.g. columns-mode
+ * route/stack divergence), and judging it not-hosted would leave the request
+ * to time out as "renderer did not respond" (monorepo#2789).
+ */
+function routedWorkspaceId(): string | null {
+  if (typeof window === 'undefined') return null;
+  const match = window.location.pathname.match(/^\/workspace\/([^/?]+)/);
+  const id = match?.[1];
+  return id && id !== 'new' ? id : null;
+}
+
 function* ensureWorkspaceLayoutForRequest(workspaceId: string): SagaGenerator<LayoutReadiness> {
   const held = workspaceId in (yield* selectPanelLayoutWorkspaces.effect());
-  if (!held && !(yield* selectWorkspaceTabOrder.effect()).includes(workspaceId)) {
+  if (
+    !held &&
+    !(yield* selectWorkspaceTabOrder.effect()).includes(workspaceId) &&
+    routedWorkspaceId() !== workspaceId
+  ) {
     return { status: 'not-hosted' };
   }
   try {
@@ -206,8 +228,8 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
   const workspaceId = data.workspaceId;
   const requestId = typeof data.requestId === 'string' ? data.requestId : undefined;
 
-  // Only answer for workspaces this window actually hosts (layout state or
-  // tab bar). A window that does not host the requested workspace must never
+  // Only answer for workspaces this window actually hosts (layout state,
+  // tab bar, or route). A window that does not host the requested workspace must never
   // resolve the requestId: an empty wrong-workspace reply poisons main's
   // per-workspace tab cache (monorepo#2756 RC1, #2602). A hosted workspace
   // that was never visited this session is hydrated on demand so its
