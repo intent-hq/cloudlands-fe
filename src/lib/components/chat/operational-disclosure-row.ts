@@ -33,6 +33,8 @@ export const OPERATIONAL_GROUP_CHILD_CONTENT_CLASS = `${OPERATIONAL_ROW_GEOMETRY
 /** Nested operational icon centers share the parent group's prose origin. */
 export const OPERATIONAL_GROUP_CHILD_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} operational-group-child-row min-w-0 max-w-full`;
 
+export const OPERATIONAL_GROUP_CHILD_TOOL_ROW_CLASS = 'pl-2';
+
 export const OPERATIONAL_PRIMARY_CLASS = 'text-muted-foreground';
 
 export const OPERATIONAL_SECONDARY_CLASS = 'text-muted-foreground';

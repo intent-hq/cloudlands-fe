@@ -403,6 +403,7 @@ describe('MessageContent - top-level response rows', () => {
       { type: 'text', text: '<group:Plan>' },
       { type: 'text', text: 'Grouped detail' },
       { type: 'thinking', text: 'Nested reasoning' },
+      { type: 'tool_use', id: 'nested-tool', name: 'view', input: { path: 'src/example.ts' } },
       { type: 'text', text: '</group:Plan>\nFollowing prose' },
     ];
 
@@ -418,6 +419,7 @@ describe('MessageContent - top-level response rows', () => {
     expect(groupContent?.querySelector('[data-operational-expanded-guide]')).toBeTruthy();
     const proseChild = groupContent?.querySelector('[data-message-content-block="text"]');
     const operationalChild = groupContent?.querySelector('[data-message-content-block="thinking"]');
+    const toolChild = groupContent?.querySelector('[data-message-content-block="tool_use"]');
     expect(proseChild?.className).toContain(
       'pl-[calc(var(--operational-row-inline-padding)+var(--operational-leading-slot-size)+var(--operational-leading-gap))]',
     );
@@ -426,6 +428,8 @@ describe('MessageContent - top-level response rows', () => {
     );
     expect(operationalChild?.className).toContain('operational-group-child-row');
     expect(operationalChild?.getAttribute('style')).toBeNull();
+    expect(toolChild?.className).toContain('operational-group-child-row');
+    expect(toolChild?.className).toContain('pl-2');
 
     const streaming = render(StreamingMessageContent, {
       props: { content, isStreaming: true },
@@ -440,5 +444,8 @@ describe('MessageContent - top-level response rows', () => {
     });
     expect(streamingChild?.className).toContain('operational-group-child-row');
     expect(streamingChild?.getAttribute('style')).toBeNull();
+    expect(
+      streaming.container.querySelector('[data-message-content-block="tool_use"]')?.className,
+    ).toContain('pl-2');
   });
 });
