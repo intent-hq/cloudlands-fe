@@ -1908,6 +1908,14 @@ const SUGGESTED_PROMPTS_OPENER_REGEX = /<!--[ \t]*suggested-prompts[ \t]*$/;
  */
 const SUGGESTED_PROMPTS_CLOSER_REGEX = /^[ \t]*-->[ \t]*$/;
 
+/**
+ * Lenient closer: a line whose non-empty remainder ends in `-->` (models
+ * sometimes fuse the last prompt with the closer). The remainder becomes the
+ * final body line and still passes through the body-text gate, so a `-->`
+ * embedded mid-line (Mermaid edge `A --> B`) never closes a block.
+ */
+const SUGGESTED_PROMPTS_TRAILING_CLOSER_REGEX = /^(.*\S)[ \t]*-->$/;
+
 /** Opening/closing markdown fence (backtick or tilde), optionally indented. */
 const FENCE_LINE_REGEX = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 
@@ -1944,9 +1952,10 @@ interface SuggestedPromptsBlock {
  *
  * A block is accepted only when all of the following hold:
  * - its opener ends its own line and sits outside any fenced code region;
- * - it is closed by a `-->` standing alone on its own line, also outside any
- *   fenced code region (fence state is tracked across the whole scan, so a
- *   `-->` inside a fenced example after an opener cannot close the block);
+ * - it is closed by a `-->` standing alone on its own line — or ending a line
+ *   whose remainder becomes the final body line — also outside any fenced
+ *   code region (fence state is tracked across the whole scan, so a `-->`
+ *   inside a fenced example after an opener cannot close the block);
  * - none of its captured lines looks like response body text.
  *
  * Blocks that fail any of these are not returned at all, so callers never
@@ -2004,6 +2013,19 @@ function findSuggestedPromptsBlocks(content: string): SuggestedPromptsBlock[] {
       continue;
     }
 
+    const trailingCloserMatch = line.match(SUGGESTED_PROMPTS_TRAILING_CLOSER_REGEX);
+    if (trailingCloserMatch) {
+      // The remainder before the trailing `-->` is the final body line; the
+      // body-text gate runs on the remainder, not the raw line (the raw line
+      // always matches the Mermaid-edge pattern).
+      const body = [...lines.slice(openerIndex + 1, i), trailingCloserMatch[1]];
+      if (!body.some((bodyLine) => looksLikeBodyText(bodyLine.trim()))) {
+        blocks.push({ start: openerStart, end: offsets[i] + lines[i].length, body });
+      }
+      openerIndex = -1;
+      continue;
+    }
+
     // A second opener means the first one was never closed.
     const reopenMatch = line.match(SUGGESTED_PROMPTS_OPENER_REGEX);
     if (reopenMatch) {
@@ -2042,9 +2064,9 @@ function looksLikeBodyText(line: string): boolean {
  * Label|delay:30|Check build results
  * -->
  *
- * Only accepted blocks count: the opener and the standalone `-->` closer must
- * both sit outside any code fence, and no captured line may look like response
- * body text. A block that fails any of these is left untouched in
+ * Only accepted blocks count: the opener and the `-->` closer (standalone, or
+ * trailing a final body line) must both sit outside any code fence, and no
+ * captured line may look like response body text. A block that fails any of these is left untouched in
  * `cleanedContent` rather than stripped, so a Mermaid diagram or table can
  * neither surface as prompt chips nor disappear from the rendered message. The
  * last accepted block wins.

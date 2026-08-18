@@ -1,0 +1,19 @@
+{
+  "note": "final prompt line fused with the --> closer still closes the block",
+  "prompts": [
+    "Resume the rewrite now.",
+    "Show the parked diff.",
+    "Leave rewrite parked for now."
+  ],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Parked the rewrite."
+        }
+      ]
+    }
+  ]
+}
