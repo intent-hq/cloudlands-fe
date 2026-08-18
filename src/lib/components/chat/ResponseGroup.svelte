@@ -192,4 +192,10 @@
   .operational-group-guide {
     left: calc(var(--operational-row-inline-padding) + var(--operational-leading-half-slot-size));
   }
+
+  :global(.operational-group-child-row) {
+    padding-inline-start: calc(
+      var(--operational-leading-half-slot-size) + var(--operational-leading-gap)
+    );
+  }
 </style>
