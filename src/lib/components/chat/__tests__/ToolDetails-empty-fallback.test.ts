@@ -154,6 +154,59 @@ describe('ToolDetails empty rich-result fallback', () => {
   });
 });
 
+describe('ToolDetails pending (running) rendering', () => {
+  it('shows the full multiline command for a pending terminal call without a result section', () => {
+    const command = 'cd packages/cloudlands-fe && \\\n  pnpm vitest run \\\n  src/lib/tests';
+    const { container } = render(ToolDetails, {
+      props: {
+        input: { command },
+        result: undefined,
+        parsedResult: null,
+        isError: false,
+        pending: true,
+      },
+    });
+
+    const pre = container.querySelector('pre');
+    expect(pre?.textContent).toBe(command);
+    expect(container.textContent).not.toContain('Result');
+    expect(container.textContent).not.toContain('No output');
+  });
+
+  it('shows sanitized JSON input for a pending non-terminal call without a result section', () => {
+    const { container } = render(ToolDetails, {
+      props: {
+        input: { path: '/repo/src/file.ts', view_range: [1, 120] },
+        result: undefined,
+        parsedResult: null,
+        isError: false,
+        pending: true,
+      },
+    });
+
+    expect(container.textContent).toContain('Input');
+    expect(container.textContent).toContain('/repo/src/file.ts');
+    expect(container.textContent).not.toContain('Result');
+  });
+
+  it('redacts secrets in a pending command while preserving line structure', () => {
+    const { container } = render(ToolDetails, {
+      props: {
+        input: { command: 'export API_KEY=abc123 && \\\n  ./deploy.sh' },
+        result: undefined,
+        parsedResult: null,
+        isError: false,
+        pending: true,
+      },
+    });
+
+    const pre = container.querySelector('pre');
+    expect(pre?.textContent).toContain('API_KEY=[redacted]');
+    expect(pre?.textContent).toContain('\n  ./deploy.sh');
+    expect(pre?.textContent).not.toContain('abc123');
+  });
+});
+
 describe('ToolDetails batch delegate rendering', () => {
   it('renders a disposition summary instead of the "Agent spawned" label', () => {
     const { container } = render(ToolDetails, {
