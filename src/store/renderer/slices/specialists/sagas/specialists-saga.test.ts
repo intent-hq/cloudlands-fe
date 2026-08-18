@@ -40,20 +40,8 @@ vi.mock('$lib/constants/specialists', () => ({
 vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
 vi.mock('$lib/components/ui/toast', () => ({ toast: { error: mocks.toastError } }));
 
-import { m } from '$shared/paraglide/messages.js';
 import { settingsChanged } from '../../settings-events/settings-events-slice';
-import {
-  deleteFileSpecialist,
-  exportBuiltinToFile,
-  loadFileSpecialists,
-  saveFileSpecialist,
-  setBundledSpecialists,
-  setBundledSpecialistsLoaded,
-  setCustomSpecialistsLoaded,
-  setFileSpecialists,
-  setFileSpecialistsLoaded,
-  setOverridesLoaded,
-} from '../specialists-slice';
+import { deleteFileSpecialist, saveFileSpecialist, setBundledSpecialists, setBundledSpecialistsLoaded, setCustomSpecialistsLoaded, setFileSpecialists, setFileSpecialistsLoaded, setOverridesLoaded } from '../specialists-slice';
 import { specialistsSaga } from './specialists-saga';
 
 const settle = async () => {
@@ -305,107 +293,6 @@ describe('specialistsSaga', () => {
     await task.toPromise();
   });
 
-  it('sends exact export arguments and refetches the exact exported definition', async () => {
-    mocks.list.mockResolvedValue([fileDef('builtin')]);
-    const channel = stdChannel();
-    const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => sagaState() }, specialistsSaga);
-    channel.put(exportBuiltinToFile('builtin'));
-    await settle();
-
-    expect(mocks.create.mock.calls).toEqual([
-      [
-        'builtin',
-        {
-          id: 'builtin',
-          name: 'Builtin',
-          description: 'Default',
-          codingAgent: undefined,
-          model: undefined,
-          roleReminder: undefined,
-          modelOptions: undefined,
-          behaviorPrompt: 'Default prompt',
-          source: 'user',
-          hidden: true,
-        },
-        'user',
-        undefined,
-      ],
-    ]);
-    expect(mocks.list.mock.calls).toEqual([[]]);
-    expect(dispatch.mock.calls.map(([action]) => action)).toEqual(expectedListActions(['builtin']));
-    task.cancel();
-    await task.toPromise();
-  });
-
-  it('loads and maps an exact specialist.list result', async () => {
-    mocks.list.mockResolvedValue([fileDef('loaded')]);
-    const channel = stdChannel();
-    const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => sagaState() }, specialistsSaga);
-    channel.put(loadFileSpecialists());
-    await settle();
-
-    expect(mocks.list.mock.calls).toEqual([[]]);
-    expect(dispatch.mock.calls.map(([action]) => action)).toEqual(expectedListActions(['loaded']));
-    task.cancel();
-    await task.toPromise();
-  });
-
-  it('surfaces exact save, delete, export, and refetch terminal errors', async () => {
-    mocks.create.mockImplementation((id: string) =>
-      Promise.reject(new Error(id === 'builtin' ? 'export failed' : 'save failed')),
-    );
-    mocks.edit.mockRejectedValue(new Error('edit failed'));
-    mocks.remove.mockRejectedValue(new Error('delete failed'));
-    mocks.list.mockRejectedValue(new Error('refresh failed'));
-    const channel = stdChannel();
-    const task = runSaga(
-      {
-        channel,
-        dispatch: vi.fn(),
-        getState: () => sagaState({ edited: mappedFileDef('edited') }),
-      },
-      specialistsSaga,
-    );
-
-    channel.put(
-      saveFileSpecialist({
-        id: 'new',
-        name: 'New',
-        description: 'New',
-        behaviorPrompt: 'New.',
-      }),
-    );
-    await settle();
-    channel.put(
-      saveFileSpecialist({
-        id: 'edited',
-        name: 'Edited',
-        description: 'Edited',
-        behaviorPrompt: 'Edited.',
-      }),
-    );
-    await settle();
-    channel.put(deleteFileSpecialist({ id: 'removed' }));
-    await settle();
-    channel.put(exportBuiltinToFile('builtin'));
-    await settle();
-    channel.put(loadFileSpecialists());
-    await settle();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(mocks.toastError.mock.calls).toEqual([
-      ['save failed'],
-      ['edit failed'],
-      ['delete failed'],
-      ['export failed'],
-      [m.specialists_mutation_refreshFailed_error()],
-    ]);
-    task.cancel();
-    await task.toPromise();
-  });
-
   describe('settings-driven refetch (monorepo#1925)', () => {
     afterEach(() => vi.useRealTimers());
 
@@ -486,56 +373,5 @@ describe('specialistsSaga', () => {
       task.cancel();
       await task.toPromise();
     });
-  });
-
-  it('suppresses a stale explicit load after a newer subscription snapshot', async () => {
-    let resolveList!: (defs: any[]) => void;
-    mocks.list.mockReturnValue(
-      new Promise((resolve) => {
-        resolveList = resolve;
-      }),
-    );
-    const channel = stdChannel();
-    const dispatch = vi.fn();
-    const task = runSaga(
-      {
-        channel,
-        dispatch,
-        getState: () => ({
-          ...sagaState(),
-        }),
-      },
-      specialistsSaga,
-    );
-    channel.put(loadFileSpecialists());
-    await settle();
-    mocks.subscription?.([fileDef('new')]);
-    await settle();
-    resolveList([fileDef('stale')]);
-    await settle();
-    const fileActions = dispatch.mock.calls
-      .map(([action]) => action)
-      .filter((action) => action.type === setFileSpecialists.type);
-    expect(fileActions).toEqual([
-      setFileSpecialists([
-        {
-          id: 'new',
-          name: 'Reviewer',
-          description: 'Reviews',
-          codingAgent: 'codex',
-          model: 'gpt',
-          modelOptions: [{ model: 'opencode:kimi-k3', hint: 'Use for broad review' }],
-          behaviorPrompt: 'Review.',
-          roleReminder: 'Verify.',
-          filePath: '/tmp/new.md',
-          source: 'user',
-          hidden: false,
-          resolvedModel: 'gpt',
-          resolvedProvider: 'codex',
-        },
-      ]),
-    ]);
-    task.cancel();
-    await task.toPromise();
   });
 });

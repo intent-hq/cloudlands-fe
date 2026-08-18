@@ -22,16 +22,7 @@ import {
   reopenClosedTab,
 } from '../../panel-layout/panel-layout-slice';
 import { TAB_REMOVAL_ACTIONS } from '../../panel-layout/panel-layout-action-utils';
-import {
-  closeAll as closeAllSidebar,
-  closeHoverCards,
-  closePanel as closeSidebarPanel,
-  hydrateSidebarNav,
-  openPanel as openSidebarPanel,
-  setExpandedItem,
-  setHoveredItem,
-  togglePanel as toggleSidebarPanel,
-} from '../../sidebar-nav/sidebar-nav-slice';
+import { closeAll as closeAllSidebar, closeHoverCards, closePanel as closeSidebarPanel, hydrateSidebarNav, openPanel as openSidebarPanel, setExpandedItem, setHoveredItem, togglePanel as toggleSidebarPanel } from '../../sidebar-nav/sidebar-nav-slice';
 import {
   selectDividerBoundaryStateSnapshot,
   type DividerBoundarySnapshot,

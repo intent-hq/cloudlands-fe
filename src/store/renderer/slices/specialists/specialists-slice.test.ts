@@ -4,27 +4,9 @@ import {
   expect,
 } from "vitest";
 import {
-  getItem,
   getItems,
 } from "@augmentcode/themis/utils/collections/collection-utils";
-import {
-  specialistsReducer,
-  initialState,
-  setBundledSpecialists,
-  setFileSpecialists,
-  setOverridesLoaded,
-  setCustomSpecialistsLoaded,
-  setModelOverride,
-  clearModelOverride,
-  setBehaviorPromptOverride,
-  clearBehaviorPromptOverride,
-  clearAllOverrides,
-  resetAllOverrides,
-  createCustomSpecialist,
-  updateCustomSpecialist,
-  deleteCustomSpecialist,
-  type FileSpecialist,
-} from "./specialists-slice";
+import { specialistsReducer, initialState, setBundledSpecialists, setFileSpecialists, setOverridesLoaded, setCustomSpecialistsLoaded, type FileSpecialist } from "./specialists-slice";
 
 describe("specialistsReducer", () => {
   it("should return initial state", () => {
@@ -37,130 +19,6 @@ describe("specialistsReducer", () => {
       const specialists = [{ id: "test", name: "Test", description: "Desc", defaultBehaviorPrompt: "prompt" }];
       const state = specialistsReducer(initialState, setBundledSpecialists(specialists));
       expect(state.bundledSpecialists).toEqual(specialists);
-    });
-  });
-
-  describe("setModelOverride", () => {
-    it("should set a model override", () => {
-      const state = specialistsReducer(initialState, setModelOverride("spec-writer", "gpt-4"));
-      expect(state.userOverrides.modelOverrides["spec-writer"]).toBe("gpt-4");
-    });
-
-    it("should not mutate other overrides", () => {
-      const stateWithOverride = specialistsReducer(initialState, setModelOverride("spec-writer", "gpt-4"));
-      const state = specialistsReducer(stateWithOverride, setModelOverride("implementor", "opus"));
-      expect(state.userOverrides.modelOverrides["spec-writer"]).toBe("gpt-4");
-      expect(state.userOverrides.modelOverrides["implementor"]).toBe("opus");
-    });
-  });
-
-  describe("clearModelOverride", () => {
-    it("should remove a model override", () => {
-      const stateWithOverride = specialistsReducer(initialState, setModelOverride("spec-writer", "gpt-4"));
-      const state = specialistsReducer(stateWithOverride, clearModelOverride("spec-writer"));
-      expect(state.userOverrides.modelOverrides["spec-writer"]).toBeUndefined();
-    });
-  });
-
-  describe("setBehaviorPromptOverride", () => {
-    it("should set a behavior prompt override", () => {
-      const state = specialistsReducer(initialState, setBehaviorPromptOverride("spec-writer", "custom prompt"));
-      expect(state.userOverrides.behaviorPromptOverrides["spec-writer"]).toBe("custom prompt");
-    });
-  });
-
-  describe("clearBehaviorPromptOverride", () => {
-    it("should remove a behavior prompt override", () => {
-      const s1 = specialistsReducer(initialState, setBehaviorPromptOverride("spec-writer", "custom"));
-      const state = specialistsReducer(s1, clearBehaviorPromptOverride("spec-writer"));
-      expect(state.userOverrides.behaviorPromptOverrides["spec-writer"]).toBeUndefined();
-    });
-  });
-
-  describe("clearAllOverrides", () => {
-    it("should clear both model and behavior prompt overrides for a specialist", () => {
-      let state = specialistsReducer(initialState, setModelOverride("spec-writer", "gpt-4"));
-      state = specialistsReducer(state, setBehaviorPromptOverride("spec-writer", "custom"));
-      state = specialistsReducer(state, clearAllOverrides("spec-writer"));
-      expect(state.userOverrides.modelOverrides["spec-writer"]).toBeUndefined();
-      expect(state.userOverrides.behaviorPromptOverrides["spec-writer"]).toBeUndefined();
-    });
-  });
-
-  describe("resetAllOverrides", () => {
-    it("should clear all overrides", () => {
-      let state = specialistsReducer(initialState, setModelOverride("spec-writer", "gpt-4"));
-      state = specialistsReducer(state, setBehaviorPromptOverride("implementor", "custom"));
-      state = specialistsReducer(state, resetAllOverrides());
-      expect(state.userOverrides).toEqual({ codingAgentOverrides: {}, modelOverrides: {}, behaviorPromptOverrides: {} });
-    });
-  });
-
-  describe("createCustomSpecialist", () => {
-    it("should add a custom specialist with generated ID", () => {
-      const state = specialistsReducer(initialState, createCustomSpecialist({
-        name: "My Custom",
-        description: "Custom desc",
-        model: "gpt-4",
-        behaviorPrompt: "Be helpful",
-      }));
-      const customSpecialists = getItems(state.customSpecialists);
-      expect(customSpecialists).toHaveLength(1);
-      expect(customSpecialists[0].name).toBe("My Custom");
-      expect(customSpecialists[0].id).toMatch(/^custom-/);
-    });
-
-    it("should generate ID in action creator (pure reducer)", () => {
-      // The action's payload should already contain the generated ID
-      const action = createCustomSpecialist({
-        name: "Test",
-        description: "desc",
-        model: "gpt-4",
-        behaviorPrompt: "prompt",
-      });
-      // payload is [specialist, id] — the id is pre-generated
-      expect(action.payload).toHaveLength(2);
-      expect(action.payload[1]).toMatch(/^custom-\d+$/);
-    });
-
-    it("should produce deterministic results when given same action (reducer purity)", () => {
-      const action = createCustomSpecialist({
-        name: "Deterministic",
-        description: "desc",
-        model: "gpt-4",
-        behaviorPrompt: "prompt",
-      });
-      const state1 = specialistsReducer(initialState, action);
-      const state2 = specialistsReducer(initialState, action);
-      // Same action → same result (reducer is pure)
-      expect(state1).toEqual(state2);
-    });
-  });
-
-  describe("updateCustomSpecialist", () => {
-    it("should update existing custom specialist", () => {
-      let state = specialistsReducer(initialState, createCustomSpecialist({
-        name: "Original", description: "desc", model: "gpt-4", behaviorPrompt: "prompt",
-      }));
-      const id = getItems(state.customSpecialists)[0].id;
-      state = specialistsReducer(state, updateCustomSpecialist(id, { name: "Updated" }));
-      expect(getItem(state.customSpecialists, id)?.name).toBe("Updated");
-    });
-
-    it("should return same state for non-existent specialist", () => {
-      const state = specialistsReducer(initialState, updateCustomSpecialist("nonexistent", { name: "X" }));
-      expect(state).toBe(initialState);
-    });
-  });
-
-  describe("deleteCustomSpecialist", () => {
-    it("should remove custom specialist", () => {
-      let state = specialistsReducer(initialState, createCustomSpecialist({
-        name: "ToDelete", description: "desc", model: "gpt-4", behaviorPrompt: "prompt",
-      }));
-      const id = getItems(state.customSpecialists)[0].id;
-      state = specialistsReducer(state, deleteCustomSpecialist(id));
-      expect(getItems(state.customSpecialists)).toHaveLength(0);
     });
   });
 

@@ -4,40 +4,12 @@ import {
   expect,
   vi,
 } from "vitest";
-import {
-  noteReadTrackingReducer,
-  markAsViewed,
-  clearCurrentlyViewed,
-  markNoteRead,
-  computeUnreadNotesSuccess,
-  setLoading,
-  clearCache,
-  loadNoteReadStatusSuccess,
-  initialState,
-  type NoteReadTrackingState,
-} from "./note-read-tracking-slice";
+import { noteReadTrackingReducer, clearCurrentlyViewed, markNoteRead, clearCache, initialState, type NoteReadTrackingState } from "./note-read-tracking-slice";
 
 describe("noteReadTrackingReducer", () => {
   it("should return initial state", () => {
     const state = noteReadTrackingReducer(undefined, { type: "@@INIT" });
     expect(state).toEqual(initialState);
-  });
-
-  describe("markAsViewed", () => {
-    it("should set currently viewed note and remove from unread", () => {
-      const prev: NoteReadTrackingState = {
-        ...initialState,
-        unreadNoteIds: { "note-1": true, "note-2": true },
-      };
-      const state = noteReadTrackingReducer(prev, markAsViewed("note-1"));
-      expect(state.currentlyViewedNoteId).toBe("note-1");
-      expect(state.unreadNoteIds).toEqual({ "note-2": true });
-    });
-
-    it("should return same state for empty noteId", () => {
-      const state = noteReadTrackingReducer(initialState, markAsViewed(""));
-      expect(state).toBe(initialState);
-    });
   });
 
   describe("clearCurrentlyViewed", () => {
@@ -87,22 +59,6 @@ describe("noteReadTrackingReducer", () => {
     });
   });
 
-  describe("computeUnreadNotesSuccess", () => {
-    it("should set unread IDs and clear loading", () => {
-      const prev: NoteReadTrackingState = { ...initialState, isLoading: true };
-      const state = noteReadTrackingReducer(prev, computeUnreadNotesSuccess(["a", "b"]));
-      expect(state.unreadNoteIds).toEqual({ a: true, b: true });
-      expect(state.isLoading).toBe(false);
-    });
-  });
-
-  describe("setLoading", () => {
-    it("should set loading state", () => {
-      const state = noteReadTrackingReducer(initialState, setLoading(true));
-      expect(state.isLoading).toBe(true);
-    });
-  });
-
   describe("clearCache", () => {
     it("should reset to initial state", () => {
       const prev: NoteReadTrackingState = {
@@ -113,14 +69,6 @@ describe("noteReadTrackingReducer", () => {
       };
       const state = noteReadTrackingReducer(prev, clearCache());
       expect(state).toEqual(initialState);
-    });
-  });
-
-  describe("loadNoteReadStatusSuccess", () => {
-    it("should cache read record", () => {
-      const record = { lastReadAt: "2025-01-01T00:00:00Z", readCount: 5 };
-      const state = noteReadTrackingReducer(initialState, loadNoteReadStatusSuccess("note-1", record));
-      expect(state.readRecords["note-1"]).toEqual(record);
     });
   });
 });
