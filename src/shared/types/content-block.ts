@@ -110,24 +110,6 @@ export interface ContentBlock {
   /** Whether the tool call resulted in an error (camelCase alias) */
   isError?: boolean;
 
-  // Slim conversation projection flags (PROTOCOL §5.5, additive): stamped by
-  // the daemon when a body was replaced by a bounded preview / thumbnail.
-  // Fetch the full block via `agent.getMessageBlock` (v7.2).
-  /** `input` is a bounded preview of the full body (tool_use). */
-  inputTruncated?: boolean;
-  /** Byte size of the full `input` body (tool_use). */
-  inputBytes?: number;
-  /** `output` is a bounded preview of the full body (tool_result). */
-  outputTruncated?: boolean;
-  /** Byte size of the full `output` body (tool_result). */
-  outputBytes?: number;
-  /** `data` was over budget: replaced by a thumbnail or omitted (image). */
-  dataTruncated?: boolean;
-  /** Byte size of the full base64 `data` (image). */
-  dataBytes?: number;
-  /** `data` carries the write-time thumbnail, not the original (image). */
-  dataIsThumbnail?: boolean;
-
   // Media fields (for image/audio/file types)
   /** Base64-encoded media data */
   data?: string;
