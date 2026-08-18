@@ -883,6 +883,51 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result.error).toContain('unsupported reasoningEffort');
   });
 
+  it('updateSpecialist forwards the resolved specialist fields through agent.update', async () => {
+    backend.onRequest('agent.update', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.updateSpecialist({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      specialist: 'spec-writer',
+      model: 'grok4.6',
+      systemPrompt: 'Coordinate the work.',
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.update',
+      params: {
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        changes: {
+          specialist: 'spec-writer',
+          model: 'grok4.6',
+          systemPrompt: 'Coordinate the work.',
+        },
+      },
+    });
+  });
+
+  it('updateSpecialist forwards null to clear the specialist and system prompt', async () => {
+    backend.onRequest('agent.update', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    await client.updateSpecialist({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      specialist: null,
+      systemPrompt: null,
+    });
+
+    expect(backend.requests[0]?.params).toEqual({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      changes: { specialist: null, systemPrompt: null },
+    });
+  });
+
   it('rename forwards agent.rename with §5.5 params and folds the ack into success', async () => {
     // PROTOCOL §5.5: agent.rename takes `{ agentId, name }` (name non-empty)
     // and returns `{ success: true, name }`; an applied rename emits
@@ -1086,6 +1131,26 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
       isWaitingForOtherAgents: true,
       waitingForAgentIds: ['agent-child-1', 'agent-child-2'],
     });
+  });
+
+  it('list and get preserve the AgentLite specialist metadata and model verbatim', async () => {
+    const coordinator = {
+      id: 'agent-coordinator',
+      workspaceId: 'ws-1',
+      name: 'Coordinator',
+      status: 'idle',
+      model: 'grok4.6',
+      metadata: { specialist: 'spec-writer' },
+    };
+    backend.onRequest('agent.list', () => ({ agents: [coordinator] }));
+    backend.onRequest('agent.get', () => ({ agent: coordinator }));
+    const client = new LiveAgentsClient();
+
+    const [listed] = await client.list('ws-1');
+    const fetched = await client.get('agent-coordinator');
+
+    expect(listed).toMatchObject({ model: 'grok4.6', metadata: { specialist: 'spec-writer' } });
+    expect(fetched).toMatchObject({ model: 'grok4.6', metadata: { specialist: 'spec-writer' } });
   });
 
   it('does not synthesize activity flags the daemon omits (no healing)', async () => {

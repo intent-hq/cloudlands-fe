@@ -54,16 +54,6 @@ export const pruneTaskAgentAssociationsForNote = createAction<[
   currentTaskKeysOrTexts: string[],
 ]>("taskAgentAssociations/pruneTaskAgentAssociationsForNote");
 
-export const removeTaskAgentAssociationsForAgent = createAction<[
-  workspaceId: string,
-  agentId: string,
-]>("taskAgentAssociations/removeTaskAgentAssociationsForAgent");
-
-export const applyRemoveTaskAgentAssociationsForAgent = createAction<[
-  workspaceId: string,
-  agentId: string,
-]>("taskAgentAssociations/applyRemoveTaskAgentAssociationsForAgent");
-
 /**
  * Apply a daemon-authoritative `task:agent-linked` event (PROTOCOL §6.5).
  * Distinct from `addTaskAgentAssociation` so the mutation middleware — which
@@ -223,20 +213,5 @@ taskAgentAssociationsReducer.with(pruneTaskAgentAssociationsForNote, (state, { p
       : { ...workspaceState.byNoteId, [noteId]: nextNoteAssociations };
 
     return setWorkspaceState(state, workspaceId, { byNoteId });
-  });
-taskAgentAssociationsReducer.with(applyRemoveTaskAgentAssociationsForAgent, (state, { payload: [workspaceId, agentId] }) => {
-    const workspaceState = getWorkspaceState(state, workspaceId);
-    const byNoteId: Record<string, TaskAgentAssociationsByTaskKey> = {};
-    let changed = false;
-
-    for (const [noteId, noteAssociations] of Object.entries(workspaceState.byNoteId)) {
-      const filtered = Object.fromEntries(
-        Object.entries(noteAssociations).filter(([, association]) => association.agentId !== agentId)
-      );
-      if (Object.keys(filtered).length !== Object.keys(noteAssociations).length) changed = true;
-      if (Object.keys(filtered).length > 0) byNoteId[noteId] = filtered;
-    }
-
-    return changed ? setWorkspaceState(state, workspaceId, { byNoteId }) : state;
   });
 taskAgentAssociationsReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) => clearWorkspaceState(state, workspaceId));

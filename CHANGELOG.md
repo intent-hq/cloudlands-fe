@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.66.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.66.0...v2.66.1) (2026-08-18)
+
+
+### 🐛 Bug Fixes
+
+* enforce chat.subscribe sole-writer invariant at stream end ([#1427](https://github.com/intent-hq/cloudlands-fe/issues/1427)) ([45ddc34](https://github.com/intent-hq/cloudlands-fe/commit/45ddc3408522ad720094af9c5bf976d0903542b2))
+* persist coordinator specialist assignment ([#1429](https://github.com/intent-hq/cloudlands-fe/issues/1429)) ([d51f4a6](https://github.com/intent-hq/cloudlands-fe/commit/d51f4a6f62674617e34df337e0985dd2b9a6d025))
+
 ## [2.66.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.65.0...v2.66.0) (2026-08-18)
 
 
