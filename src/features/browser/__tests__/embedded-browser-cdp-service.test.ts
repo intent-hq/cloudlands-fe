@@ -103,13 +103,16 @@ beforeEach(() => {
 describe('focusTab', () => {
   it('forwards explicit pin intent with the exact tab focus request', async () => {
     const service = await loadService();
+    mocks.fromId.mockReturnValue(fakeWebview(42, 'http://a/'));
+    service.registerTab('tab-1', 42);
 
-    expect(service.focusTab('tab-1', 'ws-1', true)).toBe(true);
+    await expect(service.focusTab('tab-1', 'ws-1', true)).resolves.toBe(true);
     expect(mocks.sendToWorkspaceWindows).toHaveBeenCalledWith(
       'ws-1',
       IPC_CHANNELS.BROWSER.FOCUS_TAB,
-      { tabId: 'tab-1', pin: true },
+      { tabId: 'tab-1', workspaceId: 'ws-1', pin: true },
     );
+    service.unregisterTab('tab-1');
   });
 });
 
@@ -126,8 +129,9 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
     service.registerTab('tab-open', 11);
     service.registerTab('tab-closed', 12);
 
-    const tabs = await service.listAllTabs('ws-1');
+    const { tabs, stale } = await service.listAllTabs('ws-1');
 
+    expect(stale).toBe(false);
     expect(tabs.map((t) => t.tabId)).toEqual(['tab-open']);
     expect(tabs[0]).toMatchObject({ tabId: 'tab-open', webContentsId: 11, mounted: true });
   });
@@ -141,7 +145,7 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
     mocks.getAllWebContents.mockReturnValue([fakeWebview(21, 'http://a/')]);
     service.registerTab('tab-mounted', 21);
 
-    const tabs = await service.listAllTabs('ws-1');
+    const { tabs } = await service.listAllTabs('ws-1');
 
     expect(tabs).toHaveLength(2);
     expect(tabs.find((t) => t.tabId === 'tab-mounted')).toMatchObject({ mounted: true });
@@ -166,13 +170,13 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
     service.registerTab('tab-1', 31);
     service.registerTab('tab-ghost', 33);
 
-    const listed = await service.listAllTabs('ws-1');
+    const { tabs: listed } = await service.listAllTabs('ws-1');
     expect(listed.map((t) => t.tabId).sort()).toEqual(['tab-1', 'tab-2']);
 
     for (const tab of listed) {
       await expect(service.closeTab(tab.tabId, 'ws-1')).resolves.toEqual({ tabId: tab.tabId });
     }
-    expect(await service.listAllTabs('ws-1')).toEqual([]);
+    expect(await service.listAllTabs('ws-1')).toEqual({ tabs: [], stale: false });
   });
 
   it("does not fall back to another workspace's tabs when a list request times out", async () => {
@@ -181,15 +185,20 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
     wireRenderer([{ tabId: 'tab-a', url: 'http://a/', title: 'A' }], 'ws-a');
 
     // Populate the cache with ws-a's tab list.
-    expect((await service.listAllTabs('ws-a')).map((t) => t.tabId)).toEqual(['tab-a']);
+    expect((await service.listAllTabs('ws-a')).tabs.map((t) => t.tabId)).toEqual(['tab-a']);
 
     // ws-b's request gets no reply and times out; the fallback must not
-    // serve ws-a's cached tabs (which closeTab(..., 'ws-b') would reject).
+    // serve ws-a's cached tabs (which closeTab(..., 'ws-b') would reject) —
+    // and with no ws-b cache it must reject, not fabricate an empty list
+    // (monorepo#2756 RC4).
     vi.useFakeTimers();
     try {
       const pending = service.listAllTabs('ws-b');
+      pending.catch(() => {}); // avoid unhandled rejection before assertion
       await vi.advanceTimersByTimeAsync(600);
-      expect(await pending).toEqual([]);
+      await expect(pending).rejects.toThrow(
+        'Tab list for workspace ws-b is unavailable: the renderer did not respond and no cached tab list exists.',
+      );
     } finally {
       vi.useRealTimers();
     }

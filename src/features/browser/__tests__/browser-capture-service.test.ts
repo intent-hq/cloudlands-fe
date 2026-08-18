@@ -17,15 +17,18 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     ensureAttached: vi.fn(),
     evaluate: vi.fn(),
     getAccessibilityTree: vi.fn().mockResolvedValue(''),
-    listAllTabs: vi.fn().mockResolvedValue([
-      {
-        tabId: 'tab-1',
-        webContentsId: 1,
-        mounted: true,
-        url: 'https://example.test/page',
-        title: 'Example',
-      },
-    ]),
+    listAllTabs: vi.fn().mockResolvedValue({
+      tabs: [
+        {
+          tabId: 'tab-1',
+          webContentsId: 1,
+          mounted: true,
+          url: 'https://example.test/page',
+          title: 'Example',
+        },
+      ],
+      stale: false,
+    }),
     onCdpMessage: vi.fn((_: number, handler: (method: string, params: unknown) => void) => {
       cdpMessageHandler = handler;
       return () => {

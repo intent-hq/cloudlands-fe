@@ -122,6 +122,15 @@ export const syntheticFixtures: SyntheticFixture[] = [
     ],
   },
   {
+    id: 'prompts-trailing-closer',
+    note: 'final prompt line fused with the --> closer still closes the block',
+    blocks: [
+      text(
+        'Parked the rewrite.\n\n<!-- suggested-prompts\nResume the rewrite now.\nShow the parked diff.\nLeave rewrite parked for now. -->\n',
+      ),
+    ],
+  },
+  {
     id: 'special-augment-snippet',
     note: 'augment_code_snippet XML block with 4-backtick fence',
     blocks: [

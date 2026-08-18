@@ -252,4 +252,29 @@ describe('appLayoutNavigationSaga', () => {
     task.cancel();
     await task.toPromise();
   });
+
+  it('ignores non-browser and unknown tab focus requests', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: {
+              'panel-note': { tabs: [{ id: 'note-1', type: 'note' }] },
+            },
+          },
+        },
+      },
+    };
+    const task = runSaga({ channel, dispatch, getState: () => state }, appLayoutNavigationSaga);
+
+    channel.put(focusBrowserTabRequested('ws-1', 'note-1'));
+    channel.put(focusBrowserTabRequested('ws-1', 'missing'));
+    await settle();
+
+    expect(dispatch).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
 });

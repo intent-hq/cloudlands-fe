@@ -70,6 +70,19 @@ export const selectWokenUpInfo = store.createSelector<
 });
 
 /**
+ * Utility-footer readiness latch: true once an `agent.getSubscriptions`
+ * snapshot read has settled (success OR failure) for this (workspace, agent).
+ * A failed read counts as ready-with-empty so the footer readiness gate can
+ * never wedge the transcript reveal on subscription data.
+ */
+export const selectSubscriptionSnapshotFetched = store.createSelector<
+  [workspaceId: string, agentId: string],
+  boolean
+>((state, workspaceId, agentId) => {
+  return selectEntry.select(state, workspaceId, agentId).snapshotFetched;
+});
+
+/**
  * All agent IDs that have entries in the subscription UI for a given workspace.
  * Used by sagas to refresh all tracked agents on system-level events.
  */

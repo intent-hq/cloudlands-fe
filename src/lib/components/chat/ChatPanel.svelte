@@ -95,6 +95,7 @@
   } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
     selectAwaitingSwitchBackSnapshot,
+    selectAwaitingUtilityFooter,
     selectChatError,
     selectChatLastChunkTime,
     selectChatModelUnavailable,
@@ -360,6 +361,10 @@
   // Switch-back gate: true while a re-viewed conversation's (re)opening
   // standing subscription has not yet delivered its fresh seq-0 snapshot.
   const awaitingSwitchBackSnapshot$ = selectAwaitingSwitchBackSnapshot(agentIdStore);
+  // Utility-footer gate: true while the footer data sources (subscriptions,
+  // hooks, monitored PRs) have not all settled — transcript and footer
+  // reveal in the same paint (saga-cleared, bounded fallback).
+  const awaitingUtilityFooter$ = selectAwaitingUtilityFooter(agentIdStore);
   // Indeterminate first-hydration gate: while the INITIAL hydration is in
   // flight (never settled before for this agent), a partially-loaded message
   // list — e.g. the standing subscription's newest page landing ahead of the
@@ -369,15 +374,6 @@
     !$transcriptHydratedOnce$ && $transcriptHydration$ === 'loading',
   );
   const transcriptHydrationFailed = $derived($transcriptHydration$ === 'error');
-  // Utility stack gate: the hooks/monitors/subscriptions card never renders
-  // before the transcript reveal — hidden until this agent's first hydration
-  // settles (data prefetch is unaffected; only the render is gated).
-  const showTranscriptUtilityCard = $derived(
-    shouldShowTranscriptUtilityStack({
-      transcriptHydratedOnce: $transcriptHydratedOnce$,
-      hydrationSettled: $transcriptHydration$ === 'settled',
-    }),
-  );
   const authoritativeConversationEvidence = $derived(
     hasAuthoritativeConversationEvidence(
       $agentSession$ ?? null,
@@ -1506,15 +1502,30 @@
   // Alias for backward compatibility
   let pendingInitialPrompt = $derived(pendingInitialData.prompt);
 
-  // Switch-back reveal deferral: on re-view, keep the indeterminate skeleton
-  // up (and suppress everything that would paint stale conversation state)
-  // until the resubscribe snapshot applies, the subscription closes, or the
-  // saga-owned bounded fallback clears the gate — then reveal in one paint.
+  // Transcript reveal deferral: keep the indeterminate skeleton up (and
+  // suppress everything that would paint stale conversation state) until the
+  // resubscribe snapshot applies AND the utility-footer data sources settle
+  // (or the subscription closes / the saga-owned bounded fallback clears the
+  // gates) — then reveal transcript and footer in one paint.
   const deferTranscriptReveal = $derived(
     shouldDeferTranscriptReveal({
       awaitingSwitchBackSnapshot: $awaitingSwitchBackSnapshot$,
+      awaitingUtilityFooter: $awaitingUtilityFooter$,
       transcriptHydratedOnce: $transcriptHydratedOnce$,
       hasPendingInitialPrompt: Boolean(pendingInitialPrompt),
+    }),
+  );
+
+  // Utility stack gate: the hooks/monitors/subscriptions card never renders
+  // before the transcript reveal — hidden until this agent's first hydration
+  // settles and the reveal deferral clears, so it mounts in the SAME flip
+  // that reveals the transcript (data prefetch is unaffected; only the
+  // render is gated).
+  const showTranscriptUtilityCard = $derived(
+    shouldShowTranscriptUtilityStack({
+      transcriptHydratedOnce: $transcriptHydratedOnce$,
+      hydrationSettled: $transcriptHydration$ === 'settled',
+      revealDeferred: deferTranscriptReveal,
     }),
   );
 

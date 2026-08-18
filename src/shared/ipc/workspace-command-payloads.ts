@@ -17,6 +17,17 @@ export type BrowserCloseTabPayload = WorkspaceCommandPayload & {
   tabId: string;
 };
 
+export type BrowserFocusTabPayload = WorkspaceCommandPayload & {
+  tabId: string;
+  /** Pin the panel that contains the focused browser tab. */
+  pin?: boolean;
+};
+
+export type BrowserListTabsRequestPayload = WorkspaceCommandPayload & {
+  /** Echoed back so main resolves the matching pending request (monorepo#2602). */
+  requestId?: string;
+};
+
 export function workspaceCommandPayload(workspaceId: unknown): WorkspaceCommandPayload | null {
   return typeof workspaceId === 'string' && workspaceId.length > 0 ? { workspaceId } : null;
 }
