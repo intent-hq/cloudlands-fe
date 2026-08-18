@@ -11,15 +11,30 @@ import { toast } from 'svelte-sonner';
 import { m } from '$shared/paraglide/messages.js';
 import { resolveBrowserLinkUrl } from './browser-url-resolution';
 
+/** Resolved open target: the URL to load plus the pre-rewrite requested URL. */
+export interface ResolvedBrowserLinkTarget {
+  /** Final URL to open (the rewritten target even on resolver error). */
+  url: string;
+  /**
+   * Original URL as requested; present only when the URL was rewritten.
+   * Persisted with the tab so a restart can re-run the rewrite
+   * (intent-hq/monorepo#2789).
+   */
+  requestedUrl?: string;
+}
+
 /**
  * Resolve `rawUrl` for a programmatic browser open and surface resolver
  * feedback: `error` (rewritten target unreachable, probe + tunnel failed)
  * shows an error toast with the resolver's explanation, `warning`
  * (bare-loopback ambiguity in remote mode) shows a warning toast. Always
  * returns a URL to open — on error it is the rewritten target, so the
- * browser's own error page shows instead of a dead silent click.
+ * browser's own error page shows instead of a dead silent click. Rewritten
+ * resolutions also carry `requestedUrl` for tab persistence.
  */
-export async function resolveBrowserLinkForOpen(rawUrl: string): Promise<string> {
+export async function resolveBrowserLinkForOpen(
+  rawUrl: string,
+): Promise<ResolvedBrowserLinkTarget> {
   const resolved = await resolveBrowserLinkUrl(
     rawUrl,
     typeof window !== 'undefined' ? window.electronAPI?.invoke : undefined,
@@ -31,5 +46,10 @@ export async function resolveBrowserLinkForOpen(rawUrl: string): Promise<string>
       description: resolved.warning,
     });
   }
-  return resolved.url;
+  return {
+    url: resolved.url,
+    ...(resolved.rewritten && resolved.requestedUrl !== undefined
+      ? { requestedUrl: resolved.requestedUrl }
+      : {}),
+  };
 }

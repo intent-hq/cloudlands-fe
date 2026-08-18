@@ -89,12 +89,22 @@ export interface ContentBlock {
   input?: Record<string, unknown>;
   /** Tool call ID (legacy alias) */
   toolCallId?: string;
+  /** Slim projection (PROTOCOL §5.5, v7.1): `input` is a bounded preview of an
+   *  over-budget body — fetch the full block via `agent.getMessageBlock`. */
+  inputTruncated?: boolean;
+  /** Serialized byte size of the full `input` when `inputTruncated` is set. */
+  inputBytes?: number;
 
   // Tool result fields
   /** ID of the tool_use block this result corresponds to */
   tool_use_id?: string;
   /** Tool result output */
   output?: any;
+  /** Slim projection (PROTOCOL §5.5, v7.1): `output` is a bounded preview of
+   *  an over-budget body — fetch the full block via `agent.getMessageBlock`. */
+  outputTruncated?: boolean;
+  /** Serialized byte size of the full `output` when `outputTruncated` is set. */
+  outputBytes?: number;
   /** Whether the tool call resulted in an error (snake_case) */
   is_error?: boolean;
   /** Whether the tool call resulted in an error (camelCase alias) */
@@ -103,6 +113,13 @@ export interface ContentBlock {
   // Media fields (for image/audio/file types)
   /** Base64-encoded media data */
   data?: string;
+  /** Slim projection (PROTOCOL §5.5, v7.1): `data` is a write-time thumbnail
+   *  (or omitted on legacy pre-thumbnail rows) instead of the full image. */
+  dataTruncated?: boolean;
+  /** Present with `dataTruncated` when `data` carries the persisted thumbnail. */
+  dataIsThumbnail?: boolean;
+  /** Byte size of the full `data` when `dataTruncated` is set. */
+  dataBytes?: number;
   /** MIME type of media */
   mimeType?: string;
   /** Transcript for audio content */

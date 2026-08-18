@@ -2,11 +2,7 @@
  * Tests for text-utils
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   deriveAgentPreviewLine,
   getLastMeaningfulLine,
@@ -222,6 +218,31 @@ describe('text-utils', () => {
         }),
       ).toBe('Last meaningful line');
       expect(deriveAgentPreviewLine({ lastUserMessage: 'only user text' })).toBe('only user text');
+    });
+
+    it('surfaces the persisted lastToolUse name when no response text exists (tool-only stretch)', () => {
+      expect(
+        deriveAgentPreviewLine({
+          lastMessageRole: 'assistant',
+          lastToolUse: { name: 'str-replace-editor' },
+        }),
+      ).toBe('str-replace-editor');
+      // Response text keeps precedence over the tool preview.
+      expect(
+        deriveAgentPreviewLine({
+          lastMessageRole: 'assistant',
+          lastAgentResponse: 'Some response',
+          lastToolUse: { name: 'str-replace-editor' },
+        }),
+      ).toBe('Some response');
+      // The tool preview outranks only the final user-message fallback.
+      expect(
+        deriveAgentPreviewLine({
+          lastMessageRole: 'assistant',
+          lastUserMessage: 'user text',
+          lastToolUse: { name: 'view' },
+        }),
+      ).toBe('view');
     });
   });
 });

@@ -61,9 +61,19 @@ export function reconcileEmbeddedBrowserUrlProp(
     return { shouldLoad: false, targetUrl: null };
   }
 
+  // Defer — do NOT consume — a prop change that lands while the webview is
+  // still loading (mounted but not ready). Leaving previousUrlProp untouched
+  // makes the readiness flip re-run the reconcile and load the URL then;
+  // consuming it here would strand the webview on its in-flight page while
+  // the store already points elsewhere (e.g. a restart-rehydrated tab whose
+  // fresh tunnel URL resolves during the dead initial load, monorepo#2789).
+  if (!options.webviewReady) {
+    return { shouldLoad: false, targetUrl: null };
+  }
+
   state.previousUrlProp = url;
 
-  if (!options.webviewReady || !options.isValidBrowserUrl(url)) {
+  if (!options.isValidBrowserUrl(url)) {
     return { shouldLoad: false, targetUrl: null };
   }
 

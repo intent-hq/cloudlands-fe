@@ -104,6 +104,7 @@ describe('browserIpcSaga', () => {
       ['browser:close-tab', handlers['browser:close-tab']],
       ['browser:focus-tab', handlers['browser:focus-tab']],
       ['browser:list-tabs-request', handlers['browser:list-tabs-request']],
+      ['browser:tab-navigated', handlers['browser:tab-navigated']],
     ]);
 
     first.cancel();
@@ -113,10 +114,11 @@ describe('browserIpcSaga', () => {
       ['browser:close-tab', 'browser:close-tab-listener'],
       ['browser:focus-tab', 'browser:focus-tab-listener'],
       ['browser:list-tabs-request', 'browser:list-tabs-request-listener'],
+      ['browser:tab-navigated', 'browser:tab-navigated-listener'],
     ]);
 
     const restarted = start();
-    expect(on).toHaveBeenCalledTimes(8);
+    expect(on).toHaveBeenCalledTimes(10);
     restarted.cancel();
     await restarted.toPromise();
   });
@@ -199,7 +201,7 @@ describe('browserIpcSaga', () => {
       },
       {
         type: 'panelLayout/updateTabBrowserUrl',
-        payload: ['ws-1', 'browser-1', 'https://replace.test'],
+        payload: ['ws-1', 'browser-1', 'https://replace.test', null],
       },
       {
         type: 'panelLayout/setActiveTab',
@@ -283,6 +285,119 @@ describe('browserIpcSaga', () => {
         },
       },
     ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('persists the payload requestedUrl on the opened tab (monorepo#2789)', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({
+      url: 'http://127.0.0.1:52345/',
+      workspaceId: 'ws-1',
+      requestedUrl: 'http://daemon.localhost:3000/',
+    });
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': { panels: { one: { tabs: [{ id: 'browser-1', type: 'browser' }] } } },
+        },
+      },
+    };
+    await emit({
+      url: 'http://127.0.0.1:52345/',
+      position: 'replace',
+      workspaceId: 'ws-1',
+      requestedUrl: 'http://daemon.localhost:3000/',
+    });
+
+    expect(actions).toEqual([
+      {
+        type: 'panelLayout/openTabInAdjacentOrSplit',
+        payload: {
+          wsId: 'ws-1',
+          tab: {
+            ...TAB('http://127.0.0.1:52345/'),
+            browserRequestedUrl: 'http://daemon.localhost:3000/',
+          },
+          sourcePanelId: undefined,
+          animated: false,
+          force: false,
+          newTabId: `tab-${NOW}-i`,
+          timestamp: NOW,
+        },
+      },
+      {
+        type: 'panelLayout/updateTabBrowserUrl',
+        payload: ['ws-1', 'browser-1', 'http://127.0.0.1:52345/', 'http://daemon.localhost:3000/'],
+      },
+      {
+        type: 'panelLayout/setActiveTab',
+        payload: { wsId: 'ws-1', tabId: 'browser-1', panelId: undefined, timestamp: NOW },
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('persists a main-driven navigation with its requested URL via browser:tab-navigated (monorepo#2789)', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': { panels: { one: { tabs: [{ id: 'browser-1', type: 'browser' }] } } },
+        },
+      },
+    };
+
+    // Rewritten navigation: records the requested URL.
+    await emit(
+      {
+        tabId: 'browser-1',
+        workspaceId: 'ws-1',
+        url: 'http://127.0.0.1:52345/page',
+        requestedUrl: 'http://daemon.localhost:3000/page',
+      },
+      'browser:tab-navigated',
+    );
+    // Non-rewritten navigation: clears any stored requested URL.
+    await emit(
+      { tabId: 'browser-1', workspaceId: 'ws-1', url: 'https://example.test/' },
+      'browser:tab-navigated',
+    );
+
+    expect(actions).toEqual([
+      {
+        type: 'panelLayout/updateTabBrowserUrl',
+        payload: [
+          'ws-1',
+          'browser-1',
+          'http://127.0.0.1:52345/page',
+          'http://daemon.localhost:3000/page',
+        ],
+      },
+      {
+        type: 'panelLayout/updateTabBrowserUrl',
+        payload: ['ws-1', 'browser-1', 'https://example.test/', null],
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('ignores browser:tab-navigated with bad payloads or for un-hosted workspaces', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    await emit({}, 'browser:tab-navigated');
+    await emit({ tabId: 'browser-1', workspaceId: 'ws-1' }, 'browser:tab-navigated');
+    await emit({ tabId: 7, workspaceId: 'ws-1', url: 'https://x.test/' }, 'browser:tab-navigated');
+    await emit(
+      { tabId: 'browser-1', url: 'https://x.test/' }, // no workspaceId
+      'browser:tab-navigated',
+    );
+    expect(actions).toEqual([]);
     task.cancel();
     await task.toPromise();
   });
@@ -417,7 +532,9 @@ describe('browserIpcSaga', () => {
       panelLayout: {
         byWorkspaceId: {
           'ws-active': {
-            panels: { one: { tabs: [{ id: 'browser-x', type: 'browser', browserUrl: 'http://x/' }] } },
+            panels: {
+              one: { tabs: [{ id: 'browser-x', type: 'browser', browserUrl: 'http://x/' }] },
+            },
           },
           'ws-background': {
             panels: {
@@ -431,7 +548,12 @@ describe('browserIpcSaga', () => {
                     title: 'A',
                     closable: true,
                   },
-                  { id: 'browser-pinned', type: 'browser', browserUrl: 'http://b/', closable: false },
+                  {
+                    id: 'browser-pinned',
+                    type: 'browser',
+                    browserUrl: 'http://b/',
+                    closable: false,
+                  },
                 ],
               },
             },
@@ -459,7 +581,9 @@ describe('browserIpcSaga', () => {
       panelLayout: {
         byWorkspaceId: {
           'ws-here': {
-            panels: { one: { tabs: [{ id: 'browser-1', type: 'browser', browserUrl: 'http://a/' }] } },
+            panels: {
+              one: { tabs: [{ id: 'browser-1', type: 'browser', browserUrl: 'http://a/' }] },
+            },
           },
         },
       },
@@ -481,12 +605,16 @@ describe('browserIpcSaga', () => {
         byWorkspaceId: {
           'ws-a': {
             panels: {
-              one: { tabs: [{ id: 'tab-a', type: 'browser', browserUrl: 'http://a/', title: 'A' }] },
+              one: {
+                tabs: [{ id: 'tab-a', type: 'browser', browserUrl: 'http://a/', title: 'A' }],
+              },
             },
           },
           'ws-b': {
             panels: {
-              one: { tabs: [{ id: 'tab-b', type: 'browser', browserUrl: 'http://b/', title: 'B' }] },
+              one: {
+                tabs: [{ id: 'tab-b', type: 'browser', browserUrl: 'http://b/', title: 'B' }],
+              },
             },
           },
         },
@@ -499,11 +627,17 @@ describe('browserIpcSaga', () => {
     expect(mocks.invoke.mock.calls).toEqual([
       [
         'browser:list-tabs-response',
-        { requestId: 'req-a', tabs: [{ tabId: 'tab-a', url: 'http://a/', title: 'A', closable: true }] },
+        {
+          requestId: 'req-a',
+          tabs: [{ tabId: 'tab-a', url: 'http://a/', title: 'A', closable: true }],
+        },
       ],
       [
         'browser:list-tabs-response',
-        { requestId: 'req-b', tabs: [{ tabId: 'tab-b', url: 'http://b/', title: 'B', closable: true }] },
+        {
+          requestId: 'req-b',
+          tabs: [{ tabId: 'tab-b', url: 'http://b/', title: 'B', closable: true }],
+        },
       ],
     ]);
     task.cancel();
@@ -637,6 +771,64 @@ describe('browserIpcSaga', () => {
       await task.toPromise();
     });
 
+    it('answers listTabs for the ROUTED workspace even with no layout entry and no tab-strip membership', async () => {
+      // Main routes LIST_TABS_REQUEST at windows by the routed workspace
+      // (windowWorkspaceIds) as well as the tab strip, so a window routed to
+      // /workspace/{id} must answer even when the workspace is missing from
+      // workspaceStacks — staying silent times the request out as "renderer
+      // did not respond" (monorepo#2789 live regression in v2.64.0).
+      const { task } = startWithReducer();
+      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
+      seedStorage('ws-routed-1', [
+        { id: 'browser-1', type: 'browser', title: 'A', browserUrl: 'http://a/', closable: true },
+      ]);
+      window.history.pushState({}, '', '/workspace/ws-routed-1');
+      try {
+        await emit({ workspaceId: 'ws-routed-1', requestId: 'req-r1' }, 'browser:list-tabs-request');
+      } finally {
+        window.history.pushState({}, '', '/');
+      }
+
+      expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
+        requestId: 'req-r1',
+        tabs: [{ tabId: 'browser-1', url: 'http://a/', title: 'A', closable: true }],
+      });
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('stays silent when the route is /workspace/new and the workspace is otherwise unhosted', async () => {
+      const { actions, task } = startWithReducer();
+      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
+      window.history.pushState({}, '', '/workspace/new');
+      try {
+        await emit({ workspaceId: 'new', requestId: 'req-r2' }, 'browser:list-tabs-request');
+      } finally {
+        window.history.pushState({}, '', '/');
+      }
+
+      expect(mocks.invoke).not.toHaveBeenCalled();
+      expect(actions).toEqual([]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('stays silent for a non-routed workspace when the window is routed to a different one', async () => {
+      const { actions, task } = startWithReducer();
+      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
+      window.history.pushState({}, '', '/workspace/ws-routed-other');
+      try {
+        await emit({ workspaceId: 'ws-not-here', requestId: 'req-r3' }, 'browser:list-tabs-request');
+      } finally {
+        window.history.pushState({}, '', '/');
+      }
+
+      expect(mocks.invoke).not.toHaveBeenCalled();
+      expect(actions).toEqual([]);
+      task.cancel();
+      await task.toPromise();
+    });
+
     it('opens with position "replace" against the hydrated layout, reusing the persisted browser tab', async () => {
       const { actions, task } = startWithReducer();
       hostedState('ws-hyd-6');
@@ -651,7 +843,7 @@ describe('browserIpcSaga', () => {
 
       expect(actions).toContainEqual({
         type: 'panelLayout/updateTabBrowserUrl',
-        payload: ['ws-hyd-6', 'browser-1', 'http://replaced/'],
+        payload: ['ws-hyd-6', 'browser-1', 'http://replaced/', null],
       });
       expect(actions).toContainEqual(
         expect.objectContaining({
@@ -688,14 +880,20 @@ describe('browserIpcSaga', () => {
       const key = `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}ws-hyd-err-2`;
       mocks.storage.set(key, new Error('storage exploded'));
 
-      await emit({ workspaceId: 'ws-hyd-err-2', requestId: 'req-e2a' }, 'browser:list-tabs-request');
+      await emit(
+        { workspaceId: 'ws-hyd-err-2', requestId: 'req-e2a' },
+        'browser:list-tabs-request',
+      );
       mocks.storage.set(
         key,
         persistedLayout([
           { id: 'browser-1', type: 'browser', title: 'A', browserUrl: 'http://a/', closable: true },
         ]),
       );
-      await emit({ workspaceId: 'ws-hyd-err-2', requestId: 'req-e2b' }, 'browser:list-tabs-request');
+      await emit(
+        { workspaceId: 'ws-hyd-err-2', requestId: 'req-e2b' },
+        'browser:list-tabs-request',
+      );
 
       expect(mocks.invoke.mock.calls.map(([, payload]: any[]) => payload)).toEqual([
         { requestId: 'req-e2a', error: 'layout hydration failed: storage exploded' },

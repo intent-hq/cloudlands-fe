@@ -381,20 +381,19 @@ export async function openInBrowserPanel(
   sourcePanelId?: string,
 ): Promise<boolean> {
   let targetUrl = url;
+  let requestedUrl: string | undefined;
   try {
     const { resolveBrowserLinkForOpen } = await import('$lib/utils/browser-link-open');
-    targetUrl = await resolveBrowserLinkForOpen(url);
+    const resolved = await resolveBrowserLinkForOpen(url);
+    targetUrl = resolved.url;
+    requestedUrl = resolved.requestedUrl;
   } catch (error) {
     logger.warn('URL resolution failed, opening the URL unresolved', { url, error });
   }
   try {
     const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
     const layoutManager = getPanelLayoutManager(workspaceId);
-    if (sourcePanelId) {
-      layoutManager.openBrowserPanel(targetUrl, undefined, sourcePanelId);
-    } else {
-      layoutManager.openBrowserPanel(targetUrl);
-    }
+    layoutManager.openBrowserPanel(targetUrl, undefined, sourcePanelId, requestedUrl);
     logger.debug('Opened URL in browser panel', { url, targetUrl, workspaceId });
     return true;
   } catch (error) {

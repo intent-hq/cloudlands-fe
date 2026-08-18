@@ -53,6 +53,7 @@ function openBrowserTab(
   position: 'adjacent' | 'replace' | 'same' = 'adjacent',
   workspaceId?: string,
   allowDuplicate?: boolean,
+  requestedUrl?: string,
 ): { success: boolean; message: string; tabId?: string } {
   const workspacePayload = workspaceCommandPayload(workspaceId);
   if (!workspacePayload) {
@@ -95,6 +96,7 @@ function openBrowserTab(
       ...workspacePayload,
       tabId,
       ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
+      ...(requestedUrl === undefined ? {} : { requestedUrl }),
     },
   );
   if (!delivery.delivered) {
@@ -262,7 +264,8 @@ export async function executeBrowserActions(
 ): Promise<ExecutionResult> {
   return executeActions(
     { actions, tabId },
-    (url, position, allowDuplicate) => openBrowserTab(url, position, workspaceId, allowDuplicate),
+    (url, position, allowDuplicate, requestedUrl) =>
+      openBrowserTab(url, position, workspaceId, allowDuplicate, requestedUrl),
     agentId,
     workspaceId,
     getDaemonLoopbackContext,

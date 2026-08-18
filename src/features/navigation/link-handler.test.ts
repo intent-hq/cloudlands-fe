@@ -31,7 +31,7 @@ vi.mock('../../shared/generated/ipc-client', () => ({
 
 // Entry-point URL resolution (loopback rewrite/probe/tunnel); echoes by default
 const resolveBrowserLinkForOpenMock = vi.hoisted(() =>
-  vi.fn(async (url: string) => url),
+  vi.fn(async (url: string) => ({ url })),
 );
 vi.mock('$lib/utils/browser-link-open', () => ({
   resolveBrowserLinkForOpen: resolveBrowserLinkForOpenMock,
@@ -432,6 +432,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
       'https://example.com/docs',
       undefined,
       'panel-chat',
+      undefined,
     );
   });
 
@@ -535,14 +536,14 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
     });
 
     expect(result).toBe(true);
-    expect(openBrowserPanelMock).toHaveBeenCalledWith(url);
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, undefined, undefined);
     expect(invokeIpcMock).not.toHaveBeenCalled();
   });
 
   it('resolves the URL BEFORE opening the browser panel and opens the resolved URL', async () => {
     const url = 'http://localhost:5173/app';
     const resolvedUrl = 'http://10.0.0.5:5173/app';
-    resolveBrowserLinkForOpenMock.mockResolvedValueOnce(resolvedUrl);
+    resolveBrowserLinkForOpenMock.mockResolvedValueOnce({ url: resolvedUrl, requestedUrl: url });
 
     const result = await handleLink(url, {
       workspaceId: TEST_WORKSPACE_ID,
@@ -551,7 +552,7 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
 
     expect(result).toBe(true);
     expect(resolveBrowserLinkForOpenMock).toHaveBeenCalledWith(url);
-    expect(openBrowserPanelMock).toHaveBeenCalledWith(resolvedUrl);
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(resolvedUrl, undefined, undefined, url);
   });
 
   it('opens the URL unresolved when entry-point resolution throws', async () => {
@@ -564,7 +565,7 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
     });
 
     expect(result).toBe(true);
-    expect(openBrowserPanelMock).toHaveBeenCalledWith(url);
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, undefined, undefined);
   });
 
   it('Cmd+Click without a workspaceId falls back to the external browser', async () => {
@@ -693,7 +694,7 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
     });
 
     expect(result).toBe(true);
-    expect(openBrowserPanelMock).toHaveBeenCalledWith(url);
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, undefined, undefined);
     expect(showLinkActionMenuMock).not.toHaveBeenCalled();
   });
 
@@ -757,7 +758,7 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
 
     expect(result).toBe(true);
     expect(showLinkActionMenuMock).not.toHaveBeenCalled();
-    expect(openBrowserPanelMock).toHaveBeenCalledWith(url);
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, undefined, undefined);
   });
 
   it('non-issue/PR GitHub links plain-click to the external browser (no menu)', async () => {
