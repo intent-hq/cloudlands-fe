@@ -55,7 +55,9 @@ async function expectGeometryWithinHalfDevicePixel(component: Locator, page: Pag
     .toBeLessThanOrEqual(0.5);
 }
 
-test('defines the navigation landmark and native button keyboard model', async ({ mount }) => {
+test('renders distinct panel glyphs, one active tile, and the native button keyboard model', async ({
+  mount,
+}) => {
   const component = await mount(PanelNavigatorPrepHarness, { props: { viewportWidth: 320 } });
   const navigator = component.getByRole('navigation', { name: 'Panel navigator' });
   const segments = navigator.getByRole('button');
@@ -64,6 +66,22 @@ test('defines the navigation landmark and native button keyboard model', async (
   await expect(segments.nth(1)).toHaveAccessibleName(
     'A deliberately long note title for truncation',
   );
+  await expect(segments.nth(1)).toHaveAttribute(
+    'title',
+    'A deliberately long note title for truncation',
+  );
+  await expect(segments.nth(0)).toHaveAttribute('data-panel-navigator-icon', 'agent');
+  await expect(segments.nth(1)).toHaveAttribute('data-panel-navigator-icon', 'note');
+  await expect(segments.nth(2)).toHaveAttribute('data-panel-navigator-icon', 'browser');
+  expect(
+    new Set(
+      await segments.evaluateAll((nodes) =>
+        nodes.map((node) => node.querySelector('svg path')?.getAttribute('d')),
+      ),
+    ).size,
+  ).toBe(3);
+  await expect(segments.nth(0)).toHaveAttribute('aria-current', 'page');
+  await expect(segments.nth(1)).not.toHaveAttribute('aria-current', 'page');
   await expect(navigator.locator('[data-panel-navigator-thumb]')).toHaveAttribute(
     'aria-hidden',
     'true',
@@ -73,7 +91,7 @@ test('defines the navigation landmark and native button keyboard model', async (
   await component.getByTestId('before-navigator').focus();
   await component.getByTestId('before-navigator').press('Tab');
   await expect(segments.nth(0)).toBeFocused();
-  await expect(segments.nth(0)).toHaveCSS('height', '24px');
+  await expect(segments.nth(0)).toHaveCSS('height', '36px');
   await segments.nth(0).press('Tab');
   await expect(segments.nth(1)).toBeFocused();
   await segments.nth(1).press('Shift+Tab');
@@ -89,6 +107,20 @@ test('defines the navigation landmark and native button keyboard model', async (
   await segments.nth(1).press('Space');
   await expect(segments.nth(1)).toBeFocused();
   await expect(component.getByTestId('activation-state')).toHaveText('note:2');
+  await expect(segments.nth(1)).toHaveAttribute('aria-current', 'page');
+  await expect(segments.nth(0)).not.toHaveAttribute('aria-current', 'page');
+
+  const [activeBackground, inactiveBackground] = await Promise.all([
+    segments
+      .nth(1)
+      .locator('.panel-navigator-tile')
+      .evaluate((node) => getComputedStyle(node).backgroundColor),
+    segments
+      .nth(2)
+      .locator('.panel-navigator-tile')
+      .evaluate((node) => getComputedStyle(node).backgroundColor),
+  ]);
+  expect(activeBackground).not.toBe(inactiveBackground);
 });
 
 test('covers fit, one-pixel overflow, mixed widths, narrow layout, and 200% zoom', async ({
@@ -112,7 +144,7 @@ test('covers fit, one-pixel overflow, mixed widths, narrow layout, and 200% zoom
     });
     const navigator = component.getByRole('navigation', { name: 'Panel navigator' });
     await expect(navigator.getByRole('button')).toHaveCount(initialPanels.length);
-    await expect(navigator.locator('.panel-navigator-track')).toHaveCSS('height', '5px');
+    await expect(navigator.locator('.panel-navigator-track')).toHaveCSS('height', '36px');
     await expectGeometryWithinHalfDevicePixel(component, page);
     const [thumbWidth, trackWidth] = await Promise.all([
       navigator
@@ -140,16 +172,19 @@ test('updates scroll, open, close, and order without animation in reduced motion
   const segments = navigator.getByRole('button');
   await expect(segments).toHaveCount(3);
   expect(
-    await segments.first().evaluate((node) => {
-      const durations = getComputedStyle(node).transitionDuration.split(',');
-      return Math.max(
-        ...durations.map((duration) =>
-          duration.endsWith('ms')
-            ? Number.parseFloat(duration) / 1000
-            : Number.parseFloat(duration),
-        ),
-      );
-    }),
+    await segments
+      .first()
+      .locator('.panel-navigator-tile')
+      .evaluate((node) => {
+        const durations = getComputedStyle(node).transitionDuration.split(',');
+        return Math.max(
+          ...durations.map((duration) =>
+            duration.endsWith('ms')
+              ? Number.parseFloat(duration) / 1000
+              : Number.parseFloat(duration),
+          ),
+        );
+      }),
   ).toBeLessThanOrEqual(0.00001);
   await expect
     .poll(() =>

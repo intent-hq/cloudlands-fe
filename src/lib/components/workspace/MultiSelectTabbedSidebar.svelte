@@ -289,11 +289,11 @@
   let agentSearchQuery = $state('');
   let contextSearchQuery = $state('');
   const expandedStripTabs = $derived(
-    TAB_DEFINITIONS.filter((definition) => definition.id !== 'overview').map(({ id, label }) => ({
-      id,
-      label,
-    })),
+    TAB_DEFINITIONS.filter((definition) => definition.id !== 'overview').map(
+      ({ id, label, icon }) => ({ id, label, icon }),
+    ),
   );
+  let sidebarTabSwitchDirection = $state<'left' | 'right' | 'none'>('none');
   let openLauncherHoverKey = $state<string | null>(null);
   const launcherRects = new Map<LauncherTabId, DOMRect>();
   const expandedCardRects = new Map<LauncherTabId, DOMRect>();
@@ -311,6 +311,17 @@
     { tabId, direction }: { tabId: LauncherTabId; direction: 'expand' | 'collapse' },
   ): TransitionConfig {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return { duration: 0 };
+
+    if (sidebarTabSwitchDirection !== 'none') {
+      const incomingOffset = sidebarTabSwitchDirection === 'right' ? 24 : -24;
+      const offset = direction === 'expand' ? incomingOffset : -incomingOffset;
+      return {
+        duration: 180,
+        easing: cubicOut,
+        css: (t, u) =>
+          `opacity: ${t}; transform: translateX(${u * offset}px); will-change: opacity, transform;`,
+      };
+    }
 
     const mountedLauncherRect =
       direction === 'collapse'
@@ -362,6 +373,13 @@
   function handleTabClick(tabId: TabId) {
     const previousTabId = [...selectedTabs][0] ?? 'overview';
     const nextTabId = previousTabId === tabId ? 'overview' : tabId;
+    if (previousTabId !== 'overview' && nextTabId !== 'overview') {
+      const tabOrder = TAB_DEFINITIONS.map(({ id }) => id).filter((id) => id !== 'overview');
+      sidebarTabSwitchDirection =
+        tabOrder.indexOf(nextTabId) > tabOrder.indexOf(previousTabId) ? 'right' : 'left';
+    } else {
+      sidebarTabSwitchDirection = 'none';
+    }
     if (previousTabId === 'agents' && nextTabId !== 'agents') agentSearchQuery = '';
     if (previousTabId === 'context' && nextTabId !== 'context') contextSearchQuery = '';
     if (previousTabId === 'overview' && tabId !== 'overview') {
@@ -398,6 +416,11 @@
 
   function handleExpandedOverlayClick(event: MouseEvent) {
     if ((event.target as Element).closest('.sidebar-expanded-card')) return;
+    dismissExpandedCard(false);
+  }
+
+  function handleExpandedFooterClick(event: MouseEvent) {
+    if (event.target instanceof Element && event.target.closest('[data-sidebar-tab-strip]')) return;
     dismissExpandedCard(false);
   }
 
@@ -692,6 +715,7 @@
     // Switch to the appropriate sidebar tab
     const targetTab = mapSidebarTabId(sidebarTabId);
     if (targetTab) {
+      sidebarTabSwitchDirection = 'none';
       persistSelectedTabs(new Set([targetTab]));
     }
 
@@ -850,15 +874,16 @@
           {@html '<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->'}
           <div
             role="presentation"
-            class="absolute inset-x-0 z-20 flex min-h-0 min-w-0 flex-col overflow-hidden px-4 pb-1 pt-3"
+            class="absolute inset-x-0 z-20 grid min-h-0 min-w-0 overflow-hidden px-4 pb-1 pt-3"
             style={`top: ${expandedOverlayTop}px; bottom: ${expandedOverlayBottom}px;`}
             data-sidebar-overlay
+            data-sidebar-switch-direction={sidebarTabSwitchDirection}
             onclick={handleExpandedOverlayClick}
           >
             {#each orderedSelectedTabs as tabId (tabId)}
               {@const tab = TAB_DEFINITIONS.find((t) => t.id === tabId)}
               <div
-                class="sidebar-expanded-card relative z-10 flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-sidebar"
+                class="sidebar-expanded-card relative z-10 flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-sidebar"
                 data-sidebar-card-surface
                 in:cardMorph|global={{
                   tabId: tabId as LauncherTabId,
@@ -1315,14 +1340,18 @@
     </div>
   {/if}
   <!-- Compact launchers stay fixed; only collapsed tabs resize beneath an expanded card. -->
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
     bind:this={bottomLaunchersElement}
+    role="presentation"
     class={cn(
       'relative z-30 w-full shrink-0 pb-3 transition-all duration-500',
       isLauncherOverview ? 'grid gap-3 px-6 pt-3' : 'px-4 pt-2',
       isLauncherOverview ? (isNewWorkspaceSession ? 'grid-cols-1' : 'grid-cols-2') : '',
     )}
     data-sidebar-compact-bottom-row={isLauncherOverview || undefined}
+    data-sidebar-expanded-footer={!isLauncherOverview || undefined}
+    onclick={isLauncherOverview ? undefined : handleExpandedFooterClick}
   >
     {#if isLauncherOverview}
       {#if !isNewWorkspaceSession}

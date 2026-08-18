@@ -88,9 +88,10 @@ async function mountStripMatrix(
   await page.addStyleTag({ content: 'body { margin: 0; }' });
   await page.evaluate(async ({ width, zoom, theme }) => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
-    const [{ mount, tick }, { default: Strip }] = await Promise.all([
+    const [{ mount, tick }, { default: Strip }, icons] = await Promise.all([
       import('/@id/svelte'),
       import('/src/lib/components/workspace/SidebarExpandedTabStrip.svelte'),
+      import('/src/lib/icons/phosphor-icons.ts'),
     ]);
     document.body.replaceChildren();
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -101,9 +102,20 @@ async function mountStripMatrix(
         target.dataset.stripScenario = `${count}-${activeIndex}`;
         target.style.cssText = `width:${width}px; margin:12px; zoom:${zoom};`;
         document.body.append(target);
+        const tabIcons = [
+          icons.faRobot,
+          icons.faAlignLeft,
+          icons.faCode,
+          icons.faFolderTree,
+          icons.faGlobe,
+          icons.faTerminal,
+          icons.faFile,
+          icons.faGear,
+        ];
         const tabs = Array.from({ length: count }, (_, index) => ({
           id: `tab-${index}`,
           label: `Very long workspace tab label ${index + 1}`,
+          icon: tabIcons[index],
         }));
         mount(Strip, {
           target,
@@ -250,10 +262,12 @@ function expectEqual(values: number[], tolerance = 0.75) {
   expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(tolerance);
 }
 
-function expectOverlappingDeck(rects: Array<{ x: number; width: number }>) {
+function expectSegmentedDeck(rects: Array<{ x: number; width: number }>) {
   for (let index = 1; index < rects.length; index += 1) {
     expect(rects[index].x).toBeGreaterThan(rects[index - 1].x);
-    expect(rects[index].x).toBeLessThan(rects[index - 1].x + rects[index - 1].width);
+    expect(
+      Math.abs(rects[index].x - (rects[index - 1].x + rects[index - 1].width)),
+    ).toBeLessThanOrEqual(1);
   }
 }
 
@@ -886,6 +900,60 @@ test('Browser and Shell compact cards expand into tested six-member deck bodies'
   await expect(page.locator('[data-workspace-shell-list]')).toBeVisible();
 });
 
+test('expanded footer collapses from every surrounding hit area without swallowing navigator clicks', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 1000 });
+  await mountSidebar(page, {
+    width: 360,
+    zoom: 1,
+    selectedTab: 'agents',
+    reducedMotion: true,
+  });
+
+  const footer = page.locator('[data-sidebar-expanded-footer]');
+  const strip = page.locator('[data-sidebar-tab-strip]');
+  const openAgents = async () => {
+    await page.locator('[data-sidebar-launcher="agents"] .launcher-tile-action').click();
+    await expect(page.locator('[data-sidebar-overlay]')).toBeVisible();
+    await expect(strip).toHaveAttribute('data-active-tab', 'agents');
+  };
+
+  for (const area of ['left', 'right', 'above', 'below'] as const) {
+    const footerBox = await footer.boundingBox();
+    const stripBox = await strip.boundingBox();
+    expect(footerBox).not.toBeNull();
+    expect(stripBox).not.toBeNull();
+    const x =
+      area === 'left'
+        ? footerBox!.x + 2
+        : area === 'right'
+          ? footerBox!.x + footerBox!.width - 2
+          : stripBox!.x + stripBox!.width / 2;
+    const y =
+      area === 'above'
+        ? footerBox!.y + 2
+        : area === 'below'
+          ? footerBox!.y + footerBox!.height - 2
+          : stripBox!.y + stripBox!.height / 2;
+
+    await page.mouse.click(x, y);
+    await expect(page.locator('[data-sidebar-launcher-grid]')).toBeVisible();
+    await openAgents();
+  }
+
+  await strip.dispatchEvent('click');
+  await expect(page.locator('[data-sidebar-overlay]')).toBeVisible();
+  await expect(strip).toHaveAttribute('data-active-tab', 'agents');
+
+  await strip.locator('[data-sidebar-collapsed-tab="context"] button').dispatchEvent('click');
+  await expect(page.locator('[data-sidebar-overlay]')).toBeVisible();
+  await expect(strip).toHaveAttribute('data-active-tab', 'context');
+
+  await strip.locator('[data-sidebar-collapsed-tab="context"] button').dispatchEvent('click');
+  await expect(page.locator('[data-sidebar-launcher-grid]')).toBeVisible();
+});
+
 test('tab deck previews inactive tabs without changing current content and transfers close on activation', async ({
   page,
 }) => {
@@ -903,23 +971,20 @@ test('tab deck previews inactive tabs without changing current content and trans
     const inactiveTabs = strip.locator('[data-sidebar-collapsed-tab]:not([data-active="true"])');
     const expandedCard = page.locator('.sidebar-expanded-card');
     const expandedTab = strip.locator('[data-sidebar-collapsed-tab][data-expanded="true"]');
-    const labels = strip.locator('[data-sidebar-tab-strip-label]');
+    const icons = strip.locator('[data-sidebar-tab-strip-icon]');
     const closes = strip.locator('[data-sidebar-tab-close]');
     await expect(activeTab).toHaveCount(1);
     await expect(tabs).toHaveCount(6);
-    await expect(strip.locator('svg')).toHaveCount(0);
+    await expect(strip.locator('svg')).toHaveCount(6);
     await expect(expandedTab).toHaveCount(1);
-    await expect(labels).toHaveCount(1);
+    await expect(icons).toHaveCount(6);
     await expect(closes).toHaveCount(1);
     const stripBefore = await strip.boundingBox();
     const cardBefore = await expandedCard.boundingBox();
     const headerBefore = await expandedCard.locator('h6').first().textContent();
     const activeId = await activeTab.getAttribute('data-sidebar-collapsed-tab');
-    const activeBefore = (await boxes(activeTab))[0].width;
-    const edgeWidths = (await boxes(inactiveTabs)).map(({ width }) => width);
-    expectEqual(edgeWidths);
-    expect(activeBefore).toBeGreaterThan(Math.max(...edgeWidths) * 3);
-    expectOverlappingDeck(await boxes(tabs));
+    expectEqual((await boxes(tabs)).map(({ width }) => width));
+    expectSegmentedDeck(await boxes(tabs));
     const cardSurfaceStyles = await cardStyles(
       page.locator('.sidebar-expanded-card, [data-sidebar-tab-strip] [data-sidebar-card-surface]'),
     );
@@ -928,23 +993,16 @@ test('tab deck previews inactive tabs without changing current content and trans
     expect(cardSurfaceStyles.every(({ borderWidth }) => borderWidth === '1px')).toBe(true);
     expect(new Set(cardSurfaceStyles.map(({ borderColor }) => borderColor)).size).toBe(1);
     const tabButtonStyles = await cardStyles(tabs.locator('button'));
-    expect(tabButtonStyles[0].radii[0]).not.toBe('0px');
-    expect(tabButtonStyles[0].radii[3]).not.toBe('0px');
-    expect(tabButtonStyles[0].radii[1]).toBe('0px');
-    expect(tabButtonStyles[0].radii[2]).toBe('0px');
-    expect(tabButtonStyles.at(-1)!.radii[0]).toBe('0px');
-    expect(tabButtonStyles.at(-1)!.radii[3]).toBe('0px');
-    expect(tabButtonStyles.at(-1)!.radii[1]).not.toBe('0px');
-    expect(tabButtonStyles.at(-1)!.radii[2]).not.toBe('0px');
-    expect(
-      tabButtonStyles.slice(1, -1).every(({ radii }) => radii.every((radius) => radius === '0px')),
-    ).toBe(true);
+    expect(tabButtonStyles.every(({ radii }) => radii.every((radius) => radius !== '0px'))).toBe(
+      true,
+    );
+    await expect(strip.locator('.sidebar-expanded-tab-indicator')).toHaveCount(1);
     const activeLayer = (await cardStyles(activeTab))[0].zIndex;
     expect(activeLayer).toBeGreaterThan(
       Math.max(...(await cardStyles(inactiveTabs)).map(({ zIndex }) => zIndex)),
     );
-    await expect(labels).toBeAttached();
-    await expect(activeTab.locator('[data-sidebar-tab-strip-label]')).toHaveCount(1);
+    await expect(icons).toHaveCount(6);
+    await expect(activeTab.locator('[data-sidebar-tab-strip-icon]')).toHaveCount(1);
     await expect(activeTab.locator('[data-sidebar-tab-close][data-visible="true"]')).toHaveCount(1);
 
     await inactiveTabs.nth(0).hover();
@@ -953,11 +1011,11 @@ test('tab deck previews inactive tabs without changing current content and trans
     await expect(strip).toHaveAttribute('data-active-tab', activeId!);
     await expect(strip).toHaveAttribute('data-preview-tab', previewId!);
     await expect(expandedTab).toHaveAttribute('data-sidebar-collapsed-tab', previewId!);
-    await expect(labels).toHaveCount(1);
-    await expect(inactiveTabs.nth(0).locator('[data-sidebar-tab-strip-label]')).toHaveCount(1);
-    await expect(activeTab.locator('[data-sidebar-tab-strip-label]')).toHaveCount(0);
+    await expect(icons).toHaveCount(6);
+    await expect(inactiveTabs.nth(0).locator('[data-sidebar-tab-strip-icon]')).toHaveCount(1);
+    await expect(activeTab.locator('[data-sidebar-tab-strip-icon]')).toHaveCount(1);
     await expect(activeTab.locator('[data-sidebar-tab-close]')).toHaveCount(1);
-    await expect(activeTab.locator('[data-sidebar-tab-close][data-visible="true"]')).toHaveCount(0);
+    await expect(activeTab.locator('[data-sidebar-tab-close][data-visible="true"]')).toHaveCount(1);
     const previewLayer = (await cardStyles(inactiveTabs.nth(0)))[0].zIndex;
     const previewLayers = (await cardStyles(tabs)).map(({ zIndex }) => zIndex);
     expect(previewLayer).toBe(Math.max(...previewLayers));
@@ -980,11 +1038,12 @@ test('tab deck previews inactive tabs without changing current content and trans
         };
       });
     expect(previewButtonStyle.cursor).toBe('pointer');
-    expect(previewButtonStyle.paddingLeft).toBe('16px');
-    expect(previewButtonStyle.paddingRight).toBe('16px');
+    expect(previewButtonStyle.paddingLeft).toBe('8px');
+    expect(previewButtonStyle.paddingRight).toBe('8px');
     expect(previewButtonStyle.radii.every((radius) => radius !== '0px')).toBe(true);
-    expect((await boxes(inactiveTabs.nth(0)))[0].width).toBeGreaterThan(
-      (await boxes(activeTab))[0].width * 3,
+    expect((await boxes(inactiveTabs.nth(0)))[0].width).toBeCloseTo(
+      (await boxes(activeTab))[0].width,
+      0,
     );
     expect(await expandedCard.locator('h6').first().textContent()).toBe(headerBefore);
     expect(await strip.boundingBox()).toEqual(stripBefore);
@@ -1010,18 +1069,32 @@ test('tab deck previews inactive tabs without changing current content and trans
     await keyboardPreview.locator('button').focus();
     await keyboardPreview.locator('button').press(geometry.zoom === 1 ? 'Enter' : 'Space');
     await expect(strip).toHaveAttribute('data-active-tab', keyboardPreviewId!);
+    await expect(strip).toHaveAttribute('data-slide-direction', 'right');
+    await expect(page.locator('[data-sidebar-overlay]')).toHaveAttribute(
+      'data-sidebar-switch-direction',
+      'right',
+    );
     const transferredActive = strip.locator(
       `[data-sidebar-collapsed-tab="${keyboardPreviewId}"][data-active="true"]`,
     );
     await expect(transferredActive.locator('[data-sidebar-tab-close]')).toHaveCount(1);
     await expect(strip.locator('[data-sidebar-tab-close]')).toHaveCount(1);
-    await expect(transferredActive.locator('[data-sidebar-tab-strip-label]')).toHaveCount(1);
-    await transferredActive.locator('[data-sidebar-tab-close]').click();
+    await expect(transferredActive.locator('[data-sidebar-tab-strip-icon]')).toHaveCount(1);
+    await strip.locator(`[data-sidebar-collapsed-tab="${activeId}"] button`).click();
+    await expect(strip).toHaveAttribute('data-active-tab', activeId!);
+    await expect(strip).toHaveAttribute('data-slide-direction', 'left');
+    await expect(page.locator('[data-sidebar-overlay]')).toHaveAttribute(
+      'data-sidebar-switch-direction',
+      'left',
+    );
+    await strip
+      .locator(`[data-sidebar-collapsed-tab="${activeId}"][data-active="true"] button`)
+      .click();
     await expect(page.locator('[data-sidebar-launcher-grid]')).toBeVisible();
   }
 });
 
-test('overlapping deck keeps one text card and current-owned close for every 2â€“8 tab position', async ({
+test('segmented deck keeps one icon per card and current-owned close for every 2â€“8 tab position', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -1042,21 +1115,22 @@ test('overlapping deck keeps one text card and current-owned close for every 2â€
         await expect(tabs).toHaveCount(count);
         await expect(active).toHaveAttribute('data-sidebar-collapsed-tab', `tab-${activeIndex}`);
         await expect(expanded).toHaveAttribute('data-sidebar-collapsed-tab', `tab-${activeIndex}`);
-        await expect(strip.locator('[data-sidebar-tab-strip-label]')).toHaveCount(1);
+        await expect(strip.locator('[data-sidebar-tab-strip-label]')).toHaveCount(0);
         await expect(strip.locator('[data-sidebar-tab-close]')).toHaveCount(1);
         await expect(active.locator('[data-sidebar-tab-close][data-visible="true"]')).toHaveCount(
           1,
         );
-        await expect(
-          strip.locator('svg, [data-status], [data-sidebar-tab-strip-icon]'),
-        ).toHaveCount(0);
+        await expect(strip.locator('[data-sidebar-tab-strip-icon]')).toHaveCount(count);
+        await expect(strip.locator('svg')).toHaveCount(count);
         const stripBox = await strip.boundingBox();
-        const activeWidth = (await boxes(active))[0].width;
-        const inactiveWidths = (await boxes(inactive)).map(({ width }) => width);
-        expect(activeWidth).toBeGreaterThan(Math.max(...inactiveWidths) * 2);
-        expectEqual(inactiveWidths);
-        expectOverlappingDeck(await boxes(tabs));
-        expect((await boxes(tabs)).every(({ height }) => height === stripBox!.height)).toBe(true);
+        expectEqual((await boxes(tabs)).map(({ width }) => width));
+        expectSegmentedDeck(await boxes(tabs));
+        const tabHeights = (await boxes(tabs)).map(({ height }) => height);
+        expectEqual(tabHeights);
+        expect(Math.max(...tabHeights)).toBeLessThan(stripBox!.height);
+        expect(
+          (await boxes(tabs)).every(({ width, height }) => Math.abs(width - height) <= 2),
+        ).toBe(true);
         const restingRadii = await tabs.evaluateAll((elements) =>
           elements.map((element) => {
             const style = getComputedStyle(element.querySelector('button')!);
@@ -1068,10 +1142,7 @@ test('overlapping deck keeps one text card and current-owned close for every 2â€
             ];
           }),
         );
-        expect(restingRadii[0][0]).not.toBe('0px');
-        expect(restingRadii[0][3]).not.toBe('0px');
-        expect(restingRadii.at(-1)?.[1]).not.toBe('0px');
-        expect(restingRadii.at(-1)?.[2]).not.toBe('0px');
+        expect(restingRadii.every((radii) => radii.every((radius) => radius !== '0px'))).toBe(true);
         const gaps = await tabs
           .locator('button')
           .evaluateAll((buttons) => buttons.map((button) => getComputedStyle(button).columnGap));
@@ -1082,9 +1153,9 @@ test('overlapping deck keeps one text card and current-owned close for every 2â€
             return [style.paddingLeft, style.paddingRight];
           }),
         );
-        expect(
-          horizontalPadding.every(([left, right]) => left === '16px' && right === '16px'),
-        ).toBe(true);
+        expect(horizontalPadding.every(([left, right]) => left === '8px' && right === '8px')).toBe(
+          true,
+        );
 
         await active.hover();
         await expect(active).toHaveAttribute('data-raised', 'true');
@@ -1124,15 +1195,15 @@ test('overlapping deck keeps one text card and current-owned close for every 2â€
           });
           expect(previewStyle.cursor).toBe('pointer');
           expect(previewStyle.radii.every((radius) => radius !== '0px')).toBe(true);
-          await expect(strip.locator('[data-sidebar-tab-strip-label]')).toHaveCount(1);
+          await expect(strip.locator('[data-sidebar-tab-strip-icon]')).toHaveCount(count);
           await expect(active.locator('[data-sidebar-tab-close]')).toHaveCount(1);
           await expect(active.locator('[data-sidebar-tab-close][data-visible="true"]')).toHaveCount(
-            0,
+            1,
           );
           const previewStripBox = await strip.boundingBox();
           expect(previewStripBox?.width).toBe(stripBox?.width);
           expect(previewStripBox?.height).toBe(stripBox?.height);
-          expectOverlappingDeck(await boxes(tabs));
+          expectSegmentedDeck(await boxes(tabs));
           await page.mouse.move(0, 0);
           await expect(expanded).toHaveAttribute(
             'data-sidebar-collapsed-tab',
@@ -1186,13 +1257,13 @@ test('reduced motion settles tab allocation immediately and mode transitions res
   await expect(strip).toHaveAttribute('data-active-tab', activeId!);
   await expect(strip).toHaveAttribute('data-preview-tab', previewId!);
   await expect(expanded).toHaveAttribute('data-sidebar-collapsed-tab', previewId!);
-  await expect(active.locator('[data-sidebar-tab-close][data-visible="true"]')).toHaveCount(0);
+  await expect(active.locator('[data-sidebar-tab-close][data-visible="true"]')).toHaveCount(1);
   expect(await strip.boundingBox()).toEqual(stripBefore);
 
   await page.mouse.move(0, 0);
   await expect(expanded).toHaveAttribute('data-sidebar-collapsed-tab', activeId!);
   await expect(active.locator('button')).toHaveAttribute('data-tab-action', 'close');
-  await active.locator('[data-sidebar-tab-close]').click();
+  await active.locator('button').click();
   const gridCards = page.locator('[data-sidebar-launcher-grid] [data-sidebar-launcher]');
   await expect(gridCards).toHaveCount(4);
   const restored = await boxes(gridCards);

@@ -21,6 +21,7 @@ import type {
   PanelLayoutRestoreStatus,
   PanelState,
   PanelTab,
+  PanelTabType,
   RecentlyClosedTab,
 } from './panel-layout-types';
 
@@ -341,14 +342,15 @@ function getPanelNavigatorItems(layout: WorkspacePanelLayoutState) {
     const panel = layout.panels[panelId];
     if (!panel) return [];
     const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId);
-    return [{ id: panelId, title: activeTab?.title ?? panel.tabs[0]?.title ?? '' }];
+    const navigatorTab = activeTab ?? panel.tabs[0];
+    return [{ id: panelId, title: navigatorTab?.title ?? '', type: navigatorTab?.type }];
   });
 }
 
 /** Generic panel order and titles for proportional navigation surfaces. */
 export const selectPanelNavigatorItems = store.createSelector<
   [wsId: string],
-  { id: string; title: string }[]
+  { id: string; title: string; type?: PanelTabType }[]
 >((state, wsId) =>
   getPanelNavigatorItems(state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState),
 );

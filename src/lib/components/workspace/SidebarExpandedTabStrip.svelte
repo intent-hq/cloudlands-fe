@@ -1,10 +1,13 @@
 <script lang="ts">
+  import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
+  import Fa from 'svelte-fa';
   import { Button } from '$lib/components/ui/button';
   import './multi-select-sidebar-transitions.css';
 
   interface SidebarStripTab {
     id: string;
     label: string;
+    icon: IconDefinition;
   }
 
   interface Props {
@@ -20,10 +23,25 @@
   const raisedTabId = $derived(hoveredTabId ?? focusedTabId);
   const previewedTabId = $derived(raisedTabId === activeTabId ? null : raisedTabId);
   const expandedTabId = $derived(previewedTabId ?? activeTabId);
+  const activeTabIndex = $derived(
+    Math.max(
+      0,
+      tabs.findIndex(({ id }) => id === activeTabId),
+    ),
+  );
+  let previousActiveTabIndex = $state(-1);
+  let slideDirection = $state<'left' | 'right' | 'none'>('none');
 
   $effect(() => {
     if (!tabs.some(({ id }) => id === hoveredTabId)) hoveredTabId = null;
     if (!tabs.some(({ id }) => id === focusedTabId)) focusedTabId = null;
+  });
+
+  $effect(() => {
+    if (previousActiveTabIndex >= 0 && previousActiveTabIndex !== activeTabIndex) {
+      slideDirection = activeTabIndex > previousActiveTabIndex ? 'right' : 'left';
+    }
+    previousActiveTabIndex = activeTabIndex;
   });
 
   function handlePointerEnter(tabId: string) {
@@ -46,12 +64,15 @@
 </script>
 
 <div
-  class="sidebar-expanded-tab-deck flex h-10 w-full min-w-0 overflow-hidden"
+  class="sidebar-expanded-tab-deck mx-auto flex h-10 min-w-0 overflow-hidden"
+  style={`--sidebar-tab-count: ${tabs.length}; --sidebar-active-index: ${activeTabIndex};`}
   data-sidebar-tab-strip
   data-launcher-layout="tabs"
   data-active-tab={activeTabId}
   data-preview-tab={previewedTabId ?? undefined}
+  data-slide-direction={slideDirection}
 >
+  <span class="sidebar-expanded-tab-indicator" aria-hidden="true"></span>
   {#each tabs as tab, index (tab.id)}
     {@const active = tab.id === activeTabId}
     {@const expanded = tab.id === expandedTabId}
@@ -75,30 +96,24 @@
     >
       <Button
         variant="plain"
-        class="sidebar-expanded-tab-action relative h-full w-full min-w-0 cursor-pointer justify-start gap-0! overflow-hidden rounded-none border border-border bg-sidebar px-4! py-2 text-foreground opacity-100 outline-none hover:bg-muted focus-visible:bg-muted"
-        onclick={() => onActivate(tab.id)}
+        class="sidebar-expanded-tab-action relative h-full w-full min-w-0 cursor-pointer gap-0! overflow-hidden p-2! outline-none"
+        onclick={(event) => {
+          event.stopPropagation();
+          onActivate(tab.id);
+        }}
         aria-expanded={expanded}
         aria-current={active ? 'page' : undefined}
         aria-label={active ? closeLabel : tab.label}
+        tooltip={active ? closeLabel : tab.label}
+        tooltipDelayDuration={0}
         data-tab-action={active ? 'close' : 'activate'}
-        data-sidebar-card-surface
       >
-        {#if expanded}
-          <span
-            class="min-w-0 truncate text-sm font-semibold {active ? 'pr-5' : ''}"
-            data-sidebar-tab-strip-label
-          >
-            {tab.label}
-          </span>
-        {/if}
+        <span class="sidebar-expanded-tab-icon" data-sidebar-tab-strip-icon>
+          <Fa icon={tab.icon} />
+        </span>
         {#if active}
-          <span
-            class="absolute right-4 cursor-pointer text-base leading-none {expanded
-              ? ''
-              : 'invisible'}"
-            aria-hidden="true"
-            data-sidebar-tab-close
-            data-visible={expanded || undefined}>×</span
+          <span class="sr-only" aria-hidden="true" data-sidebar-tab-close data-visible="true"
+            >×</span
           >
         {/if}
       </Button>

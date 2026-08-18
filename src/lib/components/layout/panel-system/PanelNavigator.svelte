@@ -1,5 +1,22 @@
 <script lang="ts">
   import { tick } from 'svelte';
+  import Fa from 'svelte-fa';
+  import {
+    faCode,
+    faCodeBranch,
+    faCodeCommit,
+    faComment,
+    faFile,
+    faGear,
+    faGlobe,
+    faHouse,
+    faRobot,
+    faTableColumns,
+    faTerminal,
+  } from '@fortawesome/free-solid-svg-icons';
+  import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
+  import { RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
+  import type { PanelTabType } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import {
     getPanelNavigatorGeometry,
     type PanelNavigatorGeometry,
@@ -8,6 +25,7 @@
   export interface PanelNavigatorItem {
     id: string;
     title: string;
+    type?: PanelTabType;
   }
 
   let {
@@ -15,6 +33,7 @@
     viewport,
     panelRoot,
     ariaLabel,
+    activePanelId = null,
     onActivate,
     class: className = '',
   }: {
@@ -22,6 +41,7 @@
     viewport: HTMLElement | null;
     panelRoot: HTMLElement | null;
     ariaLabel: string;
+    activePanelId?: string | null;
     onActivate: (panelId: string) => void;
     class?: string;
   } = $props();
@@ -122,35 +142,80 @@
   const segmentGeometry = $derived(
     new Map(geometry.segments.map((segment) => [segment.id, segment])),
   );
+
+  function getPanelIcon(type?: PanelTabType): IconDefinition {
+    switch (type) {
+      case 'agent':
+        return faComment;
+      case 'agent-overview':
+        return faRobot;
+      case 'note':
+        return RESOURCE_ICON_BY_KIND.note;
+      case 'terminal':
+        return faTerminal;
+      case 'browser':
+        return faGlobe;
+      case 'file':
+        return faFile;
+      case 'diff':
+        return faCodeBranch;
+      case 'changes':
+      case 'local-changes':
+      case 'chat-changes':
+      case 'activity-changes':
+        return RESOURCE_ICON_BY_KIND.changes;
+      case 'settings':
+        return faGear;
+      case 'overview':
+        return faHouse;
+      case 'code-review':
+        return faCodeCommit;
+      case 'hook-script':
+      case 'activity':
+        return faCode;
+      default:
+        return faTableColumns;
+    }
+  }
 </script>
 
 <nav
-  class="panel-navigator pointer-events-none h-6 {className}"
+  class="panel-navigator pointer-events-none flex h-9 justify-center {className}"
   aria-label={ariaLabel}
   data-panel-navigator
 >
-  <div class="panel-navigator-track absolute inset-x-0 bottom-0 h-[5px] rounded-full bg-muted">
+  <div
+    class="panel-navigator-track pointer-events-none relative h-9 w-full max-w-xl overflow-hidden rounded-(--radius-large) bg-popover/95 text-popover-foreground shadow-(--elevation-overlay) ring-1 ring-border ring-inset backdrop-blur-md"
+  >
     {#each panels as panel (panel.id)}
       {@const segment = segmentGeometry.get(panel.id)}
       {#if segment}
+        {@const active = panel.id === activePanelId}
         <button
           type="button"
-          class="panel-navigator-segment pointer-events-auto absolute bottom-0 overflow-hidden rounded-sm border border-transparent bg-muted-foreground/25 text-left text-foreground hover:border-border hover:bg-popover focus-visible:border-ring focus-visible:bg-popover focus-visible:outline-none"
+          class="panel-navigator-segment group pointer-events-auto absolute inset-y-0 z-10 min-w-0 border-0 bg-transparent p-1 text-muted-foreground focus-visible:outline-none"
           style:left={`${segment.start * 100}%`}
           style:width={`${segment.size * 100}%`}
           aria-label={panel.title}
+          aria-current={active ? 'page' : undefined}
           title={panel.title}
           data-panel-navigator-segment={panel.id}
+          data-panel-navigator-icon={panel.type ?? 'panel'}
           onclick={() => onActivate(panel.id)}
         >
-          <span class="panel-navigator-title type-caption block truncate px-1.5 opacity-0">
-            {panel.title}
+          <span
+            class="panel-navigator-tile flex size-full items-center justify-center rounded-(--radius-medium) group-focus-visible:ring-2 group-focus-visible:ring-ring/65 {active
+              ? 'bg-primary text-primary-foreground shadow-(--elevation-raised) group-hover:bg-primary'
+              : 'group-hover:bg-accent group-hover:text-accent-foreground'}"
+            aria-hidden="true"
+          >
+            <Fa icon={getPanelIcon(panel.type)} size={14} class="panel-navigator-icon" />
           </span>
         </button>
       {/if}
     {/each}
     <div
-      class="panel-navigator-thumb pointer-events-none absolute bottom-0 h-[5px] rounded-full bg-foreground/15 ring-1 ring-inset ring-foreground/35"
+      class="panel-navigator-thumb pointer-events-none absolute bottom-0 z-20 h-0.5 rounded-full bg-primary/70"
       style:left={`${geometry.thumbStart * 100}%`}
       style:width={`${geometry.thumbSize * 100}%`}
       data-panel-navigator-thumb
@@ -160,28 +225,25 @@
 </nav>
 
 <style>
-  .panel-navigator-segment {
-    height: 5px;
+  .panel-navigator-tile {
     transition:
-      height 120ms ease,
       background-color 120ms ease,
-      border-color 120ms ease;
-  }
-
-  .panel-navigator-segment:hover,
-  .panel-navigator-segment:focus-visible {
-    z-index: 2;
-    height: 24px;
-  }
-
-  .panel-navigator-segment:hover .panel-navigator-title,
-  .panel-navigator-segment:focus-visible .panel-navigator-title {
-    opacity: 1;
+      color 120ms ease,
+      box-shadow 120ms ease;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .panel-navigator-segment {
+    .panel-navigator-tile {
       transition: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .panel-navigator-track,
+    [aria-current='page'] .panel-navigator-tile {
+      border: 1px solid CanvasText;
+      background: Canvas;
+      color: CanvasText;
     }
   }
 </style>

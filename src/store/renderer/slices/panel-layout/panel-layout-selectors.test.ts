@@ -85,8 +85,8 @@ describe('panel layout selectors', () => {
     expect(selectPanelColumnCount.select(state as any, 'vertical')).toBe(1);
     expect(selectPanelIds.select(state as any, 'populated')).toEqual(['p1', 'p2']);
     expect(selectPanelNavigatorItems.select(state as any, 'populated')).toEqual([
-      { id: 'p1', title: 'One' },
-      { id: 'p2', title: '' },
+      { id: 'p1', title: 'One', type: 'note' },
+      { id: 'p2', title: '', type: undefined },
     ]);
     expect(selectPanelCanvasWidthsByWorkspaceId.select(state as any)).toEqual({
       empty: 500,

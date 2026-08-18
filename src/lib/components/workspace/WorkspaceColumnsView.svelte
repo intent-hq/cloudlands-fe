@@ -899,6 +899,8 @@
       viewport={columnsScroller}
       panelRoot={navigatorPanelRoot}
       ariaLabel={m.layout_panelLayout_ariaLabel()}
+      activePanelId={$focusedPanelTargetsByWorkspaceId$[$currentWorkspaceId$ ?? '']?.panelId ??
+        null}
       onActivate={activatePanelFromNavigator}
       class="absolute inset-x-3 bottom-3 z-50"
     />

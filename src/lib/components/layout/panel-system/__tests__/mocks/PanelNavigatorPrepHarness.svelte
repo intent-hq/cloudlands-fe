@@ -1,10 +1,12 @@
 <script lang="ts">
   import PanelNavigator from '../../PanelNavigator.svelte';
+  import type { PanelTabType } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
   interface HarnessPanel {
     id: string;
     title: string;
     width: number;
+    type?: PanelTabType;
   }
 
   let {
@@ -12,9 +14,14 @@
     zoom = 1,
     theme = 'light',
     initialPanels = [
-      { id: 'chat', title: 'Chat', width: 240 },
-      { id: 'note', title: 'A deliberately long note title for truncation', width: 360 },
-      { id: 'browser', title: 'Browser', width: 480 },
+      { id: 'chat', title: 'Chat', width: 240, type: 'agent' },
+      {
+        id: 'note',
+        title: 'A deliberately long note title for truncation',
+        width: 360,
+        type: 'note',
+      },
+      { id: 'browser', title: 'Browser', width: 480, type: 'browser' },
     ],
   }: {
     viewportWidth?: number;
@@ -29,6 +36,7 @@
   let panelRoot = $state<HTMLElement | null>(null);
   let activationCount = $state(0);
   let lastActivated = $state('');
+  let activePanelId = $state('chat');
 
   $effect(() => {
     if (initialized) return;
@@ -39,6 +47,7 @@
   function activate(panelId: string) {
     activationCount += 1;
     lastActivated = panelId;
+    activePanelId = panelId;
   }
 
   function addPanel() {
@@ -89,10 +98,11 @@
       </div>
     </div>
     <PanelNavigator
-      panels={panels.map(({ id, title }) => ({ id, title }))}
+      panels={panels.map(({ id, title, type }) => ({ id, title, type }))}
       {viewport}
       {panelRoot}
       ariaLabel="Panel navigator"
+      {activePanelId}
       onActivate={activate}
       class="absolute inset-x-0 bottom-0"
     />

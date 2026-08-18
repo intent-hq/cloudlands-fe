@@ -161,9 +161,7 @@ test('renders proportional segments and activates the canonical reveal path', as
     height: node.getBoundingClientRect().height,
   }));
   await segments.nth(1).hover();
-  await expect
-    .poll(() => segments.nth(1).evaluate((node) => node.getBoundingClientRect().height))
-    .toBe(48);
+  await expect(segments.nth(1)).toHaveAttribute('title', /.+/);
   expect(
     await navigator.evaluate((node) => ({
       width: node.getBoundingClientRect().width,
@@ -171,20 +169,13 @@ test('renders proportional segments and activates the canonical reveal path', as
     })),
   ).toEqual(restingNavigatorSize);
   await segments.nth(1).focus();
-  await expect(segments.nth(1).locator('.panel-navigator-title')).toHaveCSS(
-    'text-overflow',
-    'ellipsis',
-  );
-  expect(
-    await segments
-      .nth(1)
-      .locator('.panel-navigator-title')
-      .evaluate((node) => node.scrollWidth > node.clientWidth),
-  ).toBe(true);
+  expect((await segments.nth(1).boundingBox())?.height).toBeCloseTo(restingNavigatorSize.height, 1);
   await segments.nth(1).press('Enter');
+  await expect(segments.nth(1)).toHaveAttribute('aria-current', 'page');
   await expectFocusedPanelVisible(component);
   await segments.nth(0).focus();
   await segments.nth(0).press('Space');
+  await expect(segments.nth(0)).toHaveAttribute('aria-current', 'page');
   await expectFocusedPanelVisible(component);
   await segments.nth(1).click();
   await expectFocusedPanelVisible(component);
@@ -268,20 +259,28 @@ test('updates geometry for fit, overflow, scroll, resize, open, close, and reord
       document.documentElement.classList.toggle('light', value === 'light');
     }, theme);
     await expect
-      .poll(() => segments.first().evaluate((node) => getComputedStyle(node).backgroundColor))
+      .poll(() =>
+        segments
+          .first()
+          .locator('.panel-navigator-tile')
+          .evaluate((node) => getComputedStyle(node).backgroundColor),
+      )
       .not.toBe('rgba(0, 0, 0, 0)');
   }
   expect(
-    await segments.first().evaluate((node) => {
-      const durations = getComputedStyle(node).transitionDuration.split(',');
-      return Math.max(
-        ...durations.map((duration) =>
-          duration.endsWith('ms')
-            ? Number.parseFloat(duration) / 1000
-            : Number.parseFloat(duration),
-        ),
-      );
-    }),
+    await segments
+      .first()
+      .locator('.panel-navigator-tile')
+      .evaluate((node) => {
+        const durations = getComputedStyle(node).transitionDuration.split(',');
+        return Math.max(
+          ...durations.map((duration) =>
+            duration.endsWith('ms')
+              ? Number.parseFloat(duration) / 1000
+              : Number.parseFloat(duration),
+          ),
+        );
+      }),
   ).toBeLessThanOrEqual(0.00001);
 
   await component.update({

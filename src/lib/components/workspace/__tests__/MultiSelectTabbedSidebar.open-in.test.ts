@@ -784,7 +784,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(expanded.container.querySelector('[data-sidebar-local-changes-summary]')).toBeNull();
   });
 
-  it('renders the expanded card as an overlay that dismisses only from its backdrop', async () => {
+  it('dismisses expanded overlay and footer backdrops without navigator propagation', async () => {
     mocks.agents = [makeAgent('agent-1')];
     const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
 
@@ -796,6 +796,8 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     mocks.selectedTabs = ['agents'];
     const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
     const overlay = container.querySelector<HTMLElement>('[data-sidebar-overlay]');
+    const footer = container.querySelector<HTMLElement>('[data-sidebar-expanded-footer]');
+    const strip = container.querySelector<HTMLElement>('[data-sidebar-tab-strip]');
     const agent = container.querySelector<HTMLElement>('[data-expanded-agent="agent-1"]');
 
     expect(overlay).toBeTruthy();
@@ -812,7 +814,45 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       expect.objectContaining({ type: 'sidebarNav/setMultiSelectSidebarSelectedTabs' }),
     );
 
+    await fireEvent.click(strip!);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+
+    await fireEvent.click(
+      strip!.querySelector<HTMLElement>('[data-sidebar-collapsed-tab="context"] button')!,
+    );
+    expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+        payload: ['ws-1', ['context']],
+      }),
+    );
+    mocks.dispatch.mockClear();
+
+    await fireEvent.click(
+      strip!.querySelector<HTMLElement>('[data-sidebar-collapsed-tab="agents"] button')!,
+    );
+    expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+        payload: ['ws-1', ['overview']],
+      }),
+    );
+    mocks.dispatch.mockClear();
+
+    await fireEvent.click(footer!);
+    expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+        payload: ['ws-1', ['overview']],
+      }),
+    );
+    mocks.dispatch.mockClear();
+
     await fireEvent.click(overlay!);
+    expect(mocks.dispatch).toHaveBeenCalledTimes(1);
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'sidebarNav/setMultiSelectSidebarSelectedTabs',
