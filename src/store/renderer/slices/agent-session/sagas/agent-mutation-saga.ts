@@ -28,7 +28,7 @@ import {
   refreshWorkspaceSubscriptionEntriesRequested,
   removeWatchedAgent,
 } from '../../agent-subscription-ui/agent-subscription-ui-slice';
-import { agentSessionDismissQuestionsRequested } from '../agent-session-slice';
+import { agentSessionDismissQuestionsRequested, updateSession } from '../agent-session-slice';
 import {
   activateAgentRequested,
   deleteAgentSessionRequested,
@@ -222,9 +222,17 @@ function* saveAgent(action: ReturnType<typeof saveAgentSessionRequested>): SagaG
     yield* put(action.success(undefined as never));
     settled = true;
   } catch (error) {
-    yield* put(
-      action.failure(mutationError(error, m.errors_catalog_storageWriteFailed_friendly())),
-    );
+    const failure = mutationError(error, m.errors_catalog_storageWriteFailed_friendly());
+    const rollback = options?.specialistRollback;
+    const current = yield* selectAgentSession.effect(agentId);
+    const specialistStillOptimistic =
+      (current?.metadata?.specialist ?? null) === specialistUpdate.specialist &&
+      (specialistUpdate.model === undefined || current?.model === specialistUpdate.model);
+    if (rollback && specialistStillOptimistic) {
+      yield* put(updateSession(agentId, rollback));
+    }
+    yield* call(showError, failure.message);
+    yield* put(action.failure(failure));
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {

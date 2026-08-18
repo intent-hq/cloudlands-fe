@@ -3088,15 +3088,24 @@
     }
 
     // Persist only the specialist fields resolved by this picker change.
-    appStore.dispatch(
-      saveAgentSessionRequested(workspace.id, agentId, true, {
-        specialistUpdate: {
-          specialist: specialistId,
-          ...(specialistId && newModel !== undefined ? { model: newModel } : {}),
-          ...(behaviorPrompt !== undefined ? { systemPrompt: behaviorPrompt } : {}),
-        },
-      }),
-    );
+    const saveAction = saveAgentSessionRequested(workspace.id, agentId, true, {
+      specialistUpdate: {
+        specialist: specialistId,
+        ...(specialistId && newModel !== undefined ? { model: newModel } : {}),
+        ...(specialistId === null
+          ? { systemPrompt: null }
+          : behaviorPrompt !== undefined
+            ? { systemPrompt: behaviorPrompt }
+            : {}),
+      },
+      specialistRollback: { metadata: session.metadata, model: session.model },
+    });
+    appStore.dispatch(saveAction);
+    // The mutation saga owns rollback and the user-visible error; observe the
+    // rejection here so this component dispatch is not an unhandled promise.
+    void saveAction.promise.catch((error) => {
+      logger.error('Failed to persist agent specialist change', { agentId, error });
+    });
     logger.info('Agent specialist change dispatched', {
       agentId,
       specialistId,

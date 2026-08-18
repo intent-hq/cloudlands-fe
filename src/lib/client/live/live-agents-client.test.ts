@@ -910,7 +910,7 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
-  it('updateSpecialist forwards null to clear the specialist and omits unresolved fields', async () => {
+  it('updateSpecialist forwards null to clear the specialist and system prompt', async () => {
     backend.onRequest('agent.update', () => ({ success: true }));
     const client = new LiveAgentsClient();
 
@@ -918,12 +918,13 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       agentId: 'agent-1',
       workspaceId: 'ws-1',
       specialist: null,
+      systemPrompt: null,
     });
 
     expect(backend.requests[0]?.params).toEqual({
       agentId: 'agent-1',
       workspaceId: 'ws-1',
-      changes: { specialist: null },
+      changes: { specialist: null, systemPrompt: null },
     });
   });
 

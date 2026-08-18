@@ -46,7 +46,11 @@ import {
   saveAgentSessionRequested,
   undoAgentDeletionRequested,
 } from '../../workspace-agents/workspace-agents-slice';
-import { agentSessionDismissQuestionsRequested, bulkUpsertSessions } from '../agent-session-slice';
+import {
+  agentSessionDismissQuestionsRequested,
+  bulkUpsertSessions,
+  updateSession,
+} from '../agent-session-slice';
 import { AGENT_DELETION_TOMBSTONE_TTL_MS, agentMutationSaga } from './agent-mutation-saga';
 
 const WS = 'ws-mutation';
@@ -172,11 +176,11 @@ describe('agentMutationSaga', () => {
     await stop(task);
   });
 
-  it('persists clearing the specialist as an explicit null', async () => {
+  it('persists clearing the specialist and system prompt as explicit nulls', async () => {
     mocks.updateSpecialist.mockResolvedValue({ success: true });
     const { channel, task } = start();
     const action = saveAgentSessionRequested(WS, A1, true, {
-      specialistUpdate: { specialist: null },
+      specialistUpdate: { specialist: null, systemPrompt: null },
     });
     channel.put(action);
 
@@ -185,7 +189,38 @@ describe('agentMutationSaga', () => {
       agentId: A1,
       workspaceId: WS,
       specialist: null,
+      systemPrompt: null,
     });
+    await stop(task);
+  });
+
+  it('rolls back an optimistic specialist change and surfaces persistence failure', async () => {
+    const previousMetadata = { source: 'chat-panel' };
+    const optimistic = session(A1, {
+      metadata: {
+        ...previousMetadata,
+        specialist: 'spec-writer',
+        behaviorPrompt: 'Coordinate the work.',
+      },
+      model: 'grok4.6',
+    });
+    mocks.updateSpecialist.mockResolvedValue({ success: false, error: 'update rejected' });
+    const { channel, dispatched, task } = start({ [A1]: optimistic });
+    const action = saveAgentSessionRequested(WS, A1, true, {
+      specialistUpdate: {
+        specialist: 'spec-writer',
+        model: 'grok4.6',
+        systemPrompt: 'Coordinate the work.',
+      },
+      specialistRollback: { metadata: previousMetadata, model: 'default-model' },
+    });
+    channel.put(action);
+
+    await expect(action.promise).rejects.toThrow('update rejected');
+    expect(dispatched).toContainEqual(
+      updateSession(A1, { metadata: previousMetadata, model: 'default-model' }),
+    );
+    expect(mocks.error).toHaveBeenCalledWith('update rejected');
     await stop(task);
   });
 
