@@ -3,11 +3,13 @@
   import { CONTAINED_PANEL_INLINE_CHROME } from '$shared/panel-layout-sizing';
   import { store as appStore } from '$store/renderer/store';
   import {
+    closePanel,
     initializeLayout,
     openTabInAdjacentOrSplit,
     openTabInNewRootColumn,
     setRestoreStatus,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { selectPanelCanvasWidth } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import type { PanelTabType } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
   appStore.init();
@@ -24,6 +26,7 @@
     panelTypes = null,
     panelSizes = null,
     pristine = false,
+    followPersistedCanvas = false,
   }: {
     mode?: 'contained' | 'uncontained';
     /** Root split direction: horizontal columns or a vertical stack. */
@@ -41,11 +44,13 @@
     panelTypes?: PanelTabType[] | null;
     panelSizes?: number[] | null;
     pristine?: boolean;
+    followPersistedCanvas?: boolean;
   } = $props();
 
   let widthAdjustment = $state(0);
   let layoutMountKey = $state(0);
   const LAYOUT_ID = `column-clip-check-${scenario}-${panelTypes?.join('-') ?? 'default'}`;
+  const layoutCanvasWidth$ = selectPanelCanvasWidth(LAYOUT_ID);
   const agentTab = {
     type: 'agent' as const,
     title: 'Ada',
@@ -114,7 +119,14 @@
     appStore.dispatch(openTabInNewRootColumn(LAYOUT_ID, agentTab, { force: true }, 10));
   }
 
-  const stackWidth = $derived(sidebarWidth + canvasWidth + insetChrome + widthAdjustment);
+  function closeFirstPanel() {
+    appStore.dispatch(closePanel(LAYOUT_ID, 'p1'));
+  }
+
+  const outerCanvasWidth = $derived(
+    followPersistedCanvas ? ($layoutCanvasWidth$ ?? canvasWidth) : canvasWidth,
+  );
+  const stackWidth = $derived(sidebarWidth + outerCanvasWidth + insetChrome + widthAdjustment);
 </script>
 
 <button data-testid="width-minus-one" class="sr-only" onclick={() => (widthAdjustment = -1)}>
@@ -129,6 +141,7 @@
 <button data-testid="reload-panel-layout" class="sr-only" onclick={() => (layoutMountKey += 1)}>
   Reload
 </button>
+<button data-testid="close-first-panel" class="sr-only" onclick={closeFirstPanel}>Close</button>
 
 {#if scenario === 'create-agent'}
   <button data-testid="create-agent-panel" class="sr-only" onclick={createAgentPanel}>

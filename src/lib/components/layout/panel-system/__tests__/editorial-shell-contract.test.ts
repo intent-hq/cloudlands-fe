@@ -248,7 +248,8 @@ describe('editorial workspace shell presentation contract', () => {
     expect(appLayout).not.toContain('background-color: hsl(var(--background) /');
     expect(appLayout).toContain('class="workspace-main flex');
     expect(appLayout).toContain("'rounded-xl bg-sidebar border border-border shadow-sm'");
-    expect(sidebarPanel).toContain('relative bg-sidebar text-sidebar-foreground');
+    expect(sidebarPanel).toContain('relative text-sidebar-foreground');
+    expect(sidebarPanel).not.toContain('relative bg-sidebar text-sidebar-foreground');
     expect(appLayout).not.toContain('backdrop-filter:');
   });
 

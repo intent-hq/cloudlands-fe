@@ -227,6 +227,7 @@ function startRestoreSaga(
     agentSessions: {
       byAgentId: Object.fromEntries(agents.map((agent) => [String(agent.id), agent])),
     },
+    workspaceNotes: workspaceNotesReducer(undefined, { type: '@@test/init' }),
   };
   const channel = stdChannel();
   const dispatch = vi.fn((action) => {
@@ -443,6 +444,55 @@ describe('panelLayoutSaga', () => {
       newWorkspaceLifecycle: { spec: { state: 'revealed' } },
     });
     await cancelSaga(task);
+  });
+
+  it.each([true, false])(
+    'preserves the production bootstrap when coordinator=%s mounts before persistence',
+    async (coordinator) => {
+      const seeded = panelLayoutReducer(
+        { byWorkspaceId: {} },
+        bootstrapNewWorkspaceLayout(WS_1, 'agent-1', 'Initial agent', coordinator),
+      ).byWorkspaceId[WS_1];
+      const mounted = startRestoreSaga(null, [], seeded);
+      await settle();
+
+      const workspace = mounted.getState().panelLayout.byWorkspaceId[WS_1];
+      const agentPanels = Object.values(workspace.panels).filter((panel: any) =>
+        panel.tabs.some((candidate: any) => candidate.agentId === 'agent-1'),
+      );
+      expect(agentPanels).toHaveLength(1);
+      expect(agentPanels[0]).toMatchObject({ pinned: true });
+      expect(workspace.focusedPanelId).toBe(agentPanels[0].id);
+      expect(mocks.setJSON.mock.calls.at(-1)?.[1]).toMatchObject({
+        newWorkspaceLifecycle: { initialAgentId: 'agent-1', initialAgentPending: false },
+      });
+      await cancelSaga(mounted.task);
+    },
+  );
+
+  it('resolves an existing delayed agent snapshot during production mount without duplication', async () => {
+    const seeded = panelLayoutReducer(
+      { byWorkspaceId: {} },
+      bootstrapNewWorkspaceLayout(WS_1, null, 'Initial agent', false),
+    ).byWorkspaceId[WS_1];
+    const initial = agent('agent-delayed', 'Delayed agent');
+    const mounted = startRestoreSaga(null, [initial], seeded);
+    await settle();
+    mounted.send(setAgents(WS_1, [initial]));
+    await settle();
+
+    const workspace = mounted.getState().panelLayout.byWorkspaceId[WS_1];
+    const agentPanels = Object.values(workspace.panels).filter((panel: any) =>
+      panel.tabs.some((candidate: any) => candidate.agentId === initial.id),
+    );
+    expect(agentPanels).toHaveLength(1);
+    expect(agentPanels[0]).toMatchObject({ pinned: true });
+    expect(workspace.focusedPanelId).toBe(agentPanels[0].id);
+    expect(workspace.newWorkspaceLifecycle).toMatchObject({
+      initialAgentId: initial.id,
+      initialAgentPending: false,
+    });
+    await cancelSaga(mounted.task);
   });
 
   it('resolves delayed agent metadata from the canonical snapshot without duplicates', async () => {

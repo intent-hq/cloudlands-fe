@@ -1227,7 +1227,7 @@
                   selected={isFocused}
                   tabindex={-1}
                   icon={faChevronDown}
-                  iconClass={`opacity-50 [&>svg]:w-2! [&>svg]:mr-1! ${gitColor} transition-transform duration-150 ${flatNode.isExpanded ? '' : '-rotate-90'}`}
+                  iconClass={`opacity-50 [&>svg]:w-2! [&>svg]:mr-1! ${gitColor} transition-transform duration-150 ${flatNode.isExpanded ? '' : 'rotate-90'}`}
                   title={displayName}
                   titleClass={gitColor}
                   onclick={() => handleItemClick(flatNode, absoluteIndex)}

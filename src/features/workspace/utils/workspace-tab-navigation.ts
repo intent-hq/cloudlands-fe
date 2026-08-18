@@ -24,6 +24,7 @@ import {
   selectRecentlyClosed,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+import { toggleSidebar } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 import { resolveEmptyWindowDestination } from './empty-window-destination';
 import type { KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
 import { m } from '$shared/paraglide/messages.js';
@@ -66,7 +67,8 @@ interface WorkspaceTabNavigationStore {
       | ReturnType<typeof closePanel>
       | ReturnType<typeof closeActiveTab>
       | ReturnType<typeof openBlankWorkingPanel>
-      | ReturnType<typeof reopenClosedTab>,
+      | ReturnType<typeof reopenClosedTab>
+      | ReturnType<typeof toggleSidebar>,
   ): unknown;
 }
 
@@ -266,6 +268,7 @@ export function registerWorkspaceTabShortcuts({
   toggleWorkspaceViewMode,
 }: RegisterWorkspaceTabShortcutsOptions): void {
   const mod = isMac ? { meta: true } : { ctrl: true };
+  const sidebarChord = getShortcutChord('TOGGLE_SIDEBAR', isMac);
   const workspaceViewModeChord = getShortcutChord('WORKSPACE_VIEW_MODE', isMac);
   const withRoute = (action: (currentPath: string) => unknown) => () => action(getCurrentPath());
 
@@ -275,6 +278,12 @@ export function registerWorkspaceTabShortcuts({
     global: true,
     description: m.workspace_shortcuts_newSpace_description(),
     action: openNewWorkspace,
+  });
+  register({
+    ...sidebarChord,
+    global: true,
+    description: SHORTCUTS.TOGGLE_SIDEBAR.label,
+    action: () => store.dispatch(toggleSidebar()),
   });
   register({
     ...workspaceViewModeChord,

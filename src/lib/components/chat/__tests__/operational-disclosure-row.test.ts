@@ -66,6 +66,7 @@ vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () =
 }));
 
 import ContextEngineToolCall from '../ContextEngineToolCall.svelte';
+import ChatOperationalRow from '../ChatOperationalRow.svelte';
 import ResponseGroup from '../ResponseGroup.svelte';
 import ThinkingBlock from '../ThinkingBlock.svelte';
 import ToolCall from '../ToolCall.svelte';
@@ -120,6 +121,21 @@ function expectRenderedContract(container: HTMLElement, summary: Element, shared
 }
 
 describe('shared operational disclosure-row contract', () => {
+  it('renders response-group chevrons left when closed and down when open', async () => {
+    const leading = createRawSnippet(() => ({ render: () => '<span>Lead</span>' }));
+    const summary = createRawSnippet(() => ({ render: () => '<span>Summary</span>' }));
+    const view = render(ChatOperationalRow, {
+      props: { leading, summary, interactive: true, expanded: false },
+    });
+    const chevron = view.container.querySelector('[data-operational-chevron] .fa-icon')!;
+
+    expect(chevron.getAttribute('data-icon')).toBe('chevron-down');
+    expect(chevron.classList.contains('rotate-90')).toBe(true);
+
+    await view.rerender({ leading, summary, interactive: true, expanded: true });
+    expect(chevron.classList.contains('rotate-90')).toBe(false);
+  });
+
   it('keeps the shared muted tone immutable through hover and focus class paths', () => {
     const { container } = render(ThinkingBlock, { props: { content: 'Stable reasoning' } });
     const row = container.querySelector('[data-chat-operational-row]')!;
@@ -322,23 +338,29 @@ describe('shared operational disclosure-row contract', () => {
     });
     const groupIconBox = group.container.querySelector('[data-operational-icon-box]')!;
     expectClasses(groupIconBox, CHAT_OPERATIONAL_LEADING_CLASS);
-    expect(groupIconBox.querySelector('[data-icon="arrows-in-line-vertical"]')).toBeTruthy();
+    expect(groupIconBox.querySelector('[data-icon="arrows-out-line-vertical"]')).toBeTruthy();
+    expect(group.container.querySelector('[data-operational-chevron]')).toBeNull();
   });
 
-  it('keeps reasoning indented and response-group children flush without a guide', async () => {
+  it('keeps reasoning indented and centers the response-group guide on its header icon', async () => {
     const reasoning = render(ThinkingBlock, { props: { content: 'Expanded reasoning' } });
     await fireEvent.click(screen.getByTestId('reasoning-disclosure'));
     expectClasses(
       reasoning.container.querySelector('[data-operational-expanded-content]')!,
       OPERATIONAL_EXPANDED_CONTENT_CLASS,
     );
+    expect(
+      reasoning.container.querySelector('[data-operational-expanded-content]')?.className,
+    ).toContain('pb-2');
     cleanup();
 
     const group = render(ResponseGroup, { props: { name: 'Group', children } });
     await fireEvent.click(group.container.querySelector('button')!);
     const expanded = group.container.querySelector('[data-operational-expanded-content]')!;
     expectClasses(expanded, OPERATIONAL_GROUP_CONTENT_CLASS);
-    expect(group.container.querySelector('[data-operational-expanded-guide]')).toBeNull();
+    const guide = group.container.querySelector('[data-operational-expanded-guide]')!;
+    expect(guide).toBeTruthy();
+    expect(guide.className).toContain('operational-group-guide');
     expect(expanded.className).not.toContain('pl-');
   });
 

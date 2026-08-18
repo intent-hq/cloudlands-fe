@@ -352,7 +352,7 @@
                 <Fa
                   icon={faChevronDown}
                   size="xs"
-                  class="opacity-50 transition-transform {olderExpanded ? 'rotate-180' : ''}"
+                  class="opacity-50 transition-transform {olderExpanded ? '' : 'rotate-90'}"
                 />
               </span>
             </div>
@@ -424,7 +424,7 @@
         <Fa
           icon={faChevronDown}
           size={12}
-          class="text-subtle shrink-0 transition-transform {isExpanded ? 'rotate-0' : '-rotate-90'}"
+          class="text-subtle shrink-0 transition-transform {isExpanded ? 'rotate-0' : 'rotate-90'}"
         />
         {#if commitFiles.length > 0}
           <LineChangesBadge

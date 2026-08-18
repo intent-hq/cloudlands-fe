@@ -25,7 +25,7 @@
   import {
     faCheck,
     faChevronDown,
-    faChevronRight,
+    faChevronLeft,
     faCloud,
     faExclamationTriangle,
     faRotate,
@@ -1657,7 +1657,7 @@
                     class="w-full justify-start text-left text-sm text-muted-foreground hover:text-foreground"
                   >
                     <Fa
-                      icon={dependabotBranchesCollapsed ? faChevronRight : faChevronDown}
+                      icon={dependabotBranchesCollapsed ? faChevronLeft : faChevronDown}
                       size="xs"
                       class="mr-1"
                     />
@@ -1700,7 +1700,7 @@
                       icon={faChevronDown}
                       size={10}
                       class="mr-1 opacity-50 transition-transform duration-200 {workspaceBranchesCollapsed
-                        ? '-rotate-90'
+                        ? 'rotate-90'
                         : ''}"
                     />
                     {m.workspace_branchSelector_workspaceBranches_label()}
@@ -1744,7 +1744,7 @@
                       size={10}
                       class="mr-1 opacity-50 transition-transform duration-200 {showRemoteBranches
                         ? ''
-                        : '-rotate-90'}"
+                        : 'rotate-90'}"
                     />
                     <Fa icon={faCloud} size={10} class="mr-1 opacity-50" />
                     {m.workspace_branchSelector_remoteBranches_label()}

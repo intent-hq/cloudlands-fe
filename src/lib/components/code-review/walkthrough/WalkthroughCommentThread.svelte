@@ -17,7 +17,7 @@
     faComment,
     faUser,
     faChevronDown,
-    faChevronUp,
+    faChevronLeft,
     faLightbulb,
     faInfoCircle,
     faExclamationCircle,
@@ -189,7 +189,7 @@
         class="w-full flex items-center justify-between px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
       >
         <span class="font-medium">{m.codeReview_commentThread_suggestedChanges_label()}</span>
-        <Fa icon={showSuggestedChanges ? faChevronUp : faChevronDown} class="h-3 w-3" />
+        <Fa icon={showSuggestedChanges ? faChevronDown : faChevronLeft} class="h-3 w-3" />
       </button>
 
       {#if showSuggestedChanges}

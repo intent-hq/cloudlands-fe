@@ -1,11 +1,11 @@
 /**
  * Height ledger — scroll compensation for LazyTurn height changes.
  *
- * The chat scroll container disables native scroll anchoring
- * (overflow-anchor: none in ChatPanel — required to keep the pinned sticky row
- * from oscillating), so any height change of a turn ABOVE the reader's
- * viewport shifts the visible transcript unless scrollTop is compensated
- * manually. The v2.37.0 fix compensated one-shot at swap-flush time, which
+ * When native scroll anchoring is unavailable, a height change of a turn ABOVE
+ * the reader's viewport shifts the visible transcript unless scrollTop is
+ * compensated manually. The follow action enables native anchoring while an
+ * unlocked reader is active and this ledger yields to it. The v2.37.0 fix
+ * compensated one-shot at swap-flush time, which
  * missed late-settling content (remounted blocks, images, badges, text-wrap
  * differences vs the cached placeholder height) — each settle showed up as an
  * intermittent 20–30px jump at the top of the chat while scrolling through
@@ -90,7 +90,7 @@
  * and it requires a simultaneous under- and overestimated placeholder pair
  * near the bottom.
  */
-import { isFollowingBottom } from '$lib/utils/smartScroll';
+import { isFollowingBottom, isNativeScrollAnchoringActive } from '$lib/utils/smartScroll';
 
 export interface ScrollerSnapshot {
   scrollTop: number;
@@ -145,9 +145,10 @@ export function createHeightLedger(
       const delta = newHeight - lastHeight;
       lastHeight = newHeight;
       if (delta === 0) return;
-      // The follow action is the sole absolute bottom writer. Keep this
-      // ledger's baseline current, but never compete with a captured lock.
-      if (isFollowingBottom(scroller)) return;
+      // Keep the baseline current, but never compete with either scroll
+      // authority: followBottom owns the locked bottom and the browser owns
+      // the visible reading anchor while native anchoring is active.
+      if (isFollowingBottom(scroller) || isNativeScrollAnchoringActive(scroller)) return;
       const scrollerTop = scroller.getBoundingClientRect().top;
       const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
       // How far the native clamp moved scrollTop at flush time: it fires

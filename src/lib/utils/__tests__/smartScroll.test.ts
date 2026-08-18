@@ -5,6 +5,7 @@ import {
   followBottom,
   followToBottom,
   isFollowingBottom,
+  isNativeScrollAnchoringActive,
 } from '../smartScroll';
 
 describe('animateScrollTo', () => {
@@ -296,16 +297,24 @@ describe('followBottom policy', () => {
   });
 
   it('attaches the native anchor only while following', () => {
+    const child = document.createElement('div');
+    child.style.overflowAnchor = 'auto';
+    container.append(child);
     const action = followBottom(container, { follow: false });
     expect(container.querySelector('[data-follow-bottom-anchor]')).toBeNull();
+    expect(child.style.overflowAnchor).toBe('auto');
+    expect(isNativeScrollAnchoringActive(container)).toBe(true);
 
     action.update({ follow: true });
     const anchor = container.querySelector<HTMLElement>('[data-follow-bottom-anchor]')!;
     expect(anchor.style.overflowAnchor).toBe('auto');
+    expect(child.style.overflowAnchor).toBe('none');
+    expect(isNativeScrollAnchoringActive(container)).toBe(false);
 
     container.dispatchEvent(new WheelEvent('wheel', { deltaY: -20 }));
     expect(container.querySelector('[data-follow-bottom-anchor]')).toBeNull();
     expect(anchor.style.overflowAnchor).toBe('none');
+    expect(child.style.overflowAnchor).toBe('auto');
     action.destroy();
   });
 

@@ -13,6 +13,8 @@ export function getAgentAvatarStateLabel(state: AvatarState): string {
       return m.agentOverview_hierarchyGraph_statusCompleted_label();
     case 'failed':
       return m.agentOverview_hierarchyGraph_statusFailed_label();
+    case 'question':
+      return m.chat_questionWizard_title();
     case 'waiting':
       return m.agentOverview_hierarchyGraph_statusWaiting_label();
     case 'needs-permission':

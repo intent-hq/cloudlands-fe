@@ -353,6 +353,26 @@ describe('WorkspaceHoverCard', () => {
     expect(status.className).not.toMatch(/line-clamp|truncate|text-ellipsis/);
   });
 
+  it('renders title, repository, and named semantic status as three ordered rows', async () => {
+    const { container } = await renderHoverCard({ displayStatus: 'in_progress' });
+    const header = container.querySelector('[data-workspace-hover-card-header]');
+    const rows = header?.querySelectorAll(
+      '[data-workspace-hover-card-title-row], [data-workspace-hover-card-repo-row], [data-workspace-hover-card-status-row]',
+    );
+    const statusRow = container.querySelector('[data-workspace-hover-card-status-row]');
+
+    expect(rows).toHaveLength(3);
+    expect([...rows!].map((row) => normalizedText(row))).toEqual([
+      'Hover Card Workspace',
+      'augment/intent',
+      'In progress',
+    ]);
+    expect(statusRow?.querySelector('[data-workspace-status="in_progress"]')).toBeTruthy();
+    expect(statusRow?.querySelector('[data-workspace-status]')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    );
+  });
+
   it('keeps one shared workspace icon and named agent surfaces through live state changes', async () => {
     mocks.agentSessionsByWorkspace['ws-1'] = [
       {
@@ -378,7 +398,8 @@ describe('WorkspaceHoverCard', () => {
 
     expect(view.container.querySelectorAll('[data-workspace-status]')).toHaveLength(1);
     expect(workspaceIcon?.getAttribute('data-workspace-status')).toBe('in_progress');
-    expect(workspaceIcon?.getAttribute('data-workspace-status-icon')).toBe('circle');
+    expect(workspaceIcon?.getAttribute('data-workspace-status-visual')).toBe('dot');
+    expect(workspaceIcon?.getAttribute('data-workspace-status-icon')).toBeNull();
     expect(agentIcons).toHaveLength(2);
     expect([...agentIcons].map((icon) => icon.getAttribute('data-avatar-variant'))).toEqual([
       'standard',

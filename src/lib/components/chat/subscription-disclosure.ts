@@ -1,7 +1,8 @@
 import type { TransitionConfig } from 'svelte/transition';
 import { safeDisclosureTransition } from './disclosure-motion';
 
-export const SUBSCRIPTION_ICON_CLASS = 'text-ghost opacity-60';
+export const SUBSCRIPTION_ICON_CLASS = 'text-muted-foreground! opacity-100';
+export const SUBSCRIPTION_ACTION_ICON_CLASS = 'text-ghost opacity-60';
 export const SUBSCRIPTION_CARD_CONTAINMENT_CLASS =
   'w-full min-w-0 max-w-full overflow-hidden font-family-child';
 export const SUBSCRIPTION_CARD_SURFACE_CLASS =
@@ -12,9 +13,8 @@ export const SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS = 'type-body font-normal text-mut
 export const SUBSCRIPTION_ROW_GEOMETRY_CLASS = 'h-9! min-h-9 border-0! px-3! py-2!';
 export const SUBSCRIPTION_FINISHED_ROW_GEOMETRY_CLASS = 'min-h-10 border-0! px-3! py-2!';
 export const SUBSCRIPTION_LEADING_COLUMN_CLASS =
-  'inline-flex size-5 shrink-0 items-center justify-center leading-none';
-export const SUBSCRIPTION_LEADING_CONTENT_CLASS =
-  'grid grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-x-2';
+  'inline-flex shrink-0 items-center justify-center leading-none';
+export const SUBSCRIPTION_LEADING_CONTENT_CLASS = 'inline-flex min-w-0 items-center gap-1.5';
 export const SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS =
   "relative before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-border before:content-['']";
 export const SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS = `${SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS} first:before:hidden`;

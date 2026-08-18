@@ -25,8 +25,13 @@ export const OPERATIONAL_EXPANDED_CONTENT_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TO
 /** Borderless tool details start 4px below the row at the summary text origin. */
 export const OPERATIONAL_INLINE_DETAILS_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} min-w-0 max-w-full pl-[calc(var(--operational-row-inline-padding)+var(--operational-leading-slot-size)+var(--operational-leading-gap))] pt-1`;
 
-/** Group children stay on the top-level operational-row edge with no guide or horizontal offset. */
-export const OPERATIONAL_GROUP_CONTENT_CLASS = 'min-w-0 max-w-full';
+/** Group guide shares the header icon center; non-operational children share its text origin. */
+export const OPERATIONAL_GROUP_CONTENT_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} relative min-w-0 max-w-full`;
+
+export const OPERATIONAL_GROUP_CHILD_CONTENT_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} min-w-0 max-w-full pl-[calc(var(--operational-row-inline-padding)+var(--operational-leading-slot-size)+var(--operational-leading-gap))]`;
+
+/** Nested operational icon centers share the parent group's prose origin. */
+export const OPERATIONAL_GROUP_CHILD_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} operational-group-child-row min-w-0 max-w-full`;
 
 export const OPERATIONAL_PRIMARY_CLASS = 'text-muted-foreground';
 

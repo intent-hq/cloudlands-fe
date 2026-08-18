@@ -53,6 +53,7 @@ function makeStore(
   viewMode?: TabState['viewMode'],
   workspaces: Array<{ id: string; status?: string }> = [],
 ) {
+  const actions: Array<{ type: string }> = [];
   let state = {
     tabState: makeTabState(currentTabId, viewMode),
     panelLayout: panelLayout ?? panelLayoutInitialState,
@@ -62,10 +63,12 @@ function makeStore(
     },
   } as StoreState;
   return {
+    actions,
     get state() {
       return state;
     },
     dispatch(action: Parameters<typeof tabStateReducer>[1]) {
+      actions.push(action);
       state = {
         ...state,
         tabState: tabStateReducer(state.tabState, action),
@@ -408,11 +411,12 @@ describe('global workspace tab navigation', () => {
     const shortcuts: KeyboardShortcut[] = [];
     const openNewWorkspace = vi.fn();
     const toggleWorkspaceViewMode = vi.fn();
+    const store = makeStore();
 
     registerWorkspaceTabShortcuts({
       isMac: true,
       register: (shortcut) => shortcuts.push(shortcut),
-      store: makeStore(),
+      store,
       getCurrentPath: () => '/workspace/ws-1',
       navigate: vi.fn(),
       openNewWorkspace,
@@ -431,6 +435,7 @@ describe('global workspace tab navigation', () => {
         .join('+');
     expect(shortcuts.map(chord)).toEqual([
       'meta+n',
+      'meta+b',
       'meta+shift+l',
       'meta+t',
       'meta+w',
@@ -450,6 +455,14 @@ describe('global workspace tab navigation', () => {
 
     shortcuts[0].action();
     expect(openNewWorkspace).toHaveBeenCalledOnce();
+
+    const sidebarShortcut = shortcuts.find((shortcut) => chord(shortcut) === 'meta+b')!;
+    expect(sidebarShortcut).toMatchObject({
+      global: true,
+      description: SHORTCUTS.TOGGLE_SIDEBAR.label,
+    });
+    sidebarShortcut.action();
+    expect(store.actions.at(-1)?.type).toBe('uiLayout/toggleSidebar');
   });
 
   it.each([

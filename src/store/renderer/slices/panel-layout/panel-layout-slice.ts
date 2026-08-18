@@ -813,7 +813,6 @@ function closePanelHelper(
   const remainingColumnCount = countHorizontalPanelColumns(removal.node);
   const canvasWidth = (() => {
     if (ws.canvasWidth === null || ws.canvasWidthSource === 'intrinsic') return null;
-    if (remainingColumnCount === 1) return ws.canvasWidth;
     const previousGutterWidth = PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, previousColumnCount - 1);
     const remainingGutterWidth = PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, remainingColumnCount - 1);
     const previousPanelWidth = Math.max(0, ws.canvasWidth - previousGutterWidth);

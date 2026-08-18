@@ -17,7 +17,7 @@
     faRotate,
     faPlay,
     faStop,
-    faChevronUp,
+    faChevronLeft,
     faChevronDown,
     faWaveSquare,
   } from '@fortawesome/free-solid-svg-icons';
@@ -595,7 +595,7 @@
         <Fa icon={faBug} class="text-orange-500" size="sm" />
         <!-- i18n-ignore (dev-only debug UI) -->
         <h3 class="font-medium text-sm">Debug Panel</h3>
-        <Fa icon={isCollapsed ? faChevronUp : faChevronDown} class="text-subtle" size="xs" />
+        <Fa icon={isCollapsed ? faChevronLeft : faChevronDown} class="text-subtle" size="xs" />
       </div>
       <div class="flex items-center gap-1">
         <Button

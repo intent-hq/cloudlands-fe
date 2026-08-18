@@ -6,7 +6,7 @@
     faSpinner,
     faRotateRight,
     faChevronDown,
-    faChevronRight,
+    faChevronLeft,
     faFolderOpen,
   } from '@fortawesome/free-solid-svg-icons';
   import { fly, slide } from 'svelte/transition';
@@ -237,7 +237,7 @@
     class="flex items-center gap-2 w-full px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer"
     onclick={() => (isExpanded = !isExpanded)}
   >
-    <Fa icon={isExpanded ? faChevronDown : faChevronRight} class="h-3 w-3 text-subtle" />
+    <Fa icon={isExpanded ? faChevronDown : faChevronLeft} class="h-3 w-3 text-subtle" />
     <Fa icon={faWandMagicSparkles} class="h-4 w-4 text-purple-500" />
     <span class="text-sm font-medium">{m.codeReview_walkthroughSection_title()}</span>
     {#if isRunning}
@@ -327,7 +327,7 @@
                 onclick={() => (isOtherFilesExpanded = !isOtherFilesExpanded)}
               >
                 <Fa
-                  icon={isOtherFilesExpanded ? faChevronDown : faChevronRight}
+                  icon={isOtherFilesExpanded ? faChevronDown : faChevronLeft}
                   class="h-3 w-3 text-subtle"
                 />
                 <Fa icon={faFolderOpen} class="h-3 w-3 text-ghost" />

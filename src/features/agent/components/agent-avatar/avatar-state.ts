@@ -22,6 +22,7 @@ import {
  * - unread: Agent has unread messages (blue indicator)
  * - completed: Agent has finished (green checkmark)
  * - failed: Agent failed (red X)
+ * - question: Agent has an unanswered question (orange)
  * - waiting: Agent is waiting (hourglass icon)
  * - attention-discussion: Agent requested a discussion (amber comment icon)
  * - attention-blocker: Agent reported a blocker (red exclamation icon)
@@ -34,6 +35,7 @@ export type AvatarState =
   | 'idle'
   | 'completed'
   | 'failed'
+  | 'question'
   | 'waiting'
   | 'needs-permission'
   | 'attention-discussion'
@@ -51,6 +53,8 @@ export interface AvatarStateOptions {
   isCompleted?: boolean;
   /** Whether the agent has failed */
   isFailed?: boolean;
+  /** Whether the agent has an unanswered question */
+  hasQuestion?: boolean;
   /** Whether the agent has a pending permission request that needs user action */
   hasPermissionRequest?: boolean;
   /** Kind of the agent's pending attention request (discussion/blocker), if any */
@@ -60,7 +64,7 @@ export interface AvatarStateOptions {
 /**
  * Input data for determining avatar state
  */
-export interface AgentStateInput extends AgentRuntimeStateInput {}
+export type AgentStateInput = AgentRuntimeStateInput;
 
 /**
  * Check if an agent is actively working (streaming, processing, or responding)
@@ -94,6 +98,7 @@ export function getAvatarState(
     isActive = false,
     isCompleted = false,
     isFailed = false,
+    hasQuestion = false,
     hasPermissionRequest = false,
     attentionKind = null,
   } = options;
@@ -111,6 +116,12 @@ export function getAvatarState(
   // Failed state
   if (isFailed || input.status === AgentStatus.Error || input.status === 'failed') {
     return 'failed';
+  }
+
+  // An unanswered question is the highest-priority non-failure state because
+  // it needs a user response even if the agent is doing unrelated work.
+  if (hasQuestion) {
+    return 'question';
   }
 
   // Needs permission - agent is blocked waiting for user approval

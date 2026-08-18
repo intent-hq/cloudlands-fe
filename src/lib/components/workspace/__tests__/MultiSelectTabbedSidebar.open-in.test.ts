@@ -88,7 +88,10 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({ state: () => mockStoreState, dispatch: mocks.dispatch });
 });
 
-vi.mock('$lib/utils/platform-capabilities', () => ({ hasCapability: () => true }));
+vi.mock('$lib/utils/platform-capabilities', () => ({
+  hasCapability: () => true,
+  isElectronPlatform: () => true,
+}));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -167,6 +170,10 @@ vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () =
 }));
 vi.mock('$store/renderer/slices/workspace-events/workspace-events-selectors', () => ({
   selectWorkspaceEvents: mocks.selector([]),
+}));
+vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
+  selectHudAgentHasPendingQuestion: { select: () => false },
+  selectHudQuestionsByAgentId: mocks.selector({}),
 }));
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => ({ openUserTab: mocks.openUserTab }),

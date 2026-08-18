@@ -132,7 +132,7 @@
       <Fa
         icon={faChevronDown}
         size="xs"
-        class="opacity-50 transition-transform duration-200 {isExpanded ? '' : '-rotate-90'}"
+        class="opacity-50 transition-transform duration-200 {isExpanded ? '' : 'rotate-90'}"
       />
       <!-- <Fa icon={faPlug} size="xs" class="opacity-70" /> -->
       <span>{m.workspace_mcpServers_title()}</span>

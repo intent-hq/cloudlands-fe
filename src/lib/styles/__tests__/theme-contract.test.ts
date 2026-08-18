@@ -216,7 +216,7 @@ describe('theme color contract', () => {
     expect(provider).toContain('has-data-[variant=inset]:bg-sidebar');
     expect(skeleton).toContain('bg-sidebar text-sidebar-foreground');
     expect(navigationPanel).toContain(
-      'sidebar-panel h-full flex flex-col relative bg-sidebar text-sidebar-foreground dark:bg-transparent',
+      'sidebar-panel h-full flex flex-col relative text-sidebar-foreground',
     );
     for (const source of [sidebar, provider, skeleton, navigationPanel]) {
       expect(source).not.toMatch(/--sidebar\s*:/);

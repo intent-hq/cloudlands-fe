@@ -23,9 +23,6 @@
  */
 
 import { createLogger } from '$lib/utils/client-logger';
-import { toggleSidebar } from '$store/renderer/slices/ui-layout/ui-layout-slice';
-import { store as appStore } from '$store/renderer/store';
-
 const logger = createLogger('PanelShortcuts');
 
 export interface UsePanelShortcutsOptions {
@@ -68,14 +65,6 @@ export function usePanelShortcuts(options: UsePanelShortcutsOptions) {
       // conflicting with text editing shortcuts like Cmd+B (bold) in rich text editors.
 
       // Cmd+0: Let browser handle native zoom reset (don't intercept)
-
-      // Cmd+B: Toggle workspace left sidebar (collapse/expand)
-      if (event.key === 'b' && !event.shiftKey && !event.altKey) {
-        event.preventDefault();
-        logger.debug('Toggling workspace left sidebar');
-        appStore.dispatch(toggleSidebar());
-        return;
-      }
 
       // Cmd+Shift+D: Open Agent Overview
       if ((event.key === 'd' || event.key === 'D') && event.shiftKey && !event.altKey) {

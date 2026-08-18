@@ -1,14 +1,10 @@
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import {
-  faCircle,
   faCircleCheck,
-  faCircleExclamation,
+  faCircleQuestion,
   faClock,
   faCodeMerge,
   faCodePullRequest,
-  faEnvelope,
-  faPause,
-  faPlay,
   faTriangleExclamation,
   faXmark,
 } from '@fortawesome/free-solid-svg-icons';
@@ -28,7 +24,8 @@ export type WorkspaceStatusPresentationInput = Pick<
 
 export interface WorkspaceStatusPresentation {
   state: WorkspaceStatusPresentationState;
-  icon: IconDefinition;
+  visual: 'dot' | 'icon';
+  icon: IconDefinition | null;
   className: string;
   label: string;
   tooltip: string;
@@ -44,20 +41,28 @@ const HIGH_PRIORITY_STATES = new Set<WorkspaceDisplayStatus>([
 
 const VISUALS: Record<
   WorkspaceStatusPresentationState,
-  Pick<WorkspaceStatusPresentation, 'icon' | 'className'>
+  Pick<WorkspaceStatusPresentation, 'visual' | 'icon' | 'className'>
 > = {
-  failed: { icon: faTriangleExclamation, className: 'text-foreground' },
-  blocked: { icon: faXmark, className: 'text-destructive' },
-  needs_attention: { icon: faCircleExclamation, className: 'text-warning' },
-  in_progress: { icon: faCircle, className: 'text-success' },
-  waiting: { icon: faClock, className: 'text-muted-foreground' },
-  unread: { icon: faEnvelope, className: 'text-info' },
-  not_started: { icon: faPlay, className: 'text-muted-foreground' },
-  idle: { icon: faPause, className: 'text-muted-foreground' },
-  complete: { icon: faCircleCheck, className: 'text-success' },
-  pr_ready: { icon: faCodePullRequest, className: 'text-success' },
-  pr_open: { icon: faCodePullRequest, className: 'text-info' },
-  pr_merged: { icon: faCodeMerge, className: 'text-success' },
+  failed: { visual: 'icon', icon: faTriangleExclamation, className: 'text-foreground' },
+  blocked: { visual: 'icon', icon: faXmark, className: 'text-destructive' },
+  needs_attention: { visual: 'icon', icon: faCircleQuestion, className: 'text-warning' },
+  in_progress: {
+    visual: 'dot',
+    icon: null,
+    className: 'workspace-status-color-active',
+  },
+  waiting: { visual: 'icon', icon: faClock, className: 'text-muted-foreground' },
+  unread: {
+    visual: 'dot',
+    icon: null,
+    className: 'workspace-status-color-unread',
+  },
+  not_started: { visual: 'dot', icon: null, className: 'text-muted-foreground/35' },
+  idle: { visual: 'dot', icon: null, className: 'text-muted-foreground/35' },
+  complete: { visual: 'icon', icon: faCircleCheck, className: 'text-success' },
+  pr_ready: { visual: 'icon', icon: faCodePullRequest, className: 'text-success' },
+  pr_open: { visual: 'icon', icon: faCodePullRequest, className: 'text-info' },
+  pr_merged: { visual: 'icon', icon: faCodeMerge, className: 'text-success' },
 };
 
 function labelFor(state: WorkspaceStatusPresentationState): string {

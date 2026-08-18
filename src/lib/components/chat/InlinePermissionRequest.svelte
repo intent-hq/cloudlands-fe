@@ -5,7 +5,7 @@
   import type { PermissionRequest } from '$store/renderer/slices/permission/permission-slice';
 
   import Fa from 'svelte-fa';
-  import { faShieldHalved, faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
+  import { faShieldHalved, faChevronDown, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
   import { parsePermissionRequest } from './permission-parser';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -133,7 +133,7 @@
         class="type-caption mb-3 flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
         onclick={() => (showDetails = !showDetails)}
       >
-        <Fa icon={showDetails ? faChevronUp : faChevronDown} class="text-ui" />
+        <Fa icon={showDetails ? faChevronDown : faChevronLeft} class="text-ui" />
         {showDetails
           ? m.chat_inlinePermission_hideRawDetails_label()
           : m.chat_inlinePermission_showRawDetails_label()}

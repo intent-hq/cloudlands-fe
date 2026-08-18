@@ -762,8 +762,7 @@
     get enabled() {
       return active;
     },
-    // Note: Cmd+B sidebar toggle is handled by appStore.dispatch(toggleSidebar())
-    // in use-panel-shortcuts.svelte.ts
+    // Cmd+B is registered once by the global workspace shortcut router.
     onOpenAgentOverview: () => {
       // Open the Agent Overview panel tab
       const layoutManager = getPanelLayoutManager(panelLayoutId);

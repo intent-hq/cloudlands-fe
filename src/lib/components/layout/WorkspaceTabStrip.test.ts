@@ -111,6 +111,62 @@ vi.mock('svelte-fa', async () => ({
 
 import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
 
+function makeRect(left: number, top = 20, width = 160, height = 32): DOMRect {
+  return {
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    x: left,
+    y: top,
+    toJSON: () => ({}),
+  };
+}
+
+function setTabGeometry() {
+  for (const [id, left] of [
+    ['ws-1', 0],
+    ['ws-2', 162],
+    ['ws-3', 324],
+  ] as const) {
+    const tab = document.querySelector<HTMLElement>(`[data-workspace-tab="${id}"]`)!;
+    tab.getBoundingClientRect = () => makeRect(left);
+  }
+}
+
+function makeDataTransfer() {
+  return {
+    effectAllowed: 'none',
+    dropEffect: 'none',
+    setData: vi.fn(),
+    getData: vi.fn(() => 'ws-1'),
+    setDragImage: vi.fn(),
+  };
+}
+
+function makeDragEvent(
+  type: string,
+  dataTransfer: ReturnType<typeof makeDataTransfer>,
+  clientX: number,
+  clientY = 20,
+) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperties(event, {
+    clientX: { value: clientX },
+    clientY: { value: clientY },
+    dataTransfer: { value: dataTransfer },
+  });
+  return event;
+}
+
+function renderedTabOrder() {
+  return Array.from(document.querySelectorAll('[data-workspace-tab-motion]')).map((tab) =>
+    tab.getAttribute('data-workspace-tab-motion'),
+  );
+}
+
 describe('WorkspaceTabStrip', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
@@ -280,8 +336,8 @@ describe('WorkspaceTabStrip', () => {
     const statuses = tab.querySelectorAll('[data-workspace-status]');
     expect(statuses).toHaveLength(1);
     expect(statuses[0].getAttribute('data-workspace-status')).toBe('in_progress');
-    expect(statuses[0].getAttribute('data-workspace-status-icon')).toBe('circle');
-    expect(statuses[0].className).toContain('text-success');
+    expect(statuses[0].getAttribute('data-workspace-status-icon')).toBeNull();
+    expect(statuses[0].className).toContain('workspace-status-color-active');
     expect(tab.querySelector('[data-workspace-tab-status-overflow]')).toBeNull();
   });
 
@@ -505,7 +561,7 @@ describe('WorkspaceTabStrip', () => {
     expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-2');
   });
 
-  it('supports keyboard and pointer drag reordering', async () => {
+  it('supports keyboard reordering', async () => {
     render(WorkspaceTabStrip);
     const alpha = screen.getByRole('tab', { name: /Alpha/ });
 
@@ -514,32 +570,95 @@ describe('WorkspaceTabStrip', () => {
       type: 'tabState/moveWorkspace',
       payload: ['ws-1', 'ws-2', 'after'],
     });
+  });
 
+  it('moves the real tab horizontally and keeps its placeholder in the proposed slot', async () => {
+    render(WorkspaceTabStrip);
+    setTabGeometry();
     mocks.dispatch.mockClear();
-    const alphaContainer = document.querySelector('[data-workspace-tab="ws-1"]')!;
-    const gammaContainer = document.querySelector('[data-workspace-tab="ws-3"]')!;
-    expect(alphaContainer.parentElement?.getAttribute('data-workspace-tab-motion')).toBe('ws-1');
-    expect(gammaContainer.parentElement?.getAttribute('data-workspace-tab-motion')).toBe('ws-3');
-    const dataTransfer = {
-      effectAllowed: 'none',
-      dropEffect: 'none',
-      setData: vi.fn(),
-      getData: vi.fn(() => 'ws-1'),
-    };
-    await fireEvent.dragStart(alphaContainer, { dataTransfer });
-    await fireEvent.dragOver(gammaContainer, { dataTransfer });
-    await fireEvent.drop(gammaContainer, { dataTransfer });
+    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
+    const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
+    const dataTransfer = makeDataTransfer();
+
+    await fireEvent(source, makeDragEvent('dragstart', dataTransfer, 80));
+    expect(dataTransfer.setDragImage).toHaveBeenCalledOnce();
+    expect(source.className).toContain('fixed');
+    expect(source.style.left).toBe('0px');
+    expect(source.style.top).toBe('20px');
+    expect(document.querySelector('[data-workspace-tab-placeholder="ws-1"]')).toBeTruthy();
+
+    await fireEvent(strip, makeDragEvent('dragover', dataTransfer, 250, 900));
+
+    expect(source.style.left).toBe('170px');
+    expect(source.style.top).toBe('20px');
+    expect(renderedTabOrder()).toEqual(['ws-2', 'ws-1', 'ws-3']);
+    expect(
+      document
+        .querySelector('[data-workspace-tab-placeholder="ws-1"]')
+        ?.parentElement?.getAttribute('data-workspace-tab-motion'),
+    ).toBe('ws-1');
+    expect(document.querySelector('[data-workspace-stack-preview]')).toBeNull();
+    expect(
+      mocks.dispatch.mock.calls.some(([action]) => action.type === 'tabState/moveWorkspace'),
+    ).toBe(false);
+  });
+
+  it('persists only the released order and leaves the dropped tab at that slot', async () => {
+    render(WorkspaceTabStrip);
+    setTabGeometry();
+    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
+    const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
+    const dataTransfer = makeDataTransfer();
+
+    await fireEvent(source, makeDragEvent('dragstart', dataTransfer, 80));
+    mocks.dispatch.mockClear();
+    await fireEvent(strip, makeDragEvent('dragover', dataTransfer, 430));
+    await fireEvent(strip, makeDragEvent('drop', dataTransfer, 430));
 
     expect(mocks.dispatch).not.toHaveBeenCalledWith({
       type: 'tabState/openWorkspaceTab',
       payload: expect.any(Array),
     });
     expect(mocks.goto).not.toHaveBeenCalled();
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'tabState/moveWorkspace',
-      payload: ['ws-1', 'ws-3', 'after'],
-    });
+    const moveActions = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action.type === 'tabState/moveWorkspace');
+    expect(moveActions).toEqual([
+      {
+        type: 'tabState/moveWorkspace',
+        payload: ['ws-1', 'ws-3', 'after'],
+      },
+    ]);
     expect(screen.getByText('Moved Alpha to position 3')).toBeTruthy();
+    expect(renderedTabOrder()).toEqual(['ws-2', 'ws-3', 'ws-1']);
+    expect(source.className).not.toContain('fixed');
+    expect(source.className).not.toContain(
+      'transition-[background-color,border-color,box-shadow,opacity,transform]',
+    );
+    expect(source.style.left).toBe('');
+    expect(document.querySelector('[data-workspace-tab-placeholder]')).toBeNull();
+  });
+
+  it('restores the original order without persistence when the drag is cancelled', async () => {
+    render(WorkspaceTabStrip);
+    setTabGeometry();
+    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
+    const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
+    const dataTransfer = makeDataTransfer();
+
+    await fireEvent(source, makeDragEvent('dragstart', dataTransfer, 80));
+    mocks.dispatch.mockClear();
+    await fireEvent(strip, makeDragEvent('dragover', dataTransfer, 430));
+    expect(renderedTabOrder()).toEqual(['ws-2', 'ws-3', 'ws-1']);
+
+    await fireEvent(source, makeDragEvent('dragend', dataTransfer, 430));
+
+    expect(renderedTabOrder()).toEqual(['ws-1', 'ws-2', 'ws-3']);
+    expect(document.querySelector('[data-workspace-tab-placeholder]')).toBeNull();
+    expect(
+      mocks.dispatch.mock.calls.some(([action]) => action.type === 'tabState/moveWorkspace'),
+    ).toBe(false);
+    expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'tabState/endDrag', payload: [] });
   });
 
   it('keeps keyboard focus perceivable without a perimeter outline, ring, or focus-only shadow', () => {
@@ -569,37 +688,19 @@ describe('WorkspaceTabStrip', () => {
     }
   });
 
-  it('uses the centered top zone to stack a tab above another workspace', async () => {
+  it('does not expose stacked drop states at any vertical pointer position', async () => {
     render(WorkspaceTabStrip);
-    const source = document.querySelector('[data-workspace-tab="ws-1"]')!;
-    const target = document.querySelector('[data-workspace-tab="ws-2"]')!;
-    const targetRect = { left: 100, top: 100, width: 160, height: 32 } as DOMRect;
-    Object.defineProperty(target, 'getBoundingClientRect', { value: () => targetRect });
-    const dataTransfer = {
-      effectAllowed: 'none',
-      dropEffect: 'none',
-      setData: vi.fn(),
-      getData: vi.fn(() => 'ws-1'),
-    };
-    const dragEvent = (type: string, clientX: number, clientY: number) => {
-      const event = new Event(type, { bubbles: true, cancelable: true });
-      Object.defineProperties(event, {
-        clientX: { value: clientX },
-        clientY: { value: clientY },
-        dataTransfer: { value: dataTransfer },
-      });
-      return event;
-    };
+    setTabGeometry();
+    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
+    const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
+    const dataTransfer = makeDataTransfer();
 
-    await fireEvent(source, dragEvent('dragstart', 110, 110));
-    await fireEvent(target, dragEvent('dragover', 180, 103));
-    expect(target.getAttribute('data-workspace-drop-placement')).toBe('above');
-    expect(document.querySelector('[data-workspace-stack-preview="above"]')).toBeTruthy();
-    await fireEvent(target, dragEvent('drop', 180, 103));
+    await fireEvent(source, makeDragEvent('dragstart', dataTransfer, 80));
+    await fireEvent(strip, makeDragEvent('dragover', dataTransfer, 250, -500));
+    await fireEvent(strip, makeDragEvent('dragover', dataTransfer, 250, 500));
 
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'tabState/moveWorkspace',
-      payload: ['ws-1', 'ws-2', 'above'],
-    });
+    expect(document.querySelector('[data-workspace-drop-placement]')).toBeNull();
+    expect(document.querySelector('[data-workspace-stack-preview]')).toBeNull();
+    expect(source.style.top).toBe('20px');
   });
 });

@@ -929,6 +929,15 @@ describe('SimpleRichInput provider switch sync', () => {
 });
 
 describe('SimpleRichInput Stop-button visibility', () => {
+  const readyAttachment = () => ({
+    id: 'attachment-1',
+    type: 'file' as const,
+    label: 'dump.har',
+    attachmentId: 'att-uuid-1',
+    attachmentMimeType: 'application/json',
+    placementStatus: 'placed' as const,
+  });
+
   const baseProps = () => ({
     value: '',
     contextItems: [],
@@ -984,6 +993,25 @@ describe('SimpleRichInput Stop-button visibility', () => {
     expect(sendButton()).not.toBeNull();
   });
 
+  it.each([
+    { mode: 'text-only', value: 'follow up', contextItems: [] },
+    { mode: 'attachment-only', value: '', contextItems: [readyAttachment()] },
+    { mode: 'mixed', value: 'follow up', contextItems: [readyAttachment()] },
+  ])(
+    'submits $mode content through the accessible Send action',
+    async ({ value, contextItems }) => {
+      const onsubmit = vi.fn();
+      render(SimpleRichInput, {
+        props: { ...baseProps(), value, contextItems, onsubmit },
+      });
+
+      const send = screen.getByRole('button', { name: 'Send message' });
+      expect((send as HTMLButtonElement).disabled).toBe(false);
+      await fireEvent.click(send);
+      expect(onsubmit).toHaveBeenCalledWith(value);
+    },
+  );
+
   it('shows Stop when isResponding is true (pre-first-chunk processing window)', () => {
     render(SimpleRichInput, { props: { ...baseProps(), isResponding: true } });
 
@@ -1010,30 +1038,38 @@ describe('SimpleRichInput Stop-button visibility', () => {
     expect(screen.getByTestId('prompt-actions-trigger').dataset.variant).toBe('ghost-light');
   });
 
-  it('renders Queue and Send as flat muted actions while responding with a draft', async () => {
-    const onsubmit = vi.fn();
-    const onforcesubmit = vi.fn();
-    render(SimpleRichInput, {
-      props: {
-        ...baseProps(),
-        value: 'follow up',
-        isResponding: true,
-        onsubmit,
-        onforcesubmit,
-      },
-    });
+  it.each([
+    { mode: 'text-only', value: 'follow up', contextItems: [] },
+    { mode: 'attachment-only', value: '', contextItems: [readyAttachment()] },
+    { mode: 'mixed', value: 'follow up', contextItems: [readyAttachment()] },
+  ])(
+    'renders accessible Queue and Interrupt actions while responding with $mode content',
+    async ({ value, contextItems }) => {
+      const onsubmit = vi.fn();
+      const onforcesubmit = vi.fn();
+      render(SimpleRichInput, {
+        props: {
+          ...baseProps(),
+          value,
+          contextItems,
+          isResponding: true,
+          onsubmit,
+          onforcesubmit,
+        },
+      });
 
-    const queue = screen.getByRole('button', { name: 'Queue message' });
-    const send = screen.getByRole('button', { name: 'Interrupt and send' });
-    expect(queue?.dataset.variant).toBe('ghost-light');
-    expect(send?.dataset.variant).toBe('ghost-light');
-    expect(queue?.parentElement?.className).not.toContain('bg-sidebar');
+      const queue = screen.getByRole('button', { name: 'Queue message' });
+      const send = screen.getByRole('button', { name: 'Interrupt and send' });
+      expect(queue?.dataset.variant).toBe('ghost-light');
+      expect(send?.dataset.variant).toBe('ghost-light');
+      expect(queue?.parentElement?.className).not.toContain('bg-sidebar');
 
-    await fireEvent.click(queue!);
-    await fireEvent.click(send!);
-    expect(onsubmit).toHaveBeenCalledWith('follow up');
-    expect(onforcesubmit).toHaveBeenCalledWith('follow up');
-  });
+      await fireEvent.click(queue!);
+      await fireEvent.click(send!);
+      expect(onsubmit).toHaveBeenCalledWith(value);
+      expect(onforcesubmit).toHaveBeenCalledWith(value);
+    },
+  );
 
   it('shows Send (not Stop) when only the broader running signal would be true, IDLE-1', () => {
     // A coordinator whose own turn has ended but is still waiting on delegated

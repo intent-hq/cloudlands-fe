@@ -3,6 +3,7 @@
   import { navigateAfterWorkspaceRemoval } from '$lib/utils/workspace-navigation';
   import { handleLink } from '$features/navigation/link-handler';
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import type { AgentSession } from '$shared/types';
   import './multi-select-sidebar-transitions.css';
   import {
     selectStagedWorkingChanges,
@@ -20,7 +21,11 @@
     type AgentAvatarStackItem,
   } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
-  import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
+  import {
+    getAvatarStateForSession,
+    type AvatarState,
+  } from '$features/agent/components/agent-avatar/avatar-state';
+  import { getAgentAvatarStateLabel } from '$features/agent/components/agent-avatar/avatar-state-label';
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
@@ -92,9 +97,15 @@
   import { selectMultiSelectSidebarSelectedTabIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { store as appStore } from '$store/renderer/store';
   import {
+    selectHudAgentHasPendingQuestion,
+    selectHudQuestionsByAgentId,
+  } from '$store/renderer/slices/hud/hud-selectors';
+  import { deriveWizardPendingQuestions } from '$lib/components/chat/questions/wizard-gate';
+  import {
     deriveAgentLauncherItems,
     deriveNoteLauncherItems,
     getAgentLauncherPreview,
+    getAgentLauncherStatusPriority,
     getLauncherPreviewLimit,
     getNoteLauncherPreview,
   } from './utils/sidebar-launcher-preview';
@@ -190,6 +201,32 @@
   const notesLoading$ = selectNotesLoading(workspaceIdStore);
   const allWorkspaceAgents = selectAllWorkspaceAgents(workspaceIdStore);
   const agentsLoading = selectIsLoadingAgents(workspaceIdStore);
+  const hudQuestionsByAgentId$ = selectHudQuestionsByAgentId();
+
+  function getLauncherAvatarState(agent: AgentSession): AvatarState {
+    // Keep the derived reactive to capture-only question updates even before a
+    // transcript is hydrated into the workspace-agent session.
+    void $hudQuestionsByAgentId$;
+    const hasQuestion =
+      selectHudAgentHasPendingQuestion.select(appStore.state, agent.id) ||
+      deriveWizardPendingQuestions(appStore.state, agent.id, agent.messages) !== null;
+    return getAvatarStateForSession(agent, { hasQuestion });
+  }
+
+  function getLauncherStatusTone(state: AvatarState): 'success' | 'warning' | 'danger' | 'muted' {
+    if (state === 'failed') return 'danger';
+    if (
+      state === 'question' ||
+      state === 'needs-permission' ||
+      state === 'attention-blocker' ||
+      state === 'attention-discussion'
+    ) {
+      return 'warning';
+    }
+    if (state === 'running' || state === 'responding') return 'success';
+    return 'muted';
+  }
+
   const launcherAgentState = $derived.by(() =>
     deriveAgentLauncherItems(
       $allWorkspaceAgents,
@@ -200,6 +237,11 @@
           agent,
           isRunning ? selectAgentSessionStreamingContent.select(appStore.state, agent.id) : '',
         ),
+      (agent) =>
+        Math.max(
+          getAgentLauncherStatusPriority(getLauncherAvatarState(agent)),
+          Number(selectAgentIsRunning.select(appStore.state, agent.id)),
+        ),
     ),
   );
   const launcherAgents = $derived(launcherAgentState.launcherAgents);
@@ -208,7 +250,7 @@
       key: agent.id,
       agentId: agent.id,
       specialist: agent.metadata?.specialist || agent.agentMetadata?.specialist || null,
-      state: getAvatarStateForSession(agent),
+      state: getLauncherAvatarState(agent),
     })),
   );
   const runningLauncherAgents = $derived(launcherAgentState.runningAgents);
@@ -425,14 +467,6 @@
     return null;
   });
   const effectiveIsAllChangesViewActive = $derived(focusedContentType === 'local-changes');
-  function getAgentPanelState(agentId: string) {
-    return getPanelTabOpenState($allPanelTabs$, $activeTab$, workspaceId, {
-      type: 'agent',
-      agentId,
-      workspaceId,
-    });
-  }
-
   function getNotePanelState(noteId: string) {
     return getPanelTabOpenState($allPanelTabs$, $activeTab$, workspaceId, {
       type: 'note',
@@ -744,10 +778,11 @@
 {#snippet launcherAgentAvatar(item: AgentAvatarStackItem)}
   {@const launcherItem = launcherAgents.find(({ agent }) => agent.id === item.agentId)}
   {#if launcherItem}
-    {@const { agent, isRunning, preview } = launcherItem}
+    {@const { agent, preview } = launcherItem}
     <SidebarLauncherHoverCard
       title={agent.name || `${m.workspace_fileChanges_agent_label()} ${agent.id.slice(0, 8)}`}
-      status={isRunning ? m.chat_backgroundHooks_running_label() : undefined}
+      status={getAgentAvatarStateLabel(item.state ?? 'idle')}
+      statusTone={getLauncherStatusTone(item.state ?? 'idle')}
       rows={[
         { label: m.chat_agentThread_you_label(), text: preview.lastUserMessage },
         { label: m.workspace_fileChanges_agent_label(), text: preview.response },

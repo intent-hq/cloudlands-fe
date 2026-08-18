@@ -1413,7 +1413,7 @@ describe('panelLayoutReducer', () => {
       expect(result.byWorkspaceId[WS].panels.p1.activeTabId).toBe('t2');
     });
 
-    it('keeps the explicit canvas reference when the final tab collapses a split', () => {
+    it('shrinks the explicit canvas to the retained column when the final tab collapses a split', () => {
       const state = emptyState();
       state.byWorkspaceId[WS] = {
         ...emptyWorkspaceState,
@@ -1447,7 +1447,7 @@ describe('panelLayoutReducer', () => {
       const workspace = result.byWorkspaceId[WS];
 
       expect(workspace.root).toEqual({ type: 'panel', panelId: 'p2' });
-      expect(workspace.canvasWidth).toBe(1000);
+      expect(workspace.canvasWidth).toBe(744);
       expect(workspace.canvasWidthSource).toBe('explicit');
     });
 
@@ -1726,7 +1726,53 @@ describe('panelLayoutReducer', () => {
   });
 
   describe('closePanel', () => {
-    it('keeps an explicit canvas reference when a horizontal split collapses', () => {
+    it('compacts a horizontal canvas while preserving retained ratios, focus, and history', () => {
+      const state = emptyState();
+      state.byWorkspaceId[WS] = {
+        ...emptyWorkspaceState,
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          sizes: [20, 30, 50],
+          children: [
+            { type: 'panel', panelId: 'p1' },
+            { type: 'panel', panelId: 'p2' },
+            { type: 'panel', panelId: 'p3' },
+          ],
+        },
+        panels: {
+          p1: { id: 'p1', tabs: [], activeTabId: null },
+          p2: { id: 'p2', tabs: [], activeTabId: null },
+          p3: { id: 'p3', tabs: [], activeTabId: null },
+        },
+        focusedPanelId: 'p3',
+        canvasWidth: 1200,
+        canvasWidthSource: 'explicit',
+      };
+
+      const workspace = panelLayoutReducer(state, closePanel(WS, 'p2', 2000)).byWorkspaceId[WS];
+
+      expect(workspace.root).toEqual({
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'panel', panelId: 'p1' },
+          { type: 'panel', panelId: 'p3' },
+        ],
+        sizes: [expect.closeTo((20 / 70) * 100, 6), expect.closeTo((50 / 70) * 100, 6)],
+      });
+      expect(workspace.canvasWidth).toBeCloseTo(836.8, 6);
+      expect(workspace.canvasWidthSource).toBe('explicit');
+      expect(workspace.focusedPanelId).toBe('p3');
+      expect(workspace.layoutHistory[0]).toMatchObject({
+        canvasWidth: 1200,
+        canvasWidthSource: 'explicit',
+        timestamp: 2000,
+        root: { sizes: [20, 30, 50] },
+      });
+    });
+
+    it('shrinks an explicit canvas when a horizontal split collapses', () => {
       const state = emptyState();
       state.byWorkspaceId[WS] = {
         ...emptyWorkspaceState,
@@ -1751,7 +1797,7 @@ describe('panelLayoutReducer', () => {
       const workspace = panelLayoutReducer(state, closePanel(WS, 'p1')).byWorkspaceId[WS];
 
       expect(workspace.root).toEqual({ type: 'panel', panelId: 'p2' });
-      expect(workspace.canvasWidth).toBe(1200);
+      expect(workspace.canvasWidth).toBe(596);
       expect(workspace.canvasWidthSource).toBe('explicit');
     });
 

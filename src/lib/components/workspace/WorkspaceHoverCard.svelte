@@ -40,7 +40,10 @@
   import { formatInteger } from '$lib/i18n/format';
   import TaskStatusProgress from './TaskStatusProgress.svelte';
   import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
-  import { resolveWorkspaceStatusState } from './utils/workspace-status-presentation';
+  import {
+    getWorkspaceStatusPresentation,
+    resolveWorkspaceStatusState,
+  } from './utils/workspace-status-presentation';
 
   interface Props {
     workspace: Workspace | null;
@@ -324,6 +327,7 @@
 
   let statusMessage = $derived(workspace?.statusMessage?.trim());
   let workspaceStatusState = $derived(resolveWorkspaceStatusState(workspace ?? {}));
+  let workspaceStatusPresentation = $derived(getWorkspaceStatusPresentation(workspaceStatusState));
 
   let lifecycleText = $derived.by(() => {
     if (!workspace) return null;
@@ -454,12 +458,11 @@
   class="bg-popover shadow-(--elevation-overlay) ring-1 ring-border/70 py-3 px-4 w-[320px] shrink-0 max-w-[calc(100vw-1rem)] flex flex-col gap-1.5 text-left"
 >
   <!-- Header: Title and repo -->
-  <div class="w-full">
+  <div class="w-full" data-workspace-hover-card-header>
     {#if isLoading || !workspace}
       <Skeleton class="h-5 w-40" />
     {:else}
-      <div class="flex items-start gap-2">
-        <WorkspaceStatusIcon status={workspaceStatusState} size={14} class="mt-0.5" />
+      <div class="flex items-start gap-2" data-workspace-hover-card-title-row>
         <div class="min-w-0 flex-1">
           <div class="text-sm font-semibold text-foreground truncate">
             {workspace?.title || m.workspace_links_untitled_label()}
@@ -473,12 +476,19 @@
           </div>
         {/if}
       </div>
-      <div class="w-full flex items-center -mt-0.5 gap-1">
+      <div class="w-full flex items-center -mt-0.5 gap-1" data-workspace-hover-card-repo-row>
         <div
           class="flex-1 text-muted-foreground text-sm truncate text-left bg-transparent border-none p-0 font-inherit"
         >
           {repoDisplayName}
         </div>
+      </div>
+      <div
+        class="mt-1 flex w-full min-w-0 items-center gap-2 text-sm text-muted-foreground"
+        data-workspace-hover-card-status-row
+      >
+        <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
+        <span class="min-w-0 truncate">{workspaceStatusPresentation.label}</span>
       </div>
       <div class="mt-2 min-w-0" data-workspace-hover-card-progress>
         <TaskStatusProgress

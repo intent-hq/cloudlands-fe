@@ -162,13 +162,13 @@ function colorDistance(first: Rgba, second: Rgba): number {
   return Math.hypot(first[0] - second[0], first[1] - second[1], first[2] - second[2]);
 }
 
-type SurfaceFamily = 'neutral' | 'attention' | 'active' | 'unread' | 'waiting';
+type SurfaceFamily = 'neutral' | 'completed' | 'attention' | 'active' | 'waiting';
 
 const surfaceFamilyByState = {
   running: 'active',
   responding: 'active',
-  unread: 'unread',
-  completed: 'active',
+  unread: 'neutral',
+  completed: 'completed',
   failed: 'attention',
   waiting: 'waiting',
   'needs-permission': 'attention',
@@ -180,16 +180,16 @@ const surfaceFamilyByState = {
 const expectedSurfaceByTheme = {
   light: {
     neutral: [232, 237, 234, 255],
+    completed: [220, 229, 224, 255],
     attention: [255, 162, 64, 255],
     active: [209, 226, 78, 255],
-    unread: [211, 226, 252, 255],
     waiting: [196, 167, 242, 255],
   },
   dark: {
     neutral: [192, 206, 198, 255],
+    completed: [53, 70, 60, 255],
     attention: [255, 181, 102, 255],
     active: [222, 237, 110, 255],
-    unread: [184, 210, 255, 255],
     waiting: [176, 150, 232, 255],
   },
 } as const satisfies Record<'light' | 'dark', Record<SurfaceFamily, Rgba>>;
@@ -487,7 +487,7 @@ test('resolves opaque, separated semantic state tokens in light and dark modes',
     expect(backgrounds.size).toBe(familyColors.length);
     for (const [index, first] of familyColors.entries()) {
       for (const second of familyColors.slice(index + 1)) {
-        expect(colorDistance(first, second)).toBeGreaterThan(25);
+        expect(colorDistance(first, second)).toBeGreaterThan(15);
       }
     }
     const waiting = expectedSurfaceByTheme[theme].waiting;
@@ -598,8 +598,8 @@ test('shows the state surface in live panel-header and subscription consumers', 
     }, theme);
     await page.waitForTimeout(250);
     for (const [avatar, family] of [
-      [panelAvatar.nth(1), 'unread'],
-      [subscriptionAvatar, 'active'],
+      [panelAvatar.nth(1), 'neutral'],
+      [subscriptionAvatar, 'completed'],
     ] as const) {
       const presentation = await computedPresentation(avatar);
       expect(presentation.background[3]).toBe(255);

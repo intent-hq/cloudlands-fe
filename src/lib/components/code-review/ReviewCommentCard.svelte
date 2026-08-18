@@ -131,7 +131,7 @@
       >
         <Fa
           icon={faChevronDown}
-          class="h-2.5 w-2.5 transition-transform shrink-0 {isCodeExpanded ? '' : '-rotate-90'}"
+          class="h-2.5 w-2.5 transition-transform shrink-0 {isCodeExpanded ? '' : 'rotate-90'}"
         />
         <span class="font-mono truncate">
           {comment.location.file}:{comment.location.startLine}{comment.location.endLine

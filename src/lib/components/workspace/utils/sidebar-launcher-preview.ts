@@ -23,6 +23,20 @@ export interface NoteLauncherState {
   overflowCount: number;
 }
 
+export function getAgentLauncherStatusPriority(state: string): number {
+  if (state === 'failed') return 3;
+  if (
+    state === 'question' ||
+    state === 'needs-permission' ||
+    state === 'attention-blocker' ||
+    state === 'attention-discussion'
+  ) {
+    return 2;
+  }
+  if (state === 'running' || state === 'responding') return 1;
+  return 0;
+}
+
 export function getLauncherPreviewLimit(
   availableWidth: number,
   overflowWidth: number,
@@ -41,6 +55,7 @@ export function deriveAgentLauncherItems(
   limit: number,
   getIsRunning: (agent: AgentSession) => boolean,
   buildPreview: (agent: AgentSession, isRunning: boolean) => AgentLauncherPreview,
+  getStatusPriority: (agent: AgentSession) => number = (agent) => Number(getIsRunning(agent)),
 ): {
   launcherAgents: AgentLauncherItem[];
   runningAgents: AgentSession[];
@@ -48,12 +63,16 @@ export function deriveAgentLauncherItems(
   overflowCount: number;
 } {
   const uniqueAgents = [...new Map(agents.map((agent) => [agent.id, agent])).values()];
-  const agentStates = uniqueAgents.map((agent) => ({ agent, isRunning: getIsRunning(agent) }));
+  const agentStates = uniqueAgents.map((agent) => ({
+    agent,
+    isRunning: getIsRunning(agent),
+    statusPriority: getStatusPriority(agent),
+  }));
   const runningAgents = agentStates.filter(({ isRunning }) => isRunning).map(({ agent }) => agent);
   const primaryAgentId = findPrimaryAgent(uniqueAgents)?.id;
   const orderedAgentStates = agentStates.sort(
     (a, b) =>
-      Number(b.isRunning) - Number(a.isRunning) ||
+      b.statusPriority - a.statusPriority ||
       Number(b.agent.hasUnread === true) - Number(a.agent.hasUnread === true) ||
       compareAgentsByLastMessage(a.agent, b.agent),
   );

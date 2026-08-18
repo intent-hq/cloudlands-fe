@@ -34,6 +34,7 @@ export interface FollowBottomState {
 interface BottomFollower {
   followAndScroll: () => void;
   isFollowing: () => boolean;
+  isNativeScrollAnchoringActive: () => boolean;
   beforeMutation: (element: HTMLElement) => FollowBottomMutation;
 }
 
@@ -98,6 +99,13 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function setNativeBottomAnchorActive(active: boolean) {
+    if (active) {
+      for (const child of container.children) {
+        if (child instanceof HTMLElement) excludeNativeAnchor(child);
+      }
+    } else {
+      for (const element of originalOverflowAnchors.keys()) restoreNativeAnchor(element);
+    }
     const overflowAnchor = active ? 'auto' : 'none';
     if (nativeBottomAnchor.style.overflowAnchor !== overflowAnchor) {
       nativeBottomAnchor.style.overflowAnchor = overflowAnchor;
@@ -109,9 +117,6 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function setupNativeBottomAnchor() {
-    for (const child of container.children) {
-      if (child instanceof HTMLElement) excludeNativeAnchor(child);
-    }
     setNativeBottomAnchorActive(isFollowing);
   }
 
@@ -211,6 +216,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       requestBottomSettle();
     },
     isFollowing: () => isFollowing,
+    isNativeScrollAnchoringActive: () =>
+      !isFollowing && getComputedStyle(container).overflowAnchor !== 'none',
     beforeMutation(element) {
       if (destroyed || !isFollowing) return inertFollowBottomMutation;
       activeMutationLocks += 1;
@@ -360,7 +367,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
           for (const node of mutation.addedNodes) {
             if (node instanceof HTMLElement && node !== nativeBottomAnchor && resizeObserver) {
               observePersistentResize(node);
-              if (node.parentElement === container) excludeNativeAnchor(node);
+              if (isFollowing && node.parentElement === container) excludeNativeAnchor(node);
             }
           }
         }
@@ -451,6 +458,10 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
 export function isFollowingBottom(element: HTMLElement): boolean {
   return bottomFollowers.get(element)?.isFollowing() ?? false;
+}
+
+export function isNativeScrollAnchoringActive(element: HTMLElement): boolean {
+  return bottomFollowers.get(element)?.isNativeScrollAnchoringActive() ?? false;
 }
 
 /**

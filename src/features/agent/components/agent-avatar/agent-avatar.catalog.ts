@@ -12,6 +12,7 @@ export const agentAvatarCatalogStates: readonly AvatarState[] = [
   'unread',
   'completed',
   'failed',
+  'question',
   'waiting',
   'needs-permission',
   'attention-discussion',

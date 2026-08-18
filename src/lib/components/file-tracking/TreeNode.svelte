@@ -3,7 +3,7 @@
   import Fa from 'svelte-fa';
   import {
     faChevronDown,
-    faChevronRight,
+    faChevronLeft,
     faFolder,
     faFolderOpen,
     faFileCode,
@@ -170,7 +170,7 @@
         class="absolute left-0 flex items-center"
         style="padding-left: {indent + 4}px; top: 50%; transform: translateY(-50%)"
       >
-        <Fa icon={expanded ? faChevronDown : faChevronRight} size="10" class="text-subtle" />
+        <Fa icon={expanded ? faChevronDown : faChevronLeft} size="10" class="text-subtle" />
       </div>
       <ListItem
         icon={expanded ? faFolderOpen : faFolder}

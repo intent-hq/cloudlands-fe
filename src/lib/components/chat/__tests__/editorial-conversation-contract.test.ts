@@ -47,7 +47,7 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('<div class="w-full" data-testid="question-wizard-slot">');
     expect(panel).toContain("? 'w-full px-1.5!'");
     expect(panel).toContain(": 'w-full px-4 sm:px-6'");
-    expect(panel).toContain('conversation-composer relative z-20 w-full');
+    expect(panel).toContain('conversation-composer relative z-10 w-full');
     expect(panel).toContain('class="chat-content-measure mx-auto w-full min-w-0"');
     expect(panel).toContain('data-testid="chat-composer-controls-inner"');
     expect(panel).toContain('edgeDocked');
@@ -88,10 +88,10 @@ describe('editorial conversation presentation contract', () => {
   it('keeps the pinned row stable while its turn spans the container top (no sticky flicker)', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
 
-    // Native scroll anchoring must stay off: it compensates for the pinned row's
-    // sticky compaction by shifting scrollTop, re-firing detection and un-pinning
-    // the row in a per-frame loop (top-of-chat flicker).
-    expect(panel).toContain('style="scrollbar-gutter: stable; overflow-anchor: none;"');
+    // Native scroll anchoring and the height ledger now cooperate to hold the
+    // source row while the independent overlay changes at the container edge.
+    expect(panel).toContain('style="scrollbar-gutter: stable;"');
+    expect(panel).not.toContain('overflow-anchor: none');
 
     // The overlay is derived from source-row geometry, so compaction cannot
     // change the source row's height or restart pin detection.
@@ -212,13 +212,17 @@ describe('editorial conversation presentation contract', () => {
     expect(streamingContent).toContain('data-operational-cluster-row=');
     expect(streamingContent).not.toContain('my-1.25');
     expect(streamingContent).not.toContain('margin-top: -0.5rem');
-    expect(responseGroup).toContain('<div class="flex flex-col gap-0"');
+    expect(responseGroup).toContain('<div class="relative flex flex-col gap-0"');
     expect(staticContent).not.toContain("'mb-1.5'");
     expect(streamingContent).not.toContain('class:mb-1.5');
     expect(operationalRow).toContain('OPERATIONAL_EXPANDED_CONTENT_CLASS = `${');
     expect(operationalRow).toContain('OPERATIONAL_GROUP_CONTENT_CLASS');
     expect(operationalRow).not.toContain('OPERATIONAL_EXPANDED_GUIDE_CLASS');
-    expect(responseGroup).not.toContain('data-operational-expanded-guide');
+    expect(responseGroup).toContain('data-operational-expanded-guide');
+    expect(staticContent).toContain('OPERATIONAL_GROUP_CHILD_CONTENT_CLASS');
+    expect(streamingContent).toContain('OPERATIONAL_GROUP_CHILD_CONTENT_CLASS');
+    expect(staticContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
+    expect(streamingContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
     expect(responseGroup).not.toContain('pl-4.5');
     expect(staticContent).toMatch(/true,\s+isAdjacentOperationalClusterRow\(\s+group\.children,/);
     expect(streamingContent).toMatch(
@@ -380,12 +384,23 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('eventSubscriptionsVisible');
     expect(panel.match(/isCompactMode \? 'mb-2' : 'mb-16'/g)).toHaveLength(4);
     expect(panel).toContain("isCompactMode ? 'mb-2' : 'mb-8'");
-    expect(panel).toContain('style="scrollbar-gutter: stable; overflow-anchor: none;"');
+    expect(panel).toContain('style="scrollbar-gutter: stable;"');
     expect(message).toContain('class="absolute right-1 z-10');
     expect(message).toContain('<MessageActions');
     expect(message).toContain('class="absolute right-1 z-10');
     expect(message).not.toContain('group-hover:grid-rows-[1fr]');
     expect(message).not.toContain('class="mt-1 flex items-center justify-end"');
     expect(panel).not.toContain('w-full pt-8 pb-12');
+  });
+
+  it('keeps the tall streaming Aurora below queued messages in the stacking order', () => {
+    const panel = source('src/lib/components/chat/ChatPanel.svelte');
+
+    expect(panel).toContain('class="conversation-composer relative z-10 w-full"');
+    expect(panel).toContain(
+      'class="pointer-events-none absolute -inset-x-2 -bottom-2 z-0 overflow-hidden"',
+    );
+    expect(panel).toContain('height: calc(100% + 10rem)');
+    expect(panel).toContain('class="relative z-20 mt-6 {isChiefWorkspace');
   });
 });

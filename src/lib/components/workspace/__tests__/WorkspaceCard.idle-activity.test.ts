@@ -116,7 +116,7 @@ describe('WorkspaceCard compact agent metadata', () => {
     await rerender({ workspace: makeWorkspace({ displayStatus: 'in_progress', waiting: true }) });
     expect(container.querySelector('[data-workspace-status]')).toBe(icon);
     expect(icon?.getAttribute('data-workspace-status')).toBe('in_progress');
-    expect(icon?.getAttribute('data-workspace-status-icon')).toBe('circle');
+    expect(icon?.getAttribute('data-workspace-status-icon')).toBeNull();
 
     await rerender({ workspace: makeWorkspace({ displayStatus: 'blocked', attention: 'unread' }) });
     expect(container.querySelector('[data-workspace-status]')).toBe(icon);

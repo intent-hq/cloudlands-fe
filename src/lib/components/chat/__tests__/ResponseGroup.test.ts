@@ -121,7 +121,7 @@ describe('ResponseGroup - collapse state model', () => {
     expect(header(container).querySelectorAll('button')).toHaveLength(0);
   });
 
-  it('keeps one aligned operational icon and zero expanded operational spacing', async () => {
+  it('moves the disclosure state into the leading icon and omits the trailing chevron', async () => {
     const { container } = render(ResponseGroup, {
       props: { name: 'Group title', children },
     });
@@ -129,7 +129,10 @@ describe('ResponseGroup - collapse state model', () => {
     const button = header(container);
     expect(button.querySelector('[data-operational-icon-box]')).toBeTruthy();
     expect(button.querySelector('[data-icon="arrows-in-line-vertical"]')).toBeTruthy();
+    expect(container.querySelector('[data-operational-chevron]')).toBeNull();
     await fireEvent.click(button);
+    expect(button.querySelector('[data-icon="arrows-out-line-vertical"]')).toBeTruthy();
+    expect(button.querySelector('[data-icon="arrows-in-line-vertical"]')).toBeNull();
     expect(container.querySelector('[data-operational-expanded-content]')?.className).not.toMatch(
       /\bpt-/,
     );
@@ -194,7 +197,7 @@ describe('ResponseGroup - collapse state model', () => {
     expect(detailFactory).toHaveBeenCalledTimes(1);
     await waitFor(() =>
       expect(container.querySelector('[data-testid="response-group-snippet"]')?.textContent).toBe(
-        'latest {exact} payload',
+        'first payload',
       ),
     );
 
@@ -324,12 +327,16 @@ describe('ResponseGroup - block identity', () => {
     expect(new Set(keys).size).toBe(blocks.length);
   });
 
-  it('selects the latest presentable payload without cloning or rewriting it', () => {
-    const latestTool = {
+  it('selects the first visible expanded payload without cloning or rewriting it', () => {
+    const openingText = {
+      type: 'text',
+      text: 'First visible expanded content',
+    } as ContentBlock;
+    const laterTool = {
       type: 'tool_use',
       id: 'tool-latest',
       name: 'workspace_api',
-      input: { summary: 'Keep this exact payload' },
+      input: { summary: 'Later payload' },
     } as ContentBlock;
     const trailingResult = {
       type: 'tool_result',
@@ -337,7 +344,9 @@ describe('ResponseGroup - block identity', () => {
       output: { content: 'exact result' },
     } as ContentBlock;
 
-    expect(getResponseGroupPreviewBlock([latestTool, trailingResult])).toBe(latestTool);
+    expect(getResponseGroupPreviewBlock([openingText, laterTool, trailingResult])).toBe(
+      openingText,
+    );
   });
 });
 
@@ -387,13 +396,14 @@ describe('MessageContent - top-level response rows', () => {
     expect(container.querySelectorAll('.border.border-border').length).toBe(2);
   });
 
-  it('keeps adjacent operational seams and nested child margins at zero', async () => {
+  it('keeps adjacent operational seams and aligns nested prose with the group header text', async () => {
     const MessageContent = (await import('../MessageContent.svelte')).default;
+    const StreamingMessageContent = (await import('../StreamingMessageContent.svelte')).default;
     const content: ContentBlock[] = [
-      {
-        type: 'text',
-        text: '<group:Plan>Grouped detail</group>\nFollowing prose',
-      },
+      { type: 'text', text: '<group:Plan>' },
+      { type: 'text', text: 'Grouped detail' },
+      { type: 'thinking', text: 'Nested reasoning' },
+      { type: 'text', text: '</group:Plan>\nFollowing prose' },
     ];
 
     const { container } = render(MessageContent, { props: { content } });
@@ -405,6 +415,28 @@ describe('MessageContent - top-level response rows', () => {
     await waitFor(() => expect(group?.querySelector('[data-response-group-content]')).toBeTruthy());
     expect(group?.querySelector('[data-response-group-content]')?.className).toContain('gap-0');
     const groupContent = group?.querySelector('[data-response-group-content]');
-    expect(groupContent?.firstElementChild?.className ?? '').not.toMatch(/\bm[trblxy]?-/);
+    expect(groupContent?.querySelector('[data-operational-expanded-guide]')).toBeTruthy();
+    const proseChild = groupContent?.querySelector('[data-message-content-block="text"]');
+    const operationalChild = groupContent?.querySelector('[data-message-content-block="thinking"]');
+    expect(proseChild?.className).toContain(
+      'pl-[calc(var(--operational-row-inline-padding)+var(--operational-leading-slot-size)+var(--operational-leading-gap))]',
+    );
+    expect(proseChild?.getAttribute('style')).toContain(
+      'padding-left: calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))',
+    );
+    expect(operationalChild?.className).toContain('operational-group-child-row');
+
+    const streaming = render(StreamingMessageContent, {
+      props: { content, isStreaming: true },
+    });
+    await fireEvent.click(
+      streaming.container.querySelector('[data-testid="response-group-disclosure"]')!,
+    );
+    const streamingChild = await waitFor(() => {
+      const child = streaming.container.querySelector('[data-message-content-block="thinking"]');
+      expect(child).toBeTruthy();
+      return child;
+    });
+    expect(streamingChild?.className).toContain('operational-group-child-row');
   });
 });

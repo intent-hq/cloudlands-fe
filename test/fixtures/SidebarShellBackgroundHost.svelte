@@ -21,14 +21,23 @@
   appStore.dispatch(resetWorkspaceState());
   appStore.dispatch(setWorkspaceHasLoaded(true));
   appStore.dispatch(setAllSpacesViewMode('recent'));
-  for (let index = 0; index < 4; index += 1) {
+  for (let index = 0; index < 5; index += 1) {
     const timestamp = `2026-08-1${index}T12:00:00.000Z`;
     appStore.dispatch(
       setWorkspaceEntity({
         id: `sidebar-shell-${index}`,
         title: `Sidebar shell workspace ${index + 1}`,
         status: 'active',
-        displayStatus: index === 0 ? 'in_progress' : 'idle',
+        displayStatus:
+          index === 0
+            ? 'needs_attention'
+            : index === 1
+              ? 'in_progress'
+              : index === 4
+                ? 'not_started'
+                : 'idle',
+        attention: index === 0 || index === 2 ? 'unread' : 'none',
+        activity: index <= 1 ? 'agent_running' : 'idle',
         branch: 'polish-ui',
         changesets: [],
         timeline: [],

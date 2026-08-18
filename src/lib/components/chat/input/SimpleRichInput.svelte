@@ -1657,7 +1657,7 @@
           </Button>
         </TooltipShortcut>
 
-        {#if value.trim()}
+        {#if canSend}
           <div class="flex items-center gap-1" transition:slide={{ axis: 'x', duration: 200 }}>
             <TooltipShortcut
               label={m.chat_richInput_queueMessage_ariaLabel()}

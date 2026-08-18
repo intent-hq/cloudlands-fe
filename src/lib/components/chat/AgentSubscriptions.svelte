@@ -725,7 +725,6 @@
             <button
               type="button"
               class="relative flex w-full min-w-0 max-w-full cursor-pointer items-center gap-0 overflow-hidden rounded border-none bg-transparent text-left font-[inherit] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring {SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
-              style="padding-inline-end: 2.25rem !important;"
               data-testid="one-shot-summary-toggle"
               data-subscription-row="agent-watch"
               aria-label={summaryHeading}
@@ -733,10 +732,7 @@
               aria-controls={waitingAgentListId}
               onclick={toggleWaitingAgentsCollapsed}
             >
-              <span
-                class="w-max shrink-0 {SUBSCRIPTION_LEADING_CONTENT_CLASS}"
-                style="grid-template-columns: 1rem minmax(0, 1fr); column-gap: 0.25rem;"
-              >
+              <span class="w-max shrink-0 {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
                 <span
                   class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
                   data-testid="one-shot-leading-column"
@@ -751,7 +747,7 @@
                     <Fa
                       icon={faCircleCheck}
                       size={14}
-                      class="h-3.5! w-3.5! shrink-0 text-success"
+                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
                     />
                   {/if}
                 </span>
@@ -762,26 +758,28 @@
                   {summaryHeading}
                 </span>
               </span>
-              {#if waitingAgentsCollapsed}
-                <AgentAvatarStack
-                  items={getHeaderStackItems(summaryAgentRows)}
-                  maxVisible={8}
-                  adaptive
-                />
-              {:else}
-                <span class="min-w-0 flex-1" aria-hidden="true"></span>
-              {/if}
-              <span
-                class="absolute end-3 inline-flex h-6 w-6 shrink-0 items-center justify-center"
-                data-testid="one-shot-collapse-toggle"
-              >
-                <Fa
-                  icon={faChevronDown}
-                  size={16}
-                  class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {waitingAgentsCollapsed
-                    ? 'rotate-90'
-                    : ''}"
-                />
+              <span class="ml-auto flex min-w-0 flex-1 items-center justify-end">
+                {#if waitingAgentsCollapsed}
+                  <AgentAvatarStack
+                    items={getHeaderStackItems(summaryAgentRows)}
+                    maxVisible={8}
+                    adaptive
+                  />
+                {:else}
+                  <span class="min-w-0 flex-1" aria-hidden="true"></span>
+                {/if}
+                <span
+                  class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                  data-testid="one-shot-collapse-toggle"
+                >
+                  <Fa
+                    icon={faChevronDown}
+                    size={16}
+                    class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {waitingAgentsCollapsed
+                      ? 'rotate-90'
+                      : ''}"
+                  />
+                </span>
               </span>
             </button>
           </div>
@@ -823,30 +821,28 @@
                     <Fa
                       icon={faCircleCheck}
                       size={14}
-                      class="h-3.5! w-3.5! shrink-0 text-success"
+                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
                     />
                   </span>
-                  <span class="flex min-w-0 items-center gap-2">
-                    <span
-                      class="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground"
-                      data-testid="finished-agent-summary-title"
-                    >
-                      {m.chat_agentSubscriptions_finished_many({
-                        count: formatInteger(finishedAgentRows.length),
-                      })}
-                    </span>
-                    <span
-                      class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
-                      data-testid="finished-agent-chevron"
-                    >
-                      <Fa
-                        icon={faChevronDown}
-                        size={16}
-                        class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {finishedAgentsExpanded
-                          ? ''
-                          : '-rotate-90'}"
-                      />
-                    </span>
+                  <span
+                    class="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground"
+                    data-testid="finished-agent-summary-title"
+                  >
+                    {m.chat_agentSubscriptions_finished_many({
+                      count: formatInteger(finishedAgentRows.length),
+                    })}
+                  </span>
+                  <span
+                    class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                    data-testid="finished-agent-chevron"
+                  >
+                    <Fa
+                      icon={faChevronDown}
+                      size={16}
+                      class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {finishedAgentsExpanded
+                        ? ''
+                        : 'rotate-90'}"
+                    />
                   </span>
                 </button>
                 {#if finishedAgentsExpanded}

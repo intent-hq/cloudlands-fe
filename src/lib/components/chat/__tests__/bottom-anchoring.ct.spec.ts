@@ -178,6 +178,30 @@ test('preserves an unlocked viewport through send, stream, queue, subscription, 
   await component.unmount();
 });
 
+test('preserves the visible chat anchor when an adjacent panel narrows the column', async ({
+  mount,
+}) => {
+  const component = await mount(BottomAnchoringHost, {
+    props: { width: 720, reflowingContent: true },
+  });
+  const anchor = component.getByTestId('visible-anchor');
+  await anchor.evaluate((node) => {
+    const viewport = node.closest<HTMLElement>('[data-testid="transcript"]')!;
+    viewport.dispatchEvent(new WheelEvent('wheel', { deltaY: -20 }));
+    viewport.scrollTop = node.offsetTop;
+    viewport.dispatchEvent(new Event('scroll'));
+  });
+  const before = await anchor.evaluate((node) => node.getBoundingClientRect().top);
+
+  await component.update({ props: { width: 360, reflowingContent: true } });
+
+  await expect
+    .poll(() => anchor.evaluate((node) => node.getBoundingClientRect().top))
+    .toBeCloseTo(before, 1);
+  await expect(component.getByTestId('bottom-state')).toContainText('unlocked');
+  await component.unmount();
+});
+
 test('keeps user scroll-away unlocked and click-to-relock returns to the exact bottom', async ({
   mount,
 }) => {

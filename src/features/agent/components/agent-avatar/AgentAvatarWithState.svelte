@@ -87,15 +87,15 @@
     transition: none;
   }
 
-  .agent-avatar-with-state--unread {
-    --agent-avatar-background: hsl(var(--agent-avatar-surface-unread));
-  }
-
   .agent-avatar-with-state--waiting {
     --agent-avatar-background: hsl(var(--agent-avatar-surface-waiting));
   }
 
-  .agent-avatar-with-state--failed,
+  .agent-avatar-with-state--failed {
+    --agent-avatar-background: hsl(var(--agent-avatar-surface-failed));
+  }
+
+  .agent-avatar-with-state--question,
   .agent-avatar-with-state--attention-blocker,
   .agent-avatar-with-state--needs-permission,
   .agent-avatar-with-state--attention-discussion {
@@ -122,15 +122,15 @@
       background-color: ButtonFace;
       color: ButtonText;
     }
-    .agent-avatar-with-state--unread {
-      --agent-avatar-background-forced: ButtonFace;
-      background-color: ButtonFace;
-    }
     .agent-avatar-with-state--waiting {
       --agent-avatar-background-forced: Field;
       background-color: Field;
     }
-    .agent-avatar-with-state--failed,
+    .agent-avatar-with-state--failed {
+      --agent-avatar-background-forced: Mark;
+      background-color: Mark;
+    }
+    .agent-avatar-with-state--question,
     .agent-avatar-with-state--attention-blocker,
     .agent-avatar-with-state--needs-permission,
     .agent-avatar-with-state--attention-discussion {

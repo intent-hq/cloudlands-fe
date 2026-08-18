@@ -5,7 +5,7 @@
     faExclamationTriangle,
     faInfo,
     faChevronDown,
-    faChevronRight,
+    faChevronLeft,
     faLightbulb,
     faExternalLinkAlt,
   } from '@fortawesome/free-solid-svg-icons';
@@ -114,7 +114,7 @@
         {/if}
       </div>
       <Fa
-        icon={isExpanded ? faChevronDown : faChevronRight}
+        icon={isExpanded ? faChevronDown : faChevronLeft}
         size="sm"
         class="text-subtle flex-shrink-0 mt-1"
       />

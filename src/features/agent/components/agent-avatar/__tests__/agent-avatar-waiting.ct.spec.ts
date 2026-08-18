@@ -36,6 +36,7 @@ async function surfaceColors(component: Locator) {
       completed: color('completed'),
       unread: color('unread'),
       failed: color('failed'),
+      question: color('question'),
       permission: color('needs-permission'),
       discussion: color('attention-discussion'),
       blocker: color('attention-blocker'),
@@ -90,9 +91,11 @@ test('keeps waiting separate through a live same-node state transition', async (
       expect(colorDistance(parseRgb(colors.waiting), parseRgb(color))).toBeGreaterThan(60);
     }
     expect(colors.running).not.toBe(colors.completed);
-    expect(colors.failed).toBe(colors.permission);
-    expect(colors.failed).toBe(colors.discussion);
-    expect(colors.failed).toBe(colors.blocker);
+    expect(colors.unread).toBe(colors.idle);
+    expect(colors.failed).not.toBe(colors.permission);
+    expect(colors.question).toBe(colors.permission);
+    expect(colors.question).toBe(colors.discussion);
+    expect(colors.question).toBe(colors.blocker);
 
     for (const state of ['waiting', 'running', 'completed'] as const) {
       await component.update({ props: { theme, state } });

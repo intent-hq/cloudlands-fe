@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  cycleFontStyle,
   cycleNoteFontStyle,
   deleteActivityLogPreset,
   hydrateActivityLogPresets,
   initialState,
   resetNotificationSettings,
   saveActivityLogPreset,
-  setAgentFontStyle,
   setCodeFontFamily,
   setGroupByRepo,
   setGithubLinkDefaultAction,

@@ -177,9 +177,7 @@ test('starts every icon-free peek exactly 10px after the primary label', async (
   }
 });
 
-test('keeps the muted waiting icon aligned in expanded and collapsed headers', async ({
-  mount,
-}) => {
+test('keeps the waiting icon at the compact gap and on the header text tone', async ({ mount }) => {
   const component = await mount(AgentSubscriptionInlineHost);
   const cases = [
     { agentCount: 1, longLabels: true },
@@ -205,6 +203,8 @@ test('keeps the muted waiting icon aligned in expanded and collapsed headers', a
                 right: box.right,
                 top: box.top,
                 bottom: box.bottom,
+                width: box.width,
+                height: box.height,
                 centerX: (box.left + box.right) / 2,
                 centerY: (box.top + box.bottom) / 2,
               };
@@ -238,7 +238,10 @@ test('keeps the muted waiting icon aligned in expanded and collapsed headers', a
 
           const deviceDelta = (left: number, right: number) =>
             Math.abs(left - right) * expanded.devicePixelRatio;
-          expect(deviceDelta(expanded.slot.centerX, expanded.avatar.centerX)).toBeLessThanOrEqual(
+          expect(expanded.slot.width).toBeCloseTo(14 * zoom, 1);
+          expect(expanded.slot.height).toBeCloseTo(14 * zoom, 1);
+          expect(deviceDelta(expanded.slot.left, expanded.avatar.left)).toBeLessThanOrEqual(0.5);
+          expect(deviceDelta(expanded.slot.centerX, expanded.icon.centerX)).toBeLessThanOrEqual(
             0.5,
           );
           expect(
@@ -247,19 +250,16 @@ test('keeps the muted waiting icon aligned in expanded and collapsed headers', a
               expanded.avatar.centerY - expanded.agentRow.top,
             ),
           ).toBeLessThanOrEqual(0.5);
-          expect(deviceDelta(expanded.icon.centerX, expanded.avatar.centerX)).toBeLessThanOrEqual(
-            0.5,
-          );
           expect(
             deviceDelta(
               expanded.icon.centerY - expanded.headerRow.top,
               expanded.avatar.centerY - expanded.agentRow.top,
             ),
           ).toBeLessThanOrEqual(0.5);
-          expect(deviceDelta(expanded.title.left, expanded.name.left)).toBeLessThanOrEqual(0.5);
-          // The icon and summary title share the muted secondary tone. The agent
-          // name remains the opaque primary tone.
-          expect(expanded.iconStyle.opacity).toBe('0.6');
+          expect(expanded.title.left - expanded.icon.right).toBeCloseTo(6 * zoom, 1);
+          // The icon and summary title share one opaque muted secondary tone.
+          // The agent name remains the opaque primary tone.
+          expect(expanded.iconStyle.opacity).toBe('1');
           expect(expanded.iconStyle.color).toBe(expanded.titleStyle.color);
           expect(expanded.titleStyle.opacity).toBe('1');
           expect(expanded.titleStyle.color).not.toBe(expanded.nameColor);
@@ -298,7 +298,7 @@ test('keeps the muted waiting icon aligned in expanded and collapsed headers', a
             0.5,
           );
           expect(collapsedIcon.color).toBe(expanded.iconStyle.color);
-          expect(collapsedIcon.opacity).toBe('0.6');
+          expect(collapsedIcon.opacity).toBe('1');
         }
       }
     }
@@ -475,6 +475,9 @@ test('omits cohort time and pins the finished chevron across count and state', a
           await expect(component.getByTestId('finished-agent-group')).not.toHaveAttribute(
             'data-finished-at',
           );
+          await expect(
+            component.getByTestId('finished-agent-chevron').locator('[data-icon="chevron-down"]'),
+          ).toHaveClass(/rotate-90/);
 
           const collapsed = await summary.evaluate((row) => {
             const slot = row.querySelector('[data-testid="finished-agent-chevron"]') as HTMLElement;
@@ -503,6 +506,9 @@ test('omits cohort time and pins the finished chevron across count and state', a
 
           await summary.click();
           await expect(summary).toHaveAttribute('aria-expanded', 'true');
+          await expect(
+            component.getByTestId('finished-agent-chevron').locator('[data-icon="chevron-down"]'),
+          ).not.toHaveClass(/rotate-90/);
           const expandedRight = await component
             .getByTestId('finished-agent-chevron')
             .evaluate((slot) => slot.getBoundingClientRect().right);
@@ -622,6 +628,9 @@ test('centers the finished summary and gives completed avatars a muted semantic 
           const card = avatar.closest('[data-testid="agent-subscriptions-card"]') as HTMLElement;
           const cardBackground = getComputedStyle(card).backgroundColor;
           const icon = card.querySelector('[data-icon="circle-check"]') as SVGElement;
+          const title = card.querySelector(
+            '[data-testid="finished-agent-summary-title"]',
+          ) as HTMLElement;
           const completedBackground = avatarStyle.backgroundColor;
           const completedForeground = avatarStyle.color;
           const avatarArt = avatar.querySelector('[data-agent-avatar]') as SVGElement;
@@ -648,7 +657,10 @@ test('centers the finished summary and gives completed avatars a muted semantic 
             activeBackground,
             waitingBackground,
             completedContrast: contrast(completedForeground, completedBackground),
-            iconContrast: contrast(getComputedStyle(icon).color, cardBackground),
+            iconColor: getComputedStyle(icon).color,
+            iconOpacity: getComputedStyle(icon).opacity,
+            titleColor: getComputedStyle(title).color,
+            titleOpacity: getComputedStyle(title).opacity,
             completedChroma: chroma(completedBackground),
             activeChroma: chroma(activeBackground),
             waitingChroma: chroma(waitingBackground),
@@ -664,7 +676,8 @@ test('centers the finished summary and gives completed avatars a muted semantic 
         expect(colors.avatarArtColor).toBe(colors.completedForeground);
         expect(colors.activeAnimations).toEqual([]);
         expect(colors.completedContrast, JSON.stringify(colors)).toBeGreaterThanOrEqual(4.5);
-        expect(colors.iconContrast).toBeGreaterThanOrEqual(3);
+        expect(colors.iconColor).toBe(colors.titleColor);
+        expect(colors.iconOpacity).toBe(colors.titleOpacity);
         expect(colors.completedChroma).toBeLessThan(colors.activeChroma);
         expect(colors.completedChroma).toBeLessThan(colors.waitingChroma);
       }
@@ -723,9 +736,7 @@ test('keeps the outer Subscribed header and a distinct cohort header in mixed mo
   await expect(component.getByTestId('mixed-subscription-preview')).toBeVisible();
 });
 
-test('keeps the muted bell in the outer header across themes, widths, zoom, and disclosure states', async ({
-  mount,
-}) => {
+test('keeps the bell at the compact gap and on the outer-header text tone', async ({ mount }) => {
   const component = await mount(AgentSubscriptionInlineHost, { props: { mode: 'mixed' } });
   const summary = component.getByTestId('event-subscriptions-summary');
 
@@ -753,6 +764,8 @@ test('keeps the muted bell in the outer header across themes, widths, zoom, and 
               slotCenterX: (slotBox.left + slotBox.right) / 2,
               slotCenterY: (slotBox.top + slotBox.bottom) / 2,
               iconWidth: iconBox.width,
+              iconRight: iconBox.right,
+              titleLeft: title.getBoundingClientRect().left,
               iconCenterX: (iconBox.left + iconBox.right) / 2,
               iconCenterY: (iconBox.top + iconBox.bottom) / 2,
               iconColor: getComputedStyle(icon).color,
@@ -760,13 +773,12 @@ test('keeps the muted bell in the outer header across themes, widths, zoom, and 
               titleColor: getComputedStyle(title).color,
             };
           });
-          expect(geometry.slotWidth).toBeCloseTo(20 * zoom, 1);
+          expect(geometry.slotWidth).toBeCloseTo(14 * zoom, 1);
           expect(geometry.iconWidth).toBeCloseTo(14 * zoom, 1);
           expect(geometry.iconCenterX).toBeCloseTo(geometry.slotCenterX, 1);
           expect(geometry.iconCenterY).toBeCloseTo(geometry.slotCenterY, 1);
-          // Both icon and title use text-muted-foreground (text-ghost resolves to muted-foreground)
-          // Icon has 0.6 opacity via the SUBSCRIPTION_ICON_CLASS
-          expect(geometry.iconOpacity).toBe('0.6');
+          expect(geometry.titleLeft - geometry.iconRight).toBeCloseTo(6 * zoom, 1);
+          expect(geometry.iconOpacity).toBe('1');
           expect(geometry.iconColor).toBe(geometry.titleColor);
           await expect(
             component.getByTestId('event-subscriptions-leading-column').locator('svg'),
@@ -1205,7 +1217,7 @@ for (const [agentStateScenario, expected] of canonicalAgentStateCases) {
     const component = await mount(AgentSubscriptionInlineHost, {
       props: {
         mode: 'mixed',
-        agentCount: 7,
+        agentCount: 1,
         initiallyExpanded: false,
         agentStateScenario,
       },

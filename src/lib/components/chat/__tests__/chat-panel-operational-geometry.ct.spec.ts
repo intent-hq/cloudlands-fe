@@ -55,6 +55,7 @@ for (const theme of ['light', 'dark'] as const) {
                     : 'tool';
               return {
                 kind,
+                nested: wrapper.hasAttribute('data-response-group-child'),
                 top: box.top,
                 bottom: box.bottom,
                 height: row.getBoundingClientRect().height,
@@ -114,13 +115,16 @@ for (const theme of ['light', 'dark'] as const) {
             if (previous.kind !== 'thinking' && current.kind !== 'thinking') continue;
             if (previous.kind === 'thinking' && current.kind === 'thinking') continue;
             pairOrders.add(`${previous.kind}>${current.kind}`);
-            for (const [before, after] of [
-              [previous.cardEdges[0], current.cardEdges[0]],
-              [previous.cardEdges[1], current.cardEdges[1]],
-              [previous.iconCenter[0], current.iconCenter[0]],
-              [previous.labelStart, current.labelStart],
-              [previous.baseline, current.baseline],
-            ]) {
+            const pairs = [[previous.baseline, current.baseline]];
+            if (previous.nested === current.nested) {
+              pairs.push(
+                [previous.cardEdges[0], current.cardEdges[0]],
+                [previous.cardEdges[1], current.cardEdges[1]],
+                [previous.iconCenter[0], current.iconCenter[0]],
+                [previous.labelStart, current.labelStart],
+              );
+            }
+            for (const [before, after] of pairs) {
               expect(Math.abs(before - after)).toBeLessThanOrEqual(0.5);
             }
           }
@@ -154,8 +158,8 @@ for (const theme of ['light', 'dark'] as const) {
               `[data-tool-use-id="${messageId === 'assistant-finished' ? 'finished' : 'streaming'}-view"]`,
             )
             .evaluate((element) => element.getBoundingClientRect().x);
-          expect(groupedX).toBeCloseTo(ungroupedX, 1);
-          await expect(message.locator('[data-operational-expanded-guide]')).toHaveCount(0);
+          expect(groupedX - ungroupedX).toBeCloseTo(18 * zoom, 1);
+          await expect(message.locator('[data-operational-expanded-guide]')).toHaveCount(1);
 
           if (messageId === 'assistant-finished') {
             const staticRow = message.getByTestId('reasoning-tool-call').first();

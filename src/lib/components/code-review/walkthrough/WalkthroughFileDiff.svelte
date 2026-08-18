@@ -10,7 +10,7 @@
    */
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
-  import { faChevronDown, faChevronRight, faEllipsisH } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faChevronLeft, faEllipsisH } from '@fortawesome/free-solid-svg-icons';
   import hljs from 'highlight.js';
   import {
     parsePatch,
@@ -406,7 +406,7 @@
       onclick={toggleFileCollapsed}
     >
       <Fa
-        icon={isFileCollapsed ? faChevronRight : faChevronDown}
+        icon={isFileCollapsed ? faChevronLeft : faChevronDown}
         class="h-3 w-3 text-ghost shrink-0"
       />
 

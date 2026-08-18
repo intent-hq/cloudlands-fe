@@ -17,6 +17,7 @@ function measureGeometry(component: Locator) {
     const lastPanelRect = panels.at(-1)?.getBoundingClientRect();
     return {
       columnRight: columnRect.right,
+      columnWidth: columnRect.width,
       insetLeft: insetRect?.left ?? null,
       insetRight: insetRect?.right ?? null,
       insetBottom: insetRect?.bottom ?? null,
@@ -148,6 +149,32 @@ test('keeps an explicit restored chat width byte-for-byte', async ({ mount }) =>
   });
 
   await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(615);
+});
+
+test('reflows the workspace column to the retained panel width after close', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(PanelWorkspaceColumnClipHarness, {
+    props: {
+      sidebarWidth: 360,
+      canvasWidth: 1200,
+      persistedCanvasWidth: 1200,
+      followPersistedCanvas: true,
+    },
+  });
+
+  expect((await measureGeometry(component)).panelWidths).toEqual([596, 596]);
+  await component
+    .getByTestId('close-first-panel')
+    .evaluate((button: HTMLButtonElement) => button.click());
+  await expect(component.locator('[data-panel-id]')).toHaveCount(1);
+  await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(596);
+  const geometry = await measureGeometry(component);
+  expect(geometry.columnWidth).toBe(360 + 596 + 16);
+  expect(geometry.panelWidths).toEqual([596]);
+  expect(geometry.lastPanelRight!).toBeLessThanOrEqual(geometry.columnRight);
 });
 
 for (const zoomFactor of [1, 2]) {

@@ -153,6 +153,11 @@ function typography(element: HTMLElement) {
   };
 }
 
+function tone(element: Element) {
+  const style = getComputedStyle(element);
+  return { color: style.color, opacity: style.opacity };
+}
+
 beforeAll(() => {
   typographyStyle.textContent = `
     .type-body {
@@ -211,6 +216,39 @@ describe('subscription row typography', () => {
       expect(typography(row)).toEqual(expected);
       expect(row.classList).toContain('type-body');
       expect(row.classList).toContain('font-normal');
+    }
+  });
+
+  it('renders semantic header icons on the header text tone at narrow 200% zoom', async () => {
+    document.documentElement.classList.add('dark');
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 });
+    document.body.style.zoom = '2';
+    setEventSubscriptionsExpanded('ws-1', 'agent-parent', true);
+    render(EventSubscriptionsCard, {
+      props: { workspaceId: 'ws-1', agentId: 'agent-parent' },
+    });
+
+    await waitFor(() => expect(screen.getByTestId('event-subscriptions-summary')).toBeTruthy());
+    await fireEvent.click(await screen.findByTestId('one-shot-summary-toggle'));
+    const rows = [
+      [
+        screen.getByTestId('event-subscriptions-summary'),
+        screen.getByTestId('event-subscriptions-summary-title'),
+      ],
+      [screen.getByTestId('one-shot-summary-toggle'), screen.getByTestId('one-shot-summary-title')],
+      [
+        screen.getByTestId('finished-agent-summary'),
+        screen.getByTestId('finished-agent-summary-title'),
+      ],
+      [screen.getByTestId('background-hook-summary'), screen.getByText('Watch CI')],
+      [screen.getByTestId('monitored-pr-summary'), screen.getByText(/Polish subscriptions/)],
+    ] as const;
+
+    for (const [row, label] of rows) {
+      const icon = row.querySelector('svg')!;
+      expect(icon.classList).toContain('text-muted-foreground!');
+      expect(icon.classList).toContain('opacity-100');
+      expect(tone(icon)).toEqual(tone(label));
     }
   });
 });

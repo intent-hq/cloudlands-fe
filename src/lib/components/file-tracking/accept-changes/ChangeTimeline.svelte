@@ -15,7 +15,7 @@
     faArrowRight,
     faCodePullRequest,
     faEye,
-    faChevronRight,
+    faChevronDown,
     faUser,
     faCheck,
     faStop,
@@ -977,8 +977,8 @@
                                 onclick={() => toggleAgentGroup(group.agentId)}
                               >
                                 <Fa
-                                  icon={faChevronRight}
-                                  class="h-2.5! w-2.5! text-muted-foreground group-hover/row:text-muted-foreground shrink-0 transition-transform {!isCollapsed &&
+                                  icon={faChevronDown}
+                                  class="h-2.5! w-2.5! text-muted-foreground group-hover/row:text-muted-foreground shrink-0 transition-transform {isCollapsed &&
                                     'rotate-90'}"
                                 />
                                 {#if group.agentId}
@@ -1147,8 +1147,8 @@
                                 }}
                               >
                                 <Fa
-                                  icon={faChevronRight}
-                                  class="h-2.5! w-2.5! text-muted-foreground group-hover/row:text-muted-foreground shrink-0 transition-transform {!isCollapsed &&
+                                  icon={faChevronDown}
+                                  class="h-2.5! w-2.5! text-muted-foreground group-hover/row:text-muted-foreground shrink-0 transition-transform {isCollapsed &&
                                     'rotate-90'}"
                                 />
                                 {#if group.agentId}

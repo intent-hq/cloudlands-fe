@@ -11,7 +11,7 @@
     faClipboard,
     faCheck,
     faChevronDown,
-    faChevronRight,
+    faChevronLeft,
   } from '@fortawesome/free-solid-svg-icons';
   import { shell } from '$lib/electron-bridge';
   import { m } from '$shared/paraglide/messages.js';
@@ -214,7 +214,7 @@
         onclick={() => (showDetails = !showDetails)}
         aria-expanded={showDetails}
       >
-        <Fa icon={showDetails ? faChevronDown : faChevronRight} size="xs" />
+        <Fa icon={showDetails ? faChevronDown : faChevronLeft} size="xs" />
         <span
           >{showDetails
             ? m.onboarding_creationError_hideErrorDetails_label()

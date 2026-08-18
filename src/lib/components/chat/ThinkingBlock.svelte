@@ -99,7 +99,7 @@
   summaryTitle={toggleLabel}
   onclick={toggle}
   onkeydown={handleDisclosureKeydown}
-  detailsClass="{OPERATIONAL_EXPANDED_CONTENT_CLASS} type-caption text-muted-foreground [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
+  detailsClass="{OPERATIONAL_EXPANDED_CONTENT_CLASS} pb-2 type-caption text-muted-foreground [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
   {adjacentOperationalRow}
   streaming={isStreaming}
   testId="reasoning-tool-call"

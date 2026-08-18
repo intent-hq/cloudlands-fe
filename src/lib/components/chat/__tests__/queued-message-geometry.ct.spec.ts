@@ -33,9 +33,11 @@ test('supports click, keyboard, focus, reduced motion, and a live collapsed coun
   });
   const disclosure = component.getByTestId('queued-messages-disclosure');
   const rows = component.getByTestId('queued-message-row');
+  const chevron = component.getByTestId('queued-messages-chevron').locator('svg');
   const controlsId = await disclosure.getAttribute('aria-controls');
 
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  await expect(chevron).not.toHaveClass(/rotate-90/);
   await expect(component.locator(`#${controlsId}`)).toHaveCount(1);
   await expect(rows).toHaveCount(1);
 
@@ -43,6 +45,7 @@ test('supports click, keyboard, focus, reduced motion, and a live collapsed coun
   await disclosure.click();
   await expect(disclosure).toBeFocused();
   await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+  await expect(chevron).toHaveClass(/rotate-90/);
   await expect(rows).toHaveCount(0);
 
   await component.update({ props: { width: 360, zoom: 1, messageCount: 3 } });
@@ -59,12 +62,14 @@ test('supports click, keyboard, focus, reduced motion, and a live collapsed coun
   await disclosure.press('Enter');
   await expect(disclosure).toBeFocused();
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  await expect(chevron).not.toHaveClass(/rotate-90/);
   await expect(rows).toHaveCount(3);
   expect(await component.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
 
   await disclosure.press('Space');
   await expect(disclosure).toBeFocused();
   await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+  await expect(chevron).toHaveClass(/rotate-90/);
   await expect(rows).toHaveCount(0);
 });
 
@@ -91,6 +96,20 @@ test('preserves the held hint and edit, remove, and send-now callbacks', async (
   await expect(component.locator('textarea')).toHaveValue(
     'A long queued message must keep exactly the same height when actions appear',
   );
+});
+
+test('spans the panel-width container with the top divider', async ({ mount }) => {
+  const component = await mount(QueuedMessageGeometryHost, {
+    props: { width: 720, contentWidth: 480, zoom: 1, messageCount: 1 },
+  });
+  const queue = component.getByTestId('queued-messages-container');
+  const geometry = await queue.evaluate((node) => ({
+    contentWidth: node.getBoundingClientRect().width,
+    dividerWidth: Number.parseFloat(getComputedStyle(node, '::before').width),
+  }));
+
+  expect(geometry.contentWidth).toBeCloseTo(480, 1);
+  expect(geometry.dividerWidth).toBeCloseTo(720, 1);
 });
 
 for (const state of [

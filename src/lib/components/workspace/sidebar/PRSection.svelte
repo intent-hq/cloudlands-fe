@@ -1114,7 +1114,7 @@
                     size={12}
                     class="text-subtle shrink-0 transition-transform {isPRExpanded
                       ? 'rotate-0'
-                      : '-rotate-90'}"
+                      : 'rotate-90'}"
                   />
                   <LineChangesBadge
                     additions={prTotalAdditions}

@@ -14,7 +14,7 @@
     faImage,
     faArchive,
     faCog,
-    faChevronRight,
+    faChevronLeft,
     faChevronDown,
     faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
@@ -185,7 +185,7 @@
                           <Fa icon={faSpinner} size="xs" class="w-3 h-3 animate-spin" />
                         {:else if node.children.length > 0}
                           <Fa
-                            icon={nodeExpanded ? faChevronDown : faChevronRight}
+                            icon={nodeExpanded ? faChevronDown : faChevronLeft}
                             size="xs"
                             class="w-3 h-3"
                           />

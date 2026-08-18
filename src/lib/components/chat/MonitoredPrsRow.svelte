@@ -51,6 +51,7 @@
   import {
     safeSubscriptionRowTransition,
     safeSubscriptionSlide,
+    SUBSCRIPTION_ACTION_ICON_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_ICON_CLASS,
@@ -313,7 +314,7 @@
                   event.stopPropagation();
                   (props.onclick as ((event: MouseEvent) => void) | undefined)?.(event);
                 }}
-                class="h-6 w-6 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+                class="h-6 w-6 border-0 {SUBSCRIPTION_ACTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
                 data-testid="monitored-pr-chip"
                 aria-label={m.chat_monitoredPrs_row_ariaLabel()}
               >

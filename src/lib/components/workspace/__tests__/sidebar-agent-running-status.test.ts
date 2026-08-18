@@ -13,7 +13,8 @@ describe('sidebar overview status summary', () => {
     expect(sidebar).toContain('selectAgentIsRunning.select(appStore.state, agent.id)');
     expect(preview).toContain('compareAgentsByLastMessage(a.agent, b.agent)');
     expect(sidebar).not.toContain('.sort((a, b) => Number(b.isRunning) - Number(a.isRunning))');
-    expect(sidebar).toContain('state: getAvatarStateForSession(agent)');
+    expect(sidebar).toContain('state: getLauncherAvatarState(agent)');
+    expect(preview).toContain('getAgentLauncherStatusPriority');
     expect(sidebar).toContain("data-sidebar-agent-state={item.state ?? 'idle'}");
     expect(sidebar).toContain("state={item.state ?? 'idle'}");
     expect(sidebar).not.toContain("state: isRunning ? 'running' : 'idle'");

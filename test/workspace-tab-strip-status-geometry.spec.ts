@@ -31,6 +31,11 @@ const virtualModules: Record<string, string> = {
       items.map((item) => item.category.toUpperCase()).join(' · ');
     export const formatWorkspaceTabStatusSummary = (status) =>
       status.categories.map((item) => item.category.toUpperCase()).join(' · ');`,
+  '$lib/components/workspace/utils/workspace-status-presentation': `
+    export const resolveWorkspaceStatusState = (workspace) => workspace.displayStatus ?? 'idle';
+    export const getWorkspaceStatusPresentation = (state) => ({
+      state, visual: 'dot', icon: null, className: '', accessibleName: state,
+    });`,
   '$store/renderer/slices/tab-state/tab-state-slice': `
     export const closeWorkspaceTab = (...payload) => ({ type: 'close', payload });
     export const endDrag = () => ({ type: 'endDrag' });
@@ -66,9 +71,27 @@ const virtualModules: Record<string, string> = {
       layout_workspaceTabStrip_reorderAnnouncement: ({ name, position }) => name + ' ' + position,
       layout_workspaceTabStrip_close_ariaLabel: ({ name }) => 'Close ' + name,
       layout_workspaceTabStrip_loading_ariaLabel: ({ workspaceId }) => 'Loading ' + workspaceId,
+      workspace_statusIcon_failed_label: () => 'Failed',
+      workspace_statusIcon_blocked_label: () => 'Blocked',
+      workspace_statusIcon_needsAttention_label: () => 'Needs attention',
+      workspace_statusIcon_inProgress_label: () => 'In progress',
+      workspace_taskStatus_waiting_label: () => 'Waiting',
+      hud_workspaceState_unread_label: () => 'Unread',
+      workspace_statusIcon_notStarted_label: () => 'Not started',
+      workspace_statusIcon_idle_label: () => 'Idle',
+      workspace_statusIcon_complete_label: () => 'Complete',
+      workspace_statusIcon_prReady_label: () => 'PR ready',
+      workspace_statusIcon_prOpen_label: () => 'PR open',
+      workspace_statusIcon_prMerged_label: () => 'PR merged',
     };`,
   '@fortawesome/free-solid-svg-icons': `
+    export const faCircleCheck = { iconName: 'circle-check' };
+    export const faCircleQuestion = { iconName: 'circle-question' };
+    export const faClock = { iconName: 'clock' };
+    export const faCodeMerge = { iconName: 'code-merge' };
+    export const faCodePullRequest = { iconName: 'code-pull-request' };
     export const faEllipsis = { iconName: 'ellipsis' };
+    export const faTriangleExclamation = { iconName: 'triangle-exclamation' };
     export const faXmark = { iconName: 'xmark' };`,
 };
 
@@ -288,4 +311,89 @@ test('focus, close hover, and drag keep the right-side geometry stable', async (
   ]);
   expect(dragTitle.x + dragTitle.width).toBeLessThanOrEqual(dragStatus.x + 0.5);
   expect(dragStatus.x + dragStatus.width).toBeLessThanOrEqual(dragClose.x + 0.5);
+});
+
+test('drag keeps one horizontal real tab and drops it at the proposed placeholder', async ({
+  page,
+}) => {
+  await mountStrip(page, { viewport: 900, zoom: 1, reduced: false });
+  const strip = page.locator('[data-workspace-tab-strip]');
+  const active = page.locator('[data-workspace-tab="active"]');
+  const origin = await box(active);
+  const loading = await box(page.locator('[data-workspace-tab="loading"]'));
+  const startX = origin.x + origin.width / 2;
+  const dragX = loading.x + loading.width + 4;
+
+  await active.evaluate(
+    (node, point) => {
+      const dataTransfer = new DataTransfer();
+      (
+        globalThis as typeof globalThis & { __workspaceDragData?: DataTransfer }
+      ).__workspaceDragData = dataTransfer;
+      node.dispatchEvent(
+        new DragEvent('dragstart', {
+          bubbles: true,
+          dataTransfer,
+          clientX: point.x,
+          clientY: point.y,
+        }),
+      );
+    },
+    { x: startX, y: origin.y + origin.height / 2 },
+  );
+  await strip.evaluate(
+    (node, point) => {
+      const dataTransfer = (
+        globalThis as typeof globalThis & { __workspaceDragData?: DataTransfer }
+      ).__workspaceDragData;
+      node.dispatchEvent(
+        new DragEvent('dragover', {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer,
+          clientX: point.x,
+          clientY: point.y,
+        }),
+      );
+    },
+    { x: dragX, y: origin.y + origin.height + 200 },
+  );
+
+  const placeholder = page.locator('[data-workspace-tab-placeholder="active"]');
+  await expect(placeholder).toBeVisible();
+  await expect(active).toHaveCSS('position', 'fixed');
+  const dragged = await box(active);
+  const proposed = await box(placeholder);
+  expect(dragged.x).toBeCloseTo(origin.x + dragX - startX, 1);
+  expect(dragged.y).toBeCloseTo(origin.y, 1);
+  expect(
+    await page
+      .locator('[data-workspace-tab-motion]')
+      .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-workspace-tab-motion'))),
+  ).toEqual(['inactive', 'plain', 'loading', 'active']);
+  await expect(page.locator('[data-workspace-stack-preview]')).toHaveCount(0);
+
+  await strip.evaluate(
+    (node, point) => {
+      const dataTransfer = (
+        globalThis as typeof globalThis & { __workspaceDragData?: DataTransfer }
+      ).__workspaceDragData;
+      node.dispatchEvent(
+        new DragEvent('drop', {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer,
+          clientX: point.x,
+          clientY: point.y,
+        }),
+      );
+    },
+    { x: dragX, y: origin.y + origin.height + 200 },
+  );
+
+  await expect(placeholder).toHaveCount(0);
+  await expect(active).not.toHaveCSS('position', 'fixed');
+  const dropped = await box(active);
+  expect(dropped.x).toBeCloseTo(proposed.x, 1);
+  expect(dropped.x).not.toBeCloseTo(origin.x, 1);
 });

@@ -761,7 +761,7 @@
                 size={12}
                 class="text-subtle shrink-0 transition-transform {isExpanded
                   ? 'rotate-0'
-                  : '-rotate-90'}"
+                  : 'rotate-90'}"
               />
               {#if commitFiles.length > 0}
                 <LineChangesBadge
@@ -947,7 +947,7 @@
             <Fa
               icon={faChevronDown}
               size="xs"
-              class="opacity-50 transition-transform {olderCommits.length > 0 ? 'rotate-180' : ''}"
+              class="opacity-50 transition-transform {olderCommits.length > 0 ? '' : 'rotate-90'}"
             />
           {/if}
         </span>
@@ -988,7 +988,7 @@
                 size={12}
                 class="text-subtle shrink-0 transition-transform {isExpanded
                   ? 'rotate-0'
-                  : '-rotate-90'}"
+                  : 'rotate-90'}"
               />
               {#if commitFiles.length > 0}
                 <LineChangesBadge

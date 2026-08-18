@@ -33,7 +33,41 @@
   aria-hidden={decorative ? 'true' : undefined}
   title={decorative ? undefined : presentation.tooltip}
   data-workspace-status={presentation.state}
-  data-workspace-status-icon={presentation.icon.iconName}
+  data-workspace-status-visual={presentation.visual}
+  data-workspace-status-icon={presentation.icon?.iconName}
 >
-  <Fa icon={presentation.icon} class="size-full!" />
+  {#if presentation.visual === 'dot'}
+    <span class="workspace-status-dot" data-workspace-status-dot></span>
+  {:else if presentation.icon}
+    <Fa icon={presentation.icon} class="size-full!" />
+  {/if}
 </span>
+
+<style>
+  :global(.workspace-status-color-active) {
+    color: hsl(var(--agent-avatar-surface-active));
+  }
+
+  :global(.workspace-status-color-unread) {
+    color: hsl(var(--workspace-status-unread));
+  }
+
+  .workspace-status-dot {
+    display: block;
+    flex: none;
+    width: 0.5rem;
+    height: 0.5rem;
+    padding: 0;
+    border: 0;
+    border-radius: 9999px;
+    outline: none;
+    background-color: currentColor;
+    box-shadow: none;
+  }
+
+  @media (forced-colors: active) {
+    .workspace-status-dot {
+      background-color: CanvasText;
+    }
+  }
+</style>

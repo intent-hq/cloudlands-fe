@@ -180,7 +180,7 @@
   const logger = createLogger('ChatChangesPanel');
   import {
     faChevronDown,
-    faChevronRight,
+    faChevronLeft,
     faCodeCompare,
     faArrowUpRightFromSquare,
     faPlus,
@@ -2641,7 +2641,7 @@
                         onclick={() => toggleCommitGroup(group.hash)}
                       >
                         <Fa
-                          icon={expandedCommits.has(group.hash) ? faChevronDown : faChevronRight}
+                          icon={expandedCommits.has(group.hash) ? faChevronDown : faChevronLeft}
                           class="text-subtle w-2.5! h-2.5! shrink-0"
                         />
                         <!-- Author avatar -->
@@ -2890,7 +2890,7 @@
         class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer shrink"
       >
         <Fa
-          icon={expandedFiles.has(expandKey) ? faChevronDown : faChevronRight}
+          icon={expandedFiles.has(expandKey) ? faChevronDown : faChevronLeft}
           class="text-subtle w-2.5! h-2.5! shrink-0"
         />
 

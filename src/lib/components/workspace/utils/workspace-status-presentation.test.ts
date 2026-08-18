@@ -6,19 +6,21 @@ import {
   type WorkspaceStatusPresentationState,
 } from './workspace-status-presentation';
 
-const expected: Array<[WorkspaceStatusPresentationState, string, string, string]> = [
-  ['failed', 'triangle-exclamation', 'text-foreground', 'Failed'],
-  ['blocked', 'xmark', 'text-destructive', 'Blocked'],
-  ['needs_attention', 'circle-exclamation', 'text-warning', 'Needs attention'],
-  ['in_progress', 'circle', 'text-success', 'In progress'],
-  ['waiting', 'clock', 'text-muted-foreground', 'Waiting'],
-  ['unread', 'envelope', 'text-info', 'UNREAD'],
-  ['not_started', 'play', 'text-muted-foreground', 'Not started'],
-  ['idle', 'pause', 'text-muted-foreground', 'Idle'],
-  ['complete', 'circle-check', 'text-success', 'Complete'],
-  ['pr_ready', 'code-pull-request', 'text-success', 'PR Mergeable'],
-  ['pr_open', 'code-pull-request', 'text-info', 'PR open'],
-  ['pr_merged', 'code-merge', 'text-success', 'PR merged'],
+const expected: Array<
+  [WorkspaceStatusPresentationState, 'dot' | 'icon', string | null, string, string]
+> = [
+  ['failed', 'icon', 'triangle-exclamation', 'text-foreground', 'Failed'],
+  ['blocked', 'icon', 'xmark', 'text-destructive', 'Blocked'],
+  ['needs_attention', 'icon', 'circle-question', 'text-warning', 'Needs attention'],
+  ['in_progress', 'dot', null, 'workspace-status-color-active', 'In progress'],
+  ['waiting', 'icon', 'clock', 'text-muted-foreground', 'Waiting'],
+  ['unread', 'dot', null, 'workspace-status-color-unread', 'UNREAD'],
+  ['not_started', 'dot', null, 'text-muted-foreground/35', 'Not started'],
+  ['idle', 'dot', null, 'text-muted-foreground/35', 'Idle'],
+  ['complete', 'icon', 'circle-check', 'text-success', 'Complete'],
+  ['pr_ready', 'icon', 'code-pull-request', 'text-success', 'PR Mergeable'],
+  ['pr_open', 'icon', 'code-pull-request', 'text-info', 'PR open'],
+  ['pr_merged', 'icon', 'code-merge', 'text-success', 'PR merged'],
 ];
 
 describe('workspace status presentation', () => {
@@ -29,7 +31,13 @@ describe('workspace status presentation', () => {
     expect(
       expected.map(([state]) => {
         const result = getWorkspaceStatusPresentation(state);
-        return [result.state, result.icon.iconName, result.className, result.label];
+        return [
+          result.state,
+          result.visual,
+          result.icon?.iconName ?? null,
+          result.className,
+          result.label,
+        ];
       }),
     ).toEqual(expected);
     for (const [state] of expected) {
@@ -52,6 +60,20 @@ describe('workspace status presentation', () => {
       ).toBe(displayStatus);
     },
   );
+
+  it('keeps pending user input above unread, working, and idle visuals', () => {
+    expect(
+      resolveWorkspaceStatusState({
+        displayStatus: 'needs_attention',
+        activity: 'agent_running',
+        attention: 'unread',
+      }),
+    ).toBe('needs_attention');
+    expect(getWorkspaceStatusPresentation('needs_attention')).toMatchObject({
+      visual: 'icon',
+      accessibleName: 'Needs attention',
+    });
+  });
 
   it.each(['not_started', 'idle', 'complete', 'pr_ready', 'pr_open', 'pr_merged'] as const)(
     'uses unread before waiting over lower-priority %s',

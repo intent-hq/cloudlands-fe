@@ -433,7 +433,7 @@
 
 {#if messages.length > 0}
   <div
-    class="relative border-t border-border px-2 pt-3 pb-2 z-20"
+    class="queued-messages-surface relative z-20 px-2 pt-3 pb-2 before:pointer-events-none before:absolute before:top-0 before:left-1/2 before:h-px before:-translate-x-1/2 before:bg-border"
     data-testid="queued-messages-container"
     transition:safeSlide={{ duration: 200 }}
   >
@@ -459,7 +459,7 @@
           icon={faChevronDown}
           class="h-4! w-4! opacity-60 transition-transform duration-[var(--motion-fast)] motion-reduce:transition-none {expanded
             ? ''
-            : '-rotate-90'}"
+            : 'rotate-90'}"
         />
       </span>
     </button>
@@ -617,3 +617,9 @@
   imageName={lightboxImageName}
   openerElement={lightboxOpenerElement}
 />
+
+<style>
+  .queued-messages-surface::before {
+    width: 100cqw;
+  }
+</style>

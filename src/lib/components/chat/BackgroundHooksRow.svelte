@@ -48,6 +48,7 @@
   import {
     safeSubscriptionRowTransition,
     safeSubscriptionSlide,
+    SUBSCRIPTION_ACTION_ICON_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_ICON_CLASS,
@@ -234,7 +235,7 @@
                 variant="plain"
                 size="icon-xs"
                 type="button"
-                class="h-6 w-6 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+                class="h-6 w-6 border-0 {SUBSCRIPTION_ACTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
                 data-testid="background-hook-chip"
                 aria-label={m.chat_backgroundHooks_row_ariaLabel()}
               >

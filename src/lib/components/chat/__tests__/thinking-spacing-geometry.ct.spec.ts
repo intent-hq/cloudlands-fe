@@ -90,6 +90,12 @@ for (const theme of ['light', 'dark'] as const) {
           return secondRow.getBoundingClientRect().top - groups[0].getBoundingClientRect().bottom;
         });
         expect(reasoningGroupGap).toBeCloseTo(56 * zoom, 1);
+        const expandedBottomGap = await consecutiveReasoning.evaluate((root) => {
+          const details = root.querySelector<HTMLElement>('[data-operational-expanded-content]')!;
+          const body = details.querySelector<HTMLElement>('[data-reasoning-expanded-body]')!;
+          return details.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom;
+        });
+        expect(expandedBottomGap).toBeCloseTo(8 * zoom, 1);
 
         const attention = component.getByTestId('attention-card-boundary');
         const disclosure = attention.getByTestId('reasoning-disclosure');

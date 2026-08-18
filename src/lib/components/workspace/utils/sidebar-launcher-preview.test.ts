@@ -4,6 +4,7 @@ import {
   deriveAgentLauncherItems,
   deriveNoteLauncherItems,
   getAgentLauncherPreview,
+  getAgentLauncherStatusPriority,
   getLauncherPreviewLimit,
 } from './sidebar-launcher-preview';
 
@@ -56,6 +57,36 @@ describe('sidebar launcher primary ordering', () => {
     expect(state.launcherAgents.map(({ agent: item }) => item.id)).toEqual([
       'coordinator',
       'worker',
+    ]);
+  });
+
+  it('sorts remaining agents by failed, question, running, then idle priority', () => {
+    const states = new Map([
+      ['failed', 'failed'],
+      ['question', 'question'],
+      ['permission', 'needs-permission'],
+      ['running', 'running'],
+      ['idle', 'idle'],
+      ['coordinator', 'idle'],
+    ]);
+    const agents = ['idle', 'running', 'question', 'coordinator', 'failed', 'permission'].map(
+      (id) => agent(id, { isInitialAgent: id === 'coordinator' }),
+    );
+    const state = deriveAgentLauncherItems(
+      agents,
+      6,
+      ({ id }) => id === 'running',
+      () => ({ lastUserMessage: '', response: '' }),
+      ({ id }) => getAgentLauncherStatusPriority(states.get(id) ?? 'idle'),
+    );
+
+    expect(state.launcherAgents.map(({ agent: item }) => item.id)).toEqual([
+      'coordinator',
+      'failed',
+      'permission',
+      'question',
+      'running',
+      'idle',
     ]);
   });
 

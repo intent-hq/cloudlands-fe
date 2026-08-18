@@ -94,7 +94,7 @@ for (const theme of ['light', 'dark'] as const) {
       );
       await expect(group.locator('[data-operational-expanded-content]')).toHaveCount(0);
       await expect(group.locator('[data-testid="response-group-snippet"]')).toContainText(
-        'new chunk',
+        'earlier chunk',
       );
     }
 

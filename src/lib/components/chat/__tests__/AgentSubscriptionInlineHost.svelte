@@ -7,7 +7,7 @@
     bulkUpsertSessions,
     removeSession,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
-  import type { AgentSession, ToolUseBlock } from '$shared/types';
+  import type { AgentMessage, AgentSession, ToolUseBlock } from '$shared/types';
   import { AgentStatus } from '$shared/types';
   import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 
@@ -82,6 +82,24 @@
     });
   }
 
+  function previewMessage(kind: PreviewKind): AgentMessage {
+    const contentBlocks =
+      kind === 'text'
+        ? [
+            {
+              type: 'text' as const,
+              text: 'Review `src/agent.ts` with **strong markers**, [safe label](https://example.com), and 超長い-unbroken-token-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 <button>unsafe</button>',
+            },
+          ]
+        : [toolUse(kind)];
+    return {
+      id: 'message-subscription-inline-preview',
+      role: 'assistant',
+      contentBlocks,
+      timestamp: '2026-08-15T12:04:00.000Z',
+    };
+  }
+
   $effect(() => {
     const root = document.documentElement;
     const hadLight = root.classList.contains('light');
@@ -135,8 +153,8 @@
       workspaceId: WorkspaceId(workspaceId),
       name: 'Primary Agent',
       status: currentActivity.status ?? AgentStatus.Active,
-      isStreaming: false,
-      isProcessing: false,
+      isStreaming: currentActivity.isStreaming ?? false,
+      isProcessing: currentActivity.isProcessing ?? false,
       isResponding: currentActivity.isResponding ?? false,
       isWaitingOnTool: currentActivity.isWaitingOnTool ?? false,
       isWaitingForOtherAgents: currentActivity.isWaitingForOtherAgents ?? false,
@@ -148,7 +166,7 @@
           : '',
       lastToolUse:
         currentActivity.lastToolUse ?? (currentKind === 'text' ? undefined : toolUse(currentKind)),
-      messages: [],
+      messages: [previewMessage(currentKind)],
       createdAt: '2026-08-15T12:00:00.000Z',
       updatedAt: '2026-08-15T12:05:00.000Z',
     };

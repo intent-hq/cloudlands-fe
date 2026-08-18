@@ -14,6 +14,7 @@ import ArrowsInIcon from 'phosphor-svelte/lib/ArrowsInIcon';
 import ArrowsInLineVerticalIcon from 'phosphor-svelte/lib/ArrowsInLineVerticalIcon';
 import ArrowsLeftRightIcon from 'phosphor-svelte/lib/ArrowsLeftRightIcon';
 import ArrowsOutIcon from 'phosphor-svelte/lib/ArrowsOutIcon';
+import ArrowsOutLineVerticalIcon from 'phosphor-svelte/lib/ArrowsOutLineVerticalIcon';
 import AsteriskIcon from 'phosphor-svelte/lib/AsteriskIcon';
 import AtIcon from 'phosphor-svelte/lib/AtIcon';
 import BellIcon from 'phosphor-svelte/lib/BellIcon';
@@ -194,6 +195,7 @@ const iconComponents: Record<string, Component<any>> = {
   'arrow-up-from-bracket': UploadSimpleIcon,
   'arrow-up-right-from-square': ArrowSquareOutIcon,
   'arrows-in-line-vertical': ArrowsInLineVerticalIcon,
+  'arrows-out-line-vertical': ArrowsOutLineVerticalIcon,
   'arrows-rotate': ArrowsClockwiseIcon,
   asterisk: AsteriskIcon,
   at: AtIcon,
@@ -395,6 +397,7 @@ export const faArrowUp = icon('arrow-up');
 export const faArrowUpFromBracket = icon('arrow-up-from-bracket');
 export const faArrowUpRightFromSquare = icon('arrow-up-right-from-square');
 export const faArrowsInLineVertical = icon('arrows-in-line-vertical');
+export const faArrowsOutLineVertical = icon('arrows-out-line-vertical');
 export const faArrowsRotate = icon('arrows-rotate');
 export const faAsterisk = icon('asterisk');
 export const faAt = icon('at');

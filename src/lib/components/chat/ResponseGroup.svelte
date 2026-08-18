@@ -15,7 +15,7 @@
   import CylinderScroller from './CylinderScroller.svelte';
   import InlineMarkdownSnippet from './InlineMarkdownSnippet.svelte';
   import { getResponseGroupPreviewBlock } from './response-group-blocks';
-  import { faArrowsInLineVertical } from '$lib/icons/phosphor-icons';
+  import { faArrowsInLineVertical, faArrowsOutLineVertical } from '$lib/icons/phosphor-icons';
   import {
     OPERATIONAL_GROUP_CONTENT_CLASS,
     CHAT_OPERATIONAL_ICON_CLASS,
@@ -130,7 +130,11 @@
 </script>
 
 {#snippet leading()}
-  <Fa icon={faArrowsInLineVertical} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
+  <Fa
+    icon={isExpanded ? faArrowsOutLineVertical : faArrowsInLineVertical}
+    size={16}
+    class={CHAT_OPERATIONAL_ICON_CLASS}
+  />
 {/snippet}
 
 {#snippet summary()}
@@ -145,7 +149,12 @@
 
 {#snippet details()}
   <CylinderScroller isActive={isStreaming} constrained={false}>
-    <div class="flex flex-col gap-0" data-response-group-content>
+    <div class="relative flex flex-col gap-0" data-response-group-content>
+      <span
+        class="operational-group-guide pointer-events-none absolute inset-y-0 w-px -translate-x-1/2 bg-border"
+        data-operational-expanded-guide
+        aria-hidden="true"
+      ></span>
       {@render children()}
     </div>
   </CylinderScroller>
@@ -156,6 +165,7 @@
   {summary}
   details={isExpanded ? details : undefined}
   interactive
+  showChevron={false}
   expanded={isExpanded}
   controls={detailsId}
   ariaLabel={accessibleSummary}
@@ -177,3 +187,15 @@
   summaryTestId="response-group-summary"
   class={className}
 />
+
+<style>
+  .operational-group-guide {
+    left: calc(var(--operational-row-inline-padding) + var(--operational-leading-half-slot-size));
+  }
+
+  :global(.operational-group-child-row) {
+    padding-inline-start: calc(
+      var(--operational-leading-half-slot-size) + var(--operational-leading-gap)
+    );
+  }
+</style>

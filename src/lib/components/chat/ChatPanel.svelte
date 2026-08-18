@@ -459,6 +459,14 @@
   function handleBottomStateChange(state: FollowBottomState) {
     distanceFromBottom = state.distanceFromBottom;
     scrollButtonVisibility?.update(state.distanceFromBottom);
+    // Keep the cache current before a panel-layout update can recreate this
+    // chat and run the replacement instance ahead of our destroy callback.
+    if (workspace?.id && agentId && scrollContainer && $agentMessages$.length > 0) {
+      setCachedChatScroll(workspace.id, agentId, {
+        scrollTop: scrollContainer.scrollTop,
+        shouldFollowBottom: state.isFollowing,
+      });
+    }
   }
   let scrollButtonVisibility: ReturnType<typeof createScrollBottomButtonVisibility> | null = null;
   // Transient "scroll re-locked" confirmation: a lock icon briefly flashes when
@@ -3450,7 +3458,7 @@
         </div>
       {/if}
     </div>
-    <!-- followBottom and the LazyTurn height ledger own scroll compensation. -->
+    <!-- followBottom, native anchoring, and the LazyTurn ledger own scroll compensation. -->
     <div
       bind:this={scrollContainer}
       use:trackPinnedPrompt={{
@@ -3473,7 +3481,7 @@
       }}
       class="flex-1 overflow-y-auto"
       class:agent-font-monospace={$isAgentMonospace}
-      style="scrollbar-gutter: stable; overflow-anchor: none;"
+      style="scrollbar-gutter: stable;"
       data-testid="chat-transcript-scroll-viewport"
     >
       <div
@@ -4296,7 +4304,7 @@
           <!-- Queued messages remain in the same scroll/follow surface. -->
           {#if queuedMessagesVisibility.showQueue}
             <div
-              class="mt-6 {isChiefWorkspace
+              class="relative z-20 mt-6 {isChiefWorkspace
                 ? 'w-full'
                 : 'queued-message-utility-wide -mx-4 sm:-mx-6'}"
               data-testid="queued-message-utility-area"
@@ -4336,7 +4344,7 @@
   <!-- Message Input with Aurora Background -->
   <div
     bind:this={composerElement}
-    class="conversation-composer relative z-20 w-full"
+    class="conversation-composer relative z-10 w-full"
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}
     data-testid="chat-composer-shell"
@@ -4344,10 +4352,10 @@
     <!-- Aurora northern lights effect during streaming -->
     {#if $agentSessionIsStreaming$}
       <div
-        class="absolute -inset-x-2 -bottom-2 pointer-events-none z-0 overflow-hidden"
+        class="pointer-events-none absolute -inset-x-2 -bottom-2 z-0 overflow-hidden"
+        style="height: calc(100% + 10rem);"
         data-testid="composer-aurora-host"
         transition:fade
-        style="height: calc(100% + 10rem);"
       >
         <AuroraBackground {agentId} />
         <AuroraSofteningLayer />

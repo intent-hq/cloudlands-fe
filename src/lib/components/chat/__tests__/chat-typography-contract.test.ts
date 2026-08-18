@@ -12,7 +12,7 @@ describe('chat typography contract', () => {
     expect(panel).toContain(
       'conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col',
     );
-    expect(panel).toContain('conversation-composer relative z-20 w-full');
+    expect(panel).toContain('conversation-composer relative z-10 w-full');
     expect(panel).toContain('class="chat-content-measure mx-auto w-full min-w-0"');
     expect(panel).toContain('data-testid="chat-composer-controls-inner"');
     expect(panel).toContain('max-width: 70em');
@@ -114,7 +114,7 @@ describe('chat typography contract', () => {
     expect(wake).not.toMatch(/type-(?:title|display)|text-(?:base|lg|xl|2xl)/);
   });
 
-  it('shares opaque muted body summaries and 16px event chevrons', () => {
+  it('shares opaque header icons, compact leading gaps, and 16px event chevrons', () => {
     const subscription = source('src/lib/components/chat/subscription-disclosure.ts');
     const operational = source('src/lib/components/chat/operational-disclosure-row.ts');
     const eventFiles = [
@@ -125,8 +125,17 @@ describe('chat typography contract', () => {
       'src/lib/components/chat/BackgroundHooksRow.svelte',
       'src/lib/components/chat/MonitoredPrsRow.svelte',
     ].map(source);
+    const subscriptions = source('src/lib/components/chat/AgentSubscriptions.svelte');
     expect(subscription).toContain("font-normal text-muted-foreground!'");
     expect(subscription).not.toContain('text-muted-foreground/');
+    expect(subscription).toContain(
+      "SUBSCRIPTION_ICON_CLASS = 'text-muted-foreground! opacity-100'",
+    );
+    expect(subscription).toContain("SUBSCRIPTION_ACTION_ICON_CLASS = 'text-ghost opacity-60'");
+    expect(subscription).toContain("'inline-flex min-w-0 items-center gap-1.5'");
+    expect(subscription).not.toContain('grid-cols-' + '[1.25rem_minmax(0,1fr)]');
+    expect(subscription).not.toContain('inline-flex size-5 shrink-0');
+    expect(subscriptions).not.toContain('grid-template-columns: 1rem');
     expect(subscription).toContain("SUBSCRIPTION_CHEVRON_SIZE_CLASS = 'h-[16px]! w-[16px]!'");
     expect(operational).toContain(
       "CHAT_OPERATIONAL_SUMMARY_TONE_CLASS = 'font-normal text-muted-foreground'",

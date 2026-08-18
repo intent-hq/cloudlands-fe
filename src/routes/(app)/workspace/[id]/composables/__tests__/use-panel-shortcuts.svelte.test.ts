@@ -1,34 +1,16 @@
 /**
- * Tests for usePanelShortcuts composable — Cmd+B sidebar toggle.
+ * Tests for usePanelShortcuts global shortcut boundaries.
  */
 
-import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
+import { beforeEach, afterEach, describe, it, expect } from 'vitest';
 import { flushSync } from 'svelte';
 
-const { dispatchMock } = vi.hoisted(() => ({
-  dispatchMock: vi.fn(),
-}));
-
-vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => ({}),
-    dispatch: dispatchMock,
-  });
-});
-
 import { usePanelShortcuts } from '../use-panel-shortcuts.svelte';
-import { toggleSidebar } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
-describe('usePanelShortcuts — Cmd+B', () => {
+describe('usePanelShortcuts shortcut boundaries', () => {
   let cleanup: () => void;
 
   beforeEach(() => {
-    vi.clearAllMocks();
-    dispatchMock.mockReset();
-
     Object.defineProperty(window.navigator, 'userAgent', {
       configurable: true,
       value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
@@ -44,32 +26,11 @@ describe('usePanelShortcuts — Cmd+B', () => {
     cleanup?.();
   });
 
-  it('dispatches toggleSidebar when Cmd+B is pressed', () => {
+  it('leaves Cmd+B available for the global workspace shortcut router', () => {
     const event = new KeyboardEvent('keydown', { key: 'b', metaKey: true, cancelable: true });
     window.dispatchEvent(event);
 
-    expect(dispatchMock).toHaveBeenCalledTimes(1);
-    expect(dispatchMock).toHaveBeenCalledWith(toggleSidebar());
-    expect(event.defaultPrevented).toBe(true);
-  });
-
-  it('ignores Cmd+Shift+B (modifier guard)', () => {
-    const event = new KeyboardEvent('keydown', {
-      key: 'b',
-      metaKey: true,
-      shiftKey: true,
-      cancelable: true,
-    });
-    window.dispatchEvent(event);
-
-    expect(dispatchMock).not.toHaveBeenCalled();
-  });
-
-  it('ignores plain B (no Cmd)', () => {
-    const event = new KeyboardEvent('keydown', { key: 'b', cancelable: true });
-    window.dispatchEvent(event);
-
-    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
   });
 
   it('leaves Mod+1-9 available for global workspace-tab navigation', () => {

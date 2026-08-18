@@ -10,7 +10,7 @@
    */
 
   import Fa from 'svelte-fa';
-  import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
   import { faFile } from '@fortawesome/free-regular-svg-icons';
   import type { Note, AgentMessage, AgentSession } from '$shared/types';
   import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -248,7 +248,7 @@
               <LineChangesBadge additions={totalAdditions} deletions={totalDeletions} size="xs" />
             {/if}
           </div>
-          <Fa icon={isExpanded ? faChevronDown : faChevronRight} class="text-subtle" size="xs" />
+          <Fa icon={isExpanded ? faChevronDown : faChevronLeft} class="text-subtle" size="xs" />
         </button>
 
         <!-- File List -->

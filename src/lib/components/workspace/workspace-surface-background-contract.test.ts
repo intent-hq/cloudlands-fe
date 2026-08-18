@@ -5,11 +5,12 @@ import { describe, expect, it } from 'vitest';
 const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 describe('workspace surface background contract', () => {
-  it('keeps the global sidebar token in light mode and removes its dark shell fill', () => {
+  it('keeps the sidebar shell transparent in both themes', () => {
     const sidebar = source('src/lib/components/layout/sidebar-nav/SidebarPanel.svelte');
     expect(sidebar).toContain(
-      'sidebar-panel h-full flex flex-col relative bg-sidebar text-sidebar-foreground dark:bg-transparent',
+      'sidebar-panel h-full flex flex-col relative text-sidebar-foreground',
     );
+    expect(sidebar).not.toMatch(/sidebar-panel[^"\n]*(?:bg-sidebar|background)/);
   });
 
   it('paints tab, column, sidebar-host, and panel-canvas surfaces with the sidebar token', () => {

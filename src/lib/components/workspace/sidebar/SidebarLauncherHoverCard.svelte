@@ -13,6 +13,7 @@
     emptyText: string;
     kind: 'agent' | 'note';
     status?: string;
+    statusTone?: 'success' | 'warning' | 'danger' | 'muted';
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
     gridPosition?: 'start' | 'center' | 'end';
@@ -25,6 +26,7 @@
     emptyText,
     kind,
     status,
+    statusTone = 'success',
     open = false,
     onOpenChange,
     gridPosition = 'center',
@@ -36,8 +38,21 @@
 {#snippet preview()}
   <div class="w-72 space-y-2" data-sidebar-hover-card={kind}>
     {#if status}
-      <span class="inline-flex items-center gap-1 text-xs font-medium text-success">
-        <span class="size-1.5 rounded-full bg-success" aria-hidden="true"></span>
+      <span
+        class="inline-flex items-center gap-1 text-xs font-medium"
+        class:text-success={statusTone === 'success'}
+        class:text-amber-500={statusTone === 'warning'}
+        class:text-red-500={statusTone === 'danger'}
+        class:text-muted-foreground={statusTone === 'muted'}
+      >
+        <span
+          class="size-1.5 rounded-full"
+          class:bg-success={statusTone === 'success'}
+          class:bg-amber-500={statusTone === 'warning'}
+          class:bg-red-500={statusTone === 'danger'}
+          class:bg-muted-foreground={statusTone === 'muted'}
+          aria-hidden="true"
+        ></span>
         {status}
       </span>
     {/if}

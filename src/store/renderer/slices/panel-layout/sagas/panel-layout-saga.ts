@@ -469,6 +469,18 @@ export function* handleWorkspaceMountedRestore(
   if (!isValidWorkspaceId(wsId)) return;
   mountedWorkspaceIds.add(wsId);
   if (restoredWorkspaceIds.has(wsId)) return;
+  const current = yield* selectPanelLayoutWorkspace.effect(wsId);
+  if (current.newWorkspaceLifecycle && current.restoreStatus === 'restored') {
+    // A fresh workspace can reduce its bootstrap before this saga starts or
+    // reattaches. That in-memory lifecycle is authoritative: restoring a
+    // missing storage entry here would replace it with a visually empty layout.
+    restoredWorkspaceIds.add(wsId);
+    restoredUnderBackendIds.add(wsId);
+    yield* call(resolvePendingInitialAgent, wsId);
+    yield* call(persistPanelLayout, action);
+    yield* call(reconcileDeferredSpec, wsId);
+    return;
+  }
   restoredWorkspaceIds.add(wsId);
   yield* put(setRestoreStatus(wsId, 'pending'));
   const stored = yield* call(loadLayoutFromStorage, wsId);
@@ -716,18 +728,21 @@ function* reconcileAgentsFromSnapshot(action: ReturnType<typeof setAgents>): Sag
   yield* call(reconcileEmptyRestoredLayout, workspaceId, agents);
 }
 
+function* resolvePendingInitialAgent(wsId: string): SagaGenerator<void> {
+  const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
+  if (!workspace.newWorkspaceLifecycle?.initialAgentPending) return;
+  const initial = resolveCanonicalInitialAgent(yield* selectAllWorkspaceAgents.effect(wsId));
+  if (!initial) return;
+  const agentId = String(initial.id);
+  yield* put(setInitialAgentId(wsId, agentId));
+  yield* put(resolveNewWorkspaceInitialAgent(wsId, agentId, initial.name));
+}
+
 function* handleNewWorkspaceBootstrap(
   action: ReturnType<typeof bootstrapNewWorkspaceLayout>,
 ): SagaGenerator<void> {
-  const { wsId, initialAgentId } = action.payload;
-  if (!initialAgentId) {
-    const initial = resolveCanonicalInitialAgent(yield* selectAllWorkspaceAgents.effect(wsId));
-    if (initial) {
-      const agentId = String(initial.id);
-      yield* put(setInitialAgentId(wsId, agentId));
-      yield* put(resolveNewWorkspaceInitialAgent(wsId, agentId, initial.name));
-    }
-  }
+  const { wsId } = action.payload;
+  yield* call(resolvePendingInitialAgent, wsId);
   restoredWorkspaceIds.add(wsId);
   restoredUnderBackendIds.add(wsId);
   yield* call(persistPanelLayout, action);

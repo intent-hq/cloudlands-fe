@@ -531,7 +531,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
   );
 
   it.each(['light', 'dark'])(
-    'uses the aligned compact semantic success check-circle in %s',
+    'uses compact semantic icons with the same tone as their header text in %s',
     async (theme) => {
       document.documentElement.classList.add(theme);
       const wsId = `ws-finished-icon-${theme}`;
@@ -567,20 +567,21 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       const waitingIcon = waitingSummary.querySelector('[data-icon="hourglass"]');
       const finishedIcon = finishedSummary.querySelector('[data-icon="circle-check"]');
 
-      expect(finishedSummary.classList).toContain('grid');
-      expect(finishedSummary.classList).toContain('gap-x-2');
+      expect(finishedSummary.classList).toContain('inline-flex');
+      expect(finishedSummary.classList).toContain('gap-1.5');
       expect(finishedSummary.classList).not.toContain('px-2');
-      expect(waitingLeadingColumn.classList).toContain('size-5');
-      expect(finishedLeadingColumn.classList).toContain('size-5');
+      expect(waitingLeadingColumn.classList).not.toContain('size-5');
+      expect(finishedLeadingColumn.classList).not.toContain('size-5');
       expect(finishedLeadingColumn.className).not.toMatch(/^-m(?:[lrxse])?-/);
       expect(screen.getByTestId('one-shot-agent-list').classList).not.toContain('px-1');
       expect(screen.getByTestId('one-shot-summary-toggle').classList).toContain('px-3!');
       expect(finishedIcon).toBeTruthy();
       expect(finishedSummary.querySelector('[data-icon="check"]')).toBeNull();
-      expect(finishedIcon?.classList).toContain('text-success');
+      expect(finishedIcon?.classList).toContain('text-muted-foreground!');
+      expect(finishedIcon?.classList).toContain('opacity-100');
       expect(finishedIcon?.getAttribute('aria-hidden')).toBe('true');
-      expect(waitingIcon?.classList).toContain('text-ghost');
-      expect(waitingIcon?.classList).toContain('opacity-60');
+      expect(waitingIcon?.classList).toContain('text-muted-foreground!');
+      expect(waitingIcon?.classList).toContain('opacity-100');
       expect(finishedIcon?.className.baseVal).not.toMatch(/green/);
       for (const token of ['h-3.5!', 'w-3.5!', 'shrink-0']) {
         expect(finishedIcon?.classList).toContain(token);

@@ -445,7 +445,7 @@
           <Fa
             icon={faChevronDown}
             size="sm"
-            class="flex-none text-ghost transition-transform {expanded ? '' : '-rotate-90'}"
+            class="flex-none text-ghost transition-transform {expanded ? '' : 'rotate-90'}"
           />
           <span class="text-sm truncate">{displayName}</span>
           {#if primitive.states && primitive.states.length > 0}

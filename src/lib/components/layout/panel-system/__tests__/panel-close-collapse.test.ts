@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReduxStoreContext } from '$store/renderer/types';
 import { initAppStore, store as appStore } from '$store/renderer/store';
 import {
-  closePanel,
   initializeLayout,
   setRestoreStatus,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -166,7 +165,7 @@ describe('closing a panel that collapses a split', () => {
     await waitFor(() => expect(flexBasis(survivorWrapper('p2'))).toBeCloseTo(VIEWPORT_WIDTH, 3));
   });
 
-  it('gives the survivor the full reference size after closing a horizontal sibling', async () => {
+  it('keeps the survivor at its retained width after closing a horizontal sibling', async () => {
     const workspaceId = initialize(
       {
         type: 'split',
@@ -182,13 +181,21 @@ describe('closing a panel that collapses a split', () => {
     );
     await mount(workspaceId);
 
-    appStore.dispatch(closePanel(workspaceId, 'p1'));
+    const closeButton = document
+      .querySelector<HTMLElement>('[data-mounted-panel="p1"]')!
+      .querySelector<HTMLButtonElement>('[data-panel-close]')!;
+    await fireEvent.click(closeButton);
 
-    await waitFor(() => expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(1));
-    // The exiting 8px horizontal gutter must not be subtracted from the
-    // re-measured reference size: nothing re-measures after its outro ends,
-    // which would leave the survivor permanently short by the gutter width.
-    const expectedReference = VIEWPORT_WIDTH;
+    await waitFor(() => {
+      const workspace = appStore.state.panelLayout.byWorkspaceId[workspaceId];
+      expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(1);
+      expect(workspace.focusedPanelId).toBe('p2');
+      expect(workspace.canvasWidth).toBe((VIEWPORT_WIDTH - GUTTER) / 2);
+      expect(workspace.canvasWidthSource).toBe('explicit');
+    });
+    // Closing one equal column removes its width and the gutter from the
+    // persisted canvas instead of stretching the survivor across the old row.
+    const expectedReference = (VIEWPORT_WIDTH - GUTTER) / 2;
     await waitFor(() => expect(flexBasis(survivorWrapper('p2'))).toBeCloseTo(expectedReference, 3));
   });
 

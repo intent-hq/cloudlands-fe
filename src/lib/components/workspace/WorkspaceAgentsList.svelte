@@ -172,7 +172,7 @@
             size="xs"
             class="ml-auto shrink-0 opacity-50 transition-transform duration-200 {isExpanded
               ? ''
-              : '-rotate-90'}"
+              : 'rotate-90'}"
           />
         </Button>
 
@@ -287,8 +287,8 @@
         icon={faChevronDown}
         size="xs"
         class="ml-auto shrink-0 transition-transform duration-200 {showBackgroundAgents
-          ? 'rotate-180'
-          : ''}"
+          ? ''
+          : 'rotate-90'}"
       />
     </Button>
   </div>

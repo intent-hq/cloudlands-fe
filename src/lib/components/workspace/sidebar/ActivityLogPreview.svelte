@@ -14,7 +14,7 @@
 
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
-  import { faChevronDown, faChevronUp, faPlus } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faChevronLeft, faPlus } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -259,7 +259,7 @@
           onclick={() => (expanded = !expanded)}
         >
           <Fa
-            icon={expanded ? faChevronUp : faChevronDown}
+            icon={expanded ? faChevronDown : faChevronLeft}
             size="xs"
             class="text-ghost shrink-0 w-3.5 mr-0.5"
           />

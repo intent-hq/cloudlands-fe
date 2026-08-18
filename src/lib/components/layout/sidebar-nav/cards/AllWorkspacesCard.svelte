@@ -512,7 +512,11 @@
     {:else if filteredWorkspaces.length === 0}
       <div class="px-2 pb-3 text-xs text-subtle">{m.ui_dropdown_noResults_label()}</div>
     {:else}
-      <div class="overflow-y-auto flex-1 min-h-0 pb-2" use:scrollFade>
+      <div
+        class="overflow-y-auto flex-1 min-h-0 pt-1 pb-2"
+        data-workspace-list-scroll
+        use:scrollFade
+      >
         {#if $viewMode$ === 'recent'}
           {#each filteredWorkspaces as workspace, i (workspace.id)}
             {#if i > 0 && !$pinnedIds$.includes(workspace.id) && $pinnedIds$.includes(filteredWorkspaces[i - 1].id)}

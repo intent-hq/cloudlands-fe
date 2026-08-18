@@ -66,6 +66,8 @@
     isAdjacentOperationalClusterRow,
     isOperationalClusterBlock,
     OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
+    OPERATIONAL_GROUP_CHILD_CONTENT_CLASS,
+    OPERATIONAL_GROUP_CHILD_ROW_CLASS,
   } from './operational-disclosure-row';
   import { dedupeKeys, getResponseGroupBlockKeys } from './response-group-blocks';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
@@ -849,8 +851,14 @@
                     group.children,
                     childIndex,
                     (candidate) => candidate.type !== 'tool_result',
-                  )}"
+                  )} {isOperationalClusterBlock(childBlock)
+                    ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
+                    : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS}"
+                  style:padding-left={isOperationalClusterBlock(childBlock)
+                    ? undefined
+                    : 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'}
                   data-message-content-block={childBlock.type}
+                  data-response-group-child
                 >
                   {@render renderContentBlock(
                     childBlock,

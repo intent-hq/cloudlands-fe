@@ -8,7 +8,7 @@
   import Fa from 'svelte-fa';
   import {
     faChevronDown,
-    faChevronRight,
+    faChevronLeft,
     faFileCode,
     faPencil,
   } from '@fortawesome/free-solid-svg-icons';
@@ -67,7 +67,7 @@
   >
     {#if collapsible}
       <span class="diff-header-chevron">
-        <Fa icon={collapsed ? faChevronRight : faChevronDown} />
+        <Fa icon={collapsed ? faChevronLeft : faChevronDown} />
       </span>
     {/if}
 

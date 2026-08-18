@@ -116,9 +116,9 @@
     }, SWAP_OUT_SETTLE_MS);
   }
 
-  // Height ledger — scroll compensation for ALL height changes of this turn
-  // while it sits above the reader's viewport (native scroll anchoring is off
-  // on the chat scroller; see lazy-turn-scroll-ledger.ts for the full story).
+  // Height ledger — fallback compensation for height changes above the reader
+  // when native scroll anchoring is unavailable. It yields to native anchoring
+  // while the reader is unlocked; see lazy-turn-scroll-ledger.ts.
   // account() runs after every swap flush AND every ResizeObserver fire;
   // whoever runs first consumes the delta, so the paths never
   // double-compensate.
@@ -173,7 +173,7 @@
 
       // Ledger first (synchronous, no debounce): any height change of a turn
       // fully above the viewport must be compensated in the same frame, or
-      // the visible transcript jumps (overflow-anchor is off).
+      // the visible transcript jumps when native anchoring is unavailable.
       // For the swap itself this fire is always second — the tick() microtask
       // in setVisibleWithScrollCompensation consumes the swap delta before RO
       // delivery — so here account() sees delta === 0 for the flush and its

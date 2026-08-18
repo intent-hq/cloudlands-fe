@@ -228,7 +228,7 @@
                 ? m.settings_mcp_hideTools({ count: formatInteger(server.tools.length) })
                 : m.settings_mcp_showTools({ count: formatInteger(server.tools.length) })}
             </span>
-            <div class="transition-transform duration-200 {showTools ? 'rotate-180' : ''}">
+            <div class="transition-transform duration-200 {showTools ? '' : 'rotate-90'}">
               <Fa icon={faChevronDown} size="xs" />
             </div>
           </button>

@@ -14,7 +14,7 @@
   import {
   faInfoCircle,
   faChevronDown,
-  faChevronUp,
+  faChevronLeft,
 } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils/cn';
   import { m } from '$shared/paraglide/messages.js';
@@ -99,7 +99,7 @@
         {m.chat_longRunningDebug_processingFor_before()}
         <strong>{formattedTime}</strong>
       </span>
-      <Fa icon={isExpanded ? faChevronUp : faChevronDown} class="shrink-0 opacity-60" />
+      <Fa icon={isExpanded ? faChevronDown : faChevronLeft} class="shrink-0 opacity-60" />
     </button>
 
     <!-- Expanded debug details -->

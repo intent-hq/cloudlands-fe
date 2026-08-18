@@ -1091,6 +1091,45 @@ describe('ChatPanel mounted lifecycle', () => {
     });
   });
 
+  it('caches the active reading position before a panel-column remount destroys it', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const firstView = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const firstScroll = firstView.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    Object.defineProperties(firstScroll, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
+    mocks.followBottomOptions?.onFollowChange?.(false);
+    await tick();
+    firstScroll.scrollTop = 432;
+    await fireEvent.scroll(firstScroll);
+
+    expect(getCachedChatScroll('workspace-a', 'agent-a')).toEqual({
+      scrollTop: 432,
+      shouldFollowBottom: false,
+    });
+
+    // A root panel becoming a split can mount the replacement before Svelte
+    // destroys the original branch. The replacement must still see the cache.
+    const replacement = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+    flushFrame();
+    const replacementScroll = replacement.container.querySelector(
+      '.overflow-y-auto',
+    ) as HTMLDivElement;
+    expect(replacementScroll.scrollTop).toBe(432);
+  });
+
   it('does not cache scroll state for an empty transcript', async () => {
     mocks.draftGet.mockResolvedValue(null);
     const view = render(ChatPanel, {

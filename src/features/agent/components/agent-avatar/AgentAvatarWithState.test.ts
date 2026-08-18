@@ -38,18 +38,23 @@ const waitingSurfaceByTheme = {
   dark: { channels: '259.024 64.063% 74.902%', rgb: [176, 150, 232] },
 } as const satisfies Record<'light' | 'dark', { channels: string; rgb: Rgb }>;
 
+const workspaceUnreadSurfaceByTheme = {
+  light: { channels: '217.2 91.2% 59.8%', rgb: [59, 130, 246] },
+  dark: { channels: '213.1 93.9% 67.8%', rgb: [96, 165, 250] },
+} as const satisfies Record<'light' | 'dark', { channels: string; rgb: Rgb }>;
+
 const otherSurfaceRgbByTheme = {
   light: [
     [232, 237, 234],
     [255, 162, 64],
     [209, 226, 78],
-    [211, 226, 252],
+    [59, 130, 246],
   ],
   dark: [
     [192, 206, 198],
     [255, 181, 102],
     [222, 237, 110],
-    [184, 210, 255],
+    [96, 165, 250],
   ],
 } as const satisfies Record<'light' | 'dark', readonly Rgb[]>;
 
@@ -122,7 +127,7 @@ describe('AgentAvatarWithState', () => {
     expect(source).toMatch(/agent-avatar-with-state--completed\s*{[^}]*transition: none/);
     expect(source).toContain('hsl(var(--agent-avatar-surface-attention))');
     expect(source).toContain('hsl(var(--agent-avatar-surface-active))');
-    expect(source).toContain('hsl(var(--agent-avatar-surface-unread))');
+    expect(source).not.toContain('agent-avatar-with-state--unread');
     expect(source).toContain('hsl(var(--agent-avatar-surface-waiting))');
     expect(avatarSource).toContain('hsl(var(--agent-avatar-surface-neutral))');
     expect(avatarSource).toContain('background-color: var(');
@@ -137,7 +142,7 @@ describe('AgentAvatarWithState', () => {
     expect(source).toContain('@media (forced-colors: active)');
     expect(source).toMatch(/forced-colors: active[\s\S]*outline: 1px solid CanvasText/);
     expect(source).toMatch(/prefers-reduced-motion: reduce[\s\S]*transition: none/);
-    for (const family of ['neutral', 'attention', 'active', 'unread', 'waiting']) {
+    for (const family of ['neutral', 'attention', 'failed', 'active', 'waiting']) {
       expect(tokenSource).toContain(`--theme-light-agent-avatar-surface-${family}:`);
       expect(tokenSource).toContain(`--theme-dark-agent-avatar-surface-${family}:`);
       expect(tokenSource).toContain(`--agent-avatar-surface-${family}:`);
@@ -175,6 +180,19 @@ describe('AgentAvatarWithState', () => {
       for (const other of otherSurfaceRgbByTheme[theme]) {
         expect(colorDistance(waiting.rgb, other)).toBeGreaterThan(60);
       }
+    }
+  });
+
+  it('keeps unread agents neutral while the workspace unread status stays blue', () => {
+    expect(source).not.toContain('--agent-avatar-surface-unread');
+    expect(getAgentAvatarStateLabel('unread')).toMatch(/unread/i);
+    for (const theme of ['light', 'dark'] as const) {
+      const unread = workspaceUnreadSurfaceByTheme[theme];
+      expect(tokenSource).toContain(
+        `--theme-${theme}-workspace-status-unread: ${unread.channels};`,
+      );
+      expect(unread.rgb[2] - unread.rgb[0]).toBeGreaterThan(100);
+      expect(contrastWithReferenceGlyph(unread.rgb)).toBeGreaterThanOrEqual(3);
     }
   });
 

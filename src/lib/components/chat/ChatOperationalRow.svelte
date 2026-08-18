@@ -146,7 +146,7 @@
             <Fa
               icon={faChevronDown}
               size={16}
-              class="{CHAT_OPERATIONAL_CHEVRON_CLASS} {expanded ? '' : '-rotate-90'}"
+              class="{CHAT_OPERATIONAL_CHEVRON_CLASS} {expanded ? '' : 'rotate-90'}"
             />
           </span>
         {/if}

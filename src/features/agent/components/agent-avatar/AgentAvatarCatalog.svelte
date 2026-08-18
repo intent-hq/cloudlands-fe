@@ -69,7 +69,8 @@
   }
   .agent-avatar-catalog-states {
     display: grid;
-    grid-template-columns: repeat(10, 1.25rem);
+    grid-auto-flow: column;
+    grid-auto-columns: 1.25rem;
     gap: 0.375rem;
   }
   .agent-avatar-catalog-variants {

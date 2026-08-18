@@ -80,8 +80,9 @@
   --theme-light-agent-avatar-surface-completed: 145 14% 88%;
   --theme-light-agent-avatar-foreground-completed: 154 32% 24%;
   --theme-light-agent-avatar-surface-attention: 30.785 100% 62.549%;
+  --theme-light-agent-avatar-surface-failed: 0 72% 62%;
   --theme-light-agent-avatar-surface-active: 66.892 71.845% 59.608%;
-  --theme-light-agent-avatar-surface-unread: 218.049 87.234% 90.784%;
+  --theme-light-workspace-status-unread: 217.2 91.2% 59.8%;
   --theme-light-agent-avatar-surface-waiting: 263.2 74.257% 80.196%;
 
   --theme-dark-background: 154 16% 3%;
@@ -119,8 +120,9 @@
   --theme-dark-agent-avatar-surface-completed: 145 14% 24%;
   --theme-dark-agent-avatar-foreground-completed: 135 20% 86%;
   --theme-dark-agent-avatar-surface-attention: 31 100% 70%;
+  --theme-dark-agent-avatar-surface-failed: 0 79% 70%;
   --theme-dark-agent-avatar-surface-active: 67 78% 68%;
-  --theme-dark-agent-avatar-surface-unread: 218 100% 86%;
+  --theme-dark-workspace-status-unread: 213.1 93.9% 67.8%;
   --theme-dark-agent-avatar-surface-waiting: 259.024 64.063% 74.902%;
 
   --theme-background: var(--theme-light-background);
@@ -158,8 +160,9 @@
   --theme-agent-avatar-surface-completed: var(--theme-light-agent-avatar-surface-completed);
   --theme-agent-avatar-foreground-completed: var(--theme-light-agent-avatar-foreground-completed);
   --theme-agent-avatar-surface-attention: var(--theme-light-agent-avatar-surface-attention);
+  --theme-agent-avatar-surface-failed: var(--theme-light-agent-avatar-surface-failed);
   --theme-agent-avatar-surface-active: var(--theme-light-agent-avatar-surface-active);
-  --theme-agent-avatar-surface-unread: var(--theme-light-agent-avatar-surface-unread);
+  --theme-workspace-status-unread: var(--theme-light-workspace-status-unread);
   --theme-agent-avatar-surface-waiting: var(--theme-light-agent-avatar-surface-waiting);
 
   --background: var(--theme-background);
@@ -200,8 +203,9 @@
   --agent-avatar-surface-completed: var(--theme-agent-avatar-surface-completed);
   --agent-avatar-foreground-completed: var(--theme-agent-avatar-foreground-completed);
   --agent-avatar-surface-attention: var(--theme-agent-avatar-surface-attention);
+  --agent-avatar-surface-failed: var(--theme-agent-avatar-surface-failed);
   --agent-avatar-surface-active: var(--theme-agent-avatar-surface-active);
-  --agent-avatar-surface-unread: var(--theme-agent-avatar-surface-unread);
+  --workspace-status-unread: var(--theme-workspace-status-unread);
   --agent-avatar-surface-waiting: var(--theme-agent-avatar-surface-waiting);
   --agent-avatar-compact-surface-size: 16px;
   --agent-avatar-compact-art-size: 14px;
@@ -404,8 +408,9 @@
   --theme-agent-avatar-surface-completed: var(--theme-dark-agent-avatar-surface-completed);
   --theme-agent-avatar-foreground-completed: var(--theme-dark-agent-avatar-foreground-completed);
   --theme-agent-avatar-surface-attention: var(--theme-dark-agent-avatar-surface-attention);
+  --theme-agent-avatar-surface-failed: var(--theme-dark-agent-avatar-surface-failed);
   --theme-agent-avatar-surface-active: var(--theme-dark-agent-avatar-surface-active);
-  --theme-agent-avatar-surface-unread: var(--theme-dark-agent-avatar-surface-unread);
+  --theme-workspace-status-unread: var(--theme-dark-workspace-status-unread);
   --theme-agent-avatar-surface-waiting: var(--theme-dark-agent-avatar-surface-waiting);
 }
 

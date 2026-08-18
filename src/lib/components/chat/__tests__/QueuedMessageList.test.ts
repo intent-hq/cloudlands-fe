@@ -78,8 +78,10 @@ describe('QueuedMessageList', () => {
       const content = screen.getByTestId('queued-messages-content');
       const container = screen.getByTestId('queued-messages-container');
       const label = screen.getByTestId('queued-messages-label');
+      const chevron = screen.getByTestId('queued-messages-chevron').querySelector('svg')!;
       expect(disclosure.getAttribute('aria-expanded')).toBe('true');
       expect(disclosure.getAttribute('aria-controls')).toBe(content.id);
+      expect(chevron.classList.contains('rotate-90')).toBe(false);
       expect(label.textContent?.trim()).toBe('1 queued message');
       expect(container.className).toContain('pb-2');
       expect(screen.getAllByTestId('queued-message-row')).toHaveLength(1);
@@ -93,6 +95,12 @@ describe('QueuedMessageList', () => {
       await fireEvent.click(disclosure);
       await tick();
       expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+      expect(
+        screen
+          .getByTestId('queued-messages-chevron')
+          .querySelector('svg')
+          ?.classList.contains('rotate-90'),
+      ).toBe(true);
       expect(screen.queryByTestId('queued-messages-content')).toBeNull();
       expect(screen.queryByTestId('queued-message-row')).toBeNull();
       expect(document.activeElement).toBe(disclosure);

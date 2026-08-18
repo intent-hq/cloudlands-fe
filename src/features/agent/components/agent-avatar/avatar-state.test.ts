@@ -74,6 +74,16 @@ describe('avatar-state store-backed selectors', () => {
 });
 
 describe('getAvatarState attention-request states', () => {
+  it('maps an unanswered question to question ahead of other non-failure states', () => {
+    expect(
+      getAvatarState(
+        { isStreaming: true, status: AgentStatus.Active },
+        { hasQuestion: true, attentionKind: 'discussion' },
+      ),
+    ).toBe('question');
+    expect(getAvatarState({ status: AgentStatus.Error }, { hasQuestion: true })).toBe('failed');
+  });
+
   it('maps a pending discussion request to attention-discussion', () => {
     expect(getAvatarState({ status: AgentStatus.Idle }, { attentionKind: 'discussion' })).toBe(
       'attention-discussion',

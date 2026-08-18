@@ -3,12 +3,19 @@
 
   interface Props {
     width?: number;
+    contentWidth?: number;
     zoom?: number;
     messageCount?: number;
     heldForQuestions?: boolean;
   }
 
-  let { width = 240, zoom = 1, messageCount = 1, heldForQuestions = false }: Props = $props();
+  let {
+    width = 240,
+    contentWidth = width,
+    zoom = 1,
+    messageCount = 1,
+    heldForQuestions = false,
+  }: Props = $props();
   let lastAction = $state('none');
   const messages = $derived(
     Array.from({ length: messageCount }, (_, i) => ({
@@ -23,16 +30,21 @@
   );
 </script>
 
-<div data-testid="queued-message-geometry-host" style="width: {width}px; zoom: {zoom};">
-  <QueuedMessageList
-    {messages}
-    {heldForQuestions}
-    onsendnow={(id) => (lastAction = `send:${id}`)}
-    onremove={(id) => (lastAction = `remove:${id}`)}
-    onedit={async (id, _content, editing) => {
-      lastAction = `${editing ? 'edit' : 'save'}:${id}`;
-      return { success: true };
-    }}
-  />
+<div
+  data-testid="queued-message-geometry-host"
+  style="width: {width}px; zoom: {zoom}; container-type: inline-size;"
+>
+  <div class="mx-auto" style:width="{contentWidth}px" data-testid="queued-message-content-column">
+    <QueuedMessageList
+      {messages}
+      {heldForQuestions}
+      onsendnow={(id) => (lastAction = `send:${id}`)}
+      onremove={(id) => (lastAction = `remove:${id}`)}
+      onedit={async (id, _content, editing) => {
+        lastAction = `${editing ? 'edit' : 'save'}:${id}`;
+        return { success: true };
+      }}
+    />
+  </div>
   <output hidden data-testid="queued-message-last-action">{lastAction}</output>
 </div>

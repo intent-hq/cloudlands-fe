@@ -23,6 +23,7 @@
     disclosureExpanded?: boolean;
     virtualHeight?: number;
     streamingActive?: boolean;
+    reflowingContent?: boolean;
   }
 
   let {
@@ -40,6 +41,7 @@
     disclosureExpanded = false,
     virtualHeight = 180,
     streamingActive = false,
+    reflowingContent = false,
   }: Props = $props();
   let scrollRoot = $state<HTMLDivElement>();
   let virtualTurn = $state<HTMLDivElement>();
@@ -94,14 +96,19 @@
       onScrollStateChange: report,
     }}
     class="min-h-0 flex-1 overflow-y-auto"
-    style="overflow-anchor: none;"
     data-testid="transcript"
     tabindex="0"
   >
     <div bind:this={virtualTurn} data-testid="virtual-turn" style:height="{virtualHeight}px"></div>
     {#each Array(6) as _, index}
-      <div class="h-36 border-b border-border/30 px-4 py-3" data-testid={`fixed-${index}`}>
-        Historical turn {index}
+      <div
+        class="border-b border-border/30 px-4 py-3"
+        class:h-36={!reflowingContent}
+        data-testid={`fixed-${index}`}
+      >
+        Historical turn {index}{reflowingContent
+          ? ' contains enough transcript text to wrap across several lines when an adjacent panel opens and narrows the active chat column. The visible reading position must remain stable during that reflow.'
+          : ''}
       </div>
     {/each}
     <div data-testid="visible-anchor" class="h-20 px-4 py-3">Visible anchor</div>
