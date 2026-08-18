@@ -4,6 +4,7 @@ import { call, cancelled, fork, put, take, type SagaGenerator } from 'typed-redu
 import { createLogger } from '$lib/utils/client-logger';
 import { invoke } from '$shared/generated/ipc-client';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
+import type { CommandResponse } from '$shared/types';
 import { selectAutoCommitEnabled } from '../workspace-settings-selectors';
 import { setAutoCommitEnabled } from '../workspace-settings-slice';
 
@@ -15,16 +16,27 @@ type AutoCommitAction = ReturnType<typeof setAutoCommitEnabled>;
  * the legacy `settings:set { key: 'autoCommit' }` channel — that channel maps
  * to the daemon's GLOBAL `git.autoCommit` setting, so writing it here would
  * flip the global default every time a single workspace's toggle changes.
+ *
+ * The channel resolves a `CommandResponse` envelope in both builds (Electron
+ * main handler and the web-build daemon bridge), so a persistence failure
+ * arrives as `{ success: false }` rather than a rejection — treat it the same.
  */
 export function* persistWorkspaceAutoCommitWorker(action: AutoCommitAction): SagaGenerator<void> {
   const [workspaceId] = action.payload;
   const autoCommitEnabled = yield* selectAutoCommitEnabled.effect(workspaceId);
 
   try {
-    yield* call(invoke, WORKSPACE_CHANNELS.UPDATE_SETTINGS, {
+    const response = (yield* call(invoke, WORKSPACE_CHANNELS.UPDATE_SETTINGS, {
       id: workspaceId,
       settings: { autoCommitEnabled },
-    });
+    })) as CommandResponse;
+    if (!response?.success) {
+      logger.warn('Failed to sync autoCommit to main process', {
+        workspaceId,
+        autoCommitEnabled,
+        error: response?.error,
+      });
+    }
   } catch (error) {
     logger.warn('Failed to sync autoCommit to main process', {
       workspaceId,

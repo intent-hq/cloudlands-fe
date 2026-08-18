@@ -39,7 +39,7 @@ function startSaga() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal('electronAPI', {});
-  mocks.invoke.mockResolvedValue({ ok: true });
+  mocks.invoke.mockResolvedValue({ success: true, data: {} });
 });
 
 afterEach(() => {
@@ -96,6 +96,38 @@ describe('workspaceSettingsSaga', () => {
     await task.toPromise();
   });
 
+  it('logs exact context when the write resolves a failure envelope (regression: silently swallowed success:false)', async () => {
+    // Both builds resolve a CommandResponse envelope instead of rejecting on a
+    // daemon write failure (Electron main safe handler + web-build bridge), so
+    // the worker must treat `success: false` as a failure, not ignore it.
+    mocks.invoke.mockResolvedValueOnce({ success: false, error: 'daemon write failed' });
+    const { send, task } = startSaga();
+    send(setAutoCommitEnabled('ws-1', true));
+    await settle();
+
+    expect(mocks.invoke.mock.calls).toEqual([
+      [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-1', settings: { autoCommitEnabled: true } }],
+    ]);
+    expect(mocks.warn.mock.calls).toEqual([
+      [
+        'Failed to sync autoCommit to main process',
+        { workspaceId: 'ws-1', autoCommitEnabled: true, error: 'daemon write failed' },
+      ],
+    ]);
+
+    // The worker recovers: a later toggle still writes (and a success envelope
+    // produces no warning).
+    send(setAutoCommitEnabled('ws-1', false));
+    await settle();
+    expect(mocks.invoke.mock.calls).toEqual([
+      [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-1', settings: { autoCommitEnabled: true } }],
+      [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-1', settings: { autoCommitEnabled: false } }],
+    ]);
+    expect(mocks.warn).toHaveBeenCalledTimes(1);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('ignores unrelated actions', async () => {
     const { send, task } = startSaga();
     send({ type: 'unrelated/action' });
@@ -121,7 +153,7 @@ describe('workspaceSettingsSaga', () => {
           releaseWs1 = resolve;
         });
       }
-      return Promise.resolve({ ok: true });
+      return Promise.resolve({ success: true, data: {} });
     });
     const { send, task } = startSaga();
     send(setAutoCommitEnabled('ws-1', true));
