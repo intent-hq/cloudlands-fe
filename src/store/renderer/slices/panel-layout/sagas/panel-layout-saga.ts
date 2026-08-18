@@ -40,9 +40,7 @@ import {
 } from '../../user-preferences/user-preferences-selectors';
 import {
   setPanelOpenMode,
-  setPanelStackDirection,
   togglePanelOpenMode,
-  togglePanelStackDirection,
 } from '../../user-preferences/user-preferences-slice';
 import {
   resolveCanonicalInitialAgent,
@@ -852,10 +850,6 @@ export function* panelLayoutSaga(options?: {
     yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
     yield* takeEvery(openTabWithPanelModeRequested, openTabWithPanelMode);
     yield* takeEvery([setPanelOpenMode, togglePanelOpenMode], collapseAllWorkspacesForPanelMode);
-    yield* takeEvery(
-      [setPanelStackDirection, togglePanelStackDirection],
-      collapseAllWorkspacesForPanelMode,
-    );
     yield* takeEvery(clearPanelLayout, clearPersistedLayout);
     const historyWatcher = yield* takeEvery(HISTORY_ACTIONS, queueHistorySaveForAction);
     yield* takeLatest(initializeLayout, loadHistoryForWorkspace);
