@@ -490,9 +490,32 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-browsers-${{ runner.os }}-${{ steps.ct-playwright.outputs.version }}
+      - name: Harden apt against mirror stalls
+        # The runner image points apt at azure.archive.ubuntu.com, which has
+        # stalled mid-transfer until the 30-min job budget expired — twice,
+        # before any test ran (monorepo#2832). Point apt at the canonical
+        # archive.ubuntu.com instead and bound every fetch: without an
+        # explicit Acquire timeout a dead-but-open connection can hang apt
+        # indefinitely. Belt-and-braces with the step timeout below.
+        run: |
+          set -euo pipefail
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
+            [ -e "$f" ] || continue
+            sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' "$f"
+          done
+          printf '%s\n' \
+            'Acquire::Retries "3";' \
+            'Acquire::http::Timeout "30";' \
+            'Acquire::https::Timeout "30";' \
+            | sudo tee /etc/apt/apt.conf.d/99-bounded-acquire >/dev/null
       - name: Install Playwright browsers
         # --with-deps runs even on a cache hit (OS packages aren't cached),
         # but the browser download itself is skipped when already present.
+        # Step-level timeout so an apt/download stall the Acquire bounds
+        # somehow miss fails here in minutes — with logs attributing the
+        # failure to this step — instead of eating the 30-min job budget
+        # (monorepo#2832). Normal runs take ~1-2 min.
+        timeout-minutes: 8
         run: node scripts/run-ct-tests.mjs --install-browsers --with-deps chromium
       - name: Component tests
         # list for readable logs; html feeds the failure artifact below (it
