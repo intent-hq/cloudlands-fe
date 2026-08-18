@@ -24,7 +24,16 @@ describe('WorkspaceLayout panel insets', () => {
       "main-content-area flex h-full min-w-0 z-10 {columnMode ? '' : 'pl-2 sm:pl-3'}",
     );
     expect(leftBranch).toContain('main-content-area flex h-full min-w-0 z-10');
-    expect(leftBranch).not.toContain('pl-2 sm:pl-3');
+    expect(leftBranch).not.toContain('sm:pl-3');
+  });
+
+  it('adds an 8px gutter beside a collapsed single-layout left sidebar', () => {
+    const leftBranch = workspaceLayout.match(
+      /\{#if sidebarSide === 'left'\}([\s\S]*?)\{\/if\}/,
+    )?.[1];
+
+    expect(workspaceLayout).toContain('const sidebarIsCollapsed = selectIsCollapsed();');
+    expect(leftBranch).toContain('class:pl-2={!columnMode && $sidebarIsCollapsed}');
   });
 
   it('lets a panel-free workspace column own the full sidebar width', () => {

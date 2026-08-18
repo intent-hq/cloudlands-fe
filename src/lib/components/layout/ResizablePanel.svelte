@@ -177,9 +177,22 @@
     expandedStorageKey ?? '',
   );
   // svelte-ignore state_referenced_locally
-  const isWorkspaceLeftPanel = storageKey === 'workspace-left-panel-width';
+  const isWorkspaceLeftPanel =
+    storageKey === 'workspace-left-panel-width' ||
+    storageKey?.startsWith('workspace-left-panel-width:') === true;
   // svelte-ignore state_referenced_locally
-  const isWorkspaceExpandedPanel = expandedStorageKey === 'workspace-left-panel-expanded-width';
+  const isWorkspaceExpandedPanel =
+    expandedStorageKey === 'workspace-left-panel-expanded-width' ||
+    expandedStorageKey?.startsWith('workspace-left-panel-expanded-width:') === true;
+  // svelte-ignore state_referenced_locally
+  const isWorkspaceSidebarPanel = isWorkspaceLeftPanel || isWorkspaceExpandedPanel;
+  // Scoped workspace keys retain their per-workspace persistence; only the legacy
+  // unscoped keys use the shared sidebar width fields.
+  // svelte-ignore state_referenced_locally
+  const usesLegacySidebarWidth = storageKey === 'workspace-left-panel-width';
+  // svelte-ignore state_referenced_locally
+  const usesLegacySidebarExpandedWidth =
+    expandedStorageKey === 'workspace-left-panel-expanded-width';
   let appliedStoredPanelSize = $state<number | undefined>(undefined);
   let appliedStoredExpandedPanelSize = $state<number | undefined>(undefined);
   // svelte-ignore state_referenced_locally
@@ -226,13 +239,13 @@
   }
 
   function getStoredPanelSize(isWidth: boolean): number | null {
-    if (isWidth && isWorkspaceLeftPanel) return $sidebarWidth;
+    if (isWidth && usesLegacySidebarWidth) return $sidebarWidth;
     const value = $storedPanelSize;
     return value === undefined ? null : storedValueToPixels(value, isWidth);
   }
 
   function getStoredExpandedPanelSize(): number | null {
-    if (isWorkspaceExpandedPanel) return $sidebarExpandedWidth;
+    if (usesLegacySidebarExpandedWidth) return $sidebarExpandedWidth;
     const value = $storedExpandedPanelSize;
     return value === undefined ? null : storedValueToPixels(value, true);
   }
@@ -399,10 +412,10 @@
       return;
     }
 
-    const storedValue = isWorkspaceLeftPanel ? $sidebarWidth : $storedPanelSize;
+    const storedValue = usesLegacySidebarWidth ? $sidebarWidth : $storedPanelSize;
     if (storedValue === undefined || storedValue === appliedStoredPanelSize) return;
 
-    const pixels = isWorkspaceLeftPanel ? storedValue : storedValueToPixels(storedValue, true);
+    const pixels = usesLegacySidebarWidth ? storedValue : storedValueToPixels(storedValue, true);
     if (pixels !== null) {
       panelWidth = pixels;
       widthPercent = pixelsToPercent(panelWidth, true);
@@ -413,10 +426,14 @@
   $effect(() => {
     if (orientation !== 'horizontal') return;
 
-    const storedValue = isWorkspaceExpandedPanel ? $sidebarExpandedWidth : $storedExpandedPanelSize;
+    const storedValue = usesLegacySidebarExpandedWidth
+      ? $sidebarExpandedWidth
+      : $storedExpandedPanelSize;
     if (storedValue === undefined || storedValue === appliedStoredExpandedPanelSize) return;
 
-    const pixels = isWorkspaceExpandedPanel ? storedValue : storedValueToPixels(storedValue, true);
+    const pixels = usesLegacySidebarExpandedWidth
+      ? storedValue
+      : storedValueToPixels(storedValue, true);
     if (pixels !== null) {
       expandedWidth = pixels;
       expandedWidthPercent = pixelsToPercent(expandedWidth, true);
@@ -486,7 +503,7 @@
   // React to Redux-driven sidebar collapse changes (Cmd+B, title-bar toggle, etc.).
   // The first run captures the baseline; subsequent runs apply collapse/expand.
   $effect(() => {
-    if (!isWorkspaceLeftPanel || orientation !== 'horizontal') return;
+    if (!isWorkspaceSidebarPanel || orientation !== 'horizontal') return;
 
     const collapsed = $sidebarIsCollapsed;
     if (lastSidebarCollapsed === undefined) {
@@ -501,10 +518,14 @@
 
   // Check for collapse threshold on mount and set up resize listener
   onMount(() => {
-    if (restoreStoredWidth && storageKey && !isWorkspaceLeftPanel && !$storedPanelSizeHydrated) {
+    if (restoreStoredWidth && storageKey && !usesLegacySidebarWidth && !$storedPanelSizeHydrated) {
       appStore.dispatch(requestResizablePanelSize(storageKey));
     }
-    if (expandedStorageKey && !isWorkspaceExpandedPanel && !$storedExpandedPanelSizeHydrated) {
+    if (
+      expandedStorageKey &&
+      !usesLegacySidebarExpandedWidth &&
+      !$storedExpandedPanelSizeHydrated
+    ) {
       appStore.dispatch(requestResizablePanelSize(expandedStorageKey));
     }
 
@@ -524,7 +545,7 @@
     }
 
     // Listen for sidebar toggle event (only for workspace left panel)
-    if (isWorkspaceLeftPanel) {
+    if (isWorkspaceSidebarPanel) {
       // Initialize from store's collapsed state
       const initialCollapsed = $sidebarIsCollapsed;
       if (initialCollapsed) {
@@ -537,7 +558,7 @@
 
     return () => {
       window.removeEventListener('resize', handleWindowResize);
-      if (isWorkspaceLeftPanel) {
+      if (isWorkspaceSidebarPanel) {
         window.removeEventListener('workspace:toggle-left-sidebar', handleSidebarToggle);
       }
     };
@@ -832,10 +853,12 @@
 
   // Compute the actual dimensions to use based on orientation and expanded state
   let actualWidth = $derived(
-    Math.max(
-      minWidth,
-      Math.min(maxWidth, (isExpanded ? expandedWidth : panelWidth) + transientWidthDelta),
-    ),
+    !isExpanded && panelWidth === 0
+      ? 0
+      : Math.max(
+          minWidth,
+          Math.min(maxWidth, (isExpanded ? expandedWidth : panelWidth) + transientWidthDelta),
+        ),
   );
   let actualHeight = $derived(panelHeight);
 

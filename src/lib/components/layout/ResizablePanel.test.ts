@@ -3,13 +3,20 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  dispatch: vi.fn(),
+  setSidebarCollapsed: (_collapsed: boolean) => {},
+}));
 
 vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } }));
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', async () => {
   const { readable } = await import('svelte/store');
   return {
-    selectIsCollapsed: () => readable(false),
+    selectIsCollapsed: () =>
+      readable(false, (set) => {
+        mocks.setSidebarCollapsed = set;
+        return () => (mocks.setSidebarCollapsed = () => {});
+      }),
     selectSidebarWidth: () => readable(360),
     selectSidebarExpandedWidth: () => readable(600),
     selectResizablePanelSize: (storageKey: string) =>
@@ -39,6 +46,26 @@ afterEach(() => {
 });
 
 describe('ResizablePanel reactive defaults', () => {
+  it('collapses and restores a workspace sidebar with scoped storage keys', async () => {
+    const { container } = render(ResizablePanel, {
+      props: {
+        storageKey: 'workspace-left-panel-width:ws-1',
+        expandedStorageKey: 'workspace-left-panel-expanded-width:ws-1',
+        defaultWidth: 360,
+      },
+    });
+    const panel = container.firstElementChild;
+
+    expect(panel?.getAttribute('style')).toContain('width: 360px');
+    await tick();
+    mocks.setSidebarCollapsed(true);
+    await waitFor(() => expect(panel?.getAttribute('style')).toContain('width: 0px'));
+    expect(panel?.getAttribute('style')).toContain('min-width: 0px');
+
+    mocks.setSidebarCollapsed(false);
+    await waitFor(() => expect(panel?.getAttribute('style')).toContain('width: 360px'));
+  });
+
   it('applies a hydrated column width without an automatic callback', async () => {
     const onWidthChange = vi.fn();
     const { container } = render(ResizablePanel, {
