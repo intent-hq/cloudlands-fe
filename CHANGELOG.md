@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.66.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.66.1...v2.66.2) (2026-08-18)
+
+
+### 🐛 Bug Fixes
+
+* restore Command-B sidebar toggle in single-workspace layout ([#1430](https://github.com/intent-hq/cloudlands-fe/issues/1430)) ([d77af64](https://github.com/intent-hq/cloudlands-fe/commit/d77af649397f868503ca1f2ad93be2853917e544))
+
 ## [2.66.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.66.0...v2.66.1) (2026-08-18)
 
 
