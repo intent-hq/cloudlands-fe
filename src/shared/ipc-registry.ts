@@ -490,6 +490,8 @@ export const IPC_CHANNELS = {
     OPEN_TAB: 'browser:open-tab',
     /** Close a browser tab in a panel - main->renderer event */
     CLOSE_TAB: 'browser:close-tab',
+    /** Main navigated an existing tab (agent navigate/reuse) - main->renderer event */
+    TAB_NAVIGATED: 'browser:tab-navigated',
   },
 
   // File Tracking
@@ -1043,6 +1045,9 @@ export const EVENT_CHANNELS = [
   'browser:open-tab',
   // Browser tab close request from main process (agent wants to close a browser tab)
   'browser:close-tab',
+  // Main navigated an existing browser tab (agent navigate/reuse) so the
+  // renderer can persist the new URL + requested URL (monorepo#2789)
+  'browser:tab-navigated',
   // WebSocket API events (main → renderer)
   'websocket-api:discovery-auto-disabled',
   // Workspace token usage changed (main → renderer)

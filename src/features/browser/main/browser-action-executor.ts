@@ -534,6 +534,14 @@ async function executeAction(
                 requestedTabId,
                 `window.location.href = ${JSON.stringify(finalRewrite.url)}`,
               );
+              // Persist the navigated tab's new URL + requested URL in the
+              // panel layout so a restart re-runs the rewrite (monorepo#2789).
+              embeddedBrowserCdp.notifyTabNavigated(
+                requestedTabId,
+                workspaceId,
+                finalRewrite.url,
+                finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
+              );
               const focused = await embeddedBrowserCdp.focusTab(requestedTabId, workspaceId);
               return {
                 action: 'openTab',
@@ -570,6 +578,14 @@ async function executeAction(
               await embeddedBrowserCdp.evaluate(
                 idleTabId,
                 `window.location.href = ${JSON.stringify(finalRewrite.url)}`,
+              );
+              // Persist the repurposed tab's new URL + requested URL in the
+              // panel layout so a restart re-runs the rewrite (monorepo#2789).
+              embeddedBrowserCdp.notifyTabNavigated(
+                idleTabId,
+                workspaceId,
+                finalRewrite.url,
+                finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
               );
               // Record the repurposed tab's new identity: tunneled opens set
               // the requested URL so a later repeat after a forward re-mint
@@ -724,6 +740,15 @@ async function executeAction(
         await embeddedBrowserCdp.evaluate(
           resolvedTabId,
           `window.location.href = ${JSON.stringify(navigateTarget.rewrite.url)}`,
+        );
+        // Persist the navigated tab's new URL + requested URL in the panel
+        // layout so a restart re-runs the rewrite instead of restoring a
+        // dead ephemeral forward port (monorepo#2789).
+        embeddedBrowserCdp.notifyTabNavigated(
+          resolvedTabId,
+          workspaceId,
+          navigateTarget.rewrite.url,
+          navigateTarget.rewrite.rewritten ? navigateTarget.rewrite.requestedUrl : undefined,
         );
         // The tab's content changed, so refresh its lease identity: tunneled
         // navigations record the requested URL (a later openTab for it can

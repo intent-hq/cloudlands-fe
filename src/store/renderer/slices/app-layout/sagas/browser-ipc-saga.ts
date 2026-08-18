@@ -10,6 +10,7 @@ import {
   type BrowserFocusTabPayload,
   type BrowserListTabsRequestPayload,
   type BrowserOpenTabPayload,
+  type BrowserTabNavigatedPayload,
 } from '$shared/ipc/workspace-command-payloads';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import {
@@ -48,9 +49,7 @@ function browserTab(url: string, requestedUrl?: string): Omit<PanelTab, 'id'> {
 }
 
 type LayoutReadiness =
-  | { status: 'ready' }
-  | { status: 'not-hosted' }
-  | { status: 'hydration-failed'; message: string };
+  { status: 'ready' } | { status: 'not-hosted' } | { status: 'hydration-failed'; message: string };
 
 /**
  * Ensure the workspace's panel-layout state is usable for a browser IPC
@@ -212,6 +211,37 @@ function* focusBrowser(data: BrowserFocusTabPayload | null): SagaGenerator<void>
   yield* put(focusBrowserTabRequested(data.workspaceId, data.tabId));
 }
 
+function* tabNavigated(data: BrowserTabNavigatedPayload | null): SagaGenerator<void> {
+  if (
+    !isWorkspaceCommandPayload(data) ||
+    typeof data.tabId !== 'string' ||
+    data.tabId.length === 0 ||
+    typeof data.url !== 'string'
+  )
+    return;
+  const workspaceId = data.workspaceId;
+  // The navigated tab may live in a hosted-but-unvisited workspace's
+  // persisted layout (monorepo#2789). A workspace this window does not host
+  // is left alone (the hosting window applies the update), and when
+  // hydration fails the tab cannot be in state so the update is dropped.
+  const readiness = yield* call(ensureWorkspaceLayoutForRequest, workspaceId);
+  if (readiness.status === 'not-hosted') return;
+  if (readiness.status === 'hydration-failed') {
+    logger.warn('Layout hydration failed before browser:tab-navigated; ignoring update', {
+      workspaceId,
+      tabId: data.tabId,
+      error: readiness.message,
+    });
+    return;
+  }
+  // Main navigated the tab through the rewrite pipeline, so it is the
+  // authority on the requested URL: present records it, absent clears it
+  // (the tab no longer shows rewritten content) — mirroring the executor's
+  // lease-identity semantics (monorepo#2789).
+  const requestedUrl = typeof data.requestedUrl === 'string' ? data.requestedUrl : null;
+  yield* put(updateTabBrowserUrl(workspaceId, data.tabId, data.url, requestedUrl));
+}
+
 function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGenerator<void> {
   if (!isWorkspaceCommandPayload(data)) return;
   const workspaceId = data.workspaceId;
@@ -294,6 +324,17 @@ export function* browserIpcSaga(): SagaGenerator<void> {
           bufferPolicy: {
             kind: 'lossless',
             rationale: 'Every list request must be answered; main resolves replies by requestId.',
+          },
+        },
+      ),
+      yield* takeEveryFromElectronChannel<BrowserTabNavigatedPayload | null>(
+        'browser:tab-navigated',
+        tabNavigated,
+        {
+          bufferPolicy: {
+            kind: 'lossless',
+            rationale:
+              'Every main-driven navigation must update the persisted tab URL in arrival order.',
           },
         },
       ),

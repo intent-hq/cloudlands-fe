@@ -23,6 +23,7 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     focusTab: vi.fn().mockResolvedValue(true),
     waitForTabRegistration: vi.fn().mockResolvedValue(true),
     closeTab: vi.fn().mockResolvedValue({ tabId: 'tab-1' }),
+    notifyTabNavigated: vi.fn(),
     touchLease: vi.fn(),
     releaseLease: vi.fn(),
     listAllTabs: vi.fn().mockResolvedValue({ tabs: [], stale: false }),
@@ -1846,6 +1847,121 @@ describe('browser-action-executor', () => {
       expect(embeddedBrowserCdp.findModelTabByRequestedUrl).not.toHaveBeenCalled();
       // Non-tunneled opens clear the lease's requested URL (null).
       expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-new', 'agent-1', null);
+    });
+  });
+
+  // =========================================================================
+  // Main-driven navigations persist the requested URL (monorepo#2789)
+  // =========================================================================
+  describe('notifyTabNavigated on main-driven navigations (#2789)', () => {
+    const REQUESTED = 'http://daemon.localhost:8080/page';
+    const remoteContext = () => ({ daemonIsRemote: true, daemonHost: '10.0.0.5' });
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+      vi.stubGlobal('fetch', fetchMock);
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('a tunneled navigate notifies the renderer with the tunnel URL and requested URL', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValue({
+        tabId: 'tab-1',
+        webContentsId: 1,
+      } as never);
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+      const provider = { forwardPort: vi.fn().mockResolvedValue(45678), activeForwards: () => [] };
+
+      const result = await executeActions(
+        { actions: [{ action: 'navigate', url: REQUESTED }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+        remoteContext,
+        () => provider,
+      );
+
+      expect(result.success).toBe(true);
+      // The renderer persists the tunneled URL + requested URL with the tab
+      // so a restart re-runs the rewrite instead of restoring the dead port.
+      expect(embeddedBrowserCdp.notifyTabNavigated).toHaveBeenCalledWith(
+        'tab-1',
+        'ws-1',
+        'http://127.0.0.1:45678/page',
+        REQUESTED,
+      );
+    });
+
+    it('a non-rewritten navigate notifies without a requested URL (clears it)', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValue({
+        tabId: 'tab-1',
+        webContentsId: 1,
+      } as never);
+
+      const result = await executeActions(
+        { actions: [{ action: 'navigate', url: 'https://example.test/' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.notifyTabNavigated).toHaveBeenCalledWith(
+        'tab-1',
+        'ws-1',
+        'https://example.test/',
+        undefined,
+      );
+    });
+
+    it('an openTab requestedUrl-dedupe reuse notifies with the fresh tunnel URL', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+      const provider = { forwardPort: vi.fn().mockResolvedValue(55002), activeForwards: () => [] };
+      vi.mocked(embeddedBrowserCdp.findModelTabByRequestedUrl).mockResolvedValue('tab-old');
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: REQUESTED }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+        remoteContext,
+        () => provider,
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.notifyTabNavigated).toHaveBeenCalledWith(
+        'tab-old',
+        'ws-1',
+        'http://127.0.0.1:55002/page',
+        REQUESTED,
+      );
+    });
+
+    it('an openTab idle-tab reuse notifies with the rewritten URL and requested URL', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle' as never);
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+        remoteContext,
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.notifyTabNavigated).toHaveBeenCalledWith(
+        'tab-idle',
+        'ws-1',
+        'http://10.0.0.5:3000/',
+        'http://localhost:3000/',
+      );
     });
   });
 });
