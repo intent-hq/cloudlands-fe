@@ -3,13 +3,19 @@ import { call, cancelled, fork, put, take, type SagaGenerator } from 'typed-redu
 
 import { createLogger } from '$lib/utils/client-logger';
 import { invoke } from '$shared/generated/ipc-client';
-import { SETTINGS_CHANNELS, WORKSPACE_CHANNELS } from '$shared/ipc/channels';
+import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { selectAutoCommitEnabled } from '../workspace-settings-selectors';
 import { setAutoCommitEnabled } from '../workspace-settings-slice';
 
 const logger = createLogger('WorkspaceSettingsPersistenceSaga');
 type AutoCommitAction = ReturnType<typeof setAutoCommitEnabled>;
 
+/**
+ * Persists the per-workspace auto-commit override only. This must never write
+ * the legacy `settings:set { key: 'autoCommit' }` channel — that channel maps
+ * to the daemon's GLOBAL `git.autoCommit` setting, so writing it here would
+ * flip the global default every time a single workspace's toggle changes.
+ */
 export function* persistWorkspaceAutoCommitWorker(action: AutoCommitAction): SagaGenerator<void> {
   const [workspaceId] = action.payload;
   const autoCommitEnabled = yield* selectAutoCommitEnabled.effect(workspaceId);
@@ -22,20 +28,6 @@ export function* persistWorkspaceAutoCommitWorker(action: AutoCommitAction): Sag
   } catch (error) {
     logger.warn('Failed to sync autoCommit to main process', {
       workspaceId,
-      autoCommitEnabled,
-      error,
-    });
-  }
-
-  try {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      yield* call(invoke, SETTINGS_CHANNELS.SET, {
-        key: 'autoCommit',
-        value: autoCommitEnabled,
-      });
-    }
-  } catch (error) {
-    logger.warn('Failed to persist autoCommit to electron-store', {
       autoCommitEnabled,
       error,
     });

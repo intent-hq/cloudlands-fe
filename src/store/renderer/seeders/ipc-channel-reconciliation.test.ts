@@ -353,11 +353,12 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     // the invoke head inside the `call` effect's argument list, so the direct
     // call-head scan never sees them — window:set-theme escaped to a runtime
     // UnbridgedMockIpcChannelError exactly this way (intent-hq/monorepo#2746).
-    // Guards the saga-call extractor across all three known saga sites:
-    // theme-saga.ts and workspace-settings-saga.ts.
+    // Guards the saga-call extractor across both known saga sites:
+    // theme-saga.ts and workspace-settings-saga.ts. (The saga's third site,
+    // the legacy settings:set global write, was removed — it stomped the
+    // daemon's global git.autoCommit; intent-hq/monorepo#2779.)
     expect(invoked.has('window:set-theme')).toBe(true);
     expect(invoked.has('workspace:update-settings')).toBe(true);
-    expect(invoked.has('settings:set')).toBe(true);
     expect([...invoked.keys()].some((channel) => registered.has(channel))).toBe(true);
   });
 
