@@ -867,7 +867,7 @@
 
   // Scroll active tab into view
   function scrollActiveTabIntoView() {
-    if (!tabsContainerRef || !activeTabId) return;
+    if (!showTabStrip || !tabsContainerRef || !activeTabId) return;
 
     const activeTabElement = tabsContainerRef.querySelector(
       `[data-tab-id="${activeTabId}"]`,

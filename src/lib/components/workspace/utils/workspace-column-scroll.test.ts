@@ -174,6 +174,36 @@ describe('scrollWorkspaceColumnIntoView', () => {
     expect(panel.scrollIntoView).not.toHaveBeenCalled();
   });
 
+  it('cancels an older smooth reveal when the newly focused panel is already visible', () => {
+    const frames: FrameRequestCallback[] = [];
+    const cancelFrame = vi.fn();
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', cancelFrame);
+    const container = document.createElement('div');
+    const column = document.createElement('section');
+    const oldTarget = document.createElement('div');
+    const focusedPanel = document.createElement('div');
+    column.dataset.workspaceColumn = 'ws-focus';
+    oldTarget.dataset.panelId = 'panel-old';
+    focusedPanel.dataset.panelId = 'panel-focused';
+    column.append(oldTarget, focusedPanel);
+    container.append(column);
+    setHorizontalRect(container, 0, 500);
+    setHorizontalRect(oldTarget, 600, 900);
+    setHorizontalRect(focusedPanel, 100, 400);
+
+    expect(scrollWorkspacePanelIntoView(container, 'ws-focus', 'panel-old', 'smooth')).toBe(true);
+    expect(scrollWorkspacePanelIntoView(container, 'ws-focus', 'panel-focused', 'smooth')).toBe(
+      false,
+    );
+    expect(cancelFrame).toHaveBeenCalledWith(1);
+
+    vi.unstubAllGlobals();
+  });
+
   it.each([
     ['left', -50, 300],
     ['right', 200, 550],

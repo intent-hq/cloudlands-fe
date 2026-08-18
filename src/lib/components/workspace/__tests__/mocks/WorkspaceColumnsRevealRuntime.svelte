@@ -29,6 +29,7 @@
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
     openWorkspaceFile,
+    openWorkspaceLocalChanges,
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -39,6 +40,10 @@
   let { onReady, workspaceKey }: { onReady: () => void; workspaceKey: string } = $props();
 
   const workspaceId = WorkspaceId(`workspace-panel-reveal-${workspaceKey}`);
+  const sourcePanelId = `source-panel-${workspaceKey}`;
+  const targetPanelId = `target-panel-${workspaceKey}`;
+  const sourceTabId = `source-tab-${workspaceKey}`;
+  const targetTabId = `target-tab-${workspaceKey}`;
   const targetFilePath = '/tmp/reveal-target.ts';
   const timestamp = '2026-08-16T12:00:00.000Z';
   const disposeStore = startRootStoreLifecycle(
@@ -78,16 +83,16 @@
         direction: 'horizontal',
         sizes: [50, 50],
         children: [
-          { type: 'panel', panelId: 'source-panel' },
-          { type: 'panel', panelId: 'target-panel' },
+          { type: 'panel', panelId: sourcePanelId },
+          { type: 'panel', panelId: targetPanelId },
         ],
       },
       panels: {
-        'source-panel': {
-          id: 'source-panel',
+        [sourcePanelId]: {
+          id: sourcePanelId,
           tabs: [
             {
-              id: 'source-tab',
+              id: sourceTabId,
               type: 'file',
               title: 'Source file',
               filePath: '/tmp/reveal-source.ts',
@@ -95,13 +100,13 @@
               closable: true,
             },
           ],
-          activeTabId: 'source-tab',
+          activeTabId: sourceTabId,
         },
-        'target-panel': {
-          id: 'target-panel',
+        [targetPanelId]: {
+          id: targetPanelId,
           tabs: [
             {
-              id: 'target-tab',
+              id: targetTabId,
               type: 'file',
               title: 'Reveal target with a deliberately long title that must truncate',
               filePath: targetFilePath,
@@ -109,10 +114,10 @@
               closable: true,
             },
           ],
-          activeTabId: 'target-tab',
+          activeTabId: targetTabId,
         },
       },
-      focusedPanelId: 'source-panel',
+      focusedPanelId: sourcePanelId,
       canvasWidth: 600,
     }),
   );
@@ -137,7 +142,7 @@
           workspaceId,
           closable: true,
         },
-        'source-panel',
+        sourcePanelId,
         'browser-reveal-request',
         true,
         Date.parse(timestamp),
@@ -149,7 +154,7 @@
     appStore.dispatch(
       openWorkspaceFile(workspaceId, '/tmp/production-file.ts', {
         openInAdjacentPanel: true,
-        sourcePanelId: 'source-panel',
+        sourcePanelId,
       }),
     );
   }
@@ -158,7 +163,7 @@
     appStore.dispatch(
       openWorkspaceNote(workspaceId, 'production-note', {
         openInAdjacentPanel: true,
-        sourcePanelId: 'source-panel',
+        sourcePanelId,
       }),
     );
   }
@@ -173,13 +178,17 @@
     );
   }
 
+  function openLocalChanges() {
+    appStore.dispatch(openWorkspaceLocalChanges(workspaceId));
+  }
+
   function focusExistingPanel() {
-    appStore.dispatch(focusPanel(workspaceId, 'target-panel'));
+    appStore.dispatch(focusPanel(workspaceId, targetPanelId));
   }
 
   function focusThenRemovePanel() {
-    appStore.dispatch(focusPanel(workspaceId, 'target-panel'));
-    appStore.dispatch(closePanel(workspaceId, 'target-panel'));
+    appStore.dispatch(focusPanel(workspaceId, targetPanelId));
+    appStore.dispatch(closePanel(workspaceId, targetPanelId));
   }
 
   function useMixedPanelWidths() {
@@ -187,12 +196,12 @@
   }
 
   function reorderPanels() {
-    appStore.dispatch(movePanel(workspaceId, 'target-panel', 'source-panel', 'before'));
+    appStore.dispatch(movePanel(workspaceId, targetPanelId, sourcePanelId, 'before'));
   }
 
   function closeExtraPanel() {
     const extraPanelId = $panelIds$.find(
-      (panelId) => panelId !== 'source-panel' && panelId !== 'target-panel',
+      (panelId) => panelId !== sourcePanelId && panelId !== targetPanelId,
     );
     if (extraPanelId) appStore.dispatch(closePanel(workspaceId, extraPanelId));
   }
@@ -207,6 +216,7 @@
 <button type="button" onclick={openFileAdjacent} data-open-file>Open file</button>
 <button type="button" onclick={openNoteAdjacent} data-open-note>Open note</button>
 <button type="button" onclick={openAgentColumn} data-open-agent>Open agent</button>
+<button type="button" onclick={openLocalChanges} data-open-changes>Open changes</button>
 <button type="button" onclick={focusExistingPanel} data-focus-panel>Focus panel</button>
 <button type="button" onclick={focusThenRemovePanel} data-remove-panel>Remove panel</button>
 <button type="button" onclick={useMixedPanelWidths} data-mix-panel-widths>Mix widths</button>
@@ -215,6 +225,9 @@
 <div
   class="h-[480px] overflow-hidden"
   data-reveal-state
+  data-workspace-id={workspaceId}
+  data-source-panel-id={sourcePanelId}
+  data-target-panel-id={targetPanelId}
   data-saw-pending-reveal={sawPendingReveal}
   data-pending-panel-reveal={$pendingReveal$?.requestId ?? ''}
   data-focused-panel-id={$focusedPanelId$ ?? ''}

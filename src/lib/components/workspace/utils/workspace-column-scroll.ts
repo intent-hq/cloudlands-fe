@@ -136,7 +136,12 @@ export function scrollWorkspacePanelIntoView(
 ): boolean {
   const panel = findWorkspacePanel(container, workspaceId, panelId);
   if (!panel) return false;
-  if (isHorizontallyVisible(container, panel)) return false;
+  if (isHorizontallyVisible(container, panel)) {
+    // A newer focus request owns the viewport even when its target is already
+    // visible. Stop an older smooth reveal before it moves this panel away.
+    cancelHorizontalScroll(container);
+    return false;
+  }
   const viewport = container.getBoundingClientRect();
   const revealViewport = getHorizontalRevealViewport(container, viewport);
   const delta =

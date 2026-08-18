@@ -237,6 +237,9 @@
       if (entries.length === 0) materializingWorkspaceId = null;
       return;
     }
+    // Panel open/focus is newer user intent than the startup column anchor.
+    // Stop late width-settle alignment from pulling the revealed panel away.
+    cancelScrollAnchor();
     const [workspaceId, request] =
       entries.find(([candidateId]) => candidateId === $currentWorkspaceId$) ?? entries.at(-1)!;
     materializingWorkspaceId = workspaceId;
@@ -253,7 +256,9 @@
           appStore.dispatch(consumePanelReveal(workspaceId, request.requestId));
           if (materializingWorkspaceId === workspaceId) materializingWorkspaceId = null;
         },
-        undefined,
+        // A panel request is direct focus intent. Commit it synchronously so a
+        // prior reveal or a rapid follow-up cannot leave focus off-screen.
+        'auto',
         isCurrent,
         () => {
           if (!isCurrent()) return;
@@ -407,7 +412,15 @@
     const scroller = columnsScroller;
     const ready = columnsReady;
     const revealKey = workspaceId ? `${workspaceId}:${workspaceStackLayoutKey}` : null;
-    if (!workspaceId || !scroller || !ready || revealKey === lastWorkspaceRevealKey) return;
+    if (!workspaceId || !scroller || !ready || !revealKey) return;
+    if ($panelRevealRequestsByWorkspaceId$[workspaceId]) {
+      hasRevealedInitialWorkspace = true;
+      lastWorkspaceRevealKey = revealKey;
+      layoutRevealScheduler.cancel();
+      cancelScrollAnchor();
+      return;
+    }
+    if (revealKey === lastWorkspaceRevealKey) return;
 
     if (!hasRevealedInitialWorkspace) {
       // The first reveal per mount jumps instantly — a smooth sweep would drag

@@ -22,8 +22,16 @@ async function expectFocusedPanelVisible(component: Locator) {
   const state = component.locator('[data-reveal-state]');
   const scroller = component.locator('[data-workspace-columns]');
   await expect(state).toHaveAttribute('data-pending-panel-reveal', '');
+  await component.evaluate(async () => {
+    for (let frame = 0; frame < 5; frame += 1) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }
+  });
   const panelId = await state.getAttribute('data-focused-panel-id');
-  const target = component.locator(`[data-panel-id="${panelId}"]`);
+  const workspaceId = await state.getAttribute('data-workspace-id');
+  const target = component.locator(
+    `[data-workspace-column="${workspaceId}"] [data-panel-id="${panelId}"]`,
+  );
   await expect(target).toBeVisible();
   await expect
     .poll(async () => {
@@ -109,7 +117,8 @@ test('fully reveals and consumes an equivalent panel request at 200% zoom', asyn
   const host = await requireReadyHarness(component, page);
   const state = component.locator('[data-reveal-state]');
   const scroller = component.locator('[data-workspace-columns]');
-  const target = component.locator('[data-panel-id="target-panel"]');
+  const targetPanelId = await state.getAttribute('data-target-panel-id');
+  const target = component.locator(`[data-panel-id="${targetPanelId}"]`);
 
   await expect(target).toBeVisible();
   expect(await host.evaluate((node) => node.getBoundingClientRect().width)).toBe(800);
@@ -247,7 +256,10 @@ test('updates geometry for fit, overflow, scroll, resize, open, close, and reord
   await expectNavigatorGeometryWithinHalfDevicePixel(component, page);
 
   await component.locator('[data-reorder-panels]').click();
-  await expect(segments.first()).toHaveAttribute('data-panel-navigator-segment', 'target-panel');
+  const targetPanelId = await component
+    .locator('[data-reveal-state]')
+    .getAttribute('data-target-panel-id');
+  await expect(segments.first()).toHaveAttribute('data-panel-navigator-segment', targetPanelId!);
   await expectNavigatorGeometryWithinHalfDevicePixel(component, page);
 
   for (const theme of ['light', 'dark'] as const) {
@@ -282,6 +294,7 @@ for (const route of [
   { name: 'file', trigger: '[data-open-file]' },
   { name: 'note', trigger: '[data-open-note]' },
   { name: 'agent', trigger: '[data-open-agent]' },
+  { name: 'changes', trigger: '[data-open-changes]' },
 ]) {
   test(`production ${route.name} open reveals its final panel at 400px and 200% zoom`, async ({
     mount,
@@ -312,7 +325,12 @@ test('explicit existing-panel focus reveals with minimum horizontal movement', a
   await component.locator('[data-focus-panel]').click();
   await expectFocusedPanelVisible(component);
   expect(await scroller.evaluate((node) => node.scrollTop)).toBe(verticalBefore);
-  await expect(component.locator('[data-panel-id]')).toHaveCount(2);
+  const workspaceId = await component
+    .locator('[data-reveal-state]')
+    .getAttribute('data-workspace-id');
+  await expect(
+    component.locator(`[data-workspace-column="${workspaceId}"] [data-panel-id]`),
+  ).toHaveCount(2);
 });
 
 test('panel removal cancels a scheduled reveal without recreating the panel', async ({
@@ -327,5 +345,6 @@ test('panel removal cancels a scheduled reveal without recreating the panel', as
   await component.locator('[data-remove-panel]').click();
   await expect(state).toHaveAttribute('data-pending-panel-reveal', '');
   await expect(state).toHaveAttribute('data-panel-count', '1');
-  await expect(component.locator('[data-panel-id="target-panel"]')).toHaveCount(0);
+  const targetPanelId = await state.getAttribute('data-target-panel-id');
+  await expect(component.locator(`[data-panel-id="${targetPanelId}"]`)).toHaveCount(0);
 });
