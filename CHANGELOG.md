@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.62.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.61.1...v2.62.0) (2026-08-18)
+
+
+### 🚀 Features
+
+* make running tool calls expandable to show input ([#1404](https://github.com/intent-hq/cloudlands-fe/issues/1404)) ([16d4087](https://github.com/intent-hq/cloudlands-fe/commit/16d4087623b944eab86b348b58cd343bfcb7e028))
+
 ## [2.61.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.61.0...v2.61.1) (2026-08-18)
 
 
