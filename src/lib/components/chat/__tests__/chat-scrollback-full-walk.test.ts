@@ -6,6 +6,7 @@ import {
   initialState,
   bulkUpsertSessions,
   prependHistoryMessages,
+  setHistoryOldestReached,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import type { AgentSessionState } from '$store/renderer/slices/agent-session/agent-session-types';
 import {
@@ -13,6 +14,12 @@ import {
   selectAgentMessages,
   selectHistorySegmentMeta,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
+import {
+  absorbPrependedHeightIntoSpacer,
+  reconcileVirtualSpacer,
+  shouldRequestOlderHistory,
+  splitUnloadedRows,
+} from '../chat-scrollback-composition';
 
 // ============================================================================
 // Deterministic full-walk scrollback harness
@@ -26,10 +33,20 @@ import {
 // directly assertable.
 // ============================================================================
 
-/** Conversation size for the walk scenarios. */
-const CONVERSATION_ROWS = 200;
-/** Saga page size (tiny-caps PAGE_LIMIT is 10; prod 50). */
-const PAGE_ROWS = 10;
+/**
+ * Conversation size for the walk scenarios. Large enough that the serial
+ * walk overruns HISTORY_SEGMENT_MAX (500) and cap pruning opens the
+ * history→tail hole — the regime where the QA symptoms live.
+ */
+const CONVERSATION_ROWS = 1400;
+/** Saga page size (mirrors chat-scrollback-saga PAGE_LIMIT). */
+const PAGE_ROWS = 200;
+/** Simulated transcript container clientHeight. */
+const VIEWPORT_PX = 800;
+/** Mirrors ChatPanel SCROLLBACK_TOP_THRESHOLD_PX. */
+const TOP_THRESHOLD_PX = 240;
+/** Extent-error bound vs ground truth (<15%). */
+const EXTENT_ERROR_BOUND = 0.15;
 
 const AGENT_ID = 'agent-walk';
 const BASE_MS = Date.parse('2026-01-01T00:00:00.000Z');
@@ -86,6 +103,189 @@ function storeState(agentSessions: AgentSessionState) {
   return { agentSessions } as never;
 }
 
+/** Conversation ordinal encoded in the wire id (`m-00042` → 42). */
+function ordinalOf(m: AgentMessage): number {
+  return Number(m.id.slice(2));
+}
+
+function heightOf(rows: AgentMessage[]): number {
+  return rows.reduce((sum, m) => sum + rowHeight(ordinalOf(m)), 0);
+}
+
+interface SimAnchor {
+  id: string;
+  /** rect.top - containerRect.top at capture time (docTop - scrollTop). */
+  offsetFromViewport: number;
+}
+
+/**
+ * Deterministic ChatPanel scrollback simulation: real reducer + selectors +
+ * spacer math against a simulated viewport. Document layout mirrors the
+ * template order: [above spacer][history rows][below spacer][tail rows].
+ */
+class WalkSim {
+  state: AgentSessionState;
+  above = 0;
+  below = 0;
+  ema: number | null = null;
+  scrollTop = 0;
+  /** Ordinal one past the oldest row already fetched (saga continuation). */
+  fetchCursor: number;
+
+  constructor(
+    readonly conversation: AgentMessage[],
+    tailRows: number,
+  ) {
+    this.state = seedState(conversation, tailRows);
+    this.fetchCursor = conversation.length - tailRows;
+  }
+
+  get history(): AgentMessage[] {
+    return selectAgentHistoryMessages.select(storeState(this.state), AGENT_ID);
+  }
+  get tail(): AgentMessage[] {
+    return selectAgentMessages.select(storeState(this.state), AGENT_ID);
+  }
+  get meta() {
+    return selectHistorySegmentMeta.select(storeState(this.state), AGENT_ID);
+  }
+
+  residentHeight(): number {
+    return heightOf(this.history) + heightOf(this.tail);
+  }
+  scrollHeight(): number {
+    return this.above + this.residentHeight() + this.below;
+  }
+  groundTruthHeight(): number {
+    return heightOf(this.conversation);
+  }
+  extentError(): number {
+    const truth = this.groundTruthHeight();
+    return Math.abs(this.scrollHeight() - truth) / truth;
+  }
+
+  /** Document offset of each resident row, in template order. */
+  rowDocTops(): { id: string; top: number; height: number }[] {
+    const rows: { id: string; top: number; height: number }[] = [];
+    let cursor = this.above;
+    for (const m of this.history) {
+      rows.push({ id: m.id, top: cursor, height: rowHeight(ordinalOf(m)) });
+      cursor += rowHeight(ordinalOf(m));
+    }
+    cursor += this.below;
+    for (const m of this.tail) {
+      rows.push({ id: m.id, top: cursor, height: rowHeight(ordinalOf(m)) });
+      cursor += rowHeight(ordinalOf(m));
+    }
+    return rows;
+  }
+
+  /** Mirrors captureScrollAnchor: first row whose top is inside the viewport. */
+  captureAnchor(): SimAnchor | null {
+    if (this.scrollHeight() - this.scrollTop - VIEWPORT_PX < 100) return null; // near-bottom skip
+    for (const row of this.rowDocTops()) {
+      const offset = row.top - this.scrollTop;
+      if (offset >= 0 && offset < VIEWPORT_PX) return { id: row.id, offsetFromViewport: offset };
+    }
+    return null;
+  }
+
+  /** Mirrors restoreScrollAnchor: re-pin the anchor row's viewport offset. */
+  restoreAnchor(anchor: SimAnchor | null): void {
+    if (!anchor) return;
+    const row = this.rowDocTops().find((r) => r.id === anchor.id);
+    if (!row) return; // element no longer connected (pruned)
+    const offsetDifference = row.top - this.scrollTop - anchor.offsetFromViewport;
+    if (Math.abs(offsetDifference) > 5) this.scrollTop += offsetDifference;
+  }
+
+  /**
+   * One older-history page: capture anchor, prepend through the real
+   * reducer, frozen-phase absorption of the measured added height into the
+   * locked above-spacer, then anchor restore — the ChatPanel effect order.
+   */
+  fetchOlderPage(): void {
+    const end = this.fetchCursor;
+    const start = Math.max(0, end - PAGE_ROWS);
+    const page = this.conversation.slice(start, end);
+    const residentBefore = this.residentHeight();
+    const anchor = this.captureAnchor();
+    this.state = agentSessionReducer(this.state, prependHistoryMessages(AGENT_ID, page));
+    this.fetchCursor = start;
+    if (start === 0) {
+      this.state = agentSessionReducer(this.state, setHistoryOldestReached(AGENT_ID));
+    }
+    const added = this.residentHeight() - residentBefore;
+    if (this.above > 0) this.above = absorbPrependedHeightIntoSpacer(this.above, added);
+    this.restoreAnchor(anchor);
+  }
+
+  /** Mirrors runSpacerReconcile (quiet-point dual-spacer reconcile). */
+  reconcile(): void {
+    const totalMessages = this.conversation.length;
+    const meta = this.meta;
+    const residentCount = meta.historyCount + meta.tailCount;
+    const exhausted = meta.oldestReached;
+    const split = splitUnloadedRows({
+      totalMessages,
+      residentCount,
+      exhausted,
+      startOrdinalEstimate: meta.startOrdinalEstimate,
+      gapToTail: meta.gapToTail,
+      holeRowsEstimate: meta.holeRowsEstimate,
+    });
+    const residentContentHeight = this.residentHeight();
+    const result = reconcileVirtualSpacer({
+      totalMessages,
+      residentCount,
+      exhausted,
+      residentContentHeight,
+      currentSpacerHeight: this.above,
+      rowHeightEma: this.ema,
+      viewportHeight: VIEWPORT_PX,
+      unloadedRows: split.above,
+    });
+    this.ema = result.rowHeightEma;
+    const belowResult = reconcileVirtualSpacer({
+      totalMessages,
+      residentCount,
+      exhausted: false,
+      residentContentHeight: 0,
+      currentSpacerHeight: this.below,
+      rowHeightEma: this.ema,
+      viewportHeight: VIEWPORT_PX,
+      unloadedRows: split.below,
+    });
+    if (!result.applied && !belowResult.applied) return;
+    const previousScrollTop = this.scrollTop;
+    let compensation = result.applied ? result.scrollTopDelta : 0;
+    if (belowResult.applied && this.below > 0) {
+      const spacerTopDoc = this.above + heightOf(this.history);
+      if (previousScrollTop > spacerTopDoc) compensation += belowResult.scrollTopDelta;
+    }
+    if (result.applied) this.above = result.spacerHeight;
+    if (belowResult.applied) this.below = belowResult.spacerHeight;
+    if (compensation !== 0) this.scrollTop = Math.max(0, previousScrollTop + compensation);
+  }
+
+  /** The ChatPanel older-history trigger guard at the current position. */
+  triggerFires(): boolean {
+    const meta = this.meta;
+    return shouldRequestOlderHistory({
+      scrollTop: this.scrollTop,
+      threshold: TOP_THRESHOLD_PX,
+      canScroll: this.scrollHeight() > VIEWPORT_PX,
+      fetching: false,
+      exhausted: meta.oldestReached,
+      historyCount: meta.historyCount,
+      tailCount: meta.tailCount,
+      tailTruncated: this.fetchCursor > 0 || meta.historyCount > 0,
+      totalMessages: this.conversation.length,
+      spacerAbove: this.above,
+    });
+  }
+}
+
 describe('full-walk scrollback harness', () => {
   it('drives one older-history page through the real reducer', () => {
     const conversation = buildConversation();
@@ -110,5 +310,43 @@ describe('full-walk scrollback harness', () => {
     expect(meta.tailCount).toBe(tailRows);
     expect(meta.gapToTail).toBe(false);
     expect(meta.oldestReached).toBe(false);
+  });
+
+  it('serial walk tail→top keeps extent error under 15% at every quiet point', () => {
+    const conversation = buildConversation();
+    const sim = new WalkSim(conversation, 20);
+
+    // Initial hydration settles: first reconcile seeds the EMA + spacer.
+    sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
+    sim.reconcile();
+    expect(sim.above).toBeGreaterThan(0);
+    expect(sim.extentError()).toBeLessThan(EXTENT_ERROR_BOUND);
+
+    const extentErrors: { step: number; error: number }[] = [];
+    let steps = 0;
+    const MAX_STEPS = 2000;
+    while (!sim.meta.oldestReached && steps < MAX_STEPS) {
+      steps += 1;
+      // User scrolls up one viewport per step.
+      sim.scrollTop = Math.max(0, sim.scrollTop - VIEWPORT_PX);
+      // Edge-trigger + settle chaining: keep paging while the guard fires
+      // (mirrors shouldChainOlderHistoryOnSettle re-running the same guard).
+      let chain = 0;
+      while (sim.triggerFires() && chain < 50) {
+        chain += 1;
+        sim.fetchOlderPage();
+      }
+      // Transcript goes quiet → reconcile runs.
+      sim.reconcile();
+      extentErrors.push({ step: steps, error: sim.extentError() });
+    }
+
+    expect(sim.meta.oldestReached).toBe(true);
+    expect(steps).toBeLessThan(MAX_STEPS);
+    const worst = extentErrors.reduce((a, b) => (b.error > a.error ? b : a));
+    expect(
+      worst.error,
+      `worst extent error ${(worst.error * 100).toFixed(1)}% at step ${worst.step}`,
+    ).toBeLessThan(EXTENT_ERROR_BOUND);
   });
 });
