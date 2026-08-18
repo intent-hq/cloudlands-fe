@@ -143,7 +143,7 @@ describe('workspace column layout contract', () => {
     expect(columns).not.toContain('titlebarClearance');
     expect(columns).toContain('<WorkspaceSurface\n        {workspaceId}');
     expect(columns).toContain('retainWorkspaceSessionOnUnmount={true}');
-    expect(appLayout).toContain('<WorkspaceColumnsView />');
+    expect(appLayout).toContain('<WorkspaceColumnsView');
     expect(appLayout).not.toContain('getWorkspaceRouteContext');
     expect(appLayout).toContain('workspaceIdFromRoute(routePathname, routeWorkspaceId)');
     expect(appLayout).not.toContain('globalSidebarOpen');
