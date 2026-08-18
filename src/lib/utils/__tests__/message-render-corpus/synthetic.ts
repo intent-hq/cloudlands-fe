@@ -123,7 +123,7 @@ export const syntheticFixtures: SyntheticFixture[] = [
   },
   {
     id: 'prompts-trailing-closer',
-    note: 'final prompt line fused with the --> closer still closes the block',
+    note: 'final prompt line fused with the --> closer remains visible as malformed',
     blocks: [
       text(
         'Parked the rewrite.\n\n<!-- suggested-prompts\nResume the rewrite now.\nShow the parked diff.\nLeave rewrite parked for now. -->\n',
