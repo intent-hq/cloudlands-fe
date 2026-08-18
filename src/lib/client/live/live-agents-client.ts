@@ -491,6 +491,22 @@ export class LiveAgentsClient implements AgentsClient {
       changes: { reasoningEffort: params.reasoningEffort },
     });
   }
+  async updateSpecialist(params: {
+    agentId: string;
+    workspaceId: string;
+    specialist: string | null;
+    model?: string | null;
+    systemPrompt?: string | null;
+  }): Promise<MutationResult> {
+    const changes: Record<string, unknown> = { specialist: params.specialist };
+    if (params.model !== undefined) changes.model = params.model;
+    if (params.systemPrompt !== undefined) changes.systemPrompt = params.systemPrompt;
+    return runMutation('agent.update', {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      changes,
+    });
+  }
   async rename(
     agentId: string,
     name: string,

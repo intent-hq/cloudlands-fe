@@ -3087,13 +3087,25 @@
       );
     }
 
-    // Request persistence for future sessions (fire-and-forget; saga reports failures).
-    // NOTE: This may fail for sessions with no messages (which is fine), because:
-    // 1. The in-memory metadata is updated via Redux dispatch above
-    // 2. When sending a message, the metadata is passed directly in the request
-    // 3. The backend will read from request.metadata (priority) before disk
-    // If persistence succeeds, the specialist will be remembered for future sessions.
-    appStore.dispatch(saveAgentSessionRequested(workspace.id, agentId, true));
+    // Persist only the specialist fields resolved by this picker change.
+    const saveAction = saveAgentSessionRequested(workspace.id, agentId, true, {
+      specialistUpdate: {
+        specialist: specialistId,
+        ...(specialistId && newModel !== undefined ? { model: newModel } : {}),
+        ...(specialistId === null
+          ? { systemPrompt: null }
+          : behaviorPrompt !== undefined
+            ? { systemPrompt: behaviorPrompt }
+            : {}),
+      },
+      specialistRollback: { metadata: session.metadata, model: session.model },
+    });
+    appStore.dispatch(saveAction);
+    // The mutation saga owns rollback and the user-visible error; observe the
+    // rejection here so this component dispatch is not an unhandled promise.
+    void saveAction.promise.catch((error) => {
+      logger.error('Failed to persist agent specialist change', { agentId, error });
+    });
     logger.info('Agent specialist change dispatched', {
       agentId,
       specialistId,

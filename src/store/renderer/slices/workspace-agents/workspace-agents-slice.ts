@@ -77,6 +77,12 @@ export interface ForkAgentRequest {
 
 export interface SaveAgentSessionOptions {
   allowTruncation?: boolean;
+  specialistUpdate?: {
+    specialist: string | null;
+    model?: string | null;
+    systemPrompt?: string | null;
+  };
+  specialistRollback?: Pick<AgentSession, 'metadata' | 'model'>;
 }
 
 function reconcileWorkspaceAgentSnapshot(

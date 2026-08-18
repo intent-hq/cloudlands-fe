@@ -92,6 +92,57 @@ describe('agentReadSaga', () => {
     await task.toPromise();
   });
 
+  it('replaces blank-agent specialist metadata and default model with the daemon projection', async () => {
+    const existing = session({ model: 'default-model', metadata: {} });
+    const hydrated = session({
+      model: 'grok4.6',
+      metadata: { specialist: 'spec-writer' },
+    });
+    mocks.get.mockResolvedValue(hydrated);
+    const channel = stdChannel();
+    let agentSessions = agentSessionReducer(
+      initialAgentSessionState,
+      bulkUpsertSessions([existing]),
+    );
+    const dispatch = vi.fn((action) => {
+      agentSessions = agentSessionReducer(agentSessions, action);
+    });
+    const task = runSaga({ channel, dispatch, getState: () => ({ agentSessions }) }, agentReadSaga);
+
+    channel.put(ensureAgentSessionLoaded(WS, AGENT));
+    await settle();
+
+    expect(agentSessions.byAgentId[AGENT]).toMatchObject({
+      model: 'grok4.6',
+      metadata: { specialist: 'spec-writer' },
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not swallow a specialist-only hydrate when the model is unchanged', async () => {
+    const existing = session({ model: 'grok4.6', metadata: {} });
+    mocks.get.mockResolvedValue(
+      session({ model: 'grok4.6', metadata: { specialist: 'spec-writer' } }),
+    );
+    const channel = stdChannel();
+    let agentSessions = agentSessionReducer(
+      initialAgentSessionState,
+      bulkUpsertSessions([existing]),
+    );
+    const dispatch = vi.fn((action) => {
+      agentSessions = agentSessionReducer(agentSessions, action);
+    });
+    const task = runSaga({ channel, dispatch, getState: () => ({ agentSessions }) }, agentReadSaga);
+
+    channel.put(ensureAgentSessionLoaded(WS, AGENT));
+    await settle();
+
+    expect(agentSessions.byAgentId[AGENT]?.metadata?.specialist).toBe('spec-writer');
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('loads a different agent while the first read remains blocked', async () => {
     const otherAgent = 'agent-other';
     let resolveFirst!: (value: AgentSession) => void;
