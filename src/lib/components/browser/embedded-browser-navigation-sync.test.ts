@@ -106,7 +106,7 @@ describe('embedded browser navigation synchronization', () => {
     expect(syncState.previousUrlProp).toBe('https://example.test/app/profile');
   });
 
-  it('records URL prop changes while the webview is not ready and does not load the same prop later', () => {
+  it('defers URL prop changes while the webview is not ready and loads them once it is', () => {
     const syncState = createEmbeddedBrowserNavigationSyncState('https://example.test/app');
     const isValidBrowserUrl = vi.fn(() => true);
 
@@ -118,6 +118,13 @@ describe('embedded browser navigation synchronization', () => {
         isValidBrowserUrl,
       },
     );
+    // The not-ready reconcile must not consume the prop change: the store
+    // already points at the new URL (e.g. a restart-rehydrated tab whose
+    // fresh tunnel resolves during the dead initial load, monorepo#2789), so
+    // the readiness flip has to pick it up.
+    expect(notReadyDecision).toEqual({ shouldLoad: false, targetUrl: null });
+    expect(syncState.previousUrlProp).toBe('https://example.test/app');
+
     const readyDecision = reconcileEmbeddedBrowserUrlProp(
       syncState,
       'https://example.test/app/settings',
@@ -126,10 +133,11 @@ describe('embedded browser navigation synchronization', () => {
         isValidBrowserUrl,
       },
     );
-
-    expect(notReadyDecision).toEqual({ shouldLoad: false, targetUrl: null });
-    expect(readyDecision).toEqual({ shouldLoad: false, targetUrl: null });
-    expect(isValidBrowserUrl).not.toHaveBeenCalled();
+    expect(readyDecision).toEqual({
+      shouldLoad: true,
+      targetUrl: 'https://example.test/app/settings',
+    });
+    expect(syncState.previousUrlProp).toBe('https://example.test/app/settings');
   });
 
   it('uses exact string equality for equivalent parent URL round-trips', () => {

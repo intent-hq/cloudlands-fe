@@ -608,6 +608,39 @@ describe('panelLayoutSaga', () => {
       );
       await cancelSaga(task);
     });
+
+    it('re-resolves restored tunneled tabs on the backend-switch restore path too', async () => {
+      const remoteKey = `backend:${REMOTE_ID}:${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${WS_1}`;
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === remoteKey ? browserLayout() : undefined,
+      );
+      mocks.resolveBrowserLinkUrl.mockResolvedValue({
+        url: FRESH_TUNNEL,
+        rewritten: true,
+        requestedUrl: REQUESTED,
+        tunneled: true,
+      });
+      let backendId = LOCAL_CONNECTION_ID;
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => storeState(WS_1, backendId) },
+        panelLayoutSaga,
+        { activeWorkspaceId: WS_1 },
+      );
+      await settle();
+      dispatch.mockClear();
+
+      backendId = REMOTE_ID;
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      await settle();
+
+      expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalledWith(REQUESTED, expect.anything());
+      expect(dispatch.mock.calls.map(([action]) => action)).toContainEqual(
+        updateTabBrowserUrl(WS_1, 'tab-b', FRESH_TUNNEL, REQUESTED),
+      );
+      await cancelSaga(task);
+    });
   });
 
   it.each([
