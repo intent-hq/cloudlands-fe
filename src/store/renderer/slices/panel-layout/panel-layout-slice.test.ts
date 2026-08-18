@@ -6,6 +6,7 @@ import {
   initializeLayout,
   setRestoreStatus,
   openTab,
+  openTabInRightmostColumn,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
   openBlankWorkingPanel,
@@ -438,6 +439,46 @@ describe('panelLayoutReducer', () => {
     });
   });
 
+  describe('fixed-column Spec reveal', () => {
+    it('switches a coordinator once to agent-left and Spec-right', () => {
+      const seeded = panelLayoutReducer(
+        emptyState(),
+        bootstrapNewWorkspaceLayout(WS, 'agent-1', 'Coordinator', true, 1),
+      );
+      const revealed = panelLayoutReducer(
+        seeded,
+        revealDeferredSpecTab(WS, 'spec:created', 'Spec', 10),
+      );
+      const repeated = panelLayoutReducer(
+        revealed,
+        revealDeferredSpecTab(WS, 'spec:updated', 'Spec', 20),
+      );
+      const workspace = revealed.byWorkspaceId[WS];
+      const order = workspace.root.type === 'split' ? workspace.root.children : [];
+
+      expect(order).toHaveLength(2);
+      expect(workspace.panels[order[0].type === 'panel' ? order[0].panelId : '']).toMatchObject({
+        tabs: [expect.objectContaining({ type: 'agent', agentId: 'agent-1' })],
+      });
+      expect(workspace.panels[order[1].type === 'panel' ? order[1].panelId : '']).toMatchObject({
+        tabs: [expect.objectContaining({ type: 'note', noteId: 'spec' })],
+      });
+      expect(workspace.newWorkspaceLifecycle?.spec.state).toBe('revealed');
+      expect(repeated).toBe(revealed);
+    });
+
+    it('does not auto-reveal Spec for a non-coordinator workspace', () => {
+      const seeded = panelLayoutReducer(
+        emptyState(),
+        bootstrapNewWorkspaceLayout(WS, 'agent-1', 'Initial agent', false, 1),
+      );
+
+      expect(
+        panelLayoutReducer(seeded, revealDeferredSpecTab(WS, 'spec:created', 'Spec', 10)),
+      ).toBe(seeded);
+    });
+  });
+
   describe('toggleExpandPanel', () => {
     it('fills the horizontal split and restores the exact saved widths on a second toggle', () => {
       const state = stateWithPanel('p1');
@@ -714,6 +755,81 @@ describe('panelLayoutReducer', () => {
       } finally {
         nowSpy.mockRestore();
       }
+    });
+  });
+
+  describe('openTabInRightmostColumn', () => {
+    function twoColumnState() {
+      const state = stateWithPanel('left', [{ id: 'left-tab', type: 'note', title: 'Left' }]);
+      state.byWorkspaceId[WS] = {
+        ...state.byWorkspaceId[WS],
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'left' },
+            { type: 'panel', panelId: 'right' },
+          ],
+          sizes: [50, 50],
+        },
+        panels: {
+          ...state.byWorkspaceId[WS].panels,
+          right: {
+            id: 'right',
+            tabs: [{ id: 'old-right', type: 'file', title: 'Old right', closable: true }],
+            activeTabId: 'old-right',
+          },
+        },
+        focusedPanelId: 'left',
+      };
+      return state;
+    }
+
+    it('activates new content in the rightmost column and keeps displaced content in history', () => {
+      const result = panelLayoutReducer(
+        twoColumnState(),
+        openTabInRightmostColumn(
+          WS,
+          { type: 'note', title: 'Plan', noteId: 'plan', closable: true },
+          { newTabId: 'new-right' },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.focusedPanelId).toBe('right');
+      expect(result.panels.right.tabs.map((tab) => tab.id)).toEqual(['old-right', 'new-right']);
+      expect(result.panels.right.activeTabId).toBe('new-right');
+      expect(result.panels.left.tabs.map((tab) => tab.id)).toEqual(['left-tab']);
+      expect(Object.keys(result.panels)).toEqual(['left', 'right']);
+    });
+
+    it('activates an equivalent tab in place unless duplicates are explicitly allowed', () => {
+      const state = twoColumnState();
+      state.byWorkspaceId[WS].panels.left.tabs[0] = {
+        id: 'left-tab',
+        type: 'file',
+        title: 'Left',
+        filePath: 'src/left.ts',
+        closable: true,
+      };
+      const tab = {
+        type: 'file' as const,
+        title: 'Left',
+        filePath: 'src/left.ts',
+        closable: true,
+      };
+      const activated = panelLayoutReducer(
+        state,
+        openTabInRightmostColumn(WS, tab, { newTabId: 'ignored' }, 10),
+      ).byWorkspaceId[WS];
+      const duplicated = panelLayoutReducer(
+        state,
+        openTabInRightmostColumn(WS, tab, { allowDuplicate: true, newTabId: 'duplicate' }, 20),
+      ).byWorkspaceId[WS];
+
+      expect(activated.focusedPanelId).toBe('left');
+      expect(activated.panels.right.tabs.map((candidate) => candidate.id)).toEqual(['old-right']);
+      expect(duplicated.panels.right.tabs.at(-1)?.id).toBe('duplicate');
     });
   });
 

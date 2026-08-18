@@ -28,10 +28,10 @@ describe('appLayoutNavigationSaga', () => {
     await settle();
     expect(dispatch).toHaveBeenNthCalledWith(1, ensureAgentSessionLoaded('ws-1', 'agent-1'));
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInNewRootColumn',
+      type: 'panelLayout/openTab',
       payload: {
         wsId: 'ws-1',
-        sourcePanelId: 'panel-1',
+        panelId: 'panel-1',
         force: true,
         tab: {
           type: 'agent',
@@ -54,10 +54,10 @@ describe('appLayoutNavigationSaga', () => {
     await settle();
     expect(dispatch).toHaveBeenNthCalledWith(1, ensureAgentSessionLoaded('ws-1', 'agent-1'));
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInNewRootColumn',
+      type: 'panelLayout/openTab',
       payload: {
         wsId: 'ws-1',
-        sourcePanelId: 'panel-1',
+        panelId: 'panel-1',
         force: true,
         tab: {
           type: 'agent',
@@ -82,11 +82,9 @@ describe('appLayoutNavigationSaga', () => {
     await settle();
     expect(dispatch).toHaveBeenNthCalledWith(1, ensureAgentSessionLoaded('ws-1', 'agent-1'));
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInNewRootColumn',
+      type: 'panelLayout/openTabInRightmostColumnRequested',
       payload: {
         wsId: 'layout-1',
-        adaptiveFirstChat: true,
-        availableCanvasWidth: 1400,
         force: true,
         tab: { agentId: 'agent-1', workspaceId: 'ws-1' },
       },
@@ -111,7 +109,7 @@ describe('appLayoutNavigationSaga', () => {
     await settle();
     expect(dispatch).toHaveBeenNthCalledWith(1, ensureAgentSessionLoaded('ws-1', 'agent-missing'));
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInNewRootColumn',
+      type: 'panelLayout/openTabInRightmostColumnRequested',
       payload: {
         wsId: 'ws-1',
         force: true,
@@ -151,10 +149,10 @@ describe('appLayoutNavigationSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInNewRootColumn',
+      type: 'panelLayout/openTab',
       payload: {
         wsId: 'layout-1',
-        sourcePanelId: 'working-panel',
+        panelId: 'working-panel',
         tab: { agentId: 'agent-1', workspaceId: 'ws-1' },
       },
     });
@@ -169,7 +167,7 @@ describe('appLayoutNavigationSaga', () => {
       panelLayout: { byWorkspaceId: { 'ws-1': { panels: {}, pendingPanelReveal: null } } },
     };
     const dispatch = vi.fn((action: any) => {
-      if (action.type === 'panelLayout/openTabInNewRootColumn') {
+      if (action.type === 'panelLayout/openTabInRightmostColumnRequested') {
         state = {
           ...state,
           panelLayout: {
@@ -193,12 +191,12 @@ describe('appLayoutNavigationSaga', () => {
     await settle();
 
     const openAction = dispatch.mock.calls.find(
-      ([action]) => action.type === 'panelLayout/openTabInNewRootColumn',
+      ([action]) => action.type === 'panelLayout/openTabInRightmostColumnRequested',
     )?.[0];
     expect(openAction.payload.newTabId).not.toBe('tab-reused');
     expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
       'workspaceAgents/ensureAgentSessionLoaded',
-      'panelLayout/openTabInNewRootColumn',
+      'panelLayout/openTabInRightmostColumnRequested',
     ]);
     task.cancel();
     await task.toPromise();

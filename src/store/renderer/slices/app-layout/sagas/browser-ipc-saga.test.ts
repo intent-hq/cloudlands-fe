@@ -156,22 +156,20 @@ describe('browserIpcSaga', () => {
 
     expect(actions).toMatchObject([
       {
-        type: 'panelLayout/openTabInNewRootColumn',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://one.test'),
-          sourcePanelId: undefined,
           force: false,
           newTabId: `tab-${NOW}-i`,
           timestamp: NOW,
         },
       },
       {
-        type: 'panelLayout/openTabInNewRootColumn',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://two.test'),
-          sourcePanelId: undefined,
           force: false,
           newTabId: `tab-${NOW}-i`,
           timestamp: NOW,
@@ -189,11 +187,10 @@ describe('browserIpcSaga', () => {
         },
       },
       {
-        type: 'panelLayout/openTabInNewRootColumn',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-2',
           tab: TAB('https://four.test'),
-          sourcePanelId: undefined,
           force: false,
           newTabId: `tab-${NOW}-i`,
           timestamp: NOW,
@@ -413,11 +410,10 @@ describe('browserIpcSaga', () => {
 
     expect(actions).toMatchObject([
       {
-        type: 'panelLayout/openTabInNewRootColumn',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://one.test'),
-          sourcePanelId: undefined,
           force: false,
           allowDuplicate: true,
           newTabId: 'tab-main-1',
@@ -456,7 +452,7 @@ describe('browserIpcSaga', () => {
     const actions: any[] = [];
     const task = start((action: any) => {
       actions.push(action);
-      if (action.type === 'panelLayout/openTabInNewRootColumn') {
+      if (action.type === 'panelLayout/openTabInRightmostColumnRequested') {
         state.panelLayout.byWorkspaceId['ws-1'] = {
           panels: {},
           pendingPanelReveal: {
@@ -470,7 +466,9 @@ describe('browserIpcSaga', () => {
 
     await emit({ url: 'https://pinned.test', workspaceId: 'ws-1', tabId: 'request-1', pin: true });
 
-    expect(actions.map((action) => action.type)).toEqual(['panelLayout/openTabInNewRootColumn']);
+    expect(actions.map((action) => action.type)).toEqual([
+      'panelLayout/openTabInRightmostColumnRequested',
+    ]);
     task.cancel();
     await task.toPromise();
   });
@@ -500,14 +498,13 @@ describe('browserIpcSaga', () => {
 
     expect(actions).toMatchObject([
       {
-        type: 'panelLayout/openTabInNewRootColumn',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-1',
           tab: {
             ...TAB('http://127.0.0.1:52345/'),
             browserRequestedUrl: 'http://daemon.localhost:3000/',
           },
-          sourcePanelId: undefined,
           force: false,
           newTabId: `tab-${NOW}-i`,
           timestamp: NOW,
@@ -530,7 +527,7 @@ describe('browserIpcSaga', () => {
     const actions: any[] = [];
     const task = start((action: any) => {
       actions.push(action);
-      if (action.type === 'panelLayout/openTabInNewRootColumn') {
+      if (action.type === 'panelLayout/openTabInRightmostColumnRequested') {
         state.panelLayout.byWorkspaceId['ws-1'] = {
           panels: {},
           pendingPanelReveal: {
@@ -544,7 +541,9 @@ describe('browserIpcSaga', () => {
 
     await emit({ url: 'https://stale.test', workspaceId: 'ws-1', tabId: 'request-1', pin: true });
 
-    expect(actions.map((action) => action.type)).toEqual(['panelLayout/openTabInNewRootColumn']);
+    expect(actions.map((action) => action.type)).toEqual([
+      'panelLayout/openTabInRightmostColumnRequested',
+    ]);
     task.cancel();
     await task.toPromise();
   });

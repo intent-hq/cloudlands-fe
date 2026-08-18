@@ -33,12 +33,12 @@ describe('PanelLayoutAdapter', () => {
     mocks.panels = {};
   });
 
-  it('routes untargeted content through the global panel mode', () => {
+  it('routes untargeted content to the rightmost configured column', () => {
     new PanelLayoutAdapter('ws-1').openTab(tab);
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'panelLayout/openTabWithPanelModeRequested',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: expect.objectContaining({ wsId: 'ws-1', tab }),
       }),
     );
@@ -55,12 +55,12 @@ describe('PanelLayoutAdapter', () => {
     );
   });
 
-  it('routes browser content through the global panel mode', () => {
+  it('routes browser content to the rightmost configured column', () => {
     new PanelLayoutAdapter('ws-1').openBrowserPanel('https://example.com');
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'panelLayout/openTabWithPanelModeRequested',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: expect.objectContaining({
           wsId: 'ws-1',
           tab: expect.objectContaining({ type: 'browser', browserUrl: 'https://example.com' }),
@@ -69,11 +69,24 @@ describe('PanelLayoutAdapter', () => {
     );
   });
 
-  it('opens untargeted content in the focused empty panel', () => {
+  it('routes untargeted content right even when the focused panel is empty', () => {
     mocks.focusedPanelId = 'working';
     mocks.panels = { working: { id: 'working', tabs: [], activeTabId: null } };
 
     new PanelLayoutAdapter('ws-1').openTab(tab);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panelLayout/openTabInRightmostColumnRequested',
+        payload: expect.objectContaining({ wsId: 'ws-1', tab }),
+      }),
+    );
+  });
+
+  it('opens adjacent content in its empty source panel', () => {
+    mocks.panels = { working: { id: 'working', tabs: [], activeTabId: null } };
+
+    new PanelLayoutAdapter('ws-1').openTabInAdjacentOrSplit(tab, 'working');
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -83,8 +96,10 @@ describe('PanelLayoutAdapter', () => {
     );
   });
 
-  it('opens adjacent content in its empty source panel', () => {
-    mocks.panels = { working: { id: 'working', tabs: [], activeTabId: null } };
+  it('preserves an explicit populated source panel target', () => {
+    mocks.panels = {
+      working: { id: 'working', tabs: [{ id: 'existing' }], activeTabId: 'existing' },
+    };
 
     new PanelLayoutAdapter('ws-1').openTabInAdjacentOrSplit(tab, 'working');
 

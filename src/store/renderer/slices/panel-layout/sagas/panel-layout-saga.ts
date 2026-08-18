@@ -102,7 +102,8 @@ import {
   openBlankWorkingPanel,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
-  openTabWithPanelModeRequested,
+  openTabInRightmostColumn,
+  openTabInRightmostColumnRequested,
   observeDeferredSpecGeneration,
   panelLayoutReducer,
   panelLayoutScopeMounted,
@@ -145,6 +146,7 @@ const PERSIST_ACTIONS = [
   openTab,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
+  openTabInRightmostColumn,
   closeTab,
   closeActiveTab,
   closeTabsByType,
@@ -194,6 +196,7 @@ const PERSIST_ACTIONS = [
 const HISTORY_ACTIONS = [
   openTab,
   openTabInAdjacentOrSplit,
+  openTabInRightmostColumn,
   closeTab,
   closeActiveTab,
   closeOtherTabs,
@@ -285,11 +288,12 @@ function* reconcileAllWorkspaceColumnCounts(): SagaGenerator<void> {
   }
 }
 
-function* openTabWithPanelMode(
-  action: ReturnType<typeof openTabWithPanelModeRequested>,
+function* routeTabToRightmostColumn(
+  action: ReturnType<typeof openTabInRightmostColumnRequested>,
 ): SagaGenerator<void> {
-  const { wsId, tab, options, timestamp } = action.payload;
-  yield* put(openTabInNewRootColumn(wsId, tab, options, timestamp));
+  const { wsId, tab, force, allowDuplicate, newTabId, timestamp } = action.payload;
+  yield* put(reconcilePanelColumnCount(wsId, yield* selectPanelColumnCount.effect(), timestamp));
+  yield* put(openTabInRightmostColumn(wsId, tab, { force, allowDuplicate, newTabId }, timestamp));
 }
 
 function collectPanelIds(node: PanelLayoutNode, panelIds: Set<string>): boolean {
@@ -811,11 +815,16 @@ function specGeneration(note: { id: unknown; createdAt: Date | string }): string
 
 function* reconcileDeferredSpec(workspaceId: string): SagaGenerator<void> {
   const layout = yield* selectPanelLayoutWorkspace.effect(workspaceId);
-  if (layout.newWorkspaceLifecycle?.spec.state !== 'deferred') return;
+  if (
+    !layout.newWorkspaceLifecycle?.coordinator ||
+    layout.newWorkspaceLifecycle.spec.state !== 'deferred'
+  )
+    return;
   const spec = yield* selectSpec.effect(workspaceId);
   if (!spec) return;
   const generation = specGeneration(spec);
   if (spec.content.trim().length > 0) {
+    yield* put(setPanelColumnCount(2));
     yield* put(revealDeferredSpecTab(workspaceId, generation, m.layout_shared_spec_title()));
   } else if (layout.newWorkspaceLifecycle.spec.generation !== generation) {
     yield* put(observeDeferredSpecGeneration(workspaceId, generation));
@@ -1025,7 +1034,7 @@ export function* panelLayoutSaga(options?: {
     yield* takeEvery(PERSIST_ACTIONS, persistPanelLayout);
     yield* takeEvery(setTabOwnerAgent, persistPanelLayout);
     yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
-    yield* takeEvery(openTabWithPanelModeRequested, openTabWithPanelMode);
+    yield* takeEvery(openTabInRightmostColumnRequested, routeTabToRightmostColumn);
     yield* takeEvery(setPanelColumnCount, reconcileAllWorkspaceColumnCounts);
     yield* takeEvery([clearPanelLayout, workspaceDeleted], clearPersistedLayout);
     const historyWatcher = yield* takeEvery(HISTORY_ACTIONS, queueHistorySaveForAction);

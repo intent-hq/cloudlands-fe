@@ -10,7 +10,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { isBinaryExtension } from '$shared/binary-file-extensions';
 import { m } from '$shared/paraglide/messages.js';
 import { selectPanel } from '../../panel-layout/panel-layout-selectors';
-import { openTabInNewRootColumn } from '../../panel-layout/panel-layout-slice';
+import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import {
@@ -36,12 +36,10 @@ function* openWorkspaceTab(
   sourcePanelId?: string,
 ): SagaGenerator<void> {
   void adjacent;
-  void sourcePanelId;
   yield* put(
-    openTabInNewRootColumn(workspaceId, tab, {
-      force: true,
-      sourcePanelId,
-    }),
+    sourcePanelId
+      ? openTab(workspaceId, tab, sourcePanelId, undefined, true)
+      : openTabInRightmostColumnRequested(workspaceId, tab, { force: true }),
   );
 }
 

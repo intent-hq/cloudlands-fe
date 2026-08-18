@@ -230,6 +230,40 @@ export const openTab = createAction(
   }),
 );
 
+export const openTabInRightmostColumn = createAction(
+  'panelLayout/openTabInRightmostColumn',
+  (
+    wsId: string,
+    tab: Omit<PanelTab, 'id'>,
+    options?: { force?: boolean; allowDuplicate?: boolean; newTabId?: string },
+    timestamp?: number,
+  ) => ({
+    wsId,
+    tab,
+    force: options?.force ?? false,
+    ...(options?.allowDuplicate === undefined ? {} : { allowDuplicate: options.allowDuplicate }),
+    newTabId: options?.newTabId ?? generateTabId(),
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
+export const openTabInRightmostColumnRequested = createAction(
+  'panelLayout/openTabInRightmostColumnRequested',
+  (
+    wsId: string,
+    tab: Omit<PanelTab, 'id'>,
+    options?: { force?: boolean; allowDuplicate?: boolean; newTabId?: string },
+    timestamp?: number,
+  ) => ({
+    wsId,
+    tab,
+    force: options?.force ?? false,
+    ...(options?.allowDuplicate === undefined ? {} : { allowDuplicate: options.allowDuplicate }),
+    newTabId: options?.newTabId ?? generateTabId(),
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
 export const openTabInAdjacentOrSplit = createAction(
   'panelLayout/openTabInAdjacentOrSplit',
   (
@@ -275,27 +309,6 @@ export const openTabInNewRootColumn = createAction(
     sourcePanelId: options?.sourcePanelId,
     newPanelId: options?.newPanelId ?? generatePanelId(),
     newTabId: options?.newTabId ?? generateTabId(),
-    timestamp: timestamp ?? Date.now(),
-  }),
-);
-
-export const openTabWithPanelModeRequested = createAction(
-  'panelLayout/openTabWithPanelModeRequested',
-  (
-    wsId: string,
-    tab: Omit<PanelTab, 'id'>,
-    options?: {
-      availableCanvasWidth?: number;
-      adaptiveFirstChat?: boolean;
-      force?: boolean;
-      allowDuplicate?: boolean;
-      newTabId?: string;
-    },
-    timestamp?: number,
-  ) => ({
-    wsId,
-    tab,
-    options,
     timestamp: timestamp ?? Date.now(),
   }),
 );
@@ -1341,8 +1354,8 @@ function openNewWorkspaceInitialAgent(
 
 function applyCanonicalDefaultPairGeometry(
   workspace: WorkspacePanelLayoutState,
-  reusablePanelId: string,
   initialAgentPanelId: string,
+  specPanelId: string,
 ): WorkspacePanelLayoutState {
   if (workspace.canvasWidthSource === 'explicit') return workspace;
   if (
@@ -1350,9 +1363,9 @@ function applyCanonicalDefaultPairGeometry(
     workspace.root.direction !== 'horizontal' ||
     workspace.root.children.length !== 2 ||
     workspace.root.children[0]?.type !== 'panel' ||
-    workspace.root.children[0].panelId !== reusablePanelId ||
+    workspace.root.children[0].panelId !== initialAgentPanelId ||
     workspace.root.children[1]?.type !== 'panel' ||
-    workspace.root.children[1].panelId !== initialAgentPanelId
+    workspace.root.children[1].panelId !== specPanelId
   ) {
     return workspace;
   }
@@ -1362,8 +1375,8 @@ function applyCanonicalDefaultPairGeometry(
     root: {
       ...workspace.root,
       sizes: [
-        (DEFAULT_MEDIUM_PANEL_WIDTH / panelWidth) * 100,
         (DEFAULT_CHAT_PANEL_WIDTH / panelWidth) * 100,
+        (DEFAULT_MEDIUM_PANEL_WIDTH / panelWidth) * 100,
       ],
     },
     ...resolveIntrinsicPanelCanvasWidth(panelWidth + PANEL_SPLIT_GUTTER_WIDTH),
@@ -1502,6 +1515,18 @@ panelLayoutReducer.with(openTab, (state, { payload }) => {
   };
   ws = addToFocusHistory(ws, targetPanelId, newTabId, timestamp);
   return setWorkspaceState(state, wsId, ws);
+});
+panelLayoutReducer.with(openTabInRightmostColumn, (state, { payload }) => {
+  const { wsId, tab, force, allowDuplicate, newTabId, timestamp } = payload;
+  const ws = getWorkspaceState(state, wsId);
+  const targetPanelId = getPanelOrder(ws.root)
+    .filter((panelId) => ws.panels[panelId])
+    .at(-1);
+  if (!targetPanelId) return state;
+  return selfDispatch(
+    state,
+    openTab(wsId, tab, targetPanelId, newTabId, force, timestamp, allowDuplicate),
+  );
 });
 panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
   const {
@@ -2898,9 +2923,11 @@ panelLayoutReducer.with(observeDeferredSpecGeneration, (state, { payload: [wsId,
 });
 panelLayoutReducer.with(revealDeferredSpecTab, (state, { payload }) => {
   const { wsId, generation, title, panelId, tabId, timestamp } = payload;
-  const ws = getWorkspaceState(state, wsId);
+  let ws = getWorkspaceState(state, wsId);
   const lifecycle = ws.newWorkspaceLifecycle;
-  if (!lifecycle || lifecycle.spec.state !== 'deferred') return state;
+  if (!lifecycle?.coordinator || lifecycle.spec.state !== 'deferred') return state;
+  ws = reconcileWorkspacePanelColumns(ws, 2, [panelId], timestamp, true);
+  const reconciledState = setWorkspaceState(state, wsId, ws);
 
   const revealedLifecycle = {
     ...lifecycle,
@@ -2917,7 +2944,7 @@ panelLayoutReducer.with(revealDeferredSpecTab, (state, { payload }) => {
         (candidate) => candidate.type === 'agent' && candidate.agentId === lifecycle.initialAgentId,
       ),
     )?.id;
-    const root = movePanelToRootEdgeInLayout(current.root, specPanelId, 'before') ?? current.root;
+    const root = movePanelToRootEdgeInLayout(current.root, specPanelId, 'after') ?? current.root;
     const normalized: WorkspacePanelLayoutState = {
       ...current,
       ...(ws.canvasWidthSource === 'explicit'
@@ -2934,16 +2961,25 @@ panelLayoutReducer.with(revealDeferredSpecTab, (state, { payload }) => {
       currentState,
       wsId,
       initialAgentPanelId
-        ? applyCanonicalDefaultPairGeometry(normalized, specPanelId, initialAgentPanelId)
+        ? applyCanonicalDefaultPairGeometry(normalized, initialAgentPanelId, specPanelId)
         : normalized,
     );
   };
+  const rightmostPanelId = getPanelOrder(ws.root).at(-1);
+  if (!rightmostPanelId) return state;
   for (const [existingPanelId, panel] of Object.entries(ws.panels)) {
     const existing = panel.tabs.find(
       (tab) => tab.type === 'note' && tab.noteId === lifecycle.spec.noteId,
     );
     if (!existing) continue;
-    const activated = setWorkspaceState(state, wsId, {
+    if (existingPanelId !== rightmostPanelId) {
+      const moved = selfDispatch(
+        reconciledState,
+        moveTabToPanel(wsId, existing.id, existingPanelId, rightmostPanelId, undefined, timestamp),
+      );
+      return finalizeReveal(moved, rightmostPanelId, existing.id);
+    }
+    const activated = setWorkspaceState(reconciledState, wsId, {
       ...ws,
       panels: { ...ws.panels, [existingPanelId]: { ...panel, activeTabId: existing.id } },
     });
@@ -2957,18 +2993,10 @@ panelLayoutReducer.with(revealDeferredSpecTab, (state, { payload }) => {
     workspaceId: wsId,
     closable: true,
   };
-  const reusablePanelId = getPanelOrder(ws.root).at(-1);
-  const opened = reusablePanelId
-    ? selfDispatch(state, openTab(wsId, tab, reusablePanelId, tabId, true, timestamp))
-    : selfDispatch(
-        state,
-        openTabInNewRootColumn(
-          wsId,
-          tab,
-          { force: true, newPanelId: panelId, newTabId: tabId },
-          timestamp,
-        ),
-      );
+  const opened = selfDispatch(
+    reconciledState,
+    openTab(wsId, tab, rightmostPanelId, tabId, true, timestamp),
+  );
   const openedWorkspace = getWorkspaceState(opened, wsId);
   const specPanelId = Object.values(openedWorkspace.panels).find((panel) =>
     panel.tabs.some(

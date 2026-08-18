@@ -14,7 +14,7 @@
 
   import { TrackedChangeDiffViewer } from '$features/file-tracking/components/diff';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { openTabWithPanelModeRequested } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { openTabInRightmostColumnRequested } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
@@ -150,7 +150,7 @@
       workspaceId,
     };
     const store = appStore;
-    store.dispatch(openTabWithPanelModeRequested(workspaceId, tabData));
+    store.dispatch(openTabInRightmostColumnRequested(workspaceId, tabData));
   }
 
   // Register header actions

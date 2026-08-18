@@ -12,7 +12,7 @@ import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 import {
   openTab,
-  openTabWithPanelModeRequested,
+  openTabInRightmostColumnRequested,
   closeTab,
   closeActiveTab,
   closeTabsByType,
@@ -88,12 +88,6 @@ export class PanelLayoutAdapter {
     appStore.dispatch(action);
   }
 
-  private getEmptyTargetPanelId(sourcePanelId?: string): string | undefined {
-    const panels = selectPanels.select(this.state, this.workspaceId);
-    const panelId = sourcePanelId ?? selectFocusedPanelId.select(this.state, this.workspaceId);
-    return panelId && panels[panelId]?.tabs.length === 0 ? panelId : undefined;
-  }
-
   // --- Imperative read methods (for event handlers / one-time reads only) ---
 
   /** Get all panel IDs. One-time read — not reactive. */
@@ -121,37 +115,41 @@ export class PanelLayoutAdapter {
 
   // --- Tab operations ---
   openTab(tab: Omit<PanelTab, 'id'>, panelId?: string) {
-    const targetPanelId = panelId ?? this.getEmptyTargetPanelId();
-    if (targetPanelId) {
-      this.dispatch(openTab(this.workspaceId, tab, targetPanelId));
+    if (panelId) {
+      this.dispatch(openTab(this.workspaceId, tab, panelId));
       return;
     }
-    this.dispatch(openTabWithPanelModeRequested(this.workspaceId, tab));
+    this.dispatch(openTabInRightmostColumnRequested(this.workspaceId, tab));
   }
-  /** User opens bypass Spec deferral and consume a pristine coordinator placeholder first. */
+  /** User opens bypass Spec deferral while preserving explicit panel targeting. */
   openUserTab(tab: Omit<PanelTab, 'id'>, panelId?: string) {
-    const panels = selectPanels.select(this.state, this.workspaceId);
-    const placeholder = Object.values(panels).find(
-      (panel) => panel.pristine === true && panel.tabs.length === 0,
-    );
-    if (panelId || placeholder) {
-      this.dispatch(openTab(this.workspaceId, tab, panelId ?? placeholder?.id, undefined, true));
+    if (panelId) {
+      this.dispatch(openTab(this.workspaceId, tab, panelId, undefined, true));
       return;
     }
-    this.dispatch(openTabWithPanelModeRequested(this.workspaceId, tab, { force: true }));
+    this.dispatch(openTabInRightmostColumnRequested(this.workspaceId, tab, { force: true }));
   }
   openTabInAdjacentOrSplit(
     tab: Omit<PanelTab, 'id'>,
     sourcePanelId?: string,
     options?: { animated?: boolean; force?: boolean; allowDuplicate?: boolean },
   ) {
-    const targetPanelId = this.getEmptyTargetPanelId(sourcePanelId);
-    if (targetPanelId) {
-      this.dispatch(openTab(this.workspaceId, tab, targetPanelId, undefined, options?.force));
+    if (sourcePanelId) {
+      this.dispatch(
+        openTab(
+          this.workspaceId,
+          tab,
+          sourcePanelId,
+          undefined,
+          options?.force,
+          undefined,
+          options?.allowDuplicate,
+        ),
+      );
       return;
     }
     this.dispatch(
-      openTabWithPanelModeRequested(this.workspaceId, tab, {
+      openTabInRightmostColumnRequested(this.workspaceId, tab, {
         force: options?.force,
         allowDuplicate: options?.allowDuplicate,
       }),

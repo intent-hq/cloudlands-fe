@@ -30,7 +30,7 @@ import {
   closeTab,
   focusPanel,
   openTab,
-  openTabInNewRootColumn,
+  openTabInRightmostColumnRequested,
   setActiveTab,
   setPanelPinned,
   setTabOwnerAgent,
@@ -238,16 +238,10 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     return;
   }
   if (position === 'adjacent') {
-    const panelOpenMode = yield* selectPanelOpenMode.effect();
-    const openAction = openTabInNewRootColumn(
+    const openAction = openTabInRightmostColumnRequested(
       workspaceId,
       browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
-      {
-        newTabId,
-        allowDuplicate,
-        panelOpenMode,
-        panelStackDirection: yield* selectPanelStackDirection.effect(),
-      },
+      { newTabId, allowDuplicate },
     );
     yield* put(openAction);
     return;

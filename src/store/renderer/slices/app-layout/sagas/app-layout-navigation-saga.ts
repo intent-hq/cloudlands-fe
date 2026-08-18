@@ -9,7 +9,8 @@ import {
 } from '../../panel-layout/panel-layout-selectors';
 import {
   focusPanel,
-  openTabInNewRootColumn,
+  openTab,
+  openTabInRightmostColumnRequested,
   restoreHiddenTab,
   setActiveTab,
 } from '../../panel-layout/panel-layout-slice';
@@ -31,15 +32,9 @@ function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGe
     closable: true,
   };
   const targetWorkspaceId = detail.panelLayoutId ?? workspaceId;
-  const openAction = openTabInNewRootColumn(targetWorkspaceId, tab, {
-    ...(detail.openInNewColumn
-      ? {
-          availableCanvasWidth: detail.availablePanelCanvasWidth,
-          adaptiveFirstChat: detail.adaptiveFirstChat,
-        }
-      : { sourcePanelId: detail.sourcePanelId }),
-    force: true,
-  });
+  const openAction = detail.sourcePanelId
+    ? openTab(targetWorkspaceId, tab, detail.sourcePanelId, undefined, true)
+    : openTabInRightmostColumnRequested(targetWorkspaceId, tab, { force: true });
   yield* put(openAction);
 }
 

@@ -74,6 +74,8 @@ import {
   openBlankWorkingPanel,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
+  openTabInRightmostColumn,
+  openTabInRightmostColumnRequested,
   panelLayoutScopeMounted,
   panelLayoutScopeUnmounted,
   reconcilePanelColumnCount,
@@ -98,7 +100,11 @@ import {
   updateTabTitle,
 } from '../panel-layout-slice';
 import { panelLayoutReducer } from '../panel-layout-slice';
-import { setPanelColumnCount } from '../../user-preferences/user-preferences-slice';
+import {
+  initialState as userPreferencesInitialState,
+  setPanelColumnCount,
+  userPreferencesReducer,
+} from '../../user-preferences/user-preferences-slice';
 import { setAgents } from '../../workspace-agents/workspace-agents-slice';
 import {
   applyLocalNoteUpdate,
@@ -156,6 +162,7 @@ function storeState(
         [WS_2]: workspaceState([{ ...snapshot, timestamp: 20 }]),
       },
     },
+    userPreferences: userPreferencesInitialState,
     tabState: { currentTabId: activeWorkspaceId },
     connections: { activeId: activeBackendId },
     workspaceAgents: { byWorkspaceId: {} },
@@ -204,6 +211,7 @@ function startLifecycleSaga(initialSpecContent = '', activeWorkspaceId: string |
       undefined,
       loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [specNote(initialSpecContent)] }),
     ),
+    userPreferences: userPreferencesInitialState,
   };
   const channel = stdChannel();
   const dispatch = vi.fn((action) => {
@@ -211,6 +219,7 @@ function startLifecycleSaga(initialSpecContent = '', activeWorkspaceId: string |
       ...state,
       panelLayout: panelLayoutReducer(state.panelLayout, action),
       workspaceNotes: workspaceNotesReducer(state.workspaceNotes, action),
+      userPreferences: userPreferencesReducer(state.userPreferences, action),
     };
     channel.put(action);
   });
@@ -296,6 +305,7 @@ const persistActionCreators = [
   openTab,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
+  openTabInRightmostColumn,
   openBlankWorkingPanel,
   closeTab,
   closeActiveTab,
@@ -451,6 +461,18 @@ describe('panelLayoutSaga', () => {
       .filter((candidate: any) => candidate.type === 'note' && candidate.noteId === 'spec');
     expect(specTabs).toHaveLength(1);
     expect(workspace.newWorkspaceLifecycle.spec.state).toBe('revealed');
+    expect(getState().userPreferences.panelColumnCount).toBe(2);
+    const order = workspace.root.type === 'split' ? workspace.root.children : [];
+    expect(order).toHaveLength(2);
+    expect(
+      workspace.panels[order[0].type === 'panel' ? order[0].panelId : ''].tabs[0],
+    ).toMatchObject({
+      type: 'agent',
+      agentId: 'agent-1',
+    });
+    expect(
+      workspace.panels[order[1].type === 'panel' ? order[1].panelId : ''].tabs.at(-1),
+    ).toMatchObject({ type: 'note', noteId: 'spec' });
     expect(
       dispatch.mock.calls.filter(([action]) => action.type === revealDeferredSpecTab.type),
     ).toHaveLength(1);
@@ -459,6 +481,38 @@ describe('panelLayoutSaga', () => {
     ).toBe(false);
     expect(mocks.setJSON.mock.calls.at(-1)?.[1]).toMatchObject({
       newWorkspaceLifecycle: { spec: { state: 'revealed' } },
+    });
+    await cancelSaga(task);
+  });
+
+  it('reconciles the configured count before opening ordinary content on the right', async () => {
+    const state: any = {
+      ...storeState(),
+      userPreferences: { ...userPreferencesInitialState, panelColumnCount: 3 },
+    };
+    const { channel, dispatch, task } = startSaga(state);
+    const action = openTabInRightmostColumnRequested(
+      WS_1,
+      { type: 'note', title: 'Plan', noteId: 'plan', closable: true },
+      { allowDuplicate: true, newTabId: 'tab-plan' },
+      123,
+    );
+
+    channel.put(action);
+    await settle();
+
+    expect(dispatch.mock.calls.slice(0, 2).map(([dispatched]) => dispatched.type)).toEqual([
+      'panelLayout/reconcilePanelColumnCount',
+      'panelLayout/openTabInRightmostColumn',
+    ]);
+    expect(dispatch.mock.calls[0]?.[0]).toMatchObject({ payload: { wsId: WS_1, count: 3 } });
+    expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
+      payload: {
+        wsId: WS_1,
+        newTabId: 'tab-plan',
+        allowDuplicate: true,
+        timestamp: 123,
+      },
     });
     await cancelSaga(task);
   });
