@@ -472,9 +472,10 @@ function buildContentBlocks(state: StreamState): ContentBlock[] {
     const attachments = state.attachmentsByUseIndex.get(key);
     if (attachments) result.push(...attachments);
   }
-  // A rejoin snapshot (seedStreamFromSnapshot) can already contain the
-  // standalone resource block the attachment map re-appends; collapse to one
-  // card per logical resource, preferring the daemon-canonical variant.
+  // The same logical resource can reach the accumulator twice — e.g. a
+  // tool-call-claimed attachment (`registeredAttachments`) plus the terminal
+  // `agent:stream:end` trailingBlocks copy; collapse to one card per logical
+  // resource, preferring the daemon-canonical variant.
   return dedupeResourceBlocks(result);
 }
 
@@ -1159,8 +1160,8 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // Q&A questions today), byte-identical to the persisted transcript. Append
   // them into the accumulator before finalizing so the wizard triggers live
   // without a refetch. `buildContentBlocks`'s `dedupeResourceBlocks` keeps
-  // this idempotent against rejoin-snapshot seeds / tool-call-claimed copies
-  // of the same canonical block (stamped `attachmentId` nonce).
+  // this idempotent against tool-call-claimed copies of the same canonical
+  // block (stamped `attachmentId` nonce).
   const trailingBlocks = Array.isArray(data?.trailingBlocks)
     ? (data.trailingBlocks.filter((b) => b !== null && typeof b === 'object') as ContentBlock[])
     : [];
