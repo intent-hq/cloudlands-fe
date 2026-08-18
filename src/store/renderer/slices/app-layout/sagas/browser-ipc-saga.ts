@@ -16,6 +16,10 @@ import {
   selectPanelLayoutWorkspaces,
 } from '../../panel-layout/panel-layout-selectors';
 import {
+  hydrateWorkspaceLayout,
+  waitForWorkspaceLayoutRestore,
+} from '../../panel-layout/sagas/panel-layout-saga';
+import {
   closeTab,
   openTab,
   openTabInAdjacentOrSplit,
@@ -23,6 +27,7 @@ import {
   updateTabBrowserUrl,
 } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
+import { selectWorkspaceTabOrder } from '../../tab-state/tab-state-selectors';
 import { focusBrowserTabRequested } from '../app-layout-slice';
 
 let running = false;
@@ -31,9 +36,39 @@ function browserTab(url: string): Omit<PanelTab, 'id'> {
   return { type: 'browser', title: 'Browser', browserUrl: url, closable: true };
 }
 
+/**
+ * Ensure the workspace's panel-layout state is usable for a browser IPC
+ * request. A workspace sitting in this window's tab bar but never visited
+ * this session has no layout entry yet — hydrate its persisted layout on
+ * demand so state-level ops (listTabs, openTab, closeTab, focusTab routing)
+ * work without the user activating it (monorepo#2789). A workspace this
+ * window does not host is left alone: callers must stay silent for it so a
+ * wrong-window reply can never poison main's per-workspace tab cache
+ * (monorepo#2756 RC1, #2602).
+ */
+function* ensureWorkspaceLayoutForRequest(
+  workspaceId: string,
+): SagaGenerator<'ready' | 'not-hosted'> {
+  const layouts = yield* selectPanelLayoutWorkspaces.effect();
+  if (workspaceId in layouts) {
+    // The entry may have been created by a restore that is still in flight
+    // (restoreStatus 'pending'); answer with post-restore state.
+    yield* call(waitForWorkspaceLayoutRestore, workspaceId);
+    return 'ready';
+  }
+  const hosted = (yield* selectWorkspaceTabOrder.effect()).includes(workspaceId);
+  if (!hosted) return 'not-hosted';
+  yield* call(hydrateWorkspaceLayout, workspaceId);
+  return 'ready';
+}
+
 function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   if (!isWorkspaceCommandPayload(data) || typeof data.url !== 'string') return;
   const workspaceId = data.workspaceId;
+  // Hydrate a hosted-but-unvisited workspace first so the open lands on its
+  // persisted layout (and the 'replace' branch can find existing browser
+  // tabs) instead of a fresh default layout (monorepo#2789).
+  yield* call(ensureWorkspaceLayoutForRequest, workspaceId);
 
   // Main pre-generates the tab id so it can lease agent-opened tabs for
   // exact-URL dedupe (monorepo#2541); fall back to renderer generation for
@@ -91,6 +126,9 @@ function* closeBrowser(data: BrowserCloseTabPayload | null): SagaGenerator<void>
     return;
   const workspaceId = data.workspaceId;
 
+  // The tab to close may live in a hosted-but-unvisited workspace's
+  // persisted layout (monorepo#2789).
+  yield* call(ensureWorkspaceLayoutForRequest, workspaceId);
   const tabs = yield* selectAllTabs.effect(workspaceId);
   const existing = tabs.find((tab) => tab.id === data.tabId && tab.type === 'browser');
   if (!existing || existing.closable === false) return;
@@ -104,7 +142,10 @@ function* focusBrowser(data: BrowserFocusTabPayload | null): SagaGenerator<void>
   // Route by the payload's workspaceId so a request for a background
   // workspace (or a non-focused window) still focuses the right layout's
   // tab — the old PanelLayout listener gated on the active layout and
-  // answered with its own workspaceId (monorepo#2756 RC2).
+  // answered with its own workspaceId (monorepo#2756 RC2). Hydrate a
+  // hosted-but-unvisited workspace first so the focus handler can find the
+  // tab in its restored layout (monorepo#2789).
+  yield* call(ensureWorkspaceLayoutForRequest, data.workspaceId);
   yield* put(focusBrowserTabRequested(data.workspaceId, data.tabId));
 }
 
@@ -113,12 +154,24 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
   const workspaceId = data.workspaceId;
   const requestId = typeof data.requestId === 'string' ? data.requestId : undefined;
 
-  // Only answer for workspaces this window's layout state actually holds.
-  // A window that does not hold the requested workspace must never resolve
-  // the requestId: an empty wrong-workspace reply poisons main's
-  // per-workspace tab cache (monorepo#2756 RC1, #2602).
-  const layouts = yield* selectPanelLayoutWorkspaces.effect();
-  if (!(workspaceId in layouts)) return;
+  // Only answer for workspaces this window actually hosts (layout state or
+  // tab bar). A window that does not host the requested workspace must never
+  // resolve the requestId: an empty wrong-workspace reply poisons main's
+  // per-workspace tab cache (monorepo#2756 RC1, #2602). A hosted workspace
+  // that was never visited this session is hydrated on demand so its
+  // persisted tab list answers instead of a silent timeout (monorepo#2789).
+  try {
+    if ((yield* call(ensureWorkspaceLayoutForRequest, workspaceId)) === 'not-hosted') return;
+  } catch (error) {
+    // Truthful error: distinguish "hydration failed" from "renderer did not
+    // respond" so main can reject instead of timing out (monorepo#2789).
+    yield* call(invoke, 'browser:list-tabs-response', {
+      requestId,
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      error: `layout hydration failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    return;
+  }
 
   const browserTabs = (yield* selectAllTabs.effect(workspaceId))
     .filter((tab) => tab.type === 'browser')

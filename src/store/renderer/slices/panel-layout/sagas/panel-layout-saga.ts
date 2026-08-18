@@ -191,9 +191,14 @@ const restoredUnderBackendIds = new Set<string>();
 // every mounted workspace (not just the active one): with the columns UI
 // several workspaces mount at boot, and their initial restore may have read
 // the wrong backend namespace when it ran before the boot connections:list.
-// (retroactiveRestore also adds the active workspace here without a real
-// mount event; harmless — a later real unmount removes it.)
+// (retroactiveRestore and hydrateWorkspaceLayout also add workspaces here
+// without a real mount event; harmless — a later real unmount removes it, and
+// membership keeps backend switches re-restoring their layouts too.)
 const mountedWorkspaceIds = new Set<string>();
+// Restores currently in flight, so on-demand hydration callers can await a
+// restore another trigger already started instead of answering with
+// pre-restore state (monorepo#2789).
+const inflightRestores = new Map<string, Promise<void>>();
 
 type HistorySaveMessage = {
   action: { type: string; payload?: unknown };
@@ -364,17 +369,62 @@ export function* handleWorkspaceMountedRestore(
   mountedWorkspaceIds.add(wsId);
   if (restoredWorkspaceIds.has(wsId)) return;
   restoredWorkspaceIds.add(wsId);
-  yield* put(setRestoreStatus(wsId, 'pending'));
-  const stored = yield* call(loadLayoutFromStorage, wsId);
-  if (stored === null) {
-    yield* put(setRestoreStatus(wsId, 'empty'));
-  } else if (stored === 'invalid') {
-    yield* put(setRestoreStatus(wsId, 'invalid'));
-  } else {
-    yield* put(initializeLayout(wsId, normalizeLayoutForWorkspace(wsId, stored)));
-    yield* put(setRestoreStatus(wsId, 'restored'));
+  let settleInflight!: () => void;
+  inflightRestores.set(
+    wsId,
+    new Promise<void>((resolve) => {
+      settleInflight = resolve;
+    }),
+  );
+  let completed = false;
+  try {
+    yield* put(setRestoreStatus(wsId, 'pending'));
+    const stored = yield* call(loadLayoutFromStorage, wsId);
+    if (stored === null) {
+      yield* put(setRestoreStatus(wsId, 'empty'));
+    } else if (stored === 'invalid') {
+      yield* put(setRestoreStatus(wsId, 'invalid'));
+    } else {
+      yield* put(initializeLayout(wsId, normalizeLayoutForWorkspace(wsId, stored)));
+      yield* put(setRestoreStatus(wsId, 'restored'));
+    }
+    restoredUnderBackendIds.add(wsId);
+    completed = true;
+  } finally {
+    // A failed or cancelled restore releases the dedup guard so a later
+    // trigger can retry instead of trusting a restore that never finished.
+    if (!completed) restoredWorkspaceIds.delete(wsId);
+    inflightRestores.delete(wsId);
+    settleInflight();
   }
-  restoredUnderBackendIds.add(wsId);
+}
+
+/**
+ * Wait for a restore of this workspace's layout that another trigger (mount,
+ * hydration) already has in flight. No-op when none is running. Callers that
+ * read the layout right after a `setRestoreStatus('pending')` entry appeared
+ * use this to answer with post-restore state (monorepo#2789).
+ */
+export function* waitForWorkspaceLayoutRestore(wsId: string): SagaGenerator<void> {
+  const inflight = inflightRestores.get(wsId);
+  if (inflight) yield* call(() => inflight);
+}
+
+/**
+ * Restore a workspace's persisted layout on demand, without a UI mount — for
+ * a workspace sitting in this window's tab bar that has not been visited this
+ * session (monorepo#2789). Idempotent: an already-restored workspace is left
+ * untouched, and a restore another trigger has in flight is awaited instead
+ * of duplicated. Reuses the mount-restore path, so the workspace also joins
+ * mountedWorkspaceIds and backend switches re-restore its layout.
+ */
+export function* hydrateWorkspaceLayout(wsId: string): SagaGenerator<void> {
+  if (!isValidWorkspaceId(wsId)) return;
+  if (restoredWorkspaceIds.has(wsId)) {
+    yield* call(waitForWorkspaceLayoutRestore, wsId);
+    return;
+  }
+  yield* call(handleWorkspaceMountedRestore, panelLayoutScopeMounted(wsId));
 }
 
 export function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void> {

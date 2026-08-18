@@ -250,6 +250,26 @@ describe('embedded browser CDP workspace routing', () => {
       }
     });
 
+    // monorepo#2789: a renderer whose background layout hydration failed
+    // reports a truthful error; the request rejects with it instead of
+    // timing out as "renderer did not respond".
+    it('rejects with the renderer-reported error instead of waiting out the timeout', async () => {
+      mocks.sendToWorkspaceWindows.mockImplementation(
+        (workspaceId: string, channel: string, payload: { requestId?: string }) => {
+          if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+          responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+            {},
+            { error: 'layout hydration failed: storage exploded', requestId: payload.requestId },
+          );
+          return DELIVERED;
+        },
+      );
+
+      await expect(embeddedBrowserCdp.requestPanelBrowserTabs('ws-hydfail')).rejects.toThrow(
+        'layout hydration failed: storage exploded',
+      );
+    });
+
     it('closeTab refuses to report "already closed" from a stale tab list missing the tab', async () => {
       // Seed a ws-stale cache WITHOUT tab-x, then go silent.
       mocks.sendToWorkspaceWindows.mockImplementation(

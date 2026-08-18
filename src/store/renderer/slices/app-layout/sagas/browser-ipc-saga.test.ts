@@ -4,9 +4,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   isElectron: vi.fn(() => true),
   invoke: vi.fn(() => Promise.resolve()),
+  storage: new Map<string, unknown>(),
 }));
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron, invoke: mocks.invoke }));
+// Transitive imports of the panel-layout saga (pulled in for on-demand
+// hydration, monorepo#2789) that must not drag in the real app store / IPC;
+// storage is Map-backed because the global localStorage mock always
+// returns null.
+vi.mock('$features/layout/panel-layout-adapter', () => ({
+  clearPanelLayoutAdapter: vi.fn(),
+}));
+vi.mock('$features/layout/panel-layout-history.client', () => ({
+  loadPanelLayoutHistory: vi.fn(),
+  savePanelLayoutHistory: vi.fn(),
+}));
+vi.mock('../../../utils/safe-local-storage-saga', () => ({
+  getLocalStorageJSON: function* (key: string) {
+    return mocks.storage.get(key);
+  },
+  setLocalStorageJSON: function* (key: string, value: unknown) {
+    mocks.storage.set(key, value);
+  },
+  removeLocalStorageItem: function* (key: string) {
+    mocks.storage.delete(key);
+  },
+}));
 
+import { PANEL_LAYOUT_STORAGE_KEY_PREFIX } from '../../panel-layout/panel-layout-types';
+import { panelLayoutReducer } from '../../panel-layout/panel-layout-slice';
 import { browserIpcSaga } from './browser-ipc-saga';
 
 const NOW = new Date('2026-07-31T00:00:00.000Z').getTime();
@@ -19,7 +44,17 @@ const TAB = (url: string) => ({
 const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 };
+
+const persistedLayout = (tabs: unknown[]) => ({
+  root: { type: 'panel', panelId: 'panel-1' },
+  panels: { 'panel-1': { id: 'panel-1', tabs, activeTabId: null } },
+  focusedPanelId: 'panel-1',
+  canvasWidth: null,
+  canvasWidthSource: null,
+});
 
 describe('browserIpcSaga', () => {
   let handlers: Record<string, (payload: unknown) => void>;
@@ -45,12 +80,13 @@ describe('browserIpcSaga', () => {
     });
     offById = vi.fn();
     window.electronAPI = { ...window.electronAPI, on, offById };
-    state = { panelLayout: { byWorkspaceId: {} } };
+    state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
     mocks.isElectron.mockReturnValue(true);
   });
 
   afterEach(() => {
     delete (window as Partial<Window>).electronAPI;
+    mocks.storage.clear();
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.clearAllMocks();
@@ -414,7 +450,7 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
-  it('never resolves a requestId for a workspace this window does not hold (monorepo#2602)', async () => {
+  it('never resolves a requestId for a workspace this window does not host (monorepo#2602)', async () => {
     const task = start();
     state = {
       panelLayout: {
@@ -424,6 +460,7 @@ describe('browserIpcSaga', () => {
           },
         },
       },
+      tabState: { workspaceStacks: [['ws-here']] },
     };
 
     await emit({ workspaceId: 'ws-elsewhere', requestId: 'req-2' }, 'browser:list-tabs-request');
@@ -488,6 +525,114 @@ describe('browserIpcSaga', () => {
     });
     task.cancel();
     await task.toPromise();
+  });
+
+  describe('background hydration for hosted-but-unvisited workspaces (monorepo#2789)', () => {
+    const startWithReducer = () => {
+      const actions: unknown[] = [];
+      const task = start((action: any) => {
+        actions.push(action);
+        state = { ...state, panelLayout: panelLayoutReducer(state.panelLayout, action) };
+      });
+      return { actions, task };
+    };
+    const hostedState = (wsId: string) => {
+      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [[wsId]] } };
+    };
+    const seedStorage = (wsId: string, tabs: unknown[]) => {
+      mocks.storage.set(`${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${wsId}`, persistedLayout(tabs));
+    };
+
+    it('hydrates the persisted layout and answers listTabs for a hosted-but-unvisited workspace', async () => {
+      const { task } = startWithReducer();
+      hostedState('ws-hyd-1');
+      seedStorage('ws-hyd-1', [
+        { id: 'note-1', type: 'note', title: 'Note' },
+        { id: 'browser-1', type: 'browser', title: 'A', browserUrl: 'http://a/', closable: true },
+      ]);
+
+      await emit({ workspaceId: 'ws-hyd-1', requestId: 'req-h1' }, 'browser:list-tabs-request');
+
+      expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
+        requestId: 'req-h1',
+        tabs: [{ tabId: 'browser-1', url: 'http://a/', title: 'A', closable: true }],
+      });
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('answers with an empty-but-truthful tab list when nothing is stored for a hosted workspace', async () => {
+      const { task } = startWithReducer();
+      hostedState('ws-hyd-2');
+
+      await emit({ workspaceId: 'ws-hyd-2', requestId: 'req-h2' }, 'browser:list-tabs-request');
+
+      expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
+        requestId: 'req-h2',
+        tabs: [],
+      });
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('hydrates at most once for back-to-back requests (idempotent double-hydration)', async () => {
+      const { actions, task } = startWithReducer();
+      hostedState('ws-hyd-3');
+      seedStorage('ws-hyd-3', [
+        { id: 'browser-1', type: 'browser', title: 'A', browserUrl: 'http://a/', closable: true },
+      ]);
+
+      await emit({ workspaceId: 'ws-hyd-3', requestId: 'req-h3a' }, 'browser:list-tabs-request');
+      await emit({ workspaceId: 'ws-hyd-3', requestId: 'req-h3b' }, 'browser:list-tabs-request');
+
+      const restores = actions.filter(
+        (action: any) => action.type === 'panelLayout/initializeLayout',
+      );
+      expect(restores).toHaveLength(1);
+      expect(mocks.invoke.mock.calls.map(([, payload]: any[]) => payload)).toEqual([
+        {
+          requestId: 'req-h3a',
+          tabs: [{ tabId: 'browser-1', url: 'http://a/', title: 'A', closable: true }],
+        },
+        {
+          requestId: 'req-h3b',
+          tabs: [{ tabId: 'browser-1', url: 'http://a/', title: 'A', closable: true }],
+        },
+      ]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('closes a tab in a hosted-but-unvisited workspace after hydrating it', async () => {
+      const { actions, task } = startWithReducer();
+      hostedState('ws-hyd-4');
+      seedStorage('ws-hyd-4', [
+        { id: 'browser-1', type: 'browser', title: 'A', browserUrl: 'http://a/', closable: true },
+      ]);
+
+      await emit({ tabId: 'browser-1', workspaceId: 'ws-hyd-4' }, 'browser:close-tab');
+
+      expect(actions).toContainEqual(
+        expect.objectContaining({
+          type: 'panelLayout/closeTab',
+          payload: expect.objectContaining({ wsId: 'ws-hyd-4', tabId: 'browser-1' }),
+        }),
+      );
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('stays silent for a workspace neither hydrated nor in this window tab bar', async () => {
+      const { actions, task } = startWithReducer();
+      hostedState('ws-hyd-5');
+
+      await emit({ workspaceId: 'ws-not-here', requestId: 'req-h5' }, 'browser:list-tabs-request');
+
+      expect(mocks.invoke).not.toHaveBeenCalled();
+      expect(actions).toEqual([]);
+      task.cancel();
+      await task.toPromise();
+    });
   });
 
   it('does not subscribe outside Electron', async () => {
