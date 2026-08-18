@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.65.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.64.2...v2.65.0) (2026-08-18)
+
+
+### 🚀 Features
+
+* opt into slim conversation projection with 50-message pages ([#1421](https://github.com/intent-hq/cloudlands-fe/issues/1421)) ([f0d852b](https://github.com/intent-hq/cloudlands-fe/commit/f0d852b248ef0c7c7cf86b345632a9cd288ca158))
+* rehydrate tunneled browser tabs onto fresh forwards after restart ([#1417](https://github.com/intent-hq/cloudlands-fe/issues/1417)) ([9553bcd](https://github.com/intent-hq/cloudlands-fe/commit/9553bcdf499fc1ee8a11abc0283211bfc1fc2029))
+
+
+### 🐛 Bug Fixes
+
+* **agent:** dismiss stale agent-failure Retry for deleted agents ([#1414](https://github.com/intent-hq/cloudlands-fe/issues/1414)) ([05ee38c](https://github.com/intent-hq/cloudlands-fe/commit/05ee38c3229b1263a5a116b384bbea197d751cd7))
+* **browser:** answer listTabs for the routed workspace missing from layout and tab-strip state ([#1419](https://github.com/intent-hq/cloudlands-fe/issues/1419)) ([98bc3e2](https://github.com/intent-hq/cloudlands-fe/commit/98bc3e29047d89199f7e401cd27d9ad325f6b2ce))
+* bump intentd sidecar to v0.7.19 ([#1425](https://github.com/intent-hq/cloudlands-fe/issues/1425)) ([69ab8ee](https://github.com/intent-hq/cloudlands-fe/commit/69ab8eec3cd55daf329551708690f0b3bdcd48ab))
+* seed tool blocks only in seedStreamFromSnapshot ([#1422](https://github.com/intent-hq/cloudlands-fe/issues/1422)) ([29c65f8](https://github.com/intent-hq/cloudlands-fe/commit/29c65f86f7fc89213c0683af310de1bbcb3fa7bf))
+
 ## [2.64.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.64.1...v2.64.2) (2026-08-18)
 
 
