@@ -382,14 +382,50 @@ function ensureStream(agentId: string, messageId: string, workspaceId: string): 
 }
 
 /**
- * REJOIN-STREAM SEEDING: prime the stream accumulator with the content blocks
+ * Parse the daemon blockIndex out of a stable `{messageId}:{blockIndex}` block
+ * id (PROTOCOL §7.1). Bare unsigned decimal only — mirrors the
+ * `{messageId}:{index}` scheme produced by the daemon's `Transcript::block_id`
+ * (agent_session.rs). Returns undefined for id-less or foreign-shaped ids.
+ */
+function parseBlockIndexFromId(blockId: unknown): number | undefined {
+  if (typeof blockId !== 'string') return undefined;
+  const separator = blockId.lastIndexOf(':');
+  if (separator < 0) return undefined;
+  const suffix = blockId.slice(separator + 1);
+  if (!/^[0-9]+$/.test(suffix)) return undefined;
+  return Number(suffix);
+}
+
+/**
+ * REJOIN-STREAM SEEDING: prime the stream accumulator with the TOOL blocks
  * from a chat.subscribe snapshot's in-flight assistant message so subsequent
- * agent:stream:chunk dispatches carry the full block prefix instead of only
- * the post-rejoin suffix. Called by chat-read-service after merging the
- * snapshot's partial assistant into the hydrated transcript; the snapshot
- * carries the full prefix built by the daemon's CS-0 D5 merge. NO-OP when the
- * message has no content blocks or when a different message id already holds
- * the stream slot.
+ * agent:tool:call dispatches carry the already-completed tool prefix instead
+ * of only the post-rejoin suffix. Called by the chat-subscribe saga after
+ * merging the snapshot's partial assistant into the hydrated transcript.
+ *
+ * TOOL BLOCKS ONLY (monorepo#2818): post-intentd#775 the agent:* firehose
+ * carries no text updates, so a seeded text/thinking block would be frozen at
+ * its seed-time copy while the standing subscription keeps advancing it in
+ * the store — the next tool tick's dispatch would then regress the fresher
+ * text via the identity merge (`mergeStreamContentBlocks`, same stable block
+ * id). Text/thinking blocks are subscription-owned and never seeded; the
+ * merge preserves them in the store regardless (monorepo#2814).
+ *
+ * tool_use blocks seed under their daemon blockIndex (parsed from the stable
+ * `{messageId}:{blockIndex}` id, PROTOCOL §7.1) so a later agent:tool:call
+ * tick — whose blockIndex is the daemon's — merges into the seeded block. The
+ * daemon's index space is shared by all block kinds (text, tool_use,
+ * tool_result, resource; `Transcript::block_id` in agent_session.rs), so a
+ * faithful snapshot array has position == id suffix; parsing from the id
+ * keeps seeding correct even if the array is ever partial or reordered
+ * relative to daemon indices. tool_result blocks ride `toolResultsByUseIndex`
+ * keyed by their paired tool_use (tool_use_id ↔ toolCallId, §7.1 synthesized
+ * pairing), matching how live completions land — never `blocksByIndex`, so
+ * `buildContentBlocks` cannot emit them twice. Blocks whose pairing cannot be
+ * resolved are skipped: the subscription still owns the full transcript.
+ *
+ * NO-OP when the message has no content blocks or when a different message id
+ * already holds the stream slot.
  */
 export function seedStreamFromSnapshot(
   agentId: string,
@@ -406,8 +442,23 @@ export function seedStreamFromSnapshot(
   const blocks = Array.isArray(inFlightMessage.contentBlocks) ? inFlightMessage.contentBlocks : [];
   if (blocks.length === 0) return;
   const state = ensureStream(agentId, messageId, workspaceId);
-  for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
-    state.blocksByIndex.set(blockIndex, blocks[blockIndex]);
+  const useIndexByToolCallId = new Map<string, number>();
+  for (const block of blocks) {
+    if (block.type === 'tool_use') {
+      const blockIndex = parseBlockIndexFromId((block as { id?: unknown }).id);
+      if (blockIndex === undefined) continue;
+      state.blocksByIndex.set(blockIndex, block);
+      const toolCallId = (block as { toolCallId?: unknown }).toolCallId;
+      if (typeof toolCallId === 'string' && toolCallId.length > 0) {
+        useIndexByToolCallId.set(toolCallId, blockIndex);
+      }
+    } else if (block.type === 'tool_result') {
+      const toolUseId = (block as { tool_use_id?: unknown }).tool_use_id;
+      if (typeof toolUseId !== 'string' || toolUseId.length === 0) continue;
+      const useIndex = useIndexByToolCallId.get(toolUseId);
+      if (useIndex === undefined) continue;
+      state.toolResultsByUseIndex.set(useIndex, block);
+    }
   }
 }
 
@@ -421,9 +472,10 @@ function buildContentBlocks(state: StreamState): ContentBlock[] {
     const attachments = state.attachmentsByUseIndex.get(key);
     if (attachments) result.push(...attachments);
   }
-  // A rejoin snapshot (seedStreamFromSnapshot) can already contain the
-  // standalone resource block the attachment map re-appends; collapse to one
-  // card per logical resource, preferring the daemon-canonical variant.
+  // The same logical resource can reach the accumulator twice — e.g. a
+  // tool-call-claimed attachment (`registeredAttachments`) plus the terminal
+  // `agent:stream:end` trailingBlocks copy; collapse to one card per logical
+  // resource, preferring the daemon-canonical variant.
   return dedupeResourceBlocks(result);
 }
 
@@ -580,9 +632,9 @@ function liftProposalResourceItem(output: unknown): Record<string, unknown> | nu
 /**
  * Predict a standalone attachment block's stable id from the `tool_use`
  * blockId: the daemon appends `tool_result` at index + 1 and the Nth
- * attachment block at index + 2 + N (`{messageId}:{index}` scheme, §7.1
- * tool_delta — each attachment chains off the previous block's id via
- * `next_block_id`). Returns undefined when the blockId does not follow that
+ * attachment block at index + 2 + N (the `{messageId}:{index}` scheme
+ * produced by the daemon's `Transcript::block_id`, agent_session.rs; §7.1
+ * tool_delta). Returns undefined when the blockId does not follow that
  * scheme.
  */
 function predictAttachmentBlockId(
@@ -592,8 +644,8 @@ function predictAttachmentBlockId(
   if (typeof toolUseBlockId !== 'string') return undefined;
   const separator = toolUseBlockId.lastIndexOf(':');
   if (separator < 0) return undefined;
-  // Bare unsigned decimal only — mirrors the daemon's `usize::parse` in
-  // `next_block_id` (subscriptions.rs), which rejects empty/hex/exponent forms.
+  // Bare unsigned decimal only — mirrors the `{messageId}:{index}` scheme
+  // produced by the daemon's `Transcript::block_id` (agent_session.rs).
   const suffix = toolUseBlockId.slice(separator + 1);
   if (!/^[0-9]+$/.test(suffix)) return undefined;
   return `${toolUseBlockId.slice(0, separator)}:${Number(suffix) + 2 + attachmentOrdinal}`;
@@ -1108,8 +1160,8 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // Q&A questions today), byte-identical to the persisted transcript. Append
   // them into the accumulator before finalizing so the wizard triggers live
   // without a refetch. `buildContentBlocks`'s `dedupeResourceBlocks` keeps
-  // this idempotent against rejoin-snapshot seeds / tool-call-claimed copies
-  // of the same canonical block (stamped `attachmentId` nonce).
+  // this idempotent against tool-call-claimed copies of the same canonical
+  // block (stamped `attachmentId` nonce).
   const trailingBlocks = Array.isArray(data?.trailingBlocks)
     ? (data.trailingBlocks.filter((b) => b !== null && typeof b === 'object') as ContentBlock[])
     : [];
