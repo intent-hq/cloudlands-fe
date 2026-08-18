@@ -124,7 +124,7 @@ describe('menuIpcSaga', () => {
           tab: {
             type: 'browser',
             title: 'Browser',
-            browserUrl: 'https://google.com',
+            browserUrl: 'about:blank',
             closable: true,
           },
           panelId: undefined,

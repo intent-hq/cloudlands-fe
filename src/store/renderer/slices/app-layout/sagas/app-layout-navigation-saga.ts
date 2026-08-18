@@ -3,13 +3,16 @@ import { put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { m } from '$shared/paraglide/messages.js';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import {
+  focusPanel,
   openTab,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
+  setActiveTab,
 } from '../../panel-layout/panel-layout-slice';
+import { selectPanels } from '../../panel-layout/panel-layout-selectors';
 import { ensureAgentSessionLoaded } from '../../workspace-agents/workspace-agents-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
-import { openAgentTabRequested } from '../app-layout-slice';
+import { focusBrowserTabRequested, openAgentTabRequested } from '../app-layout-slice';
 
 function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGenerator<void> {
   const [workspaceId, detail] = action.payload;
@@ -42,6 +45,26 @@ function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGe
   yield* put(openTab(workspaceId, tab, detail.sourcePanelId, undefined, true));
 }
 
+function* focusBrowserTab(
+  action: ReturnType<typeof focusBrowserTabRequested>,
+): SagaGenerator<void> {
+  const [wsId, tabId] = action.payload;
+  if (!wsId || !tabId) return;
+
+  const panels = yield* selectPanels.effect(wsId);
+  for (const [panelId, panel] of Object.entries(panels)) {
+    // Only browser tabs may be activated: focusTab is a browser-only action,
+    // so an arbitrary supplied id matching an agent/note/terminal tab must
+    // not bring that unrelated tab to the front.
+    if (panel.tabs.some((tab) => tab.id === tabId && tab.type === 'browser')) {
+      yield* put(focusPanel(wsId, panelId));
+      yield* put(setActiveTab(wsId, tabId, panelId));
+      return;
+    }
+  }
+}
+
 export function* appLayoutNavigationSaga(): SagaGenerator<void> {
   yield* takeEvery(openAgentTabRequested, openAgentTab);
+  yield* takeEvery(focusBrowserTabRequested, focusBrowserTab);
 }

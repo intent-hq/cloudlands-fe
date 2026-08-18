@@ -9,10 +9,37 @@ export type BrowserOpenTabPayload = WorkspaceCommandPayload & {
   tabId?: string;
   /** Skip the panel layout's equivalent-tab dedupe and always create a new tab. */
   allowDuplicate?: boolean;
+  /**
+   * Pre-rewrite URL when `url` came out of the loopback/tunnel rewrite;
+   * persisted with the tab so a restart can re-run the rewrite
+   * (monorepo#2789).
+   */
+  requestedUrl?: string;
 };
 
 export type BrowserCloseTabPayload = WorkspaceCommandPayload & {
   tabId: string;
+};
+
+export type BrowserTabNavigatedPayload = WorkspaceCommandPayload & {
+  tabId: string;
+  /** Final URL the tab was navigated to (post-rewrite). */
+  url: string;
+  /**
+   * Pre-rewrite URL when `url` came out of the loopback/tunnel rewrite;
+   * absent for non-rewritten navigations, which clear any stored requested
+   * URL (monorepo#2789).
+   */
+  requestedUrl?: string;
+};
+
+export type BrowserFocusTabPayload = WorkspaceCommandPayload & {
+  tabId: string;
+};
+
+export type BrowserListTabsRequestPayload = WorkspaceCommandPayload & {
+  /** Echoed back so main resolves the matching pending request (monorepo#2602). */
+  requestId?: string;
 };
 
 export function workspaceCommandPayload(workspaceId: unknown): WorkspaceCommandPayload | null {

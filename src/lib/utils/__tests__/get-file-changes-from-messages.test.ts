@@ -204,6 +204,45 @@ describe('getFileChangesFromMessage', () => {
     });
   });
 
+  describe('slim-truncated tool input (PROTOCOL §5.5)', () => {
+    it('keeps the file row but drops snippet content and counts', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-slim',
+          name: 'str_replace_editor',
+          input: {
+            command: 'str_replace',
+            path: 'src/big-file.ts',
+            old_str_1: '…bounded preview…',
+            new_str_1: '…bounded preview…',
+          },
+          inputTruncated: true,
+          inputBytes: 500_000,
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(1);
+
+      const change = result.changes[0];
+      expect(change.filePath).toBe('src/big-file.ts');
+      expect(change.action).toBe('modify');
+      expect(change.oldContent).toBeUndefined();
+      expect(change.newContent).toBeUndefined();
+      expect(change.additions).toBe(0);
+      expect(change.deletions).toBe(0);
+    });
+
+    it('under-budget blocks (no flag) are unaffected', () => {
+      const message = makeAssistantMessage([makeEditBlock('tool-ok', 'src/ok.ts')]);
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].oldContent).toBe('old');
+      expect(result.changes[0].newContent).toBe('new');
+    });
+  });
+
   describe('save-file fallback with file_text content field', () => {
     it('extracts file creation from display name "Create foo.swift" with file_text', () => {
       const fileContent = 'import Foundation\n\nclass Foo {\n}\n';

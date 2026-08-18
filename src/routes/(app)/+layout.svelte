@@ -54,6 +54,7 @@
   import { TooltipProvider } from '$lib/components/ui/tooltip';
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
   import LinkActionMenu from '$features/navigation/LinkActionMenu.svelte';
+  import OffscreenWebviewHost from '$lib/components/browser/OffscreenWebviewHost.svelte';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { invoke } from '$lib/electron-bridge';
@@ -190,6 +191,18 @@
   const featureCodeDialogOpen = selectFeatureCodeDialogOpen();
   const isPaletteOpen$ = selectIsPaletteOpen();
   const paletteQuery$ = selectPaletteQuery();
+
+  // Workspaces whose surfaces render their own webviews. In single-workspace
+  // mode only the routed workspace is displayed; in columns mode the columns
+  // view reports which workspaces render a real surface (virtualized columns
+  // render placeholders, so their tabs still need offscreen keep-alive)
+  // (monorepo#2789 slice 2).
+  let columnsMountedWorkspaceIds = $state<ReadonlySet<string>>(new Set());
+  const offscreenExcludedWorkspaceIds = $derived<ReadonlySet<string>>(
+    showWorkspaceColumns
+      ? columnsMountedWorkspaceIds
+      : new Set(workspaceId ? [workspaceId] : []),
+  );
 
   // Interrupted agents modal state
   let showInterruptedAgentsModal = $state(false);
@@ -933,7 +946,9 @@
               class:overflow-auto={!showWorkspaceColumns}
             >
               {#if showWorkspaceColumns}
-                <WorkspaceColumnsView />
+                <WorkspaceColumnsView
+                  onMountedWorkspaceIdsChange={(mounted) => (columnsMountedWorkspaceIds = mounted)}
+                />
               {:else}
                 {@render children?.()}
               {/if}
@@ -987,6 +1002,9 @@
 
   <!-- Link Action Menu (singleton — anchored menu for GitHub issue/PR links) -->
   <LinkActionMenu />
+
+  <!-- Offscreen keep-alive host for background-workspace browser tabs (monorepo#2789) -->
+  <OffscreenWebviewHost excludedWorkspaceIds={offscreenExcludedWorkspaceIds} />
 
   <!-- Auto-Update Notification -->
   {#await import('$lib/components/UpdateNotification.svelte') then { default: UpdateNotification }}

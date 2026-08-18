@@ -34,6 +34,7 @@ import {
   mapWorkspacePRs,
   mergeMonitoredPRs,
   orderPRSectionsForSelection,
+  sortPRsByRecency,
   sectionPRs,
   type GitRootPRSource,
   type SectionedPRs,
@@ -1311,12 +1312,17 @@ describe('orderPRSectionsForSelection', () => {
     };
   }
 
-  it('passes all three arrays through by reference when primary is selected', () => {
+  it('keeps the selection-unaware sectioning (as recency-sorted copies) when primary is selected', () => {
     const sectioned = makeSectioned();
     const result = orderPRSectionsForSelection(sectioned, workspaceRepo, null);
-    expect(result.selected).toBe(sectioned.own);
-    expect(result.others).toBe(sectioned.otherRoots);
-    expect(result.otherTracked).toBe(sectioned.otherTracked);
+    expect(result.selected.map((pr) => pr.number)).toEqual([42]);
+    // No updatedAt on these rows: PR number desc is the tiebreak.
+    expect(result.others.map((pr) => pr.number)).toEqual([9, 7]);
+    expect(result.otherTracked.map((pr) => pr.number)).toEqual([5]);
+    // Sorted copies, not the input arrays.
+    expect(result.selected).not.toBe(sectioned.own);
+    expect(result.others).not.toBe(sectioned.otherRoots);
+    expect(result.otherTracked).not.toBe(sectioned.otherTracked);
   });
 
   it('moves the selected root PRs on top and own PRs under others', () => {
@@ -1329,7 +1335,7 @@ describe('orderPRSectionsForSelection', () => {
     expect(result.selected[0]).toMatchObject({ number: 7, crossRepo: 'acme/intentd' });
     // Own PRs first, then the non-selected roots' rows
     expect(result.others.map((pr) => pr.number)).toEqual([42, 9]);
-    expect(result.otherTracked).toBe(sectioned.otherTracked);
+    expect(result.otherTracked).toEqual(sectioned.otherTracked);
   });
 
   it('attributes rows without crossRepo context to a selected root on the workspace repo', () => {
@@ -1350,17 +1356,17 @@ describe('orderPRSectionsForSelection', () => {
     const sectioned = makeSectioned();
     const result = orderPRSectionsForSelection(sectioned, workspaceRepo, {});
     expect(result.selected).toEqual([]);
-    expect(result.others.map((pr) => pr.number)).toEqual([42, 7, 9]);
-    expect(result.otherTracked).toBe(sectioned.otherTracked);
+    expect(result.others.map((pr) => pr.number)).toEqual([42, 9, 7]);
+    expect(result.otherTracked).toEqual(sectioned.otherTracked);
   });
 
-  it('leaves otherTracked untouched by any selection', () => {
+  it('leaves otherTracked membership untouched by any selection', () => {
     const sectioned = makeSectioned();
     const secondary = orderPRSectionsForSelection(sectioned, workspaceRepo, {
       repoOwner: 'acme',
       repoName: 'intentd',
     });
-    expect(secondary.otherTracked).toBe(sectioned.otherTracked);
+    expect(secondary.otherTracked).toEqual(sectioned.otherTracked);
   });
 
   it('never moves own or tracked rows into selected', () => {
@@ -1372,8 +1378,121 @@ describe('orderPRSectionsForSelection', () => {
       repoName: 'repo',
     });
     expect(result.selected).toEqual([]);
-    expect(result.others.map((pr) => pr.number)).toEqual([42, 7, 9]);
-    expect(result.otherTracked).toBe(sectioned.otherTracked);
+    expect(result.others.map((pr) => pr.number)).toEqual([42, 9, 7]);
+    expect(result.otherTracked).toEqual(sectioned.otherTracked);
+  });
+
+  it('sorts all three sections by updatedAt desc when primary is selected', () => {
+    const sectioned = makeSectioned({
+      own: [
+        makePR({ number: 1, updatedAt: '2026-01-01T00:00:00Z' }),
+        makePR({ number: 2, updatedAt: '2026-03-01T00:00:00Z' }),
+      ],
+      otherRoots: [
+        makePR({ number: 7, crossRepo: 'acme/intentd', updatedAt: '2026-02-01T00:00:00Z' }),
+        makePR({ number: 9, crossRepo: 'acme/ios', updatedAt: '2026-04-01T00:00:00Z' }),
+      ],
+      otherTracked: [
+        makePR({ number: 5, crossRepo: 'stranger/repo', updatedAt: '2026-01-01T00:00:00Z' }),
+        makePR({ number: 6, crossRepo: 'stranger/repo', updatedAt: '2026-05-01T00:00:00Z' }),
+      ],
+    });
+    const result = orderPRSectionsForSelection(sectioned, workspaceRepo, null);
+    expect(result.selected.map((pr) => pr.number)).toEqual([2, 1]);
+    expect(result.others.map((pr) => pr.number)).toEqual([9, 7]);
+    expect(result.otherTracked.map((pr) => pr.number)).toEqual([6, 5]);
+  });
+
+  it('sorts all three sections by updatedAt desc when a secondary root is selected', () => {
+    const sectioned = makeSectioned({
+      own: [makePR({ number: 1, updatedAt: '2026-01-01T00:00:00Z' })],
+      otherRoots: [
+        makePR({ number: 7, crossRepo: 'acme/intentd', updatedAt: '2026-02-01T00:00:00Z' }),
+        makePR({ number: 8, crossRepo: 'acme/intentd', updatedAt: '2026-04-01T00:00:00Z' }),
+        makePR({ number: 9, crossRepo: 'acme/ios', updatedAt: '2026-03-01T00:00:00Z' }),
+      ],
+      otherTracked: [
+        makePR({ number: 5, crossRepo: 'stranger/repo', updatedAt: '2026-01-01T00:00:00Z' }),
+        makePR({ number: 6, crossRepo: 'stranger/repo', updatedAt: '2026-05-01T00:00:00Z' }),
+      ],
+    });
+    const result = orderPRSectionsForSelection(sectioned, workspaceRepo, {
+      repoOwner: 'acme',
+      repoName: 'intentd',
+    });
+    expect(result.selected.map((pr) => pr.number)).toEqual([8, 7]);
+    // Recency wins over the own-first concatenation order.
+    expect(result.others.map((pr) => pr.number)).toEqual([9, 1]);
+    expect(result.otherTracked.map((pr) => pr.number)).toEqual([6, 5]);
+  });
+
+  it('does not mutate the input arrays', () => {
+    const sectioned = makeSectioned({
+      own: [
+        makePR({ number: 1, updatedAt: '2026-01-01T00:00:00Z' }),
+        makePR({ number: 2, updatedAt: '2026-03-01T00:00:00Z' }),
+      ],
+    });
+    orderPRSectionsForSelection(sectioned, workspaceRepo, null);
+    expect(sectioned.own.map((pr) => pr.number)).toEqual([1, 2]);
+    expect(sectioned.otherRoots.map((pr) => pr.number)).toEqual([7, 9]);
+  });
+});
+
+// ─── sortPRsByRecency (display-only Changes tab recency sort) ──────────────────
+
+describe('sortPRsByRecency', () => {
+  function makePR(overrides: Partial<PRInfo> = {}): PRInfo {
+    return {
+      number: 1,
+      title: 'PR',
+      url: 'https://github.com/acme/widgets/pull/1',
+      htmlUrl: 'https://github.com/acme/widgets/pull/1',
+      status: 'open',
+      updatedAt: '2026-01-01T00:00:00Z',
+      ...overrides,
+    };
+  }
+
+  it('sorts by updatedAt descending', () => {
+    const prs = [
+      makePR({ number: 1, updatedAt: '2026-01-01T00:00:00Z' }),
+      makePR({ number: 2, updatedAt: '2026-03-01T00:00:00Z' }),
+      makePR({ number: 3, updatedAt: '2026-02-01T00:00:00Z' }),
+    ];
+    expect(sortPRsByRecency(prs).map((pr) => pr.number)).toEqual([2, 3, 1]);
+  });
+
+  it('sorts rows missing updatedAt last', () => {
+    const prs = [
+      makePR({ number: 1, updatedAt: undefined }),
+      makePR({ number: 2, updatedAt: '2026-01-01T00:00:00Z' }),
+    ];
+    expect(sortPRsByRecency(prs).map((pr) => pr.number)).toEqual([2, 1]);
+  });
+
+  it('tiebreaks equal or missing updatedAt by descending PR number', () => {
+    const equal = [
+      makePR({ number: 4, updatedAt: '2026-01-01T00:00:00Z' }),
+      makePR({ number: 9, updatedAt: '2026-01-01T00:00:00Z' }),
+    ];
+    expect(sortPRsByRecency(equal).map((pr) => pr.number)).toEqual([9, 4]);
+
+    const missing = [
+      makePR({ number: 3, updatedAt: undefined }),
+      makePR({ number: 5, updatedAt: undefined }),
+    ];
+    expect(sortPRsByRecency(missing).map((pr) => pr.number)).toEqual([5, 3]);
+  });
+
+  it('returns a new array without mutating the input', () => {
+    const prs = [
+      makePR({ number: 1, updatedAt: '2026-01-01T00:00:00Z' }),
+      makePR({ number: 2, updatedAt: '2026-03-01T00:00:00Z' }),
+    ];
+    const sorted = sortPRsByRecency(prs);
+    expect(sorted).not.toBe(prs);
+    expect(prs.map((pr) => pr.number)).toEqual([1, 2]);
   });
 });
 

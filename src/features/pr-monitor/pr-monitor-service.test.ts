@@ -208,6 +208,16 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
 
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+  it('emits the cached (empty) list when the initial prMonitor.list seed fails (ready-with-empty)', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('list failed'));
+    const seen: PrMonitorRow[][] = [];
+    const { dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
+    await flush();
+
+    expect(seen.at(-1)).toEqual([]);
+    dispose();
+  });
+
   it('registers a workspace-scoped prMonitor:* subscription, seeds from prMonitor.list, folds events', async () => {
     mockedRequest.mockResolvedValue({ monitors: [makeMonitor()] });
     const seen: PrMonitorRow[][] = [];

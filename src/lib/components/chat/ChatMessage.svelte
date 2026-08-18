@@ -1478,6 +1478,8 @@
           {isStreaming}
           {hideToolCalls}
           workspaceId={workspace?.id ? String(workspace.id) : undefined}
+          {agentId}
+          messageId={message?.id ?? messageId}
         />
 
         <!-- Stopped indicator for interrupted messages -->

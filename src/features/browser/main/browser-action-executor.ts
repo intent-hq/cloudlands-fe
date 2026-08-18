@@ -268,6 +268,8 @@ export interface ActionResult {
   success: boolean;
   result?: unknown;
   error?: string;
+  /** Successful result with a caveat (e.g. listTabs answered from a stale cache). */
+  warning?: string;
 }
 
 export interface ExecutionResult {
@@ -291,6 +293,7 @@ async function executeAction(
     url: string,
     position?: 'adjacent' | 'replace' | 'same',
     allowDuplicate?: boolean,
+    requestedUrl?: string,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,
@@ -307,15 +310,30 @@ async function executeAction(
   try {
     switch (action.action) {
       case 'listTabs': {
-        const result = await embeddedBrowserCdp.listAllTabs(workspaceId);
-        return { action: 'listTabs', success: true, result };
+        // listAllTabs rejects when the tab list is unavailable (renderer
+        // never answered and no cache) — the catch below surfaces that as an
+        // action error instead of a silent empty list (monorepo#2756 RC4).
+        const { tabs, stale } = await embeddedBrowserCdp.listAllTabs(workspaceId);
+        if (stale) {
+          return {
+            action: 'listTabs',
+            success: true,
+            result: tabs,
+            // i18n-ignore (agent-facing protocol error, not user-facing)
+            warning: `The renderer did not answer the tab list request for workspace ${workspaceId}; this list is from a cached snapshot and may be outdated.`,
+          };
+        }
+        return { action: 'listTabs', success: true, result: tabs };
       }
 
       case 'focusTab': {
-        const result = embeddedBrowserCdp.focusTab(tabId || '', workspaceId);
+        // Resolves true only once the tab's webview is mounted and
+        // registered (bounded wait) — not merely when the focus message was
+        // delivered (intent-hq/monorepo#2756).
+        const result = await embeddedBrowserCdp.focusTab(tabId || '', workspaceId);
         if (!result) {
           const error = tabId
-            ? `Could not focus tab ${tabId}: workspace ${workspaceId} is not open in any window.` // i18n-ignore (agent-facing protocol error, not user-facing)
+            ? `Could not focus tab ${tabId}: the tab never mounted. Either workspace ${workspaceId} is not open in any window, or no tab with this id exists — check { action: "listTabs" }.` // i18n-ignore (agent-facing protocol error, not user-facing)
             : 'focusTab requires a tabId.'; // i18n-ignore (agent-facing protocol error, not user-facing)
           return { action: 'focusTab', success: false, error };
         }
@@ -469,7 +487,16 @@ async function executeAction(
               requestedUrl: action.url,
               agentId,
             });
-            const focused = embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId);
+            // Re-record the lease identity for this open: tunneled opens set
+            // the requested URL backing the requested-URL dedupe fallback
+            // below; non-tunneled opens clear any stale identity from the
+            // tab's prior use (intent-hq/monorepo#2787).
+            embeddedBrowserCdp.touchLease(
+              duplicateTabId,
+              agentId,
+              openTabTarget.tunneled ? action.url : null,
+            );
+            const focused = await embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId);
             return {
               action: 'openTab',
               success: true,
@@ -481,6 +508,59 @@ async function executeAction(
                 ...echo,
               },
             };
+          }
+        }
+
+        // Tunneled opens: the final URL embeds the tunnel-local forward
+        // port, so if the forward was re-minted since the first open the
+        // exact-URL match above can never hit. Fall back to matching the
+        // lease-recorded original requested URL and re-point the tab at the
+        // fresh tunnel URL (intent-hq/monorepo#2787).
+        if (agentId && !action.allowDuplicate && openTabTarget.tunneled) {
+          const requestedTabId = await embeddedBrowserCdp.findModelTabByRequestedUrl(
+            action.url,
+            agentId,
+            workspaceId,
+          );
+          if (requestedTabId) {
+            logger.info('Reusing existing model-opened tab with matching requested URL', {
+              tabId: requestedTabId,
+              url: finalRewrite.url,
+              requestedUrl: action.url,
+              agentId,
+            });
+            try {
+              await embeddedBrowserCdp.evaluate(
+                requestedTabId,
+                `window.location.href = ${JSON.stringify(finalRewrite.url)}`,
+              );
+              // Persist the navigated tab's new URL + requested URL in the
+              // panel layout so a restart re-runs the rewrite (monorepo#2789).
+              embeddedBrowserCdp.notifyTabNavigated(
+                requestedTabId,
+                workspaceId,
+                finalRewrite.url,
+                finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
+              );
+              const focused = await embeddedBrowserCdp.focusTab(requestedTabId, workspaceId);
+              return {
+                action: 'openTab',
+                success: true,
+                result: {
+                  reused: true,
+                  focused,
+                  tabId: requestedTabId,
+                  url: finalRewrite.url,
+                  ...echo,
+                },
+              };
+            } catch (err) {
+              logger.warn('Failed to reuse requested-URL tab, falling back to opening new tab', {
+                tabId: requestedTabId,
+                error: (err as Error).message,
+              });
+              embeddedBrowserCdp.releaseLease(requestedTabId);
+            }
           }
         }
 
@@ -499,7 +579,24 @@ async function executeAction(
                 idleTabId,
                 `window.location.href = ${JSON.stringify(finalRewrite.url)}`,
               );
-              embeddedBrowserCdp.focusTab(idleTabId, workspaceId);
+              // Persist the repurposed tab's new URL + requested URL in the
+              // panel layout so a restart re-runs the rewrite (monorepo#2789).
+              embeddedBrowserCdp.notifyTabNavigated(
+                idleTabId,
+                workspaceId,
+                finalRewrite.url,
+                finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
+              );
+              // Record the repurposed tab's new identity: tunneled opens set
+              // the requested URL so a later repeat after a forward re-mint
+              // can dedupe onto this tab; non-tunneled opens clear any stale
+              // identity from the tab's prior use (intent-hq/monorepo#2787).
+              embeddedBrowserCdp.touchLease(
+                idleTabId,
+                agentId,
+                openTabTarget.tunneled ? action.url : null,
+              );
+              await embeddedBrowserCdp.focusTab(idleTabId, workspaceId);
               return {
                 action: 'openTab',
                 success: true,
@@ -522,25 +619,78 @@ async function executeAction(
             error: 'openTab not available in this context',
           };
         }
+        // With position "replace" and an existing browser tab, the renderer
+        // updates that tab in place and never creates the pre-generated
+        // tabId — so resolve the adoption target up front and track it
+        // instead of a phantom id whose registration wait would always time
+        // out. The renderer replaces the first browser tab in the workspace
+        // layout, which is the first entry of the panel tab list here.
+        let replaceTargetTabId: string | undefined;
+        if (action.position === 'replace') {
+          try {
+            const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
+            replaceTargetTabId = tabs[0]?.tabId;
+          } catch {
+            // Tab list unavailable — assume the renderer creates a new tab.
+          }
+        }
         // For agent-driven opens the executor is the dedupe authority — it
         // already checked model-opened tabs above — so the renderer must
         // create a genuinely new tab rather than coalesce onto an equivalent
         // one (which could silently hand the agent a user-opened tab).
+        // Rewritten opens pass the original requested URL so the renderer
+        // persists it with the tab and a restart can re-run the rewrite
+        // (intent-hq/monorepo#2789).
         const result = openTabFn(
           finalRewrite.url,
           action.position,
           agentId ? true : action.allowDuplicate,
+          finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
         );
-        // Lease the new tab to the requesting agent right away so a repeat
+        // The id the caller can address: the adopted existing tab on a
+        // replace, otherwise the pre-generated id of the new tab.
+        const effectiveTabId =
+          result.success && replaceTargetTabId ? replaceTargetTabId : result.tabId;
+        // Lease the tab to the requesting agent right away so a repeat
         // openTab for the same URL dedupes onto it (intent-hq/monorepo#2541)
-        // instead of treating it as an untouchable user-opened tab.
-        if (agentId && result.success && result.tabId) {
-          embeddedBrowserCdp.touchLease(result.tabId, agentId);
+        // instead of treating it as an untouchable user-opened tab. Tunneled
+        // opens record the original requested URL, backing the requested-URL
+        // dedupe fallback above; non-tunneled opens clear any stale identity
+        // (a replace-position open adopts an existing tab whose lease may
+        // carry one) (intent-hq/monorepo#2787).
+        if (agentId && result.success && effectiveTabId) {
+          embeddedBrowserCdp.touchLease(
+            effectiveTabId,
+            agentId,
+            openTabTarget.tunneled ? action.url : null,
+          );
+        }
+        // Await the renderer's registration of the tab so the returned
+        // handle is immediately addressable — returning before the webview
+        // mounts made follow-up actions fail with "not found" (RC3,
+        // intent-hq/monorepo#2756). Bounded wait; a timeout fails the
+        // action truthfully instead of handing back an unusable id.
+        if (result.success && effectiveTabId) {
+          const registered = await embeddedBrowserCdp.waitForTabRegistration(effectiveTabId);
+          if (!registered) {
+            return {
+              action: 'openTab',
+              success: false,
+              result: { ...result, tabId: effectiveTabId, ...echo },
+              // i18n-ignore (agent-facing protocol error, not user-facing)
+              error: `Tab ${effectiveTabId} was requested but its webview did not mount in time. The page may be very slow to load — retry with { action: "focusTab", tabId: "${effectiveTabId}" } or check { action: "listTabs" }.`,
+            };
+          }
         }
         return {
           action: 'openTab',
           success: result.success,
-          result: { ...result, ...echo },
+          result: {
+            ...result,
+            ...(effectiveTabId ? { tabId: effectiveTabId } : {}),
+            ...(result.success && replaceTargetTabId ? { replaced: true } : {}),
+            ...echo,
+          },
           // Surface the failure message (e.g. "workspace not open in any
           // window", intent-hq/monorepo#2602) as the action error so the
           // sequence-level error is descriptive instead of "undefined".
@@ -591,6 +741,28 @@ async function executeAction(
           resolvedTabId,
           `window.location.href = ${JSON.stringify(navigateTarget.rewrite.url)}`,
         );
+        // Persist the navigated tab's new URL + requested URL in the panel
+        // layout so a restart re-runs the rewrite instead of restoring a
+        // dead ephemeral forward port (monorepo#2789).
+        embeddedBrowserCdp.notifyTabNavigated(
+          resolvedTabId,
+          workspaceId,
+          navigateTarget.rewrite.url,
+          navigateTarget.rewrite.rewritten ? navigateTarget.rewrite.requestedUrl : undefined,
+        );
+        // The tab's content changed, so refresh its lease identity: tunneled
+        // navigations record the requested URL (a later openTab for it can
+        // dedupe onto this tab), non-tunneled ones clear any stale identity —
+        // otherwise a later tunneled openTab for the tab's OLD requested URL
+        // could match it and navigate away from the new page
+        // (intent-hq/monorepo#2787).
+        if (agentId) {
+          embeddedBrowserCdp.touchLease(
+            resolvedTabId,
+            agentId,
+            navigateTarget.tunneled ? action.url : null,
+          );
+        }
         return {
           action: 'navigate',
           success: true,
@@ -708,6 +880,7 @@ export async function executeActions(
     url: string,
     position?: 'adjacent' | 'replace' | 'same',
     allowDuplicate?: boolean,
+    requestedUrl?: string,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,

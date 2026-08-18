@@ -99,6 +99,7 @@
   } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
     selectAwaitingSwitchBackSnapshot,
+    selectAwaitingUtilityFooter,
     selectChatError,
     selectChatLastChunkTime,
     selectChatModelUnavailable,
@@ -267,6 +268,10 @@
     shouldShowTranscriptUtilityStack,
   } from './chat-panel-visibility';
   import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
+  import {
+    findPreviousUserMessage,
+    isAutomatedChatMessage,
+  } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
 
@@ -376,6 +381,10 @@
   // Switch-back gate: true while a re-viewed conversation's (re)opening
   // standing subscription has not yet delivered its fresh seq-0 snapshot.
   const awaitingSwitchBackSnapshot$ = selectAwaitingSwitchBackSnapshot(agentIdStore);
+  // Utility-footer gate: true while the footer data sources (subscriptions,
+  // hooks, monitored PRs) have not all settled — transcript and footer
+  // reveal in the same paint (saga-cleared, bounded fallback).
+  const awaitingUtilityFooter$ = selectAwaitingUtilityFooter(agentIdStore);
   // Indeterminate first-hydration gate: while the INITIAL hydration is in
   // flight (never settled before for this agent), a partially-loaded message
   // list — e.g. the standing subscription's newest page landing ahead of the
@@ -385,15 +394,6 @@
     !$transcriptHydratedOnce$ && $transcriptHydration$ === 'loading',
   );
   const transcriptHydrationFailed = $derived($transcriptHydration$ === 'error');
-  // Utility stack gate: the hooks/monitors/subscriptions card never renders
-  // before the transcript reveal — hidden until this agent's first hydration
-  // settles (data prefetch is unaffected; only the render is gated).
-  const showTranscriptUtilityCard = $derived(
-    shouldShowTranscriptUtilityStack({
-      transcriptHydratedOnce: $transcriptHydratedOnce$,
-      hydrationSettled: $transcriptHydration$ === 'settled',
-    }),
-  );
   const authoritativeConversationEvidence = $derived(
     hasAuthoritativeConversationEvidence(
       $agentSession$ ?? null,
@@ -1150,30 +1150,14 @@
   let historyInitialized = $state(false);
 
   /**
-   * Check if a message is automated (system-initiated, not user-typed)
-   * User-typed messages never have metadata.type set.
-   * All automated messages (event notifications, task wakes, agent messages, etc.)
-   * have metadata.type defined.
+   * Check if a message is automated (system-initiated, not user-typed).
+   * Delegates to the pure helper in previous-user-message.ts: string
+   * metadata.type (except the user-authored `question_answers` tag),
+   * non-empty fromAgentId, or source === 'system' — plus the legacy
+   * text-prefix fallback for messages that lost metadata.
    */
   function isAutomatedMessage(message: AgentMessage): boolean {
-    // Primary check: User-typed messages never have metadata.type
-    // All automated messages have metadata.type set
-    if (message.metadata?.type) {
-      return true;
-    }
-
-    // Fallback check for legacy messages that lost metadata during persistence
-    // Check if the message content starts with known automated message patterns
-    const text = extractAllContent(message);
-    if (
-      text.startsWith('[WORKSPACE EVENTS]') ||
-      text.startsWith('[TASK WAKE]') ||
-      text.startsWith('[AGENT MESSAGE]')
-    ) {
-      return true;
-    }
-
-    return false;
+    return isAutomatedChatMessage(message);
   }
 
   function isEventWakeMessage(message?: AgentMessage): boolean {
@@ -1497,15 +1481,30 @@
   // Alias for backward compatibility
   let pendingInitialPrompt = $derived(pendingInitialData.prompt);
 
-  // Switch-back reveal deferral: on re-view, keep the indeterminate skeleton
-  // up (and suppress everything that would paint stale conversation state)
-  // until the resubscribe snapshot applies, the subscription closes, or the
-  // saga-owned bounded fallback clears the gate — then reveal in one paint.
+  // Transcript reveal deferral: keep the indeterminate skeleton up (and
+  // suppress everything that would paint stale conversation state) until the
+  // resubscribe snapshot applies AND the utility-footer data sources settle
+  // (or the subscription closes / the saga-owned bounded fallback clears the
+  // gates) — then reveal transcript and footer in one paint.
   const deferTranscriptReveal = $derived(
     shouldDeferTranscriptReveal({
       awaitingSwitchBackSnapshot: $awaitingSwitchBackSnapshot$,
+      awaitingUtilityFooter: $awaitingUtilityFooter$,
       transcriptHydratedOnce: $transcriptHydratedOnce$,
       hasPendingInitialPrompt: Boolean(pendingInitialPrompt),
+    }),
+  );
+
+  // Utility stack gate: the hooks/monitors/subscriptions card never renders
+  // before the transcript reveal — hidden until this agent's first hydration
+  // settles and the reveal deferral clears, so it mounts in the SAME flip
+  // that reveals the transcript (data prefetch is unaffected; only the
+  // render is gated).
+  const showTranscriptUtilityCard = $derived(
+    shouldShowTranscriptUtilityStack({
+      transcriptHydratedOnce: $transcriptHydratedOnce$,
+      hydrationSettled: $transcriptHydration$ === 'settled',
+      revealDeferred: deferTranscriptReveal,
     }),
   );
 
@@ -3124,22 +3123,20 @@
     };
   });
 
-  // Scroll to previous user message from the current sticky one
+  // Scroll to previous user-authored message from the current sticky one.
+  // Automated rows (wakes, system, agent-origin) are skipped; when the
+  // current message is itself automated, the walk starts from its position
+  // in the full message order. No preceding user message → scroll to top.
   function scrollToPreviousUserMessage(currentMessageId: string) {
     if (!scrollContainer) return;
 
-    // Get all user messages
-    const userMessages = $agentMessages$.filter((m) => m.role === 'user');
-    const currentIndex = userMessages.findIndex((m) => m.id === currentMessageId);
+    const previousMessage = findPreviousUserMessage($agentMessages$, currentMessageId);
 
-    if (currentIndex <= 0) {
-      // At first message or not found - scroll to top
+    if (!previousMessage) {
+      // No preceding user-authored message - scroll to top
       smoothScrollToPosition(0);
       return;
     }
-
-    // Find the previous user message
-    const previousMessage = userMessages[currentIndex - 1];
     const targetElement = scrollContainer.querySelector(
       `[data-message-id="${previousMessage.id}"]`,
     ) as HTMLElement;
@@ -3451,6 +3448,13 @@
     followBottom?: boolean;
     historyText?: string | null;
   }) {
+    // Scroll + follow re-lock must run synchronously, before any await: a
+    // stalled or rejecting drafts.clear must never delay or skip them.
+    if (options.followBottom) {
+      shouldFollowBottom = true;
+      if (scrollContainer) scrollToBottomUtil(scrollContainer);
+    }
+
     if (options.historyText) {
       addToInputHistory(options.historyText);
     }
@@ -3467,11 +3471,6 @@
       if (workspace && agentId) {
         await appClient.drafts.clear(workspace.id, agentId);
       }
-    }
-
-    if (options.followBottom) {
-      shouldFollowBottom = true;
-      if (scrollContainer) scrollToBottomUtil(scrollContainer);
     }
   }
 
@@ -3512,10 +3511,9 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
-    const followAfterSend = $agentMessages$.length === 0 || shouldFollowBottom;
     const userAppMessageId = prepareMessageSendTransition(text, {
       enabled: !$agentIsResponding$ && imageBlocks.length === 0 && fileBlocks.length === 0,
-      followBottom: followAfterSend,
+      followBottom: true,
     });
 
     // Dispatch all orchestration to the send-message saga
@@ -3537,7 +3535,7 @@
 
     void performLocalSendCleanup({
       clearInput: true,
-      followBottom: followAfterSend,
+      followBottom: true,
       historyText: text,
     });
   }
@@ -3650,13 +3648,25 @@
       );
     }
 
-    // Request persistence for future sessions (fire-and-forget; saga reports failures).
-    // NOTE: This may fail for sessions with no messages (which is fine), because:
-    // 1. The in-memory metadata is updated via Redux dispatch above
-    // 2. When sending a message, the metadata is passed directly in the request
-    // 3. The backend will read from request.metadata (priority) before disk
-    // If persistence succeeds, the specialist will be remembered for future sessions.
-    appStore.dispatch(saveAgentSessionRequested(workspace.id, agentId, true));
+    // Persist only the specialist fields resolved by this picker change.
+    const saveAction = saveAgentSessionRequested(workspace.id, agentId, true, {
+      specialistUpdate: {
+        specialist: specialistId,
+        ...(specialistId && newModel !== undefined ? { model: newModel } : {}),
+        ...(specialistId === null
+          ? { systemPrompt: null }
+          : behaviorPrompt !== undefined
+            ? { systemPrompt: behaviorPrompt }
+            : {}),
+      },
+      specialistRollback: { metadata: session.metadata, model: session.model },
+    });
+    appStore.dispatch(saveAction);
+    // The mutation saga owns rollback and the user-visible error; observe the
+    // rejection here so this component dispatch is not an unhandled promise.
+    void saveAction.promise.catch((error) => {
+      logger.error('Failed to persist agent specialist change', { agentId, error });
+    });
     logger.info('Agent specialist change dispatched', {
       agentId,
       specialistId,
@@ -3680,10 +3690,9 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
-    const followAfterSend = $agentMessages$.length === 0 || shouldFollowBottom;
     const userAppMessageId = prepareMessageSendTransition(text, {
       enabled: imageBlocks.length === 0 && fileBlocks.length === 0,
-      followBottom: followAfterSend,
+      followBottom: true,
       allowOverlap: true,
     });
 
@@ -3706,7 +3715,7 @@
 
     void performLocalSendCleanup({
       clearInput: true,
-      followBottom: followAfterSend,
+      followBottom: true,
       historyText: text,
     });
   }
@@ -3752,6 +3761,9 @@
     // Failures are surfaced via toast by the edit-regenerate middleware;
     // swallow the rejection here to avoid an unhandled-rejection warning.
     action.promise.catch(() => {});
+    // No launch-bubble transition on this path (there is no composer origin);
+    // just re-engage auto-follow and scroll so the regeneration is visible.
+    void performLocalSendCleanup({ followBottom: true });
   }
 
   // Handle regenerating from a specific assistant message

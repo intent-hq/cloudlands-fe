@@ -305,6 +305,81 @@ describe('resolveBrowserUrl', () => {
     });
   });
 
+  describe('tunnel forward stability (intent-hq/monorepo#2787)', () => {
+    let activeForwards: ReturnType<typeof vi.fn>;
+    let forwardAwareProvider: () => {
+      forwardPort: (port: number) => Promise<number>;
+      activeForwards: () => Array<{ remotePort: number; localPort: number }>;
+    };
+
+    beforeEach(() => {
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+      // Mirror the real providers (TunnelManager, DirectRelay): forwardPort
+      // is idempotent — a repeat call for an already-forwarded remote port
+      // returns the existing forward's local port.
+      const forwards = new Map<number, number>();
+      let nextPort = 55001;
+      forwardPort.mockImplementation(async (remotePort: number) => {
+        let localPort = forwards.get(remotePort);
+        if (localPort === undefined) {
+          localPort = nextPort++;
+          forwards.set(remotePort, localPort);
+        }
+        return localPort;
+      });
+      activeForwards = vi
+        .fn()
+        .mockImplementation(() =>
+          [...forwards.entries()].map(([remotePort, localPort]) => ({ remotePort, localPort })),
+        );
+      forwardAwareProvider = () => ({ forwardPort, activeForwards });
+    });
+
+    it('repeated resolutions of the same requested URL yield an identical final URL', async () => {
+      const first = await resolveBrowserUrl(
+        'http://daemon.localhost:8080/page',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      const second = await resolveBrowserUrl(
+        'http://daemon.localhost:8080/page',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      expect(first.tunneled).toBe(true);
+      expect(second.tunneled).toBe(true);
+      expect(first.url).toBe('http://127.0.0.1:55001/page');
+      expect(second.url).toBe(first.url);
+    });
+
+    it('always calls forwardPort so the ownership wrapper seam records the caller', async () => {
+      // The resolver must not shortcut via activeForwards: forwardPort is the
+      // seam wrapTunnelProviderWithOwnership uses to record workspace
+      // ownership refcounts (cloudlands-fe#1325), and it is idempotent on the
+      // real providers anyway.
+      await resolveBrowserUrl('http://daemon.localhost:8080/page', remoteContext, forwardAwareProvider);
+      await resolveBrowserUrl('http://daemon.localhost:8080/page', remoteContext, forwardAwareProvider);
+      expect(forwardPort).toHaveBeenCalledTimes(2);
+      expect(forwardPort).toHaveBeenNthCalledWith(1, 8080);
+      expect(forwardPort).toHaveBeenNthCalledWith(2, 8080);
+    });
+
+    it('forwards distinct remote ports independently', async () => {
+      const a = await resolveBrowserUrl(
+        'http://daemon.localhost:8080/page',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      const b = await resolveBrowserUrl(
+        'http://daemon.localhost:9090/page',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      expect(a.url).toBe('http://127.0.0.1:55001/page');
+      expect(b.url).toBe('http://127.0.0.1:55002/page');
+    });
+  });
+
   describe('rewriteOnly mode', () => {
     it('applies the remote rewrite with no probe and no tunnel', async () => {
       const result = await resolveBrowserUrl(

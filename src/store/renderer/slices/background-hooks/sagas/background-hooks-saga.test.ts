@@ -36,6 +36,7 @@ import {
   runBackgroundHookRequested,
 } from '../background-hooks-slice';
 import { backgroundHooksSaga } from './background-hooks-saga';
+import { openWorkspaceTab, tabStateReducer } from '../../tab-state/tab-state-slice';
 
 function makeHook(overrides: Partial<BackgroundHook> = {}): BackgroundHook {
   return {
@@ -75,18 +76,31 @@ function emitReconnect(): void {
 }
 
 function createHarness() {
-  let backgroundHooks = initialState;
+  const initialTabState = tabStateReducer(undefined, { type: '@@INIT' });
+  let state = { backgroundHooks: initialState, tabState: initialTabState };
   const channel = stdChannel();
+  const listeners = new Set<() => void>();
   const dispatch = vi.fn((action: { type: string; payload?: unknown }) => {
-    backgroundHooks = backgroundHooksReducer(backgroundHooks, action);
+    state = {
+      backgroundHooks: backgroundHooksReducer(state.backgroundHooks, action),
+      tabState: tabStateReducer(state.tabState, action as Parameters<typeof tabStateReducer>[1]),
+    };
     channel.put(action);
+    for (const listener of listeners) listener();
     return action;
   });
+  const reduxStore = {
+    getState: () => state,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ backgroundHooks }) },
+    { channel, dispatch, getState: reduxStore.getState, context: { reduxStore } },
     backgroundHooksSaga,
   );
-  return { dispatch, task, getState: () => backgroundHooks };
+  return { dispatch, task, getState: () => state.backgroundHooks };
 }
 
 async function stop(task: Task): Promise<void> {
@@ -267,6 +281,16 @@ describe('backgroundHooksSaga', () => {
     await stop(task);
   });
 
+  it('writes an empty workspace entry when the initial hook.list seed fails (ready-with-empty)', async () => {
+    mocks.request.mockRejectedValueOnce(new Error('list failed'));
+    const { dispatch, task, getState } = createHarness();
+    dispatch(backgroundHooksSubscribeRequested('ws-1'));
+
+    await vi.waitFor(() => expect(getState().byWorkspaceId['ws-1']).toBeDefined());
+    expect(Object.keys(getState().byWorkspaceId['ws-1'].hooks.map)).toHaveLength(0);
+    await stop(task);
+  });
+
   it('retires in-flight and trailing refetches when the last subscriber leaves', async () => {
     const pending = deferred<{ hooks: BackgroundHook[] }>();
     mocks.request.mockReturnValueOnce(pending.promise);
@@ -378,5 +402,51 @@ describe('backgroundHooksSaga', () => {
       hookId: 'hook-1',
     });
     await stop(task);
+  });
+
+  describe('active-workspace lease (view-time seed)', () => {
+    it('seeds the active workspace subscription at tab activation, before any card mounts', async () => {
+      const { dispatch, task, getState } = createHarness();
+      dispatch(openWorkspaceTab('ws-1'));
+
+      // The lease opens after the reconciliation delay: the hook.list seed
+      // lands (delivered latch flips) without any component subscriber.
+      await vi.waitFor(() => expect(getState().byWorkspaceId['ws-1']).toBeDefined());
+      expect(mocks.subscribe).toHaveBeenCalledWith({
+        eventTypes: ['hook:*'],
+        workspaceId: 'ws-1',
+      });
+      await stop(task);
+    });
+
+    it('keeps the workspace entry alive across a card remount (unsubscribe/subscribe churn)', async () => {
+      const { dispatch, task, getState } = createHarness();
+      dispatch(openWorkspaceTab('ws-1'));
+      await vi.waitFor(() => expect(getState().byWorkspaceId['ws-1']).toBeDefined());
+
+      // Card mounts (count 2), then remounts on agent switch: the paired
+      // unsubscribe never drops the count to zero while the lease holds, so
+      // the delivered entry survives and no reveal re-defers.
+      dispatch(backgroundHooksSubscribeRequested('ws-1'));
+      dispatch(backgroundHooksUnsubscribeRequested('ws-1'));
+      expect(getState().byWorkspaceId['ws-1']).toBeDefined();
+      expect(mocks.unsubscribe).not.toHaveBeenCalled();
+      await stop(task);
+    });
+
+    it('swaps the lease when the active workspace tab changes', async () => {
+      mocks.subscribe.mockImplementation(({ workspaceId }: { workspaceId: string }) =>
+        Promise.resolve({ subscriptionId: `sub-${workspaceId}` }),
+      );
+      const { dispatch, task, getState } = createHarness();
+      dispatch(openWorkspaceTab('ws-1'));
+      await vi.waitFor(() => expect(getState().byWorkspaceId['ws-1']).toBeDefined());
+
+      dispatch(openWorkspaceTab('ws-2'));
+      await vi.waitFor(() => expect(getState().byWorkspaceId['ws-2']).toBeDefined());
+      await vi.waitFor(() => expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-ws-1'));
+      expect(getState().byWorkspaceId['ws-1']).toBeUndefined();
+      await stop(task);
+    });
   });
 });

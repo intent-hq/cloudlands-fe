@@ -6,6 +6,7 @@ import {
   initialState as chatStateInitialState,
   chatLiveStreamPhaseChanged,
   chatTranscriptSnapshotApplied,
+  chatUtilityFooterReady,
   transcriptHydrationFailed,
   transcriptHydrationStarted,
   transcriptHydrationSettled,
@@ -13,6 +14,7 @@ import {
 import { markAgentAsViewed } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
 import {
   selectAwaitingSwitchBackSnapshot,
+  selectAwaitingUtilityFooter,
   selectTranscriptHydratedOnce,
   selectTranscriptHydration,
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
@@ -20,6 +22,7 @@ import {
 import {
   deriveQueuedMessagesVisibility,
   isSessionActivelyResponding,
+  isUtilityFooterReady,
   shouldDeferTranscriptReveal,
   shouldShowEndOfListStreamingStatus,
   shouldShowPendingAssistantStatus,
@@ -381,6 +384,7 @@ describe('shouldShowTranscriptUtilityStack', () => {
       shouldShowTranscriptUtilityStack({
         transcriptHydratedOnce: false,
         hydrationSettled: false,
+        revealDeferred: false,
       }),
     ).toBe(false);
   });
@@ -390,6 +394,7 @@ describe('shouldShowTranscriptUtilityStack', () => {
       shouldShowTranscriptUtilityStack({
         transcriptHydratedOnce: true,
         hydrationSettled: true,
+        revealDeferred: false,
       }),
     ).toBe(true);
   });
@@ -399,8 +404,19 @@ describe('shouldShowTranscriptUtilityStack', () => {
       shouldShowTranscriptUtilityStack({
         transcriptHydratedOnce: true,
         hydrationSettled: false,
+        revealDeferred: false,
       }),
     ).toBe(true);
+  });
+
+  it('stays hidden while the transcript reveal is deferred — the card mounts in the SAME flip', () => {
+    expect(
+      shouldShowTranscriptUtilityStack({
+        transcriptHydratedOnce: true,
+        hydrationSettled: true,
+        revealDeferred: true,
+      }),
+    ).toBe(false);
   });
 
   // These two scenarios derive the gate's inputs from REAL reducer
@@ -412,8 +428,26 @@ describe('shouldShowTranscriptUtilityStack', () => {
     return {
       transcriptHydratedOnce: selectTranscriptHydratedOnce.select(storeState, agentId),
       hydrationSettled: selectTranscriptHydration.select(storeState, agentId) === 'settled',
+      revealDeferred: shouldDeferTranscriptReveal({
+        awaitingSwitchBackSnapshot: selectAwaitingSwitchBackSnapshot.select(storeState, agentId),
+        awaitingUtilityFooter: selectAwaitingUtilityFooter.select(storeState, agentId),
+        transcriptHydratedOnce: selectTranscriptHydratedOnce.select(storeState, agentId),
+        hasPendingInitialPrompt: false,
+      }),
     };
   };
+
+  it('reveals in the same flip as the transcript through the real first-open reducer path', () => {
+    const agentId = 'agent-stack-first-open';
+    // First settle arms the footer gate: transcript stays deferred and the
+    // card stays hidden — the SAME flip reveals both once the gate clears.
+    let state = chatStateReducer(chatStateInitialState, transcriptHydrationStarted(agentId));
+    state = chatStateReducer(state, transcriptHydrationSettled(agentId));
+    expect(shouldShowTranscriptUtilityStack(gateInputs(state, agentId))).toBe(false);
+
+    state = chatStateReducer(state, chatUtilityFooterReady(agentId));
+    expect(shouldShowTranscriptUtilityStack(gateInputs(state, agentId))).toBe(true);
+  });
 
   it('re-hides on switch to a not-yet-hydrated agent (fresh per-agent state)', () => {
     // Agent/workspace switches remount the card via {#key}; the gate then
@@ -437,6 +471,7 @@ describe('shouldShowTranscriptUtilityStack', () => {
 describe('shouldDeferTranscriptReveal', () => {
   const armedReView = {
     awaitingSwitchBackSnapshot: true,
+    awaitingUtilityFooter: true,
     transcriptHydratedOnce: true,
     hasPendingInitialPrompt: false,
   };
@@ -445,9 +480,25 @@ describe('shouldDeferTranscriptReveal', () => {
     expect(shouldDeferTranscriptReveal(armedReView)).toBe(true);
   });
 
-  it('never defers when the gate is not armed', () => {
+  it('defers while only the switch-back snapshot gate holds', () => {
+    expect(shouldDeferTranscriptReveal({ ...armedReView, awaitingUtilityFooter: false })).toBe(
+      true,
+    );
+  });
+
+  it('defers while only the utility-footer gate holds', () => {
     expect(
       shouldDeferTranscriptReveal({ ...armedReView, awaitingSwitchBackSnapshot: false }),
+    ).toBe(true);
+  });
+
+  it('never defers when neither gate is armed', () => {
+    expect(
+      shouldDeferTranscriptReveal({
+        ...armedReView,
+        awaitingSwitchBackSnapshot: false,
+        awaitingUtilityFooter: false,
+      }),
     ).toBe(false);
   });
 
@@ -470,17 +521,20 @@ describe('shouldDeferTranscriptReveal', () => {
     const storeState = { chatState: state } as unknown as StoreState;
     return {
       awaitingSwitchBackSnapshot: selectAwaitingSwitchBackSnapshot.select(storeState, agentId),
+      awaitingUtilityFooter: selectAwaitingUtilityFooter.select(storeState, agentId),
       transcriptHydratedOnce: selectTranscriptHydratedOnce.select(storeState, agentId),
       hasPendingInitialPrompt: false,
     };
   };
 
-  it('defers across the real switch-back reducer sequence and reveals on the fresh snapshot', () => {
+  it('defers across the real switch-back reducer sequence and reveals in one flip', () => {
     const agentId = 'agent-reveal-1';
-    // Hydrated once, snapshot applied, then the subscription closed on a
-    // switch away (phase null drops the snapshot meta).
+    // Hydrated once (footer gate armed then cleared), snapshot applied, then
+    // the subscription closed on a switch away (phase null drops the
+    // snapshot meta and both gates).
     let state = chatStateReducer(chatStateInitialState, transcriptHydrationStarted(agentId));
     state = chatStateReducer(state, transcriptHydrationSettled(agentId));
+    state = chatStateReducer(state, chatUtilityFooterReady(agentId));
     state = chatStateReducer(
       state,
       chatTranscriptSnapshotApplied(agentId, { truncated: false, totalMessages: 2 }),
@@ -488,15 +542,33 @@ describe('shouldDeferTranscriptReveal', () => {
     state = chatStateReducer(state, chatLiveStreamPhaseChanged(agentId, null));
     expect(shouldDeferTranscriptReveal(gateInputs(state, agentId))).toBe(false);
 
-    // Switch back: the gate arms synchronously with the view switch.
+    // Switch back: BOTH gates arm synchronously with the view switch.
     state = chatStateReducer(state, markAgentAsViewed(agentId));
     expect(shouldDeferTranscriptReveal(gateInputs(state, agentId))).toBe(true);
 
-    // The reopening subscription's fresh seq-0 snapshot reveals.
+    // A fresh seq-0 snapshot alone is not enough — the footer must settle
+    // too so transcript and footer flip in the same paint.
     state = chatStateReducer(
       state,
       chatTranscriptSnapshotApplied(agentId, { truncated: false, totalMessages: 3 }),
     );
+    expect(shouldDeferTranscriptReveal(gateInputs(state, agentId))).toBe(true);
+    state = chatStateReducer(state, chatUtilityFooterReady(agentId));
+    expect(shouldDeferTranscriptReveal(gateInputs(state, agentId))).toBe(false);
+  });
+
+  it('defers the first open after settle until the footer gate clears (same-paint reveal)', () => {
+    const agentId = 'agent-reveal-first-open';
+    let state = chatStateReducer(chatStateInitialState, transcriptHydrationStarted(agentId));
+    state = chatStateReducer(state, transcriptHydrationSettled(agentId));
+    expect(shouldDeferTranscriptReveal(gateInputs(state, agentId))).toBe(true);
+
+    state = chatStateReducer(state, chatUtilityFooterReady(agentId));
+    expect(shouldDeferTranscriptReveal(gateInputs(state, agentId))).toBe(false);
+
+    // A refresh re-hydration settle never re-arms (latch already true).
+    state = chatStateReducer(state, transcriptHydrationStarted(agentId));
+    state = chatStateReducer(state, transcriptHydrationSettled(agentId));
     expect(shouldDeferTranscriptReveal(gateInputs(state, agentId))).toBe(false);
   });
 
@@ -505,6 +577,29 @@ describe('shouldDeferTranscriptReveal', () => {
     const loading = chatStateReducer(chatStateInitialState, transcriptHydrationStarted(agentId));
     const viewed = chatStateReducer(loading, markAgentAsViewed(agentId));
     expect(shouldDeferTranscriptReveal(gateInputs(viewed, agentId))).toBe(false);
+  });
+});
+
+describe('isUtilityFooterReady', () => {
+  it('is true only when all three footer snapshots have settled', () => {
+    expect(
+      isUtilityFooterReady({
+        subscriptionSnapshotFetched: true,
+        backgroundHooksSnapshotDelivered: true,
+        prMonitorsSnapshotDelivered: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('is false while any footer snapshot is still pending', () => {
+    const ready = {
+      subscriptionSnapshotFetched: true,
+      backgroundHooksSnapshotDelivered: true,
+      prMonitorsSnapshotDelivered: true,
+    };
+    for (const key of Object.keys(ready) as (keyof typeof ready)[]) {
+      expect(isUtilityFooterReady({ ...ready, [key]: false })).toBe(false);
+    }
   });
 });
 

@@ -93,6 +93,12 @@ export interface AgentPreviewLineFields {
   isResponding?: boolean;
   /** `agent.reportToParent` report (session `metadata.completionReport`). */
   completionReport?: string | null;
+  /**
+   * Persisted tool-call preview (AgentLite `lastToolUse`, §5.5 — also carried
+   * on `agent:last-message`): the newest message's last `tool_use` block.
+   * Only `name` is read (wire/agent content).
+   */
+  lastToolUse?: { name: string } | null;
 }
 
 /**
@@ -107,7 +113,9 @@ export interface AgentPreviewLineFields {
  *      (push-applied ~1s by `agent:stream:activity`);
  *   3. the digest / completion-report summary;
  *   4. the persisted `lastAgentResponse` (idle agents);
- *   5. the last user message as a final fallback.
+ *   5. the persisted `lastToolUse` name (tool-only stretches with no
+ *      response text — mirrors the card's last-response > last-tool order);
+ *   6. the last user message as a final fallback.
  * Returns null when no source has text.
  */
 export function deriveAgentPreviewLine(fields: AgentPreviewLineFields): string | null {
@@ -126,6 +134,8 @@ export function deriveAgentPreviewLine(fields: AgentPreviewLineFields): string |
     ? getLastMeaningfulLine(fields.lastAgentResponse)
     : '';
   if (lastResponse) return lastResponse;
+  const toolName = fields.lastToolUse?.name?.trim();
+  if (toolName) return toolName;
   return userFirstLine || null;
 }
 

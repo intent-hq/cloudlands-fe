@@ -38,6 +38,9 @@ const mocks = vi.hoisted(() => {
     resizeConstructor: vi.fn(),
     agentMessages: mutableReadable<unknown[]>([]),
     awaitingSwitchBackSnapshot: mutableReadable(false),
+    awaitingUtilityFooter: mutableReadable(false),
+    transcriptHydration: mutableReadable('settled'),
+    transcriptHydratedOnce: mutableReadable(true),
     animateMessageSend: vi.fn(),
     createMessageSendLaunchBubble: vi.fn(),
     pendingQuestions: null as { messageId: string; questions: unknown[] } | null,
@@ -87,6 +90,9 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectAwaitingSwitchBackSnapshot: Object.assign(() => mocks.awaitingSwitchBackSnapshot, {
     select: () => false,
   }),
+  selectAwaitingUtilityFooter: Object.assign(() => mocks.awaitingUtilityFooter, {
+    select: () => false,
+  }),
   selectChatError: mocks.selector(null),
   selectChatIsStalled: mocks.selector(false),
   selectChatLastChunkTime: mocks.selector(null),
@@ -100,8 +106,12 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectFetchingOlderHistory: mocks.selector(false),
   selectHistoryExhausted: mocks.selector(false),
   selectHistorySeekUnsupported: mocks.selector(false),
-  selectTranscriptHydration: mocks.selector('settled'),
-  selectTranscriptHydratedOnce: mocks.selector(true),
+  selectTranscriptHydration: Object.assign(() => mocks.transcriptHydration, {
+    select: () => 'settled',
+  }),
+  selectTranscriptHydratedOnce: Object.assign(() => mocks.transcriptHydratedOnce, {
+    select: () => true,
+  }),
   selectTranscriptSnapshotMeta: mocks.selector(undefined),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
@@ -208,7 +218,7 @@ vi.mock('../questions/QuestionWizard.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../ChatMessage.svelte', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/MockChatMessage.svelte')).default,
 }));
 vi.mock('../questions/wizard-gate', () => ({
   deriveWizardPendingQuestions: () => mocks.pendingQuestions,
@@ -304,6 +314,9 @@ beforeEach(() => {
   });
   mocks.agentMessages.set([]);
   mocks.awaitingSwitchBackSnapshot.set(false);
+  mocks.awaitingUtilityFooter.set(false);
+  mocks.transcriptHydration.set('settled');
+  mocks.transcriptHydratedOnce.set(true);
   mocks.animateMessageSend.mockResolvedValue(undefined);
   mocks.createMessageSendLaunchBubble.mockImplementation(() => {
     const bubble = document.createElement('div');
@@ -467,6 +480,108 @@ describe('ChatPanel mounted lifecycle', () => {
 
     view.unmount();
     expect(bubble.isConnected).toBe(false);
+  });
+
+  it('re-engages follow and scrolls to the bottom on send even when scrolled up', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+
+    // Simulate the user scrolling up mid-conversation: auto-follow disengages.
+    mocks.followBottomOptions?.onFollowChange?.(false);
+    await tick();
+    vi.mocked(scrollToBottomUtil).mockClear();
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'sent from a scrolled-up transcript' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    expect(vi.mocked(scrollToBottomUtil)).toHaveBeenCalledWith(scrollContainer);
+
+    // Follow was re-engaged: the unmount-time cache records follow=true.
+    view.unmount();
+    expect(getCachedChatScroll('workspace-a', 'agent-a')).toMatchObject({
+      shouldFollowBottom: true,
+    });
+  });
+
+  it('re-engages follow and scrolls to the bottom on send even when drafts.clear never settles', async () => {
+    // Regression: the followBottom branch of performLocalSendCleanup used to
+    // run after `await appClient.drafts.clear(...)`, so a stalled (or
+    // rejecting) clear delayed or skipped the scroll + follow re-lock. It must
+    // run synchronously, before the drafts round-trip.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.draftClear.mockReturnValue(new Promise(() => {}));
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+
+    // Simulate the user scrolling up mid-conversation: auto-follow disengages.
+    mocks.followBottomOptions?.onFollowChange?.(false);
+    await tick();
+    vi.mocked(scrollToBottomUtil).mockClear();
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'sent while drafts.clear hangs' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await tick();
+
+    // The clear is still pending, yet the scroll + re-lock already happened.
+    expect(mocks.draftClear).toHaveBeenCalledWith('workspace-a', 'agent-a');
+    expect(vi.mocked(scrollToBottomUtil)).toHaveBeenCalledWith(scrollContainer);
+
+    // Follow was re-engaged: the unmount-time cache records follow=true.
+    view.unmount();
+    expect(getCachedChatScroll('workspace-a', 'agent-a')).toMatchObject({
+      shouldFollowBottom: true,
+    });
+  });
+
+  it('re-engages follow and scrolls to the bottom on edit-and-regenerate when scrolled up', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'u1', role: 'user', content: 'original prompt', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+
+    // Simulate the user scrolling up mid-conversation: auto-follow disengages.
+    mocks.followBottomOptions?.onFollowChange?.(false);
+    await tick();
+    vi.mocked(scrollToBottomUtil).mockClear();
+
+    // Confirm an edit-and-regenerate on the user message.
+    await fireEvent.click(screen.getByTestId('mock-edit-submit'));
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    expect(vi.mocked(scrollToBottomUtil)).toHaveBeenCalledWith(scrollContainer);
+
+    // Follow was re-engaged: the unmount-time cache records follow=true.
+    view.unmount();
+    expect(getCachedChatScroll('workspace-a', 'agent-a')).toMatchObject({
+      shouldFollowBottom: true,
+    });
   });
 
   it('keeps draft restore and save ownership with the rebound workspace and agent', async () => {
@@ -1001,5 +1116,118 @@ describe('ChatPanel mounted lifecycle', () => {
 
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
     expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
+  });
+
+  it('reveals transcript and utility footer in the same flip on switch-back', async () => {
+    // Same-paint reveal: while EITHER gate holds (here the footer gate after
+    // the snapshot gate cleared), the skeleton stays up and the utility card
+    // stays unmounted; clearing the last gate flips both in one paint.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    mocks.awaitingSwitchBackSnapshot.set(true);
+    mocks.awaitingUtilityFooter.set(true);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    expect(
+      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
+    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).toBeNull();
+
+    // The fresh snapshot applies but the footer sources are still settling:
+    // still one deferred surface — no partial reveal.
+    mocks.awaitingSwitchBackSnapshot.set(false);
+    await tick();
+    expect(
+      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
+    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).toBeNull();
+
+    // Footer ready: transcript and utility card mount in the SAME flip.
+    mocks.awaitingUtilityFooter.set(false);
+    await tick();
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
+    expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="event-subscriptions-card"]'),
+    ).not.toBeNull();
+  });
+
+  it('reveals transcript and utility footer in the same flip on first open', async () => {
+    // First open: hydration settles (latch true) with the footer gate armed —
+    // the skeleton keeps covering until the footer sources settle, then both
+    // reveal together.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'first', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    mocks.awaitingUtilityFooter.set(true);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    expect(
+      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
+    ).not.toBeNull();
+    expect(view.container.querySelector('[data-conversation-turn]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).toBeNull();
+
+    mocks.awaitingUtilityFooter.set(false);
+    await tick();
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
+    expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="event-subscriptions-card"]'),
+    ).not.toBeNull();
+  });
+
+  it('reveals without the footer when the bounded fallback clears the gates', async () => {
+    // Fallback (footer sources never settled in the window): the saga clears
+    // both flags — the transcript reveals and the (empty-data) card mounts
+    // hidden; late footer data pops in afterwards (out of scope here).
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'retained', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    mocks.awaitingSwitchBackSnapshot.set(true);
+    mocks.awaitingUtilityFooter.set(true);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    expect(
+      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
+    ).not.toBeNull();
+
+    // chatSwitchBackRevealTimedOut clears BOTH gates in the reducer.
+    mocks.awaitingSwitchBackSnapshot.set(false);
+    mocks.awaitingUtilityFooter.set(false);
+    await tick();
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
+    expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
+  });
+
+  it('renders no visible utility footer when all footer data is empty', async () => {
+    // Empty data renders nothing: the card wrapper mounts with the reveal but
+    // stays hidden (no visible footprint) while no subscriptions/hooks/PRs
+    // exist.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    const area = view.container.querySelector('[data-testid="subscription-utility-area"]');
+    expect(area).not.toBeNull();
+    expect(area!.getAttribute('data-has-subscriptions')).toBe('false');
+    expect(area!.classList.contains('hidden')).toBe(true);
   });
 });

@@ -59,19 +59,28 @@
  * An authoritative idle snapshot also clears retained flags after reconnect or
  * HMR, except for one snapshot that races a locally observed `chatSendStarted`.
  *
- * SOLE-WRITER INVARIANT: the standing subscription is the sole writer of an
- * agent's transcript MESSAGE state — the firehose events carry no content
- * (the daemon events bridge dispatches content-free chat-state bookkeeping
- * only), and the initial hydration (`chat-read-saga`) writes only the
- * persisted history.
+ * SOLE-WRITER INVARIANT: while a standing registration covers an agent (the
+ * chat-subscription-registry, marked at install / cleared at close), the
+ * subscription is the SOLE writer of that agent's transcript MESSAGE
+ * CONTENT. The `agent:*` firehose path keeps accumulating but omits content
+ * blocks from its dispatches (`dispatchStreamUpdate`; re-checked at apply
+ * time in `agent-stream-saga`), retaining only flag/metadata bookkeeping —
+ * so neither a mid-turn `agent:tool:call` tick nor the terminal
+ * `agent:stream:end` `complete` can clobber the reconciled transcript. For
+ * UNCOVERED agents (background/unviewed) the firehose remains the transcript
+ * writer, and its updates merge by block identity
+ * (`mergeStreamContentBlocks`, monorepo#2814) so they never delete
+ * previously written blocks. The initial hydration (`chat-read-saga`) writes
+ * only the persisted history.
  *
  * The root-owned saga takes each lifecycle action after reducers have applied
  * it, preserving the former post-action state-read semantics.
  */
-import { buffers, channel as createChannel, type Channel } from 'redux-saga';
+import { buffers, channel as createChannel, type Channel, type Task } from 'redux-saga';
 import {
   actionChannel,
   call,
+  cancel,
   delay,
   fork,
   put,
@@ -89,14 +98,29 @@ import {
   chatSwitchBackRevealTimedOut,
   chatTranscriptSnapshotApplied,
   chatTranscriptSnapshotRerequested,
+  chatUtilityFooterReady,
   initializeChatRequested,
   refreshChatTranscriptRequested,
   transcriptHydrationSettled,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
   selectAwaitingSwitchBackSnapshot,
+  selectAwaitingUtilityFooter,
   selectTranscriptHydration,
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
+import {
+  setSubscriptionSnapshot,
+  subscriptionSnapshotFetchFailed,
+} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+import { selectSubscriptionSnapshotFetched } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
+import {
+  backgroundHooksCleared,
+  backgroundHooksUpdated,
+} from '$store/renderer/slices/background-hooks/background-hooks-slice';
+import { selectBackgroundHooksSnapshotDelivered } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
+import { prMonitorsUpdated } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
+import { selectPrMonitorsSnapshotDelivered } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+import { isUtilityFooterReady } from '$lib/components/chat/chat-panel-visibility';
 import {
   bulkUpsertSessions,
   clearAllSessions,
@@ -115,6 +139,10 @@ import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { createLogger } from '$lib/utils/client-logger';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
+import {
+  clearStandingChatSubscription,
+  markStandingChatSubscription,
+} from '$features/agent/utils/chat-subscription-registry';
 import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
 import {
   selectAgentMessages,
@@ -187,6 +215,8 @@ interface SubscriptionCoordinator {
   events: Channel<ChatSubscriptionEvent>;
   /** Agents whose next idle snapshot may predate a locally-started turn. */
   locallyStartedTurns: Set<string>;
+  /** One bounded reveal-gate watcher per agent (see revealGateWatcher). */
+  revealGateWatchers: Map<string, Task>;
 }
 
 function createCompletion(): TransitionCompletion {
@@ -438,8 +468,8 @@ function* handleSubscriptionEvent(
     yield* applyTranscript(coordinator, event.agentId, entry, event.transcript, discardStoreOnly);
     // Seq-0 snapshot applied (single-transfer hydration): seed the firehose
     // stream accumulator with the snapshot's in-flight assistant message so
-    // subsequent agent:stream:chunk events pass the regression guard, then
-    // record the snapshot metadata for the chat-read saga (it settles
+    // subsequent agent:stream:chunk dispatches carry the full block prefix,
+    // then record the snapshot metadata for the chat-read saga (it settles
     // hydration on it and anchors the background older-history fetch).
     if (event.transcript.fromSnapshot === true) {
       const session = yield* selectAgentSession.effect(event.agentId);
@@ -572,6 +602,12 @@ function* openSubscription(
       hasEmitted: false,
       wasStreaming: false,
     });
+    // Sole-writer handoff: the firehose stream path consults this registry
+    // and stops writing message CONTENT while the registration stands (its
+    // accumulator keeps accumulating as the fallback writer). Marked at
+    // install — the seq-0 snapshot that follows is canonical for anything
+    // the firehose would have written in between.
+    markStandingChatSubscription(agentId);
     installed = true;
     ready = true;
     for (const event of pending) coordinator.events.put(event);
@@ -617,6 +653,13 @@ function* closeSubscription(
     return;
   }
   coordinator.subscriptions.delete(agentId);
+  // Sole-writer handoff back: the firehose stream path resumes writing
+  // message content for this agent. Its accumulator kept accumulating the
+  // whole time, so a mid-turn close loses nothing the fallback writer would
+  // normally carry (post-intentd#775 it never carries assistant text —
+  // text streamed after the close renders on the next snapshot/reconcile,
+  // same as any non-covered agent).
+  clearStandingChatSubscription(agentId);
   yield* call(entry.acquisition.dispose);
   if (slot.acquisition === entry.acquisition) slot.acquisition = undefined;
   try {
@@ -819,30 +862,136 @@ export const SWITCH_BACK_REVEAL_WAIT_MS =
   SNAPSHOT_TIMEOUT_MS + INITIAL_RETRY_DELAY_MS + SWITCH_BACK_REVEAL_MARGIN_MS;
 
 /**
- * Saga-owned fallback timer for one armed switch-back reveal gate: races the
- * bounded wait against the gate's own clearing signals (snapshot applied, or
- * subscription closed — both already clear the gate in the reducer). A
- * re-dispatched `markAgentAsViewed` for the same agent also retires this
- * watcher — the route handler forks a fresh one when the gate is (still)
- * armed, so exactly one watcher runs per armed gate instead of duplicates
- * racing. Only a timeout with the gate STILL armed dispatches the fallback
- * clear; the reducer additionally no-ops a stale dispatch, so a superseded
+ * Composed utility-footer readiness for one (workspace, agent): the agent's
+ * `agent.getSubscriptions` read plus the workspace's `hook.list` and
+ * `prMonitor.list` seeds have all settled (success or failure both latch —
+ * a failed read renders the same as empty). The chief virtual workspace is
+ * EXEMPT (always ready): its footer seeds come only from the two
+ * active-workspace watchers keyed on `currentTabId`, and the Chief panel is
+ * a standing surface outside the tab strip — the seeds would never arrive
+ * ahead of the card mount, so gating a chief thread on them could only ever
+ * resolve via the bounded fallback (a full-length skeleton on every open).
+ * Chief threads keep the pre-gate behavior: reveal on transcript readiness,
+ * with the footer populating from the card's own mount-time fetches. The
+ * same short-circuit is deliberately NOT applied to ordinary non-active-tab
+ * workspaces (multi-panel layouts): their entries seed on tab activation and
+ * are retained (pr-monitors) or re-seeded by the card mount (hooks), so the
+ * gate still converges without the fallback in the common case.
+ */
+function* isFooterReadyForReveal(wsId: string, agentId: string): SagaGenerator<boolean> {
+  if (wsId === CHIEF_WORKSPACE_ID) return true;
+  const subscriptionSnapshotFetched = yield* selectSubscriptionSnapshotFetched.effect(
+    wsId,
+    agentId,
+  );
+  const backgroundHooksSnapshotDelivered =
+    yield* selectBackgroundHooksSnapshotDelivered.effect(wsId);
+  const prMonitorsSnapshotDelivered = yield* selectPrMonitorsSnapshotDelivered.effect(wsId);
+  return isUtilityFooterReady({
+    subscriptionSnapshotFetched,
+    backgroundHooksSnapshotDelivered,
+    prMonitorsSnapshotDelivered,
+  });
+}
+
+/**
+ * Saga-owned watcher for the armed transcript reveal gates (the switch-back
+ * snapshot gate and/or the utility-footer gate — both first open and
+ * switch-back share it). One bounded timer per agent: it clears the footer
+ * gate (`chatUtilityFooterReady`) the moment the footer data sources are all
+ * settled, exits once every gate is clear (snapshot applied / subscription
+ * closed already clear their gates in the reducer), and on timeout with any
+ * gate STILL armed dispatches the fallback clear — the transcript reveals
+ * without the footer (today's behavior) rather than an indefinite skeleton.
+ * `startRevealGateWatcher` cancels a superseded watcher before forking a
+ * fresh one, so exactly one runs per agent instead of duplicates racing; the
+ * reducer additionally no-ops a stale timeout dispatch, so a superseded
  * watcher can never re-clear a re-armed gate.
  */
-function* switchBackRevealFallback(agentId: string): SagaGenerator<void> {
-  const clearsGate = (action: { type: string; payload?: unknown }): boolean => {
-    if (!Array.isArray(action.payload) || action.payload[0] !== agentId) return false;
-    if (action.type === chatTranscriptSnapshotApplied.type) return true;
-    if (action.type === markAgentAsViewed.type) return true;
-    return action.type === chatLiveStreamPhaseChanged.type && action.payload[1] === null;
+function* revealGateWatcher(agentId: string, wsId: string): SagaGenerator<void> {
+  const mayChangeGates = (action: { type: string; payload?: unknown }): boolean => {
+    switch (action.type) {
+      case chatTranscriptSnapshotApplied.type:
+      case chatLiveStreamPhaseChanged.type:
+      case chatSwitchBackRevealTimedOut.type:
+      case chatUtilityFooterReady.type:
+        return Array.isArray(action.payload) && action.payload[0] === agentId;
+      case setSubscriptionSnapshot.type: {
+        const payload = action.payload as { workspaceId?: string; agentId?: string } | undefined;
+        return payload?.workspaceId === wsId && payload?.agentId === agentId;
+      }
+      case subscriptionSnapshotFetchFailed.type:
+        return (
+          Array.isArray(action.payload) &&
+          action.payload[0] === wsId &&
+          action.payload[1] === agentId
+        );
+      case backgroundHooksUpdated.type:
+      case backgroundHooksCleared.type:
+      case prMonitorsUpdated.type:
+        return Array.isArray(action.payload) && action.payload[0] === wsId;
+      default:
+        return false;
+    }
   };
+  function* gatesSettled(): SagaGenerator<void> {
+    while (true) {
+      if (
+        (yield* selectAwaitingUtilityFooter.effect(agentId)) &&
+        (yield* isFooterReadyForReveal(wsId, agentId))
+      ) {
+        yield* put(chatUtilityFooterReady(agentId));
+      }
+      const snapshotArmed = yield* selectAwaitingSwitchBackSnapshot.effect(agentId);
+      const footerArmed = yield* selectAwaitingUtilityFooter.effect(agentId);
+      if (!snapshotArmed && !footerArmed) return;
+      yield* take(mayChangeGates);
+    }
+  }
   const { timedOut } = yield* race({
-    cleared: take(clearsGate),
+    settled: call(gatesSettled),
     timedOut: delay(SWITCH_BACK_REVEAL_WAIT_MS),
   });
-  if (timedOut && (yield* selectAwaitingSwitchBackSnapshot.effect(agentId))) {
+  if (
+    timedOut &&
+    ((yield* selectAwaitingSwitchBackSnapshot.effect(agentId)) ||
+      (yield* selectAwaitingUtilityFooter.effect(agentId)))
+  ) {
     yield* put(chatSwitchBackRevealTimedOut(agentId));
   }
+}
+
+/** Fork the per-agent reveal-gate watcher, superseding any previous one. */
+function* startRevealGateWatcher(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+): SagaGenerator<void> {
+  const wsId =
+    coordinator.slots.get(agentId)?.wsId ??
+    coordinator.subscriptions.get(agentId)?.wsId ??
+    (yield* selectAgentSession.effect(agentId))?.workspaceId;
+  if (!wsId) {
+    // No workspace to watch footer readiness for — fail OPEN (clear both
+    // gates immediately) rather than leaving an armed gate with no watcher.
+    yield* put(chatSwitchBackRevealTimedOut(agentId));
+    return;
+  }
+  const existing = coordinator.revealGateWatchers.get(agentId);
+  if (existing?.isRunning()) yield* cancel(existing);
+  const task = yield* fork(function* runWatcher(): SagaGenerator<void> {
+    try {
+      yield* call(revealGateWatcher, agentId, wsId);
+    } finally {
+      // Self-prune on completion (settled, timed out, or cancelled) so the
+      // map holds only live watchers; a superseded watcher's cancellation
+      // runs before the fresh task is stored, so the identity check keeps
+      // it from deleting its successor.
+      if (coordinator.revealGateWatchers.get(agentId) === task) {
+        coordinator.revealGateWatchers.delete(agentId);
+      }
+    }
+  });
+  coordinator.revealGateWatchers.set(agentId, task);
 }
 
 /**
@@ -992,16 +1141,28 @@ function* routeLifecycleAction(
     if (coordinator.slots.has(agentId)) coordinator.locallyStartedTurns.add(agentId);
   } else if (action.type === markAgentAsViewed.type) {
     const [agentId] = action.payload as ReturnType<typeof markAgentAsViewed>['payload'];
-    // The reducer armed the switch-back reveal gate synchronously with this
+    // The reducer armed the switch-back reveal gates synchronously with this
     // action (when the transcript hydrated before and no current-subscription
-    // snapshot exists); own its bounded fallback here so a snapshot that
-    // never arrives cannot leave an indefinite skeleton.
-    if (yield* selectAwaitingSwitchBackSnapshot.effect(agentId)) {
-      yield* fork(switchBackRevealFallback, agentId);
+    // snapshot exists); own their bounded fallback here so a snapshot or
+    // footer seed that never arrives cannot leave an indefinite skeleton.
+    if (
+      (yield* selectAwaitingSwitchBackSnapshot.effect(agentId)) ||
+      (yield* selectAwaitingUtilityFooter.effect(agentId))
+    ) {
+      yield* startRevealGateWatcher(coordinator, agentId);
     }
     yield* handleViewed(coordinator, agentId);
   } else if (action.type === transcriptHydrationSettled.type) {
     const [agentId] = action.payload as ReturnType<typeof transcriptHydrationSettled>['payload'];
+    // The FIRST settle armed the utility-footer reveal gate (same-paint
+    // reveal of transcript + footer on first open); own its bounded wait
+    // unless a switch-back watcher already runs for this agent.
+    if (
+      (yield* selectAwaitingUtilityFooter.effect(agentId)) &&
+      !coordinator.revealGateWatchers.get(agentId)?.isRunning()
+    ) {
+      yield* startRevealGateWatcher(coordinator, agentId);
+    }
     enqueueHydrationSettled(coordinator, agentId);
   } else if (action.type === refreshChatTranscriptRequested.type) {
     const [wsId, agentId] = action.payload as ReturnType<
@@ -1063,8 +1224,12 @@ function disposeCoordinator(coordinator: SubscriptionCoordinator): string[] {
     slot.acquisition?.dispose();
   }
   for (const entry of coordinator.subscriptions.values()) entry.acquisition.dispose();
+  for (const agentId of agentIds) clearStandingChatSubscription(agentId);
   coordinator.subscriptions.clear();
   coordinator.slots.clear();
+  // Watcher tasks are forked children of the root saga — cancellation
+  // retires them; only the bookkeeping map needs clearing.
+  coordinator.revealGateWatchers.clear();
   return agentIds;
 }
 
@@ -1075,6 +1240,7 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
     slots: new Map(),
     events: createChannel(buffers.expanding<ChatSubscriptionEvent>()),
     locallyStartedTurns: new Set(),
+    revealGateWatchers: new Map(),
   };
   const lifecycleActions = yield* actionChannel(
     [

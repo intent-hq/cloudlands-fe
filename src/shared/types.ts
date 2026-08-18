@@ -1155,6 +1155,10 @@ export interface ToolUseBlock {
   /** Provider tool-call id — tool_result blocks reference it via `tool_use_id` (PROTOCOL §7.1) */
   toolCallId?: string;
   metadata?: Record<string, unknown>;
+  /** Slim projection (§5.5): `input` is a bounded preview of the full body. */
+  inputTruncated?: boolean;
+  /** Slim projection (§5.5): byte size of the full `input` body. */
+  inputBytes?: number;
 }
 
 export interface ToolResultBlock {
@@ -1164,6 +1168,10 @@ export interface ToolResultBlock {
   tool_use_id: string;
   output: unknown;
   is_error?: boolean;
+  /** Slim projection (§5.5): `output` is a bounded preview of the full body. */
+  outputTruncated?: boolean;
+  /** Slim projection (§5.5): byte size of the full `output` body. */
+  outputBytes?: number;
 }
 
 // ToolCall is now imported from ./types/agent-message.ts

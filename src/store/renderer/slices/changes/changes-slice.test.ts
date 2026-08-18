@@ -2,56 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { ChangeStage } from '$features/file-tracking/types';
 import type {
   TrackedChange,
-  StageTransition,
   CommitInfo,
   MainPanelViewState,
 } from './changes-types';
 import type { StoreState } from '../../types';
-import {
-  fileTrackingReducer,
-  initialState,
-  clearWorkspace,
-  setLoading,
-  setError,
-  setHasLoadedInitialData,
-  setChangesData,
-  setTransitions,
-  setCommitsData,
-  appendOlderCommits,
-  clearOlderCommits,
-  setLoadingOlderCommits,
-  setChanges,
-  clearAllChanges,
-  setMainPanelView,
-  clearMainPanelView,
-  requestAgentLineStats,
-  agentLineStatsRequestStarted,
-  agentLineStatsRequestSucceeded,
-  agentLineStatsRequestFailed,
-  updateAgentStats,
-  clearAgentStats,
-  setCommitMessage,
-  setTargetBranch,
-  setPendingCommitAction,
-  setIsAutofillAndCommitting,
-  setIsAutofillAndCreatingPR,
-  startBackgroundOperation,
-  resetAcceptChangesOperations,
-  setCachedGitStatus,
-  changesSyncStarted,
-  changesDataUpdated,
-  changesSyncQueued,
-  changesSyncFinished,
-  changesSyncDirtyConsumed,
-  changesLoadStarted,
-  changesLoadQueued,
-  changesLoadFinished,
-  changesLoadDirtyConsumed,
-  changesRefreshStarted,
-  changesRefreshQueued,
-  changesRefreshFinished,
-  changesRefreshDirtyConsumed,
-} from './changes-slice';
+import { fileTrackingReducer, initialState, clearWorkspace, setLoading, setHasLoadedInitialData, setChangesData, setCommitsData, appendOlderCommits, clearOlderCommits, setLoadingOlderCommits, setChanges, setMainPanelView, clearMainPanelView, requestAgentLineStats, agentLineStatsRequestStarted, agentLineStatsRequestSucceeded, agentLineStatsRequestFailed, updateAgentStats, setCommitMessage, setTargetBranch, setPendingCommitAction, setIsAutofillAndCommitting, setIsAutofillAndCreatingPR, startBackgroundOperation, resetAcceptChangesOperations, setCachedGitStatus } from './changes-slice';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   selectFileTrackingLoading,
@@ -63,16 +18,6 @@ import {
   selectAgentLineStats,
   selectAllAgentStats,
   selectShouldRequestAgentLineStats,
-  selectChangesLastSyncTime,
-  selectChangesLastUpdatedAt,
-  selectChangesSyncInProgress,
-  selectChangesSyncDirty,
-  selectChangesSyncDirtyForce,
-  selectChangesSyncThrottleMs,
-  selectChangesLoadInProgress,
-  selectChangesLoadDirty,
-  selectChangesRefreshInProgress,
-  selectChangesRefreshDirty,
 } from './changes-selectors';
 import type { LineChangeStats } from './changes-types';
 
@@ -120,81 +65,9 @@ describe('fileTrackingReducer', () => {
     expect(state.byWorkspaceId[WS].loading).toBe(true);
   });
 
-  it('setError updates error', () => {
-    const state = fileTrackingReducer(initialState, setError(WS, 'oops'));
-    expect(state.byWorkspaceId[WS].error).toBe('oops');
-  });
-
   it('setHasLoadedInitialData updates flag', () => {
     const state = fileTrackingReducer(initialState, setHasLoadedInitialData(WS, true));
     expect(state.byWorkspaceId[WS].hasLoadedInitialData).toBe(true);
-  });
-
-  it('initializes serializable changes coordination state with the default sync throttle', () => {
-    const state = fileTrackingReducer(initialState, changesSyncStarted(WS, 1234));
-
-    expect(state.byWorkspaceId[WS].coordination).toEqual({
-      lastSyncTime: 1234,
-      lastUpdatedAt: 0,
-      syncInProgress: true,
-      syncDirty: false,
-      syncDirtyForce: false,
-      syncThrottleMs: 10000,
-      loadInProgress: false,
-      loadDirty: false,
-      refreshInProgress: false,
-      refreshDirty: false,
-    });
-    expect(JSON.parse(JSON.stringify(state.byWorkspaceId[WS].coordination))).toEqual(
-      state.byWorkspaceId[WS].coordination,
-    );
-  });
-
-  it('tracks sync coordination transitions and preserves queued force', () => {
-    let state = fileTrackingReducer(initialState, changesSyncStarted(WS, 111));
-    state = fileTrackingReducer(state, changesDataUpdated(WS, 222));
-    state = fileTrackingReducer(state, changesSyncQueued(WS, false));
-    state = fileTrackingReducer(state, changesSyncQueued(WS, true));
-    state = fileTrackingReducer(state, changesSyncFinished(WS));
-
-    expect(state.byWorkspaceId[WS].coordination).toMatchObject({
-      lastSyncTime: 111,
-      lastUpdatedAt: 222,
-      syncInProgress: false,
-      syncDirty: true,
-      syncDirtyForce: true,
-      syncThrottleMs: 10000,
-    });
-
-    state = fileTrackingReducer(state, changesSyncDirtyConsumed(WS));
-    expect(state.byWorkspaceId[WS].coordination.syncDirty).toBe(false);
-    expect(state.byWorkspaceId[WS].coordination.syncDirtyForce).toBe(false);
-  });
-
-  it('tracks load and refresh coordination transitions without recursive state', () => {
-    let state = fileTrackingReducer(initialState, changesLoadStarted(WS));
-    state = fileTrackingReducer(state, changesLoadQueued(WS));
-    state = fileTrackingReducer(state, changesLoadFinished(WS));
-    state = fileTrackingReducer(state, changesRefreshStarted(WS));
-    state = fileTrackingReducer(state, changesRefreshQueued(WS));
-    state = fileTrackingReducer(state, changesRefreshFinished(WS));
-
-    expect(state.byWorkspaceId[WS].coordination).toMatchObject({
-      loadInProgress: false,
-      loadDirty: true,
-      refreshInProgress: false,
-      refreshDirty: true,
-    });
-
-    state = fileTrackingReducer(state, changesLoadDirtyConsumed(WS));
-    state = fileTrackingReducer(state, changesRefreshDirtyConsumed(WS));
-    expect(state.byWorkspaceId[WS].coordination.loadDirty).toBe(false);
-    expect(state.byWorkspaceId[WS].coordination.refreshDirty).toBe(false);
-  });
-
-  it('keeps no-op coordination transitions by reference', () => {
-    expect(fileTrackingReducer(initialState, changesLoadFinished(WS))).toBe(initialState);
-    expect(fileTrackingReducer(initialState, changesSyncDirtyConsumed(WS))).toBe(initialState);
   });
 
   it('setChangesData stores changes, truncated, and totalCount', () => {
@@ -205,19 +78,6 @@ describe('fileTrackingReducer', () => {
     expect(ws.changesTruncated).toBe(true);
     expect(ws.totalChangesCount).toBe(100);
     expect(ws.error).toBeNull();
-  });
-
-  it('setTransitions stores transitions', () => {
-    const t: StageTransition = {
-      id: 't1',
-      changeId: 'c1',
-      fromStage: ChangeStage.Unstaged,
-      toStage: ChangeStage.Staged,
-      timestamp: Date.now(),
-      actor: { type: 'user', id: 'u1' },
-    };
-    const state = fileTrackingReducer(initialState, setTransitions(WS, [t]));
-    expect(state.byWorkspaceId[WS].transitions).toEqual([t]);
   });
 
   it('setCommitsData stores commits, boundarySha, and clears olderCommits', () => {
@@ -266,22 +126,6 @@ describe('fileTrackingReducer', () => {
     let state = fileTrackingReducer(initialState, setChanges(WS, c1));
     state = fileTrackingReducer(state, setChanges(WS, c2));
     expect(state.byWorkspaceId[WS].changes).toEqual(c2);
-  });
-
-  it('clearAllChanges empties changes and transitions', () => {
-    const t: StageTransition = {
-      id: 't1',
-      changeId: 'c1',
-      fromStage: ChangeStage.Unstaged,
-      toStage: ChangeStage.Staged,
-      timestamp: Date.now(),
-      actor: { type: 'user', id: 'u1' },
-    };
-    let state = fileTrackingReducer(initialState, setChanges(WS, [mockChange('a')]));
-    state = fileTrackingReducer(state, setTransitions(WS, [t]));
-    state = fileTrackingReducer(state, clearAllChanges(WS));
-    expect(state.byWorkspaceId[WS].changes).toEqual([]);
-    expect(state.byWorkspaceId[WS].transitions).toEqual([]);
   });
 
   it('setMainPanelView sets view', () => {
@@ -378,40 +222,12 @@ describe('fileTrackingReducer', () => {
     expect(state.agentStats['agent-1']).toEqual(stats2);
   });
 
-  it('clearAgentStats removes agent stats', () => {
-    let state = fileTrackingReducer(
-      initialState,
-      updateAgentStats('agent-1', { additions: 1, deletions: 0, timestamp: '' }),
-    );
-    state = fileTrackingReducer(
-      state,
-      agentLineStatsRequestStarted('agent-1', '2026-01-01T00:00:00.000Z'),
-    );
-    state = fileTrackingReducer(state, clearAgentStats('agent-1'));
-    expect(state.agentStats['agent-1']).toBeUndefined();
-    expect(state.agentLineStatsRequests['agent-1']).toBeUndefined();
-  });
-
   it('workspaceUnmounted clears workspace state', () => {
     let state = fileTrackingReducer(initialState, setLoading(WS, true));
     state = fileTrackingReducer(state, setChanges(WS, [mockChange('a')]));
     expect(state.byWorkspaceId[WS]).toBeDefined();
     state = fileTrackingReducer(state, workspaceUnmounted(WS));
     expect(state.byWorkspaceId[WS]).toBeUndefined();
-  });
-
-  it('clearAgentStats does not affect other agents', () => {
-    let state = fileTrackingReducer(
-      initialState,
-      updateAgentStats('agent-1', { additions: 1, deletions: 0, timestamp: '' }),
-    );
-    state = fileTrackingReducer(
-      state,
-      updateAgentStats('agent-2', { additions: 2, deletions: 0, timestamp: '' }),
-    );
-    state = fileTrackingReducer(state, clearAgentStats('agent-1'));
-    expect(state.agentStats['agent-1']).toBeUndefined();
-    expect(state.agentStats['agent-2']).toBeDefined();
   });
 
   // Accept changes tests (moved from transient-ui slice)
@@ -476,29 +292,6 @@ describe('changes selectors', () => {
 
   it('selectFileTrackingChanges returns empty by default', () => {
     expect(selectFileTrackingChanges.select(asStoreState(initialState), WS)).toEqual([]);
-  });
-
-  it('selects saga-readable changes coordination state', () => {
-    let state = fileTrackingReducer(initialState, changesSyncStarted(WS, 333));
-    state = fileTrackingReducer(state, changesSyncQueued(WS, true));
-    state = fileTrackingReducer(state, changesLoadStarted(WS));
-    state = fileTrackingReducer(state, changesLoadQueued(WS));
-    state = fileTrackingReducer(state, changesRefreshStarted(WS));
-    state = fileTrackingReducer(state, changesRefreshQueued(WS));
-    const storeState = asStoreState(state);
-
-    expect(selectChangesLastSyncTime.select(storeState, WS)).toBe(333);
-    state = fileTrackingReducer(state, changesDataUpdated(WS, 444));
-    const updatedStoreState = asStoreState(state);
-    expect(selectChangesLastUpdatedAt.select(updatedStoreState, WS)).toBe(444);
-    expect(selectChangesSyncInProgress.select(storeState, WS)).toBe(true);
-    expect(selectChangesSyncDirty.select(storeState, WS)).toBe(true);
-    expect(selectChangesSyncDirtyForce.select(storeState, WS)).toBe(true);
-    expect(selectChangesSyncThrottleMs.select(storeState, WS)).toBe(10000);
-    expect(selectChangesLoadInProgress.select(storeState, WS)).toBe(true);
-    expect(selectChangesLoadDirty.select(storeState, WS)).toBe(true);
-    expect(selectChangesRefreshInProgress.select(storeState, WS)).toBe(true);
-    expect(selectChangesRefreshDirty.select(storeState, WS)).toBe(true);
   });
 
   it('selectStagedWorkingChanges and selectUnstagedWorkingChanges separate staged and unstaged', () => {

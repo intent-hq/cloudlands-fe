@@ -1,7 +1,12 @@
 import { faWrench } from '@fortawesome/free-solid-svg-icons';
 import { describe, expect, it } from 'vitest';
 import type { ToolCategory, ToolDisplay } from '../tool-classifier';
-import { buildToolDisplayModel, isOkOnlyResult, sanitizeToolPayload } from '../tool-display-model';
+import {
+  buildToolDisplayModel,
+  isOkOnlyResult,
+  sanitizeMultilineToolText,
+  sanitizeToolPayload,
+} from '../tool-display-model';
 
 const display = (category: ToolCategory, verb = 'Inspect', subject = 'target'): ToolDisplay => ({
   category,
@@ -117,6 +122,31 @@ describe('compact tool display model', () => {
     expect(workspace.hasDetails).toBe(false);
 
     expect(model(display('generic'), {}, { ok: true }).hasDetails).toBe(true);
+  });
+
+  it('exposes details for running tools with input so the pending call is inspectable', () => {
+    const running = buildToolDisplayModel({
+      toolName: 'launch-process',
+      display: display('terminal', 'Run', 'pnpm test'),
+      input: { command: 'pnpm test' },
+      result: null,
+      toolState: 'running',
+    });
+    expect(running.hasDetails).toBe(true);
+
+    const runningNoInput = buildToolDisplayModel({
+      toolName: 'launch-process',
+      display: display('terminal', 'Run', 'command'),
+      input: {},
+      result: null,
+      toolState: 'running',
+    });
+    expect(runningNoInput.hasDetails).toBe(false);
+  });
+
+  it('preserves newlines when sanitizing multiline tool text', () => {
+    const command = 'cd repo && \\\n  API_KEY=abc123 pnpm test\n';
+    expect(sanitizeMultilineToolText(command)).toBe('cd repo && \\\n  API_KEY=[redacted] pnpm test');
   });
 
   it('redacts secrets while preserving non-secret provenance', () => {

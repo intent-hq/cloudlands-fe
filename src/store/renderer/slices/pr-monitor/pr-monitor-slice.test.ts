@@ -6,7 +6,7 @@ import { getItems } from '@augmentcode/themis/utils/collections/collection-utils
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import { initialState, prMonitorReducer, prMonitorsUpdated } from './pr-monitor-slice';
-import { selectPrMonitors } from './pr-monitor-selectors';
+import { selectPrMonitors, selectPrMonitorsSnapshotDelivered } from './pr-monitor-selectors';
 
 function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
   return {
@@ -121,6 +121,15 @@ describe('selectPrMonitors', () => {
     const completed = makeMonitor({ monitorId: 'mon-2', state: 'completed' });
     expect(selectPrMonitors.select({ prMonitor: stateWith([active, completed]) }, 'ws-1')).toEqual(
       [active, completed],
+    );
+  });
+
+  it('selectPrMonitorsSnapshotDelivered flips once any list (even empty) is delivered', () => {
+    expect(selectPrMonitorsSnapshotDelivered.select({ prMonitor: initialState }, 'ws-1')).toBe(
+      false,
+    );
+    expect(selectPrMonitorsSnapshotDelivered.select({ prMonitor: stateWith([]) }, 'ws-1')).toBe(
+      true,
     );
   });
 });

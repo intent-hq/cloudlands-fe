@@ -526,13 +526,14 @@ export interface SelectionOrderedPRSections {
 /**
  * Reorder {@link sectionPRs} output to follow the git-root dropdown selection
  * (monorepo#2053). With the primary root selected (`selectedRoot` null) the
- * three input arrays pass through by reference — rendering stays byte-
- * identical to the selection-unaware sectioning. With a secondary root
+ * three sections keep the selection-unaware sectioning, returned as
+ * recency-sorted copies (see {@link sortPRsByRecency}). With a secondary root
  * selected, its rows (attributed by repo `owner/name`, resolving rows
  * without `crossRepo` context against the workspace repo) move to the top
  * section while the workspace's own PRs join the remaining roots' rows under
  * "Other PRs". A selected root without a detected `owner/name` owns no rows.
- * Purely visual: functional consumers keep keying off `SectionedPRs.own`.
+ * Every returned section is sorted newest-updated first. Purely visual:
+ * functional consumers keep keying off `SectionedPRs.own`.
  */
 export function orderPRSectionsForSelection(
   sectioned: SectionedPRs,
@@ -541,9 +542,9 @@ export function orderPRSectionsForSelection(
 ): SelectionOrderedPRSections {
   if (!selectedRoot) {
     return {
-      selected: sectioned.own,
-      others: sectioned.otherRoots,
-      otherTracked: sectioned.otherTracked,
+      selected: sortPRsByRecency(sectioned.own),
+      others: sortPRsByRecency(sectioned.otherRoots),
+      otherTracked: sortPRsByRecency(sectioned.otherTracked),
     };
   }
   const selectedRepo =
@@ -560,10 +561,23 @@ export function orderPRSectionsForSelection(
     }
   }
   return {
-    selected,
-    others: [...sectioned.own, ...rest],
-    otherTracked: sectioned.otherTracked,
+    selected: sortPRsByRecency(selected),
+    others: sortPRsByRecency([...sectioned.own, ...rest]),
+    otherTracked: sortPRsByRecency(sectioned.otherTracked),
   };
+}
+
+/**
+ * Display-only recency sort for the Changes tab PR sections: `updatedAt`
+ * descending, rows missing `updatedAt` last, PR number descending as
+ * tiebreak. Returns a new array; the input is not mutated.
+ */
+export function sortPRsByRecency(prs: PRInfo[]): PRInfo[] {
+  return [...prs].sort(
+    (a, b) =>
+      compareMissingLast(a.updatedAt, b.updatedAt, (x, y) => y.localeCompare(x)) ||
+      b.number - a.number,
+  );
 }
 
 /** Comparator fragment: rows with a timestamp sort before rows without one;

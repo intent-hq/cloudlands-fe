@@ -25,7 +25,7 @@ vi.mock('$lib/utils/client-logger', () => ({
 }));
 
 import { emitMockIpcEvent, resetMockIpcRouter } from '$shared/ipc-mock-router';
-import { clearCurrentWorkspaceTab, openWorkspaceTab } from '../../tab-state/tab-state-slice';
+import { loadWorkspaceTabsState, openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { notificationIpcSaga, webNotificationSaga } from './notifications-saga';
 
 class MockNotification {
@@ -82,7 +82,13 @@ function startWebSaga(current = state(), dispatch = vi.fn()) {
   );
   const setWorkspaceId = (workspaceId: string | null) => {
     current.tabState.currentTabId = workspaceId;
-    channel.put(workspaceId ? openWorkspaceTab(workspaceId) : clearCurrentWorkspaceTab());
+    channel.put(
+      workspaceId
+        ? openWorkspaceTab(workspaceId)
+        : loadWorkspaceTabsState({
+            openTabs: [], currentTabId: null, pinnedTabs: [], unsavedTabs: [], optimisticTabs: [], tabOrder: [],
+          }),
+    );
     listeners.forEach((listener) => listener());
   };
   return { setWorkspaceId, task };

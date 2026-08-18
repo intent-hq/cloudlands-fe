@@ -7,6 +7,9 @@
     getToolResultPayload,
     getToolResultText,
   } from './tool-result-pairing';
+  import { isHydrationPending, mergeHydratedContent } from './block-hydration';
+  import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
+  import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
   import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
@@ -68,9 +71,33 @@
     content: ContentBlock[];
     isStreaming?: boolean;
     workspaceId?: string;
+    /** Agent session id; with `messageId`, enables lazy block hydration (§5.5). */
+    agentId?: string;
+    /** Persisted message id owning `content` (hydration fetch/merge key). */
+    messageId?: string;
   }
 
-  let { content, isStreaming = false, workspaceId }: Props = $props();
+  let { content, isStreaming = false, workspaceId, agentId, messageId }: Props = $props();
+
+  // Lazy full-block hydration (§5.5 slim projection → v7.2
+  // agent.getMessageBlock): substitute cached full blocks for slim-truncated
+  // ones before any downstream derivation. Init-time subscription (agentId is
+  // stable per component instance); under-budget content passes through with
+  // referential identity intact.
+  // svelte-ignore state_referenced_locally -- intentional initial snapshot; keyed component identity is fixed.
+  const hydratedBlocks$ = selectHydratedBlocks(agentId ?? '');
+  const hydratedContent = $derived(
+    mergeHydratedContent(content || [], messageId, $hydratedBlocks$),
+  );
+
+  function hydrateImageBlock(blockId: string | undefined) {
+    if (!agentId || !messageId || !blockId) return;
+    appStore.dispatch(messageBlockHydrationRequested(agentId, messageId, blockId));
+  }
+
+  function imageHydrationLoading(blockId: string | undefined): boolean {
+    return blockId ? isHydrationPending($hydratedBlocks$, messageId, [blockId]) : false;
+  }
 
   // Filter out empty text blocks and deduplicate tool_use blocks by ID.
   // Deduplication: when a skeleton tool_use (vague label) and its follow-up
@@ -80,7 +107,7 @@
     // Collapse duplicate §7.1 resource blocks (daemon-attached canonical +
     // FE-lifted fallback for the same logical resource) so exactly one card
     // renders per resource, preferring the daemon-canonical variant.
-    const filtered = dedupeResourceBlocks(content || []).filter((block) => {
+    const filtered = dedupeResourceBlocks(hydratedContent).filter((block) => {
       // Agent Q&A questions are wizard-only: they never render in the
       // transcript (pending or resolved), so strip them here.
       if (isQuestionResourceBlock(block)) {
@@ -122,12 +149,12 @@
   // Build a map of tool results from tool_result blocks, paired by
   // toolCallId ↔ tool_use_id per PROTOCOL.md §7.1, with position-based
   // fallback for error results with empty tool_use_id
-  const toolResultsMap = $derived.by(() => buildToolResultsMap(content || []));
+  const toolResultsMap = $derived.by(() => buildToolResultsMap(hydratedContent));
 
   // Compute tool states based on results
   const toolStates = $derived.by(() => {
     const states = new Map<string, 'running' | 'completed' | 'error'>();
-    for (const block of content || []) {
+    for (const block of hydratedContent) {
       if (block.type === 'tool_use') {
         const toolBlock = block as ToolUseBlock;
         const result = findToolResult(toolResultsMap, toolBlock);
@@ -475,9 +502,16 @@
         {/if}
       {/if}
     </div>
-  {:else if block.type === 'image' && block.data && block.mimeType}
+  {:else if block.type === 'image' && (block.data || block.dataTruncated) && block.mimeType}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
-      <ChatImageBlock data={block.data} mimeType={block.mimeType} />
+      <ChatImageBlock
+        data={block.data}
+        mimeType={block.mimeType}
+        dataTruncated={block.dataTruncated === true}
+        dataIsThumbnail={block.dataIsThumbnail === true}
+        hydrationLoading={imageHydrationLoading(block.id)}
+        onHydrate={agentId && messageId && block.id ? () => hydrateImageBlock(block.id) : undefined}
+      />
     </div>
   {:else if block.type === 'tool_use'}
     {@const toolBlock = block as ToolUseBlock}
@@ -485,7 +519,15 @@
     {@const toolState = toolStates.get(toolBlock.id) || 'completed'}
     {@const resultContent = getToolResultPayload(toolResult)}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
-      <ToolCall toolUse={toolBlock} {toolState} result={resultContent} {workspaceId} />
+      <ToolCall
+        toolUse={toolBlock}
+        {toolState}
+        result={resultContent}
+        resultBlock={toolResult}
+        {workspaceId}
+        {agentId}
+        {messageId}
+      />
     </div>
   {:else if block.type === 'tool_result'}
     {@const resultPayload = getToolResultPayload(block)}

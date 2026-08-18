@@ -112,8 +112,9 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
     service.registerTab('tab-open', 11);
     service.registerTab('tab-closed', 12);
 
-    const tabs = await service.listAllTabs('ws-1');
+    const { tabs, stale } = await service.listAllTabs('ws-1');
 
+    expect(stale).toBe(false);
     expect(tabs.map((t) => t.tabId)).toEqual(['tab-open']);
     expect(tabs[0]).toMatchObject({ tabId: 'tab-open', webContentsId: 11, mounted: true });
   });
@@ -127,7 +128,7 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
     mocks.getAllWebContents.mockReturnValue([fakeWebview(21, 'http://a/')]);
     service.registerTab('tab-mounted', 21);
 
-    const tabs = await service.listAllTabs('ws-1');
+    const { tabs } = await service.listAllTabs('ws-1');
 
     expect(tabs).toHaveLength(2);
     expect(tabs.find((t) => t.tabId === 'tab-mounted')).toMatchObject({ mounted: true });
@@ -152,13 +153,13 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
     service.registerTab('tab-1', 31);
     service.registerTab('tab-ghost', 33);
 
-    const listed = await service.listAllTabs('ws-1');
+    const { tabs: listed } = await service.listAllTabs('ws-1');
     expect(listed.map((t) => t.tabId).sort()).toEqual(['tab-1', 'tab-2']);
 
     for (const tab of listed) {
       await expect(service.closeTab(tab.tabId, 'ws-1')).resolves.toEqual({ tabId: tab.tabId });
     }
-    expect(await service.listAllTabs('ws-1')).toEqual([]);
+    expect(await service.listAllTabs('ws-1')).toEqual({ tabs: [], stale: false });
   });
 
   it("does not fall back to another workspace's tabs when a list request times out", async () => {
@@ -167,15 +168,20 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
     wireRenderer([{ tabId: 'tab-a', url: 'http://a/', title: 'A' }], 'ws-a');
 
     // Populate the cache with ws-a's tab list.
-    expect((await service.listAllTabs('ws-a')).map((t) => t.tabId)).toEqual(['tab-a']);
+    expect((await service.listAllTabs('ws-a')).tabs.map((t) => t.tabId)).toEqual(['tab-a']);
 
     // ws-b's request gets no reply and times out; the fallback must not
-    // serve ws-a's cached tabs (which closeTab(..., 'ws-b') would reject).
+    // serve ws-a's cached tabs (which closeTab(..., 'ws-b') would reject) —
+    // and with no ws-b cache it must reject, not fabricate an empty list
+    // (monorepo#2756 RC4).
     vi.useFakeTimers();
     try {
       const pending = service.listAllTabs('ws-b');
+      pending.catch(() => {}); // avoid unhandled rejection before assertion
       await vi.advanceTimersByTimeAsync(600);
-      expect(await pending).toEqual([]);
+      await expect(pending).rejects.toThrow(
+        'Tab list for workspace ws-b is unavailable: the renderer did not respond and no cached tab list exists.',
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -257,5 +263,115 @@ describe('findModelTabByExactUrl (#2541)', () => {
     service.touchLease('tab-elsewhere', 'agent-1');
 
     await expect(service.findModelTabByExactUrl(URL_A, 'agent-1', 'ws-1')).resolves.toBeUndefined();
+  });
+});
+
+describe('findModelTabByRequestedUrl (#2787)', () => {
+  const REQUESTED = 'http://127.0.0.1:5190/';
+  const TUNNELED_OLD = 'http://127.0.0.1:55001/';
+
+  it('returns a tab whose lease recorded the requested URL even when its live URL differs', async () => {
+    const service = await loadService();
+    wireRenderer([{ tabId: 'tab-a', url: TUNNELED_OLD, title: 'A' }]);
+    mocks.getAllWebContents.mockReturnValue([fakeWebview(51, TUNNELED_OLD)]);
+    service.registerTab('tab-a', 51);
+    service.touchLease('tab-a', 'agent-1', REQUESTED);
+
+    await expect(service.findModelTabByRequestedUrl(REQUESTED, 'agent-1', 'ws-1')).resolves.toBe(
+      'tab-a',
+    );
+    // Reuse re-claims the lease for the requesting agent
+    expect(service.findIdleTab('agent-1')).toBeUndefined();
+  });
+
+  it('never returns a user-opened tab (no lease entry)', async () => {
+    const service = await loadService();
+    wireRenderer([{ tabId: 'tab-user', url: TUNNELED_OLD, title: 'A' }]);
+    mocks.getAllWebContents.mockReturnValue([fakeWebview(52, TUNNELED_OLD)]);
+    service.registerTab('tab-user', 52);
+
+    await expect(
+      service.findModelTabByRequestedUrl(REQUESTED, 'agent-1', 'ws-1'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('returns undefined for leases that recorded no requested URL', async () => {
+    const service = await loadService();
+    wireRenderer([{ tabId: 'tab-plain', url: TUNNELED_OLD, title: 'A' }]);
+    mocks.getAllWebContents.mockReturnValue([fakeWebview(53, TUNNELED_OLD)]);
+    service.registerTab('tab-plain', 53);
+    service.touchLease('tab-plain', 'agent-1');
+
+    await expect(
+      service.findModelTabByRequestedUrl(REQUESTED, 'agent-1', 'ws-1'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('skips a tab actively leased by a different agent', async () => {
+    const service = await loadService();
+    wireRenderer([{ tabId: 'tab-other', url: TUNNELED_OLD, title: 'A' }]);
+    mocks.getAllWebContents.mockReturnValue([fakeWebview(54, TUNNELED_OLD)]);
+    service.registerTab('tab-other', 54);
+    service.touchLease('tab-other', 'agent-2', REQUESTED);
+
+    await expect(
+      service.findModelTabByRequestedUrl(REQUESTED, 'agent-1', 'ws-1'),
+    ).resolves.toBeUndefined();
+  });
+
+  it("claims another agent's tab once its lease has expired", async () => {
+    vi.useFakeTimers();
+    try {
+      const service = await loadService();
+      wireRenderer([{ tabId: 'tab-expired', url: TUNNELED_OLD, title: 'A' }]);
+      mocks.getAllWebContents.mockReturnValue([fakeWebview(55, TUNNELED_OLD)]);
+      service.registerTab('tab-expired', 55);
+      service.touchLease('tab-expired', 'agent-2', REQUESTED);
+      vi.advanceTimersByTime(4 * 60 * 1000); // past the 3-minute idle timeout
+
+      await expect(service.findModelTabByRequestedUrl(REQUESTED, 'agent-1', 'ws-1')).resolves.toBe(
+        'tab-expired',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a plain touchLease refresh preserves the recorded requested URL', async () => {
+    const service = await loadService();
+    wireRenderer([{ tabId: 'tab-a', url: TUNNELED_OLD, title: 'A' }]);
+    mocks.getAllWebContents.mockReturnValue([fakeWebview(56, TUNNELED_OLD)]);
+    service.registerTab('tab-a', 56);
+    service.touchLease('tab-a', 'agent-1', REQUESTED);
+    service.touchLease('tab-a', 'agent-1'); // e.g. a screenshot on the tab
+
+    await expect(service.findModelTabByRequestedUrl(REQUESTED, 'agent-1', 'ws-1')).resolves.toBe(
+      'tab-a',
+    );
+  });
+
+  it('touchLease with null clears the recorded requested URL (tab repurposed)', async () => {
+    const service = await loadService();
+    wireRenderer([{ tabId: 'tab-a', url: TUNNELED_OLD, title: 'A' }]);
+    mocks.getAllWebContents.mockReturnValue([fakeWebview(58, TUNNELED_OLD)]);
+    service.registerTab('tab-a', 58);
+    service.touchLease('tab-a', 'agent-1', REQUESTED);
+    service.touchLease('tab-a', 'agent-1', null); // repurposed for a non-tunneled open
+
+    await expect(
+      service.findModelTabByRequestedUrl(REQUESTED, 'agent-1', 'ws-1'),
+    ).resolves.toBeUndefined();
+  });
+
+  it("never returns a matching tab from another workspace's panel layout", async () => {
+    const service = await loadService();
+    wireRenderer([]);
+    mocks.getAllWebContents.mockReturnValue([fakeWebview(57, TUNNELED_OLD)]);
+    service.registerTab('tab-elsewhere', 57);
+    service.touchLease('tab-elsewhere', 'agent-1', REQUESTED);
+
+    await expect(
+      service.findModelTabByRequestedUrl(REQUESTED, 'agent-1', 'ws-1'),
+    ).resolves.toBeUndefined();
   });
 });

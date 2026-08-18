@@ -1,5 +1,6 @@
 import { END, buffers, channel as createChannel, type Channel } from 'redux-saga';
-import { call, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { call, delay, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
 
 import {
   backendSubscribe,
@@ -27,6 +28,7 @@ import {
   runBackgroundHookRequested,
 } from '../background-hooks-slice';
 import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
+import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 
 const logger = createLogger('BackgroundHooksSaga');
 
@@ -166,6 +168,12 @@ function* refetchWorkspace(
     }
   } catch (error) {
     logger.warn('hook.list failed', { workspaceId, error });
+    // Still deliver the cached list (empty on a failed initial seed) so the
+    // workspace entry exists: the utility-footer readiness gate treats a
+    // failed seed as ready-with-empty and never wedges the reveal.
+    if (active.get(workspaceId) === entry && entry.generation === generation) {
+      yield* put(backgroundHooksUpdated(workspaceId, entry.hooks));
+    }
   }
 }
 
@@ -270,6 +278,48 @@ function* cancelHookWorker(
   }
 }
 
+const SUBSCRIPTION_RECONCILIATION_DELAY_MS = 100;
+
+/**
+ * View-time lease on the ACTIVE workspace's hook subscription (mirrors the
+ * pr-monitor saga's active-workspace watcher): holds one refcount so the
+ * `hook.list` seed lands — and the footer-readiness selector
+ * (`selectBackgroundHooksSnapshotDelivered`) flips — before the
+ * EventSubscriptionsCard mounts post-reveal, and so the card's own
+ * unsubscribe on agent-switch remount never drops the count to zero
+ * (which would clear the delivered latch and re-defer every reveal).
+ * Switching workspace tabs swaps the lease: the previous workspace's count
+ * drops (clearing when the card is unmounted too), the new one seeds.
+ * Auto-forks (selector-channel helper); on root cancellation the root saga's
+ * own finally closes every active workspace, lease included.
+ *
+ * Asymmetry with pr-monitors — intentional: the swap CLEARS the outgoing
+ * workspace's entry (`backgroundHooksCleared` drops the delivered latch),
+ * while the pr-monitor saga retains its entry on reconcile. Hooks favor
+ * freshness because consumers read the entry as authoritative-when-present
+ * (`getActiveHookNames` skips its `hook.list` fallback whenever an entry
+ * exists), so a retained entry would silently serve stale hooks while
+ * unsubscribed; pr-monitor consumers have no such existence-keyed fallback
+ * and re-seed on activation regardless. Cost: a cross-workspace switch-back
+ * re-arms the footer reveal gate for the ~100ms reconciliation delay + one
+ * `hook.list` RTT (overlapping the agent's own view-time
+ * `agent.getSubscriptions` re-read, and bounded by the reveal fallback).
+ */
+function* watchActiveWorkspaceLease(): SagaGenerator<void> {
+  let leasedWorkspaceId: string | null = null;
+  yield* takeLatestFromSelector(
+    selectCurrentWorkspaceTabId,
+    function* ({ payload }: SelectorChannelPayload<string | null>): SagaGenerator<void> {
+      yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
+      if (payload === leasedWorkspaceId) return;
+      const previous = leasedWorkspaceId;
+      leasedWorkspaceId = payload;
+      if (payload) yield* put(backgroundHooksSubscribeRequested(payload));
+      if (previous) yield* put(backgroundHooksUnsubscribeRequested(previous));
+    },
+  );
+}
+
 export function* backgroundHooksSaga(): SagaGenerator<void> {
   const active = new Map<string, ActiveWorkspace>();
   const transport: TransportRuntime = {};
@@ -293,6 +343,7 @@ export function* backgroundHooksSaga(): SagaGenerator<void> {
   yield* takeSingleFlightInContext(refetchEvents, refetchContext, refetchWorkspace, active);
   yield* takeEvery(runBackgroundHookRequested, runHookWorker);
   yield* takeEvery(cancelBackgroundHookRequested, cancelHookWorker);
+  yield* watchActiveWorkspaceLease();
   try {
     while (true) {
       const message: TransportMessage = yield* take(transportEvents);

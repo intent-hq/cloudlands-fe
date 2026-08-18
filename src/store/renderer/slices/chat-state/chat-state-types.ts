@@ -120,6 +120,19 @@ export interface TranscriptSnapshotMeta {
 export type LiveStreamPhase = 'connecting' | 'awaiting-snapshot' | 'live' | 'resyncing' | 'delayed';
 
 /**
+ * One lazily hydrated content block (PROTOCOL §5.5 slim projection + v7.2
+ * `agent.getMessageBlock`): the FULL body fetched on demand when the user
+ * expands a truncated tool row or views a truncated image. Keyed in
+ * `ChatAgentState.hydratedBlocks` by `{messageId}|{blockId}`. `seq` is a
+ * per-agent monotonic counter used ONLY for cap eviction (Record key order
+ * is not insertion order for integer-like keys).
+ */
+export type HydratedBlockEntry =
+  | { status: 'loading'; seq: number }
+  | { status: 'loaded'; seq: number; block: ContentBlock }
+  | { status: 'error'; seq: number; error: string };
+
+/**
  * Serializable per-agent chat state stored in Redux.
  * Serializable per-agent chat state without non-serializable fields
  * (those stay in the saga).
@@ -221,6 +234,29 @@ export interface ChatAgentState {
    * the subscribe saga's bounded fallback timeout.
    */
   awaitingSwitchBackSnapshot?: boolean;
+  /**
+   * Utility-footer reveal gate: true while the transcript reveal is holding
+   * for the footer data sources (agent subscriptions, background hooks,
+   * monitored PRs) to settle their initial snapshots, so transcript and
+   * footer flip in the SAME paint. Armed by the first
+   * `transcriptHydrationSettled` (first open) and alongside
+   * `awaitingSwitchBackSnapshot` on `markAgentAsViewed` (switch-back);
+   * cleared by `chatUtilityFooterReady` (the subscribe saga observed
+   * `isUtilityFooterReady` flip true), by the subscription teardown
+   * (phase null), or by the saga's bounded fallback timeout — footer
+   * readiness must NEVER wedge the transcript reveal.
+   */
+  awaitingUtilityFooter?: boolean;
+  /**
+   * Lazily hydrated full content blocks, keyed `{messageId}|{blockId}`
+   * (§5.5 slim projection → v7.2 `agent.getMessageBlock`). Read-through
+   * cache of daemon responses: `loading` de-dupes concurrent expand clicks
+   * (single-flight per block), `loaded` renders instead of the slim preview,
+   * `error` re-enables the fetch on the next expand. Bounded at
+   * MAX_HYDRATED_BLOCKS (oldest-seq evicted first) since each entry can
+   * carry an MB-scale body.
+   */
+  hydratedBlocks?: Record<string, HydratedBlockEntry>;
 }
 
 /**
@@ -280,6 +316,7 @@ export interface InitializeChatOptions {
 
 import type { ContextItem as ChatInputContextItem } from '$lib/components/chat/input/context-api';
 import type { ContextReference } from '$features/agent/agent-context';
+import type { ContentBlock } from '$shared/types';
 
 // ============================================================================
 // Top-level slice state (flat, agent-keyed)
@@ -307,3 +344,18 @@ export const MIN_MESSAGE_SEND_INTERVAL = 100;
  * comfortably exceeds any realistic queue depth.
  */
 export const MAX_QUEUED_RETRY_RECORDS = 20;
+
+/**
+ * Cap on cached `hydratedBlocks` per agent (memory bound): each entry can
+ * carry an MB-scale full tool body or original image. Hydrating beyond the
+ * cap evicts the oldest (lowest-seq) settled entries first; in-flight
+ * `loading` entries are never evicted (the single-flight guard depends on
+ * them). 30 comfortably exceeds the number of expanded rows a user works
+ * with at once while bounding worst-case retention.
+ */
+export const MAX_HYDRATED_BLOCKS = 30;
+
+/** Key for one hydrated block in `ChatAgentState.hydratedBlocks`. */
+export function hydratedBlockKey(messageId: string, blockId: string): string {
+  return `${messageId}|${blockId}`;
+}

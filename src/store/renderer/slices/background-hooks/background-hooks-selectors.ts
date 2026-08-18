@@ -14,3 +14,14 @@ export const selectBackgroundHooks = store.createSelector(
     return getItems(ws.hooks);
   },
 );
+
+/**
+ * Utility-footer readiness: true once the workspace's initial `hook.list`
+ * seed has been delivered (the saga writes an entry on success AND on a
+ * failed seed — failure counts as ready-with-empty, so this never wedges
+ * the transcript reveal).
+ */
+export const selectBackgroundHooksSnapshotDelivered = store.createSelector(
+  (state, workspaceId: string): boolean =>
+    state.backgroundHooks?.byWorkspaceId?.[workspaceId] !== undefined,
+);

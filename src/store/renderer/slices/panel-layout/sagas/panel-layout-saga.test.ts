@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getJSON: vi.fn(),
   loadHistory: vi.fn(),
   removeItem: vi.fn(),
+  resolveBrowserLinkUrl: vi.fn(),
   saveHistory: vi.fn(),
   setJSON: vi.fn(),
 }));
@@ -17,9 +18,15 @@ vi.mock('$features/layout/panel-layout-history.client', () => ({
   loadPanelLayoutHistory: mocks.loadHistory,
   savePanelLayoutHistory: mocks.saveHistory,
 }));
+vi.mock('$lib/utils/browser-url-resolution', () => ({
+  resolveBrowserLinkUrl: mocks.resolveBrowserLinkUrl,
+}));
 vi.mock('../../../utils/safe-local-storage-saga', () => ({
+  // Yield the mock's return value so a test can hand back a Promise to hold
+  // a restore in flight (the saga awaits yielded promises; plain values pass
+  // through unchanged).
   getLocalStorageJSON: function* (key: string) {
-    return mocks.getJSON(key);
+    return yield mocks.getJSON(key);
   },
   removeLocalStorageItem: function* (key: string) {
     mocks.removeItem(key);
@@ -101,7 +108,11 @@ import {
   type LayoutSnapshot,
   type WorkspacePanelLayout,
 } from '../panel-layout-types';
-import { isStoredLayoutValid, panelLayoutSaga } from './panel-layout-saga';
+import {
+  isStoredLayoutValid,
+  panelLayoutSaga,
+  waitForWorkspaceLayoutRestore,
+} from './panel-layout-saga';
 
 const WS_1 = 'ws-1';
 const WS_2 = 'ws-2';
@@ -257,6 +268,11 @@ describe('panelLayoutSaga', () => {
     vi.setSystemTime(NOW);
     mocks.loadHistory.mockResolvedValue(null);
     mocks.saveHistory.mockResolvedValue(true);
+    // Default: pass-through resolution (no rewrite for this session).
+    mocks.resolveBrowserLinkUrl.mockImplementation(async (url: string) => ({
+      url,
+      rewritten: false,
+    }));
   });
 
   afterEach(() => vi.useRealTimers());
@@ -498,6 +514,135 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
+  describe('restart rehydration of tunneled browser tabs (monorepo#2789)', () => {
+    const REQUESTED = 'http://daemon.localhost:3000/';
+    const DEAD_TUNNEL = 'http://127.0.0.1:52345/';
+    const FRESH_TUNNEL = 'http://127.0.0.1:61111/';
+
+    function browserLayout(tabOverrides: Record<string, unknown> = {}): WorkspacePanelLayout {
+      const browserTab = {
+        id: 'tab-b',
+        type: 'browser' as const,
+        title: 'Browser',
+        closable: true,
+        browserUrl: DEAD_TUNNEL,
+        browserRequestedUrl: REQUESTED,
+        ...tabOverrides,
+      };
+      return {
+        root: { type: 'panel', panelId: 'panel-1' },
+        panels: {
+          'panel-1': { id: 'panel-1', tabs: [browserTab], activeTabId: browserTab.id },
+        },
+        focusedPanelId: 'panel-1',
+        canvasWidth: null,
+        canvasWidthSource: null,
+      };
+    }
+
+    it('re-resolves a restored tunneled tab onto the fresh endpoint', async () => {
+      mocks.getJSON.mockReturnValue(browserLayout());
+      mocks.resolveBrowserLinkUrl.mockResolvedValue({
+        url: FRESH_TUNNEL,
+        rewritten: true,
+        requestedUrl: REQUESTED,
+        tunneled: true,
+      });
+      const { channel, dispatch, task } = startSaga();
+      await settle();
+      channel.put(workspaceMounted(WS_1));
+      await settle();
+
+      expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalledWith(REQUESTED, expect.anything());
+      expect(dispatch.mock.calls.map(([action]) => action)).toContainEqual(
+        updateTabBrowserUrl(WS_1, 'tab-b', FRESH_TUNNEL, REQUESTED),
+      );
+      await cancelSaga(task);
+    });
+
+    it('leaves the tab untouched when the resolution lands on the stored URL', async () => {
+      mocks.getJSON.mockReturnValue(browserLayout());
+      mocks.resolveBrowserLinkUrl.mockResolvedValue({
+        url: DEAD_TUNNEL,
+        rewritten: true,
+        requestedUrl: REQUESTED,
+      });
+      const { channel, dispatch, task } = startSaga();
+      await settle();
+      channel.put(workspaceMounted(WS_1));
+      await settle();
+
+      expect(
+        dispatch.mock.calls.some(([action]) => action.type === updateTabBrowserUrl.type),
+      ).toBe(false);
+      await cancelSaga(task);
+    });
+
+    it('never resolves legacy layouts without a requested URL (byte-identical restore)', async () => {
+      mocks.getJSON.mockReturnValue(browserLayout({ browserRequestedUrl: undefined }));
+      const { channel, dispatch, task } = startSaga();
+      await settle();
+      channel.put(workspaceMounted(WS_1));
+      await settle();
+
+      expect(mocks.resolveBrowserLinkUrl).not.toHaveBeenCalled();
+      expect(
+        dispatch.mock.calls.some(([action]) => action.type === updateTabBrowserUrl.type),
+      ).toBe(false);
+      await cancelSaga(task);
+    });
+
+    it('falls back to the requested URL when the rewrite cannot be established', async () => {
+      mocks.getJSON.mockReturnValue(browserLayout());
+      // resolveBrowserLinkUrl never throws: a failed resolution passes the
+      // URL through unresolved, so the tab lands on its requested URL and the
+      // normal navigation error path shows instead of the dead port.
+      mocks.resolveBrowserLinkUrl.mockResolvedValue({ url: REQUESTED, rewritten: false });
+      const { channel, dispatch, task } = startSaga();
+      await settle();
+      channel.put(workspaceMounted(WS_1));
+      await settle();
+
+      expect(dispatch.mock.calls.map(([action]) => action)).toContainEqual(
+        updateTabBrowserUrl(WS_1, 'tab-b', REQUESTED, REQUESTED),
+      );
+      await cancelSaga(task);
+    });
+
+    it('re-resolves restored tunneled tabs on the backend-switch restore path too', async () => {
+      const remoteKey = `backend:${REMOTE_ID}:${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${WS_1}`;
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === remoteKey ? browserLayout() : undefined,
+      );
+      mocks.resolveBrowserLinkUrl.mockResolvedValue({
+        url: FRESH_TUNNEL,
+        rewritten: true,
+        requestedUrl: REQUESTED,
+        tunneled: true,
+      });
+      let backendId = LOCAL_CONNECTION_ID;
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => storeState(WS_1, backendId) },
+        panelLayoutSaga,
+        { activeWorkspaceId: WS_1 },
+      );
+      await settle();
+      dispatch.mockClear();
+
+      backendId = REMOTE_ID;
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      await settle();
+
+      expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalledWith(REQUESTED, expect.anything());
+      expect(dispatch.mock.calls.map(([action]) => action)).toContainEqual(
+        updateTabBrowserUrl(WS_1, 'tab-b', FRESH_TUNNEL, REQUESTED),
+      );
+      await cancelSaga(task);
+    });
+  });
+
   it.each([
     {
       name: 'drops an unprovenanced legacy fill',
@@ -633,6 +778,38 @@ describe('panelLayoutSaga', () => {
     await settle();
 
     expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, layout]]);
+    await cancelSaga(task);
+  });
+
+  it('persists browserRequestedUrl with the tab (round-trip, monorepo#2789)', async () => {
+    const browserTab = {
+      id: 'tab-b',
+      type: 'browser' as const,
+      title: 'Browser',
+      closable: true,
+      browserUrl: 'http://127.0.0.1:52345/',
+      browserRequestedUrl: 'http://daemon.localhost:3000/',
+    };
+    const state = storeState();
+    state.panelLayout.byWorkspaceId[WS_1] = {
+      ...workspaceState(),
+      panels: {
+        'panel-1': { id: 'panel-1', tabs: [browserTab], activeTabId: browserTab.id },
+      },
+    };
+    mocks.getJSON.mockReturnValue(undefined);
+    const { channel, task } = startSaga(state);
+    await settle();
+    channel.put(workspaceMounted(WS_1));
+    await settle();
+    channel.put({ type: focusPanel.type, payload: [WS_1, 'panel-1'] });
+    await settle();
+
+    const persisted = mocks.setJSON.mock.calls.find(([key]) => key === STORAGE_KEY_1)?.[1];
+    expect(persisted?.panels['panel-1'].tabs[0]).toMatchObject({
+      browserUrl: 'http://127.0.0.1:52345/',
+      browserRequestedUrl: 'http://daemon.localhost:3000/',
+    });
     await cancelSaga(task);
   });
 
@@ -1031,6 +1208,53 @@ describe('panelLayoutSaga', () => {
         setRestoreStatus(WS_2, 'pending'),
         initializeLayout(WS_2, layout),
         setRestoreStatus(WS_2, 'restored'),
+      ]);
+      await cancelSaga(task);
+    });
+
+    it('registers switch re-restores in flight so hydration waiters see post-switch state (monorepo#2789)', async () => {
+      let resolveStored!: (value: unknown) => void;
+      const storedPromise = new Promise((resolve) => {
+        resolveStored = resolve;
+      });
+      mocks.getJSON.mockReturnValue(undefined);
+      let backendId = LOCAL_CONNECTION_ID;
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const getState = () => storeState(WS_1, backendId);
+      const task = runSaga({ channel, dispatch, getState }, panelLayoutSaga, {
+        activeWorkspaceId: WS_1,
+      });
+      await settle();
+      dispatch.mockClear();
+
+      // The incoming backend's storage read stays pending, holding the
+      // switch re-restore in flight while the store still has the outgoing
+      // backend's layout.
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === REMOTE_STORAGE_KEY_1 ? storedPromise : undefined,
+      );
+      backendId = REMOTE_ID;
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      await settle();
+
+      let waited = false;
+      const waiter = runSaga({ channel, dispatch, getState }, function* () {
+        yield* waitForWorkspaceLayoutRestore(WS_1);
+        waited = true;
+      });
+      await settle();
+      // The waiter must block on the in-flight switch re-restore — a no-op
+      // wait here is the stale-tabs leak the registration exists to prevent.
+      expect(waited).toBe(false);
+
+      resolveStored(layout);
+      await waiter.toPromise();
+      expect(waited).toBe(true);
+      expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        setRestoreStatus(WS_1, 'pending'),
+        initializeLayout(WS_1, layout),
+        setRestoreStatus(WS_1, 'restored'),
       ]);
       await cancelSaga(task);
     });

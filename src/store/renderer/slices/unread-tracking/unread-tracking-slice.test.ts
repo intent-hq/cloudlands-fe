@@ -3,16 +3,7 @@ import {
   expect,
   it,
 } from "vitest";
-import {
-  initialState,
-  markAgentAsViewed,
-  clearCurrentlyViewedAgent,
-  startDividerSession,
-  endDividerSession,
-  endAllDividerSessions,
-  recordWatchedStreamingTail,
-  unreadTrackingReducer,
-} from "./unread-tracking-slice";
+import { initialState, markAgentAsViewed, clearCurrentlyViewedAgent, startDividerSession, endDividerSession, recordWatchedStreamingTail, unreadTrackingReducer } from "./unread-tracking-slice";
 import type { UnreadTrackingState } from "./unread-tracking-types";
 
 const reduce = unreadTrackingReducer;
@@ -137,19 +128,6 @@ describe("unreadTrackingReducer", () => {
       const ended = reduce(started, endDividerSession("a1"));
       const restarted = reduce(ended, startDividerSession("a1", "msg-9"));
       expect(restarted.dividerSessionByAgentId.a1).toEqual({ anchorId: "msg-9" });
-    });
-  });
-
-  describe("endAllDividerSessions", () => {
-    it("should clear every session", () => {
-      const one = reduce(initialState, startDividerSession("a1", "msg-1"));
-      const two = reduce(one, startDividerSession("a2", null));
-      const state = reduce(two, endAllDividerSessions());
-      expect(state.dividerSessionByAgentId).toEqual({});
-    });
-
-    it("should be no-op when there are no sessions", () => {
-      expect(reduce(initialState, endAllDividerSessions())).toBe(initialState);
     });
   });
 

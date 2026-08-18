@@ -71,12 +71,16 @@
  *
  * The stream family is accumulated per agent (one in-flight assistant per
  * agent) using the BE's monotonic `blockIndex` so the candidate transcript
- * always grows and the renderer's regression guard
- * (`resolveStreamContentBlocks`) accepts each update. Cleanup runs on
- * `agent:stream:end` / `agent:failed` so a subsequent prompt turn starts from
- * a clean slate. Dedup on hydration is preserved by carrying the BE-canonical
- * `messageId` as `assistantMessageId` so the in-flight message id matches the
- * one `agents.getConversation` returns later.
+ * always grows. Post-intentd#775 the accumulator is text-starved (tool blocks
+ * only), so the stream saga merges each dispatch into the message's current
+ * blocks by block identity (`resolveStreamContentBlocks` →
+ * `mergeStreamContentBlocks`) instead of replacing them — updates the blocks
+ * this bridge knows about without deleting subscription-owned text blocks
+ * (monorepo#2814). Cleanup runs on `agent:stream:end` / `agent:failed` so a
+ * subsequent prompt turn starts from a clean slate. Dedup on hydration is
+ * preserved by carrying the BE-canonical `messageId` as `assistantMessageId`
+ * so the in-flight message id matches the one `agents.getConversation`
+ * returns later.
  *
  * Dependency-light: registers a one-shot subscription on first dispatch and a
  * single notification listener; both are cleaned up if the host store
@@ -144,6 +148,7 @@ import {
   createProposalResource,
 } from '$shared/types/proposal-resource';
 import { dedupeResourceBlocks, getResourceContents } from '$shared/types/resource-block-identity';
+import { hasStandingChatSubscription } from '$features/agent/utils/chat-subscription-registry';
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import { store as appStore } from '$store/renderer/store';
 import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
@@ -196,6 +201,7 @@ import { markWorkspaceSeenIfViewing } from '$features/workspace/mark-workspace-s
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import { ensureAgentSession } from '$features/agent/agent-read-service';
+import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
 import {
   getPendingAgentDeletion,
   isAgentDeletionPending,
@@ -203,7 +209,12 @@ import {
   setPendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
 import { notifyInterruptedAgentUpdated } from '$features/agent/interrupted-agents-service';
-import { recordAgentFailure, removeAgentFailure } from '$features/agent/agent-failure-registry';
+import {
+  getAgentFailureEntry,
+  listAgentFailureEntries,
+  recordAgentFailure,
+  removeAgentFailure,
+} from '$features/agent/agent-failure-registry';
 import {
   showAgentAttentionToast,
   showWorkspaceAutoUnarchiveToast,
@@ -242,7 +253,6 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import { mapDaemonMcpState } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
-import { loadChatTranscript } from '$features/agent/chat-read-service';
 import {
   hydrateAgentQueue,
   noteAgentQueueEventSnapshotApplied,
@@ -317,6 +327,41 @@ const streamsByAgent = new Map<string, StreamState>();
 const previewTurnMessageIdByAgent = new Map<string, string>();
 
 /**
+ * True once this bridge has delivered an `agent:last-message` event — the
+ * §6.5 content-bearing companion the daemon emits alongside EVERY
+ * `agent:message`. While false (older daemon), the lean id-only
+ * `agent:message` echo falls back to a light `agent.get` refresh
+ * (`refreshAgentSessionCoalesced`) so previews still converge; once true, the
+ * companion carries the preview projections directly and the fallback
+ * retires. Reset with the rest of the routing state (the next daemon after a
+ * backend switch may be older).
+ */
+let daemonEmitsLastMessage = false;
+
+/**
+ * Single-flight + trailing-coalesce wrapper over `ensureAgentSession` for the
+ * `agent:message` back-compat refresh (per the event-driven refetch rule):
+ * triggers during an in-flight fetch collapse into at most ONE follow-up
+ * fetch after it settles. `ensureAgentSession` never rejects, so the chain
+ * always advances.
+ */
+const agentSessionRefreshInFlight = new Set<string>();
+const agentSessionRefreshFollowUpWanted = new Set<string>();
+function refreshAgentSessionCoalesced(agentId: string): void {
+  if (agentSessionRefreshInFlight.has(agentId)) {
+    agentSessionRefreshFollowUpWanted.add(agentId);
+    return;
+  }
+  agentSessionRefreshInFlight.add(agentId);
+  void ensureAgentSession(agentId).then(() => {
+    agentSessionRefreshInFlight.delete(agentId);
+    if (agentSessionRefreshFollowUpWanted.delete(agentId)) {
+      refreshAgentSessionCoalesced(agentId);
+    }
+  });
+}
+
+/**
  * Debounce timers for changes-slice refresh per workspace. Change events can
  * fire very frequently during agent activity (matching the note in
  * WorkspaceProgressCard.svelte line ~213), so we debounce ~1s per workspace to
@@ -378,14 +423,50 @@ function ensureStream(agentId: string, messageId: string, workspaceId: string): 
 }
 
 /**
- * REJOIN-STREAM SEEDING: prime the stream accumulator with the content blocks
+ * Parse the daemon blockIndex out of a stable `{messageId}:{blockIndex}` block
+ * id (PROTOCOL §7.1). Bare unsigned decimal only — mirrors the
+ * `{messageId}:{index}` scheme produced by the daemon's `Transcript::block_id`
+ * (agent_session.rs). Returns undefined for id-less or foreign-shaped ids.
+ */
+function parseBlockIndexFromId(blockId: unknown): number | undefined {
+  if (typeof blockId !== 'string') return undefined;
+  const separator = blockId.lastIndexOf(':');
+  if (separator < 0) return undefined;
+  const suffix = blockId.slice(separator + 1);
+  if (!/^[0-9]+$/.test(suffix)) return undefined;
+  return Number(suffix);
+}
+
+/**
+ * REJOIN-STREAM SEEDING: prime the stream accumulator with the TOOL blocks
  * from a chat.subscribe snapshot's in-flight assistant message so subsequent
- * agent:stream:chunk events pass the regression guard (resolveStreamContentBlocks
- * → hasActiveStreamRegression) instead of being suppressed. Called by
- * chat-read-service after merging the snapshot's partial assistant into the
- * hydrated transcript; the snapshot carries the full prefix built by the
- * daemon's CS-0 D5 merge. NO-OP when the message has no content blocks or when
- * a different message id already holds the stream slot.
+ * agent:tool:call dispatches carry the already-completed tool prefix instead
+ * of only the post-rejoin suffix. Called by the chat-subscribe saga after
+ * merging the snapshot's partial assistant into the hydrated transcript.
+ *
+ * TOOL BLOCKS ONLY (monorepo#2818): post-intentd#775 the agent:* firehose
+ * carries no text updates, so a seeded text/thinking block would be frozen at
+ * its seed-time copy while the standing subscription keeps advancing it in
+ * the store — the next tool tick's dispatch would then regress the fresher
+ * text via the identity merge (`mergeStreamContentBlocks`, same stable block
+ * id). Text/thinking blocks are subscription-owned and never seeded; the
+ * merge preserves them in the store regardless (monorepo#2814).
+ *
+ * tool_use blocks seed under their daemon blockIndex (parsed from the stable
+ * `{messageId}:{blockIndex}` id, PROTOCOL §7.1) so a later agent:tool:call
+ * tick — whose blockIndex is the daemon's — merges into the seeded block. The
+ * daemon's index space is shared by all block kinds (text, tool_use,
+ * tool_result, resource; `Transcript::block_id` in agent_session.rs), so a
+ * faithful snapshot array has position == id suffix; parsing from the id
+ * keeps seeding correct even if the array is ever partial or reordered
+ * relative to daemon indices. tool_result blocks ride `toolResultsByUseIndex`
+ * keyed by their paired tool_use (tool_use_id ↔ toolCallId, §7.1 synthesized
+ * pairing), matching how live completions land — never `blocksByIndex`, so
+ * `buildContentBlocks` cannot emit them twice. Blocks whose pairing cannot be
+ * resolved are skipped: the subscription still owns the full transcript.
+ *
+ * NO-OP when the message has no content blocks or when a different message id
+ * already holds the stream slot.
  */
 export function seedStreamFromSnapshot(
   agentId: string,
@@ -402,8 +483,23 @@ export function seedStreamFromSnapshot(
   const blocks = Array.isArray(inFlightMessage.contentBlocks) ? inFlightMessage.contentBlocks : [];
   if (blocks.length === 0) return;
   const state = ensureStream(agentId, messageId, workspaceId);
-  for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
-    state.blocksByIndex.set(blockIndex, blocks[blockIndex]);
+  const useIndexByToolCallId = new Map<string, number>();
+  for (const block of blocks) {
+    if (block.type === 'tool_use') {
+      const blockIndex = parseBlockIndexFromId((block as { id?: unknown }).id);
+      if (blockIndex === undefined) continue;
+      state.blocksByIndex.set(blockIndex, block);
+      const toolCallId = (block as { toolCallId?: unknown }).toolCallId;
+      if (typeof toolCallId === 'string' && toolCallId.length > 0) {
+        useIndexByToolCallId.set(toolCallId, blockIndex);
+      }
+    } else if (block.type === 'tool_result') {
+      const toolUseId = (block as { tool_use_id?: unknown }).tool_use_id;
+      if (typeof toolUseId !== 'string' || toolUseId.length === 0) continue;
+      const useIndex = useIndexByToolCallId.get(toolUseId);
+      if (useIndex === undefined) continue;
+      state.toolResultsByUseIndex.set(useIndex, block);
+    }
   }
 }
 
@@ -417,9 +513,10 @@ function buildContentBlocks(state: StreamState): ContentBlock[] {
     const attachments = state.attachmentsByUseIndex.get(key);
     if (attachments) result.push(...attachments);
   }
-  // A rejoin snapshot (seedStreamFromSnapshot) can already contain the
-  // standalone resource block the attachment map re-appends; collapse to one
-  // card per logical resource, preferring the daemon-canonical variant.
+  // The same logical resource can reach the accumulator twice — e.g. a
+  // tool-call-claimed attachment (`registeredAttachments`) plus the terminal
+  // `agent:stream:end` trailingBlocks copy; collapse to one card per logical
+  // resource, preferring the daemon-canonical variant.
   return dedupeResourceBlocks(result);
 }
 
@@ -576,9 +673,9 @@ function liftProposalResourceItem(output: unknown): Record<string, unknown> | nu
 /**
  * Predict a standalone attachment block's stable id from the `tool_use`
  * blockId: the daemon appends `tool_result` at index + 1 and the Nth
- * attachment block at index + 2 + N (`{messageId}:{index}` scheme, §7.1
- * tool_delta — each attachment chains off the previous block's id via
- * `next_block_id`). Returns undefined when the blockId does not follow that
+ * attachment block at index + 2 + N (the `{messageId}:{index}` scheme
+ * produced by the daemon's `Transcript::block_id`, agent_session.rs; §7.1
+ * tool_delta). Returns undefined when the blockId does not follow that
  * scheme.
  */
 function predictAttachmentBlockId(
@@ -588,8 +685,8 @@ function predictAttachmentBlockId(
   if (typeof toolUseBlockId !== 'string') return undefined;
   const separator = toolUseBlockId.lastIndexOf(':');
   if (separator < 0) return undefined;
-  // Bare unsigned decimal only — mirrors the daemon's `usize::parse` in
-  // `next_block_id` (subscriptions.rs), which rejects empty/hex/exponent forms.
+  // Bare unsigned decimal only — mirrors the `{messageId}:{index}` scheme
+  // produced by the daemon's `Transcript::block_id` (agent_session.rs).
   const suffix = toolUseBlockId.slice(separator + 1);
   if (!/^[0-9]+$/.test(suffix)) return undefined;
   return `${toolUseBlockId.slice(0, separator)}:${Number(suffix) + 2 + attachmentOrdinal}`;
@@ -602,6 +699,19 @@ function dispatchStreamUpdate(
   stopReason?: string,
   finishReason?: string,
 ): void {
+  // SOLE-WRITER INVARIANT (PROTOCOL §7.1): when a standing chat.subscribe
+  // registration covers this agent, the subscription owns message CONTENT —
+  // omit the accumulator's blocks so this dispatch keeps only its bookkeeping
+  // duties (streaming flags, stopReason/finishReason metadata, chat-state
+  // resets). The terminal `complete` would otherwise replace the reconciled
+  // transcript with the accumulator's text-starved stale set — with no later
+  // emit to heal it, the turn's tail goes missing — and mid-turn
+  // `content-blocks` ticks flicker subscription-owned rows. The accumulator
+  // itself keeps accumulating regardless, so it stays the complete fallback
+  // writer for agents whose coverage ends mid-turn. The apply-time guard in
+  // agent-stream-saga re-checks coverage for dispatches buffered across a
+  // registration install.
+  const covered = hasStandingChatSubscription(agentId);
   appStore.dispatch(
     agentStreamUpdateReceived({
       workspaceId: state.workspaceId,
@@ -610,7 +720,7 @@ function dispatchStreamUpdate(
       source: 'sendMessage',
       eventType,
       assistantMessageId: state.messageId,
-      contentBlocks: buildContentBlocks(state),
+      ...(covered ? {} : { contentBlocks: buildContentBlocks(state) }),
       ...(stopReason ? { stopReason } : {}),
       ...(finishReason ? { finishReason } : {}),
     }),
@@ -1104,8 +1214,8 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // Q&A questions today), byte-identical to the persisted transcript. Append
   // them into the accumulator before finalizing so the wizard triggers live
   // without a refetch. `buildContentBlocks`'s `dedupeResourceBlocks` keeps
-  // this idempotent against rejoin-snapshot seeds / tool-call-claimed copies
-  // of the same canonical block (stamped `attachmentId` nonce).
+  // this idempotent against tool-call-claimed copies of the same canonical
+  // block (stamped `attachmentId` nonce).
   const trailingBlocks = Array.isArray(data?.trailingBlocks)
     ? (data.trailingBlocks.filter((b) => b !== null && typeof b === 'object') as ContentBlock[])
     : [];
@@ -1169,7 +1279,10 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // content is the trailing blocks (e.g. questions with no streamed text).
   // Finalize a matching placeholder so the Stopped indicator / finish notice /
   // question wizard appears live. A later `agents.getConversation` reconcile
-  // dedupes by message id.
+  // dedupes by message id. SOLE-WRITER INVARIANT: for a subscription-covered
+  // agent the terminal §7.1 reconcile delivers the drained question blocks as
+  // `added` blocks itself, so the firehose copy is omitted (same gate as
+  // `dispatchStreamUpdate`) and only the metadata/flag bookkeeping applies.
   if (messageId && (trailingBlocks.length > 0 || stopReason === 'interrupted' || finishReason)) {
     appStore.dispatch(
       agentStreamUpdateReceived({
@@ -1179,7 +1292,9 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         source: 'sendMessage',
         eventType: 'complete',
         assistantMessageId: messageId,
-        contentBlocks: dedupeResourceBlocks(trailingBlocks),
+        ...(hasStandingChatSubscription(agentId)
+          ? {}
+          : { contentBlocks: dedupeResourceBlocks(trailingBlocks) }),
         ...(stopReason ? { stopReason } : {}),
         ...(finishReason ? { finishReason } : {}),
       }),
@@ -1284,6 +1399,107 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   // open modal listing this agent re-checks agent.listInterrupted (debounced;
   // no-op when the modal is closed or the agent is not listed).
   notifyInterruptedAgentUpdated(agentId);
+}
+
+/**
+ * Parse the persisted `lastToolUse` preview carried on `agent:last-message`
+ * (§6.5) / `AgentLite` (§5.5): `{ name, input?, inputTruncated?, inputBytes? }`
+ * with `input` bounded by the slim-projection budget. `name` is required and
+ * non-empty; a payload diverging from the documented shape is rejected whole.
+ */
+function readPersistedLastToolUse(
+  value: unknown,
+):
+  | { name: string; input?: Record<string, unknown>; inputTruncated?: boolean; inputBytes?: number }
+  | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { name, input, inputTruncated, inputBytes } = value as {
+    name?: unknown;
+    input?: unknown;
+    inputTruncated?: unknown;
+    inputBytes?: unknown;
+  };
+  if (typeof name !== 'string' || name.trim().length === 0) return undefined;
+  if (
+    input !== undefined &&
+    (typeof input !== 'object' || input === null || Array.isArray(input))
+  ) {
+    return undefined;
+  }
+  if (inputTruncated !== undefined && typeof inputTruncated !== 'boolean') return undefined;
+  if (inputBytes !== undefined && typeof inputBytes !== 'number') return undefined;
+  return {
+    name,
+    ...(input !== undefined ? { input: input as Record<string, unknown> } : {}),
+    ...(inputTruncated !== undefined ? { inputTruncated } : {}),
+    ...(inputBytes !== undefined ? { inputBytes } : {}),
+  };
+}
+
+/**
+ * `agent:last-message` (§6.5, additive) — the content-bearing companion the
+ * daemon emits alongside EVERY `agent:message`, carrying the persisted
+ * preview projections the write just computed (the same values the §5.5
+ * `AgentLite` projection serves). A user/assistant row's echo carries
+ * `lastMessageRole` + `lastMessageId` plus its role-specific preview —
+ * `lastAgentResponse` (assistant) or `lastUserMessage` (user) — and
+ * `lastToolUse`, whose ABSENCE means the persisted preview is now cleared
+ * (the newest message carries no tool call). The role-specific preview has
+ * the same absence-means-cleared semantics: the daemon overwrites the
+ * persisted preview column unconditionally on every user/assistant append,
+ * deriving the payload field from the appended row itself, so an assistant
+ * echo WITHOUT `lastAgentResponse` (a tool-only / text-free row) means the
+ * persisted preview is now empty — clear it so a stale previous response
+ * cannot outrank the fresh tool chip (same outcome as the `agent.get`
+ * replace-ingest path). The OTHER role's preview column was not touched by
+ * the append, so it is left alone. System (and other) rows keep the
+ * base id-only echo shape (the preview columns were not touched), so they
+ * only flip the daemon-capability flag. The apply is a metadata-only
+ * `updateSession` merge — ZERO follow-up RPCs, and a loaded transcript is
+ * never clobbered (`updateSession` leaves `messages` untouched). `hasUnread`
+ * is re-derived from the freshness fields so the unread badge converges
+ * without an `agent.get` (same derivation as wire ingest, monorepo#1597).
+ */
+function handleAgentLastMessageEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  if (typeof agentId !== 'string' || agentId.length === 0) return;
+  // The daemon emits this companion event: retire the `agent:message`
+  // back-compat `agent.get` refresh for the rest of this bridge's lifetime.
+  daemonEmitsLastMessage = true;
+  const role = data.role;
+  if (role !== 'user' && role !== 'assistant') return;
+  const updates: Partial<AgentSession> = {
+    lastToolUse: readPersistedLastToolUse(data.lastToolUse),
+  };
+  if (data.lastMessageRole === 'user' || data.lastMessageRole === 'assistant') {
+    updates.lastMessageRole = data.lastMessageRole;
+  }
+  if (typeof data.lastMessageId === 'string' && data.lastMessageId.length > 0) {
+    updates.lastMessageId = data.lastMessageId;
+  }
+  if (role === 'assistant') {
+    updates.lastAgentResponse =
+      typeof data.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined;
+  } else {
+    updates.lastUserMessage =
+      typeof data.lastUserMessage === 'string' ? data.lastUserMessage : undefined;
+  }
+  withHydratedSession(agentId, () => {
+    const session = appStore.state.agentSessions?.byAgentId[agentId];
+    if (!session) return;
+    appStore.dispatch(
+      updateSession(agentId, {
+        ...updates,
+        hasUnread: deriveAgentHasUnread({
+          lastMessageRole: updates.lastMessageRole ?? session.lastMessageRole,
+          lastMessageId: updates.lastMessageId ?? session.lastMessageId,
+          metadata: session.metadata as { lastSeenMessageId?: string } | undefined,
+        }),
+      }),
+    );
+  });
 }
 
 /**
@@ -2333,7 +2549,12 @@ function handleAgentDeleteScheduledEvent(event: WorkspaceEvent, workspaceId: str
   // on the row) can resolve after it; without an entry that stale read would
   // resurrect the agent. Snapshot-less entries restore via the cancel
   // handler's reconcile refetch instead of an instant snapshot.
-  registerAgentDeleteTombstone(workspaceId, agentId, tombstoneClearDelayMs(data?.deleteAt), snapshot);
+  registerAgentDeleteTombstone(
+    workspaceId,
+    agentId,
+    tombstoneClearDelayMs(data?.deleteAt),
+    snapshot,
+  );
 }
 
 /**
@@ -3264,38 +3485,28 @@ export function routeDaemonEventsNotification(
   if (type === 'agent:attention-requested') {
     handleAgentUpdatedEvent(event);
   }
-  // STAB-22: agent:message events with role="assistant" should trigger a
-  // conversation refetch so AgentCard preview updates for watched agents whose
-  // tab was never opened. The event payload is { agentId, messageId, role }.
-  // Guard for role="assistant": refetch when the session is missing or the
-  // persisted row's messageId is absent from the transcript (checking both
-  // `id` and `appMessageId`, matching the message-dedup merge identity) —
-  // this self-heals transcripts that hydrated before the row persisted
-  // (#1019). When the event carries no messageId, only refetch for an
-  // empty session (avoid redundant fetches for already-hydrated transcripts).
-  // QUEUED-MESSAGES: also handle role="user" — if the session is missing or its
-  // messages do not contain the messageId, refetch to fold in dequeued and
-  // agent-to-agent messages.
-  if (type === 'agent:message') {
-    const { agentId, messageId, role } = event.data ?? {};
-    if (typeof agentId === 'string') {
-      if (role === 'assistant') {
-        const session = appStore.state.agentSessions.byAgentId[agentId];
-        const hasMessage =
-          typeof messageId === 'string'
-            ? (session?.messages.some((m) => m.id === messageId || m.appMessageId === messageId) ??
-              false)
-            : (session?.messages.length ?? 0) > 0;
-        if (!session || !hasMessage) {
-          void loadChatTranscript(agentId);
-        }
-      } else if (role === 'user' && typeof messageId === 'string') {
-        const session = appStore.state.agentSessions.byAgentId[agentId];
-        // Trigger refetch if session doesn't exist OR messageId is not present
-        if (!session || !session.messages.some((m) => m.id === messageId)) {
-          void loadChatTranscript(agentId);
-        }
-      }
+  // `agent:last-message` (§6.5, additive) — content-bearing companion of
+  // every `agent:message`: applies the persisted preview projections straight
+  // off the payload (ZERO follow-up RPCs) and marks the daemon as emitting
+  // the event, retiring the back-compat refresh below. Returns early: the
+  // paired `agent:message` already records the row in the activity timeline,
+  // so the companion falling through would double-count every message.
+  if (type === 'agent:last-message') {
+    handleAgentLastMessageEvent(event);
+    return;
+  }
+  // STAB-22 (rewired): `agent:message` no longer triggers a transcript fetch.
+  // Non-viewed agents' previews ride `agent:last-message` (above) and viewed
+  // transcripts ride the standing `chat.subscribe` delta stream (§7.1) —
+  // paging the whole conversation per persisted row multiplied every message
+  // into O(pages) `agent.getConversation` calls. Back-compat: until the
+  // daemon proves it emits the companion event, fall back to a light
+  // metadata-only `agent.get` refresh (single-flight + trailing-coalesce,
+  // transcript preserved) so previews on older daemons still converge.
+  if (type === 'agent:message' && !daemonEmitsLastMessage) {
+    const { agentId, role } = event.data ?? {};
+    if (typeof agentId === 'string' && (role === 'assistant' || role === 'user')) {
+      refreshAgentSessionCoalesced(agentId);
     }
   }
   // Process-queue events (§6.5): agent:process:queued sets the hint,
@@ -3420,18 +3631,90 @@ export async function refreshDaemonEventsAfterReconnect(
     const activeAgentId =
       state.workspaceAgents?.byWorkspaceId[activeWorkspaceId]?.activeAgentId ?? null;
     if (activeAgentId) {
-      void loadChatTranscript(activeAgentId);
-      // Queue rows drained while the connection was down never re-emit
-      // `agent:queue:updated`; reconcile the mirror from `agent.getQueue`
-      // (monorepo#1749).
+      // NO transcript fetch here: the standing `chat.subscribe` registration
+      // re-registers on the same reconnect signal and its fresh seq-0
+      // snapshot (§7.1) IS the reconciled transcript — an eager
+      // `agent.getConversation` page walk would duplicate that transfer on
+      // every reconnect. Queue rows drained while the connection was down
+      // never re-emit `agent:queue:updated`; reconcile the mirror from
+      // `agent.getQueue` (monorepo#1749).
       void hydrateAgentQueue(activeAgentId);
     }
   }
+  // The failure registry converges via live `agent:deleted` /
+  // `agent:status-changed` events only; deletions during the missed-event
+  // window leave stale entries whose toast offers Retry against a deleted
+  // agent forever (monorepo#2806). Reconcile survivors against the daemon.
+  await reconcileAgentFailureRegistry();
+}
+
+/**
+ * Drop failure-registry entries whose agent no longer exists on the daemon.
+ * One `agent.list` per DISTINCT workspace holding entries (no per-entry
+ * fan-out — AGENTS.md "Event-driven refetches"); a failed or unverifiable
+ * list (missing/non-array `agents`) keeps that workspace's entries
+ * (unverifiable ≠ deleted — live events converge them later). Only entries
+ * from the snapshot taken BEFORE the list, still identical in the registry
+ * (the same identity-guard convention as retryAgent in the toast saga), are
+ * dropped: a failure recorded or replaced while the list was in flight
+ * predates nothing the stale result can prove, so it is kept. Never throws,
+ * so the reconnect refresh can await it safely.
+ */
+async function reconcileAgentFailureRegistry(): Promise<void> {
+  const entries = listAgentFailureEntries();
+  if (entries.length === 0) return;
+  const { backendRequest } = await import('$lib/client/live/backend-transport');
+  const workspaceIds = [...new Set(entries.map((entry) => entry.workspaceId))];
+  await Promise.all(
+    workspaceIds.map(async (workspaceId) => {
+      let survivorIds: Set<string>;
+      try {
+        const response = (await backendRequest('agent.list', { workspaceId })) as
+          | { agents?: Array<{ id?: unknown }> }
+          | undefined;
+        if (!Array.isArray(response?.agents)) {
+          logger.warn(
+            'agent.list returned no verifiable agents array during failure-registry reconciliation — keeping entries',
+            { workspaceId },
+          );
+          return;
+        }
+        survivorIds = new Set(
+          response.agents
+            .map((agent) => agent?.id)
+            .filter((id): id is string => typeof id === 'string'),
+        );
+      } catch (error) {
+        logger.warn('agent.list failed during failure-registry reconciliation — keeping entries', {
+          workspaceId,
+          error,
+        });
+        return;
+      }
+      for (const entry of entries) {
+        if (entry.workspaceId !== workspaceId) continue;
+        if (survivorIds.has(entry.agentId)) continue;
+        // Identity guard: only drop the exact entry snapshotted before the
+        // list. Removed mid-flight (live agent:deleted) → already gone;
+        // replaced mid-flight (re-failure) → the fresh entry postdates the
+        // list result, which proves nothing about it — keep it.
+        if (getAgentFailureEntry(entry.agentId) !== entry) continue;
+        logger.warn('Dropping failure entry for agent no longer on the daemon', {
+          agentId: entry.agentId,
+          workspaceId,
+        });
+        removeAgentFailure(entry.agentId);
+      }
+    }),
+  );
 }
 
 export function disposeDaemonEventsRoutingState(): void {
   streamsByAgent.clear();
   previewTurnMessageIdByAgent.clear();
+  daemonEmitsLastMessage = false;
+  agentSessionRefreshInFlight.clear();
+  agentSessionRefreshFollowUpWanted.clear();
   for (const timer of changesRefreshTimersByWorkspace.values()) {
     clearTimeout(timer);
   }

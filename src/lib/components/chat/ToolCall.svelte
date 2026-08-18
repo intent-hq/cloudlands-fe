@@ -1,9 +1,12 @@
 <script lang="ts">
-  import type { ToolUseBlock } from '$shared/types';
+  import type { ContentBlock, ToolUseBlock } from '$shared/types';
   import Fa from 'svelte-fa';
   import { safeSlide } from '$lib/utils/animations';
   import ToolDetails from './ToolDetails.svelte';
   import { parseToolResult } from './tool-result-parser';
+  import { isHydrationPending, truncatedToolBlockIds } from './block-hydration';
+  import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
+  import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { classifyTool, isContextEngineTool } from './tool-classifier';
   import ContextEngineToolCall from './ContextEngineToolCall.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
@@ -37,10 +40,46 @@
     toolUse: ToolUseBlock;
     toolState?: 'running' | 'completed' | 'error';
     result?: any;
+    /** The paired tool_result BLOCK (not payload) — carries §5.5 slim flags. */
+    resultBlock?: ContentBlock | null;
     workspaceId?: string;
+    /** Agent session id; with `messageId`, enables lazy block hydration (§5.5). */
+    agentId?: string;
+    /** Persisted message id owning these blocks (hydration fetch key). */
+    messageId?: string;
   }
 
-  let { toolUse, toolState = 'completed', result = null, workspaceId }: Props = $props();
+  let {
+    toolUse,
+    toolState = 'completed',
+    result = null,
+    resultBlock = null,
+    workspaceId,
+    agentId,
+    messageId,
+  }: Props = $props();
+
+  // Lazy full-block hydration (§5.5 slim projection → v7.2
+  // agent.getMessageBlock): rows served slim carry `inputTruncated` /
+  // `outputTruncated`; expanding such a row dispatches a single-flight fetch
+  // for each truncated block (reducer + saga dedupe re-dispatches). Once the
+  // parent merges the hydrated full blocks back in, the flags disappear and
+  // the ids list goes empty. The hydrated-map subscription is init-time
+  // (agentId is stable per instance); under-budget rows have no truncated
+  // ids and never fetch.
+  // svelte-ignore state_referenced_locally -- intentional initial snapshot; keyed component identity is fixed.
+  const hydratedBlocks$ = selectHydratedBlocks(agentId ?? '');
+  const truncatedBlockIds = $derived(truncatedToolBlockIds(toolUse, resultBlock));
+  const hydrationPending = $derived(
+    isHydrationPending($hydratedBlocks$, messageId, truncatedBlockIds),
+  );
+
+  function requestHydration() {
+    if (!agentId || !messageId) return;
+    for (const blockId of truncatedBlockIds) {
+      appStore.dispatch(messageBlockHydrationRequested(agentId, messageId, blockId));
+    }
+  }
 
   // Check if this is a context engine tool (special Augment branding)
   const isContextEngine = $derived(isContextEngineTool(toolUse.name));
@@ -103,7 +142,11 @@
   const detailsId = $derived(`tool-details-${toolUse.id}`);
 
   function toggleExpanded() {
-    if (isExpandable) expanded = !expanded;
+    if (!isExpandable) return;
+    expanded = !expanded;
+    // Expanding a slim-truncated row triggers the on-demand full-block fetch
+    // (no-op for under-budget rows: truncatedBlockIds is empty).
+    if (expanded) requestHydration();
   }
 
   function handleDisclosureKeydown(event: KeyboardEvent) {
@@ -133,7 +176,7 @@
 
 <!-- Special rendering for Augment Context Engine tools -->
 {#if isContextEngine}
-  <ContextEngineToolCall {toolUse} {toolState} {result} />
+  <ContextEngineToolCall {toolUse} {toolState} {result} onExpand={requestHydration} />
 {:else if !toolDisplay.hidden}
   <div
     class={OPERATIONAL_ROW_CONTAINER_CLASS}
@@ -288,11 +331,25 @@
 
   {#if expanded}
     <div id={detailsId} class="ml-1" transition:expand>
+      <!-- While the full block is being hydrated (§5.5), the slim preview
+           renders below with a fetching notice; the merged full body replaces
+           it reactively when the fetch settles. -->
+      {#if hydrationPending}
+        <div
+          class="type-caption flex items-center gap-2 px-2 py-1 text-subtle"
+          data-testid="tool-call-hydration-loading"
+        >
+          <Fa icon={toolDisplay.icon} size={12} class="animate-pulse" />
+          <span>{m.chat_toolCall_loadingFullOutput_label()}</span>
+        </div>
+      {/if}
       <ToolDetails
         input={toolUse.input}
         {result}
         {parsedResult}
         isError={toolState === 'error'}
+        pending={toolState === 'running'}
+        isTerminal={toolDisplay.category === 'terminal'}
         {workspaceId}
         suppressOkOnlyResult={displayModel.isOkOnlyWorkspaceResult}
       />

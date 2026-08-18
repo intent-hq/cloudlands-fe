@@ -16,7 +16,10 @@
  * Retry calls `appClient.agents.retry(agentId, workspaceId)` for that one
  * agent; `ok:true` removes the entry from the registry (the daemon's
  * `agent:status-changed` event converges other state); `ok:false` keeps the
- * entry and surfaces a brief failure note on the toast. The button is
+ * entry and surfaces a brief failure note on the toast — unless the daemon
+ * rejected with not-found (`notFound: true`, monorepo#2806): the agent was
+ * deleted, so the stale entry is removed and the toast dismissed instead of
+ * offering Retry forever. The button is
  * disabled while the retry is in flight. The click also navigates to the
  * agent's workspace with its chat drawer open (chief-of-staff failures open
  * the sidebar Assistant panel instead), regardless of the retry RPC outcome.
@@ -260,9 +263,13 @@ function* navigateToFailedAgent(entry: AgentFailureEntry): SagaGenerator<void> {
 /**
  * Retry ONE failed agent via `agent.retry`. `ok:true` removes the entry from
  * the registry (its status-changed event reconciles the rest); `ok:false`
- * keeps it and surfaces a brief note on the updated toast. The click also
- * navigates to the agent regardless of the retry RPC outcome (a failed retry
- * still shows its note on the toast).
+ * keeps it and surfaces a brief note on the updated toast — EXCEPT the
+ * not-found rejection (`notFound: true`): the agent was deleted while the
+ * toast sat open (its `agent:deleted` event was missed), so the stale entry
+ * is removed and the toast dismissed instead of keep-and-note (logged at
+ * WARN per the #1753 convention — an expected condition, not an error). The
+ * click also navigates to the agent regardless of the retry RPC outcome (a
+ * failed retry still shows its note on the toast).
  */
 function* retryAgent(
   agentId: string,
@@ -280,6 +287,7 @@ function* retryAgent(
     // Defensive only: LiveAgentsClient.retry already maps transport errors
     // to `{ ok: false }`, so this catch is a guard against future clients.
     let ok = false;
+    let notFound = false;
     try {
       const result = yield* call(
         [appClient.agents, appClient.agents.retry],
@@ -287,19 +295,27 @@ function* retryAgent(
         entry.workspaceId,
       );
       ok = result.ok === true;
+      notFound = result.ok === false && result.notFound === true;
     } catch (error) {
       logger.error('agent.retry threw', { agentId: entry.agentId, error });
     }
     state.retrying = false;
-    if (!ok) state.retryNote = m.agent_failureToast_retryFailed_error();
+    if (notFound) {
+      logger.warn('agent.retry target no longer exists — dropping stale failure entry', {
+        agentId: entry.agentId,
+        workspaceId: entry.workspaceId,
+      });
+    } else if (!ok) {
+      state.retryNote = m.agent_failureToast_retryFailed_error();
+    }
 
     // Removing the entry notifies the subscription, which dismisses the
     // toast. Only remove when the registry still holds the entry snapshotted
     // at retry start — if the agent re-failed while its retry was in flight,
-    // `recordAgentFailure` stored a fresh entry that this stale ok:true must
-    // not erase.
+    // `recordAgentFailure` stored a fresh entry that this stale ok:true (or
+    // stale notFound) must not erase.
     let removed = false;
-    if (ok && getAgentFailureEntry(agentId) === entry) {
+    if ((ok || notFound) && getAgentFailureEntry(agentId) === entry) {
       removed = removeAgentFailure(agentId);
     }
     if (!removed) {

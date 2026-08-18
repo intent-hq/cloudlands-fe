@@ -28,7 +28,7 @@ import {
   refreshWorkspaceSubscriptionEntriesRequested,
   removeWatchedAgent,
 } from '../../agent-subscription-ui/agent-subscription-ui-slice';
-import { agentSessionDismissQuestionsRequested } from '../agent-session-slice';
+import { agentSessionDismissQuestionsRequested, updateSession } from '../agent-session-slice';
 import {
   activateAgentRequested,
   deleteAgentSessionRequested,
@@ -202,7 +202,43 @@ function* activateAgent(action: ReturnType<typeof activateAgentRequested>): Saga
 }
 
 function* saveAgent(action: ReturnType<typeof saveAgentSessionRequested>): SagaGenerator<void> {
-  yield* put(action.success(undefined as never));
+  const [wsId, agentId, , options] = action.payload;
+  const specialistUpdate = options?.specialistUpdate;
+  if (!specialistUpdate) {
+    yield* put(action.success(undefined as never));
+    return;
+  }
+
+  let settled = false;
+  try {
+    const result = yield* call([appClient.agents, appClient.agents.updateSpecialist], {
+      agentId,
+      workspaceId: wsId,
+      ...specialistUpdate,
+    });
+    if (!result.success) {
+      throw new Error(result.error || m.errors_catalog_storageWriteFailed_friendly());
+    }
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    const failure = mutationError(error, m.errors_catalog_storageWriteFailed_friendly());
+    const rollback = options?.specialistRollback;
+    const current = yield* selectAgentSession.effect(agentId);
+    const specialistStillOptimistic =
+      (current?.metadata?.specialist ?? null) === specialistUpdate.specialist &&
+      (specialistUpdate.model === undefined || current?.model === specialistUpdate.model);
+    if (rollback && specialistStillOptimistic) {
+      yield* put(updateSession(agentId, rollback));
+    }
+    yield* call(showError, failure.message);
+    yield* put(action.failure(failure));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.errors_catalog_storageWriteFailed_friendly())));
+    }
+  }
 }
 
 function* renameAgent(action: ReturnType<typeof renameAgentSessionRequested>): SagaGenerator<void> {
