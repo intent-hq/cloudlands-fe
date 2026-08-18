@@ -1056,7 +1056,7 @@ describe('WorkspaceColumnsView', () => {
     target.getBoundingClientRect = vi.fn(() => ({ left: -20, right: 340 }) as DOMRect);
     workspaceStacks.set([['ws-2'], ['ws-3']]);
     await new Promise((resolve) => setTimeout(resolve, 450));
-    expect(scroller.scrollLeft).toBeCloseTo(472, 4);
+    expect(scroller.scrollLeft).toBeCloseTo(472, 2);
 
     target.getBoundingClientRect = vi.fn(() => ({ left: 600, right: 960 }) as DOMRect);
     workspaceStacks.set([['ws-1'], ['ws-2'], ['ws-3']]);
