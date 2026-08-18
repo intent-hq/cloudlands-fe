@@ -1799,15 +1799,20 @@ export class TerminalAdapter {
       // Resolve loopback URLs, then open the browser panel on the result.
       void import('$lib/utils/browser-link-open')
         .then(({ resolveBrowserLinkForOpen }) => resolveBrowserLinkForOpen(uri))
-        .catch(() => uri)
-        .then((resolvedUrl) => {
+        .catch((): { url: string; requestedUrl?: string } => ({ url: uri }))
+        .then((resolved) => {
           import('$features/layout/panel-layout-adapter')
             .then(({ getPanelLayoutManager }) => {
               const layoutManager = getPanelLayoutManager(this.workspaceId);
-              layoutManager.openBrowserPanel(resolvedUrl);
+              layoutManager.openBrowserPanel(
+                resolved.url,
+                undefined,
+                undefined,
+                resolved.requestedUrl,
+              );
               logger.debug('Opened URL in browser panel', {
                 uri,
-                resolvedUrl,
+                resolvedUrl: resolved.url,
                 workspaceId: this.workspaceId,
               });
             })
@@ -1817,7 +1822,7 @@ export class TerminalAdapter {
                 error: err,
               });
               // Fallback to external browser
-              void invokeIpc('shell:openExternal', { url: resolvedUrl });
+              void invokeIpc('shell:openExternal', { url: resolved.url });
             });
         });
     } catch (err) {
