@@ -642,12 +642,14 @@ describe('shared operational disclosure-row contract', () => {
       expect(disclosure.getAttribute('aria-expanded')).toBe('false');
     });
 
+    // Running tools WITH input are expandable (input details), so the
+    // non-interactive contract only applies to input-less running tools.
     it.each([
       {
         name: 'ToolCall',
         renderRow: () => {
           const { container } = render(ToolCall, {
-            props: { toolUse: genericTool, toolState: 'running' },
+            props: { toolUse: createToolUse('tool-no-input', 'shell'), toolState: 'running' },
           });
           return container.querySelector('[data-operational-disclosure-row]')! as HTMLElement;
         },
@@ -656,7 +658,10 @@ describe('shared operational disclosure-row contract', () => {
         name: 'ContextEngineToolCall',
         renderRow: () => {
           const { container } = render(ContextEngineToolCall, {
-            props: { toolUse: contextTool, toolState: 'running' },
+            props: {
+              toolUse: createToolUse('tool-context-no-input', 'codebase-retrieval'),
+              toolState: 'running',
+            },
           });
           return container.querySelector('[data-operational-disclosure-row]')! as HTMLElement;
         },
