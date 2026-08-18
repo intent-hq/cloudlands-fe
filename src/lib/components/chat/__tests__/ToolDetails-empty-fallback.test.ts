@@ -164,6 +164,7 @@ describe('ToolDetails pending (running) rendering', () => {
         parsedResult: null,
         isError: false,
         pending: true,
+        isTerminal: true,
       },
     });
 
@@ -171,6 +172,33 @@ describe('ToolDetails pending (running) rendering', () => {
     expect(pre?.textContent).toBe(command);
     expect(container.textContent).not.toContain('Result');
     expect(container.textContent).not.toContain('No output');
+  });
+
+  it('shows all input fields for a pending non-terminal call carrying a command field', () => {
+    // str-replace-editor is classified file-write but sends command: "str_replace";
+    // without the terminal gate its pending view would collapse to "$ str_replace"
+    const { container } = render(ToolDetails, {
+      props: {
+        input: {
+          command: 'str_replace',
+          path: 'src/lib/components/chat/ToolDetails.svelte',
+          old_str_1: 'before text',
+          new_str_1: 'after text',
+        },
+        result: undefined,
+        parsedResult: null,
+        isError: false,
+        pending: true,
+      },
+    });
+
+    expect(container.textContent).toContain('Input');
+    expect(container.textContent).toContain('str_replace');
+    expect(container.textContent).toContain('src/lib/components/chat/ToolDetails.svelte');
+    expect(container.textContent).toContain('before text');
+    expect(container.textContent).toContain('after text');
+    expect(container.textContent).not.toContain('$ str_replace');
+    expect(container.textContent).not.toContain('Result');
   });
 
   it('shows sanitized JSON input for a pending non-terminal call without a result section', () => {
@@ -197,6 +225,7 @@ describe('ToolDetails pending (running) rendering', () => {
         parsedResult: null,
         isError: false,
         pending: true,
+        isTerminal: true,
       },
     });
 

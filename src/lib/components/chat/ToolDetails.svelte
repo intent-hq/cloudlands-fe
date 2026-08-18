@@ -45,6 +45,8 @@
     isError?: boolean;
     /** The tool call is still running: show only the input, never a result section. */
     pending?: boolean;
+    /** The tool is classified as a terminal command (gates the terminal-style pending view). */
+    isTerminal?: boolean;
     workspaceId?: string;
     suppressOkOnlyResult?: boolean;
   }
@@ -55,6 +57,7 @@
     parsedResult,
     isError = false,
     pending = false,
+    isTerminal = false,
     workspaceId,
     suppressOkOnlyResult = false,
   }: Props = $props();
@@ -187,8 +190,12 @@
   });
 
   // Full multiline command for pending terminal calls (whitespace preserved so
-  // the complete command is inspectable while the result is still pending)
+  // the complete command is inspectable while the result is still pending).
+  // Gated on the classified terminal category: non-terminal tools that happen
+  // to carry a `command` field (e.g. str-replace-editor) must fall through to
+  // the JSON input view so all their fields stay inspectable.
   const pendingCommand = $derived.by(() => {
+    if (!isTerminal) return null;
     if (typeof input?.command !== 'string' || !input.command.trim()) return null;
     return sanitizeMultilineToolText(input.command);
   });
