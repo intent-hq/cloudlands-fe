@@ -12,7 +12,18 @@ for (const theme of ['light', 'dark'] as const) {
         const component = await mount(ChatPanelOperationalGeometryHost, {
           props: { theme, zoom, width },
         });
+        // The fixture session streams, so followBottom re-pins the transcript
+        // to the exact bottom on every mutation/resize settle frame. Playwright
+        // scrolls targets into view without wheel events, so follow never
+        // unlocks and the re-pin races (and under CI load starves) clicks on
+        // rows above the fold. A real user scrolls up first, which drops
+        // follow — emulate that before each interaction pass.
+        const unlockFollow = () =>
+          component
+            .getByTestId('chat-transcript-scroll-viewport')
+            .evaluate((node) => node.dispatchEvent(new WheelEvent('wheel', { deltaY: -20 })));
         for (const messageId of ['assistant-finished', 'assistant-streaming']) {
+          await unlockFollow();
           const message = component.locator(`[data-message-id="${messageId}"]`);
           await message.getByTestId('response-group-disclosure').click();
           const rows = message.locator('[data-chat-operational-row]');

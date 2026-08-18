@@ -15,9 +15,14 @@ for (const zoom of [1, 2]) {
     const streamingFixture = component.getByTestId('streaming-reasoning-rhythm');
     await staticFixture.getByTestId('reasoning-disclosure').click();
 
+    // The markdown viewer hydrates asynchronously after the disclosure opens;
+    // on a loaded CI runner the first poll can land before it exists. Return
+    // null instead of throwing so `expect.poll` keeps retrying (a thrown
+    // evaluate aborts the poll immediately).
     const measure = (fixture: typeof staticFixture) =>
       fixture.locator('[data-reasoning-expanded-body]').evaluate((body) => {
-        const viewer = body.querySelector<HTMLElement>('.markdown-viewer')!;
+        const viewer = body.querySelector<HTMLElement>('.markdown-viewer');
+        if (!viewer) return null;
         const chunkRoot = viewer.querySelector<HTMLElement>(':scope > .ProseMirror') ?? viewer;
         const rootBox = chunkRoot.getBoundingClientRect();
         const chunks = Array.from(chunkRoot.children).map((chunk) => {
@@ -51,9 +56,13 @@ for (const zoom of [1, 2]) {
 
     const assertRhythm = async (fixture: typeof staticFixture, expectedTags: string[]) => {
       await expect
-        .poll(async () => (await measure(fixture)).chunks.map((chunk) => chunk.tag))
+        .poll(async () => (await measure(fixture))?.chunks.map((chunk) => chunk.tag), {
+          // Chunk hydration loads the markdown/shiki bundles; on a saturated
+          // CI runner that can exceed the 5s default.
+          timeout: 30_000,
+        })
         .toEqual(expectedTags);
-      const geometry = await measure(fixture);
+      const geometry = (await measure(fixture))!;
       expect(geometry.rowGap).toBe('8px');
       expect(geometry.chunks.map((chunk) => chunk.marginTop)).toEqual(
         expectedTags.map((tag, index) => (index > 0 && /^H[1-6]$/.test(tag) ? '24px' : '0px')),
