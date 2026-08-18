@@ -427,9 +427,11 @@ describe('MessageContent - top-level response rows', () => {
       'padding-left: calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))',
     );
     expect(operationalChild?.className).toContain('operational-group-child-row');
+    expect(operationalChild?.className).toContain('ml-2');
     expect(operationalChild?.getAttribute('style')).toBeNull();
     expect(toolChild?.className).toContain('operational-group-child-row');
-    expect(toolChild?.className).toContain('pl-2');
+    expect(toolChild?.className).toContain('ml-2');
+    expect(toolChild?.className).toContain('w-[calc(100%-0.5rem)]');
 
     const streaming = render(StreamingMessageContent, {
       props: { content, isStreaming: true },
@@ -443,9 +445,10 @@ describe('MessageContent - top-level response rows', () => {
       return child;
     });
     expect(streamingChild?.className).toContain('operational-group-child-row');
+    expect(streamingChild?.className).toContain('ml-2');
     expect(streamingChild?.getAttribute('style')).toBeNull();
     expect(
       streaming.container.querySelector('[data-message-content-block="tool_use"]')?.className,
-    ).toContain('pl-2');
+    ).toContain('ml-2');
   });
 });

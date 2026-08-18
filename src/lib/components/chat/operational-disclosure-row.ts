@@ -30,10 +30,8 @@ export const OPERATIONAL_GROUP_CONTENT_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKEN
 
 export const OPERATIONAL_GROUP_CHILD_CONTENT_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} min-w-0 max-w-full pl-[calc(var(--operational-row-inline-padding)+var(--operational-leading-slot-size)+var(--operational-leading-gap))]`;
 
-/** Nested operational icon centers share the parent group's prose origin. */
-export const OPERATIONAL_GROUP_CHILD_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} operational-group-child-row min-w-0 max-w-full`;
-
-export const OPERATIONAL_GROUP_CHILD_TOOL_ROW_CLASS = 'pl-2';
+/** Nested operational rows shift right without overflowing the group. */
+export const OPERATIONAL_GROUP_CHILD_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} operational-group-child-row ml-2 min-w-0 w-[calc(100%-0.5rem)] max-w-[calc(100%-0.5rem)]`;
 
 export const OPERATIONAL_PRIMARY_CLASS = 'text-muted-foreground';
 

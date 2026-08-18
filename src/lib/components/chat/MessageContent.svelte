@@ -59,7 +59,6 @@
     OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
     OPERATIONAL_GROUP_CHILD_CONTENT_CLASS,
     OPERATIONAL_GROUP_CHILD_ROW_CLASS,
-    OPERATIONAL_GROUP_CHILD_TOOL_ROW_CLASS,
   } from './operational-disclosure-row';
   import { dedupeKeys, getResponseGroupBlockKeys } from './response-group-blocks';
   import NavLink from './NavLink.svelte';
@@ -661,11 +660,7 @@
                     isVisibleOperationalBlock,
                   )} ${
                     isOperationalClusterBlock(childBlock)
-                      ? `${OPERATIONAL_GROUP_CHILD_ROW_CLASS} ${
-                          childBlock.type === 'tool_use'
-                            ? OPERATIONAL_GROUP_CHILD_TOOL_ROW_CLASS
-                            : ''
-                        }`
+                      ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
                       : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS
                   }`}
                   style:padding-left={isOperationalClusterBlock(childBlock)

@@ -29,7 +29,9 @@ for (const theme of ['light', 'dark'] as const) {
         });
         const baseline = component.locator('[data-testid="baseline-geometry"]');
         const groupButton = baseline.locator('[data-testid="group-adjacency"] button').first();
-        const groupSummary = baseline.locator('[data-testid="response-group-summary"]');
+        const groupSummary = baseline
+          .locator('[data-testid="group-adjacency"]')
+          .locator('[data-testid="response-group-summary"]');
         const prose = baseline.locator('[data-assistant-prose]');
 
         await expect(groupSummary).toBeVisible();
@@ -38,7 +40,7 @@ for (const theme of ['light', 'dark'] as const) {
         const operationalRows = baseline.locator(
           '[data-chat-operational-row] [data-operational-disclosure-row]',
         );
-        await expect(operationalRows).toHaveCount(4);
+        await expect(operationalRows).toHaveCount(5);
         const operationalContentXs: number[] = [];
         for (const row of await operationalRows.all()) {
           const geometry = await row.evaluate((element) => {
@@ -106,7 +108,7 @@ for (const theme of ['light', 'dark'] as const) {
               return { color: style.color, fontWeight: style.fontWeight };
             }),
           );
-        expect(summaryStyles).toHaveLength(4);
+        expect(summaryStyles).toHaveLength(5);
         expect(new Set(segmentStyles.map(({ color }) => color)).size).toBe(1);
         expect(segmentStyles.every(({ fontWeight }) => fontWeight === '400')).toBe(true);
         const laneBackground = await component
@@ -118,6 +120,7 @@ for (const theme of ['light', 'dark'] as const) {
           .evaluateAll((elements) => elements.map((element) => element.getAttribute('data-icon')));
         expect([...new Set(leadingIconNames)].sort()).toEqual([
           'arrows-in-line-vertical',
+          'arrows-out-line-vertical',
           'brain',
           'eye',
           'hand',
@@ -263,10 +266,7 @@ for (const theme of ['light', 'dark'] as const) {
               16 * zoom,
               1,
             );
-            expect(lastBlockBox.y - (lastRowBox.y + lastRowBox.height)).toBeCloseTo(
-              (testId === 'streaming-operational-cluster' ? 16 : 0) * zoom,
-              1,
-            );
+            expect(lastBlockBox.y - (lastRowBox.y + lastRowBox.height)).toBeCloseTo(0, 1);
           }
         };
 
@@ -275,7 +275,7 @@ for (const theme of ['light', 'dark'] as const) {
         await assertCluster('streaming-operational-cluster', 5);
 
         const expandedGroup = component.locator('[data-testid="expanded-group-prose"]');
-        const groupRow = expandedGroup.locator('[data-operational-row-container]');
+        const groupRow = expandedGroup.locator('[data-operational-disclosure-row]');
         const groupProse = expandedGroup.locator(
           '[data-response-group-content] > [data-message-content-block="text"]',
         );
@@ -285,6 +285,30 @@ for (const theme of ['light', 'dark'] as const) {
           groupProse.boundingBox(),
         ]);
         expect(groupProseBox!.y - (groupRowBox!.y + groupRowBox!.height)).toBeCloseTo(16 * zoom, 1);
+
+        const nestedGroup = component.locator('[data-testid="expanded-group-operational-rows"]');
+        const nestedGroupContent = nestedGroup.locator('[data-response-group-content]');
+        const nestedRows = nestedGroup.locator('[data-response-group-child]');
+        await expect(nestedRows).toHaveCount(2);
+        const nestedGeometry = await nestedRows.evaluateAll((elements) =>
+          elements.map((element) => {
+            const box = element.getBoundingClientRect();
+            const parentBox = element.parentElement!.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+              inset: box.left - parentBox.left,
+              marginLeft: style.marginLeft,
+              rightEdge: box.right,
+              parentRightEdge: parentBox.right,
+            };
+          }),
+        );
+        await expect(nestedGroupContent).toBeVisible();
+        for (const row of nestedGeometry) {
+          expect(row.inset).toBeCloseTo(8 * zoom, 1);
+          expect(row.marginLeft).toBe('8px');
+          expect(row.rightEdge).toBeCloseTo(row.parentRightEdge, 1);
+        }
 
         for (const mode of ['static', 'streaming']) {
           for (const pair of [

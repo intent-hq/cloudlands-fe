@@ -29,6 +29,12 @@
   const expandedGroupProse: ContentBlock[] = [
     { type: 'text', text: '<group:Audit>The first hygiene command failed.</group>' },
   ];
+  const expandedGroupOperationalRows: ContentBlock[] = [
+    { type: 'text', text: '<group:Recovery>' },
+    { type: 'thinking', id: 'nested-thinking', text: 'Inspecting cancellation state' },
+    { type: 'tool_use', id: 'nested-tool', name: 'view', input: { path: 'src/example.ts' } },
+    { type: 'text', text: '</group:Recovery>' },
+  ];
   const tool = [
     { type: 'tool_use', id: 'tool-1', name: 'read_file', input: { path: 'src/example.ts' } },
   ] as ContentBlock[];
@@ -179,6 +185,9 @@
       <div data-testid="group-adjacency"><MessageContent content={grouped} /></div>
       <div data-testid="expanded-group-prose"><MessageContent content={expandedGroupProse} /></div>
       <div data-testid="full-width-tool"><MessageContent content={tool} /></div>
+    </div>
+    <div data-testid="expanded-group-operational-rows">
+      <MessageContent content={expandedGroupOperationalRows} />
     </div>
     <div data-testid="single-operational-cluster">
       <MessageContent content={tool} />
