@@ -2014,7 +2014,10 @@ function findSuggestedPromptsBlocks(content: string): SuggestedPromptsBlock[] {
     }
 
     const trailingCloserMatch = line.match(SUGGESTED_PROMPTS_TRAILING_CLOSER_REGEX);
-    if (trailingCloserMatch) {
+    // An opener-shaped remainder (e.g. `<!-- suggested-prompts -->`) must not
+    // close the block: closing would strip real body text as prompts. Fall
+    // through to the second-opener rescan instead.
+    if (trailingCloserMatch && !SUGGESTED_PROMPTS_OPENER_REGEX.test(trailingCloserMatch[1])) {
       // The remainder before the trailing `-->` is the final body line; the
       // body-text gate runs on the remainder, not the raw line (the raw line
       // always matches the Mermaid-edge pattern).

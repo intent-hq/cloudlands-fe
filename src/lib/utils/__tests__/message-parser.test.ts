@@ -1159,6 +1159,20 @@ Some trailing content.`;
     expect(hasSuggestedPrompts(content)).toBe(false);
   });
 
+  it('should not close a block on an opener-shaped trailing-closer remainder', () => {
+    const content = [
+      '<!-- suggested-prompts',
+      'Some real response text here.',
+      '<!-- suggested-prompts -->',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+    expect(hasSuggestedPrompts(content)).toBe(false);
+  });
+
   it('should not close an open block on an embedded --> mid-line', () => {
     const content = ['<!-- suggested-prompts', 'A --> B', 'Run tests'].join('\n');
 
