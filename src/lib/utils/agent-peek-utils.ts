@@ -6,8 +6,6 @@
  */
 
 import type { AgentSession, AgentMessage, FileOperation, ToolUseBlock } from '$shared/types';
-import { AuggieTextParser } from './auggie-text-parser';
-import { stripGroupTags } from './text-utils';
 import { m } from '$shared/paraglide/messages.js';
 
 export interface AgentPeekData {
@@ -17,142 +15,57 @@ export interface AgentPeekData {
   lastUserMessage: string;
   lastResponse: string;
   /**
-   * Latest tool_use block from the most recent assistant message when the
-   * trailing meaningful block is a tool_use (i.e. after ignoring empty text
-   * and tool_result blocks). Set even when the message has earlier text,
-   * in which case `lastResponse` is cleared so consumers render the tool
-   * icon/label preview instead of stale prior text.
+   * Most recent tool call to preview, from the wire `lastToolUse`
+   * (AgentLite, PROTOCOL §5.5 / the tool-call arm of `agent:stream:activity`).
+   * While streaming it is the live overlay and `lastResponse` is cleared;
+   * idle it is only set when there is no response text (response text keeps
+   * precedence). Consumers render the tool icon/label preview.
    */
   lastToolUse?: ToolUseBlock;
   fileChanges: FileOperation[];
   messages: AgentMessage[];
   /** Completion report set via report_to_parent tool */
   completionReport?: string;
-  /** Digest extracted from <agent_digest> tag in last message */
+  /** Wire `digest` (AgentLite, PROTOCOL §5.5), served verbatim */
   digest?: string;
   /** ID of the parent agent that created this agent */
   parentAgentId?: string;
   /**
    * Role of the session's newest user/assistant message: the wire
-   * `lastMessageRole` (AgentLite, PROTOCOL §5.5) when present, else derived
-   * from the loaded transcript (system/error rows are transparent).
-   * Undefined when neither source is available (older daemon, empty
-   * transcript) so consumers keep their existing behavior.
+   * `lastMessageRole` (AgentLite, PROTOCOL §5.5), served verbatim.
+   * Undefined when the daemon omits it so consumers keep their existing
+   * behavior.
    */
   lastMessageRole?: 'user' | 'assistant';
 }
 
 /**
- * Extract peek data from an agent session
+ * Extract peek data from an agent session.
+ *
+ * Preview fields (`lastResponse`, `lastUserMessage`, `digest`, `lastToolUse`,
+ * `lastMessageRole`) are served verbatim from the wire AgentLite fields
+ * (PROTOCOL §5.5) — the daemon already cleans them (`clean_response_text`
+ * strips `<agent_digest>`, suggested-prompts blocks, group tags). The loaded
+ * transcript is never consulted to re-derive previews; absent wire fields
+ * yield an empty preview.
  */
 export function getAgentPeekData(agent: AgentSession | null | undefined): AgentPeekData | null {
   if (!agent) return null;
 
-  // Extract last user message and last assistant response from messages array
-  let lastUserMessage = '';
-  let lastResponse = '';
+  const lastUserMessage = agent.lastUserMessage || '';
+  let lastResponse = agent.lastAgentResponse || '';
   let lastToolUse: ToolUseBlock | undefined;
-  let digest: string | undefined;
-  let lastMessageRole: 'user' | 'assistant' | undefined =
+  const digest = agent.digest || undefined;
+  const lastMessageRole: 'user' | 'assistant' | undefined =
     agent.lastMessageRole === 'user' || agent.lastMessageRole === 'assistant'
       ? agent.lastMessageRole
       : undefined;
 
-  // Transcript-derived fallback for loaded sessions when the wire field is
-  // absent (older daemon): role of the newest user/assistant message.
-  if (!lastMessageRole && agent.messages && agent.messages.length > 0) {
-    for (let i = agent.messages.length - 1; i >= 0; i--) {
-      const role = agent.messages[i].role;
-      if (role === 'user' || role === 'assistant') {
-        lastMessageRole = role;
-        break;
-      }
-    }
-  }
-
-  let foundUserMessage = false;
-  let foundAssistantMessage = false;
-
-  if (agent.messages && agent.messages.length > 0) {
-    // Find the last user message
-    for (let i = agent.messages.length - 1; i >= 0; i--) {
-      const msg = agent.messages[i];
-      if (msg.role === 'user') {
-        foundUserMessage = true;
-        lastUserMessage = extractMessageText(msg);
-        break;
-      }
-    }
-
-    // Find the last assistant response and extract digest if present
-    for (let i = agent.messages.length - 1; i >= 0; i--) {
-      const msg = agent.messages[i];
-      if (msg.role === 'assistant') {
-        foundAssistantMessage = true;
-        const fullText = extractMessageText(msg);
-        // Try to extract <agent_digest> from the message
-        const extracted = AuggieTextParser.extractDigest(fullText);
-        if (extracted.digest) {
-          digest = extracted.digest;
-        }
-
-        // Prefer previewing the latest block. If the assistant most recently
-        // emitted a tool_use, surface it as the preview (consumers render a
-        // proper tool icon) instead of the older text earlier in the message.
-        const latest = getLatestMeaningfulBlock(msg);
-        if (latest && (latest as any).type === 'tool_use') {
-          lastToolUse = latest as ToolUseBlock;
-          lastResponse = '';
-        } else {
-          lastResponse = extracted.digest ? extracted.cleanedText : fullText;
-        }
-        break;
-      }
-    }
-  }
-
-  // Wire-field fallback (AgentLite, PROTOCOL §5.5): when the loaded transcript
-  // has no assistant message (e.g. an idle delegated agent whose session only
-  // holds the initial user message), the session's wire-persisted preview
-  // fields are the freshest source. Transcript-derived values stay
-  // authoritative whenever the transcript contains the corresponding role.
-  if (!foundAssistantMessage) {
-    if (agent.lastAgentResponse) {
-      const extracted = AuggieTextParser.extractDigest(agent.lastAgentResponse);
-      if (extracted.digest) {
-        digest = extracted.digest;
-        lastResponse = extracted.cleanedText;
-      } else {
-        lastResponse = agent.lastAgentResponse;
-      }
-    }
-    // The daemon strips <agent_digest> spans from `lastAgentResponse` at the
-    // source and serves the digest as the separate wire `digest` field, so
-    // the extraction above is defensive-only; prefer its result when present.
-    if (!digest && agent.digest) {
-      digest = agent.digest;
-    }
-    // Persisted tool-call preview (AgentLite `lastToolUse`, §5.5 — also
-    // applied by `agent:last-message`): a never-opened agent whose newest
-    // message ended on a tool call has no response text to preview, so the
-    // wire preview drives the tool chip the same way a loaded transcript's
-    // trailing tool_use block would. Response text keeps precedence
-    // (mirrors the card's last-response > last-tool order); the streaming
-    // overlay below still wins while a turn is in flight.
-    if (!lastResponse && !agent.isStreaming && agent.lastToolUse?.name) {
-      lastToolUse = {
-        type: 'tool_use',
-        id: `wire-tool:${agent.id}`,
-        name: agent.lastToolUse.name,
-        input: agent.lastToolUse.input ?? {},
-      };
-    }
-  }
-  // The daemon's in-flight activity overlay is fresher than the loaded
-  // transcript. It is cleared at turn boundaries, so only use it while the
-  // session is actively streaming; an idle leftover must not displace the
-  // persisted final response.
   if (agent.isStreaming && agent.lastToolUse?.name) {
+    // The daemon's in-flight activity overlay is fresher than the persisted
+    // preview. It is cleared at turn boundaries, so only use it while the
+    // session is actively streaming; an idle leftover must not displace the
+    // persisted final response.
     lastToolUse = {
       type: 'tool_use',
       id: `live-tool:${agent.id}`,
@@ -160,10 +73,18 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
       input: {},
     };
     lastResponse = '';
-  }
-
-  if (!foundUserMessage && agent.lastUserMessage) {
-    lastUserMessage = agent.lastUserMessage;
+  } else if (!lastResponse && !agent.isStreaming && agent.lastToolUse?.name) {
+    // Persisted tool-call preview (AgentLite `lastToolUse`, §5.5 — also
+    // applied by `agent:last-message`): an agent whose newest message ended
+    // on a tool call has no response text to preview, so the wire preview
+    // drives the tool chip. Response text keeps precedence (mirrors the
+    // card's last-response > last-tool order).
+    lastToolUse = {
+      type: 'tool_use',
+      id: `wire-tool:${agent.id}`,
+      name: agent.lastToolUse.name,
+      input: agent.lastToolUse.input ?? {},
+    };
   }
 
   // Extract completion report and parent agent from metadata if available
@@ -188,42 +109,6 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
     parentAgentId,
     lastMessageRole,
   };
-}
-
-/**
- * Extract text content from a message. Returns an empty string if the message
- * has no text blocks (callers can fall back to tool_use previews separately).
- */
-function extractMessageText(msg: AgentMessage): string {
-  if (msg.contentBlocks && Array.isArray(msg.contentBlocks)) {
-    return stripGroupTags(
-      msg.contentBlocks
-        .filter((block: any) => block.type === 'text')
-        .map((block: any) => block.text || block.content || '')
-        .join(' ')
-        .trim(),
-    );
-  }
-  return '';
-}
-
-/**
- * Return the most recent meaningful content block from a message, preferring
- * tool_use / non-empty text and skipping tool_result entries. Used to decide
- * whether the preview should render a tool icon or plain text.
- */
-function getLatestMeaningfulBlock(msg: AgentMessage): unknown {
-  if (!msg.contentBlocks || !Array.isArray(msg.contentBlocks)) return undefined;
-  for (let i = msg.contentBlocks.length - 1; i >= 0; i--) {
-    const block: any = msg.contentBlocks[i];
-    if (block.type === 'tool_use') return block;
-    if (block.type === 'text') {
-      const text = (block.text || block.content || '').trim();
-      if (text) return block;
-    }
-    // tool_result and empty text blocks are skipped
-  }
-  return undefined;
 }
 
 /**

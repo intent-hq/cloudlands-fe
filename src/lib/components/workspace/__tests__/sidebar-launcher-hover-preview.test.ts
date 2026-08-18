@@ -29,23 +29,14 @@ describe('sidebar launcher hover previews', () => {
     );
   });
 
-  it('shows the latest user message and prefers the streaming response', () => {
+  it('shows the wire lastUserMessage and prefers the streaming response', () => {
+    // The preview comes from the wire lastUserMessage (AgentLite, PROTOCOL
+    // §5.5) — the loaded transcript is never consulted to re-derive it.
     const agent = {
       id: 'agent-1',
-      messages: [
-        {
-          id: 'user-1',
-          role: 'user',
-          timestamp: '2026-07-28T00:00:00.000Z',
-          contentBlocks: [{ type: 'text', text: '[Current view] Review @context[note] this UI' }],
-        },
-        {
-          id: 'assistant-1',
-          role: 'assistant',
-          timestamp: '2026-07-28T00:00:01.000Z',
-          contentBlocks: [{ type: 'text', text: 'Older response' }],
-        },
-      ],
+      messages: [],
+      lastUserMessage: '[Current view] Review @context[note] this UI',
+      lastAgentResponse: 'Older response',
     } as AgentSession;
 
     expect(getAgentLauncherPreview(agent, 'Streaming response')).toEqual({
