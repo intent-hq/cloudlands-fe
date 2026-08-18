@@ -29,7 +29,6 @@
     faCompress,
     faTableColumns,
     faGripLines,
-    faThumbtack,
     faArrowLeft,
     faArrowRight,
     faCheck,
@@ -52,7 +51,6 @@
   import {
     reopenClosedTab,
     restorePanelDragLayout,
-    setPanelPinned,
     toggleExpandPanel,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import {
@@ -93,10 +91,6 @@
   } from '$features/agent/components/agent-avatar/avatar-state';
   import { getAgentAvatarStateLabel } from '$features/agent/components/agent-avatar/avatar-state-label';
   import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
-  import {
-    selectPanelOpenMode,
-    selectPanelStackDirection,
-  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
   import { toNativePath } from '$lib/utils/path-utils';
@@ -115,9 +109,6 @@
     getPanelIdentityContext,
     PANEL_IDENTITY_SEARCH_THRESHOLD,
   } from './panel-identity-history';
-
-  const panelOpenMode$ = selectPanelOpenMode();
-  const panelStackDirection$ = selectPanelStackDirection();
 
   // Detect platform for file manager labels
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -146,7 +137,6 @@
     tabs: PanelTab[];
     activeTabId: string | null;
     panelId: string;
-    pinned?: boolean;
     workspaceId: string;
     layoutId?: string;
     isFocused?: boolean;
@@ -187,7 +177,6 @@
     tabs,
     activeTabId,
     panelId,
-    pinned = false,
     workspaceId,
     layoutId,
     isFocused = false,
@@ -390,9 +379,7 @@
 
   const identityTabs = $derived([
     ...tabs,
-    ...(!pinned
-      ? $recentlyClosed$.filter((entry) => entry.panelId === panelId).map((entry) => entry.tab)
-      : []),
+    ...$recentlyClosed$.filter((entry) => entry.panelId === panelId).map((entry) => entry.tab),
   ]);
   const backPanelTabId = $derived(getAdjacentPanelTabId(identityTabs, activeTabId, 1));
   const forwardPanelTabId = $derived(getAdjacentPanelTabId(identityTabs, activeTabId, -1));
@@ -1337,39 +1324,6 @@
   }
 </script>
 
-{#snippet panelPinButton()}
-  <Tooltip
-    content={pinned
-      ? m.layout_panelTabBar_unpinPanel_label()
-      : m.layout_panelTabBar_pinPanel_label()}
-    side="bottom"
-    delayDuration={300}
-  >
-    <Button
-      variant="ghost-light"
-      size="icon-sm"
-      class={pinned ? 'text-primary' : 'text-muted-foreground opacity-40 hover:opacity-100'}
-      onclick={() =>
-        appStore.dispatch(
-          setPanelPinned(workspaceId, panelId, !pinned, undefined, $panelStackDirection$),
-        )}
-      aria-label={pinned
-        ? m.layout_panelTabBar_unpinPanel_label()
-        : m.layout_panelTabBar_pinPanel_label()}
-      aria-pressed={pinned}
-      data-panel-pin
-    >
-      <span
-        class="inline-flex transition-transform duration-[var(--motion-fast)] motion-reduce:transition-none"
-        style:transform={pinned ? 'rotate(-45deg)' : undefined}
-        data-panel-pin-icon
-      >
-        <Fa icon={faThumbtack} size="xs" />
-      </span>
-    </Button>
-  </Tooltip>
-{/snippet}
-
 {#snippet panelActionsDropdown()}
   <DropdownMenu align="end" side="bottom" contentClass="w-56">
     <!-- i18n-ignore -->
@@ -1413,18 +1367,6 @@
       </div>
       <div data-panel-actions-section="actions">
         {@render contentActions?.actions?.()}
-        <Menu.CommandItem
-          icon={faThumbtack}
-          label={pinned
-            ? m.layout_panelTabBar_unpinPanel_label()
-            : m.layout_panelTabBar_pinPanel_label()}
-          onclick={() => {
-            appStore.dispatch(
-              setPanelPinned(workspaceId, panelId, !pinned, undefined, $panelStackDirection$),
-            );
-            close();
-          }}
-        />
         <Menu.CommandItem
           icon={faTableColumns}
           label={m.layout_panelTabBar_splitRight_label()}
@@ -1801,9 +1743,6 @@
         class="panel-actions flex items-center gap-0 px-1 opacity-30 group-hover/tabbar:opacity-100 focus-within:opacity-100 transition-opacity z-20"
         data-panel-header-actions
       >
-        {#if $panelOpenMode$ === 'pin'}
-          {@render panelPinButton()}
-        {/if}
         {@render contentActions?.primary?.()}
         {@render panelActionsDropdown()}
         {@render panelCloseButton()}
@@ -2072,9 +2011,6 @@
 
       <!-- Right: stable content controls, grouped actions, and close. -->
       <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
-        {#if $panelOpenMode$ === 'pin'}
-          {@render panelPinButton()}
-        {/if}
         {@render contentActions?.primary?.()}
         {@render panelActionsDropdown()}
         {@render panelCloseButton()}

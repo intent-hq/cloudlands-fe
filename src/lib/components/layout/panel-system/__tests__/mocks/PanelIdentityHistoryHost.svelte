@@ -168,7 +168,6 @@
     {activeTabId}
     panelId="panel-history"
     {workspaceId}
-    {pinned}
     isFocused
     onTabClick={(tabId) => (activeTabId = tabId)}
     onTabRename={() => {}}

@@ -12,10 +12,6 @@ import { m } from '$shared/paraglide/messages.js';
 import { selectPanel } from '../../panel-layout/panel-layout-selectors';
 import { openTabInNewRootColumn } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
-import {
-  selectPanelOpenMode,
-  selectPanelStackDirection,
-} from '../../user-preferences/user-preferences-selectors';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import {
   chatChangesDedupId,
@@ -45,8 +41,6 @@ function* openWorkspaceTab(
     openTabInNewRootColumn(workspaceId, tab, {
       force: true,
       sourcePanelId,
-      panelOpenMode: yield* selectPanelOpenMode.effect(),
-      panelStackDirection: yield* selectPanelStackDirection.effect(),
     }),
   );
 }

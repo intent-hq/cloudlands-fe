@@ -11,8 +11,7 @@ import {
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setNotificationEnabled,
-  setPanelOpenMode,
-  setPanelStackDirection,
+  setPanelColumnCount,
   setNoteFontStyle,
   setLanguagePreference,
   setShowArchived,
@@ -30,8 +29,6 @@ import {
   toggleShowReasoningBlocks,
   setUpdateChannel,
   toggleSpellcheck,
-  togglePanelOpenMode,
-  togglePanelStackDirection,
   type UserPreferencesState,
   userPreferencesReducer,
 } from './user-preferences-slice';
@@ -53,8 +50,7 @@ import {
   selectNoteFontStyleLabel,
   selectNotificationEnabled,
   selectNotificationVolume,
-  selectPanelOpenMode,
-  selectPanelStackDirection,
+  selectPanelColumnCount,
   selectShowArchived,
   selectShowReasoningBlocks,
   selectSoundEnabled,
@@ -119,31 +115,20 @@ describe('userPreferencesReducer', () => {
     });
   });
 
-  describe('panel open mode', () => {
-    it('defaults to normal and supports set and toggle actions', () => {
-      expect(initialState.panelOpenMode).toBe('normal');
-      const pinned = userPreferencesReducer(initialState, setPanelOpenMode('pin'));
-      expect(pinned.panelOpenMode).toBe('pin');
-      expect(userPreferencesReducer(pinned, togglePanelOpenMode()).panelOpenMode).toBe('normal');
+  describe('panel column count', () => {
+    it('defaults to one and accepts counts from one through four', () => {
+      expect(initialState.panelColumnCount).toBe(1);
+      expect(userPreferencesReducer(initialState, setPanelColumnCount(4)).panelColumnCount).toBe(4);
     });
 
-    it('selects normal for legacy state without the preference', () => {
-      expect(selectPanelOpenMode.select({ userPreferences: undefined } as any)).toBe('normal');
-    });
-  });
-
-  describe('panel stack direction', () => {
-    it('defaults to right and supports set and toggle actions', () => {
-      expect(initialState.panelStackDirection).toBe('right');
-      const left = userPreferencesReducer(initialState, setPanelStackDirection('left'));
-      expect(left.panelStackDirection).toBe('left');
-      expect(userPreferencesReducer(left, togglePanelStackDirection()).panelStackDirection).toBe(
-        'right',
-      );
+    it('rejects invalid persisted or dispatched counts', () => {
+      expect(userPreferencesReducer(initialState, setPanelColumnCount(0))).toBe(initialState);
+      expect(userPreferencesReducer(initialState, setPanelColumnCount(5))).toBe(initialState);
+      expect(userPreferencesReducer(initialState, setPanelColumnCount(2.5))).toBe(initialState);
     });
 
-    it('selects right for legacy state without the preference', () => {
-      expect(selectPanelStackDirection.select({ userPreferences: undefined } as any)).toBe('right');
+    it('selects one for legacy state without the preference', () => {
+      expect(selectPanelColumnCount.select({ userPreferences: undefined } as any)).toBe(1);
     });
   });
 

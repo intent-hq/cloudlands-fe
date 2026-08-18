@@ -69,10 +69,7 @@ import {
   resolveUserPanelCanvasResize,
 } from './panel-layout-width-provenance';
 import { findEquivalentPanelTab, type EquivalentPanelTab } from './panel-tab-identity';
-import type {
-  PanelOpenMode,
-  PanelStackDirection,
-} from '../user-preferences/user-preferences-slice';
+import type { PanelColumnCount } from '../user-preferences/user-preferences-slice';
 import { rebaseRequestedUrlForNavigation } from './browser-tab-rehydration';
 
 // ============================================================================
@@ -262,8 +259,6 @@ export const openTabInNewRootColumn = createAction(
       availableCanvasWidth?: number;
       adaptiveFirstChat?: boolean;
       force?: boolean;
-      panelOpenMode?: PanelOpenMode;
-      panelStackDirection?: PanelStackDirection;
       allowDuplicate?: boolean;
       newPanelId?: string;
       newTabId?: string;
@@ -276,8 +271,6 @@ export const openTabInNewRootColumn = createAction(
     availableCanvasWidth: options?.availableCanvasWidth,
     adaptiveFirstChat: options?.adaptiveFirstChat ?? false,
     force: options?.force ?? false,
-    panelOpenMode: options?.panelOpenMode ?? 'normal',
-    panelStackDirection: options?.panelStackDirection ?? 'right',
     ...(options?.allowDuplicate === undefined ? {} : { allowDuplicate: options.allowDuplicate }),
     sourcePanelId: options?.sourcePanelId,
     newPanelId: options?.newPanelId ?? generatePanelId(),
@@ -517,10 +510,9 @@ export const splitPanel = createAction(
 
 export const openBlankWorkingPanel = createAction(
   'panelLayout/openBlankWorkingPanel',
-  (wsId: string, timestamp?: number, panelStackDirection: PanelStackDirection = 'right') => ({
+  (wsId: string, timestamp?: number) => ({
     wsId,
     newPanelId: generatePanelId(),
-    panelStackDirection,
     timestamp: timestamp ?? Date.now(),
   }),
 );
@@ -534,30 +526,14 @@ export const closePanel = createAction(
   }),
 );
 
-export const collapseToReusablePanel = createAction(
-  'panelLayout/collapseToReusablePanel',
-  (wsId: string, timestamp?: number, panelStackDirection: PanelStackDirection = 'right') => ({
+export const reconcilePanelColumnCount = createAction(
+  'panelLayout/reconcilePanelColumnCount',
+  (wsId: string, count: PanelColumnCount, timestamp?: number, recordHistory = true) => ({
     wsId,
-    panelStackDirection,
+    count,
+    newPanelIds: Array.from({ length: 3 }, () => generatePanelId()),
     timestamp: timestamp ?? Date.now(),
-  }),
-);
-
-export const setPanelPinned = createAction(
-  'panelLayout/setPanelPinned',
-  (
-    wsId: string,
-    panelId: string,
-    pinned: boolean,
-    timestamp?: number,
-    panelStackDirection: PanelStackDirection = 'right',
-  ) => ({
-    wsId,
-    panelId,
-    pinned,
-    panelStackDirection,
-    requestId: generateTabId(),
-    timestamp: timestamp ?? Date.now(),
+    recordHistory,
   }),
 );
 
@@ -887,46 +863,138 @@ function closePanelHelper(
   };
 }
 
-function panelIsPinned(panel: PanelState): boolean {
-  return panel.pinned === true || panel.tabs.some((tab) => tab.closable === false);
+function createFixedColumnRoot(panelIds: string[]): PanelLayoutNode {
+  if (panelIds.length === 1) return { type: 'panel', panelId: panelIds[0] };
+  return {
+    type: 'split',
+    direction: 'horizontal',
+    children: panelIds.map((panelId) => ({ type: 'panel' as const, panelId })),
+    sizes: panelIds.map(() => 100 / panelIds.length),
+  };
 }
 
-function collapseWorkspaceToReusablePanel(
-  workspace: WorkspacePanelLayoutState,
-  timestamp: number,
-  preferredReusableId?: string,
-  dropEmptyReusable = false,
-  panelStackDirection: PanelStackDirection = 'right',
-): WorkspacePanelLayoutState {
-  const order = getPanelOrder(workspace.root);
-  const unpinnedIds = order.filter((panelId) => {
-    const panel = workspace.panels[panelId];
-    return panel && !panelIsPinned(panel);
-  });
-  if (unpinnedIds.length === 0) return workspace;
-  const reusableId =
-    preferredReusableId && unpinnedIds.includes(preferredReusableId)
-      ? preferredReusableId
-      : workspace.focusedPanelId && unpinnedIds.includes(workspace.focusedPanelId)
-        ? workspace.focusedPanelId
-        : unpinnedIds[0];
-  let next = workspace;
-  for (const panelId of unpinnedIds) {
-    if (panelId !== reusableId) next = closePanelHelper(next, panelId, timestamp);
-  }
-  if (
-    dropEmptyReusable &&
-    next.panels[reusableId]?.tabs.length === 0 &&
-    Object.keys(next.panels).length > 1
-  ) {
-    return closePanelHelper(next, reusableId, timestamp);
-  }
-  const root = movePanelToRootEdgeInLayout(
-    next.root,
-    reusableId,
-    panelStackDirection === 'left' ? 'before' : 'after',
+function isFixedColumnRoot(root: PanelLayoutNode, panelIds: string[]): boolean {
+  if (panelIds.length === 1) return root.type === 'panel' && root.panelId === panelIds[0];
+  return (
+    root.type === 'split' &&
+    root.direction === 'horizontal' &&
+    root.children.length === panelIds.length &&
+    root.children.every(
+      (child, index) => child.type === 'panel' && child.panelId === panelIds[index],
+    )
   );
-  return root ? { ...next, root } : next;
+}
+
+function stripLegacyPanelPin(panel: PanelState): PanelState {
+  const { pinned: _legacyPinned, ...clean } = panel as PanelState & { pinned?: unknown };
+  return clean;
+}
+
+function reconcileWorkspacePanelColumns(
+  workspace: WorkspacePanelLayoutState,
+  count: PanelColumnCount,
+  newPanelIds: string[],
+  timestamp: number,
+  recordHistory: boolean,
+): WorkspacePanelLayoutState {
+  const restored = restoreExpandedWorkspaceLayout(workspace);
+  const originalOrder = getPanelOrder(restored.root).filter((panelId) => restored.panels[panelId]);
+  if (originalOrder.length === 0) return restored;
+  const hasLegacyPin = Object.values(restored.panels).some((panel) => 'pinned' in panel);
+  if (
+    originalOrder.length === count &&
+    isFixedColumnRoot(restored.root, originalOrder) &&
+    !hasLegacyPin
+  ) {
+    return restored;
+  }
+
+  const next = recordHistory ? saveToHistory(restored, timestamp) : restored;
+  let panels = Object.fromEntries(
+    Object.entries(next.panels).map(([panelId, panel]) => [panelId, stripLegacyPanelPin(panel)]),
+  );
+  const panelIds = originalOrder.slice(0, count);
+  const removedPanelIds = originalOrder.slice(count);
+  const survivingRightmostId = panelIds.at(-1);
+
+  if (survivingRightmostId && removedPanelIds.length > 0) {
+    const survivor = panels[survivingRightmostId];
+    const seenTabIds = new Set(survivor.tabs.map((tab) => tab.id));
+    const displacedTabs = removedPanelIds.flatMap((panelId) => panels[panelId]?.tabs ?? []);
+    const mergedTabs = [...survivor.tabs];
+    for (const tab of displacedTabs) {
+      if (!seenTabIds.has(tab.id)) {
+        seenTabIds.add(tab.id);
+        mergedTabs.push(tab);
+      }
+    }
+    const fallbackActiveTabId = removedPanelIds
+      .map((panelId) => panels[panelId]?.activeTabId)
+      .find((tabId): tabId is string => Boolean(tabId && seenTabIds.has(tabId)));
+    panels[survivingRightmostId] = {
+      ...survivor,
+      tabs: mergedTabs,
+      activeTabId: survivor.activeTabId ?? fallbackActiveTabId ?? mergedTabs[0]?.id ?? null,
+      pristine: mergedTabs.length === 0 ? survivor.pristine : false,
+    };
+    for (const panelId of removedPanelIds) delete panels[panelId];
+  }
+
+  while (panelIds.length < count) {
+    const panelId = newPanelIds[panelIds.length - originalOrder.length];
+    if (!panelId) break;
+    panelIds.push(panelId);
+    panels[panelId] = { id: panelId, tabs: [], activeTabId: null, pristine: true };
+  }
+
+  const removedSet = new Set(removedPanelIds);
+  const focusedPanelId =
+    next.focusedPanelId && !removedSet.has(next.focusedPanelId)
+      ? next.focusedPanelId
+      : (survivingRightmostId ?? panelIds[0] ?? null);
+  const previousColumnCount = originalOrder.length;
+  const nextColumnCount = panelIds.length;
+  const canvasWidth = (() => {
+    if (next.canvasWidth === null || next.canvasWidthSource === 'intrinsic') return null;
+    const contentWidth = Math.max(
+      0,
+      next.canvasWidth - PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, previousColumnCount - 1),
+    );
+    return (
+      contentWidth * (nextColumnCount / previousColumnCount) +
+      PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, nextColumnCount - 1)
+    );
+  })();
+  const root = isFixedColumnRoot(next.root, panelIds) ? next.root : createFixedColumnRoot(panelIds);
+
+  return {
+    ...next,
+    root,
+    panels,
+    focusedPanelId,
+    canvasWidth,
+    canvasWidthSource: next.canvasWidthSource === 'intrinsic' ? null : next.canvasWidthSource,
+    recentlyClosed: next.recentlyClosed.map((entry) =>
+      removedSet.has(entry.panelId) && survivingRightmostId
+        ? { ...entry, panelId: survivingRightmostId }
+        : entry,
+    ),
+    focusHistory: next.focusHistory.map((entry) =>
+      removedSet.has(entry.panelId) && survivingRightmostId
+        ? { ...entry, panelId: survivingRightmostId }
+        : entry,
+    ),
+    expandedPanelId: null,
+    savedSizesBeforeExpand: [],
+    savedCanvasWidthBeforeExpand: undefined,
+    savedCanvasWidthSourceBeforeExpand: undefined,
+    pendingPanelReveal:
+      next.pendingPanelReveal &&
+      removedSet.has(next.pendingPanelReveal.panelId) &&
+      survivingRightmostId
+        ? { ...next.pendingPanelReveal, panelId: survivingRightmostId }
+        : next.pendingPanelReveal,
+  };
 }
 
 /** Add an entry to focus history using the timestamp generated before dispatch. */
@@ -1240,12 +1308,11 @@ function selfDispatch(
   return _reducerRef(state, action);
 }
 
-function openAndPinNewWorkspaceInitialAgent(
+function openNewWorkspaceInitialAgent(
   state: PanelLayoutSliceState,
   wsId: string,
   agentId: string,
   title: string,
-  panelId: string,
   tabId: string,
   timestamp: number,
 ): PanelLayoutSliceState {
@@ -1256,60 +1323,20 @@ function openAndPinNewWorkspaceInitialAgent(
     workspaceId: wsId,
     closable: true,
   };
-  const before = getWorkspaceState(state, wsId);
-  const pristinePanelId = getPanelOrder(before.root).find((candidateId) => {
-    const panel = before.panels[candidateId];
-    return panel?.pristine === true && panel.tabs.length === 0 && !panelIsPinned(panel);
-  });
-  const opened = pristinePanelId
-    ? selfDispatch(state, openTab(wsId, tab, pristinePanelId, tabId, true, timestamp))
-    : selfDispatch(
-        state,
-        openTabInNewRootColumn(
-          wsId,
-          tab,
-          { force: true, newPanelId: panelId, newTabId: tabId },
-          timestamp,
-        ),
-      );
-  const revealPanelId = getWorkspaceState(opened, wsId).pendingPanelReveal?.panelId;
-  if (!revealPanelId) return opened;
-  const pinned = selfDispatch(opened, setPanelPinned(wsId, revealPanelId, true, timestamp));
-  const initialAgentPanelId = Object.values(getWorkspaceState(pinned, wsId).panels).find((panel) =>
-    panel.tabs.some((panelTab) => panelTab.type === 'agent' && panelTab.agentId === agentId),
-  )?.id;
-  let cleaned = pinned;
-  for (const candidate of Object.values(getWorkspaceState(cleaned, wsId).panels)) {
-    if (
-      candidate.id !== initialAgentPanelId &&
-      candidate.pristine === true &&
-      candidate.tabs.length === 0
-    ) {
-      cleaned = selfDispatch(cleaned, closePanel(wsId, candidate.id, timestamp));
-    }
-  }
-  const workspace = getWorkspaceState(cleaned, wsId);
-  const lifecycle = workspace.newWorkspaceLifecycle;
-  const reusablePanelId = getPanelOrder(workspace.root).find(
-    (candidateId) =>
-      candidateId !== initialAgentPanelId && workspace.panels[candidateId]?.pinned !== true,
+  const current = getWorkspaceState(state, wsId);
+  const opened = selfDispatch(
+    state,
+    openTab(wsId, tab, current.focusedPanelId ?? undefined, tabId, true, timestamp),
   );
+  const workspace = getWorkspaceState(opened, wsId);
+  const lifecycle = workspace.newWorkspaceLifecycle;
   const nextWorkspace = {
     ...workspace,
-    pendingFocusTabId:
-      (initialAgentPanelId ? workspace.panels[initialAgentPanelId]?.activeTabId : null) ??
-      workspace.pendingFocusTabId,
     newWorkspaceLifecycle: lifecycle
       ? { ...lifecycle, initialAgentId: agentId, initialAgentPending: false }
       : lifecycle,
   };
-  return setWorkspaceState(
-    cleaned,
-    wsId,
-    reusablePanelId && initialAgentPanelId
-      ? applyCanonicalDefaultPairGeometry(nextWorkspace, reusablePanelId, initialAgentPanelId)
-      : nextWorkspace,
-  );
+  return setWorkspaceState(opened, wsId, nextWorkspace);
 }
 
 function applyCanonicalDefaultPairGeometry(
@@ -1382,7 +1409,6 @@ panelLayoutReducer.with(bootstrapNewWorkspaceLayout, (state, { payload }) => {
         tabs: [],
         activeTabId: null,
         pristine: true,
-        pinned: false,
       },
     },
     focusedPanelId: placeholderPanelId,
@@ -1397,12 +1423,11 @@ panelLayoutReducer.with(bootstrapNewWorkspaceLayout, (state, { payload }) => {
     },
   });
   return initialAgentId
-    ? openAndPinNewWorkspaceInitialAgent(
+    ? openNewWorkspaceInitialAgent(
         bootstrapped,
         wsId,
         initialAgentId,
         initialAgentTitle,
-        panelId,
         tabId,
         timestamp,
       )
@@ -1413,7 +1438,7 @@ panelLayoutReducer.with(resolveNewWorkspaceInitialAgent, (state, { payload }) =>
   const ws = getWorkspaceState(state, wsId);
   const lifecycle = ws.newWorkspaceLifecycle;
   if (!lifecycle?.initialAgentPending) return state;
-  return openAndPinNewWorkspaceInitialAgent(state, wsId, agentId, title, panelId, tabId, timestamp);
+  return openNewWorkspaceInitialAgent(state, wsId, agentId, title, tabId, timestamp);
 });
 panelLayoutReducer.with(setRestoreStatus, (state, { payload: [wsId, restoreStatus] }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -1485,8 +1510,6 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
     availableCanvasWidth,
     adaptiveFirstChat,
     force,
-    panelOpenMode,
-    panelStackDirection,
     newPanelId,
     newTabId,
     timestamp,
@@ -1504,78 +1527,6 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
       wsId,
       activateEquivalentTab(ws, existing, tab, newTabId, timestamp),
     );
-  }
-
-  if (panelOpenMode === 'pin') {
-    const newTab: PanelTab = { ...tab, id: newTabId };
-    ws = saveToHistory(ws, timestamp);
-    ws = collapseWorkspaceToReusablePanel(ws, timestamp, undefined, false, panelStackDirection);
-    const reusablePanelId = getPanelOrder(ws.root).find((panelId) => {
-      const panel = ws.panels[panelId];
-      return panel && !panelIsPinned(panel);
-    });
-
-    if (reusablePanelId) {
-      const panel = ws.panels[reusablePanelId];
-      const closed = panel.tabs
-        .filter((oldTab) => oldTab.closable !== false)
-        .map((oldTab) => ({ tab: { ...oldTab }, panelId: reusablePanelId, closedAt: timestamp }));
-      const root = movePanelToRootEdgeInLayout(
-        ws.root,
-        reusablePanelId,
-        panelStackDirection === 'left' ? 'before' : 'after',
-      );
-      ws = {
-        ...ws,
-        ...(root ? { root } : {}),
-        panels: {
-          ...ws.panels,
-          [reusablePanelId]: {
-            ...panel,
-            tabs: [newTab],
-            activeTabId: newTabId,
-            pristine: false,
-          },
-        },
-        focusedPanelId: reusablePanelId,
-        pendingFocusTabId: newTabId,
-        pendingPanelReveal: createPanelRevealRequest(reusablePanelId, newTabId, newTabId),
-        recentlyClosed: [...closed, ...ws.recentlyClosed].slice(0, MAX_RECENTLY_CLOSED),
-      };
-      ws = addToFocusHistory(ws, reusablePanelId, newTabId, timestamp);
-      return setWorkspaceState(state, wsId, ws);
-    }
-
-    const existingCanvasWidth =
-      ws.canvasWidth ?? getAutomaticPanelLayoutCanvasWidth(ws.root, ws.panels, 'content');
-    const newPanelWidth = getPanelCreationWidthForType(tab.type);
-    const appendedRoot = appendHorizontalPanelToLayout(
-      ws.root,
-      newPanelId,
-      existingCanvasWidth,
-      newPanelWidth,
-    );
-    const root =
-      movePanelToRootEdgeInLayout(
-        appendedRoot,
-        newPanelId,
-        panelStackDirection === 'left' ? 'before' : 'after',
-      ) ?? appendedRoot;
-    ws = {
-      ...ws,
-      root,
-      panels: {
-        ...ws.panels,
-        [newPanelId]: { id: newPanelId, tabs: [newTab], activeTabId: newTabId },
-      },
-      focusedPanelId: newPanelId,
-      canvasWidth: existingCanvasWidth + newPanelWidth + PANEL_SPLIT_GUTTER_WIDTH,
-      canvasWidthSource: ws.canvasWidthSource === 'intrinsic' ? null : ws.canvasWidthSource,
-      pendingFocusTabId: newTabId,
-      pendingPanelReveal: createPanelRevealRequest(newPanelId, newTabId, newTabId),
-    };
-    ws = addToFocusHistory(ws, newPanelId, newTabId, timestamp);
-    return setWorkspaceState(state, wsId, ws);
   }
 
   const panelIds = Object.keys(ws.panels);
@@ -1649,12 +1600,7 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
   );
   ws = {
     ...ws,
-    root:
-      movePanelToRootEdgeInLayout(
-        appendedRoot,
-        newPanelId,
-        panelStackDirection === 'left' ? 'before' : 'after',
-      ) ?? appendedRoot,
+    root: appendedRoot,
     panels: {
       ...ws.panels,
       [newPanelId]: { id: newPanelId, tabs: [newTab], activeTabId: newTabId },
@@ -2505,100 +2451,40 @@ panelLayoutReducer.with(splitPanel, (state, { payload }) => {
   return setWorkspaceState(state, wsId, ws);
 });
 panelLayoutReducer.with(openBlankWorkingPanel, (state, { payload }) => {
-  const { wsId, newPanelId, timestamp, panelStackDirection } = payload;
+  const { wsId, newPanelId, timestamp } = payload;
   const current = restoreExpandedWorkspaceLayout(getWorkspaceState(state, wsId));
-  const currentReusableId = getPanelOrder(current.root).find((panelId) => {
-    const panel = current.panels[panelId];
-    return panel && !panelIsPinned(panel);
-  });
-  if (
-    currentReusableId &&
-    current.panels[currentReusableId].tabs.length === 0 &&
-    current.panels[currentReusableId].pristine === true
-  ) {
+  const rightmostPanelId = getPanelOrder(current.root).at(-1);
+  if (!rightmostPanelId || !current.panels[rightmostPanelId]) return state;
+  const rightmostPanel = current.panels[rightmostPanelId];
+  if (rightmostPanel.tabs.length === 0 && rightmostPanel.pristine === true) {
     return setWorkspaceState(state, wsId, {
       ...current,
-      focusedPanelId: currentReusableId,
-      pendingPanelReveal: createPanelRevealRequest(currentReusableId, null, newPanelId),
+      focusedPanelId: rightmostPanelId,
+      pendingPanelReveal: createPanelRevealRequest(rightmostPanelId, null, newPanelId),
     });
   }
 
-  const ws = collapseWorkspaceToReusablePanel(
-    saveToHistory(current, timestamp),
-    timestamp,
-    undefined,
-    false,
-    panelStackDirection,
-  );
-  const reusablePanelId = getPanelOrder(ws.root).find((panelId) => {
-    const panel = ws.panels[panelId];
-    return panel && !panelIsPinned(panel);
-  });
-
-  if (reusablePanelId) {
-    const panel = ws.panels[reusablePanelId];
-    const closed = panel.tabs.map((tab) => ({
-      tab: { ...tab },
-      panelId: reusablePanelId,
-      closedAt: timestamp,
-    }));
-    const root = movePanelToRootEdgeInLayout(
-      ws.root,
-      reusablePanelId,
-      panelStackDirection === 'left' ? 'before' : 'after',
-    );
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      ...(root ? { root } : {}),
-      panels: {
-        ...ws.panels,
-        [reusablePanelId]: {
-          ...panel,
-          tabs: [],
-          activeTabId: null,
-          pristine: true,
-          pinned: false,
-        },
-      },
-      focusedPanelId: reusablePanelId,
-      pendingFocusTabId: null,
-      pendingPanelReveal: createPanelRevealRequest(reusablePanelId, null, newPanelId),
-      recentlyClosed: [...closed, ...ws.recentlyClosed].slice(0, MAX_RECENTLY_CLOSED),
-    });
-  }
-
-  const existingCanvasWidth =
-    ws.canvasWidth ?? getAutomaticPanelLayoutCanvasWidth(ws.root, ws.panels, 'content');
-  const appendedRoot = appendHorizontalPanelToLayout(
-    ws.root,
-    newPanelId,
-    existingCanvasWidth,
-    DEFAULT_PANEL_WIDTH,
-  );
-  const root =
-    movePanelToRootEdgeInLayout(
-      appendedRoot,
-      newPanelId,
-      panelStackDirection === 'left' ? 'before' : 'after',
-    ) ?? appendedRoot;
+  const ws = saveToHistory(current, timestamp);
+  const closed = rightmostPanel.tabs.map((tab) => ({
+    tab: { ...tab },
+    panelId: rightmostPanelId,
+    closedAt: timestamp,
+  }));
   return setWorkspaceState(state, wsId, {
     ...ws,
-    root,
     panels: {
       ...ws.panels,
-      [newPanelId]: {
-        id: newPanelId,
+      [rightmostPanelId]: {
+        ...rightmostPanel,
         tabs: [],
         activeTabId: null,
         pristine: true,
-        pinned: false,
       },
     },
-    focusedPanelId: newPanelId,
-    canvasWidth: existingCanvasWidth + DEFAULT_PANEL_WIDTH + PANEL_SPLIT_GUTTER_WIDTH,
-    canvasWidthSource: ws.canvasWidthSource === 'intrinsic' ? null : ws.canvasWidthSource,
+    focusedPanelId: rightmostPanelId,
     pendingFocusTabId: null,
-    pendingPanelReveal: createPanelRevealRequest(newPanelId, null, newPanelId),
+    pendingPanelReveal: createPanelRevealRequest(rightmostPanelId, null, newPanelId),
+    recentlyClosed: [...closed, ...ws.recentlyClosed].slice(0, MAX_RECENTLY_CLOSED),
   });
 });
 // --- Close Panel ---
@@ -2615,48 +2501,17 @@ panelLayoutReducer.with(closePanel, (state, { payload }) => {
   updatedWs = closePanelHelper(updatedWs, panelId, timestamp);
   return setWorkspaceState(state, wsId, updatedWs);
 });
-panelLayoutReducer.with(collapseToReusablePanel, (state, { payload }) => {
-  const { wsId, timestamp, panelStackDirection } = payload;
+panelLayoutReducer.with(reconcilePanelColumnCount, (state, { payload }) => {
+  const { wsId, count, newPanelIds, timestamp, recordHistory } = payload;
   const ws = getWorkspaceState(state, wsId);
-  const collapsed = collapseWorkspaceToReusablePanel(
-    saveToHistory(ws, timestamp),
+  const reconciled = reconcileWorkspacePanelColumns(
+    ws,
+    count,
+    newPanelIds,
     timestamp,
-    undefined,
-    true,
-    panelStackDirection,
+    recordHistory,
   );
-  return collapsed === ws ? state : setWorkspaceState(state, wsId, collapsed);
-});
-panelLayoutReducer.with(setPanelPinned, (state, { payload }) => {
-  const { wsId, panelId, pinned, requestId, timestamp, panelStackDirection } = payload;
-  const ws = getWorkspaceState(state, wsId);
-  const panel = ws.panels[panelId];
-  if (!panel || panel.pinned === pinned) return state;
-  const next = saveToHistory(ws, timestamp);
-  if (!pinned) {
-    const unpinned = collapseWorkspaceToReusablePanel(
-      {
-        ...next,
-        panels: { ...next.panels, [panelId]: { ...panel, pinned: false } },
-      },
-      timestamp,
-      panelId,
-      false,
-      panelStackDirection,
-    );
-    return setWorkspaceState(state, wsId, {
-      ...unpinned,
-      focusedPanelId: panelId,
-      pendingPanelReveal: createPanelRevealRequest(panelId, panel.activeTabId, requestId),
-      canvasWidthSource:
-        unpinned.canvasWidthSource === 'intrinsic' ? null : unpinned.canvasWidthSource,
-    });
-  }
-  return setWorkspaceState(state, wsId, {
-    ...next,
-    panels: { ...next.panels, [panelId]: { ...panel, pinned } },
-    canvasWidthSource: next.canvasWidthSource === 'intrinsic' ? null : next.canvasWidthSource,
-  });
+  return setWorkspaceState(state, wsId, reconciled);
 });
 // --- Update Sizes ---
 panelLayoutReducer.with(movePanel, (state, { payload }) => {
@@ -3069,18 +2924,6 @@ panelLayoutReducer.with(revealDeferredSpecTab, (state, { payload }) => {
         ? { canvasWidth: ws.canvasWidth, canvasWidthSource: 'explicit' as const }
         : {}),
       root,
-      panels: {
-        ...current.panels,
-        [specPanelId]: { ...current.panels[specPanelId], pinned: false },
-        ...(initialAgentPanelId
-          ? {
-              [initialAgentPanelId]: {
-                ...current.panels[initialAgentPanelId],
-                pinned: true,
-              },
-            }
-          : {}),
-      },
       focusedPanelId: specPanelId,
       pendingFocusTabId: specTabId,
       pendingPanelReveal: createPanelRevealRequest(specPanelId, specTabId, tabId),
@@ -3114,10 +2957,7 @@ panelLayoutReducer.with(revealDeferredSpecTab, (state, { payload }) => {
     workspaceId: wsId,
     closable: true,
   };
-  const reusablePanelId = getPanelOrder(ws.root).find((panelId) => {
-    const panel = ws.panels[panelId];
-    return panel && !panelIsPinned(panel);
-  });
+  const reusablePanelId = getPanelOrder(ws.root).at(-1);
   const opened = reusablePanelId
     ? selfDispatch(state, openTab(wsId, tab, reusablePanelId, tabId, true, timestamp))
     : selfDispatch(

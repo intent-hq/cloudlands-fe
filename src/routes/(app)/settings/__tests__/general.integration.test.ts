@@ -18,14 +18,13 @@ import {
   selectUpdateChannel,
   selectNoteFontStyle,
   selectAgentFontStyle,
-  selectPanelOpenMode,
+  selectPanelColumnCount,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
   setAgentFontStyle,
   setNoteFontStyle,
-  setPanelOpenMode,
+  setPanelColumnCount,
   setUpdateChannel,
-  togglePanelOpenMode,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
   GENERAL_ACCESSIBILITY_FIXTURE,
@@ -137,7 +136,7 @@ beforeEach(() => {
   appStore.dispatch(setUpdateChannel('stable'));
   appStore.dispatch(setNoteFontStyle('monospace'));
   appStore.dispatch(setAgentFontStyle('monospace'));
-  appStore.dispatch(setPanelOpenMode('normal'));
+  appStore.dispatch(setPanelColumnCount(1));
   appStore.dispatch(simulateSetState({ status: 'idle' }));
   vi.clearAllMocks();
   (globalThis as typeof globalThis & { __APP_VERSION__: string }).__APP_VERSION__ = '2.0.10';
@@ -161,20 +160,17 @@ afterAll(() => {
 });
 
 describe('Settings migration', () => {
-  it('moves the panel-open preference into Appearance settings', async () => {
+  it('exposes the fixed-column preference through Appearance settings', async () => {
     const recorder = installDispatchRecorder();
     const general = renderGeneral();
-    expect(screen.queryByRole('switch', { name: 'Open new panels pinned' })).toBeNull();
+    expect(document.querySelector('[data-panel-column-count]')).toBeNull();
     general.unmount();
 
     renderAppearance();
-    const toggle = screen.getByRole('switch', { name: 'Open new panels pinned' });
-
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
-    await fireEvent.click(toggle);
-
-    await waitFor(() => expect(selectPanelOpenMode.select(appStore.state)).toBe('pin'));
-    expect(recorder.calls).toContainEqual(togglePanelOpenMode());
+    expect(document.querySelector('[data-panel-column-count="1"]')).toBeTruthy();
+    appStore.dispatch(setPanelColumnCount(3));
+    await waitFor(() => expect(selectPanelColumnCount.select(appStore.state)).toBe(3));
+    expect(recorder.calls).toContainEqual(setPanelColumnCount(3));
     expect(readFileSync('src/lib/components/layout/WindowTitleBar.svelte', 'utf8')).not.toContain(
       'data-titlebar-panel-open-mode',
     );

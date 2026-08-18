@@ -44,7 +44,7 @@ import {
   resolveNewWorkspaceInitialAgent,
   revealDeferredSpecTab,
   resetLayout,
-  collapseToReusablePanel,
+  reconcilePanelColumnCount,
   goBack,
   goForward,
   setPanelPinned,
@@ -158,7 +158,7 @@ describe('panelLayoutReducer', () => {
     });
   });
 
-  describe('new workspace canonical bootstrap', () => {
+  describe.skip('legacy two-panel workspace bootstrap', () => {
     const preferredCanvasWidth =
       DEFAULT_MEDIUM_PANEL_WIDTH + DEFAULT_CHAT_PANEL_WIDTH + PANEL_SPLIT_GUTTER_WIDTH;
 
@@ -1020,7 +1020,7 @@ describe('panelLayoutReducer', () => {
       });
     });
 
-    it('prepends a new root column when panels stack from the left', () => {
+    it.skip('prepends a new root column when panels stack from the left', () => {
       const state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
       state.byWorkspaceId[WS] = {
         ...state.byWorkspaceId[WS],
@@ -1072,7 +1072,7 @@ describe('panelLayoutReducer', () => {
       expect(result.pendingPanelReveal).toMatchObject({ panelId: 'p1', tabId: 'agent-tab' });
     });
 
-    it('replaces the reusable panel and preserves pinned panels in pin mode', () => {
+    it.skip('replaces the reusable panel and preserves pinned panels in pin mode', () => {
       const state = emptyState();
       state.byWorkspaceId[WS] = {
         ...emptyWorkspaceState,
@@ -1122,7 +1122,7 @@ describe('panelLayoutReducer', () => {
       expect(result.recentlyClosed[0].tab.id).toBe('old');
     });
 
-    it('keeps the reusable panel on the right in pin mode when configured', () => {
+    it.skip('keeps the reusable panel on the right in pin mode when configured', () => {
       const state = emptyState();
       state.byWorkspaceId[WS] = {
         ...emptyWorkspaceState,
@@ -1170,7 +1170,7 @@ describe('panelLayoutReducer', () => {
     });
   });
 
-  describe('reusable panel state', () => {
+  describe.skip('legacy reusable panel state', () => {
     it('clears and reuses the working panel as one undoable layout change', () => {
       const state = stateWithPanel('working', [
         { id: 'old', type: 'note', title: 'Old', filePath: 'old.md' },
@@ -1393,6 +1393,95 @@ describe('panelLayoutReducer', () => {
         }),
       ]);
       expect(result.root.type).toBe('panel');
+    });
+  });
+
+  describe('fixed column state', () => {
+    it('starts a new workspace with one visible agent column', () => {
+      const result = panelLayoutReducer(
+        emptyState(),
+        bootstrapNewWorkspaceLayout(WS, 'agent-1', 'Coordinator', true),
+      ).byWorkspaceId[WS];
+
+      expect(result.root.type).toBe('panel');
+      expect(Object.values(result.panels)).toHaveLength(1);
+      expect(Object.values(result.panels)[0].tabs).toEqual([
+        expect.objectContaining({ type: 'agent', agentId: 'agent-1' }),
+      ]);
+    });
+
+    it('adds pristine columns to the right when the count increases', () => {
+      const state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
+      const action = reconcilePanelColumnCount(WS, 3, 10);
+
+      const result = panelLayoutReducer(state, action).byWorkspaceId[WS];
+      const order = result.root.type === 'split' ? result.root.children : [];
+
+      expect(order).toMatchObject([
+        { panelId: 'p1' },
+        { panelId: action.payload.newPanelIds[0] },
+        { panelId: action.payload.newPanelIds[1] },
+      ]);
+      expect(result.panels[action.payload.newPanelIds[0]]).toMatchObject({
+        tabs: [],
+        activeTabId: null,
+        pristine: true,
+      });
+      expect(result.panels.p1.tabs).toEqual([expect.objectContaining({ id: 'one' })]);
+    });
+
+    it('merges removed right columns into the surviving rightmost history', () => {
+      const state = emptyState();
+      state.byWorkspaceId[WS] = {
+        ...emptyWorkspaceState,
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: ['p1', 'p2', 'p3', 'p4'].map((panelId) => ({
+            type: 'panel' as const,
+            panelId,
+          })),
+          sizes: [25, 25, 25, 25],
+        },
+        panels: Object.fromEntries(
+          ['p1', 'p2', 'p3', 'p4'].map((panelId, index) => [
+            panelId,
+            {
+              id: panelId,
+              tabs: [{ id: `tab-${index + 1}`, type: 'note' as const, title: panelId }],
+              activeTabId: `tab-${index + 1}`,
+              ...(panelId === 'p4' ? { pinned: true } : {}),
+            },
+          ]),
+        ) as any,
+        focusedPanelId: 'p4',
+      };
+
+      const result = panelLayoutReducer(state, reconcilePanelColumnCount(WS, 2, 10)).byWorkspaceId[
+        WS
+      ];
+
+      expect(Object.keys(result.panels)).toEqual(['p1', 'p2']);
+      expect(result.panels.p2.tabs.map((tab) => tab.id)).toEqual(['tab-2', 'tab-3', 'tab-4']);
+      expect(result.panels.p2.activeTabId).toBe('tab-2');
+      expect(result.focusedPanelId).toBe('p2');
+      expect(result.panels.p2).not.toHaveProperty('pinned');
+      expect(result.layoutHistory).toHaveLength(1);
+    });
+
+    it('flattens legacy split layouts to the selected fixed count', () => {
+      let state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
+      state = panelLayoutReducer(state, splitPanel(WS, 'p1', 'vertical', undefined, 1));
+
+      const result = panelLayoutReducer(state, reconcilePanelColumnCount(WS, 2, 10)).byWorkspaceId[
+        WS
+      ];
+
+      expect(result.root).toMatchObject({
+        type: 'split',
+        direction: 'horizontal',
+        children: [{ type: 'panel' }, { type: 'panel' }],
+      });
     });
   });
 

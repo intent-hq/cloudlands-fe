@@ -682,7 +682,6 @@ export function normalizeTablessPanelLayout(layout: LayoutShape): LayoutShape {
         tabs: tab ? [tab] : [],
         activeTabId: tab?.id ?? null,
         ...(panel.pristine !== undefined ? { pristine: panel.pristine && !tab } : {}),
-        ...(panel.pinned !== undefined ? { pinned: panel.pinned } : {}),
       };
       panelIds.push(panelId);
       if (

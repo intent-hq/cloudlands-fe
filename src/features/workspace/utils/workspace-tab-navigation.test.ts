@@ -385,18 +385,22 @@ describe('global workspace tab navigation', () => {
 
       const ws = store.state.panelLayout.byWorkspaceId['ws-2'];
       expect(Object.keys(ws.panels)).toEqual(['p1']);
-      expect(ws.panels.p1).toMatchObject({ tabs: [], pinned: false, pristine: true });
+      expect(ws.panels.p1).toMatchObject({ tabs: [], pristine: true });
+      expect(ws.panels.p1).not.toHaveProperty('pinned');
       expect(ws.focusedPanelId).toBe('p1');
     });
 
-    it('collapses multiple reusable panels into the working column', () => {
+    it('opens a blank working column without collapsing existing fixed columns', () => {
       const store = makeStore(
         'ws-2',
         layoutWith([makePanel('p1', ['t1']), makePanel('p2', ['t2'])], null),
       );
 
-      expect(openNewPanel(store, '/workspace/ws-2')).toBe('p1');
-      expect(Object.keys(store.state.panelLayout.byWorkspaceId['ws-2'].panels)).toEqual(['p1']);
+      expect(openNewPanel(store, '/workspace/ws-2')).toBe('p2');
+      expect(Object.keys(store.state.panelLayout.byWorkspaceId['ws-2'].panels)).toEqual([
+        'p1',
+        'p2',
+      ]);
     });
 
     it('returns null outside workspace routes', () => {

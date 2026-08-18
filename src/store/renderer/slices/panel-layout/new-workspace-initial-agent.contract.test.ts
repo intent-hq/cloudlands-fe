@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { getPanelOrder } from './panel-layout-tabless';
 import {
   bootstrapNewWorkspaceLayout,
   initializeLayout,
@@ -23,7 +22,7 @@ function agentTabs(state: PanelLayoutSliceState) {
 
 describe('new workspace initial-agent contract', () => {
   it.each([true, false])(
-    'opens one focused pinned initial agent when coordinator=%s',
+    'opens one focused initial agent column when coordinator=%s',
     (coordinator) => {
       const state = panelLayoutReducer(
         initialState(),
@@ -35,9 +34,10 @@ describe('new workspace initial-agent contract', () => {
       );
 
       expect(agentTabs(state)).toHaveLength(1);
-      expect(panel).toMatchObject({ pinned: true });
+      expect(panel).not.toHaveProperty('pinned');
+      expect(Object.values(workspace.panels)).toHaveLength(1);
       expect(workspace.focusedPanelId).toBe(panel?.id);
-      expect(workspace.pendingFocusTabId).toBe(panel?.activeTabId);
+      expect(workspace.pendingFocusTabId).toBeNull();
       expect(workspace.pendingPanelReveal).toMatchObject({
         panelId: panel?.id,
         tabId: panel?.activeTabId,
@@ -68,7 +68,7 @@ describe('new workspace initial-agent contract', () => {
     });
   });
 
-  it('reuses and pins an equivalent initial-agent tab opened before the daemon snapshot', () => {
+  it('reuses an equivalent initial-agent tab opened before the daemon snapshot', () => {
     const pending = panelLayoutReducer(
       initialState(),
       bootstrapNewWorkspaceLayout(WS, null, 'Initial agent', false, 1),
@@ -98,12 +98,12 @@ describe('new workspace initial-agent contract', () => {
     );
 
     expect(agentTabs(resolved)).toHaveLength(1);
-    expect(panel).toMatchObject({ pinned: true });
+    expect(panel).not.toHaveProperty('pinned');
     expect(workspace.pendingPanelReveal?.panelId).toBe(panel?.id);
     expect(workspace.newWorkspaceLifecycle?.initialAgentPending).toBe(false);
   });
 
-  it('restores the pinned initial agent without replaying bootstrap work', () => {
+  it('restores the initial agent without replaying bootstrap work', () => {
     const created = panelLayoutReducer(
       initialState(),
       bootstrapNewWorkspaceLayout(WS, 'agent-initial', 'Initial agent', true),
@@ -124,23 +124,19 @@ describe('new workspace initial-agent contract', () => {
     );
 
     expect(agentTabs(repeated)).toHaveLength(1);
-    expect(repeated.byWorkspaceId[WS].panels[created.focusedPanelId!]).toMatchObject({
-      pinned: true,
-    });
+    expect(repeated.byWorkspaceId[WS].panels[created.focusedPanelId!]).not.toHaveProperty('pinned');
   });
 
   it.each([true, false])(
-    'starts with only the pinned initial agent when coordinator=%s',
+    'starts with only the initial agent column when coordinator=%s',
     (coordinator) => {
       const workspace = panelLayoutReducer(
         initialState(),
         bootstrapNewWorkspaceLayout(WS, 'agent-initial', 'Initial agent', coordinator),
       ).byWorkspaceId[WS];
-      const order = getPanelOrder(workspace.root);
-
-      expect(order).toHaveLength(1);
-      expect(workspace.panels[order[0]]).toMatchObject({ pinned: true });
-      expect(workspace.panels[order[0]].tabs).toEqual([
+      expect(workspace.root.type).toBe('panel');
+      expect(Object.values(workspace.panels)).toHaveLength(1);
+      expect(Object.values(workspace.panels)[0].tabs).toEqual([
         expect.objectContaining({ agentId: 'agent-initial' }),
       ]);
     },

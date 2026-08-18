@@ -503,7 +503,6 @@
         tabs={panel.tabs}
         activeTabId={panel.activeTabId}
         panelId={panel.id}
-        pinned={panel.pinned === true}
         {workspaceId}
         {layoutId}
         {isFocused}

@@ -58,7 +58,7 @@ function mountedPanels(): HTMLElement[] {
 
 describe('mounted new workspace layout', () => {
   it.each([true, false])(
-    'shows one focused pinned initial agent when coordinator=%s, then reveals Spec once',
+    'shows one focused initial agent column when coordinator=%s, then reveals Spec once',
     async (coordinator) => {
       const workspaceId = `mounted-bootstrap-${++sequence}`;
       const agentTitle = coordinator ? 'Coordinator' : 'Initial agent';
@@ -79,23 +79,18 @@ describe('mounted new workspace layout', () => {
         panel.tabs.some((tab) => tab.type === 'agent' && tab.agentId === 'agent-1'),
       );
       expect(agentPanels).toHaveLength(1);
-      expect(agentPanels[0]).toMatchObject({ pinned: true });
+      expect(agentPanels[0]).not.toHaveProperty('pinned');
       expect(workspace.focusedPanelId).toBe(agentPanels[0].id);
 
       appStore.dispatch(revealDeferredSpecTab(workspaceId, 'spec:created', 'Spec', 10));
-      await waitFor(() =>
-        expect(mountedPanels().map((panel) => panel.textContent)).toEqual([
-          expect.stringContaining('Spec'),
-          expect.stringContaining(agentTitle),
-        ]),
-      );
+      await waitFor(() => expect(mountedPanels()[0].textContent).toContain('Spec'));
 
       result.unmount();
       render(PanelLayout, {
         props: { workspaceId, layoutId: workspaceId },
         context: new Map([[STORE_CONTEXT, storeContext]]),
       });
-      await waitFor(() => expect(mountedPanels()).toHaveLength(2));
+      await waitFor(() => expect(mountedPanels()).toHaveLength(1));
       expect(mountedPanels().filter((panel) => panel.textContent?.includes('Spec'))).toHaveLength(
         1,
       );

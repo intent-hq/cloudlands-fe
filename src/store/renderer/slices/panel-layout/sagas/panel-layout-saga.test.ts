@@ -46,7 +46,6 @@ import {
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   clearPanelLayout,
-  collapseToReusablePanel,
   bootstrapNewWorkspaceLayout,
   closeActiveTab,
   closeAllOthersEverywhere,
@@ -77,6 +76,7 @@ import {
   openTabInNewRootColumn,
   panelLayoutScopeMounted,
   panelLayoutScopeUnmounted,
+  reconcilePanelColumnCount,
   reconcileStaleAgentTabs,
   reorderTabs,
   reopenClosedTab,
@@ -87,7 +87,6 @@ import {
   selectPreviousTab,
   setActiveTab,
   setDeferSpecTab,
-  setPanelPinned,
   setRestoreStatus,
   splitPanel,
   toggleExpandPanel,
@@ -99,6 +98,7 @@ import {
   updateTabTitle,
 } from '../panel-layout-slice';
 import { panelLayoutReducer } from '../panel-layout-slice';
+import { setPanelColumnCount } from '../../user-preferences/user-preferences-slice';
 import { setAgents } from '../../workspace-agents/workspace-agents-slice';
 import {
   applyLocalNoteUpdate,
@@ -297,7 +297,6 @@ const persistActionCreators = [
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
   openBlankWorkingPanel,
-  collapseToReusablePanel,
   closeTab,
   closeActiveTab,
   closeTabsByType,
@@ -335,7 +334,7 @@ const persistActionCreators = [
   updateTabFavicon,
   updateFileTabPath,
   consumePendingFocus,
-  setPanelPinned,
+  reconcilePanelColumnCount,
 ];
 
 describe('panelLayoutSaga', () => {
@@ -377,7 +376,7 @@ describe('panelLayoutSaga', () => {
         ...layout,
         panels: { 'panel-1': { ...layout.panels['panel-1'], pinned: 'yes' } },
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isStoredLayoutValid({
         ...layout,
@@ -479,7 +478,7 @@ describe('panelLayoutSaga', () => {
         panel.tabs.some((candidate: any) => candidate.agentId === 'agent-1'),
       );
       expect(agentPanels).toHaveLength(1);
-      expect(agentPanels[0]).toMatchObject({ pinned: true });
+      expect(agentPanels[0]).not.toHaveProperty('pinned');
       expect(workspace.focusedPanelId).toBe(agentPanels[0].id);
       expect(mocks.setJSON.mock.calls.at(-1)?.[1]).toMatchObject({
         newWorkspaceLifecycle: { initialAgentId: 'agent-1', initialAgentPending: false },
@@ -504,7 +503,7 @@ describe('panelLayoutSaga', () => {
       panel.tabs.some((candidate: any) => candidate.agentId === initial.id),
     );
     expect(agentPanels).toHaveLength(1);
-    expect(agentPanels[0]).toMatchObject({ pinned: true });
+    expect(agentPanels[0]).not.toHaveProperty('pinned');
     expect(workspace.focusedPanelId).toBe(agentPanels[0].id);
     expect(workspace.newWorkspaceLifecycle).toMatchObject({
       initialAgentId: initial.id,
@@ -560,7 +559,7 @@ describe('panelLayoutSaga', () => {
         spec: { state: 'deferred' },
       },
     });
-    expect(Object.values(stored.panels)).toContainEqual(expect.objectContaining({ pinned: true }));
+    expect(Object.values(stored.panels).every((panel) => !('pinned' in panel))).toBe(true);
     await cancelSaga(lifecycle.task);
 
     mocks.getJSON.mockReturnValue(stored);
@@ -586,7 +585,7 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
-  it('pins the initial agent while migrating a legacy layout without pin state', async () => {
+  it('restores a legacy initial-agent layout without adding pin state', async () => {
     const legacyAgentTab = {
       ...tab,
       type: 'agent' as const,
@@ -612,11 +611,11 @@ describe('panelLayoutSaga', () => {
     const restored = dispatch.mock.calls.find(
       ([action]) => action.type === initializeLayout.type,
     )?.[0].payload.layout;
-    expect(restored.panels['panel-1']).toMatchObject({ pinned: true });
+    expect(restored.panels['panel-1']).not.toHaveProperty('pinned');
     await cancelSaga(task);
   });
 
-  it('preserves an explicit unpin during restore instead of reapplying migration', async () => {
+  it('removes an explicit legacy unpin during restore', async () => {
     const explicitUnpin: WorkspacePanelLayout = {
       ...layout,
       panels: {
@@ -634,11 +633,11 @@ describe('panelLayoutSaga', () => {
     const restored = dispatch.mock.calls.find(
       ([action]) => action.type === initializeLayout.type,
     )?.[0].payload.layout;
-    expect(restored.panels['panel-1']).toMatchObject({ pinned: false });
+    expect(restored.panels['panel-1']).not.toHaveProperty('pinned');
     await cancelSaga(task);
   });
 
-  it('pins an undefined initial-agent panel in a partially migrated layout', async () => {
+  it('removes all pin state from a partially migrated layout', async () => {
     const initialAgentTab = {
       ...tab,
       type: 'agent' as const,
@@ -674,8 +673,8 @@ describe('panelLayoutSaga', () => {
     const restored = dispatch.mock.calls.find(
       ([action]) => action.type === initializeLayout.type,
     )?.[0].payload.layout;
-    expect(restored.panels['panel-1']).toMatchObject({ pinned: true });
-    expect(restored.panels['panel-2']).toMatchObject({ pinned: true });
+    expect(Object.keys(restored.panels)).toEqual(['panel-1']);
+    expect(restored.panels['panel-1']).not.toHaveProperty('pinned');
     await cancelSaga(task);
   });
 
@@ -724,9 +723,11 @@ describe('panelLayoutSaga', () => {
     expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
       setRestoreStatus.type,
       resetLayout.type,
+      reconcilePanelColumnCount.type,
       setRestoreStatus.type,
       setRestoreStatus.type,
       resetLayout.type,
+      reconcilePanelColumnCount.type,
       setRestoreStatus.type,
     ]);
     expect(
@@ -793,7 +794,7 @@ describe('panelLayoutSaga', () => {
       expect(workspace.pendingFocusTabId).toBe(tabs[0].id);
       expect(
         Object.values(workspace.panels).find((panel: any) => panel.tabs.length > 0),
-      ).toMatchObject({ pinned: true });
+      ).not.toHaveProperty('pinned');
       expect(mocks.setJSON.mock.calls.at(-1)?.[1]).toMatchObject({
         focusedPanelId: workspace.focusedPanelId,
         panels: workspace.panels,
@@ -1188,6 +1189,29 @@ describe('panelLayoutSaga', () => {
       await cancelSaga(task);
     },
   );
+
+  it('reconciles every workspace when the global column count changes', async () => {
+    const state = {
+      ...storeState(),
+      userPreferences: { panelColumnCount: 3 },
+    };
+    const { channel, dispatch, task } = startSaga(state);
+    await settle();
+    dispatch.mockClear();
+
+    channel.put(setPanelColumnCount(3));
+    await settle();
+
+    expect(
+      dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === reconcilePanelColumnCount.type),
+    ).toEqual([
+      expect.objectContaining({ payload: expect.objectContaining({ wsId: WS_1, count: 3 }) }),
+      expect.objectContaining({ payload: expect.objectContaining({ wsId: WS_2, count: 3 }) }),
+    ]);
+    await cancelSaga(task);
+  });
 
   it('persists saved widths instead of the session-only expanded geometry', async () => {
     const state = storeState();
@@ -1792,13 +1816,18 @@ describe('panelLayoutSaga', () => {
       expect(dispatched.map((action) => action.type)).toEqual([
         setRestoreStatus.type,
         resetLayout.type,
+        reconcilePanelColumnCount.type,
         loadLayoutHistory.type,
         setRestoreStatus.type,
       ]);
       expect(dispatched[0]).toEqual(setRestoreStatus(WS_1, 'pending'));
       expect(dispatched[1].payload.wsId).toBe(WS_1);
-      expect(dispatched[2]).toEqual(loadLayoutHistory(WS_1, [], 0));
-      expect(dispatched[3]).toEqual(setRestoreStatus(WS_1, 'empty'));
+      expect(dispatched[2]).toMatchObject({
+        type: reconcilePanelColumnCount.type,
+        payload: { wsId: WS_1, count: 1 },
+      });
+      expect(dispatched[3]).toEqual(loadLayoutHistory(WS_1, [], 0));
+      expect(dispatched[4]).toEqual(setRestoreStatus(WS_1, 'empty'));
       await cancelSaga(task);
     });
 
@@ -1910,7 +1939,7 @@ describe('panelLayoutSaga', () => {
       expect(mocks.saveHistory).not.toHaveBeenCalled();
     });
 
-    it('normalizes restored multi-tab panels into focused one-tab panels', async () => {
+    it('keeps restored multi-tab content in one fixed column history', async () => {
       const multiTabLayout = {
         root: { type: 'panel' as const, panelId: 'panel-1' },
         panels: {
@@ -1948,18 +1977,13 @@ describe('panelLayoutSaga', () => {
       );
       expect(initializeCalls).toHaveLength(1);
       const normalized = initializeCalls[0][0].payload.layout;
-      expect(normalized.root.type).toBe('split');
-      expect(normalized.root.direction).toBe('horizontal');
-      expect(normalized.root.children).toHaveLength(2);
-      const panel1Id = normalized.root.children[0].panelId;
-      const panel2Id = normalized.root.children[1].panelId;
-      expect(normalized.panels[panel1Id].tabs.map(({ id }: { id: string }) => id)).toEqual([
+      expect(normalized.root).toEqual({ type: 'panel', panelId: 'panel-1' });
+      expect(normalized.panels['panel-1'].tabs.map(({ id }: { id: string }) => id)).toEqual([
         'tab-1',
-      ]);
-      expect(normalized.panels[panel2Id].tabs.map(({ id }: { id: string }) => id)).toEqual([
         'tab-2',
       ]);
-      expect(normalized.focusedPanelId).toBe(panel2Id);
+      expect(normalized.panels['panel-1'].activeTabId).toBe('tab-1');
+      expect(normalized.focusedPanelId).toBe('panel-1');
       await cancelSaga(task);
     });
   });

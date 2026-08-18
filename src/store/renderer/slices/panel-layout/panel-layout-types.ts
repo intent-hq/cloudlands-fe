@@ -91,8 +91,6 @@ export interface PanelState {
   activeTabId: string | null;
   /** True for an untouched reusable blank panel that the next user item can consume. */
   pristine?: boolean;
-  /** Pinned panels are preserved when reusable-panel mode collapses the layout. */
-  pinned?: boolean;
 }
 
 /** Node in the panel layout tree - either a panel or a split container */

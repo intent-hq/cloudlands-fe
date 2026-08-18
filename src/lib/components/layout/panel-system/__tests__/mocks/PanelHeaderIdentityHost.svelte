@@ -9,7 +9,6 @@
   import { store } from '$store/renderer/store';
   import PanelEmptyState from '../../PanelEmptyState.svelte';
   import PanelTabBar from '../../PanelTabBar.svelte';
-  import { setPanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
   type IdentityType = PanelTabType | 'empty';
 
@@ -34,9 +33,6 @@
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   registerAllTabTypes();
   onDestroy(disposeStore);
-  $effect(() => {
-    store.dispatch(setPanelOpenMode(pinMode ? 'pin' : 'normal'));
-  });
 
   const tab = $derived<PanelTab | null>(
     identityType === 'empty'
@@ -67,7 +63,6 @@
       activeTabId={tab.id}
       panelId="panel-identity"
       workspaceId="panel-identity-workspace"
-      {pinned}
       isFocused
       onTabRename={() => {}}
       onClosePanel={() => {}}

@@ -10,7 +10,6 @@ import {
   faPaperclip,
   faPlay,
   faTerminal,
-  faThumbtack,
   faWandMagicSparkles,
 } from '@fortawesome/free-solid-svg-icons';
 import { m } from '$shared/paraglide/messages.js';
@@ -109,17 +108,6 @@ export const COMMAND_PALETTE_COMMANDS = (viewMode: WorkspaceViewMode) => [
     shortcut: getShortcutDisplay('WORKSPACE_VIEW_MODE'),
     // i18n-ignore (non-rendered search aliases)
     searchText: 'tab horizontal stacked columns workspace view layout',
-  },
-  {
-    id: 'toggle-panel-open-mode',
-    get label() {
-      return m.lib_commandPalette_togglePanelOpenMode_command();
-    },
-    get description() {
-      return m.lib_commandPalette_togglePanelOpenMode_description();
-    },
-    icon: faThumbtack,
-    shortcut: '⌥⌘P',
   },
   {
     id: 'enhance-prompt',

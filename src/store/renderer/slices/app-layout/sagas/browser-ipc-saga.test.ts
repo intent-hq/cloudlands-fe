@@ -452,7 +452,7 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
-  it('pins the panel correlated to an explicit browser open request', async () => {
+  it('opens an explicit browser request without creating panel pin state', async () => {
     const actions: any[] = [];
     const task = start((action: any) => {
       actions.push(action);
@@ -470,13 +470,7 @@ describe('browserIpcSaga', () => {
 
     await emit({ url: 'https://pinned.test', workspaceId: 'ws-1', tabId: 'request-1', pin: true });
 
-    expect(actions.map((action) => action.type)).toEqual([
-      'panelLayout/openTabInNewRootColumn',
-      'panelLayout/setPanelPinned',
-    ]);
-    expect(actions[1]).toMatchObject({
-      payload: { wsId: 'ws-1', panelId: 'panel-resolved', pinned: true },
-    });
+    expect(actions.map((action) => action.type)).toEqual(['panelLayout/openTabInNewRootColumn']);
     task.cancel();
     await task.toPromise();
   });
@@ -1247,7 +1241,10 @@ describe('browserIpcSaga', () => {
       ]);
       window.history.pushState({}, '', '/workspace/ws-routed-1');
       try {
-        await emit({ workspaceId: 'ws-routed-1', requestId: 'req-r1' }, 'browser:list-tabs-request');
+        await emit(
+          { workspaceId: 'ws-routed-1', requestId: 'req-r1' },
+          'browser:list-tabs-request',
+        );
       } finally {
         window.history.pushState({}, '', '/');
       }
@@ -1281,7 +1278,10 @@ describe('browserIpcSaga', () => {
       state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
       window.history.pushState({}, '', '/workspace/ws-routed-other');
       try {
-        await emit({ workspaceId: 'ws-not-here', requestId: 'req-r3' }, 'browser:list-tabs-request');
+        await emit(
+          { workspaceId: 'ws-not-here', requestId: 'req-r3' },
+          'browser:list-tabs-request',
+        );
       } finally {
         window.history.pushState({}, '', '/');
       }

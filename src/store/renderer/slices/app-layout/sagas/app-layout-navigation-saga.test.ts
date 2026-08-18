@@ -162,7 +162,7 @@ describe('appLayoutNavigationSaga', () => {
     await task.toPromise();
   });
 
-  it('pins only the panel correlated to an explicit agent open request', async () => {
+  it('opens the requested agent without creating panel pin state', async () => {
     const channel = stdChannel();
     let state: any = {
       agentSessions: { byAgentId: { 'agent-1': { id: 'agent-1', name: 'Ada' } } },
@@ -196,15 +196,15 @@ describe('appLayoutNavigationSaga', () => {
       ([action]) => action.type === 'panelLayout/openTabInNewRootColumn',
     )?.[0];
     expect(openAction.payload.newTabId).not.toBe('tab-reused');
-    expect(dispatch.mock.calls.at(-1)?.[0]).toMatchObject({
-      type: 'panelLayout/setPanelPinned',
-      payload: { wsId: 'ws-1', panelId: 'panel-resolved', pinned: true },
-    });
+    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
+      'workspaceAgents/ensureAgentSessionLoaded',
+      'panelLayout/openTabInNewRootColumn',
+    ]);
     task.cancel();
     await task.toPromise();
   });
 
-  it('focuses and pins the exact panel for a reused browser tab', async () => {
+  it('focuses the exact panel for a reused browser tab without pin state', async () => {
     const channel = stdChannel();
     const state: any = {
       panelLayout: {
@@ -236,11 +236,7 @@ describe('appLayoutNavigationSaga', () => {
     expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
       'panelLayout/setActiveTab',
       'panelLayout/focusPanel',
-      'panelLayout/setPanelPinned',
     ]);
-    expect(dispatch.mock.calls.at(-1)?.[0]).toMatchObject({
-      payload: { panelId: 'panel-browser', pinned: true },
-    });
 
     dispatch.mockClear();
     channel.put(focusBrowserTabRequested('ws-1', 'browser-1'));

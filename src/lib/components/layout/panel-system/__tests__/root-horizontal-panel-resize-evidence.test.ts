@@ -15,6 +15,7 @@ import {
 import { selectPanelCanvasWidth } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import { panelLayoutSaga } from '$store/renderer/slices/panel-layout/sagas/panel-layout-saga';
 import { PANEL_LAYOUT_STORAGE_KEY_PREFIX } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import { setPanelColumnCount } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import PanelLayout from '../PanelLayout.svelte';
 
 const STORE_CONTEXT = 'redux-store-context';
@@ -259,6 +260,7 @@ beforeEach(() => {
     } as DOMRect;
   });
   storeContext = initAppStore(appStore);
+  appStore.dispatch(setPanelColumnCount(3));
   initializeThreePanels();
 });
 
@@ -338,6 +340,7 @@ describe('root horizontal resize release evidence', () => {
     storeContext?.dispose();
 
     storeContext = initAppStore(appStore);
+    appStore.dispatch(setPanelColumnCount(3));
     startProductionSaga();
     await settleSaga();
     sagaChannel!.put(panelLayoutScopeMounted(WORKSPACE_ID));
@@ -357,6 +360,7 @@ describe('root horizontal resize release evidence', () => {
     );
     result.unmount();
 
+    appStore.dispatch(setPanelColumnCount(1));
     storage.set(
       STORAGE_KEY,
       JSON.stringify({

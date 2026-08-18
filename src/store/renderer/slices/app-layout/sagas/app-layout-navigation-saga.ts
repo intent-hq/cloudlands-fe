@@ -12,21 +12,10 @@ import {
   openTabInNewRootColumn,
   restoreHiddenTab,
   setActiveTab,
-  setPanelPinned,
 } from '../../panel-layout/panel-layout-slice';
-import {
-  selectPanelOpenMode,
-  selectPanelStackDirection,
-} from '../../user-preferences/user-preferences-selectors';
 import { ensureAgentSessionLoaded } from '../../workspace-agents/workspace-agents-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { focusBrowserTabRequested, openAgentTabRequested } from '../app-layout-slice';
-
-function* pinRevealedPanel(workspaceId: string, requestId: string): SagaGenerator<void> {
-  const reveal = yield* selectPendingPanelReveal.effect(workspaceId);
-  if (reveal?.requestId !== requestId) return;
-  yield* put(setPanelPinned(workspaceId, reveal.panelId, true));
-}
 
 function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGenerator<void> {
   const [workspaceId, detail] = action.payload;
@@ -41,8 +30,6 @@ function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGe
     workspaceId,
     closable: true,
   };
-  const panelOpenMode = yield* selectPanelOpenMode.effect();
-
   const targetWorkspaceId = detail.panelLayoutId ?? workspaceId;
   const openAction = openTabInNewRootColumn(targetWorkspaceId, tab, {
     ...(detail.openInNewColumn
@@ -52,19 +39,14 @@ function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGe
         }
       : { sourcePanelId: detail.sourcePanelId }),
     force: true,
-    panelOpenMode,
-    panelStackDirection: yield* selectPanelStackDirection.effect(),
   });
   yield* put(openAction);
-  if (detail.pin === true) {
-    yield* pinRevealedPanel(targetWorkspaceId, openAction.payload.newTabId);
-  }
 }
 
 function* focusBrowserTab(
   action: ReturnType<typeof focusBrowserTabRequested>,
 ): SagaGenerator<void> {
-  const [workspaceId, tabId, pin] = action.payload;
+  const [workspaceId, tabId] = action.payload;
   if (!workspaceId || !tabId) return;
   let panels = yield* selectPanels.effect(workspaceId);
   let target = Object.entries(panels).find(([, panel]) =>
@@ -87,9 +69,6 @@ function* focusBrowserTab(
   yield* put(setActiveTab(workspaceId, tabId, panelId));
   const focusAction = focusPanel(workspaceId, panelId);
   yield* put(focusAction);
-  if (pin === true) {
-    yield* pinRevealedPanel(workspaceId, focusAction.payload.requestId);
-  }
 }
 
 export function* appLayoutNavigationSaga(): SagaGenerator<void> {

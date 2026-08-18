@@ -428,29 +428,14 @@ describe('panel context menu routing', () => {
     expect(container.querySelector('[data-panel-pin]')).toBeNull();
   });
 
-  it('keeps pin, kebab, and Close visible while grouping other panel controls in the menu', async () => {
+  it('keeps kebab and Close visible while grouping other panel controls in the menu', async () => {
     const { container } = renderTabBar({ onClosePanel: vi.fn() });
     const directActions = container.querySelector<HTMLElement>('.panel-actions')!;
 
-    expect(directActions.querySelectorAll('button')).toHaveLength(3);
-    const pinButton = directActions.querySelector<HTMLButtonElement>('[data-panel-pin]')!;
-    expect(directActions.querySelector('button')).toBe(pinButton);
-    expect(pinButton.getAttribute('aria-label')).toBe('Pin panel');
-    expect(pinButton.getAttribute('aria-pressed')).toBe('false');
+    expect(directActions.querySelectorAll('button')).toHaveLength(2);
+    expect(directActions.querySelector('[data-panel-pin]')).toBeNull();
     expect(directActions.querySelector('[data-testid="panel-actions-trigger"]')).toBeTruthy();
     expect(directActions.querySelector('[data-testid="panel-close-button"]')).toBeTruthy();
-
-    await fireEvent.click(pinButton);
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'panelLayout/setPanelPinned',
-        payload: expect.objectContaining({
-          wsId: 'workspace-1',
-          panelId: 'target-panel',
-          pinned: true,
-        }),
-      }),
-    );
 
     await fireEvent.click(
       directActions.querySelector<HTMLElement>('[data-testid="panel-actions-trigger"]')!,

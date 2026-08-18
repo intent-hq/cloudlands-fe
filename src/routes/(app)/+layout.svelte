@@ -91,7 +91,6 @@
     selectWorkspaceLoading,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectZoomFactor } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { togglePanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     selectBootRouteGateResolved,
     selectLocalSetupGate,
@@ -201,9 +200,7 @@
   // (monorepo#2789 slice 2).
   let columnsMountedWorkspaceIds = $state<ReadonlySet<string>>(new Set());
   const offscreenExcludedWorkspaceIds = $derived<ReadonlySet<string>>(
-    showWorkspaceColumns
-      ? columnsMountedWorkspaceIds
-      : new Set(workspaceId ? [workspaceId] : []),
+    showWorkspaceColumns ? columnsMountedWorkspaceIds : new Set(workspaceId ? [workspaceId] : []),
   );
 
   // Interrupted agents modal state
@@ -567,15 +564,6 @@
       // i18n-ignore (shortcut registry metadata, not rendered in UI)
       register({ key: 'p', ctrl: true, description: 'Quick Open (Win/Linux)', action: openFile });
     }
-    register({
-      key: 'p',
-      meta: isMac,
-      ctrl: !isMac,
-      alt: true,
-      description: 'Toggle Panel Open Mode', // i18n-ignore (shortcut registry metadata, not rendered in UI)
-      skipInEditableElements: true,
-      action: () => appStore.dispatch(togglePanelOpenMode()),
-    });
     // Cmd+Shift+P (Mac) / Ctrl+Shift+P (Win/Linux) -> command palette (VS Code-style)
     register({
       key: 'p',

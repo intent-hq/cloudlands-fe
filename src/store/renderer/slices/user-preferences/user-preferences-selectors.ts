@@ -1,5 +1,9 @@
 import { store } from '../../store';
-import { SYSTEM_DEFAULT_FONT, type FontOption } from './user-preferences-slice';
+import {
+  SYSTEM_DEFAULT_FONT,
+  type FontOption,
+  type PanelColumnCount,
+} from './user-preferences-slice';
 import { resolvePreferenceToLocale } from '$lib/i18n/locale';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -146,12 +150,8 @@ export const selectGithubLinkDefaultAction = store.createSelector((state) => {
   return state.userPreferences?.githubLinkDefaultAction ?? 'show-choices';
 });
 
-export const selectPanelOpenMode = store.createSelector((state) => {
-  return state.userPreferences?.panelOpenMode ?? 'normal';
-});
-
-export const selectPanelStackDirection = store.createSelector((state) => {
-  return state.userPreferences?.panelStackDirection ?? 'right';
+export const selectPanelColumnCount = store.createSelector((state): PanelColumnCount => {
+  return state.userPreferences?.panelColumnCount ?? 1;
 });
 
 /** The concrete catalog locale the preference resolves to (explicit → system → en). */

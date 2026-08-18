@@ -62,16 +62,13 @@
     panel.tabs.some((tab) => tab.agentId === 'agent-initial'),
   );
   const agentPanel = agentPanels[0];
-  const reusablePanel = order
-    .map((id) => layout.panels[id])
-    .find((panel) => panel?.pinned !== true);
+  const reusablePanel = order.map((id) => layout.panels[id]).find((panel) => panel?.pristine);
 </script>
 
 <output
   data-initial-agent-state
   data-agent-count={agentPanels.length}
   data-agent-panel-id={agentPanel?.id ?? ''}
-  data-agent-pinned={agentPanel?.pinned === true}
   data-focused-panel-id={layout.focusedPanelId ?? ''}
   data-reusable-panel-id={reusablePanel?.id ?? ''}
   data-panel-order={order.join(',')}

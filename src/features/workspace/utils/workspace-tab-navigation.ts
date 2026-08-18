@@ -18,7 +18,6 @@ import {
   openBlankWorkingPanel,
   reopenClosedTab,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-import { selectPanelStackDirection } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
   selectPanels,
   selectFocusedPanelId,
@@ -240,11 +239,7 @@ export function openNewPanel(
   const workspaceId = match && match[1] !== 'new' ? match[1] : null;
   if (!workspaceId) return null;
 
-  const action = openBlankWorkingPanel(
-    workspaceId,
-    undefined,
-    selectPanelStackDirection.select(store.state),
-  );
+  const action = openBlankWorkingPanel(workspaceId);
   store.dispatch(action);
   return selectFocusedPanelId.select(store.state, workspaceId);
 }

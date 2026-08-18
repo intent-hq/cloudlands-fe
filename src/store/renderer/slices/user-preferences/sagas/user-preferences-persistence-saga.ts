@@ -17,8 +17,7 @@ import {
   selectHasCompletedProviderSetup,
   selectLanguagePreference,
   selectNoteFontStyle,
-  selectPanelOpenMode,
-  selectPanelStackDirection,
+  selectPanelColumnCount,
   selectShowArchived,
   selectShowReasoningBlocks,
   selectSpellcheckEnabled,
@@ -36,8 +35,8 @@ import {
   setHasCompletedProviderSetup,
   setLanguagePreference,
   setNoteFontStyle,
-  setPanelOpenMode,
-  setPanelStackDirection,
+  isPanelColumnCount,
+  setPanelColumnCount,
   setShowArchived,
   setShowReasoningBlocks,
   setSpellcheckEnabled,
@@ -47,8 +46,6 @@ import {
   toggleShowArchived,
   toggleShowReasoningBlocks,
   toggleSpellcheck,
-  togglePanelOpenMode,
-  togglePanelStackDirection,
   type ActivityLogPresetPreference,
   type FontStyle,
 } from '../user-preferences-slice';
@@ -64,8 +61,7 @@ const CODE_STORAGE_KEY = 'code-font-settings';
 const ACTIVITY_LOG_PRESETS_STORAGE_KEY = 'activityLogPresets';
 const LANGUAGE_PREFERENCE_STORAGE_KEY = 'language-preference';
 const GITHUB_LINK_DEFAULT_ACTION_STORAGE_KEY = 'github-links:defaultAction';
-const PANEL_OPEN_MODE_STORAGE_KEY = 'panel-layout:openMode';
-const PANEL_STACK_DIRECTION_STORAGE_KEY = 'panel-layout:stackDirection';
+const PANEL_COLUMN_COUNT_STORAGE_KEY = 'panel-layout:columnCount';
 
 type ListSystemFontsResponse = {
   success?: boolean;
@@ -165,16 +161,9 @@ export function* hydrateUserPreferencesWorker() {
     yield* put(setGithubLinkDefaultAction(githubLinkDefaultAction));
   }
 
-  const panelOpenMode = yield* getLocalStorageJSON<unknown>(PANEL_OPEN_MODE_STORAGE_KEY);
-  if (panelOpenMode === 'normal' || panelOpenMode === 'pin') {
-    yield* put(setPanelOpenMode(panelOpenMode));
-  }
-
-  const panelStackDirection = yield* getLocalStorageJSON<unknown>(
-    PANEL_STACK_DIRECTION_STORAGE_KEY,
-  );
-  if (panelStackDirection === 'left' || panelStackDirection === 'right') {
-    yield* put(setPanelStackDirection(panelStackDirection));
+  const panelColumnCount = yield* getLocalStorageJSON<unknown>(PANEL_COLUMN_COUNT_STORAGE_KEY);
+  if (isPanelColumnCount(panelColumnCount)) {
+    yield* put(setPanelColumnCount(panelColumnCount));
   }
 }
 
@@ -254,14 +243,10 @@ function* persistGithubLinkDefaultActionWorker() {
   );
 }
 
-function* persistPanelOpenModeWorker() {
-  yield* setLocalStorageJSON(PANEL_OPEN_MODE_STORAGE_KEY, yield* selectPanelOpenMode.effect());
-}
-
-function* persistPanelStackDirectionWorker() {
+export function* persistPanelColumnCountWorker() {
   yield* setLocalStorageJSON(
-    PANEL_STACK_DIRECTION_STORAGE_KEY,
-    yield* selectPanelStackDirection.effect(),
+    PANEL_COLUMN_COUNT_STORAGE_KEY,
+    yield* selectPanelColumnCount.effect(),
   );
 }
 
@@ -286,11 +271,7 @@ function* watchUserPreferenceWrites() {
   );
   yield* takeEvery(setLanguagePreference, persistLanguagePreferenceWorker);
   yield* takeEvery(setGithubLinkDefaultAction, persistGithubLinkDefaultActionWorker);
-  yield* takeEvery([setPanelOpenMode, togglePanelOpenMode], persistPanelOpenModeWorker);
-  yield* takeEvery(
-    [setPanelStackDirection, togglePanelStackDirection],
-    persistPanelStackDirectionWorker,
-  );
+  yield* takeEvery(setPanelColumnCount, persistPanelColumnCountWorker);
 }
 
 /** Unregistered until the S20 middleware cutover. */
