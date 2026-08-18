@@ -20,6 +20,7 @@ vi.mock('../embedded-browser-cdp-service', () => ({
   embeddedBrowserCdp: {
     registerTab: vi.fn(),
     unregisterTab: vi.fn(),
+    waitForTabRegistration: vi.fn().mockResolvedValue(true),
   },
 }));
 

@@ -8,7 +8,6 @@
     getPanelMovePreviewWidthRatio,
     getPanelRootEdgeMovePreview,
   } from '$features/layout/panel-move-preview';
-  import { invoke as ipcInvoke } from '$shared/generated/ipc-client';
   import {
     createPanelKeyboardShortcuts,
     registerPanelKeyboardShortcuts,
@@ -76,7 +75,6 @@
     selectPanelCanvasWidthSource,
     selectRestoreStatus,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import { focusBrowserTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
   import { renameAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
@@ -1187,52 +1185,13 @@
       handleTerminalCreated(event.payload || event);
     });
 
-    // Listen for browser tab focus requests from main process (CDP agent).
-    // Translate the IPC payload into a Redux action handled by the app-layout saga.
-    const unsubBrowserFocus = listenSync('browser:focus-tab', (event: any) => {
-      if (!active) return;
-      const tabId = event?.payload?.tabId;
-      if (!tabId) {
-        logger.warn('browser:focus-tab received without tabId', { event });
-        return;
-      }
-      appStore.dispatch(focusBrowserTabRequested(workspaceId, tabId));
-    });
-
-    // Listen for browser tab list requests from main process
-    const unsubBrowserListTabs = listenSync('browser:list-tabs-request', (event: any) => {
-      if (!active) return;
-      // Echo the requestId back so the main process resolves the matching
-      // pending request (concurrent requests must not consume each other's
-      // replies).
-      const requestId = event?.payload?.requestId;
-      // Collect all browser tabs from the panel layout
-      const browserTabs = selectAllTabs
-        .select(appStore.state, workspaceId)
-        .filter((t) => t.type === 'browser')
-        .map((t) => ({
-          tabId: t.id,
-          url: t.browserUrl || '',
-          title: t.title || m.layout_panelLayout_browser_fallback(),
-          closable: t.closable !== false,
-        }));
-
-      logger.debug('Responding to browser:list-tabs-request', {
-        count: browserTabs.length,
-        requestId,
-      });
-
-      // Send the list back to main process
-      if (canOpenBrowserPanel) {
-        void ipcInvoke('browser:list-tabs-response', { tabs: browserTabs, requestId });
-      }
-    });
+    // browser:focus-tab and browser:list-tabs-request are handled by the
+    // window-level browser IPC saga (browser-ipc-saga.ts), which routes by the
+    // payload's workspaceId so background workspaces answer too (monorepo#2756).
 
     return () => {
       document.removeEventListener('layout:configure-panels', handleConfigurePanels);
       unsubTerminalCreated();
-      unsubBrowserFocus();
-      unsubBrowserListTabs();
     };
   });
 

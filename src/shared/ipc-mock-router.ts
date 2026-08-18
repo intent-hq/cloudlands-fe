@@ -148,10 +148,10 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
     { success: false, error: 'Remote SSH file access is not available in this build' },
   ],
   // Electron-main CDP plumbing: EmbeddedBrowser's webContents registration
-  // (caller `.catch`es and logs) and PanelLayout's response arm for the
-  // browser:list-tabs-request event — which never fires in this build (see
-  // UNEMITTED_LISTENER_ALLOWLIST), so the invoke is statically present but
-  // unreachable.
+  // (caller `.catch`es and logs) and the browser IPC saga's response arm for
+  // the browser:list-tabs-request event. The saga only subscribes in Electron
+  // (isElectron() gate) and the request never fires in this build, so the
+  // invoke is statically present but unreachable.
   ['browser:register-tab', undefined],
   ['browser:list-tabs-response', undefined],
   // Chat-input context enrichment (context-api getWorkspaceInfo). The caller
@@ -212,12 +212,6 @@ export const UNEMITTED_LISTENER_ALLOWLIST: ReadonlyMap<string, string> = new Map
   ['git:auto-commit-started', 'no daemon auto-commit events (PROTOCOL §6.5 git:* reserved)'],
   ['git:auto-commit-succeeded', 'no daemon auto-commit events (PROTOCOL §6.5 git:* reserved)'],
   ['git:auto-commit-hook-failure', 'no daemon auto-commit events (PROTOCOL §6.5 git:* reserved)'],
-  // PanelLayout ↔ Electron-main CDP agent plumbing (focus a browser tab / list
-  // open tabs). The CDP agent lives in the unported Electron main process;
-  // nothing in the daemon build issues these requests. The paired
-  // browser:list-tabs-response invoke is an allowlisted absent surface above.
-  ['browser:focus-tab', 'Electron-main CDP agent request — no emitter in the daemon build'],
-  ['browser:list-tabs-request', 'Electron-main CDP agent request — no emitter in the daemon build'],
   // Tiptap editor agent-suggestion marks (editor-listeners.ts). The legacy
   // agent note-suggestion flow was never ported — no producer exists on the
   // daemon; the editor simply never renders suggestion marks.
