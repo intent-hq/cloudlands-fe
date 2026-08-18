@@ -491,18 +491,33 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-browsers-${{ runner.os }}-${{ steps.ct-playwright.outputs.version }}
       - name: Harden apt against mirror stalls
-        # The runner image points apt at azure.archive.ubuntu.com, which has
-        # stalled mid-transfer until the 30-min job budget expired — twice,
-        # before any test ran (monorepo#2832). Point apt at the canonical
-        # archive.ubuntu.com instead and bound every fetch: without an
-        # explicit Acquire timeout a dead-but-open connection can hang apt
-        # indefinitely. Belt-and-braces with the step timeout below.
+        # The runner image prefers the azure.archive.ubuntu.com mirror, which
+        # has stalled mid-transfer until the 30-min job budget expired —
+        # twice, before any test ran (monorepo#2832). The image routes apt
+        # through mirror+file indirection (/etc/apt/sources.list.d/*.sources
+        # says mirror+file:/etc/apt/apt-mirrors.txt; the azure hostname lives
+        # ONLY in that mirror list), so drop the azure entry from the list —
+        # the canonical archive.ubuntu.com + security.ubuntu.com fallbacks
+        # remain. The plain-hostname rewrite over the sources files is kept
+        # as a fail-safe in case a future image drops the indirection. Also
+        # bound every fetch: without an explicit Acquire timeout a
+        # dead-but-open connection can hang apt indefinitely — and the second
+        # recorded hang was on archive.ubuntu.com itself, so the timeout (not
+        # the mirror swap) is the load-bearing bound. Belt-and-braces with
+        # the step timeout below.
         run: |
           set -euo pipefail
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+            echo "apt-mirrors.txt now:" && cat /etc/apt/apt-mirrors.txt
+          fi
           for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
             [ -e "$f" ] || continue
             sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' "$f"
           done
+          if grep -Rq 'azure\.archive\.ubuntu\.com' /etc/apt; then
+            echo "::warning::azure.archive.ubuntu.com still referenced under /etc/apt — mirror swap ineffective (Acquire bounds still apply)"
+          fi
           printf '%s\n' \
             'Acquire::Retries "3";' \
             'Acquire::http::Timeout "30";' \
