@@ -248,6 +248,8 @@
                 content={message.contentBlocks || []}
                 isStreaming={!!message.isStreaming}
                 workspaceId={agent?.workspaceId ? String(agent.workspaceId) : undefined}
+                {agentId}
+                messageId={message.id}
               />
             </div>
           </div>

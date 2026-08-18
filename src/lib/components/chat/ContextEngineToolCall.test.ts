@@ -1,9 +1,14 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ContentBlock, ToolUseBlock } from '$shared/types';
 import ContextEngineToolCall from './ContextEngineToolCall.svelte';
 import MessageContent from './MessageContent.svelte';
+import { store as appStore } from '$store/renderer/store';
+
+// MessageContent subscribes to the hydrated-blocks selector at init (§5.5
+// lazy block hydration), which requires an initialized store.
+beforeAll(() => appStore.init());
 
 vi.mock(
   '$store/renderer/slices/user-preferences/user-preferences-selectors',

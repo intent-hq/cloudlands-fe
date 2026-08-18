@@ -3,6 +3,7 @@ import type { StoreState } from '../../types';
 import { emptyChatAgentState } from './chat-state-slice';
 import type {
   ChatAgentState,
+  HydratedBlockEntry,
   StatusEvent,
   LastAttemptedMessage,
   LiveStreamPhase,
@@ -10,6 +11,7 @@ import type {
   TranscriptHydrationStatus,
   TranscriptSnapshotMeta,
 } from './chat-state-types';
+import { hydratedBlockKey } from './chat-state-types';
 
 // ============================================================================
 // Helpers
@@ -174,6 +176,33 @@ export const selectAwaitingSwitchBackSnapshot = store.createSelector(
 export const selectAwaitingUtilityFooter = store.createSelector(
   (state, agentId: string): boolean =>
     getAgentChatState(state, agentId).awaitingUtilityFooter === true,
+);
+
+/**
+ * Select one lazily hydrated content block entry (§5.5 slim projection →
+ * v7.2 `agent.getMessageBlock`), or undefined when never requested. Keyed by
+ * `{messageId}|{blockId}` via `hydratedBlockKey`.
+ */
+export const selectHydratedBlock = store.createSelector(
+  (
+    state,
+    agentId: string,
+    messageId: string,
+    blockId: string,
+  ): HydratedBlockEntry | undefined =>
+    getAgentChatState(state, agentId).hydratedBlocks?.[hydratedBlockKey(messageId, blockId)],
+);
+
+/**
+ * Select the agent's whole hydrated-block cache (keys `{messageId}|{blockId}`
+ * via `hydratedBlockKey`), or undefined when nothing was ever hydrated.
+ * Components subscribe to this map at init (agentId is stable per instance)
+ * and look blocks up reactively with `$derived` — block ids can appear after
+ * init (streaming), which a per-block selector readable could not track.
+ */
+export const selectHydratedBlocks = store.createSelector(
+  (state, agentId: string): Record<string, HydratedBlockEntry> | undefined =>
+    getAgentChatState(state, agentId).hydratedBlocks,
 );
 
 

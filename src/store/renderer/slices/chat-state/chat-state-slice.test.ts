@@ -34,7 +34,11 @@ import {
   chatTranscriptSnapshotApplied,
   chatSwitchBackRevealTimedOut,
   chatUtilityFooterReady,
+  messageBlockHydrationRequested,
+  messageBlockHydrated,
+  messageBlockHydrationFailed,
 } from './chat-state-slice';
+import { MAX_HYDRATED_BLOCKS } from './chat-state-types';
 import { markAgentAsViewed } from '../unread-tracking/unread-tracking-slice';
 import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-stream-slice';
 import {
@@ -49,6 +53,7 @@ import {
   selectChatError,
   selectChatLastMessageTime,
   selectChatLiveStreamPhase,
+  selectHydratedBlock,
   selectTranscriptHydratedOnce,
   selectTranscriptHydration,
 } from './chat-state-selectors';
@@ -1383,6 +1388,87 @@ describe('chatState selectors', () => {
       expect(footerArmed(state)).toBe(true);
       state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, null));
       expect(footerArmed(state)).toBe(false);
+    });
+  });
+
+  describe('lazy block hydration (§5.5 slim → v7.2 agent.getMessageBlock)', () => {
+    const MSG = 'msg-1';
+    const BLOCK = 'msg-1:2';
+    const entry = (state: ReturnType<typeof chatStateReducer>) =>
+      selectHydratedBlock.select(asStoreState(state), AGENT, MSG, BLOCK);
+
+    it('hydration request parks a loading entry keyed {messageId}|{blockId}', () => {
+      const state = chatStateReducer(
+        initialState,
+        messageBlockHydrationRequested(AGENT, MSG, BLOCK),
+      );
+      expect(entry(state)).toMatchObject({ status: 'loading' });
+    });
+
+    it('a re-request while loading is a no-op (single-flight)', () => {
+      const first = chatStateReducer(
+        initialState,
+        messageBlockHydrationRequested(AGENT, MSG, BLOCK),
+      );
+      const second = chatStateReducer(first, messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+      expect(second).toBe(first);
+    });
+
+    it('a re-request after load is a no-op (read-through cache: no refetch marker)', () => {
+      let state = chatStateReducer(initialState, messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+      state = chatStateReducer(
+        state,
+        messageBlockHydrated(AGENT, MSG, BLOCK, {
+          type: 'tool_result',
+          id: BLOCK,
+          output: 'full body',
+        }),
+      );
+      const after = chatStateReducer(state, messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+      expect(after).toBe(state);
+      expect(entry(after)).toMatchObject({ status: 'loaded', block: { output: 'full body' } });
+    });
+
+    it('a failed fetch records the error and the next request retries', () => {
+      let state = chatStateReducer(initialState, messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+      state = chatStateReducer(state, messageBlockHydrationFailed(AGENT, MSG, BLOCK, 'boom'));
+      expect(entry(state)).toMatchObject({ status: 'error', error: 'boom' });
+      state = chatStateReducer(state, messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+      expect(entry(state)).toMatchObject({ status: 'loading' });
+    });
+
+    it('caps cached entries at MAX_HYDRATED_BLOCKS, evicting oldest settled first', () => {
+      let state = initialState;
+      for (let i = 0; i < MAX_HYDRATED_BLOCKS + 5; i++) {
+        const blockId = `msg-x:${i}`;
+        state = chatStateReducer(state, messageBlockHydrationRequested(AGENT, 'msg-x', blockId));
+        state = chatStateReducer(
+          state,
+          messageBlockHydrated(AGENT, 'msg-x', blockId, { type: 'text', text: `t${i}` }),
+        );
+      }
+      const cached = state.byAgentId[AGENT].hydratedBlocks!;
+      expect(Object.keys(cached).length).toBeLessThanOrEqual(MAX_HYDRATED_BLOCKS);
+      // Newest entry survives; the very first was evicted.
+      expect(cached[`msg-x|msg-x:${MAX_HYDRATED_BLOCKS + 4}`]).toBeDefined();
+      expect(cached['msg-x|msg-x:0']).toBeUndefined();
+    });
+
+    it('never evicts in-flight loading entries', () => {
+      let state = initialState;
+      // Park MAX_HYDRATED_BLOCKS loading entries, then settle one more.
+      for (let i = 0; i < MAX_HYDRATED_BLOCKS; i++) {
+        state = chatStateReducer(
+          state,
+          messageBlockHydrationRequested(AGENT, 'msg-y', `msg-y:${i}`),
+        );
+      }
+      state = chatStateReducer(state, messageBlockHydrationRequested(AGENT, 'msg-y', 'msg-y:last'));
+      const cached = state.byAgentId[AGENT].hydratedBlocks!;
+      for (let i = 0; i < MAX_HYDRATED_BLOCKS; i++) {
+        expect(cached[`msg-y|msg-y:${i}`]).toMatchObject({ status: 'loading' });
+      }
+      expect(cached['msg-y|msg-y:last']).toMatchObject({ status: 'loading' });
     });
   });
 

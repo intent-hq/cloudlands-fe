@@ -13,6 +13,7 @@
 import type {
   AgentMessage,
   AgentSession,
+  ContentBlock,
   CreateNoteRequest,
   CreateWorkspaceRequest,
   DiffChunk,
@@ -495,6 +496,18 @@ export interface AgentsClient {
     nextToken: string | null;
     prevToken: string | null;
   }>;
+  /**
+   * One FULL content block of one persisted message, by block id
+   * (`agent.getMessageBlock`, §5.5, v7.2) — the on-demand counterpart of the
+   * slim conversation projection: a client holding a `*Truncated` slim block
+   * fetches the complete body here. Block identity matches the served
+   * conversation byte-for-byte (persisted assistant ids and serve-time
+   * synthetic `{messageId}:{index}` ids both resolve), and the returned block
+   * is the full, unprojected body — no `*Truncated`/`*Bytes` flags, images
+   * carry the original `data`, never the thumbnail. Unknown message/block ids
+   * reject with `-32602`; errors propagate as rejections.
+   */
+  getMessageBlock(agentId: string, messageId: string, blockId: string): Promise<ContentBlock>;
   /**
    * Create an agent session (`agent.create`, §5.5). The daemon returns the
    * full `AgentLite` projection of the newly persisted session (widened in
