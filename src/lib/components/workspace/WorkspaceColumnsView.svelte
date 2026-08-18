@@ -66,6 +66,18 @@
     selectResizablePanelSizes,
   } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
 
+  interface Props {
+    /**
+     * Reports which workspaces currently render a real WorkspaceSurface
+     * (virtualized columns render placeholders instead), so the offscreen
+     * webview host can keep the placeholder-only workspaces' browser tabs
+     * alive (monorepo#2789 slice 2).
+     */
+    onMountedWorkspaceIdsChange?: (mounted: ReadonlySet<string>) => void;
+  }
+
+  let { onMountedWorkspaceIdsChange }: Props = $props();
+
   const currentWorkspaceId$ = selectCurrentWorkspaceTabId();
   const workspaceStacks$ = selectWorkspaceStacks();
   const panelCanvasWidthsByWorkspaceId$ = selectPanelCanvasWidthsByWorkspaceId();
@@ -140,6 +152,10 @@
     if (draggedWorkspaceId) mounted.add(draggedWorkspaceId);
     if (dragOverWorkspaceId) mounted.add(dragOverWorkspaceId);
     return mounted;
+  });
+
+  $effect(() => {
+    onMountedWorkspaceIdsChange?.(mountedWorkspaceIds);
   });
 
   $effect(() => {

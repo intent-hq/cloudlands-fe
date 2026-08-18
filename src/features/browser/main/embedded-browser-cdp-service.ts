@@ -262,14 +262,20 @@ class EmbeddedBrowserCdpService {
       for (const resolve of waiters) resolve(true);
     }
 
-    // Automatically clean up when webContents is destroyed
+    // Automatically clean up when webContents is destroyed. Only drop the
+    // registry entry/lease if the tab still points at THIS webContents — a
+    // tab handed off between hosts (offscreen keep-alive ↔ visible panel,
+    // monorepo#2789) re-registers with a new webContentsId before the old
+    // guest's destroyed event fires, and that newer mapping must survive.
     const wc = webContents.fromId(webContentsId);
     if (wc && !wc.isDestroyed()) {
       wc.once('destroyed', () => {
         logger.info('WebContents destroyed, cleaning up tab registry', { tabId, webContentsId });
-        this.tabRegistry.delete(tabId);
+        if (this.tabRegistry.get(tabId) === webContentsId) {
+          this.tabRegistry.delete(tabId);
+          this.tabLeases.delete(tabId);
+        }
         this.attachedDebuggers.delete(webContentsId);
-        this.tabLeases.delete(tabId);
       });
     }
   }
