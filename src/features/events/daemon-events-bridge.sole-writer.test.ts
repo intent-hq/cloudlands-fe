@@ -166,27 +166,30 @@ describe('chat.subscribe sole-writer invariant at stream end', () => {
 
   afterEach(() => vi.clearAllMocks());
 
-  it('terminal complete must NOT replace the reconciled transcript with the stale accumulator set', () => {
+  it('terminal complete must NOT regress the reconciled transcript to the stale accumulator copies', () => {
     const handler = capturedHandlers[0]!;
     markStandingChatSubscription(AGENT);
 
-    // Mid-stream rejoin: the snapshot seeded the accumulator with the tool
-    // prefix only (text is never seeded — monorepo#2818), so by stream end
-    // the accumulator is text-starved.
-    const toolPrefix = reconciledBlocks().slice(1, 3);
-    seedSession([assistantMessage([reconciledBlocks()[0], ...toolPrefix])]);
-    seedStreamFromSnapshot(
-      AGENT,
-      { id: MESSAGE_ID, contentBlocks: [reconciledBlocks()[0], ...toolPrefix] },
-      WS,
-    );
+    // Mid-stream rejoin: the snapshot seeded the accumulator while the tool
+    // was still running, so its copy of the tool_use is STALE — in_progress,
+    // no result — and text is never seeded (monorepo#2818), so the set is
+    // also text-starved.
+    const staleToolUse = {
+      ...reconciledBlocks()[1],
+      metadata: { toolKind: 'execute', status: 'in_progress' },
+    } as ContentBlock;
+    seedSession([assistantMessage([reconciledBlocks()[0], staleToolUse])]);
+    seedStreamFromSnapshot(AGENT, { id: MESSAGE_ID, contentBlocks: [staleToolUse] }, WS);
 
-    // The standing subscription reconciles the FULL final transcript,
-    // including the tail text the firehose never saw.
+    // The standing subscription reconciles the FULL final transcript: the
+    // tool completed (result attached) and the tail text landed — none of
+    // which the firehose accumulator ever saw.
     appStore.dispatch(replaceMessages(AGENT, [assistantMessage(reconciledBlocks())]));
 
     // Terminal firehose event — pre-fix its `complete` dispatch carried the
-    // accumulator's stale set and the tail text went missing.
+    // accumulator's stale set, and the identity merge took the stale copy
+    // for every matched block: the completed tool_use regressed to a
+    // forever-spinning in_progress with no later emit to heal it.
     handler(
       notification('agent:stream:end', {
         agentId: AGENT,
