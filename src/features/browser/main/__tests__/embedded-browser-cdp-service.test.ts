@@ -270,6 +270,13 @@ describe('embedded browser CDP workspace routing', () => {
       );
     });
 
+    it('ignores a nullish list-tabs response payload without throwing', () => {
+      const handler = responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE);
+      expect(handler).toBeDefined();
+      expect(() => handler?.({}, null)).not.toThrow();
+      expect(() => handler?.({}, undefined)).not.toThrow();
+    });
+
     it('closeTab refuses to report "already closed" from a stale tab list missing the tab', async () => {
       // Seed a ws-stale cache WITHOUT tab-x, then go silent.
       mocks.sendToWorkspaceWindows.mockImplementation(

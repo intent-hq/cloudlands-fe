@@ -94,7 +94,8 @@ class EmbeddedBrowserCdpService {
     // Listen for browser tab list responses from renderer
     ipcMain.handle(
       IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE,
-      (_event, data: { tabs?: PanelBrowserTab[]; requestId?: string; error?: string }) => {
+      (_event, data: { tabs?: PanelBrowserTab[]; requestId?: string; error?: string } | null) => {
+        if (!data || typeof data !== 'object') return;
         logger.debug('Received browser tab list from renderer', {
           count: data.tabs?.length,
           requestId: data.requestId,
@@ -104,7 +105,10 @@ class EmbeddedBrowserCdpService {
           // Truthful error from the renderer (e.g. background layout
           // hydration failed, monorepo#2789): reject the matching request
           // instead of letting it time out as "renderer did not respond".
-          // The cache is left untouched.
+          // The cache is left untouched. Unlike the resolve path below, an
+          // error without a requestId is deliberately dropped (no
+          // reject-all-pending semantics): one window's hydration failure
+          // must not fail other windows' healthy pending requests.
           if (data.requestId) {
             const pending = this.pendingListTabsRequests.get(data.requestId);
             if (pending) {

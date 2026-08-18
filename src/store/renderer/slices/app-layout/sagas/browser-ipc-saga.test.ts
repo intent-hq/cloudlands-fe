@@ -19,8 +19,11 @@ vi.mock('$features/layout/panel-layout-history.client', () => ({
   savePanelLayoutHistory: vi.fn(),
 }));
 vi.mock('../../../utils/safe-local-storage-saga', () => ({
+  // A stored Error simulates a throwing restore path (hydration failure).
   getLocalStorageJSON: function* (key: string) {
-    return mocks.storage.get(key);
+    const value = mocks.storage.get(key);
+    if (value instanceof Error) throw value;
+    return value;
   },
   setLocalStorageJSON: function* (key: string, value: unknown) {
     mocks.storage.set(key, value);
@@ -630,6 +633,111 @@ describe('browserIpcSaga', () => {
 
       expect(mocks.invoke).not.toHaveBeenCalled();
       expect(actions).toEqual([]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('opens with position "replace" against the hydrated layout, reusing the persisted browser tab', async () => {
+      const { actions, task } = startWithReducer();
+      hostedState('ws-hyd-6');
+      seedStorage('ws-hyd-6', [
+        { id: 'browser-1', type: 'browser', title: 'A', browserUrl: 'http://a/', closable: true },
+      ]);
+
+      await emit(
+        { url: 'http://replaced/', position: 'replace', workspaceId: 'ws-hyd-6' },
+        'browser:open-tab',
+      );
+
+      expect(actions).toContainEqual({
+        type: 'panelLayout/updateTabBrowserUrl',
+        payload: ['ws-hyd-6', 'browser-1', 'http://replaced/'],
+      });
+      expect(actions).toContainEqual(
+        expect.objectContaining({
+          type: 'panelLayout/setActiveTab',
+          payload: expect.objectContaining({ wsId: 'ws-hyd-6', tabId: 'browser-1' }),
+        }),
+      );
+      expect(actions.map((action: any) => action.type)).not.toContain('panelLayout/openTab');
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('replies with a truthful hydration error instead of tabs when the restore throws', async () => {
+      const { task } = startWithReducer();
+      hostedState('ws-hyd-err-1');
+      mocks.storage.set(
+        `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}ws-hyd-err-1`,
+        new Error('storage exploded'),
+      );
+
+      await emit({ workspaceId: 'ws-hyd-err-1', requestId: 'req-e1' }, 'browser:list-tabs-request');
+
+      expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
+        requestId: 'req-e1',
+        error: 'layout hydration failed: storage exploded',
+      });
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('retries hydration on the next request after a failed one instead of answering empty', async () => {
+      const { task } = startWithReducer();
+      hostedState('ws-hyd-err-2');
+      const key = `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}ws-hyd-err-2`;
+      mocks.storage.set(key, new Error('storage exploded'));
+
+      await emit({ workspaceId: 'ws-hyd-err-2', requestId: 'req-e2a' }, 'browser:list-tabs-request');
+      mocks.storage.set(
+        key,
+        persistedLayout([
+          { id: 'browser-1', type: 'browser', title: 'A', browserUrl: 'http://a/', closable: true },
+        ]),
+      );
+      await emit({ workspaceId: 'ws-hyd-err-2', requestId: 'req-e2b' }, 'browser:list-tabs-request');
+
+      expect(mocks.invoke.mock.calls.map(([, payload]: any[]) => payload)).toEqual([
+        { requestId: 'req-e2a', error: 'layout hydration failed: storage exploded' },
+        {
+          requestId: 'req-e2b',
+          tabs: [{ tabId: 'browser-1', url: 'http://a/', title: 'A', closable: true }],
+        },
+      ]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('survives a hydration failure in close/focus handlers and keeps servicing requests', async () => {
+      const { actions, task } = startWithReducer();
+      hostedState('ws-hyd-err-3');
+      mocks.storage.set(
+        `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}ws-hyd-err-3`,
+        new Error('storage exploded'),
+      );
+
+      await emit({ tabId: 'browser-1', workspaceId: 'ws-hyd-err-3' }, 'browser:close-tab');
+      expect(actions.map((action: any) => action.type)).not.toContain('panelLayout/closeTab');
+
+      await emit({ tabId: 'browser-1', workspaceId: 'ws-hyd-err-3' }, 'browser:focus-tab');
+      expect(actions).toContainEqual({
+        type: 'appLayout/focusBrowserTabRequested',
+        payload: ['ws-hyd-err-3', 'browser-1'],
+      });
+
+      // The saga is still alive: a later healthy request is answered.
+      state = {
+        ...state,
+        tabState: { workspaceStacks: [['ws-hyd-err-3', 'ws-hyd-ok']] },
+      };
+      seedStorage('ws-hyd-ok', [
+        { id: 'browser-2', type: 'browser', title: 'B', browserUrl: 'http://b/', closable: true },
+      ]);
+      await emit({ workspaceId: 'ws-hyd-ok', requestId: 'req-ok' }, 'browser:list-tabs-request');
+      expect(mocks.invoke).toHaveBeenCalledWith('browser:list-tabs-response', {
+        requestId: 'req-ok',
+        tabs: [{ tabId: 'browser-2', url: 'http://b/', title: 'B', closable: true }],
+      });
       task.cancel();
       await task.toPromise();
     });

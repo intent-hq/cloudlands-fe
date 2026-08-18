@@ -18,8 +18,11 @@ vi.mock('$features/layout/panel-layout-history.client', () => ({
   savePanelLayoutHistory: mocks.saveHistory,
 }));
 vi.mock('../../../utils/safe-local-storage-saga', () => ({
+  // Yield the mock's return value so a test can hand back a Promise to hold
+  // a restore in flight (the saga awaits yielded promises; plain values pass
+  // through unchanged).
   getLocalStorageJSON: function* (key: string) {
-    return mocks.getJSON(key);
+    return yield mocks.getJSON(key);
   },
   removeLocalStorageItem: function* (key: string) {
     mocks.removeItem(key);
@@ -101,7 +104,11 @@ import {
   type LayoutSnapshot,
   type WorkspacePanelLayout,
 } from '../panel-layout-types';
-import { isStoredLayoutValid, panelLayoutSaga } from './panel-layout-saga';
+import {
+  isStoredLayoutValid,
+  panelLayoutSaga,
+  waitForWorkspaceLayoutRestore,
+} from './panel-layout-saga';
 
 const WS_1 = 'ws-1';
 const WS_2 = 'ws-2';
@@ -1031,6 +1038,53 @@ describe('panelLayoutSaga', () => {
         setRestoreStatus(WS_2, 'pending'),
         initializeLayout(WS_2, layout),
         setRestoreStatus(WS_2, 'restored'),
+      ]);
+      await cancelSaga(task);
+    });
+
+    it('registers switch re-restores in flight so hydration waiters see post-switch state (monorepo#2789)', async () => {
+      let resolveStored!: (value: unknown) => void;
+      const storedPromise = new Promise((resolve) => {
+        resolveStored = resolve;
+      });
+      mocks.getJSON.mockReturnValue(undefined);
+      let backendId = LOCAL_CONNECTION_ID;
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const getState = () => storeState(WS_1, backendId);
+      const task = runSaga({ channel, dispatch, getState }, panelLayoutSaga, {
+        activeWorkspaceId: WS_1,
+      });
+      await settle();
+      dispatch.mockClear();
+
+      // The incoming backend's storage read stays pending, holding the
+      // switch re-restore in flight while the store still has the outgoing
+      // backend's layout.
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === REMOTE_STORAGE_KEY_1 ? storedPromise : undefined,
+      );
+      backendId = REMOTE_ID;
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      await settle();
+
+      let waited = false;
+      const waiter = runSaga({ channel, dispatch, getState }, function* () {
+        yield* waitForWorkspaceLayoutRestore(WS_1);
+        waited = true;
+      });
+      await settle();
+      // The waiter must block on the in-flight switch re-restore — a no-op
+      // wait here is the stale-tabs leak the registration exists to prevent.
+      expect(waited).toBe(false);
+
+      resolveStored(layout);
+      await waiter.toPromise();
+      expect(waited).toBe(true);
+      expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        setRestoreStatus(WS_1, 'pending'),
+        initializeLayout(WS_1, layout),
+        setRestoreStatus(WS_1, 'restored'),
       ]);
       await cancelSaga(task);
     });
