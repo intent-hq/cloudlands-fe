@@ -3,6 +3,7 @@ import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   ChatAgentState,
   ChatStateSlice,
+  HydratedBlockEntry,
   StatusEvent,
   LastAttemptedMessage,
   LiveStreamPhase,
@@ -13,7 +14,11 @@ import type {
   StreamStatusContext,
   TranscriptSnapshotMeta,
 } from './chat-state-types';
-import { MAX_QUEUED_RETRY_RECORDS } from './chat-state-types';
+import {
+  MAX_HYDRATED_BLOCKS,
+  MAX_QUEUED_RETRY_RECORDS,
+  hydratedBlockKey,
+} from './chat-state-types';
 import { sanitizeStatusEvent } from './chat-state-serialization';
 import {
   agentStreamUpdateReceived,
@@ -26,7 +31,7 @@ import {
   removeQueuedMessageFromAgentQueue,
   replaceAgentQueue,
 } from '../agent-queue/agent-queue-slice';
-import type { QueuedMessage } from '$shared/types';
+import type { ContentBlock, QueuedMessage } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
 
 // ============================================================================
@@ -137,6 +142,37 @@ function parkRetryRecord(
     ids.sort((a, b) => next[a].seq - next[b].seq);
     for (const id of ids.slice(0, ids.length - MAX_QUEUED_RETRY_RECORDS)) {
       delete next[id];
+    }
+  }
+  return next;
+}
+
+/**
+ * Write one hydrated-block entry with the next monotonic seq, evicting the
+ * oldest SETTLED (loaded/error) entries beyond MAX_HYDRATED_BLOCKS. In-flight
+ * `loading` entries are exempt from eviction — the single-flight dedup
+ * depends on them surviving until the fetch settles.
+ */
+function setHydratedBlock(
+  agent: ChatAgentState,
+  key: string,
+  entry:
+    | { status: 'loading' }
+    | { status: 'loaded'; block: ContentBlock }
+    | { status: 'error'; error: string },
+): Record<string, HydratedBlockEntry> {
+  const current = agent.hydratedBlocks ?? {};
+  const seq = Object.values(current).reduce((max, e) => Math.max(max, e.seq), 0) + 1;
+  const next: Record<string, HydratedBlockEntry> = {
+    ...current,
+    [key]: { ...entry, seq } as HydratedBlockEntry,
+  };
+  const settledIds = Object.keys(next).filter((id) => next[id].status !== 'loading');
+  const overflow = Object.keys(next).length - MAX_HYDRATED_BLOCKS;
+  if (overflow > 0) {
+    settledIds.sort((a, b) => next[a].seq - next[b].seq);
+    for (const id of settledIds.slice(0, overflow)) {
+      if (id !== key) delete next[id];
     }
   }
   return next;
@@ -740,6 +776,29 @@ export const chatTranscriptSnapshotRerequested = createAction<[wsId: string, age
   'chatState/transcriptSnapshotRerequested',
 );
 
+// --- Lazy block hydration (§5.5 slim projection → v7.2 agent.getMessageBlock) ---
+
+/**
+ * Saga trigger + single-flight marker: the user expanded a truncated tool row
+ * or asked for a truncated image's original. The reducer records `loading`
+ * under `{messageId}|{blockId}` (deduping concurrent expands — the saga
+ * ignores triggers whose entry is already loading/loaded), then the
+ * chat-read saga fetches via `agent.getMessageBlock`.
+ */
+export const messageBlockHydrationRequested = createAction<
+  [agentId: string, messageId: string, blockId: string]
+>('chatState/messageBlockHydrationRequested');
+
+/** The full block arrived: cache it for rendering (bounded, oldest evicted). */
+export const messageBlockHydrated = createAction<
+  [agentId: string, messageId: string, blockId: string, block: ContentBlock]
+>('chatState/messageBlockHydrated');
+
+/** The fetch failed: record the error so the next expand can retry. */
+export const messageBlockHydrationFailed = createAction<
+  [agentId: string, messageId: string, blockId: string, error: string]
+>('chatState/messageBlockHydrationFailed');
+
 // --- Send message saga trigger (no reducer state change) ---
 
 /** Trigger the send-message saga. Dispatched from ChatPanel after DOM serialization. */
@@ -973,6 +1032,44 @@ chatStateReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId
     awaitingSwitchBackSnapshot: false,
   });
 });
+chatStateReducer.with(
+  messageBlockHydrationRequested,
+  (state, { payload: [agentId, messageId, blockId] }) => {
+    const agent = getAgent(state, agentId);
+    const key = hydratedBlockKey(messageId, blockId);
+    const existing = agent.hydratedBlocks?.[key];
+    // Single-flight + read-through cache: an in-flight or already-loaded
+    // entry ignores the re-request; only absent or errored entries start a
+    // fresh fetch (the saga keys off the same predicate).
+    if (existing && existing.status !== 'error') return state;
+    return updateAgent(state, agentId, {
+      agentId,
+      hydratedBlocks: setHydratedBlock(agent, key, { status: 'loading' }),
+    });
+  },
+);
+chatStateReducer.with(
+  messageBlockHydrated,
+  (state, { payload: [agentId, messageId, blockId, block] }) => {
+    const agent = getAgent(state, agentId);
+    const key = hydratedBlockKey(messageId, blockId);
+    return updateAgent(state, agentId, {
+      agentId,
+      hydratedBlocks: setHydratedBlock(agent, key, { status: 'loaded', block }),
+    });
+  },
+);
+chatStateReducer.with(
+  messageBlockHydrationFailed,
+  (state, { payload: [agentId, messageId, blockId, error] }) => {
+    const agent = getAgent(state, agentId);
+    const key = hydratedBlockKey(messageId, blockId);
+    return updateAgent(state, agentId, {
+      agentId,
+      hydratedBlocks: setHydratedBlock(agent, key, { status: 'error', error }),
+    });
+  },
+);
 chatStateReducer.with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, phase] }) => {
   if (phase === null && !state.byAgentId[agentId]) return state;
   // Phase null = subscription closed (teardown reset): the snapshot metadata

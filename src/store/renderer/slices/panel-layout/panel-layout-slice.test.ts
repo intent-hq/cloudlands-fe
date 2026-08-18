@@ -27,6 +27,7 @@ import {
   setDeferSpecTab,
   toggleExpandPanel,
   updateTabTitle,
+  updateTabBrowserUrl,
   updateFileTabPath,
   clearPanelLayout,
   bootstrapNewWorkspaceLayout,
@@ -1721,6 +1722,69 @@ describe('panelLayoutReducer', () => {
       const state = stateWithPanel('p1', [{ id: 't1', type: 'note', title: 'Old Title' }]);
       const result = panelLayoutReducer(state, updateTabTitle(WS, 't1', 'New Title'));
       expect(result.byWorkspaceId[WS].panels.p1.tabs[0].title).toBe('New Title');
+    });
+  });
+
+  describe('updateTabBrowserUrl', () => {
+    const REQUESTED = 'http://daemon.localhost:3000/';
+    const TUNNELED = 'http://127.0.0.1:52345/';
+
+    function browserState(browserRequestedUrl?: string, browserUrl = TUNNELED) {
+      const state = stateWithPanel('p1', [{ id: 't1', type: 'browser', title: 'Browser' }]);
+      const tab = state.byWorkspaceId[WS].panels.p1.tabs[0] as any;
+      tab.browserUrl = browserUrl;
+      if (browserRequestedUrl !== undefined) tab.browserRequestedUrl = browserRequestedUrl;
+      return state;
+    }
+
+    it('records the requested URL when a string is passed (rewritten open)', () => {
+      const result = panelLayoutReducer(
+        browserState(),
+        updateTabBrowserUrl(WS, 't1', TUNNELED, REQUESTED),
+      );
+      const tab = result.byWorkspaceId[WS].panels.p1.tabs[0];
+      expect(tab.browserUrl).toBe(TUNNELED);
+      expect(tab.browserRequestedUrl).toBe(REQUESTED);
+    });
+
+    it('clears the requested URL when null is passed (non-rewritten open)', () => {
+      const result = panelLayoutReducer(
+        browserState(REQUESTED),
+        updateTabBrowserUrl(WS, 't1', 'https://example.com/', null),
+      );
+      const tab = result.byWorkspaceId[WS].panels.p1.tabs[0];
+      expect(tab.browserUrl).toBe('https://example.com/');
+      expect(tab.browserRequestedUrl).toBeUndefined();
+    });
+
+    it('rebases the requested URL for same-origin webview navigations (omitted arg)', () => {
+      const result = panelLayoutReducer(
+        browserState(REQUESTED),
+        updateTabBrowserUrl(WS, 't1', 'http://127.0.0.1:52345/app?x=1'),
+      );
+      const tab = result.byWorkspaceId[WS].panels.p1.tabs[0];
+      expect(tab.browserUrl).toBe('http://127.0.0.1:52345/app?x=1');
+      expect(tab.browserRequestedUrl).toBe('http://daemon.localhost:3000/app?x=1');
+    });
+
+    it('drops the requested URL when a navigation leaves the origin (omitted arg)', () => {
+      const result = panelLayoutReducer(
+        browserState(REQUESTED),
+        updateTabBrowserUrl(WS, 't1', 'https://example.com/'),
+      );
+      const tab = result.byWorkspaceId[WS].panels.p1.tabs[0];
+      expect(tab.browserUrl).toBe('https://example.com/');
+      expect(tab.browserRequestedUrl).toBeUndefined();
+    });
+
+    it('leaves tabs without a requested URL unchanged on navigation (legacy behavior)', () => {
+      const result = panelLayoutReducer(
+        browserState(undefined, 'http://127.0.0.1:3000/'),
+        updateTabBrowserUrl(WS, 't1', 'http://127.0.0.1:3000/next'),
+      );
+      const tab = result.byWorkspaceId[WS].panels.p1.tabs[0];
+      expect(tab.browserUrl).toBe('http://127.0.0.1:3000/next');
+      expect(tab.browserRequestedUrl).toBeUndefined();
     });
   });
 

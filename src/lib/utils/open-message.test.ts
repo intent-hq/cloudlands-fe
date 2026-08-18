@@ -6,14 +6,7 @@
  * hydration + hand-off choreography, including the §5.5 `aroundMessageId`
  * seek path for messages absent from the (pruned) store.
  */
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockDispatch, mockState, mockGetConversation } = vi.hoisted(() => ({
   mockDispatch: vi.fn(),
@@ -22,9 +15,8 @@ const { mockDispatch, mockState, mockGetConversation } = vi.hoisted(() => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => mockState.value,
     dispatch: mockDispatch,
@@ -156,7 +148,7 @@ describe('openMessage', () => {
     await vi.runAllTimersAsync();
     await done;
 
-    expect(mockGetConversation).toHaveBeenCalledWith('agent-1', 200, undefined, 'msg-1');
+    expect(mockGetConversation).toHaveBeenCalledWith('agent-1', 50, undefined, 'msg-1');
     expect(mockDispatch).toHaveBeenCalledWith({
       type: 'agentSessions/replaceMessages',
       payload: ['agent-1', seekPage.messages],

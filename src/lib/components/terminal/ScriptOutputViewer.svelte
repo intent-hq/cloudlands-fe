@@ -121,14 +121,19 @@
       try {
         const url = new URL(uri);
         if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-          void resolveBrowserLinkForOpen(uri).then((resolvedUrl) => {
+          void resolveBrowserLinkForOpen(uri).then((resolved) => {
             import('$features/layout/panel-layout-adapter')
               .then(({ getPanelLayoutManager }) => {
                 const layoutManager = getPanelLayoutManager(workspaceId);
-                layoutManager.openBrowserPanel(resolvedUrl);
+                layoutManager.openBrowserPanel(
+                  resolved.url,
+                  undefined,
+                  undefined,
+                  resolved.requestedUrl,
+                );
               })
               .catch(() => {
-                window.open(resolvedUrl, '_blank');
+                window.open(resolved.url, '_blank');
               });
           });
         } else {

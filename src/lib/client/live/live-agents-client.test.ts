@@ -1266,7 +1266,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
     expect(backend.requests[0]).toEqual({
       method: 'agent.getConversation',
-      params: { agentId: 'agent-1', limit: 200 },
+      params: { agentId: 'agent-1', limit: 50, projection: 'slim' },
     });
     expect(page.nextToken).toBe('tok-2');
     expect(page.truncated).toBe(true);
@@ -1287,7 +1287,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
     expect(backend.requests[0]).toEqual({
       method: 'agent.getConversation',
-      params: { agentId: 'agent-1', limit: 100, nextToken: 'tok-2' },
+      params: { agentId: 'agent-1', limit: 100, nextToken: 'tok-2', projection: 'slim' },
     });
     expect(page.nextToken).toBeNull();
   });
@@ -1314,11 +1314,16 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     }));
     const client = new LiveAgentsClient();
 
-    const page = await client.getConversation('agent-1', 200, undefined, 'msg-target');
+    const page = await client.getConversation('agent-1', 50, undefined, 'msg-target');
 
     expect(backend.requests[0]).toEqual({
       method: 'agent.getConversation',
-      params: { agentId: 'agent-1', limit: 200, aroundMessageId: 'msg-target' },
+      params: {
+        agentId: 'agent-1',
+        limit: 50,
+        aroundMessageId: 'msg-target',
+        projection: 'slim',
+      },
     });
     expect(page.nextToken).toBe('older-tok');
     expect(page.prevToken).toBe('newer-tok');
@@ -1382,6 +1387,64 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
       'exceeds maximum outbound frame size',
     );
     expect(backend.requests.map((request) => request.params.limit)).toEqual([4, 2, 1]);
+  });
+
+  // ---- §5.5 agent.getMessageBlock (v7.2 slim-hydration counterpart) ------
+
+  it('getMessageBlock forwards agentId/messageId/blockId and returns the full block', async () => {
+    // PROTOCOL §5.5 v7.2: { block } — the full, unprojected body (no
+    // *Truncated/*Bytes flags on the returned block).
+    backend.onRequest('agent.getMessageBlock', () => ({
+      block: {
+        type: 'tool_result',
+        id: 'msg-1:3',
+        tool_use_id: 'call-9',
+        output: 'x'.repeat(5000),
+      },
+    }));
+    const client = new LiveAgentsClient();
+
+    const block = await client.getMessageBlock('agent-1', 'msg-1', 'msg-1:3');
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.getMessageBlock',
+      params: { agentId: 'agent-1', messageId: 'msg-1', blockId: 'msg-1:3' },
+    });
+    expect(block.type).toBe('tool_result');
+    expect(block.id).toBe('msg-1:3');
+    expect(block.output).toHaveLength(5000);
+  });
+
+  it('getMessageBlock rejects on a missing block envelope', async () => {
+    backend.onRequest('agent.getMessageBlock', () => ({}));
+    const client = new LiveAgentsClient();
+    await expect(client.getMessageBlock('agent-1', 'msg-1', 'msg-1:0')).rejects.toThrow(
+      'returned no block',
+    );
+  });
+
+  it.each([
+    ['an array', []],
+    ['an empty object', {}],
+    ['an object with an unknown type', { type: 'bogus', id: 'msg-1:0' }],
+    ['a string', 'tool_result'],
+  ])('getMessageBlock rejects a malformed block envelope (%s)', async (_label, badBlock) => {
+    // Malformed { block } values must reject, never get cached and merged
+    // into message content as a ContentBlock.
+    backend.onRequest('agent.getMessageBlock', () => ({ block: badBlock }));
+    const client = new LiveAgentsClient();
+    await expect(client.getMessageBlock('agent-1', 'msg-1', 'msg-1:0')).rejects.toThrow(
+      'returned no block',
+    );
+  });
+
+  it('getMessageBlock propagates daemon -32602 rejections (unknown ids)', async () => {
+    backend.onRequest('agent.getMessageBlock', () => {
+      throw new BackendError(buildErrorPayload('INVALID_PARAMS', 'unknown block id: msg-1:99'));
+    });
+    const client = new LiveAgentsClient();
+    await expect(client.getMessageBlock('agent-1', 'msg-1', 'msg-1:99')).rejects.toThrow(
+      'unknown block id',
+    );
   });
 
   describe('retry', () => {
@@ -1451,6 +1514,65 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
       const result = await client.retry('agent-fail', 'ws-1');
       expect(result).toEqual({ ok: false, error: 'Transport failure' });
+      expect(result).not.toHaveProperty('notFound');
+    });
+
+    it('classifies the daemon not-found rejection as notFound:true (#2806)', async () => {
+      // PROTOCOL §5.5: a deleted agent rejects with -32602 and the structured
+      // discriminator `data.code: "not-found"` (monorepo#1320). The client
+      // must preserve that classification instead of collapsing it into a
+      // generic { ok: false } so the failure toast can dismiss itself.
+      backend.onRequest('agent.retry', () => {
+        throw new BackendError(
+          buildErrorPayload('INVALID_PARAMS', 'Agent agent-gone not found', {
+            rpcCode: -32602,
+            data: { code: 'not-found' },
+          }),
+        );
+      });
+      const client = new LiveAgentsClient();
+
+      const result = await client.retry('agent-gone', 'ws-1');
+      expect(result).toEqual({
+        ok: false,
+        notFound: true,
+        error: 'Agent agent-gone not found',
+      });
+    });
+
+    it('classifies the legacy not-found shape (rpcCode + message, no data.code) as notFound:true', async () => {
+      // Older daemons / lossy re-wrapping lose the structured data.code; the
+      // classifier's rpcCode + message fallback must still mark notFound.
+      backend.onRequest('agent.retry', () => {
+        throw new BackendError(
+          buildErrorPayload('INVALID_PARAMS', 'Agent agent-old not found', {
+            rpcCode: -32602,
+          }),
+        );
+      });
+      const client = new LiveAgentsClient();
+
+      const result = await client.retry('agent-old', 'ws-1');
+      expect(result).toEqual({
+        ok: false,
+        notFound: true,
+        error: 'Agent agent-old not found',
+      });
+    });
+
+    it('does not mark lookalike -32602 errors without a not-found signal as notFound', async () => {
+      backend.onRequest('agent.retry', () => {
+        throw new BackendError(
+          buildErrorPayload('INVALID_PARAMS', 'workspaceId is required', {
+            rpcCode: -32602,
+          }),
+        );
+      });
+      const client = new LiveAgentsClient();
+
+      const result = await client.retry('agent-1', 'ws-1');
+      expect(result).toEqual({ ok: false, error: 'workspaceId is required' });
+      expect(result).not.toHaveProperty('notFound');
     });
   });
 

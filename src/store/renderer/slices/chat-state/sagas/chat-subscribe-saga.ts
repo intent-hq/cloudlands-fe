@@ -59,11 +59,19 @@
  * An authoritative idle snapshot also clears retained flags after reconnect or
  * HMR, except for one snapshot that races a locally observed `chatSendStarted`.
  *
- * SOLE-WRITER INVARIANT: the standing subscription is the sole writer of an
- * agent's transcript MESSAGE state — the firehose events carry no content
- * (the daemon events bridge dispatches content-free chat-state bookkeeping
- * only), and the initial hydration (`chat-read-saga`) writes only the
- * persisted history.
+ * SOLE-WRITER INVARIANT: while a standing registration covers an agent (the
+ * chat-subscription-registry, marked at install / cleared at close), the
+ * subscription is the SOLE writer of that agent's transcript MESSAGE
+ * CONTENT. The `agent:*` firehose path keeps accumulating but omits content
+ * blocks from its dispatches (`dispatchStreamUpdate`; re-checked at apply
+ * time in `agent-stream-saga`), retaining only flag/metadata bookkeeping —
+ * so neither a mid-turn `agent:tool:call` tick nor the terminal
+ * `agent:stream:end` `complete` can clobber the reconciled transcript. For
+ * UNCOVERED agents (background/unviewed) the firehose remains the transcript
+ * writer, and its updates merge by block identity
+ * (`mergeStreamContentBlocks`, monorepo#2814) so they never delete
+ * previously written blocks. The initial hydration (`chat-read-saga`) writes
+ * only the persisted history.
  *
  * The root-owned saga takes each lifecycle action after reducers have applied
  * it, preserving the former post-action state-read semantics.
@@ -131,6 +139,10 @@ import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { createLogger } from '$lib/utils/client-logger';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
+import {
+  clearStandingChatSubscription,
+  markStandingChatSubscription,
+} from '$features/agent/utils/chat-subscription-registry';
 import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
 import {
   selectAgentMessages,
@@ -456,8 +468,8 @@ function* handleSubscriptionEvent(
     yield* applyTranscript(coordinator, event.agentId, entry, event.transcript, discardStoreOnly);
     // Seq-0 snapshot applied (single-transfer hydration): seed the firehose
     // stream accumulator with the snapshot's in-flight assistant message so
-    // subsequent agent:stream:chunk events pass the regression guard, then
-    // record the snapshot metadata for the chat-read saga (it settles
+    // subsequent agent:stream:chunk dispatches carry the full block prefix,
+    // then record the snapshot metadata for the chat-read saga (it settles
     // hydration on it and anchors the background older-history fetch).
     if (event.transcript.fromSnapshot === true) {
       const session = yield* selectAgentSession.effect(event.agentId);
@@ -590,6 +602,12 @@ function* openSubscription(
       hasEmitted: false,
       wasStreaming: false,
     });
+    // Sole-writer handoff: the firehose stream path consults this registry
+    // and stops writing message CONTENT while the registration stands (its
+    // accumulator keeps accumulating as the fallback writer). Marked at
+    // install — the seq-0 snapshot that follows is canonical for anything
+    // the firehose would have written in between.
+    markStandingChatSubscription(agentId);
     installed = true;
     ready = true;
     for (const event of pending) coordinator.events.put(event);
@@ -635,6 +653,13 @@ function* closeSubscription(
     return;
   }
   coordinator.subscriptions.delete(agentId);
+  // Sole-writer handoff back: the firehose stream path resumes writing
+  // message content for this agent. Its accumulator kept accumulating the
+  // whole time, so a mid-turn close loses nothing the fallback writer would
+  // normally carry (post-intentd#775 it never carries assistant text —
+  // text streamed after the close renders on the next snapshot/reconcile,
+  // same as any non-covered agent).
+  clearStandingChatSubscription(agentId);
   yield* call(entry.acquisition.dispose);
   if (slot.acquisition === entry.acquisition) slot.acquisition = undefined;
   try {
@@ -1199,6 +1224,7 @@ function disposeCoordinator(coordinator: SubscriptionCoordinator): string[] {
     slot.acquisition?.dispose();
   }
   for (const entry of coordinator.subscriptions.values()) entry.acquisition.dispose();
+  for (const agentId of agentIds) clearStandingChatSubscription(agentId);
   coordinator.subscriptions.clear();
   coordinator.slots.clear();
   // Watcher tasks are forked children of the root saga — cancellation

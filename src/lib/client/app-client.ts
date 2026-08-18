@@ -13,6 +13,7 @@
 import type {
   AgentMessage,
   AgentSession,
+  ContentBlock,
   CreateNoteRequest,
   CreateWorkspaceRequest,
   DiffChunk,
@@ -496,6 +497,18 @@ export interface AgentsClient {
     prevToken: string | null;
   }>;
   /**
+   * One FULL content block of one persisted message, by block id
+   * (`agent.getMessageBlock`, §5.5, v7.2) — the on-demand counterpart of the
+   * slim conversation projection: a client holding a `*Truncated` slim block
+   * fetches the complete body here. Block identity matches the served
+   * conversation byte-for-byte (persisted assistant ids and serve-time
+   * synthetic `{messageId}:{index}` ids both resolve), and the returned block
+   * is the full, unprojected body — no `*Truncated`/`*Bytes` flags, images
+   * carry the original `data`, never the thumbnail. Unknown message/block ids
+   * reject with `-32602`; errors propagate as rejections.
+   */
+  getMessageBlock(agentId: string, messageId: string, blockId: string): Promise<ContentBlock>;
+  /**
    * Create an agent session (`agent.create`, §5.5). The daemon returns the
    * full `AgentLite` projection of the newly persisted session (widened in
    * P2-12a from the earlier `{id, name}` snippet), which this method
@@ -719,12 +732,19 @@ export interface AgentsClient {
    * `redriven: true`: the redriven head entry's turn-correlation id — the
    * SAME id the original send/enqueue RPC returned (preserved across the
    * terminal-failure requeue), so the redrive's lifecycle events correlate
-   * with the record the client already keyed.
+   * with the record the client already keyed. `notFound: true` on an
+   * `ok: false` result marks the daemon's not-found rejection (-32602,
+   * data.code "not-found", §5.5) — the agent was deleted, so callers should
+   * drop stale failure state instead of keeping a Retry affordance
+   * (monorepo#2806).
    */
   retry(
     agentId: string,
     workspaceId: string,
-  ): Promise<{ ok: true; redriven?: boolean; turnId?: string } | { ok: false; error: string }>;
+  ): Promise<
+    | { ok: true; redriven?: boolean; turnId?: string }
+    | { ok: false; notFound?: boolean; error: string }
+  >;
   /**
    * Resolve an outstanding interactive permission prompt
    * (`agent.respondPermission`, PROTOCOL §8). The daemon forwards the chosen

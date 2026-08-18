@@ -2,6 +2,9 @@
   import type { ToolUseBlock } from '$shared/types';
   import SuggestedPrompts from '../SuggestedPrompts.svelte';
   import ToolCall from '../ToolCall.svelte';
+  import { store as appStore } from '$store/renderer/store';
+
+  appStore.init();
 
   interface Props {
     compact?: boolean;

@@ -18,6 +18,9 @@
     getToolResultPayload,
     getToolResultText,
   } from './tool-result-pairing';
+  import { isHydrationPending, mergeHydratedContent } from './block-hydration';
+  import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
+  import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
   import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
@@ -93,6 +96,10 @@
     hideSetupScripts?: boolean;
     workspaceId?: string;
     role?: MessageRole;
+    /** Agent session id; with `messageId`, enables lazy block hydration (§5.5). */
+    agentId?: string;
+    /** Persisted message id owning `content` (hydration fetch/merge key). */
+    messageId?: string;
     onSetupScriptGenerated?: (script: {
       name: string;
       description: string;
@@ -107,8 +114,31 @@
     hideSetupScripts = false,
     workspaceId,
     role = 'assistant',
+    agentId,
+    messageId,
     onSetupScriptGenerated,
   }: Props = $props();
+
+  // Lazy full-block hydration (§5.5 slim projection → v7.2
+  // agent.getMessageBlock): substitute cached full blocks for slim-truncated
+  // ones before any downstream derivation. Init-time subscription (agentId is
+  // stable per component instance); under-budget content passes through with
+  // referential identity intact — live-streamed blocks are never truncated,
+  // so the merge is a no-op mid-turn.
+  // svelte-ignore state_referenced_locally -- intentional initial snapshot; keyed component identity is fixed.
+  const hydratedBlocks$ = selectHydratedBlocks(agentId ?? '');
+  const hydratedContent = $derived(
+    mergeHydratedContent(content || [], messageId, $hydratedBlocks$),
+  );
+
+  function hydrateImageBlock(blockId: string | undefined) {
+    if (!agentId || !messageId || !blockId) return;
+    appStore.dispatch(messageBlockHydrationRequested(agentId, messageId, blockId));
+  }
+
+  function imageHydrationLoading(blockId: string | undefined): boolean {
+    return blockId ? isHydrationPending($hydratedBlocks$, messageId, [blockId]) : false;
+  }
 
   // OPTIMIZATION: Use $derived instead of $effect to avoid triggering re-renders
   let cleanupFunctions: Array<() => void> = [];
@@ -162,7 +192,7 @@
     // Agent Q&A questions are wizard-only: they never render in the
     // transcript (pending or resolved), so strip them up front.
     const rawBlocks = dedupeAgentVideoContentBlocks(
-      normalizeAgentVideoContentBlocks(dedupeResourceBlocks(content || []), role),
+      normalizeAgentVideoContentBlocks(dedupeResourceBlocks(hydratedContent), role),
     ).filter((block) => !isQuestionResourceBlock(block));
 
     // DEBUG: Log content block types for tool call visibility debugging
@@ -766,8 +796,11 @@
         toolUse={toolBlock}
         toolState={toolStates.get(toolBlock.id) || 'running'}
         result={resultContent}
+        resultBlock={toolResultBlock}
         {workspaceId}
         {adjacentOperationalRow}
+        {agentId}
+        {messageId}
       />
       {#if Array.isArray(resultContent)}
         {#each resultContent as nestedBlock, nestedIndex (`${toolBlock.id}-image-${nestedIndex}`)}
@@ -801,8 +834,15 @@
       {workspaceId}
       {adjacentOperationalRow}
     />
-  {:else if block.type === 'image' && block.data && block.mimeType}
-    <ChatImageBlock data={block.data} mimeType={block.mimeType} />
+  {:else if block.type === 'image' && (block.data || block.dataTruncated) && block.mimeType}
+    <ChatImageBlock
+      data={block.data}
+      mimeType={block.mimeType}
+      dataTruncated={block.dataTruncated === true}
+      dataIsThumbnail={block.dataIsThumbnail === true}
+      hydrationLoading={imageHydrationLoading(block.id)}
+      onHydrate={agentId && messageId && block.id ? () => hydrateImageBlock(block.id) : undefined}
+    />
   {:else if block.type === 'video' && block.source}
     <ChatVideoBlock
       source={block.source}

@@ -157,11 +157,19 @@ export class PanelLayoutAdapter {
       }),
     );
   }
-  openBrowserPanel(url?: string, contextItemId?: string, sourcePanelId?: string): void {
+  openBrowserPanel(
+    url?: string,
+    contextItemId?: string,
+    sourcePanelId?: string,
+    requestedUrl?: string,
+  ): void {
     const tab: Omit<PanelTab, 'id'> = {
       type: 'browser',
       title: m.layout_tabTypes_browser_title(),
       browserUrl: url ?? 'https://google.com',
+      // Pre-rewrite URL persisted with the tab so a restart can re-run the
+      // loopback/tunnel rewrite (intent-hq/monorepo#2789).
+      ...(requestedUrl === undefined ? {} : { browserRequestedUrl: requestedUrl }),
       contextItemId,
       closable: true,
     };

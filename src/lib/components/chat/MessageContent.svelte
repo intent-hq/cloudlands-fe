@@ -17,6 +17,9 @@
     getToolResultPayload,
     getToolResultText,
   } from './tool-result-pairing';
+  import { isHydrationPending, mergeHydratedContent } from './block-hydration';
+  import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
+  import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
   import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
@@ -88,9 +91,40 @@
     isStreaming?: boolean;
     workspaceId?: string;
     role?: MessageRole;
+    /** Agent session id; with `messageId`, enables lazy block hydration (§5.5). */
+    agentId?: string;
+    /** Persisted message id owning `content` (hydration fetch/merge key). */
+    messageId?: string;
   }
 
-  let { content, isStreaming = false, workspaceId, role = 'assistant' }: Props = $props();
+  let {
+    content,
+    isStreaming = false,
+    workspaceId,
+    role = 'assistant',
+    agentId,
+    messageId,
+  }: Props = $props();
+
+  // Lazy full-block hydration (§5.5 slim projection → v7.2
+  // agent.getMessageBlock): substitute cached full blocks for slim-truncated
+  // ones before any downstream derivation. Init-time subscription (agentId is
+  // stable per component instance); under-budget content passes through with
+  // referential identity intact.
+  // svelte-ignore state_referenced_locally -- intentional initial snapshot; keyed component identity is fixed.
+  const hydratedBlocks$ = selectHydratedBlocks(agentId ?? '');
+  const hydratedContent = $derived(
+    mergeHydratedContent(content || [], messageId, $hydratedBlocks$),
+  );
+
+  function hydrateImageBlock(blockId: string | undefined) {
+    if (!agentId || !messageId || !blockId) return;
+    appStore.dispatch(messageBlockHydrationRequested(agentId, messageId, blockId));
+  }
+
+  function imageHydrationLoading(blockId: string | undefined): boolean {
+    return blockId ? isHydrationPending($hydratedBlocks$, messageId, [blockId]) : false;
+  }
 
   // Filter out empty text blocks and deduplicate tool_use blocks by ID.
   // Deduplication: when a skeleton tool_use (vague label) and its follow-up
@@ -101,7 +135,7 @@
     // FE-lifted fallback for the same logical resource) so exactly one card
     // renders per resource, preferring the daemon-canonical variant.
     const filtered = dedupeAgentVideoContentBlocks(
-      normalizeAgentVideoContentBlocks(dedupeResourceBlocks(content || []), role),
+      normalizeAgentVideoContentBlocks(dedupeResourceBlocks(hydratedContent), role),
     ).filter((block) => {
       // Agent Q&A questions are wizard-only: they never render in the
       // transcript (pending or resolved), so strip them here.
@@ -526,9 +560,16 @@
         {/if}
       {/if}
     </div>
-  {:else if block.type === 'image' && block.data && block.mimeType}
+  {:else if block.type === 'image' && (block.data || block.dataTruncated) && block.mimeType}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
-      <ChatImageBlock data={block.data} mimeType={block.mimeType} />
+      <ChatImageBlock
+        data={block.data}
+        mimeType={block.mimeType}
+        dataTruncated={block.dataTruncated === true}
+        dataIsThumbnail={block.dataIsThumbnail === true}
+        hydrationLoading={imageHydrationLoading(block.id)}
+        onHydrate={agentId && messageId && block.id ? () => hydrateImageBlock(block.id) : undefined}
+      />
     </div>
   {:else if block.type === 'video' && block.source}
     <ChatVideoBlock
@@ -546,8 +587,11 @@
         toolUse={toolBlock}
         {toolState}
         result={resultContent}
+        resultBlock={toolResult}
         {workspaceId}
         {adjacentOperationalRow}
+        {agentId}
+        {messageId}
       />
     </div>
   {:else if block.type === 'tool_result'}

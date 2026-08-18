@@ -25,6 +25,8 @@
     toolState?: 'running' | 'completed' | 'error';
     result?: any;
     adjacentOperationalRow?: boolean;
+    /** Called on expand — the parent dispatches lazy block hydration (§5.5). */
+    onExpand?: () => void;
   }
 
   let {
@@ -32,6 +34,7 @@
     toolState = 'completed',
     result = null,
     adjacentOperationalRow = false,
+    onExpand,
   }: Props = $props();
 
   const parsedResult = $derived(
@@ -92,7 +95,11 @@
   const isExpandable = $derived(hasResults || toolState === 'error');
 
   function toggleExpanded() {
-    if (isExpandable) expanded = !expanded;
+    if (!isExpandable) return;
+    expanded = !expanded;
+    // Expanding a slim-truncated row triggers the on-demand full-block fetch
+    // (no-op for under-budget rows: the parent's truncated id list is empty).
+    if (expanded) onExpand?.();
   }
 
   function handleDisclosureKeydown(event: KeyboardEvent) {

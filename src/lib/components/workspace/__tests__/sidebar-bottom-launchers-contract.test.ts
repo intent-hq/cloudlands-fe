@@ -119,7 +119,8 @@ describe('workspace sidebar bottom launchers', () => {
     expect(browserLauncher).toContain('getRunningScriptBrowserTarget($scripts$)');
     expect(browserLauncher).toContain('{#if browserTarget && !hasOpenBrowserTab}');
     expect(browserLauncher).toContain('resolveBrowserLinkForOpen(browserTarget.url)');
-    expect(browserLauncher).toContain('openBrowserPanel(resolvedUrl)');
+    expect(browserLauncher).toContain('openBrowserPanel(');
+    expect(browserLauncher).toContain('resolved.url');
     expect(browserLauncher).toContain('data-sidebar-running-url={browserTarget.url}');
   });
 

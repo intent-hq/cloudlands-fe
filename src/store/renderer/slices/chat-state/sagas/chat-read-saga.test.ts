@@ -4,10 +4,15 @@ import { runSaga, stdChannel } from 'redux-saga';
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   getConversation: vi.fn(),
+  getMessageBlock: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
-    agents: { get: mocks.get, getConversation: mocks.getConversation },
+    agents: {
+      get: mocks.get,
+      getConversation: mocks.getConversation,
+      getMessageBlock: mocks.getMessageBlock,
+    },
     chat: {},
   },
 }));
@@ -27,11 +32,13 @@ import {
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   initialState as chatStateInitialState,
+  messageBlockHydrationRequested,
   refreshChatTranscriptRequested,
   transcriptHydrationFailed,
   transcriptHydrationSettled,
   transcriptHydrationStarted,
 } from '../chat-state-slice';
+import { hydratedBlockKey } from '../chat-state-types';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { chatReadSaga } from './chat-read-saga';
 
@@ -189,7 +196,7 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     await settle();
 
     expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
-    expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 200, undefined, 'm-snap-1');
+    expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 50, undefined, 'm-snap-1');
     expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
       'm-old-1',
       'm-old-2',
@@ -245,8 +252,8 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     await settle();
 
     expect(mocks.getConversation.mock.calls).toEqual([
-      [AGENT, 200, undefined, 'm-snap'],
-      [AGENT, 200, 'older'],
+      [AGENT, 50, undefined, 'm-snap'],
+      [AGENT, 50, 'older'],
     ]);
     expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
       'm-r1',
@@ -334,8 +341,8 @@ describe('chatReadSaga (single-transfer hydration)', () => {
 
     expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
     expect(mocks.getConversation.mock.calls).toEqual([
-      [AGENT, 200, undefined, 'm4'],
-      [AGENT, 200, 'older'],
+      [AGENT, 50, undefined, 'm4'],
+      [AGENT, 50, 'older'],
     ]);
     // Complete transcript — no middle gap.
     expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
@@ -364,8 +371,8 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     await settle();
 
     expect(mocks.getConversation.mock.calls).toEqual([
-      [AGENT, 200, undefined, 'm-snap'],
-      [AGENT, 200, 'older'],
+      [AGENT, 50, undefined, 'm-snap'],
+      [AGENT, 50, 'older'],
     ]);
     expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
       'm-old-1',
@@ -666,6 +673,112 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     );
     expect(startedCalls).toHaveLength(1);
     expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+});
+
+describe('chatReadSaga lazy block hydration (§5.5 slim → v7.2 agent.getMessageBlock)', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  const MSG = 'msg-1';
+  const BLOCK = 'msg-1:2';
+  const KEY = hydratedBlockKey(MSG, BLOCK);
+
+  it('fetches the full block once and caches it under {messageId}|{blockId}', async () => {
+    mocks.getMessageBlock.mockResolvedValue({
+      type: 'tool_result',
+      id: BLOCK,
+      tool_use_id: 'call-1',
+      output: 'the full body',
+    });
+    const run = harness();
+    run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+    await settle();
+
+    expect(mocks.getMessageBlock).toHaveBeenCalledTimes(1);
+    expect(mocks.getMessageBlock).toHaveBeenCalledWith(AGENT, MSG, BLOCK);
+    expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toMatchObject({
+      status: 'loaded',
+      block: { output: 'the full body' },
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('single-flight: concurrent expand triggers produce exactly one wire fetch', async () => {
+    let resolveFetch!: (block: unknown) => void;
+    mocks.getMessageBlock.mockReturnValue(
+      new Promise((done) => {
+        resolveFetch = done;
+      }),
+    );
+    const run = harness();
+    run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+    run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+    await settle();
+    run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+    await settle();
+    resolveFetch({ type: 'tool_result', id: BLOCK, output: 'body' });
+    await settle();
+
+    expect(mocks.getMessageBlock).toHaveBeenCalledTimes(1);
+    expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toMatchObject({
+      status: 'loaded',
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('a re-request after load fires no second fetch (read-through cache)', async () => {
+    mocks.getMessageBlock.mockResolvedValue({ type: 'tool_result', id: BLOCK, output: 'body' });
+    const run = harness();
+    run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+    await settle();
+    run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+    await settle();
+
+    expect(mocks.getMessageBlock).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('a failed fetch records the error and a later request retries', async () => {
+    mocks.getMessageBlock
+      .mockRejectedValueOnce(new Error('unknown block id: msg-1:2'))
+      .mockResolvedValueOnce({ type: 'tool_result', id: BLOCK, output: 'body' });
+    const run = harness();
+    run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+    await settle();
+
+    expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toMatchObject({
+      status: 'error',
+      error: 'unknown block id: msg-1:2',
+    });
+
+    run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+    await settle();
+    expect(mocks.getMessageBlock).toHaveBeenCalledTimes(2);
+    expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toMatchObject({
+      status: 'loaded',
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('distinct blocks hydrate independently', async () => {
+    mocks.getMessageBlock
+      .mockResolvedValueOnce({ type: 'tool_use', id: 'msg-1:0', name: 't', input: { a: 1 } })
+      .mockResolvedValueOnce({ type: 'image', id: 'msg-2:1', data: 'AAAA', mimeType: 'image/png' });
+    const run = harness();
+    run.dispatch(messageBlockHydrationRequested(AGENT, 'msg-1', 'msg-1:0'));
+    run.dispatch(messageBlockHydrationRequested(AGENT, 'msg-2', 'msg-2:1'));
+    await settle();
+
+    expect(mocks.getMessageBlock).toHaveBeenCalledTimes(2);
+    const cached = run.chat().byAgentId[AGENT]?.hydratedBlocks;
+    expect(cached?.[hydratedBlockKey('msg-1', 'msg-1:0')]).toMatchObject({ status: 'loaded' });
+    expect(cached?.[hydratedBlockKey('msg-2', 'msg-2:1')]).toMatchObject({ status: 'loaded' });
     run.task.cancel();
     await run.task.toPromise();
   });

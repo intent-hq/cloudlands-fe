@@ -338,5 +338,42 @@ describe('getAgentPeekData', () => {
       expect(data?.lastUserMessage).toBe('wire user message');
       expect(data?.digest).toBe('Wire digest summary');
     });
+
+    it('renders the tool chip from the wire lastToolUse for a never-opened agent (no response text)', () => {
+      // A never-opened agent whose newest message ended on a tool call: the
+      // AgentLite / agent:last-message preview carries lastToolUse but no
+      // lastAgentResponse.
+      const session = {
+        ...makeSession([]),
+        lastToolUse: { name: 'str-replace-editor', input: { path: 'src/x.ts' } },
+      };
+      const data = getAgentPeekData(session);
+      expect(data?.lastToolUse?.name).toBe('str-replace-editor');
+      expect((data?.lastToolUse?.input as any)?.path).toBe('src/x.ts');
+      expect(data?.lastResponse).toBe('');
+    });
+
+    it('keeps response text ahead of the wire lastToolUse preview', () => {
+      const session = {
+        ...makeSession([]),
+        lastAgentResponse: 'wire response',
+        lastToolUse: { name: 'view' },
+      };
+      const data = getAgentPeekData(session);
+      expect(data?.lastResponse).toBe('wire response');
+      expect(data?.lastToolUse).toBeUndefined();
+    });
+
+    it('does not double-apply the wire lastToolUse while the live streaming overlay owns it', () => {
+      const session = {
+        ...makeSession([]),
+        isStreaming: true,
+        lastToolUse: { name: 'launch-process', status: 'running' },
+      };
+      const data = getAgentPeekData(session);
+      // The streaming overlay path renders it (live-tool id), not the wire path.
+      expect(data?.lastToolUse?.id).toBe('live-tool:agent-1');
+      expect(data?.lastToolUse?.name).toBe('launch-process');
+    });
   });
 });

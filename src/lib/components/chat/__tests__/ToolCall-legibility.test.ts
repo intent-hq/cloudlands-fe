@@ -4,10 +4,12 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const dispatchMock = vi.hoisted(() => vi.fn());
+
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: vi.fn() });
+  return createAppStoreMockModule({ state: () => ({}), dispatch: dispatchMock });
 });
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
@@ -120,5 +122,91 @@ describe('ToolCall conversation legibility', () => {
     });
 
     expect(screen.queryByRole('button')).toBeNull();
+  });
+});
+
+describe('ToolCall lazy block hydration (§5.5 slim → v7.2 agent.getMessageBlock)', () => {
+  afterEach(() => dispatchMock.mockClear());
+
+  it('expanding a slim-truncated row dispatches one hydration request per truncated block', async () => {
+    render(ToolCall, {
+      props: {
+        toolUse: {
+          id: 'msg-1:0',
+          name: 'shell',
+          input: { command: 'preview…' },
+          inputTruncated: true,
+          inputBytes: 900_000,
+        } as any,
+        toolState: 'completed',
+        result: 'preview output…',
+        resultBlock: {
+          type: 'tool_result',
+          id: 'msg-1:1',
+          tool_use_id: 'call-1',
+          output: 'preview output…',
+          outputTruncated: true,
+          outputBytes: 2_000_000,
+        } as any,
+        agentId: 'agent-1',
+        messageId: 'msg-1',
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /Run tests/ }));
+
+    const hydrationActions = dispatchMock.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action?.type === 'chatState/messageBlockHydrationRequested');
+    expect(hydrationActions).toHaveLength(2);
+    expect(hydrationActions[0].payload).toEqual(['agent-1', 'msg-1', 'msg-1:0']);
+    expect(hydrationActions[1].payload).toEqual(['agent-1', 'msg-1', 'msg-1:1']);
+  });
+
+  it('expanding an under-budget row dispatches nothing (no fetch fired)', async () => {
+    render(ToolCall, {
+      props: {
+        toolUse: { id: 'msg-2:0', name: 'shell', input: { command: 'ls' } } as any,
+        toolState: 'completed',
+        result: 'ok',
+        resultBlock: {
+          type: 'tool_result',
+          id: 'msg-2:1',
+          tool_use_id: 'call-2',
+          output: 'ok',
+        } as any,
+        agentId: 'agent-1',
+        messageId: 'msg-2',
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /Run tests/ }));
+
+    const hydrationActions = dispatchMock.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action?.type === 'chatState/messageBlockHydrationRequested');
+    expect(hydrationActions).toHaveLength(0);
+  });
+
+  it('without agentId/messageId a truncated row expands without dispatching', async () => {
+    render(ToolCall, {
+      props: {
+        toolUse: {
+          id: 'msg-3:0',
+          name: 'shell',
+          input: { command: 'preview…' },
+          inputTruncated: true,
+        } as any,
+        toolState: 'completed',
+        result: 'x',
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /Run tests/ }));
+
+    const hydrationActions = dispatchMock.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action?.type === 'chatState/messageBlockHydrationRequested');
+    expect(hydrationActions).toHaveLength(0);
   });
 });

@@ -55,6 +55,11 @@ import {
   applyNoteUpdated,
   loadWorkspaceNotesSucceeded,
 } from '../../workspace-notes/workspace-notes-slice';
+import { resolveBrowserLinkUrl } from '$lib/utils/browser-url-resolution';
+import {
+  collectRehydratableBrowserTabs,
+  type RehydratableBrowserTab,
+} from '../browser-tab-rehydration';
 import {
   selectPanelLayoutWorkspace,
   selectPanelLayoutWorkspaceIds,
@@ -468,6 +473,38 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
   if (opened.focusedPanelId) yield* put(setPanelPinned(wsId, opened.focusedPanelId, true));
 }
 
+/**
+ * Re-resolve restored browser tabs that carry a persisted pre-rewrite
+ * requested URL (intent-hq/monorepo#2789). The persisted final URL may embed
+ * a previous session's ephemeral tunnel forward port, which is dead after a
+ * restart — re-running the rewrite (rewrite → probe → tunnel via
+ * `browser:resolve-url`) points the tab at a live endpoint for this session.
+ * Tabs without a requested URL (legacy layouts, never-rewritten URLs) are
+ * untouched. Failures are truthful: when the rewrite cannot be established
+ * (daemon not connected, web build) the tab falls back to its requested URL
+ * and the browser's normal navigation error path shows, instead of silently
+ * keeping the dead port. The requested URL is re-recorded either way so a
+ * later restart can retry.
+ */
+export function* rehydrateTunneledBrowserTabs(
+  wsId: string,
+  tabs: RehydratableBrowserTab[],
+): SagaGenerator<void> {
+  for (const tab of tabs) {
+    try {
+      const resolved = yield* call(
+        resolveBrowserLinkUrl,
+        tab.requestedUrl,
+        typeof window !== 'undefined' ? window.electronAPI?.invoke : undefined,
+      );
+      if (resolved.url === tab.storedUrl) continue;
+      yield* put(updateTabBrowserUrl(wsId, tab.tabId, resolved.url, tab.requestedUrl));
+    } catch {
+      // Best-effort: a failed resolution leaves the tab on its stored URL.
+    }
+  }
+}
+
 export function* loadLayoutFromStorage(
   wsId: string,
 ): SagaGenerator<WorkspacePanelLayout | 'invalid' | null> {
@@ -515,8 +552,12 @@ export function* handleWorkspaceMountedRestore(
       yield* put(resetLayout(wsId));
       yield* put(setRestoreStatus(wsId, 'invalid'));
     } else {
-      yield* put(initializeLayout(wsId, normalizeLayoutForWorkspace(wsId, stored)));
+      const normalized = normalizeLayoutForWorkspace(wsId, stored);
+      yield* put(initializeLayout(wsId, normalized));
       yield* put(setRestoreStatus(wsId, 'restored'));
+      // Forked: re-resolving tunneled tabs goes over IPC and must not delay
+      // the restore settling (hydration callers wait on it).
+      yield* fork(rehydrateTunneledBrowserTabs, wsId, collectRehydratableBrowserTabs(normalized));
     }
     restoredUnderBackendIds.add(wsId);
     yield* call(reconcileEmptyRestoredLayout, wsId);
@@ -843,8 +884,12 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
       yield* put(loadLayoutHistory(wsId, [], 0));
       yield* put(setRestoreStatus(wsId, stored === null ? 'empty' : 'invalid'));
     } else {
-      yield* put(initializeLayout(wsId, normalizeLayoutForWorkspace(wsId, stored)));
+      const normalized = normalizeLayoutForWorkspace(wsId, stored);
+      yield* put(initializeLayout(wsId, normalized));
       yield* put(setRestoreStatus(wsId, 'restored'));
+      // Mirror the mount path: restored tunneled tabs re-resolve against the
+      // incoming backend's live tunnel state (monorepo#2789).
+      yield* fork(rehydrateTunneledBrowserTabs, wsId, collectRehydratableBrowserTabs(normalized));
     }
     restoredUnderBackendIds.add(wsId);
     yield* call(reconcileEmptyRestoredLayout, wsId);

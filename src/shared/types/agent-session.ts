@@ -273,18 +273,24 @@ export interface AgentSession {
   lastAgentResponse?: string;
 
   /**
-   * Most recent tool call of the in-flight turn (PROTOCOL §7, additive on the
-   * tool-call arm of `agent:stream:activity`). Push-applied by the
-   * daemon-events bridge so a non-viewed agent's preview advances during
-   * tool-only stretches, and cleared by it at each turn boundary and on the
-   * terminal `agent:stream:end` — the field describes a running turn only.
-   * Omitted by older daemons and before the turn's first tool call. Stored
-   * verbatim; only `name` is rendered today (`status` mirrors the wire shape
-   * for the queued footer status indicator).
+   * Most recent tool call preview, from two wire sources sharing this field:
+   * (a) the in-flight turn's live tool signal (PROTOCOL §7, tool-call arm of
+   * `agent:stream:activity`, `{ name, status? }`) — push-applied by the
+   * daemon-events bridge, cleared at each turn boundary and on the terminal
+   * `agent:stream:end`; (b) the PERSISTED `AgentLite.lastToolUse` preview
+   * (PROTOCOL §5.5, additive — `{ name, input?, inputTruncated?, inputBytes? }`,
+   * the newest user/assistant message's last `tool_use` block with `input`
+   * bounded by the slim-projection budget), served on `agent.list`/`agent.get`
+   * and on every user/assistant `agent:last-message` event (§6.5), where its
+   * absence means the preview was just cleared. Omitted by older daemons.
+   * Stored verbatim.
    */
   lastToolUse?: {
     name: string;
     status?: string;
+    input?: Record<string, unknown>;
+    inputTruncated?: boolean;
+    inputBytes?: number;
   };
 
   /**

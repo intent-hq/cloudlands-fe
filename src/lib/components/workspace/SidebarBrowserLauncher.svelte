@@ -43,8 +43,13 @@
     // Resolve (rewrite → probe → tunnel) BEFORE the tab opens — the embedded
     // browser loads exactly the URL it is given (intent-hq/monorepo#2404).
     // eslint-disable-next-line intent/no-component-async-data-fetch -- click-time URL resolution IPC, not domain data fetching
-    void resolveBrowserLinkForOpen(browserTarget.url).then((resolvedUrl) => {
-      getPanelLayoutManager(panelLayoutId).openBrowserPanel(resolvedUrl);
+    void resolveBrowserLinkForOpen(browserTarget.url).then((resolved) => {
+      getPanelLayoutManager(panelLayoutId).openBrowserPanel(
+        resolved.url,
+        undefined,
+        undefined,
+        resolved.requestedUrl,
+      );
     });
   }
 

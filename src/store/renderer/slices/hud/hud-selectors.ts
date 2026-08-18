@@ -878,6 +878,7 @@ function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
             isResponding: session.isResponding === true,
             completionReport:
               typeof metadata.completionReport === 'string' ? metadata.completionReport : null,
+            lastToolUse: session.lastToolUse,
           })
         : null,
       parentAgentId,

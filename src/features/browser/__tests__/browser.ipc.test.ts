@@ -112,7 +112,7 @@ describe('browser:resolve-url IPC handler', () => {
   it('forwards explicit pin intent in the browser open event', async () => {
     const { executeActions } = await import('../main/browser-action-executor');
     vi.mocked(executeActions).mockImplementationOnce(async (_input, openTab) => {
-      openTab?.('https://example.com', 'adjacent', true, true);
+      openTab?.('https://example.com', 'adjacent', true, undefined, true);
       return { success: true, results: [] };
     });
     const { executeBrowserActions } = await import('../main/browser.ipc');

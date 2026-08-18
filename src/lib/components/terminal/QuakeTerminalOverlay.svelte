@@ -494,14 +494,14 @@
   // Resolve a script's detected URL (rewrite → probe → tunnel; toasts on
   // resolver warning/error) BEFORE opening the browser panel on it.
   function openScriptUrl(rawUrl: string): void {
-    void resolveBrowserLinkForOpen(rawUrl).then((resolvedUrl) => {
+    void resolveBrowserLinkForOpen(rawUrl).then((resolved) => {
       import('$features/layout/panel-layout-adapter')
         .then(({ getPanelLayoutManager }) => {
           const layoutManager = getPanelLayoutManager(workspaceId!);
-          layoutManager.openBrowserPanel(resolvedUrl);
+          layoutManager.openBrowserPanel(resolved.url, undefined, undefined, resolved.requestedUrl);
         })
         .catch(() => {
-          window.open(resolvedUrl, '_blank');
+          window.open(resolved.url, '_blank');
         });
     });
   }

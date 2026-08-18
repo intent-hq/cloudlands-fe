@@ -499,6 +499,30 @@ function extractFileChangeFromBlock(block: ContentBlock): ChatFileChange | null 
     return null;
   }
 
+  // Slim conversation projection (PROTOCOL §5.5): `input` is a bounded
+  // preview, so old_str/new_str/file_content snippets are unreliable. Keep
+  // the file row (path and action survive the bounded preview — small
+  // fields pass through intact) but drop the snippet content and counts so
+  // no misleading diff body renders; the diff panel's git-based full-file
+  // paths are unaffected.
+  if (block.inputTruncated === true) {
+    const change = extractFileChangeFromBlockInner(block);
+    if (!change) return null;
+    return {
+      ...change,
+      additions: 0,
+      deletions: 0,
+      oldContent: undefined,
+      newContent: undefined,
+      startLineNumber: undefined,
+    };
+  }
+
+  return extractFileChangeFromBlockInner(block);
+}
+
+function extractFileChangeFromBlockInner(block: ContentBlock): ChatFileChange | null {
+
   // Tool names are not guaranteed to be strings; use the first non-empty string candidate
   const toolName =
     typeof block.name === 'string' && block.name

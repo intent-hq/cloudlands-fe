@@ -53,6 +53,14 @@ export interface PanelTab {
   hookId?: string;
   diffPath?: string;
   browserUrl?: string;
+  /**
+   * Original URL as requested before the loopback/tunnel rewrite (e.g.
+   * `http://daemon.localhost:3000/`); present only when `browserUrl` was
+   * produced by a rewrite. Persisted so a restored tab can re-run the
+   * rewrite and land on a live tunnel instead of a dead ephemeral forward
+   * port (intent-hq/monorepo#2789).
+   */
+  browserRequestedUrl?: string;
   faviconUrl?: string;
   contextItemId?: string;
 

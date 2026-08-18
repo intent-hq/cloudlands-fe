@@ -7,10 +7,11 @@
  * the sole data path (intent-hq/monorepo#1697); there is no legacy
  * events-driven `agent.list` refetch.
  */
-import { AgentStatus } from '$shared/types';
+import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
+import { AgentStatus, isContentBlock } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
-import type { AgentMessage, AgentSession } from '$shared/types';
+import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import type { QueuedMessage } from '$shared/types/agent-session';
 import type {
   AgentCancelDeleteResult,
@@ -112,11 +113,16 @@ export class LiveAgentsClient implements AgentsClient {
   // additive) takes precedence over any token daemon-side and resolves to the
   // page containing that message; seek pages carry `prevToken` (forward cursor
   // toward the live tail — normalized to null on legacy backward pages, which
-  // never include the key). `messages` is returned raw; the agent-session
-  // reducer normalizes/sorts/dedups/prunes on ingest.
+  // never include the key). Every read opts into the §5.5 slim projection
+  // (`projection: "slim"`, additive within v7.1): oversized tool/image block
+  // bodies arrive as bounded previews with `*Truncated`/`*Bytes` flags so a
+  // large transcript never produces multi-MB frames (an older daemon ignores
+  // the unknown param and serves full blocks — same additive convention as
+  // `chat.subscribe`'s `deltaEncoding`). `messages` is returned raw; the
+  // agent-session reducer normalizes/sorts/dedups/prunes on ingest.
   async getConversation(
     agentId: string,
-    limit = 200,
+    limit = 50,
     pageToken?: string,
     aroundMessageId?: string,
   ): Promise<{
@@ -136,7 +142,11 @@ export class LiveAgentsClient implements AgentsClient {
     let requestLimit = limit;
     let result: ConversationResult;
     for (;;) {
-      const params: Record<string, unknown> = { agentId, limit: requestLimit };
+      const params: Record<string, unknown> = {
+        agentId,
+        limit: requestLimit,
+        projection: 'slim',
+      };
       if (pageToken !== undefined) params.nextToken = pageToken;
       if (aroundMessageId !== undefined) params.aroundMessageId = aroundMessageId;
       try {
@@ -164,6 +174,30 @@ export class LiveAgentsClient implements AgentsClient {
       nextToken: typeof result.nextToken === 'string' ? result.nextToken : null,
       prevToken: typeof result.prevToken === 'string' ? result.prevToken : null,
     };
+  }
+
+  // One FULL content block by id (`agent.getMessageBlock`, §5.5, v7.2) — the
+  // on-demand counterpart of the slim projection: fetches the complete body
+  // of a `*Truncated` slim block. The daemon returns `{ block }`; a missing
+  // or malformed envelope rejects (callers rely on a real block or an error,
+  // never a silent empty object).
+  async getMessageBlock(
+    agentId: string,
+    messageId: string,
+    blockId: string,
+  ): Promise<ContentBlock> {
+    const result = await backendRequest<{ block?: unknown }>('agent.getMessageBlock', {
+      agentId,
+      messageId,
+      blockId,
+    });
+    const block = result?.block;
+    if (!isContentBlock(block)) {
+      throw new Error(
+        `agent.getMessageBlock returned no block for message ${messageId} block ${blockId}`,
+      );
+    }
+    return block;
   }
 
   // Mutations forward to the daemon (§7.2); daemon agent-lifecycle events
@@ -521,7 +555,10 @@ export class LiveAgentsClient implements AgentsClient {
   async retry(
     agentId: string,
     workspaceId: string,
-  ): Promise<{ ok: true; redriven?: boolean; turnId?: string } | { ok: false; error: string }> {
+  ): Promise<
+    | { ok: true; redriven?: boolean; turnId?: string }
+    | { ok: false; notFound?: boolean; error: string }
+  > {
     // `agent.retry` redrives a failed agent spawn. Only valid when agent status
     // is `error`; returns `{ ok: false }` otherwise. On ok:true, `redriven`
     // reports whether a queued message existed and is being redriven (status
@@ -542,8 +579,19 @@ export class LiveAgentsClient implements AgentsClient {
       return turnId !== undefined ? { ok: true, redriven, turnId } : { ok: true, redriven };
     } catch (error) {
       // Transport/RPC errors return { ok: false, error } rather than throwing so
-      // callers can surface the error and keep the retry button visible.
+      // callers can surface the error and keep the retry button visible. The
+      // daemon's not-found rejection (-32602, data.code "not-found", §5.5) is
+      // preserved as `notFound: true` — the agent was deleted, so callers can
+      // drop their stale failure state instead of offering Retry forever
+      // (monorepo#2806). Classification reuses isAgentNotFoundError (#1753),
+      // whose rpcCode+message fallback deliberately diverges from §9's strict
+      // data.code-only client rule to cover errors that lost the structured
+      // code (older daemons, lossy re-wrapping); the lookalike surface here is
+      // small since agent.retry only sends agentId/workspaceId.
       const errorMsg = error instanceof Error ? error.message : 'Failed to retry agent spawn';
+      if (isAgentNotFoundError(error)) {
+        return { ok: false, notFound: true, error: errorMsg };
+      }
       return { ok: false, error: errorMsg };
     }
   }

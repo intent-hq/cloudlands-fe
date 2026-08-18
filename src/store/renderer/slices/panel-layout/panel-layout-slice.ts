@@ -61,6 +61,7 @@ import type {
   PanelOpenMode,
   PanelStackDirection,
 } from '../user-preferences/user-preferences-slice';
+import { rebaseRequestedUrlForNavigation } from './browser-tab-rehydration';
 
 // ============================================================================
 // ID Generation Helpers (used in payload modifiers)
@@ -998,9 +999,16 @@ export const updateTabTitle = createAction<[wsId: string, tabId: string, newTitl
   'panelLayout/updateTabTitle',
 );
 
-export const updateTabBrowserUrl = createAction<[wsId: string, tabId: string, newUrl: string]>(
-  'panelLayout/updateTabBrowserUrl',
-);
+/**
+ * `requestedUrl` maintains the tab's persisted pre-rewrite URL
+ * (intent-hq/monorepo#2789): a string records it (rewritten/tunneled opens),
+ * `null` clears it (non-rewritten opens), and `undefined` (webview
+ * navigations) rebases it onto the navigated path while the tab stays on the
+ * same rewritten origin — see `rebaseRequestedUrlForNavigation`.
+ */
+export const updateTabBrowserUrl = createAction<
+  [wsId: string, tabId: string, newUrl: string, requestedUrl?: string | null]
+>('panelLayout/updateTabBrowserUrl');
 
 export const updateTabFavicon = createAction<[wsId: string, tabId: string, faviconUrl: string]>(
   'panelLayout/updateTabFavicon',
@@ -1747,20 +1755,35 @@ panelLayoutReducer.with(updateTabTitle, (state, { payload: [wsId, tabId, newTitl
   return state;
 });
 // --- Update Tab Browser URL ---
-panelLayoutReducer.with(updateTabBrowserUrl, (state, { payload: [wsId, tabId, newUrl] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  for (const [pId, panel] of Object.entries(ws.panels)) {
-    const tabIdx = panel.tabs.findIndex((t) => t.id === tabId && t.type === 'browser');
-    if (tabIdx >= 0) {
-      const newTabs = panel.tabs.map((t, i) => (i === tabIdx ? { ...t, browserUrl: newUrl } : t));
-      return setWorkspaceState(state, wsId, {
-        ...ws,
-        panels: { ...ws.panels, [pId]: { ...panel, tabs: newTabs } },
-      });
+panelLayoutReducer.with(
+  updateTabBrowserUrl,
+  (state, { payload: [wsId, tabId, newUrl, requestedUrl] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    for (const [pId, panel] of Object.entries(ws.panels)) {
+      const tabIdx = panel.tabs.findIndex((t) => t.id === tabId && t.type === 'browser');
+      if (tabIdx >= 0) {
+        const newTabs = panel.tabs.map((t, i) => {
+          if (i !== tabIdx) return t;
+          const kept =
+            requestedUrl === undefined
+              ? rebaseRequestedUrlForNavigation(t.browserUrl, newUrl, t.browserRequestedUrl)
+              : (requestedUrl ?? undefined);
+          const { browserRequestedUrl: _dropped, ...rest } = t;
+          return {
+            ...rest,
+            browserUrl: newUrl,
+            ...(kept !== undefined ? { browserRequestedUrl: kept } : {}),
+          };
+        });
+        return setWorkspaceState(state, wsId, {
+          ...ws,
+          panels: { ...ws.panels, [pId]: { ...panel, tabs: newTabs } },
+        });
+      }
     }
-  }
-  return state;
-});
+    return state;
+  },
+);
 // --- Update Tab Favicon ---
 panelLayoutReducer.with(updateTabFavicon, (state, { payload: [wsId, tabId, faviconUrl] }) => {
   const ws = getWorkspaceState(state, wsId);
