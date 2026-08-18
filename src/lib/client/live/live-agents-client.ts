@@ -8,10 +8,10 @@
  * events-driven `agent.list` refetch.
  */
 import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
-import { AgentStatus } from '$shared/types';
+import { AgentStatus, isContentBlock } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
-import type { AgentMessage, AgentSession } from '$shared/types';
+import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import type { QueuedMessage } from '$shared/types/agent-session';
 import type {
   AgentCancelDeleteResult,
@@ -174,6 +174,30 @@ export class LiveAgentsClient implements AgentsClient {
       nextToken: typeof result.nextToken === 'string' ? result.nextToken : null,
       prevToken: typeof result.prevToken === 'string' ? result.prevToken : null,
     };
+  }
+
+  // One FULL content block by id (`agent.getMessageBlock`, §5.5, v7.2) — the
+  // on-demand counterpart of the slim projection: fetches the complete body
+  // of a `*Truncated` slim block. The daemon returns `{ block }`; a missing
+  // or malformed envelope rejects (callers rely on a real block or an error,
+  // never a silent empty object).
+  async getMessageBlock(
+    agentId: string,
+    messageId: string,
+    blockId: string,
+  ): Promise<ContentBlock> {
+    const result = await backendRequest<{ block?: unknown }>('agent.getMessageBlock', {
+      agentId,
+      messageId,
+      blockId,
+    });
+    const block = result?.block;
+    if (!isContentBlock(block)) {
+      throw new Error(
+        `agent.getMessageBlock returned no block for message ${messageId} block ${blockId}`,
+      );
+    }
+    return block;
   }
 
   // Mutations forward to the daemon (§7.2); daemon agent-lifecycle events

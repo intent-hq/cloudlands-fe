@@ -1389,6 +1389,64 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(backend.requests.map((request) => request.params.limit)).toEqual([4, 2, 1]);
   });
 
+  // ---- §5.5 agent.getMessageBlock (v7.2 slim-hydration counterpart) ------
+
+  it('getMessageBlock forwards agentId/messageId/blockId and returns the full block', async () => {
+    // PROTOCOL §5.5 v7.2: { block } — the full, unprojected body (no
+    // *Truncated/*Bytes flags on the returned block).
+    backend.onRequest('agent.getMessageBlock', () => ({
+      block: {
+        type: 'tool_result',
+        id: 'msg-1:3',
+        tool_use_id: 'call-9',
+        output: 'x'.repeat(5000),
+      },
+    }));
+    const client = new LiveAgentsClient();
+
+    const block = await client.getMessageBlock('agent-1', 'msg-1', 'msg-1:3');
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.getMessageBlock',
+      params: { agentId: 'agent-1', messageId: 'msg-1', blockId: 'msg-1:3' },
+    });
+    expect(block.type).toBe('tool_result');
+    expect(block.id).toBe('msg-1:3');
+    expect(block.output).toHaveLength(5000);
+  });
+
+  it('getMessageBlock rejects on a missing block envelope', async () => {
+    backend.onRequest('agent.getMessageBlock', () => ({}));
+    const client = new LiveAgentsClient();
+    await expect(client.getMessageBlock('agent-1', 'msg-1', 'msg-1:0')).rejects.toThrow(
+      'returned no block',
+    );
+  });
+
+  it.each([
+    ['an array', []],
+    ['an empty object', {}],
+    ['an object with an unknown type', { type: 'bogus', id: 'msg-1:0' }],
+    ['a string', 'tool_result'],
+  ])('getMessageBlock rejects a malformed block envelope (%s)', async (_label, badBlock) => {
+    // Malformed { block } values must reject, never get cached and merged
+    // into message content as a ContentBlock.
+    backend.onRequest('agent.getMessageBlock', () => ({ block: badBlock }));
+    const client = new LiveAgentsClient();
+    await expect(client.getMessageBlock('agent-1', 'msg-1', 'msg-1:0')).rejects.toThrow(
+      'returned no block',
+    );
+  });
+
+  it('getMessageBlock propagates daemon -32602 rejections (unknown ids)', async () => {
+    backend.onRequest('agent.getMessageBlock', () => {
+      throw new BackendError(buildErrorPayload('INVALID_PARAMS', 'unknown block id: msg-1:99'));
+    });
+    const client = new LiveAgentsClient();
+    await expect(client.getMessageBlock('agent-1', 'msg-1', 'msg-1:99')).rejects.toThrow(
+      'unknown block id',
+    );
+  });
+
   describe('retry', () => {
     it('calls agent.retry with correct params and returns ok:true on success', async () => {
       backend.onRequest('agent.retry', (params) => {

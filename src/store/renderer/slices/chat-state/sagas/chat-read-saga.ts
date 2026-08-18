@@ -66,12 +66,19 @@ import {
   chatTranscriptSnapshotApplied,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
+  messageBlockHydrated,
+  messageBlockHydrationFailed,
+  messageBlockHydrationRequested,
   refreshChatTranscriptRequested,
   transcriptHydrationFailed,
   transcriptHydrationSettled,
   transcriptHydrationStarted,
 } from '../chat-state-slice';
-import { selectTranscriptHydration, selectTranscriptSnapshotMeta } from '../chat-state-selectors';
+import {
+  selectHydratedBlock,
+  selectTranscriptHydration,
+  selectTranscriptSnapshotMeta,
+} from '../chat-state-selectors';
 
 const logger = createLogger('ChatReadSaga');
 const PAGE_LIMIT = 50;
@@ -399,15 +406,56 @@ function* snapshotRecoveryWorker(action: ReturnType<typeof chatTranscriptSnapsho
   });
 }
 
+/**
+ * Lazy block hydration (§5.5 slim projection → v7.2 `agent.getMessageBlock`):
+ * fetch one FULL content block on demand when the user expands a truncated
+ * tool row or views a truncated image. Single-flight per block, twice over:
+ * the `messageBlockHydrationRequested` reducer parks `loading` under the
+ * block's key (so a non-`loading` entry here means loaded/absent — nothing to
+ * fetch), and `inFlightBlocks` (saga-local, non-serializable) drops the
+ * duplicate workers takeEvery still spawns for re-dispatches that arrive
+ * while the state already reads `loading`.
+ */
+function* hydrateMessageBlockWorker(
+  inFlightBlocks: Set<string>,
+  action: ReturnType<typeof messageBlockHydrationRequested>,
+) {
+  const [agentId, messageId, blockId] = action.payload;
+  if (!agentId || !messageId || !blockId) return;
+  const key = `${agentId}|${messageId}|${blockId}`;
+  if (inFlightBlocks.has(key)) return;
+  const entry = yield* selectHydratedBlock.effect(agentId, messageId, blockId);
+  if (entry?.status !== 'loading') return;
+  inFlightBlocks.add(key);
+  try {
+    const block = yield* call(
+      [appClient.agents, appClient.agents.getMessageBlock],
+      agentId,
+      messageId,
+      blockId,
+    );
+    yield* put(messageBlockHydrated(agentId, messageId, blockId, block));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('message block hydration failed', { agentId, messageId, blockId, message });
+    yield* put(messageBlockHydrationFailed(agentId, messageId, blockId, message));
+  } finally {
+    inFlightBlocks.delete(key);
+  }
+}
+
 export function* chatReadSaga() {
   const hydrationTails: HydrationTails = new Map();
+  const inFlightBlocks = new Set<string>();
   try {
     yield* all([
       takeEvery(initializeChatRequested, initializeChatWorker, hydrationTails),
       takeEvery(refreshChatTranscriptRequested, refreshChatWorker, hydrationTails),
       takeEvery(chatTranscriptSnapshotApplied, snapshotRecoveryWorker),
+      takeEvery(messageBlockHydrationRequested, hydrateMessageBlockWorker, inFlightBlocks),
     ]);
   } finally {
     hydrationTails.clear();
+    inFlightBlocks.clear();
   }
 }
