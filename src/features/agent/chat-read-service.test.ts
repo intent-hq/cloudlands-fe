@@ -423,24 +423,27 @@ describe('chatReadService (fake seam, real store)', () => {
     const agentId = 'agent-pagination-cap';
     agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
 
-    // An 800-message conversation served in 200-message pages, newest page
-    // first: Page 1 (no token): messages 601-800, Page 2: 401-600, Page 3:
-    // 201-400. Page 3 still advertises nextToken="page4" — the bound must stop
-    // there (the page-4 mock is deliberately NOT queued; an unbounded pager
-    // would fetch the afterEach default empty page instead and fail the
-    // call-count assertion below).
+    // An 800-message conversation served in conforming 50-message pages,
+    // newest page first: Page 1 (no token): messages 751-800, Page 2:
+    // 701-750, …, Page 10: 301-350. Page 10 still advertises
+    // nextToken="page11" — the bound must stop there (the page-11 mock is
+    // deliberately NOT queued; an unbounded pager would fetch the afterEach
+    // default empty page instead and fail the call-count assertion below).
     const page = (start: number) =>
-      Array.from({ length: 200 }, (_, i) => makeMessage(`msg-${start + i}`, `m ${start + i}`));
-    agentsApi.getConversation
-      .mockResolvedValueOnce({ ...conversation(page(601), 'page2') } as never)
-      .mockResolvedValueOnce({ ...conversation(page(401), 'page3') } as never)
-      .mockResolvedValueOnce({ ...conversation(page(201), 'page4') } as never);
+      Array.from({ length: 50 }, (_, i) => makeMessage(`msg-${start + i}`, `m ${start + i}`));
+    for (let n = 1; n <= 10; n++) {
+      const start = 800 - n * 50 + 1;
+      agentsApi.getConversation.mockResolvedValueOnce({
+        ...conversation(page(start), `page${n + 1}`),
+      } as never);
+    }
 
     await loadChatTranscript(agentId);
 
-    // 3 pages accumulate 600 >= 500 — the fourth page is never requested.
-    expect(agentsApi.getConversation).toHaveBeenCalledTimes(3);
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(3, agentId, 50, 'page3');
+    // 10 pages accumulate 500 >= 500 — the eleventh page is never requested.
+    expect(agentsApi.getConversation).toHaveBeenCalledTimes(10);
+    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(1, agentId, 50, undefined);
+    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(10, agentId, 50, 'page10');
 
     // The store keeps the newest 500 (the slice's prune cap), oldest-first.
     const stored = selectAgentMessages.select(appStore.state, agentId);
