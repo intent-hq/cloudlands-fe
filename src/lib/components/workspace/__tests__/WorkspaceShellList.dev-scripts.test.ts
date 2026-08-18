@@ -99,6 +99,13 @@ describe('WorkspaceShellList development script controls', () => {
     expect(within(runningRow).getByText('Running')).toBeTruthy();
     expect(within(runningRow).getByRole('button', { name: 'Stop' })).toBeTruthy();
     expect(within(runningRow).getByRole('button', { name: 'Restart Dev server' })).toBeTruthy();
+    expect(runningRow.className).toContain('h-8');
+    expect(runningRow.className).toContain('px-0');
+    expect(runningRow.parentElement?.className).toContain('gap-0');
+    expect(runningRow.querySelector('[data-script-status-indicator]')).toBeTruthy();
+    expect(
+      within(runningRow).getByRole('button', { name: 'Dev server Running' }).className,
+    ).toContain('items-center');
   });
 
   it('dispatches start, stop, and restart without opening the script overlay', async () => {
