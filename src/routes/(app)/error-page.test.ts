@@ -73,6 +73,7 @@ describe('(app) +error page', () => {
     setPage(500, '/workspace/w-1', 'kaboom');
     const { container } = render(ErrorPage);
     expect(mocks.goto).not.toHaveBeenCalled();
+    expect(container.firstElementChild?.classList.contains('min-h-screen')).toBe(true);
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
     expect(container.textContent).toContain('kaboom');
   });
@@ -108,6 +109,7 @@ describe('root +error page', () => {
     setPage(500, '/anything', 'root kaboom');
     const { container } = render(RootErrorPage);
     expect(mocks.goto).not.toHaveBeenCalled();
+    expect(container.firstElementChild?.classList.contains('min-h-screen')).toBe(true);
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
     expect(container.textContent).toContain('root kaboom');
   });

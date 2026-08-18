@@ -27,7 +27,7 @@
 </script>
 
 {#if !redirectingNotFound}
-  <div class="h-full flex items-center justify-center p-6 bg-background">
+  <div class="min-h-screen flex items-center justify-center p-6 bg-background">
     <div class="w-full max-w-md" role="alert" aria-live="assertive">
       <div class="bg-card border border-border rounded-xl shadow-lg p-8 space-y-6 text-center">
         <div class="flex justify-center">

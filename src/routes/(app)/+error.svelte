@@ -29,7 +29,7 @@
 
 {#if !redirectingNotFound}
   <!-- Full height container with vertical centering -->
-  <div class="h-full flex items-center justify-center p-6 bg-background">
+  <div class="min-h-screen flex items-center justify-center p-6 bg-background">
     <!-- Centered content container with max width -->
     <div class="w-full max-w-md" role="alert" aria-live="assertive">
       <!-- Card container -->
