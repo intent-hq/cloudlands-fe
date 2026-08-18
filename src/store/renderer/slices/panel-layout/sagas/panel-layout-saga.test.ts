@@ -768,11 +768,11 @@ describe('panelLayoutSaga', () => {
     };
 
     it.each([
-      ['missing', undefined],
-      ['invalid', { bad: true }],
-      ['empty', emptyStoredLayout],
-      ['normalized-empty', foreignOnlyLayout],
-    ])('opens the newest primary agent after a %s restore', async (_name, stored) => {
+      ['missing', undefined, 'agent-initial'],
+      ['invalid', { bad: true }, 'agent-recent'],
+      ['empty', emptyStoredLayout, 'agent-recent'],
+      ['normalized-empty', foreignOnlyLayout, 'agent-recent'],
+    ])('opens the expected agent after a %s restore', async (_name, stored, expectedAgentId) => {
       const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
       const recent = agent('agent-recent', 'Recent', '2026-07-31T02:00:00.000Z');
       const background = agent('agent-background', 'Background', '2026-07-31T03:00:00.000Z', {
@@ -786,7 +786,9 @@ describe('panelLayoutSaga', () => {
 
       const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
       const tabs = Object.values(workspace.panels).flatMap((panel: any) => panel.tabs);
-      expect(tabs).toEqual([expect.objectContaining({ type: 'agent', agentId: 'agent-recent' })]);
+      expect(tabs).toEqual([
+        expect.objectContaining({ type: 'agent', agentId: expectedAgentId }),
+      ]);
       expect(workspace.focusedPanelId).toBeTruthy();
       expect(workspace.pendingFocusTabId).toBe(tabs[0].id);
       expect(

@@ -46,7 +46,6 @@ import {
   resolveCanonicalInitialAgent,
   resolveEmptyLayoutAgent,
   selectAllWorkspaceAgents,
-  selectEmptyLayoutAgent,
 } from '../../workspace-agents/workspace-agents-selectors';
 import { setAgents, setInitialAgentId } from '../../workspace-agents/workspace-agents-slice';
 import { selectSpec } from '../../workspace-notes/workspace-notes-selectors';
@@ -451,9 +450,12 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
   if (!restoredWorkspaceIds.has(wsId)) return;
   const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
   if (layout.newWorkspaceLifecycle || hasAnyTab(layout)) return;
-  const agent = agents
-    ? resolveEmptyLayoutAgent(agents, wsId)
-    : yield* selectEmptyLayoutAgent.effect(wsId);
+  const availableAgents = agents ?? (yield* selectAllWorkspaceAgents.effect(wsId));
+  const agent = resolveEmptyLayoutAgent(
+    availableAgents,
+    wsId,
+    layout.restoreStatus === 'empty',
+  );
   if (!agent) return;
   yield* put(
     openTabInAdjacentOrSplit(

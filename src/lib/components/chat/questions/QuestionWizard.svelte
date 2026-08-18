@@ -141,7 +141,7 @@
 </script>
 
 <div
-  class="min-w-0 overflow-hidden rounded-(--radius-large) bg-card shadow-sm"
+  class="min-w-0 overflow-hidden rounded-(--radius-large) bg-card"
   data-question-wizard
   data-testid="question-wizard-card"
 >

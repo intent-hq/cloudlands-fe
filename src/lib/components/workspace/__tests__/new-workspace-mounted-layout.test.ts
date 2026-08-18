@@ -71,11 +71,9 @@ describe('mounted new workspace layout', () => {
         context: new Map([[STORE_CONTEXT, storeContext]]),
       });
 
-      await waitFor(() => expect(mountedPanels()).toHaveLength(2));
-      expect(mountedPanels()[0].textContent).not.toContain(agentTitle);
+      await waitFor(() => expect(mountedPanels()).toHaveLength(1));
+      expect(mountedPanels()[0].textContent).toContain(agentTitle);
       expect(mountedPanels()[0].textContent).not.toContain('Spec');
-      expect(mountedPanels()[1].textContent).toContain(agentTitle);
-      expect(mountedPanels()[1].textContent).not.toContain('Spec');
       const workspace = appStore.state.panelLayout.byWorkspaceId[workspaceId];
       const agentPanels = Object.values(workspace.panels).filter((panel) =>
         panel.tabs.some((tab) => tab.type === 'agent' && tab.agentId === 'agent-1'),

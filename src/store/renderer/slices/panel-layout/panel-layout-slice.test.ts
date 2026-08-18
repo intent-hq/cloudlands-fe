@@ -149,7 +149,6 @@ describe('panelLayoutReducer', () => {
   describe('new workspace canonical bootstrap', () => {
     const preferredCanvasWidth =
       DEFAULT_MEDIUM_PANEL_WIDTH + DEFAULT_CHAT_PANEL_WIDTH + PANEL_SPLIT_GUTTER_WIDTH;
-    const preferredPanelWidth = DEFAULT_MEDIUM_PANEL_WIDTH + DEFAULT_CHAT_PANEL_WIDTH;
 
     it.each([true, false])(
       'seeds and reveals the immediate initial agent with coordinator=%s',
@@ -166,25 +165,15 @@ describe('panelLayoutReducer', () => {
               )
             : [initialWorkspace.root.panelId];
 
-        expect(initialWorkspace.root).toMatchObject({
-          type: 'split',
-          direction: 'horizontal',
-          sizes: [
-            expect.closeTo((DEFAULT_MEDIUM_PANEL_WIDTH / preferredPanelWidth) * 100, 6),
-            expect.closeTo((DEFAULT_CHAT_PANEL_WIDTH / preferredPanelWidth) * 100, 6),
-          ],
-        });
+        expect(initialWorkspace.root).toMatchObject({ type: 'panel' });
+        expect(initialOrder).toHaveLength(1);
         expect(initialWorkspace.panels[initialOrder[0]]).toMatchObject({
-          tabs: [],
-          pinned: false,
-        });
-        expect(initialWorkspace.panels[initialOrder[1]]).toMatchObject({
           pinned: true,
           tabs: [expect.objectContaining({ type: 'agent', agentId: 'agent-1' })],
         });
         expect(initialWorkspace).toMatchObject({
-          canvasWidth: preferredCanvasWidth,
-          canvasWidthSource: 'intrinsic',
+          canvasWidth: null,
+          canvasWidthSource: null,
           newWorkspaceLifecycle: { coordinator, initialAgentPending: false },
         });
 
@@ -373,15 +362,13 @@ describe('panelLayoutReducer', () => {
       ]);
     });
 
-    it('reveals canonical Spec once and preserves a touched placeholder tab', () => {
+    it('reveals canonical Spec once and preserves a user tab in the initial agent panel', () => {
       const seeded = panelLayoutReducer(
         emptyState(),
         bootstrapNewWorkspaceLayout(WS, 'agent-1', 'Coordinator', true),
       );
-      const placeholder = Object.values(seeded.byWorkspaceId[WS].panels).find(
-        (panel) => panel.pristine,
-      )!;
-      const touched = panelLayoutReducer(seeded, markPanelTouched(WS, placeholder.id));
+      const agentPanel = Object.values(seeded.byWorkspaceId[WS].panels)[0];
+      const touched = panelLayoutReducer(seeded, markPanelTouched(WS, agentPanel.id));
       const withDraft = panelLayoutReducer(
         touched,
         openTab(
@@ -393,7 +380,7 @@ describe('panelLayoutReducer', () => {
             workspaceId: WS,
             closable: true,
           },
-          placeholder.id,
+          agentPanel.id,
           'draft-tab',
           true,
         ),
@@ -413,9 +400,9 @@ describe('panelLayoutReducer', () => {
       const workspace = duplicate.byWorkspaceId[WS];
 
       expect(Object.values(workspace.panels)).toHaveLength(2);
-      expect(workspace.panels[placeholder.id].tabs.map((tab) => tab.noteId)).toEqual([
+      expect(workspace.panels[agentPanel.id].tabs.map((tab) => tab.noteId)).toEqual([
+        undefined,
         'draft',
-        'spec',
       ]);
       expect(
         Object.values(workspace.panels)
@@ -423,7 +410,7 @@ describe('panelLayoutReducer', () => {
           .filter((tab) => tab.type === 'note' && tab.noteId === 'spec'),
       ).toHaveLength(1);
       expect(workspace.newWorkspaceLifecycle?.spec.state).toBe('revealed');
-      expect(workspace.focusedPanelId).toBe(placeholder.id);
+      expect(workspace.focusedPanelId).not.toBe(agentPanel.id);
     });
 
     it('clears the one-shot lifecycle on reset', () => {

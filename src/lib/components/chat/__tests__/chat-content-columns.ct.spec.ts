@@ -36,6 +36,16 @@ test('caps and centers separate transcript and composer columns in every wide st
   }
 });
 
+test('adds bottom breathing room when no subscription utility is visible', async ({ mount }) => {
+  const component = await mount(ChatPanelOperationalGeometryHost, {
+    props: { theme: 'light', zoom: 1, width: 720 },
+  });
+  const promptLayer = component.getByTestId('composer-prompt-layer');
+
+  await expect(promptLayer).toHaveAttribute('data-has-transcript-utility', 'false');
+  await expect(promptLayer).toHaveCSS('padding-bottom', '12px');
+});
+
 test('uses the same available width and gutters without a nested narrow scroll owner', async ({
   mount,
 }) => {

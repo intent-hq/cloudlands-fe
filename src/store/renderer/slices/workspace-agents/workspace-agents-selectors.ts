@@ -106,7 +106,25 @@ export function resolveCanonicalInitialAgent(agents: AgentSession[]): AgentSessi
 export function resolveEmptyLayoutAgent(
   agents: AgentSession[],
   workspaceId: string,
+  allowInitialAgent = false,
 ): AgentSession | null {
+  const eligibleAgents = agents.filter(
+    (agent) =>
+      String(agent.workspaceId) === workspaceId &&
+      agent.status !== 'deleted' &&
+      !agent.pendingDeleteAt,
+  );
+  if (allowInitialAgent) {
+    const initialAgent = [...eligibleAgents]
+      .sort(byCreatedOrder)
+      .find(
+        (agent) =>
+          agent.isInitialAgent === true ||
+          agent.metadata?.isInitialAgent === true ||
+          agent.agentMetadata?.isInitialAgent === true,
+      );
+    if (initialAgent) return initialAgent;
+  }
   const orderedPrimaryAgents = agents
     .filter(
       (agent) =>

@@ -130,7 +130,7 @@ describe('new workspace initial-agent contract', () => {
   });
 
   it.each([true, false])(
-    'keeps the reusable column first and the pinned initial agent immediately right when coordinator=%s',
+    'starts with only the pinned initial agent when coordinator=%s',
     (coordinator) => {
       const workspace = panelLayoutReducer(
         initialState(),
@@ -138,10 +138,9 @@ describe('new workspace initial-agent contract', () => {
       ).byWorkspaceId[WS];
       const order = getPanelOrder(workspace.root);
 
-      expect(order).toHaveLength(2);
-      expect(workspace.panels[order[0]]).toMatchObject({ pinned: false });
-      expect(workspace.panels[order[1]]).toMatchObject({ pinned: true });
-      expect(workspace.panels[order[1]].tabs).toEqual([
+      expect(order).toHaveLength(1);
+      expect(workspace.panels[order[0]]).toMatchObject({ pinned: true });
+      expect(workspace.panels[order[0]].tabs).toEqual([
         expect.objectContaining({ agentId: 'agent-initial' }),
       ]);
     },

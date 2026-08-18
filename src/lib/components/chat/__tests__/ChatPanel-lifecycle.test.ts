@@ -1523,5 +1523,8 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(area).not.toBeNull();
     expect(area!.getAttribute('data-has-subscriptions')).toBe('false');
     expect(area!.classList.contains('hidden')).toBe(true);
+    const composer = view.container.querySelector('[data-testid="composer-prompt-layer"]');
+    expect(composer?.getAttribute('data-has-transcript-utility')).toBe('false');
+    expect(composer?.classList.contains('pb-3')).toBe(true);
   });
 });

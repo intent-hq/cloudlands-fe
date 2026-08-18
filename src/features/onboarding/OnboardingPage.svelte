@@ -128,6 +128,7 @@
   import { selectModel } from '$store/renderer/slices/model/model-slice';
   import { hydrateWorkspaceNavigation } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { bootstrapNewWorkspaceLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { createLogger } from '$lib/utils/client-logger';
   import { cn } from '$lib/utils';
 
@@ -1127,6 +1128,46 @@
       // create result; the FE no longer pre-mints one.
       const agentId = result.data.initialAgent?.id;
 
+      // Install the panel layout before attachment delivery so both the normal
+      // path and a later attachment retry open the daemon-created initial
+      // agent. Legacy navigation stays empty so drawer migration cannot
+      // replace the canonical panel seed.
+      try {
+        getPanelLayoutManager(workspace.id).clearLayout();
+      } catch {
+        /* ignore */
+      }
+      try {
+        const { workspaceStorageManager: wsm } =
+          await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
+        wsm.clearState(workspace.id);
+      } catch {
+        /* ignore */
+      }
+      appStore.dispatch(setWorkspaceEntity(workspace));
+      if (agentId) {
+        appStore.dispatch(setInitialAgentId(workspace.id, agentId));
+      }
+      appStore.dispatch(
+        bootstrapNewWorkspaceLayout(
+          workspace.id,
+          agentId ?? null,
+          'Coordinator',
+          specialistId === 'spec-writer',
+        ),
+      );
+      appStore.dispatch(
+        hydrateWorkspaceNavigation(workspace.id, {
+          version: 2,
+          workspace: { id: workspace.id, status: 'loading' },
+          mainPanel: { type: 'empty' },
+          drawer: { open: false, type: null, itemId: null },
+          navigation: { history: [], currentIndex: -1 },
+          ui: { hasInitialized: false },
+        }),
+      );
+      appStore.dispatch(openWorkspaceTab(workspace.id));
+
       // Place staged attachments now that the workspace exists and deliver
       // the held-back first message with the attachment-reference blocks.
       // On failure the failed pills stay visible (retry or remove) and
@@ -1195,22 +1236,6 @@
           });
       }
 
-      // Clear stale layout/storage
-      try {
-        getPanelLayoutManager(workspace.id).clearLayout();
-      } catch {
-        /* ignore */
-      }
-      try {
-        const { workspaceStorageManager: wsm } =
-          await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
-        wsm.clearState(workspace.id);
-      } catch {
-        /* ignore */
-      }
-
-      appStore.dispatch(setWorkspaceEntity(workspace));
-
       // Record the script as this repo's last-used default (localStorage).
       // Skip the unedited repo-config script — the committed .intent/config.json
       // is its source of truth, and recording a copy would shadow future
@@ -1229,31 +1254,6 @@
           projectSelection.type === 'github' ? projectSelection.githubUrl : undefined,
         );
       }
-
-      // Initial-agent delivery (message + sends) is owned by the daemon; the
-      // FE only records which agent is the initial one so the UI can highlight
-      // and focus it. The id is daemon-assigned (from the create result); when
-      // it is somehow absent, skip the highlight/focus rather than invent one.
-      if (agentId) {
-        appStore.dispatch(setInitialAgentId(workspace.id, agentId));
-      }
-
-      // Same intent as CompactWorkspaceInitializer: land on the initial-agent
-      // conversation as the only tab, full-width. The spec note remains
-      // reachable from the sidebar; the main panel stays empty here so the
-      // middleware doesn't need to special-case an agent-only screen.
-      appStore.dispatch(
-        hydrateWorkspaceNavigation(workspace.id, {
-          version: 2,
-          workspace: { id: workspace.id, status: 'loading' },
-          mainPanel: { type: 'empty' },
-          drawer: agentId
-            ? { open: true, type: 'agent' as const, itemId: agentId }
-            : { open: false, type: null, itemId: null },
-          navigation: { history: [], currentIndex: -1 },
-          ui: { hasInitialized: false },
-        }),
-      );
 
       setupRepoStatus = 'done';
       setupBranchStatus = 'done';
@@ -1290,7 +1290,6 @@
       onHoldActiveChange(true);
       onFadingOutChange(false);
 
-      appStore.dispatch(openWorkspaceTab(workspace.id));
       await goto(`/workspace/${workspace.id}`, { replaceState: true });
     } catch (err) {
       logger.error('Workspace creation failed', err as Error);

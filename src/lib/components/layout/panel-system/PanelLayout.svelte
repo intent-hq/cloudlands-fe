@@ -1391,10 +1391,9 @@
     data-testid="panel-workspace-inset"
     use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24 }}
   >
-    <!-- Content-sized wrapper so the container's right padding is preserved
-         at the end of the horizontal scroll range (padding after a w-full
-         child is otherwise swallowed by descendant overflow). -->
-    <div class={contained ? 'h-full w-full min-w-0' : 'h-full w-max min-w-full'}>
+    <!-- The flex track makes the fixed-width canvas participate in max-content
+         sizing, which keeps the container's right padding in the scroll range. -->
+    <div class={contained ? 'h-full w-full min-w-0' : 'flex h-full w-max min-w-full'}>
       {#key effectiveLayoutId}
         <PanelCanvasFrame
           sizing={canvasSizing}

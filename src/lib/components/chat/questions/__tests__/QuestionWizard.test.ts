@@ -75,6 +75,7 @@ describe('QuestionWizard', () => {
 
     expect(wizard?.className).toContain('bg-card');
     expect(wizard?.className).not.toContain('border');
+    expect(wizard?.className).not.toContain('shadow');
     expect(wizard?.className).toContain('rounded-(--radius-large)');
     expect(options).toHaveLength(2);
     expect(options.every((option) => option.className.includes('border-0'))).toBe(true);

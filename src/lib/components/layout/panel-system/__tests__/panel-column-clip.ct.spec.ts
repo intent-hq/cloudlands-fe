@@ -117,6 +117,32 @@ test('fits an automatic canvas inside the visible frame (tab view)', async ({ mo
   expect(measurements.lastPanelRight!).toBeLessThanOrEqual(measurements.columnRight);
 });
 
+test('keeps the right inset visible at the horizontal scroll end (tab view)', async ({
+  mount,
+}) => {
+  const component = await mount(PanelWorkspaceColumnClipHarness, {
+    props: {
+      mode: 'uncontained',
+      sidebarWidth: 0,
+      canvasWidth: 760,
+      persistedCanvasWidth: 1208,
+      insetChrome: 0,
+    },
+  });
+  const inset = component.getByTestId('panel-workspace-inset');
+
+  await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
+  await inset.evaluate((node) => {
+    node.scrollLeft = node.scrollWidth;
+  });
+  const measurements = await measureGeometry(component);
+
+  expect(measurements.insetRight! - measurements.canvasRight!).toBeCloseTo(
+    Number.parseFloat(measurements.insetPaddingRight!),
+    1,
+  );
+});
+
 for (const zoomFactor of [1, 2]) {
   test(`uses the 700px chat default without a first-frame resize at ${zoomFactor * 100}%`, async ({
     mount,

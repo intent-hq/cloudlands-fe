@@ -618,6 +618,13 @@
   // The pinned-prompt overlay host subtracts it so the overlay lane occupies
   // the same horizontal box as the conversation column.
   let scrollbarGutterWidth = $state(0);
+  let hasVisibleTranscriptUtility = $state(false);
+
+  $effect(() => {
+    workspace?.id;
+    agentId;
+    hasVisibleTranscriptUtility = false;
+  });
 
   $effect(() => {
     if (containerHeight > 0) {
@@ -4309,6 +4316,7 @@
                 workspaceId={workspace.id}
                 {agentId}
                 compact={isCompactMode}
+                bind:visible={hasVisibleTranscriptUtility}
               />
             {/key}
           {/if}
@@ -4376,8 +4384,10 @@
 
     <div
       class="composer-prompt-layer relative z-10 w-full border-t border-border"
+      class:pb-3={!hasVisibleTranscriptUtility}
       style:padding-inline-end="{scrollbarGutterWidth}px"
       data-testid="composer-prompt-layer"
+      data-has-transcript-utility={hasVisibleTranscriptUtility}
     >
       <div
         class="chat-content-measure mx-auto w-full min-w-0"

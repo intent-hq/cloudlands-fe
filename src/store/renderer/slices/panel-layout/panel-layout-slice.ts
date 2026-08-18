@@ -1067,35 +1067,55 @@ function openAndPinNewWorkspaceInitialAgent(
     workspaceId: wsId,
     closable: true,
   };
-  const opened = selfDispatch(
-    state,
-    openTabInNewRootColumn(
-      wsId,
-      tab,
-      { force: true, newPanelId: panelId, newTabId: tabId },
-      timestamp,
-    ),
-  );
+  const before = getWorkspaceState(state, wsId);
+  const pristinePanelId = getPanelOrder(before.root).find((candidateId) => {
+    const panel = before.panels[candidateId];
+    return panel?.pristine === true && panel.tabs.length === 0 && !panelIsPinned(panel);
+  });
+  const opened = pristinePanelId
+    ? selfDispatch(state, openTab(wsId, tab, pristinePanelId, tabId, true, timestamp))
+    : selfDispatch(
+        state,
+        openTabInNewRootColumn(
+          wsId,
+          tab,
+          { force: true, newPanelId: panelId, newTabId: tabId },
+          timestamp,
+        ),
+      );
   const revealPanelId = getWorkspaceState(opened, wsId).pendingPanelReveal?.panelId;
   if (!revealPanelId) return opened;
   const pinned = selfDispatch(opened, setPanelPinned(wsId, revealPanelId, true, timestamp));
-  const workspace = getWorkspaceState(pinned, wsId);
-  const lifecycle = workspace.newWorkspaceLifecycle;
-  const initialAgentPanelId = Object.values(workspace.panels).find((panel) =>
+  const initialAgentPanelId = Object.values(getWorkspaceState(pinned, wsId).panels).find((panel) =>
     panel.tabs.some((panelTab) => panelTab.type === 'agent' && panelTab.agentId === agentId),
   )?.id;
+  let cleaned = pinned;
+  for (const candidate of Object.values(getWorkspaceState(cleaned, wsId).panels)) {
+    if (
+      candidate.id !== initialAgentPanelId &&
+      candidate.pristine === true &&
+      candidate.tabs.length === 0
+    ) {
+      cleaned = selfDispatch(cleaned, closePanel(wsId, candidate.id, timestamp));
+    }
+  }
+  const workspace = getWorkspaceState(cleaned, wsId);
+  const lifecycle = workspace.newWorkspaceLifecycle;
   const reusablePanelId = getPanelOrder(workspace.root).find(
     (candidateId) =>
       candidateId !== initialAgentPanelId && workspace.panels[candidateId]?.pinned !== true,
   );
   const nextWorkspace = {
     ...workspace,
+    pendingFocusTabId:
+      (initialAgentPanelId ? workspace.panels[initialAgentPanelId]?.activeTabId : null) ??
+      workspace.pendingFocusTabId,
     newWorkspaceLifecycle: lifecycle
       ? { ...lifecycle, initialAgentId: agentId, initialAgentPending: false }
       : lifecycle,
   };
   return setWorkspaceState(
-    pinned,
+    cleaned,
     wsId,
     reusablePanelId && initialAgentPanelId
       ? applyCanonicalDefaultPairGeometry(nextWorkspace, reusablePanelId, initialAgentPanelId)
@@ -2594,6 +2614,9 @@ panelLayoutReducer.with(revealDeferredSpecTab, (state, { payload }) => {
     const root = movePanelToRootEdgeInLayout(current.root, specPanelId, 'before') ?? current.root;
     const normalized: WorkspacePanelLayoutState = {
       ...current,
+      ...(ws.canvasWidthSource === 'explicit'
+        ? { canvasWidth: ws.canvasWidth, canvasWidthSource: 'explicit' as const }
+        : {}),
       root,
       panels: {
         ...current.panels,

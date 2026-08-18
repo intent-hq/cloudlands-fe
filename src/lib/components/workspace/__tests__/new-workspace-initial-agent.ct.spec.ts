@@ -23,10 +23,10 @@ for (const coordinator of [true, false]) {
       await expect(state).toHaveAttribute('data-agent-count', '1');
       await expect(state).toHaveAttribute('data-agent-pinned', 'true');
       const agentPanelId = await state.getAttribute('data-agent-panel-id');
-      const reusablePanelId = await state.getAttribute('data-reusable-panel-id');
       await expect(state).toHaveAttribute('data-focused-panel-id', agentPanelId!);
-      await expect(state).toHaveAttribute('data-panel-order', `${reusablePanelId},${agentPanelId}`);
-      await expect(component.locator('[data-panel-id]')).toHaveCount(2);
+      await expect(state).toHaveAttribute('data-reusable-panel-id', '');
+      await expect(state).toHaveAttribute('data-panel-order', agentPanelId!);
+      await expect(component.locator('[data-panel-id]')).toHaveCount(1);
       await expect(component.locator(`[data-panel-id="${agentPanelId}"]`)).toHaveAttribute(
         'data-focused',
         'true',
