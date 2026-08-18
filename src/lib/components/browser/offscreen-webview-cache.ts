@@ -1,13 +1,19 @@
 /**
  * Offscreen webview keep-alive cache (monorepo#2789 slice 2).
  *
- * Pure LRU bookkeeping for the OffscreenWebviewHost: decides which browser
+ * Pure bookkeeping for the OffscreenWebviewHost: decides which browser
  * tabs of background (hosted but not displayed) workspaces keep a live
  * offscreen <webview>, so content-level browser ops (evaluate / screenshot /
  * capture) work without the workspace being displayed. Follows the
- * panel-tab-cache.ts precedent: a Map of tabId -> last-seen timestamp,
- * recomputed from candidates on every layout change and capped by evicting
- * the oldest entries.
+ * panel-tab-cache.ts precedent: a Map of tabId -> timestamp of when the tab
+ * entered the offscreen set, recomputed from candidates on every layout
+ * change and capped by evicting the oldest entries.
+ *
+ * Eviction order is by backgrounding time (FIFO), not use: recency is never
+ * refreshed by agent activity, so under cap pressure the longest-backgrounded
+ * tab is evicted even if an agent is actively operating on it. Feeding
+ * main-process tab-lease touches back into recency is a possible follow-up
+ * if the default cap proves too tight.
  */
 
 export const MAX_OFFSCREEN_WEBVIEWS = 8;

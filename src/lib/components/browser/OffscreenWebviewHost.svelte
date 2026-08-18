@@ -7,11 +7,18 @@
    * layout, outside the keyed workspace surface.
    *
    * Candidates derive from the panel-layout slice (all hosted workspace
-   * layouts minus the displayed ones); an LRU cap bounds guest memory. When
-   * a workspace is displayed again its tabs leave the candidate set and the
-   * visible EmbeddedBrowser re-registers the tab; when a workspace is
+   * layouts minus the displayed ones); a cap bounds guest memory, evicting
+   * by backgrounding time (see offscreen-webview-cache.ts). When a workspace
+   * is displayed again its tabs leave the candidate set and the visible
+   * EmbeddedBrowser re-registers the tab; when a workspace is
    * archived/deleted its layout state is cleared (workspaceUnmounted), which
    * drops its entries here and destroys the guests.
+   *
+   * Known limitation (multi-window): the exclusion set is per-window, so a
+   * workspace displayed in another window can also mount a hidden guest
+   * here, and the main-process tab registry keeps whichever registration
+   * came last. Arbitrating registrations across windows (e.g. preferring
+   * visible-panel guests) is left to a follow-up slice.
    */
   import { untrack } from 'svelte';
   import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
@@ -66,9 +73,10 @@
 
   $effect(() => {
     const currentCandidates = candidates;
+    const currentMax = maxWebviews;
     const { currentCache, nextCache } = untrack(() => ({
       currentCache: cache,
-      nextCache: updateOffscreenWebviewCache(cache, currentCandidates, Date.now(), maxWebviews),
+      nextCache: updateOffscreenWebviewCache(cache, currentCandidates, Date.now(), currentMax),
     }));
     if (!areOffscreenWebviewCachesEqual(currentCache, nextCache)) {
       for (const candidate of currentCandidates) {

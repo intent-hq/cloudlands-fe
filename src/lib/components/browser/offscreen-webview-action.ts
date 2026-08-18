@@ -60,7 +60,11 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
     if (url) appStore.dispatch(updateTabBrowserUrl(entry.workspaceId, entry.tabId, url));
   };
 
-  webview.addEventListener('dom-ready', handleDomReady);
+  // dom-ready fires on every top-level navigation; register once per guest
+  // (EmbeddedBrowser precedent) so repeated navigations don't stack
+  // redundant registerTab calls and destroyed-hooks in the main process.
+  // The muted state set on first dom-ready persists on the webContents.
+  webview.addEventListener('dom-ready', handleDomReady, { once: true });
   webview.addEventListener('did-navigate', handleDidNavigate);
   // Hash/history navigation does not fire did-navigate; the visible
   // EmbeddedBrowser syncs it too, so mirror it here.
