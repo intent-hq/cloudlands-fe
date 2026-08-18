@@ -166,7 +166,7 @@ export class PanelLayoutAdapter {
     const tab: Omit<PanelTab, 'id'> = {
       type: 'browser',
       title: m.layout_tabTypes_browser_title(),
-      browserUrl: url ?? 'https://google.com',
+      browserUrl: url ?? 'about:blank',
       // Pre-rewrite URL persisted with the tab so a restart can re-run the
       // loopback/tunnel rewrite (intent-hq/monorepo#2789).
       ...(requestedUrl === undefined ? {} : { browserRequestedUrl: requestedUrl }),

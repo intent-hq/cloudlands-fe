@@ -30,6 +30,7 @@
     reconcileEmbeddedBrowserUrlProp,
     recordEmbeddedBrowserNavigation,
   } from './embedded-browser-navigation-sync';
+  import { isValidBrowserUrl } from './embedded-browser-url-validation';
   import Fa from 'svelte-fa';
   import {
     faArrowLeft,
@@ -49,42 +50,6 @@
 
   // Use shared protocol constants — single source of truth in src/shared/constants.ts
   const ALLOWED_PROTOCOLS = BROWSER_PROTOCOLS.NAVIGATION_ALLOWED;
-
-  // Check if URL is valid and safe to load
-  // - Must use an allowed protocol (see BROWSER_PROTOCOLS.NAVIGATION_ALLOWED)
-  // - Must not be the app's own URL
-  // Defined early so it can be used during state initialization
-  function isValidBrowserUrl(targetUrl: string): boolean {
-    if (!targetUrl) {
-      logger.debug('isValidBrowserUrl: empty URL');
-      return false;
-    }
-    try {
-      const parsedUrl = new URL(targetUrl);
-      // Block dangerous protocols
-      if (!ALLOWED_PROTOCOLS.includes(parsedUrl.protocol)) {
-        logger.debug('isValidBrowserUrl: blocked protocol', {
-          url: targetUrl,
-          protocol: parsedUrl.protocol,
-        });
-        return false;
-      }
-      // Don't allow loading the app itself
-      const appOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-      const isValid = parsedUrl.origin !== appOrigin;
-      if (!isValid) {
-        logger.debug('isValidBrowserUrl: URL matches app origin', {
-          url: targetUrl,
-          appOrigin,
-          urlOrigin: parsedUrl.origin,
-        });
-      }
-      return isValid;
-    } catch (e) {
-      logger.debug('isValidBrowserUrl: URL parse error', { url: targetUrl, error: e });
-      return false;
-    }
-  }
 
   interface Props {
     url: string;

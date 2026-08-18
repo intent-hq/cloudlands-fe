@@ -1034,8 +1034,8 @@
             sidebarSide={$sidebarSide$}
             sidebarStorageKey={`workspace-left-panel-width:${workspaceId}`}
             sidebarExpandedStorageKey={`workspace-left-panel-expanded-width:${workspaceId}`}
-            {sidebarFillsAvailableWidth}
             {columnMode}
+            {sidebarFillsAvailableWidth}
             disableSidebarWidthTransition={columnMode}
             {onSidebarWidthChange}
             startCollapsed={isOnboarding}

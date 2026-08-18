@@ -19,6 +19,7 @@
   import { Logger } from '$shared/logger';
   import { m } from '$shared/paraglide/messages.js';
   import { COLUMN_SIDEBAR_MAX_WIDTH } from '$store/renderer/slices/ui-layout/ui-layout-slice';
+  import { selectIsCollapsed } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
 
   // Props
   interface Props {
@@ -85,6 +86,7 @@
   }: Props = $props();
 
   const workspaceLogger = new Logger('WorkspaceLayout');
+  const sidebarIsCollapsed = selectIsCollapsed();
 </script>
 
 <ErrorBoundary logger={workspaceLogger}>
@@ -122,6 +124,7 @@
         disableWidthTransition={disableSidebarWidthTransition}
         notifyAutomaticWidthChanges={!columnMode}
         clampStoredWidth={columnMode}
+        followSidebarCollapsed={!columnMode}
         onWidthChange={onSidebarWidthChange}
         className="workspace-sidebar-panel workspace-sidebar-{sidebarSide} flex-none h-full min-w-0 bg-sidebar {sidebarSide ===
         'left'
@@ -133,7 +136,10 @@
 
       {#if sidebarSide === 'left'}
         <!-- Main Content Area (Panel Layout) - rendered after when sidebar is on left -->
-        <div class="main-content-area flex h-full min-w-0 z-10 bg-sidebar">
+        <div
+          class="main-content-area flex h-full min-w-0 z-10 bg-sidebar"
+          class:pl-2={!columnMode && $sidebarIsCollapsed}
+        >
           {@render content()}
         </div>
       {/if}

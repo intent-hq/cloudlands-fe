@@ -75,7 +75,7 @@ function* newBrowser(data: WorkspaceCommandPayload | null): SagaGenerator<void> 
     openTab(workspaceId, {
       type: 'browser',
       title: 'Browser',
-      browserUrl: 'https://google.com',
+      browserUrl: 'about:blank',
       closable: true,
     }),
   );
