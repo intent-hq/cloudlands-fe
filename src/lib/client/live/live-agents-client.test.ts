@@ -1451,6 +1451,65 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
       const result = await client.retry('agent-fail', 'ws-1');
       expect(result).toEqual({ ok: false, error: 'Transport failure' });
+      expect(result).not.toHaveProperty('notFound');
+    });
+
+    it('classifies the daemon not-found rejection as notFound:true (#2806)', async () => {
+      // PROTOCOL §5.5: a deleted agent rejects with -32602 and the structured
+      // discriminator `data.code: "not-found"` (monorepo#1320). The client
+      // must preserve that classification instead of collapsing it into a
+      // generic { ok: false } so the failure toast can dismiss itself.
+      backend.onRequest('agent.retry', () => {
+        throw new BackendError(
+          buildErrorPayload('INVALID_PARAMS', 'Agent agent-gone not found', {
+            rpcCode: -32602,
+            data: { code: 'not-found' },
+          }),
+        );
+      });
+      const client = new LiveAgentsClient();
+
+      const result = await client.retry('agent-gone', 'ws-1');
+      expect(result).toEqual({
+        ok: false,
+        notFound: true,
+        error: 'Agent agent-gone not found',
+      });
+    });
+
+    it('classifies the legacy not-found shape (rpcCode + message, no data.code) as notFound:true', async () => {
+      // Older daemons / lossy re-wrapping lose the structured data.code; the
+      // classifier's rpcCode + message fallback must still mark notFound.
+      backend.onRequest('agent.retry', () => {
+        throw new BackendError(
+          buildErrorPayload('INVALID_PARAMS', 'Agent agent-old not found', {
+            rpcCode: -32602,
+          }),
+        );
+      });
+      const client = new LiveAgentsClient();
+
+      const result = await client.retry('agent-old', 'ws-1');
+      expect(result).toEqual({
+        ok: false,
+        notFound: true,
+        error: 'Agent agent-old not found',
+      });
+    });
+
+    it('does not mark lookalike -32602 errors without a not-found signal as notFound', async () => {
+      backend.onRequest('agent.retry', () => {
+        throw new BackendError(
+          buildErrorPayload('INVALID_PARAMS', 'workspaceId is required', {
+            rpcCode: -32602,
+          }),
+        );
+      });
+      const client = new LiveAgentsClient();
+
+      const result = await client.retry('agent-1', 'ws-1');
+      expect(result).toEqual({ ok: false, error: 'workspaceId is required' });
+      expect(result).not.toHaveProperty('notFound');
     });
   });
 

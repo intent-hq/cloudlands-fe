@@ -189,6 +189,58 @@ describe('agentFailureToastSaga', () => {
     await task.toPromise();
   });
 
+  it('Retry notFound removes the entry and dismisses the toast — no permanent Retry failed state (#2806)', async () => {
+    // The daemon rejected agent.retry with the not-found discriminator: the
+    // agent was deleted while the toast sat open. The stale entry must be
+    // dropped and the toast dismissed instead of keep-and-note.
+    mocks.retry.mockResolvedValue({ ok: false, notFound: true, error: 'Agent agent-1 not found' });
+    const dispatch = vi.fn();
+    const task = runSaga({ dispatch, getState: state }, agentFailureToastSaga);
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });
+    await settle();
+
+    lastToast('agent-failure:agent-1').componentProps.onRetry();
+    await settle();
+
+    expect(getAgentFailureEntry('agent-1')).toBeUndefined();
+    expect(mocks.dismiss).toHaveBeenCalledWith('agent-failure:agent-1');
+    // No "Retry failed" re-render after the dismissal.
+    expect(lastToast('agent-failure:agent-1').componentProps).not.toEqual(
+      expect.objectContaining({ retryNote: 'Retry failed' }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('stale notFound does not erase a re-failure that landed during the retry', async () => {
+    // Mirrors the stale-ok:true guard: a NEWER failure recorded while the
+    // not-found retry was in flight (e.g. the agent was recreated and failed
+    // again) must survive the stale not-found result.
+    let resolveRetry!: (value: { ok: false; notFound: true; error: string }) => void;
+    mocks.retry.mockImplementation(
+      () =>
+        new Promise<{ ok: false; notFound: true; error: string }>(
+          (resolve) => (resolveRetry = resolve),
+        ),
+    );
+    const task = runSaga({ dispatch: vi.fn(), getState: state }, agentFailureToastSaga);
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom', at: 1000 });
+    await settle();
+
+    lastToast('agent-failure:agent-1').componentProps.onRetry();
+    await settle();
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'new boom', at: 2000 });
+    resolveRetry({ ok: false, notFound: true, error: 'Agent agent-1 not found' });
+    await settle();
+
+    expect(getAgentFailureEntry('agent-1')?.error).toBe('new boom');
+    expect(lastToast('agent-failure:agent-1').componentProps).toEqual(
+      expect.objectContaining({ errorSummary: 'new boom', retrying: false }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('stale ok:true does not erase a re-failure that landed during the retry', async () => {
     let resolveRetry!: (value: { ok: boolean }) => void;
     mocks.retry.mockImplementation(

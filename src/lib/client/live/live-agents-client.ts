@@ -7,6 +7,7 @@
  * the sole data path (intent-hq/monorepo#1697); there is no legacy
  * events-driven `agent.list` refetch.
  */
+import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
 import { AgentStatus } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
@@ -521,7 +522,10 @@ export class LiveAgentsClient implements AgentsClient {
   async retry(
     agentId: string,
     workspaceId: string,
-  ): Promise<{ ok: true; redriven?: boolean; turnId?: string } | { ok: false; error: string }> {
+  ): Promise<
+    | { ok: true; redriven?: boolean; turnId?: string }
+    | { ok: false; notFound?: boolean; error: string }
+  > {
     // `agent.retry` redrives a failed agent spawn. Only valid when agent status
     // is `error`; returns `{ ok: false }` otherwise. On ok:true, `redriven`
     // reports whether a queued message existed and is being redriven (status
@@ -542,8 +546,15 @@ export class LiveAgentsClient implements AgentsClient {
       return turnId !== undefined ? { ok: true, redriven, turnId } : { ok: true, redriven };
     } catch (error) {
       // Transport/RPC errors return { ok: false, error } rather than throwing so
-      // callers can surface the error and keep the retry button visible.
+      // callers can surface the error and keep the retry button visible. The
+      // daemon's not-found rejection (-32602, data.code "not-found", §5.5) is
+      // preserved as `notFound: true` — the agent was deleted, so callers can
+      // drop their stale failure state instead of offering Retry forever
+      // (monorepo#2806).
       const errorMsg = error instanceof Error ? error.message : 'Failed to retry agent spawn';
+      if (isAgentNotFoundError(error)) {
+        return { ok: false, notFound: true, error: errorMsg };
+      }
       return { ok: false, error: errorMsg };
     }
   }
