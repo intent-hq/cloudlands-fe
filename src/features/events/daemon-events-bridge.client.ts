@@ -71,12 +71,16 @@
  *
  * The stream family is accumulated per agent (one in-flight assistant per
  * agent) using the BE's monotonic `blockIndex` so the candidate transcript
- * always grows and the renderer's regression guard
- * (`resolveStreamContentBlocks`) accepts each update. Cleanup runs on
- * `agent:stream:end` / `agent:failed` so a subsequent prompt turn starts from
- * a clean slate. Dedup on hydration is preserved by carrying the BE-canonical
- * `messageId` as `assistantMessageId` so the in-flight message id matches the
- * one `agents.getConversation` returns later.
+ * always grows. Post-intentd#775 the accumulator is text-starved (tool blocks
+ * only), so the stream saga merges each dispatch into the message's current
+ * blocks by block identity (`resolveStreamContentBlocks` →
+ * `mergeStreamContentBlocks`) instead of replacing them — updates the blocks
+ * this bridge knows about without deleting subscription-owned text blocks
+ * (monorepo#2814). Cleanup runs on `agent:stream:end` / `agent:failed` so a
+ * subsequent prompt turn starts from a clean slate. Dedup on hydration is
+ * preserved by carrying the BE-canonical `messageId` as `assistantMessageId`
+ * so the in-flight message id matches the one `agents.getConversation`
+ * returns later.
  *
  * Dependency-light: registers a one-shot subscription on first dispatch and a
  * single notification listener; both are cleaned up if the host store
@@ -415,12 +419,12 @@ function ensureStream(agentId: string, messageId: string, workspaceId: string): 
 /**
  * REJOIN-STREAM SEEDING: prime the stream accumulator with the content blocks
  * from a chat.subscribe snapshot's in-flight assistant message so subsequent
- * agent:stream:chunk events pass the regression guard (resolveStreamContentBlocks
- * → hasActiveStreamRegression) instead of being suppressed. Called by
- * chat-read-service after merging the snapshot's partial assistant into the
- * hydrated transcript; the snapshot carries the full prefix built by the
- * daemon's CS-0 D5 merge. NO-OP when the message has no content blocks or when
- * a different message id already holds the stream slot.
+ * agent:stream:chunk dispatches carry the full block prefix instead of only
+ * the post-rejoin suffix. Called by chat-read-service after merging the
+ * snapshot's partial assistant into the hydrated transcript; the snapshot
+ * carries the full prefix built by the daemon's CS-0 D5 merge. NO-OP when the
+ * message has no content blocks or when a different message id already holds
+ * the stream slot.
  */
 export function seedStreamFromSnapshot(
   agentId: string,
