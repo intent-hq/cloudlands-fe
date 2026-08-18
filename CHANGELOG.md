@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.60.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.59.5...v2.60.0) (2026-08-18)
+
+
+### 🚀 Features
+
+* reveal transcript and utility footer in the same paint ([#1395](https://github.com/intent-hq/cloudlands-fe/issues/1395)) ([32eb5d8](https://github.com/intent-hq/cloudlands-fe/commit/32eb5d85069b439f14c669f6dd27fd43d78860cb))
+
+
+### 🐛 Bug Fixes
+
+* accept trailing --&gt; closer in suggested-prompts parser ([#1396](https://github.com/intent-hq/cloudlands-fe/issues/1396)) ([b82f30e](https://github.com/intent-hq/cloudlands-fe/commit/b82f30e79e3d08f723d195a5e40d22139f857c71))
+* route browser tab actions by workspace and stop masking renderer failures ([#1388](https://github.com/intent-hq/cloudlands-fe/issues/1388)) ([a48e012](https://github.com/intent-hq/cloudlands-fe/commit/a48e012c6f99da6ed6d2cc0c33a82d6527530f89))
+* stop per-workspace auto-commit toggle from writing global git.autoCommit ([#1397](https://github.com/intent-hq/cloudlands-fe/issues/1397)) ([9e270e1](https://github.com/intent-hq/cloudlands-fe/commit/9e270e18406cbbc9527da617856e044e93984a7c))
+
 ## [2.59.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.59.4...v2.59.5) (2026-08-17)
 
 
