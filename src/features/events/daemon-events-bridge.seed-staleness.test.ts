@@ -220,13 +220,26 @@ describe('seed staleness regression (monorepo#2818)', () => {
     expect(toolUse.metadata?.status).toBe('in_progress');
   });
 
-  it('a seeded tool_result must not duplicate when its completion tick replays', () => {
+  it('seeding survives snapshot interleaving where array position ≠ daemon blockIndex', () => {
     const handler = capturedHandlers[0]!;
 
-    // Rejoin AFTER the first tool completed: the snapshot interleaves the
-    // tool_result after its tool_use (§7.1 synthesized pairing by
-    // toolCallId ↔ tool_use_id), and a second tool is mid-flight at daemon
-    // blockIndex 3 (text blocks occupy the even indices).
+    // Rejoin AFTER the first tool completed LATE: text (:2) and a second
+    // tool_use (:3) streamed before toolu_01's output arrived, so its
+    // tool_result persisted at daemon index 4 (§7.1: the result never derives
+    // from its use — resultBlockId is whatever index the durable transcript
+    // actually assigned; monorepo#2029). The snapshot page interleaves the
+    // result right after its use (§7.1 synthesized pairing), so ARRAY
+    // POSITION DIVERGES FROM THE ID SUFFIX from position 2 onward:
+    //
+    //   position: 0        1          2            3         4
+    //   id:       :0 text  :1 use     :4 result    :2 text   :3 use
+    //
+    // Pre-fix positional seeding keyed blocksByIndex by position, so the
+    // mid-flight toolu_02 sat at key 4 while its live ticks carry
+    // blockIndex 3 (where the seeded text block sat) — a progress-only tick
+    // then found no prior tool_use and collapsed the name; and the seeded
+    // tool_result lived in blocksByIndex, duplicating against the live
+    // completion's toolResultsByUseIndex entry.
     appStore.dispatch(clearAllSessions());
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
@@ -243,11 +256,12 @@ describe('seed staleness regression (monorepo#2818)', () => {
       },
       {
         type: 'tool_result',
-        id: `${MESSAGE_ID}:2`,
+        id: `${MESSAGE_ID}:4`,
         tool_use_id: 'toolu_01',
         output: 'edited file',
         is_error: false,
       },
+      { type: 'text', id: `${MESSAGE_ID}:2`, text: 'Now running the tests.' },
       {
         type: 'tool_use',
         id: `${MESSAGE_ID}:3`,
@@ -273,8 +287,10 @@ describe('seed staleness regression (monorepo#2818)', () => {
     );
     seedStreamFromSnapshot(AGENT, { id: MESSAGE_ID, contentBlocks: rejoinBlocks }, WS);
 
-    // The second tool completes: the accumulator dispatches its full block
-    // list. The seeded tool_result for toolu_01 must appear exactly once.
+    // Progress-only tick for the mid-flight tool (empty toolName — the daemon
+    // mapper's default): it must merge into the SEEDED block at daemon
+    // blockIndex 3. Pre-fix that key held the seeded text block (position 3),
+    // so the tick collapsed the tool name.
     handler(
       notification('agent:tool:call', {
         agentId: AGENT,
@@ -282,27 +298,48 @@ describe('seed staleness regression (monorepo#2818)', () => {
         blockIndex: 3,
         blockId: `${MESSAGE_ID}:3`,
         toolCallId: 'toolu_02',
-        toolName: 'launch-process',
-        toolKind: 'execute',
+        toolName: '',
+        status: 'in_progress',
+      }),
+    );
+
+    // The completed tick for toolu_01 REPLAYS (duplicate delivery / late
+    // re-emit) carrying the persisted result identity. The seeded result must
+    // be overwritten in place via toolResultsByUseIndex, never doubled from a
+    // positional blocksByIndex copy.
+    handler(
+      notification('agent:tool:call', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        blockIndex: 1,
+        blockId: `${MESSAGE_ID}:1`,
+        toolCallId: 'toolu_01',
+        toolName: 'str-replace-editor',
+        toolKind: 'edit',
         status: 'completed',
-        output: 'tests passed',
+        output: 'edited file',
+        resultBlockIndex: 4,
+        resultBlockId: `${MESSAGE_ID}:4`,
       }),
     );
 
     const message = readAssistantMessage();
     const blocks = message?.contentBlocks ?? [];
+
+    // Seeded identity of the mid-flight tool survived the progress-only tick
+    // (pre-fix: name collapsed to '' because the seed miskeyed it at 4).
+    const secondUse = blocks.find(
+      (b) => b.type === 'tool_use' && (b as { toolCallId?: string }).toolCallId === 'toolu_02',
+    ) as { name?: string; metadata?: { status?: string } };
+    expect(secondUse).toBeDefined();
+    expect(secondUse.name).toBe('launch-process');
+    expect(secondUse.metadata?.status).toBe('in_progress');
+
+    // Exactly one tool_result for the replayed completion (pre-fix: the
+    // positionally-seeded copy in blocksByIndex doubled the live one).
     const firstToolResults = blocks.filter(
       (b) => b.type === 'tool_result' && (b as { tool_use_id?: string }).tool_use_id === 'toolu_01',
     );
     expect(firstToolResults).toHaveLength(1);
-    const secondToolResults = blocks.filter(
-      (b) => b.type === 'tool_result' && (b as { tool_use_id?: string }).tool_use_id === 'toolu_02',
-    );
-    expect(secondToolResults).toHaveLength(1);
-    // The second tool's status merge landed.
-    const secondUse = blocks.find(
-      (b) => b.type === 'tool_use' && (b as { toolCallId?: string }).toolCallId === 'toolu_02',
-    ) as { metadata?: { status?: string } };
-    expect(secondUse?.metadata?.status).toBe('completed');
   });
 });
