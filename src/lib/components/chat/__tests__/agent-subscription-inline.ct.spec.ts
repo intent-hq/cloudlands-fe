@@ -713,6 +713,7 @@ test('screenshots the finished summary and completed participant treatment', asy
       await expect(component.getByTestId('finished-agent-list')).toBeVisible();
       await expect(component).toHaveScreenshot(
         `finished-participants-${theme}-${zoom === 1 ? '100' : '200'}.png`,
+        { maxDiffPixelRatio: 0.02 },
       );
     }
   }

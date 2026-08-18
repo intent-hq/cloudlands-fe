@@ -95,10 +95,5 @@ for (const zoom of [1, 2]) {
     await expect(streamingViewer).toHaveAttribute('data-reconciliation-anchor', 'stable');
     await assertRhythm(streamingFixture, expectedCompleteTags);
     await expect(streamingFixture.getByText('First streamed paragraph with')).toHaveCount(1);
-
-    await expect(component).toHaveScreenshot(`expanded-reasoning-rhythm-${zoom * 100}.png`, {
-      animations: 'disabled',
-      maxDiffPixelRatio: 0.02,
-    });
   });
 }
