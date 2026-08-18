@@ -13,6 +13,7 @@
 export type DevToolsToggleWindow = {
   isDestroyed(): boolean;
   webContents: {
+    isDestroyed(): boolean;
     toggleDevTools(): void;
   };
 };
@@ -20,7 +21,7 @@ export type DevToolsToggleWindow = {
 export function toggleWindowDevTools(
   window: DevToolsToggleWindow | null | undefined,
 ): boolean {
-  if (!window || window.isDestroyed()) return false;
+  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return false;
   window.webContents.toggleDevTools();
   return true;
 }

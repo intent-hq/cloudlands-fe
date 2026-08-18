@@ -2,11 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { toggleWindowDevTools, type DevToolsToggleWindow } from '../menu-devtools-toggle';
 
-function createWindow(destroyed = false) {
+function createWindow(destroyed = false, webContentsDestroyed = false) {
   const toggleDevTools = vi.fn();
   const window: DevToolsToggleWindow = {
     isDestroyed: () => destroyed,
-    webContents: { toggleDevTools },
+    webContents: {
+      isDestroyed: () => webContentsDestroyed,
+      toggleDevTools,
+    },
   };
   return { window, toggleDevTools };
 }
@@ -31,6 +34,14 @@ describe('toggleWindowDevTools', () => {
 
   it('no-ops when the window is destroyed', () => {
     const { window, toggleDevTools } = createWindow(true);
+
+    expect(toggleWindowDevTools(window)).toBe(false);
+
+    expect(toggleDevTools).not.toHaveBeenCalled();
+  });
+
+  it('no-ops when the webContents is destroyed', () => {
+    const { window, toggleDevTools } = createWindow(false, true);
 
     expect(toggleWindowDevTools(window)).toBe(false);
 
