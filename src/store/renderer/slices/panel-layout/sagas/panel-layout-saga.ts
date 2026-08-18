@@ -198,7 +198,7 @@ const mountedWorkspaceIds = new Set<string>();
 // Restores currently in flight, so on-demand hydration callers can await a
 // restore another trigger already started instead of answering with
 // pre-restore state (monorepo#2789).
-const inflightRestores = new Map<string, Promise<void>>();
+const inflightRestores: Map<string, Promise<void>> = new Map();
 
 type HistorySaveMessage = {
   action: { type: string; payload?: unknown };
