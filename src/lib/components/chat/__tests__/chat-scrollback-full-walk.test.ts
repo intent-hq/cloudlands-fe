@@ -268,6 +268,26 @@ class WalkSim {
     if (compensation !== 0) this.scrollTop = Math.max(0, previousScrollTop + compensation);
   }
 
+  /**
+   * Pixels of the viewport [scrollTop, scrollTop + VIEWPORT_PX) covered by
+   * spacer territory (above spacer + below spacer) — blank space on screen.
+   */
+  spacerOverlapPx(): number {
+    const viewTop = this.scrollTop;
+    const viewBottom = Math.min(this.scrollTop + VIEWPORT_PX, this.scrollHeight());
+    const overlap = (top: number, bottom: number) =>
+      Math.max(0, Math.min(viewBottom, bottom) - Math.max(viewTop, top));
+    const aboveOverlap = overlap(0, this.above);
+    const belowTop = this.above + heightOf(this.history);
+    const belowOverlap = overlap(belowTop, belowTop + this.below);
+    return aboveOverlap + belowOverlap;
+  }
+
+  /** Fraction of the viewport that is blank spacer (0..1). */
+  blankFraction(): number {
+    return this.spacerOverlapPx() / VIEWPORT_PX;
+  }
+
   /** The ChatPanel older-history trigger guard at the current position. */
   triggerFires(): boolean {
     const meta = this.meta;
@@ -348,5 +368,61 @@ describe('full-walk scrollback harness', () => {
       worst.error,
       `worst extent error ${(worst.error * 100).toFixed(1)}% at step ${worst.step}`,
     ).toBeLessThan(EXTENT_ERROR_BOUND);
+  });
+
+  it('serial walk never leaves the settled viewport resting in blank spacer territory', () => {
+    const conversation = buildConversation();
+    const sim = new WalkSim(conversation, 20);
+    sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
+    sim.reconcile();
+
+    interface StepTrace {
+      step: number;
+      scrollTop: number;
+      above: number;
+      below: number;
+      blankFraction: number;
+      historyCount: number;
+      holeRowsEstimate: number | null;
+      gapToTail: boolean;
+      pagesFetched: number;
+      triggerStillFires: boolean;
+    }
+    const violations: StepTrace[] = [];
+    let steps = 0;
+    const MAX_STEPS = 2000;
+    while (!sim.meta.oldestReached && steps < MAX_STEPS) {
+      steps += 1;
+      sim.scrollTop = Math.max(0, sim.scrollTop - VIEWPORT_PX);
+      let pagesFetched = 0;
+      while (sim.triggerFires() && pagesFetched < 50) {
+        pagesFetched += 1;
+        sim.fetchOlderPage();
+      }
+      sim.reconcile();
+      // Settled: no fetch in flight, chain guard is quiet. The viewport must
+      // now show real rows — any spacer overlap is a persistent blank swath.
+      if (sim.spacerOverlapPx() > 0) {
+        const meta = sim.meta;
+        violations.push({
+          step: steps,
+          scrollTop: sim.scrollTop,
+          above: sim.above,
+          below: sim.below,
+          blankFraction: Number(sim.blankFraction().toFixed(3)),
+          historyCount: meta.historyCount,
+          holeRowsEstimate: meta.holeRowsEstimate,
+          gapToTail: meta.gapToTail,
+          pagesFetched,
+          triggerStillFires: sim.triggerFires(),
+        });
+      }
+    }
+
+    expect(
+      violations,
+      `settled viewport rested in blank spacer territory at ${violations.length}/${steps} steps; ` +
+        `first: ${JSON.stringify(violations[0])}; last: ${JSON.stringify(violations.at(-1))}`,
+    ).toEqual([]);
   });
 });
