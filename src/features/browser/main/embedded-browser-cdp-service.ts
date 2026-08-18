@@ -45,6 +45,13 @@ interface PanelBrowserTab {
 interface TabLease {
   agentId: string;
   lastUsedAt: number;
+  /**
+   * Original URL the agent asked to open, recorded when it differs from the
+   * final URL (tunneled opens, where the final URL embeds an ephemeral
+   * forward port). Backs the openTab requested-URL dedupe fallback
+   * (intent-hq/monorepo#2787).
+   */
+  requestedUrl?: string;
 }
 
 /**
@@ -707,9 +714,23 @@ class EmbeddedBrowserCdpService {
   /**
    * Record that an agent is actively using a tab.
    * Call this on every action that targets a tab to keep the lease fresh.
+   *
+   * `requestedUrl` records the agent's original requested URL (tunneled
+   * opens): a string sets it, `null` clears it (the tab was repurposed for a
+   * new non-tunneled target, so a stale identity must not linger), and
+   * omitting it preserves a previously recorded value so plain refreshes
+   * (screenshots, evaluates) don't erase it.
    */
-  touchLease(tabId: string, agentId: string): void {
-    this.tabLeases.set(tabId, { agentId, lastUsedAt: Date.now() });
+  touchLease(tabId: string, agentId: string, requestedUrl?: string | null): void {
+    const recorded =
+      requestedUrl === null
+        ? undefined
+        : (requestedUrl ?? this.tabLeases.get(tabId)?.requestedUrl);
+    this.tabLeases.set(tabId, {
+      agentId,
+      lastUsedAt: Date.now(),
+      ...(recorded !== undefined ? { requestedUrl: recorded } : {}),
+    });
   }
 
   /**
@@ -821,6 +842,54 @@ class EmbeddedBrowserCdpService {
       logger.info('Found model-opened tab with exact URL match', {
         tabId: tab.tabId,
         url,
+        previousAgentId: lease.agentId,
+        requestingAgentId,
+        workspaceId,
+      });
+      this.touchLease(tab.tabId, requestingAgentId);
+      return tab.tabId;
+    }
+    return undefined;
+  }
+
+  /**
+   * Find a mounted, model-opened tab whose lease recorded the given
+   * requested URL, and claim it for the requesting agent.
+   *
+   * Fallback for openTab dedupe on tunneled opens (intent-hq/monorepo#2787):
+   * when the tunnel forward was re-minted, the final URL differs per call and
+   * {@link findModelTabByExactUrl} can never match — but the agent's original
+   * requested URL is stable, so the lease-recorded requestedUrl identifies
+   * the logical duplicate. Same safety rules as the exact-URL variant:
+   * candidates come from the requesting workspace's panel layout only,
+   * user-opened tabs (no lease) are never returned, and a tab actively
+   * leased by a different agent is skipped.
+   */
+  async findModelTabByRequestedUrl(
+    requestedUrl: string,
+    requestingAgentId: string,
+    workspaceId?: string,
+  ): Promise<string | undefined> {
+    // Dedupe is best-effort: an unavailable tab list just means no reusable
+    // tab was found — it must not fail the enclosing openTab.
+    let tabs: (TabInfo & { mounted: boolean })[];
+    try {
+      ({ tabs } = await this.listAllTabs(workspaceId));
+    } catch (error) {
+      logger.debug('Tab list unavailable during requestedUrl dedupe; skipping reuse', {
+        workspaceId,
+        error: (error as Error).message,
+      });
+      return undefined;
+    }
+    for (const tab of tabs) {
+      if (!tab.mounted) continue;
+      const lease = this.tabLeases.get(tab.tabId);
+      if (!lease || lease.requestedUrl !== requestedUrl) continue;
+      if (lease.agentId !== requestingAgentId && this.isTabLeased(tab.tabId)) continue;
+      logger.info('Found model-opened tab with matching requested URL', {
+        tabId: tab.tabId,
+        requestedUrl,
         previousAgentId: lease.agentId,
         requestingAgentId,
         workspaceId,

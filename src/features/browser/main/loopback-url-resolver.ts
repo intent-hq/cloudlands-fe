@@ -215,7 +215,16 @@ export async function resolveRewrittenRemoteTarget(
     }
     if (tunnel) {
       try {
-        const localPort = await tunnel.forwardPort(Number(port));
+        const remotePort = Number(port);
+        // forwardPort is idempotent on both real providers (TunnelManager,
+        // DirectRelay): a repeat call for an already-forwarded remote port
+        // returns the existing forward's local port, so repeat resolutions of
+        // the same requested URL yield an identical final URL and openTab's
+        // exact-URL dedupe can match (intent-hq/monorepo#2787). Always call
+        // it — never shortcut via activeForwards — so the ownership wrapper
+        // seam records the requesting workspace as a co-owner of the forward
+        // (refcounted cleanup, cloudlands-fe#1325).
+        const localPort = await tunnel.forwardPort(remotePort);
         // Known limitation: an `https` URL keeps its scheme with the host
         // swapped to 127.0.0.1, so the origin server's cert fails hostname
         // verification in the embedded browser. Nothing better is possible
@@ -227,7 +236,7 @@ export async function resolveRewrittenRemoteTarget(
         logger.info('Rewritten remote origin unreachable; falling back to the daemon tunnel', {
           requestedUrl: rewrite.requestedUrl,
           rewrittenUrl: rewrite.url,
-          remotePort: Number(port),
+          remotePort,
           localPort,
         });
         return {
