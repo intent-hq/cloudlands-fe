@@ -550,7 +550,11 @@ export class LiveAgentsClient implements AgentsClient {
       // daemon's not-found rejection (-32602, data.code "not-found", §5.5) is
       // preserved as `notFound: true` — the agent was deleted, so callers can
       // drop their stale failure state instead of offering Retry forever
-      // (monorepo#2806).
+      // (monorepo#2806). Classification reuses isAgentNotFoundError (#1753),
+      // whose rpcCode+message fallback deliberately diverges from §9's strict
+      // data.code-only client rule to cover errors that lost the structured
+      // code (older daemons, lossy re-wrapping); the lookalike surface here is
+      // small since agent.retry only sends agentId/workspaceId.
       const errorMsg = error instanceof Error ? error.message : 'Failed to retry agent spawn';
       if (isAgentNotFoundError(error)) {
         return { ok: false, notFound: true, error: errorMsg };

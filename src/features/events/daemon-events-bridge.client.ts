@@ -204,6 +204,7 @@ import {
 } from '$features/agent/utils/pending-agent-deletions';
 import { notifyInterruptedAgentUpdated } from '$features/agent/interrupted-agents-service';
 import {
+  getAgentFailureEntry,
   listAgentFailureEntries,
   recordAgentFailure,
   removeAgentFailure,
@@ -3441,9 +3442,14 @@ export async function refreshDaemonEventsAfterReconnect(
 /**
  * Drop failure-registry entries whose agent no longer exists on the daemon.
  * One `agent.list` per DISTINCT workspace holding entries (no per-entry
- * fan-out — AGENTS.md "Event-driven refetches"); a failed list keeps that
- * workspace's entries (unverifiable ≠ deleted — live events converge them
- * later). Never throws, so the reconnect refresh can await it safely.
+ * fan-out — AGENTS.md "Event-driven refetches"); a failed or unverifiable
+ * list (missing/non-array `agents`) keeps that workspace's entries
+ * (unverifiable ≠ deleted — live events converge them later). Only entries
+ * from the snapshot taken BEFORE the list, still identical in the registry
+ * (the same identity-guard convention as retryAgent in the toast saga), are
+ * dropped: a failure recorded or replaced while the list was in flight
+ * predates nothing the stale result can prove, so it is kept. Never throws,
+ * so the reconnect refresh can await it safely.
  */
 async function reconcileAgentFailureRegistry(): Promise<void> {
   const entries = listAgentFailureEntries();
@@ -3457,9 +3463,17 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
         const response = (await backendRequest('agent.list', { workspaceId })) as
           | { agents?: Array<{ id?: unknown }> }
           | undefined;
-        const agents = Array.isArray(response?.agents) ? response.agents : [];
+        if (!Array.isArray(response?.agents)) {
+          logger.warn(
+            'agent.list returned no verifiable agents array during failure-registry reconciliation — keeping entries',
+            { workspaceId },
+          );
+          return;
+        }
         survivorIds = new Set(
-          agents.map((agent) => agent?.id).filter((id): id is string => typeof id === 'string'),
+          response.agents
+            .map((agent) => agent?.id)
+            .filter((id): id is string => typeof id === 'string'),
         );
       } catch (error) {
         logger.warn('agent.list failed during failure-registry reconciliation — keeping entries', {
@@ -3468,11 +3482,14 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
         });
         return;
       }
-      // Re-read per workspace: a live agent:deleted delivered while the list
-      // was in flight may already have removed entries.
-      for (const entry of listAgentFailureEntries()) {
+      for (const entry of entries) {
         if (entry.workspaceId !== workspaceId) continue;
         if (survivorIds.has(entry.agentId)) continue;
+        // Identity guard: only drop the exact entry snapshotted before the
+        // list. Removed mid-flight (live agent:deleted) → already gone;
+        // replaced mid-flight (re-failure) → the fresh entry postdates the
+        // list result, which proves nothing about it — keep it.
+        if (getAgentFailureEntry(entry.agentId) !== entry) continue;
         logger.warn('Dropping failure entry for agent no longer on the daemon', {
           agentId: entry.agentId,
           workspaceId,

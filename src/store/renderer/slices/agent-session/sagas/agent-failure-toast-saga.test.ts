@@ -204,10 +204,9 @@ describe('agentFailureToastSaga', () => {
 
     expect(getAgentFailureEntry('agent-1')).toBeUndefined();
     expect(mocks.dismiss).toHaveBeenCalledWith('agent-failure:agent-1');
-    // No "Retry failed" re-render after the dismissal.
-    expect(lastToast('agent-failure:agent-1').componentProps).not.toEqual(
-      expect.objectContaining({ retryNote: 'Retry failed' }),
-    );
+    // No failure-note re-render after the dismissal: the last render carries
+    // no retryNote at all (asserting absence, not a specific i18n string).
+    expect(lastToast('agent-failure:agent-1').componentProps.retryNote).toBeUndefined();
     task.cancel();
     await task.toPromise();
   });
