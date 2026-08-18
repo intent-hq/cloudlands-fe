@@ -463,6 +463,64 @@ describe('workspaces-seeder legacy IPC bridges', () => {
     });
   });
 
+  describe('workspace:update-settings → daemon workspace.setAutoCommit', () => {
+    it('forwards the per-workspace override as workspace.setAutoCommit { workspaceId, enabled }', async () => {
+      // PROTOCOL §5.1: workspace.setAutoCommit { workspaceId, enabled } →
+      // { autoCommit: { enabled, source: "workspace" } }.
+      mockedRequest.mockResolvedValueOnce({
+        autoCommit: { enabled: false, source: 'workspace' },
+      });
+
+      const response = await mockInvoke<CommandResponse<Record<string, never>>>(
+        WORKSPACE_CHANNELS.UPDATE_SETTINGS,
+        { id: 'ws-1', settings: { autoCommitEnabled: false } },
+      );
+
+      expect(mockedRequest.mock.calls).toEqual([
+        ['workspace.setAutoCommit', { workspaceId: 'ws-1', enabled: false }],
+      ]);
+      expect(response).toEqual({ success: true, data: {} });
+    });
+
+    it('never writes the global git.autoCommit setting (regression: toggle stomped the global)', async () => {
+      mockedRequest.mockResolvedValueOnce({
+        autoCommit: { enabled: true, source: 'workspace' },
+      });
+
+      await mockInvoke(WORKSPACE_CHANNELS.UPDATE_SETTINGS, {
+        id: 'ws-1',
+        settings: { autoCommitEnabled: true },
+      });
+
+      const globalWrites = mockedRequest.mock.calls.filter(([m]) => m === 'settings.update');
+      expect(globalWrites).toEqual([]);
+    });
+
+    it('folds a daemon failure into {success:false, error} — the saga fires and forgets', async () => {
+      mockedRequest.mockRejectedValueOnce(new Error('Invalid params'));
+
+      const response = await mockInvoke<CommandResponse<never>>(
+        WORKSPACE_CHANNELS.UPDATE_SETTINGS,
+        { id: 'ws-1', settings: { autoCommitEnabled: true } },
+      );
+
+      expect(response).toEqual({ success: false, error: 'Invalid params' });
+    });
+
+    it('rejects a payload without a boolean autoCommitEnabled without touching the daemon', async () => {
+      const response = await mockInvoke<CommandResponse<never>>(
+        WORKSPACE_CHANNELS.UPDATE_SETTINGS,
+        { id: 'ws-1', settings: {} },
+      );
+
+      expect(response).toEqual({
+        success: false,
+        error: 'id and settings.autoCommitEnabled are required',
+      });
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+  });
+
   describe('workspace:get-root (allowlisted absence)', () => {
     it('resolves undefined instead of rejecting — NoteTabType hides the open-file button', async () => {
       expect(UNBRIDGED_INVOKE_ALLOWLIST.has('workspace:get-root')).toBe(true);

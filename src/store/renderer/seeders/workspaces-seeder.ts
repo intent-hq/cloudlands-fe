@@ -221,20 +221,21 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY, async (arg) 
   }
 });
 
-// `workspace:update-settings` — workspace settings persistence middleware
-// writes auto-commit state via this IPC channel. Bridge to the daemon's
-// `workspace.updateSettings` (PROTOCOL §5.1). The middleware fires and forgets
-// (no await), so rejections propagate as uncaught promises; return the legacy
-// success envelope so it doesn't reject.
+// `workspace:update-settings` — workspace settings persistence saga writes
+// per-workspace auto-commit state via this IPC channel. Bridge to the daemon's
+// `workspace.setAutoCommit` (PROTOCOL §5.1) — the per-workspace override only;
+// the global `git.autoCommit` setting is never written from here. Resolve the
+// legacy CommandResponse envelope (matching the Electron main handler) instead
+// of rejecting; the saga worker inspects `success` and logs failures.
 registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
-  const payload = arg as { id?: unknown; settings?: unknown } | undefined;
+  const payload = arg as { id?: unknown; settings?: { autoCommitEnabled?: unknown } } | undefined;
   const id = typeof payload?.id === 'string' ? payload.id : '';
-  const settings = payload?.settings;
-  if (!id || typeof settings !== 'object' || settings === null) {
-    return { success: false, error: 'id and settings are required' };
+  const enabled = payload?.settings?.autoCommitEnabled;
+  if (!id || typeof enabled !== 'boolean') {
+    return { success: false, error: 'id and settings.autoCommitEnabled are required' };
   }
   try {
-    await backendRequest('workspace.updateSettings', { id, settings });
+    await backendRequest('workspace.setAutoCommit', { workspaceId: id, enabled });
     return { success: true, data: {} };
   } catch (error) {
     return {

@@ -39,7 +39,7 @@ function startSaga() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal('electronAPI', {});
-  mocks.invoke.mockResolvedValue({ ok: true });
+  mocks.invoke.mockResolvedValue({ success: true, data: {} });
 });
 
 afterEach(() => {
@@ -47,29 +47,44 @@ afterEach(() => {
 });
 
 describe('workspaceSettingsSaga', () => {
-  it('writes the exact post-state value to workspace IPC before global settings IPC', async () => {
+  it('writes the exact post-state value to the workspace IPC channel only', async () => {
     const { send, task } = startSaga();
     send(setAutoCommitEnabled('ws-1', false));
     await settle();
 
     expect(mocks.invoke.mock.calls).toEqual([
       [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-1', settings: { autoCommitEnabled: false } }],
-      [SETTINGS_CHANNELS.SET, { key: 'autoCommit', value: false }],
     ]);
     task.cancel();
     await task.toPromise();
   });
 
-  it('continues to global persistence after workspace IPC fails and logs exact context', async () => {
+  it('never writes the legacy global settings channel (regression: global git.autoCommit stomp)', async () => {
+    // Even in an Electron build (electronAPI present via beforeEach), toggling
+    // one workspace must not write `settings:set { key: 'autoCommit' }` — that
+    // channel maps to the daemon's GLOBAL `git.autoCommit` setting.
+    const { send, task } = startSaga();
+    send(setAutoCommitEnabled('ws-1', true));
+    send(setAutoCommitEnabled('ws-2', false));
+    await settle();
+
+    const globalWrites = mocks.invoke.mock.calls.filter(
+      ([channel]) => channel === SETTINGS_CHANNELS.SET,
+    );
+    expect(globalWrites).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('logs exact context when the workspace IPC write fails and makes no other writes', async () => {
     const error = new Error('workspace unavailable');
-    mocks.invoke.mockRejectedValueOnce(error).mockResolvedValueOnce({ ok: true });
+    mocks.invoke.mockRejectedValueOnce(error);
     const { send, task } = startSaga();
     send(setAutoCommitEnabled('ws-1', true));
     await settle();
 
     expect(mocks.invoke.mock.calls).toEqual([
       [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-1', settings: { autoCommitEnabled: true } }],
-      [SETTINGS_CHANNELS.SET, { key: 'autoCommit', value: true }],
     ]);
     expect(mocks.warn.mock.calls).toEqual([
       [
@@ -81,33 +96,34 @@ describe('workspaceSettingsSaga', () => {
     await task.toPromise();
   });
 
-  it('logs global persistence failure after the successful workspace write', async () => {
-    const error = new Error('settings unavailable');
-    mocks.invoke.mockResolvedValueOnce({ ok: true }).mockRejectedValueOnce(error);
+  it('logs exact context when the write resolves a failure envelope (regression: silently swallowed success:false)', async () => {
+    // Both builds resolve a CommandResponse envelope instead of rejecting on a
+    // daemon write failure (Electron main safe handler + web-build bridge), so
+    // the worker must treat `success: false` as a failure, not ignore it.
+    mocks.invoke.mockResolvedValueOnce({ success: false, error: 'daemon write failed' });
     const { send, task } = startSaga();
-    send(setAutoCommitEnabled('ws-2', false));
+    send(setAutoCommitEnabled('ws-1', true));
     await settle();
 
     expect(mocks.invoke.mock.calls).toEqual([
-      [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-2', settings: { autoCommitEnabled: false } }],
-      [SETTINGS_CHANNELS.SET, { key: 'autoCommit', value: false }],
+      [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-1', settings: { autoCommitEnabled: true } }],
     ]);
     expect(mocks.warn.mock.calls).toEqual([
-      ['Failed to persist autoCommit to electron-store', { autoCommitEnabled: false, error }],
+      [
+        'Failed to sync autoCommit to main process',
+        { workspaceId: 'ws-1', autoCommitEnabled: true, error: 'daemon write failed' },
+      ],
     ]);
-    task.cancel();
-    await task.toPromise();
-  });
 
-  it('skips global settings IPC outside the Electron bridge', async () => {
-    vi.stubGlobal('electronAPI', undefined);
-    const { send, task } = startSaga();
+    // The worker recovers: a later toggle still writes (and a success envelope
+    // produces no warning).
     send(setAutoCommitEnabled('ws-1', false));
     await settle();
-
     expect(mocks.invoke.mock.calls).toEqual([
+      [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-1', settings: { autoCommitEnabled: true } }],
       [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-1', settings: { autoCommitEnabled: false } }],
     ]);
+    expect(mocks.warn).toHaveBeenCalledTimes(1);
     task.cancel();
     await task.toPromise();
   });
@@ -137,7 +153,7 @@ describe('workspaceSettingsSaga', () => {
           releaseWs1 = resolve;
         });
       }
-      return Promise.resolve({ ok: true });
+      return Promise.resolve({ success: true, data: {} });
     });
     const { send, task } = startSaga();
     send(setAutoCommitEnabled('ws-1', true));
@@ -150,7 +166,6 @@ describe('workspaceSettingsSaga', () => {
     expect(mocks.invoke.mock.calls).toEqual([
       [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-1', settings: { autoCommitEnabled: true } }],
       [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-2', settings: { autoCommitEnabled: false } }],
-      [SETTINGS_CHANNELS.SET, { key: 'autoCommit', value: false }],
     ]);
 
     releaseWs1();
@@ -158,10 +173,7 @@ describe('workspaceSettingsSaga', () => {
     expect(mocks.invoke.mock.calls).toEqual([
       [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-1', settings: { autoCommitEnabled: true } }],
       [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-2', settings: { autoCommitEnabled: false } }],
-      [SETTINGS_CHANNELS.SET, { key: 'autoCommit', value: false }],
-      [SETTINGS_CHANNELS.SET, { key: 'autoCommit', value: true }],
       [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-1', settings: { autoCommitEnabled: true } }],
-      [SETTINGS_CHANNELS.SET, { key: 'autoCommit', value: true }],
     ]);
     task.cancel();
     await task.toPromise();
@@ -184,9 +196,7 @@ describe('workspaceSettingsSaga', () => {
 
     expect(mocks.invoke.mock.calls).toEqual([
       [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-1', settings: { autoCommitEnabled: false } }],
-      [SETTINGS_CHANNELS.SET, { key: 'autoCommit', value: false }],
       [WORKSPACE_CHANNELS.UPDATE_SETTINGS, { id: 'ws-1', settings: { autoCommitEnabled: true } }],
-      [SETTINGS_CHANNELS.SET, { key: 'autoCommit', value: true }],
     ]);
     task.cancel();
     await task.toPromise();
