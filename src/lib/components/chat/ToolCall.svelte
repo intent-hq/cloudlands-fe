@@ -293,6 +293,8 @@
         {result}
         {parsedResult}
         isError={toolState === 'error'}
+        pending={toolState === 'running'}
+        isTerminal={toolDisplay.category === 'terminal'}
         {workspaceId}
         suppressOkOnlyResult={displayModel.isOkOnlyWorkspaceResult}
       />

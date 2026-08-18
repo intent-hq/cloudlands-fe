@@ -23,16 +23,24 @@ const SECRET_KEY =
 const WORKSPACE_MUTATION =
   /(?:^|_)(?:add|archive|assign|cancel|create|delete|edit|mark|remove|rename|respond|send|set|unarchive|update|write)(?:_|$)/i;
 
-export function sanitizeToolText(value: unknown): string {
+function redactSecrets(value: unknown): string {
   const text = typeof value === 'string' ? value : String(value ?? '');
   return text
     .replace(/\b(Bearer\s+)[^\s"']+/gi, '$1[redacted]')
     .replace(
       /\b([A-Za-z0-9_-]*(?:token|secret|password|api[_-]?key)[A-Za-z0-9_-]*\s*[=:]\s*)[^\s"']+/gi,
       '$1[redacted]',
-    )
-    .replace(/\s+/g, ' ')
-    .trim();
+    );
+}
+
+export function sanitizeToolText(value: unknown): string {
+  return redactSecrets(value).replace(/\s+/g, ' ').trim();
+}
+
+// Same redaction as sanitizeToolText but preserves newlines/indentation, for
+// displaying full multiline inputs such as terminal commands.
+export function sanitizeMultilineToolText(value: unknown): string {
+  return redactSecrets(value).trim();
 }
 
 export function sanitizeToolPayload(value: unknown, key = ''): unknown {
@@ -217,6 +225,8 @@ export function buildToolDisplayModel({
       toolState === 'error' ? 'error' : okOnly && toolState === 'completed' ? 'success' : null,
     isOkOnlyWorkspaceResult: okOnly,
     hasDetails:
-      toolState === 'error' || (!okOnly && toolState === 'completed' && (hasPayload || hasInput)),
+      toolState === 'error' ||
+      (toolState === 'running' && hasInput) ||
+      (!okOnly && toolState === 'completed' && (hasPayload || hasInput)),
   };
 }

@@ -32,13 +32,21 @@
   import { store as appStore } from '$store/renderer/store';
   import { formatDate, formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
-  import { sanitizeToolPayload, sanitizeToolText } from './tool-display-model';
+  import {
+    sanitizeMultilineToolText,
+    sanitizeToolPayload,
+    sanitizeToolText,
+  } from './tool-display-model';
 
   interface Props {
     input: Record<string, any>;
     result?: any;
     parsedResult?: ParsedToolResult | null;
     isError?: boolean;
+    /** The tool call is still running: show only the input, never a result section. */
+    pending?: boolean;
+    /** The tool is classified as a terminal command (gates the terminal-style pending view). */
+    isTerminal?: boolean;
     workspaceId?: string;
     suppressOkOnlyResult?: boolean;
   }
@@ -48,6 +56,8 @@
     result,
     parsedResult,
     isError = false,
+    pending = false,
+    isTerminal = false,
     workspaceId,
     suppressOkOnlyResult = false,
   }: Props = $props();
@@ -179,6 +189,17 @@
     return entries.length > 0 ? entries : null;
   });
 
+  // Full multiline command for pending terminal calls (whitespace preserved so
+  // the complete command is inspectable while the result is still pending).
+  // Gated on the classified terminal category: non-terminal tools that happen
+  // to carry a `command` field (e.g. str-replace-editor) must fall through to
+  // the JSON input view so all their fields stay inspectable.
+  const pendingCommand = $derived.by(() => {
+    if (!isTerminal) return null;
+    if (typeof input?.command !== 'string' || !input.command.trim()) return null;
+    return sanitizeMultilineToolText(input.command);
+  });
+
   // Extract concise display text from common error payloads. Structured raw
   // data stays behind the explicit disclosure below.
   const errorText = $derived.by(() => {
@@ -256,6 +277,35 @@
         <div class="px-3 pb-2">{@render rawDetails()}</div>
       {/if}
     </div>
+  {:else if pending}
+    <!-- Running tool call: show the full input while the result is pending. -->
+    {#if pendingCommand}
+      <!-- Terminal command with whitespace preserved so multiline commands are readable -->
+      <div class="overflow-hidden rounded bg-[#1a1b26]">
+        <div class="flex items-start gap-2 p-2">
+          <span class="text-[#7aa2f7] font-mono text-xs mt-px shrink-0">$</span>
+          <pre
+            class="m-0 flex-1 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words max-h-72 overflow-y-auto text-[#a9b1d6]/90">{pendingCommand}</pre>
+        </div>
+      </div>
+    {:else}
+      <div class="flex flex-col gap-2 rounded bg-muted/30 p-2">
+        {#if featuredInput}
+          <div class="text-subtle italic">"{featuredInput}"</div>
+        {/if}
+        <div>
+          <div class="type-caption mb-1 text-subtle">
+            {m.chat_toolDetails_input_label()}
+          </div>
+          <pre
+            class="m-0 max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-subtle">{JSON.stringify(
+              sanitizedInput,
+              null,
+              2,
+            )}</pre>
+        </div>
+      </div>
+    {/if}
   {:else if suppressOkOnlyResult}
     <!-- Successful ok-only mutations intentionally have no expanded body. -->
   {:else if result || parsedResult}
