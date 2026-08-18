@@ -1721,6 +1721,51 @@ describe('browser-action-executor', () => {
       expect(mockOpenTabFn).toHaveBeenCalledTimes(1);
     });
 
+    it('a tunneled navigate records the requested URL on the tab lease', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      const provider = idempotentTunnelProvider();
+      vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValue({
+        tabId: 'tab-1',
+        webContentsId: 1,
+      } as never);
+
+      const result = await executeActions(
+        { actions: [{ action: 'navigate', url: REQUESTED }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+        remoteContext,
+        () => provider,
+      );
+
+      expect(result.success).toBe(true);
+      // The tab's content changed to the tunneled target, so its lease
+      // identity is refreshed — a later openTab for the same requested URL
+      // dedupes onto this tab instead of opening another.
+      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-1', 'agent-1', REQUESTED);
+    });
+
+    it('a non-tunneled navigate clears any stale requested URL on the tab lease', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValue({
+        tabId: 'tab-1',
+        webContentsId: 1,
+      } as never);
+      vi.unstubAllGlobals(); // target reachable — no tunnel involved
+
+      const result = await executeActions(
+        { actions: [{ action: 'navigate', url: 'http://localhost:3000/other' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      // The tab navigated away, so a stale requestedUrl from an earlier
+      // tunneled open must not keep matching it.
+      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-1', 'agent-1', null);
+    });
+
     it('never consults the requestedUrl fallback for non-tunneled opens (#2541 unchanged)', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       mockOpenTabFn.mockReturnValueOnce({ success: true, message: 'opened', tabId: 'tab-new' });

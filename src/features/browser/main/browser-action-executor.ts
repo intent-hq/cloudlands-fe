@@ -720,6 +720,19 @@ async function executeAction(
           resolvedTabId,
           `window.location.href = ${JSON.stringify(navigateTarget.rewrite.url)}`,
         );
+        // The tab's content changed, so refresh its lease identity: tunneled
+        // navigations record the requested URL (a later openTab for it can
+        // dedupe onto this tab), non-tunneled ones clear any stale identity —
+        // otherwise a later tunneled openTab for the tab's OLD requested URL
+        // could match it and navigate away from the new page
+        // (intent-hq/monorepo#2787).
+        if (agentId) {
+          embeddedBrowserCdp.touchLease(
+            resolvedTabId,
+            agentId,
+            navigateTarget.tunneled ? action.url : null,
+          );
+        }
         return {
           action: 'navigate',
           success: true,
