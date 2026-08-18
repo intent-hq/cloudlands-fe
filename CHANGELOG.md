@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.66.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.65.0...v2.66.0) (2026-08-18)
+
+
+### 🚀 Features
+
+* lazy full-block hydration on expand (agent.getMessageBlock, protocol v7.2) ([#1423](https://github.com/intent-hq/cloudlands-fe/issues/1423)) ([1f26658](https://github.com/intent-hq/cloudlands-fe/commit/1f2665831312a57025f6f0b1c316d31daf2c4449))
+
 ## [2.65.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.64.2...v2.65.0) (2026-08-18)
 
 
