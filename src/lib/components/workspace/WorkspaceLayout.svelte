@@ -120,6 +120,7 @@
         disableWidthTransition={disableSidebarWidthTransition}
         notifyAutomaticWidthChanges={!columnMode}
         clampStoredWidth={columnMode}
+        followSidebarCollapsed={!columnMode}
         onWidthChange={onSidebarWidthChange}
         className="workspace-sidebar-panel workspace-sidebar-{sidebarSide} flex-none h-full min-w-0 {sidebarSide ===
         'left'

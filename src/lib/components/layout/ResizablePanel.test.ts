@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
+  sidebarCollapsedInitial: false,
   setSidebarCollapsed: (_collapsed: boolean) => {},
+  storedPanelSizeSetters: new Map<string, (value: number | undefined) => void>(),
 }));
 
 vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } }));
@@ -13,14 +15,14 @@ vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', async () => {
   const { readable } = await import('svelte/store');
   return {
     selectIsCollapsed: () =>
-      readable(false, (set) => {
+      readable(mocks.sidebarCollapsedInitial, (set) => {
         mocks.setSidebarCollapsed = set;
         return () => (mocks.setSidebarCollapsed = () => {});
       }),
     selectSidebarWidth: () => readable(360),
     selectSidebarExpandedWidth: () => readable(600),
-    selectResizablePanelSize: (storageKey: string) =>
-      readable(
+    selectResizablePanelSize: (storageKey: string) => {
+      const initialValue =
         storageKey === 'workspace-column-width:synced'
           ? 600
           : storageKey === 'workspace-column-width:hydrated'
@@ -31,9 +33,14 @@ vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', async () => {
                 ? 720
                 : storageKey === 'workspace-left-panel-expanded-width:stale'
                   ? 880
-                  : undefined,
-      ),
-    selectResizablePanelSizeHydrated: () => readable(true),
+                  : undefined;
+      return readable(initialValue, (set) => {
+        mocks.storedPanelSizeSetters.set(storageKey, set);
+        return () => mocks.storedPanelSizeSetters.delete(storageKey);
+      });
+    },
+    selectResizablePanelSizeHydrated: (storageKey: string) =>
+      readable(storageKey !== 'workspace-left-panel-width:delayed'),
   };
 });
 
@@ -42,6 +49,8 @@ import ResizablePanel from './ResizablePanel.svelte';
 afterEach(() => {
   cleanup();
   mocks.dispatch.mockClear();
+  mocks.sidebarCollapsedInitial = false;
+  mocks.storedPanelSizeSetters.clear();
   vi.restoreAllMocks();
 });
 
@@ -64,6 +73,39 @@ describe('ResizablePanel reactive defaults', () => {
 
     mocks.setSidebarCollapsed(false);
     await waitFor(() => expect(panel?.getAttribute('style')).toContain('width: 360px'));
+  });
+
+  it('does not collapse a scoped workspace sidebar when collapse following is disabled', async () => {
+    const { container } = render(ResizablePanel, {
+      props: {
+        storageKey: 'workspace-left-panel-width:column-ws',
+        defaultWidth: 360,
+        followSidebarCollapsed: false,
+      },
+    });
+    const panel = container.firstElementChild;
+
+    mocks.setSidebarCollapsed(true);
+    await tick();
+
+    expect(panel?.getAttribute('style')).toContain('width: 360px');
+  });
+
+  it('stays collapsed when a stored sidebar width hydrates and restores it on expand', async () => {
+    mocks.sidebarCollapsedInitial = true;
+    const storageKey = 'workspace-left-panel-width:delayed';
+    const { container } = render(ResizablePanel, {
+      props: { storageKey, defaultWidth: 360 },
+    });
+    const panel = container.firstElementChild;
+
+    await waitFor(() => expect(panel?.getAttribute('style')).toContain('width: 0px'));
+    mocks.storedPanelSizeSetters.get(storageKey)?.(390);
+    await tick();
+    expect(panel?.getAttribute('style')).toContain('width: 0px');
+
+    mocks.setSidebarCollapsed(false);
+    await waitFor(() => expect(panel?.getAttribute('style')).toContain('width: 390px'));
   });
 
   it('applies a hydrated column width without an automatic callback', async () => {

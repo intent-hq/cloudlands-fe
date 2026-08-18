@@ -36,6 +36,14 @@ describe('WorkspaceLayout panel insets', () => {
     expect(leftBranch).toContain('class:pl-2={!columnMode && $sidebarIsCollapsed}');
   });
 
+  it('forwards column mode so column layouts skip global collapse behavior and its gutter', () => {
+    const workspaceLayoutCall = workspaceSurface.match(/<WorkspaceLayout([\s\S]*?)\/>/)?.[1];
+
+    expect(workspaceLayoutCall).toContain('{columnMode}');
+    expect(workspaceLayout).toContain('followSidebarCollapsed={!columnMode}');
+    expect(workspaceLayout).toContain('class:pl-2={!columnMode && $sidebarIsCollapsed}');
+  });
+
   it('lets a panel-free workspace column own the full sidebar width', () => {
     expect(workspaceSurface).toContain('const delayCompactFill =');
     expect(workspaceSurface).toContain('let previousColumnPanelCount: number | null = null');

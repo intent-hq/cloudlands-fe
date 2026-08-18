@@ -50,6 +50,7 @@
     disableWidthTransition = false,
     notifyAutomaticWidthChanges = true,
     clampStoredWidth = false,
+    followSidebarCollapsed = true,
     onWidthChange,
     onResizeStart,
     onResize,
@@ -123,6 +124,8 @@
     notifyAutomaticWidthChanges?: boolean;
     /** Clamp stale persisted widths to current bounds instead of rejecting them. */
     clampStoredWidth?: boolean;
+    /** Follow the shared workspace sidebar collapse state. */
+    followSidebarCollapsed?: boolean;
     onWidthChange?: (width: number) => void;
     onResizeStart?: () => void;
     onResize?: (previousWidth: number, nextWidth: number) => void;
@@ -186,6 +189,8 @@
     expandedStorageKey?.startsWith('workspace-left-panel-expanded-width:') === true;
   // svelte-ignore state_referenced_locally
   const isWorkspaceSidebarPanel = isWorkspaceLeftPanel || isWorkspaceExpandedPanel;
+  // svelte-ignore state_referenced_locally
+  const followsSidebarCollapsed = followSidebarCollapsed && isWorkspaceSidebarPanel;
   // Scoped workspace keys retain their per-workspace persistence; only the legacy
   // unscoped keys use the shared sidebar width fields.
   // svelte-ignore state_referenced_locally
@@ -417,7 +422,12 @@
 
     const pixels = usesLegacySidebarWidth ? storedValue : storedValueToPixels(storedValue, true);
     if (pixels !== null) {
-      panelWidth = pixels;
+      if (followsSidebarCollapsed && $sidebarIsCollapsed) {
+        widthBeforeToggle = pixels;
+        panelWidth = 0;
+      } else {
+        panelWidth = pixels;
+      }
       widthPercent = pixelsToPercent(panelWidth, true);
       appliedStoredPanelSize = storedValue;
     }
@@ -503,7 +513,7 @@
   // React to Redux-driven sidebar collapse changes (Cmd+B, title-bar toggle, etc.).
   // The first run captures the baseline; subsequent runs apply collapse/expand.
   $effect(() => {
-    if (!isWorkspaceSidebarPanel || orientation !== 'horizontal') return;
+    if (!followsSidebarCollapsed || orientation !== 'horizontal') return;
 
     const collapsed = $sidebarIsCollapsed;
     if (lastSidebarCollapsed === undefined) {
@@ -545,7 +555,7 @@
     }
 
     // Listen for sidebar toggle event (only for workspace left panel)
-    if (isWorkspaceSidebarPanel) {
+    if (followsSidebarCollapsed) {
       // Initialize from store's collapsed state
       const initialCollapsed = $sidebarIsCollapsed;
       if (initialCollapsed) {
@@ -558,7 +568,7 @@
 
     return () => {
       window.removeEventListener('resize', handleWindowResize);
-      if (isWorkspaceSidebarPanel) {
+      if (followsSidebarCollapsed) {
         window.removeEventListener('workspace:toggle-left-sidebar', handleSidebarToggle);
       }
     };
