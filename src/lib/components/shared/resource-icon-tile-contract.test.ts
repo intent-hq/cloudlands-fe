@@ -58,8 +58,8 @@ describe('resource icon tile source contract', () => {
     expect(terminal).toContain('border border-border bg-sidebar px-3');
     expect(strip).toContain('sidebar-expanded-tab-deck');
     expect(strip).toContain('sidebar-expanded-tab-indicator');
-    expect(transitions).toContain('border: 1px solid hsl(var(--theme-dark-sidebar-border))');
-    expect(transitions).toContain('background-color: hsl(var(--theme-dark-sidebar))');
+    expect(transitions).toContain('border: 1px solid hsl(var(--sidebar-border))');
+    expect(transitions).toContain('background-color: hsl(var(--sidebar))');
   });
 
   it('migrates panel tabs, compact headers, and empty or recent items', () => {

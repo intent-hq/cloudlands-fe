@@ -17,9 +17,9 @@
   width: min(100%, calc(var(--sidebar-tab-count) * 32px + 8px));
   gap: 0;
   padding: 3px;
-  border: 1px solid hsl(var(--theme-dark-sidebar-border));
+  border: 1px solid hsl(var(--sidebar-border));
   border-radius: calc(var(--radius-lg) + 3px);
-  background-color: hsl(var(--theme-dark-sidebar));
+  background-color: hsl(var(--sidebar));
   box-shadow: var(--elevation-raised);
 }
 
@@ -42,7 +42,7 @@
   border: 0;
   border-radius: var(--radius-md);
   background-color: transparent;
-  color: hsl(var(--theme-dark-muted-foreground));
+  color: hsl(var(--muted-foreground));
   justify-content: center;
   opacity: 1;
   padding: 8px;
@@ -77,13 +77,13 @@
 }
 
 .sidebar-expanded-tab[data-raised='true']:not([data-active='true']) .sidebar-expanded-tab-action {
-  background-color: hsl(var(--theme-dark-sidebar-accent));
-  color: hsl(var(--theme-dark-sidebar-accent-foreground));
+  background-color: hsl(var(--sidebar-accent));
+  color: hsl(var(--sidebar-accent-foreground));
 }
 
 .sidebar-expanded-tab[data-active='true'] .sidebar-expanded-tab-action {
   background-color: transparent;
-  color: hsl(var(--theme-dark-foreground));
+  color: hsl(var(--foreground));
 }
 
 .sidebar-expanded-tab[data-active='true'] .sidebar-expanded-tab-action:hover {
