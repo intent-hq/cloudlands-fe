@@ -148,6 +148,7 @@ import {
   createProposalResource,
 } from '$shared/types/proposal-resource';
 import { dedupeResourceBlocks, getResourceContents } from '$shared/types/resource-block-identity';
+import { hasStandingChatSubscription } from '$features/agent/utils/chat-subscription-registry';
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import { store as appStore } from '$store/renderer/store';
 import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
@@ -698,6 +699,19 @@ function dispatchStreamUpdate(
   stopReason?: string,
   finishReason?: string,
 ): void {
+  // SOLE-WRITER INVARIANT (PROTOCOL §7.1): when a standing chat.subscribe
+  // registration covers this agent, the subscription owns message CONTENT —
+  // omit the accumulator's blocks so this dispatch keeps only its bookkeeping
+  // duties (streaming flags, stopReason/finishReason metadata, chat-state
+  // resets). The terminal `complete` would otherwise replace the reconciled
+  // transcript with the accumulator's text-starved stale set — with no later
+  // emit to heal it, the turn's tail goes missing — and mid-turn
+  // `content-blocks` ticks flicker subscription-owned rows. The accumulator
+  // itself keeps accumulating regardless, so it stays the complete fallback
+  // writer for agents whose coverage ends mid-turn. The apply-time guard in
+  // agent-stream-saga re-checks coverage for dispatches buffered across a
+  // registration install.
+  const covered = hasStandingChatSubscription(agentId);
   appStore.dispatch(
     agentStreamUpdateReceived({
       workspaceId: state.workspaceId,
@@ -706,7 +720,7 @@ function dispatchStreamUpdate(
       source: 'sendMessage',
       eventType,
       assistantMessageId: state.messageId,
-      contentBlocks: buildContentBlocks(state),
+      ...(covered ? {} : { contentBlocks: buildContentBlocks(state) }),
       ...(stopReason ? { stopReason } : {}),
       ...(finishReason ? { finishReason } : {}),
     }),
@@ -1265,7 +1279,10 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // content is the trailing blocks (e.g. questions with no streamed text).
   // Finalize a matching placeholder so the Stopped indicator / finish notice /
   // question wizard appears live. A later `agents.getConversation` reconcile
-  // dedupes by message id.
+  // dedupes by message id. SOLE-WRITER INVARIANT: for a subscription-covered
+  // agent the terminal §7.1 reconcile delivers the drained question blocks as
+  // `added` blocks itself, so the firehose copy is omitted (same gate as
+  // `dispatchStreamUpdate`) and only the metadata/flag bookkeeping applies.
   if (messageId && (trailingBlocks.length > 0 || stopReason === 'interrupted' || finishReason)) {
     appStore.dispatch(
       agentStreamUpdateReceived({
@@ -1275,7 +1292,9 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         source: 'sendMessage',
         eventType: 'complete',
         assistantMessageId: messageId,
-        contentBlocks: dedupeResourceBlocks(trailingBlocks),
+        ...(hasStandingChatSubscription(agentId)
+          ? {}
+          : { contentBlocks: dedupeResourceBlocks(trailingBlocks) }),
         ...(stopReason ? { stopReason } : {}),
         ...(finishReason ? { finishReason } : {}),
       }),
