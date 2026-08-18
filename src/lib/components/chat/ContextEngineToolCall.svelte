@@ -26,9 +26,11 @@
     toolUse: ToolUseBlock;
     toolState?: 'running' | 'completed' | 'error';
     result?: any;
+    /** Called on expand — the parent dispatches lazy block hydration (§5.5). */
+    onExpand?: () => void;
   }
 
-  let { toolUse, toolState = 'completed', result = null }: Props = $props();
+  let { toolUse, toolState = 'completed', result = null, onExpand }: Props = $props();
 
   const parsedResult = $derived(
     result !== null && result !== undefined
@@ -92,7 +94,11 @@
   const isExpandable = $derived(hasResults || toolState === 'error');
 
   function toggleExpanded() {
-    if (isExpandable) expanded = !expanded;
+    if (!isExpandable) return;
+    expanded = !expanded;
+    // Expanding a slim-truncated row triggers the on-demand full-block fetch
+    // (no-op for under-budget rows: the parent's truncated id list is empty).
+    if (expanded) onExpand?.();
   }
 
   function handleDisclosureKeydown(event: KeyboardEvent) {

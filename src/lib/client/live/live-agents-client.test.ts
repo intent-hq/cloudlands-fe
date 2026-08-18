@@ -1417,6 +1417,21 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     );
   });
 
+  it.each([
+    ['an array', []],
+    ['an empty object', {}],
+    ['an object with an unknown type', { type: 'bogus', id: 'msg-1:0' }],
+    ['a string', 'tool_result'],
+  ])('getMessageBlock rejects a malformed block envelope (%s)', async (_label, badBlock) => {
+    // Malformed { block } values must reject, never get cached and merged
+    // into message content as a ContentBlock.
+    backend.onRequest('agent.getMessageBlock', () => ({ block: badBlock }));
+    const client = new LiveAgentsClient();
+    await expect(client.getMessageBlock('agent-1', 'msg-1', 'msg-1:0')).rejects.toThrow(
+      'returned no block',
+    );
+  });
+
   it('getMessageBlock propagates daemon -32602 rejections (unknown ids)', async () => {
     backend.onRequest('agent.getMessageBlock', () => {
       throw new BackendError(buildErrorPayload('INVALID_PARAMS', 'unknown block id: msg-1:99'));

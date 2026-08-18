@@ -86,6 +86,29 @@ describe('ContextEngineToolCall', () => {
     expect(screen.getByText('Search failed')).toBeTruthy();
   });
 
+  it('calls onExpand when expanded (lazy block hydration hook, §5.5)', async () => {
+    const onExpand = vi.fn();
+    render(ContextEngineToolCall, {
+      props: {
+        toolUse,
+        toolState: 'error',
+        result: 'Search failed',
+        onExpand,
+      },
+    });
+
+    const disclosure = screen.getByRole('button');
+    await fireEvent.click(disclosure);
+    expect(onExpand).toHaveBeenCalledTimes(1);
+
+    // Collapse does not re-fire; a second expand asks again (the reducer's
+    // loading/loaded cache makes the re-dispatch a no-op).
+    await fireEvent.click(disclosure);
+    expect(onExpand).toHaveBeenCalledTimes(1);
+    await fireEvent.click(disclosure);
+    expect(onExpand).toHaveBeenCalledTimes(2);
+  });
+
   it('renders a paired daemon-shaped Context Engine result', () => {
     const content: ContentBlock[] = [
       {

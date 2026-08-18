@@ -176,7 +176,7 @@
 
 <!-- Special rendering for Augment Context Engine tools -->
 {#if isContextEngine}
-  <ContextEngineToolCall {toolUse} {toolState} {result} />
+  <ContextEngineToolCall {toolUse} {toolState} {result} onExpand={requestHydration} />
 {:else if !toolDisplay.hidden}
   <div
     class={OPERATIONAL_ROW_CONTAINER_CLASS}

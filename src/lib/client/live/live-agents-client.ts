@@ -7,7 +7,7 @@
  * the sole data path (intent-hq/monorepo#1697); there is no legacy
  * events-driven `agent.list` refetch.
  */
-import { AgentStatus } from '$shared/types';
+import { AgentStatus, isContentBlock } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
@@ -182,12 +182,12 @@ export class LiveAgentsClient implements AgentsClient {
       blockId,
     });
     const block = result?.block;
-    if (!block || typeof block !== 'object') {
+    if (!isContentBlock(block)) {
       throw new Error(
         `agent.getMessageBlock returned no block for message ${messageId} block ${blockId}`,
       );
     }
-    return block as ContentBlock;
+    return block;
   }
 
   // Mutations forward to the daemon (§7.2); daemon agent-lifecycle events
