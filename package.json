@@ -53,6 +53,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint . && pnpm run lint:i18n-strings && pnpm run lint:i18n-completeness",
     "lint:fix": "eslint --fix .",
+    "lint:dead-code": "knip",
     "lint:i18n-strings": "node scripts/check-hardcoded-strings.mjs",
     "lint:i18n-completeness": "node scripts/check-i18n-completeness.mjs",
     "lint:dispatch-gate": "node scripts/check-workspace-event-dispatchers.mjs",
