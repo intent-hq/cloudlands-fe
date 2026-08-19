@@ -5892,6 +5892,140 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
 
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', { workspaceId: PENDING_WS });
   });
+
+  // Owned-tab lifecycle (monorepo#2857): the deletion COMMIT destroys the
+  // agent's owned browser tabs (visible + hidden) and clears main's
+  // registrations; the SCHEDULE (grace window — cancelDelete must restore
+  // tabs intact) does not.
+  it('agent:deleted destroys owned tabs (visible + hidden) and clears main registrations', async () => {
+    const { initializeLayout, closeTab } = await import(
+      '$store/renderer/slices/panel-layout/panel-layout-slice'
+    );
+    appStore.dispatch(
+      initializeLayout(PENDING_WS, {
+        root: { type: 'panel', panelId: 'p1' },
+        panels: {
+          p1: {
+            id: 'p1',
+            tabs: [
+              {
+                id: 'owned-vis',
+                type: 'browser',
+                title: 'V',
+                closable: true,
+                browserUrl: 'http://v/',
+                ownerAgentId: PENDING_AGENT,
+              },
+              {
+                id: 'owned-hid',
+                type: 'browser',
+                title: 'H',
+                closable: true,
+                browserUrl: 'http://h/',
+                ownerAgentId: PENDING_AGENT,
+              },
+              { id: 'keep', type: 'note', title: 'K', closable: true },
+            ],
+            activeTabId: 'owned-vis',
+          },
+        },
+        focusedPanelId: 'p1',
+      } as never),
+    );
+    appStore.dispatch(closeTab(PENDING_WS, 'owned-hid', 'p1', 1000));
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    invokeSpy.mockClear();
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-deleted-owned-tabs',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:deleted',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS },
+        },
+      },
+    });
+
+    const state = appStore.state as {
+      panelLayout: {
+        byWorkspaceId: Record<
+          string,
+          { panels: Record<string, { tabs: { id: string }[] }>; hiddenTabs: { id: string }[] }
+        >;
+      };
+    };
+    const ws = state.panelLayout.byWorkspaceId[PENDING_WS];
+    expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['keep']);
+    expect(ws.hiddenTabs).toHaveLength(0);
+    const clearCalls = invokeSpy.mock.calls.filter(
+      (call: unknown[]) => call[0] === 'browser:clear-agent-tabs',
+    );
+    expect(clearCalls.map((call: unknown[]) => call[1])).toEqual([{ agentId: PENDING_AGENT }]);
+  });
+
+  it('agent:delete-scheduled leaves owned tabs alive (grace window, cancel restores intact)', async () => {
+    const { initializeLayout } = await import(
+      '$store/renderer/slices/panel-layout/panel-layout-slice'
+    );
+    appStore.dispatch(
+      initializeLayout(PENDING_WS, {
+        root: { type: 'panel', panelId: 'p1' },
+        panels: {
+          p1: {
+            id: 'p1',
+            tabs: [
+              {
+                id: 'owned-grace',
+                type: 'browser',
+                title: 'G',
+                closable: true,
+                browserUrl: 'http://g/',
+                ownerAgentId: PENDING_AGENT,
+              },
+            ],
+            activeTabId: 'owned-grace',
+          },
+        },
+        focusedPanelId: 'p1',
+      } as never),
+    );
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    invokeSpy.mockClear();
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-del-scheduled-tabs',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:delete-scheduled',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS, deleteAt: DELETE_AT },
+        },
+      },
+    });
+
+    const state = appStore.state as {
+      panelLayout: {
+        byWorkspaceId: Record<string, { panels: Record<string, { tabs: { id: string }[] }> }>;
+      };
+    };
+    expect(state.panelLayout.byWorkspaceId[PENDING_WS].panels.p1.tabs.map((t) => t.id)).toEqual([
+      'owned-grace',
+    ]);
+    expect(
+      invokeSpy.mock.calls.filter((call: unknown[]) => call[0] === 'browser:clear-agent-tabs'),
+    ).toHaveLength(0);
+  });
 });
 
 describe('daemonEventsBridge (task:status-changed → applyTaskStatusChanged)', () => {

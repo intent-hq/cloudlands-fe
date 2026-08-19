@@ -272,6 +272,79 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
+  // Hidden-replace (monorepo#2857): an AGENT replace bound to a hidden
+  // (user-closed) owned tab navigates it in place and leaves it hidden; an
+  // unowned (user) open never adopts a hidden tab — that would look like a
+  // no-op and retarget an agent-owned tab.
+  it('an agent replace bound to a hidden owned tab navigates it in place and keeps it hidden', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: { one: { tabs: [] } },
+            hiddenTabs: [
+              { id: 'browser-hidden', type: 'browser', ownerAgentId: 'agent-1' },
+            ],
+          },
+        },
+      },
+    };
+
+    await emit({
+      url: 'https://hidden.test',
+      position: 'replace',
+      workspaceId: 'ws-1',
+      ownerAgentId: 'agent-1',
+      replaceTabId: 'browser-hidden',
+    });
+
+    // Navigate + ownership only — no setActiveTab/openTab: the tab stays
+    // hidden (the user's close is respected).
+    expect(actions).toMatchObject([
+      {
+        type: 'panelLayout/updateTabBrowserUrl',
+        payload: ['ws-1', 'browser-hidden', 'https://hidden.test', null],
+      },
+      {
+        type: 'panelLayout/setTabOwnerAgent',
+        payload: ['ws-1', 'browser-hidden', 'agent-1'],
+      },
+    ]);
+    expect(actions.map((a: any) => a.type)).not.toContain('panelLayout/setActiveTab');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('an unowned replace bound to a hidden tab never adopts it — opens a visible tab instead', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: { one: { tabs: [] } },
+            hiddenTabs: [
+              { id: 'browser-hidden', type: 'browser', ownerAgentId: 'agent-1' },
+            ],
+          },
+        },
+      },
+    };
+
+    await emit({
+      url: 'https://user.test',
+      position: 'replace',
+      workspaceId: 'ws-1',
+      replaceTabId: 'browser-hidden',
+    });
+
+    expect(actions.map((a: any) => a.type)).toEqual(['panelLayout/openTab']);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('an agent replace whose bound target is gone opens a new tab instead of adopting an unchecked one', async () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));

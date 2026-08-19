@@ -184,18 +184,20 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     // an agent open must NOT (main never ownership-checked that tab): it
     // opens a new tab instead.
     const replaceTabId = typeof data.replaceTabId === 'string' ? data.replaceTabId : undefined;
-    // A replace may target a hidden (user-closed) owned tab — the per-agent
-    // dedupe still reuses it (monorepo#2857). Navigate it in place and leave
-    // it hidden: the user's close is respected, the agent keeps operating on
-    // the live offscreen webview.
-    if (replaceTabId) {
+    // An AGENT replace may target a hidden (user-closed) owned tab — the
+    // per-agent dedupe still reuses it (monorepo#2857). Navigate it in place
+    // and leave it hidden: the user's close is respected, the agent keeps
+    // operating on the live offscreen webview. Unowned (user) opens never
+    // take this branch: main resolves the target from a list that includes
+    // hidden tabs, and navigating one in place would look like a no-op to
+    // the user while retargeting an agent-owned tab — fall through and open
+    // a visible tab instead.
+    if (replaceTabId && ownerAgentId) {
       const hiddenTabs = yield* selectHiddenTabs.effect(workspaceId);
       const hidden = hiddenTabs.find((tab) => tab.type === 'browser' && tab.id === replaceTabId);
       if (hidden) {
         yield* put(updateTabBrowserUrl(workspaceId, hidden.id, data.url, requestedUrl ?? null));
-        if (ownerAgentId) {
-          yield* put(setTabOwnerAgent(workspaceId, hidden.id, ownerAgentId));
-        }
+        yield* put(setTabOwnerAgent(workspaceId, hidden.id, ownerAgentId));
         return;
       }
     }

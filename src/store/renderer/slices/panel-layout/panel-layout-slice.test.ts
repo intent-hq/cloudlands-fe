@@ -21,7 +21,9 @@ import {
   reorderTabs,
   focusPanel,
   closeOtherTabs,
+  closeTabsToRight,
   closeAllTabs,
+  closeAllOthersEverywhere,
   closeTabsByType,
   reopenClosedTab,
   pruneRecentlyClosed,
@@ -2061,6 +2063,25 @@ describe('panelLayoutReducer', () => {
         }),
       );
       expect(result.byWorkspaceId[WS].hiddenTabs.map((t) => t.id)).toEqual(['owned']);
+    });
+
+    // Bulk user closes hide owned tabs (never recentlyClosed) the same way
+    // single closes do — partitionRemovedTabs covers every bulk path.
+    it.each([
+      ['closeOtherTabs', () => closeOtherTabs(WS, 'plain', 'p1', 1000)],
+      ['closeTabsToRight', () => closeTabsToRight(WS, 'plain', 'p1', 1000)],
+      ['closeAllTabs', () => closeAllTabs(WS, 'p1', 1000)],
+      ['closeAllOthersEverywhere', () => closeAllOthersEverywhere(WS, 'plain', 'p1', 1000)],
+    ])('%s hides owned tabs instead of pushing them to recentlyClosed', (_name, action) => {
+      const state = stateWithPanel('p1', [
+        { id: 'plain', type: 'note', title: 'P' },
+        { ...ownedTab },
+        { id: 'other', type: 'note', title: 'O' },
+      ]);
+      const ws = panelLayoutReducer(state, action()).byWorkspaceId[WS];
+      expect(ws.hiddenTabs.map((t) => t.id)).toEqual(['owned']);
+      expect(ws.recentlyClosed.map((e) => e.tab.id)).not.toContain('owned');
+      expect(ws.panels.p1.tabs.map((t) => t.id)).not.toContain('owned');
     });
 
     // Regression (monorepo#2857 review): a destroyed owned tab lived on in

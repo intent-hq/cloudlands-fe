@@ -1,7 +1,9 @@
 import { call, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type { AgentSession } from '$shared/types';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
@@ -42,8 +44,18 @@ function* loadAgentSessionSaga(wsId: string, agentId: string) {
       logger.warn('Agent no longer exists on daemon; closing stale tabs', { wsId, agentId });
       yield* put(closeTabsByAgentId(wsId, agentId));
       // A deletion missed while the app was closed: destroy the dead
-      // agent's owned browser tabs too (monorepo#2857).
+      // agent's owned browser tabs too (monorepo#2857), and clear main's
+      // CDP/ownership registrations — an earlier list-tabs reply may
+      // already have rehydrated them for the persisted hidden tabs.
       yield* put(destroyTabsByOwnerAgent(wsId, agentId));
+      try {
+        yield* call(invoke, IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId });
+      } catch (clearError) {
+        logger.warn('Failed to clear main-process registrations for deleted agent tabs', {
+          agentId,
+          error: clearError,
+        });
+      }
       return;
     }
     logger.error('Failed to load agent session', error);
