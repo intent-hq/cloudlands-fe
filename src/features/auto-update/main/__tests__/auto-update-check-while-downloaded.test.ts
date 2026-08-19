@@ -284,3 +284,69 @@ describe('manual checks while an update is downloaded', () => {
     expect(service.getState().updateInfo?.version).toBe('2.1.0');
   });
 });
+
+describe('feed rollback while an update is downloaded', () => {
+  /** checkForUpdates mock: the feed no longer offers any update. */
+  function feedAnswersNotAvailable(checkMock: Mock) {
+    checkMock.mockImplementation(async () => {
+      updaterHandlers['checking-for-update']();
+      updaterHandlers['update-not-available']({ version: '2.0.0' });
+      return { updateInfo: { version: '2.0.0' } } as never;
+    });
+  }
+
+  it('disarms quit-install, clears updateInfo, and ends not-available (regression)', async () => {
+    const { service, checkMock, updater } = await setupService();
+    landDownloaded('2.1.0');
+    expect(updater.autoInstallOnAppQuit).toBe(true);
+    expect(service.getState().updateInfo?.version).toBe('2.1.0');
+
+    // The release was pulled from the feed: the startup check answers
+    // 'update-not-available' while the 2.1.0 artifact is still armed.
+    feedAnswersNotAvailable(checkMock);
+    await vi.advanceTimersByTimeAsync(STARTUP_CHECK_DELAY_MS);
+
+    expect(checkMock).toHaveBeenCalledTimes(1);
+    const state = service.getState();
+    expect(state.status).toBe('not-available');
+    expect(state.updateInfo).toBeNull();
+    // The now-unpublished artifact must not install on quit.
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+  });
+
+  it('a manual check that detects the rollback shows a truthful up-to-date toast', async () => {
+    const { service, checkMock, mockWindow, updater } = await setupService();
+    landDownloaded('2.1.0');
+
+    feedAnswersNotAvailable(checkMock);
+    await service.checkForUpdatesManual();
+
+    // No pending-install UI remains, so "up to date" is correct.
+    expect(mockWindow.webContents.send).toHaveBeenCalledWith('auto-update:up-to-date', {
+      version: '2.0.0',
+    });
+    expect(service.getState().status).toBe('not-available');
+    expect(service.getState().updateInfo).toBeNull();
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+  });
+
+  it('a later check that finds an update again re-arms through the normal flow', async () => {
+    const { service, checkMock, updater } = await setupService();
+    landDownloaded('2.1.0');
+
+    feedAnswersNotAvailable(checkMock);
+    await service.checkForUpdatesManual();
+    expect(service.getState().status).toBe('not-available');
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+
+    // The release is re-published (or a newer one lands): the normal
+    // available → download → downloaded flow re-arms quit-install.
+    feedResolvesTo(checkMock, '2.1.1', { withProgress: true });
+    await service.checkForUpdatesManual();
+
+    const state = service.getState();
+    expect(state.status).toBe('downloaded');
+    expect(state.updateInfo?.version).toBe('2.1.1');
+    expect(updater.autoInstallOnAppQuit).toBe(true);
+  });
+});

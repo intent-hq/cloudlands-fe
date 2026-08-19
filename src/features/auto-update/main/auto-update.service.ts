@@ -243,8 +243,30 @@ class AutoUpdateService {
     autoUpdater.on('update-not-available', (info: ElectronUpdateInfo) => {
       this.clearCheckTimeout();
       this.checkSessionActive = false;
-      this.downloadCancellationToken = null;
       this.expectingDownloadCancel = false;
+      // Feed rollback: 'update-not-available' arriving while a pending
+      // artifact exists means the release was pulled from the feed. The
+      // now-unpublished artifact must not stay armed for quit-install (the
+      // supersede path handles a feed that still offers a DIFFERENT
+      // version; this is the feed offering nothing). Disarm, cancel an
+      // in-flight download, and drop the pending updateInfo so the
+      // 'not-available' state below reflects reality — a later check that
+      // finds an update again re-arms via 'update-downloaded' as usual.
+      const status = this.state.status;
+      if (status === 'available' || status === 'downloading' || status === 'downloaded') {
+        logger.warn('Feed no longer offers the pending update; discarding it', {
+          pendingVersion: this.state.updateInfo?.version,
+          status,
+        });
+        autoUpdater.autoInstallOnAppQuit = false;
+        if (this.downloadCancellationToken) {
+          this.expectingDownloadCancel = true;
+          this.downloadCancellationToken.cancel();
+        }
+        this.state.updateInfo = null;
+        this.state.progress = null;
+      }
+      this.downloadCancellationToken = null;
       logger.info('No update available', {
         currentVersion: info.version,
         isManualCheck: this.isManualCheck,
