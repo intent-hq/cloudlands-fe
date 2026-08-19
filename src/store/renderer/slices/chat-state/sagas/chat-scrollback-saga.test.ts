@@ -540,4 +540,34 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     run.task.cancel();
     await run.task.toPromise();
   });
+
+  it('refuses to start a serial page or gap fill while a seek is in flight', async () => {
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('m-10', 10)] })]));
+    let resolveSeek!: (value: unknown) => void;
+    mocks.getConversation.mockReturnValueOnce(
+      new Promise((done) => {
+        resolveSeek = done;
+      }),
+    );
+    run.channel.put(historySeekRequested(WS, AGENT, 500));
+    await settle();
+    expect(run.chat()?.fetchingHistorySeek).toBe(true);
+
+    // Serial page and gap fill while the seek is in flight: both dropped —
+    // the seek's landing REPLACES the segment, so a page anchored at the
+    // pre-seek segment must never merge into the seeded one.
+    run.channel.put(olderHistoryPageRequested(WS, AGENT));
+    run.channel.put(historyGapFillRequested(WS, AGENT));
+    await settle();
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+
+    resolveSeek(
+      page([message('m-500', 500)], { totalMessages: 2000, nextToken: 'older-1' }),
+    );
+    await settle();
+    expect(run.chat()?.fetchingHistorySeek).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
 });

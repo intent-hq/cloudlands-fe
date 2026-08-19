@@ -117,6 +117,11 @@ export function indexConversationTurns<
       // (scrollback composition — positional indexes shift on history
       // prepends and would churn LazyTurn height caches), else the
       // positional index (tail-only transcript, unchanged keys).
+      // PARTIAL stability: `turnIndex` is still the turn's position WITHIN
+      // the group, so a same-day prepend that inserts turns at the front of
+      // an existing group re-keys the following orphan turns (assistant-only
+      // turns; user-message turns key off the message id). Follow-up option:
+      // key orphan turns off their first message id.
       const turnKey =
         turn.userMessage?.id ?? `group-${group.groupKey ?? groupIndex}-turn-${turnIndex}`;
       globalIndexByTurnKey.set(turnKey, globalIndex++);

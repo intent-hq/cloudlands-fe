@@ -523,23 +523,9 @@ export function splitUnloadedRows(params: UnloadedRowsSplitParams): {
   return { above: unloaded - below, below };
 }
 
-/**
- * Estimate the conversation ordinal of a seek landing page's FIRST row.
- * Mirrors the daemon's `page_window_around`: half the page budget goes to
- * rows older than the (clamped) target, clamped at either edge so the page
- * stays full. An estimate only — boundaries stay exact via `oldestReached`
- * (nextToken null ⇒ start is 0) and the gap-close overlap detection.
- */
-export function estimateSeekLandingStartOrdinal(
-  targetOrdinal: number,
-  pageLimit: number,
-  totalMessages: number,
-): number {
-  if (totalMessages <= 0) return 0;
-  const target = Math.min(totalMessages - 1, Math.max(0, Math.floor(targetOrdinal)));
-  const start = target - Math.floor(pageLimit / 2);
-  return Math.min(Math.max(0, totalMessages - pageLimit), Math.max(0, start));
-}
+// Single shared copy of the daemon's `page_window_around` mirror — re-exported
+// here so panel-side consumers keep their import site.
+export { estimateSeekLandingStartOrdinal } from '$lib/utils/seek-landing-estimate';
 
 export interface SeekLandingScrollTopParams {
   /** Above-spacer height (px) applied for the seeded segment. */

@@ -48,6 +48,7 @@ import { all, call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga'
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
+import { estimateSeekLandingStartOrdinal } from '$lib/utils/seek-landing-estimate';
 import type { AgentMessage } from '$shared/types';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import {
@@ -126,6 +127,10 @@ function* fetchOlderPageWorker(
   if (yield* call(isAgentDeletionPending, agentId)) return;
   const chat = yield* selectChatAgentState.effect(agentId);
   if (chat.fetchingOlderHistory) return;
+  // Mirror of the seek worker's serial guard: a settling seek REPLACES the
+  // segment, so a page anchored at the pre-seek segment must never merge
+  // into the seeded one. The panel re-classifies once the seek settles.
+  if (chat.fetchingHistorySeek) return;
   const meta = yield* selectHistorySegmentMeta.effect(agentId);
   if (meta.oldestReached) return;
   const history: AgentMessage[] = yield* selectAgentHistoryMessages.effect(agentId);
@@ -163,6 +168,8 @@ function* fetchGapFillWorker(
   if (yield* call(isAgentDeletionPending, agentId)) return;
   const chat = yield* selectChatAgentState.effect(agentId);
   if (chat.fetchingGapFill) return;
+  // Mirror of the seek worker's serial guard (see fetchOlderPageWorker).
+  if (chat.fetchingHistorySeek) return;
   const meta = yield* selectHistorySegmentMeta.effect(agentId);
   if (!meta.gapToTail) return;
   const history: AgentMessage[] = yield* selectAgentHistoryMessages.effect(agentId);
@@ -188,30 +195,16 @@ function* fetchGapFillWorker(
 
 /**
  * INVALID_PARAMS (-32602) from either transport: a strict daemon rejecting
- * the `aroundIndex` param it does not know.
+ * the `aroundIndex` param it does not know. Deliberately over-matches: the
+ * daemon serves other -32602s on this method (e.g. agent not found), so a
+ * seek racing a daemon-side agent deletion can latch `historySeekUnsupported`
+ * from an unrelated rejection — accepted, since the latch is per-agent and
+ * that agent is gone anyway.
  */
 function isInvalidParamsError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const candidate = error as { rpcCode?: unknown; code?: unknown };
   return candidate.rpcCode === -32602 || candidate.code === 'INVALID_PARAMS';
-}
-
-/**
- * Estimate the conversation ordinal of a seek landing page's FIRST row,
- * mirroring the daemon's `page_window_around`: half the page budget goes to
- * rows older than the (clamped) target, clamped at either edge so the page
- * stays full. An estimate only — boundaries stay exact via `oldestReached`
- * (`nextToken === null` ⇒ start is 0) and the tail-overlap gap close.
- */
-function estimateSeekLandingStart(
-  targetOrdinal: number,
-  pageRows: number,
-  totalMessages: number,
-): number {
-  if (totalMessages <= 0) return 0;
-  const target = Math.min(totalMessages - 1, Math.max(0, Math.floor(targetOrdinal)));
-  const start = target - Math.floor(pageRows / 2);
-  return Math.min(Math.max(0, totalMessages - pageRows), Math.max(0, start));
 }
 
 function* historySeekWorker(
@@ -266,7 +259,7 @@ function* historySeekWorker(
         seedHistoryAround(
           agentId,
           page.messages,
-          estimateSeekLandingStart(target, page.messages.length, page.totalMessages),
+          estimateSeekLandingStartOrdinal(target, page.messages.length, page.totalMessages),
         ),
       );
       tokens = { nextToken: page.nextToken, prevToken: page.prevToken };

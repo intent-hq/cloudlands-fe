@@ -2170,6 +2170,11 @@
   function requestHistoryGapFill() {
     if (!workspace?.id || !agentId) return;
     if ($fetchingGapFill$ || !$historySegmentMeta$.gapToTail) return;
+    // Never race a settling seek (mirror of maybeRequestOlderHistory): the
+    // seek REPLACES the segment, so a gap page anchored at the pre-seek
+    // segment must not go to the wire. The saga carries the same guard;
+    // this closes the panel-side dispatch window (sentinel, button).
+    if ($fetchingHistorySeek$ || seekLandingPending) return;
     appStore.dispatch(historyGapFillRequested(workspace.id, agentId));
   }
 
