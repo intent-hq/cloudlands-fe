@@ -45,7 +45,7 @@ describe('agent overview graph helpers', () => {
     });
 
     expect(getNodeStatus(session)).toBe('idle');
-    expect(getStreamingState(session).streamingText).toBeUndefined();
+    expect(getStreamingState(session).activeToolName).toBeUndefined();
   });
 
   it('keeps active response flags authoritative for running state', () => {
@@ -67,5 +67,62 @@ describe('agent overview graph helpers', () => {
     });
 
     expect(getNodeStatus(session)).toBe('responding');
+  });
+
+  describe('getStreamingState wire previews (monorepo#2852)', () => {
+    it('derives lastResponse from the wire lastAgentResponse, never the transcript', () => {
+      const session = makeSession({
+        status: AgentStatus.Active,
+        lastAgentResponse: 'First line.\nClean wire line.',
+        messages: [
+          {
+            id: 'msg-1',
+            role: 'assistant' as const,
+            timestamp: '2024-01-01T00:00:00.000Z',
+            contentBlocks: [
+              {
+                type: 'text' as const,
+                text: 'Transcript text.\n<!-- suggested-prompts\n["p"]\n-->',
+              },
+            ],
+          },
+        ] as any,
+      });
+
+      expect(getStreamingState(session).lastResponse).toBe('Clean wire line.');
+    });
+
+    it('returns lastResponse even when the transcript is empty', () => {
+      const session = makeSession({
+        status: AgentStatus.Idle,
+        lastAgentResponse: 'Persisted wire response',
+        messages: [],
+      });
+
+      expect(getStreamingState(session).lastResponse).toBe('Persisted wire response');
+    });
+
+    it('surfaces the wire lastToolUse as the active tool only while streaming', () => {
+      const toolUse = { name: 'view', input: { path: 'src/a.ts' } };
+      const streaming = makeSession({
+        status: AgentStatus.Processing,
+        isStreaming: true,
+        lastToolUse: toolUse as any,
+      });
+      const idle = makeSession({
+        status: AgentStatus.Idle,
+        isStreaming: false,
+        lastToolUse: toolUse as any,
+      });
+
+      const state = getStreamingState(streaming);
+      expect(state.activeToolName).toBe('view');
+      expect(state.activeToolInput).toEqual({ path: 'src/a.ts' });
+      expect(getStreamingState(idle).activeToolName).toBeUndefined();
+    });
+
+    it('returns an empty state for undefined sessions', () => {
+      expect(getStreamingState(undefined)).toEqual({});
+    });
   });
 });
