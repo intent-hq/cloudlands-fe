@@ -93,6 +93,12 @@ export interface PanelState {
   pristine?: boolean;
 }
 
+export type PanelColumnCount = 1 | 2 | 3 | 4;
+
+export function isPanelColumnCount(value: unknown): value is PanelColumnCount {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 4;
+}
+
 /** Node in the panel layout tree - either a panel or a split container */
 export type PanelLayoutNode =
   | { type: 'panel'; panelId: string }
@@ -106,6 +112,8 @@ export type PanelLayoutNode =
 
 /** Complete layout state for a workspace */
 export interface WorkspacePanelLayout {
+  /** Version of the persisted fixed-column representation. */
+  version?: number;
   root: PanelLayoutNode;
   panels: Record<string, PanelState>;
   focusedPanelId: string | null;
@@ -117,6 +125,8 @@ export interface WorkspacePanelLayout {
    * restart; destroyed only on agent deletion or workspace archive/delete.
    */
   hiddenTabs?: PanelTab[];
+  /** Workspace-scoped selected column count. */
+  columnCount?: PanelColumnCount;
   /** User-resized intrinsic horizontal canvas width; null/absent uses automatic sizing. */
   canvasWidth?: number | null;
   /** Identifies a width that must survive restore; absent is a legacy automatic width. */
@@ -179,6 +189,7 @@ export interface LayoutSnapshot {
   /** Optional for backward compatibility with existing persisted history. */
   canvasWidth?: number | null;
   canvasWidthSource?: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
+  columnCount?: PanelColumnCount;
   timestamp: number;
 }
 
@@ -213,6 +224,7 @@ export interface WorkspacePanelLayoutState {
   /** Current horizontal panel canvas width in pixels; null uses the default column width. */
   canvasWidth: number | null;
   canvasWidthSource: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
+  columnCount: PanelColumnCount;
   restoreStatus: PanelLayoutRestoreStatus;
   pendingFocusTabId: string | null;
   pendingPanelReveal?: PanelRevealRequest | null;
@@ -248,6 +260,7 @@ export type PanelLayoutSliceState = {
 // ============================================================================
 
 export const PANEL_LAYOUT_STORAGE_KEY_PREFIX = 'panel-layout-';
+export const PANEL_LAYOUT_PERSISTENCE_VERSION = 2;
 export const MAX_RECENTLY_CLOSED = 20;
 export const MAX_LAYOUT_HISTORY = 50;
 export const MAX_FOCUS_HISTORY = 100;

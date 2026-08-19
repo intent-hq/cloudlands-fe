@@ -11,11 +11,6 @@ export const SYSTEM_DEFAULT_FONT =
 export type FontStyle = 'sans' | 'monospace';
 export type AgentFontStyle = FontStyle;
 export type NoteFontStyle = FontStyle | 'serif';
-export type PanelColumnCount = 1 | 2 | 3 | 4;
-
-export function isPanelColumnCount(value: unknown): value is PanelColumnCount {
-  return Number.isInteger(value) && typeof value === 'number' && value >= 1 && value <= 4;
-}
 
 export const FONT_STYLES: FontStyle[] = ['sans', 'monospace'];
 const NOTE_FONT_STYLES: NoteFontStyle[] = ['sans', 'serif', 'monospace'];
@@ -62,8 +57,6 @@ export type UserPreferencesState = {
   /** BCP-47 locale tag of an available catalog, or "system" to follow the OS. */
   languagePreference: string;
   githubLinkDefaultAction: GithubLinkDefaultAction;
-  /** Global number of fixed panel columns shared by every workspace. */
-  panelColumnCount: PanelColumnCount;
 };
 
 type FontSettingsState = Pick<
@@ -103,7 +96,6 @@ export const initialState: UserPreferencesState = {
   activityLogPresets: [],
   languagePreference: SYSTEM_LANGUAGE_PREFERENCE,
   githubLinkDefaultAction: 'show-choices',
-  panelColumnCount: 1,
 };
 
 export const setUpdateChannel = createAction<[channel: UpdateChannel]>(
@@ -175,10 +167,6 @@ export const setLanguagePreference = createAction<[preference: string]>(
 
 export const setGithubLinkDefaultAction = createAction<[action: GithubLinkDefaultAction]>(
   'userPreferences/setGithubLinkDefaultAction',
-);
-
-export const setPanelColumnCount = createAction<[count: number]>(
-  'userPreferences/setPanelColumnCount',
 );
 
 const showArchivedPreference = createBooleanPreference<UserPreferencesState>({
@@ -301,8 +289,3 @@ userPreferencesReducer.with(setGithubLinkDefaultAction, (state, { payload: [acti
   ...state,
   githubLinkDefaultAction: action,
 }));
-userPreferencesReducer.with(setPanelColumnCount, (state, { payload: [count] }) =>
-  isPanelColumnCount(count) && state.panelColumnCount !== count
-    ? { ...state, panelColumnCount: count }
-    : state,
-);

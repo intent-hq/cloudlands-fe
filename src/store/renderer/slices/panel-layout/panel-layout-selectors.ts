@@ -23,6 +23,7 @@ import type {
   PanelTab,
   PanelTabType,
   RecentlyClosedTab,
+  PanelColumnCount,
 } from './panel-layout-types';
 
 const emptyFileContentPrunePaths: string[] = [];
@@ -267,10 +268,10 @@ export const selectPanelCanvasWidthSource = store.createSelector<
 );
 
 /** Select the horizontal column count for one mounted layout scope. */
-export const selectPanelColumnCount = store.createSelector<[wsId: string], number>(
+export const selectPanelColumnCount = store.createSelector<[wsId: string], PanelColumnCount>(
   (state, wsId) => {
     const layout = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
-    return countHorizontalPanelColumns(layout.root);
+    return layout.columnCount;
   },
 );
 

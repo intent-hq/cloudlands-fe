@@ -37,11 +37,6 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { selectPanelColumnCount } from '../../user-preferences/user-preferences-selectors';
-import {
-  setPanelColumnCount,
-  type PanelColumnCount,
-} from '../../user-preferences/user-preferences-slice';
 import {
   resolveCanonicalInitialAgent,
   resolveEmptyLayoutAgent,
@@ -59,12 +54,8 @@ import {
   collectRehydratableBrowserTabs,
   type RehydratableBrowserTab,
 } from '../browser-tab-rehydration';
-import {
-  selectPanelLayoutWorkspace,
-  selectPanelLayoutWorkspaceIds,
-} from '../panel-layout-selectors';
-import { normalizeTablessPanelLayout, removeForeignWorkspaceTabs } from '../panel-layout-tabless';
-import { migratePanelCanvasWidth } from '../panel-layout-width-provenance';
+import { selectPanelLayoutWorkspace } from '../panel-layout-selectors';
+import { migratePanelLayoutForWorkspace } from '../panel-layout-migration';
 import {
   clearPanelLayout,
   bootstrapNewWorkspaceLayout,
@@ -101,11 +92,11 @@ import {
   openTabInRightmostColumn,
   openTabInRightmostColumnRequested,
   observeDeferredSpecGeneration,
-  panelLayoutReducer,
   panelLayoutScopeMounted,
   panelLayoutScopeUnmounted,
   reconcileStaleAgentTabs,
   reconcilePanelColumnCount,
+  setPanelColumnCount,
   reorderTabs,
   reopenClosedTab,
   resetLayout,
@@ -132,10 +123,12 @@ import {
 import {
   HISTORY_PERSIST_DEBOUNCE_MS,
   PANEL_LAYOUT_STORAGE_KEY_PREFIX,
+  PANEL_LAYOUT_PERSISTENCE_VERSION,
   type PanelLayoutNode,
   type WorkspacePanelLayout,
   type WorkspacePanelLayoutState,
 } from '../panel-layout-types';
+import { selectPanelColumnCount } from '../panel-layout-selectors';
 
 const PERSIST_ACTIONS = [
   initializeLayout,
@@ -187,6 +180,7 @@ const PERSIST_ACTIONS = [
   updateFileTabPath,
   consumePendingFocus,
   reconcilePanelColumnCount,
+  setPanelColumnCount,
 ];
 
 const HISTORY_ACTIONS = [
@@ -276,19 +270,13 @@ function getWsId(action: { payload?: unknown }): string | undefined {
   return undefined;
 }
 
-function* reconcileAllWorkspaceColumnCounts(): SagaGenerator<void> {
-  const count = yield* selectPanelColumnCount.effect();
-  const workspaceIds = yield* selectPanelLayoutWorkspaceIds.effect();
-  for (const wsId of workspaceIds) {
-    yield* put(reconcilePanelColumnCount(wsId, count));
-  }
-}
-
 function* routeTabToRightmostColumn(
   action: ReturnType<typeof openTabInRightmostColumnRequested>,
 ): SagaGenerator<void> {
   const { wsId, tab, force, allowDuplicate, newTabId, timestamp } = action.payload;
-  yield* put(reconcilePanelColumnCount(wsId, yield* selectPanelColumnCount.effect(), timestamp));
+  yield* put(
+    reconcilePanelColumnCount(wsId, yield* selectPanelColumnCount.effect(wsId), timestamp),
+  );
   yield* put(openTabInRightmostColumn(wsId, tab, { force, allowDuplicate, newTabId }, timestamp));
 }
 
@@ -300,8 +288,8 @@ function collectPanelIds(node: PanelLayoutNode, panelIds: Set<string>): boolean 
   }
   if (
     !Array.isArray(node.children) ||
-    !Array.isArray(node.sizes) ||
-    node.children.length !== node.sizes.length
+    node.children.length === 0 ||
+    (node.direction !== 'horizontal' && node.direction !== 'vertical')
   ) {
     return false;
   }
@@ -354,10 +342,11 @@ export function isStoredLayoutValid(value: unknown): value is WorkspacePanelLayo
     }
     const panelIds = new Set<string>();
     if (!collectPanelIds(layout.root, panelIds) || panelIds.size === 0) return false;
+    if (Object.keys(layout.panels).length === 0) return false;
     for (const panelId of panelIds) {
       if (!layout.panels[panelId]) return false;
     }
-    if (layout.focusedPanelId !== null && !panelIds.has(layout.focusedPanelId)) return false;
+    if (layout.focusedPanelId !== null && !layout.panels[layout.focusedPanelId]) return false;
     for (const [panelId, panel] of Object.entries(layout.panels)) {
       if (!panel || panel.id !== panelId || !Array.isArray(panel.tabs)) return false;
       if (panel.pristine !== undefined && typeof panel.pristine !== 'boolean') return false;
@@ -403,40 +392,7 @@ function normalizeLayoutForWorkspace(
   workspaceId: string,
   layout: WorkspacePanelLayout,
 ): WorkspacePanelLayout {
-  const normalized: WorkspacePanelLayout = normalizeTablessPanelLayout(
-    removeForeignWorkspaceTabs(layout, workspaceId),
-  );
-  Object.assign(normalized, migratePanelCanvasWidth(layout.canvasWidth, layout.canvasWidthSource));
-  if (layout.hiddenTabs !== undefined) normalized.hiddenTabs = layout.hiddenTabs;
-  if (layout.deferSpecTab !== undefined) normalized.deferSpecTab = layout.deferSpecTab;
-  if (layout.newWorkspaceLifecycle !== undefined) {
-    normalized.newWorkspaceLifecycle = layout.newWorkspaceLifecycle;
-  }
-  return normalized;
-}
-
-function reconcileRestoredColumnCount(
-  wsId: string,
-  layout: WorkspacePanelLayout,
-  count: PanelColumnCount,
-): WorkspacePanelLayout {
-  const initialized = panelLayoutReducer({ byWorkspaceId: {} }, initializeLayout(wsId, layout))
-    .byWorkspaceId[wsId];
-  const reconciled = panelLayoutReducer(
-    { byWorkspaceId: { [wsId]: initialized } },
-    reconcilePanelColumnCount(wsId, count, undefined, false),
-  ).byWorkspaceId[wsId];
-  return {
-    root: reconciled.root,
-    panels: reconciled.panels,
-    focusedPanelId: reconciled.focusedPanelId,
-    canvasWidth: reconciled.canvasWidth,
-    canvasWidthSource: reconciled.canvasWidthSource,
-    ...(layout.deferSpecTab !== undefined ? { deferSpecTab: layout.deferSpecTab } : {}),
-    ...(layout.newWorkspaceLifecycle !== undefined
-      ? { newWorkspaceLifecycle: layout.newWorkspaceLifecycle }
-      : {}),
-  };
+  return migratePanelLayoutForWorkspace(workspaceId, layout);
 }
 
 function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): SagaGenerator<void> {
@@ -553,18 +509,12 @@ function* handleWorkspaceMountedRestore(
     const stored = yield* call(loadLayoutFromStorage, wsId);
     if (stored === null) {
       yield* put(resetLayout(wsId));
-      yield* put(reconcilePanelColumnCount(wsId, yield* selectPanelColumnCount.effect()));
       yield* put(setRestoreStatus(wsId, 'empty'));
     } else if (stored === 'invalid') {
       yield* put(resetLayout(wsId));
-      yield* put(reconcilePanelColumnCount(wsId, yield* selectPanelColumnCount.effect()));
       yield* put(setRestoreStatus(wsId, 'invalid'));
     } else {
-      const normalized = reconcileRestoredColumnCount(
-        wsId,
-        normalizeLayoutForWorkspace(wsId, stored),
-        yield* selectPanelColumnCount.effect(),
-      );
+      const normalized = normalizeLayoutForWorkspace(wsId, stored);
       yield* put(initializeLayout(wsId, normalized));
       yield* put(setRestoreStatus(wsId, 'restored'));
       // Detached (spawn, not fork): re-resolving tunneled tabs goes over IPC
@@ -633,9 +583,11 @@ function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void>
     const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
     if (workspace === emptyWorkspaceState) return;
     const layout: WorkspacePanelLayout = {
+      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
       root: getPersistableRoot(workspace),
       panels: workspace.panels,
       focusedPanelId: workspace.focusedPanelId,
+      columnCount: workspace.columnCount,
       canvasWidth:
         workspace.expandedPanelId !== null && workspace.savedCanvasWidthBeforeExpand !== undefined
           ? workspace.savedCanvasWidthBeforeExpand
@@ -820,7 +772,6 @@ function* reconcileDeferredSpec(workspaceId: string): SagaGenerator<void> {
   if (!spec) return;
   const generation = specGeneration(spec);
   if (spec.content.trim().length > 0) {
-    yield* put(setPanelColumnCount(2));
     yield* put(revealDeferredSpecTab(workspaceId, generation, m.layout_shared_spec_title()));
   } else if (layout.newWorkspaceLifecycle.spec.generation !== generation) {
     yield* put(observeDeferredSpecGeneration(workspaceId, generation));
@@ -880,7 +831,6 @@ function* handleNewWorkspaceBootstrap(
 ): SagaGenerator<void> {
   const { wsId } = action.payload;
   yield* call(resolvePendingInitialAgent, wsId);
-  yield* put(reconcilePanelColumnCount(wsId, yield* selectPanelColumnCount.effect()));
   restoredWorkspaceIds.add(wsId);
   restoredUnderBackendIds.add(wsId);
   yield* call(persistPanelLayout, action);
@@ -908,15 +858,10 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
     const stored = yield* call(loadLayoutFromStorage, wsId);
     if (stored === null || stored === 'invalid') {
       yield* put(resetLayout(wsId));
-      yield* put(reconcilePanelColumnCount(wsId, yield* selectPanelColumnCount.effect()));
       yield* put(loadLayoutHistory(wsId, [], 0));
       yield* put(setRestoreStatus(wsId, stored === null ? 'empty' : 'invalid'));
     } else {
-      const normalized = reconcileRestoredColumnCount(
-        wsId,
-        normalizeLayoutForWorkspace(wsId, stored),
-        yield* selectPanelColumnCount.effect(),
-      );
+      const normalized = normalizeLayoutForWorkspace(wsId, stored);
       yield* put(initializeLayout(wsId, normalized));
       yield* put(setRestoreStatus(wsId, 'restored'));
       // Mirror the mount path: restored tunneled tabs re-resolve against the
@@ -1031,7 +976,6 @@ export function* panelLayoutSaga(options?: {
     yield* takeEvery(setTabOwnerAgent, persistPanelLayout);
     yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
     yield* takeEvery(openTabInRightmostColumnRequested, routeTabToRightmostColumn);
-    yield* takeEvery(setPanelColumnCount, reconcileAllWorkspaceColumnCounts);
     yield* takeEvery([clearPanelLayout, workspaceDeleted], clearPersistedLayout);
     const historyWatcher = yield* takeEvery(HISTORY_ACTIONS, queueHistorySaveForAction);
     yield* takeLatest(initializeLayout, loadHistoryForWorkspace);

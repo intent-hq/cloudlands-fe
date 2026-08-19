@@ -1,7 +1,9 @@
 <script lang="ts">
   import { m } from '$shared/paraglide/messages.js';
-  import type { PanelColumnCount } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-  import { isPanelColumnCount } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import {
+    isPanelColumnCount,
+    type PanelColumnCount,
+  } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
   import { PANEL_COLUMN_RAIL_WIDTH } from '$shared/panel-layout-sizing';

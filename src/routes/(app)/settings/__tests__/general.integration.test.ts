@@ -18,12 +18,10 @@ import {
   selectUpdateChannel,
   selectNoteFontStyle,
   selectAgentFontStyle,
-  selectPanelColumnCount,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
   setAgentFontStyle,
   setNoteFontStyle,
-  setPanelColumnCount,
   setUpdateChannel,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
@@ -136,7 +134,6 @@ beforeEach(() => {
   appStore.dispatch(setUpdateChannel('stable'));
   appStore.dispatch(setNoteFontStyle('monospace'));
   appStore.dispatch(setAgentFontStyle('monospace'));
-  appStore.dispatch(setPanelColumnCount(1));
   appStore.dispatch(simulateSetState({ status: 'idle' }));
   vi.clearAllMocks();
   (globalThis as typeof globalThis & { __APP_VERSION__: string }).__APP_VERSION__ = '2.0.10';
@@ -168,9 +165,7 @@ describe('Settings migration', () => {
 
     renderAppearance();
     expect(document.querySelector('[data-panel-column-count]')).toBeNull();
-    appStore.dispatch(setPanelColumnCount(3));
-    await waitFor(() => expect(selectPanelColumnCount.select(appStore.state)).toBe(3));
-    expect(recorder.calls).toContainEqual(setPanelColumnCount(3));
+    expect(appStore.state.userPreferences).not.toHaveProperty('panelColumnCount');
     expect(readFileSync('src/lib/components/layout/WindowTitleBar.svelte', 'utf8')).not.toContain(
       'data-titlebar-panel-open-mode',
     );

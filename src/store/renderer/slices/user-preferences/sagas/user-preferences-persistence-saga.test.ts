@@ -37,7 +37,6 @@ import {
   setHasCompletedProviderSetup,
   setLanguagePreference,
   setNoteFontStyle,
-  setPanelColumnCount,
   setShowArchived,
   setShowReasoningBlocks,
   setSpellcheckEnabled,
@@ -146,7 +145,6 @@ describe('userPreferencesPersistenceSaga', () => {
       activityLogPresets: [preset],
       'language-preference': 'de',
       'github-links:defaultAction': 'copy-link',
-      'panel-layout:columnCount': 3,
     };
     mocks.getJSON.mockImplementation((key: string) => stored[key]);
     const dispatch = vi.fn();
@@ -165,7 +163,6 @@ describe('userPreferencesPersistenceSaga', () => {
       [hydrateActivityLogPresets([preset])],
       [setLanguagePreference('de')],
       [setGithubLinkDefaultAction('copy-link')],
-      [setPanelColumnCount(3)],
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([]);
   });
@@ -177,7 +174,6 @@ describe('userPreferencesPersistenceSaga', () => {
       if (key === 'activityLogPresets') return [{ name: 1, filters: null }];
       if (key === 'language-preference') return ' ';
       if (key === 'github-links:defaultAction') return 'launch-missiles';
-      if (key === 'panel-layout:columnCount') return 5;
       return undefined;
     });
     const dispatch = vi.fn();
@@ -200,7 +196,6 @@ describe('userPreferencesPersistenceSaga', () => {
         activityLogPresets: [preset],
         languagePreference: 'de',
         githubLinkDefaultAction: 'start-workspace',
-        panelColumnCount: 3,
       },
     };
     const channel = stdChannel();
@@ -231,7 +226,6 @@ describe('userPreferencesPersistenceSaga', () => {
       deleteActivityLogPreset(0),
       setLanguagePreference('de'),
       setGithubLinkDefaultAction('start-workspace'),
-      setPanelColumnCount(3),
     ];
     for (const action of actions) {
       channel.put(action);
@@ -257,7 +251,6 @@ describe('userPreferencesPersistenceSaga', () => {
       ['activityLogPresets', [preset]],
       ['language-preference', 'de'],
       ['github-links:defaultAction', 'start-workspace'],
-      ['panel-layout:columnCount', 3],
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([['de']]);
     expect(vi.mocked(window.electronAPI.invoke).mock.calls).toEqual([

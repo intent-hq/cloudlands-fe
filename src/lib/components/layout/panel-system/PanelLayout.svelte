@@ -84,6 +84,7 @@
     selectPanelColumnDefaultWidthTiers,
     selectPanelCanvasWidth,
     selectPanelCanvasWidthSource,
+    selectPanelColumnCount,
     selectPendingPanelReveal,
     selectRestoreStatus,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -96,13 +97,10 @@
     panelLayoutScopeUnmounted,
     consumePanelReveal,
     resizePanelLayoutRightEdge,
+    setPanelColumnCount,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { store as appStore } from '$store/renderer/store';
-  import { selectPanelColumnCount } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import {
-    setPanelColumnCount,
-    type PanelColumnCount,
-  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import type { PanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import {
     getAutomaticPanelCanvasWidth,
     getPanelDefaultWidth,
@@ -179,7 +177,7 @@
   const pendingPanelReveal$ = selectPendingPanelReveal(workspaceIdStore);
   const restoreStatus$ = selectRestoreStatus(workspaceIdStore);
   const panelIds$ = selectPanelIds(workspaceIdStore);
-  const panelColumnCount$ = selectPanelColumnCount();
+  const panelColumnCount$ = selectPanelColumnCount(workspaceIdStore);
   const isDragging$ = selectIsDragging();
   // Keep the root renderer on the split branch when the first adjacent panel
   // opens. The existing panel then retains its keyed component instance while
@@ -911,7 +909,7 @@
   }
 
   function handlePanelColumnCountChange(count: PanelColumnCount) {
-    appStore.dispatch(setPanelColumnCount(count));
+    appStore.dispatch(setPanelColumnCount(workspaceId, count));
   }
 
   /**

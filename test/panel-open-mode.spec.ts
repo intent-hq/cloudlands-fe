@@ -47,8 +47,6 @@ test('walks fixed column counts from one through four and recovers removed conte
   await page.goto(`${baseUrl}src/app.html`);
   const result = await page.evaluate(async () => {
     const layout = await import('/src/store/renderer/slices/panel-layout/panel-layout-slice.ts');
-    const preferences =
-      await import('/src/store/renderer/slices/user-preferences/user-preferences-slice.ts');
     let state = {
       byWorkspaceId: {
         ws: {
@@ -98,13 +96,9 @@ test('walks fixed column counts from one through four and recovers removed conte
       );
       counts.push(panelIds().length);
     }
-    const preference = preferences.userPreferencesReducer(
-      preferences.initialState,
-      preferences.setPanelColumnCount(4),
-    );
     return {
       counts,
-      preference: preference.panelColumnCount,
+      selectedCount: state.byWorkspaceId.ws.columnCount,
       panelIds: panelIds(),
       tabs: state.byWorkspaceId.ws.panels.p1.tabs.map((tab) => tab.id),
       activeTabId: state.byWorkspaceId.ws.panels.p1.activeTabId,
@@ -113,7 +107,7 @@ test('walks fixed column counts from one through four and recovers removed conte
 
   expect(result).toEqual({
     counts: [1, 2, 3, 4, 3, 2, 1],
-    preference: 4,
+    selectedCount: 1,
     panelIds: ['p1'],
     tabs: ['tab-1', 'tab-2', 'tab-3', 'tab-4'],
     activeTabId: 'tab-1',

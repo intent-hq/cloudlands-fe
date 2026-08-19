@@ -11,7 +11,6 @@ import {
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setNotificationEnabled,
-  setPanelColumnCount,
   setNoteFontStyle,
   setLanguagePreference,
   setShowArchived,
@@ -50,7 +49,6 @@ import {
   selectNoteFontStyleLabel,
   selectNotificationEnabled,
   selectNotificationVolume,
-  selectPanelColumnCount,
   selectShowArchived,
   selectShowReasoningBlocks,
   selectSoundEnabled,
@@ -112,23 +110,6 @@ describe('userPreferencesReducer', () => {
         toggleSpellcheck(),
       );
       expect(state.spellcheckEnabled).toBe(false);
-    });
-  });
-
-  describe('panel column count', () => {
-    it('defaults to one and accepts counts from one through four', () => {
-      expect(initialState.panelColumnCount).toBe(1);
-      expect(userPreferencesReducer(initialState, setPanelColumnCount(4)).panelColumnCount).toBe(4);
-    });
-
-    it('rejects invalid persisted or dispatched counts', () => {
-      expect(userPreferencesReducer(initialState, setPanelColumnCount(0))).toBe(initialState);
-      expect(userPreferencesReducer(initialState, setPanelColumnCount(5))).toBe(initialState);
-      expect(userPreferencesReducer(initialState, setPanelColumnCount(2.5))).toBe(initialState);
-    });
-
-    it('selects one for legacy state without the preference', () => {
-      expect(selectPanelColumnCount.select({ userPreferences: undefined } as any)).toBe(1);
     });
   });
 

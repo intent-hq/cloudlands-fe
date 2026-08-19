@@ -17,7 +17,6 @@ import {
   selectHasCompletedProviderSetup,
   selectLanguagePreference,
   selectNoteFontStyle,
-  selectPanelColumnCount,
   selectShowArchived,
   selectShowReasoningBlocks,
   selectSpellcheckEnabled,
@@ -35,8 +34,6 @@ import {
   setHasCompletedProviderSetup,
   setLanguagePreference,
   setNoteFontStyle,
-  isPanelColumnCount,
-  setPanelColumnCount,
   setShowArchived,
   setShowReasoningBlocks,
   setSpellcheckEnabled,
@@ -61,7 +58,6 @@ const CODE_STORAGE_KEY = 'code-font-settings';
 const ACTIVITY_LOG_PRESETS_STORAGE_KEY = 'activityLogPresets';
 const LANGUAGE_PREFERENCE_STORAGE_KEY = 'language-preference';
 const GITHUB_LINK_DEFAULT_ACTION_STORAGE_KEY = 'github-links:defaultAction';
-const PANEL_COLUMN_COUNT_STORAGE_KEY = 'panel-layout:columnCount';
 
 type ListSystemFontsResponse = {
   success?: boolean;
@@ -160,11 +156,6 @@ export function* hydrateUserPreferencesWorker() {
   if (isGithubLinkDefaultAction(githubLinkDefaultAction)) {
     yield* put(setGithubLinkDefaultAction(githubLinkDefaultAction));
   }
-
-  const panelColumnCount = yield* getLocalStorageJSON<unknown>(PANEL_COLUMN_COUNT_STORAGE_KEY);
-  if (isPanelColumnCount(panelColumnCount)) {
-    yield* put(setPanelColumnCount(panelColumnCount));
-  }
 }
 
 function* persistSpellcheckWorker() {
@@ -243,13 +234,6 @@ function* persistGithubLinkDefaultActionWorker() {
   );
 }
 
-export function* persistPanelColumnCountWorker() {
-  yield* setLocalStorageJSON(
-    PANEL_COLUMN_COUNT_STORAGE_KEY,
-    yield* selectPanelColumnCount.effect(),
-  );
-}
-
 function* watchUserPreferenceWrites() {
   yield* takeEvery([setSpellcheckEnabled, toggleSpellcheck], persistSpellcheckWorker);
   yield* takeEvery([setShowArchived, toggleShowArchived], persistShowArchivedWorker);
@@ -271,7 +255,6 @@ function* watchUserPreferenceWrites() {
   );
   yield* takeEvery(setLanguagePreference, persistLanguagePreferenceWorker);
   yield* takeEvery(setGithubLinkDefaultAction, persistGithubLinkDefaultActionWorker);
-  yield* takeEvery(setPanelColumnCount, persistPanelColumnCountWorker);
 }
 
 /** Unregistered until the S20 middleware cutover. */

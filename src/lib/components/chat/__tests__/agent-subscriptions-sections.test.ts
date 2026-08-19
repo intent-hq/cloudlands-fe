@@ -103,9 +103,9 @@ import { panelLayoutSaga } from '$store/renderer/slices/panel-layout/sagas/panel
 import {
   clearPanelLayout,
   initializeLayout,
+  setPanelColumnCount,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-import { setPanelColumnCount } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import AgentSubscriptions from '../AgentSubscriptions.svelte';
 import {
   SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
@@ -284,7 +284,6 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     backendRequestSpy.mockResolvedValue(snapshot());
     navigateToRouteSpy.mockClear();
     sessionState.byId.clear();
-    appStore.dispatch(setPanelColumnCount(2));
     resetAgentSubscriptionsViewStateForTests();
   });
 
@@ -759,6 +758,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       },
       'parent',
     );
+    appStore.dispatch(setPanelColumnCount(wsId, 2));
     await expandWaitingAgents();
 
     await fireEvent.click(within(agentRow('agent-new')).getAllByRole('button')[0]);

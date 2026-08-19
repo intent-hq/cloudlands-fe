@@ -69,6 +69,7 @@
   data-initial-agent-state
   data-agent-count={agentPanels.length}
   data-agent-panel-id={agentPanel?.id ?? ''}
+  data-agent-panel-has-pin={String(agentPanel ? 'pinned' in agentPanel : false)}
   data-focused-panel-id={layout.focusedPanelId ?? ''}
   data-reusable-panel-id={reusablePanel?.id ?? ''}
   data-panel-order={order.join(',')}

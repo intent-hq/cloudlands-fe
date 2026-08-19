@@ -46,6 +46,7 @@ import {
   revealDeferredSpecTab,
   resetLayout,
   reconcilePanelColumnCount,
+  setPanelColumnCount,
   goBack,
   goForward,
   setPanelPinned,
@@ -1544,6 +1545,22 @@ describe('panelLayoutReducer', () => {
         pristine: true,
       });
       expect(result.panels.p1.tabs).toEqual([expect.objectContaining({ id: 'one' })]);
+    });
+
+    it('sets a valid count only for the target workspace', () => {
+      const state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
+      state.byWorkspaceId.other = {
+        ...emptyWorkspaceState,
+        root: { type: 'panel', panelId: 'other-panel' },
+        panels: { 'other-panel': { id: 'other-panel', tabs: [], activeTabId: null } },
+        focusedPanelId: 'other-panel',
+      };
+
+      const result = panelLayoutReducer(state, setPanelColumnCount(WS, 2, 10));
+
+      expect(result.byWorkspaceId[WS].columnCount).toBe(2);
+      expect(result.byWorkspaceId.other.columnCount).toBe(1);
+      expect(panelLayoutReducer(result, setPanelColumnCount(WS, 5, 11))).toBe(result);
     });
 
     it('walks counts one through four and recovers removed content in surviving history', () => {

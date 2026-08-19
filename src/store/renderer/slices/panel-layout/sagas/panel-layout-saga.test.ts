@@ -88,6 +88,7 @@ import {
   selectNextTab,
   selectPreviousTab,
   setActiveTab,
+  setPanelColumnCount,
   setDeferSpecTab,
   setRestoreStatus,
   splitPanel,
@@ -102,7 +103,6 @@ import {
 import { panelLayoutReducer } from '../panel-layout-slice';
 import {
   initialState as userPreferencesInitialState,
-  setPanelColumnCount,
   userPreferencesReducer,
 } from '../../user-preferences/user-preferences-slice';
 import { setAgents } from '../../workspace-agents/workspace-agents-slice';
@@ -114,6 +114,7 @@ import {
 } from '../../workspace-notes/workspace-notes-slice';
 import {
   HISTORY_PERSIST_DEBOUNCE_MS,
+  PANEL_LAYOUT_PERSISTENCE_VERSION,
   PANEL_LAYOUT_STORAGE_KEY_PREFIX,
   type LayoutSnapshot,
   type WorkspacePanelLayout,
@@ -134,11 +135,13 @@ const NOW = new Date('2026-07-31T00:00:00.000Z');
 
 const tab = { id: 'tab-1', type: 'note' as const, title: 'Note', closable: true, noteId: 'note-1' };
 const layout: WorkspacePanelLayout = {
+  version: PANEL_LAYOUT_PERSISTENCE_VERSION,
   root: { type: 'panel', panelId: 'panel-1' },
   panels: { 'panel-1': { id: 'panel-1', tabs: [tab], activeTabId: tab.id } },
   focusedPanelId: 'panel-1',
   canvasWidth: null,
   canvasWidthSource: null,
+  columnCount: 1,
 };
 const snapshot: LayoutSnapshot = { ...layout, timestamp: 10 };
 
@@ -421,7 +424,7 @@ describe('panelLayoutSaga', () => {
         ...layout,
         root: { type: 'split', direction: 'horizontal', children: [layout.root], sizes: [] },
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('reveals first canonical Spec write once and does not activate a background workspace', async () => {
@@ -461,7 +464,7 @@ describe('panelLayoutSaga', () => {
       .filter((candidate: any) => candidate.type === 'note' && candidate.noteId === 'spec');
     expect(specTabs).toHaveLength(1);
     expect(workspace.newWorkspaceLifecycle.spec.state).toBe('revealed');
-    expect(getState().userPreferences.panelColumnCount).toBe(2);
+    expect(workspace.columnCount).toBe(2);
     const order = workspace.root.type === 'split' ? workspace.root.children : [];
     expect(order).toHaveLength(2);
     expect(
@@ -486,10 +489,8 @@ describe('panelLayoutSaga', () => {
   });
 
   it('reconciles the configured count before opening ordinary content on the right', async () => {
-    const state: any = {
-      ...storeState(),
-      userPreferences: { ...userPreferencesInitialState, panelColumnCount: 3 },
-    };
+    const state: any = storeState();
+    state.panelLayout.byWorkspaceId[WS_1].columnCount = 3;
     const { channel, dispatch, task } = startSaga(state);
     const action = openTabInRightmostColumnRequested(
       WS_1,
@@ -727,8 +728,9 @@ describe('panelLayoutSaga', () => {
     const restored = dispatch.mock.calls.find(
       ([action]) => action.type === initializeLayout.type,
     )?.[0].payload.layout;
-    expect(Object.keys(restored.panels)).toEqual(['panel-1']);
+    expect(Object.keys(restored.panels)).toEqual(['panel-1', 'panel-2']);
     expect(restored.panels['panel-1']).not.toHaveProperty('pinned');
+    expect(restored.panels['panel-2']).not.toHaveProperty('pinned');
     await cancelSaga(task);
   });
 
@@ -777,11 +779,9 @@ describe('panelLayoutSaga', () => {
     expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
       setRestoreStatus.type,
       resetLayout.type,
-      reconcilePanelColumnCount.type,
       setRestoreStatus.type,
       setRestoreStatus.type,
       resetLayout.type,
-      reconcilePanelColumnCount.type,
       setRestoreStatus.type,
     ]);
     expect(
@@ -909,7 +909,8 @@ describe('panelLayoutSaga', () => {
       const run = startRestoreSaga(layout, [recent]);
       await settle();
 
-      expect(run.getState().panelLayout.byWorkspaceId[WS_1]).toMatchObject(layout);
+      const { version: _version, ...restoredLayout } = layout;
+      expect(run.getState().panelLayout.byWorkspaceId[WS_1]).toMatchObject(restoredLayout);
       expect(
         run.dispatch.mock.calls.some(([action]) => action.type === openTabInAdjacentOrSplit.type),
       ).toBe(false);
@@ -1244,26 +1245,20 @@ describe('panelLayoutSaga', () => {
     },
   );
 
-  it('reconciles every workspace when the global column count changes', async () => {
-    const state = {
-      ...storeState(),
-      userPreferences: { panelColumnCount: 3 },
-    };
+  it('does not reconcile other workspaces when one workspace changes its column count', async () => {
+    const state = storeState();
     const { channel, dispatch, task } = startSaga(state);
     await settle();
     dispatch.mockClear();
 
-    channel.put(setPanelColumnCount(3));
+    channel.put(setPanelColumnCount(WS_1, 3));
     await settle();
 
     expect(
       dispatch.mock.calls
         .map(([action]) => action)
         .filter((action) => action.type === reconcilePanelColumnCount.type),
-    ).toEqual([
-      expect.objectContaining({ payload: expect.objectContaining({ wsId: WS_1, count: 3 }) }),
-      expect.objectContaining({ payload: expect.objectContaining({ wsId: WS_2, count: 3 }) }),
-    ]);
+    ).toEqual([]);
     await cancelSaga(task);
   });
 
@@ -1870,18 +1865,13 @@ describe('panelLayoutSaga', () => {
       expect(dispatched.map((action) => action.type)).toEqual([
         setRestoreStatus.type,
         resetLayout.type,
-        reconcilePanelColumnCount.type,
         loadLayoutHistory.type,
         setRestoreStatus.type,
       ]);
       expect(dispatched[0]).toEqual(setRestoreStatus(WS_1, 'pending'));
       expect(dispatched[1].payload.wsId).toBe(WS_1);
-      expect(dispatched[2]).toMatchObject({
-        type: reconcilePanelColumnCount.type,
-        payload: { wsId: WS_1, count: 1 },
-      });
-      expect(dispatched[3]).toEqual(loadLayoutHistory(WS_1, [], 0));
-      expect(dispatched[4]).toEqual(setRestoreStatus(WS_1, 'empty'));
+      expect(dispatched[2]).toEqual(loadLayoutHistory(WS_1, [], 0));
+      expect(dispatched[3]).toEqual(setRestoreStatus(WS_1, 'empty'));
       await cancelSaga(task);
     });
 
@@ -2036,7 +2026,7 @@ describe('panelLayoutSaga', () => {
         'tab-1',
         'tab-2',
       ]);
-      expect(normalized.panels['panel-1'].activeTabId).toBe('tab-1');
+      expect(normalized.panels['panel-1'].activeTabId).toBe('tab-2');
       expect(normalized.focusedPanelId).toBe('panel-1');
       await cancelSaga(task);
     });

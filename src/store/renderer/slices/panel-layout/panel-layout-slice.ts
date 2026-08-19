@@ -33,8 +33,14 @@ import type {
   RecentlyClosedTab,
   PanelDragLayoutSnapshot,
   PanelRevealRequest,
+  PanelColumnCount,
 } from './panel-layout-types';
-import { MAX_RECENTLY_CLOSED, MAX_LAYOUT_HISTORY, MAX_FOCUS_HISTORY } from './panel-layout-types';
+import {
+  MAX_RECENTLY_CLOSED,
+  MAX_LAYOUT_HISTORY,
+  MAX_FOCUS_HISTORY,
+  isPanelColumnCount,
+} from './panel-layout-types';
 import {
   getDominantPanelCanvasWidth,
   getDominantSplitGeometry,
@@ -69,7 +75,6 @@ import {
   resolveUserPanelCanvasResize,
 } from './panel-layout-width-provenance';
 import { findEquivalentPanelTab, type EquivalentPanelTab } from './panel-tab-identity';
-import type { PanelColumnCount } from '../user-preferences/user-preferences-slice';
 import { rebaseRequestedUrlForNavigation } from './browser-tab-rehydration';
 
 // ============================================================================
@@ -92,7 +97,7 @@ function generateTabId(): string {
 
 export function createDefaultLayout(): Pick<
   WorkspacePanelLayoutState,
-  'root' | 'panels' | 'focusedPanelId' | 'canvasWidth' | 'canvasWidthSource'
+  'root' | 'panels' | 'focusedPanelId' | 'canvasWidth' | 'canvasWidthSource' | 'columnCount'
 > {
   const panelId = generatePanelId();
   return {
@@ -103,6 +108,7 @@ export function createDefaultLayout(): Pick<
     focusedPanelId: panelId,
     canvasWidth: null,
     canvasWidthSource: null,
+    columnCount: 1,
   };
 }
 
@@ -113,6 +119,7 @@ export const emptyWorkspaceState: WorkspacePanelLayoutState = {
   canvasWidth: null,
   canvasWidthSource: null,
   hiddenTabs: createCollection('id'),
+  columnCount: 1,
   restoreStatus: 'idle',
   pendingFocusTabId: null,
   pendingPanelReveal: null,
@@ -146,6 +153,7 @@ export const initializeLayout = createAction(
       canvasWidth?: number | null;
       canvasWidthSource?: WorkspacePanelLayoutState['canvasWidthSource'];
       hiddenTabs?: PanelTab[];
+      columnCount?: PanelColumnCount;
       deferSpecTab?: boolean;
       newWorkspaceLifecycle?: WorkspacePanelLayoutState['newWorkspaceLifecycle'];
     },
@@ -550,6 +558,16 @@ export const reconcilePanelColumnCount = createAction(
   }),
 );
 
+export const setPanelColumnCount = createAction(
+  'panelLayout/setPanelColumnCount',
+  (wsId: string, count: number, timestamp?: number) => ({
+    wsId,
+    count,
+    newPanelIds: Array.from({ length: 3 }, () => generatePanelId()),
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
 export const movePanel = createAction(
   'panelLayout/movePanel',
   (
@@ -912,18 +930,18 @@ function reconcileWorkspacePanelColumns(
 ): WorkspacePanelLayoutState {
   const restored = restoreExpandedWorkspaceLayout(workspace);
   const originalOrder = getPanelOrder(restored.root).filter((panelId) => restored.panels[panelId]);
-  if (originalOrder.length === 0) return restored;
+  if (originalOrder.length === 0) return { ...restored, columnCount: count };
   const hasLegacyPin = Object.values(restored.panels).some((panel) => 'pinned' in panel);
   if (
     originalOrder.length === count &&
     isFixedColumnRoot(restored.root, originalOrder) &&
     !hasLegacyPin
   ) {
-    return restored;
+    return restored.columnCount === count ? restored : { ...restored, columnCount: count };
   }
 
   const next = recordHistory ? saveToHistory(restored, timestamp) : restored;
-  let panels = Object.fromEntries(
+  const panels = Object.fromEntries(
     Object.entries(next.panels).map(([panelId, panel]) => [panelId, stripLegacyPanelPin(panel)]),
   );
   const panelIds = originalOrder.slice(0, count);
@@ -987,6 +1005,7 @@ function reconcileWorkspacePanelColumns(
     focusedPanelId,
     canvasWidth,
     canvasWidthSource: next.canvasWidthSource === 'intrinsic' ? null : next.canvasWidthSource,
+    columnCount: count,
     recentlyClosed: next.recentlyClosed.map((entry) =>
       removedSet.has(entry.panelId) && survivingRightmostId
         ? { ...entry, panelId: survivingRightmostId }
@@ -1063,6 +1082,7 @@ function saveToHistory(
     focusedPanelId: ws.focusedPanelId,
     canvasWidth: ws.canvasWidth,
     canvasWidthSource: ws.canvasWidthSource,
+    columnCount: ws.columnCount,
     timestamp,
   };
   layoutHistory.push(snapshot);
@@ -1396,6 +1416,9 @@ panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
     focusedPanelId: layout.focusedPanelId,
     ...canvasWidthState,
     hiddenTabs: createCollection('id', layout.hiddenTabs ?? []),
+    columnCount: isPanelColumnCount(layout.columnCount)
+      ? layout.columnCount
+      : (Math.min(4, Math.max(1, countHorizontalPanelColumns(layout.root))) as PanelColumnCount),
     deferSpecTab: layout.deferSpecTab ?? false,
     newWorkspaceLifecycle: layout.newWorkspaceLifecycle ?? null,
     pendingFocusTabId: null,
@@ -2537,6 +2560,16 @@ panelLayoutReducer.with(reconcilePanelColumnCount, (state, { payload }) => {
   );
   return setWorkspaceState(state, wsId, reconciled);
 });
+panelLayoutReducer.with(setPanelColumnCount, (state, { payload }) => {
+  const { wsId, count, newPanelIds, timestamp } = payload;
+  if (!isPanelColumnCount(count)) return state;
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(
+    state,
+    wsId,
+    reconcileWorkspacePanelColumns(ws, count, newPanelIds, timestamp, true),
+  );
+});
 // --- Update Sizes ---
 panelLayoutReducer.with(movePanel, (state, { payload }) => {
   const { wsId, panelId, targetPanelId, position, timestamp } = payload;
@@ -2771,6 +2804,7 @@ panelLayoutReducer.with(goBack, (state, { payload: { wsId, timestamp } }) => {
       focusedPanelId: ws.focusedPanelId,
       canvasWidth: ws.canvasWidth,
       canvasWidthSource: ws.canvasWidthSource,
+      columnCount: ws.columnCount,
       timestamp,
     });
   }
@@ -2797,6 +2831,7 @@ panelLayoutReducer.with(goBack, (state, { payload: { wsId, timestamp } }) => {
     // duplicate live in hiddenTabs, and owned tabs the snapshot displaces
     // from a panel are re-hidden, not destroyed (monorepo#2857).
     hiddenTabs: reconcileHiddenTabsWithRestoredPanels(ws, panels),
+    columnCount: snapshot.columnCount ?? ws.columnCount,
     layoutHistory,
     historyIndex,
   });
@@ -2824,6 +2859,7 @@ panelLayoutReducer.with(goForward, (state, { payload: [wsId] }) => {
     focusedPanelId: snapshot.focusedPanelId,
     ...canvasWidthState,
     hiddenTabs: reconcileHiddenTabsWithRestoredPanels(ws, panels),
+    columnCount: snapshot.columnCount ?? ws.columnCount,
     historyIndex,
   });
 });

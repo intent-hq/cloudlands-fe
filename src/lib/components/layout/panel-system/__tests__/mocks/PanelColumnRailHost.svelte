@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { Button } from '$lib/components/ui/button';
-  import type { PanelColumnCount } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import type { PanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import PanelColumnRail from '../../PanelColumnRail.svelte';
 
   let {
