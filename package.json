@@ -221,6 +221,7 @@
     "eslint-plugin-unused-imports": "^4.4.1",
     "glob": "^13.0.6",
     "jsdom": "^30.0.1",
+    "knip": "^6.32.2",
     "node-gyp": "^13.0.1",
     "playwright": "^1.62.1",
     "postcss": "^8.5.26",
