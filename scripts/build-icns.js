@@ -49,7 +49,7 @@ async function devPngBuffer(size) {
   return sharp(DEV_SOURCE_PATH).resize(size, size).png().toBuffer();
 }
 
-async function validateSources() {
+async function validateReleaseSources() {
   for (const size of SOURCE_SIZES) {
     const source = sourcePath(size);
     const metadata = await sharp(source).metadata();
@@ -57,10 +57,27 @@ async function validateSources() {
       throw new Error(`${source} must be a ${size}x${size} PNG`);
     }
   }
+}
 
+async function validateDevSource() {
   const devMetadata = await sharp(DEV_SOURCE_PATH).metadata();
-  if (devMetadata.format !== 'png' || devMetadata.width !== 276 || devMetadata.height !== 276) {
-    throw new Error(`${DEV_SOURCE_PATH} must be a 276x276 PNG`);
+  if (devMetadata.format !== 'png' || devMetadata.width !== 864 || devMetadata.height !== 864) {
+    throw new Error(`${DEV_SOURCE_PATH} must be an 864x864 PNG`);
+  }
+
+  const { data, info } = await sharp(DEV_SOURCE_PATH)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const alphaAt = (x, y) => data[(y * info.width + x) * info.channels + 3];
+  const edges = [
+    Array.from({ length: info.width }, (_, x) => alphaAt(x, 0)),
+    Array.from({ length: info.width }, (_, x) => alphaAt(x, info.height - 1)),
+    Array.from({ length: info.height }, (_, y) => alphaAt(0, y)),
+    Array.from({ length: info.height }, (_, y) => alphaAt(info.width - 1, y)),
+  ];
+  if (edges.some((edge) => edge.every((alpha) => alpha === 0))) {
+    throw new Error(`${DEV_SOURCE_PATH} must not have a fully transparent outer row or column`);
   }
 }
 
@@ -101,18 +118,35 @@ async function buildIco(pngBuffer, destination) {
   fs.writeFileSync(destination, Buffer.concat([header, ...images]));
 }
 
+async function buildDevelopmentIcons() {
+  await buildIcns(devPngBuffer, DEV_ICONSET_DIR, path.join(ICONS_DIR, 'dev-icon.icns'));
+  await buildIco(devPngBuffer, path.join(ICONS_DIR, 'dev-icon.ico'));
+  fs.writeFileSync(path.join(ICONS_DIR, 'dev-icon.png'), await devPngBuffer(512));
+}
+
 async function main() {
+  const args = process.argv.slice(2);
+  const unknownArgs = args.filter((arg) => arg !== '--dev-only');
+  if (unknownArgs.length > 0) throw new Error(`Unknown argument: ${unknownArgs[0]}`);
+
+  if (args.includes('--dev-only')) {
+    console.log('Building development app icons...');
+    await validateDevSource();
+    await buildDevelopmentIcons();
+    console.log('Created dev-icon PNG/ICO/ICNS assets');
+    return;
+  }
+
   console.log('Building release and development app icons...');
-  await validateSources();
+  await validateReleaseSources();
+  await validateDevSource();
 
   await buildIcns(releasePngBuffer, ICONSET_DIR, path.join(ICONS_DIR, 'icon.icns'));
   await buildIco(releasePngBuffer, path.join(ICONS_DIR, 'icon.ico'));
   fs.copyFileSync(sourcePath(512), path.join(ICONS_DIR, 'icon.png'));
   fs.copyFileSync(sourcePath(128), FAVICON_PATH);
 
-  await buildIcns(devPngBuffer, DEV_ICONSET_DIR, path.join(ICONS_DIR, 'dev-icon.icns'));
-  await buildIco(devPngBuffer, path.join(ICONS_DIR, 'dev-icon.ico'));
-  fs.writeFileSync(path.join(ICONS_DIR, 'dev-icon.png'), await devPngBuffer(512));
+  await buildDevelopmentIcons();
   console.log('Created release icons, favicon.png, and dev-icon PNG/ICO/ICNS assets');
 }
 
