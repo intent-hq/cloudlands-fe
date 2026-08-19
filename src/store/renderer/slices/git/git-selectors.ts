@@ -5,11 +5,13 @@
  */
 
 import { store } from "../../store";
+import type { AppSelector } from "../../types";
 import {
   defaultGitOperationFlags,
   getGitWorkspaceState,
 } from "./git-slice";
-import type { PostMergeState } from "./git-types";
+import type { GitOperationFlags, PostMergeState } from "./git-types";
+import type { GitStatus } from "$shared/types";
 
 const defaultPostMergeState: PostMergeState = {
   aheadOfTrunk: null,
@@ -24,28 +26,33 @@ const defaultPostMergeState: PostMergeState = {
 
 // ── Raw state selectors ──
 
-export const selectGitStatus = store.createSelector(
-  (state, wsId: string) => getGitWorkspaceState(state.git, wsId).status
-);
+export const selectGitStatus: AppSelector<GitStatus | null, [wsId: string]> =
+  store.createSelector(
+    (state, wsId: string) => getGitWorkspaceState(state.git, wsId).status
+  );
 
-export const selectGitAhead = store.createSelector(
-  (state, wsId: string) => getGitWorkspaceState(state.git, wsId).ahead
-);
+export const selectGitAhead: AppSelector<number, [wsId: string]> =
+  store.createSelector(
+    (state, wsId: string) => getGitWorkspaceState(state.git, wsId).ahead
+  );
 
-export const selectGitBehind = store.createSelector(
-  (state, wsId: string) => getGitWorkspaceState(state.git, wsId).behind
-);
+export const selectGitBehind: AppSelector<number, [wsId: string]> =
+  store.createSelector(
+    (state, wsId: string) => getGitWorkspaceState(state.git, wsId).behind
+  );
 
 // ── Sidebar post-merge / git operation flag selectors (moved from transient-ui) ──
 
-export const selectPostMergeState = store.createSelector(
-  (state, wsId: string): PostMergeState =>
-    getGitWorkspaceState(state.git, wsId).postMergeState ?? defaultPostMergeState
-);
+export const selectPostMergeState: AppSelector<PostMergeState, [wsId: string]> =
+  store.createSelector(
+    (state, wsId: string): PostMergeState =>
+      getGitWorkspaceState(state.git, wsId).postMergeState ?? defaultPostMergeState
+  );
 
-export const selectGitOperationFlags = store.createSelector(
-  (state, wsId: string) => {
-    const ws = getGitWorkspaceState(state.git, wsId);
-    return ws.gitOperations ?? defaultGitOperationFlags;
-  }
-);
+export const selectGitOperationFlags: AppSelector<GitOperationFlags, [wsId: string]> =
+  store.createSelector(
+    (state, wsId: string) => {
+      const ws = getGitWorkspaceState(state.git, wsId);
+      return ws.gitOperations ?? defaultGitOperationFlags;
+    }
+  );

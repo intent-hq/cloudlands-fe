@@ -1,5 +1,9 @@
 {
   "compilerOptions": {
+    // moduleResolution=node10 is deprecated in TS 6.0 (TS5107), but preload
+    // must emit CommonJS while package.json is "type": "module", so the
+    // node16/nodenext migration is deferred.
+    "ignoreDeprecations": "6.0",
     "target": "ES2022",
     "module": "commonjs",
     "lib": ["ES2022", "DOM"],
@@ -18,12 +22,11 @@
     "declarationMap": true,
     "typeRoots": ["./node_modules/@types"],
     "types": ["node"],
-    "baseUrl": ".",
     "paths": {
-      "$lib/*": ["src/lib/*"],
-      "$store/*": ["src/store/*"],
-      "$shared/*": ["src/shared/*"],
-      "$features/*": ["src/features/*"]
+      "$lib/*": ["./src/lib/*"],
+      "$store/*": ["./src/store/*"],
+      "$shared/*": ["./src/shared/*"],
+      "$features/*": ["./src/features/*"]
     }
   },
   "include": ["src/preload/**/*.ts"],
