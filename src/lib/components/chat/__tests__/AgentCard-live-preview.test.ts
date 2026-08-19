@@ -6,10 +6,11 @@
  *
  * Renders the REAL component against the REAL configured store and asserts
  * the preview line's source precedence:
- *   1. the viewed-agent chat.subscribe streaming buffer (character-level),
- *   2. the session's push-applied `lastAgentResponse` while responding,
- *   3. the wire `lastAgentResponse` (AgentLite, PROTOCOL §5.5) otherwise —
- *      the loaded transcript is never consulted to re-derive previews.
+ *   1. the session's push-applied `lastAgentResponse` while responding
+ *      (refreshed ~1s by `agent:stream:activity`; server-cleaned),
+ *   2. the wire `lastAgentResponse` (AgentLite, PROTOCOL §5.5) otherwise —
+ *      stream buffers and the loaded transcript are never consulted to
+ *      re-derive previews (monorepo#2843).
  */
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
@@ -106,20 +107,29 @@ describe('AgentCard live preview precedence', () => {
     expect(header?.contains(timestamp)).toBe(true);
   });
 
-  it('lets the viewed-agent chat.subscribe streaming buffer win over lastAgentResponse', async () => {
-    // Viewed agent: the standing chat.subscribe stream grows a live
-    // (isStreaming) assistant message — that buffer stays authoritative.
+  it('serves the pushed wire preview over a streaming buffer ending in suggested prompts', async () => {
+    // Regression (monorepo#2843): the viewed-agent chat.subscribe buffer is
+    // never consulted — a buffer ending in a multi-line suggested-prompts
+    // block must never surface a prompt line; the server-cleaned pushed
+    // lastAgentResponse is the sole live source.
     seedSession({
       isStreaming: true,
-      messages: [assistantMessage('character-level buffer text', { isStreaming: true })],
+      messages: [
+        assistantMessage(
+          'The prose answer.\n<!-- suggested-prompts\n- Try the first prompt\n- Try the second prompt\n-->',
+          { isStreaming: true },
+        ),
+      ],
     });
-    appStore.dispatch(updateSession(agentId, { lastAgentResponse: 'coarser activity preview' }));
+    appStore.dispatch(streamActivityReceived(agentId, true));
+    appStore.dispatch(updateSession(agentId, { lastAgentResponse: 'The prose answer.' }));
 
     render(AgentCard, { props: { agentId } });
 
     const preview = await screen.findByTestId('agent-card-preview');
-    expect(preview.textContent).toContain('character-level buffer text');
-    expect(preview.textContent).not.toContain('coarser activity preview');
+    expect(preview.textContent).toContain('The prose answer.');
+    expect(preview.textContent).not.toContain('Try the first prompt');
+    expect(preview.textContent).not.toContain('Try the second prompt');
   });
 
   it('serves the wire lastAgentResponse verbatim when the agent is not responding', async () => {
@@ -180,17 +190,23 @@ describe('AgentCard live tool preview (tool-only stretches)', () => {
     await waitFor(() => expect(preview.textContent?.toLowerCase()).toContain('read'));
   });
 
-  it('lets live streamed text outrank the live tool label', async () => {
+  it('lets push-applied live text outrank the live tool label', async () => {
     seedSession({
       isStreaming: true,
-      messages: [assistantMessage('character-level buffer text', { isStreaming: true })],
+      messages: [],
     });
-    appStore.dispatch(updateSession(agentId, { lastToolUse: { name: 'read_file' } }));
+    appStore.dispatch(streamActivityReceived(agentId, true));
+    appStore.dispatch(
+      updateSession(agentId, {
+        lastAgentResponse: 'push-applied live text',
+        lastToolUse: { name: 'read_file' },
+      }),
+    );
 
     render(AgentCard, { props: { agentId } });
 
     const preview = await screen.findByTestId('agent-card-preview');
-    expect(preview.textContent).toContain('character-level buffer text');
+    expect(preview.textContent).toContain('push-applied live text');
   });
 
   it('outranks the previous-turn digest while responding', async () => {

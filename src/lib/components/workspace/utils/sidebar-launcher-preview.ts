@@ -1,11 +1,7 @@
 import type { AgentSession, Note } from '$shared/types';
 import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
 import { stripInternalDeliveryNotes } from '$lib/utils/user-message-presentation';
-import {
-  stripGroupTags,
-  stripMarkdownFormatting,
-  stripUserMessagePrefixes,
-} from '$lib/utils/text-utils';
+import { stripMarkdownFormatting, stripUserMessagePrefixes } from '$lib/utils/text-utils';
 
 export interface AgentLauncherPreview {
   lastUserMessage: string;
@@ -185,21 +181,24 @@ export function compareAgentsByLastMessage(a: AgentSession, b: AgentSession): nu
   );
 }
 
-export function getAgentLauncherPreview(
-  agent: AgentSession,
-  streamingContent = '',
-): AgentLauncherPreview {
+export function getAgentLauncherPreview(agent: AgentSession): AgentLauncherPreview {
+  // The response preview is the wire `lastAgentResponse` (served via
+  // getAgentPeekData; push-applied ~1s by `agent:stream:activity` while
+  // streaming) — no client-side stream-buffer re-derivation (monorepo#2843).
   const peek = getAgentPeekData(agent);
   const lastUserMessage = stripUserMessagePrefixes(
     stripInternalDeliveryNotes(peek?.lastUserMessage ?? ''),
   )
     .replace(/\s+/g, ' ')
     .trim();
-  const liveResponse = stripGroupTags(streamingContent).trim();
 
   return {
     lastUserMessage,
-    response: liveResponse || peek?.lastResponse?.trim() || '',
+    // getAgentPeekData clears lastResponse while a live tool call is in
+    // flight (the tool overlay wins on chip-capable surfaces); this hover
+    // card is text-only, so fall back to the wire lastAgentResponse (still
+    // server-cleaned) instead of rendering an empty response row.
+    response: peek?.lastResponse?.trim() || agent.lastAgentResponse?.trim() || '',
   };
 }
 

@@ -198,9 +198,9 @@
               >
             {/if}
           </div>
-          {#if !toolDisplay && (agent.streamingText || agent.lastResponse)}
+          {#if !toolDisplay && agent.lastResponse}
             <div class="text-ui text-subtle truncate w-full px-1 leading-tight">
-              {agent.streamingText || agent.lastResponse}
+              {agent.lastResponse}
             </div>
           {/if}
         </div>

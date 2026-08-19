@@ -15,7 +15,7 @@ import type { AgentAttentionRequest } from '$shared/utils/agent-attention';
 export interface AgentCardPreviewInputs {
   /** Pending attention request (discussion/blocker), or null. */
   attentionRequest: AgentAttentionRequest | null;
-  /** Live streamed text line (stream buffer or push-applied lastAgentResponse). */
+  /** Live text line (push-applied wire lastAgentResponse while responding). */
   liveResponseLine: string;
   /** In-flight tool_use overlay while streaming. */
   liveToolUse: ToolUseBlock | undefined;
