@@ -5,6 +5,7 @@ import {
   fork,
   join,
   put,
+  spawn,
   takeEvery,
   takeLatest,
   takeLeading,
@@ -369,6 +370,12 @@ function normalizeLayoutForWorkspace(
  * and the browser's normal navigation error path shows, instead of silently
  * keeping the dead port. The requested URL is re-recorded either way so a
  * later restart can retry.
+ *
+ * Runs detached (spawned) from the restore, so a resolution can land seconds
+ * later — after the user navigated the tab, or after a backend switch
+ * replaced the layout. Each retarget therefore re-checks that the tab still
+ * sits on the exact stored/requested pair the probe started from and is
+ * dropped as stale otherwise.
  */
 export function* rehydrateTunneledBrowserTabs(
   wsId: string,
@@ -382,6 +389,17 @@ export function* rehydrateTunneledBrowserTabs(
         typeof window !== 'undefined' ? window.electronAPI?.invoke : undefined,
       );
       if (resolved.url === tab.storedUrl) continue;
+      const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
+      const current = Object.values(workspace.panels)
+        .flatMap((panel) => panel.tabs)
+        .find((candidate) => candidate.id === tab.tabId);
+      if (
+        !current ||
+        current.browserUrl !== tab.storedUrl ||
+        current.browserRequestedUrl !== tab.requestedUrl
+      ) {
+        continue;
+      }
       yield* put(updateTabBrowserUrl(wsId, tab.tabId, resolved.url, tab.requestedUrl));
     } catch {
       // Best-effort: a failed resolution leaves the tab on its stored URL.
@@ -425,9 +443,14 @@ export function* handleWorkspaceMountedRestore(
       const normalized = normalizeLayoutForWorkspace(wsId, stored);
       yield* put(initializeLayout(wsId, normalized));
       yield* put(setRestoreStatus(wsId, 'restored'));
-      // Forked: re-resolving tunneled tabs goes over IPC and must not delay
-      // the restore settling (hydration callers wait on it).
-      yield* fork(rehydrateTunneledBrowserTabs, wsId, collectRehydratableBrowserTabs(normalized));
+      // Detached (spawn, not fork): re-resolving tunneled tabs goes over IPC
+      // (rewrite → reachability probe → tunnel fallback, 1.5s+ per dead
+      // port) and must not delay the restore settling. An attached fork
+      // would: `call(handleWorkspaceMountedRestore)` from
+      // `hydrateWorkspaceLayout` only returns once attached forks finish,
+      // leaving browser IPC callers blocked in waitForWorkspaceLayoutRestore
+      // past main's 500ms listTabs timeout (monorepo#2789).
+      yield* spawn(rehydrateTunneledBrowserTabs, wsId, collectRehydratableBrowserTabs(normalized));
     }
     restoredUnderBackendIds.add(wsId);
     completed = true;
@@ -748,8 +771,13 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
       yield* put(initializeLayout(wsId, normalized));
       yield* put(setRestoreStatus(wsId, 'restored'));
       // Mirror the mount path: restored tunneled tabs re-resolve against the
-      // incoming backend's live tunnel state (monorepo#2789).
-      yield* fork(rehydrateTunneledBrowserTabs, wsId, collectRehydratableBrowserTabs(normalized));
+      // incoming backend's live tunnel state (monorepo#2789). Detached
+      // (spawn, not fork): handleBackendSwitch `call`s this generator once
+      // per mounted workspace with every workspace's inflightRestores entry
+      // pre-registered, so an attached fork would serialize dead-port probes
+      // into the restore loop and leave later workspaces' waiters (browser
+      // IPC listTabs) blocked past main's 500ms timeout.
+      yield* spawn(rehydrateTunneledBrowserTabs, wsId, collectRehydratableBrowserTabs(normalized));
     }
     restoredUnderBackendIds.add(wsId);
     completed = true;
