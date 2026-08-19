@@ -5,11 +5,8 @@ import { AcceptChangesClient } from '$features/accept-changes/accept-changes.cli
 import { externalEditorsClient } from '$features/external-editors/external-editors.client';
 import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
 import type { GithubRepo } from '$features/github-auth/types';
-import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
-import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type { WorkspaceId } from '$shared/types/branded-ids';
-import type { KnownRepo } from '$shared/types/known-repo';
 import {
   loadWorkspaceDataRequested,
   refreshAcceptChangesStatus,
@@ -38,7 +35,6 @@ import {
   setGithubReposLoading,
   type GithubRepoItem,
 } from '../../github-repos/github-repos-slice';
-import { loadKnownRepos, setRepos } from '../../known-repos/known-repos-slice';
 import { refreshPRStatusRequested } from '../../pr-status/pr-status-slice';
 import { refreshScripts } from '../../scripts/scripts-slice';
 import { loadSkillsRequested } from '../../skills/skills-slice';
@@ -51,8 +47,6 @@ import { initContextForWorkspace } from '../../context/context-slice';
 import { workspaceMounted } from '../workspace-lifecycle-slice';
 
 const logger = createLogger('LifecycleIpcReadSaga');
-
-type KnownReposResponse = { success: boolean; data?: KnownRepo[] };
 
 function normalizeRepo(repo: GithubRepo): GithubRepoItem {
   return {
@@ -96,20 +90,6 @@ function* refreshEditors(forceRefresh: boolean): SagaGenerator<void> {
     yield* put(fetchEditorsFailure(error instanceof Error ? error.message : String(error)));
   } finally {
     yield* put(setLoading(false));
-  }
-}
-
-function* refreshKnownRepos(): SagaGenerator<void> {
-  try {
-    const result: KnownReposResponse = yield* call(
-      invoke<KnownReposResponse>,
-      IPC_CHANNELS.WORKSPACE.GET_RECENT_REPOSITORIES,
-      {},
-    );
-    if (result.success && Array.isArray(result.data)) yield* put(setRepos(result.data));
-    else logger.warn('Recent-repositories IPC returned no usable data; keeping prior known repos');
-  } catch (error) {
-    logger.error('Failed to load known repos; keeping prior known repos', error);
   }
 }
 
@@ -179,7 +159,6 @@ export function* lifecycleIpcReadSaga(): SagaGenerator<void> {
   yield* all([
     takeLeading(loadGithubRepos, refreshGithubRepos),
     takeLeading(fetchEditors, refreshEditorsWorker),
-    takeLeading(loadKnownRepos, refreshKnownRepos),
     takeLeading(refreshAcceptChangesStatus, refreshAcceptChangesWorker),
     takeEvery(workspaceMounted, workspaceMountedWorker),
   ]);

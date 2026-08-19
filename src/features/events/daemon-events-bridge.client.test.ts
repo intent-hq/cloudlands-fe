@@ -5005,8 +5005,10 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
 
   it('a pending refetch is dropped if the tasks slice is cleared during the debounce window', async () => {
     const CLEARED_WS = 'ws-bridge-tasks-cleared';
-    const { loadWorkspaceTasksSucceeded, clearWorkspaceTasks } =
+    const { loadWorkspaceTasksSucceeded } =
       await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
+    const { removeWorkspaceEntity } =
+      await import('$store/renderer/slices/workspace/workspace-slice');
     appStore.dispatch(
       loadWorkspaceTasksSucceeded(CLEARED_WS, [], { total: 0, completed: 0, inProgress: 0 }),
     );
@@ -5017,7 +5019,7 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
     handler(noteEnvelope(CLEARED_WS, 'note:deleted', 'note-y'));
     // Workspace unmounted/deleted while the debounce is pending — the timer
     // re-checks `initialized` at fire time and must not issue a task.list.
-    appStore.dispatch(clearWorkspaceTasks(CLEARED_WS));
+    appStore.dispatch(removeWorkspaceEntity(CLEARED_WS));
     vi.advanceTimersByTime(2000);
 
     expect(taskListCalls(CLEARED_WS)).toHaveLength(0);

@@ -18,7 +18,6 @@ vi.mock('$lib/client', () => ({
 import { SETTINGS_CHANNELS, WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
-  loadAutoCommitSettings,
   refreshAutoCommitSettings,
   setAutoCommitEnabled,
   syncWorkspaceSettings,
@@ -254,7 +253,7 @@ describe('workspaceSettingsSaga', () => {
       await settle();
 
       expect(mocks.getWorkspaceSettings.mock.calls).toEqual([['ws-1']]);
-      expect(dispatched).toEqual([loadAutoCommitSettings('ws-1', false)]);
+      expect(dispatched).toEqual([setAutoCommitEnabled('ws-1', false)]);
       expect(getSettingsState().byWorkspaceId['ws-1']?.autoCommitEnabled).toBe(false);
       task.cancel();
       await task.toPromise();
@@ -267,7 +266,7 @@ describe('workspaceSettingsSaga', () => {
       await settle();
 
       expect(mocks.getWorkspaceSettings.mock.calls).toEqual([['ws-1']]);
-      expect(dispatched).toEqual([loadAutoCommitSettings('ws-1', true)]);
+      expect(dispatched).toEqual([setAutoCommitEnabled('ws-1', true)]);
       task.cancel();
       await task.toPromise();
     });
@@ -356,7 +355,7 @@ describe('workspaceSettingsSaga', () => {
       await settle();
 
       expect(mocks.getWorkspaceSettings.mock.calls).toEqual([['ws-1']]);
-      expect(dispatched).toEqual([loadAutoCommitSettings('ws-1', false)]);
+      expect(dispatched).toEqual([setAutoCommitEnabled('ws-1', false)]);
       task.cancel();
       await task.toPromise();
     });
@@ -383,10 +382,10 @@ describe('workspaceSettingsSaga', () => {
         ['ws-2'],
       ]);
       expect(dispatched).toEqual([
-        loadAutoCommitSettings('ws-1', true),
-        loadAutoCommitSettings('ws-2', false),
-        loadAutoCommitSettings('ws-1', true),
-        loadAutoCommitSettings('ws-2', true),
+        setAutoCommitEnabled('ws-1', true),
+        setAutoCommitEnabled('ws-2', false),
+        setAutoCommitEnabled('ws-1', true),
+        setAutoCommitEnabled('ws-2', true),
       ]);
       expect(getSettingsState().byWorkspaceId['ws-2']?.autoCommitEnabled).toBe(true);
       task.cancel();
@@ -429,8 +428,8 @@ describe('workspaceSettingsSaga', () => {
         ['ws-2'],
       ]);
       expect(dispatched).toEqual([
-        loadAutoCommitSettings('ws-1', true),
-        loadAutoCommitSettings('ws-2', true),
+        setAutoCommitEnabled('ws-1', true),
+        setAutoCommitEnabled('ws-2', true),
       ]);
       task.cancel();
       await task.toPromise();
@@ -463,8 +462,8 @@ describe('workspaceSettingsSaga', () => {
       // Sweep re-read ws-1 only; ws-2 kept its single in-flight mount read.
       expect(mocks.getWorkspaceSettings.mock.calls).toEqual([['ws-1'], ['ws-2'], ['ws-1']]);
       expect(dispatched).toEqual([
-        loadAutoCommitSettings('ws-1', false),
-        loadAutoCommitSettings('ws-2', true),
+        setAutoCommitEnabled('ws-1', false),
+        setAutoCommitEnabled('ws-2', true),
       ]);
       task.cancel();
       await task.toPromise();

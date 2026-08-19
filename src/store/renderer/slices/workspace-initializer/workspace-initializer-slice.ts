@@ -2,8 +2,6 @@ import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   createCollection,
-  removeItem,
-  upsertItem,
 } from "@augmentcode/themis/utils/collections/collection-utils";
 import type {
   CompactWorkspaceInitializerFormState,
@@ -74,14 +72,6 @@ export const setWorkspaceInitializerRemoteSetups = createAction<[
   setups: WorkspaceInitializerRemoteSetup[],
 ]>("workspaceInitializer/setRemoteSetups");
 
-export const upsertWorkspaceInitializerRemoteSetup = createAction<[
-  setup: WorkspaceInitializerRemoteSetup,
-]>("workspaceInitializer/upsertRemoteSetup");
-
-export const removeWorkspaceInitializerRemoteSetup = createAction<[
-  id: string,
-]>("workspaceInitializer/removeRemoteSetup");
-
 export const setWorkspaceInitializerLastSubmittedAgent = createAction<[
   settings: WorkspaceInitializerAgentSettings | null,
 ]>("workspaceInitializer/setLastSubmittedAgent");
@@ -151,14 +141,6 @@ workspaceInitializerReducer.with(setWorkspaceInitializerRecentRepos, (state, { p
 workspaceInitializerReducer.with(setWorkspaceInitializerRemoteSetups, (state, { payload: [remoteSetups] }) => ({
     ...state,
     remoteSetups: createCollection<WorkspaceInitializerRemoteSetup, "id">("id", remoteSetups),
-  }));
-workspaceInitializerReducer.with(upsertWorkspaceInitializerRemoteSetup, (state, { payload: [setup] }) => ({
-    ...state,
-    remoteSetups: upsertItem(state.remoteSetups, setup),
-  }));
-workspaceInitializerReducer.with(removeWorkspaceInitializerRemoteSetup, (state, { payload: [id] }) => ({
-    ...state,
-    remoteSetups: removeItem(state.remoteSetups, id),
   }));
 workspaceInitializerReducer.with(setWorkspaceInitializerLastSubmittedAgent, (state, { payload: [lastSubmittedAgent] }) => ({
     ...state,

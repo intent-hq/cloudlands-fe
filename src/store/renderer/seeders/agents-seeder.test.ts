@@ -32,7 +32,7 @@ import {
 import { selectAgentSession } from '../slices/agent-session/agent-session-selectors';
 import { bulkUpsertSessions } from '../slices/agent-session/agent-session-slice';
 import { selectActiveAgentId } from '../slices/workspace-agents/workspace-agents-selectors';
-import { setActiveAgentId, addAgent } from '../slices/workspace-agents/workspace-agents-slice';
+import { setActiveAgentId } from '../slices/workspace-agents/workspace-agents-slice';
 
 const mockedClient = vi.mocked(appClient);
 
@@ -205,8 +205,7 @@ describe('agents-seeder', () => {
         messages: [],
         status: 'idle',
       };
-      store.dispatch(addAgent(WORKSPACE_ID, agent1));
-      store.dispatch(addAgent(WORKSPACE_ID, agent2));
+      store.dispatch(bulkUpsertSessions([agent1, agent2]));
       store.dispatch(setActiveAgentId(WORKSPACE_ID, AGENT_ID_1));
 
       // Mock daemon response: both agents present, AGENT_ID_2 is foreground

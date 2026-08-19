@@ -9,16 +9,7 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import {
-  applyNoteCreated,
-  applyNoteDeleted,
-  applyNoteUpdated,
-  loadWorkspaceNotesFailed,
-  loadWorkspaceNotesSucceeded,
-  noteEventReceived,
-  selectNote,
-  workspaceNotesReducer,
-} from '../workspace-notes-slice';
+import { loadWorkspaceNotesFailed, loadWorkspaceNotesSucceeded, selectNote, workspaceNotesReducer } from '../workspace-notes-slice';
 import { notesReadSaga } from './notes-read-saga';
 
 const WS = 'ws-notes-read';
@@ -208,30 +199,6 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('uses global leading event reads and suppresses the active result after cleanup', async () => {
-    let resolve!: (notes: Note[]) => void;
-    const list = vi.spyOn(appClient.notes, 'list').mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
-    const run = harness();
-    const event = noteEventReceived(WS, 'note-1', 'note:updated');
-
-    run.channel.put(event);
-    await settle();
-    run.channel.put(noteEventReceived('ws-ignored', 'note-2', 'note:created'));
-    run.channel.put(workspaceUnmounted(WS));
-    await settle();
-    resolve([note('note-1')]);
-    await settle();
-
-    expect(list.mock.calls).toEqual([[WS]]);
-    expect(run.actions).toEqual([]);
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
   it('cancels an in-flight workspace hydration and suppresses its late result on cleanup', async () => {
     let resolve!: (notes: Note[]) => void;
     const list = vi.spyOn(appClient.notes, 'list').mockReturnValue(
@@ -275,73 +242,5 @@ describe('notesReadSaga', () => {
     await settle();
 
     expect(run.actions).toEqual([]);
-  });
-
-  it('applies a deleted event without fetching', async () => {
-    const list = vi.spyOn(appClient.notes, 'list');
-    const run = harness([note('note-1')]);
-
-    run.channel.put(noteEventReceived(WS, 'note-1', 'note:deleted'));
-    await settle();
-
-    expect(list.mock.calls).toEqual([]);
-    expect(run.actions).toEqual([applyNoteDeleted(WS, 'note-1')]);
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
-  it('maps a created event to the exact created action', async () => {
-    const created = note('note-created');
-    const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([created]);
-    const run = harness([note('existing')]);
-
-    run.channel.put(noteEventReceived(WS, 'note-created', 'note:created'));
-    await settle();
-
-    expect(list.mock.calls).toEqual([[WS]]);
-    expect(run.actions).toEqual([applyNoteCreated(WS, created)]);
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
-  it('maps an updated event to the exact updated action', async () => {
-    const updated = note('note-1', { title: 'Updated' });
-    const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([updated]);
-    const run = harness([note('note-1')]);
-
-    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
-    await settle();
-
-    expect(list.mock.calls).toEqual([[WS]]);
-    expect(run.actions).toEqual([applyNoteUpdated(WS, 'note-1', updated)]);
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
-  it('does not double-dispatch when an event refresh rejects', async () => {
-    const list = vi.spyOn(appClient.notes, 'list').mockRejectedValue(new Error('offline'));
-    const run = harness([note('note-1')]);
-
-    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
-    await settle();
-
-    expect(list.mock.calls).toEqual([[WS]]);
-    expect(run.actions).toEqual([]);
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
-  it('ignores an event whose returned note belongs to another workspace', async () => {
-    const foreign = note('note-1', { workspaceId: WorkspaceId('other-workspace') });
-    const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([foreign]);
-    const run = harness([note('note-1')]);
-
-    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
-    await settle();
-
-    expect(list.mock.calls).toEqual([[WS]]);
-    expect(run.actions).toEqual([]);
-    run.task.cancel();
-    await run.task.toPromise();
   });
 });

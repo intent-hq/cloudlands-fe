@@ -26,7 +26,7 @@ export const initialState: WorkspaceSettingsState = {
   byWorkspaceId: {},
 };
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
+const { getWorkspaceState, setWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceSettings);
 
 // ============================================================================
@@ -45,14 +45,6 @@ export const syncWorkspaceSettings = createAction<[workspaceId: string]>(
   "workspaceSettings/syncWorkspaceSettings"
 );
 
-export const loadAutoCommitSettings = createAction<[workspaceId: string, enabled: boolean]>(
-  "workspaceSettings/loadAutoCommitSettings"
-);
-
-export const clearWorkspaceSettings = createAction<[workspaceId: string]>(
-  "workspaceSettings/clearWorkspaceSettings"
-);
-
 // ============================================================================
 // Reducer
 // ============================================================================
@@ -65,14 +57,4 @@ workspaceSettingsReducer.with(setAutoCommitEnabled, (state, { payload: [workspac
       autoCommitEnabled: enabled,
     });
   });
-workspaceSettingsReducer.with(loadAutoCommitSettings, (state, { payload: [workspaceId, enabled] }) => {
-    const wsState = getWorkspaceState(state, workspaceId);
-    return setWorkspaceState(state, workspaceId, {
-      ...wsState,
-      autoCommitEnabled: enabled,
-    });
-  });
-workspaceSettingsReducer.with(clearWorkspaceSettings, (state, { payload: [workspaceId] }) =>
-    clearWorkspaceState(state, workspaceId)
-  );
 

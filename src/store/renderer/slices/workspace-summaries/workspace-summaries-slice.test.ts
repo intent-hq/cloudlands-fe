@@ -2,14 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { WorkspaceDiffSummary, WorkspaceGitSummary } from "$shared/types";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import { removeWorkspaceEntity } from "../workspace/workspace-slice";
-import {
-  clearWorkspaceSummaries,
-  initialState,
-  loadWorkspaceSummariesFailed,
-  loadWorkspaceSummariesRequested,
-  loadWorkspaceSummariesSucceeded,
-  workspaceSummariesReducer,
-} from "./workspace-summaries-slice";
+import { initialState, loadWorkspaceSummariesRequested, loadWorkspaceSummariesSucceeded, workspaceSummariesReducer } from "./workspace-summaries-slice";
 
 const WS = "ws-1";
 
@@ -41,15 +34,6 @@ describe("workspaceSummariesReducer", () => {
   });
 
   describe("loadWorkspaceSummariesRequested", () => {
-    it("marks the workspace as loading and clears errors", () => {
-      const failed = workspaceSummariesReducer(
-        initialState,
-        loadWorkspaceSummariesFailed(WS, "nope")
-      );
-      const state = workspaceSummariesReducer(failed, loadWorkspaceSummariesRequested(WS));
-
-      expect(state.byWorkspaceId[WS]).toMatchObject({ loading: true, error: null });
-    });
 
     it("keeps stale summaries while loading", () => {
       const state = workspaceSummariesReducer(loadedState(), loadWorkspaceSummariesRequested(WS));
@@ -96,27 +80,7 @@ describe("workspaceSummariesReducer", () => {
     });
   });
 
-  describe("loadWorkspaceSummariesFailed", () => {
-    it("records the error and stops loading", () => {
-      const loading = workspaceSummariesReducer(initialState, loadWorkspaceSummariesRequested(WS));
-      const state = workspaceSummariesReducer(loading, loadWorkspaceSummariesFailed(WS, "boom"));
-
-      expect(state.byWorkspaceId[WS]).toMatchObject({ loading: false, error: "boom" });
-    });
-
-    it("keeps previously loaded summaries on failure", () => {
-      const state = workspaceSummariesReducer(loadedState(), loadWorkspaceSummariesFailed(WS, "boom"));
-
-      expect(state.byWorkspaceId[WS]).toMatchObject({ diffSummary, gitSummary, error: "boom" });
-    });
-  });
-
   describe("cleanup", () => {
-    it("clears workspace state on clearWorkspaceSummaries", () => {
-      const state = workspaceSummariesReducer(loadedState(), clearWorkspaceSummaries(WS));
-
-      expect(state.byWorkspaceId[WS]).toBeUndefined();
-    });
 
     it("clears workspace state on workspaceUnmounted", () => {
       const state = workspaceSummariesReducer(loadedState(), workspaceUnmounted(WS));

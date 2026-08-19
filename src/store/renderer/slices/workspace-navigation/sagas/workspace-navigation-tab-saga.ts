@@ -13,19 +13,7 @@ import { selectPanel } from '../../panel-layout/panel-layout-selectors';
 import { openTab, openTabInAdjacentOrSplit } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
-import {
-  chatChangesDedupId,
-  openWorkspaceActivityChanges,
-  openWorkspaceAttachment,
-  openWorkspaceBrowser,
-  openWorkspaceChatChanges,
-  openWorkspaceCodeReview,
-  openWorkspaceCommitChangeset,
-  openWorkspaceDiff,
-  openWorkspaceFile,
-  openWorkspaceLocalChanges,
-  openWorkspaceNote,
-} from '../workspace-navigation-slice';
+import { chatChangesDedupId, openWorkspaceAttachment, openWorkspaceBrowser, openWorkspaceChatChanges, openWorkspaceCodeReview, openWorkspaceCommitChangeset, openWorkspaceDiff, openWorkspaceFile, openWorkspaceLocalChanges, openWorkspaceNote } from '../workspace-navigation-slice';
 
 const logger = createLogger('WorkspaceNavigationTabSaga');
 
@@ -204,24 +192,6 @@ function* openChatChanges(
   );
 }
 
-function* openActivityChanges(
-  action: ReturnType<typeof openWorkspaceActivityChanges>,
-): SagaGenerator<void> {
-  const [workspaceId, event] = action.payload;
-  if (!workspaceId || !event) return;
-  yield* openWorkspaceTab(
-    workspaceId,
-    {
-      type: 'activity-changes',
-      title: m.layout_tabTypes_activityChanges_title(),
-      workspaceId,
-      closable: true,
-      data: { event },
-    },
-    false,
-  );
-}
-
 function* openCodeReview(action: ReturnType<typeof openWorkspaceCodeReview>): SagaGenerator<void> {
   const [workspaceId, review] = action.payload;
   if (!workspaceId) return;
@@ -289,7 +259,6 @@ function* openAttachment(action: ReturnType<typeof openWorkspaceAttachment>): Sa
 }
 
 export function* workspaceNavigationTabSaga(): SagaGenerator<void> {
-  yield* takeEvery(openWorkspaceActivityChanges, openActivityChanges);
   yield* takeEvery(openWorkspaceBrowser, openBrowser);
   yield* takeEvery(openWorkspaceChatChanges, openChatChanges);
   yield* takeEvery(openWorkspaceCodeReview, openCodeReview);
