@@ -340,6 +340,8 @@ describe('shouldShowSetupCardOnly', () => {
     const loadingState = { ...settledEmptyInitialAgent, hydrationSettled: false };
     expect(shouldShowSetupCardOnly(loadingState)).toBe(false);
     // ...and the transcript-skeleton gate matches that same loading state.
+    // The skeleton branch renders skeleton rows only (no setup card), so the
+    // indeterminate load shows no premature "ready to go" affordance.
     expect(
       shouldShowTranscriptSkeleton({
         isFirstHydrationLoading: true,

@@ -172,8 +172,8 @@ type SetupCardOnlyState = {
  * reopened workspace always reconstructs an empty prompt, and the transcript is
  * momentarily empty until hydration lands — without the settled guard this
  * branch would replace the loading skeleton with the setup card for the whole
- * load. During loading, `shouldShowTranscriptSkeleton` wins (it already renders
- * the setup card above the skeleton for initial-workspace agents).
+ * load. During loading, `shouldShowTranscriptSkeleton` wins (the skeleton
+ * branch renders skeleton rows only — no setup card).
  */
 export function shouldShowSetupCardOnly(state: SetupCardOnlyState): boolean {
   return (

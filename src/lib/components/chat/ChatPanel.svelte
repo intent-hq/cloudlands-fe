@@ -3571,32 +3571,6 @@
           </div>
         {:else if shouldShowTranscriptSkeleton( { isFirstHydrationLoading, hasSession: Boolean($agentSession$), hydrationSettled: $transcriptHydration$ === 'settled', hasMessages: $agentMessages$.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt) } )}
           <!-- Skeleton: initial newest-window hydration is unresolved. -->
-          {#if isInitialWorkspaceAgent && onboardingContext}
-            <div class="pt-16 pb-6">
-              <WorkspaceSetupCard
-                repoName={onboardingContext.projectName ||
-                  onboardingContext.projectPath?.split('/').pop() ||
-                  m.chat_chatPanel_yourProject_fallback()}
-                repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
-                worktreePath={onboardingContext.worktreePath}
-                workspaceId={workspace?.id}
-                branch={onboardingContext.branch}
-                baseRef={onboardingContext.baseRef || 'origin/main'}
-                specialistName={onboardingContext.specialistName}
-                specialistId={onboardingContext.specialistId}
-                hasPrompt={!!onboardingContext.prompt?.trim()}
-                repoStatus="done"
-                branchStatus="done"
-                agentStatus="done"
-                setupScriptStatus={onboardingContext.setupScript ? 'done' : undefined}
-                setupScriptContent={onboardingContext.setupScript}
-                onFocusSetupTerminal={onboardingContext.setupScript
-                  ? handleFocusSetupTerminal
-                  : undefined}
-                skipIsolation={onboardingContext.skipWorktree}
-              />
-            </div>
-          {/if}
           <!-- Skeleton loading state when session is not yet initialized or transcript is loading -->
           {@render transcriptSkeletonRows()}
         {:else}
