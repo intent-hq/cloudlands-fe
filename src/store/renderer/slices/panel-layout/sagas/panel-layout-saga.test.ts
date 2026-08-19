@@ -541,6 +541,28 @@ describe('panelLayoutSaga', () => {
       };
     }
 
+    // The rehydration saga re-reads the store before retargeting (stale
+    // guard), so these tests need state that reflects the saga's own
+    // dispatches (initializeLayout, updateTabBrowserUrl) — unlike startSaga's
+    // static state.
+    function startReducingSaga(options: { backendId?: () => string } = {}) {
+      const getBackendId = options.backendId ?? (() => LOCAL_CONNECTION_ID);
+      let panelLayout: ReturnType<typeof panelLayoutReducer> = { byWorkspaceId: {} };
+      const channel = stdChannel();
+      const dispatch = vi.fn((action) => {
+        panelLayout = panelLayoutReducer(panelLayout, action);
+        channel.put(action);
+      });
+      const getState = () => ({
+        ...storeState(WS_1, getBackendId()),
+        panelLayout,
+      });
+      const task = runSaga({ channel, dispatch, getState }, panelLayoutSaga, {
+        activeWorkspaceId: null,
+      });
+      return { channel, dispatch, getState, task };
+    }
+
     it('re-resolves a restored tunneled tab onto the fresh endpoint', async () => {
       mocks.getJSON.mockReturnValue(browserLayout());
       mocks.resolveBrowserLinkUrl.mockResolvedValue({
@@ -549,7 +571,7 @@ describe('panelLayoutSaga', () => {
         requestedUrl: REQUESTED,
         tunneled: true,
       });
-      const { channel, dispatch, task } = startSaga();
+      const { channel, dispatch, task } = startReducingSaga();
       await settle();
       channel.put(workspaceMounted(WS_1));
       await settle();
@@ -568,7 +590,7 @@ describe('panelLayoutSaga', () => {
         rewritten: true,
         requestedUrl: REQUESTED,
       });
-      const { channel, dispatch, task } = startSaga();
+      const { channel, dispatch, task } = startReducingSaga();
       await settle();
       channel.put(workspaceMounted(WS_1));
       await settle();
@@ -599,7 +621,7 @@ describe('panelLayoutSaga', () => {
       // URL through unresolved, so the tab lands on its requested URL and the
       // normal navigation error path shows instead of the dead port.
       mocks.resolveBrowserLinkUrl.mockResolvedValue({ url: REQUESTED, rewritten: false });
-      const { channel, dispatch, task } = startSaga();
+      const { channel, dispatch, task } = startReducingSaga();
       await settle();
       channel.put(workspaceMounted(WS_1));
       await settle();
@@ -622,13 +644,9 @@ describe('panelLayoutSaga', () => {
         tunneled: true,
       });
       let backendId = LOCAL_CONNECTION_ID;
-      const channel = stdChannel();
-      const dispatch = vi.fn();
-      const task = runSaga(
-        { channel, dispatch, getState: () => storeState(WS_1, backendId) },
-        panelLayoutSaga,
-        { activeWorkspaceId: WS_1 },
-      );
+      const { channel, dispatch, task } = startReducingSaga({ backendId: () => backendId });
+      await settle();
+      channel.put(workspaceMounted(WS_1));
       await settle();
       dispatch.mockClear();
 
@@ -640,6 +658,34 @@ describe('panelLayoutSaga', () => {
       expect(dispatch.mock.calls.map(([action]) => action)).toContainEqual(
         updateTabBrowserUrl(WS_1, 'tab-b', FRESH_TUNNEL, REQUESTED),
       );
+      await cancelSaga(task);
+    });
+
+    it('drops a stale resolution when the tab navigated while the probe was in flight', async () => {
+      mocks.getJSON.mockReturnValue(browserLayout());
+      let resolveProbe!: (value: unknown) => void;
+      mocks.resolveBrowserLinkUrl.mockReturnValue(
+        new Promise((resolve) => {
+          resolveProbe = resolve;
+        }),
+      );
+      const { channel, dispatch, task } = startReducingSaga();
+      await settle();
+      channel.put(workspaceMounted(WS_1));
+      await settle();
+
+      // User navigates the tab while the dead-port probe is still running
+      // (harness dispatch reduces the store and forwards to the channel).
+      dispatch(updateTabBrowserUrl(WS_1, 'tab-b', 'http://127.0.0.1:59999/', REQUESTED));
+      dispatch.mockClear();
+
+      resolveProbe({ url: FRESH_TUNNEL, rewritten: true, requestedUrl: REQUESTED, tunneled: true });
+      await settle();
+
+      // The late resolution must not clobber the newer navigation.
+      expect(
+        dispatch.mock.calls.some(([action]) => action.type === updateTabBrowserUrl.type),
+      ).toBe(false);
       await cancelSaga(task);
     });
 

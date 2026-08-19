@@ -370,6 +370,12 @@ function normalizeLayoutForWorkspace(
  * and the browser's normal navigation error path shows, instead of silently
  * keeping the dead port. The requested URL is re-recorded either way so a
  * later restart can retry.
+ *
+ * Runs detached (spawned) from the restore, so a resolution can land seconds
+ * later — after the user navigated the tab, or after a backend switch
+ * replaced the layout. Each retarget therefore re-checks that the tab still
+ * sits on the exact stored/requested pair the probe started from and is
+ * dropped as stale otherwise.
  */
 export function* rehydrateTunneledBrowserTabs(
   wsId: string,
@@ -383,6 +389,17 @@ export function* rehydrateTunneledBrowserTabs(
         typeof window !== 'undefined' ? window.electronAPI?.invoke : undefined,
       );
       if (resolved.url === tab.storedUrl) continue;
+      const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
+      const current = Object.values(workspace.panels)
+        .flatMap((panel) => panel.tabs)
+        .find((candidate) => candidate.id === tab.tabId);
+      if (
+        !current ||
+        current.browserUrl !== tab.storedUrl ||
+        current.browserRequestedUrl !== tab.requestedUrl
+      ) {
+        continue;
+      }
       yield* put(updateTabBrowserUrl(wsId, tab.tabId, resolved.url, tab.requestedUrl));
     } catch {
       // Best-effort: a failed resolution leaves the tab on its stored URL.
