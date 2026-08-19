@@ -22,6 +22,7 @@
  */
 import type { WorkspaceEvent } from '$features/events/types';
 import { isHudAttentionValue } from '$store/renderer/slices/hud/hud-types';
+import { looksLikeAgentId } from '$shared/utils/agent-name-utils';
 import { extractQuestionsFromStreamEnd } from '../hud-question-capture';
 import type { HudTakeoverKind, HudTakeoverTrigger } from './hud-takeover-queue';
 
@@ -65,11 +66,6 @@ export type HudAgentNameResolver = (agentId: string) => string | undefined;
 
 function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-/** Whether a name is actually a raw agent id (never render those). */
-function looksLikeAgentId(name: string): boolean {
-  return /^agent-[a-f0-9-]{36}$/i.test(name);
 }
 
 /**

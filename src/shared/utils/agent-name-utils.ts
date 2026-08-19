@@ -56,3 +56,11 @@ export function isRandomAgentName(name: string | undefined | null): boolean {
   return adjectivesSet.has(adjective.toLowerCase()) && animalsSet.has(animal.toLowerCase());
 }
 
+/**
+ * Check if a name is actually a raw agent id (e.g. "agent-<uuid>").
+ * UI surfaces must never render these as display names.
+ */
+export function looksLikeAgentId(name: string): boolean {
+  return /^agent-[a-f0-9-]{36}$/i.test(name);
+}
+

@@ -1,5 +1,11 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import EventWakeupBanner from '$lib/components/chat/EventWakeupBanner.svelte';
+  import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { store } from '$store/renderer/store';
+
+  const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  onDestroy(disposeStore);
 
   type Scenario =
     'one' | 'two' | 'four' | 'five' | 'duplicate' | 'unknown' | 'attention' | 'failure' | 'motion';
