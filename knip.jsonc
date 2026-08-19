@@ -1,5 +1,11 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  // The remaining 19 duplicate-export rows are deliberate KEEPs (triaged): both names in
+  // each pair have live importers (icon compat aliases, per-channel schema aliases,
+  // mock-module shape, etc.). Consolidation is a rename follow-up, not dead code.
+  "rules": {
+    "duplicates": "warn"
+  },
   "entry": [
     // Electron main process (tsconfig.main.json; package.json "main" points at its build output)
     "src/main/index.ts",
@@ -33,6 +39,25 @@
     "cdp-mcp-server/cdp-helpers.js",
     // Compile-time type-assertion file, checked by tsc (pnpm run check), never imported
     "src/store/renderer/utils/context-saga-effects.typecheck.ts"
+  ],
+  "ignore": [
+    // Consumed via `import * as Card/Dialog/Menu/Sheet` namespace imports whose member
+    // access happens in .svelte template markup — knip's svelte compiler does not track
+    // that usage, so every export is falsely reported unused.
+    "src/lib/components/ui/card/index.ts",
+    "src/lib/components/ui/dialog/index.ts",
+    "src/lib/components/ui/menu/index.ts",
+    "src/lib/components/ui/sheet/index.ts",
+    // Loaded via `@import './diff-shared-styles.css'` inside DiffViewer.svelte's
+    // <style> block — knip does not parse CSS imports in svelte styles
+    "src/features/file-tracking/components/diff/diff-shared-styles.css",
+    // Discoverability API contract-required by scripts/ui-component-integration.test.ts
+    // (Gate C): must exist and re-export every canonical ui subpath even without importers
+    "src/lib/components/ui/index.ts",
+    // Contract surface exercised via `vi.importActual` in system-ipc-routing.test.ts and
+    // agent-subscription-contracts.test.ts — knip cannot trace importActual usage
+    "src/lib/electron-bridge.ts",
+    "src/main/browser-ipc-broadcast-adapter.ts"
   ],
   "project": [
     "src/**/*.{js,cjs,mjs,ts,svelte,css}",

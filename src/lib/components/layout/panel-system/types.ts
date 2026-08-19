@@ -14,10 +14,3 @@ export type LayoutPresetId =
   | 'changes'
   | 'review';
 
-/** Preset configuration */
-export interface LayoutPreset {
-  id: LayoutPresetId;
-  label: string;
-  description: string;
-  isBuiltIn: boolean;
-}

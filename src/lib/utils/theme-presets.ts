@@ -11,7 +11,7 @@
 
 import { THEME_PRESET_MANIFEST } from '../../shared/theme-presets-manifest';
 
-export interface ThemeJSON {
+interface ThemeJSON {
   name: string;
   type: 'dark' | 'light';
   colors: Record<string, string>;

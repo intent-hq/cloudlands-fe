@@ -1,6 +1,6 @@
 import { THEME_PRESET_MANIFEST } from '../../shared/theme-presets-manifest';
 
-export const catalogThemes = ['system', 'light', 'dark'] as const;
+const catalogThemes = ['system', 'light', 'dark'] as const;
 export const catalogColorThemes = [
   'default',
   ...THEME_PRESET_MANIFEST.map(({ id }) => id),

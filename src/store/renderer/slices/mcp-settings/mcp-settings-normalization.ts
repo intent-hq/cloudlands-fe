@@ -1,4 +1,4 @@
-import type { McpAuthInfo, McpServerConfig, McpServerStatus } from './mcp-settings-types';
+import type { McpServerConfig, McpServerStatus } from './mcp-settings-types';
 
 const MCP_SERVER_STATUSES: readonly McpServerStatus[] = [
   'connected',
@@ -60,7 +60,7 @@ export function toMcpErrorMessage(value: unknown, fallback: string): string {
   return toMcpErrorMessageValue(value, fallback, new WeakSet<object>());
 }
 
-export function optionalString(value: unknown): string | undefined {
+function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
@@ -84,7 +84,7 @@ function stringRecord(value: unknown): Record<string, string> | undefined {
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
-export function normalizeMcpAuthType(value: unknown): McpServerConfig['authType'] | undefined {
+function normalizeMcpAuthType(value: unknown): McpServerConfig['authType'] | undefined {
   return MCP_AUTH_TYPES.includes(value as NonNullable<McpServerConfig['authType']>)
     ? (value as NonNullable<McpServerConfig['authType']>)
     : undefined;
@@ -123,17 +123,6 @@ export function normalizeDisabledServers(value: unknown): Record<string, true> {
     if (name) acc[name] = true;
     return acc;
   }, {});
-}
-
-export function normalizeMcpAuthInfo(value: unknown): McpAuthInfo {
-  if (!isRecord(value)) return { requiresAuth: false, hasAuth: false };
-  return {
-    requiresAuth: value.requiresAuth === true,
-    hasAuth: value.hasAuth === true,
-    providerName: optionalString(value.providerName),
-    providerDisplayName: optionalString(value.providerDisplayName),
-    authHint: optionalString(value.authHint),
-  };
 }
 
 function normalizeMcpServerConfig(value: unknown, fallbackName?: string): McpServerConfig | null {

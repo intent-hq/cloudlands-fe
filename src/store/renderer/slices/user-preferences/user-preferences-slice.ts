@@ -15,7 +15,7 @@ export type PanelOpenMode = 'normal' | 'pin';
 export type PanelStackDirection = 'left' | 'right';
 
 export const FONT_STYLES: FontStyle[] = ['sans', 'monospace'];
-export const NOTE_FONT_STYLES: NoteFontStyle[] = ['sans', 'serif', 'monospace'];
+const NOTE_FONT_STYLES: NoteFontStyle[] = ['sans', 'serif', 'monospace'];
 
 export interface FontOption {
   value: string;
@@ -23,7 +23,7 @@ export interface FontOption {
   fontFamily: string;
 }
 
-export interface ActivityLogFiltersPreference {
+interface ActivityLogFiltersPreference {
   showFileChanges: boolean;
   showAgentActivity: boolean;
   showSystemEvents: boolean;
@@ -65,12 +65,12 @@ export type UserPreferencesState = {
   panelStackDirection: PanelStackDirection;
 };
 
-export type FontSettingsState = Pick<
+type FontSettingsState = Pick<
   UserPreferencesState,
   'agentFontStyle' | 'noteFontStyle' | 'codeFontFamily' | 'systemFonts'
 >;
 
-export type NotificationSettingsState = Pick<
+type NotificationSettingsState = Pick<
   UserPreferencesState,
   'enabled' | 'soundEnabled' | 'soundOnlyWhenUnfocused' | 'volume'
 >;

@@ -124,10 +124,3 @@ export class ListenerManager {
     return () => this.cleanup();
   }
 }
-
-/**
- * Create a new listener manager instance
- */
-export function createListenerManager(): ListenerManager {
-  return new ListenerManager();
-}

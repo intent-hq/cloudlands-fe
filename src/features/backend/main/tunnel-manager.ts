@@ -65,17 +65,17 @@ const { WebSocket: NodeWebSocket } = nodeRequire('ws') as {
 };
 
 /** `OPEN` — ask the daemon to connect `127.0.0.1:<port>` (payload: port u16 BE). */
-export const OP_OPEN = 0x01;
+const OP_OPEN = 0x01;
 /** `OPEN_OK` — the daemon-side TCP connect succeeded (no payload). */
-export const OP_OPEN_OK = 0x02;
+const OP_OPEN_OK = 0x02;
 /** `OPEN_ERR` — the connect failed / was refused (payload: UTF-8 message). */
-export const OP_OPEN_ERR = 0x03;
+const OP_OPEN_ERR = 0x03;
 /** `DATA` — raw stream bytes (payload may be empty). */
 export const OP_DATA = 0x04;
 /** `EOF` — half-close: no more data in the sender's direction (no payload). */
-export const OP_EOF = 0x05;
+const OP_EOF = 0x05;
 /** `CLOSE` — full stream teardown (no payload). */
-export const OP_CLOSE = 0x06;
+const OP_CLOSE = 0x06;
 
 /** Frame header length: opcode (1 byte) + streamId (4 bytes, big-endian). */
 export const HEADER_LEN = 5;
@@ -260,7 +260,7 @@ interface StreamState {
  * HTTP 401/403 → {@link AuthRejectedError}). UDS/TCP transports are local —
  * a tunnel is meaningless there — and are rejected.
  */
-export function createTunnelSocket(config: BackendConnectionConfig): TunnelSocketLike {
+function createTunnelSocket(config: BackendConnectionConfig): TunnelSocketLike {
   if (config.transport === 'ws') {
     if (!config.wsUrl) throw new Error('WS transport requires a wsUrl');
     const url = new URL(config.wsUrl);

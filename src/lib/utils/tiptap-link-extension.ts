@@ -105,16 +105,16 @@ const IntentLink = Link.extend({
     return {
       setLink:
         (attributes: any) =>
-          ({ commands }: any) => {
+        ({ commands }: any) => {
           // If href is null or undefined, unset the link
-            if (attributes.href === null || attributes.href === undefined) {
-              return commands.unsetMark(this.name);
-            }
+          if (attributes.href === null || attributes.href === undefined) {
+            return commands.unsetMark(this.name);
+          }
 
-            // Set the link mark with the provided attributes
-            // We bypass validation by directly setting the mark
-            return commands.setMark(this.name, attributes);
-          },
+          // Set the link mark with the provided attributes
+          // We bypass validation by directly setting the mark
+          return commands.setMark(this.name, attributes);
+        },
     };
   },
 });
@@ -132,12 +132,6 @@ export function createIntentLink(options: Partial<LinkOptions> = {}) {
     ...options,
   });
 }
-
-/**
- * Pre-configured Link extension with intent:// protocol support
- * Use this directly if you don't need to customize options
- */
-export const CustomLink = createIntentLink();
 
 // Backward compatibility alias
 /** @deprecated Use createIntentLink instead */

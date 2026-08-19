@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const uiComponentCategorySchema = z.enum([
+const uiComponentCategorySchema = z.enum([
   'primitive',
   'pattern',
   'product',
@@ -8,7 +8,7 @@ export const uiComponentCategorySchema = z.enum([
   'deletion-candidate',
 ]);
 
-export const uiComponentFixtureSchema = z.object({
+const uiComponentFixtureSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   states: z.array(z.string().min(1)).min(1),
@@ -24,7 +24,7 @@ const pathSchema = z
     message: 'use a repository-relative POSIX path',
   });
 
-export const uiComponentMetadataSchema = z
+const uiComponentMetadataSchema = z
   .object({
     id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
     source: pathSchema,
@@ -65,7 +65,7 @@ export const uiComponentMetadataSchema = z
     }
   });
 
-export const uiComponentFolderTemplateSchema = z.object({
+const uiComponentFolderTemplateSchema = z.object({
   implementation: z.string().min(1),
   publicModule: z.string().min(1),
   metadata: z.string().min(1),
@@ -74,14 +74,14 @@ export const uiComponentFolderTemplateSchema = z.object({
   variantRecipe: z.string().min(1).optional(),
 });
 
-export const uiDependencyRuleSchema = z.object({
+const uiDependencyRuleSchema = z.object({
   layer: z.enum(['primitive', 'pattern', 'product']),
   allowed: z.array(z.string().min(1)).min(1),
   forbidden: z.array(z.string().min(1)),
   repair: z.string().min(1),
 });
 
-export const uiComponentInventorySchema = z.object({
+const uiComponentInventorySchema = z.object({
   version: z.literal(1),
   folderTemplate: uiComponentFolderTemplateSchema,
   dependencyRules: z.array(uiDependencyRuleSchema).length(3),

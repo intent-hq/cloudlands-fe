@@ -6,7 +6,7 @@ export const settingsSectionMetadata = parseUiComponentMetadata({
   source: 'src/lib/components/ui/settings-section/settings-section.svelte',
   publicImport: '$lib/components/ui/settings-section',
   legacyImports: [],
-  exports: ['Root', 'SettingsSection', 'settingsSectionMetadata'],
+  exports: ['SettingsSection'],
   category: 'pattern',
   owner: '008-B',
   callers: ['src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte'],

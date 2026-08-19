@@ -15,8 +15,8 @@
  * for (or `null` for "daemon-host home") so the read service can echo it back
  * with the success/error action and the slice can ignore stale responses.
  */
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 
 /** One directory entry returned by `host.listDirectory`. */
 export interface DirectoryPickerEntry {
@@ -30,7 +30,7 @@ export interface DirectoryPickerEntry {
  * One daemon-validated favorite riding the `host.listDirectory` result:
  * a standard user directory that exists on the daemon host.
  */
-export interface DirectoryPickerListingFavorite {
+interface DirectoryPickerListingFavorite {
   id: string;
   path: string;
 }
@@ -69,8 +69,8 @@ export type DirectoryPickerState = {
    * intact so the user can correct the typed path without losing context.
    */
   pathError: string | null;
-	/** Inline failure hint for creating a typed folder. */
-	createError: string | null;
+  /** Inline failure hint for creating a typed folder. */
+  createError: string | null;
 };
 
 export const initialState: DirectoryPickerState = {
@@ -79,7 +79,7 @@ export const initialState: DirectoryPickerState = {
   error: null,
   requestedPath: null,
   pathError: null,
-	createError: null,
+  createError: null,
 };
 
 /**
@@ -88,18 +88,18 @@ export const initialState: DirectoryPickerState = {
  * spinner shows without waiting for the IPC round-trip.
  */
 export const loadDirectoryRequested = createAction<[path?: string]>(
-  "directoryPicker/loadRequested",
+  'directoryPicker/loadRequested',
 );
 
 /** Service → reducer: a successful listing for `requestedPath`. */
 export const directoryListingLoaded = createAction<
   [requestedPath: string | null, listing: DirectoryPickerListing]
->("directoryPicker/listingLoaded");
+>('directoryPicker/listingLoaded');
 
 /** Service → reducer: a failed listing for `requestedPath`. */
-export const directoryListingFailed = createAction<
-  [requestedPath: string | null, error: string]
->("directoryPicker/listingFailed");
+export const directoryListingFailed = createAction<[requestedPath: string | null, error: string]>(
+  'directoryPicker/listingFailed',
+);
 
 /**
  * Trigger: navigate to a user-typed path. The read service lists `path` and,
@@ -107,39 +107,35 @@ export const directoryListingFailed = createAction<
  * `pathNavigationFailed` so the current listing survives as an inline hint.
  */
 export const navigateToPathRequested = createAction<[path: string]>(
-  "directoryPicker/navigateToPathRequested",
+  'directoryPicker/navigateToPathRequested',
 );
 
 /**
  * Service → reducer: a typed-path navigation failed. Keeps the current
  * `listing` and records `pathError` as the inline hint.
  */
-export const pathNavigationFailed = createAction<
-  [requestedPath: string, error: string]
->("directoryPicker/pathNavigationFailed");
+export const pathNavigationFailed = createAction<[requestedPath: string, error: string]>(
+  'directoryPicker/pathNavigationFailed',
+);
 
 /** Clear the typed-path hint — dispatched when the user cancels the edit. */
-export const clearPathNavigationError = createAction(
-  "directoryPicker/clearPathNavigationError",
-);
+export const clearPathNavigationError = createAction('directoryPicker/clearPathNavigationError');
 
 /** Trigger: ask the saga to create `path`, then navigate to it on success. */
 export const createDirectoryRequested = createAction<[path: string]>(
-	"directoryPicker/createDirectoryRequested",
+  'directoryPicker/createDirectoryRequested',
 );
 
 /** Service → reducer: creating `requestedPath` failed; current listing survives. */
 export const createDirectoryFailed = createAction<[requestedPath: string, error: string]>(
-	"directoryPicker/createDirectoryFailed",
+  'directoryPicker/createDirectoryFailed',
 );
 
 /** Clear the create-directory inline hint. */
-export const clearCreateDirectoryError = createAction(
-	"directoryPicker/clearCreateDirectoryError",
-);
+export const clearCreateDirectoryError = createAction('directoryPicker/clearCreateDirectoryError');
 
 /** Reset back to the initial state — dispatched when the modal closes. */
-export const resetDirectoryPicker = createAction("directoryPicker/reset");
+export const resetDirectoryPicker = createAction('directoryPicker/reset');
 
 export const directoryPickerReducer = createReducer<DirectoryPickerState>(initialState);
 directoryPickerReducer.with(loadDirectoryRequested, (state, { payload: [path] }) => ({
@@ -167,7 +163,7 @@ directoryPickerReducer.with(
       loading: false,
       error: null,
       pathError: null,
-		createError: null,
+      createError: null,
       listing,
     };
   },
@@ -197,24 +193,24 @@ directoryPickerReducer.with(clearPathNavigationError, (state) => ({
   pathError: null,
 }));
 directoryPickerReducer.with(createDirectoryRequested, (state, { payload: [path] }) => ({
-	...state,
-	loading: true,
-	error: null,
-	pathError: null,
-	createError: null,
-	requestedPath: path,
+  ...state,
+  loading: true,
+  error: null,
+  pathError: null,
+  createError: null,
+  requestedPath: path,
 }));
 directoryPickerReducer.with(createDirectoryFailed, (state, { payload: [requestedPath, error] }) => {
-	if (state.requestedPath !== requestedPath) return state;
-	return {
-		...state,
-		loading: false,
-		createError: error,
-		error: null,
-	};
+  if (state.requestedPath !== requestedPath) return state;
+  return {
+    ...state,
+    loading: false,
+    createError: error,
+    error: null,
+  };
 });
 directoryPickerReducer.with(clearCreateDirectoryError, (state) => ({
-	...state,
-	createError: null,
+  ...state,
+  createError: null,
 }));
 directoryPickerReducer.with(resetDirectoryPicker, () => initialState);

@@ -15,7 +15,6 @@ import { getItem, getItems } from '@augmentcode/themis/utils/collections/collect
 import type { StoreState } from '../../types';
 import { sumHudUsageTotals, type HudFeedEntry } from './hud-slice';
 import {
-  WORKSPACE_DISPLAY_STATUS_VALUES,
   WorkspaceStatus,
   isWorkspaceDisplayStatus,
   type NoteId,
@@ -148,7 +147,7 @@ function effectiveDisplayStatus(
 }
 
 /** Non-archived workspaces the HUD renders, with live displayStatus applied. */
-export const selectHudWorkspaces = store.createSelector((state): Workspace[] => {
+const selectHudWorkspaces = store.createSelector((state): Workspace[] => {
   const overrides = state.hud.displayStatusByWorkspaceId;
   return getItems(state.workspace.workspaces)
     .filter(
@@ -163,20 +162,6 @@ export const selectHudWorkspaces = store.createSelector((state): Workspace[] => 
         : workspace;
     });
 });
-
-/** WORKSPACES panel state bars: count per displayStatus wire value. */
-export const selectHudWorkspaceStateCounts = store.createSelector(
-  (state): Record<WorkspaceDisplayStatus, number> => {
-    const counts = Object.fromEntries(
-      WORKSPACE_DISPLAY_STATUS_VALUES.map((value) => [value, 0]),
-    ) as Record<WorkspaceDisplayStatus, number>;
-    for (const workspace of selectHudWorkspaces.select(state)) {
-      const status = workspace.displayStatus;
-      if (status) counts[status] += 1;
-    }
-    return counts;
-  },
-);
 
 /**
  * The `agentSummary` aggregate is typed as the slim `WorkspaceAgentIdSummary`
@@ -318,7 +303,7 @@ export const selectHudWorkspaceStateBars = store.createSelector((state): HudWork
 });
 
 /** Discriminates what raised an ATTENTION panel row. */
-export type HudAttentionKind = 'agent_waiting' | 'agent_failed' | 'workspace_attention';
+type HudAttentionKind = 'agent_waiting' | 'agent_failed' | 'workspace_attention';
 
 /** One ATTENTION panel row. */
 export interface HudAttentionItem {
@@ -349,7 +334,7 @@ export interface HudAttentionItem {
  * agentId → display name across all HUD workspaces' `agentSummary.agents`
  * (PROTOCOL §5.1). The join point for "never show raw agent UUIDs".
  */
-export const selectHudAgentNamesById = store.createSelector((state): Record<string, string> => {
+const selectHudAgentNamesById = store.createSelector((state): Record<string, string> => {
   const names: Record<string, string> = {};
   for (const workspace of selectHudWorkspaces.select(state)) {
     for (const agent of agentInfosOf(workspace)) {

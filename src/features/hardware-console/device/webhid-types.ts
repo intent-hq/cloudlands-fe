@@ -37,7 +37,7 @@ export interface HidConnectionEventLike {
   device: HidDeviceLike;
 }
 
-export interface HidDeviceFilter {
+interface HidDeviceFilter {
   vendorId?: number;
   productId?: number;
   usagePage?: number;

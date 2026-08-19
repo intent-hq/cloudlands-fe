@@ -7,10 +7,9 @@ import { logger } from '../../../shared/logger';
  * without requiring Node.js EventEmitter
  */
 
- 
 type EventListener = (...args: any[]) => void;
 
-export class BrowserEventEmitter {
+export class EventEmitter {
   private events: Map<string, Set<EventListener>> = new Map();
   private onceEvents: Map<string, Set<EventListener>> = new Map();
 
@@ -130,4 +129,3 @@ export class BrowserEventEmitter {
 }
 
 // Alias for compatibility
-export const EventEmitter = BrowserEventEmitter;

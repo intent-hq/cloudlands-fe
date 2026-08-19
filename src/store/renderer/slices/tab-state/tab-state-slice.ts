@@ -3,7 +3,7 @@ import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { omitKey } from '../../utils/utils';
 
 export type HandleDropZoneType = 'row-above' | 'row-below' | 'column-left' | 'column-right';
-export type TabFlagMap = Record<string, boolean>;
+type TabFlagMap = Record<string, boolean>;
 export type WorkspaceViewMode = 'single' | 'columns';
 export type WorkspaceDropPlacement = 'before' | 'after' | 'above' | 'below';
 

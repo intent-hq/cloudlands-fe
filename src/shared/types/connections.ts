@@ -89,21 +89,6 @@ export interface ConnectionRecord {
   isLocal: boolean;
 }
 
-/** Which backend the FE is currently connected to. */
-export interface ActiveBackendView {
-  /** id of the active connection; `LOCAL_CONNECTION_ID` for the local sidecar. */
-  activeId: string;
-  /** True when the active backend is the local sidecar. */
-  isLocal: boolean;
-}
-
-// ============================================================================
-// Channel params & results
-// ============================================================================
-
-/** `connections:list` — no params. */
-export type ConnectionsListParams = void;
-
 /**
  * `connections:list` result: the full ordered list (local first, then remotes)
  * plus the active selection.

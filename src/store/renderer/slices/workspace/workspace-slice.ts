@@ -1,4 +1,4 @@
-import type { CreateWorkspaceRequest, Workspace } from '$shared/types';
+import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { shallowEqual } from 'fast-equals';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -14,52 +14,17 @@ import {
   upsertItem,
 } from '@augmentcode/themis/utils/collections/collection-utils';
 
-export type WorkspaceUpdatedEvent = {
-  workspaceId: string;
-  changes: Partial<Workspace>;
-};
-
-export type WorkspaceCreatedEvent = {
-  workspaceId: string;
-  workspace?: Workspace;
-};
-
-export type WorkspaceDeletedEvent = {
-  workspaceId: string;
-};
-
-export type WorkspaceArchivedEvent = {
-  workspaceId: string;
-};
-
-export type WorkspaceBackgroundEnrichmentEvent = {
-  workspaceId: string;
-  updates?: Partial<
-    Pick<
-      Workspace,
-      | 'repositoryOwner'
-      | 'repositoryName'
-      | 'activePullRequest'
-      | 'prStatus'
-      | 'prNumber'
-      | 'prUrl'
-      | 'pullRequests'
-      | 'agentSummary'
-    >
-  >;
-};
-
 export interface WorkspaceRecencyState {
   lastViewedAt: Record<string, number>;
 }
 
-export type PendingWorkspaceTitleMutation = {
+type PendingWorkspaceTitleMutation = {
   token: number;
   optimisticTitle: string;
   previousTitle: string;
 };
 
-export const defaultWorkspaceRecencyState: WorkspaceRecencyState = {
+const defaultWorkspaceRecencyState: WorkspaceRecencyState = {
   lastViewedAt: {},
 };
 
@@ -184,26 +149,6 @@ export const cleanupRecency = createAction<[workspaceIds: string[]]>('workspace/
 
 export const loadWorkspacesRequested = createAction<[retryCount?: number]>(
   'workspace/loadWorkspacesRequested',
-);
-
-export const createWorkspaceRequested = createAction<[request: CreateWorkspaceRequest]>(
-  'workspace/createWorkspaceRequested',
-);
-
-export const openWorkspaceRequested = createAction<[wsId: string]>(
-  'workspace/openWorkspaceRequested',
-);
-
-export const updateWorkspaceRequested = createAction<[wsId: string, changes: Partial<Workspace>]>(
-  'workspace/updateWorkspaceRequested',
-);
-
-export const duplicateWorkspaceRequested = createAction<[wsId: string, newTitle?: string]>(
-  'workspace/duplicateWorkspaceRequested',
-);
-
-export const deleteWorkspaceRequested = createAction<[wsId: string]>(
-  'workspace/deleteWorkspaceRequested',
 );
 
 // ---------------------------------------------------------------------------

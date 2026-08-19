@@ -114,31 +114,6 @@ export interface SpecialistFile {
 }
 
 /**
- * Unified specialist type that combines all sources
- * This is what the frontend and agent system work with
- */
-export interface UnifiedSpecialist {
-  /** Unique identifier */
-  id: string;
-  /** Display name */
-  name: string;
-  /** Short description */
-  description: string;
-  /** ACP provider / runtime backend, if explicitly configured */
-  codingAgent?: string;
-  /** Default model ID */
-  defaultModel: string;
-  /** Behavior prompt / system instructions */
-  defaultBehaviorPrompt: string;
-  /** Optional role reminder for long conversations */
-  roleReminder?: string;
-  /** Source of this specialist definition */
-  source: SpecialistSource;
-  /** File path if source is 'file' */
-  filePath?: string;
-}
-
-/**
  * Result of listing specialists from files
  */
 export interface SpecialistFilesResult {
@@ -160,12 +135,6 @@ export const SPECIALISTS_FOLDER = 'specialists';
  * Valid file extensions for specialist files
  */
 export const SPECIALIST_FILE_EXTENSIONS = ['.md'];
-
-/**
- * Legacy default model constant. Runtime specialist resolution should prefer
- * the user's selected default model when a specialist does not specify model.
- */
-export const DEFAULT_SPECIALIST_MODEL = 'sonnet4.5';
 
 /**
  * Sanitize a string to be used as a specialist ID.

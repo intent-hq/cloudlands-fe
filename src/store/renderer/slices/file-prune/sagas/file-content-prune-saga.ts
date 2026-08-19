@@ -25,7 +25,7 @@ function hasRemovedTab(
   );
 }
 
-export function* cleanupClosedFileContentEntries(action: {
+function* cleanupClosedFileContentEntries(action: {
   type: string;
   payload?: unknown;
 }): SagaGenerator<void> {

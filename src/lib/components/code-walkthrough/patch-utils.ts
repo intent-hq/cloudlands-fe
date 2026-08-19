@@ -5,7 +5,7 @@
  * Adapted from the browser prototype's patch-utils.ts.
  */
 
-export type LineType = 'context' | 'addition' | 'deletion' | 'hunkHeader';
+type LineType = 'context' | 'addition' | 'deletion' | 'hunkHeader';
 
 export interface DiffLine {
   type: LineType;
@@ -113,7 +113,7 @@ export function parsePatch(patch: string | undefined | null): Hunk[] {
 /**
  * Extract file path from a diff --git line
  */
-export function extractFilePath(diffHeader: string): string | null {
+function extractFilePath(diffHeader: string): string | null {
   // Match "diff --git a/path/to/file b/path/to/file"
   const match = diffHeader.match(/diff --git a\/(.+) b\/(.+)/);
   if (match) {

@@ -5,24 +5,6 @@ import { m } from '$shared/paraglide/messages.js';
 
 const logger = new Logger('CommentLoader');
 
-// Minimal input type for creating a new comment (ID is assigned by backend)
-export type NewCommentInput = {
-  content: string;
-  type: NoteComment['type'];
-  author: string;
-  authorType: NoteComment['authorType'];
-  status: NoteComment['status'];
-  threadId?: string;
-  parentId?: string;
-  section?: string;
-  lineStart?: number;
-  lineEnd?: number;
-  from?: number;
-  to?: number;
-  markId?: string;
-  agentId?: string;
-};
-
 export interface CommentLoaderOptions {
   workspaceId: string;
   noteId?: string; // Optional noteId for loading note-specific comments
@@ -171,63 +153,5 @@ export async function resolveComment(
   } catch (error) {
     logger.error('[CommentLoader] Failed to resolve comment:', error);
     return false;
-  }
-}
-
-/**
- * Reply to a comment via IPC
- */
-export async function replyToComment(
-  workspaceId: string,
-  noteId: string,
-  parentId: string,
-  content: string,
-  author: string,
-): Promise<NoteComment | null> {
-  try {
-    const result = await commentsClient.add({
-      workspaceId,
-      noteId,
-      content,
-      type: 'comment',
-      author,
-      authorType: 'user',
-      parentId,
-    });
-
-    if (result.ok) {
-      logger.info('[CommentLoader] Successfully replied to comment');
-      const c: any = result.data;
-      const converted: NoteComment = {
-        id: c.id,
-        noteId: c.noteId ?? noteId,
-        threadId: c.threadId ?? c.id,
-        author: c.author ?? m.comments_loader_unknownAuthor_label(),
-        authorType: (c.authorType as NoteComment['authorType']) ?? 'user',
-        type: c.type as NoteComment['type'],
-        content: c.content ?? '',
-        status: (c.status as NoteComment['status']) ?? 'open',
-        createdAt: c.createdAt ?? new Date().toISOString(),
-        updatedAt: c.updatedAt ?? new Date().toISOString(),
-        parentId: c.parentId,
-        section: c.section,
-        lineStart: c.lineStart,
-        lineEnd: c.lineEnd,
-        reactions: c.reactions,
-        suggestionDiff: c.suggestionDiff
-          ? { original: c.suggestionDiff.original, proposed: c.suggestionDiff.proposed }
-          : undefined,
-        from: c.from,
-        to: c.to,
-        markId: c.markId,
-      };
-      return converted;
-    } else {
-      logger.error('[CommentLoader] Failed to reply to comment:', result.error);
-      return null;
-    }
-  } catch (error) {
-    logger.error('[CommentLoader] Failed to reply to comment:', error);
-    return null;
   }
 }

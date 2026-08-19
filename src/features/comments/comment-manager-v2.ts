@@ -6,16 +6,10 @@
  */
 
 import type { Editor } from '@tiptap/core';
-import {
-  getTextBetween,
-  getTextSerializersFromSchema,
-} from '@tiptap/core';
+import { getTextBetween, getTextSerializersFromSchema } from '@tiptap/core';
 import type { CommentV2, CommentAnchor } from './comment-types-v2';
 import { createLogger } from '$lib/utils/client-logger';
-import {
-  findCommentAnchors,
-  getAllAnchoredCommentIds,
-} from '$lib/components/tiptap/CommentAnchor';
+import { findCommentAnchors, getAllAnchoredCommentIds } from '$lib/components/tiptap/CommentAnchor';
 import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
 import {
   loadComments as loadCommentsFromBackend,
@@ -42,17 +36,6 @@ import {
 } from './utils/anchor-reconciliation';
 
 const logger = createLogger('CommentManagerV2');
-
-/**
- * Result of anchor recovery attempt
- */
-export interface RecoveryResult {
-  success: boolean;
-  method?: 'exact-match' | 'fuzzy-match' | 'context-match';
-  confidence: number;
-  reason?: 'text-not-found' | 'no-version-history' | 'never-healthy';
-  savedAfterRecovery?: boolean;
-}
 
 export class CommentManagerV2 {
   private editor: Editor | null = null;
@@ -214,11 +197,11 @@ export class CommentManagerV2 {
             // NoteComment doesn't have anchorContext, so the key is never set
             reactions: comment.reactions
               ? Object.fromEntries(
-                Object.entries(comment.reactions).map(([k, v]) => [
-                  k,
-                  Array.isArray(v) ? (v as string[]) : [v as string],
-                ]),
-              )
+                  Object.entries(comment.reactions).map(([k, v]) => [
+                    k,
+                    Array.isArray(v) ? (v as string[]) : [v as string],
+                  ]),
+                )
               : undefined,
           };
         }
@@ -415,9 +398,11 @@ export class CommentManagerV2 {
           });
 
           // Mark the comment as orphaned so it still shows in the sidebar
-          appStore.dispatch(updateCommentAction(comment.id, {
-            isOrphaned: true,
-          }));
+          appStore.dispatch(
+            updateCommentAction(comment.id, {
+              isOrphaned: true,
+            }),
+          );
 
           // Still update decorations so orphaned comments are visible in sidebar
           this.updateDecorations();
@@ -808,9 +793,7 @@ export class CommentManagerV2 {
    * (also stripping anchor markers, block markers, and link urls), and maps
    * the first match back to document positions.
    */
-  private findTextByPlaintextProjection(
-    searchText: string,
-  ): { from: number; to: number } | null {
+  private findTextByPlaintextProjection(searchText: string): { from: number; to: number } | null {
     if (!this.editor) return null;
 
     const needle = projectAnchorNeedle(searchText);
@@ -893,9 +876,9 @@ export class CommentManagerV2 {
 
     const anchoredCommentIds = getAllAnchoredCommentIds(this.editor.state.doc);
     // Only check comments for the current note
-    const currentNoteComments = selectComments.select(appStore.state).filter(
-      (comment) => comment.noteId === this.noteId,
-    );
+    const currentNoteComments = selectComments
+      .select(appStore.state)
+      .filter((comment) => comment.noteId === this.noteId);
     const commentById = new Map(currentNoteComments.map((c) => [c.id, c]));
 
     // Thread replies share the thread root's anchors, so also accept the
@@ -948,9 +931,9 @@ export class CommentManagerV2 {
       return;
     }
 
-    const currentNoteComments = selectComments.select(appStore.state).filter(
-      (comment) => comment.noteId === this.noteId,
-    );
+    const currentNoteComments = selectComments
+      .select(appStore.state)
+      .filter((comment) => comment.noteId === this.noteId);
 
     if (currentNoteComments.length === 0) {
       logger.debug('No comments to reapply anchors for', {
@@ -1276,7 +1259,9 @@ export class CommentManagerV2 {
     }
 
     // Get all comments for this note
-    const comments = selectComments.select(appStore.state).filter((comment) => comment.noteId === this.noteId);
+    const comments = selectComments
+      .select(appStore.state)
+      .filter((comment) => comment.noteId === this.noteId);
 
     logger.debug('Scanning anchor health', {
       commentCount: comments.length,

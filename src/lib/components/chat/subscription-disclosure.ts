@@ -20,8 +20,6 @@ export const SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS =
 export const SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS = `${SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS} first:before:hidden`;
 export const SUBSCRIPTION_DISCLOSURE_ROW_CLASS =
   'type-body flex h-9! w-full min-w-0 max-w-full items-center justify-start! gap-2 overflow-hidden px-3! py-2! font-normal text-muted-foreground!'; // i18n-ignore (Tailwind class constants)
-export const SUBSCRIPTION_COMPACT_DISCLOSURE_ROW_CLASS =
-  'type-body flex min-h-9 w-full min-w-0 max-w-full items-center gap-1.5 overflow-hidden px-3 py-2 font-normal text-muted-foreground!'; // i18n-ignore (Tailwind class constants)
 export const SUBSCRIPTION_CHEVRON_CLASS =
   'text-ghost opacity-60 transition-transform duration-[var(--motion-fast)] motion-reduce:transition-none';
 export const SUBSCRIPTION_CHEVRON_SIZE_CLASS = 'h-[16px]! w-[16px]!';

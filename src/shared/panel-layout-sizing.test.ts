@@ -4,7 +4,6 @@ import {
   DEFAULT_CHAT_PANEL_WIDTH,
   DEFAULT_MEDIUM_PANEL_WIDTH,
   DEFAULT_PANEL_WIDTH,
-  FIRST_CHAT_PREFERRED_WIDTH,
   MAX_VISIBLE_ROOT_PANEL_RESIZE_COUNT,
   PANEL_SPLIT_GUTTER_WIDTH,
   allocatePanelWidths,
@@ -36,7 +35,6 @@ describe('panel type default widths', () => {
     expect(DEFAULT_PANEL_WIDTH).toBe(500);
     expect(DEFAULT_CHAT_PANEL_WIDTH).toBe(DEFAULT_PANEL_WIDTH + 200);
     expect(DEFAULT_CHAT_PANEL_WIDTH).toBe(700);
-    expect(FIRST_CHAT_PREFERRED_WIDTH).toBe(DEFAULT_CHAT_PANEL_WIDTH);
     expect(DEFAULT_MEDIUM_PANEL_WIDTH).toBe(720);
     expect(DEFAULT_BROWSER_PANEL_WIDTH).toBe(900);
     expect(getPanelDefaultWidth('narrow')).toBe(500);

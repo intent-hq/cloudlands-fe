@@ -6,7 +6,7 @@ export const settingsPageShellMetadata = parseUiComponentMetadata({
   source: 'src/lib/components/ui/settings-page-shell/settings-page-shell.svelte',
   publicImport: '$lib/components/ui/settings-page-shell',
   legacyImports: [],
-  exports: ['Root', 'SettingsPageShell', 'settingsPageShellMetadata'],
+  exports: ['SettingsPageShell'],
   category: 'pattern',
   owner: '008-B',
   callers: ['src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte'],

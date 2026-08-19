@@ -15,22 +15,7 @@ import type {
   ModelState,
 } from './model-types';
 
-export type {
-  ModelFallbackInfo,
-  ModelLoadingState,
-  ModelLoadingStatus,
-  ModelState,
-} from './model-types';
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-export const GLOBAL_MODEL_KEY = 'workspaces-selected-model';
-export const PROVIDER_MODELS_KEY = 'workspaces-provider-models';
-
-export const MAX_AUTO_RETRIES = 3;
-export const RETRY_DELAYS_MS = [5_000, 15_000, 30_000];
+export type { ModelFallbackInfo, ModelLoadingStatus, ModelState } from './model-types';
 
 function buildLoadingState(
   previous: ModelLoadingState | undefined,

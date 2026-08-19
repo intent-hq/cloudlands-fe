@@ -61,7 +61,7 @@ interface DaemonEventLeases {
   scopedFile: SubscriptionLease;
 }
 
-export function createDaemonEventsChannel(): EventChannel<DaemonChannelMessage> {
+function createDaemonEventsChannel(): EventChannel<DaemonChannelMessage> {
   return eventChannel<DaemonChannelMessage>((emit) => {
     const offNotification = onBackendNotification((notification) => {
       emit({ kind: 'notification', notification });

@@ -4,7 +4,7 @@ export interface PanelNavigatorRange {
   right: number;
 }
 
-export interface PanelNavigatorSegmentGeometry {
+interface PanelNavigatorSegmentGeometry {
   id: string;
   start: number;
   size: number;

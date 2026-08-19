@@ -27,7 +27,7 @@ const SUGGESTION_MESSAGES = [
   m.onboarding_suggestions_typeAnnotations_prompt,
 ] as const;
 
-export function getAllOnboardingSuggestions(): string[] {
+function getAllOnboardingSuggestions(): string[] {
   return SUGGESTION_MESSAGES.map((fn) => fn());
 }
 

@@ -1,4 +1,4 @@
-import { store } from "../../store";
+import { store } from '../../store';
 import type {
   ProposalApplyResult,
   ProposalLifecycleEntry,
@@ -8,10 +8,6 @@ import type {
 export const selectProposalLifecycleEntry = store.createSelector(
   (state, proposalId: string): ProposalLifecycleEntry | null =>
     state.proposalLifecycle[proposalId] ?? null,
-);
-
-export const selectProposalLifecycleEntries = store.createSelector(
-  (state): Record<string, ProposalLifecycleEntry> => state.proposalLifecycle,
 );
 
 export const selectProposalStatus = store.createSelector(

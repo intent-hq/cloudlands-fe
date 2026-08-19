@@ -70,10 +70,7 @@ export class RequestDeduplicator {
   /**
    * Execute the actual request and drop the pending entry when it settles.
    */
-  private async executeRequest<T>(
-    key: string,
-    operation: () => Promise<T>,
-  ): Promise<T> {
+  private async executeRequest<T>(key: string, operation: () => Promise<T>): Promise<T> {
     try {
       const result = await operation();
       this.pendingRequests.delete(key);
@@ -206,7 +203,7 @@ export class RequestDeduplicator {
 }
 
 // Export singleton instance
-export const requestDeduplicator = RequestDeduplicator.getInstance();
+const requestDeduplicator = RequestDeduplicator.getInstance();
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
@@ -215,5 +212,4 @@ if (import.meta.hot) {
 }
 
 // Export static key generators for convenience
-export const { generateAgentCreationKey, generateMessageKey, generateSessionKey } =
-  RequestDeduplicator;
+export const {} = RequestDeduplicator;

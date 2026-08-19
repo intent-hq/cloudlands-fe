@@ -22,8 +22,8 @@
  * Dependency-light (per feature utils conventions): pure functions over the
  * session payload — no stores, services, or side effects.
  */
-import type { AgentSession } from "$shared/types";
-import type { BulkUpsertSessionsOptions } from "$store/renderer/slices/agent-session/agent-session-slice";
+import type { AgentSession } from '$shared/types';
+import type { BulkUpsertSessionsOptions } from '$store/renderer/slices/agent-session/agent-session-slice';
 
 /**
  * Daemon-reported turn liveness on a freshly fetched session (PROTOCOL §5.5
@@ -32,7 +32,7 @@ import type { BulkUpsertSessionsOptions } from "$store/renderer/slices/agent-ses
  * message-preservation gate. `turnInFlight` is a §5.5 additive field not
  * declared on the TS type, so it is read defensively off the raw session.
  */
-export function daemonReportsTurnInFlight(session: AgentSession): boolean {
+function daemonReportsTurnInFlight(session: AgentSession): boolean {
   return (
     (session as { turnInFlight?: unknown }).turnInFlight === true ||
     session.isResponding === true ||
@@ -41,7 +41,7 @@ export function daemonReportsTurnInFlight(session: AgentSession): boolean {
 }
 
 /** Upsert options that let an authoritative snapshot's explicit-false flags win. */
-export const STALE_RUNTIME_FLAG_CLEAR_OPTIONS: BulkUpsertSessionsOptions = Object.freeze({
+const STALE_RUNTIME_FLAG_CLEAR_OPTIONS: BulkUpsertSessionsOptions = Object.freeze({
   preserveExplicitRuntimeFlags: false,
   allowActiveTurnRuntimeFlagClear: true,
 });

@@ -10,7 +10,6 @@ import {
   countHorizontalPanelColumns,
   getAutomaticPanelLayoutCanvasWidth,
   getHorizontalPanelColumnDefaultWidthTiers,
-  getHorizontalPanelColumnDefaultWidths,
   getPanelOrder,
 } from './panel-layout-tabless';
 import { panelTabsAreEquivalent } from './panel-tab-identity';
@@ -201,15 +200,6 @@ export const selectAllTabs = store.createSelector<[wsId: string], PanelTab[]>((s
   return Object.values(ws.panels).flatMap((p) => p.tabs);
 });
 
-export const selectPanelTabCountsByWorkspaceId = store.createSelector((state) => {
-  return Object.fromEntries(
-    Object.entries(state.panelLayout.byWorkspaceId).map(([workspaceId, layout]) => [
-      workspaceId,
-      Object.values(layout.panels).reduce((count, panel) => count + panel.tabs.length, 0),
-    ]),
-  );
-});
-
 /** Select visible horizontal panel-column counts for workspace width reservation. */
 export const selectPanelColumnCountsByWorkspaceId = store.createSelector((state) => {
   return Object.fromEntries(
@@ -220,15 +210,6 @@ export const selectPanelColumnCountsByWorkspaceId = store.createSelector((state)
   );
 });
 
-export const selectPanelColumnDefaultWidthsByWorkspaceId = store.createSelector((state) => {
-  return Object.fromEntries(
-    Object.entries(state.panelLayout.byWorkspaceId).map(([workspaceId, layout]) => [
-      workspaceId,
-      getHorizontalPanelColumnDefaultWidths(layout.root, layout.panels),
-    ]),
-  );
-});
-
 export const selectPanelColumnDefaultWidthTiers = store.createSelector<
   [wsId: string],
   PanelDefaultWidthTier[]
@@ -236,13 +217,6 @@ export const selectPanelColumnDefaultWidthTiers = store.createSelector<
   const layout = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
   return getHorizontalPanelColumnDefaultWidthTiers(layout.root, layout.panels);
 });
-
-export const selectPanelColumnDefaultWidths = store.createSelector<[wsId: string], number[]>(
-  (state, wsId) => {
-    const layout = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
-    return getHorizontalPanelColumnDefaultWidths(layout.root, layout.panels);
-  },
-);
 
 export const selectPanelCanvasWidthsByWorkspaceId = store.createSelector((state) => {
   return Object.fromEntries(
@@ -385,18 +359,3 @@ export const selectCanGoForward = store.createSelector<[wsId: string], boolean>(
   const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
   return ws.historyIndex < ws.layoutHistory.length - 1;
 });
-
-// ============================================================================
-// Compatibility helpers (for use in non-component code like sagas)
-// ============================================================================
-
-/**
- * Get the workspace panel layout state from the store state.
- * Use this for direct state reads in sagas/callbacks instead of selectors.
- */
-export function getWorkspacePanelLayout(
-  state: { panelLayout: { byWorkspaceId: Record<string, WorkspacePanelLayoutState> } },
-  wsId: string,
-): WorkspacePanelLayoutState {
-  return state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
-}

@@ -233,14 +233,6 @@ export function createIntentLinkClickHandler() {
   };
 }
 
-// Backward compatibility aliases
-/** @deprecated Use parseIntentLink instead */
-export const parseWorkspacesLink = parseIntentLink;
-/** @deprecated Use handleIntentLink instead */
-export const handleWorkspacesLink = handleIntentLink;
-/** @deprecated Use createIntentLinkClickHandler instead */
-export const createWorkspacesLinkClickHandler = createIntentLinkClickHandler;
-
 /**
  * Private: Navigate to a note
  */

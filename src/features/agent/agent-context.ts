@@ -47,17 +47,6 @@ export interface ContextReference {
 }
 
 /**
- * Request to launch an agent with specific agent type and context
- */
-export interface AgentLaunchRequest {
-  workspaceId: string;
-  agentType: string; // Agent type identifier (e.g., 'workspace', 'task-loop', 'debug')
-  userMessage?: string; // Optional - not needed when context is sufficient
-  references?: ContextReference[];
-  agentName?: string; // Optional custom name (auto-generated if not provided)
-}
-
-/**
  * Agent context format for IPC communication
  */
 export interface AgentContext {

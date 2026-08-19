@@ -19,8 +19,8 @@ declare global {
   interface Window {
     intent?: {
       reduxContext?:
-        | import('./lib/store/types').ReduxStoreContext
-        | import('./lib/store/types').ReduxStoreContext[];
+        | import('./store/renderer/types').ReduxStoreContext
+        | import('./store/renderer/types').ReduxStoreContext[];
       enableReduxLogging?: () => void;
       disableReduxLogging?: () => void;
       debug?: {

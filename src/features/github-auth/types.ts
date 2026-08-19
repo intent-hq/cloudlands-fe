@@ -9,7 +9,7 @@ export interface GitHubUser {
  * Where the daemon-owned device flow stands (PROTOCOL §5.27 `deviceFlow.status`).
  * `pending` = waiting for the user to enter the code; the rest are terminal.
  */
-export type GitHubDeviceFlowStatus = 'pending' | 'expired' | 'denied' | 'error';
+type GitHubDeviceFlowStatus = 'pending' | 'expired' | 'denied' | 'error';
 
 /**
  * The `deviceFlow` object embedded in `github.authStatus` (§5.27) — the
@@ -112,21 +112,4 @@ export interface GitHubAuthRequiredEvent {
   workspaceId?: string;
   operation?: string;
   message: string;
-}
-
-// Legacy types for backwards compatibility (deprecated)
-
-/** @deprecated Use StartAuthResult instead */
-export interface StartDeviceFlowResult {
-  userCode: string;
-  verificationUri: string;
-  expiresIn: number;
-}
-
-/** @deprecated No longer used - auth is managed by the daemon */
-export interface StoredAuth {
-  accessToken: string;
-  user: GitHubUser;
-  createdAt: string;
-  scopes: string[];
 }

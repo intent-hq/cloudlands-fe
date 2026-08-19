@@ -24,7 +24,7 @@ export const ProviderCatalogRequestSchema = z.object({}).strict();
  * stripped. No row carries a default designation: the effective default
  * provider is derived from user settings, never from the registry.
  */
-export const ProviderCatalogEntrySchema = z
+const ProviderCatalogEntrySchema = z
   .object({
     id: z.string().min(1),
     displayName: z.string(),

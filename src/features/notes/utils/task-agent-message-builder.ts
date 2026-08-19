@@ -9,6 +9,7 @@ import { noteLink } from '$shared/constants/intent-links';
  * @param taskText - The text from the original checklist item
  * @param parentNoteId - Optional ID of the note containing the original checklist
  * @param parentNoteTitle - Optional title of the parent note
+ * @public imported by NoteWithComments.svelte (knip does not track that file's imports)
  */
 export function buildTaskNoteContent(
   taskText: string,

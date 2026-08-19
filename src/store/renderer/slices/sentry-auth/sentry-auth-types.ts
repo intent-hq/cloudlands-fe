@@ -4,7 +4,7 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
-import type { SentryIssueResult, SentryProject } from "$features/sentry-auth/types";
+import type { SentryIssueResult, SentryProject } from '$features/sentry-auth/types';
 
 export type SentryAuthState = {
   /** Whether user is authenticated with Sentry */
@@ -26,5 +26,4 @@ export type SentryAuthState = {
 };
 
 // Re-export types that consumers need
-export type { SentryIssueResult, SentryProject } from "$features/sentry-auth/types";
-
+export type { SentryIssueResult } from '$features/sentry-auth/types';

@@ -18,7 +18,7 @@ export interface ProviderAuthStatusParams {
   force?: boolean;
 }
 
-export interface ProviderAuthStatusEntry {
+interface ProviderAuthStatusEntry {
   id: string;
   /**
    * true = authenticated/ready, false = explicitly not authenticated,

@@ -92,8 +92,6 @@ export const STREAMING_PROFILES: Record<StreamingProfileName, StreamingProfile> 
 
 export const DEFAULT_PROFILE: StreamingProfileName = 'standard';
 
-export const STREAMING_PROFILE_STORAGE_KEY = 'streaming-profile';
-
 export type StreamingConfigState = {
   currentProfile: StreamingProfileName;
   customConfig: Partial<StreamingTimeoutConfig> | null;
@@ -112,12 +110,6 @@ export function resolveStreamingConfig(
   return baseConfig;
 }
 
-export function calculateBackoff(
-  attemptNumber: number,
-  config: StreamingTimeoutConfig,
-): number {
-  return Math.min(
-    Math.pow(config.backoffMultiplier, attemptNumber) * 1000,
-    config.maxBackoffTime,
-  );
+export function calculateBackoff(attemptNumber: number, config: StreamingTimeoutConfig): number {
+  return Math.min(Math.pow(config.backoffMultiplier, attemptNumber) * 1000, config.maxBackoffTime);
 }

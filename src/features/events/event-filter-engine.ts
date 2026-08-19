@@ -6,22 +6,14 @@
 
 import {
   WorkspaceEvent,
-  WorkspaceEventType,
   EventFilter,
   FilterOperator,
-  ActorType,
 } from './types';
 import { Logger } from '../../shared/logger';
 
 const logger = new Logger('EventFilterEngine');
 
-const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
-
-function escapeRegexLiteral(value: string): string {
-  return value.replace(REGEX_SPECIAL_CHARS, '\\$&');
-}
-
-export class EventFilterEngine {
+class EventFilterEngine {
   /**
    * Check if an event matches all filters
    */
@@ -239,70 +231,6 @@ export class EventFilterEngine {
 
 const subscriptionFilterEngine = new EventFilterEngine();
 
-export interface EventTypeSubscriptionFilterOptions {
-  eventTypes: string[];
-  workspaceId?: string;
-}
-
-/**
- * Build subscription filters from event type patterns.
- *
- * This dependency-light helper is shared by external WebSocket subscriptions
- * and renderer subscription handling so both transports use the same exact,
- * wildcard, mixed wildcard/exact, and workspace scoping semantics.
- */
-export function createEventTypeSubscriptionFilters({
-  eventTypes,
-  workspaceId,
-}: EventTypeSubscriptionFilterOptions): EventFilter[] {
-  const filters: EventFilter[] = [];
-  const wildcardPatterns = eventTypes.filter((type) => type.endsWith(':*'));
-  const exactTypes = eventTypes.filter((type) => !type.endsWith(':*'));
-
-  if (wildcardPatterns.length === 0) {
-    if (exactTypes.length === 1) {
-      filters.push({ field: 'type', operator: 'equals', value: exactTypes[0] });
-    } else if (exactTypes.length > 1) {
-      filters.push({ field: 'type', operator: 'in', value: exactTypes });
-    }
-  } else if (exactTypes.length === 0) {
-    if (wildcardPatterns.length === 1) {
-      filters.push({
-        field: 'type',
-        operator: 'starts_with',
-        value: wildcardPatterns[0].slice(0, -1),
-      });
-    } else {
-      const prefixes = wildcardPatterns.map((pattern) =>
-        escapeRegexLiteral(pattern.slice(0, -1)),
-      );
-      filters.push({
-        field: 'type',
-        operator: 'matches',
-        value: `^(${prefixes.join('|')})`,
-      });
-    }
-  } else {
-    const parts = [
-      ...wildcardPatterns.map(
-        (pattern) => `${escapeRegexLiteral(pattern.slice(0, -1))}.+`,
-      ),
-      ...exactTypes.map(escapeRegexLiteral),
-    ];
-    filters.push({
-      field: 'type',
-      operator: 'matches',
-      value: `^(${parts.join('|')})$`,
-    });
-  }
-
-  if (workspaceId) {
-    filters.push({ field: 'workspaceId', operator: 'equals', value: workspaceId });
-  }
-
-  return filters;
-}
-
 export function eventMatchesSubscription(event: WorkspaceEvent, filters: EventFilter[]): boolean {
   return subscriptionFilterEngine.matches(event, filters);
 }
@@ -312,82 +240,4 @@ export function filterEventsForSubscription(
   filters: EventFilter[],
 ): WorkspaceEvent[] {
   return subscriptionFilterEngine.filterEvents(events, filters);
-}
-
-
-/**
- * Type-safe filter builder for workspace events.
- *
- * Pure utility – builds an EventFilter[] array from a fluent API.
- * Moved here from workspace-event-bus.ts during Redux migration cleanup.
- */
-
-export class EventFilterBuilder<_T extends WorkspaceEvent = WorkspaceEvent> {
-  private filters: EventFilter[] = [];
-
-  ofType<K extends WorkspaceEventType>(
-    type: K,
-  ): EventFilterBuilder<Extract<WorkspaceEvent, { type: K }>> {
-    this.filters.push({ field: 'type', operator: 'equals', value: type });
-    return this as any;
-  }
-
-  ofTypes(types: WorkspaceEventType[]): this {
-    if (types.length === 1) {
-      this.filters.push({ field: 'type', operator: 'equals' as const, value: types[0] });
-    } else if (types.length > 1) {
-      this.filters.push({ field: 'type', operator: 'in' as const, value: types });
-    }
-    return this;
-  }
-
-  byActor(actorType: ActorType, actorId?: string): this {
-    this.filters.push({ field: 'actor.type', operator: 'equals', value: actorType });
-    if (actorId) {
-      this.filters.push({ field: 'actor.id', operator: 'equals', value: actorId });
-    }
-    return this;
-  }
-
-  since(timestamp: Date | string): this {
-    this.filters.push({
-      field: 'timestamp',
-      operator: 'greater_than',
-      value: typeof timestamp === 'string' ? timestamp : timestamp.toISOString(),
-    });
-    return this;
-  }
-
-  inLast(milliseconds: number): this {
-    return this.since(new Date(Date.now() - milliseconds));
-  }
-
-  inPath(path: string): this {
-    this.filters.push({ field: 'data.path', operator: 'starts_with', value: path });
-    return this;
-  }
-
-  matchingPattern(pattern: string | RegExp): this {
-    this.filters.push({ field: 'data.path', operator: 'matches', value: pattern });
-    return this;
-  }
-
-  inSession(sessionId: string): this {
-    this.filters.push({ field: 'sessionId', operator: 'equals', value: sessionId });
-    return this;
-  }
-
-  withCorrelation(correlationId: string): this {
-    this.filters.push({ field: 'correlationId', operator: 'equals', value: correlationId });
-    return this;
-  }
-
-  limit(count: number): this {
-    this.filters.push({ field: '_limit', operator: 'equals', value: count });
-    return this;
-  }
-
-  build(): EventFilter[] {
-    return this.filters;
-  }
 }

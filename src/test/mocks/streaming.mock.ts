@@ -8,7 +8,7 @@ import { EventEmitter } from '$lib/utils/browser-event-emitter';
 import type { ContentBlock, AgentMessage } from '$shared/types';
 import { v4 as uuidv4 } from 'uuid';
 
-export interface MockStreamChunk {
+interface MockStreamChunk {
   type: 'text' | 'content_block' | 'tool_call' | 'error' | 'complete';
   data: any;
   timestamp: number;
@@ -209,6 +209,6 @@ export class MockStreamManager extends EventEmitter {
   }
 }
 
-export function createMockStreamManager(): MockStreamManager {
+function createMockStreamManager(): MockStreamManager {
   return new MockStreamManager();
 }

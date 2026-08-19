@@ -35,15 +35,15 @@ export type DecodedVendorMessage =
   | { kind: 'joystick'; angle: number; distance: number };
 
 /** Payloads for the typed events emitted by {@link HardwareInputEventMap}. */
-export interface KeyEventPayload {
+interface KeyEventPayload {
   key: LogicalKeyId;
 }
 
-export interface EncoderRotateEventPayload {
+interface EncoderRotateEventPayload {
   direction: EncoderDirection;
 }
 
-export interface JoystickEventPayload {
+interface JoystickEventPayload {
   /** Normalized angular position, wrapping 0.0–1.0. */
   angle: number;
   /** Normalized deflection from center, 0.0–1.0. */
@@ -52,7 +52,7 @@ export interface JoystickEventPayload {
   sector: number;
 }
 
-export interface JoystickReleasePayload {
+interface JoystickReleasePayload {
   /** The sector that was active when the stick was released (the selection). */
   sector: number;
 }
@@ -94,7 +94,7 @@ export interface VendorNotificationSource {
   onNotification(listener: (message: unknown) => void): () => void;
 }
 
-export interface JoystickOptions {
+interface JoystickOptions {
   /** Deflection at or above which the radial interaction engages. */
   engageDistance?: number;
   /** Deflection at or below which an engaged stick releases (hysteresis). */

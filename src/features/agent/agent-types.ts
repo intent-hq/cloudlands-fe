@@ -6,23 +6,11 @@
  */
 
 // Import shared types for use in this file
-import type { ProviderMessage, ToolCall as SharedToolCall } from '../../shared/types';
-
-// Re-export shared types
-export type {
-  AgentSession,
-  ProviderMessage as AgentMessage, // Provider message type (simplified)
-  ToolCall,
-} from '../../shared/types';
-
-// Type aliases for convenience in this file
-type AgentMessage = ProviderMessage;
-type ToolCall = SharedToolCall;
 
 /**
  * Tool definition for agent capabilities
  */
-export interface Tool {
+interface Tool {
   /** Unique name identifier for the tool */
   name: string;
   /** Human-readable description of what the tool does */
@@ -31,36 +19,6 @@ export interface Tool {
   parameters?: Record<string, unknown>;
   /** Execute the tool with given parameters */
   execute: (params: unknown) => Promise<unknown>;
-}
-
-/**
- * Response structure from an agent after processing a message.
- * Contains the agent's response content and any tool calls made.
- */
-export interface AgentResponse {
-  /** The text content of the agent's response */
-  content: string;
-  /** Optional array of tool calls the agent wants to execute */
-  toolCalls?: ToolCall[];
-  /** Additional metadata about the response */
-  metadata?: Record<string, any>;
-}
-
-/**
- * Options for streaming agent responses.
- * Provides callbacks for handling different streaming events.
- */
-export interface StreamOptions {
-  /** Called for each token received during streaming */
-  onToken?: (token: string) => void;
-  /** Called when the agent makes a tool call */
-  onToolCall?: (toolCall: ToolCall) => void;
-  /** Called when the complete message is received */
-  onComplete?: (message: AgentMessage) => void;
-  /** Called if an error occurs during streaming */
-  onError?: (error: Error) => void;
-  /** AbortSignal to cancel the streaming operation */
-  signal?: AbortSignal;
 }
 
 /**

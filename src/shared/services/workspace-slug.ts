@@ -8,11 +8,7 @@
  * With collision suffix: word-word-N (e.g., "amber-forest-2", "auth-refactor-3")
  */
 
-import {
-  uniqueNamesGenerator,
-  adjectives,
-  animals,
-} from 'unique-names-generator';
+import { uniqueNamesGenerator, adjectives, animals } from 'unique-names-generator';
 
 /**
  * Pattern for validating workspace slugs
@@ -91,15 +87,6 @@ const knownWorkspaceSlugs = new Set<string>();
 export function registerWorkspaceSlug(slug: string): void {
   if (slug && WORKSPACE_SLUG_PATTERN.test(slug)) {
     knownWorkspaceSlugs.add(slug);
-  }
-}
-
-/**
- * Register multiple workspace slugs as known.
- */
-export function registerWorkspaceSlugs(slugs: string[]): void {
-  for (const slug of slugs) {
-    registerWorkspaceSlug(slug);
   }
 }
 

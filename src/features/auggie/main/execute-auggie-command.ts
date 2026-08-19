@@ -3,15 +3,12 @@ import { Buffer } from 'node:buffer';
 import { Logger } from '../../../shared/logger';
 import { hostExec } from '../../../shared/main/host-exec';
 import { hostExecStream } from '../../../shared/main/host-exec-stream';
-import {
-  findAuggiePathAsync,
-  getEnhancedPath,
-} from './auggie-path';
+import { findAuggiePathAsync, getEnhancedPath } from './auggie-path';
 
 const logger = new Logger('ExecuteAuggieCommand');
 
 // Default timeout for auggie commands (30 seconds)
-export const DEFAULT_AUGGIE_TIMEOUT_MS = 30_000;
+const DEFAULT_AUGGIE_TIMEOUT_MS = 30_000;
 
 /**
  * Build a PATH string for executing the auggie CLI binary.

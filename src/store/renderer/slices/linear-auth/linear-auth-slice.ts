@@ -1,8 +1,8 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import type { LinearAuthSliceState } from "./linear-auth-types";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import type { LinearAuthSliceState } from './linear-auth-types';
 
-export const initialState: LinearAuthSliceState = {
+const initialState: LinearAuthSliceState = {
   isAuthenticated: false,
   requiresDaemonAuth: false,
   isAuthenticating: false,
@@ -15,14 +15,14 @@ export const initialState: LinearAuthSliceState = {
 // --- Actions ---
 
 /** Trigger: initialize linear auth (store-service probes the daemon) */
-export const initializeLinearAuth = createAction("linearAuth/initialize");
+export const initializeLinearAuth = createAction('linearAuth/initialize');
 
 /**
  * Trigger: connect with a pasted Linear personal API key. The store-service
  * stores it via the daemon keyring path (`linear.token`, PROTOCOL §5.28) and
  * re-probes `linear.authStatus`.
  */
-export const connectLinear = createAction<[apiKey: string]>("linearAuth/connect");
+export const connectLinear = createAction<[apiKey: string]>('linearAuth/connect');
 
 /**
  * Legacy trigger kept for surfaces with a one-click "Connect" button
@@ -30,14 +30,14 @@ export const connectLinear = createAction<[apiKey: string]>("linearAuth/connect"
  * store-service maps this to a status re-probe; the real connect is
  * `connectLinear(apiKey)` from the settings panel.
  */
-export const startLinearAuth = createAction("linearAuth/startAuth");
+export const startLinearAuth = createAction('linearAuth/startAuth');
 
 /** Trigger: logout — clears the daemon-held API key and re-probes */
-export const logoutLinear = createAction("linearAuth/logout");
+export const logoutLinear = createAction('linearAuth/logout');
 
 /** Set auth state from IPC response */
 export const setLinearAuthState = createAction(
-  "linearAuth/setAuthState",
+  'linearAuth/setAuthState',
   (isAuthenticated: boolean, requiresDaemonAuth: boolean, oauthUrl: string | null) => ({
     isAuthenticated,
     requiresDaemonAuth,
@@ -47,18 +47,15 @@ export const setLinearAuthState = createAction(
 
 /** Set authenticating flag */
 export const setLinearIsAuthenticating = createAction<[value: boolean]>(
-  "linearAuth/setIsAuthenticating",
+  'linearAuth/setIsAuthenticating',
 );
 
 /** Set error */
-export const setLinearError = createAction<[error: string | null]>(
-  "linearAuth/setError",
-);
+export const setLinearError = createAction<[error: string | null]>('linearAuth/setError');
 
 // --- Reducer ---
 
 export const linearAuthReducer = createReducer<LinearAuthSliceState>(initialState);
-
 
 linearAuthReducer.with(setLinearAuthState, (state, { payload }) => ({
   ...state,

@@ -1,9 +1,6 @@
 import { Code } from '@tiptap/extension-code';
 import { mergeAttributes } from '@tiptap/core';
-import {
-  Plugin,
-  PluginKey,
-} from '@tiptap/pm/state';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 
 const codeMarkBoundaryPluginKey = new PluginKey('codeMarkBoundary');
@@ -105,10 +102,7 @@ export const CustomCode = Code.extend({
             // Create transaction to replace `code` with code mark
             const tr = state.tr;
             tr.delete(backtickStart, to); // Delete the `code` text including where closing backtick would go
-            tr.insert(
-              backtickStart,
-              state.schema.text(codeContent, [codeMarkType.create()]),
-            );
+            tr.insert(backtickStart, state.schema.text(codeContent, [codeMarkType.create()]));
             tr.setStoredMarks([]); // Clear marks so next char isn't code
 
             view.dispatch(tr);
@@ -153,5 +147,3 @@ export const CustomCode = Code.extend({
     ];
   },
 });
-
-export default CustomCode;

@@ -278,28 +278,6 @@ export const selectAgentSessionStreamingContent = store.createSelector(
 );
 
 /**
- * Select whether the session holds a stream-owned assistant message — one the
- * standing `chat.subscribe` delta stream is actively growing (viewed agents
- * only). Distinguishes character-level live content from
- * `selectAgentSessionStreamingContent`'s session-flag fallback, which can
- * surface the last PERSISTED assistant message's text while a non-viewed
- * agent streams a new turn (its transcript never grows mid-turn). The
- * message-level flag stays accurate across navigate-away because
- * The chat-subscribe saga normalizes stale `isStreaming` /
- * `streamingComplete` flags when it tears down a mid-turn subscription.
- */
-export const selectAgentSessionHasStreamOwnedMessage = store.createSelector(
-  (state, agentId: string): boolean => {
-    const messages = state.agentSessions?.byAgentId[agentId]?.messages ?? [];
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const message = messages[i];
-      if (message.role === 'assistant' && isStreamingMessage(message)) return true;
-    }
-    return false;
-  },
-);
-
-/**
  * Select whether the transcript's actual TAIL entry is a stream-owned
  * assistant message — stricter than `selectAgentSessionHasStreamOwnedMessage`,
  * which reports true for a streaming assistant row ANYWHERE in the array. An
@@ -403,20 +381,6 @@ export const selectAgentIsResponding = store.createSelector((state, agentId: str
 export const selectAgentQueuedMessages = store.createSelector(
   (state, agentId: string): QueuedMessage[] => selectAgentQueueMessages.select(state, agentId),
 );
-
-/** Select all agents that are currently streaming */
-export const selectAllStreamingAgents = store.createSelector((state): AgentSession[] => {
-  const byAgentId = state.agentSessions?.byAgentId ?? {};
-  const result: AgentSession[] = [];
-  for (const id of Object.keys(byAgentId)) {
-    const stored = byAgentId[id];
-    if (stored?.isStreaming === true) {
-      const materialized = materializeSession(stored);
-      if (materialized) result.push(materialized);
-    }
-  }
-  return result;
-});
 
 /** Select all agents with live work that should retain workspace interest. */
 export const selectAllRetainedAgentSessions = store.createSelector((state): AgentSession[] => {

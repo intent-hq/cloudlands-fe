@@ -78,11 +78,3 @@ export function sanitizeStatusEvent(
     timestamp: toSafeTimestamp(readField(statusEvent, 'timestamp'), fallbackTimestamp),
   };
 }
-
-export function sanitizeStatusEvents(statusEvents: unknown): StatusEvent[] {
-  if (!Array.isArray(statusEvents)) {
-    return [];
-  }
-
-  return statusEvents.map((statusEvent) => sanitizeStatusEvent(statusEvent));
-}

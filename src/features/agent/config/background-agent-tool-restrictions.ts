@@ -114,23 +114,11 @@ export const EXTERNAL_TOOLS = ['web-fetch', 'web-search', 'github-api'] as const
 /**
  * Subagent orchestration tools
  */
-export const SUBAGENT_TOOLS = [
+const SUBAGENT_TOOLS = [
   'sub-agent',
   'sub-agent-explore',
   'sub-agent-plan',
   'sub-agent-code-review-local-analyzer',
-] as const;
-
-/**
- * Built-in auggie tools that conflict with workspace MCP tools.
- * These should always be removed because the workspace MCP versions
- * (e.g., create_agent_workspace-mcp) are the correct implementations
- * that integrate with the workspace agent lifecycle.
- * Without this, the LLM may call both the built-in and MCP versions
- * in parallel, causing errors and duplicate agent creation.
- */
-export const CONFLICTING_BUILTIN_TOOLS = [
-  'create_agent', // Conflicts with create_agent_workspace-mcp
 ] as const;
 
 // ============================================================================

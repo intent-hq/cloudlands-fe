@@ -15,28 +15,6 @@ export function decodeBase64Unicode(base64: string): string {
   return new TextDecoder().decode(bytes);
 }
 
-export { ReferenceBlockNode } from './reference-block-node';
-export { CliBlockNode } from './cli-block-node';
-export { AgentActionBlockNode } from './agent-action-block-node';
-export { PatchBlockNode } from './patch-block-node';
-export { DiagramBlockNode } from './diagram-block-node';
-
-// Export all nodes as an array for easy registration
-export const notePrimitiveNodes = [
-  'ReferenceBlockNode',
-  'CliBlockNode',
-  'AgentActionBlockNode',
-  'PatchBlockNode',
-  'DiagramBlockNode',
-];
-
 // Helper to get all node extensions
-import { ReferenceBlockNode } from './reference-block-node';
-import { CliBlockNode } from './cli-block-node';
-import { AgentActionBlockNode } from './agent-action-block-node';
-import { PatchBlockNode } from './patch-block-node';
-import { DiagramBlockNode } from './diagram-block-node';
 
-export function getNotePrimitiveExtensions() {
-  return [ReferenceBlockNode, CliBlockNode, AgentActionBlockNode, PatchBlockNode, DiagramBlockNode];
-}
+

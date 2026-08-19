@@ -7,22 +7,11 @@
  * (`electron-ipc-transport.ts`) when `window.electronAPI` exists. See
  * `backend-transport-types.ts` for the transport interface.
  */
-import { resolveBackendTransport } from "./backend-transport-factory";
-import type { BackendNotification } from "./backend-transport-types";
+import { resolveBackendTransport } from './backend-transport-factory';
+import type { BackendNotification } from './backend-transport-types';
 
-export type {
-  BackendErrorPayload,
-  BackendNotification,
-  BackendRequestOptions,
-  BackendTransport,
-} from "./backend-transport-types";
-export { BackendError } from "./backend-transport-types";
-export { electronAPI } from "./electron-ipc-transport";
-
-/** Whether the live backend bridge is reachable in this environment. */
-export function isBackendAvailable(): boolean {
-  return resolveBackendTransport().isAvailable();
-}
+export type { BackendNotification } from './backend-transport-types';
+export { electronAPI } from './electron-ipc-transport';
 
 /**
  * Forward a JSON-RPC request to the daemon.
@@ -59,7 +48,7 @@ export async function backendUnsubscribe(subscriptionId: string): Promise<void> 
  * `capabilities`). The full server block is `{locality, hasDisplay, osArch,
  * version, capabilities}`.
  */
-export interface ServerCapabilities {
+interface ServerCapabilities {
   liveState?: boolean;
 }
 
@@ -83,7 +72,7 @@ export function detectLiveStateCapability(): Promise<boolean> {
   if (!liveStateCapabilityPromise) {
     liveStateCapabilityPromise = backendRequest<{
       server?: { capabilities?: ServerCapabilities };
-    }>("client.hello", {})
+    }>('client.hello', {})
       .then((result) => result?.server?.capabilities?.liveState === true)
       .catch(() => false);
   }
@@ -107,4 +96,3 @@ export function onBackendNotification(handler: (n: BackendNotification) => void)
 export function onBackendReconnected(handler: () => void): () => void {
   return resolveBackendTransport().onReconnected(handler);
 }
-

@@ -7,8 +7,7 @@
 
 import type { AppError } from './error-handler.svelte';
 
-
-export interface ErrorReport {
+interface ErrorReport {
   id: string;
   summary: string;
   details: string;
@@ -17,7 +16,7 @@ export interface ErrorReport {
   agentPrompt: string;
 }
 
-export interface ErrorContext {
+interface ErrorContext {
   // Application state
   currentRoute?: string;
   workspaceId?: string;
@@ -46,7 +45,7 @@ export interface ErrorContext {
   }>;
 }
 
-export class ErrorReporter {
+class ErrorReporter {
   private static instance: ErrorReporter;
   private recentActions: Array<{ action: string; timestamp: string; details?: any }> = [];
   private maxRecentActions = 20;

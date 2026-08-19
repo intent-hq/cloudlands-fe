@@ -21,7 +21,7 @@ const logger = createLogger('diff-highlighter-worker-pool');
 
 // Common languages that are likely to be used in diffs
 // These are pre-loaded into the Shiki highlighter worker pool
-export const SUPPORTED_DIFF_LANGUAGES = [
+const SUPPORTED_DIFF_LANGUAGES = [
   'typescript',
   'javascript',
   'tsx',
@@ -38,8 +38,6 @@ export const SUPPORTED_DIFF_LANGUAGES = [
   'bash',
   'powershell',
 ] as const;
-
-export type SupportedDiffLanguage = (typeof SUPPORTED_DIFF_LANGUAGES)[number];
 
 // Set for O(1) lookup
 const SUPPORTED_LANGUAGES_SET = new Set<string>(SUPPORTED_DIFF_LANGUAGES);
@@ -75,7 +73,7 @@ export const DIFF_WORKER_POOL_IDLE_TERMINATION_MS = 30_000;
  * caches could retain ~330 MB before evicting anything; at 64 they cap at
  * ~85 MB while still keeping a whole review session's files warm.
  */
-export const DIFF_AST_LRU_CACHE_SIZE = 64;
+const DIFF_AST_LRU_CACHE_SIZE = 64;
 
 // Lifecycle accounting. Each pool creation spawns `poolSize` workers, each with
 // its own Shiki highlighter, so a create that is never paired with a terminate
@@ -87,7 +85,7 @@ let poolsTerminated = 0;
 let currentPoolSize = 0;
 let poolCreatedAtMs = 0;
 
-export type DiffWorkerPoolTerminationReason = 'idle' | 'unload' | 'manual';
+type DiffWorkerPoolTerminationReason = 'idle' | 'unload' | 'manual';
 
 export interface DiffWorkerPoolLifecycleStats {
   /** Monotonic id of the current (or most recent) pool. */
@@ -177,10 +175,9 @@ function unregisterUnloadTermination(): void {
 function workerFactory(): Worker {
   // Use the portable worker bundle which is self-contained
   // and works in Electron's renderer process.
-  return new Worker(
-    new URL('@pierre/diffs/worker/worker-portable.js', import.meta.url),
-    { type: 'classic' },
-  );
+  return new Worker(new URL('@pierre/diffs/worker/worker-portable.js', import.meta.url), {
+    type: 'classic',
+  });
 }
 
 /**
@@ -339,23 +336,10 @@ export function isDiffHighlighterPreloaded(): boolean {
 }
 
 /**
- * Wait for the worker pool to be initialized.
- * Returns immediately if already initialized.
- */
-export async function waitForDiffHighlighterPreload(): Promise<void> {
-  if (workerPool) {
-    return;
-  }
-  if (initPromise) {
-    await initPromise;
-  }
-}
-
-/**
  * Terminate the worker pool and clean up resources.
  * Call this when the app is closing or navigating away.
  */
-export function terminateDiffWorkerPool(reason: DiffWorkerPoolTerminationReason = 'manual'): void {
+function terminateDiffWorkerPool(reason: DiffWorkerPoolTerminationReason = 'manual'): void {
   clearIdleTerminationTimer();
   const leasesAtTermination = activeWorkerPoolLeases;
   activeWorkerPoolLeases = 0;

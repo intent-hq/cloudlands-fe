@@ -15,7 +15,7 @@ export const LAST_USED_SETUP_SCRIPTS_STORAGE_KEY = 'setup-scripts:last-used-by-r
 /** Newest N repos kept; older entries are evicted on write. */
 export const MAX_REPOS = 20;
 
-export interface LastUsedSetupScript {
+interface LastUsedSetupScript {
   name: string;
   content: string;
   /** ISO timestamp of the workspace creation that used the script. */

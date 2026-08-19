@@ -1,7 +1,7 @@
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { OnboardingStep } from '../onboarding/onboarding-types';
 
-export type WorkspaceInitializerRepoType = 'local' | 'github' | 'remote';
+type WorkspaceInitializerRepoType = 'local' | 'github' | 'remote';
 
 export interface WorkspaceInitializerRemoteSetup {
   id: string;

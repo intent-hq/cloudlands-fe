@@ -43,11 +43,10 @@ const ENABLE_DEBUG_FILES = false;
  */
 function getDebugDir(): string {
   // Dynamic require to avoid loading fs in browser
-   
+
   const path = require('path') as typeof import('path');
   const os = require('os') as typeof import('os');
   const fs = require('fs') as typeof import('fs');
-   
 
   const debugDir = path.join(os.homedir(), 'intent', 'recovery-debug');
   if (!fs.existsSync(debugDir)) {
@@ -83,10 +82,9 @@ function writeDebugFile(
 
   try {
     // Dynamic require to avoid loading fs in browser
-     
+
     const fs = require('fs') as typeof import('fs');
     const path = require('path') as typeof import('path');
-     
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `${timestamp}_${noteId}_${commentId}.json`;
@@ -128,12 +126,8 @@ export interface AnchorPositions {
 /**
  * State of a comment's anchors
  */
-export type AnchorState =
-  | 'HEALTHY'
-  | 'PARTIAL_START_ONLY'
-  | 'PARTIAL_END_ONLY'
-  | 'DEGENERATE'
-  | 'ORPHANED';
+type AnchorState =
+  'HEALTHY' | 'PARTIAL_START_ONLY' | 'PARTIAL_END_ONLY' | 'DEGENERATE' | 'ORPHANED';
 
 /**
  * Information about a problematic anchor
@@ -204,7 +198,7 @@ const CONTEXT_LENGTH = 50;
  * validateAnchorPair({ start: 10, end: undefined }); // false (incomplete)
  * ```
  */
-export function validateAnchorPair(positions: AnchorPositions): boolean {
+function validateAnchorPair(positions: AnchorPositions): boolean {
   if (positions.start === undefined || positions.end === undefined) {
     return false;
   }

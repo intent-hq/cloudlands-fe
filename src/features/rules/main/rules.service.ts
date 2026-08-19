@@ -12,7 +12,7 @@ import * as path from 'path';
 
 const logger = new Logger('RulesService');
 
-export interface Rule {
+interface Rule {
   id: string;
   title: string;
   content: string;
@@ -27,7 +27,7 @@ export interface Rule {
 // In-memory storage
 const rulesStore = new Map<string, Rule>();
 
-export class RulesService {
+class RulesService {
   /**
    * List all rules for a workspace
    */

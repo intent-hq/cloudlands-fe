@@ -4,13 +4,13 @@
  * Types for the git Redux slice. Safe to import from any process.
  */
 
-import type { GitStatus, DiffChunk } from "$shared/types";
+import type { GitStatus, DiffChunk } from '$shared/types';
 
 // ── Git Operation Event Types ──
 
-export type GitOperationType = "commit" | "push" | "create-pr" | "auto-commit";
+type GitOperationType = 'commit' | 'push' | 'create-pr' | 'auto-commit';
 
-export type GitOperationResult = {
+type GitOperationResult = {
   commitHash?: string;
   prNumber?: number;
   prUrl?: string;
@@ -18,7 +18,7 @@ export type GitOperationResult = {
   reason?: string;
 };
 
-export type GitOperationMetadata = {
+type GitOperationMetadata = {
   message?: string;
   prTitle?: string;
   agentId?: string;
@@ -41,11 +41,11 @@ export type GitOperationFailedEvent = {
   metadata?: GitOperationMetadata;
 };
 
-export type AutoCommitHookFailureEvent = {
+type AutoCommitHookFailureEvent = {
   workspaceId: string;
   agentId: string;
   agentName?: string;
-  status: "waking-agent" | "retries-exhausted";
+  status: 'waking-agent' | 'retries-exhausted';
   hookOutput: string;
   retryCount: number;
 };
@@ -64,13 +64,13 @@ export interface PostMergeState {
 }
 
 export type GitOperationFlagName =
-  | "isPushing"
-  | "isPulling"
-  | "isForcePushing"
-  | "isRebasing"
-  | "isRefreshingPR"
-  | "isRefreshingGitStatus"
-  | "isResettingToTrunk";
+  | 'isPushing'
+  | 'isPulling'
+  | 'isForcePushing'
+  | 'isRebasing'
+  | 'isRefreshingPR'
+  | 'isRefreshingGitStatus'
+  | 'isResettingToTrunk';
 
 export interface GitOperationFlags {
   isPushing: boolean;
@@ -106,4 +106,3 @@ export type GitState = {
   lastGitError: GitOperationFailedEvent | null;
   lastAutoCommitHookFailure: AutoCommitHookFailureEvent | null;
 };
-

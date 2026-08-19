@@ -227,7 +227,7 @@ const BrowserActionSchema = z.discriminatedUnion('action', [
   CloseTunnelActionSchema,
 ]);
 
-export type BrowserAction = z.infer<typeof BrowserActionSchema>;
+type BrowserAction = z.infer<typeof BrowserActionSchema>;
 
 /**
  * Validate that a URL is safe to load in the embedded browser.
@@ -280,13 +280,12 @@ const ActionSequenceSchema = z.object({
   tabId: z.string().optional(), // Default tabId for all actions
 });
 
-export type ActionSequence = z.infer<typeof ActionSequenceSchema>;
 
 // ============================================================================
 // Execution Result Types
 // ============================================================================
 
-export interface ActionResult {
+interface ActionResult {
   action: string;
   success: boolean;
   result?: unknown;
@@ -344,8 +343,7 @@ async function resolveAgentDisplayName(
   try {
     const { getBackendClient } = await import('../../backend/main/backend.ipc');
     const result = (await getBackendClient().request('agent.list', { workspaceId })) as
-      | { agents?: Array<{ id?: string; name?: string }> }
-      | undefined;
+      { agents?: Array<{ id?: string; name?: string }> } | undefined;
     const name = result?.agents?.find((a) => a.id === agentId)?.name;
     return typeof name === 'string' && name.length > 0 ? name : undefined;
   } catch {

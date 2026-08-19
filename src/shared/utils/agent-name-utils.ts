@@ -6,17 +6,6 @@
  * dictionaries (static data).
  */
 
-import {
-  adjectives,
-  animals,
-} from 'unique-names-generator';
-
-/**
- * Create a Set for O(1) lookup of adjectives and animals.
- * Created once at module load for performance.
- */
-const adjectivesSet = new Set(adjectives.map((a) => a.toLowerCase()));
-const animalsSet = new Set(animals.map((a) => a.toLowerCase()));
 
 /**
  * Check if a name is a "generic" agent name (e.g., "New Agent", "Orchestrator", "Assistant").
@@ -39,28 +28,9 @@ export function isGenericAgentName(name: string | undefined | null): boolean {
 }
 
 /**
- * Check if a name is a random "Adjective Animal" name (e.g., "Swift Falcon", "Clever Otter").
- * These are auto-generated names that should prompt the agent to set a custom name.
- * Used to determine if naming instructions should be included in the first message.
- */
-export function isRandomAgentName(name: string | undefined | null): boolean {
-  if (!name) return true;
-
-  const trimmed = name.trim();
-  // Random names are exactly two capitalized words separated by a space
-  const parts = trimmed.split(' ');
-  if (parts.length !== 2) return false;
-
-  const [adjective, animal] = parts;
-  // Check if both words are in the dictionaries (case-insensitive)
-  return adjectivesSet.has(adjective.toLowerCase()) && animalsSet.has(animal.toLowerCase());
-}
-
-/**
  * Check if a name is actually a raw agent id (e.g. "agent-<uuid>").
  * UI surfaces must never render these as display names.
  */
 export function looksLikeAgentId(name: string): boolean {
   return /^agent-[a-f0-9-]{36}$/i.test(name);
 }
-

@@ -30,7 +30,7 @@ export interface MonacoStandaloneThemeData {
   encodedTokensColors?: string[];
 }
 
-export interface MonacoTokenRule {
+interface MonacoTokenRule {
   token: string;
   foreground?: string;
   background?: string;

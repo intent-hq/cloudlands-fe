@@ -18,14 +18,7 @@ export type ScriptMode = 'service' | 'command';
  * Script category for grouping in the UI.
  */
 export type ScriptCategory =
-  | 'dev'
-  | 'build'
-  | 'test'
-  | 'lint'
-  | 'typecheck'
-  | 'format'
-  | 'storybook'
-  | 'other';
+  'dev' | 'build' | 'test' | 'lint' | 'typecheck' | 'format' | 'storybook' | 'other';
 
 /**
  * How the script was created.
@@ -84,7 +77,7 @@ export interface ScriptWithState extends WorkspaceScript {
  * Persistence format for .workspace/scripts.json.
  * Includes a version field for forward compatibility.
  */
-export interface ScriptsFileFormat {
+interface ScriptsFileFormat {
   version: number;
   scripts: WorkspaceScript[];
 }
@@ -98,4 +91,3 @@ export function createDefaultRuntimeState(): ScriptRuntimeState {
     restartCount: 0,
   };
 }
-

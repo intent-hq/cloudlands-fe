@@ -103,7 +103,6 @@ const ENFORCED_DIRS = [
   'src/features/agent/chat-read-service.ts',
   'src/features/agent/interrupted-agents-service.ts',
   'src/features/agent/main/agent-missing.ipc.ts',
-  'src/features/agent/main/agent-validator.ts',
   'src/features/agent/main/stream-manager.ts',
   // provider integrations. acp-official main/server, parsers, and plans emit
   // agent-facing wire content; cortex/cortex-acp is a standalone stdio adapter

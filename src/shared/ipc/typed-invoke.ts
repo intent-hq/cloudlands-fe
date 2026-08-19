@@ -15,73 +15,7 @@
  *   // TypeScript will error if you pass wrong request type
  */
 
-import type { IpcContractMap, IpcResponse } from './contracts';
-import { Logger } from '../logger';
-import { invoke as invokeIpc } from '../generated/ipc-client';
-
-const logger = new Logger('TypedInvoke');
-
-/**
- * Type-safe invoke function with full type inference
- *
- * @param channel - The IPC channel name (must be in IpcContractMap)
- * @param request - The request payload (type-checked against contract)
- * @returns Promise resolving to typed response
- *
- * @example
- *   const response = await typedInvoke('agent:create', {
- *     workspaceId: WorkspaceId('123'),
- *     workspacePath: '/path',
- *     name: 'Agent'
- *   });
- *   if (response.success) {
- *     console.log(response.data?.agent.name);
- *   } else {
- *     console.error(response.error?.message);
- *   }
- */
-export async function typedInvoke<K extends keyof IpcContractMap>(
-  channel: K,
-  request: IpcContractMap[K][0],
-): Promise<IpcResponse<IpcContractMap[K][1]>> {
-  try {
-    if (typeof window === 'undefined' || !window.electronAPI) {
-      throw new Error('IPC renderer not available - electronAPI not exposed');
-    }
-
-    logger.debug(`Invoking IPC channel: ${String(channel)}`, { request });
-
-    // Invoke the channel through the generated IPC boundary
-    const response = await invokeIpc<IpcResponse<IpcContractMap[K][1]>>(String(channel), request);
-
-    logger.debug(`IPC response from ${String(channel)}:`, { response });
-
-    // Ensure response has the correct structure
-    if (!response || typeof response !== 'object') {
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_RESPONSE',
-          message: 'Invalid response format from IPC handler',
-          details: { response },
-        },
-      };
-    }
-
-    return response as IpcResponse<IpcContractMap[K][1]>;
-  } catch (error) {
-    logger.error(`IPC error on channel ${String(channel)}:`, error as Error);
-
-    return {
-      success: false,
-      error: {
-        code: 'IPC_ERROR',
-        message: error instanceof Error ? error.message : 'Unknown IPC error',
-        details: error instanceof Error ? { stack: error.stack } : undefined,
-      },
-    };
-  }
-}
+import type { IpcResponse } from './contracts';
 
 /**
  * Helper to check if a response was successful

@@ -6,10 +6,7 @@
  */
 
 import { z } from 'zod';
-import {
-  IpcContracts,
-  type IpcContractKey,
-} from './contracts';
+import { IpcContracts, type IpcContractKey } from './contracts';
 import { Logger } from '../logger';
 
 const logger = new Logger('TypeValidation');
@@ -152,28 +149,4 @@ function formatZodErrors(error: z.ZodError): ValidationError[] {
     expected: 'expected' in err ? String(err.expected) : undefined,
     received: 'received' in err ? String(err.received) : undefined,
   }));
-}
-
-// ============================================================================
-// Validation Middleware
-// ============================================================================
-
-/**
- * Create a validation middleware for IPC handlers
- */
-export function createValidationMiddleware<K extends IpcContractKey>(channel: K) {
-  return (handler: (data: z.infer<(typeof IpcContracts)[K]['request']>) => Promise<any>) =>
-    async (event: any, data: unknown) => {
-      const validation = validateIpcRequest(channel, data);
-
-      if (!validation.success) {
-        logger.error(`Validation failed for ${channel}`, { errors: validation.errors });
-        return {
-          success: false,
-          errors: validation.errors,
-        };
-      }
-
-      return handler(validation.data as z.infer<(typeof IpcContracts)[K]['request']>);
-    };
 }

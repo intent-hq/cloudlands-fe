@@ -185,7 +185,7 @@ function runProcessTableCommand(
  * Read the OS process table. `ps` reports RSS in KB; the PowerShell fallback is
  * asked to print the same four space-separated fields so one parser covers both.
  */
-export function readProcessTable(): Promise<ProcessTableEntry[] | null> {
+function readProcessTable(): Promise<ProcessTableEntry[] | null> {
   if (process.platform === 'win32') {
     return runProcessTableCommand('powershell.exe', [
       '-NoProfile',
@@ -398,7 +398,9 @@ export function formatSnapshot(snapshot: MemorySnapshot): string {
   const main = snapshot.electron.filter((sample) => sample.kind === 'main');
   parts.push(`main=${toMB(sumRss(main))}MB`);
 
-  const renderers = snapshot.electron.filter((sample) => sample.kind === 'renderer').sort(byRssDesc);
+  const renderers = snapshot.electron
+    .filter((sample) => sample.kind === 'renderer')
+    .sort(byRssDesc);
   for (const renderer of renderers.slice(0, MAX_LISTED_RENDERERS)) {
     parts.push(`renderer[${renderer.pid}]=${toMB(renderer.rssBytes)}MB`);
   }
@@ -421,16 +423,22 @@ export function formatSnapshot(snapshot: MemorySnapshot): string {
   } else if (snapshot.sidecar.length === 0) {
     parts.push('sidecar(intentd)=none');
   } else if (snapshot.sidecar.length === 1) {
-    parts.push(`sidecar(intentd)[${snapshot.sidecar[0].pid}]=${toMB(snapshot.sidecar[0].rssBytes)}MB`);
+    parts.push(
+      `sidecar(intentd)[${snapshot.sidecar[0].pid}]=${toMB(snapshot.sidecar[0].rssBytes)}MB`,
+    );
   } else {
-    parts.push(`sidecar(intentd)(n=${snapshot.sidecar.length})=${toMB(sumRss(snapshot.sidecar))}MB`);
+    parts.push(
+      `sidecar(intentd)(n=${snapshot.sidecar.length})=${toMB(sumRss(snapshot.sidecar))}MB`,
+    );
   }
 
   if (!snapshot.processTableUnavailable) {
     parts.push(`agents(n=${snapshot.agents.length})=${toMB(sumRss(snapshot.agents))}MB`);
     const top = [...snapshot.agents].sort(byRssDesc).slice(0, TOP_AGENTS_LISTED);
     if (top.length > 0) {
-      const listed = top.map((agent) => `${agent.name ?? 'agent'}[${agent.pid}]=${toMB(agent.rssBytes)}MB`);
+      const listed = top.map(
+        (agent) => `${agent.name ?? 'agent'}[${agent.pid}]=${toMB(agent.rssBytes)}MB`,
+      );
       parts.push(`top=[${listed.join(',')}]`);
     }
   }
@@ -494,7 +502,7 @@ export const MAX_RETAINED_AGE_MS = 24 * 60 * 60 * 1000;
 export const RETAINED_TOP_PROCESSES = 5;
 
 /** One process inside a retained sample. */
-export interface RetainedProcess {
+interface RetainedProcess {
   pid: number;
   kind: ProcessKind;
   name?: string;
@@ -502,7 +510,7 @@ export interface RetainedProcess {
 }
 
 /** Aggregate for one {@link ProcessKind} within a sample. */
-export interface KindTotal {
+interface KindTotal {
   count: number;
   rssBytes: number;
 }
@@ -518,7 +526,7 @@ export interface RetainedMemorySample {
   processTableUnavailable: boolean;
 }
 
-export interface MemoryPeak {
+interface MemoryPeak {
   rssBytes: number;
   /** ISO-8601 time of the sample that set this peak. */
   at: string;
@@ -532,14 +540,14 @@ export interface MemoryPeak {
   partial?: boolean;
 }
 
-export interface ProcessPeak extends MemoryPeak {
+interface ProcessPeak extends MemoryPeak {
   pid: number;
   kind: ProcessKind;
   name?: string;
 }
 
 /** High-water marks since app start. Deliberately outlive the retention window. */
-export interface MemoryPeaks {
+interface MemoryPeaks {
   /** Peak aggregate footprint across every sampled process. */
   total: MemoryPeak | null;
   /**
@@ -731,9 +739,7 @@ export async function logMemorySample(
     if (warning) logger.warn(warning);
     return snapshot;
   } catch (error) {
-    logger.warn(
-      `sample failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    logger.warn(`sample failed: ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
 }

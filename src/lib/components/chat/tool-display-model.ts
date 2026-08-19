@@ -4,7 +4,7 @@ import type { ToolDisplay } from './tool-classifier';
 
 export type ToolState = 'running' | 'completed' | 'error';
 
-export interface CompactToolSentenceSegment {
+interface CompactToolSentenceSegment {
   kind: 'primary' | 'secondary' | 'file';
   text: string;
 }

@@ -11,14 +11,14 @@
  * is fire-and-forget with `.catch()`, and on web there is no native UI to
  * localize.
  */
-import { registerMockIpcHandler } from "$shared/ipc-mock-router";
-import { IPC_CHANNELS } from "$shared/ipc-registry";
+import { registerMockIpcHandler } from '$shared/ipc-mock-router';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 /** Register the language-preference invoke bridge handler. Idempotent. */
-export function registerLanguagePreferenceBridge(): void {
+function registerLanguagePreferenceBridge(): void {
   registerMockIpcHandler(IPC_CHANNELS.APP.SET_LANGUAGE_PREFERENCE, async (payload?: unknown) => {
-    const bridge = typeof window !== "undefined" ? window.electronAPI : undefined;
-    if (bridge && typeof bridge.invoke === "function") {
+    const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+    if (bridge && typeof bridge.invoke === 'function') {
       return bridge.invoke(IPC_CHANNELS.APP.SET_LANGUAGE_PREFERENCE, payload);
     }
     return undefined;

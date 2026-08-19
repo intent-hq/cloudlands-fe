@@ -18,8 +18,6 @@ import type { IpcContractMap } from './contracts';
 
 const UUID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
-
-
 // Workspace IDs can be:
 // 1. New slug format: word-word (e.g., "amber-forest", "auth-refactor")
 // 2. New slug with collision suffix: word-word-N (e.g., "amber-forest-2")
@@ -89,7 +87,7 @@ export const AgentListRequestSchema = z.object({
 });
 
 // Delete agent schema
-export const AgentDeleteRequestSchema = z.object({
+const AgentDeleteRequestSchema = z.object({
   agentId: AgentIdSchema,
   workspaceId: WorkspaceIdSchema,
 });
@@ -98,7 +96,7 @@ export const AgentDeleteRequestSchema = z.object({
 // and names the provider the picked model belongs to — required to resolve a
 // bare modelId when it targets a provider other than the session's current
 // one (cross-provider model pick).
-export const AgentSetModelRequestSchema = z.object({
+const AgentSetModelRequestSchema = z.object({
   agentId: AgentIdSchema,
   modelId: z.string().min(1, 'modelId is required'),
   workspaceId: WorkspaceIdSchema,

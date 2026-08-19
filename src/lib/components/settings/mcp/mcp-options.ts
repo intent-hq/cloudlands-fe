@@ -8,9 +8,9 @@
 import { m } from '$shared/paraglide/messages.js';
 import type { McpTransportType, McpAuthType } from './types';
 
-export type UserInputType = 'argument' | 'environmentVariable';
+type UserInputType = 'argument' | 'environmentVariable';
 
-export interface UserInputConfig {
+interface UserInputConfig {
   label: string;
   description?: string;
   placeholder?: string;
