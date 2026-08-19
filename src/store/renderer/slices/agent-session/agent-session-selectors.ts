@@ -177,20 +177,74 @@ export const selectAgentMessages = store.createSelector(
   },
 );
 
+const EMPTY_HISTORY_MESSAGES: AgentMessage[] = [];
+
+/** Select the hydrated scrollback history segment rows for a given agent (ordered array). */
+export const selectAgentHistoryMessages = store.createSelector(
+  (state, agentId: string): AgentMessage[] => {
+    const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
+    return segment ? segment.messages : EMPTY_HISTORY_MESSAGES;
+  },
+);
+
+export interface HistorySegmentMeta {
+  /** true when a hole is open between history and the tail. */
+  gapToTail: boolean;
+  /** true once the conversation's true first message has been hydrated. */
+  oldestReached: boolean;
+  /** Number of hydrated history rows. */
+  historyCount: number;
+  /** Number of resident tail rows. */
+  tailCount: number;
+  /**
+   * Estimated conversation ordinal of the segment's first row (seek-seeded
+   * segments only); null for serial-walk segments (split by
+   * `holeRowsEstimate` instead).
+   */
+  startOrdinalEstimate: number | null;
+  /**
+   * Estimated rows inside the open history→tail hole (serial-walk segments:
+   * newest-side cap prunes minus gap refills); null when untracked.
+   */
+  holeRowsEstimate: number | null;
+}
+
+/** Select scrollback history segment metadata (gap flag, oldestReached, counts). */
+export const selectHistorySegmentMeta = store.createSelector(
+  (state, agentId: string): HistorySegmentMeta => {
+    const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
+    const tailCount = state.agentSessions?.byAgentId[agentId]?.messages.length ?? 0;
+    return {
+      gapToTail: segment?.gapToTail === true,
+      oldestReached: segment?.oldestReached === true,
+      historyCount: segment?.messages.length ?? 0,
+      tailCount,
+      startOrdinalEstimate: segment?.startOrdinalEstimate ?? null,
+      holeRowsEstimate: segment?.holeRowsEstimate ?? null,
+    };
+  },
+);
+
 /**
  * Select a single message by id within an agent session.
  * Returns the live message reference from Redux state, so components that
  * subscribe via this selector stay in sync during streaming updates instead
  * of depending on a possibly-stale prop.
  *
- * Bounded lookup over the stored ordered message list.
+ * Bounded lookup over the stored ordered message list; falls back to the
+ * scrollback history segment so paged-in history rows resolve too (they
+ * live in `historySegmentsByAgentId`, not the tail — without the fallback
+ * every history row renders as the "Loading..." placeholder).
  */
 export const selectAgentMessageById = store.createSelector(
   (state, agentId: string, messageId: string): AgentMessage | undefined => {
     if (!agentId || !messageId) return undefined;
     const stored = state.agentSessions?.byAgentId[agentId];
     if (!stored) return undefined;
-    return stored.messages.find((message) => message.id === messageId);
+    const tailMatch = stored.messages.find((message) => message.id === messageId);
+    if (tailMatch) return tailMatch;
+    const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
+    return segment?.messages.find((message) => message.id === messageId);
   },
 );
 

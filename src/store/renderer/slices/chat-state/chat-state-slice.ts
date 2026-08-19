@@ -54,6 +54,12 @@ export const emptyChatAgentState: ChatAgentState = {
   lastMessageTime: 0,
   lastChunkReceivedAt: 0,
   liveStreamPhase: null,
+  fetchingOlderHistory: false,
+  fetchingGapFill: false,
+  scrollbackOlderToken: null,
+  scrollbackGapToken: null,
+  fetchingHistorySeek: false,
+  historySeekUnsupported: false,
 };
 
 export const initialState: ChatStateSlice = {
@@ -776,6 +782,91 @@ export const chatTranscriptSnapshotRerequested = createAction<[wsId: string, age
   'chatState/transcriptSnapshotRerequested',
 );
 
+// --- Scrollback paging actions (on-demand history segment fetches) ---
+
+/**
+ * UI request: fetch ONE older-history page (200 rows) into the scrollback
+ * history segment. Deduped per agent by the `fetchingOlderHistory` flag
+ * (takeLeading semantics per agent); a no-op once `oldestReached`.
+ */
+export const olderHistoryPageRequested = createAction<[wsId: string, agentId: string]>(
+  'chatState/olderHistoryPageRequested',
+);
+
+/**
+ * UI request: fetch ONE page (200 rows) refilling the hole between the
+ * scrollback history segment and the live tail. Deduped per agent by the
+ * `fetchingGapFill` flag; a no-op unless the segment's `gapToTail` is open.
+ */
+export const historyGapFillRequested = createAction<[wsId: string, agentId: string]>(
+  'chatState/historyGapFillRequested',
+);
+
+/**
+ * UI request: far-flick seek — jump the scrollback history segment to the
+ * page containing `targetOrdinal` (0-based from the OLDEST message) with ONE
+ * `aroundIndex` fetch, replacing the current segment. Deduped per agent by
+ * the `fetchingHistorySeek` flag; a no-op when the daemon already rejected
+ * `aroundIndex` (`historySeekUnsupported` — the serial walk applies instead).
+ */
+export const historySeekRequested = createAction<
+  [wsId: string, agentId: string, targetOrdinal: number]
+>('chatState/historySeekRequested');
+
+/** A scrollback page fetch entered flight for the given direction. */
+export const scrollbackFetchStarted = createAction<
+  [agentId: string, direction: 'older' | 'gap' | 'seek']
+>('chatState/scrollbackFetchStarted');
+
+/**
+ * An older scrollback page fetch settled (success or swallowed error).
+ * Clears `fetchingOlderHistory` and persists the backward continuation
+ * cursor (`null` on error or exhaustion ⇒ the next request re-seeks). Also
+ * drops the gap-refill cursor: the prepend may have cap-pruned history's
+ * newest side, so a forward walk continuing from the old position would
+ * skip the pruned rows.
+ */
+export const scrollbackOlderPageSettled = createAction<[agentId: string, nextToken: string | null]>(
+  'chatState/scrollbackOlderPageSettled',
+);
+
+/**
+ * A gap-refill scrollback page fetch settled (success or swallowed error).
+ * Clears `fetchingGapFill` and persists the forward continuation cursor
+ * (`null` on error or tail reached ⇒ the next request re-seeks). Also drops
+ * the older cursor: the append may have cap-pruned history's oldest side,
+ * so a backward walk continuing from the old position would skip the
+ * pruned rows.
+ */
+export const scrollbackGapPageSettled = createAction<[agentId: string, prevToken: string | null]>(
+  'chatState/scrollbackGapPageSettled',
+);
+
+/**
+ * An `aroundIndex` seek fetch settled. Clears `fetchingHistorySeek` and — on
+ * success — persists BOTH continuation cursors minted by the landing page
+ * (backward `nextToken`, forward `prevToken`), so subsequent walks continue
+ * in either direction from the landing without re-seeking. `unsupported`
+ * latches `historySeekUnsupported` (daemon predates `aroundIndex`).
+ */
+export const scrollbackSeekSettled = createAction<
+  [
+    agentId: string,
+    tokens: { nextToken: string | null; prevToken: string | null },
+    unsupported?: boolean,
+  ]
+>('chatState/scrollbackSeekSettled');
+
+/**
+ * Drop the agent's scrollback continuation state (both cursors + fetching
+ * flags). Dispatched by the scrollback saga whenever the history segment is
+ * cleared out from under the walk (session removal, explicit segment clear,
+ * §7.1 `resumed: false` rehydration).
+ */
+export const scrollbackContinuationReset = createAction<[agentId: string]>(
+  'chatState/scrollbackContinuationReset',
+);
+
 // --- Lazy block hydration (§5.5 slim projection → v7.2 agent.getMessageBlock) ---
 
 /**
@@ -1138,6 +1229,63 @@ chatStateReducer.with(eventReceived, (state, { payload: [, event] }) => {
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || agentId.length === 0) return state;
   return reduceAgentIdleReconcile(state, agentId, event.timestamp);
+});
+chatStateReducer.with(scrollbackFetchStarted, (state, { payload: [agentId, direction] }) =>
+  updateAgent(state, agentId, {
+    agentId,
+    ...(direction === 'older'
+      ? { fetchingOlderHistory: true }
+      : direction === 'gap'
+        ? { fetchingGapFill: true }
+        : { fetchingHistorySeek: true }),
+  }),
+);
+chatStateReducer.with(scrollbackOlderPageSettled, (state, { payload: [agentId, nextToken] }) =>
+  updateAgent(state, agentId, {
+    agentId,
+    fetchingOlderHistory: false,
+    scrollbackOlderToken: nextToken,
+    scrollbackGapToken: null,
+  }),
+);
+chatStateReducer.with(scrollbackGapPageSettled, (state, { payload: [agentId, prevToken] }) =>
+  updateAgent(state, agentId, {
+    agentId,
+    fetchingGapFill: false,
+    scrollbackGapToken: prevToken,
+    scrollbackOlderToken: null,
+  }),
+);
+chatStateReducer.with(
+  scrollbackSeekSettled,
+  (state, { payload: [agentId, tokens, unsupported] }) =>
+    updateAgent(state, agentId, {
+      agentId,
+      fetchingHistorySeek: false,
+      scrollbackOlderToken: tokens.nextToken,
+      scrollbackGapToken: tokens.prevToken,
+      ...(unsupported ? { historySeekUnsupported: true } : {}),
+    }),
+);
+chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] }) => {
+  const agent = state.byAgentId[agentId];
+  if (!agent) return state;
+  if (
+    !agent.fetchingOlderHistory &&
+    !agent.fetchingGapFill &&
+    !agent.fetchingHistorySeek &&
+    agent.scrollbackOlderToken === null &&
+    agent.scrollbackGapToken === null
+  ) {
+    return state;
+  }
+  return updateAgent(state, agentId, {
+    fetchingOlderHistory: false,
+    fetchingGapFill: false,
+    fetchingHistorySeek: false,
+    scrollbackOlderToken: null,
+    scrollbackGapToken: null,
+  });
 });
 chatStateReducer.with(workspaceDeleted, (state, { payload: [, agentIds] }) => {
   if (agentIds.length === 0) return state;

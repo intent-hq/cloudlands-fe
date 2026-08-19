@@ -199,9 +199,10 @@ jobs:
   # Fail-safe, not fail-open: the heavy jobs skip only when the output is
   # exactly 'true' (script error, missing output, or job failure leaves it
   # empty and falls back to full CI), and pr-title / conflict-markers / route
-  # / gate still run on every PR. Unlike intentd's matrix build job, all three
-  # heavy jobs here are non-matrix and the only required context is "CI Gate"
-  # (which always runs), so a job-level skip is safe.
+  # / gate still run on every PR. The only required context is "CI Gate"
+  # (which always runs), and a job-level skip is safe for every heavy job —
+  # including the test-ct shard matrix, where skipping the job reports
+  # 'skipped' for the whole matrix (no per-leg required contexts exist).
   release-fast-path:
     name: Release PR Fast Path
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
@@ -441,18 +442,30 @@ jobs:
   # Playwright component tests (*.ct.spec.ts via playwright-ct.config.ts;
   # monorepo#2091). Pinned to ubuntu-latest rather than routed: browser
   # provisioning needs `playwright install --with-deps` (sudo apt), which the
-  # self-hosted tinybox runner doesn't offer, and the suite is small (~40
-  # tests, minutes) so it isn't worth a tinybox slot. Browsers are installed
+  # self-hosted tinybox runner doesn't offer. The suite has grown to ~350
+  # tests across ~56 files running serially (workers: 1 on CI — deliberate),
+  # so a single job straddled the 30-min budget (monorepo#2887); it is split
+  # into a 2-way shard matrix instead (Playwright shards by file), putting
+  # each leg at roughly half the serial runtime. Browsers are installed
   # via the run-ct-tests.mjs launcher so their version matches the CT-aligned
   # playwright runner (1.58.x, NOT the repo's top-level playwright — see
   # monorepo#1586), and the binary cache is keyed on that same version.
   # Skipped at job level on release-fast-path PRs — see the checks job's
   # comment for the full skip/fail-safe rationale.
   test-ct:
-    name: Component Tests
+    name: Component Tests (shard ${{ matrix.shard }}/2)
     needs: [release-fast-path]
     if: ${{ !cancelled() && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ubuntu-latest
+    strategy:
+      # Let the sibling shard finish so one flaky leg doesn't hide the other
+      # leg's result.
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    # Per-shard budget: a healthy leg runs ~9-13 min (half of the ~18-26 min
+    # serial suite), so 30 min leaves >2x headroom for retry bursts and slow
+    # runners.
     timeout-minutes: 30
     permissions:
       contents: read
@@ -537,12 +550,14 @@ jobs:
       - name: Component tests
         # list for readable logs; html feeds the failure artifact below (it
         # never auto-opens when CI is set).
-        run: pnpm run test:ct --reporter=list,html
+        run: pnpm run test:ct --shard=${{ matrix.shard }}/2 --reporter=list,html
       - name: Upload playwright report
-        if: failure()
+        # Also on cancellation, so a timeout overrun still leaves the report
+        # and traces behind for diagnosis (monorepo#2887).
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-ct-report
+          name: playwright-ct-report-${{ matrix.shard }}-of-2
           path: |
             playwright-report/
             test-results/
@@ -558,7 +573,9 @@ jobs:
   # route failure, or a failed release-fast-path job leaving the output
   # empty) still fails the gate: fail-safe, not fail-open (mirrors intentd's
   # event/shape-aware gate reasoning, adapted to this workflow's
-  # pull_request-only trigger and non-matrix heavy jobs).
+  # pull_request-only trigger). test-ct is a shard matrix: its needs.result
+  # aggregates the legs (success only when every shard passes; a job-level
+  # skip reports 'skipped' for the whole matrix, same as before).
   gate:
     name: CI Gate
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).

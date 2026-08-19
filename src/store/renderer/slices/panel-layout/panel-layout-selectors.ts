@@ -201,6 +201,20 @@ export const selectAllTabs = store.createSelector<[wsId: string], PanelTab[]>((s
   return Object.values(ws.panels).flatMap((p) => p.tabs);
 });
 
+/** Whether any open panel tab (across all workspaces) hosts this agent's chat. */
+export const selectAgentHasOpenPanelTab = store.createSelector<[agentId: string], boolean>(
+  (state, agentId) => {
+    for (const ws of Object.values(state.panelLayout.byWorkspaceId)) {
+      for (const panel of Object.values(ws.panels)) {
+        if (panel.tabs.some((tab) => tab.type === 'agent' && tab.agentId === agentId)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  },
+);
+
 export const selectPanelTabCountsByWorkspaceId = store.createSelector((state) => {
   return Object.fromEntries(
     Object.entries(state.panelLayout.byWorkspaceId).map(([workspaceId, layout]) => [

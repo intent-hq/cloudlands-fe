@@ -76,6 +76,7 @@ import {
 } from '../../../shared/main/window-appearance';
 import { meetsMinimumVersion } from '../../../shared/utils/version-compare';
 import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
+import { resolveAppIconPath } from '../../../main/utils/resolve-app-icon';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -897,6 +898,11 @@ export function setupSystemIPC() {
     }
 
     const isDarkMode = nativeTheme.shouldUseDarkColors;
+    const iconPath = resolveAppIconPath({
+      isPackaged: app.isPackaged,
+      nodeEnv: process.env.NODE_ENV,
+      platform: process.platform,
+    });
     const newWindow = new BrowserWindow({
       width: 1920,
       height: 1080,
@@ -913,6 +919,7 @@ export function setupSystemIPC() {
       ...getWindowTitleBarOptions(),
       title: 'Intent',
       ...getWindowAppearanceOptions(isDarkMode),
+      ...(iconPath && { icon: iconPath }),
     });
     forwardRendererConsoleToMainLog(newWindow);
 

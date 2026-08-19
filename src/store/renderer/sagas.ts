@@ -25,6 +25,7 @@ import { backgroundAgentSettingsSaga } from './slices/background-agent-settings/
 import { backgroundHooksSaga } from './slices/background-hooks/sagas/background-hooks-saga';
 import { browserPersistenceSaga } from './slices/browser/sagas/browser-persistence-saga';
 import { chatReadSaga } from './slices/chat-state/sagas/chat-read-saga';
+import { chatScrollbackSaga } from './slices/chat-state/sagas/chat-scrollback-saga';
 import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
 import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga';
 import { bootFallbackToastSaga } from './slices/connections/sagas/boot-fallback-toast-saga';
@@ -124,6 +125,7 @@ export const sagas = [
   chatReadSaga,
   chatSubscribeSaga,
   chatSendSaga,
+  chatScrollbackSaga,
   permissionResponseSaga,
   agentStreamSaga,
   agentCreationSaga,
