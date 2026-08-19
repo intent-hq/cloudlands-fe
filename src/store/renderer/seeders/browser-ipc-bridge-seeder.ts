@@ -29,8 +29,9 @@
  * Same pattern as window-state-bridge-seeder (monorepo#2746, the same defect
  * class on window:set-theme): forward verbatim when the preload bridge
  * exists; resolve undefined when it does not (browser dev / bridge-less
- * build) — every caller is fire-and-forget or catch-guarded, matching the
- * former allowlist disposition.
+ * build). Callers must treat the forwarded invoke as fallible: it now
+ * reaches the real ipcMain handler, so a main-side throw rejects (the
+ * browser-ipc saga catch-guards its reply invokes accordingly).
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
