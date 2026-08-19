@@ -113,7 +113,10 @@ export class LiveAgentsClient implements AgentsClient {
   // additive) takes precedence over any token daemon-side and resolves to the
   // page containing that message; seek pages carry `prevToken` (forward cursor
   // toward the live tail — normalized to null on legacy backward pages, which
-  // never include the key). Every read opts into the §5.5 slim projection
+  // never include the key). `aroundIndex` (§5.5 ordinal seek, additive) is the
+  // 0-based ordinal from the OLDEST message — out-of-range clamps daemon-side,
+  // and daemons predating the param reject it with -32602 (the scrollback saga
+  // handles the fallback). Every read opts into the §5.5 slim projection
   // (`projection: "slim"`, additive within v7.1): oversized tool/image block
   // bodies arrive as bounded previews with `*Truncated`/`*Bytes` flags so a
   // large transcript never produces multi-MB frames (an older daemon ignores
@@ -125,6 +128,7 @@ export class LiveAgentsClient implements AgentsClient {
     limit = 50,
     pageToken?: string,
     aroundMessageId?: string,
+    aroundIndex?: number,
   ): Promise<{
     messages: AgentMessage[];
     truncated: boolean;
@@ -149,6 +153,7 @@ export class LiveAgentsClient implements AgentsClient {
       };
       if (pageToken !== undefined) params.nextToken = pageToken;
       if (aroundMessageId !== undefined) params.aroundMessageId = aroundMessageId;
+      if (aroundIndex !== undefined) params.aroundIndex = aroundIndex;
       try {
         result = await backendRequest<ConversationResult>('agent.getConversation', params);
         break;

@@ -946,7 +946,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
 
   it('preserves store-only rows the snapshot page does not cover (older paged history)', () => {
     const agentId = 'agent-sub-paged';
-    // Full-history hydration (chat-read saga) landed an older message the
+    // Infinite scrollback (chat-scrollback saga) landed an older message the
     // newest snapshot page no longer includes.
     const older = makeMessage('older-page-msg', 'old history', {
       timestamp: '2025-12-31T23:00:00.000Z',
