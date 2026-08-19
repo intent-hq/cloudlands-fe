@@ -1218,6 +1218,14 @@ Some trailing content.`;
     expect(parseSuggestedPrompts(inlineCloser).cleanedContent).toBe(inlineCloser);
   });
 
+  it('keeps non-comment tags at the start of a streaming line', () => {
+    const content = '<group:Recovery>Continue the operation</group:Recovery>';
+    expect(parseSuggestedPrompts(content, { isStreaming: true })).toEqual({
+      prompts: [],
+      cleanedContent: content,
+    });
+  });
+
   it('reconstructs delimiters split across text content blocks', () => {
     const contentBlocks: ContentBlock[] = [
       { type: 'text', text: 'Done.\n\n<!' },
@@ -1763,9 +1771,7 @@ describe('groupContentBlocks', () => {
   });
 
   it('should close an open group on empty-name close tag </group:>', () => {
-    const blocks: ContentBlock[] = [
-      textBlock('<group:Work>doing stuff</group:>after'),
-    ];
+    const blocks: ContentBlock[] = [textBlock('<group:Work>doing stuff</group:>after')];
     const result = groupContentBlocks(blocks);
 
     expect(result.length).toBe(2);

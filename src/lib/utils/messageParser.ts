@@ -1678,20 +1678,24 @@ function parseSuggestedPromptLines(body: string[]): SuggestedPrompt[] | null {
 }
 
 function partialOpenerStart(line: string): number | null {
-  for (let index = line.lastIndexOf('<'); index >= 0; index = line.lastIndexOf('<', index - 1)) {
+  let index = line.lastIndexOf('<');
+  while (index >= 0) {
     const suffix = line.slice(index);
     if ('<!--'.startsWith(suffix)) return index;
-    if (!suffix.startsWith('<!--')) continue;
-    const afterComment = suffix.slice(4);
-    const afterWhitespace = afterComment.replace(/^[ \t]+/, '');
-    if (afterWhitespace.length === 0 || 'suggested-prompts'.startsWith(afterWhitespace))
-      return index;
-    if (
-      afterWhitespace.startsWith('suggested-prompts') &&
-      /^[ \t]*$/.test(afterWhitespace.slice('suggested-prompts'.length))
-    ) {
-      return index;
+    if (suffix.startsWith('<!--')) {
+      const afterComment = suffix.slice(4);
+      const afterWhitespace = afterComment.replace(/^[ \t]+/, '');
+      if (afterWhitespace.length === 0 || 'suggested-prompts'.startsWith(afterWhitespace))
+        return index;
+      if (
+        afterWhitespace.startsWith('suggested-prompts') &&
+        /^[ \t]*$/.test(afterWhitespace.slice('suggested-prompts'.length))
+      ) {
+        return index;
+      }
     }
+    if (index === 0) break;
+    index = line.lastIndexOf('<', index - 1);
   }
   return null;
 }
