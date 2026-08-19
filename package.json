@@ -211,7 +211,7 @@
     "autoprefixer": "^10.5.4",
     "bits-ui": "^2.15.5",
     "clsx": "^2.1.1",
-    "concurrently": "^9.1.2",
+    "concurrently": "^10.0.4",
     "cross-env": "^10.1.0",
     "electron": "^42.8.0",
     "electron-builder": "^26.15.3",
