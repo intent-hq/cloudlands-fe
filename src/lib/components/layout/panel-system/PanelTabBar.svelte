@@ -33,6 +33,7 @@
     faArrowRight,
     faCheck,
     faMagnifyingGlass,
+    faClockRotateLeft,
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { toast } from '$lib/components/ui/toast';
@@ -385,8 +386,8 @@
     ...tabs,
     ...$recentlyClosed$.filter((entry) => entry.panelId === panelId).map((entry) => entry.tab),
   ]);
-  const backPanelTabId = $derived(getAdjacentPanelTabId(identityTabs, activeTabId, 1));
-  const forwardPanelTabId = $derived(getAdjacentPanelTabId(identityTabs, activeTabId, -1));
+  const backPanelTabId = $derived(getAdjacentPanelTabId(identityTabs, activeTabId, -1));
+  const forwardPanelTabId = $derived(getAdjacentPanelTabId(identityTabs, activeTabId, 1));
   const filteredIdentityTabs = $derived(
     filterPanelTabs(identityTabs, identitySearchQuery, getTabTitle),
   );
@@ -1459,6 +1460,158 @@
   {/if}
 {/snippet}
 
+{#snippet identityHistoryMenu(
+  currentTab: PanelTab,
+  currentTitle: string,
+  currentContext: string | null,
+  agentStateLabel: string | null,
+  specialistName: string | null,
+  specialistDescription: string | null,
+  delegatedBy: string | null,
+)}
+  <span class="shrink-0 self-center">
+    <Menu.Root bind:open={identityMenuOpen} onOpenChange={handleIdentityOpenChange}>
+      <Menu.Trigger>
+        {#snippet child({ props })}
+          <Button
+            {...props}
+            bind:ref={identityTriggerRef}
+            variant="ghost-light"
+            size="icon-xs"
+            class="size-6! focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+            aria-label={m.layout_panelTabBar_identityHistory_ariaLabel()}
+            tooltip={m.layout_panelTabBar_identityHistory_ariaLabel()}
+            tooltipSide="bottom"
+            onfocus={handleIdentityTriggerFocus}
+            onpointerenter={handleIdentityTriggerPointerEnter}
+            onpointerleave={handleIdentityTriggerPointerLeave}
+            data-testid="panel-identity-history-trigger"
+            data-panel-identity-history-trigger
+          >
+            <Fa icon={faClockRotateLeft} size="xs" />
+          </Button>
+        {/snippet}
+      </Menu.Trigger>
+      <Menu.Content
+        bind:ref={identityMenuRef}
+        align="end"
+        side="bottom"
+        collisionPadding={8}
+        class="w-64 max-w-[calc(100vw-1rem)] p-1.5 focus-visible:border-border focus-visible:ring-0 data-[state=closed]:animate-none!"
+        maxHeight="min(28rem, calc(100dvh - 1rem))"
+        aria-label={m.layout_panelTabBar_identityHistory_ariaLabel()}
+        onpointerenter={handleIdentityMenuPointerEnter}
+        onpointerleave={handleIdentityMenuPointerLeave}
+        data-panel-identity-history-menu
+      >
+        <div class="flex min-w-0 items-start gap-2 px-2 pb-1.5 pt-1" data-panel-identity-current>
+          <span class="flex size-5 shrink-0 items-center justify-center" aria-hidden="true">
+            {@render panelIdentity(currentTab, true)}
+          </span>
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-sm font-medium text-foreground" data-panel-identity-title>
+              {currentTitle}
+            </div>
+            {#if agentStateLabel}
+              <div
+                class="type-caption truncate text-muted-foreground"
+                data-panel-identity-agent-state
+              >
+                {agentStateLabel}
+              </div>
+            {/if}
+            {#if currentContext}
+              <div class="type-caption truncate text-muted-foreground" data-panel-identity-context>
+                {currentContext}
+              </div>
+            {/if}
+            {#if specialistName}
+              <div
+                class="type-caption truncate text-muted-foreground"
+                data-panel-identity-specialist
+              >
+                {m.layout_panelTabBar_specialistAgent_label({ specialist: specialistName })}
+              </div>
+            {/if}
+            {#if specialistDescription}
+              <div
+                class="type-caption line-clamp-2 text-muted-foreground"
+                data-panel-identity-specialist-description
+              >
+                {specialistDescription}
+              </div>
+            {/if}
+            {#if delegatedBy}
+              <div
+                class="type-caption truncate text-muted-foreground"
+                data-panel-identity-delegated-by
+              >
+                {m.layout_panelTabBar_delegatedBy_label({ name: delegatedBy })}
+              </div>
+            {/if}
+          </div>
+        </div>
+        {#if showIdentityHistory}
+          <div data-panel-identity-history-section>
+            <Menu.Separator />
+            <div class="flex items-center gap-2 px-1 py-1">
+              <div
+                class="shrink-0 px-1 text-base font-medium text-muted-foreground"
+                data-panel-identity-history-title
+              >
+                {m.layout_panelTabBar_identityHistory_ariaLabel()}
+              </div>
+              {#if showIdentitySearch}
+                <label class="relative min-w-0 flex-1">
+                  <span class="sr-only">{m.ui_searchableSelect_search_placeholder()}</span>
+                  <Fa
+                    icon={faMagnifyingGlass}
+                    size="xs"
+                    class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  />
+                  <Input
+                    bind:value={identitySearchQuery}
+                    type="search"
+                    noFocusStyle
+                    aria-label={m.ui_searchableSelect_search_placeholder()}
+                    placeholder={m.ui_searchableSelect_search_placeholder()}
+                    class="h-7 w-full rounded-md border border-border bg-transparent pl-7 pr-2 text-xs outline-none focus:border-input focus:ring-1 focus:ring-border"
+                    data-panel-identity-search
+                  />
+                </label>
+              {/if}
+            </div>
+            <div class="max-h-64 overflow-y-auto overscroll-contain" data-panel-identity-list>
+              {#each filteredIdentityTabs as tab (tab.id)}
+                {@const current = tab.id === activeTabId}
+                <Menu.Item
+                  class="min-h-8"
+                  aria-current={current ? 'page' : undefined}
+                  onclick={() => activateIdentityTab(tab.id)}
+                  data-panel-identity-item={tab.id}
+                  data-panel-identity-type={tab.type}
+                >
+                  <span class="flex size-5 shrink-0 items-center justify-center">
+                    {@render panelIdentity(tab, true)}
+                  </span>
+                  <span class="min-w-0 flex-1 truncate">{getTabTitle(tab)}</span>
+                  {#if current}
+                    <Fa icon={faCheck} size="xs" class="shrink-0 text-primary" />
+                  {/if}
+                </Menu.Item>
+              {:else}
+                <div class="px-2 py-3 text-center text-xs text-muted-foreground">
+                  {m.ui_combobox_noOptions_message()}
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      </Menu.Content>
+    </Menu.Root>
+  </span>
+{/snippet}
+
 <svelte:window onkeydown={handlePanelDragKeyDown} onpointermove={handleIdentityWindowPointerMove} />
 
 <!-- Tab bar + Header wrapper -->
@@ -1809,200 +1962,13 @@
     >
       <!-- Left: one content title + optional context (changes tabs provide their own header). -->
       <div class="flex min-w-0 flex-1 items-center gap-2">
-        <!-- Type identity opens the existing ordered tabs for this panel column. -->
         <span
-          class="shrink-0 self-center"
-          onpointerenter={handleIdentityTriggerPointerEnter}
-          onpointerleave={handleIdentityTriggerPointerLeave}
+          class="panel-header-leading-surface flex size-6 shrink-0 items-center justify-center self-center"
+          data-testid={activeTab.type === 'agent' ? 'panel-header-agent-avatar-slot' : undefined}
+          data-panel-header-leading-surface
         >
-          <Menu.Root bind:open={identityMenuOpen} onOpenChange={handleIdentityOpenChange}>
-            <Menu.Trigger>
-              {#snippet child({ props })}
-                <button
-                  {...props}
-                  bind:this={identityTriggerRef}
-                  type="button"
-                  class="panel-header-leading-surface flex size-6 items-center justify-center rounded-md outline-none hover:bg-accent focus-visible:bg-accent focus-visible:text-accent-foreground"
-                  aria-label={m.layout_panelTabBar_identityHistory_ariaLabel()}
-                  title={m.layout_panelTabBar_identityHistory_ariaLabel()}
-                  onfocus={handleIdentityTriggerFocus}
-                  data-testid={activeTab.type === 'agent'
-                    ? 'panel-header-agent-avatar-slot'
-                    : 'panel-identity-history-trigger'}
-                  data-panel-identity-history-trigger
-                  data-panel-header-leading-surface
-                >
-                  {@render panelIdentity(activeTab)}
-                </button>
-              {/snippet}
-            </Menu.Trigger>
-            <Menu.Content
-              bind:ref={identityMenuRef}
-              align="start"
-              side="bottom"
-              collisionPadding={8}
-              class="w-64 max-w-[calc(100vw-1rem)] p-1.5 focus-visible:border-border focus-visible:ring-0 data-[state=closed]:animate-none!"
-              maxHeight="min(28rem, calc(100dvh - 1rem))"
-              aria-label={m.layout_panelTabBar_identityHistory_ariaLabel()}
-              onpointerenter={handleIdentityMenuPointerEnter}
-              onpointerleave={handleIdentityMenuPointerLeave}
-              data-panel-identity-history-menu
-            >
-              <div
-                class="flex min-w-0 items-start gap-2 px-2 pb-1.5 pt-1"
-                data-panel-identity-current
-              >
-                <span class="flex size-5 shrink-0 items-center justify-center" aria-hidden="true">
-                  {@render panelIdentity(activeTab, true)}
-                </span>
-                <div class="min-w-0 flex-1">
-                  <div
-                    class="truncate text-sm font-medium text-foreground"
-                    data-panel-identity-title
-                  >
-                    {activeTabTitle}
-                  </div>
-                  {#if activeAgentStateLabel}
-                    <div
-                      class="type-caption truncate text-muted-foreground"
-                      data-panel-identity-agent-state
-                    >
-                      {activeAgentStateLabel}
-                    </div>
-                  {/if}
-                  {#if activeIdentityContext}
-                    <div
-                      class="type-caption truncate text-muted-foreground"
-                      data-panel-identity-context
-                    >
-                      {activeIdentityContext}
-                    </div>
-                  {/if}
-                  {#if activeAgentSpecialistName}
-                    <div
-                      class="type-caption truncate text-muted-foreground"
-                      data-panel-identity-specialist
-                    >
-                      {m.layout_panelTabBar_specialistAgent_label({
-                        specialist: activeAgentSpecialistName,
-                      })}
-                    </div>
-                  {/if}
-                  {#if activeAgentSpecialistDescription}
-                    <div
-                      class="type-caption line-clamp-2 text-muted-foreground"
-                      data-panel-identity-specialist-description
-                    >
-                      {activeAgentSpecialistDescription}
-                    </div>
-                  {/if}
-                  {#if activeAgentDelegatedBy}
-                    <div
-                      class="type-caption truncate text-muted-foreground"
-                      data-panel-identity-delegated-by
-                    >
-                      {m.layout_panelTabBar_delegatedBy_label({ name: activeAgentDelegatedBy })}
-                    </div>
-                  {/if}
-                </div>
-              </div>
-              {#if showIdentityHistory}
-                <div data-panel-identity-history-section>
-                  <Menu.Separator />
-                  <div class="flex items-center gap-2 px-1 py-1">
-                    <div
-                      class="shrink-0 px-1 text-base font-medium text-muted-foreground"
-                      data-panel-identity-history-title
-                    >
-                      {m.layout_panelTabBar_identityHistory_ariaLabel()}
-                    </div>
-                    {#if showIdentitySearch}
-                      <label class="relative min-w-0 flex-1">
-                        <span class="sr-only">{m.ui_searchableSelect_search_placeholder()}</span>
-                        <Fa
-                          icon={faMagnifyingGlass}
-                          size="xs"
-                          class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
-                        />
-                        <Input
-                          bind:value={identitySearchQuery}
-                          type="search"
-                          noFocusStyle
-                          aria-label={m.ui_searchableSelect_search_placeholder()}
-                          placeholder={m.ui_searchableSelect_search_placeholder()}
-                          class="h-7 w-full rounded-md border border-border bg-transparent pl-7 pr-2 text-xs outline-none focus:border-input focus:ring-1 focus:ring-border"
-                          data-panel-identity-search
-                        />
-                      </label>
-                    {/if}
-                  </div>
-                  <div class="max-h-64 overflow-y-auto overscroll-contain" data-panel-identity-list>
-                    {#each filteredIdentityTabs as tab (tab.id)}
-                      {@const current = tab.id === activeTabId}
-                      <Menu.Item
-                        class="min-h-8"
-                        aria-current={current ? 'page' : undefined}
-                        onclick={() => activateIdentityTab(tab.id)}
-                        data-panel-identity-item={tab.id}
-                        data-panel-identity-type={tab.type}
-                      >
-                        <span class="flex size-5 shrink-0 items-center justify-center">
-                          {@render panelIdentity(tab, true)}
-                        </span>
-                        <span class="min-w-0 flex-1 truncate">{getTabTitle(tab)}</span>
-                        {#if current}
-                          <Fa icon={faCheck} size="xs" class="shrink-0 text-primary" />
-                        {/if}
-                      </Menu.Item>
-                    {:else}
-                      <div class="px-2 py-3 text-center text-xs text-muted-foreground">
-                        {m.ui_combobox_noOptions_message()}
-                      </div>
-                    {/each}
-                  </div>
-                </div>
-              {/if}
-            </Menu.Content>
-          </Menu.Root>
+          {@render panelIdentity(activeTab)}
         </span>
-        <div class="flex shrink-0 items-center" data-panel-identity-navigation>
-          <TooltipShortcut
-            label={m.ui_contentHeader_goBack_tooltip()}
-            shortcut="cmd+["
-            side="bottom"
-            delayDuration={300}
-          >
-            <Button
-              variant="ghost-light"
-              size="icon-xs"
-              class="size-6! focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-              disabled={!backPanelTabId}
-              aria-label={m.ui_contentHeader_goBack_tooltip()}
-              onclick={() => activateIdentityTab(backPanelTabId)}
-              data-panel-identity-back
-            >
-              <Fa icon={faArrowLeft} size="xs" />
-            </Button>
-          </TooltipShortcut>
-          <TooltipShortcut
-            label={m.ui_contentHeader_goForward_tooltip()}
-            shortcut="cmd+]"
-            side="bottom"
-            delayDuration={300}
-          >
-            <Button
-              variant="ghost-light"
-              size="icon-xs"
-              class="size-6! focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-              disabled={!forwardPanelTabId}
-              aria-label={m.ui_contentHeader_goForward_tooltip()}
-              onclick={() => activateIdentityTab(forwardPanelTabId)}
-              data-panel-identity-forward
-            >
-              <Fa icon={faArrowRight} size="xs" />
-            </Button>
-          </TooltipShortcut>
-        </div>
         <!-- Single content title; type/category is conveyed by the content itself. -->
         <div class="panel-header-title min-w-0 shrink" data-panel-header-title>
           {#if isTabRenameable(activeTab) && onTabRename}
@@ -2048,6 +2014,53 @@
 
       <!-- Right: stable content controls, grouped actions, and close. -->
       <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
+        <div class="flex shrink-0 items-center" data-panel-identity-navigation>
+          {@render identityHistoryMenu(
+            activeTab,
+            activeTabTitle,
+            activeIdentityContext,
+            activeAgentStateLabel,
+            activeAgentSpecialistName,
+            activeAgentSpecialistDescription,
+            activeAgentDelegatedBy,
+          )}
+          <TooltipShortcut
+            label={m.ui_contentHeader_goBack_tooltip()}
+            shortcut="cmd+["
+            side="bottom"
+            delayDuration={300}
+          >
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              class="size-6! focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+              disabled={!backPanelTabId}
+              aria-label={m.ui_contentHeader_goBack_tooltip()}
+              onclick={() => activateIdentityTab(backPanelTabId)}
+              data-panel-identity-back
+            >
+              <Fa icon={faArrowLeft} size="xs" />
+            </Button>
+          </TooltipShortcut>
+          <TooltipShortcut
+            label={m.ui_contentHeader_goForward_tooltip()}
+            shortcut="cmd+]"
+            side="bottom"
+            delayDuration={300}
+          >
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              class="size-6! focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+              disabled={!forwardPanelTabId}
+              aria-label={m.ui_contentHeader_goForward_tooltip()}
+              onclick={() => activateIdentityTab(forwardPanelTabId)}
+              data-panel-identity-forward
+            >
+              <Fa icon={faArrowRight} size="xs" />
+            </Button>
+          </TooltipShortcut>
+        </div>
         {@render contentActions?.primary?.()}
         {@render panelActionsDropdown()}
         {@render panelCloseButton()}

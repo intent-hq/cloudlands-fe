@@ -3,6 +3,7 @@
   import { invoke } from '$shared/generated/ipc-client';
 
   import { Button } from '$lib/components/ui/button';
+  import * as Menu from '$lib/components/ui/menu';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import {
     faBars,
@@ -42,6 +43,12 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import { renameWorkspaceTitle } from '$features/workspace/rename-workspace-title';
+  import { selectPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { setPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import {
+    isPanelColumnCount,
+    type PanelColumnCount,
+  } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
   interface Props {
     workspace: Workspace | null;
@@ -63,6 +70,7 @@
   let isSavingStatusMessage = $state(false);
   let skipNextStatusBlurSave = $state(false);
   let dropdownOpen = $state(false);
+  const panelColumnCounts = [1, 2, 3, 4] as const;
 
   // Branch rename state
   let isEditingBranch = $state(false);
@@ -370,6 +378,7 @@
   $effect(() => {
     workspaceIdStore.set(workspaceId || workspace?.id || '');
   });
+  const panelColumnCount$ = selectPanelColumnCount(workspaceIdStore);
   const pinnedKeySlot$ = selectWorkspacePinnedKeySlot(workspaceIdStore);
   const resolvedKeySlot$ = selectWorkspaceResolvedKeySlot(workspaceIdStore);
 
@@ -408,6 +417,20 @@
     dropdownOpen = false;
   }
 
+  function handlePanelColumnCountChange(value: string) {
+    const count = Number(value);
+    const targetWorkspaceId = workspaceId || workspace?.id || '';
+    if (targetWorkspaceId && isPanelColumnCount(count)) {
+      appStore.dispatch(setPanelColumnCount(targetWorkspaceId, count));
+    }
+  }
+
+  function panelColumnCountLabel(value: PanelColumnCount) {
+    return value === 1
+      ? m.workspace_sidebarHeader_panelColumns_count_one({ count: value })
+      : m.workspace_sidebarHeader_panelColumns_count_many({ count: value });
+  }
+
   // Handle click outside to cancel editing
   function handleClickOutside(e: MouseEvent) {
     if (isEditingTitle && titleInputRef && !titleInputRef.contains(e.target as Node)) {
@@ -431,6 +454,30 @@
     }
   });
 </script>
+
+{#snippet panelColumnIcon(value: PanelColumnCount)}
+  {@const width = value * 4 + (value - 1) * 2}
+  <svg
+    viewBox="0 0 24 18"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linejoin="round"
+    aria-hidden="true"
+    data-panel-column-icon={value}
+  >
+    {#each Array.from({ length: value }) as _, index}
+      <rect
+        x={12 - width / 2 + index * 6}
+        y="2"
+        width="4"
+        height="14"
+        rx="1"
+        vector-effect="non-scaling-stroke"
+      />
+    {/each}
+  </svg>
+{/snippet}
 
 <div class="group flex h-full items-start justify-between gap-2">
   <div class="flex min-w-0 flex-1 flex-col gap-1">
@@ -582,42 +629,91 @@
     </div>
   </div>
 
-  <DropdownMenu bind:open={dropdownOpen} align="end">
-    {#snippet trigger({ props })}
-      <Button
-        {...props}
-        variant="ghost-light"
-        size="icon-sm"
-        aria-label={m.workspace_sidebarHeader_actions_ariaLabel()}
-        class="opacity-50 group-hover:opacity-70 hover:!opacity-100 transition-opacity duration-150"
-        disabled={isDeleting}
+  <div class="flex shrink-0 items-start gap-1" data-sidebar-header-controls>
+    <Menu.Root>
+      <Menu.Trigger>
+        {#snippet child({ props })}
+          <Button
+            {...props}
+            variant="outline"
+            size="sm"
+            class="h-8 min-w-14 gap-1.5 rounded-lg bg-card/80 px-2 shadow-xs backdrop-blur-sm transition-colors motion-reduce:transition-none"
+            aria-label={m.workspace_sidebarHeader_panelColumns_currentCount_ariaLabel({
+              count: $panelColumnCount$,
+            })}
+            tooltip={m.workspace_sidebarHeader_panelColumns_currentCount_tooltip({
+              count: $panelColumnCount$,
+            })}
+            tooltipSide="bottom"
+            data-panel-column-count-trigger
+          >
+            <span class="size-5" data-panel-column-count-icon
+              >{@render panelColumnIcon($panelColumnCount$)}</span
+            >
+            <span class="type-caption tabular-nums text-foreground" data-panel-column-count
+              >{$panelColumnCount$}</span
+            >
+          </Button>
+        {/snippet}
+      </Menu.Trigger>
+      <Menu.Content
+        align="end"
+        side="bottom"
+        class="w-44"
+        aria-label={m.workspace_sidebarHeader_panelColumns_ariaLabel()}
       >
-        {#if isDeleting}
-          <div
-            class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
-          ></div>
-        {:else}
-          <Fa icon={faEllipsisV} size="sm" />
-        {/if}
-      </Button>
-    {/snippet}
+        <Menu.RadioGroup
+          value={String($panelColumnCount$)}
+          onValueChange={handlePanelColumnCountChange}
+        >
+          {#each panelColumnCounts as option}
+            <Menu.RadioItem value={String(option)}>
+              <span class="size-5 text-muted-foreground">{@render panelColumnIcon(option)}</span>
+              <span>{panelColumnCountLabel(option)}</span>
+            </Menu.RadioItem>
+          {/each}
+        </Menu.RadioGroup>
+      </Menu.Content>
+    </Menu.Root>
 
-    {#snippet content()}
-      <div class="w-48">
-        <WorkspaceActionsMenu
-          filePath={workspace?.worktreePath || workspace?.repositoryPath || workspace?.path || ''}
-          workspaceId={workspace?.id || workspaceId}
-          isDirectory={true}
-          isWorkspaceRoot={true}
-          onDelete={handleDelete}
-          onClose={handleClose}
-          showDeleteOption={true}
-          showFileNameCopy={false}
-          additionalActions={microKeyAction
-            ? [sidebarToggleAction, microKeyAction, sidebarSideAction]
-            : [sidebarToggleAction, sidebarSideAction]}
-        />
-      </div>
-    {/snippet}
-  </DropdownMenu>
+    <DropdownMenu bind:open={dropdownOpen} align="end">
+      {#snippet trigger({ props })}
+        <Button
+          {...props}
+          variant="ghost-light"
+          size="icon-sm"
+          aria-label={m.workspace_sidebarHeader_actions_ariaLabel()}
+          class="opacity-50 group-hover:opacity-70 hover:!opacity-100 transition-opacity duration-150"
+          disabled={isDeleting}
+          data-workspace-actions-trigger
+        >
+          {#if isDeleting}
+            <div
+              class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
+            ></div>
+          {:else}
+            <Fa icon={faEllipsisV} size="sm" />
+          {/if}
+        </Button>
+      {/snippet}
+
+      {#snippet content()}
+        <div class="w-48">
+          <WorkspaceActionsMenu
+            filePath={workspace?.worktreePath || workspace?.repositoryPath || workspace?.path || ''}
+            workspaceId={workspace?.id || workspaceId}
+            isDirectory={true}
+            isWorkspaceRoot={true}
+            onDelete={handleDelete}
+            onClose={handleClose}
+            showDeleteOption={true}
+            showFileNameCopy={false}
+            additionalActions={microKeyAction
+              ? [sidebarToggleAction, microKeyAction, sidebarSideAction]
+              : [sidebarToggleAction, sidebarSideAction]}
+          />
+        </div>
+      {/snippet}
+    </DropdownMenu>
+  </div>
 </div>

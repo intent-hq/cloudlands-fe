@@ -157,7 +157,7 @@ afterAll(() => {
 });
 
 describe('Settings migration', () => {
-  it('keeps the fixed-column preference in the workspace rail instead of settings', async () => {
+  it('keeps the fixed-column preference in the workspace header instead of settings', async () => {
     const recorder = installDispatchRecorder();
     const general = renderGeneral();
     expect(document.querySelector('[data-panel-column-count]')).toBeNull();
@@ -170,7 +170,7 @@ describe('Settings migration', () => {
       'data-titlebar-panel-open-mode',
     );
     expect(
-      readFileSync('src/lib/components/layout/panel-system/PanelColumnRail.svelte', 'utf8'),
+      readFileSync('src/lib/components/workspace/WorkspaceSidebarHeader.svelte', 'utf8'),
     ).toContain('data-panel-column-count');
     recorder.restore();
   });

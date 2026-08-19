@@ -20,7 +20,6 @@
   } from '$features/layout/panel-cycle-navigation';
   import PanelContainer from './PanelContainer.svelte';
   import PanelCanvasFrame from './PanelCanvasFrame.svelte';
-  import PanelColumnRail from './PanelColumnRail.svelte';
   import {
     getPanelCanvasWidths,
     getPanelPreferredWidths,
@@ -84,7 +83,6 @@
     selectPanelColumnDefaultWidthTiers,
     selectPanelCanvasWidth,
     selectPanelCanvasWidthSource,
-    selectPanelColumnCount,
     selectPendingPanelReveal,
     selectRestoreStatus,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -97,10 +95,8 @@
     panelLayoutScopeUnmounted,
     consumePanelReveal,
     resizePanelLayoutRightEdge,
-    setPanelColumnCount,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { store as appStore } from '$store/renderer/store';
-  import type { PanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import {
     getAutomaticPanelCanvasWidth,
     getPanelDefaultWidth,
@@ -177,7 +173,6 @@
   const pendingPanelReveal$ = selectPendingPanelReveal(workspaceIdStore);
   const restoreStatus$ = selectRestoreStatus(workspaceIdStore);
   const panelIds$ = selectPanelIds(workspaceIdStore);
-  const panelColumnCount$ = selectPanelColumnCount(workspaceIdStore);
   const isDragging$ = selectIsDragging();
   // Keep the root renderer on the split branch when the first adjacent panel
   // opens. The existing panel then retains its keyed component instance while
@@ -908,10 +903,6 @@
     });
   }
 
-  function handlePanelColumnCountChange(count: PanelColumnCount) {
-    appStore.dispatch(setPanelColumnCount(workspaceId, count));
-  }
-
   /**
    * Handle renaming a tab (note, agent, or file).
    * Shows a toast with undo support.
@@ -1451,7 +1442,6 @@
         {/key}
       </div>
     </div>
-    <PanelColumnRail count={$panelColumnCount$} onCountChange={handlePanelColumnCountChange} />
   </div>
 </div>
 <!-- Leader key indicator -->

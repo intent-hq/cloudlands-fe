@@ -67,6 +67,17 @@ vi.mock('$store/renderer/slices/ui-layout/ui-layout-slice', () => ({
   toggleSidebarSide: vi.fn(() => ({ type: 'uiLayout/toggleSidebarSide' })),
 }));
 
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectPanelColumnCount: mocks.selector(2),
+}));
+
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
+  setPanelColumnCount: vi.fn((workspaceId: string, count: number) => ({
+    type: 'panelLayout/setPanelColumnCount',
+    payload: [workspaceId, count],
+  })),
+}));
+
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   beginWorkspaceTitleMutation: vi.fn(
     (id: string, token: number, optimisticTitle: string, previousTitle: string) => ({
@@ -171,6 +182,27 @@ describe('WorkspaceSidebarHeader status message', () => {
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
       configurable: true,
+    });
+  });
+
+  it('places the workspace-scoped column control immediately before the actions menu', async () => {
+    const { container } = await renderHeader();
+    const controls = container.querySelector('[data-sidebar-header-controls]')!;
+    const columnTrigger = controls.querySelector('[data-panel-column-count-trigger]')!;
+    const actionsTrigger = controls.querySelector('[data-workspace-actions-trigger]')!;
+
+    expect(columnTrigger.textContent?.trim()).toBe('2');
+    expect(columnTrigger.querySelectorAll('rect')).toHaveLength(2);
+    expect(
+      columnTrigger.compareDocumentPosition(actionsTrigger) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    await fireEvent.click(columnTrigger);
+    expect(await screen.findAllByRole('menuitemradio')).toHaveLength(4);
+    await fireEvent.click(screen.getByRole('menuitemradio', { name: '4 columns' }));
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'panelLayout/setPanelColumnCount',
+      payload: ['ws-1', 4],
     });
   });
 

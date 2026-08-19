@@ -61,10 +61,7 @@
   import { createLayoutStableRevealScheduler } from './utils/layout-stable-reveal';
   import { isFocusInEditableElement } from '$lib/utils/keyboardShortcuts';
   import AllWorkspacesCard from '$lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte';
-  import {
-    CONTAINED_PANEL_INLINE_CHROME,
-    PANEL_COLUMN_RAIL_WIDTH,
-  } from '$shared/panel-layout-sizing';
+  import { CONTAINED_PANEL_INLINE_CHROME } from '$shared/panel-layout-sizing';
   import { m } from '$shared/paraglide/messages.js';
   import {
     COLUMN_SIDEBAR_MAX_WIDTH,
@@ -857,8 +854,7 @@
                   getSidebarWidth(workspaceId) +
                   (panelCount > 0
                     ? panelCanvasWidth * (panelPreviewWidthRatios[workspaceId] ?? 1) +
-                      CONTAINED_PANEL_INLINE_CHROME +
-                      PANEL_COLUMN_RAIL_WIDTH
+                      CONTAINED_PANEL_INLINE_CHROME
                     : 0)
                 );
               }),

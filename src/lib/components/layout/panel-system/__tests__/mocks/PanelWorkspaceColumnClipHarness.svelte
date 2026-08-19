@@ -1,9 +1,6 @@
 <script lang="ts">
   import PanelLayout from '../../PanelLayout.svelte';
-  import {
-    CONTAINED_PANEL_INLINE_CHROME,
-    PANEL_COLUMN_RAIL_WIDTH,
-  } from '$shared/panel-layout-sizing';
+  import { CONTAINED_PANEL_INLINE_CHROME } from '$shared/panel-layout-sizing';
   import { store as appStore } from '$store/renderer/store';
   import {
     closePanel,
@@ -129,9 +126,7 @@
   const outerCanvasWidth = $derived(
     followPersistedCanvas ? ($layoutCanvasWidth$ ?? canvasWidth) : canvasWidth,
   );
-  const stackWidth = $derived(
-    sidebarWidth + outerCanvasWidth + insetChrome + PANEL_COLUMN_RAIL_WIDTH + widthAdjustment,
-  );
+  const stackWidth = $derived(sidebarWidth + outerCanvasWidth + insetChrome + widthAdjustment);
 </script>
 
 <button data-testid="width-minus-one" class="sr-only" onclick={() => (widthAdjustment = -1)}>

@@ -24,7 +24,7 @@ test('opens by click, focus, and hover and activates the stable ordered history'
   await expect(menu.getByRole('searchbox')).toBeVisible();
   await page.keyboard.press('Escape');
   await component.locator('[data-panel-identity-back]').click();
-  await expect(component).toHaveAttribute('data-active-tab', 'file-history');
+  await expect(component).toHaveAttribute('data-active-tab', 'agent-history');
 
   await trigger.click();
   const search = menu.getByRole('searchbox');
@@ -181,6 +181,16 @@ test('keeps history navigation in the header with visible keyboard focus', async
 
   await expect(back).toBeVisible();
   await expect(forward).toBeVisible();
+  const navigation = component.locator('[data-panel-identity-navigation]');
+  const actions = navigation.locator('..');
+  await expect(navigation).toBeVisible();
+  expect(
+    await actions.evaluate((node) =>
+      Array.from(node.querySelectorAll('button')).map((button) =>
+        button.getAttribute('aria-label'),
+      ),
+    ),
+  ).toEqual(['Panel history', 'Go back', 'Go forward', 'More', 'Close panel']);
   await trigger.click();
   const menu = page.getByRole('menu', { name: 'Panel history' });
   await expect(menu.locator('[data-panel-identity-navigation]')).toHaveCount(0);
@@ -188,6 +198,22 @@ test('keeps history navigation in the header with visible keyboard focus', async
   await back.focus();
   await expect(back).toBeFocused();
   await expect(back).toHaveClass(/focus-visible:ring-2/);
+});
+
+test('maps left to the sole previous entry and right to the next entry', async ({ mount }) => {
+  const component = await mount(PanelIdentityHistoryHost, {
+    props: { historyCount: 5, initialActiveTabId: 'note-history' },
+  });
+  const back = component.locator('[data-panel-identity-back]');
+  const forward = component.locator('[data-panel-identity-forward]');
+
+  await back.click();
+  await expect(component).toHaveAttribute('data-active-tab', 'agent-history');
+  await expect(back).toBeDisabled();
+  await forward.click();
+  await expect(component).toHaveAttribute('data-active-tab', 'note-history');
+  await forward.click();
+  await expect(component).toHaveAttribute('data-active-tab', 'file-history');
 });
 
 test('keeps the portalled menu inside narrow light/dark viewports at 100% and 200% zoom', async ({
