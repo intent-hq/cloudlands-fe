@@ -482,6 +482,24 @@ describe('ModelPicker combined reasoning mode', () => {
     activeProviderId$.set('auggie');
   });
 
+  it('hides the reasoning footer when the selected model has no effort levels', async () => {
+    const models = [{ value: 'no-effort', label: 'No effort model' }];
+    mockModelState.availableModels = models;
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'no-effort',
+        portal: false,
+        showReasoning: true,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(screen.queryByTestId('model-reasoning-section')).toBeNull();
+  });
+
   it('shows a compact collapsed reasoning row by default', async () => {
     render(ModelPicker, {
       props: {

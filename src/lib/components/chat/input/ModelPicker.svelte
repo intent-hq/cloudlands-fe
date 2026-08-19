@@ -1223,6 +1223,7 @@
   }
 
   const reasoningLevels = $derived(showReasoning ? selectedModelEffortLevels : []);
+  const showReasoningFooter = $derived(showReasoning && reasoningLevels.length > 0);
   const persistedReasoningEffort = $derived(
     onReasoningChange ? (reasoningEffort ?? null) : ($reasoningEffort$ ?? null),
   );
@@ -1250,6 +1251,11 @@
       updatingReasoningEffort ||
       (!onReasoningChange && (!agentId || !workspaceId)) ||
       reasoningLevels.length === 0,
+  );
+  const showDropdownFooter = $derived(
+    showReasoningFooter ||
+      (!allProvidersLoaded && Object.keys(allProviderModels).length > 0) ||
+      nonBlockingProviderWarnings.length > 0,
   );
 
   $effect(() => {
@@ -1717,6 +1723,77 @@
     {/if}
   {/snippet}
 
+  {#snippet dropdownFooter()}
+    {#if showReasoningFooter}
+      <div class="px-2 py-2" data-testid="model-reasoning-section">
+        <Button
+          variant="ghost"
+          size="default"
+          aria-expanded={reasoningExpanded}
+          aria-disabled={reasoningControlDisabled}
+          disabled={reasoningControlDisabled}
+          class={cn(
+            'flex w-full items-center justify-between rounded bg-transparent px-2 py-1.5 text-left text-xs focus:bg-transparent focus:outline-none',
+            reasoningControlDisabled
+              ? 'cursor-not-allowed text-muted-foreground/50'
+              : 'hover:bg-muted/20',
+          )}
+          data-testid="model-reasoning-toggle"
+          onclick={() => {
+            if (!reasoningControlDisabled) reasoningExpanded = !reasoningExpanded;
+          }}
+          onkeydown={handleReasoningToggleKeydown}
+        >
+          <span class="truncate">
+            {m.chat_effortPicker_title_label()} · {currentReasoningLabel}
+          </span>
+        </Button>
+        {#if reasoningExpanded && reasoningLevels.length > 0}
+          <div
+            class="px-2 pb-1 pt-2"
+            role="group"
+            aria-label={m.chat_effortPicker_popover_ariaLabel()}
+            transition:slide={{ duration: 180, axis: 'y' }}
+          >
+            <EffortPicker
+              mode="embedded"
+              {agentId}
+              {workspaceId}
+              effortLevels={reasoningLevels}
+              effort={currentReasoningEffort}
+              disabled={reasoningControlDisabled}
+              onEffortChange={handleReasoningSelect}
+              onkeydown={handleReasoningSliderKeydown}
+            />
+          </div>
+        {/if}
+      </div>
+    {/if}
+    {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
+      <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
+        <div
+          class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
+        ></div>
+        <span>{m.chat_modelPicker_loadingMore_label()}</span>
+      </div>
+    {/if}
+    {#if nonBlockingProviderWarnings.length > 0}
+      <div class="px-3 py-2 space-y-1.5 text-xs">
+        {#each nonBlockingProviderWarnings as warning (warning.providerId)}
+          <div class="flex items-start gap-2 text-muted-foreground" role="status">
+            <ModelProviderErrorItem
+              providerId={warning.providerId}
+              providerLabel={warning.providerName}
+              error={warning.message}
+              hint={warning.hint}
+              compact={true}
+            />
+          </div>
+        {/each}
+      </div>
+    {/if}
+  {/snippet}
+
   <Dropdown
     bind:this={dropdownRef}
     bind:value={dropdownValue}
@@ -1745,6 +1822,7 @@
     {portal}
     {collisionBoundary}
     {groupHeader}
+    footer={showDropdownFooter ? dropdownFooter : undefined}
   >
     {#snippet trigger({
       open: _open,
@@ -1899,77 +1977,6 @@
           </div>
         {/if}
       </div>
-    {/snippet}
-
-    {#snippet footer()}
-      {#if showReasoning}
-        <div class="px-2 py-2" data-testid="model-reasoning-section">
-          <Button
-            variant="ghost"
-            size="default"
-            aria-expanded={reasoningExpanded}
-            aria-disabled={reasoningControlDisabled}
-            disabled={reasoningControlDisabled}
-            class={cn(
-              'flex w-full items-center justify-between rounded bg-transparent px-2 py-1.5 text-left text-xs focus:bg-transparent focus:outline-none',
-              reasoningControlDisabled
-                ? 'cursor-not-allowed text-muted-foreground/50'
-                : 'hover:bg-muted/20',
-            )}
-            data-testid="model-reasoning-toggle"
-            onclick={() => {
-              if (!reasoningControlDisabled) reasoningExpanded = !reasoningExpanded;
-            }}
-            onkeydown={handleReasoningToggleKeydown}
-          >
-            <span class="truncate">
-              {m.chat_effortPicker_title_label()} · {currentReasoningLabel}
-            </span>
-          </Button>
-          {#if reasoningExpanded && reasoningLevels.length > 0}
-            <div
-              class="px-2 pb-1 pt-2"
-              role="group"
-              aria-label={m.chat_effortPicker_popover_ariaLabel()}
-              transition:slide={{ duration: 180, axis: 'y' }}
-            >
-              <EffortPicker
-                mode="embedded"
-                {agentId}
-                {workspaceId}
-                effortLevels={reasoningLevels}
-                effort={currentReasoningEffort}
-                disabled={reasoningControlDisabled}
-                onEffortChange={handleReasoningSelect}
-                onkeydown={handleReasoningSliderKeydown}
-              />
-            </div>
-          {/if}
-        </div>
-      {/if}
-      {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
-        <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
-          <div
-            class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
-          ></div>
-          <span>{m.chat_modelPicker_loadingMore_label()}</span>
-        </div>
-      {/if}
-      {#if nonBlockingProviderWarnings.length > 0}
-        <div class="px-3 py-2 space-y-1.5 text-xs">
-          {#each nonBlockingProviderWarnings as warning (warning.providerId)}
-            <div class="flex items-start gap-2 text-muted-foreground" role="status">
-              <ModelProviderErrorItem
-                providerId={warning.providerId}
-                providerLabel={warning.providerName}
-                error={warning.message}
-                hint={warning.hint}
-                compact={true}
-              />
-            </div>
-          {/each}
-        </div>
-      {/if}
     {/snippet}
 
     {#snippet empty()}
