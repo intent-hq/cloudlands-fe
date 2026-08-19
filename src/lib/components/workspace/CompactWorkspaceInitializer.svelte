@@ -18,6 +18,7 @@
     resolveSetupScriptParam,
     setupScriptDisplayName,
     REPO_CONFIG_SCRIPT_NAME,
+    type SetupScriptNameSource,
   } from '$features/setup-scripts';
   import {
     getLastUsedSetupScript,
@@ -513,6 +514,7 @@
   let setupScript = $state('');
   let showSetupScript = $state(false); // Always collapsed on mount
   let setupScriptName = $state('Custom');
+  let setupScriptNameSource = $state<SetupScriptNameSource>('custom');
   let isCustomSetupScript = $state(false);
 
   // Repo-committed setup script from <repo>/.intent/config.json (local repos
@@ -541,6 +543,7 @@
     });
     setupScript = choice.content;
     setupScriptName = choice.name;
+    setupScriptNameSource = choice.source;
     isCustomSetupScript = false;
   }
 
@@ -1353,6 +1356,7 @@
           } else {
             setupScript = '';
             setupScriptName = 'Custom';
+            setupScriptNameSource = 'custom';
             isCustomSetupScript = false;
           }
         }
@@ -1369,6 +1373,7 @@
       applyScript: (script) => {
         setupScript = script;
         setupScriptName = REPO_CONFIG_SCRIPT_NAME;
+        setupScriptNameSource = 'repo-config';
         isCustomSetupScript = false;
       },
     });
@@ -2238,6 +2243,7 @@
     setupScript = '';
     showSetupScript = false;
     setupScriptName = 'Custom';
+    setupScriptNameSource = 'custom';
     isCustomSetupScript = false;
 
     // Restore the last used setup script for the preserved repo so the next
@@ -3266,7 +3272,7 @@
                     >{m.workspace_compactInitializer_detectingSetupScript_label()}</span
                   >
                 {:else}
-                  {setupScriptDisplayName(setupScriptName)}
+                  {setupScriptDisplayName(setupScriptName, setupScriptNameSource)}
                 {/if}
               </span>
               <p class="text-sm text-subtle">
@@ -3281,6 +3287,7 @@
             repoConfigScript={repoConfigScriptRepo === repoPath ? repoConfigScript : null}
             bind:value={setupScript}
             bind:scriptName={setupScriptName}
+            bind:scriptNameSource={setupScriptNameSource}
             bind:isCustomScript={isCustomSetupScript}
             onClose={() => (showSetupScript = false)}
           />

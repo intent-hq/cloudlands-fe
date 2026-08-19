@@ -25,18 +25,27 @@ export const REPO_CONFIG_SCRIPT_NAME = 'From repo config';
 export const REPO_CONFIG_SCRIPT_ID = 'repo-config';
 
 /**
- * Localized display label for a setup-script name. Maps the persisted
- * identity sentinels (`REPO_CONFIG_SCRIPT_NAME`, `'Custom'`) to their
- * localized messages; any other name (templates, user-named scripts) passes
- * through unchanged. Display-only — identity comparisons and saved-script
- * matching must keep using the English sentinel constants.
+ * True identity of a setup-script name, tracked by the call sites that know
+ * where the name came from: `'repo-config'` for the repo-committed script,
+ * `'custom'` for the empty/custom fallback, `'named'` for everything that
+ * carries its own display name (saved scripts, templates, generated scripts).
  */
-export function setupScriptDisplayName(name: string): string {
-  if (name === REPO_CONFIG_SCRIPT_NAME) {
+export type SetupScriptNameSource = 'repo-config' | 'custom' | 'named';
+
+/**
+ * Localized display label for a setup-script name. Localizes only when the
+ * entry's true identity (`source`) is a sentinel — `'repo-config'` and
+ * `'custom'` map to their localized messages; `'named'` passes the name
+ * through unchanged, so a user-saved script literally named "From repo
+ * config" or "Custom" keeps its own name. Display-only — identity
+ * comparisons and saved-script matching must keep using the English
+ * sentinel constants.
+ */
+export function setupScriptDisplayName(name: string, source: SetupScriptNameSource): string {
+  if (source === 'repo-config') {
     return m.workspace_setupScriptEditor_fromRepoConfig_name();
   }
-  // i18n-ignore (persisted identity sentinel; comparison only, not rendered)
-  if (name === 'Custom') {
+  if (source === 'custom') {
     return m.workspace_setupScriptEditor_custom_name();
   }
   return name;
@@ -167,6 +176,8 @@ export function resolveSetupScriptParam(options: {
 export interface SetupScriptChoice {
   content: string;
   name: string;
+  /** Which branch produced the name — drives display-label localization. */
+  source: SetupScriptNameSource;
 }
 
 /**
@@ -181,13 +192,13 @@ export function chooseDefaultSetupScript(options: {
 }): SetupScriptChoice {
   const { repoConfigScript, lastUsed, genericTemplate } = options;
   if (repoConfigScript) {
-    return { content: repoConfigScript, name: REPO_CONFIG_SCRIPT_NAME };
+    return { content: repoConfigScript, name: REPO_CONFIG_SCRIPT_NAME, source: 'repo-config' };
   }
   if (lastUsed) {
-    return { content: lastUsed.content, name: lastUsed.name };
+    return { content: lastUsed.content, name: lastUsed.name, source: 'named' };
   }
   if (genericTemplate) {
-    return { content: genericTemplate.content, name: genericTemplate.name };
+    return { content: genericTemplate.content, name: genericTemplate.name, source: 'named' };
   }
-  return { content: '', name: 'Custom' };
+  return { content: '', name: 'Custom', source: 'custom' };
 }

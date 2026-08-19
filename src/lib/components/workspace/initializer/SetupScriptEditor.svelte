@@ -19,6 +19,7 @@
   REPO_CONFIG_SCRIPT_NAME,
   setupScriptDisplayName,
   type ProjectType,
+  type SetupScriptNameSource,
 } from '$features/setup-scripts';
 
   import { m } from '$shared/paraglide/messages.js';
@@ -37,6 +38,8 @@
     value?: string;
     expanded?: boolean;
     scriptName?: string;
+    /** True identity of `scriptName` — drives display-label localization. */
+    scriptNameSource?: SetupScriptNameSource;
     isCustomScript?: boolean;
     compact?: boolean;
     triggerClass?: string;
@@ -53,6 +56,7 @@
     value = $bindable(''),
     expanded = $bindable(false),
     scriptName = $bindable(m.workspace_setupScriptEditor_custom_name()),
+    scriptNameSource = $bindable('named'),
     isCustomScript = $bindable(false),
     compact = false,
     triggerClass = '',
@@ -68,6 +72,7 @@
   let selectedScriptId = $state('');
   let hasUserEdited = $state(false);
   let customName = $state(scriptName);
+  let customNameSource = $state<SetupScriptNameSource>(scriptNameSource);
 
 
   // Track programmatic value changes to avoid false "user edited" detection
@@ -81,23 +86,35 @@
     repoPath ? getLastUsedSetupScript(repoPath, githubUrl) : undefined,
   );
 
-  // Build a map of script id -> content and label for quick lookup
+  // Build a map of script id -> content, label, and name source for quick lookup
   const scriptMap = $derived.by(() => {
-    const map = new Map<string, { content: string; label: string }>();
+    const map = new Map<
+      string,
+      { content: string; label: string; source: SetupScriptNameSource }
+    >();
 
     if (repoConfigScript) {
-      map.set(REPO_CONFIG_SCRIPT_ID, { content: repoConfigScript, label: REPO_CONFIG_SCRIPT_NAME });
+      map.set(REPO_CONFIG_SCRIPT_ID, {
+        content: repoConfigScript,
+        label: REPO_CONFIG_SCRIPT_NAME,
+        source: 'repo-config',
+      });
     }
 
     if (lastUsedScript) {
       map.set(LAST_USED_SCRIPT_ID, {
         content: lastUsedScript.content,
         label: lastUsedScript.name,
+        source: 'named',
       });
     }
 
     SETUP_SCRIPT_TEMPLATES.forEach((t) => {
-      map.set(`template-${t.id}`, { content: getTemplateContent(t), label: t.name });
+      map.set(`template-${t.id}`, {
+        content: getTemplateContent(t),
+        label: t.name,
+        source: 'named',
+      });
     });
 
     return map;
@@ -106,12 +123,15 @@
   // Variables accordion state
   let wordWrap = $state(true);
 
-  // Get display label for trigger button
+  // Get display label for trigger button (localized via the entry's true
+  // identity — a saved script literally named "Custom" keeps its own name)
   const displayLabel = $derived.by(() => {
-    if (hasUserEdited) return customName;
+    if (hasUserEdited) return setupScriptDisplayName(customName, customNameSource);
     if (!selectedScriptId) return m.workspace_setupScriptEditor_custom_name();
     const script = scriptMap.get(selectedScriptId);
-    return script?.label || m.workspace_setupScriptEditor_custom_name();
+    return script
+      ? setupScriptDisplayName(script.label, script.source)
+      : m.workspace_setupScriptEditor_custom_name();
   });
 
 
@@ -125,6 +145,7 @@
     if (script) {
       value = script.content;
       customName = script.label;
+      customNameSource = script.source;
       onchange?.(value);
     }
     requestAnimationFrame(() => codeEditorRef?.focus());
@@ -150,6 +171,7 @@
   function handleClear() {
     value = '';
     customName = m.workspace_setupScriptEditor_custom_name();
+    customNameSource = 'named';
     hasUserEdited = false;
     selectedScriptId = '';
     onchange?.('');
@@ -190,6 +212,7 @@
           if (trimmedValue === entry.content.trim()) {
             selectedScriptId = id;
             customName = entry.label;
+            customNameSource = entry.source;
             hasUserEdited = false;
             matched = true;
             break;
@@ -199,7 +222,10 @@
         if (!matched) {
           // No match found — preserve customName from the scriptName prop
           hasUserEdited = true;
-          customName = customName || scriptName || m.workspace_setupScriptEditor_custom_name();
+          if (!customName) {
+            customName = scriptName || m.workspace_setupScriptEditor_custom_name();
+            customNameSource = scriptName ? scriptNameSource : 'named';
+          }
         }
 
         isProgrammaticChange = true;
@@ -221,17 +247,21 @@
         // Use the script committed in the repo's .intent/config.json
         selectedScriptId = REPO_CONFIG_SCRIPT_ID;
         customName = REPO_CONFIG_SCRIPT_NAME;
+        customNameSource = 'repo-config';
       } else if (lastUsed) {
         // Use last used script for this repo (localStorage)
         selectedScriptId = LAST_USED_SCRIPT_ID;
         customName = lastUsed.name; // Set to last used script's name
+        customNameSource = 'named';
       } else if (COPY_CONFIG_TEMPLATE_ID) {
         // Fallback to "Copy config files only" template
         selectedScriptId = COPY_CONFIG_TEMPLATE_ID;
         const script = scriptMap.get(COPY_CONFIG_TEMPLATE_ID);
         customName = script?.label || m.workspace_setupScriptEditor_custom_name();
+        customNameSource = 'named';
       } else {
         customName = m.workspace_setupScriptEditor_custom_name();
+        customNameSource = 'named';
       }
     });
 
@@ -268,6 +298,7 @@
   // Sync internal state with bindable props for parent component access
   $effect(() => {
     scriptName = customName;
+    scriptNameSource = customNameSource;
     isCustomScript = hasUserEdited;
   });
 </script>
@@ -320,7 +351,7 @@
             class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId === REPO_CONFIG_SCRIPT_ID ? 'bg-background text-foreground ring-1 ring-border' : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
             onclick={() => handleScriptSelect(REPO_CONFIG_SCRIPT_ID)}
           >
-            <span class="text-sm">{setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME)}</span>
+            <span class="text-sm">{setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'repo-config')}</span>
             <p class="text-xs text-subtle mt-0.5 line-clamp-1">{m.workspace_setupScriptEditor_repoConfig_description()}</p>
           </button>
         </div>
@@ -423,7 +454,7 @@
     >
       <Fa icon={faTerminal} size="xs" />
       <span class="text-sm font-normal text-subtle">{m.workspace_setupScriptEditor_setupScript_label()}</span>
-      <span class="text-subtle font-normal">{setupScriptDisplayName(displayLabel)}</span>
+      <span class="text-subtle font-normal">{displayLabel}</span>
     </Button>
 
     <!-- Expanded Content (non-compact mode renders inside, compact mode renders via slot) -->

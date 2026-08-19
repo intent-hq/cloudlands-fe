@@ -187,7 +187,11 @@ describe('chooseDefaultSetupScript', () => {
       lastUsed,
       genericTemplate,
     });
-    expect(choice).toEqual({ content: 'echo repo-config', name: REPO_CONFIG_SCRIPT_NAME });
+    expect(choice).toEqual({
+      content: 'echo repo-config',
+      name: REPO_CONFIG_SCRIPT_NAME,
+      source: 'repo-config',
+    });
   });
 
   it('falls back to the last-used script when no repo config script exists', () => {
@@ -196,7 +200,11 @@ describe('chooseDefaultSetupScript', () => {
       lastUsed,
       genericTemplate,
     });
-    expect(choice).toEqual({ content: 'echo last-used', name: 'My saved script' });
+    expect(choice).toEqual({
+      content: 'echo last-used',
+      name: 'My saved script',
+      source: 'named',
+    });
   });
 
   it('falls back to the generic template when neither exists', () => {
@@ -205,7 +213,11 @@ describe('chooseDefaultSetupScript', () => {
       lastUsed: undefined,
       genericTemplate,
     });
-    expect(choice).toEqual({ content: 'echo template', name: 'Copy config files only' });
+    expect(choice).toEqual({
+      content: 'echo template',
+      name: 'Copy config files only',
+      source: 'named',
+    });
   });
 
   it('falls back to empty custom when nothing is available', () => {
@@ -214,7 +226,16 @@ describe('chooseDefaultSetupScript', () => {
       lastUsed: undefined,
       genericTemplate: undefined,
     });
-    expect(choice).toEqual({ content: '', name: 'Custom' });
+    expect(choice).toEqual({ content: '', name: 'Custom', source: 'custom' });
+  });
+
+  it('tags a last-used script named like a sentinel as named, not a sentinel source', () => {
+    const choice = chooseDefaultSetupScript({
+      repoConfigScript: null,
+      lastUsed: { name: 'Custom', content: 'echo saved' },
+      genericTemplate,
+    });
+    expect(choice).toEqual({ content: 'echo saved', name: 'Custom', source: 'named' });
   });
 });
 
@@ -279,29 +300,47 @@ describe('resolveSetupScriptParam (monorepo#1862)', () => {
 describe('setupScriptDisplayName', () => {
   afterEach(() => overwriteGetLocale(() => 'en'));
 
-  it('maps the repo-config sentinel to the localized label', () => {
+  it('maps the repo-config source to the localized label', () => {
     overwriteGetLocale(() => 'fr');
-    expect(setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME)).toBe(
+    expect(setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'repo-config')).toBe(
       m.workspace_setupScriptEditor_fromRepoConfig_name(),
     );
-    expect(setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME)).not.toBe(REPO_CONFIG_SCRIPT_NAME);
+    expect(setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'repo-config')).not.toBe(
+      REPO_CONFIG_SCRIPT_NAME,
+    );
   });
 
-  it('maps the Custom sentinel to the localized label', () => {
+  it('maps the custom source to the localized label', () => {
     overwriteGetLocale(() => 'de');
-    expect(setupScriptDisplayName('Custom')).toBe(m.workspace_setupScriptEditor_custom_name());
-    expect(setupScriptDisplayName('Custom')).not.toBe('Custom');
+    expect(setupScriptDisplayName('Custom', 'custom')).toBe(
+      m.workspace_setupScriptEditor_custom_name(),
+    );
+    expect(setupScriptDisplayName('Custom', 'custom')).not.toBe('Custom');
   });
 
   it('renders the English labels in the base locale', () => {
     overwriteGetLocale(() => 'en');
-    expect(setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME)).toBe('From repo config');
-    expect(setupScriptDisplayName('Custom')).toBe('Custom');
+    expect(setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'repo-config')).toBe(
+      'From repo config',
+    );
+    expect(setupScriptDisplayName('Custom', 'custom')).toBe('Custom');
   });
 
-  it('passes through any other name unchanged', () => {
+  it('passes through named scripts unchanged', () => {
     overwriteGetLocale(() => 'ja');
-    expect(setupScriptDisplayName('My saved script')).toBe('My saved script');
-    expect(setupScriptDisplayName('Copy config files only')).toBe('Copy config files only');
+    expect(setupScriptDisplayName('My saved script', 'named')).toBe('My saved script');
+    expect(setupScriptDisplayName('Copy config files only', 'named')).toBe(
+      'Copy config files only',
+    );
+  });
+
+  it('keeps a saved script literally named like a sentinel un-localized', () => {
+    overwriteGetLocale(() => 'fr');
+    // A user-saved script named "Custom" or "From repo config" is a named
+    // script — its name must pass through, never be relabeled as a sentinel.
+    expect(setupScriptDisplayName('Custom', 'named')).toBe('Custom');
+    expect(setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'named')).toBe(
+      REPO_CONFIG_SCRIPT_NAME,
+    );
   });
 });

@@ -6,7 +6,7 @@
   import Modal from './Modal.svelte';
   import SetupScriptEditor from '$lib/components/workspace/initializer/SetupScriptEditor.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
-  import type { ProjectType } from '$features/setup-scripts';
+  import type { ProjectType, SetupScriptNameSource } from '$features/setup-scripts';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -19,6 +19,8 @@
     repoConfigScript?: string | null;
     value?: string;
     scriptName?: string;
+    /** True identity of `scriptName` — drives display-label localization. */
+    scriptNameSource?: SetupScriptNameSource;
     isCustomScript?: boolean;
     onClose?: () => void;
   }
@@ -31,6 +33,7 @@
     repoConfigScript = null,
     value = $bindable(''),
     scriptName = $bindable('Custom'),
+    scriptNameSource = $bindable('named'),
     isCustomScript = $bindable(false),
     onClose,
   }: Props = $props();
@@ -38,6 +41,7 @@
   // Local state — edits happen here, only committed on Done
   let localValue = $state('');
   let localScriptName = $state('Custom');
+  let localScriptNameSource = $state<SetupScriptNameSource>('named');
   let localIsCustomScript = $state(false);
   let editorExpanded = $state(true);
   const localHasUnsavedChanges = $derived(
@@ -51,6 +55,7 @@
     if (open) {
       localValue = value;
       localScriptName = scriptName;
+      localScriptNameSource = scriptNameSource;
       localIsCustomScript = isCustomScript;
       editorExpanded = true;
     }
@@ -59,6 +64,7 @@
   function handleDone() {
     value = localValue;
     scriptName = localScriptName;
+    scriptNameSource = localScriptNameSource;
     isCustomScript = localIsCustomScript;
     open = false;
     onClose?.();
@@ -83,6 +89,7 @@
     bind:value={localValue}
     bind:expanded={editorExpanded}
     bind:scriptName={localScriptName}
+    bind:scriptNameSource={localScriptNameSource}
     bind:isCustomScript={localIsCustomScript}
     contentOnly={true}
   />
