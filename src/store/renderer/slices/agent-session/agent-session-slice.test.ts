@@ -749,6 +749,61 @@ describe('agent-session-slice reducer', () => {
         { id: 'msg_backend', appMessageId, metadata: { source: 'backend' } },
       ]);
     });
+
+    it('preserves object identity of already-present rows on an older-history prepend', () => {
+      const m1 = makeUniqueMessage('m1', 'assistant', '2024-01-01T00:00:02.000Z');
+      const m2 = makeUniqueMessage('m2', 'assistant', '2024-01-01T00:00:03.000Z');
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { messages: [m1, m2] })),
+      );
+      const before = getMsgs(state, 'a1');
+      const older = makeUniqueMessage('m-old', 'assistant', '2024-01-01T00:00:01.000Z');
+      state = agentSessionReducer(
+        state,
+        replaceMessages('a1', [
+          older,
+          { ...m1 },
+          { ...m2, contentBlocks: [...(m2.contentBlocks ?? [])] },
+        ]),
+      );
+      const after = getMsgs(state, 'a1');
+      expect(after.map((m) => m.id)).toEqual(['m-old', 'm1', 'm2']);
+      expect(after[1]).toBe(before[0]);
+      expect(after[2]).toBe(before[1]);
+    });
+
+    it('no-ops entirely when the replacement is structurally equivalent', () => {
+      const m1 = makeUniqueMessage('m1', 'assistant', '2024-01-01T00:00:01.000Z');
+      const m2 = makeUniqueMessage('m2', 'assistant', '2024-01-01T00:00:02.000Z');
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { messages: [m1, m2] })),
+      );
+      const next = agentSessionReducer(state, replaceMessages('a1', [{ ...m1 }, { ...m2 }]));
+      expect(next).toBe(state);
+    });
+
+    it('gives a changed row a new identity while unchanged rows keep theirs', () => {
+      const m1 = makeUniqueMessage('m1', 'assistant', '2024-01-01T00:00:01.000Z');
+      const m2 = makeUniqueMessage('m2', 'assistant', '2024-01-01T00:00:02.000Z');
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { messages: [m1, m2] })),
+      );
+      const before = getMsgs(state, 'a1');
+      state = agentSessionReducer(
+        state,
+        replaceMessages('a1', [
+          { ...m1 },
+          { ...m2, contentBlocks: [{ type: 'text' as const, text: 'edited' }] },
+        ]),
+      );
+      const after = getMsgs(state, 'a1');
+      expect(after[0]).toBe(before[0]);
+      expect(after[1]).not.toBe(before[1]);
+      expect(after[1].contentBlocks).toEqual([{ type: 'text', text: 'edited' }]);
+    });
   });
 
   describe('updateSession', () => {

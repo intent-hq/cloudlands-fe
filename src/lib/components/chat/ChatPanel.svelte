@@ -195,7 +195,11 @@
     createLazyTurnHeightCache,
     type LazyTurnHeightCache,
   } from './lazy-turn-height-cache';
-  import { isTurnInRecentWindow, shouldVirtualizeTurns } from './chat-turn-virtualization';
+  import {
+    isOlderHistoryPrepend,
+    isTurnInRecentWindow,
+    shouldVirtualizeTurns,
+  } from './chat-turn-virtualization';
   import {
     EMPTY_TEMPORARY_TURN_MATERIALIZATION,
     isTurnTemporarilyMaterialized,
@@ -1592,8 +1596,30 @@
   // Count user messages as proxy for turns (each user message starts a turn)
   const totalTurnCount = $derived($agentMessages$.filter((m) => m.role === 'user').length);
 
-  // PERF: Enable lazy loading only for larger conversations
-  const shouldUseLazyLoading = $derived(shouldVirtualizeTurns(totalTurnCount));
+  // PERF: Enable lazy loading only for larger conversations. Latched across
+  // background older-history prepends: when the transcript grows but the
+  // newest row is unchanged (the post-reveal backfill of a truncated
+  // snapshot), flipping lazy mode on would rewrap every already-rendered turn
+  // in LazyTurn and repaint the whole visible list, so the prepend keeps the
+  // mode decided at reveal. Genuine appends still follow the threshold.
+  let lazyModeTracker = { count: 0, newestId: undefined as string | undefined, mode: false };
+  const shouldUseLazyLoading = $derived.by(() => {
+    const currentCount = $agentMessages$.length;
+    const currentNewestId = $agentMessages$[currentCount - 1]?.id;
+    const unchanged =
+      currentCount === lazyModeTracker.count && currentNewestId === lazyModeTracker.newestId;
+    const latch =
+      unchanged ||
+      isOlderHistoryPrepend(
+        lazyModeTracker.count,
+        lazyModeTracker.newestId,
+        currentCount,
+        currentNewestId,
+      );
+    const mode = latch ? lazyModeTracker.mode : shouldVirtualizeTurns(totalTurnCount);
+    lazyModeTracker = { count: currentCount, newestId: currentNewestId, mode };
+    return mode;
+  });
 
   // PERF: Pre-compute message index and turn number maps for O(1) lookups
   // This avoids O(n²) complexity from indexOf/slice/filter in the render loop
@@ -1617,17 +1643,28 @@
     return map;
   });
 
-  // Track previous message count to detect new messages
+  // Track previous message count and newest row to detect new messages and to
+  // distinguish appended NEW messages from the background older-history
+  // prepend (list grew, newest row unchanged), which must stay scroll-neutral.
   let previousMessageCount = $state(0);
+  let previousNewestMessageId: string | undefined = undefined;
 
   // Auto-scroll to bottom when new messages are added and shouldFollowBottom is true
   $effect(() => {
     const currentCount = $agentMessages$.length;
+    const currentNewestId = $agentMessages$[currentCount - 1]?.id;
     // Scroll to bottom when:
     // 1. New message added AND following is enabled, OR
     // 2. First message added (transition from empty to non-empty) - always scroll to show the new content
     const isFirstMessage = previousMessageCount === 0 && currentCount > 0;
-    const hasNewMessages = currentCount > previousMessageCount;
+    const hasNewMessages =
+      currentCount > previousMessageCount &&
+      !isOlderHistoryPrepend(
+        previousMessageCount,
+        previousNewestMessageId,
+        currentCount,
+        currentNewestId,
+      );
     const shouldScroll =
       hasNewMessages && (isFirstMessage || shouldFollowBottom);
     if (hasNewMessages) {
@@ -1668,6 +1705,7 @@
       }
     }
     previousMessageCount = currentCount;
+    previousNewestMessageId = currentNewestId;
   });
 
   // Helper functions for O(1) lookups

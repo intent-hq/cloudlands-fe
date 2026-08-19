@@ -8,3 +8,23 @@ export function shouldVirtualizeTurns(turnCount: number): boolean {
 export function isTurnInRecentWindow(globalIndex: number, totalTurns: number): boolean {
   return globalIndex >= Math.max(0, totalTurns - FORCE_VISIBLE_TURN_COUNT);
 }
+
+/**
+ * True when a transcript change is purely a prepend of OLDER history: the
+ * list grew but the newest row is unchanged (the background older-history
+ * backfill after a truncated snapshot). Such changes must stay paint- and
+ * scroll-neutral — no auto-scroll and no lazy-mode flip.
+ */
+export function isOlderHistoryPrepend(
+  previousCount: number,
+  previousNewestId: string | undefined,
+  currentCount: number,
+  currentNewestId: string | undefined,
+): boolean {
+  return (
+    previousCount > 0 &&
+    currentCount > previousCount &&
+    currentNewestId !== undefined &&
+    currentNewestId === previousNewestId
+  );
+}

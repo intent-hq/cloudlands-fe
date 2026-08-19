@@ -1,4 +1,4 @@
-import { shallowEqual } from 'fast-equals';
+import { deepEqual, shallowEqual } from 'fast-equals';
 import type { AgentSession, AgentMessage, SessionStats } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { CanonicalAgentStatusFields, WorkspaceEvent } from '$features/events/types';
@@ -153,6 +153,31 @@ function normalizeSortPruneMessages(messages: AgentMessage[]): AgentMessage[] {
   return pruneMessages(
     orderMessagesForConversation(deduplicateAgentMessages(messages.map(normalizeAgentMessage))),
   );
+}
+
+/**
+ * Reuse prior message object identities when a full replacement contains rows
+ * structurally equal to ones already in the store, so a background
+ * older-history prepend does not re-render the already-rendered suffix of the
+ * transcript. Returns the previous array itself when the replacement is
+ * entirely equivalent (position-for-position), letting the reducer no-op.
+ */
+function reconcileMessageIdentities(
+  previous: AgentMessage[],
+  next: AgentMessage[],
+): AgentMessage[] {
+  const previousById = new Map(previous.map((message) => [message.id, message]));
+  let unchanged = next.length === previous.length;
+  const reconciled = next.map((message, index) => {
+    const prior = previousById.get(message.id);
+    if (prior && (prior === message || deepEqual(prior, message))) {
+      if (prior !== previous[index]) unchanged = false;
+      return prior;
+    }
+    unchanged = false;
+    return message;
+  });
+  return unchanged ? previous : reconciled;
 }
 
 function isOptimisticUserMessage(message: AgentMessage): boolean {
@@ -1072,10 +1097,12 @@ agentSessionReducer.with(updateMessage, (state, { payload: [agentId, messageId, 
 agentSessionReducer.with(replaceMessages, (state, { payload: [agentId, messages] }) => {
   const session = getSession(state, agentId);
   if (!session) return state;
-  return setSession(state, agentId, {
-    ...session,
-    messages: normalizeSortPruneMessages(messages),
-  });
+  const nextMessages = reconcileMessageIdentities(
+    session.messages,
+    normalizeSortPruneMessages(messages),
+  );
+  if (nextMessages === session.messages) return state;
+  return setSession(state, agentId, { ...session, messages: nextMessages });
 });
 agentSessionReducer.with(removeMessage, (state, { payload: [agentId, messageId] }) => {
   const session = getSession(state, agentId);
