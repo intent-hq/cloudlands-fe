@@ -44,6 +44,14 @@ export function getRecentRepoLabel(repo: RecentRepoEntry): RecentRepoLabel {
 }
 
 /**
+ * Hover tooltip for a Recent-list entry: the full checkout path for local
+ * entries, nothing for (path-less) GitHub entries.
+ */
+export function getRecentRepoTooltip(repo: RecentRepoEntry): string | undefined {
+  return repo.type === 'local' && repo.path ? repo.path : undefined;
+}
+
+/**
  * Path segments owned by the daemon rather than the user: the legacy clone
  * directory and the repo cache (`<workspaces_root>/.repo-cache/<owner>/<repo>`,
  * docs/PROTOCOL.md). Repos living there are not copyable local repos.

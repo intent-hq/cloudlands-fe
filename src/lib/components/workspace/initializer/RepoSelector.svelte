@@ -73,10 +73,12 @@
   } from './isolation-mode';
   import {
     getRecentRepoLabel,
+    getRecentRepoTooltip,
     getWorkspaceOwnedCheckoutPaths,
     isDaemonManagedRepoPath,
     matchesRecentRepoSearch,
   } from './recent-repo-display';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('RepoSelector');
@@ -1797,40 +1799,50 @@
             <div class="">
               {#each filteredRepos() as repo, index (repo.path || repo.name)}
                 {@const label = getRecentRepoLabel(repo)}
-                <button
-                  type="button"
-                  class="w-full flex items-center gap-2 py-1.5 text-left hover:bg-muted/50 rounded-md px-2 pl-3 -mx-2 transition-colors cursor-pointer {index ===
-                  highlightedIndex
-                    ? 'bg-accent/20'
-                    : ''}"
-                  onclick={() => handleSelectRepo(repo)}
-                >
-                  {#if label.ownerPrefix}
-                    <img
-                      src={getGitHubAvatarUrl(label.ownerPrefix, 32)}
-                      alt={label.ownerPrefix}
-                      class="w-4 h-4 rounded-full shrink-0"
-                      loading="lazy"
-                      onerror={(e) =>
-                        ((e.currentTarget as HTMLImageElement).style.display = 'none')}
-                    />
-                  {:else}
-                    <Fa
-                      icon={repo.type === 'github' ? faGithub : faFolder}
-                      class="text-subtle shrink-0 opacity-50"
-                      size={12}
-                    />
-                  {/if}
-                  <span class="text-sm text-foreground truncate">
+                {@const tooltip = getRecentRepoTooltip(repo)}
+                {#snippet repoRow()}
+                  <button
+                    type="button"
+                    class="w-full flex items-center gap-2 py-1.5 text-left hover:bg-muted/50 rounded-md px-2 pl-3 -mx-2 transition-colors cursor-pointer {index ===
+                    highlightedIndex
+                      ? 'bg-accent/20'
+                      : ''}"
+                    onclick={() => handleSelectRepo(repo)}
+                  >
                     {#if label.ownerPrefix}
-                      <span class="text-subtle mr-1">{label.ownerPrefix} /</span>
+                      <img
+                        src={getGitHubAvatarUrl(label.ownerPrefix, 32)}
+                        alt={label.ownerPrefix}
+                        class="w-4 h-4 rounded-full shrink-0"
+                        loading="lazy"
+                        onerror={(e) =>
+                          ((e.currentTarget as HTMLImageElement).style.display = 'none')}
+                      />
+                    {:else}
+                      <Fa
+                        icon={repo.type === 'github' ? faGithub : faFolder}
+                        class="text-subtle shrink-0 opacity-50"
+                        size={12}
+                      />
                     {/if}
-                    {label.primary}
-                    {#if label.suffix}
-                      <span class="text-subtle ml-1">({label.suffix})</span>
-                    {/if}
-                  </span>
-                </button>
+                    <span class="text-sm text-foreground truncate">
+                      {#if label.ownerPrefix}
+                        <span class="text-subtle mr-1">{label.ownerPrefix} /</span>
+                      {/if}
+                      {label.primary}
+                      {#if label.suffix}
+                        <span class="text-subtle ml-1">({label.suffix})</span>
+                      {/if}
+                    </span>
+                  </button>
+                {/snippet}
+                {#if tooltip}
+                  <Tooltip content={tooltip} delayDuration={300} side="bottom" class="flex w-full">
+                    {@render repoRow()}
+                  </Tooltip>
+                {:else}
+                  {@render repoRow()}
+                {/if}
               {/each}
             </div>
           {/if}
