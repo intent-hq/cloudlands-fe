@@ -1584,21 +1584,20 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
   );
 
   // Cold-open snapshot miss under rapid workspace switching (monorepo#2917) —
-  // the viewed-agent swap (handleViewed) sweeps ALL other same-realm slots
-  // with no hydration-loading spare: when the final workspace double-mounts
-  // two ChatPanels, the second panel's markAgentAsViewed closes the first
-  // panel's still-acquiring cold-open slot (desiredToken cleared +
-  // cancelPending), so its chat.subscribe — which issued promptly — resolves
-  // straight into an unsubscribe and its seq-0 snapshot is token-dropped.
-  // Both of that panel's opens are already consumed (init + its own viewed),
-  // so no snapshot is coming: the chat-read saga strands a full
-  // SNAPSHOT_WAIT_MS window and logs the wait-window warning before the
-  // re-request escalation force-cycles a fresh registration.
-  // it.fails: asserts the DESIRED behavior (the sibling cold open survives
-  // the swap while its hydration is loading — the same spare-then-revisit
-  // contract monorepo#2864 gave the applied-clear sweep); flip to `it` when
-  // the fix lands.
-  it.fails(
+  // the viewed-agent swap (handleViewed) used to sweep ALL other same-realm
+  // slots with no hydration-loading spare: when the final workspace
+  // double-mounts two ChatPanels, the second panel's markAgentAsViewed closed
+  // the first panel's still-acquiring cold-open slot (desiredToken cleared +
+  // cancelPending), so its chat.subscribe — which issued promptly — resolved
+  // straight into an unsubscribe and its seq-0 snapshot was token-dropped.
+  // Both of that panel's opens were already consumed (init + its own viewed),
+  // so no snapshot was coming: the chat-read saga stranded a full
+  // SNAPSHOT_WAIT_MS window and logged the wait-window warning before the
+  // re-request escalation force-cycled a fresh registration. Fixed by
+  // extending the monorepo#2864 spare-then-revisit contract to the swap
+  // sweep: same-realm agents whose hydration is `loading` with a mounted
+  // panel are spared and revisited when the hydration settles/fails.
+  it(
     'spares a sibling cold open mid-acquisition from the viewed-agent swap during a double ChatPanel mount (monorepo#2917)',
     async () => {
       const hopA = 'agent-2917-hop-a';
@@ -1668,6 +1667,93 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       expect(selectAgentMessages.select(appStore.state, finalC1).map((m) => m.id)).toContain(
         'm-2917-c1',
       );
+
+      // The spare defers the close, it never cancels it: the sibling's
+      // hydration settles with its panel tab still open — the deferred-clear
+      // revisit keeps the subscription (the spare was for THIS live panel).
+      appStore.dispatch(transcriptHydrationSettled(finalC1));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(c1.subscription.unsubscribe).not.toHaveBeenCalled();
+    },
+  );
+
+  it(
+    'runs the deferred close once hydration settles when the swap-spared sibling panel closed mid-load (no leaked subscription, monorepo#2917)',
+    async () => {
+      // Leak guard for the swap-sweep spare, mirroring the applied-clear
+      // sweep's (PR #1462): a sibling spared from the viewed-agent swap whose
+      // panel then genuinely closes mid-load must still be torn down once its
+      // hydration settles — otherwise the standing subscription leaks until
+      // an unrelated swap or session teardown.
+      const sibling = 'agent-2917-swap-leak-sibling';
+      const viewed = 'agent-2917-swap-leak-viewed';
+      seedSession(sibling);
+      seedSession(viewed);
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'Sibling', closable: true, agentId: sibling }),
+      );
+      const sub = openChat(sibling);
+      appStore.dispatch(markAgentAsViewed(sibling));
+      appStore.dispatch(transcriptHydrationStarted(sibling));
+
+      // The swap spares the sibling: hydration loading + mounted panel tab.
+      openChat(viewed);
+      appStore.dispatch(markAgentAsViewed(viewed));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+      // The sibling's panel closes mid-load; hydration then settles with no
+      // open tab and no re-view — the deferred close runs now.
+      appStore.dispatch(clearPanelLayout(WS));
+      appStore.dispatch(transcriptHydrationSettled(sibling));
+      await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+    },
+  );
+
+  it(
+    'runs the deferred close once hydration fails when the swap-spared sibling panel closed mid-load (monorepo#2917)',
+    async () => {
+      // Same leak, failure edge: a hydration that FAILS after the swap spare
+      // must also revisit the deferred close — `loading` never wedges it.
+      const sibling = 'agent-2917-swap-leak-fail-sibling';
+      const viewed = 'agent-2917-swap-leak-fail-viewed';
+      seedSession(sibling);
+      seedSession(viewed);
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'Sibling', closable: true, agentId: sibling }),
+      );
+      const sub = openChat(sibling);
+      appStore.dispatch(markAgentAsViewed(sibling));
+      appStore.dispatch(transcriptHydrationStarted(sibling));
+
+      openChat(viewed);
+      appStore.dispatch(markAgentAsViewed(viewed));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+      appStore.dispatch(clearPanelLayout(WS));
+      appStore.dispatch(transcriptHydrationFailed(sibling));
+      await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+    },
+  );
+
+  it(
+    'still sweeps a loading same-realm sibling with no mounted panel on the viewed-agent swap (spare requires a hosting panel tab)',
+    async () => {
+      // Swap-invariant guard: the spare is scoped to siblings a live panel is
+      // actively waiting on. A loading agent no panel tab hosts has nothing
+      // waiting on its snapshot, so the swap still closes it — no over-spare.
+      const sibling = 'agent-2917-swap-unhosted-sibling';
+      const viewed = 'agent-2917-swap-unhosted-viewed';
+      seedSession(sibling);
+      seedSession(viewed);
+      const sub = openChat(sibling);
+      appStore.dispatch(markAgentAsViewed(sibling));
+      appStore.dispatch(transcriptHydrationStarted(sibling));
+
+      openChat(viewed);
+      appStore.dispatch(markAgentAsViewed(viewed));
+      await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
     },
   );
 
