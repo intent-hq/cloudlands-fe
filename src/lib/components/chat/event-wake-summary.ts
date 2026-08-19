@@ -73,10 +73,11 @@ export function parseAgentEvents(text: string, metadata?: EventWakeMetadata): Pa
       const data = event.data as Record<string, unknown>;
       const agentId = data.agentId as string | undefined;
       if (agentId && (COMPLETION_EVENT_TYPES.has(event.type) || event.type === 'agent:created')) {
+        const agentName = firstNonEmptyString(data.agentName);
         agentMap.set(agentId, {
           type: event.type,
           agentId,
-          agentName: data.agentName as string | undefined,
+          agentName: agentName && !looksLikeAgentId(agentName) ? agentName : undefined,
           completionReport: firstNonEmptyString(data.completionReport, data.report),
           lastResponseSummary: firstNonEmptyString(data.lastResponseSummary),
         });
@@ -171,18 +172,22 @@ export function summarizeEventWake(
   const completed = events.filter((e) => COMPLETION_EVENT_TYPES.has(e.type));
   const created = events.filter((e) => e.type === 'agent:created');
   const parts: string[] = [];
+  // Only use the named wording when a display name resolved; never fall back
+  // to the raw agent id.
   if (completed.length === 1) {
     parts.push(
-      m.chat_eventWake_childCompleted_named({
-        name: completed[0].agentName ?? completed[0].agentId,
-      }),
+      completed[0].agentName
+        ? m.chat_eventWake_childCompleted_named({ name: completed[0].agentName })
+        : m.chat_eventWakeup_agentFinished_label(),
     );
   } else if (completed.length > 1) {
     parts.push(m.chat_eventWake_childCompleted_count({ count: formatInteger(completed.length) }));
   }
   if (created.length === 1) {
     parts.push(
-      m.chat_eventWake_childCreated_named({ name: created[0].agentName ?? created[0].agentId }),
+      created[0].agentName
+        ? m.chat_eventWake_childCreated_named({ name: created[0].agentName })
+        : m.events_activity_agentCreated_label(),
     );
   } else if (created.length > 1) {
     parts.push(m.chat_eventWake_childCreated_count({ count: formatInteger(created.length) }));

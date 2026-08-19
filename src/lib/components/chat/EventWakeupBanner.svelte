@@ -8,6 +8,7 @@
    */
   import { faBell, faChevronDown, faRotate } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { onDestroy } from 'svelte';
   import { safeSlide } from '$lib/utils/animations';
   import { getActivityLabel } from '$features/events/activity-labels';
   import type { WorkspaceEvent } from '$features/events/types';
@@ -86,6 +87,15 @@
   const detailsId = `${componentId}-event-wakeup-details`;
   let detailsOpen = $state(false);
 
+  // Bridge immutable Redux snapshots into local rune state so the derived
+  // labels re-resolve agent names when a session lands after the banner
+  // renders (e.g. async session load).
+  let rendererState = $state.raw(appStore.state);
+  const unsubscribeRendererState = appStore.getReadableState().subscribe((state) => {
+    rendererState = state;
+  });
+  onDestroy(unsubscribeRendererState);
+
   /**
    * Best display name for an event's agent: the payload's name field, else a
    * live agent-session store lookup by agentId — never an id-shaped value.
@@ -95,7 +105,7 @@
     const wireName = firstNonEmptyString(data.agentName, data.name);
     if (wireName && !looksLikeAgentId(wireName)) return wireName;
     const agentId = firstNonEmptyString(data.agentId);
-    const stored = agentId ? selectAgentSession.select(appStore.state, agentId)?.name : undefined;
+    const stored = agentId ? selectAgentSession.select(rendererState, agentId)?.name : undefined;
     return stored && !looksLikeAgentId(stored) ? stored : undefined;
   }
 

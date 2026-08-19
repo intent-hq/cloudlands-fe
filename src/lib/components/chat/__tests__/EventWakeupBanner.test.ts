@@ -626,4 +626,37 @@ describe('EventWakeupBanner agent-id suppression', () => {
     expect(summary.getAttribute('aria-label')).toBe('Builder finished');
     expect(summary.textContent).not.toContain('agent-00000000');
   });
+
+  it('updates from the generic label to the resolved name when the session lands after render', async () => {
+    const LATE_AGENT_UUID = 'agent-11111111-2222-4333-8444-555555555555';
+    renderBanner({
+      type: 'event_notification',
+      eventCount: 1,
+      eventTypes: ['agent:idle'],
+      events: [
+        {
+          type: 'agent:idle',
+          timestamp: '2026-08-12T12:00:00.000Z',
+          data: { agentId: LATE_AGENT_UUID },
+        },
+      ],
+    });
+
+    const summary = screen.getByTestId('event-wakeup-summary');
+    expect(summary.getAttribute('aria-label')).toBe('Agent finished');
+
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: LATE_AGENT_UUID,
+          workspaceId: WORKSPACE.id,
+          name: 'Late Loader',
+          messages: [],
+        } as unknown as AgentSession,
+      ]),
+    );
+    await vi.waitFor(() => {
+      expect(summary.getAttribute('aria-label')).toBe('Late Loader finished');
+    });
+  });
 });
