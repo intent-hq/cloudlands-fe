@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.71.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.70.0...v2.71.0) (2026-08-19)
+
+
+### 🚀 Features
+
+* agent viewport sizing — resizeTab, openTab width/height, scale-to-fit ([#1458](https://github.com/intent-hq/cloudlands-fe/issues/1458)) ([d436ba6](https://github.com/intent-hq/cloudlands-fe/commit/d436ba6c69a2b6059b599ee0ed146cecc8b0c06d))
+
+
+### 🐛 Bug Fixes
+
+* localize Shell tab label for zh locales and setup-script display name ([#1472](https://github.com/intent-hq/cloudlands-fe/issues/1472)) ([5e93868](https://github.com/intent-hq/cloudlands-fe/commit/5e9386863d426f974148bd964f94e769c4952559))
+* stop the chat-export path clobbering the main-process locale ([#1475](https://github.com/intent-hq/cloudlands-fe/issues/1475)) ([c9d0138](https://github.com/intent-hq/cloudlands-fe/commit/c9d01382e9b5bdcf5d54a5376dc41137e5c68b55))
+
 ## [2.70.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.69.0...v2.70.0) (2026-08-19)
 
 
