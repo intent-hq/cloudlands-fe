@@ -11,6 +11,7 @@ import {
   type BrowserListTabsRequestPayload,
   type BrowserOpenTabPayload,
   type BrowserTabNavigatedPayload,
+  type BrowserTabOwnerChangedPayload,
 } from '$shared/ipc/workspace-command-payloads';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import {
@@ -30,6 +31,7 @@ import {
   openTabInNewRootColumn,
   setActiveTab,
   setPanelPinned,
+  setTabOwnerAgent,
   updateTabBrowserUrl,
 } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
@@ -44,7 +46,11 @@ let running = false;
 
 const logger = createLogger('BrowserIpcSaga');
 
-function browserTab(url: string, requestedUrl?: string): Omit<PanelTab, 'id'> {
+function browserTab(
+  url: string,
+  requestedUrl?: string,
+  ownerAgentId?: string,
+): Omit<PanelTab, 'id'> {
   return {
     type: 'browser',
     title: 'Browser',
@@ -53,6 +59,9 @@ function browserTab(url: string, requestedUrl?: string): Omit<PanelTab, 'id'> {
     // Persist the pre-rewrite URL so a restart can re-run the rewrite
     // (monorepo#2789).
     ...(requestedUrl === undefined ? {} : { browserRequestedUrl: requestedUrl }),
+    // Persist the owning agent on agent opens so ownership survives restart
+    // (monorepo#2857).
+    ...(ownerAgentId === undefined ? {} : { ownerAgentId }),
   };
 }
 
@@ -156,13 +165,36 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   // Pre-rewrite URL for rewritten opens; persisted with the tab so a restart
   // can re-run the rewrite (monorepo#2789).
   const requestedUrl = typeof data.requestedUrl === 'string' ? data.requestedUrl : undefined;
+  // Owning agent on agent opens; persisted with the tab (monorepo#2857).
+  const ownerAgentId =
+    typeof data.ownerAgentId === 'string' && data.ownerAgentId.length > 0
+      ? data.ownerAgentId
+      : undefined;
 
   const position = data.position ?? 'adjacent';
   if (position === 'replace') {
     const tabs = yield* selectAllTabs.effect(workspaceId);
-    const existing = tabs.find((tab) => tab.type === 'browser');
+    // Main resolves (and, for agent opens, ownership-checks) the adoption
+    // target and binds it into the payload as replaceTabId; replace only
+    // that exact tab so a layout change since the check cannot redirect the
+    // replace onto a different (possibly other-agent-owned) tab
+    // (monorepo#2857 TOCTOU). When it's gone — or on legacy payloads without
+    // replaceTabId — a user open falls back to the first browser tab, while
+    // an agent open must NOT (main never ownership-checked that tab): it
+    // opens a new tab instead.
+    const replaceTabId = typeof data.replaceTabId === 'string' ? data.replaceTabId : undefined;
+    const existing = replaceTabId
+      ? tabs.find((tab) => tab.type === 'browser' && tab.id === replaceTabId)
+      : ownerAgentId
+        ? undefined
+        : tabs.find((tab) => tab.type === 'browser');
     if (existing) {
       yield* put(updateTabBrowserUrl(workspaceId, existing.id, data.url, requestedUrl ?? null));
+      // An agent replace adopts the existing tab — record its new owner
+      // (main enforced ownership before sending this open, monorepo#2857).
+      if (ownerAgentId) {
+        yield* put(setTabOwnerAgent(workspaceId, existing.id, ownerAgentId));
+      }
       yield* put(setActiveTab(workspaceId, existing.id));
       if (pin) {
         const panels = yield* selectPanels.effect(workspaceId);
@@ -180,7 +212,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     }
     const openAction = openTab(
       workspaceId,
-      browserTab(data.url, requestedUrl),
+      browserTab(data.url, requestedUrl, ownerAgentId),
       undefined,
       newTabId,
       undefined,
@@ -193,19 +225,23 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   }
   if (position === 'adjacent') {
     const panelOpenMode = yield* selectPanelOpenMode.effect();
-    const openAction = openTabInNewRootColumn(workspaceId, browserTab(data.url, requestedUrl), {
-      newTabId,
-      allowDuplicate,
-      panelOpenMode,
-      panelStackDirection: yield* selectPanelStackDirection.effect(),
-    });
+    const openAction = openTabInNewRootColumn(
+      workspaceId,
+      browserTab(data.url, requestedUrl, ownerAgentId),
+      {
+        newTabId,
+        allowDuplicate,
+        panelOpenMode,
+        panelStackDirection: yield* selectPanelStackDirection.effect(),
+      },
+    );
     yield* put(openAction);
     if (pin) yield* pinRevealedPanel(workspaceId, openAction.payload.newTabId);
     return;
   }
   const openAction = openTab(
     workspaceId,
-    browserTab(data.url, requestedUrl),
+    browserTab(data.url, requestedUrl, ownerAgentId),
     undefined,
     newTabId,
     undefined,
@@ -327,11 +363,42 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
       url: tab.browserUrl || '',
       title: tab.title || m.layout_panelLayout_browser_fallback(),
       closable: tab.closable !== false,
+      // Persisted owner so main's ownership registry can rehydrate after a
+      // restart (monorepo#2857); absent for unowned (user) tabs.
+      ...(typeof tab.ownerAgentId === 'string' && tab.ownerAgentId.length > 0
+        ? { ownerAgentId: tab.ownerAgentId }
+        : {}),
     }));
 
   // Echo the requestId back so main resolves the matching pending request
   // (concurrent requests must not consume each other's replies).
   yield* call(invoke, 'browser:list-tabs-response', { tabs: browserTabs, requestId });
+}
+
+function* tabOwnerChanged(data: BrowserTabOwnerChangedPayload | null): SagaGenerator<void> {
+  if (
+    !isWorkspaceCommandPayload(data) ||
+    typeof data.tabId !== 'string' ||
+    data.tabId.length === 0 ||
+    typeof data.ownerAgentId !== 'string' ||
+    data.ownerAgentId.length === 0
+  )
+    return;
+  const workspaceId = data.workspaceId;
+  // Main is the atomic claim arbiter; this event persists the accepted
+  // owner on the panel-layout tab (monorepo#2857). Same hostedness/hydration
+  // discipline as tab-navigated: a non-hosting window leaves it alone.
+  const readiness = yield* call(ensureWorkspaceLayoutForRequest, workspaceId);
+  if (readiness.status === 'not-hosted') return;
+  if (readiness.status === 'hydration-failed') {
+    logger.warn('Layout hydration failed before browser:tab-owner-changed; ignoring update', {
+      workspaceId,
+      tabId: data.tabId,
+      error: readiness.message,
+    });
+    return;
+  }
+  yield* put(setTabOwnerAgent(workspaceId, data.tabId, data.ownerAgentId));
 }
 
 export function* browserIpcSaga(): SagaGenerator<void> {
@@ -387,6 +454,17 @@ export function* browserIpcSaga(): SagaGenerator<void> {
             kind: 'lossless',
             rationale:
               'Every main-driven navigation must update the persisted tab URL in arrival order.',
+          },
+        },
+      ),
+      yield* takeEveryFromElectronChannel<BrowserTabOwnerChangedPayload | null>(
+        'browser:tab-owner-changed',
+        tabOwnerChanged,
+        {
+          bufferPolicy: {
+            kind: 'lossless',
+            rationale:
+              'Every ownership change must be persisted with the tab in arrival order.',
           },
         },
       ),

@@ -61,6 +61,12 @@ export interface PanelTab {
    * port (intent-hq/monorepo#2789).
    */
   browserRequestedUrl?: string;
+  /**
+   * Agent owning this browser tab (monorepo#2857); absent for user-opened
+   * (unowned) tabs. Persisted with the layout so ownership survives restart;
+   * main's ownership registry rehydrates from it.
+   */
+  ownerAgentId?: string;
   faviconUrl?: string;
   contextItemId?: string;
 

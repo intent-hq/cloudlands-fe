@@ -43,10 +43,12 @@ const logger = new Logger('BrowserIPC');
  * Requires workspaceId and sends only to windows displaying that workspace.
  *
  * The tab id is generated here (main) and passed to the renderer so the
- * caller can lease the new tab immediately — the executor needs the id to
- * mark agent-opened tabs for exact-URL dedupe (intent-hq/monorepo#2541).
- * `allowDuplicate` is forwarded so the renderer's own equivalent-tab dedupe
- * doesn't override an explicit request for a genuinely new tab.
+ * caller can record ownership of the new tab immediately — the executor
+ * needs the id to mark agent-opened tabs for exact-URL dedupe
+ * (intent-hq/monorepo#2541). `allowDuplicate` is forwarded so the renderer's
+ * own equivalent-tab dedupe doesn't override an explicit request for a
+ * genuinely new tab. `ownerAgentId` (agent opens) is persisted with the tab
+ * so ownership survives restart (monorepo#2857).
  */
 function openBrowserTab(
   url: string,
@@ -55,6 +57,8 @@ function openBrowserTab(
   allowDuplicate?: boolean,
   requestedUrl?: string,
   pin?: boolean,
+  ownerAgentId?: string,
+  replaceTabId?: string,
 ): { success: boolean; message: string; tabId?: string } {
   const workspacePayload = workspaceCommandPayload(workspaceId);
   if (!workspacePayload) {
@@ -99,6 +103,8 @@ function openBrowserTab(
       ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
       ...(requestedUrl === undefined ? {} : { requestedUrl }),
       ...(pin === undefined ? {} : { pin }),
+      ...(ownerAgentId === undefined ? {} : { ownerAgentId }),
+      ...(replaceTabId === undefined ? {} : { replaceTabId }),
     },
   );
   if (!delivery.delivered) {
@@ -266,8 +272,17 @@ export async function executeBrowserActions(
 ): Promise<ExecutionResult> {
   return executeActions(
     { actions, tabId },
-    (url, position, allowDuplicate, requestedUrl, pin) =>
-      openBrowserTab(url, position, workspaceId, allowDuplicate, requestedUrl, pin),
+    (url, position, allowDuplicate, requestedUrl, pin, ownerAgentId, replaceTabId) =>
+      openBrowserTab(
+        url,
+        position,
+        workspaceId,
+        allowDuplicate,
+        requestedUrl,
+        pin,
+        ownerAgentId,
+        replaceTabId,
+      ),
     agentId,
     workspaceId,
     getDaemonLoopbackContext,
