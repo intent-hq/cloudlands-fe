@@ -87,23 +87,17 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
     },
   ],
 
-  // Electron app version read for analytics common properties
-  // (buildStaticCommonProperties, fired on startup via hooks.client.ts). The
-  // browser build has no packaged app version and no daemon surface for one;
-  // the caller wraps the invoke in try/catch and folds absence to 'unknown'.
-  ['app:get-version', undefined],
-  // Electron native window-chrome state pushed by boot-path $effects: the
-  // native window title (WindowTitleBar SET_TITLE) and browser-panel focus
-  // tracking for menu shortcuts (PanelLayout SET_BROWSER_FOCUSED). There is
-  // no window chrome in this build and no daemon surface for it; every caller
-  // is fire-and-forget with `.catch(() => {})`, so resolving undefined keeps
-  // startup quiet.
-  // (window:open-new is bridged to window.open in misc-ui-events-seeder;
-  // window:set-in-workspace and window:set-open-workspace-tabs are forwarded
-  // to the real preload bridge in window-state-bridge-seeder so main-process
-  // window-workspace tracking works in the packaged app.)
-  ['window:set-browser-focused', undefined],
-  ['window:set-title', undefined],
+  // (app:get-version, window:set-title, and window:set-browser-focused are
+  // forwarded to the real preload bridge in window-state-bridge-seeder.ts —
+  // the packaged app HAS live main-process handlers for all three in
+  // features/system/main/system.ipc.ts, and allowlisted absences here
+  // silently suppressed them: the native window title never updated and main
+  // never learned browser-panel focus for menu-shortcut gating;
+  // intent-hq/monorepo#2927. window:open-new is bridged to window.open in
+  // misc-ui-events-seeder; window:set-in-workspace and
+  // window:set-open-workspace-tabs are likewise forwarded in
+  // window-state-bridge-seeder so main-process window-workspace tracking
+  // works in the packaged app.)
   // Per-agent auto-commit status badges (ChatPanel refreshAutoCommitStatuses).
   // The daemon auto-commits via git.agentCommit (PROTOCOL §5.6) but exposes no
   // per-agent commit-status-history read; the caller requires
