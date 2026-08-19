@@ -107,7 +107,7 @@ describe('agentCreationSaga', () => {
       openAgentTabRequested(WS, {
         agentId: AGENT,
         panelLayoutId: 'layout-1',
-        sourcePanelId: 'working-panel',
+        targetPanelId: 'working-panel',
       }),
     );
     task.cancel();
@@ -129,7 +129,7 @@ describe('agentCreationSaga', () => {
       openAgentTabRequested(WS, {
         agentId: AGENT,
         panelLayoutId: 'layout-1',
-        sourcePanelId: 'working-panel',
+        targetPanelId: 'working-panel',
       }),
     );
     task.cancel();

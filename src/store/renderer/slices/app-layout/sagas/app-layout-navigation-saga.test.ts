@@ -2,6 +2,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ensureAgentSessionLoaded } from '../../workspace-agents/workspace-agents-slice';
+import type { OpenAgentTabDetail } from '../app-layout-types';
 import { focusBrowserTabRequested, openAgentTabRequested } from '../app-layout-slice';
 import { appLayoutNavigationSaga } from './app-layout-navigation-saga';
 
@@ -11,7 +12,63 @@ const settle = async () => {
 };
 
 describe('appLayoutNavigationSaga', () => {
-  it('requests hydration before opening normal and adjacent agent tabs', async () => {
+  const agentOpenCases: Array<{
+    name: string;
+    detail: OpenAgentTabDetail;
+    expected: { type: string; payload: Record<string, unknown> };
+  }> = [
+    {
+      name: 'routes an ordinary source-context open to the rightmost column',
+      detail: { agentId: 'agent-1', sourcePanelId: 'panel-1' },
+      expected: {
+        type: 'panelLayout/openTabInRightmostColumnRequested',
+        payload: { wsId: 'ws-1', force: true },
+      },
+    },
+    {
+      name: 'routes a modifier open beside its source panel',
+      detail: { agentId: 'agent-1', sourcePanelId: 'panel-1', openInAdjacentPanel: true },
+      expected: {
+        type: 'panelLayout/openTabInAdjacentOrSplit',
+        payload: { wsId: 'ws-1', sourcePanelId: 'panel-1', force: true },
+      },
+    },
+    {
+      name: 'routes an explicit new-column open in its selected layout',
+      detail: {
+        agentId: 'agent-1',
+        panelLayoutId: 'layout-1',
+        sourcePanelId: 'panel-1',
+        openInNewColumn: true,
+        adaptiveFirstChat: true,
+        availablePanelCanvasWidth: 1400,
+      },
+      expected: {
+        type: 'panelLayout/openTabInNewRootColumn',
+        payload: {
+          wsId: 'layout-1',
+          sourcePanelId: 'panel-1',
+          availableCanvasWidth: 1400,
+          adaptiveFirstChat: true,
+          force: true,
+        },
+      },
+    },
+    {
+      name: 'routes a genuine exact-panel open to its target panel',
+      detail: {
+        agentId: 'agent-1',
+        panelLayoutId: 'layout-1',
+        targetPanelId: 'working-panel',
+      },
+      expected: {
+        type: 'panelLayout/openTab',
+        payload: { wsId: 'layout-1', panelId: 'working-panel', force: true },
+      },
+    },
+  ];
+
+  it.each(agentOpenCases)('$name', async ({ detail, expected }) => {
     const channel = stdChannel();
     const dispatch = vi.fn();
     const task = runSaga(
@@ -24,15 +81,13 @@ describe('appLayoutNavigationSaga', () => {
       },
       appLayoutNavigationSaga,
     );
-    channel.put(openAgentTabRequested('ws-1', { agentId: 'agent-1', sourcePanelId: 'panel-1' }));
+    channel.put(openAgentTabRequested('ws-1', detail));
     await settle();
     expect(dispatch).toHaveBeenNthCalledWith(1, ensureAgentSessionLoaded('ws-1', 'agent-1'));
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
+      ...expected,
       payload: {
-        wsId: 'ws-1',
-        panelId: 'panel-1',
-        force: true,
+        ...expected.payload,
         tab: {
           type: 'agent',
           title: 'Ada',
@@ -40,53 +95,6 @@ describe('appLayoutNavigationSaga', () => {
           workspaceId: 'ws-1',
           closable: true,
         },
-      },
-    });
-
-    dispatch.mockClear();
-    channel.put(
-      openAgentTabRequested('ws-1', {
-        agentId: 'agent-1',
-        sourcePanelId: 'panel-1',
-        openInAdjacentPanel: true,
-      }),
-    );
-    await settle();
-    expect(dispatch).toHaveBeenNthCalledWith(1, ensureAgentSessionLoaded('ws-1', 'agent-1'));
-    expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
-      payload: {
-        wsId: 'ws-1',
-        panelId: 'panel-1',
-        force: true,
-        tab: {
-          type: 'agent',
-          title: 'Ada',
-          agentId: 'agent-1',
-          workspaceId: 'ws-1',
-          closable: true,
-        },
-      },
-    });
-
-    dispatch.mockClear();
-    channel.put(
-      openAgentTabRequested('ws-1', {
-        agentId: 'agent-1',
-        panelLayoutId: 'layout-1',
-        openInNewColumn: true,
-        adaptiveFirstChat: true,
-        availablePanelCanvasWidth: 1400,
-      }),
-    );
-    await settle();
-    expect(dispatch).toHaveBeenNthCalledWith(1, ensureAgentSessionLoaded('ws-1', 'agent-1'));
-    expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInRightmostColumnRequested',
-      payload: {
-        wsId: 'layout-1',
-        force: true,
-        tab: { agentId: 'agent-1', workspaceId: 'ws-1' },
       },
     });
     task.cancel();
@@ -120,40 +128,6 @@ describe('appLayoutNavigationSaga', () => {
           workspaceId: 'ws-1',
           closable: true,
         },
-      },
-    });
-    task.cancel();
-    await task.toPromise();
-  });
-
-  it('uses the explicit layout and source panel for a normal agent open', async () => {
-    const channel = stdChannel();
-    const dispatch = vi.fn();
-    const task = runSaga(
-      {
-        channel,
-        dispatch,
-        getState: () => ({
-          agentSessions: { byAgentId: { 'agent-1': { id: 'agent-1', name: 'Ada' } } },
-        }),
-      },
-      appLayoutNavigationSaga,
-    );
-    channel.put(
-      openAgentTabRequested('ws-1', {
-        agentId: 'agent-1',
-        panelLayoutId: 'layout-1',
-        sourcePanelId: 'working-panel',
-      }),
-    );
-    await settle();
-
-    expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
-      payload: {
-        wsId: 'layout-1',
-        panelId: 'working-panel',
-        tab: { agentId: 'agent-1', workspaceId: 'ws-1' },
       },
     });
     task.cancel();

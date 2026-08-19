@@ -81,6 +81,25 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspaceId: () => mocks.activeReadable,
+  selectWorkspaceById: { select: () => undefined },
+}));
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentSession: Object.assign(
+    () => ({ subscribe: (run: (value: undefined) => void) => (run(undefined), () => {}) }),
+    { select: () => undefined },
+  ),
+  selectAgentIsResponding: Object.assign(
+    () => ({ subscribe: (run: (value: boolean) => void) => (run(false), () => {}) }),
+    { select: () => false },
+  ),
+}));
+vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
+  selectChatReceivedFirstChunk: () => ({
+    subscribe: (run: (value: boolean) => void) => (run(false), () => {}),
+  }),
+}));
+vi.mock('$lib/components/tiptap/task-agent-polling-manager', () => ({
+  taskAgentPollingManager: { register: vi.fn(), unregister: vi.fn() },
 }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: Object.assign(mocks.noteReadable, {
@@ -112,8 +131,13 @@ vi.mock('$lib/components/tiptap/TaskNotePreview.svelte', async () => ({
 
 import TestTaskItemNodeView from './TestTaskItemNodeView.test.svelte';
 
-function taskNote(workspaceId: string, title: string) {
-  return { id: 'shared-task', workspaceId, title, metadata: { task: { status: 'not_started' } } };
+function taskNote(workspaceId: string, title: string, assignedAgentIds?: string[]) {
+  return {
+    id: 'shared-task',
+    workspaceId,
+    title,
+    metadata: { task: { status: 'not_started', assignedAgentIds } },
+  };
 }
 
 function linkedProps(workspaceId: string) {
@@ -174,5 +198,37 @@ describe('TaskItemNodeView workspace ownership', () => {
       openInNewAdjacentPanel: true,
       sourcePanelId: 'panel-b',
     });
+  });
+
+  it('opens the assigned agent with the task owner without opening the linked note', async () => {
+    mocks.setWorkspace('workspace-b', true, [
+      taskNote('workspace-b', 'Task from B', ['assigned-agent']),
+    ]);
+    const view = render(TestTaskItemNodeView, { props: linkedProps('workspace-b') });
+    const panel = document.createElement('div');
+    panel.dataset.panelId = 'panel-b';
+    view.container.parentElement?.insertBefore(panel, view.container);
+    panel.appendChild(view.container);
+
+    const agentButton = await waitFor(() =>
+      view.container.querySelector<HTMLButtonElement>('.task-agent-status'),
+    );
+    expect(agentButton).not.toBeNull();
+    expect(agentButton!.parentElement?.closest('button')).toBeNull();
+
+    await fireEvent.click(agentButton!);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'appLayout/openAgentTabRequested',
+      payload: [
+        'workspace-b',
+        {
+          agentId: 'assigned-agent',
+          sourcePanelId: 'panel-b',
+          openInAdjacentPanel: false,
+        },
+      ],
+    });
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 });

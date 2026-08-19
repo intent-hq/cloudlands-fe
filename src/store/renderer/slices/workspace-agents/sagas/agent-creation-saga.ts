@@ -131,7 +131,7 @@ function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): Sag
       openAgentTabRequested(wsId, {
         agentId: result.agent.id,
         panelLayoutId: options?.panelLayoutId,
-        sourcePanelId: options?.panelId,
+        targetPanelId: options?.panelId,
       }),
     );
   } catch (error) {
@@ -186,7 +186,7 @@ function* createSpecialistAgent(
       openAgentTabRequested(wsId, {
         agentId: result.agent.id,
         panelLayoutId: options?.panelLayoutId,
-        sourcePanelId: options?.panelId,
+        targetPanelId: options?.panelId,
       }),
     );
   } catch (error) {

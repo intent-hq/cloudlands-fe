@@ -25,6 +25,7 @@ export type OpenAgentTabDetail = {
   openInAdjacentPanel?: boolean;
   openInNewColumn?: boolean;
   sourcePanelId?: string;
+  targetPanelId?: string;
   panelLayoutId?: string;
   availablePanelCanvasWidth?: number;
   adaptiveFirstChat?: boolean;

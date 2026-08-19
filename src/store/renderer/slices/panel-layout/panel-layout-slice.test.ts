@@ -897,7 +897,13 @@ describe('panelLayoutReducer', () => {
         twoColumnState(),
         openTabInRightmostColumn(
           WS,
-          { type: 'note', title: 'Plan', noteId: 'plan', closable: true },
+          {
+            type: 'agent',
+            title: 'Assigned agent',
+            agentId: 'agent-1',
+            workspaceId: WS,
+            closable: true,
+          },
           { newTabId: 'new-right' },
           10,
         ),
@@ -908,6 +914,11 @@ describe('panelLayoutReducer', () => {
       expect(result.panels.right.activeTabId).toBe('new-right');
       expect(result.panels.left.tabs.map((tab) => tab.id)).toEqual(['left-tab']);
       expect(Object.keys(result.panels)).toEqual(['left', 'right']);
+      expect(result.layoutHistory).toHaveLength(1);
+      expect(result.layoutHistory[0].panels.right).toMatchObject({
+        activeTabId: 'old-right',
+        tabs: [expect.objectContaining({ id: 'old-right' })],
+      });
     });
 
     it('activates an equivalent tab in place unless duplicates are explicitly allowed', () => {

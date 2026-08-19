@@ -39,13 +39,16 @@
     agentId,
     onViewAgent,
     compact = false,
+    workspaceId: owningWorkspaceId,
   }: {
     agentId: string;
     onViewAgent?: () => void;
     compact?: boolean;
+    workspaceId?: string;
   } = $props();
 
-  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+  const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+  let workspaceId = $derived(owningWorkspaceId ?? routeWorkspaceId);
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
   const serviceAgent$ = selectAgentSession(agentId);
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent

@@ -10,6 +10,8 @@ import {
 import {
   focusPanel,
   openTab,
+  openTabInAdjacentOrSplit,
+  openTabInNewRootColumn,
   openTabInRightmostColumnRequested,
   restoreHiddenTab,
   setActiveTab,
@@ -32,9 +34,18 @@ function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGe
     closable: true,
   };
   const targetWorkspaceId = detail.panelLayoutId ?? workspaceId;
-  const openAction = detail.sourcePanelId
-    ? openTab(targetWorkspaceId, tab, detail.sourcePanelId, undefined, true)
-    : openTabInRightmostColumnRequested(targetWorkspaceId, tab, { force: true });
+  const openAction = detail.targetPanelId
+    ? openTab(targetWorkspaceId, tab, detail.targetPanelId, undefined, true)
+    : detail.openInAdjacentPanel
+      ? openTabInAdjacentOrSplit(targetWorkspaceId, tab, detail.sourcePanelId, { force: true })
+      : detail.openInNewColumn
+        ? openTabInNewRootColumn(targetWorkspaceId, tab, {
+            availableCanvasWidth: detail.availablePanelCanvasWidth,
+            adaptiveFirstChat: detail.adaptiveFirstChat,
+            force: true,
+            sourcePanelId: detail.sourcePanelId,
+          })
+        : openTabInRightmostColumnRequested(targetWorkspaceId, tab, { force: true });
   yield* put(openAction);
 }
 
