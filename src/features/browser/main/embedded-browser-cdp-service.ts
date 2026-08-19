@@ -15,8 +15,13 @@ import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 
 const logger = new Logger('EmbeddedBrowserCdp');
 
-/** How long (ms) before a tab lease is considered idle and the tab can be reused by another agent */
-const IDLE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
+/**
+ * Default emulated viewport for agent-owned tabs whose size is unknown
+ * (agent openTab without an explicit width, or ownership rehydrated from a
+ * persisted layout after restart) — the standard desktop viewport
+ * (monorepo#2857).
+ */
+export const DEFAULT_AGENT_VIEWPORT = { width: 1280, height: 800 } as const;
 
 /**
  * How long (ms) to wait for a tab's webview to mount and register after an
@@ -39,12 +44,18 @@ interface PanelBrowserTab {
   title: string;
   /** Whether the tab may be closed by the user/agent (defaults to true when absent) */
   closable?: boolean;
+  /** Persisted owner when the tab is agent-owned (monorepo#2857); null/absent = unowned. */
+  ownerAgentId?: string | null;
 }
 
-/** Tracks which agent is actively using a browser tab */
-interface TabLease {
-  agentId: string;
-  lastUsedAt: number;
+/**
+ * Persistent ownership record for an agent-owned tab (monorepo#2857).
+ * Replaces the former time-based TabLease: ownership never expires and is
+ * never transferred — it ends only when the tab is genuinely closed (or the
+ * owning agent is deleted; lifecycle handled separately).
+ */
+interface TabOwnership {
+  ownerAgentId: string;
   /**
    * Original URL the agent asked to open, recorded when it differs from the
    * final URL (tunneled opens, where the final URL embeds an ephemeral
@@ -52,7 +63,14 @@ interface TabLease {
    * (intent-hq/monorepo#2787).
    */
   requestedUrl?: string;
+  /** Emulated viewport size (owned tabs are always emulated, monorepo#2857). */
+  emulatedSize: { width: number; height: number };
 }
+
+/** Result of an atomic claim attempt (monorepo#2857). */
+export type ClaimTabResult =
+  | { status: 'claimed'; alreadyOwned: boolean }
+  | { status: 'already-claimed'; ownerAgentId: string };
 
 /**
  * Service for managing CDP connections to embedded browser webviews.
@@ -91,8 +109,13 @@ class EmbeddedBrowserCdpService {
   /** Counter for generating unique request IDs */
   private listTabsRequestCounter = 0;
 
-  /** Tracks which agent is using which tab. Key is tabId. */
-  private tabLeases = new Map<string, TabLease>();
+  /**
+   * Persistent tab ownership registry (monorepo#2857). Key is tabId. Main is
+   * the atomic claim arbiter; the renderer persists `ownerAgentId` on the
+   * panel-layout tab, and {@link hydrateOwnershipFromPanelTabs} re-seeds this
+   * map from renderer replies after a restart.
+   */
+  private tabOwnership = new Map<string, TabOwnership>();
 
   /** Pending resolvers waiting for a tabId to register, keyed by tabId. */
   private registrationWaiters = new Map<string, Set<(registered: boolean) => void>>();
@@ -127,6 +150,9 @@ class EmbeddedBrowserCdpService {
         }
         if (!Array.isArray(data.tabs)) return;
         const tabs = data.tabs;
+        // Re-seed the ownership registry from the renderer's persisted
+        // layout so ownership survives an app restart (monorepo#2857).
+        this.hydrateOwnershipFromPanelTabs(tabs);
         if (data.requestId) {
           // Resolve only the request this reply answers, so concurrent
           // requests for different workspaces never consume each other's
@@ -263,17 +289,19 @@ class EmbeddedBrowserCdpService {
     }
 
     // Automatically clean up when webContents is destroyed. Only drop the
-    // registry entry/lease if the tab still points at THIS webContents — a
-    // tab handed off between hosts (offscreen keep-alive ↔ visible panel,
+    // registry entry if the tab still points at THIS webContents — a tab
+    // handed off between hosts (offscreen keep-alive ↔ visible panel,
     // monorepo#2789) re-registers with a new webContentsId before the old
     // guest's destroyed event fires, and that newer mapping must survive.
+    // Ownership is deliberately NOT cleared here: a destroyed webContents
+    // also happens on unmount (panel caching), and ownership is persistent —
+    // it ends only on a confirmed tab close (monorepo#2857).
     const wc = webContents.fromId(webContentsId);
     if (wc && !wc.isDestroyed()) {
       wc.once('destroyed', () => {
         logger.info('WebContents destroyed, cleaning up tab registry', { tabId, webContentsId });
         if (this.tabRegistry.get(tabId) === webContentsId) {
           this.tabRegistry.delete(tabId);
-          this.tabLeases.delete(tabId);
         }
         this.attachedDebuggers.delete(webContentsId);
       });
@@ -319,7 +347,9 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Unregister a browser tab (called when tab is closed)
+   * Unregister a browser tab (called when tab is closed).
+   * Ownership is NOT cleared here — unregistration also covers unmounts;
+   * use {@link clearTabOwnership} on a genuine close (monorepo#2857).
    */
   unregisterTab(tabId: string): void {
     const webContentsId = this.tabRegistry.get(tabId);
@@ -327,7 +357,6 @@ class EmbeddedBrowserCdpService {
       logger.info('Unregistering browser tab', { tabId, webContentsId });
       this.detachDebugger(webContentsId);
       this.tabRegistry.delete(tabId);
-      this.tabLeases.delete(tabId);
     }
   }
 
@@ -398,9 +427,14 @@ class EmbeddedBrowserCdpService {
    * - webContentsId: number if mounted (can run CDP commands)
    * - webContentsId: -1 if unmounted (need to focusTab first)
    */
-  async listAllTabs(
-    workspaceId?: string,
-  ): Promise<{ tabs: (TabInfo & { mounted: boolean })[]; stale: boolean }> {
+  async listAllTabs(workspaceId?: string): Promise<{
+    tabs: (TabInfo & {
+      mounted: boolean;
+      ownerAgentId?: string;
+      emulatedSize?: { width: number; height: number };
+    })[];
+    stale: boolean;
+  }> {
     // Get panel layout tabs (includes unmounted)
     const { tabs: panelTabs, stale } = await this.requestPanelBrowserTabs(workspaceId);
 
@@ -415,11 +449,18 @@ class EmbeddedBrowserCdpService {
       });
     }
 
-    // Panel tabs only, marking whether each is backed by a live webview
+    // Panel tabs only, marking whether each is backed by a live webview.
+    // Each tab is annotated with its owner from the ownership registry
+    // (rehydrated from the panel reply above) so agents can see which tabs
+    // they may manipulate (monorepo#2857).
     const tabs = panelTabs.map((panelTab) => {
+      const ownership = this.tabOwnership.get(panelTab.tabId);
+      const owner = ownership
+        ? { ownerAgentId: ownership.ownerAgentId, emulatedSize: ownership.emulatedSize }
+        : {};
       const mounted = mountedTabs.find((t) => t.tabId === panelTab.tabId);
       if (mounted) {
-        return { ...mounted, mounted: true };
+        return { ...mounted, mounted: true, ...owner };
       }
       return {
         tabId: panelTab.tabId,
@@ -427,6 +468,7 @@ class EmbeddedBrowserCdpService {
         url: panelTab.url,
         title: panelTab.title,
         mounted: false,
+        ...owner,
       };
     });
     return { tabs, stale };
@@ -588,10 +630,12 @@ class EmbeddedBrowserCdpService {
       throw new Error(`Tab ${tabId} could not be closed (the UI did not confirm the close).`);
     }
 
-    // Proactive CDP cleanup: detach debugger, drop registry entry and lease.
-    // For mounted tabs the webContents `destroyed` hook covers this too, but
-    // unmounted tabs have no webContents to fire it.
+    // Proactive CDP cleanup: detach debugger, drop registry entry and
+    // ownership (the close is confirmed, so the tab is genuinely gone).
+    // For mounted tabs the webContents `destroyed` hook covers the registry
+    // too, but unmounted tabs have no webContents to fire it.
     this.unregisterTab(tabId);
+    this.clearTabOwnership(tabId);
     for (const [key, tabs] of this.panelBrowserTabsCache) {
       this.panelBrowserTabsCache.set(
         key,
@@ -739,112 +783,161 @@ class EmbeddedBrowserCdpService {
   }
 
   // ============================================================
-  // TAB LEASE MANAGEMENT - Tracks which agent is using which tab
+  // TAB OWNERSHIP - Persistent agent ownership registry (monorepo#2857)
   // ============================================================
 
   /**
-   * Record that an agent is actively using a tab.
-   * Call this on every action that targets a tab to keep the lease fresh.
+   * Record that an agent owns a tab (agent openTab, or a successful claim).
+   * Ownership is persistent: it never expires and is never reassigned to a
+   * different agent through this method — callers must consult
+   * {@link getTabOwner} / {@link claimTab} first.
    *
    * `requestedUrl` records the agent's original requested URL (tunneled
    * opens): a string sets it, `null` clears it (the tab was repurposed for a
    * new non-tunneled target, so a stale identity must not linger), and
-   * omitting it preserves a previously recorded value so plain refreshes
-   * (screenshots, evaluates) don't erase it.
+   * omitting it preserves a previously recorded value.
+   *
+   * `size` sets the tab's emulated viewport; omitting it preserves a
+   * previously recorded size, defaulting to {@link DEFAULT_AGENT_VIEWPORT}.
    */
-  touchLease(tabId: string, agentId: string, requestedUrl?: string | null): void {
+  setTabOwner(
+    tabId: string,
+    ownerAgentId: string,
+    requestedUrl?: string | null,
+    size?: { width: number; height: number },
+  ): void {
+    const previous = this.tabOwnership.get(tabId);
     const recorded =
-      requestedUrl === null ? undefined : (requestedUrl ?? this.tabLeases.get(tabId)?.requestedUrl);
-    this.tabLeases.set(tabId, {
-      agentId,
-      lastUsedAt: Date.now(),
+      requestedUrl === null ? undefined : (requestedUrl ?? previous?.requestedUrl);
+    this.tabOwnership.set(tabId, {
+      ownerAgentId,
       ...(recorded !== undefined ? { requestedUrl: recorded } : {}),
+      emulatedSize: size ?? previous?.emulatedSize ?? { ...DEFAULT_AGENT_VIEWPORT },
     });
   }
 
   /**
-   * Release a tab lease (e.g., when an agent is done with a tab).
+   * The agent owning a tab, or undefined when the tab is unowned/unknown.
    */
-  releaseLease(tabId: string): void {
-    this.tabLeases.delete(tabId);
+  getTabOwner(tabId: string): string | undefined {
+    return this.tabOwnership.get(tabId)?.ownerAgentId;
+  }
+
+  /** A tab's emulated viewport size, when it is agent-owned. */
+  getTabEmulatedSize(tabId: string): { width: number; height: number } | undefined {
+    return this.tabOwnership.get(tabId)?.emulatedSize;
   }
 
   /**
-   * Check if a tab is currently leased by an active agent.
-   * A lease is considered active if it was touched within IDLE_TIMEOUT_MS.
+   * Drop a tab's ownership record. Only for genuinely closed/destroyed tabs
+   * (confirmed closeTab, agent deletion) — there is no release-to-unowned
+   * path (monorepo#2857).
    */
-  private isTabLeased(tabId: string): boolean {
-    const lease = this.tabLeases.get(tabId);
-    if (!lease) return false;
-    return Date.now() - lease.lastUsedAt < IDLE_TIMEOUT_MS;
+  clearTabOwnership(tabId: string): void {
+    this.tabOwnership.delete(tabId);
   }
 
   /**
-   * Find a mounted browser tab that is idle (not actively leased by any agent)
-   * and atomically claim it for the requesting agent.
+   * Atomically claim an unowned tab for an agent (monorepo#2857).
    *
-   * Returns the tabId if found, undefined otherwise.
+   * First claim wins: main's single-threaded event loop makes the
+   * check-and-set below atomic — two concurrent claimants can never both
+   * succeed. There is no stealing: a tab owned by another agent returns
+   * `already-claimed` naming the owner; the current owner re-claiming its
+   * own tab is an idempotent success (`alreadyOwned: true`, size updated).
    *
-   * The lease is touched immediately so that concurrent callers won't
-   * get the same tab (avoids race conditions across async boundaries).
-   *
-   * Only considers tabs that have a previous lease entry (i.e., were previously
-   * used by an agent). Tabs opened manually by the user are never reused.
-   *
-   * Prefers tabs previously used by the requesting agent, then falls back to
-   * any other agent's expired-lease tab.
+   * The caller (executor) validates the required `width` and verifies the
+   * tab exists in the workspace's panel layout BEFORE calling this — the
+   * check-and-set itself must stay synchronous so no await can interleave
+   * a competing claim between check and set.
    */
-  findIdleTab(requestingAgentId: string): string | undefined {
-    const mountedTabs = this.listTabs();
-    if (mountedTabs.length === 0) return undefined;
-
-    // First pass: find a tab previously used by this agent (expired lease = idle)
-    for (const tab of mountedTabs) {
-      const lease = this.tabLeases.get(tab.tabId);
-      if (lease && lease.agentId === requestingAgentId && !this.isTabLeased(tab.tabId)) {
-        logger.info('Claiming idle tab previously used by requesting agent', {
-          tabId: tab.tabId,
-          agentId: requestingAgentId,
-        });
-        this.touchLease(tab.tabId, requestingAgentId);
-        return tab.tabId;
+  claimTab(
+    tabId: string,
+    agentId: string,
+    size: { width: number; height: number },
+  ): ClaimTabResult {
+    const existing = this.tabOwnership.get(tabId);
+    if (existing) {
+      if (existing.ownerAgentId === agentId) {
+        this.setTabOwner(tabId, agentId, undefined, size);
+        return { status: 'claimed', alreadyOwned: true };
       }
+      return { status: 'already-claimed', ownerAgentId: existing.ownerAgentId };
     }
-
-    // Second pass: find any agent-opened tab with an expired lease.
-    // Tabs without a lease entry (user-opened) are never reused.
-    for (const tab of mountedTabs) {
-      const lease = this.tabLeases.get(tab.tabId);
-      if (lease && !this.isTabLeased(tab.tabId)) {
-        logger.info('Claiming idle tab for reuse (previously used by another agent)', {
-          tabId: tab.tabId,
-          previousAgentId: lease.agentId,
-          requestingAgentId,
-        });
-        this.touchLease(tab.tabId, requestingAgentId);
-        return tab.tabId;
-      }
-    }
-
-    return undefined;
+    this.setTabOwner(tabId, agentId, undefined, size);
+    logger.info('Tab claimed by agent', { tabId, agentId, ...size });
+    return { status: 'claimed', alreadyOwned: false };
   }
 
   /**
-   * Find a mounted, model-opened tab whose current URL exactly matches the
-   * requested URL, and claim it for the requesting agent.
+   * Re-seed the ownership registry from a renderer tab-list reply so
+   * persisted ownership survives an app restart (monorepo#2857). Existing
+   * in-memory records win (they may carry a requestedUrl / size the layout
+   * does not); rehydrated records get the default viewport until resized.
+   */
+  private hydrateOwnershipFromPanelTabs(tabs: PanelBrowserTab[]): void {
+    for (const tab of tabs) {
+      if (typeof tab.ownerAgentId !== 'string' || tab.ownerAgentId.length === 0) continue;
+      if (this.tabOwnership.has(tab.tabId)) continue;
+      this.tabOwnership.set(tab.tabId, {
+        ownerAgentId: tab.ownerAgentId,
+        emulatedSize: { ...DEFAULT_AGENT_VIEWPORT },
+      });
+      logger.info('Rehydrated tab ownership from panel layout', {
+        tabId: tab.tabId,
+        ownerAgentId: tab.ownerAgentId,
+      });
+    }
+  }
+
+  /**
+   * Resolve a tab's owner, hydrating from the renderer's panel layout when
+   * the tab is unknown to the in-memory registry (e.g. an enforcement check
+   * right after a restart, before any tab list crossed the IPC boundary).
+   * Best-effort: an unavailable tab list resolves to the in-memory answer.
+   */
+  async resolveTabOwner(tabId: string, workspaceId?: string): Promise<string | undefined> {
+    const known = this.tabOwnership.get(tabId);
+    if (known) return known.ownerAgentId;
+    try {
+      // listAllTabs → requestPanelBrowserTabs → LIST_TABS_RESPONSE hydrates
+      // the ownership registry as a side effect.
+      await this.listAllTabs(workspaceId);
+    } catch {
+      // Tab list unavailable — answer from what we know.
+    }
+    return this.tabOwnership.get(tabId)?.ownerAgentId;
+  }
+
+  /**
+   * Notify the renderer that a tab's owner changed (successful claim) so the
+   * panel layout persists `ownerAgentId` with the tab (monorepo#2857).
+   * Fire-and-forget, mirroring notifyTabNavigated.
+   */
+  notifyTabOwnerChanged(tabId: string, workspaceId: string | undefined, ownerAgentId: string): void {
+    if (!tabId || typeof workspaceId !== 'string' || workspaceId.length === 0) return;
+    sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.TAB_OWNER_CHANGED, {
+      tabId,
+      workspaceId,
+      ownerAgentId,
+    });
+  }
+
+  /**
+   * Find a mounted tab OWNED BY THE REQUESTING AGENT whose current URL
+   * exactly matches the requested URL.
    *
    * Used by openTab dedupe (intent-hq/monorepo#2541): opening a URL the
-   * model already has open focuses the existing tab instead of creating a
-   * duplicate.
+   * agent already has open focuses the existing tab instead of creating a
+   * duplicate. Dedupe is strictly per-agent (monorepo#2857): another
+   * agent's matching tab is never reused — across agents a new tab is
+   * opened — and user-opened (unowned) tabs are never returned, so an
+   * agent can never hijack a user tab.
    *
    * Candidates are restricted to tabs present in the requesting workspace's
    * panel layout (the same source of truth listAllTabs/closeTab use), so a
-   * matching tab in another workspace is never reused or focused. Only tabs
-   * with a lease entry (i.e. opened or used by an agent) are considered —
-   * tabs the user opened are never returned, so the model can never hijack
-   * a user tab. A tab actively leased by a different agent is skipped so
-   * one agent never steals another's in-use tab. Matching is exact string
-   * equality on the live webview URL — no normalization.
+   * matching tab in another workspace is never reused or focused. Matching
+   * is exact string equality on the live webview URL — no normalization.
    */
   async findModelTabByExactUrl(
     url: string,
@@ -865,34 +958,31 @@ class EmbeddedBrowserCdpService {
     }
     for (const tab of tabs) {
       if (!tab.mounted || tab.url !== url) continue;
-      const lease = this.tabLeases.get(tab.tabId);
-      if (!lease) continue; // user-opened tab — never reuse
-      if (lease.agentId !== requestingAgentId && this.isTabLeased(tab.tabId)) continue;
-      logger.info('Found model-opened tab with exact URL match', {
+      const ownership = this.tabOwnership.get(tab.tabId);
+      if (ownership?.ownerAgentId !== requestingAgentId) continue;
+      logger.info('Found own tab with exact URL match', {
         tabId: tab.tabId,
         url,
-        previousAgentId: lease.agentId,
         requestingAgentId,
         workspaceId,
       });
-      this.touchLease(tab.tabId, requestingAgentId);
       return tab.tabId;
     }
     return undefined;
   }
 
   /**
-   * Find a mounted, model-opened tab whose lease recorded the given
-   * requested URL, and claim it for the requesting agent.
+   * Find a mounted tab OWNED BY THE REQUESTING AGENT whose ownership record
+   * carries the given requested URL.
    *
    * Fallback for openTab dedupe on tunneled opens (intent-hq/monorepo#2787):
    * when the tunnel forward was re-minted, the final URL differs per call and
    * {@link findModelTabByExactUrl} can never match — but the agent's original
-   * requested URL is stable, so the lease-recorded requestedUrl identifies
-   * the logical duplicate. Same safety rules as the exact-URL variant:
-   * candidates come from the requesting workspace's panel layout only,
-   * user-opened tabs (no lease) are never returned, and a tab actively
-   * leased by a different agent is skipped.
+   * requested URL is stable, so the recorded requestedUrl identifies the
+   * logical duplicate. Same safety rules as the exact-URL variant: candidates
+   * come from the requesting workspace's panel layout only, and dedupe is
+   * strictly per-agent — unowned and other agents' tabs are never returned
+   * (monorepo#2857).
    */
   async findModelTabByRequestedUrl(
     requestedUrl: string,
@@ -913,17 +1003,15 @@ class EmbeddedBrowserCdpService {
     }
     for (const tab of tabs) {
       if (!tab.mounted) continue;
-      const lease = this.tabLeases.get(tab.tabId);
-      if (!lease || lease.requestedUrl !== requestedUrl) continue;
-      if (lease.agentId !== requestingAgentId && this.isTabLeased(tab.tabId)) continue;
-      logger.info('Found model-opened tab with matching requested URL', {
+      const ownership = this.tabOwnership.get(tab.tabId);
+      if (ownership?.ownerAgentId !== requestingAgentId) continue;
+      if (ownership.requestedUrl !== requestedUrl) continue;
+      logger.info('Found own tab with matching requested URL', {
         tabId: tab.tabId,
         requestedUrl,
-        previousAgentId: lease.agentId,
         requestingAgentId,
         workspaceId,
       });
-      this.touchLease(tab.tabId, requestingAgentId);
       return tab.tabId;
     }
     return undefined;
