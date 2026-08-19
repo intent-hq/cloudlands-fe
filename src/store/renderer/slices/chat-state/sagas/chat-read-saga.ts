@@ -41,6 +41,7 @@ import { INITIAL_RETRY_DELAY_MS, SNAPSHOT_TIMEOUT_MS } from '$lib/client/live/li
 import { createLogger } from '$lib/utils/client-logger';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
+import { hasReplayableChatSnapshot } from '$features/agent/utils/chat-subscription-registry';
 import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
 import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
@@ -163,6 +164,19 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
       // a fresh application.
       if (!(meta && (meta.totalMessages === 0 || visible.length > 0))) {
         meta = undefined;
+        // Fast path (intent-hq/monorepo#2864 defense-in-depth): the standing
+        // subscription already holds a replayable snapshot (deferred
+        // pre-session snapshot, or its last reconciled transcript IS a
+        // snapshot) yet no valid meta backs this hydration — its seq-0 emit
+        // was consumed before this hydration attached (e.g. a teardown reset
+        // dropped the meta) and no new emit is coming. Escalate NOW instead
+        // of stranding the first bounded wait window: the re-request replays
+        // the held snapshot without touching the wire. A cold open (no
+        // replayable snapshot yet) keeps the plain wait — its seq-0 emit is
+        // still in flight and force-cycling it would only churn.
+        if (yield* call(hasReplayableChatSnapshot, agentId)) {
+          yield* put(chatTranscriptSnapshotRerequested(wsId, agentId));
+        }
         for (let attempt = 1; attempt <= SNAPSHOT_WAIT_ATTEMPTS && !meta; attempt += 1) {
           const { applied } = yield* race({
             applied: take(snapshotChannel),
