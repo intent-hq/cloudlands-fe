@@ -49,7 +49,13 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => ({
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': { columnCount: 1 },
+        },
+      },
+    }),
     dispatch: mocks.dispatch,
   });
 });

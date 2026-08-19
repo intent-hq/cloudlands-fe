@@ -294,7 +294,7 @@ describe('panel header agent avatar state', () => {
       expect(avatar.hasAttribute('data-agent-avatar-surface')).toBe(true);
       expect(avatar.style.width).toBe('24px');
       expect(avatar.style.height).toBe('24px');
-      expect(slot.parentElement?.className).toContain('self-center');
+      expect(slot.className).toContain('self-center');
     },
   );
 });
