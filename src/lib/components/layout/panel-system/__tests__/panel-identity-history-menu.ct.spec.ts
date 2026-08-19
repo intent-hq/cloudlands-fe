@@ -6,22 +6,25 @@ test('opens by click, focus, and hover and activates the stable ordered history'
   page,
 }) => {
   const component = await mount(PanelIdentityHistoryHost, {
-    props: { width: 260, zoom: 2, historyCount: 8 },
+    props: { width: 260, zoom: 2, historyCount: 10 },
   });
   const trigger = component.locator('[data-panel-identity-history-trigger]');
 
   await trigger.click();
   const menu = page.getByRole('menu', { name: 'Panel history' });
   await expect(menu).toBeVisible();
-  await expect(menu.locator('[data-panel-identity-item]')).toHaveCount(8);
-  await expect(menu.locator('[data-panel-identity-history-section]')).toBeVisible();
-  await expect(menu.locator('[data-panel-identity-history-title]')).toHaveText('Panel history');
-  await expect(menu.locator('[data-panel-identity-history-title]')).toHaveCSS('font-size', '16px');
+  await expect(menu.locator('[data-panel-identity-item]')).toHaveCount(10);
+  await expect(menu.locator('[data-panel-identity-current]')).toHaveCount(0);
+  await expect(menu.locator('[data-panel-identity-history-title]')).toHaveCount(0);
+  await expect(menu.getByRole('separator')).toHaveCount(0);
   await expect(menu.locator('[aria-current="page"]')).toHaveAttribute(
     'data-panel-identity-item',
     'note-history',
   );
-  await expect(menu.getByRole('searchbox')).toBeVisible();
+  const initialSearch = menu.getByRole('searchbox');
+  await expect(initialSearch).toBeVisible();
+  await expect(initialSearch).toHaveAttribute('aria-label', /.+/);
+  await expect(initialSearch).toHaveAttribute('placeholder', /.+/);
   await page.keyboard.press('Escape');
   await component.locator('[data-panel-identity-back]').click();
   await expect(component).toHaveAttribute('data-active-tab', 'agent-history');
@@ -119,55 +122,86 @@ test('shows recently closed history and closes its hover menu after pointer exit
   await expect(menu.locator('[data-panel-identity-item]')).toHaveCount(2);
 });
 
-test('suppresses a redundant single-entry history section', async ({ mount, page }) => {
+test('shows the quiet search and current row for a single-entry history', async ({
+  mount,
+  page,
+}) => {
   const component = await mount(PanelIdentityHistoryHost, { props: { historyCount: 1 } });
 
   await component.locator('[data-panel-identity-history-trigger]').click();
   const menu = page.getByRole('menu', { name: 'Panel history' });
-  await expect(menu.locator('[data-panel-identity-current]')).toBeVisible();
-  await expect(menu.locator('[data-panel-identity-history-section]')).toHaveCount(0);
-  await expect(menu.locator('[data-panel-identity-item]')).toHaveCount(0);
+  const search = menu.getByRole('searchbox');
+  await expect(search).toBeVisible();
+  await expect(menu.locator('[data-panel-identity-item]')).toHaveCount(1);
+  await expect(menu.locator('[data-panel-identity-item="agent-history"]')).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await expect(menu.locator('[data-panel-identity-current-check]')).toHaveCount(1);
+
+  for (const focused of [false, true]) {
+    if (focused) await search.focus();
+    const style = await search.evaluate((node) => {
+      const computed = getComputedStyle(node);
+      return {
+        background: computed.backgroundColor,
+        border: computed.borderTopWidth,
+        hasVisibleBoxShadow: (computed.boxShadow.match(/-?\d+(?:\.\d+)?px/g) ?? []).some(
+          (value) => Number.parseFloat(value) !== 0,
+        ),
+        outline: computed.outlineStyle,
+        caret: computed.caretColor,
+        color: computed.color,
+      };
+    });
+    expect(style.background).toBe('rgba(0, 0, 0, 0)');
+    expect(style.border).toBe('0px');
+    expect(style.hasVisibleBoxShadow).toBe(false);
+    expect(style.outline).toBe('none');
+    expect(style.caret).toBe(style.color);
+  }
 });
 
-test('shows one clear identity and omits duplicate current metadata', async ({ mount, page }) => {
-  const component = await mount(PanelIdentityHistoryHost, {
-    props: { historyCount: 9, initialActiveTabId: 'agents-file-history' },
-  });
-
-  await component.locator('[data-panel-identity-history-trigger]').click();
-  const current = page
-    .getByRole('menu', { name: 'Panel history' })
-    .locator('[data-panel-identity-current]');
-  await expect(current.locator('[data-panel-identity-title]')).toHaveText('AGENTS.md');
-  await expect(current.locator('[data-panel-identity-context]')).toHaveCount(0);
-  await expect(current).not.toContainText('Files');
-});
-
-test('keeps agent metadata out of the inline header and in current details', async ({
+test('keeps agent and Spec identities in the list with one current check', async ({
   mount,
   page,
 }) => {
   const component = await mount(PanelIdentityHistoryHost, {
-    props: { historyCount: 3, initialActiveTabId: 'agent-history' },
+    props: { historyCount: 10, initialActiveTabId: 'agent-history' },
   });
-  const header = component.locator('[data-panel-tabless-header]');
-  await expect(header.locator('[data-panel-header-title]')).toHaveText('Build agent');
-  await expect(header).not.toContainText('Implementor');
-  await expect(header).not.toContainText('Delegated by Coordinator');
 
   await component.locator('[data-panel-identity-history-trigger]').click();
-  const current = page
-    .getByRole('menu', { name: 'Panel history' })
-    .locator('[data-panel-identity-current]');
-  await expect(current).toHaveCSS('align-items', 'flex-start');
-  await expect(current.locator('[data-panel-identity-agent-state]')).toHaveText('Idle');
-  await expect(current.locator('[data-panel-identity-specialist]')).toHaveText('Implementor agent');
-  await expect(current.locator('[data-panel-identity-specialist-description]')).toHaveText(
-    'Builds focused implementation changes.',
-  );
-  await expect(current.locator('[data-panel-identity-delegated-by]')).toHaveText(
-    'Delegated by Coordinator',
-  );
+  const menu = page.getByRole('menu', { name: 'Panel history' });
+  const agent = menu.locator('[data-panel-identity-item="agent-history"]');
+  await expect(agent.locator('[data-agent-avatar-with-state]')).toBeVisible();
+  await expect(agent.locator('[data-panel-identity-current-check]')).toHaveCount(1);
+  await expect(menu.locator('[data-panel-identity-current-check]')).toHaveCount(1);
+
+  await menu.locator('[data-panel-identity-item="spec-history"]').click();
+  await expect(component).toHaveAttribute('data-active-tab', 'spec-history');
+  await component.locator('[data-panel-identity-history-trigger]').click();
+  const spec = menu.locator('[data-panel-identity-item="spec-history"]');
+  await expect(spec).toContainText('Spec');
+  await expect(spec.locator('[data-resource-kind="note"]')).toBeVisible();
+  await expect(spec.locator('[data-panel-identity-current-check]')).toHaveCount(1);
+  await expect(menu.locator('[data-panel-identity-current-check]')).toHaveCount(1);
+});
+
+test('filters to one list and shows the consistent empty result', async ({ mount, page }) => {
+  const component = await mount(PanelIdentityHistoryHost, { props: { historyCount: 10 } });
+  await component.locator('[data-panel-identity-history-trigger]').click();
+  const menu = page.getByRole('menu', { name: 'Panel history' });
+  const search = menu.getByRole('searchbox');
+
+  await search.fill('preview browser');
+  await expect(menu.locator('[data-panel-identity-item]')).toHaveCount(1);
+  await expect(menu.locator('[data-panel-identity-item="browser-history"]')).toBeVisible();
+  await expect(menu.locator('[data-panel-identity-list]')).toHaveCount(1);
+
+  await search.fill('no matching panel');
+  await expect(menu.locator('[data-panel-identity-item]')).toHaveCount(0);
+  await expect(menu.locator('[data-panel-identity-empty]')).toBeVisible();
+  await expect(menu.locator('[data-panel-identity-empty]')).not.toBeEmpty();
 });
 
 test('keeps history navigation in the header with visible keyboard focus', async ({
@@ -190,7 +224,11 @@ test('keeps history navigation in the header with visible keyboard focus', async
         button.getAttribute('aria-label'),
       ),
     ),
-  ).toEqual(['Panel history', 'Go back', 'Go forward', 'More', 'Close panel']);
+  ).toEqual(['More', 'Panel history', 'Go back', 'Go forward', 'Close panel']);
+  const divider = actions.locator('[data-panel-history-divider]');
+  await expect(divider).toHaveCount(1);
+  await expect(divider).toHaveAttribute('aria-hidden', 'true');
+  await expect(actions.getByRole('separator')).toHaveCount(0);
   await trigger.click();
   const menu = page.getByRole('menu', { name: 'Panel history' });
   await expect(menu.locator('[data-panel-identity-navigation]')).toHaveCount(0);
@@ -198,6 +236,24 @@ test('keeps history navigation in the header with visible keyboard focus', async
   await back.focus();
   await expect(back).toBeFocused();
   await expect(back).toHaveClass(/focus-visible:ring-2/);
+});
+
+test('keeps one hidden divider and the exact order when Close is unavailable', async ({
+  mount,
+}) => {
+  const component = await mount(PanelIdentityHistoryHost, {
+    props: { historyCount: 3, closeAvailable: false },
+  });
+  const actions = component.locator('[data-panel-tabless-header] [data-panel-header-actions]');
+  expect(
+    await actions.evaluate((node) =>
+      Array.from(node.querySelectorAll('button')).map((button) =>
+        button.getAttribute('aria-label'),
+      ),
+    ),
+  ).toEqual(['More', 'Panel history', 'Go back', 'Go forward']);
+  await expect(actions.locator('[data-panel-history-divider]')).toHaveCount(1);
+  await expect(actions.locator('[data-testid="panel-close-button"]')).toHaveCount(0);
 });
 
 test('maps left to the sole previous entry and right to the next entry', async ({ mount }) => {
@@ -239,7 +295,7 @@ test('keeps the portalled menu inside narrow light/dark viewports at 100% and 20
       expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(
         await page.evaluate(() => innerWidth),
       );
-      await expect(menu.getByRole('searchbox')).toHaveCount(0);
+      await expect(menu.getByRole('searchbox')).toBeVisible();
       expect(await menu.evaluate((node) => getComputedStyle(node).animationName)).toBe('none');
       await page.keyboard.press('Escape');
     }

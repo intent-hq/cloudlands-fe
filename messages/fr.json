@@ -2788,7 +2788,6 @@
   "layout_panelTabBar_splitDown_ariaLabel": "Scinder le panneau en bas",
   "layout_panelTabBar_closePanel_tooltip": "Fermer le panneau",
   "layout_panelTabBar_bgBadge_label": "AP",
-  "layout_panelTabBar_specialistAgent_label": "Agent {specialist}",
   "layout_panelTabBar_delegatedBy_label": "Délégué par {name}",
   "layout_panelTabBar_specialistDelegatedBy_label": "{specialist} · Délégué par {name}",
   "layout_panelTabBar_closeContextMenu_ariaLabel": "Fermer le menu contextuel",

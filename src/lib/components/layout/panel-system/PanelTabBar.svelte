@@ -90,7 +90,6 @@
     type AvatarState,
     getAvatarStateForSession,
   } from '$features/agent/components/agent-avatar/avatar-state';
-  import { getAgentAvatarStateLabel } from '$features/agent/components/agent-avatar/avatar-state-label';
   import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
@@ -103,13 +102,7 @@
   import type { PanelHeaderActions } from './panel-header-context.svelte';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
   import { getResourceIconKind, RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
-  import {
-    filterPanelTabs,
-    getAdjacentPanelTabId,
-    getDistinctPanelIdentityValue,
-    getPanelIdentityContext,
-    PANEL_IDENTITY_SEARCH_THRESHOLD,
-  } from './panel-identity-history';
+  import { filterPanelTabs, getAdjacentPanelTabId } from './panel-identity-history';
 
   // Detect platform for file manager labels
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -320,19 +313,6 @@
   }
 
   /**
-   * Get the specialist display name for an agent tab
-   * Uses $workspaceAgents$ for reactive updates when session metadata changes
-   * Uses unified specialist lookup that includes built-in, custom, AND team specialists
-   */
-  function getAgentSpecialist(tab: PanelTab) {
-    if (tab.type !== 'agent' || !tab.agentId) return null;
-    const agent = $workspaceAgents$.find((a) => a.id === tab.agentId);
-    const specialistId = agent?.metadata?.specialist || (agent as any)?.agentMetadata?.specialist;
-    if (!specialistId) return null;
-    return $specialists$.find((specialist) => specialist.id === specialistId) ?? null;
-  }
-
-  /**
    * Get the avatar state for an agent tab.
    * Uses canonical agent-session selectors for live running/waiting state.
    */
@@ -391,8 +371,6 @@
   const filteredIdentityTabs = $derived(
     filterPanelTabs(identityTabs, identitySearchQuery, getTabTitle),
   );
-  const showIdentityHistory = $derived(identityTabs.length > 1);
-  const showIdentitySearch = $derived(identityTabs.length >= PANEL_IDENTITY_SEARCH_THRESHOLD);
 
   function clearIdentityHoverTimer() {
     if (!identityHoverTimer) return;
@@ -1192,28 +1170,6 @@
   });
 
   /**
-   * "Delegated by" parent-agent attribution for the active agent tab.
-   *
-   * The parent agent ID is mirrored into a writable store so selectAgentSession
-   * re-evaluates reactively — the label appears as soon as the parent session
-   * lands in Redux (e.g. after a workspace switch loads sessions), without
-   * requiring any user interaction.
-   */
-  const activeAgentParentId = $derived.by(() => {
-    if (!activeTab || activeTab.type !== 'agent' || !activeTab.agentId) return null;
-    const agent = $workspaceAgents$.find((a) => a.id === activeTab.agentId);
-    return (agent?.metadata?.createdByAgentId as string | undefined) ?? null;
-  });
-  const activeAgentParentIdStore = writable<string>('');
-  $effect(() => {
-    activeAgentParentIdStore.set(activeAgentParentId ?? '');
-  });
-  const activeAgentParent$ = selectAgentSession(activeAgentParentIdStore);
-  const activeAgentDelegatedByName = $derived(
-    activeAgentParentId ? $activeAgentParent$?.name || null : null,
-  );
-
-  /**
    * Check if a tab can be renamed.
    * Notes, agents, and files can be renamed.
    * Spec notes cannot be renamed.
@@ -1460,15 +1416,7 @@
   {/if}
 {/snippet}
 
-{#snippet identityHistoryMenu(
-  currentTab: PanelTab,
-  currentTitle: string,
-  currentContext: string | null,
-  agentStateLabel: string | null,
-  specialistName: string | null,
-  specialistDescription: string | null,
-  delegatedBy: string | null,
-)}
+{#snippet identityHistoryMenu()}
   <span class="shrink-0 self-center">
     <Menu.Root bind:open={identityMenuOpen} onOpenChange={handleIdentityOpenChange}>
       <Menu.Trigger>
@@ -1504,109 +1452,56 @@
         onpointerleave={handleIdentityMenuPointerLeave}
         data-panel-identity-history-menu
       >
-        <div class="flex min-w-0 items-start gap-2 px-2 pb-1.5 pt-1" data-panel-identity-current>
-          <span class="flex size-5 shrink-0 items-center justify-center" aria-hidden="true">
-            {@render panelIdentity(currentTab, true)}
-          </span>
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-sm font-medium text-foreground" data-panel-identity-title>
-              {currentTitle}
-            </div>
-            {#if agentStateLabel}
-              <div
-                class="type-caption truncate text-muted-foreground"
-                data-panel-identity-agent-state
-              >
-                {agentStateLabel}
-              </div>
-            {/if}
-            {#if currentContext}
-              <div class="type-caption truncate text-muted-foreground" data-panel-identity-context>
-                {currentContext}
-              </div>
-            {/if}
-            {#if specialistName}
-              <div
-                class="type-caption truncate text-muted-foreground"
-                data-panel-identity-specialist
-              >
-                {m.layout_panelTabBar_specialistAgent_label({ specialist: specialistName })}
-              </div>
-            {/if}
-            {#if specialistDescription}
-              <div
-                class="type-caption line-clamp-2 text-muted-foreground"
-                data-panel-identity-specialist-description
-              >
-                {specialistDescription}
-              </div>
-            {/if}
-            {#if delegatedBy}
-              <div
-                class="type-caption truncate text-muted-foreground"
-                data-panel-identity-delegated-by
-              >
-                {m.layout_panelTabBar_delegatedBy_label({ name: delegatedBy })}
-              </div>
-            {/if}
-          </div>
-        </div>
-        {#if showIdentityHistory}
-          <div data-panel-identity-history-section>
-            <Menu.Separator />
-            <div class="flex items-center gap-2 px-1 py-1">
-              <div
-                class="shrink-0 px-1 text-base font-medium text-muted-foreground"
-                data-panel-identity-history-title
-              >
-                {m.layout_panelTabBar_identityHistory_ariaLabel()}
-              </div>
-              {#if showIdentitySearch}
-                <label class="relative min-w-0 flex-1">
-                  <span class="sr-only">{m.ui_searchableSelect_search_placeholder()}</span>
-                  <Fa
-                    icon={faMagnifyingGlass}
-                    size="xs"
-                    class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
-                  />
-                  <Input
-                    bind:value={identitySearchQuery}
-                    type="search"
-                    noFocusStyle
-                    aria-label={m.ui_searchableSelect_search_placeholder()}
-                    placeholder={m.ui_searchableSelect_search_placeholder()}
-                    class="h-7 w-full rounded-md border border-border bg-transparent pl-7 pr-2 text-xs outline-none focus:border-input focus:ring-1 focus:ring-border"
-                    data-panel-identity-search
-                  />
-                </label>
-              {/if}
-            </div>
-            <div class="max-h-64 overflow-y-auto overscroll-contain" data-panel-identity-list>
-              {#each filteredIdentityTabs as tab (tab.id)}
-                {@const current = tab.id === activeTabId}
-                <Menu.Item
-                  class="min-h-8"
-                  aria-current={current ? 'page' : undefined}
-                  onclick={() => activateIdentityTab(tab.id)}
-                  data-panel-identity-item={tab.id}
-                  data-panel-identity-type={tab.type}
+        <label class="relative block min-w-0" data-panel-identity-search-container>
+          <span class="sr-only">{m.ui_searchableSelect_search_placeholder()}</span>
+          <Fa
+            icon={faMagnifyingGlass}
+            size="xs"
+            class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            bind:value={identitySearchQuery}
+            type="search"
+            noFocusStyle
+            aria-label={m.ui_searchableSelect_search_placeholder()}
+            placeholder={m.ui_searchableSelect_search_placeholder()}
+            class="h-8 w-full rounded-none border-0 bg-transparent pl-7 pr-2 text-sm text-foreground caret-foreground shadow-none outline-none transition-none hover:border-0 hover:bg-transparent focus:border-0 focus:bg-transparent focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:bg-transparent focus-visible:outline-none focus-visible:ring-0"
+            data-panel-identity-search
+          />
+        </label>
+        <div class="max-h-64 overflow-y-auto overscroll-contain" data-panel-identity-list>
+          {#each filteredIdentityTabs as tab (tab.id)}
+            {@const current = tab.id === activeTabId}
+            <Menu.Item
+              class={cn('min-h-8', current && 'bg-accent/60 text-accent-foreground')}
+              aria-current={current ? 'page' : undefined}
+              onclick={() => activateIdentityTab(tab.id)}
+              data-panel-identity-item={tab.id}
+              data-panel-identity-type={tab.type}
+            >
+              <span class="flex size-5 shrink-0 items-center justify-center">
+                {@render panelIdentity(tab, true)}
+              </span>
+              <span class="min-w-0 flex-1 truncate">{getTabTitle(tab)}</span>
+              {#if current}
+                <span
+                  class="flex size-4 shrink-0 items-center justify-center"
+                  aria-hidden="true"
+                  data-panel-identity-current-check
                 >
-                  <span class="flex size-5 shrink-0 items-center justify-center">
-                    {@render panelIdentity(tab, true)}
-                  </span>
-                  <span class="min-w-0 flex-1 truncate">{getTabTitle(tab)}</span>
-                  {#if current}
-                    <Fa icon={faCheck} size="xs" class="shrink-0 text-primary" />
-                  {/if}
-                </Menu.Item>
-              {:else}
-                <div class="px-2 py-3 text-center text-xs text-muted-foreground">
-                  {m.ui_combobox_noOptions_message()}
-                </div>
-              {/each}
+                  <Fa icon={faCheck} size="xs" class="text-primary" />
+                </span>
+              {/if}
+            </Menu.Item>
+          {:else}
+            <div
+              class="type-body flex min-h-8 items-center justify-center px-2 py-1 text-muted-foreground"
+              data-panel-identity-empty
+            >
+              {m.ui_combobox_noOptions_message()}
             </div>
-          </div>
-        {/if}
+          {/each}
+        </div>
       </Menu.Content>
     </Menu.Root>
   </span>
@@ -1929,23 +1824,6 @@
   {#if activeTab}
     {@const activeTabPath = getTabPath(activeTab)}
     {@const activeTabTitle = getTabTitle(activeTab)}
-    {@const activeIdentityContext = getPanelIdentityContext(
-      activeTabTitle,
-      activeTabPath ?? activeTab.browserUrl ?? null,
-    )}
-    {@const activeAgentSpecialist = getAgentSpecialist(activeTab)}
-    {@const activeAgentSpecialistName = getDistinctPanelIdentityValue(activeAgentSpecialist?.name, [
-      activeTabTitle,
-    ])}
-    {@const activeAgentSpecialistDescription = getDistinctPanelIdentityValue(
-      activeAgentSpecialist?.description,
-      [activeTabTitle, activeAgentSpecialistName],
-    )}
-    {@const activeAgentDelegatedBy = getDistinctPanelIdentityValue(activeAgentDelegatedByName, [
-      activeTabTitle,
-    ])}
-    {@const activeAgentStateLabel =
-      activeTab.type === 'agent' ? getAgentAvatarStateLabel(activeAgentAvatarState) : null}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class={cn(
@@ -2014,16 +1892,12 @@
 
       <!-- Right: stable content controls, grouped actions, and close. -->
       <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
+        {@render contentActions?.primary?.()}
+        {@render panelActionsDropdown()}
+        <span class="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden="true" data-panel-history-divider
+        ></span>
         <div class="flex shrink-0 items-center" data-panel-identity-navigation>
-          {@render identityHistoryMenu(
-            activeTab,
-            activeTabTitle,
-            activeIdentityContext,
-            activeAgentStateLabel,
-            activeAgentSpecialistName,
-            activeAgentSpecialistDescription,
-            activeAgentDelegatedBy,
-          )}
+          {@render identityHistoryMenu()}
           <TooltipShortcut
             label={m.ui_contentHeader_goBack_tooltip()}
             shortcut="cmd+["
@@ -2061,8 +1935,6 @@
             </Button>
           </TooltipShortcut>
         </div>
-        {@render contentActions?.primary?.()}
-        {@render panelActionsDropdown()}
         {@render panelCloseButton()}
       </div>
     </div>

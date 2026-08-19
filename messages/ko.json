@@ -2788,7 +2788,6 @@
   "layout_panelTabBar_splitDown_ariaLabel": "패널 아래로 분할",
   "layout_panelTabBar_closePanel_tooltip": "패널 닫기",
   "layout_panelTabBar_bgBadge_label": "BG",
-  "layout_panelTabBar_specialistAgent_label": "{specialist} 에이전트",
   "layout_panelTabBar_delegatedBy_label": "{name}이(가) 위임함",
   "layout_panelTabBar_specialistDelegatedBy_label": "{specialist} · {name}이(가) 위임함",
   "layout_panelTabBar_closeContextMenu_ariaLabel": "컨텍스트 메뉴 닫기",

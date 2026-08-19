@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
-import {
-  filterPanelTabs,
-  getAdjacentPanelTabId,
-  getDistinctPanelIdentityValue,
-  getPanelIdentityContext,
-  PANEL_IDENTITY_SEARCH_THRESHOLD,
-} from './panel-identity-history';
+import { filterPanelTabs, getAdjacentPanelTabId } from './panel-identity-history';
 
 const tabs = [
   { id: 'agent', type: 'agent', title: 'Build agent', closable: true },
@@ -34,24 +28,5 @@ describe('panel identity history helpers', () => {
       'terminal',
     ]);
     expect(tabs.map((tab) => tab.id)).toEqual(['agent', 'note', 'browser', 'terminal']);
-    expect(PANEL_IDENTITY_SEARCH_THRESHOLD).toBe(6);
-  });
-
-  it('keeps only context that adds information to the panel title', () => {
-    expect(getPanelIdentityContext('AGENTS.md', 'AGENTS.md')).toBeNull();
-    expect(getPanelIdentityContext('AGENTS.md', '/workspace/AGENTS.md')).toBe('/workspace');
-    expect(getPanelIdentityContext('Preview', 'https://example.com/preview')).toBe(
-      'https://example.com/preview',
-    );
-    expect(getPanelIdentityContext('Release plan', null)).toBeNull();
-  });
-
-  it('omits empty and duplicate agent metadata values', () => {
-    expect(getDistinctPanelIdentityValue('Implementor', ['Build agent'])).toBe('Implementor');
-    expect(getDistinctPanelIdentityValue(' build AGENT ', ['Build agent'])).toBeNull();
-    expect(
-      getDistinctPanelIdentityValue('Scoped implementation', ['Build agent', 'Implementor']),
-    ).toBe('Scoped implementation');
-    expect(getDistinctPanelIdentityValue('  ', ['Build agent'])).toBeNull();
   });
 });

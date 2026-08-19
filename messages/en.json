@@ -2789,7 +2789,6 @@
   "layout_panelTabBar_splitDown_ariaLabel": "Split panel down",
   "layout_panelTabBar_closePanel_tooltip": "Close panel",
   "layout_panelTabBar_bgBadge_label": "BG",
-  "layout_panelTabBar_specialistAgent_label": "{specialist} agent",
   "layout_panelTabBar_delegatedBy_label": "Delegated by {name}",
   "layout_panelTabBar_specialistDelegatedBy_label": "{specialist} · Delegated by {name}",
   "layout_panelTabBar_closeContextMenu_ariaLabel": "Close context menu",

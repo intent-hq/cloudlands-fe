@@ -2788,7 +2788,6 @@
   "layout_panelTabBar_splitDown_ariaLabel": "パネルを下に分割",
   "layout_panelTabBar_closePanel_tooltip": "パネルを閉じる",
   "layout_panelTabBar_bgBadge_label": "BG",
-  "layout_panelTabBar_specialistAgent_label": "{specialist} エージェント",
   "layout_panelTabBar_delegatedBy_label": "{name} から委任",
   "layout_panelTabBar_specialistDelegatedBy_label": "{specialist} · {name} から委任",
   "layout_panelTabBar_closeContextMenu_ariaLabel": "コンテキストメニューを閉じる",

@@ -2788,7 +2788,6 @@
   "layout_panelTabBar_splitDown_ariaLabel": "向下拆分面板",
   "layout_panelTabBar_closePanel_tooltip": "關閉面板",
   "layout_panelTabBar_bgBadge_label": "背景",
-  "layout_panelTabBar_specialistAgent_label": "{specialist}智慧體",
   "layout_panelTabBar_delegatedBy_label": "由 {name} 委派",
   "layout_panelTabBar_specialistDelegatedBy_label": "{specialist} · 由 {name} 委派",
   "layout_panelTabBar_closeContextMenu_ariaLabel": "關閉右鍵選單",

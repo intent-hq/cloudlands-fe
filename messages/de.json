@@ -2788,7 +2788,6 @@
   "layout_panelTabBar_splitDown_ariaLabel": "Panel unten teilen",
   "layout_panelTabBar_closePanel_tooltip": "Panel schließen",
   "layout_panelTabBar_bgBadge_label": "BG",
-  "layout_panelTabBar_specialistAgent_label": "{specialist}-Agent",
   "layout_panelTabBar_delegatedBy_label": "Delegiert von {name}",
   "layout_panelTabBar_specialistDelegatedBy_label": "{specialist} · Delegiert von {name}",
   "layout_panelTabBar_closeContextMenu_ariaLabel": "Kontextmenü schließen",
