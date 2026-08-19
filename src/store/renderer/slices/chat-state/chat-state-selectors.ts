@@ -154,6 +154,46 @@ export const selectTranscriptSnapshotMeta = store.createSelector(
     getAgentChatState(state, agentId).transcriptSnapshot,
 );
 
+// --- Scrollback paging (on-demand history segment fetches) ---
+
+/** True while an on-demand older-history scrollback page fetch is in flight. */
+export const selectFetchingOlderHistory = store.createSelector(
+  (state, agentId: string): boolean =>
+    getAgentChatState(state, agentId).fetchingOlderHistory,
+);
+
+/** True while an on-demand gap-refill scrollback page fetch is in flight. */
+export const selectFetchingGapFill = store.createSelector(
+  (state, agentId: string): boolean =>
+    getAgentChatState(state, agentId).fetchingGapFill,
+);
+
+/** True while an `aroundIndex` far-flick seek fetch is in flight. */
+export const selectFetchingHistorySeek = store.createSelector(
+  (state, agentId: string): boolean =>
+    getAgentChatState(state, agentId).fetchingHistorySeek,
+);
+
+/**
+ * True once the daemon rejected `aroundIndex` (INVALID_PARAMS) — a daemon
+ * predating the param. Far-flick seeks fall back to the serial walk.
+ */
+export const selectHistorySeekUnsupported = store.createSelector(
+  (state, agentId: string): boolean =>
+    getAgentChatState(state, agentId).historySeekUnsupported,
+);
+
+/**
+ * True once the older scrollback walk hydrated the conversation's true first
+ * message. Reads the history segment's `oldestReached` (agent-session slice)
+ * so exhaustion lives and dies with the segment itself — a cleared segment
+ * (chat reset, §7.1 `resumed: false` rehydration) is never falsely exhausted.
+ */
+export const selectHistoryExhausted = store.createSelector(
+  (state, agentId: string): boolean =>
+    state.agentSessions?.historySegmentsByAgentId?.[agentId]?.oldestReached === true,
+);
+
 /**
  * Switch-back transcript reveal gate: true while the viewed conversation is
  * awaiting a fresh seq-0 snapshot from its (re)opening standing subscription.

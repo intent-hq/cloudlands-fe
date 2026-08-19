@@ -110,6 +110,51 @@ export type StoredAgentSession = Omit<AgentSession, "messages"> & {
 };
 
 /**
+ * Bounded, on-demand history segment for infinite scrollback.
+ *
+ * Holds rows OLDER than the always-resident tail (`session.messages`),
+ * hydrated page-by-page as the user scrolls up. Capped at
+ * `HISTORY_SEGMENT_MAX` rows; pruning past the cap can open a hole (gap)
+ * between history and tail that is refilled on demand.
+ */
+export interface AgentHistorySegment {
+  /** Hydrated older rows, ordered ascending by timestamp (same ordering as the tail). */
+  messages: AgentMessage[];
+  /**
+   * true when a hole is open between history's newest row and the tail's
+   * oldest retained row (newest-side pruning severed contiguity). When false
+   * and history is non-empty, history's newest row directly precedes the
+   * tail's oldest retained row, so the renderer may concatenate without a
+   * gap affordance.
+   */
+  gapToTail: boolean;
+  /** true once the conversation's true first message has been hydrated. */
+  oldestReached: boolean;
+  /**
+   * Estimated conversation ordinal (0-based from the OLDEST message) of the
+   * segment's FIRST row. Present only on segments seeded by an `aroundIndex`
+   * seek landing — it anchors the above/below split of the virtual scroll
+   * extent (`splitUnloadedRows`). Maintained as an estimate across
+   * prepends/appends (shifted by rows added/pruned at the older side) and
+   * pinned to exactly 0 when `oldestReached` flips true. Absent/undefined on
+   * serial-walk segments, which are split by `holeRowsEstimate` instead.
+   */
+  startOrdinalEstimate?: number;
+  /**
+   * Estimated number of rows inside the open history→tail hole for a
+   * SERIAL-walk segment: grown by the exact newest-side prune count when a
+   * prepend passes the cap, shrunk by the rows a gap refill moves back into
+   * history, and dropped when the hole closes. Anchors the below side of
+   * `splitUnloadedRows` so hole rows never inflate the above extent (they
+   * used to be attributed all-above, overestimating the virtual extent by up
+   * to 2x mid-walk). Absent on seek-seeded segments (`startOrdinalEstimate`
+   * anchors their split) and while the segment is contiguous with the tail.
+   * An estimate: rows the TAIL prunes into the hole are not observed here.
+   */
+  holeRowsEstimate?: number;
+}
+
+/**
  * Agent Session Slice State
  *
  * Flat, agent-keyed state for all AgentSession data.
@@ -121,5 +166,10 @@ export interface AgentSessionState {
   byAgentId: Record<string, StoredAgentSession>;
   /** Index: workspace ID → array of agent IDs belonging to that workspace */
   agentIdsByWorkspace: Record<string, string[]>;
+  /**
+   * On-demand scrollback history segments keyed by agentId. Absent/undefined
+   * means no agent has hydrated history (equivalent to an empty record).
+   */
+  historySegmentsByAgentId?: Record<string, AgentHistorySegment>;
 }
 

@@ -194,6 +194,35 @@ export interface ChatAgentState {
    * TranscriptSnapshotMeta.
    */
   transcriptSnapshot?: TranscriptSnapshotMeta;
+  /** True while an on-demand older-history scrollback page fetch is in flight. */
+  fetchingOlderHistory: boolean;
+  /** True while an on-demand gap-refill scrollback page fetch is in flight. */
+  fetchingGapFill: boolean;
+  /**
+   * Opaque §5.5 backward cursor continuing the older-history walk from where
+   * the last fetched page stopped, or null when the next request must re-seek
+   * (`aroundMessageId`) at the history segment's oldest row. Only honored
+   * while the history segment it was minted against still has rows; dropped
+   * when a gap-refill append lands (the append may have cap-pruned history's
+   * oldest side, and continuing backward would skip the pruned rows).
+   */
+  scrollbackOlderToken: string | null;
+  /**
+   * Opaque §5.5 forward cursor continuing the gap-refill walk toward the live
+   * tail, or null when the next request must re-seek at the history segment's
+   * newest row. Dropped when an older prepend lands (the prepend may have
+   * cap-pruned history's newest side, and continuing forward would skip the
+   * pruned rows).
+   */
+  scrollbackGapToken: string | null;
+  /** True while an `aroundIndex` far-flick seek fetch is in flight. */
+  fetchingHistorySeek: boolean;
+  /**
+   * True once the daemon rejected `aroundIndex` with INVALID_PARAMS —
+   * a daemon predating the param. Seeks are disabled for this agent for the
+   * rest of the session (the serial walk covers deep scrolls instead).
+   */
+  historySeekUnsupported: boolean;
   /**
    * Switch-back transcript reveal gate: true while the VIEWED conversation is
    * awaiting a fresh seq-0 snapshot from its (re)opening standing
