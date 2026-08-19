@@ -2733,7 +2733,7 @@
   "layout_allCard_statusIdle_label": "Idle",
   "layout_allCard_statusNoChanges_label": "No Code Changes",
   "layout_allCard_statusInProgress_label": "In Progress",
-  "layout_allCard_statusComplete_label": "Complete",
+  "layout_allCard_statusComplete_label": "Completed",
   "layout_allCard_statusPrReady_label": "PR Mergeable",
   "layout_allCard_statusPrOpen_label": "PR Open",
   "layout_allCard_statusPrMerged_label": "PR Merged",
