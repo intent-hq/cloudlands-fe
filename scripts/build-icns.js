@@ -2,6 +2,7 @@
 /** Build desktop and web icons from the approved app icon PNGs. */
 
 import { execFileSync } from 'child_process';
+import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
@@ -18,6 +19,8 @@ const DEV_ICONSET_DIR = path.join(ICONS_DIR, 'DevAppIcon.iconset');
 const FAVICON_PATH = path.join(__dirname, '../static/favicon.png');
 const SOURCE_SIZES = [32, 64, 128, 256, 512, 1024];
 const ICO_SIZES = [16, 32, 48, 64, 128, 256];
+const DEV_SOURCE_SHA256 = '4e6e13f59557bb3ee33ed7810ba07d05f7308d564e16456b1117885822c68581';
+const DEV_SOURCE_ALPHA_BOUNDS = { left: 80, top: 91, right: 943, bottom: 954 };
 
 // macOS iconutil requires these exact filenames and sizes
 const ICONSET_SPEC = {
@@ -60,24 +63,31 @@ async function validateReleaseSources() {
 }
 
 async function validateDevSource() {
-  const devMetadata = await sharp(DEV_SOURCE_PATH).metadata();
-  if (devMetadata.format !== 'png' || devMetadata.width !== 864 || devMetadata.height !== 864) {
-    throw new Error(`${DEV_SOURCE_PATH} must be an 864x864 PNG`);
+  const source = fs.readFileSync(DEV_SOURCE_PATH);
+  const devMetadata = await sharp(source).metadata();
+  if (devMetadata.format !== 'png' || devMetadata.width !== 1024 || devMetadata.height !== 1024) {
+    throw new Error(`${DEV_SOURCE_PATH} must be a 1024x1024 PNG`);
+  }
+  if (createHash('sha256').update(source).digest('hex') !== DEV_SOURCE_SHA256) {
+    throw new Error(`${DEV_SOURCE_PATH} must match the approved unstable icon source`);
   }
 
-  const { data, info } = await sharp(DEV_SOURCE_PATH)
+  const { data, info } = await sharp(source)
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
-  const alphaAt = (x, y) => data[(y * info.width + x) * info.channels + 3];
-  const edges = [
-    Array.from({ length: info.width }, (_, x) => alphaAt(x, 0)),
-    Array.from({ length: info.width }, (_, x) => alphaAt(x, info.height - 1)),
-    Array.from({ length: info.height }, (_, y) => alphaAt(0, y)),
-    Array.from({ length: info.height }, (_, y) => alphaAt(info.width - 1, y)),
-  ];
-  if (edges.some((edge) => edge.every((alpha) => alpha === 0))) {
-    throw new Error(`${DEV_SOURCE_PATH} must not have a fully transparent outer row or column`);
+  const bounds = { left: info.width, top: info.height, right: -1, bottom: -1 };
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      if (data[(y * info.width + x) * info.channels + 3] === 0) continue;
+      bounds.left = Math.min(bounds.left, x);
+      bounds.top = Math.min(bounds.top, y);
+      bounds.right = Math.max(bounds.right, x);
+      bounds.bottom = Math.max(bounds.bottom, y);
+    }
+  }
+  if (Object.keys(bounds).some((key) => bounds[key] !== DEV_SOURCE_ALPHA_BOUNDS[key])) {
+    throw new Error(`${DEV_SOURCE_PATH} must preserve the approved transparent spacing`);
   }
 }
 
