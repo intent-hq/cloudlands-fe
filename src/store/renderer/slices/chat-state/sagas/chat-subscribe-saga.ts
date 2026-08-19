@@ -21,9 +21,13 @@
  *    otherwise close the first panel's still-acquiring cold-open slot —
  *    cancelPending resolves its `chat.subscribe` straight into an
  *    unsubscribe, its seq-0 snapshot is token-dropped, and hydration
- *    strands a full wait window. Spared agents follow the same
- *    spare-then-revisit contract as the applied clear's (below): the close
- *    is deferred, never cancelled.
+ *    strands a full wait window. The hosting check spans every workspace's
+ *    layout (the same predicate the settle-time revisit uses), so a panel
+ *    in a visible sibling workspace column spares too — and so does a tab
+ *    persisted in a backgrounded workspace's layout, a bounded keep (until
+ *    the next same-realm swap) preferred over token-dropping its snapshot.
+ *    Spared agents follow the same spare-then-revisit contract as the
+ *    applied clear's (below): the close is deferred, never cancelled.
  *  - `transcriptHydrationSettled` re-applies the entry's last reconciled
  *    transcript: a slower chat-read hydrate whose pages predate a finalize
  *    would otherwise clobber the finalized row this stream already delivered
@@ -1051,13 +1055,19 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
   // so its chat.subscribe resolves straight into an unsubscribe and the
   // seq-0 snapshot is token-dropped, stranding that hydration for a full
   // wait window. Spare same-realm agents whose transcript hydration sits in
-  // `loading` while a panel tab still hosts them: an in-flight hydration
-  // with a mounted panel means a live sibling panel is actively waiting on
-  // that subscription's snapshot. The spare defers the close, it never
-  // cancels it — the same spare-then-revisit contract the applied clear's
-  // sweep uses (monorepo#2864): each spared agent is recorded and revisited
-  // when its hydration settles/fails (runDeferredClearIfPanelGone), so a
-  // panel genuinely closed mid-load still tears the subscription down.
+  // `loading` while a panel tab still hosts them. The hosting predicate
+  // (selectAgentHasOpenPanelTab) deliberately spans EVERY workspace's
+  // layout, like the settle-time revisit's: a mounted sibling panel of the
+  // double mount is actively waiting on the snapshot, and a tab persisted
+  // in a backgrounded workspace's layout (workspace switch mid-hydration)
+  // also spares — letting that hidden hydration complete keeps the
+  // transcript warm for switch-back instead of token-dropping its
+  // snapshot, a keep bounded by the next same-realm swap or scoped clear.
+  // The spare defers the close, it never cancels it — the same
+  // spare-then-revisit contract the applied clear's sweep uses
+  // (monorepo#2864): each spared agent is recorded and revisited when its
+  // hydration settles/fails (runDeferredClearIfPanelGone), so a panel
+  // genuinely closed mid-load still tears the subscription down.
   const spared = new Set<string>();
   for (const [slotAgentId, slot] of [...coordinator.slots.entries()]) {
     if (slotAgentId === agentId) continue;
