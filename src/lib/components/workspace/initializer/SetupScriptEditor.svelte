@@ -105,7 +105,7 @@
       map.set(LAST_USED_SCRIPT_ID, {
         content: lastUsedScript.content,
         label: lastUsedScript.name,
-        source: 'named',
+        source: lastUsedScript.nameSource,
       });
     }
 
@@ -252,7 +252,7 @@
         // Use last used script for this repo (localStorage)
         selectedScriptId = LAST_USED_SCRIPT_ID;
         customName = lastUsed.name; // Set to last used script's name
-        customNameSource = 'named';
+        customNameSource = lastUsed.nameSource;
       } else if (COPY_CONFIG_TEMPLATE_ID) {
         // Fallback to "Copy config files only" template
         selectedScriptId = COPY_CONFIG_TEMPLATE_ID;
@@ -365,7 +365,7 @@
             class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId === LAST_USED_SCRIPT_ID ? 'bg-background text-foreground ring-1 ring-border' : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
             onclick={() => handleScriptSelect(LAST_USED_SCRIPT_ID)}
           >
-            <span class="text-sm">{lastUsedScript.name}</span>
+            <span class="text-sm">{setupScriptDisplayName(lastUsedScript.name, lastUsedScript.nameSource)}</span>
             <p class="text-xs text-subtle mt-0.5 line-clamp-1">{m.workspace_setupScriptEditor_lastUsed_description()}</p>
           </button>
         </div>

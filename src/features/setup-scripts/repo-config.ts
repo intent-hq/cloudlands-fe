@@ -187,7 +187,7 @@ export interface SetupScriptChoice {
  */
 export function chooseDefaultSetupScript(options: {
   repoConfigScript: string | null;
-  lastUsed: { name: string; content: string } | undefined;
+  lastUsed: { name: string; content: string; nameSource?: SetupScriptNameSource } | undefined;
   genericTemplate: { name: string; content: string } | undefined;
 }): SetupScriptChoice {
   const { repoConfigScript, lastUsed, genericTemplate } = options;
@@ -195,7 +195,7 @@ export function chooseDefaultSetupScript(options: {
     return { content: repoConfigScript, name: REPO_CONFIG_SCRIPT_NAME, source: 'repo-config' };
   }
   if (lastUsed) {
-    return { content: lastUsed.content, name: lastUsed.name, source: 'named' };
+    return { content: lastUsed.content, name: lastUsed.name, source: lastUsed.nameSource ?? 'named' };
   }
   if (genericTemplate) {
     return { content: genericTemplate.content, name: genericTemplate.name, source: 'named' };

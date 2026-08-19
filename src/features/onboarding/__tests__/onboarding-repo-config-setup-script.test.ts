@@ -264,6 +264,8 @@ describe('onboarding repo-config setup script detection', () => {
       expect(textOf(result, 'setup-script-name')).toBe(REPO_CONFIG_SCRIPT_NAME);
     });
     expect(mocks.fetchRepoConfig).toHaveBeenCalledWith('/repo/a');
+    // The row localizes via the name's true identity, not string matching.
+    expect(textOf(result, 'setup-script-name-source')).toBe('repo-config');
     expect(textOf(result, 'setup-script')).toBe('echo repo-config');
     expect(textOf(result, 'is-custom-setup-script')).toBe('false');
     // Cached script is forwarded so SetupScriptModal renders the list entry.
@@ -282,6 +284,8 @@ describe('onboarding repo-config setup script detection', () => {
     await waitFor(() => {
       expect(textOf(result, 'setup-script-name')).toBe('My saved script');
     });
+    // A saved script's user-chosen name passes through display unlocalized.
+    expect(textOf(result, 'setup-script-name-source')).toBe('named');
     expect(textOf(result, 'setup-script')).toBe('echo saved');
     expect(textOf(result, 'repo-config-script')).toBe('');
     // No repo config — the disclosure row stays visible.

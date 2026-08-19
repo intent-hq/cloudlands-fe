@@ -237,6 +237,25 @@ describe('chooseDefaultSetupScript', () => {
     });
     expect(choice).toEqual({ content: 'echo saved', name: 'Custom', source: 'named' });
   });
+
+  it('honors the persisted nameSource of a last-used entry', () => {
+    // An edited repo-config script recorded as last-used keeps its sentinel
+    // identity, so its restore renders localized.
+    const choice = chooseDefaultSetupScript({
+      repoConfigScript: null,
+      lastUsed: {
+        name: REPO_CONFIG_SCRIPT_NAME,
+        content: 'echo edited',
+        nameSource: 'repo-config',
+      },
+      genericTemplate,
+    });
+    expect(choice).toEqual({
+      content: 'echo edited',
+      name: REPO_CONFIG_SCRIPT_NAME,
+      source: 'repo-config',
+    });
+  });
 });
 
 describe('resolveSetupScriptParam (monorepo#1862)', () => {

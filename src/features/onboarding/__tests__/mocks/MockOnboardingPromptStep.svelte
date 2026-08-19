@@ -11,6 +11,7 @@
     setupScript = $bindable(''),
     showSetupScript = $bindable(false),
     setupScriptName = $bindable('Custom'),
+    setupScriptNameSource = $bindable('custom'),
     isCustomSetupScript = $bindable(false),
     focusedSuggestionIndex = $bindable(-1),
     repoConfigScript = null,
@@ -27,6 +28,7 @@
     setupScript?: string;
     showSetupScript?: boolean;
     setupScriptName?: string;
+    setupScriptNameSource?: string;
     isCustomSetupScript?: boolean;
     focusedSuggestionIndex?: number;
     repoConfigScript?: string | null;
@@ -66,6 +68,7 @@
 </script>
 
 <div data-testid="setup-script-name">{setupScriptName}</div>
+<div data-testid="setup-script-name-source">{setupScriptNameSource}</div>
 <div data-testid="setup-script">{setupScript}</div>
 <div data-testid="repo-config-script">{repoConfigScript ?? ''}</div>
 <div data-testid="is-custom-setup-script">{String(isCustomSetupScript)}</div>

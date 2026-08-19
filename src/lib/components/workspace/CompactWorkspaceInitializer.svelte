@@ -2177,6 +2177,7 @@
           {
             name: setupScriptName || m.workspace_setupScriptEditor_customScript_name(),
             content: setupScript,
+            nameSource: setupScriptName ? setupScriptNameSource : 'named',
           },
           repoType === 'github' ? githubUrl : undefined,
         );
