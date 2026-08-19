@@ -201,4 +201,52 @@ describe('OffscreenWebviewHost', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(mountedTabIds(container)).toEqual([]);
   });
+
+  // Regression (monorepo#2857 review): the mount URL is frozen, so an
+  // external browserUrl update to a hidden owned tab (e.g. an agent openTab
+  // replacing it) silently diverged — the live guest must navigate.
+  it('navigates a mounted hidden tab when its persisted browserUrl changes externally', async () => {
+    const hiddenLayout = (url: string) => ({
+      panels: {},
+      hiddenTabs: [
+        {
+          id: 'tab-hidden',
+          type: 'browser',
+          title: 'Hidden',
+          closable: true,
+          browserUrl: url,
+          ownerAgentId: 'agent-1',
+        },
+      ],
+    });
+    layoutsStore.set({ 'ws-shown': hiddenLayout('https://example.test/start') });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set(['ws-shown']) },
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-hidden']));
+
+    const webview = container.querySelector(
+      '[data-offscreen-webview-tab="tab-hidden"]',
+    ) as HTMLElement & {
+      getWebContentsId?: () => number;
+      getURL?: () => string;
+      loadURL?: (url: string) => Promise<void>;
+    };
+    webview.getWebContentsId = () => 88;
+    webview.getURL = () => 'https://example.test/start';
+    const loadURL = vi.fn().mockResolvedValue(undefined);
+    webview.loadURL = loadURL;
+    webview.dispatchEvent(new Event('dom-ready'));
+
+    // Our own did-navigate echo (equal URL) must NOT reload the guest.
+    layoutsStore.set({ 'ws-shown': hiddenLayout('https://example.test/start') });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(loadURL).not.toHaveBeenCalled();
+
+    // An external replacement URL navigates the live guest without remount.
+    layoutsStore.set({ 'ws-shown': hiddenLayout('https://example.test/replaced') });
+    await waitFor(() => expect(loadURL).toHaveBeenCalledWith('https://example.test/replaced'));
+    // Still the same mounted element — frozen src, no remount.
+    expect(webview.getAttribute('src')).toBe('https://example.test/start');
+  });
 });

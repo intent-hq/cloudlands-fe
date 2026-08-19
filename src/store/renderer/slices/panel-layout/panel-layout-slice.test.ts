@@ -41,6 +41,7 @@ import {
   resetLayout,
   collapseToReusablePanel,
   goBack,
+  goForward,
   setPanelPinned,
 } from './panel-layout-slice';
 import { removeTerminal } from '../terminals/terminals-slice';
@@ -2060,6 +2061,63 @@ describe('panelLayoutReducer', () => {
         }),
       );
       expect(result.byWorkspaceId[WS].hiddenTabs.map((t) => t.id)).toEqual(['owned']);
+    });
+
+    // Regression (monorepo#2857 review): a destroyed owned tab lived on in
+    // layoutHistory snapshots, so goBack resurrected a ghost tab whose
+    // main-process registrations were already gone.
+    it('goBack cannot resurrect a destroyed hidden tab — history is purged', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      expect(hidden.byWorkspaceId[WS].layoutHistory[0].panels.p1.tabs.map((t) => t.id)).toEqual([
+        'owned',
+        't2',
+      ]);
+
+      const destroyed = panelLayoutReducer(hidden, closeTab(WS, 'owned', undefined, 1001, true));
+      for (const snapshot of destroyed.byWorkspaceId[WS].layoutHistory) {
+        expect(snapshot.panels.p1.tabs.map((t) => t.id)).not.toContain('owned');
+      }
+
+      const back = panelLayoutReducer(destroyed, goBack(WS, 1002)).byWorkspaceId[WS];
+      expect(back.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
+      expect(back.hiddenTabs).toHaveLength(0);
+    });
+
+    it('destroyTabsByOwnerAgent purges hidden owned tabs from layout history', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      const destroyed = panelLayoutReducer(hidden, destroyTabsByOwnerAgent(WS, 'agent-1', 1001));
+      for (const snapshot of destroyed.byWorkspaceId[WS].layoutHistory) {
+        expect(snapshot.panels.p1.tabs.map((t) => t.id)).not.toContain('owned');
+      }
+
+      const back = panelLayoutReducer(destroyed, goBack(WS, 1002)).byWorkspaceId[WS];
+      expect(back.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
+      expect(back.hiddenTabs).toHaveLength(0);
+    });
+
+    // Regression (monorepo#2857 review): restoring a snapshot that predates
+    // an owned tab's restore used to drop the live tab entirely — it must be
+    // re-hidden instead (history navigation never destroys owned tabs).
+    it('goBack re-hides an owned tab absent from the restored snapshot; goForward un-hides it', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      const restored = panelLayoutReducer(hidden, restoreHiddenTab(WS, 'owned', 1001));
+      expect(restored.byWorkspaceId[WS].panels.p1.tabs.map((t) => t.id)).toEqual(['t2', 'owned']);
+      expect(restored.byWorkspaceId[WS].hiddenTabs).toHaveLength(0);
+
+      // history[1] is the pre-restore snapshot without the owned tab.
+      const back = panelLayoutReducer(restored, goBack(WS, 1002)).byWorkspaceId[WS];
+      expect(back.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
+      expect(back.hiddenTabs.map((t) => t.id)).toEqual(['owned']);
+
+      const forward = panelLayoutReducer(
+        panelLayoutReducer(restored, goBack(WS, 1002)),
+        goForward(WS),
+      ).byWorkspaceId[WS];
+      expect(forward.panels.p1.tabs.map((t) => t.id)).toEqual(['t2', 'owned']);
+      expect(forward.hiddenTabs).toHaveLength(0);
     });
   });
 

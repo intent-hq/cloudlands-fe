@@ -1025,6 +1025,64 @@ function dropTabsPresentInPanels(
   return filtered.length === hiddenTabs.length ? hiddenTabs : filtered;
 }
 
+/**
+ * Strip a destroyed tab from every layout-history snapshot so goBack/goForward
+ * can never resurrect it after its main-process registrations are gone
+ * (monorepo#2857). Layout structure is left untouched — only the tab entry
+ * (and a matching activeTabId) is removed.
+ */
+function purgeTabFromLayoutHistory(
+  ws: WorkspacePanelLayoutState,
+  tabId: string,
+): WorkspacePanelLayoutState {
+  if (ws.layoutHistory.length === 0) return ws;
+  let changed = false;
+  const layoutHistory = ws.layoutHistory.map((snapshot) => {
+    let snapshotChanged = false;
+    const panels: Record<string, PanelState> = {};
+    for (const [pId, panel] of Object.entries(snapshot.panels)) {
+      if (panel.tabs.some((tab) => tab.id === tabId)) {
+        snapshotChanged = true;
+        const tabs = panel.tabs.filter((tab) => tab.id !== tabId);
+        panels[pId] = {
+          ...panel,
+          tabs,
+          activeTabId: panel.activeTabId === tabId ? (tabs[0]?.id ?? null) : panel.activeTabId,
+        };
+      } else {
+        panels[pId] = panel;
+      }
+    }
+    if (!snapshotChanged) return snapshot;
+    changed = true;
+    return { ...snapshot, panels };
+  });
+  return changed ? { ...ws, layoutHistory } : ws;
+}
+
+/**
+ * Reconcile `hiddenTabs` with a restored history snapshot (monorepo#2857):
+ * hidden tabs the snapshot re-adds to a panel leave `hiddenTabs`, and owned
+ * browser tabs currently visible but absent from the snapshot are re-hidden
+ * instead of dropped — history navigation must never destroy an owned tab.
+ */
+function reconcileHiddenTabsWithRestoredPanels(
+  ws: WorkspacePanelLayoutState,
+  restoredPanels: Record<string, PanelState>,
+): PanelTab[] {
+  const hidden = dropTabsPresentInPanels(ws.hiddenTabs, restoredPanels);
+  const restoredIds = new Set(
+    Object.values(restoredPanels).flatMap((panel) => panel.tabs.map((tab) => tab.id)),
+  );
+  const displaced = Object.values(ws.panels)
+    .flatMap((panel) => panel.tabs)
+    .filter(
+      (tab) =>
+        isHideOnCloseTab(tab) && !restoredIds.has(tab.id) && !hidden.some((h) => h.id === tab.id),
+    );
+  return displaced.length > 0 ? [...hidden, ...displaced] : hidden;
+}
+
 /** Strip spec tabs from panels if deferSpecTab is active */
 function stripSpecTabs(panels: Record<string, PanelState>): Record<string, PanelState> {
   const result: Record<string, PanelState> = {};
@@ -1607,10 +1665,14 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
     // A destroy may target a tab that only lives in hiddenTabs (already
     // user-hidden); drop it from there (monorepo#2857).
     if (destroy && ws.hiddenTabs.some((t) => t.id === tabId)) {
-      return setWorkspaceState(state, wsId, {
-        ...ws,
-        hiddenTabs: ws.hiddenTabs.filter((t) => t.id !== tabId),
-      });
+      return setWorkspaceState(
+        state,
+        wsId,
+        purgeTabFromLayoutHistory(
+          { ...ws, hiddenTabs: ws.hiddenTabs.filter((t) => t.id !== tabId) },
+          tabId,
+        ),
+      );
     }
     return state;
   }
@@ -1619,10 +1681,14 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
   const tabIndex = panel.tabs.findIndex((t) => t.id === tabId);
   if (tabIndex === -1) {
     if (destroy && ws.hiddenTabs.some((t) => t.id === tabId)) {
-      return setWorkspaceState(state, wsId, {
-        ...ws,
-        hiddenTabs: ws.hiddenTabs.filter((t) => t.id !== tabId),
-      });
+      return setWorkspaceState(
+        state,
+        wsId,
+        purgeTabFromLayoutHistory(
+          { ...ws, hiddenTabs: ws.hiddenTabs.filter((t) => t.id !== tabId) },
+          tabId,
+        ),
+      );
     }
     return state;
   }
@@ -1661,6 +1727,12 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
     recentlyClosed,
     hiddenTabs: hideInsteadOfClose ? [...ws.hiddenTabs, { ...closedTab }] : ws.hiddenTabs,
   };
+
+  // A destroyed tab's main-process registrations are gone — strip it from
+  // every history snapshot so undo/redo can't resurrect it (monorepo#2857).
+  if (destroy) {
+    ws = purgeTabFromLayoutHistory(ws, tabId);
+  }
 
   // Close empty panel if there are others
   if (newTabs.length === 0 && Object.keys(ws.panels).length > 1) {
@@ -1748,12 +1820,16 @@ panelLayoutReducer.with(destroyTabsByOwnerAgent, (state, { payload }) => {
   if (tabsToDestroy.length === 0 && hiddenOwned.length === 0) return state;
   let result = state;
   if (hiddenOwned.length > 0) {
-    result = setWorkspaceState(result, wsId, {
+    let next: WorkspacePanelLayoutState = {
       ...ws,
       hiddenTabs: ws.hiddenTabs.filter(
         (tab) => !(tab.type === 'browser' && tab.ownerAgentId === agentId),
       ),
-    });
+    };
+    for (const tab of hiddenOwned) {
+      next = purgeTabFromLayoutHistory(next, tab.id);
+    }
+    result = setWorkspaceState(result, wsId, next);
   }
   for (const { tabId, panelId } of tabsToDestroy) {
     result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp, true));
@@ -1772,18 +1848,22 @@ panelLayoutReducer.with(destroyOwnedTabsForWorkspace, (state, { payload }) => {
       }
     }
   }
-  const hasHiddenOwned = ws.hiddenTabs.some(
+  const hiddenOwned = ws.hiddenTabs.filter(
     (tab) => tab.type === 'browser' && typeof tab.ownerAgentId === 'string',
   );
-  if (tabsToDestroy.length === 0 && !hasHiddenOwned) return state;
+  if (tabsToDestroy.length === 0 && hiddenOwned.length === 0) return state;
   let result = state;
-  if (hasHiddenOwned) {
-    result = setWorkspaceState(result, wsId, {
+  if (hiddenOwned.length > 0) {
+    let next: WorkspacePanelLayoutState = {
       ...ws,
       hiddenTabs: ws.hiddenTabs.filter(
         (tab) => !(tab.type === 'browser' && typeof tab.ownerAgentId === 'string'),
       ),
-    });
+    };
+    for (const tab of hiddenOwned) {
+      next = purgeTabFromLayoutHistory(next, tab.id);
+    }
+    result = setWorkspaceState(result, wsId, next);
   }
   for (const { tabId, panelId } of tabsToDestroy) {
     result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp, true));
@@ -2773,8 +2853,9 @@ panelLayoutReducer.with(goBack, (state, { payload: { wsId, timestamp } }) => {
     focusedPanelId: snapshot.focusedPanelId,
     ...canvasWidthState,
     // A snapshot that re-adds a since-hidden owned tab must not leave a
-    // duplicate live in hiddenTabs (monorepo#2857).
-    hiddenTabs: dropTabsPresentInPanels(ws.hiddenTabs, panels),
+    // duplicate live in hiddenTabs, and owned tabs the snapshot displaces
+    // from a panel are re-hidden, not destroyed (monorepo#2857).
+    hiddenTabs: reconcileHiddenTabsWithRestoredPanels(ws, panels),
     layoutHistory,
     historyIndex,
   });
@@ -2801,7 +2882,7 @@ panelLayoutReducer.with(goForward, (state, { payload: [wsId] }) => {
     panels,
     focusedPanelId: snapshot.focusedPanelId,
     ...canvasWidthState,
-    hiddenTabs: dropTabsPresentInPanels(ws.hiddenTabs, panels),
+    hiddenTabs: reconcileHiddenTabsWithRestoredPanels(ws, panels),
     historyIndex,
   });
 });

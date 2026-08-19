@@ -111,12 +111,16 @@
     }
   });
 
-  const entries = $derived.by(() =>
-    [...cache.keys()].flatMap((tabId) => {
+  const entries = $derived.by(() => {
+    // Live persisted URL per tab: the frozen mount URL never changes, but an
+    // external browserUrl update (agent openTab replacing a hidden tab,
+    // monorepo#2857) must reach the live guest via the action's update hook.
+    const liveUrlByTabId = new Map(candidates.map((c) => [c.tabId, c.url]));
+    return [...cache.keys()].flatMap((tabId) => {
       const frozen = frozenByTabId.get(tabId);
-      return frozen ? [{ tabId, ...frozen }] : [];
-    }),
-  );
+      return frozen ? [{ tabId, ...frozen, desiredUrl: liveUrlByTabId.get(tabId) }] : [];
+    });
+  });
 </script>
 
 <!--
