@@ -1,3 +1,6 @@
+import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+
+import { WorkspaceStatus, type Workspace } from '$shared/types';
 import { store } from '../../store';
 import { getActiveBackendId } from '../../utils/backend-storage-namespace';
 import { serializeWorkspaceTabsState } from './tab-state-slice';
@@ -70,4 +73,40 @@ export const selectLastClosedWorkspaceTab = store.createSelector(
 
 export const selectPersistedWorkspaceTabsState = store.createSelector((state) => {
   return serializeWorkspaceTabsState(state.tabState);
+});
+
+/** Stable empty result so guard-failed states never re-emit through selector channels. */
+const NO_TABS_TO_RECONCILE: string[] = [];
+
+/**
+ * Open workspace-tab IDs whose workspace is missing from the loaded workspace
+ * list or archived — the tabs the reconciliation saga should close.
+ *
+ * Returns the empty list (i.e. "do nothing") until it is provably safe to
+ * prune:
+ * - the tab strip must be hydrated for the ACTIVE backend (a backend switch
+ *   re-hydrates, so a stale strip is never reconciled against the new
+ *   backend's workspace list);
+ * - the workspace list must have completed a load (`hasLoaded`);
+ * - the loaded list must be non-empty — the seeder dispatches
+ *   `replaceWorkspaceList([])` when the daemon is unreachable, and pruning
+ *   then would wipe every tab.
+ *
+ * Optimistic tabs and workspaces with a pending creation are never pruned:
+ * the list snapshot may predate a just-created workspace.
+ */
+export const selectWorkspaceTabsToReconcile = store.createSelector((state): string[] => {
+  if (state.tabState.hydratedBackendId !== getActiveBackendId(state)) return NO_TABS_TO_RECONCILE;
+  if (!state.workspace.hasLoaded) return NO_TABS_TO_RECONCILE;
+  if (state.workspace.workspaces.ids.length === 0) return NO_TABS_TO_RECONCILE;
+  const prunable = state.tabState.workspaceStacks
+    .flatMap((stack) => stack)
+    .filter((workspaceId) => {
+      if (state.tabState.optimisticTabs[workspaceId]) return false;
+      if (state.workspace.pendingCreations[workspaceId]) return false;
+      const workspace = getItem(state.workspace.workspaces, workspaceId as Workspace['id']);
+      if (!workspace) return true;
+      return workspace.status === WorkspaceStatus.Archived || workspace.archived === true;
+    });
+  return prunable.length === 0 ? NO_TABS_TO_RECONCILE : prunable;
 });
