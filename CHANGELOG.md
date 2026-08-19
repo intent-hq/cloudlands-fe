@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.68.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.67.1...v2.68.0) (2026-08-19)
+
+
+### 🚀 Features
+
+* persistent tab ownership — ownerAgentId, claimTab, enforcement, per-agent dedupe ([#1450](https://github.com/intent-hq/cloudlands-fe/issues/1450)) ([205b94f](https://github.com/intent-hq/cloudlands-fe/commit/205b94f961935468029feff6047cf52325699445))
+
 ## [2.67.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.67.0...v2.67.1) (2026-08-19)
 
 
