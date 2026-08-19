@@ -5,6 +5,8 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+
 /** Serializable icon descriptor understood by the renderer's icon adapter. */
 interface PanelTabIcon {
   iconName: string;
@@ -196,8 +198,12 @@ export interface WorkspacePanelLayoutState {
   root: PanelLayoutNode;
   panels: Record<string, PanelState>;
   focusedPanelId: string | null;
-  /** Hidden (user-closed) agent-owned browser tabs — see WorkspacePanelLayout.hiddenTabs. */
-  hiddenTabs: PanelTab[];
+  /**
+   * Hidden (user-closed) agent-owned browser tabs — see
+   * WorkspacePanelLayout.hiddenTabs. Persisted as a plain array; stored here
+   * as a Collection keyed by tab id.
+   */
+  hiddenTabs: Collection<PanelTab, 'id'>;
   /** Current horizontal panel canvas width in pixels; null uses the default column width. */
   canvasWidth: number | null;
   canvasWidthSource: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;

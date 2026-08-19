@@ -1,5 +1,6 @@
 import { runSaga } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({
   isElectron: vi.fn(() => true),
@@ -284,9 +285,9 @@ describe('browserIpcSaga', () => {
         byWorkspaceId: {
           'ws-1': {
             panels: { one: { tabs: [] } },
-            hiddenTabs: [
+            hiddenTabs: createCollection('id', [
               { id: 'browser-hidden', type: 'browser', ownerAgentId: 'agent-1' },
-            ],
+            ]),
           },
         },
       },
@@ -325,9 +326,9 @@ describe('browserIpcSaga', () => {
         byWorkspaceId: {
           'ws-1': {
             panels: { one: { tabs: [] } },
-            hiddenTabs: [
+            hiddenTabs: createCollection('id', [
               { id: 'browser-hidden', type: 'browser', ownerAgentId: 'agent-1' },
-            ],
+            ]),
           },
         },
       },

@@ -208,16 +208,21 @@ describe('OffscreenWebviewHost', () => {
   it('navigates a mounted hidden tab when its persisted browserUrl changes externally', async () => {
     const hiddenLayout = (url: string) => ({
       panels: {},
-      hiddenTabs: [
-        {
-          id: 'tab-hidden',
-          type: 'browser',
-          title: 'Hidden',
-          closable: true,
-          browserUrl: url,
-          ownerAgentId: 'agent-1',
+      hiddenTabs: {
+        idField: 'id',
+        ids: ['tab-hidden'],
+        map: {
+          'tab-hidden': {
+            id: 'tab-hidden',
+            type: 'browser',
+            title: 'Hidden',
+            closable: true,
+            browserUrl: url,
+            ownerAgentId: 'agent-1',
+          },
         },
-      ],
+        refsCount: { 'tab-hidden': 1 },
+      },
     });
     layoutsStore.set({ 'ws-shown': hiddenLayout('https://example.test/start') });
     const { container } = render(OffscreenWebviewHost, {

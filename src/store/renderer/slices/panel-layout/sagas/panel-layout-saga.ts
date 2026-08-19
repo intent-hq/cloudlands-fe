@@ -12,6 +12,7 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 import { buffers, channel, type Channel } from 'redux-saga';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 
 import { clearPanelLayoutAdapter } from '$features/layout/panel-layout-adapter';
 import { m } from '$shared/paraglide/messages.js';
@@ -416,11 +417,10 @@ export function isStoredLayoutValid(value: unknown): value is WorkspacePanelLayo
   }
 }
 
-function hasAnyTab(layout: WorkspacePanelLayout): boolean {
-  return (
-    Object.values(layout.panels).some((panel) => panel.tabs.length > 0) ||
-    (layout.hiddenTabs?.length ?? 0) > 0
-  );
+function hasAnyTab(layout: WorkspacePanelLayout | WorkspacePanelLayoutState): boolean {
+  const hidden = layout.hiddenTabs;
+  const hiddenCount = Array.isArray(hidden) ? hidden.length : (hidden?.ids.length ?? 0);
+  return Object.values(layout.panels).some((panel) => panel.tabs.length > 0) || hiddenCount > 0;
 }
 
 function getPersistableRoot(workspace: WorkspacePanelLayoutState): PanelLayoutNode {
@@ -672,7 +672,8 @@ function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void>
           ? workspace.savedCanvasWidthSourceBeforeExpand
           : workspace.canvasWidthSource,
     };
-    if (workspace.hiddenTabs.length > 0) layout.hiddenTabs = workspace.hiddenTabs;
+    const hiddenTabs = getItems(workspace.hiddenTabs);
+    if (hiddenTabs.length > 0) layout.hiddenTabs = hiddenTabs;
     if (workspace.deferSpecTab) layout.deferSpecTab = true;
     if (workspace.newWorkspaceLifecycle) {
       layout.newWorkspaceLifecycle = workspace.newWorkspaceLifecycle;

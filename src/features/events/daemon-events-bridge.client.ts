@@ -184,6 +184,7 @@ import {
   destroyTabsByOwnerAgent,
   pruneRecentlyClosed,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { selectHiddenTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import {
   applyTaskStatusChanged,
   loadWorkspaceTasksRequested,
@@ -2452,7 +2453,6 @@ function collectOwnedTabAgentIds(workspaceId: string): Set<string> {
           string,
           {
             panels: Record<string, { tabs: Array<{ type: string; ownerAgentId?: string }> }>;
-            hiddenTabs?: Array<{ type: string; ownerAgentId?: string }>;
           }
         >;
       };
@@ -2467,7 +2467,7 @@ function collectOwnedTabAgentIds(workspaceId: string): Set<string> {
       }
     }
   }
-  for (const tab of layout.hiddenTabs ?? []) {
+  for (const tab of selectHiddenTabs.select(appStore.state, workspaceId)) {
     if (tab.type === 'browser' && typeof tab.ownerAgentId === 'string') {
       ownerAgentIds.add(tab.ownerAgentId);
     }

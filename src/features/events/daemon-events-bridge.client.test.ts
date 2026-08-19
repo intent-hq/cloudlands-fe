@@ -5956,13 +5956,13 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
       panelLayout: {
         byWorkspaceId: Record<
           string,
-          { panels: Record<string, { tabs: { id: string }[] }>; hiddenTabs: { id: string }[] }
+          { panels: Record<string, { tabs: { id: string }[] }>; hiddenTabs: { ids: string[] } }
         >;
       };
     };
     const ws = state.panelLayout.byWorkspaceId[PENDING_WS];
     expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['keep']);
-    expect(ws.hiddenTabs).toHaveLength(0);
+    expect(ws.hiddenTabs.ids).toHaveLength(0);
     const clearCalls = invokeSpy.mock.calls.filter(
       (call: unknown[]) => call[0] === 'browser:clear-agent-tabs',
     );
@@ -6628,13 +6628,13 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
             string,
             {
               panels: Record<string, { tabs: Array<{ id: string }> }>;
-              hiddenTabs: Array<{ id: string }>;
+              hiddenTabs: { ids: string[] };
             }
           >;
         };
       }
     ).panelLayout.byWorkspaceId[WS_UPD];
-    expect(layout.hiddenTabs).toHaveLength(0);
+    expect(layout.hiddenTabs.ids).toHaveLength(0);
     expect(layout.panels.p1.tabs.map((t) => t.id)).toEqual(['plain']);
     const clearCalls = invokeSpy.mock.calls.filter(
       (call: unknown[]) => call[0] === 'browser:clear-agent-tabs',

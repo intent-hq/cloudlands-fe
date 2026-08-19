@@ -71,9 +71,11 @@
       // Hidden (user-closed) owned tabs have no visible EmbeddedBrowser even
       // in the displayed workspace, so they always mount here — pinned, kept
       // alive until agent deletion or workspace archive/delete
-      // (monorepo#2857).
-      for (const tab of layout.hiddenTabs ?? []) {
-        if (tab.type !== 'browser' || !tab.browserUrl || !isKeepAliveUrl(tab.browserUrl)) {
+      // (monorepo#2857). hiddenTabs is a Collection; read its ids/map here
+      // since components must not import collection-utils.
+      for (const id of layout.hiddenTabs?.ids ?? []) {
+        const tab = layout.hiddenTabs.map[id];
+        if (!tab || tab.type !== 'browser' || !tab.browserUrl || !isKeepAliveUrl(tab.browserUrl)) {
           continue;
         }
         out.push({ tabId: tab.id, workspaceId, url: tab.browserUrl, pinned: true });

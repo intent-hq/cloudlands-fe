@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import {
   panelLayoutReducer,
   emptyWorkspaceState,
@@ -1883,7 +1884,7 @@ describe('panelLayoutReducer', () => {
       const afterClose = panelLayoutReducer(state, closeTab(WS, 't1', 'p1', 1000));
       // The owned tab is hidden (kept alive), never in recentlyClosed.
       expect(afterClose.byWorkspaceId[WS].recentlyClosed).toHaveLength(0);
-      expect(afterClose.byWorkspaceId[WS].hiddenTabs.map((t) => t.id)).toEqual(['t1']);
+      expect(getItems(afterClose.byWorkspaceId[WS].hiddenTabs).map((t) => t.id)).toEqual(['t1']);
 
       const afterReopen = panelLayoutReducer(afterClose, reopenClosedTab(WS, 1001));
       expect(afterReopen.byWorkspaceId[WS].panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
@@ -1906,7 +1907,7 @@ describe('panelLayoutReducer', () => {
       const result = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
       const ws = result.byWorkspaceId[WS];
       expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
-      expect(ws.hiddenTabs.map((t) => t.id)).toEqual(['owned']);
+      expect(getItems(ws.hiddenTabs).map((t) => t.id)).toEqual(['owned']);
       expect(ws.recentlyClosed).toHaveLength(0);
     });
 
@@ -1915,7 +1916,7 @@ describe('panelLayoutReducer', () => {
       const result = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000, true));
       const ws = result.byWorkspaceId[WS];
       expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
-      expect(ws.hiddenTabs).toHaveLength(0);
+      expect(getItems(ws.hiddenTabs)).toHaveLength(0);
       expect(ws.recentlyClosed).toHaveLength(0);
     });
 
@@ -1923,7 +1924,7 @@ describe('panelLayoutReducer', () => {
       const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
       const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
       const result = panelLayoutReducer(hidden, closeTab(WS, 'owned', undefined, 1001, true));
-      expect(result.byWorkspaceId[WS].hiddenTabs).toHaveLength(0);
+      expect(getItems(result.byWorkspaceId[WS].hiddenTabs)).toHaveLength(0);
     });
 
     it('unowned browser tabs still genuinely close into recentlyClosed', () => {
@@ -1933,7 +1934,7 @@ describe('panelLayoutReducer', () => {
       ]);
       const result = panelLayoutReducer(state, closeTab(WS, 'plain', 'p1', 1000));
       const ws = result.byWorkspaceId[WS];
-      expect(ws.hiddenTabs).toHaveLength(0);
+      expect(getItems(ws.hiddenTabs)).toHaveLength(0);
       expect(ws.recentlyClosed.map((e) => e.tab.id)).toEqual(['plain']);
     });
 
@@ -1950,11 +1951,11 @@ describe('panelLayoutReducer', () => {
         { id: 't2', type: 'note', title: 'A' },
       ]);
       const withHidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
-      expect(withHidden.byWorkspaceId[WS].hiddenTabs).toHaveLength(1);
+      expect(getItems(withHidden.byWorkspaceId[WS].hiddenTabs)).toHaveLength(1);
 
       const result = panelLayoutReducer(withHidden, destroyTabsByOwnerAgent(WS, 'agent-1', 1001));
       const ws = result.byWorkspaceId[WS];
-      expect(ws.hiddenTabs).toHaveLength(0);
+      expect(getItems(ws.hiddenTabs)).toHaveLength(0);
       expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['other', 't2']);
       expect(ws.recentlyClosed).toHaveLength(0);
 
@@ -1976,18 +1977,18 @@ describe('panelLayoutReducer', () => {
         { id: 't2', type: 'note', title: 'A' },
       ]);
       const withHidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
-      expect(withHidden.byWorkspaceId[WS].hiddenTabs).toHaveLength(1);
+      expect(getItems(withHidden.byWorkspaceId[WS].hiddenTabs)).toHaveLength(1);
 
       const result = panelLayoutReducer(withHidden, destroyOwnedTabsForWorkspace(WS, 1001));
       const ws = result.byWorkspaceId[WS];
-      expect(ws.hiddenTabs).toHaveLength(0);
+      expect(getItems(ws.hiddenTabs)).toHaveLength(0);
       expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['plain', 't2']);
     });
 
     it('workspaceDeleted drops the entire layout entry, including hidden owned tabs', () => {
       const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
       const withHidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
-      expect(withHidden.byWorkspaceId[WS].hiddenTabs).toHaveLength(1);
+      expect(getItems(withHidden.byWorkspaceId[WS].hiddenTabs)).toHaveLength(1);
 
       const result = panelLayoutReducer(withHidden, workspaceDeleted(WS, []));
       expect(result.byWorkspaceId[WS]).toBeUndefined();
@@ -1998,7 +1999,7 @@ describe('panelLayoutReducer', () => {
       const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
       const result = panelLayoutReducer(hidden, restoreHiddenTab(WS, 'owned', 1001));
       const ws = result.byWorkspaceId[WS];
-      expect(ws.hiddenTabs).toHaveLength(0);
+      expect(getItems(ws.hiddenTabs)).toHaveLength(0);
       expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2', 'owned']);
       expect(ws.panels.p1.activeTabId).toBe('owned');
       expect(ws.panels.p1.tabs.at(-1)?.ownerAgentId).toBe('agent-1');
@@ -2036,7 +2037,7 @@ describe('panelLayoutReducer', () => {
       };
       const result = panelLayoutReducer(state, closePanel(WS, 'p1', 1000));
       const ws = result.byWorkspaceId[WS];
-      expect(ws.hiddenTabs.map((t) => t.id)).toEqual(['owned']);
+      expect(getItems(ws.hiddenTabs).map((t) => t.id)).toEqual(['owned']);
       expect(ws.recentlyClosed.map((e) => e.tab.id)).toEqual(['plain']);
     });
 
@@ -2046,7 +2047,7 @@ describe('panelLayoutReducer', () => {
 
       let result = panelLayoutReducer(hidden, updateTabTitle(WS, 'owned', 'New Title'));
       result = panelLayoutReducer(result, updateTabBrowserUrl(WS, 'owned', 'http://b/', null));
-      const hiddenTab = result.byWorkspaceId[WS].hiddenTabs[0];
+      const hiddenTab = getItems(result.byWorkspaceId[WS].hiddenTabs)[0];
       expect(hiddenTab.title).toBe('New Title');
       expect(hiddenTab).toMatchObject({ browserUrl: 'http://b/' });
     });
@@ -2062,7 +2063,7 @@ describe('panelLayoutReducer', () => {
           hiddenTabs: [{ ...ownedTab, closable: true } as any],
         }),
       );
-      expect(result.byWorkspaceId[WS].hiddenTabs.map((t) => t.id)).toEqual(['owned']);
+      expect(getItems(result.byWorkspaceId[WS].hiddenTabs).map((t) => t.id)).toEqual(['owned']);
     });
 
     // Bulk user closes hide owned tabs (never recentlyClosed) the same way
@@ -2079,7 +2080,7 @@ describe('panelLayoutReducer', () => {
         { id: 'other', type: 'note', title: 'O' },
       ]);
       const ws = panelLayoutReducer(state, action()).byWorkspaceId[WS];
-      expect(ws.hiddenTabs.map((t) => t.id)).toEqual(['owned']);
+      expect(getItems(ws.hiddenTabs).map((t) => t.id)).toEqual(['owned']);
       expect(ws.recentlyClosed.map((e) => e.tab.id)).not.toContain('owned');
       expect(ws.panels.p1.tabs.map((t) => t.id)).not.toContain('owned');
     });
@@ -2102,7 +2103,7 @@ describe('panelLayoutReducer', () => {
 
       const back = panelLayoutReducer(destroyed, goBack(WS, 1002)).byWorkspaceId[WS];
       expect(back.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
-      expect(back.hiddenTabs).toHaveLength(0);
+      expect(getItems(back.hiddenTabs)).toHaveLength(0);
     });
 
     it('destroyTabsByOwnerAgent purges hidden owned tabs from layout history', () => {
@@ -2115,7 +2116,7 @@ describe('panelLayoutReducer', () => {
 
       const back = panelLayoutReducer(destroyed, goBack(WS, 1002)).byWorkspaceId[WS];
       expect(back.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
-      expect(back.hiddenTabs).toHaveLength(0);
+      expect(getItems(back.hiddenTabs)).toHaveLength(0);
     });
 
     // Regression (monorepo#2857 review): restoring a snapshot that predates
@@ -2126,19 +2127,19 @@ describe('panelLayoutReducer', () => {
       const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
       const restored = panelLayoutReducer(hidden, restoreHiddenTab(WS, 'owned', 1001));
       expect(restored.byWorkspaceId[WS].panels.p1.tabs.map((t) => t.id)).toEqual(['t2', 'owned']);
-      expect(restored.byWorkspaceId[WS].hiddenTabs).toHaveLength(0);
+      expect(getItems(restored.byWorkspaceId[WS].hiddenTabs)).toHaveLength(0);
 
       // history[1] is the pre-restore snapshot without the owned tab.
       const back = panelLayoutReducer(restored, goBack(WS, 1002)).byWorkspaceId[WS];
       expect(back.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
-      expect(back.hiddenTabs.map((t) => t.id)).toEqual(['owned']);
+      expect(getItems(back.hiddenTabs).map((t) => t.id)).toEqual(['owned']);
 
       const forward = panelLayoutReducer(
         panelLayoutReducer(restored, goBack(WS, 1002)),
         goForward(WS),
       ).byWorkspaceId[WS];
       expect(forward.panels.p1.tabs.map((t) => t.id)).toEqual(['t2', 'owned']);
-      expect(forward.hiddenTabs).toHaveLength(0);
+      expect(getItems(forward.hiddenTabs)).toHaveLength(0);
     });
   });
 

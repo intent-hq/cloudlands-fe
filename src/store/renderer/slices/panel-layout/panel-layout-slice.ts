@@ -7,6 +7,17 @@
 
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import {
+  addItem,
+  addItems,
+  createCollection,
+  getItem,
+  getItems,
+  removeItem,
+  replaceItem,
+  updateItem,
+  type Collection,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { removeTerminal } from '../terminals/terminals-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -104,7 +115,7 @@ export const emptyWorkspaceState: WorkspacePanelLayoutState = {
   focusedPanelId: 'default',
   canvasWidth: null,
   canvasWidthSource: null,
-  hiddenTabs: [],
+  hiddenTabs: createCollection('id'),
   restoreStatus: 'idle',
   pendingFocusTabId: null,
   pendingPanelReveal: null,
@@ -863,10 +874,10 @@ function closePanelHelper(
     savedCanvasWidthBeforeExpand: undefined,
     savedCanvasWidthSourceBeforeExpand: undefined,
     recentlyClosed: newRecentlyClosed,
-    hiddenTabs:
-      hiddenRemovedTabs.length > 0
-        ? [...ws.hiddenTabs, ...hiddenRemovedTabs.map((tab) => ({ ...tab }))]
-        : ws.hiddenTabs,
+    hiddenTabs: addItems(
+      ws.hiddenTabs,
+      hiddenRemovedTabs.map((tab) => ({ ...tab })),
+    ),
     pendingPanelReveal: ws.pendingPanelReveal?.panelId === panelId ? null : ws.pendingPanelReveal,
     pendingFocusTabId: removedPanel.tabs.some((tab) => tab.id === ws.pendingFocusTabId)
       ? null
@@ -1014,15 +1025,18 @@ function partitionRemovedTabs(removed: PanelTab[]): { hidden: PanelTab[]; closed
 
 /** Drop hidden tabs that a restored snapshot re-added to a visible panel. */
 function dropTabsPresentInPanels(
-  hiddenTabs: PanelTab[],
+  hiddenTabs: Collection<PanelTab, 'id'>,
   panels: Record<string, PanelState>,
-): PanelTab[] {
-  if (hiddenTabs.length === 0) return hiddenTabs;
+): Collection<PanelTab, 'id'> {
+  if (hiddenTabs.ids.length === 0) return hiddenTabs;
   const visibleIds = new Set(
     Object.values(panels).flatMap((panel) => panel.tabs.map((tab) => tab.id)),
   );
-  const filtered = hiddenTabs.filter((tab) => !visibleIds.has(tab.id));
-  return filtered.length === hiddenTabs.length ? hiddenTabs : filtered;
+  let result = hiddenTabs;
+  for (const id of hiddenTabs.ids) {
+    if (visibleIds.has(id)) result = removeItem(result, id);
+  }
+  return result;
 }
 
 /**
@@ -1069,7 +1083,7 @@ function purgeTabFromLayoutHistory(
 function reconcileHiddenTabsWithRestoredPanels(
   ws: WorkspacePanelLayoutState,
   restoredPanels: Record<string, PanelState>,
-): PanelTab[] {
+): Collection<PanelTab, 'id'> {
   const hidden = dropTabsPresentInPanels(ws.hiddenTabs, restoredPanels);
   const restoredIds = new Set(
     Object.values(restoredPanels).flatMap((panel) => panel.tabs.map((tab) => tab.id)),
@@ -1078,9 +1092,9 @@ function reconcileHiddenTabsWithRestoredPanels(
     .flatMap((panel) => panel.tabs)
     .filter(
       (tab) =>
-        isHideOnCloseTab(tab) && !restoredIds.has(tab.id) && !hidden.some((h) => h.id === tab.id),
+        isHideOnCloseTab(tab) && !restoredIds.has(tab.id) && getItem(hidden, tab.id) === undefined,
     );
-  return displaced.length > 0 ? [...hidden, ...displaced] : hidden;
+  return addItems(hidden, displaced);
 }
 
 /** Strip spec tabs from panels if deferSpecTab is active */
@@ -1333,7 +1347,7 @@ panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
     panels: layout.panels,
     focusedPanelId: layout.focusedPanelId,
     ...canvasWidthState,
-    hiddenTabs: layout.hiddenTabs ?? [],
+    hiddenTabs: createCollection('id', layout.hiddenTabs ?? []),
     deferSpecTab: layout.deferSpecTab ?? false,
     newWorkspaceLifecycle: layout.newWorkspaceLifecycle ?? null,
     pendingFocusTabId: null,
@@ -1664,12 +1678,12 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
   if (!targetPanelId || !ws.panels[targetPanelId]) {
     // A destroy may target a tab that only lives in hiddenTabs (already
     // user-hidden); drop it from there (monorepo#2857).
-    if (destroy && ws.hiddenTabs.some((t) => t.id === tabId)) {
+    if (destroy && getItem(ws.hiddenTabs, tabId)) {
       return setWorkspaceState(
         state,
         wsId,
         purgeTabFromLayoutHistory(
-          { ...ws, hiddenTabs: ws.hiddenTabs.filter((t) => t.id !== tabId) },
+          { ...ws, hiddenTabs: removeItem(ws.hiddenTabs, tabId) },
           tabId,
         ),
       );
@@ -1680,12 +1694,12 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
   const panel = ws.panels[targetPanelId];
   const tabIndex = panel.tabs.findIndex((t) => t.id === tabId);
   if (tabIndex === -1) {
-    if (destroy && ws.hiddenTabs.some((t) => t.id === tabId)) {
+    if (destroy && getItem(ws.hiddenTabs, tabId)) {
       return setWorkspaceState(
         state,
         wsId,
         purgeTabFromLayoutHistory(
-          { ...ws, hiddenTabs: ws.hiddenTabs.filter((t) => t.id !== tabId) },
+          { ...ws, hiddenTabs: removeItem(ws.hiddenTabs, tabId) },
           tabId,
         ),
       );
@@ -1725,7 +1739,7 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
       [targetPanelId]: { ...panel, tabs: newTabs, activeTabId: newActiveTabId },
     },
     recentlyClosed,
-    hiddenTabs: hideInsteadOfClose ? [...ws.hiddenTabs, { ...closedTab }] : ws.hiddenTabs,
+    hiddenTabs: hideInsteadOfClose ? addItem(ws.hiddenTabs, { ...closedTab }) : ws.hiddenTabs,
   };
 
   // A destroyed tab's main-process registrations are gone — strip it from
@@ -1814,18 +1828,17 @@ panelLayoutReducer.with(destroyTabsByOwnerAgent, (state, { payload }) => {
       }
     }
   }
-  const hiddenOwned = ws.hiddenTabs.filter(
+  const hiddenOwned = getItems(ws.hiddenTabs).filter(
     (tab) => tab.type === 'browser' && tab.ownerAgentId === agentId,
   );
   if (tabsToDestroy.length === 0 && hiddenOwned.length === 0) return state;
   let result = state;
   if (hiddenOwned.length > 0) {
-    let next: WorkspacePanelLayoutState = {
-      ...ws,
-      hiddenTabs: ws.hiddenTabs.filter(
-        (tab) => !(tab.type === 'browser' && tab.ownerAgentId === agentId),
-      ),
-    };
+    let hiddenTabs = ws.hiddenTabs;
+    for (const tab of hiddenOwned) {
+      hiddenTabs = removeItem(hiddenTabs, tab.id);
+    }
+    let next: WorkspacePanelLayoutState = { ...ws, hiddenTabs };
     for (const tab of hiddenOwned) {
       next = purgeTabFromLayoutHistory(next, tab.id);
     }
@@ -1848,18 +1861,17 @@ panelLayoutReducer.with(destroyOwnedTabsForWorkspace, (state, { payload }) => {
       }
     }
   }
-  const hiddenOwned = ws.hiddenTabs.filter(
+  const hiddenOwned = getItems(ws.hiddenTabs).filter(
     (tab) => tab.type === 'browser' && typeof tab.ownerAgentId === 'string',
   );
   if (tabsToDestroy.length === 0 && hiddenOwned.length === 0) return state;
   let result = state;
   if (hiddenOwned.length > 0) {
-    let next: WorkspacePanelLayoutState = {
-      ...ws,
-      hiddenTabs: ws.hiddenTabs.filter(
-        (tab) => !(tab.type === 'browser' && typeof tab.ownerAgentId === 'string'),
-      ),
-    };
+    let hiddenTabs = ws.hiddenTabs;
+    for (const tab of hiddenOwned) {
+      hiddenTabs = removeItem(hiddenTabs, tab.id);
+    }
+    let next: WorkspacePanelLayoutState = { ...ws, hiddenTabs };
     for (const tab of hiddenOwned) {
       next = purgeTabFromLayoutHistory(next, tab.id);
     }
@@ -1874,7 +1886,7 @@ panelLayoutReducer.with(destroyOwnedTabsForWorkspace, (state, { payload }) => {
 panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
   const { wsId, tabId, timestamp } = payload;
   let ws = getWorkspaceState(state, wsId);
-  const hiddenTab = ws.hiddenTabs.find((tab) => tab.id === tabId);
+  const hiddenTab = getItem(ws.hiddenTabs, tabId);
   if (!hiddenTab) return state;
   const targetPanelId =
     ws.focusedPanelId && ws.panels[ws.focusedPanelId]
@@ -1886,7 +1898,7 @@ panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
   const panel = ws.panels[targetPanelId];
   ws = {
     ...ws,
-    hiddenTabs: ws.hiddenTabs.filter((tab) => tab.id !== tabId),
+    hiddenTabs: removeItem(ws.hiddenTabs, tabId),
     panels: {
       ...ws.panels,
       [targetPanelId]: {
@@ -2083,10 +2095,10 @@ panelLayoutReducer.with(updateTabTitle, (state, { payload: [wsId, tabId, newTitl
       });
     }
   }
-  if (ws.hiddenTabs.some((t) => t.id === tabId)) {
+  if (getItem(ws.hiddenTabs, tabId)) {
     return setWorkspaceState(state, wsId, {
       ...ws,
-      hiddenTabs: ws.hiddenTabs.map((t) => (t.id === tabId ? { ...t, title: newTitle } : t)),
+      hiddenTabs: updateItem(ws.hiddenTabs, { id: tabId, title: newTitle }),
     });
   }
   return state;
@@ -2120,21 +2132,26 @@ panelLayoutReducer.with(
     }
     // Hidden owned tabs keep a live webview, so agent-driven navigation must
     // keep syncing their persisted URL (monorepo#2857).
-    if (ws.hiddenTabs.some((t) => t.id === tabId && t.type === 'browser')) {
-      const newHidden = ws.hiddenTabs.map((t) => {
-        if (t.id !== tabId || t.type !== 'browser') return t;
-        const kept =
-          requestedUrl === undefined
-            ? rebaseRequestedUrlForNavigation(t.browserUrl, newUrl, t.browserRequestedUrl)
-            : (requestedUrl ?? undefined);
-        const { browserRequestedUrl: _dropped, ...rest } = t;
-        return {
-          ...rest,
-          browserUrl: newUrl,
-          ...(kept !== undefined ? { browserRequestedUrl: kept } : {}),
-        };
+    const hiddenTab = getItem(ws.hiddenTabs, tabId);
+    if (hiddenTab && hiddenTab.type === 'browser') {
+      const kept =
+        requestedUrl === undefined
+          ? rebaseRequestedUrlForNavigation(
+              hiddenTab.browserUrl,
+              newUrl,
+              hiddenTab.browserRequestedUrl,
+            )
+          : (requestedUrl ?? undefined);
+      const { browserRequestedUrl: _dropped, ...rest } = hiddenTab;
+      const newHiddenTab = {
+        ...rest,
+        browserUrl: newUrl,
+        ...(kept !== undefined ? { browserRequestedUrl: kept } : {}),
+      };
+      return setWorkspaceState(state, wsId, {
+        ...ws,
+        hiddenTabs: replaceItem(ws.hiddenTabs, tabId, newHiddenTab),
       });
-      return setWorkspaceState(state, wsId, { ...ws, hiddenTabs: newHidden });
     }
     return state;
   },
@@ -2168,12 +2185,11 @@ panelLayoutReducer.with(updateTabFavicon, (state, { payload: [wsId, tabId, favic
       });
     }
   }
-  if (ws.hiddenTabs.some((t) => t.id === tabId && t.type === 'browser')) {
+  const hiddenTab = getItem(ws.hiddenTabs, tabId);
+  if (hiddenTab && hiddenTab.type === 'browser') {
     return setWorkspaceState(state, wsId, {
       ...ws,
-      hiddenTabs: ws.hiddenTabs.map((t) =>
-        t.id === tabId && t.type === 'browser' ? { ...t, faviconUrl } : t,
-      ),
+      hiddenTabs: updateItem(ws.hiddenTabs, { id: tabId, faviconUrl }),
     });
   }
   return state;
@@ -2224,8 +2240,10 @@ panelLayoutReducer.with(closeOtherTabs, (state, { payload }) => {
     ...ws,
     panels: { ...ws.panels, [targetPanelId]: { ...panel, tabs: keptTabs, activeTabId: tabId } },
     recentlyClosed,
-    hiddenTabs:
-      hidden.length > 0 ? [...ws.hiddenTabs, ...hidden.map((t) => ({ ...t }))] : ws.hiddenTabs,
+    hiddenTabs: addItems(
+      ws.hiddenTabs,
+      hidden.map((t) => ({ ...t })),
+    ),
   };
   return setWorkspaceState(state, wsId, ws);
 });
@@ -2257,8 +2275,10 @@ panelLayoutReducer.with(closeTabsToRight, (state, { payload }) => {
     ...ws,
     panels: { ...ws.panels, [targetPanelId]: { ...panel, tabs: keptTabs, activeTabId } },
     recentlyClosed,
-    hiddenTabs:
-      hidden.length > 0 ? [...ws.hiddenTabs, ...hidden.map((t) => ({ ...t }))] : ws.hiddenTabs,
+    hiddenTabs: addItems(
+      ws.hiddenTabs,
+      hidden.map((t) => ({ ...t })),
+    ),
   };
   return setWorkspaceState(state, wsId, ws);
 });
@@ -2286,8 +2306,10 @@ panelLayoutReducer.with(closeAllTabs, (state, { payload }) => {
     ...ws,
     panels: { ...ws.panels, [targetPanelId]: { ...panel, tabs: keptTabs, activeTabId } },
     recentlyClosed,
-    hiddenTabs:
-      hidden.length > 0 ? [...ws.hiddenTabs, ...hidden.map((t) => ({ ...t }))] : ws.hiddenTabs,
+    hiddenTabs: addItems(
+      ws.hiddenTabs,
+      hidden.map((t) => ({ ...t })),
+    ),
   };
 
   if (keptTabs.length === 0 && Object.keys(ws.panels).length > 1) {
@@ -2333,7 +2355,7 @@ panelLayoutReducer.with(closeAllOthersEverywhere, (state, { payload }) => {
     ...ws,
     panels: newPanels,
     recentlyClosed,
-    hiddenTabs: allHidden.length > 0 ? [...ws.hiddenTabs, ...allHidden] : ws.hiddenTabs,
+    hiddenTabs: addItems(ws.hiddenTabs, allHidden),
   };
 
   // Clean up empty panels
