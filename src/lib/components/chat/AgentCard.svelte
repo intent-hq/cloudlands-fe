@@ -15,8 +15,6 @@
   import {
     selectAgentSession,
     selectAgentIsResponding,
-    selectAgentSessionHasStreamOwnedMessage,
-    selectAgentSessionStreamingContent,
     selectAgentIsWaiting,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectChatReceivedFirstChunk } from '$store/renderer/slices/chat-state/chat-state-selectors';
@@ -440,13 +438,9 @@
   // Get line changes for this agent
   const lineChanges$ = selectAgentLineStats(agentIdStore);
 
-  // Streaming state is derived from Redux-owned stream lifecycle/message state.
-  const streamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
-  const hasStreamOwnedMessage$ = selectAgentSessionHasStreamOwnedMessage(agentIdStore);
   // Per-turn "response text landed this turn" flag (chat-state): reset by
   // `agent:stream:end`, flipped by the first text-bearing activity ping.
   const receivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
-  const streamingBuffer = $derived($streamingContent$);
   const isStreamActive = $derived($agentIsResponding$ && !$agentIsWaiting$);
 
   // Extract display data
@@ -485,26 +479,19 @@
     return typeof path === 'string' && path.length > 0 ? path : null;
   });
 
-  // Preview precedence while a turn is live:
-  //   1. the stream-owned chat.subscribe buffer (viewed agent only —
-  //      character-level progress from the standing delta stream);
-  //   2. the session's push-applied `lastAgentResponse` (refreshed ~1s by
-  //      `agent:stream:activity`, intentd#792) so a non-viewed watched
-  //      agent's preview advances mid-turn instead of freezing on stale
-  //      transcript-derived peek text — gated on the per-turn
+  // Preview precedence:
+  //   1. while a turn is live, the session's push-applied `lastAgentResponse`
+  //      (refreshed ~1s by `agent:stream:activity`, intentd#792; already
+  //      server-cleaned by `clean_response_text`) — gated on the per-turn
   //      `receivedFirstChunk` flag (reset by `agent:stream:end`, flipped by
   //      a text-bearing `agent:stream:activity`) so a leftover previous-turn
   //      `lastAgentResponse` doesn't masquerade as this turn's text in the
   //      pre-first-token window;
-  //   3. the persisted transcript peek text (idle agents) — agent-peek-utils
-  //      falls back to the wire `lastAgentResponse` when the loaded
-  //      transcript has no assistant message.
+  //   2. the persisted wire preview (idle agents) — agent-peek-utils serves
+  //      the wire `lastAgentResponse` verbatim; no stream buffer or
+  //      transcript re-derivation (monorepo#2843).
   // Tool previews (lastToolUse) only kick in when there's no text to show.
   const liveResponseLine = $derived.by(() => {
-    if (isStreamActive && $hasStreamOwnedMessage$ && streamingBuffer) {
-      const line = getLastMeaningfulLine(streamingBuffer);
-      if (line) return line;
-    }
     if ($agentIsResponding$ && $receivedFirstChunk$ && $agent$?.lastAgentResponse) {
       const line = getLastMeaningfulLine($agent$.lastAgentResponse);
       if (line) return line;

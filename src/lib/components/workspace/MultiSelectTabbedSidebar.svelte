@@ -28,10 +28,7 @@
     selectAllWorkspaceAgents,
     selectIsLoadingAgents,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
-  import {
-    selectAgentIsRunning,
-    selectAgentSessionStreamingContent,
-  } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { cn } from '$lib/utils';
   import { scrollFade } from '$lib/actions/scroll-fade';
@@ -184,11 +181,7 @@
       $allWorkspaceAgents,
       LAUNCHER_ICON_LIMIT,
       (agent) => selectAgentIsRunning.select(appStore.state, agent.id),
-      (agent, isRunning) =>
-        getAgentLauncherPreview(
-          agent,
-          isRunning ? selectAgentSessionStreamingContent.select(appStore.state, agent.id) : '',
-        ),
+      (agent) => getAgentLauncherPreview(agent),
     ),
   );
   const launcherAgents = $derived(launcherAgentState.launcherAgents);
