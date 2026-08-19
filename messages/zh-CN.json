@@ -5805,6 +5805,8 @@
   "modals_connect_confirm_label": "确认并连接",
   "modals_connect_back_label": "返回",
   "modals_connect_whereToFind_help": "在目标机器上的设置 → 通用 → WebSocket API 中查找主机、端口和访问令牌。",
+  "modals_connect_headless_before": "目标机器上没有应用？也可以运行无界面的 intentd——请参阅",
+  "modals_connect_headless_after": "了解安装和连接说明。",
   "modals_connect_detectHosts_label": "检测所有后端 IP",
   "modals_connect_detectHosts_description": "同时存储后端的其他 IP 地址，以便在其网络变化时连接仍能正常工作。",
   "modals_connect_tokenRejected_error": "守护进程拒绝了此访问令牌。请检查是否复制了当前令牌，然后重试。",

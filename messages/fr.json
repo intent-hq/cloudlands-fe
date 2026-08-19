@@ -5805,6 +5805,8 @@
   "modals_connect_confirm_label": "Confirmer et se connecter",
   "modals_connect_back_label": "Retour",
   "modals_connect_whereToFind_help": "Retrouvez l'hôte, le port et le jeton d'accès sur la machine cible dans Paramètres → Général → API WebSocket.",
+  "modals_connect_headless_before": "Pas d'application sur la machine cible ? Vous pouvez aussi exécuter un intentd headless — consultez",
+  "modals_connect_headless_after": "pour les instructions d'installation et de connexion.",
   "modals_connect_detectHosts_label": "Détecter toutes les IP du backend",
   "modals_connect_detectHosts_description": "Enregistre également les autres adresses IP du backend afin que la connexion continue de fonctionner lorsque son réseau change.",
   "modals_connect_tokenRejected_error": "Le démon a rejeté ce jeton d'accès. Vérifiez que vous avez copié le jeton actuel, puis réessayez.",
