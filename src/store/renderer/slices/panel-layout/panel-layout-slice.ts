@@ -55,7 +55,7 @@ import {
   appendHorizontalPanelToLayout,
   insertHorizontalPanelInLayout,
   removePanelPreservingHorizontalWidths,
-  resizeRootHorizontalPanel,
+  resizeRootHorizontalDivider,
   resizePanelTreeRightEdge,
   type PanelMovePosition,
 } from './panel-layout-tabless';
@@ -611,22 +611,10 @@ export const resizePanelLayoutRightEdge = createAction<
   ]
 >('panelLayout/resizePanelLayoutRightEdge');
 
-/**
- * Grow a specific root-level horizontal panel by the delta implied by
- * `nextWidth - previousWidth` while preserving every other root-level
- * horizontal sibling's pixel width. Used by root middle-handle drags so a
- * panel can grow the intrinsic canvas instead of stealing width from a neighbour.
- */
-export const resizePanelLayoutAtHorizontalPanel = createAction<
-  [
-    wsId: string,
-    previousWidth: number,
-    nextWidth: number,
-    panelIndex: number,
-    nextCanvasWidth: number,
-    previousPanelWidths?: readonly number[],
-  ]
->('panelLayout/resizePanelLayoutAtHorizontalPanel');
+/** Resize a root divider while preserving the current total canvas width. */
+export const resizePanelLayoutAtRootDivider = createAction<
+  [wsId: string, panelIndex: number, requestedDelta: number, previousPanelWidths: readonly number[]]
+>('panelLayout/resizePanelLayoutAtRootDivider');
 
 export const toggleExpandPanel = createAction<[wsId: string, panelId: string]>(
   'panelLayout/toggleExpandPanel',
@@ -2660,7 +2648,9 @@ panelLayoutReducer.with(
     const root = resizePanelTreeRightEdge(ws.root, previousWidth, nextWidth);
     const canvasWidthState = resolveUserPanelCanvasResize(
       nextCanvasWidth,
-      getAutomaticPanelLayoutCanvasWidth(root, ws.panels, 'content'),
+      resetToAutomatic
+        ? nextCanvasWidth
+        : getAutomaticPanelLayoutCanvasWidth(root, ws.panels, 'content'),
       resetToAutomatic,
     );
     if (
@@ -2674,32 +2664,19 @@ panelLayoutReducer.with(
   },
 );
 panelLayoutReducer.with(
-  resizePanelLayoutAtHorizontalPanel,
-  (
-    state,
-    { payload: [wsId, previousWidth, nextWidth, panelIndex, nextCanvasWidth, previousPanelWidths] },
-  ) => {
-    if (
-      previousWidth <= 0 ||
-      nextWidth <= 0 ||
-      !Number.isFinite(previousWidth) ||
-      !Number.isFinite(nextWidth) ||
-      !Number.isFinite(panelIndex) ||
-      !Number.isFinite(nextCanvasWidth) ||
-      nextCanvasWidth <= 0
-    ) {
-      return state;
-    }
+  resizePanelLayoutAtRootDivider,
+  (state, { payload: [wsId, panelIndex, requestedDelta, previousPanelWidths] }) => {
     const ws = getWorkspaceState(state, wsId);
-    const resized = resizeRootHorizontalPanel(
+    const resized = resizeRootHorizontalDivider(
       ws.root,
-      previousWidth,
-      nextWidth,
       panelIndex,
+      requestedDelta,
       previousPanelWidths,
     );
-    const acceptedCanvasWidth = nextCanvasWidth + resized.nextWidth - nextWidth;
-    if (!Number.isFinite(acceptedCanvasWidth) || acceptedCanvasWidth <= 0) return state;
+    if (resized.acceptedDelta === 0) return state;
+    const acceptedCanvasWidth =
+      resized.panelWidths.reduce((sum, width) => sum + width, 0) +
+      PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, resized.panelWidths.length - 1);
     const canvasWidthState = resolveUserPanelCanvasResize(
       acceptedCanvasWidth,
       getAutomaticPanelLayoutCanvasWidth(resized.node, ws.panels, 'content'),

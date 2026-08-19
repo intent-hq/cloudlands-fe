@@ -30,7 +30,7 @@ import {
   closeTabsByType,
   reopenClosedTab,
   pruneRecentlyClosed,
-  resizePanelLayoutAtHorizontalPanel,
+  resizePanelLayoutAtRootDivider,
   resizePanelLayoutRightEdge,
   setDeferSpecTab,
   toggleExpandPanel,
@@ -2763,7 +2763,7 @@ describe('panelLayoutReducer', () => {
       expect(panelLayoutReducer(state, resizePanelLayoutRightEdge(WS, 0, 1200, 1200))).toBe(state);
     });
 
-    it('grows only the selected root column and includes its width in later snapshots', () => {
+    it('resizes a root divider proportionally and includes explicit widths in later snapshots', () => {
       const state = stateWithPanel('p1');
       state.byWorkspaceId[WS] = {
         ...state.byWorkspaceId[WS],
@@ -2782,24 +2782,25 @@ describe('panelLayoutReducer', () => {
           p2: { id: 'p2', tabs: [], activeTabId: null },
           p3: { id: 'p3', tabs: [], activeTabId: null },
         },
-        canvasWidth: 1000,
+        canvasWidth: 1016,
       };
 
       const resized = panelLayoutReducer(
         state,
-        resizePanelLayoutAtHorizontalPanel(WS, 1000, 1200, 1, 1200),
+        resizePanelLayoutAtRootDivider(WS, 1, 200, [300, 400, 300]),
       );
 
-      expect(resized.byWorkspaceId[WS].canvasWidth).toBe(1200);
-      expect(resized.byWorkspaceId[WS].root).toMatchObject({ sizes: [25, 50, 25] });
+      expect(resized.byWorkspaceId[WS].canvasWidth).toBe(1016);
+      expect(resized.byWorkspaceId[WS].canvasWidthSource).toBe('explicit');
+      expect(resized.byWorkspaceId[WS].root).toMatchObject({ sizes: [30, 60, 10] });
       const snapshotted = panelLayoutReducer(
         resized,
         splitPanel(WS, 'p1', 'vertical', undefined, 1234),
       );
-      expect(snapshotted.byWorkspaceId[WS].layoutHistory[0].canvasWidth).toBe(1200);
+      expect(snapshotted.byWorkspaceId[WS].layoutHistory[0].canvasWidth).toBe(1016);
     });
 
-    it('persists the full canvas width without folding gutters into sibling sizes', () => {
+    it('keeps the full canvas fixed without folding gutters into panel sizes', () => {
       const state = stateWithPanel('p1');
       state.byWorkspaceId[WS] = {
         ...state.byWorkspaceId[WS],
@@ -2821,14 +2822,14 @@ describe('panelLayoutReducer', () => {
 
       const result = panelLayoutReducer(
         state,
-        resizePanelLayoutAtHorizontalPanel(WS, 1042, 1142, 0, 1150),
+        resizePanelLayoutAtRootDivider(WS, 0, 100, [645, 397]),
       );
       const root = result.byWorkspaceId[WS].root;
 
-      expect(result.byWorkspaceId[WS].canvasWidth).toBe(1150);
+      expect(result.byWorkspaceId[WS].canvasWidth).toBe(1050);
       if (root.type !== 'split') throw new Error('Expected horizontal split');
-      expect((root.sizes[0] / 100) * 1142).toBeCloseTo(745);
-      expect((root.sizes[1] / 100) * 1142).toBeCloseTo(397);
+      expect((root.sizes[0] / 100) * 1042).toBeCloseTo(745);
+      expect((root.sizes[1] / 100) * 1042).toBeCloseTo(297);
     });
   });
 

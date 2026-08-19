@@ -250,19 +250,15 @@
     panelDefaultWidthViewport.set(canvasSizing === 'viewport' ? panelViewportWidth : 0);
   });
   let panelRootReferenceSize = $state(0);
-  let panelCanvasResizeDelta = $state(0);
-  let panelCanvasResizeCommittedWidth = $state<number | null>(null);
   let panelOuterResizeDelta = $state(0);
   let panelOuterResizeCommittedDelta = $state(0);
   let panelOuterResizeCommittedWidth = $state<number | null>(null);
   let panelOuterResizeStartReferenceSize: number | null = null;
   const effectivePreferredCanvasWidth = $derived(
-    panelOuterResizeCommittedWidth ?? panelCanvasResizeCommittedWidth ?? $panelCanvasWidth$,
+    panelOuterResizeCommittedWidth ?? $panelCanvasWidth$,
   );
   const effectivePreferredCanvasWidthSource = $derived(
-    panelOuterResizeCommittedWidth !== null || panelCanvasResizeCommittedWidth !== null
-      ? 'explicit'
-      : $panelCanvasWidthSource$,
+    panelOuterResizeCommittedWidth !== null ? 'explicit' : $panelCanvasWidthSource$,
   );
   const rootHorizontalSizes = $derived(
     $root$?.type === 'split' &&
@@ -296,39 +292,23 @@
       : null,
   );
   const effectivePanelCanvasWidth = $derived(
-    panelOuterResizeCommittedWidth ??
-      panelCanvasResizeCommittedWidth ??
-      expandedAutomaticViewportWidth ??
-      $panelCanvasWidth$,
+    panelOuterResizeCommittedWidth ?? expandedAutomaticViewportWidth ?? $panelCanvasWidth$,
   );
   const effectivePanelCanvasWidthSource = $derived(
-    panelOuterResizeCommittedWidth !== null ||
-      panelCanvasResizeCommittedWidth !== null ||
-      expandedAutomaticViewportWidth !== null
+    panelOuterResizeCommittedWidth !== null || expandedAutomaticViewportWidth !== null
       ? 'explicit'
       : $panelCanvasWidthSource$,
   );
   const panelGeometryCanvasWidth = $derived(
     (panelOuterResizeCommittedWidth ??
-      panelCanvasResizeCommittedWidth ??
       expandedAutomaticViewportWidth ??
-      allocatedPanelCanvas.defaultWidth) +
-      panelCanvasResizeDelta +
-      panelOuterResizeDelta,
+      allocatedPanelCanvas.defaultWidth) + panelOuterResizeDelta,
   );
   let retainedRootPanel = $state<{ panelId: string; width: number } | null>(null);
 
   $effect(() => {
     const rootIsReconciled =
       $root$ === selectPanelLayoutRoot.select(appStore.state, effectiveLayoutId);
-    if (
-      panelCanvasResizeCommittedWidth !== null &&
-      rootIsReconciled &&
-      $panelCanvasWidthSource$ === 'explicit' &&
-      $panelCanvasWidth$ === panelCanvasResizeCommittedWidth
-    ) {
-      panelCanvasResizeCommittedWidth = null;
-    }
     if (
       panelOuterResizeCommittedWidth !== null &&
       rootIsReconciled &&
@@ -382,7 +362,11 @@
     if (previousWidth === nextWidth) return;
     const gutterWidth =
       startReferenceSize !== null ? Math.max(0, previousWidth - startReferenceSize) : 0;
-    const automaticWidth = getAutomaticPanelCanvasWidth($panelColumnDefaultWidths$, 'content');
+    const automaticWidth = getAutomaticPanelCanvasWidth(
+      $panelColumnDefaultWidths$,
+      canvasSizing,
+      panelViewportWidth,
+    );
     panelOuterResizeCommittedWidth = nextWidth;
     panelOuterResizeCommittedDelta = nextWidth - previousWidth;
     appStore.dispatch(
@@ -826,30 +810,13 @@
     layoutManager.updateSizes(nodePath, sizes);
   }
 
-  function handleGrowCanvasAtHorizontalPanel(
-    previousWidth: number,
-    nextWidth: number,
+  function handleResizeRootDivider(
     panelIndex: number,
-    nextCanvasWidth: number,
+    requestedDelta: number,
     previousPanelWidths: readonly number[],
   ) {
     markPristinePanelsTouched();
-    // Pin the accepted outer pixels before removing the preview delta. Redux then
-    // replaces this handoff value with the same authoritative width after Svelte
-    // reconciles, so pointer-up cannot expose the old canvas for one frame.
-    panelCanvasResizeCommittedWidth = nextCanvasWidth;
-    handlePanelCanvasResizePreview(0);
-    layoutManager.growCanvasAtHorizontalPanel(
-      previousWidth,
-      nextWidth,
-      panelIndex,
-      nextCanvasWidth,
-      previousPanelWidths,
-    );
-  }
-
-  function handlePanelCanvasResizePreview(delta: number) {
-    panelCanvasResizeDelta = delta;
+    layoutManager.resizeRootDivider(panelIndex, requestedDelta, previousPanelWidths);
   }
 
   function handlePanelCanvasWidthChange(width: number) {
@@ -1362,8 +1329,7 @@
           onZoomToggle={handleZoomToggle}
           onUpdateSizes={handleUpdateSizes}
           onRootReferenceSizeChange={(width) => (panelRootReferenceSize = width)}
-          onCanvasResizePreview={handlePanelCanvasResizePreview}
-          onGrowCanvasAtHorizontalPanel={handleGrowCanvasAtHorizontalPanel}
+          onResizeRootDivider={handleResizeRootDivider}
           onTabDropToSplit={handleTabDropToSplit}
           onTabMoveToPanel={handleTabMoveToPanel}
           onPanelMove={handlePanelMove}
@@ -1429,7 +1395,6 @@
             resetPanelColumnWidths={$panelColumnDefaultWidths$}
             canvasWidth={effectivePanelCanvasWidth}
             canvasWidthSource={effectivePanelCanvasWidthSource}
-            transientWidthDelta={panelCanvasResizeDelta}
             scrollContainer={panelWorkspaceInset}
             onWidthChange={handlePanelCanvasWidthChange}
             onResizeStart={handlePanelCanvasResizeStart}

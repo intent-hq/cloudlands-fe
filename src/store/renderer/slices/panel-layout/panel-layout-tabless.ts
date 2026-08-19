@@ -1,10 +1,10 @@
 import type { PanelLayoutNode, PanelState, WorkspacePanelLayout } from './panel-layout-types';
 import {
   DEFAULT_PANEL_WIDTH,
-  getAcceptedIndependentPanelResizeWidth,
   getAutomaticPanelCanvasWidth,
   getPanelDefaultWidth,
   PANEL_SPLIT_GUTTER_WIDTH,
+  resizePanelWidthsAtDivider,
   type PanelCanvasSizing,
   type PanelDefaultWidthTier,
 } from '../../../../shared/panel-layout-sizing';
@@ -176,64 +176,33 @@ export function resizePanelTreeAtHorizontalIndex(
   return { ...node, children, sizes: nextSizes };
 }
 
-export function resizeRootHorizontalPanel(
+export function resizeRootHorizontalDivider(
   node: PanelLayoutNode,
-  previousWidth: number,
-  requestedNextWidth: number,
   panelIndex: number,
-  previousPanelWidths?: readonly number[],
-): { node: PanelLayoutNode; nextWidth: number } {
+  requestedDelta: number,
+  previousPanelWidths: readonly number[],
+): { node: PanelLayoutNode; panelWidths: number[]; acceptedDelta: number } {
   if (
     node.type !== 'split' ||
     node.direction !== 'horizontal' ||
-    previousWidth <= 0 ||
-    requestedNextWidth <= 0 ||
-    !Number.isFinite(previousWidth) ||
-    !Number.isFinite(requestedNextWidth) ||
-    !Number.isFinite(panelIndex)
+    previousPanelWidths.length !== node.children.length
   ) {
-    return { node, nextWidth: previousWidth };
+    return { node, panelWidths: [...previousPanelWidths], acceptedDelta: 0 };
   }
-
-  const sizes = normalizeSizes(node.sizes, node.children.length);
-  const lastIndex = node.children.length - 1;
-  if (lastIndex < 1) return { node, nextWidth: previousWidth };
-  const targetIndex =
-    panelIndex < 0 || panelIndex > lastIndex ? lastIndex : Math.max(0, panelIndex);
-  const hasRenderedWidths =
-    previousPanelWidths?.length === node.children.length &&
-    previousPanelWidths.every((width) => Number.isFinite(width) && width > 0);
-  const renderedWidths = hasRenderedWidths
-    ? [...previousPanelWidths!]
-    : sizes.map((size) => (previousWidth * size) / 100);
-  const previousTargetWidth = renderedWidths[targetIndex];
-  const nextWidth = getAcceptedIndependentPanelResizeWidth(
-    previousWidth,
-    previousTargetWidth,
-    requestedNextWidth,
-  );
-  if (!hasRenderedWidths) {
-    return {
-      node: resizePanelTreeAtHorizontalIndex(node, previousWidth, nextWidth, targetIndex),
-      nextWidth,
-    };
-  }
-
-  const nextTargetWidth = previousTargetWidth + nextWidth - previousWidth;
-  renderedWidths[targetIndex] = nextTargetWidth;
-  const children = [...node.children];
-  children[targetIndex] = resizePanelTreeRightEdge(
-    children[targetIndex],
-    previousTargetWidth,
-    nextTargetWidth,
-  );
+  const resized = resizePanelWidthsAtDivider(previousPanelWidths, panelIndex, requestedDelta);
+  if (resized.acceptedDelta === 0) return { node, ...resized };
+  const totalWidth = resized.panelWidths.reduce((sum, width) => sum + width, 0);
   return {
     node: {
       ...node,
-      children,
-      sizes: renderedWidths.map((width) => (width / nextWidth) * 100),
+      children: node.children.map((child, index) =>
+        resized.panelWidths[index] === previousPanelWidths[index]
+          ? child
+          : resizePanelTreeRightEdge(child, previousPanelWidths[index], resized.panelWidths[index]),
+      ),
+      sizes: resized.panelWidths.map((width) => (width / totalWidth) * 100),
     },
-    nextWidth,
+    ...resized,
   };
 }
 

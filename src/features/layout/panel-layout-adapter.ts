@@ -35,7 +35,7 @@ import {
   movePanel,
   updateSizes,
   updateSplitSizes,
-  resizePanelLayoutAtHorizontalPanel,
+  resizePanelLayoutAtRootDivider,
   toggleExpandPanel,
   resetLayout,
   goBack,
@@ -274,20 +274,16 @@ export class PanelLayoutAdapter {
   updateSplitSizes(sizes: number[], splitPath?: number[]) {
     this.dispatch(updateSplitSizes(this.workspaceId, sizes, splitPath));
   }
-  growCanvasAtHorizontalPanel(
-    previousWidth: number,
-    nextWidth: number,
+  resizeRootDivider(
     panelIndex: number,
-    nextCanvasWidth: number,
+    requestedDelta: number,
     previousPanelWidths: readonly number[],
   ) {
     this.dispatch(
-      resizePanelLayoutAtHorizontalPanel(
+      resizePanelLayoutAtRootDivider(
         this.workspaceId,
-        previousWidth,
-        nextWidth,
         panelIndex,
-        nextCanvasWidth,
+        requestedDelta,
         previousPanelWidths,
       ),
     );

@@ -12,7 +12,7 @@ import {
   removePanelPreservingHorizontalWidths,
   resizePanelTreeAtHorizontalIndex,
   resizePanelTreeRightEdge,
-  resizeRootHorizontalPanel,
+  resizeRootHorizontalDivider,
 } from './panel-layout-tabless';
 
 describe('tabless panel layout', () => {
@@ -464,87 +464,49 @@ describe('tabless panel layout', () => {
   });
 
   it.each([
-    { panelIndex: 0, delta: 120, expected: [440, 500, 364] },
-    { panelIndex: 1, delta: -80, expected: [320, 420, 364] },
-    { panelIndex: 2, delta: 75, expected: [320, 500, 439] },
+    { panelIndex: 0, delta: 100, expected: [420, 442.12962963, 321.87037037] },
+    { panelIndex: 1, delta: -80, expected: [320, 420, 444] },
   ])(
-    'resizes root panel $panelIndex by $delta px without changing unequal siblings',
+    'resizes root divider $panelIndex by $delta with fixed total width',
     ({ panelIndex, delta, expected }) => {
-      const previousWidth = 1184;
+      const widths = [320, 500, 364];
       const root = {
         type: 'split' as const,
         direction: 'horizontal' as const,
-        sizes: [320, 500, 364].map((width) => (width / previousWidth) * 100),
+        sizes: widths.map((width) => (width / 1184) * 100),
         children: ['p1', 'p2', 'p3'].map((panelId) => ({
           type: 'panel' as const,
           panelId,
         })),
       };
 
-      const resized = resizeRootHorizontalPanel(
-        root,
-        previousWidth,
-        previousWidth + delta,
-        panelIndex,
-      );
+      const resized = resizeRootHorizontalDivider(root, panelIndex, delta, widths);
 
-      expect(resized.nextWidth).toBe(previousWidth + delta);
-      expect(resized.node.type).toBe('split');
-      if (resized.node.type === 'split') {
-        expect(resized.node.sizes.map((size) => (size / 100) * resized.nextWidth)).toEqual(
-          expected.map((width) => expect.closeTo(width, 8)),
-        );
-      }
+      expect(resized.acceptedDelta).toBe(delta);
+      expect(resized.panelWidths).toEqual(expected.map((width) => expect.closeTo(width, 8)));
+      expect(resized.panelWidths.reduce((sum, width) => sum + width, 0)).toBeCloseTo(1184, 8);
+      expect(resized.node).toMatchObject({
+        sizes: expected.map((width) => expect.closeTo((width / 1184) * 100, 8)),
+      });
     },
   );
 
-  it('clamps a root shrink at the target minimum without redistributing siblings', () => {
-    const previousWidth = 1184;
+  it('water-fills minimum widths and applies only the accepted delta', () => {
+    const widths = [400, 120, 480];
     const root = {
       type: 'split' as const,
       direction: 'horizontal' as const,
-      sizes: [320, 500, 364].map((width) => (width / previousWidth) * 100),
+      sizes: widths.map((width) => (width / 1000) * 100),
       children: ['p1', 'p2', 'p3'].map((panelId) => ({
         type: 'panel' as const,
         panelId,
       })),
     };
 
-    const resized = resizeRootHorizontalPanel(root, previousWidth, 184, 0);
+    const resized = resizeRootHorizontalDivider(root, 0, 500, widths);
 
-    expect(resized.nextWidth).toBeCloseTo(960);
-    expect(resized.node.type).toBe('split');
-    if (resized.node.type === 'split') {
-      expect(resized.node.sizes.map((size) => (size / 100) * resized.nextWidth)).toEqual([
-        expect.closeTo(96, 8),
-        expect.closeTo(500, 8),
-        expect.closeTo(364, 8),
-      ]);
-    }
-  });
-
-  it('persists viewport-equalized pixels instead of stale intrinsic ratios', () => {
-    const root = {
-      type: 'split' as const,
-      direction: 'horizontal' as const,
-      sizes: [320, 500, 364].map((width) => (width / 1184) * 100),
-      children: ['p1', 'p2', 'p3'].map((panelId) => ({
-        type: 'panel' as const,
-        panelId,
-      })),
-    };
-
-    const renderedWidths = [1184 / 3, 1184 / 3, 1184 / 3];
-    const resized = resizeRootHorizontalPanel(root, 1184, 1264, 0, renderedWidths);
-
-    expect(resized.node.type).toBe('split');
-    if (resized.node.type === 'split') {
-      expect(resized.node.sizes.map((size) => (size / 100) * resized.nextWidth)).toEqual([
-        expect.closeTo(renderedWidths[0] + 80, 8),
-        expect.closeTo(renderedWidths[1], 8),
-        expect.closeTo(renderedWidths[2], 8),
-      ]);
-    }
+    expect(resized.acceptedDelta).toBe(400);
+    expect(resized.panelWidths).toEqual([800, 100, 100]);
   });
 
   it('does not route root-only resizing through a vertical layout', () => {
@@ -558,9 +520,10 @@ describe('tabless panel layout', () => {
       ],
     };
 
-    expect(resizeRootHorizontalPanel(root, 800, 900, 0)).toEqual({
+    expect(resizeRootHorizontalDivider(root, 0, 100, [400, 400])).toEqual({
       node: root,
-      nextWidth: 800,
+      panelWidths: [400, 400],
+      acceptedDelta: 0,
     });
   });
 

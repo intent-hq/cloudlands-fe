@@ -12,6 +12,7 @@ import {
   selectPanelLayoutRoot,
   selectPanels,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+import { resizePanelWidthsAtDivider } from '$shared/panel-layout-sizing';
 
 vi.mock('../Panel.svelte', async () => ({
   default: (await import('./mocks/MockMountedPanel.svelte')).default,
@@ -180,34 +181,40 @@ afterEach(() => {
 
 describe('root horizontal panel resizing', () => {
   it.each([true, false])(
-    'keeps following widths fixed through expand, shrink, commit, and measurement (contained=%s)',
+    'keeps the canvas fixed through proportional resize, commit, and measurement (contained=%s)',
     async (contained) => {
       await renderLayout(contained);
       const initialWidths = panelGeometry().map(({ width }) => width);
       const expanded = await dragSplit(0, [32, 96]);
-      const expandedWidths = [initialWidths[0] + 96, ...initialWidths.slice(1)];
+      const expandedWidths = resizePanelWidthsAtDivider(initialWidths, 0, 96).panelWidths;
 
       expectGeometry(expanded.pointerDown, initialWidths);
       expectGeometry(expanded.preview, expandedWidths);
-      expect(expanded.previewCanvasWidth).toBeCloseTo(1296, 6);
+      expect(expanded.previewCanvasWidth).toBeCloseTo(INITIAL_CANVAS_WIDTH, 6);
       expectGeometry(panelGeometry(), expandedWidths);
-      expect(selectPanelCanvasWidth.select(appStore.state, WORKSPACE_ID)).toBeCloseTo(1296, 6);
+      expect(selectPanelCanvasWidth.select(appStore.state, WORKSPACE_ID)).toBeCloseTo(
+        INITIAL_CANVAS_WIDTH,
+        6,
+      );
 
       TestResizeObserver.flush();
       await tick();
       expectGeometry(panelGeometry(), expandedWidths);
 
       const shrunk = await dragSplit(0, [-40, -140]);
-      const shrunkWidths = [expandedWidths[0] - 140, ...expandedWidths.slice(1)];
+      const shrunkWidths = resizePanelWidthsAtDivider(expandedWidths, 0, -140).panelWidths;
       expectGeometry(shrunk.pointerDown, expandedWidths);
       expectGeometry(shrunk.preview, shrunkWidths);
-      expect(shrunk.previewCanvasWidth).toBeCloseTo(1156, 6);
+      expect(shrunk.previewCanvasWidth).toBeCloseTo(INITIAL_CANVAS_WIDTH, 6);
       expectGeometry(panelGeometry(), shrunkWidths);
-      expect(selectPanelCanvasWidth.select(appStore.state, WORKSPACE_ID)).toBeCloseTo(1156, 6);
+      expect(selectPanelCanvasWidth.select(appStore.state, WORKSPACE_ID)).toBeCloseTo(
+        INITIAL_CANVAS_WIDTH,
+        6,
+      );
     },
   );
 
-  it('preserves preceding positions and following widths while resizing the second divider', async () => {
+  it('preserves the left side while resizing the second divider', async () => {
     await renderLayout(true);
     const inset = document.querySelector<HTMLElement>('[data-testid="panel-workspace-inset"]')!;
     inset.scrollLeft = 180;
@@ -215,21 +222,23 @@ describe('root horizontal panel resizing', () => {
     const result = await dragSplit(1, [-25, -80]);
 
     expectGeometry(result.pointerDown, INITIAL_WIDTHS);
-    expectGeometry(result.preview, [320, 420, 364]);
-    expect(result.previewCanvasWidth).toBe(1120);
-    expectGeometry(panelGeometry(), [320, 420, 364]);
+    const expected = resizePanelWidthsAtDivider(INITIAL_WIDTHS, 1, -80).panelWidths;
+    expectGeometry(result.preview, expected);
+    expect(result.previewCanvasWidth).toBe(INITIAL_CANVAS_WIDTH);
+    expectGeometry(panelGeometry(), expected);
     expect(inset.scrollLeft).toBe(180);
   });
 
-  it('clamps at the target minimum in preview and commits the same accepted canvas delta', async () => {
+  it('clamps at the reference minimum in preview and keeps the canvas fixed', async () => {
     await renderLayout(true);
 
     const result = await dragSplit(0, [-1000]);
 
-    expectGeometry(result.preview, [96, 500, 364]);
-    expect(result.previewCanvasWidth).toBe(976);
-    expectGeometry(panelGeometry(), [96, 500, 364]);
-    expect(selectPanelCanvasWidth.select(appStore.state, WORKSPACE_ID)).toBe(976);
+    const expected = resizePanelWidthsAtDivider(INITIAL_WIDTHS, 0, -1000).panelWidths;
+    expectGeometry(result.preview, expected);
+    expect(result.previewCanvasWidth).toBe(INITIAL_CANVAS_WIDTH);
+    expectGeometry(panelGeometry(), expected);
+    expect(selectPanelCanvasWidth.select(appStore.state, WORKSPACE_ID)).toBe(INITIAL_CANVAS_WIDTH);
   });
 
   it('changes only the final panel at the outer edge and has no pointer-up jump', async () => {
@@ -260,6 +269,7 @@ describe('root horizontal panel resizing', () => {
   it('rehydrates committed percentages to the exact same pixels and complete right edge', async () => {
     await renderLayout(true);
     await dragSplit(1, [70]);
+    const expected = resizePanelWidthsAtDivider(INITIAL_WIDTHS, 1, 70).panelWidths;
     const committed = {
       root: selectPanelLayoutRoot.select(appStore.state, WORKSPACE_ID),
       panels: selectPanels.select(appStore.state, WORKSPACE_ID),
@@ -267,14 +277,14 @@ describe('root horizontal panel resizing', () => {
       canvasWidth: selectPanelCanvasWidth.select(appStore.state, WORKSPACE_ID),
       canvasWidthSource: 'explicit' as const,
     };
-    expectGeometry(panelGeometry(), [320, 570, 364]);
+    expectGeometry(panelGeometry(), expected);
     cleanup();
 
     appStore.dispatch(initializeLayout(WORKSPACE_ID, JSON.parse(JSON.stringify(committed))));
     await renderLayout(true, committed.canvasWidth ?? INITIAL_CANVAS_WIDTH);
 
     const geometry = panelGeometry();
-    expectGeometry(geometry, [320, 570, 364]);
+    expectGeometry(geometry, expected);
     expect(geometry.at(-1)?.right).toBeCloseTo(canvasWidth(), 6);
   });
 });

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { Locator, Page } from '@playwright/test';
 import PanelWorkspaceColumnClipHarness from './mocks/PanelWorkspaceColumnClipHarness.svelte';
+import { resizePanelWidthsAtDivider } from '$shared/panel-layout-sizing';
 
 const GUTTER_WIDTH = 8;
 const ROOT_HANDLE_SELECTOR =
@@ -64,7 +65,7 @@ function expectGeometry(actual: Geometry, widths: number[], zoomFactor: number) 
     widths.reduce((sum, width) => sum + width, 0) + GUTTER_WIDTH * (widths.length - 1);
   expect(actual.canvasWidth).toBeCloseTo(canvasWidth, 0);
   expect(actual.canvasVisualWidth).toBeCloseTo(canvasWidth * zoomFactor, 0);
-  expect(actual.panelWidths).toEqual(widths);
+  actual.panelWidths.forEach((width, index) => expect(width).toBeCloseTo(widths[index], 0));
   actual.panelVisualWidths.forEach((width, index) =>
     expect(width).toBeCloseTo(widths[index] * zoomFactor, 0),
   );
@@ -127,7 +128,11 @@ for (const mode of ['contained', 'uncontained'] as const) {
         for (const dividerIndex of [0, 1]) {
           for (const delta of [80, -120, 60, -40]) {
             const before = [...widths];
-            widths[dividerIndex] += delta;
+            widths.splice(
+              0,
+              widths.length,
+              ...resizePanelWidthsAtDivider(widths, dividerIndex, delta).panelWidths,
+            );
             const result = await dragDivider(
               page,
               component,
@@ -138,8 +143,8 @@ for (const mode of ['contained', 'uncontained'] as const) {
             expectGeometry(result.preview, widths, zoomFactor);
             expectGeometry(result.pointerUp, widths, zoomFactor);
             expectGeometry(result.settled, widths, zoomFactor);
-            before.forEach((width, index) => {
-              if (index !== dividerIndex) expect(result.settled.panelWidths[index]).toBe(width);
+            before.slice(0, dividerIndex).forEach((width, index) => {
+              expect(result.settled.panelWidths[index]).toBeCloseTo(width, 0);
             });
           }
         }
@@ -170,7 +175,7 @@ for (const zoomFactor of [1, 2]) {
     const widths = [500, 500];
     expectGeometry(await readGeometry(component), widths, zoomFactor);
 
-    widths[0] = 280;
+    widths.splice(0, widths.length, ...resizePanelWidthsAtDivider(widths, 0, -220).panelWidths);
     const shrunk = await dragDivider(page, component, handle, -220, zoomFactor);
     expectGeometry(shrunk.preview, widths, zoomFactor);
     expectGeometry(shrunk.pointerUp, widths, zoomFactor);
@@ -190,7 +195,7 @@ for (const zoomFactor of [1, 2]) {
     await nextFrames(page, 3);
     expectGeometry(await readGeometry(component), widths, zoomFactor);
 
-    widths[0] = 360;
+    widths.splice(0, widths.length, ...resizePanelWidthsAtDivider(widths, 0, 80).panelWidths);
     const grown = await dragDivider(page, component, handle, 80, zoomFactor);
     expectGeometry(grown.preview, widths, zoomFactor);
     expectGeometry(grown.pointerUp, widths, zoomFactor);
