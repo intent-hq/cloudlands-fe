@@ -142,11 +142,11 @@ vi.mock('svelte-sonner', () => ({
   toast: { error: vi.fn(), info: vi.fn(), warning: vi.fn(), success: vi.fn() },
 }));
 
-vi.mock('$features/setup-scripts', () => ({
+vi.mock('$features/setup-scripts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$features/setup-scripts')>()),
   SETUP_SCRIPT_TEMPLATES: [],
   getTemplateContent: vi.fn(() => ''),
   chooseDefaultSetupScript: vi.fn(() => ({ content: '', name: 'Custom', source: 'custom' })),
-  setupScriptDisplayName: vi.fn((name: string) => name),
   createRepoConfigProbeScheduler: vi.fn(() => ({
     onSelectionChange: vi.fn(),
     settled: vi.fn(async () => {}),

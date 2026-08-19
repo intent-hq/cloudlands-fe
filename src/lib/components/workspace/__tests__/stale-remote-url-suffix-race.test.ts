@@ -68,11 +68,11 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
 }));
 
 
-vi.mock('$features/setup-scripts', () => ({
+vi.mock('$features/setup-scripts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$features/setup-scripts')>()),
   SETUP_SCRIPT_TEMPLATES: [],
   getTemplateContent: vi.fn(() => ''),
   chooseDefaultSetupScript: vi.fn(() => ({ content: '', name: 'Custom', source: 'custom' })),
-  setupScriptDisplayName: vi.fn((name: string) => name),
   fetchRepoConfigSetupScript: vi.fn(async () => null),
   fetchGitHubRepoConfigSetupScript: vi.fn(async () => null),
   probeRepoConfigSetupScript: vi.fn(),
