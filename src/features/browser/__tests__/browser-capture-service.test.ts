@@ -13,9 +13,14 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../main/embedded-browser-cdp-service', () => ({
+  DEFAULT_AGENT_VIEWPORT: { width: 1280, height: 800 },
   embeddedBrowserCdp: {
     ensureAttached: vi.fn(),
     evaluate: vi.fn(),
+    getFirstTab: vi.fn(() => undefined),
+    // The capture flows under test run as the tab's owner (#2857).
+    resolveTabOwner: vi.fn().mockResolvedValue('agent-1'),
+    setTabOwner: vi.fn(),
     getAccessibilityTree: vi.fn().mockResolvedValue(''),
     listAllTabs: vi.fn().mockResolvedValue({
       tabs: [

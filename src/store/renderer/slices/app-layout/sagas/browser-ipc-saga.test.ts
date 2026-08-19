@@ -105,6 +105,7 @@ describe('browserIpcSaga', () => {
       ['browser:focus-tab', handlers['browser:focus-tab']],
       ['browser:list-tabs-request', handlers['browser:list-tabs-request']],
       ['browser:tab-navigated', handlers['browser:tab-navigated']],
+      ['browser:tab-owner-changed', handlers['browser:tab-owner-changed']],
     ]);
 
     first.cancel();
@@ -115,10 +116,11 @@ describe('browserIpcSaga', () => {
       ['browser:focus-tab', 'browser:focus-tab-listener'],
       ['browser:list-tabs-request', 'browser:list-tabs-request-listener'],
       ['browser:tab-navigated', 'browser:tab-navigated-listener'],
+      ['browser:tab-owner-changed', 'browser:tab-owner-changed-listener'],
     ]);
 
     const restarted = start();
-    expect(on).toHaveBeenCalledTimes(10);
+    expect(on).toHaveBeenCalledTimes(12);
     restarted.cancel();
     await restarted.toPromise();
   });

@@ -14,8 +14,8 @@ import { BROWSER_PROTOCOLS } from '../../../shared/constants';
 
 // Mock the CDP service before importing the executor
 vi.mock('../main/embedded-browser-cdp-service', () => ({
+  DEFAULT_AGENT_VIEWPORT: { width: 1280, height: 800 },
   embeddedBrowserCdp: {
-    findIdleTab: vi.fn().mockReturnValue(null),
     findModelTabByExactUrl: vi.fn().mockResolvedValue(undefined),
     findModelTabByRequestedUrl: vi.fn().mockResolvedValue(undefined),
     getFirstTab: vi.fn().mockReturnValue(null),
@@ -24,8 +24,13 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     waitForTabRegistration: vi.fn().mockResolvedValue(true),
     closeTab: vi.fn().mockResolvedValue({ tabId: 'tab-1' }),
     notifyTabNavigated: vi.fn(),
-    touchLease: vi.fn(),
-    releaseLease: vi.fn(),
+    notifyTabOwnerChanged: vi.fn(),
+    setTabOwner: vi.fn(),
+    getTabOwner: vi.fn().mockReturnValue(undefined),
+    getTabEmulatedSize: vi.fn().mockReturnValue(undefined),
+    clearTabOwnership: vi.fn(),
+    claimTab: vi.fn().mockReturnValue({ status: 'claimed', alreadyOwned: false }),
+    resolveTabOwner: vi.fn().mockResolvedValue(undefined),
     listAllTabs: vi.fn().mockResolvedValue({ tabs: [], stale: false }),
     screenshot: vi.fn().mockResolvedValue({ base64: '', width: 0, height: 0 }),
     getAccessibilityTree: vi.fn().mockResolvedValue(''),
@@ -73,6 +78,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         true,
+        undefined,
       );
     });
 
@@ -97,6 +103,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
       );
     });
 
@@ -116,6 +123,7 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(true);
       expect(mockOpenTabFn).toHaveBeenCalledWith(
         'file:///Users/me/index.html',
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -451,6 +459,8 @@ describe('browser-action-executor', () => {
         ] as any,
         stale: false,
       });
+      // The agent owns the tab it is replacing (ownership-enforced, #2857).
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
       const openTabWithId = vi
         .fn()
         .mockReturnValue({ success: true, message: 'opened', tabId: 'tab-phantom' });
@@ -467,11 +477,15 @@ describe('browser-action-executor', () => {
       expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledExactlyOnceWith(
         'tab-existing',
       );
-      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-existing', 'agent-1', null);
-      expect(embeddedBrowserCdp.touchLease).not.toHaveBeenCalledWith(
+      expect(embeddedBrowserCdp.setTabOwner).toHaveBeenCalledWith('tab-existing', 'agent-1', null, {
+        width: 1280,
+        height: 800,
+      });
+      expect(embeddedBrowserCdp.setTabOwner).not.toHaveBeenCalledWith(
         'tab-phantom',
         'agent-1',
         null,
+        expect.anything(),
       );
       expect(result.results[0]?.result).toMatchObject({ tabId: 'tab-existing', replaced: true });
     });
@@ -680,6 +694,7 @@ describe('browser-action-executor', () => {
         undefined,
         'http://127.0.0.1:3000/x?q=1',
         undefined,
+        undefined,
       );
       expect(result.results[0]?.result).toMatchObject({
         requestedUrl: 'http://127.0.0.1:3000/x?q=1',
@@ -706,6 +721,7 @@ describe('browser-action-executor', () => {
         undefined,
         'http://daemon.localhost:3000/',
         undefined,
+        undefined,
       );
       const payload = result.results[0]?.result as Record<string, unknown>;
       expect(payload.rewritten).toBe(true);
@@ -726,15 +742,15 @@ describe('browser-action-executor', () => {
         undefined,
         'http://client.localhost:5173/',
         undefined,
+        undefined,
       );
       const payload = result.results[0]?.result as Record<string, unknown>;
       expect(payload.rewritten).toBe(true);
       expect(payload.warning).toBeUndefined();
     });
 
-    it('openTab idle-tab reuse navigates the reused tab to the rewritten URL', async () => {
+    it('agent openTab without a dedupe match opens a new tab (idle-lease reuse removed, #2857)', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
-      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle');
 
       const result = await executeActions(
         { actions: [{ action: 'openTab', url: 'http://localhost:3000/' }] },
@@ -744,19 +760,16 @@ describe('browser-action-executor', () => {
         remoteContext,
       );
       expect(result.success).toBe(true);
-      expect(embeddedBrowserCdp.evaluate).toHaveBeenCalledWith(
-        'tab-idle',
-        `window.location.href = ${JSON.stringify('http://10.0.0.5:3000/')}`,
+      // No tab is navigated/repurposed — a genuinely new tab is opened.
+      expect(embeddedBrowserCdp.evaluate).not.toHaveBeenCalled();
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://10.0.0.5:3000/',
+        undefined,
+        true,
+        'http://localhost:3000/',
+        undefined,
+        'agent-1',
       );
-      expect(mockOpenTabFn).not.toHaveBeenCalled();
-      expect(result.results[0]?.result).toMatchObject({
-        reused: true,
-        tabId: 'tab-idle',
-        url: 'http://10.0.0.5:3000/',
-        requestedUrl: 'http://localhost:3000/',
-        finalUrl: 'http://10.0.0.5:3000/',
-        rewritten: true,
-      });
     });
 
     it('navigate rewrites bare loopback and echoes the rewrite in remote mode', async () => {
@@ -824,6 +837,7 @@ describe('browser-action-executor', () => {
           undefined,
           url,
           undefined,
+          undefined,
         );
         expect(result.results[0]?.result).toMatchObject({
           requestedUrl: url,
@@ -844,6 +858,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
       );
       expect(result.results[0]?.result).toEqual({ success: true, message: 'opened' });
     });
@@ -858,6 +873,7 @@ describe('browser-action-executor', () => {
       );
       expect(mockOpenTabFn).toHaveBeenCalledWith(
         'https://example.com/x',
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -905,9 +921,8 @@ describe('browser-action-executor', () => {
       expect(mockOpenTabFn).not.toHaveBeenCalled();
     });
 
-    it('openTab probe failure also prevents idle-tab reuse navigation', async () => {
+    it('openTab probe failure also prevents any tab navigation or open', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
-      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle');
       fetchMock.mockRejectedValue(new TypeError('fetch failed'));
 
       const result = await executeActions(
@@ -963,6 +978,7 @@ describe('browser-action-executor', () => {
         undefined,
         'http://127.0.0.1:3000/x?q=1',
         undefined,
+        undefined,
       );
     });
 
@@ -982,6 +998,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'http://daemon.localhost:3000/',
+        undefined,
         undefined,
       );
     });
@@ -1013,6 +1030,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'http://daemon.localhost:3000/',
+        undefined,
         undefined,
       );
     });
@@ -1079,6 +1097,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'http://127.0.0.1:3000/x?q=1',
+        undefined,
         undefined,
       );
       expect(result.results[0]?.result).toMatchObject({
@@ -1167,6 +1186,7 @@ describe('browser-action-executor', () => {
         undefined,
         'http://daemon.localhost:3000/',
         undefined,
+        undefined,
       );
       expect(result.results[0]?.result).not.toHaveProperty('tunneled');
     });
@@ -1188,6 +1208,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'http://daemon.localhost:3000/',
+        undefined,
         undefined,
       );
       expect(result.results[0]?.result).not.toHaveProperty('tunneled');
@@ -1431,7 +1452,6 @@ describe('browser-action-executor', () => {
     beforeEach(async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue(undefined);
-      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue(null as never);
     });
 
     it('reuses and focuses an existing model-opened tab with the same URL', async () => {
@@ -1478,43 +1498,9 @@ describe('browser-action-executor', () => {
       expect(mockOpenTabFn).not.toHaveBeenCalled();
     });
 
-    it('forwards pin intent when it navigates and reuses an idle model tab', async () => {
-      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
-      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle');
-
-      const result = await executeActions(
-        { actions: [{ action: 'openTab', url: 'http://localhost:3000/board', pin: true }] },
-        mockOpenTabFn,
-        'agent-1',
-        'ws-1',
-      );
-
-      expect(result.success).toBe(true);
-      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-idle', 'ws-1', true);
-      expect(mockOpenTabFn).not.toHaveBeenCalled();
-    });
-
-    it('takes precedence over idle-tab reuse (no navigation of an idle tab)', async () => {
-      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
-      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-dup');
-      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle');
-
-      const result = await executeActions(
-        { actions: [{ action: 'openTab', url: 'http://localhost:3000/' }] },
-        mockOpenTabFn,
-        'agent-1',
-        'ws-1',
-      );
-
-      expect(result.results[0]?.result).toMatchObject({ reused: true, tabId: 'tab-dup' });
-      expect(embeddedBrowserCdp.findIdleTab).not.toHaveBeenCalled();
-      expect(embeddedBrowserCdp.evaluate).not.toHaveBeenCalled();
-    });
-
     it('allowDuplicate: true bypasses reuse entirely and opens a new tab', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-dup');
-      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle');
 
       const result = await executeActions(
         {
@@ -1529,13 +1515,13 @@ describe('browser-action-executor', () => {
 
       expect(result.success).toBe(true);
       expect(embeddedBrowserCdp.findModelTabByExactUrl).not.toHaveBeenCalled();
-      expect(embeddedBrowserCdp.findIdleTab).not.toHaveBeenCalled();
       expect(mockOpenTabFn).toHaveBeenCalledWith(
         'http://localhost:3000/board',
         undefined,
         true,
         undefined,
         undefined,
+        'agent-1',
       );
     });
 
@@ -1552,6 +1538,7 @@ describe('browser-action-executor', () => {
       expect(embeddedBrowserCdp.findModelTabByExactUrl).not.toHaveBeenCalled();
       expect(mockOpenTabFn).toHaveBeenCalledWith(
         'http://localhost:3000/board',
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -1613,12 +1600,17 @@ describe('browser-action-executor', () => {
         true,
         undefined,
         undefined,
+        'agent-1',
       );
-      // The new tab is leased at open time so it counts as model-opened; a
-      // non-tunneled open clears any stale requested-URL identity.
-      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-new', 'agent-1', null);
+      // The new tab is owned at open time so it counts as the agent's own; a
+      // non-tunneled open clears any stale requested-URL identity, and the
+      // default emulated viewport is recorded (monorepo#2857).
+      expect(embeddedBrowserCdp.setTabOwner).toHaveBeenCalledWith('tab-new', 'agent-1', null, {
+        width: 1280,
+        height: 800,
+      });
 
-      // Second openTab for the same URL now finds the leased tab and reuses it.
+      // Second openTab for the same URL now finds the owned tab and reuses it.
       vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-new');
       mockOpenTabFn.mockClear();
       const second = await executeActions(
@@ -1632,9 +1624,9 @@ describe('browser-action-executor', () => {
       expect(mockOpenTabFn).not.toHaveBeenCalled();
     });
 
-    it('does not lease when openTabFn reports failure or returns no tabId', async () => {
+    it('does not record ownership when openTabFn reports failure or returns no tabId', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
-      vi.mocked(embeddedBrowserCdp.touchLease).mockClear();
+      vi.mocked(embeddedBrowserCdp.setTabOwner).mockClear();
       mockOpenTabFn.mockReturnValueOnce({ success: true, message: 'opened' });
 
       await executeActions(
@@ -1644,7 +1636,7 @@ describe('browser-action-executor', () => {
         'ws-1',
       );
 
-      expect(embeddedBrowserCdp.touchLease).not.toHaveBeenCalled();
+      expect(embeddedBrowserCdp.setTabOwner).not.toHaveBeenCalled();
     });
   });
 
@@ -1659,7 +1651,6 @@ describe('browser-action-executor', () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue(undefined);
       vi.mocked(embeddedBrowserCdp.findModelTabByRequestedUrl).mockResolvedValue(undefined);
-      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue(null as never);
       // The daemon-loopback target is never directly reachable — every
       // resolution takes the tunnel-fallback path.
       vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
@@ -1740,7 +1731,7 @@ describe('browser-action-executor', () => {
       expect(mockOpenTabFn).toHaveBeenCalledTimes(1);
     });
 
-    it('records the requested URL on the lease of a newly opened tunneled tab', async () => {
+    it('records the requested URL on the ownership of a newly opened tunneled tab', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       const provider = idempotentTunnelProvider();
       mockOpenTabFn.mockReturnValueOnce({ success: true, message: 'opened', tabId: 'tab-new' });
@@ -1754,30 +1745,10 @@ describe('browser-action-executor', () => {
         () => provider,
       );
 
-      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-new', 'agent-1', REQUESTED);
-    });
-
-    it('records the requested URL when a tunneled open reuses an idle tab', async () => {
-      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
-      const provider = idempotentTunnelProvider();
-      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle' as never);
-
-      const result = await executeActions(
-        { actions: [{ action: 'openTab', url: REQUESTED }] },
-        mockOpenTabFn,
-        'agent-1',
-        'ws-1',
-        remoteContext,
-        () => provider,
-      );
-
-      expect(result.success).toBe(true);
-      expect(result.results[0]?.result).toMatchObject({ reused: true, tabId: 'tab-idle' });
-      // The repurposed tab's lease must carry the requested URL so a later
-      // repeat after a forward re-mint can dedupe onto it (the idle-reuse
-      // branch is a fresh agent's common first-open path).
-      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-idle', 'agent-1', REQUESTED);
-      expect(mockOpenTabFn).not.toHaveBeenCalled();
+      expect(embeddedBrowserCdp.setTabOwner).toHaveBeenCalledWith('tab-new', 'agent-1', REQUESTED, {
+        width: 1280,
+        height: 800,
+      });
     });
 
     it('falls back to requestedUrl dedupe when the old forward died and a new port was minted', async () => {
@@ -1835,7 +1806,8 @@ describe('browser-action-executor', () => {
       );
 
       expect(result.success).toBe(true);
-      expect(embeddedBrowserCdp.releaseLease).toHaveBeenCalledWith('tab-old');
+      // The tab stays owned by the agent (ownership is persistent) — the
+      // open just falls through to creating a new tab.
       expect(mockOpenTabFn).toHaveBeenCalledTimes(1);
       expect(result.results[0]?.result).toMatchObject({ tabId: 'tab-new' });
     });
@@ -1860,13 +1832,15 @@ describe('browser-action-executor', () => {
       expect(mockOpenTabFn).toHaveBeenCalledTimes(1);
     });
 
-    it('a tunneled navigate records the requested URL on the tab lease', async () => {
+    it('a tunneled navigate records the requested URL on the tab ownership', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       const provider = idempotentTunnelProvider();
       vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValue({
         tabId: 'tab-1',
         webContentsId: 1,
       } as never);
+      // The agent owns the tab (ownership-enforced, #2857).
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
 
       const result = await executeActions(
         { actions: [{ action: 'navigate', url: REQUESTED }] },
@@ -1878,18 +1852,19 @@ describe('browser-action-executor', () => {
       );
 
       expect(result.success).toBe(true);
-      // The tab's content changed to the tunneled target, so its lease
+      // The tab's content changed to the tunneled target, so its ownership
       // identity is refreshed — a later openTab for the same requested URL
       // dedupes onto this tab instead of opening another.
-      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-1', 'agent-1', REQUESTED);
+      expect(embeddedBrowserCdp.setTabOwner).toHaveBeenCalledWith('tab-1', 'agent-1', REQUESTED);
     });
 
-    it('a non-tunneled navigate clears any stale requested URL on the tab lease', async () => {
+    it('a non-tunneled navigate clears any stale requested URL on the tab ownership', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValue({
         tabId: 'tab-1',
         webContentsId: 1,
       } as never);
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
       vi.unstubAllGlobals(); // target reachable — no tunnel involved
 
       const result = await executeActions(
@@ -1902,7 +1877,7 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(true);
       // The tab navigated away, so a stale requestedUrl from an earlier
       // tunneled open must not keep matching it.
-      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-1', 'agent-1', null);
+      expect(embeddedBrowserCdp.setTabOwner).toHaveBeenCalledWith('tab-1', 'agent-1', null);
     });
 
     it('never consults the requestedUrl fallback for non-tunneled opens (#2541 unchanged)', async () => {
@@ -1918,8 +1893,11 @@ describe('browser-action-executor', () => {
 
       expect(result.success).toBe(true);
       expect(embeddedBrowserCdp.findModelTabByRequestedUrl).not.toHaveBeenCalled();
-      // Non-tunneled opens clear the lease's requested URL (null).
-      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-new', 'agent-1', null);
+      // Non-tunneled opens clear the ownership's requested URL (null).
+      expect(embeddedBrowserCdp.setTabOwner).toHaveBeenCalledWith('tab-new', 'agent-1', null, {
+        width: 1280,
+        height: 800,
+      });
     });
   });
 
@@ -1946,6 +1924,7 @@ describe('browser-action-executor', () => {
         tabId: 'tab-1',
         webContentsId: 1,
       } as never);
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
       fetchMock.mockRejectedValue(new TypeError('fetch failed'));
       const provider = { forwardPort: vi.fn().mockResolvedValue(45678), activeForwards: () => [] };
 
@@ -1975,6 +1954,7 @@ describe('browser-action-executor', () => {
         tabId: 'tab-1',
         webContentsId: 1,
       } as never);
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
 
       const result = await executeActions(
         { actions: [{ action: 'navigate', url: 'https://example.test/' }] },
@@ -2016,25 +1996,328 @@ describe('browser-action-executor', () => {
       );
     });
 
-    it('an openTab idle-tab reuse notifies with the rewritten URL and requested URL', async () => {
+  });
+
+  // =========================================================================
+  // Tab ownership enforcement + claimTab (monorepo#2857)
+  // =========================================================================
+  describe('tab ownership enforcement (#2857)', () => {
+    const enforcedActions = [
+      { action: 'focusTab', tabId: 'tab-x' },
+      { action: 'getAccessibilityTree', tabId: 'tab-x' },
+      { action: 'screenshot', tabId: 'tab-x' },
+      { action: 'evaluate', tabId: 'tab-x', expression: '1 + 1' },
+      { action: 'snapshot', tabId: 'tab-x' },
+      { action: 'startSession', tabId: 'tab-x' },
+      { action: 'resetTab', tabId: 'tab-x' },
+      { action: 'navigate', tabId: 'tab-x', url: 'https://example.test/' },
+      { action: 'closeTab', tabId: 'tab-x' },
+    ] as const;
+
+    it.each(enforcedActions)(
+      "$action by an agent on another agent's tab fails with a structured not-owner error",
+      async (action) => {
+        const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+        vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-owner');
+
+        const result = await executeActions(
+          { actions: [action] },
+          mockOpenTabFn,
+          'agent-intruder',
+          'ws-1',
+        );
+
+        expect(result.success).toBe(false);
+        expect(result.results[0]).toMatchObject({
+          action: action.action,
+          success: false,
+          errorCode: 'not-owner',
+          ownerAgentId: 'agent-owner',
+        });
+        expect(result.results[0]?.error).toContain('agent-owner');
+      },
+    );
+
+    it.each(enforcedActions)(
+      '$action by an agent on an unowned tab fails with not-owner (ownerAgentId null)',
+      async (action) => {
+        const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+        vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce(undefined);
+
+        const result = await executeActions(
+          { actions: [action] },
+          mockOpenTabFn,
+          'agent-1',
+          'ws-1',
+        );
+
+        expect(result.results[0]).toMatchObject({
+          action: action.action,
+          success: false,
+          errorCode: 'not-owner',
+          ownerAgentId: null,
+        });
+        expect(result.results[0]?.error).toContain('claimTab');
+      },
+    );
+
+    it('enforcement resolves the sequence-level default tabId, not just action.tabId', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
-      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle' as never);
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-owner');
 
       const result = await executeActions(
-        { actions: [{ action: 'openTab', url: 'http://localhost:3000/' }] },
+        { actions: [{ action: 'screenshot' }], tabId: 'tab-default' },
+        mockOpenTabFn,
+        'agent-intruder',
+        'ws-1',
+      );
+
+      expect(embeddedBrowserCdp.resolveTabOwner).toHaveBeenCalledWith('tab-default', 'ws-1');
+      expect(result.results[0]).toMatchObject({ errorCode: 'not-owner' });
+    });
+
+    it('enforcement covers the first-tab fallback when no tabId is given', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValue({
+        tabId: 'tab-first',
+        webContentsId: 1,
+      } as never);
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-owner');
+
+      const result = await executeActions(
+        { actions: [{ action: 'screenshot' }] },
+        mockOpenTabFn,
+        'agent-intruder',
+        'ws-1',
+      );
+
+      expect(embeddedBrowserCdp.resolveTabOwner).toHaveBeenCalledWith('tab-first', 'ws-1');
+      expect(result.results[0]).toMatchObject({ errorCode: 'not-owner' });
+    });
+
+    it('the owner itself passes enforcement and the action executes', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
+
+      const result = await executeActions(
+        { actions: [{ action: 'screenshot', tabId: 'tab-x' }] },
         mockOpenTabFn,
         'agent-1',
         'ws-1',
-        remoteContext,
       );
 
       expect(result.success).toBe(true);
-      expect(embeddedBrowserCdp.notifyTabNavigated).toHaveBeenCalledWith(
-        'tab-idle',
+      expect(embeddedBrowserCdp.screenshot).toHaveBeenCalled();
+    });
+
+    it("user-initiated calls (no agentId) are unrestricted on any agent's tab", async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValue('agent-owner');
+      vi.mocked(embeddedBrowserCdp.closeTab).mockResolvedValue({ tabId: 'tab-x' });
+
+      const result = await executeActions(
+        {
+          actions: [
+            { action: 'screenshot', tabId: 'tab-x' },
+            { action: 'closeTab', tabId: 'tab-x' },
+          ],
+        },
+        mockOpenTabFn,
+        undefined,
         'ws-1',
-        'http://10.0.0.5:3000/',
-        'http://localhost:3000/',
       );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.resolveTabOwner).not.toHaveBeenCalled();
+      expect(embeddedBrowserCdp.screenshot).toHaveBeenCalled();
+      expect(embeddedBrowserCdp.closeTab).toHaveBeenCalled();
+    });
+
+    it('listTabs is not ownership-enforced for agents', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValue('agent-owner');
+
+      const result = await executeActions(
+        { actions: [{ action: 'listTabs' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.resolveTabOwner).not.toHaveBeenCalled();
+    });
+
+    it("agent openTab position replace on a tab it does not own fails with not-owner", async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+        tabs: [{ tabId: 'tab-user', url: 'http://a/', title: 'A', mounted: true }] as any,
+        stale: false,
+      });
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce(undefined);
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'https://example.test/', position: 'replace' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.results[0]).toMatchObject({
+        action: 'openTab',
+        errorCode: 'not-owner',
+        ownerAgentId: null,
+      });
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('claimTab action (#2857)', () => {
+    async function mockTabExists(tabId: string) {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+        tabs: [{ tabId, url: 'http://a/', title: 'A', mounted: true }] as any,
+        stale: false,
+      });
+      return embeddedBrowserCdp;
+    }
+
+    it('claims an existing unowned tab and notifies the renderer to persist the owner', async () => {
+      const embeddedBrowserCdp = await mockTabExists('tab-1');
+      vi.mocked(embeddedBrowserCdp.claimTab).mockReturnValueOnce({
+        status: 'claimed',
+        alreadyOwned: false,
+      });
+
+      const result = await executeActions(
+        { actions: [{ action: 'claimTab', tabId: 'tab-1', width: 1024, height: 768 }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.claimTab).toHaveBeenCalledWith('tab-1', 'agent-1', {
+        width: 1024,
+        height: 768,
+      });
+      expect(embeddedBrowserCdp.notifyTabOwnerChanged).toHaveBeenCalledWith(
+        'tab-1',
+        'ws-1',
+        'agent-1',
+      );
+      expect(result.results[0]?.result).toMatchObject({
+        tabId: 'tab-1',
+        ownerAgentId: 'agent-1',
+        width: 1024,
+        height: 768,
+      });
+    });
+
+    it('defaults the claim height when omitted', async () => {
+      const embeddedBrowserCdp = await mockTabExists('tab-1');
+
+      await executeActions(
+        { actions: [{ action: 'claimTab', tabId: 'tab-1', width: 1024 }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(embeddedBrowserCdp.claimTab).toHaveBeenCalledWith('tab-1', 'agent-1', {
+        width: 1024,
+        height: 800,
+      });
+    });
+
+    it('a claim without width fails schema validation before any ownership change', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+
+      const result = await executeActions(
+        { actions: [{ action: 'claimTab', tabId: 'tab-1' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(false);
+      expect(embeddedBrowserCdp.claimTab).not.toHaveBeenCalled();
+      expect(embeddedBrowserCdp.notifyTabOwnerChanged).not.toHaveBeenCalled();
+    });
+
+    it("claiming another agent's tab returns a structured already-claimed error", async () => {
+      const embeddedBrowserCdp = await mockTabExists('tab-1');
+      vi.mocked(embeddedBrowserCdp.claimTab).mockReturnValueOnce({
+        status: 'already-claimed',
+        ownerAgentId: 'agent-owner',
+      });
+
+      const result = await executeActions(
+        { actions: [{ action: 'claimTab', tabId: 'tab-1', width: 1024 }] },
+        mockOpenTabFn,
+        'agent-2',
+        'ws-1',
+      );
+
+      expect(result.results[0]).toMatchObject({
+        action: 'claimTab',
+        success: false,
+        errorCode: 'already-claimed',
+        ownerAgentId: 'agent-owner',
+      });
+      expect(result.results[0]?.error).toContain('agent-owner');
+      expect(embeddedBrowserCdp.notifyTabOwnerChanged).not.toHaveBeenCalled();
+    });
+
+    it('re-claiming an owned tab reports idempotent success', async () => {
+      const embeddedBrowserCdp = await mockTabExists('tab-1');
+      vi.mocked(embeddedBrowserCdp.claimTab).mockReturnValueOnce({
+        status: 'claimed',
+        alreadyOwned: true,
+      });
+
+      const result = await executeActions(
+        { actions: [{ action: 'claimTab', tabId: 'tab-1', width: 800 }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.result).toMatchObject({ alreadyOwned: true });
+    });
+
+    it('fails when the tab does not exist in the workspace', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+        tabs: [] as any,
+        stale: false,
+      });
+
+      const result = await executeActions(
+        { actions: [{ action: 'claimTab', tabId: 'tab-ghost', width: 1024 }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.results[0]?.success).toBe(false);
+      expect(result.results[0]?.error).toContain('not found');
+      expect(embeddedBrowserCdp.claimTab).not.toHaveBeenCalled();
+    });
+
+    it('fails for user-initiated calls (no agentId)', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+
+      const result = await executeActions(
+        { actions: [{ action: 'claimTab', tabId: 'tab-1', width: 1024 }] },
+        mockOpenTabFn,
+        undefined,
+        'ws-1',
+      );
+
+      expect(result.results[0]?.success).toBe(false);
+      expect(embeddedBrowserCdp.claimTab).not.toHaveBeenCalled();
     });
   });
 });
