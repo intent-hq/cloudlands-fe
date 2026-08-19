@@ -207,6 +207,34 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     await run.task.toPromise();
   });
 
+  it('keeps object identity of already-rendered rows across the older-history prepend', async () => {
+    mocks.get.mockResolvedValue(session());
+    mocks.getConversation.mockResolvedValueOnce(
+      page([message('m-old-1', 'old1'), message('m-old-2', 'old2'), message('m-snap-1', 'one')], {
+        prevToken: 'fwd',
+      }),
+    );
+    const run = harness();
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    await settle();
+    applySnapshot(run, [message('m-snap-1', 'one'), message('m-snap-2', 'two')], {
+      truncated: true,
+      totalMessages: 4,
+    });
+    const beforePrepend = run.sessions().byAgentId[AGENT]!.messages;
+    await settle();
+    await settle();
+
+    const afterPrepend = run.sessions().byAgentId[AGENT]!.messages;
+    expect(afterPrepend.map((m) => m.id)).toEqual(['m-old-1', 'm-old-2', 'm-snap-1', 'm-snap-2']);
+    // The suffix already in the store must keep its exact object identity so
+    // the rendered transcript does not re-render on the background prepend.
+    expect(afterPrepend[2]).toBe(beforePrepend[0]);
+    expect(afterPrepend[3]).toBe(beforePrepend[1]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('anchors the older walk at the snapshot window oldest, healing the retained-history gap (resumed: false)', async () => {
     // §7.1 resume fallback aftermath: the store holds retained rows BELOW an
     // interior gap toward the snapshot window ([m-r1] ... GAP(m-gap) ...

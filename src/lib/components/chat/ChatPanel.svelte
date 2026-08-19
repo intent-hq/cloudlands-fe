@@ -144,7 +144,7 @@
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
   import { deriveWizardPendingQuestions } from './questions/wizard-gate';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
-  import { groupMessagesByDate } from '$lib/utils/timeFormatting';
+  import { buildDateGroupKeys, groupMessagesByDate } from '$lib/utils/timeFormatting';
   import {
     animateScrollTo,
     followToBottom,
@@ -197,7 +197,12 @@
     createLazyTurnHeightCache,
     type LazyTurnHeightCache,
   } from './lazy-turn-height-cache';
-  import { isTurnInRecentWindow, shouldVirtualizeTurns } from './chat-turn-virtualization';
+  import {
+    INITIAL_LAZY_MODE_TRACKER,
+    isOlderHistoryPrepend,
+    isTurnInRecentWindow,
+    nextLazyMode,
+  } from './chat-turn-virtualization';
   import {
     EMPTY_TEMPORARY_TURN_MATERIALIZATION,
     isTurnTemporarilyMaterialized,
@@ -1567,6 +1572,10 @@
   // We'll handle the streaming state when rendering
   let groupedMessages = $derived(groupMessagesByDate($agentMessages$));
 
+  // Keyed by calendar day (not first message ID) so a same-day older-history
+  // prepend does not change the group key and recreate its rendered turns.
+  const dateGroupKeys = $derived(buildDateGroupKeys(groupedMessages));
+
   // ── "New messages" divider (unread marker, PROTOCOL §5.5 agent.markSeen) ──
   // The divider is entry-only and frozen per viewing session: on the first
   // transcript hydration the anchor is derived ONCE from the seen marker and
@@ -1639,8 +1648,20 @@
   // Count user messages as proxy for turns (each user message starts a turn)
   const totalTurnCount = $derived($agentMessages$.filter((m) => m.role === 'user').length);
 
-  // PERF: Enable lazy loading only for larger conversations
-  const shouldUseLazyLoading = $derived(shouldVirtualizeTurns(totalTurnCount));
+  // PERF: Enable lazy loading only for larger conversations, latched across
+  // background older-history prepends (see nextLazyMode). Mutating the plain
+  // (non-$state) tracker inside the derived is safe: re-evaluation with
+  // unchanged inputs is idempotent (`unchanged` → latch), and deriveds are
+  // lazy, so the latch is best-effort — a prepend coalesced with an append
+  // into one observed transition recomputes from the threshold, failing open
+  // to the pre-latch behavior. Do not make the tracker stateful.
+  let lazyModeTracker = INITIAL_LAZY_MODE_TRACKER;
+  const shouldUseLazyLoading = $derived.by(() => {
+    const currentCount = $agentMessages$.length;
+    const currentNewestId = $agentMessages$[currentCount - 1]?.id;
+    lazyModeTracker = nextLazyMode(lazyModeTracker, currentCount, currentNewestId, totalTurnCount);
+    return lazyModeTracker.mode;
+  });
 
   // PERF: Pre-compute message index and turn number maps for O(1) lookups
   // This avoids O(n²) complexity from indexOf/slice/filter in the render loop
@@ -1664,17 +1685,28 @@
     return map;
   });
 
-  // Track previous message count to detect new messages
+  // Track previous message count and newest row to detect new messages and to
+  // distinguish appended NEW messages from the background older-history
+  // prepend (list grew, newest row unchanged), which must stay scroll-neutral.
   let previousMessageCount = $state(0);
+  let previousNewestMessageId: string | undefined = undefined;
 
   // Auto-scroll to bottom when new messages are added and shouldFollowBottom is true
   $effect(() => {
     const currentCount = $agentMessages$.length;
+    const currentNewestId = $agentMessages$[currentCount - 1]?.id;
     // Scroll to bottom when:
     // 1. New message added AND following is enabled, OR
     // 2. First message added (transition from empty to non-empty) - always scroll to show the new content
     const isFirstMessage = previousMessageCount === 0 && currentCount > 0;
-    const hasNewMessages = currentCount > previousMessageCount;
+    const hasNewMessages =
+      currentCount > previousMessageCount &&
+      !isOlderHistoryPrepend(
+        previousMessageCount,
+        previousNewestMessageId,
+        currentCount,
+        currentNewestId,
+      );
     const shouldScroll = hasNewMessages && (isFirstMessage || shouldFollowBottom);
     if (hasNewMessages) {
       // Unread-marker entry: on the first transcript hydration with a latched
@@ -1713,6 +1745,7 @@
       }
     }
     previousMessageCount = currentCount;
+    previousNewestMessageId = currentNewestId;
   });
 
   // Helper functions for O(1) lookups
@@ -3935,8 +3968,11 @@
                   <NewMessagesDivider />
                 {/if}
               {/snippet}
-              <!-- PERF: Use keyed each blocks for efficient list diffing -->
-              {#each conversationTurnIndex.groups as indexedGroup, groupIndex (indexedGroup.group.messages[0]?.id ?? groupIndex)}
+              <!-- PERF: Use keyed each blocks for efficient list diffing.
+                   Group key is the calendar day so a same-day older-history
+                   prepend (which changes the group's first message) does not
+                   destroy and recreate the group's rendered turns. -->
+              {#each conversationTurnIndex.groups as indexedGroup, groupIndex (dateGroupKeys[groupIndex] ?? groupIndex)}
                 {@const turns = indexedGroup.turns}
                 {#each turns as turn, turnIndex (turn.userMessage?.id ?? `turn-${turnIndex}`)}
                   {@const turnKey = turn.userMessage?.id ?? `group-${groupIndex}-turn-${turnIndex}`}
