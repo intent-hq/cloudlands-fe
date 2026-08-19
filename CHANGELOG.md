@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.66.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.66.4...v2.66.5) (2026-08-19)
+
+
+### 🐛 Bug Fixes
+
+* **agent-preview:** trust the wire preview in TaskAgentStatus and graph-helpers ([#1444](https://github.com/intent-hq/cloudlands-fe/issues/1444)) ([af99090](https://github.com/intent-hq/cloudlands-fe/commit/af990907edd64fdc232a406a9ff378e332cda28e))
+* **browser:** detach tunneled-tab rehydration so layout restore settles before listTabs times out ([#1443](https://github.com/intent-hq/cloudlands-fe/issues/1443)) ([caf219f](https://github.com/intent-hq/cloudlands-fe/commit/caf219fe3f97f9ac6defeb36055b1fece3a20be3))
+* make the background older-history prepend paint- and scroll-neutral ([#1445](https://github.com/intent-hq/cloudlands-fe/issues/1445)) ([4888a17](https://github.com/intent-hq/cloudlands-fe/commit/4888a1735e974a764b370b2bf4144e4131bef5ce))
+* **menu:** always target the app window for the DevTools toggle ([202f44d](https://github.com/intent-hq/cloudlands-fe/commit/202f44d4d7390f2cdde6d466a2150e5482152da0))
+* remove leftover console.log('LOAD') debug statement in InlineAgentAvatar ([#1438](https://github.com/intent-hq/cloudlands-fe/issues/1438)) ([7ecadbf](https://github.com/intent-hq/cloudlands-fe/commit/7ecadbff720a90e1fc0bcd05b37ccda9259f817e))
+* remove leftover console.log('LOAD') debug statements in AgentPeekCard ([#1440](https://github.com/intent-hq/cloudlands-fe/issues/1440)) ([d241ec0](https://github.com/intent-hq/cloudlands-fe/commit/d241ec02ab1ede0805920bd4320e769dfe9095e2))
+* serve wire preview fields verbatim in getAgentPeekData ([#1439](https://github.com/intent-hq/cloudlands-fe/issues/1439)) ([61575ec](https://github.com/intent-hq/cloudlands-fe/commit/61575ec44abb892ca5de5abed663e4a9bbad1d0d))
+* trust the push-applied wire preview for live/streaming previews ([#1442](https://github.com/intent-hq/cloudlands-fe/issues/1442)) ([0962792](https://github.com/intent-hq/cloudlands-fe/commit/096279216ddae15acf669f547ca250dbc778655f))
+
 ## [2.66.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.66.3...v2.66.4) (2026-08-18)
 
 
