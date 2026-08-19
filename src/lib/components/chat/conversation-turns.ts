@@ -101,9 +101,9 @@ export function groupIntoTurns(messages: AgentMessage[]): ConversationTurn[] {
   return turns;
 }
 
-export function indexConversationTurns<TGroup extends { messages: AgentMessage[] }>(
-  groups: TGroup[],
-): ConversationTurnIndex<TGroup> {
+export function indexConversationTurns<
+  TGroup extends { messages: AgentMessage[]; groupKey?: string },
+>(groups: TGroup[]): ConversationTurnIndex<TGroup> {
   const indexedGroups: Array<ConversationTurnGroup<TGroup>> = [];
   const globalIndexByTurnKey = new Map<string, number>();
   const turnKeyByMessageId = new Map<string, string>();
@@ -113,7 +113,17 @@ export function indexConversationTurns<TGroup extends { messages: AgentMessage[]
     const turns = groupIntoTurns(group.messages);
     indexedGroups.push({ group, turns });
     turns.forEach((turn, turnIndex) => {
-      const turnKey = turn.userMessage?.id ?? `group-${groupIndex}-turn-${turnIndex}`;
+      // Orphan turns key off the group's stable `groupKey` when present
+      // (scrollback composition — positional indexes shift on history
+      // prepends and would churn LazyTurn height caches), else the
+      // positional index (tail-only transcript, unchanged keys).
+      // PARTIAL stability: `turnIndex` is still the turn's position WITHIN
+      // the group, so a same-day prepend that inserts turns at the front of
+      // an existing group re-keys the following orphan turns (assistant-only
+      // turns; user-message turns key off the message id). Follow-up option:
+      // key orphan turns off their first message id.
+      const turnKey =
+        turn.userMessage?.id ?? `group-${group.groupKey ?? groupIndex}-turn-${turnIndex}`;
       globalIndexByTurnKey.set(turnKey, globalIndex++);
       if (turn.userMessage) turnKeyByMessageId.set(turn.userMessage.id, turnKey);
       for (const message of turn.assistantMessages) {

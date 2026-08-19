@@ -84,7 +84,7 @@ jobs:
       # push uses it (pushes made with it can trigger workflows on the PR).
       - name: Checkout
         if: steps.token.outputs.present == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.RELEASE_PAT }}
 

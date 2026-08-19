@@ -7,7 +7,7 @@
 import { store } from '../../store';
 import { emptyAgentLineStatsRequestState, emptyWorkspaceState } from './changes-slice';
 import { ChangeStage } from '$features/file-tracking/types';
-import type { StoreState } from '$store/renderer/types';
+import type { AppSelector, StoreState } from '$store/renderer/types';
 import type {
   AcceptChangesState,
   FileTrackingWorkspaceState,
@@ -28,107 +28,86 @@ function getWs(state: StoreState, wsId: string): FileTrackingWorkspaceState {
   return state.changes.byWorkspaceId[wsId] ?? emptyWorkspaceState;
 }
 
-export const selectMainPanelView = store.createSelector(
-  (state): MainPanelViewState | null => state.changes.mainPanelView,
-);
+export const selectMainPanelView: AppSelector<MainPanelViewState | null> =
+  store.createSelector((state): MainPanelViewState | null => state.changes.mainPanelView);
 
 // ---------------------------------------------------------------------------
 // Workspace-scoped selectors
 // ---------------------------------------------------------------------------
 
-export const selectFileTrackingLoading = store.createSelector(
-  (state, wsId: string): boolean => getWs(state, wsId).loading,
-);
+export const selectFileTrackingLoading: AppSelector<boolean, [wsId: string]> =
+  store.createSelector((state, wsId: string): boolean => getWs(state, wsId).loading);
 
-export const selectFileTrackingIsInitialized = store.createSelector(
-  (state, wsId: string): boolean => getWs(state, wsId).hasLoadedInitialData,
-);
+export const selectFileTrackingIsInitialized: AppSelector<boolean, [wsId: string]> =
+  store.createSelector((state, wsId: string): boolean => getWs(state, wsId).hasLoadedInitialData);
 
-export const selectFileTrackingChanges = store.createSelector(
-  (state, wsId: string): TrackedChange[] => getWs(state, wsId).changes,
-);
+export const selectFileTrackingChanges: AppSelector<TrackedChange[], [wsId: string]> =
+  store.createSelector((state, wsId: string): TrackedChange[] => getWs(state, wsId).changes);
 
-export const selectFileTrackingTransitions = store.createSelector(
-  (state, wsId: string): StageTransition[] => getWs(state, wsId).transitions,
-);
+export const selectFileTrackingTransitions: AppSelector<StageTransition[], [wsId: string]> =
+  store.createSelector((state, wsId: string): StageTransition[] => getWs(state, wsId).transitions);
 
-export const selectFileTrackingCommits = store.createSelector(
-  (state, wsId: string): CommitInfo[] => getWs(state, wsId).commits,
-);
+export const selectFileTrackingCommits: AppSelector<CommitInfo[], [wsId: string]> =
+  store.createSelector((state, wsId: string): CommitInfo[] => getWs(state, wsId).commits);
 
-export const selectFileTrackingBoundarySha = store.createSelector(
-  (state, wsId: string): string | null => getWs(state, wsId).boundarySha,
-);
+export const selectFileTrackingBoundarySha: AppSelector<string | null, [wsId: string]> =
+  store.createSelector((state, wsId: string): string | null => getWs(state, wsId).boundarySha);
 
-export const selectFileTrackingOlderCommits = store.createSelector(
-  (state, wsId: string): CommitInfo[] => getWs(state, wsId).olderCommits,
-);
+export const selectFileTrackingOlderCommits: AppSelector<CommitInfo[], [wsId: string]> =
+  store.createSelector((state, wsId: string): CommitInfo[] => getWs(state, wsId).olderCommits);
 
-export const selectFileTrackingLoadingOlderCommits = store.createSelector(
-  (state, wsId: string): boolean => getWs(state, wsId).loadingOlderCommits,
-);
+export const selectFileTrackingLoadingOlderCommits: AppSelector<boolean, [wsId: string]> =
+  store.createSelector((state, wsId: string): boolean => getWs(state, wsId).loadingOlderCommits);
 
-export const selectFileTrackingChangesTruncated = store.createSelector(
-  (state, wsId: string): boolean => getWs(state, wsId).changesTruncated,
-);
+export const selectFileTrackingChangesTruncated: AppSelector<boolean, [wsId: string]> =
+  store.createSelector((state, wsId: string): boolean => getWs(state, wsId).changesTruncated);
 
-export const selectFileTrackingTotalChangesCount = store.createSelector(
-  (state, wsId: string): number => getWs(state, wsId).totalChangesCount,
-);
+export const selectFileTrackingTotalChangesCount: AppSelector<number, [wsId: string]> =
+  store.createSelector((state, wsId: string): number => getWs(state, wsId).totalChangesCount);
 
-export const selectChangesLastSyncTime = store.createSelector(
-  (state, wsId: string): number => getWs(state, wsId).coordination.lastSyncTime,
-);
+export const selectChangesLastSyncTime: AppSelector<number, [wsId: string]> =
+  store.createSelector((state, wsId: string): number => getWs(state, wsId).coordination.lastSyncTime);
 
-export const selectChangesLastUpdatedAt = store.createSelector(
-  (state, wsId: string): number => getWs(state, wsId).coordination.lastUpdatedAt,
-);
+export const selectChangesLastUpdatedAt: AppSelector<number, [wsId: string]> =
+  store.createSelector((state, wsId: string): number => getWs(state, wsId).coordination.lastUpdatedAt);
 
-export const selectChangesSyncInProgress = store.createSelector(
-  (state, wsId: string): boolean => getWs(state, wsId).coordination.syncInProgress,
-);
+export const selectChangesSyncInProgress: AppSelector<boolean, [wsId: string]> =
+  store.createSelector((state, wsId: string): boolean => getWs(state, wsId).coordination.syncInProgress);
 
-export const selectChangesSyncDirty = store.createSelector(
-  (state, wsId: string): boolean => getWs(state, wsId).coordination.syncDirty,
-);
+export const selectChangesSyncDirty: AppSelector<boolean, [wsId: string]> =
+  store.createSelector((state, wsId: string): boolean => getWs(state, wsId).coordination.syncDirty);
 
-export const selectChangesSyncDirtyForce = store.createSelector(
-  (state, wsId: string): boolean => getWs(state, wsId).coordination.syncDirtyForce,
-);
+export const selectChangesSyncDirtyForce: AppSelector<boolean, [wsId: string]> =
+  store.createSelector((state, wsId: string): boolean => getWs(state, wsId).coordination.syncDirtyForce);
 
-export const selectChangesSyncThrottleMs = store.createSelector(
-  (state, wsId: string): number => getWs(state, wsId).coordination.syncThrottleMs,
-);
+export const selectChangesSyncThrottleMs: AppSelector<number, [wsId: string]> =
+  store.createSelector((state, wsId: string): number => getWs(state, wsId).coordination.syncThrottleMs);
 
-export const selectChangesLoadInProgress = store.createSelector(
-  (state, wsId: string): boolean => getWs(state, wsId).coordination.loadInProgress,
-);
+export const selectChangesLoadInProgress: AppSelector<boolean, [wsId: string]> =
+  store.createSelector((state, wsId: string): boolean => getWs(state, wsId).coordination.loadInProgress);
 
-export const selectChangesLoadDirty = store.createSelector(
-  (state, wsId: string): boolean => getWs(state, wsId).coordination.loadDirty,
-);
+export const selectChangesLoadDirty: AppSelector<boolean, [wsId: string]> =
+  store.createSelector((state, wsId: string): boolean => getWs(state, wsId).coordination.loadDirty);
 
-export const selectChangesRefreshInProgress = store.createSelector(
-  (state, wsId: string): boolean => getWs(state, wsId).coordination.refreshInProgress,
-);
+export const selectChangesRefreshInProgress: AppSelector<boolean, [wsId: string]> =
+  store.createSelector((state, wsId: string): boolean => getWs(state, wsId).coordination.refreshInProgress);
 
-export const selectChangesRefreshDirty = store.createSelector(
-  (state, wsId: string): boolean => getWs(state, wsId).coordination.refreshDirty,
-);
+export const selectChangesRefreshDirty: AppSelector<boolean, [wsId: string]> =
+  store.createSelector((state, wsId: string): boolean => getWs(state, wsId).coordination.refreshDirty);
 
 // ---------------------------------------------------------------------------
 // Derived / computed selectors
 // ---------------------------------------------------------------------------
 
-export const selectStagedWorkingChanges = store.createSelector(
-  (state, wsId: string): TrackedChange[] => {
+export const selectStagedWorkingChanges: AppSelector<TrackedChange[], [wsId: string]> =
+  store.createSelector((state, wsId: string): TrackedChange[] => {
     const ws = getWs(state, wsId);
     return ws.changes.filter((c) => c.stage === ChangeStage.Staged);
   },
 );
 
-export const selectUnstagedWorkingChanges = store.createSelector(
-  (state, wsId: string): TrackedChange[] => {
+export const selectUnstagedWorkingChanges: AppSelector<TrackedChange[], [wsId: string]> =
+  store.createSelector((state, wsId: string): TrackedChange[] => {
     const ws = getWs(state, wsId);
     return ws.changes.filter((c) => c.stage === ChangeStage.Unstaged);
   },
@@ -138,14 +117,20 @@ export const selectUnstagedWorkingChanges = store.createSelector(
 // Convenience selectors — caller supplies the current workspaceId
 // ---------------------------------------------------------------------------
 
-export const selectCurrentChanges = store.createSelector(
+export const selectCurrentChanges: AppSelector<
+  TrackedChange[],
+  [wsId: string | null | undefined]
+> = store.createSelector(
   (state, wsId: string | null | undefined): TrackedChange[] => {
     if (!wsId) return [];
     return getWs(state, wsId).changes;
   },
 );
 
-export const selectCurrentStagedWorkingChanges = store.createSelector(
+export const selectCurrentStagedWorkingChanges: AppSelector<
+  TrackedChange[],
+  [wsId: string | null | undefined]
+> = store.createSelector(
   (state, wsId: string | null | undefined): TrackedChange[] => {
     if (!wsId) return [];
     const ws = getWs(state, wsId);
@@ -153,7 +138,10 @@ export const selectCurrentStagedWorkingChanges = store.createSelector(
   },
 );
 
-export const selectCurrentUnstagedWorkingChanges = store.createSelector(
+export const selectCurrentUnstagedWorkingChanges: AppSelector<
+  TrackedChange[],
+  [wsId: string | null | undefined]
+> = store.createSelector(
   (state, wsId: string | null | undefined): TrackedChange[] => {
     if (!wsId) return [];
     const ws = getWs(state, wsId);
@@ -161,14 +149,20 @@ export const selectCurrentUnstagedWorkingChanges = store.createSelector(
   },
 );
 
-export const selectCurrentCommits = store.createSelector(
+export const selectCurrentCommits: AppSelector<
+  CommitInfo[],
+  [wsId: string | null | undefined]
+> = store.createSelector(
   (state, wsId: string | null | undefined): CommitInfo[] => {
     if (!wsId) return [];
     return getWs(state, wsId).commits;
   },
 );
 
-export const selectCurrentLoading = store.createSelector(
+export const selectCurrentLoading: AppSelector<
+  boolean,
+  [wsId: string | null | undefined]
+> = store.createSelector(
   (state, wsId: string | null | undefined): boolean => {
     if (!wsId) return false;
     return getWs(state, wsId).loading;
@@ -180,8 +174,8 @@ export const selectCurrentLoading = store.createSelector(
 // ---------------------------------------------------------------------------
 
 /** Derive FileLineChange[] from file-tracking changes[] for a workspace */
-export const selectWorkspaceFileChanges = store.createSelector(
-  (state, wsId: string): FileLineChange[] => {
+export const selectWorkspaceFileChanges: AppSelector<FileLineChange[], [wsId: string]> =
+  store.createSelector((state, wsId: string): FileLineChange[] => {
     const ws = getWs(state, wsId);
     return ws.changes.map((c) => ({
       path: c.relativePath,
@@ -210,21 +204,24 @@ function mapStatusToAction(status?: string): 'create' | 'modify' | 'delete' {
 // ---------------------------------------------------------------------------
 
 /** Select agent stats by agent ID */
-export const selectAgentLineStats = store.createSelector(
-  (state, agentId: string): LineChangeStats | undefined => state.changes.agentStats[agentId],
-);
+export const selectAgentLineStats: AppSelector<LineChangeStats | undefined, [agentId: string]> =
+  store.createSelector(
+    (state, agentId: string): LineChangeStats | undefined => state.changes.agentStats[agentId],
+  );
 
 /** Select the full agent stats record */
-export const selectAllAgentStats = store.createSelector(
-  (state): Record<string, LineChangeStats> => state.changes.agentStats,
-);
+export const selectAllAgentStats: AppSelector<Record<string, LineChangeStats>> =
+  store.createSelector((state): Record<string, LineChangeStats> => state.changes.agentStats);
 
 const selectAgentLineStatsRequest = store.createSelector(
   (state, agentId: string): AgentLineStatsRequestState =>
     state.changes.agentLineStatsRequests[agentId] ?? emptyAgentLineStatsRequestState,
 );
 
-export const selectShouldRequestAgentLineStats = store.createSelector(
+export const selectShouldRequestAgentLineStats: AppSelector<
+  boolean,
+  [agentId: string, forceRefresh?: boolean]
+> = store.createSelector(
   (state, agentId: string, forceRefresh = false): boolean => {
     const requestState = selectAgentLineStatsRequest.select(state, agentId);
     if (requestState.isLoading) return false;
@@ -237,23 +234,30 @@ export const selectShouldRequestAgentLineStats = store.createSelector(
 // Accept changes selectors (moved from transient-ui slice)
 // ---------------------------------------------------------------------------
 
-export const selectAcceptChangesState = store.createSelector(
-  (state, workspaceId: string): AcceptChangesState => getWs(state, workspaceId).acceptChanges,
-);
+export const selectAcceptChangesState: AppSelector<AcceptChangesState, [workspaceId: string]> =
+  store.createSelector(
+    (state, workspaceId: string): AcceptChangesState => getWs(state, workspaceId).acceptChanges,
+  );
 
-export const selectSidebarCommitWhenReady = store.createSelector(
-  (state, workspaceId: string): boolean => getWs(state, workspaceId).acceptChanges.commitWhenReady,
-);
+export const selectSidebarCommitWhenReady: AppSelector<boolean, [workspaceId: string]> =
+  store.createSelector(
+    (state, workspaceId: string): boolean => getWs(state, workspaceId).acceptChanges.commitWhenReady,
+  );
 
-export const selectSidebarCreatePRWhenReady = store.createSelector(
-  (state, workspaceId: string): boolean =>
-    getWs(state, workspaceId).acceptChanges.createPRWhenReady,
-);
+export const selectSidebarCreatePRWhenReady: AppSelector<boolean, [workspaceId: string]> =
+  store.createSelector(
+    (state, workspaceId: string): boolean =>
+      getWs(state, workspaceId).acceptChanges.createPRWhenReady,
+  );
 
-export const selectSidebarMergeWhenReady = store.createSelector(
-  (state, workspaceId: string): boolean => getWs(state, workspaceId).acceptChanges.mergeWhenReady,
-);
+export const selectSidebarMergeWhenReady: AppSelector<boolean, [workspaceId: string]> =
+  store.createSelector(
+    (state, workspaceId: string): boolean => getWs(state, workspaceId).acceptChanges.mergeWhenReady,
+  );
 
-export const selectPendingAutoAction = store.createSelector(
+export const selectPendingAutoAction: AppSelector<
+  AcceptChangesState['pendingAutoAction'],
+  [workspaceId: string]
+> = store.createSelector(
   (state, workspaceId: string) => getWs(state, workspaceId).acceptChanges.pendingAutoAction,
 );

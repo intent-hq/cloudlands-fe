@@ -43,6 +43,10 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
     rationale: 'chat transport and read/subscription or hardware follow-up are independent',
   },
   {
+    pattern: /chat-state-slice\.ts#chatTranscriptSnapshotApplied$/,
+    rationale: 'hydration error recovery and scrollback segment invalidation are independent',
+  },
+  {
     pattern: /connections-slice\.ts#connectionsListReceived$/,
     rationale: 'backend layout restore and sidebar reconciliation are independent',
   },

@@ -15,7 +15,7 @@ describe('ChatPanel store import boundaries', () => {
   it('renders messages directly from agent-session state without a local optimistic layer', () => {
     const source = fs.readFileSync(CHAT_PANEL_FILE, 'utf-8');
 
-    expect(source).toContain('groupMessagesByDate($agentMessages$)');
+    expect(source).toContain('composeTranscript($agentHistoryMessages$, $agentMessages$');
     expect(source).not.toContain('visibleAgentMessages');
     expect(source).not.toContain('stageOptimisticUserMessage');
     expect(source).not.toContain('chat-panel-optimistic-message');

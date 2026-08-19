@@ -6,6 +6,7 @@
 
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger } from '$lib/i18n/format';
+import { looksLikeAgentId } from '$shared/utils/agent-name-utils';
 
 export interface EventWakeMetadata {
   type?: string;
@@ -37,6 +38,30 @@ export function firstNonEmptyString(...values: unknown[]): string | undefined {
   return undefined;
 }
 
+/**
+ * Extract agentId + display name from one legacy wake-message event line
+ * (the text after the "N. [type] " prefix). Name sources, in order: a quoted
+ * "Name", else the daemon's unquoted `Child agent NAME (agent-id)` wording.
+ * Names that are themselves agent-id-shaped are dropped so callers never
+ * render a raw UUID.
+ */
+export function parseLegacyEventLine(rawSummary: string): {
+  agentId?: string;
+  agentName?: string;
+} {
+  // Extract agentId - try new format first: {{agentId:xxx}}
+  let agentId = rawSummary.match(/\{\{agentId:([^}]+)\}\}/)?.[1];
+  // Fallback: old format with ID in parentheses: (agent-xxx-xxx-xxx)
+  if (!agentId) agentId = rawSummary.match(/\((agent-[a-f0-9-]+)\)/i)?.[1];
+
+  let agentName = rawSummary.match(/"([^"]+)"/)?.[1];
+  if (!agentName) {
+    agentName = rawSummary.match(/child agent\s+(.+?)\s*\(agent-[a-f0-9-]+\)/i)?.[1];
+  }
+  if (agentName && looksLikeAgentId(agentName)) agentName = undefined;
+  return { agentId, agentName };
+}
+
 /** Parse agent events from message text and/or metadata. */
 export function parseAgentEvents(text: string, metadata?: EventWakeMetadata): ParsedAgentEvent[] {
   // Use a Map to deduplicate by agentId (later events override earlier ones)
@@ -48,10 +73,11 @@ export function parseAgentEvents(text: string, metadata?: EventWakeMetadata): Pa
       const data = event.data as Record<string, unknown>;
       const agentId = data.agentId as string | undefined;
       if (agentId && (COMPLETION_EVENT_TYPES.has(event.type) || event.type === 'agent:created')) {
+        const agentName = firstNonEmptyString(data.agentName);
         agentMap.set(agentId, {
           type: event.type,
           agentId,
-          agentName: data.agentName as string | undefined,
+          agentName: agentName && !looksLikeAgentId(agentName) ? agentName : undefined,
           completionReport: firstNonEmptyString(data.completionReport, data.report),
           lastResponseSummary: firstNonEmptyString(data.lastResponseSummary),
         });
@@ -68,15 +94,7 @@ export function parseAgentEvents(text: string, metadata?: EventWakeMetadata): Pa
   for (const line of lines) {
     const eventMatch = line.match(/^\d+\.\s*\[([^\]]+)\]\s*(.+)$/);
     if (eventMatch) {
-      const rawSummary = eventMatch[2];
-      const agentIdMatch = rawSummary.match(/\{\{agentId:([^}]+)\}\}/);
-      let agentId = agentIdMatch?.[1];
-      if (!agentId) {
-        const oldFormatMatch = rawSummary.match(/\((agent-[a-f0-9-]+)\)/i);
-        agentId = oldFormatMatch?.[1];
-      }
-      const agentNameMatch = rawSummary.match(/"([^"]+)"/);
-      const agentName = agentNameMatch?.[1];
+      const { agentId, agentName } = parseLegacyEventLine(eventMatch[2]);
       if (
         agentId &&
         (COMPLETION_EVENT_TYPES.has(eventMatch[1]) || eventMatch[1] === 'agent:created')
@@ -154,18 +172,22 @@ export function summarizeEventWake(
   const completed = events.filter((e) => COMPLETION_EVENT_TYPES.has(e.type));
   const created = events.filter((e) => e.type === 'agent:created');
   const parts: string[] = [];
+  // Only use the named wording when a display name resolved; never fall back
+  // to the raw agent id.
   if (completed.length === 1) {
     parts.push(
-      m.chat_eventWake_childCompleted_named({
-        name: completed[0].agentName ?? completed[0].agentId,
-      }),
+      completed[0].agentName
+        ? m.chat_eventWake_childCompleted_named({ name: completed[0].agentName })
+        : m.chat_eventWakeup_agentFinished_label(),
     );
   } else if (completed.length > 1) {
     parts.push(m.chat_eventWake_childCompleted_count({ count: formatInteger(completed.length) }));
   }
   if (created.length === 1) {
     parts.push(
-      m.chat_eventWake_childCreated_named({ name: created[0].agentName ?? created[0].agentId }),
+      created[0].agentName
+        ? m.chat_eventWake_childCreated_named({ name: created[0].agentName })
+        : m.events_activity_agentCreated_label(),
     );
   } else if (created.length > 1) {
     parts.push(m.chat_eventWake_childCreated_count({ count: formatInteger(created.length) }));

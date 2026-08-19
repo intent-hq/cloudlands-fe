@@ -90,6 +90,13 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSessionIsStreaming: testState.selector(false),
   selectAgentSessionStreamingContent: testState.selector(''),
   selectAgentMessages: testState.selector([]),
+  selectAgentHistoryMessages: testState.selector([]),
+  selectHistorySegmentMeta: testState.selector({
+    gapToTail: false,
+    oldestReached: false,
+    historyCount: 0,
+    tailCount: 0,
+  }),
 }));
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectAwaitingSwitchBackSnapshot: testState.selector(false),
@@ -101,6 +108,11 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatReceivedFirstChunk: testState.selector(false),
   selectChatStatusEvents: testState.selector([]),
   selectChatStreamingStartTime: testState.selector(null),
+  selectFetchingGapFill: testState.selector(false),
+  selectFetchingHistorySeek: testState.selector(false),
+  selectFetchingOlderHistory: testState.selector(false),
+  selectHistoryExhausted: testState.selector(false),
+  selectHistorySeekUnsupported: testState.selector(false),
   selectTranscriptHydration: testState.selector({ isHydrating: false }),
   selectTranscriptHydratedOnce: testState.selector(false),
   selectTranscriptSnapshotMeta: testState.selector(undefined),

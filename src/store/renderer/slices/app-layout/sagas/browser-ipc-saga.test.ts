@@ -105,6 +105,7 @@ describe('browserIpcSaga', () => {
       ['browser:focus-tab', handlers['browser:focus-tab']],
       ['browser:list-tabs-request', handlers['browser:list-tabs-request']],
       ['browser:tab-navigated', handlers['browser:tab-navigated']],
+      ['browser:tab-owner-changed', handlers['browser:tab-owner-changed']],
     ]);
 
     first.cancel();
@@ -115,10 +116,11 @@ describe('browserIpcSaga', () => {
       ['browser:focus-tab', 'browser:focus-tab-listener'],
       ['browser:list-tabs-request', 'browser:list-tabs-request-listener'],
       ['browser:tab-navigated', 'browser:tab-navigated-listener'],
+      ['browser:tab-owner-changed', 'browser:tab-owner-changed-listener'],
     ]);
 
     const restarted = start();
-    expect(on).toHaveBeenCalledTimes(10);
+    expect(on).toHaveBeenCalledTimes(12);
     restarted.cancel();
     await restarted.toPromise();
   });
@@ -214,6 +216,97 @@ describe('browserIpcSaga', () => {
           force: false,
           timestamp: NOW,
         },
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  // Main binds the ownership-checked adoption target into the payload as
+  // replaceTabId; the replace must land on exactly that tab, and an agent
+  // open must never fall back to replacing an unchecked tab (TOCTOU,
+  // monorepo#2857).
+  it('replaces exactly the main-bound replaceTabId, not whichever browser tab is first now', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: {
+              one: {
+                tabs: [
+                  { id: 'browser-new-first', type: 'browser' },
+                  { id: 'browser-checked', type: 'browser' },
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    await emit({
+      url: 'https://bound.test',
+      position: 'replace',
+      workspaceId: 'ws-1',
+      ownerAgentId: 'agent-1',
+      replaceTabId: 'browser-checked',
+    });
+
+    expect(actions).toMatchObject([
+      {
+        type: 'panelLayout/updateTabBrowserUrl',
+        payload: ['ws-1', 'browser-checked', 'https://bound.test', null],
+      },
+      {
+        type: 'panelLayout/setTabOwnerAgent',
+        payload: ['ws-1', 'browser-checked', 'agent-1'],
+      },
+      {
+        type: 'panelLayout/setActiveTab',
+        payload: { wsId: 'ws-1', tabId: 'browser-checked' },
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('an agent replace whose bound target is gone opens a new tab instead of adopting an unchecked one', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': { panels: { one: { tabs: [{ id: 'browser-other', type: 'browser' }] } } },
+        },
+      },
+    };
+
+    await emit({
+      url: 'https://gone.test',
+      position: 'replace',
+      workspaceId: 'ws-1',
+      ownerAgentId: 'agent-1',
+      replaceTabId: 'browser-closed',
+    });
+    // Legacy/agent payload without replaceTabId: same rule — main never
+    // checked 'browser-other', so no adoption.
+    await emit({
+      url: 'https://legacy.test',
+      position: 'replace',
+      workspaceId: 'ws-1',
+      ownerAgentId: 'agent-1',
+    });
+
+    expect(actions.map((a: any) => a.type)).toEqual([
+      'panelLayout/openTab',
+      'panelLayout/openTab',
+    ]);
+    expect(actions).toMatchObject([
+      { payload: { wsId: 'ws-1', tab: { ...TAB('https://gone.test'), ownerAgentId: 'agent-1' } } },
+      {
+        payload: { wsId: 'ws-1', tab: { ...TAB('https://legacy.test'), ownerAgentId: 'agent-1' } },
       },
     ]);
     task.cancel();

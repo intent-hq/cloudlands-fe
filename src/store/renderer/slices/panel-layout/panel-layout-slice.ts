@@ -1014,6 +1014,15 @@ export const updateTabFavicon = createAction<[wsId: string, tabId: string, favic
   'panelLayout/updateTabFavicon',
 );
 
+/**
+ * Record the agent owning a browser tab (claimTab / agent openTab adopting an
+ * existing tab, monorepo#2857). Persisted with the layout so ownership
+ * survives restart; main's ownership registry rehydrates from it.
+ */
+export const setTabOwnerAgent = createAction<[wsId: string, tabId: string, ownerAgentId: string]>(
+  'panelLayout/setTabOwnerAgent',
+);
+
 // `tabId` scopes the retarget to one specific tab (e.g. a candidate click in
 // that tab's not-found panel); without it, every file tab at `oldPath`
 // retargets (file renames and the read saga, which has no tab identity).
@@ -1641,7 +1650,12 @@ panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
   if (!targetPanelId || !ws.panels[targetPanelId]) return state;
 
   const panel = ws.panels[targetPanelId];
-  const newTab: PanelTab = { ...closed.tab, id: newTabId };
+  // The genuine close cleared main's ownership of an agent-owned browser tab
+  // (monorepo#2857); a reopen is a fresh, unowned tab — carrying the stale
+  // ownerAgentId forward would resurrect ownership in main's registry (via
+  // layout rehydration) and block other agents from claiming the tab.
+  const { ownerAgentId: _staleOwner, ...closedTab } = closed.tab;
+  const newTab: PanelTab = { ...closedTab, id: newTabId };
 
   ws = {
     ...ws,
@@ -1804,6 +1818,22 @@ panelLayoutReducer.with(
     return state;
   },
 );
+// --- Set Tab Owner Agent (monorepo#2857) ---
+panelLayoutReducer.with(setTabOwnerAgent, (state, { payload: [wsId, tabId, ownerAgentId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  for (const [pId, panel] of Object.entries(ws.panels)) {
+    const tabIdx = panel.tabs.findIndex((t) => t.id === tabId && t.type === 'browser');
+    if (tabIdx >= 0) {
+      if (panel.tabs[tabIdx].ownerAgentId === ownerAgentId) return state;
+      const newTabs = panel.tabs.map((t, i) => (i === tabIdx ? { ...t, ownerAgentId } : t));
+      return setWorkspaceState(state, wsId, {
+        ...ws,
+        panels: { ...ws.panels, [pId]: { ...panel, tabs: newTabs } },
+      });
+    }
+  }
+  return state;
+});
 // --- Update Tab Favicon ---
 panelLayoutReducer.with(updateTabFavicon, (state, { payload: [wsId, tabId, faviconUrl] }) => {
   const ws = getWorkspaceState(state, wsId);

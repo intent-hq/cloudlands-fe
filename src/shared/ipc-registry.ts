@@ -492,6 +492,8 @@ export const IPC_CHANNELS = {
     CLOSE_TAB: 'browser:close-tab',
     /** Main navigated an existing tab (agent navigate/reuse) - main->renderer event */
     TAB_NAVIGATED: 'browser:tab-navigated',
+    /** A tab's owner agent changed (claim/agent open) - main->renderer event */
+    TAB_OWNER_CHANGED: 'browser:tab-owner-changed',
   },
 
   // File Tracking
@@ -1048,6 +1050,9 @@ export const EVENT_CHANNELS = [
   // Main navigated an existing browser tab (agent navigate/reuse) so the
   // renderer can persist the new URL + requested URL (monorepo#2789)
   'browser:tab-navigated',
+  // A tab's owner agent changed (claim/agent open) so the renderer can
+  // persist ownership with the tab (monorepo#2857)
+  'browser:tab-owner-changed',
   // WebSocket API events (main → renderer)
   'websocket-api:discovery-auto-disabled',
   // Workspace token usage changed (main → renderer)

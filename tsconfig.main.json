@@ -19,12 +19,11 @@
     "declarationMap": true,
     "typeRoots": ["./node_modules/@types"],
     "types": ["node"],
-    "baseUrl": ".",
     "paths": {
-      "$lib/*": ["src/lib/*"],
-      "$store/*": ["src/store/*"],
-      "$shared/*": ["src/shared/*"],
-      "$features/*": ["src/features/*"]
+      "$lib/*": ["./src/lib/*"],
+      "$store/*": ["./src/store/*"],
+      "$shared/*": ["./src/shared/*"],
+      "$features/*": ["./src/features/*"]
     },
     "allowSyntheticDefaultImports": true
   },
