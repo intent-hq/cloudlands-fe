@@ -57,16 +57,16 @@ describe('mounted panel canvas geometry', () => {
       props: ordinaryProps,
       context: new Map([[STORE_CONTEXT, storeContext]]),
     });
-    expect(geometryWidth(canvas(result.container))).toBe(1600);
+    expect(geometryWidth(canvas(result.container))).toBe(1200);
 
     await result.rerender({ ...ordinaryProps, panelColumnWidths: [900] });
-    expect(geometryWidth(canvas(result.container))).toBe(1600);
+    expect(geometryWidth(canvas(result.container))).toBe(1200);
 
     await result.rerender({
       ...ordinaryProps,
       canvasWidth: migratePanelCanvasWidth(1600, undefined).canvasWidth,
     });
-    expect(geometryWidth(canvas(result.container))).toBe(1600);
+    expect(geometryWidth(canvas(result.container))).toBe(1200);
 
     await result.rerender({
       ...ordinaryProps,
@@ -93,10 +93,10 @@ describe('mounted panel canvas geometry', () => {
       context: new Map([[STORE_CONTEXT, storeContext]]),
     });
     expect(result.getByTestId('long-content').className).toContain('w-[4000px]');
-    expect(geometryWidth(canvas(result.container))).toBe(1600);
+    expect(geometryWidth(canvas(result.container))).toBe(1200);
 
     await result.rerender({ ...ordinaryProps, longContent: true, viewportWidth: 1240 });
-    expect(geometryWidth(canvas(result.container))).toBe(1240);
+    expect(geometryWidth(canvas(result.container))).toBe(1200);
 
     await result.rerender({ ...ordinaryProps, longContent: true, viewportWidth: 800 });
     expect(geometryWidth(canvas(result.container))).toBe(800);
@@ -149,6 +149,6 @@ describe('mounted panel canvas geometry', () => {
     await fireEvent.dblClick(handle);
     expect(onResizeEnd).toHaveBeenLastCalledWith(280, 500);
     await result.rerender(ordinaryProps);
-    expect(geometryWidth(canvas(result.container))).toBe(1600);
+    expect(geometryWidth(canvas(result.container))).toBe(1200);
   });
 });

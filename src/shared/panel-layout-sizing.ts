@@ -69,6 +69,45 @@ export interface ProportionalPanelResize {
   acceptedDelta: number;
 }
 
+function allocateWidthsWithMinimum(
+  weights: readonly number[],
+  totalWidth: number,
+  minimumWidth: number,
+): number[] {
+  if (weights.length === 0) return [];
+  if (totalWidth <= 0) return weights.map(() => 0);
+
+  const nextWidths = weights.map(() => 0);
+  let remainingWidth = totalWidth;
+  let active = weights.map((width, index) => ({ width: Math.max(0, width), index }));
+  while (active.length > 0) {
+    const activeTotal = active.reduce((sum, item) => sum + item.width, 0);
+    if (activeTotal <= 0) {
+      const equalWidth = remainingWidth / active.length;
+      active.forEach((item) => {
+        nextWidths[item.index] = equalWidth;
+      });
+      break;
+    }
+    const saturated = active.filter(
+      (item) => (item.width / activeTotal) * remainingWidth < minimumWidth,
+    );
+    if (saturated.length === 0) {
+      active.forEach((item) => {
+        nextWidths[item.index] = (item.width / activeTotal) * remainingWidth;
+      });
+      break;
+    }
+    saturated.forEach((item) => {
+      nextWidths[item.index] = minimumWidth;
+    });
+    remainingWidth -= minimumWidth * saturated.length;
+    const saturatedIndexes = new Set(saturated.map((item) => item.index));
+    active = active.filter((item) => !saturatedIndexes.has(item.index));
+  }
+  return nextWidths;
+}
+
 /**
  * Resize the panel before a root divider and distribute the opposite delta
  * proportionally across every panel to its right. The total width is fixed.
@@ -78,22 +117,36 @@ export function resizePanelWidthsAtDivider(
   dividerIndex: number,
   requestedDelta: number,
 ): ProportionalPanelResize {
+  const finiteTotal = panelWidths.reduce(
+    (sum, width) => sum + (Number.isFinite(width) ? width : 0),
+    0,
+  );
+  const positiveWidths = panelWidths.map((width) =>
+    Number.isFinite(width) ? Math.max(0, width) : 0,
+  );
+  const positiveTotal = positiveWidths.reduce((sum, width) => sum + width, 0);
+  const totalWidth = finiteTotal > 0 ? finiteTotal : positiveTotal;
+  const minimumWidth =
+    panelWidths.length > 0
+      ? Math.min(totalWidth / panelWidths.length, (totalWidth * MIN_PANEL_SIZE_PERCENT) / 100)
+      : 0;
+  if (panelWidths.some((width) => !isUsableWidth(width) || width < minimumWidth)) {
+    return {
+      panelWidths: allocateWidthsWithMinimum(positiveWidths, totalWidth, minimumWidth),
+      acceptedDelta: 0,
+    };
+  }
+
   if (
     panelWidths.length < 2 ||
     !Number.isInteger(dividerIndex) ||
     dividerIndex < 0 ||
     dividerIndex >= panelWidths.length - 1 ||
-    !Number.isFinite(requestedDelta) ||
-    panelWidths.some((width) => !isUsableWidth(width))
+    !Number.isFinite(requestedDelta)
   ) {
     return { panelWidths: [...panelWidths], acceptedDelta: 0 };
   }
 
-  const totalWidth = panelWidths.reduce((sum, width) => sum + width, 0);
-  const minimumWidth = Math.min(
-    totalWidth / panelWidths.length,
-    (totalWidth * MIN_PANEL_SIZE_PERCENT) / 100,
-  );
   const referenceWidth = panelWidths[dividerIndex];
   const rightWidths = panelWidths.slice(dividerIndex + 1);
   const maximumGrowth = rightWidths.reduce(
@@ -118,26 +171,10 @@ export function resizePanelWidthsAtDivider(
     return { panelWidths: nextWidths, acceptedDelta };
   }
 
-  let remainingWidth = targetRightWidth;
-  let active = rightWidths.map((width, index) => ({ width, index }));
-  while (active.length > 0) {
-    const activeTotal = active.reduce((sum, item) => sum + item.width, 0);
-    const saturated = active.filter(
-      (item) => (item.width / activeTotal) * remainingWidth < minimumWidth,
-    );
-    if (saturated.length === 0) {
-      active.forEach((item) => {
-        nextWidths[dividerIndex + 1 + item.index] = (item.width / activeTotal) * remainingWidth;
-      });
-      break;
-    }
-    saturated.forEach((item) => {
-      nextWidths[dividerIndex + 1 + item.index] = minimumWidth;
-    });
-    remainingWidth -= minimumWidth * saturated.length;
-    const saturatedIndexes = new Set(saturated.map((item) => item.index));
-    active = active.filter((item) => !saturatedIndexes.has(item.index));
-  }
+  const resizedRightWidths = allocateWidthsWithMinimum(rightWidths, targetRightWidth, minimumWidth);
+  resizedRightWidths.forEach((width, index) => {
+    nextWidths[dividerIndex + 1 + index] = width;
+  });
 
   return { panelWidths: nextWidths, acceptedDelta };
 }

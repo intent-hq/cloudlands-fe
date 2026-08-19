@@ -62,7 +62,7 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
   },
   {
     pattern:
-      /panel-layout-slice\.ts#(?:openTabInNewRootColumn|closeTabsByType|closeTabsByAgentId|destroyTabsByOwnerAgent|destroyOwnedTabsForWorkspace|restoreHiddenTab|selectNextTab|selectPreviousTab|reorderTabs|focusPanel|markPanelTouched|updateSizes|updateSplitSizes|resizePanelLayoutRightEdge|resizePanelLayoutAtHorizontalPanel|toggleExpandPanel|goBackInFocusHistory|goForwardInFocusHistory|setDeferSpecTab|observeDeferredSpecGeneration|revealDeferredSpecTab|resolveNewWorkspaceInitialAgent|reconcileStaleAgentTabs|updateTabTitle|updateTabBrowserUrl|updateTabFavicon|updateFileTabPath|consumePendingFocus)$/,
+      /panel-layout-slice\.ts#(?:openTabInNewRootColumn|closeTabsByType|closeTabsByAgentId|destroyTabsByOwnerAgent|destroyOwnedTabsForWorkspace|restoreHiddenTab|selectNextTab|selectPreviousTab|reorderTabs|focusPanel|markPanelTouched|updateSizes|updateSplitSizes|resizePanelLayoutRightEdge|resizePanelLayoutAtRootDivider|toggleExpandPanel|goBackInFocusHistory|goForwardInFocusHistory|setDeferSpecTab|observeDeferredSpecGeneration|revealDeferredSpecTab|resolveNewWorkspaceInitialAgent|reconcileStaleAgentTabs|updateTabTitle|updateTabBrowserUrl|updateTabFavicon|updateFileTabPath|consumePendingFocus)$/,
     rationale:
       'layout persistence and specialized panel effects are independent',
   },

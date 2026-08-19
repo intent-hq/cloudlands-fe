@@ -49,7 +49,7 @@ describe('panel and workspace lifecycle motion', () => {
     expect(container).toContain(
       'lifecycleMotionReady && !isResizing && !suppressLayoutMotion && !suppressResizeCommitMotion',
     );
-    expect(container).toContain('onResizeStart={() => handleResizeStart(item.index)}');
+    expect(container).toContain('onResizeStart={handleResizeStart}');
     expect(container).toContain('onUpdateSizes?.(nodePath, committedSizes)');
     expect(container).not.toContain('onUpdateSizes?.(nodePath, newSizes)');
     expect(container).toContain(':global(body.panel-resizing) .panel-split-child');

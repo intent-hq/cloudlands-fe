@@ -103,6 +103,23 @@ describe('proportional fixed-canvas divider resizing', () => {
     });
   });
 
+  it('rejects and repairs restored widths below the global minimum', () => {
+    const result = resizePanelWidthsAtDivider([800, 50, 150], 0, 10);
+    expect(result.acceptedDelta).toBe(0);
+    expect(result.panelWidths.reduce((sum, width) => sum + width, 0)).toBeCloseTo(1000, 8);
+    result.panelWidths.forEach((width) => {
+      expect(Number.isFinite(width)).toBe(true);
+      expect(width).toBeGreaterThanOrEqual(100);
+    });
+  });
+
+  it('rejects negative widths with finite non-negative fixed-total geometry', () => {
+    const result = resizePanelWidthsAtDivider([200, -1], 0, 10);
+    expect(result.acceptedDelta).toBe(0);
+    expect(result.panelWidths.reduce((sum, width) => sum + width, 0)).toBeCloseTo(199, 8);
+    expect(result.panelWidths.every((width) => Number.isFinite(width) && width >= 0)).toBe(true);
+  });
+
   it('keeps totals, minimums, and the unaffected left side valid across a table', () => {
     for (const widths of [
       [500, 500],
@@ -127,7 +144,6 @@ describe('proportional fixed-canvas divider resizing', () => {
 
   it.each([
     { widths: [200], index: 0, delta: 10 },
-    { widths: [200, Number.NaN], index: 0, delta: 10 },
     { widths: [200, 300], index: -1, delta: 10 },
     { widths: [200, 300], index: 0, delta: Number.NaN },
   ])('rejects invalid input %#', ({ widths, index, delta }) => {
@@ -135,6 +151,13 @@ describe('proportional fixed-canvas divider resizing', () => {
       panelWidths: widths,
       acceptedDelta: 0,
     });
+  });
+
+  it('rejects non-finite widths without returning non-finite geometry', () => {
+    const result = resizePanelWidthsAtDivider([200, Number.NaN], 0, 10);
+    expect(result.acceptedDelta).toBe(0);
+    expect(result.panelWidths.reduce((sum, width) => sum + width, 0)).toBeCloseTo(200, 8);
+    expect(result.panelWidths.every((width) => Number.isFinite(width) && width >= 0)).toBe(true);
   });
 });
 

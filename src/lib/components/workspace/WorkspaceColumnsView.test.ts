@@ -310,7 +310,7 @@ describe('WorkspaceColumnsView', () => {
       '360px',
     );
     expect(document.querySelector<HTMLElement>('[data-workspace-stack="ws-2"]')?.style.width).toBe(
-      '1556px',
+      '1456px',
     );
     expect(document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')?.style.width).toBe(
       '360px',
@@ -321,7 +321,7 @@ describe('WorkspaceColumnsView', () => {
 
     expect(
       document.querySelector<HTMLElement>('[data-workspace-stack="ws-2,ws-3"]')?.style.width,
-    ).toBe('1556px');
+    ).toBe('1456px');
   });
 
   it('renders fallback-width columns during width hydration and settles to clamped widths', async () => {
@@ -420,7 +420,7 @@ describe('WorkspaceColumnsView', () => {
 
     expect(
       document.querySelector<HTMLElement>('[data-workspace-stack="ws-1,ws-2"]')?.style.width,
-    ).toBe('1436px');
+    ).toBe('1336px');
   });
 
   it('fills the shared stack width after the final panel closes', async () => {
@@ -429,11 +429,11 @@ describe('WorkspaceColumnsView', () => {
     panelCanvasWidths.set({ 'ws-1': 480, 'ws-2': 960 });
     render(WorkspaceColumnsView);
     const stack = document.querySelector<HTMLElement>('[data-workspace-stack="ws-1,ws-2"]')!;
-    expect(stack.style.width).toBe('1436px');
+    expect(stack.style.width).toBe('1336px');
     panelCounts.set({ 'ws-1': 1, 'ws-2': 0 });
     await tick();
 
-    expect(stack.style.width).toBe('956px');
+    expect(stack.style.width).toBe('856px');
   });
 
   it('uses the shared top and horizontal zones for stack and reorder drops', async () => {
@@ -573,7 +573,7 @@ describe('WorkspaceColumnsView', () => {
     render(WorkspaceColumnsView);
 
     expect(document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')?.style.width).toBe(
-      '1436px',
+      '1336px',
     );
   });
 
@@ -583,14 +583,14 @@ describe('WorkspaceColumnsView', () => {
     render(WorkspaceColumnsView);
     const panelColumn = document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')!;
 
-    expect(panelColumn.style.width).toBe('1436px');
+    expect(panelColumn.style.width).toBe('1336px');
     await fireEvent.click(document.querySelector('[data-mock-panel-preview="ws-3"]')!);
     await tick();
-    expect(panelColumn.style.width).toBe('956px');
+    expect(panelColumn.style.width).toBe('856px');
 
     await fireEvent.click(document.querySelector('[data-mock-panel-preview-clear="ws-3"]')!);
     await tick();
-    expect(panelColumn.style.width).toBe('1436px');
+    expect(panelColumn.style.width).toBe('1336px');
   });
 
   it('reactively adopts a restored intrinsic canvas width', async () => {
@@ -602,7 +602,7 @@ describe('WorkspaceColumnsView', () => {
     panelCanvasWidths.set({ 'ws-3': 960 });
     await tick();
 
-    expect(panelColumn.style.width).toBe('1436px');
+    expect(panelColumn.style.width).toBe('1336px');
   });
 
   it('uses measured sidebar pixels and clamps them to the column maximum', async () => {
@@ -611,12 +611,12 @@ describe('WorkspaceColumnsView', () => {
     render(WorkspaceColumnsView);
 
     const panelColumn = document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')!;
-    expect(panelColumn.style.width).toBe('1436px');
+    expect(panelColumn.style.width).toBe('1336px');
 
     await fireEvent.click(document.querySelector('[data-mock-sidebar-width="ws-3"]')!);
     await tick();
 
-    expect(panelColumn.style.width).toBe('1476px');
+    expect(panelColumn.style.width).toBe('1376px');
   });
 
   it('lets the inner panel canvas own resize updates without a competing dispatch', async () => {
@@ -627,7 +627,7 @@ describe('WorkspaceColumnsView', () => {
     await fireEvent.click(document.querySelector('[data-mock-panel-resize-preview="ws-3"]')!);
     await tick();
 
-    expect(panelColumn.style.width).toBe('1556px');
+    expect(panelColumn.style.width).toBe('1456px');
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 
