@@ -18,6 +18,7 @@
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
+  import { openExternalUrl } from '$lib/utils/open-external';
   import { store as appStore } from '$store/renderer/store';
   import {
     captureFingerprintRequested,
@@ -44,6 +45,15 @@
   // The WSS default port (`server.wsApi.port`, PROTOCOL §1.1). Prefilled as a
   // sensible default; the field stays editable for operators who reconfigured it.
   const DEFAULT_WS_PORT = '5181';
+
+  // i18n-ignore (URL)
+  const INTENTD_REPO_URL = 'https://github.com/intent-hq/intentd';
+
+  function openIntentdRepo(e: Event) {
+    e.preventDefault();
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- opens an external URL in the system browser, not a domain data fetch
+    void openExternalUrl(INTENTD_REPO_URL);
+  }
 
   let step = $state<Step>('details');
   let host = $state('');
@@ -280,6 +290,15 @@
           </div>
 
           <p class="text-xs text-subtle">{m.modals_connect_whereToFind_help()}</p>
+          <p class="text-xs text-subtle">
+            {m.modals_connect_headless_before()}
+            <a
+              href={INTENTD_REPO_URL}
+              class="text-primary hover:underline"
+              onclick={openIntentdRepo}><!-- i18n-ignore (URL) -->github.com/intent-hq/intentd</a
+            >
+            {m.modals_connect_headless_after()}
+          </p>
         {:else}
           <p class="text-sm text-subtle">{m.modals_connect_confirmStep_description()}</p>
           <div class="space-y-1">

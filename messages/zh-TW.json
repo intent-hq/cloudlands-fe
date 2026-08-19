@@ -5805,6 +5805,8 @@
   "modals_connect_confirm_label": "確認並連線",
   "modals_connect_back_label": "返回",
   "modals_connect_whereToFind_help": "在目標機器上的設定 → 一般 → WebSocket API 中尋找主機、連接埠和存取權杖。",
+  "modals_connect_headless_before": "目標機器上沒有應用程式？也可以執行無介面的 intentd——請參閱",
+  "modals_connect_headless_after": "以瞭解安裝和連線說明。",
   "modals_connect_detectHosts_label": "偵測所有後端 IP",
   "modals_connect_detectHosts_description": "同時儲存後端的其他 IP 位址，以便在其網路變化時連線仍能正常運作。",
   "modals_connect_tokenRejected_error": "常駐程式拒絕了此存取權杖。請確認您複製的是目前的權杖，然後再試一次。",

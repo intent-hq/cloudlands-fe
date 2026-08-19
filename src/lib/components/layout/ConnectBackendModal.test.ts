@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   captureFingerprintRequested: vi.fn(),
   addConnectionRequested: vi.fn(),
   switchConnectionRequested: vi.fn(),
+  openExternalUrl: vi.fn(),
 }));
 
 vi.mock('svelte-fa', () => ({
@@ -28,6 +29,10 @@ vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
   captureFingerprintRequested: mocks.captureFingerprintRequested,
   addConnectionRequested: mocks.addConnectionRequested,
   switchConnectionRequested: mocks.switchConnectionRequested,
+}));
+
+vi.mock('$lib/utils/open-external', () => ({
+  openExternalUrl: mocks.openExternalUrl,
 }));
 
 async function fillDetails() {
@@ -217,6 +222,19 @@ describe('ConnectBackendModal', () => {
     // closed→open transition, not on every keystroke.
     await fireEvent.input(hostInput, { target: { value: '' } });
     expect(hostInput.value).toBe('');
+  });
+
+  it('shows the headless-install hint and opens the intentd repo via the external opener', async () => {
+    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+    render(ConnectBackendModal, { props: { open: true } });
+
+    // The hint renders on the details step, under the where-to-find help.
+    expect(screen.getByText(/run a headless intentd/i)).toBeTruthy();
+
+    const link = screen.getByRole('link', { name: 'github.com/intent-hq/intentd' });
+    await fireEvent.click(link);
+
+    expect(mocks.openExternalUrl).toHaveBeenCalledWith('https://github.com/intent-hq/intentd');
   });
 
   it('keeps Continue disabled until host, a valid port, and token are provided', async () => {
