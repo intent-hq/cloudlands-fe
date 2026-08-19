@@ -13,13 +13,10 @@ import {
   selectWorkspaceViewMode,
 } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import {
-  closePanel,
-  closeActiveTab,
   openBlankWorkingPanel,
   reopenClosedTab,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
-  selectPanels,
   selectFocusedPanelId,
   selectRecentlyClosed,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -64,8 +61,6 @@ interface WorkspaceTabNavigationStore {
       | ReturnType<typeof switchToWorkspaceTabByIndex>
       | ReturnType<typeof closeWorkspaceTab>
       | ReturnType<typeof reopenLastClosedWorkspaceTab>
-      | ReturnType<typeof closePanel>
-      | ReturnType<typeof closeActiveTab>
       | ReturnType<typeof openBlankWorkingPanel>
       | ReturnType<typeof reopenClosedTab>
       | ReturnType<typeof toggleSidebar>,
@@ -108,18 +103,18 @@ function closeWorkspaceTabById(
   return workspaceId;
 }
 
-function resolveCloseTarget(
+function resolveWorkspaceTabToClose(
   store: WorkspaceTabNavigationStore,
   currentPath: string,
-): { workspaceId: string; layoutId: string } | null {
-  if (selectWorkspaceViewMode.select(store.state) === 'columns') {
-    const workspaceId = selectCurrentWorkspaceTabId.select(store.state);
-    return workspaceId ? { workspaceId, layoutId: workspaceId } : null;
-  }
-
+): string | null {
   const match = currentPath.match(/^\/workspace\/([^/]+)/);
   const workspaceId = match?.[1];
-  return workspaceId && workspaceId !== 'new' ? { workspaceId, layoutId: workspaceId } : null;
+  if (workspaceId) return workspaceId === 'new' ? null : workspaceId;
+
+  const isColumnsRoot = currentPath === '/' || currentPath === '/workspace';
+  return isColumnsRoot && selectWorkspaceViewMode.select(store.state) === 'columns'
+    ? selectCurrentWorkspaceTabId.select(store.state)
+    : null;
 }
 
 export function cycleWorkspaceTab(
@@ -144,44 +139,10 @@ export function closeActiveWorkspaceTab(
   currentPath: string,
   navigate: (path: string) => unknown,
 ): string | null {
-  const match = currentPath.match(/^\/workspace\/([^/]+)/);
-  const workspaceId = match?.[1];
-  if (!workspaceId || workspaceId === 'new') return null;
+  const workspaceId = resolveWorkspaceTabToClose(store, currentPath);
+  if (!workspaceId) return null;
 
   return closeWorkspaceTabById(store, workspaceId, currentPath, navigate);
-}
-
-/**
- * Contextual Cmd+W: close the focused panel first; when only one panel
- * remains, close its tabs; once nothing is open, close the workspace tab.
- */
-export function closePanelOrWorkspaceTab(
-  store: WorkspaceTabNavigationStore,
-  currentPath: string,
-  navigate: (path: string) => unknown,
-): 'panel' | 'tab' | 'workspace' | null {
-  const target = resolveCloseTarget(store, currentPath);
-  if (!target) return null;
-  const { workspaceId, layoutId } = target;
-
-  const panels = selectPanels.select(store.state, layoutId);
-  const panelIds = Object.keys(panels);
-  const focusedPanelId = selectFocusedPanelId.select(store.state, layoutId);
-
-  if (panelIds.length > 1) {
-    const targetId = focusedPanelId && panels[focusedPanelId] ? focusedPanelId : panelIds[0];
-    store.dispatch(closePanel(layoutId, targetId));
-    return 'panel';
-  }
-
-  const lastPanel = (focusedPanelId ? panels[focusedPanelId] : undefined) ?? panels[panelIds[0]];
-  if (lastPanel && lastPanel.tabs.length > 0) {
-    store.dispatch(closeActiveTab(layoutId, lastPanel.id));
-    return 'tab';
-  }
-
-  closeWorkspaceTabById(store, workspaceId, currentPath, navigate);
-  return 'workspace';
 }
 
 export function reopenWorkspaceTab(
@@ -303,8 +264,8 @@ export function registerWorkspaceTabShortcuts({
     ...mod,
     key: 'w',
     global: true,
-    description: m.workspace_shortcuts_closePanelTabOrSpace_description(),
-    action: withRoute((path) => closePanelOrWorkspaceTab(store, path, navigate)),
+    description: m.workspace_shortcuts_closeSpaceTab_description(),
+    action: withRoute((path) => closeActiveWorkspaceTab(store, path, navigate)),
   });
   register({
     ...mod,

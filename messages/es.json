@@ -6052,7 +6052,7 @@
   "workspace_import_result_failed_title": "Error de importación",
   "workspace_import_result_failed_message": "La importación no se completó: {error}",
   "workspace_import_openWorkspace_label": "Abrir espacio",
-  "workspace_shortcuts_closePanelTabOrSpace_description": "Cerrar panel, pestaña o espacio",
+  "workspace_shortcuts_closeSpaceTab_description": "Cerrar pestaña de espacio",
   "workspace_shortcuts_newPanel_description": "Nuevo panel",
   "workspace_shortcuts_newSpace_description": "Nuevo espacio",
   "workspace_shortcuts_nextSpaceTab_description": "Siguiente pestaña de espacio",

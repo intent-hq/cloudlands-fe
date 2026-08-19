@@ -6052,7 +6052,7 @@
   "workspace_import_result_failed_title": "インポート失敗",
   "workspace_import_result_failed_message": "インポートが完了しませんでした: {error}",
   "workspace_import_openWorkspace_label": "スペースを開く",
-  "workspace_shortcuts_closePanelTabOrSpace_description": "パネル、タブ、またはスペースを閉じる",
+  "workspace_shortcuts_closeSpaceTab_description": "スペースタブを閉じる",
   "workspace_shortcuts_newPanel_description": "新しいパネル",
   "workspace_shortcuts_newSpace_description": "新しいスペース",
   "workspace_shortcuts_nextSpaceTab_description": "次のスペースタブ",
