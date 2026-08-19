@@ -10,7 +10,7 @@
     faPlus,
     faStar,
   } from '@fortawesome/free-solid-svg-icons';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { faNote } from '$lib/icons/faNote';
 
   // Example data
@@ -112,7 +112,7 @@
         {#each agents as agent (agent.id)}
           <ListItem
             selected={selectedAgentId === agent.id}
-            iconComponent={AuggieAvatar}
+            iconComponent={AgentAvatar}
             iconProps={{ agentId: agent.id, size: 16 }}
             title={agent.name}
             subtitle={agent.lastMessage}

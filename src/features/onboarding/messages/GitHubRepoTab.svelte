@@ -275,7 +275,7 @@
   <!-- GitHub URL input — the only control; the daemon owns the checkout location. -->
   <div class="flex items-stretch gap-2">
     <div
-      class="flex-1 flex items-center rounded-lg py-1 border border-border/50 bg-card/50 overflow-hidden focus-within:border-ring"
+      class="flex-1 flex items-center rounded-lg py-1 border border-border bg-card/50 overflow-hidden focus-within:border-ring"
     >
       <Fa icon={faGithub} class="ml-3 text-muted-foreground" />
       <!-- i18n-ignore (domain name prefix) -->
@@ -311,7 +311,7 @@
     <GitHubAuthBanner message={m.onboarding_githubRepoTab_signIn_description()} />
   {:else if $reposError$}
     <div
-      class="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-xs text-destructive-foreground space-y-2"
+      class="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-xs text-error-foreground space-y-2"
     >
       <p>{m.onboarding_githubRepoTab_loadFailed_error({ error: $reposError$ })}</p>
       <button
@@ -332,7 +332,7 @@
       class="max-h-70 overflow-y-auto -mx-1 px-1"
     >
       {#if combinedRepos.length > 0}
-        <div class="divide-y divide-border/10">
+        <div class="divide-y divide-border">
           {#each combinedRepos as repo, index (repo.id)}
             {@const isFocused = index === focusedIndex}
             {@const isCommitted = githubUrl === `https://github.com/${repo.owner}/${repo.name}`}

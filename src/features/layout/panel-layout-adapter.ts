@@ -12,7 +12,7 @@ import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 import {
   openTab,
-  openTabInAdjacentOrSplit,
+  openTabWithPanelModeRequested,
   closeTab,
   closeActiveTab,
   closeTabsByType,
@@ -88,6 +88,12 @@ export class PanelLayoutAdapter {
     appStore.dispatch(action);
   }
 
+  private getEmptyTargetPanelId(sourcePanelId?: string): string | undefined {
+    const panels = selectPanels.select(this.state, this.workspaceId);
+    const panelId = sourcePanelId ?? selectFocusedPanelId.select(this.state, this.workspaceId);
+    return panelId && panels[panelId]?.tabs.length === 0 ? panelId : undefined;
+  }
+
   // --- Imperative read methods (for event handlers / one-time reads only) ---
 
   /** Get all panel IDs. One-time read — not reactive. */
@@ -115,11 +121,12 @@ export class PanelLayoutAdapter {
 
   // --- Tab operations ---
   openTab(tab: Omit<PanelTab, 'id'>, panelId?: string) {
-    if (panelId) {
-      this.dispatch(openTab(this.workspaceId, tab, panelId));
+    const targetPanelId = panelId ?? this.getEmptyTargetPanelId();
+    if (targetPanelId) {
+      this.dispatch(openTab(this.workspaceId, tab, targetPanelId));
       return;
     }
-    this.dispatch(openTabInAdjacentOrSplit(this.workspaceId, tab));
+    this.dispatch(openTabWithPanelModeRequested(this.workspaceId, tab));
   }
   /** User opens bypass Spec deferral and consume a pristine coordinator placeholder first. */
   openUserTab(tab: Omit<PanelTab, 'id'>, panelId?: string) {
@@ -131,14 +138,24 @@ export class PanelLayoutAdapter {
       this.dispatch(openTab(this.workspaceId, tab, panelId ?? placeholder?.id, undefined, true));
       return;
     }
-    this.dispatch(openTabInAdjacentOrSplit(this.workspaceId, tab, undefined, { force: true }));
+    this.dispatch(openTabWithPanelModeRequested(this.workspaceId, tab, { force: true }));
   }
   openTabInAdjacentOrSplit(
     tab: Omit<PanelTab, 'id'>,
     sourcePanelId?: string,
     options?: { animated?: boolean; force?: boolean; allowDuplicate?: boolean },
   ) {
-    this.dispatch(openTabInAdjacentOrSplit(this.workspaceId, tab, sourcePanelId, options));
+    const targetPanelId = this.getEmptyTargetPanelId(sourcePanelId);
+    if (targetPanelId) {
+      this.dispatch(openTab(this.workspaceId, tab, targetPanelId, undefined, options?.force));
+      return;
+    }
+    this.dispatch(
+      openTabWithPanelModeRequested(this.workspaceId, tab, {
+        force: options?.force,
+        allowDuplicate: options?.allowDuplicate,
+      }),
+    );
   }
   openBrowserPanel(
     url?: string,
@@ -264,6 +281,7 @@ export class PanelLayoutAdapter {
     nextWidth: number,
     panelIndex: number,
     nextCanvasWidth: number,
+    previousPanelWidths: readonly number[],
   ) {
     this.dispatch(
       resizePanelLayoutAtHorizontalPanel(
@@ -272,6 +290,7 @@ export class PanelLayoutAdapter {
         nextWidth,
         panelIndex,
         nextCanvasWidth,
+        previousPanelWidths,
       ),
     );
   }

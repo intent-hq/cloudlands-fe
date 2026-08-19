@@ -113,9 +113,7 @@
     border: 1px solid hsl(var(--border));
     border-radius: 0.5rem;
     padding: 0.25rem;
-    box-shadow:
-      0 4px 6px -1px rgb(0 0 0 / 0.1),
-      0 2px 4px -2px rgb(0 0 0 / 0.1);
+    box-shadow: var(--elevation-overlay);
     /* Remove default popover styles */
     margin: 0;
   }

@@ -37,6 +37,9 @@ test('does not reserve an absent queue gap and preserves one/many queue spacing'
               const queueBox = queue?.getBoundingClientRect() ?? null;
               return {
                 columnBottom: column.bottom,
+                columnPaddingBottom: getComputedStyle(
+                  root.querySelector('[data-testid="utility-column"]')!,
+                ).paddingBottom,
                 subscriptionBottom: subscription.bottom,
                 queueTop: queueBox?.top ?? null,
                 queueBottom: queueBox?.bottom ?? null,
@@ -44,16 +47,19 @@ test('does not reserve an absent queue gap and preserves one/many queue spacing'
             });
             if (queueCount === 0) {
               expect(geometry.queueTop).toBeNull();
-              expect(geometry.columnBottom - geometry.subscriptionBottom).toBeLessThanOrEqual(
-                13 * zoom,
+              expect(geometry.columnPaddingBottom).toBe(width === 320 ? '12px' : '24px');
+              expect(geometry.columnBottom - geometry.subscriptionBottom).toBeCloseTo(
+                (width === 320 ? 13 : 25) * zoom,
+                1,
               );
             } else {
               expect((geometry.queueTop ?? 0) - geometry.subscriptionBottom).toBeCloseTo(
                 24 * zoom,
                 0,
               );
-              expect(geometry.columnBottom - (geometry.queueBottom ?? 0)).toBeLessThanOrEqual(
-                13 * zoom,
+              expect(geometry.columnBottom - (geometry.queueBottom ?? 0)).toBeCloseTo(
+                (width === 320 ? 13 : 25) * zoom,
+                1,
               );
             }
           }

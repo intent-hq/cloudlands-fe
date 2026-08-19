@@ -18,7 +18,12 @@
   } from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import type { PanelLayoutManager, PanelTab } from '$features/layout/panel-layout-adapter';
-  import { faNote } from '$lib/icons/faNote';
+  import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
+  import {
+    getResourceIconKind,
+    RESOURCE_ICON_BY_KIND,
+    type ResourceIconKind,
+  } from '$lib/components/shared/resource-icon';
 
   import { openCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
@@ -35,15 +40,17 @@
 
   interface Props {
     workspaceId: string;
-    onCreateAgent?: () => void;
-    onCreateAgentWithSpecialist?: (specialistId: string | null) => void;
-    onCreateNote?: () => void;
-    onCreateTerminal?: () => void;
-    onOpenBrowser?: () => void;
+    panelId: string;
+    onCreateAgent?: (panelId?: string) => void;
+    onCreateAgentWithSpecialist?: (specialistId: string | null, panelId?: string) => void;
+    onCreateNote?: (panelId?: string) => void;
+    onCreateTerminal?: (panelId?: string) => void;
+    onOpenBrowser?: (panelId?: string) => void;
   }
 
   let {
     workspaceId: _workspaceId,
+    panelId,
     onCreateAgent,
     onCreateAgentWithSpecialist,
     onCreateNote,
@@ -94,7 +101,7 @@
       case 'agent':
         return faRobot;
       case 'note':
-        return faNote;
+        return RESOURCE_ICON_BY_KIND.note;
       case 'terminal':
         return faTerminal;
       case 'browser':
@@ -125,10 +132,10 @@
 
   function handleCreateAgent() {
     if (onCreateAgent) {
-      onCreateAgent();
+      onCreateAgent(panelId);
       return;
     }
-    onCreateAgentWithSpecialist?.(null);
+    onCreateAgentWithSpecialist?.(null, panelId);
   }
 
   function handleCreatePanel() {
@@ -142,6 +149,7 @@
     id: string;
     label: string;
     icon: IconDefinition;
+    resourceKind?: ResourceIconKind;
     action: () => void;
   };
 
@@ -157,14 +165,15 @@
     {
       id: 'note',
       label: m.layout_panelEmptyState_note_label(),
-      icon: faNote,
-      action: () => onCreateNote?.(),
+      icon: RESOURCE_ICON_BY_KIND.note,
+      resourceKind: 'note',
+      action: () => onCreateNote?.(panelId),
     },
     {
       id: 'terminal',
       label: m.layout_panelEmptyState_terminal_label(),
       icon: faTerminal,
-      action: () => onCreateTerminal?.(),
+      action: () => onCreateTerminal?.(panelId),
     },
     ...(onOpenBrowser
       ? [
@@ -172,7 +181,7 @@
             id: 'browser',
             label: m.layout_panelEmptyState_browser_label(),
             icon: faGlobe,
-            action: () => onOpenBrowser?.(),
+            action: () => onOpenBrowser?.(panelId),
           },
         ]
       : []),
@@ -208,6 +217,7 @@
 
 <div
   class="empty-state flex h-full items-center justify-center overflow-y-auto bg-sidebar px-6 py-10 text-sidebar-foreground"
+  data-panel-empty-state
 >
   <section
     class="empty-state-content w-full max-w-[36rem]"
@@ -221,11 +231,16 @@
           title={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
           aria-label={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
         >
-          <span
-            class="flex size-7 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground"
-          >
-            <Fa icon={action.icon} class="size-3.5" />
-          </span>
+          {#if action.resourceKind}
+            <ResourceIconTile kind={action.resourceKind} variant="emphasized" />
+          {:else}
+            <span
+              class="flex size-6 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground"
+              data-panel-empty-leading-surface
+            >
+              <Fa icon={action.icon} class="size-4" />
+            </span>
+          {/if}
           <span class="min-w-0 truncate font-medium">
             {m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
           </span>
@@ -240,12 +255,17 @@
           <span>{m.layout_panelEmptyState_recentlyClosed_label()}</span>
         </div>
         {#each recentItems as item (item.tab.id + '-' + item.closedAt)}
+          {@const resourceKind = getResourceIconKind(item.tab.type)}
           <button
             class="recent-item type-caption flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none motion-reduce:transition-none"
             onclick={handleReopenItem}
             title={m.layout_panelEmptyState_reopen_tooltip({ title: item.tab.title })}
           >
-            <Fa icon={getTabIcon(item.tab.type)} class="size-3 shrink-0 opacity-70" />
+            {#if resourceKind}
+              <ResourceIconTile kind={resourceKind} />
+            {:else}
+              <Fa icon={getTabIcon(item.tab.type)} class="size-3 shrink-0 opacity-70" />
+            {/if}
             <span class="flex-1 truncate">{item.tab.title}</span>
             <span class="shrink-0 opacity-70">{formatTime(item.closedAt)}</span>
           </button>

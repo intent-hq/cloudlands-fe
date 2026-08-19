@@ -70,11 +70,24 @@ class FakeTunnelSocket extends EventEmitter implements TunnelSocketLike {
  */
 function attachFakeDaemon(ws: FakeTunnelSocket): void {
   const sockets = new Map<number, net.Socket>();
+  const connectingSockets = new Set<net.Socket>();
+  ws.on('close', () => {
+    for (const socket of connectingSockets) socket.destroy();
+    for (const socket of sockets.values()) socket.destroy();
+    connectingSockets.clear();
+    sockets.clear();
+  });
   ws.onFrame = (frame) => {
     if (frame.type === 'open') {
       const socket = net.connect({ host: '127.0.0.1', port: frame.port });
       const streamId = frame.streamId;
+      connectingSockets.add(socket);
       socket.on('connect', () => {
+        connectingSockets.delete(socket);
+        if (ws.readyState !== 1) {
+          socket.destroy();
+          return;
+        }
         sockets.set(streamId, socket);
         ws.deliver({ type: 'openOk', streamId });
       });
@@ -86,6 +99,7 @@ function attachFakeDaemon(ws: FakeTunnelSocket): void {
         }
       });
       socket.on('close', () => {
+        connectingSockets.delete(socket);
         if (sockets.delete(streamId)) ws.deliver({ type: 'close', streamId });
       });
       return;
@@ -136,7 +150,10 @@ function makeManager(
 
 /** Loopback echo server on an ephemeral port. */
 async function startEchoServer(): Promise<{ port: number; server: net.Server }> {
-  const server = net.createServer((socket) => socket.pipe(socket));
+  const server = net.createServer((socket) => {
+    socket.on('error', () => {});
+    socket.pipe(socket);
+  });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   return { port: (server.address() as AddressInfo).port, server };
 }
@@ -513,6 +530,7 @@ describe('TunnelManager', () => {
     const localPort = await manager.forwardPort(port);
     const client = await connectClient(localPort);
     const closed = waitForClose(client);
+    await waitFor(() => created[0].sent.some((frame) => frame.type === 'open'));
     created[0].drop();
     // The in-flight stream is destroyed …
     await closed;
@@ -608,6 +626,7 @@ describe('TunnelManager', () => {
     const localPort = await manager.forwardPort(port);
     const stale = await connectClient(localPort);
     const staleClosed = waitForClose(stale);
+    await waitFor(() => created[0].sent.some((frame) => frame.type === 'open'));
 
     // The socket enters CLOSING but its 'close' event has not fired yet
     // (e.g. the close frame is in flight). The next accepted connection must

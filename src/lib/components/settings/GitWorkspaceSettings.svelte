@@ -186,7 +186,7 @@
   {#if settingsError}
     <section>
       <p
-        class="text-xs text-destructive-foreground bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2"
+        class="text-xs text-error-foreground bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2"
       >
         {settingsError}
       </p>
@@ -287,7 +287,7 @@
           placeholder={m.settings_gitWorkspace_branchPrefix_placeholder()}
         />
         {#if branchPrefixError}
-          <p class="text-xs text-destructive-foreground">{branchPrefixError}</p>
+          <p class="text-xs text-error-foreground">{branchPrefixError}</p>
         {/if}
       </div>
     </div>

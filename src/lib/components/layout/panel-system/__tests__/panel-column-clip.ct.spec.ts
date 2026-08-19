@@ -2,6 +2,15 @@ import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { Locator } from '@playwright/test';
 import PanelWorkspaceColumnClipHarness from './mocks/PanelWorkspaceColumnClipHarness.svelte';
 
+// Earlier specs in the shared CT page may leave a resized viewport behind;
+// the geometry below assumes the default 1280x720 viewport, so pin it. The
+// intermediate size forces a real resize even when Playwright's cached
+// viewport already matches, so stale emulation state is flushed.
+test.beforeEach(async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 719 });
+  await page.setViewportSize({ width: 1280, height: 720 });
+});
+
 function measureGeometry(component: Locator) {
   return component.evaluate(() => {
     const column = document.querySelector('[data-testid="workspace-column"]') as HTMLElement;
@@ -17,6 +26,7 @@ function measureGeometry(component: Locator) {
     const lastPanelRect = panels.at(-1)?.getBoundingClientRect();
     return {
       columnRight: columnRect.right,
+      columnWidth: columnRect.width,
       insetLeft: insetRect?.left ?? null,
       insetRight: insetRect?.right ?? null,
       insetBottom: insetRect?.bottom ?? null,
@@ -25,13 +35,29 @@ function measureGeometry(component: Locator) {
       insetPaddingBottom: inset ? getComputedStyle(inset).paddingBottom : null,
       insetScrollWidth: inset?.scrollWidth ?? null,
       insetClientWidth: inset?.clientWidth ?? null,
+      insetScrollLeft: inset?.scrollLeft ?? null,
       canvasWidth: canvasRect?.width ?? null,
+      canvasOffsetWidth: canvas?.offsetWidth ?? null,
       canvasRight: canvasRect?.right ?? null,
       lastPanelRight: lastPanelRect?.right ?? null,
       lastPanelBottom: lastPanelRect?.bottom ?? null,
       lastPanelFlex: panels.at(-1)?.style.flex ?? null,
       panelWidths: panels.map((p) => p.getBoundingClientRect().width),
     };
+  });
+}
+
+async function stableCanvasWidths(component: Locator) {
+  return component.evaluate(async () => {
+    const sample = () =>
+      (document.querySelector('.panel-canvas-resize-handle')?.parentElement as HTMLElement | null)
+        ?.offsetWidth ?? null;
+    const widths = [sample()];
+    await new Promise(requestAnimationFrame);
+    widths.push(sample());
+    await new Promise(requestAnimationFrame);
+    widths.push(sample());
+    return widths;
   });
 }
 
@@ -90,6 +116,235 @@ test('fits an automatic canvas inside the visible frame (tab view)', async ({ mo
   expect(measurements.canvasRight!).toBeLessThanOrEqual(measurements.columnRight);
   expect(measurements.lastPanelRight!).toBeLessThanOrEqual(measurements.columnRight);
 });
+
+test('keeps the right inset visible at the horizontal scroll end (tab view)', async ({
+  mount,
+}) => {
+  const component = await mount(PanelWorkspaceColumnClipHarness, {
+    props: {
+      mode: 'uncontained',
+      sidebarWidth: 0,
+      canvasWidth: 760,
+      persistedCanvasWidth: 1208,
+      insetChrome: 0,
+    },
+  });
+  const inset = component.getByTestId('panel-workspace-inset');
+
+  await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
+  await inset.evaluate((node) => {
+    node.scrollLeft = node.scrollWidth;
+  });
+  const measurements = await measureGeometry(component);
+
+  expect(measurements.insetRight! - measurements.canvasRight!).toBeCloseTo(
+    Number.parseFloat(measurements.insetPaddingRight!),
+    1,
+  );
+});
+
+for (const zoomFactor of [1, 2]) {
+  test(`uses the 700px chat default without a first-frame resize at ${zoomFactor * 100}%`, async ({
+    mount,
+  }) => {
+    for (const scenario of ['reuse-agent', 'restore-agent'] as const) {
+      const component = await mount(PanelWorkspaceColumnClipHarness, {
+        props: { scenario, canvasWidth: 700, persistedCanvasWidth: null, zoomFactor },
+      });
+
+      await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(700);
+      expect(await stableCanvasWidths(component)).toEqual([700, 700, 700]);
+      await component.unmount();
+    }
+  });
+}
+
+test('clamps one automatic chat to a narrow viewport without overflow', async ({ mount }) => {
+  const component = await mount(PanelWorkspaceColumnClipHarness, {
+    props: {
+      mode: 'uncontained',
+      scenario: 'restore-agent',
+      sidebarWidth: 0,
+      canvasWidth: 560,
+      persistedCanvasWidth: null,
+      insetChrome: 0,
+    },
+  });
+
+  await expect
+    .poll(async () => (await measureGeometry(component)).canvasOffsetWidth)
+    .toBeLessThan(700);
+  const measurements = await measureGeometry(component);
+  expect(measurements.insetScrollWidth).toBeLessThanOrEqual(measurements.insetClientWidth!);
+});
+
+test('keeps an explicit restored chat width byte-for-byte', async ({ mount }) => {
+  const component = await mount(PanelWorkspaceColumnClipHarness, {
+    props: { scenario: 'restore-agent', canvasWidth: 615, persistedCanvasWidth: 615 },
+  });
+
+  await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(615);
+});
+
+test('reflows the workspace column to the retained panel width after close', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(PanelWorkspaceColumnClipHarness, {
+    props: {
+      sidebarWidth: 360,
+      canvasWidth: 1200,
+      persistedCanvasWidth: 1200,
+      followPersistedCanvas: true,
+    },
+  });
+
+  expect((await measureGeometry(component)).panelWidths).toEqual([596, 596]);
+  await component
+    .getByTestId('close-first-panel')
+    .evaluate((button: HTMLButtonElement) => button.click());
+  await expect(component.locator('[data-panel-id]')).toHaveCount(1);
+  await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(596);
+  const geometry = await measureGeometry(component);
+  expect(geometry.columnWidth).toBe(360 + 596 + 16);
+  expect(geometry.panelWidths).toEqual([596]);
+  expect(geometry.lastPanelRight!).toBeLessThanOrEqual(geometry.columnRight);
+});
+
+for (const zoomFactor of [1, 2]) {
+  for (const theme of ['light', 'dark'] as const) {
+    test(`crosses the exact two-panel threshold at ${zoomFactor * 100}% in ${theme}`, async ({
+      mount,
+    }) => {
+      const component = await mount(PanelWorkspaceColumnClipHarness, {
+        props: {
+          mode: 'uncontained',
+          sidebarWidth: 0,
+          canvasWidth: 1028,
+          persistedCanvasWidth: null,
+          insetChrome: 0,
+          zoomFactor,
+        },
+      });
+      await component.evaluate((node, nextTheme) => {
+        document.documentElement.classList.toggle('dark', nextTheme === 'dark');
+        node.setAttribute('data-test-theme', nextTheme);
+      }, theme);
+
+      await expect
+        .poll(async () => (await measureGeometry(component)).canvasOffsetWidth)
+        .toBe(1008);
+      expect((await measureGeometry(component)).panelWidths).toEqual([
+        500 * zoomFactor,
+        500 * zoomFactor,
+      ]);
+
+      await component
+        .getByTestId('width-minus-one')
+        .evaluate((button: HTMLButtonElement) => button.click());
+      await expect.poll(async () => (await measureGeometry(component)).insetScrollWidth).toBe(1020);
+      expect((await measureGeometry(component)).panelWidths).toEqual([
+        500 * zoomFactor,
+        500 * zoomFactor,
+      ]);
+
+      await component
+        .getByTestId('width-plus-one')
+        .evaluate((button: HTMLButtonElement) => button.click());
+      await expect
+        .poll(async () => (await measureGeometry(component)).canvasOffsetWidth)
+        .toBe(1009);
+      expect((await measureGeometry(component)).panelWidths).toEqual([
+        500.5 * zoomFactor,
+        500.5 * zoomFactor,
+      ]);
+    });
+  }
+}
+
+test('keeps mixed panel defaults in one ordered overflowing row', async ({ mount }) => {
+  const component = await mount(PanelWorkspaceColumnClipHarness, {
+    props: {
+      mode: 'uncontained',
+      sidebarWidth: 0,
+      canvasWidth: 420,
+      persistedCanvasWidth: null,
+      insetChrome: 0,
+      panelTypes: ['agent', 'note', 'browser'],
+    },
+  });
+
+  await expect(component.locator('[data-panel-id]')).toHaveCount(3);
+  const geometry = await measureGeometry(component);
+  expect(geometry.panelWidths[0]).toBeGreaterThanOrEqual(400);
+  expect(geometry.panelWidths[1]).toBeGreaterThanOrEqual(500);
+  expect(geometry.panelWidths[2]).toBeGreaterThanOrEqual(900);
+  expect(geometry.insetScrollWidth!).toBeGreaterThan(geometry.insetClientWidth!);
+});
+
+test('uses persisted panel ratios as preferences only while they overflow', async ({ mount }) => {
+  const component = await mount(PanelWorkspaceColumnClipHarness, {
+    props: {
+      mode: 'uncontained',
+      sidebarWidth: 0,
+      canvasWidth: 1020,
+      persistedCanvasWidth: 1208,
+      insetChrome: 0,
+      panelSizes: [25, 75],
+    },
+  });
+
+  await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
+  expect((await measureGeometry(component)).panelWidths).toEqual([300, 900]);
+});
+
+test('creates the wider chat once without a post-creation resize flash', async ({ mount }) => {
+  const component = await mount(PanelWorkspaceColumnClipHarness, {
+    props: {
+      mode: 'uncontained',
+      scenario: 'create-agent',
+      sidebarWidth: 0,
+      canvasWidth: 760,
+      persistedCanvasWidth: null,
+      insetChrome: 0,
+    },
+  });
+
+  await component.getByTestId('create-agent-panel').evaluate((button: HTMLButtonElement) => {
+    button.click();
+  });
+  await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
+  expect(await stableCanvasWidths(component)).toEqual([1208, 1208, 1208]);
+  await expect(component.locator('[data-panel-id]')).toHaveCount(2);
+});
+
+for (const zoomFactor of [1, 2]) {
+  test(`resizes the new chat canvas at ${zoomFactor * 100}% zoom`, async ({ mount }) => {
+    const component = await mount(PanelWorkspaceColumnClipHarness, {
+      props: {
+        scenario: 'create-agent',
+        canvasWidth: 1200,
+        persistedCanvasWidth: null,
+        zoomFactor,
+      },
+    });
+    await component.getByTestId('create-agent-panel').evaluate((button: HTMLButtonElement) => {
+      button.click();
+    });
+    await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
+    expect(await stableCanvasWidths(component)).toEqual([1208, 1208, 1208]);
+    const handle = component.locator('.panel-canvas-resize-handle');
+    await handle.evaluate(async (element) => {
+      element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 100 }));
+      document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 200 }));
+      await new Promise(requestAnimationFrame);
+      document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 200 }));
+    });
+
+    await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1308);
+  });
+}
 
 /**
  * Regression (clipped bottom stacked panel): a root vertical split must size

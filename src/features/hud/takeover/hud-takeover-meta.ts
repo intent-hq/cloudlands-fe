@@ -54,7 +54,7 @@ export function takeoverKindColor(kind: HudTakeoverKind): string {
     case 'manual':
       return 'hsl(var(--ring))';
     case 'agent_failed':
-      return 'hsl(var(--destructive-foreground))';
+      return 'hsl(var(--error-foreground))';
     case 'question_asked':
       return 'hsl(var(--warning))';
     case 'workspace_idle':
@@ -123,9 +123,9 @@ export function taskCellMeta(status: string): HudTakeoverCellMeta {
     case 'blocked':
       return {
         label: m.hud_takeover_taskBlocked_label(),
-        color: 'hsl(var(--destructive-foreground))',
+        color: 'hsl(var(--error-foreground))',
         bg: 'hsl(0 70% 45% / 0.1)',
-        borderColor: 'hsl(var(--destructive-foreground))',
+        borderColor: 'hsl(var(--error-foreground))',
         borderStyle: 'solid',
       };
     default:

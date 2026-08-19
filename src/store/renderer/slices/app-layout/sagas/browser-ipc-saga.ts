@@ -16,6 +16,8 @@ import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import {
   selectAllTabs,
   selectPanelLayoutWorkspaces,
+  selectPanels,
+  selectPendingPanelReveal,
 } from '../../panel-layout/panel-layout-selectors';
 import {
   hydrateWorkspaceLayout,
@@ -23,13 +25,19 @@ import {
 } from '../../panel-layout/sagas/panel-layout-saga';
 import {
   closeTab,
+  focusPanel,
   openTab,
-  openTabInAdjacentOrSplit,
+  openTabInNewRootColumn,
   setActiveTab,
+  setPanelPinned,
   updateTabBrowserUrl,
 } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectWorkspaceTabOrder } from '../../tab-state/tab-state-selectors';
+import {
+  selectPanelOpenMode,
+  selectPanelStackDirection,
+} from '../../user-preferences/user-preferences-selectors';
 import { focusBrowserTabRequested } from '../app-layout-slice';
 
 let running = false;
@@ -46,6 +54,12 @@ function browserTab(url: string, requestedUrl?: string): Omit<PanelTab, 'id'> {
     // (monorepo#2789).
     ...(requestedUrl === undefined ? {} : { browserRequestedUrl: requestedUrl }),
   };
+}
+
+function* pinRevealedPanel(workspaceId: string, requestId: string): SagaGenerator<void> {
+  const reveal = yield* selectPendingPanelReveal.effect(workspaceId);
+  if (reveal?.requestId !== requestId) return;
+  yield* put(setPanelPinned(workspaceId, reveal.panelId, true));
 }
 
 type LayoutReadiness =
@@ -138,6 +152,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   // of dedupe so the panel layout's equivalent-tab reuse doesn't override it.
   const newTabId = typeof data.tabId === 'string' && data.tabId.length > 0 ? data.tabId : undefined;
   const allowDuplicate = data.allowDuplicate === true ? true : undefined;
+  const pin = data.pin === true;
   // Pre-rewrite URL for rewritten opens; persisted with the tab so a restart
   // can re-run the rewrite (monorepo#2789).
   const requestedUrl = typeof data.requestedUrl === 'string' ? data.requestedUrl : undefined;
@@ -149,32 +164,21 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     if (existing) {
       yield* put(updateTabBrowserUrl(workspaceId, existing.id, data.url, requestedUrl ?? null));
       yield* put(setActiveTab(workspaceId, existing.id));
+      if (pin) {
+        const panels = yield* selectPanels.effect(workspaceId);
+        const target = Object.entries(panels).find(([, panel]) =>
+          panel.tabs.some((tab) => tab.id === existing.id),
+        );
+        if (target) {
+          yield* put(setActiveTab(workspaceId, existing.id, target[0]));
+          const focusAction = focusPanel(workspaceId, target[0]);
+          yield* put(focusAction);
+          yield* pinRevealedPanel(workspaceId, focusAction.payload.requestId);
+        }
+      }
       return;
     }
-    yield* put(
-      openTab(
-        workspaceId,
-        browserTab(data.url, requestedUrl),
-        undefined,
-        newTabId,
-        undefined,
-        undefined,
-        allowDuplicate,
-      ),
-    );
-    return;
-  }
-  if (position === 'adjacent') {
-    yield* put(
-      openTabInAdjacentOrSplit(workspaceId, browserTab(data.url, requestedUrl), undefined, {
-        newTabId,
-        allowDuplicate,
-      }),
-    );
-    return;
-  }
-  yield* put(
-    openTab(
+    const openAction = openTab(
       workspaceId,
       browserTab(data.url, requestedUrl),
       undefined,
@@ -182,8 +186,34 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       undefined,
       undefined,
       allowDuplicate,
-    ),
+    );
+    yield* put(openAction);
+    if (pin) yield* pinRevealedPanel(workspaceId, openAction.payload.newTabId);
+    return;
+  }
+  if (position === 'adjacent') {
+    const panelOpenMode = yield* selectPanelOpenMode.effect();
+    const openAction = openTabInNewRootColumn(workspaceId, browserTab(data.url, requestedUrl), {
+      newTabId,
+      allowDuplicate,
+      panelOpenMode,
+      panelStackDirection: yield* selectPanelStackDirection.effect(),
+    });
+    yield* put(openAction);
+    if (pin) yield* pinRevealedPanel(workspaceId, openAction.payload.newTabId);
+    return;
+  }
+  const openAction = openTab(
+    workspaceId,
+    browserTab(data.url, requestedUrl),
+    undefined,
+    newTabId,
+    undefined,
+    undefined,
+    allowDuplicate,
   );
+  yield* put(openAction);
+  if (pin) yield* pinRevealedPanel(workspaceId, openAction.payload.newTabId);
 }
 
 function* closeBrowser(data: BrowserCloseTabPayload | null): SagaGenerator<void> {
@@ -230,7 +260,7 @@ function* focusBrowser(data: BrowserFocusTabPayload | null): SagaGenerator<void>
       error: readiness.message,
     });
   }
-  yield* put(focusBrowserTabRequested(data.workspaceId, data.tabId));
+  yield* put(focusBrowserTabRequested(data.workspaceId, data.tabId, data.pin));
 }
 
 function* tabNavigated(data: BrowserTabNavigatedPayload | null): SagaGenerator<void> {

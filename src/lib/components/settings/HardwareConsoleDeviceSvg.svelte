@@ -390,7 +390,7 @@
               <MicroKeySlotSquare {slot} />
             {:else}
               <span
-                class="type-caption flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-border/40 bg-muted/30 font-medium leading-none text-subtle/60 a11y-ignore"
+                class="type-caption flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-border bg-muted/30 font-medium leading-none text-subtle/60 a11y-ignore"
                 aria-hidden="true"
               >
                 {formatInteger(slot + 1)}

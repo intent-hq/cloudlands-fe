@@ -1,4 +1,4 @@
-import { shallowEqual } from 'fast-equals';
+import { deepEqual, shallowEqual } from 'fast-equals';
 import type { AgentSession, AgentMessage, SessionStats } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { CanonicalAgentStatusFields, WorkspaceEvent } from '$features/events/types';
@@ -253,6 +253,40 @@ function removeHistorySegmentsFor(
     next = removeHistorySegment(next, agentId);
   }
   return next;
+}
+
+/**
+ * Reuse prior message object identities when a full replacement contains rows
+ * structurally equal to ones already in the store, so a background
+ * older-history prepend does not re-render the already-rendered suffix of the
+ * transcript. Returns the previous array itself when the replacement is
+ * entirely equivalent (position-for-position), letting the reducer no-op.
+ *
+ * PERF: this runs on every `replaceMessages` dispatch, including per-emit
+ * transcript applies during streaming. Its per-emit cost stays O(rows) only
+ * because upstream emitters preserve unchanged-row identity — the transcript
+ * reconciler reuses unchanged message objects across emits and the
+ * older-history saga merges against the store's own rows — so each deepEqual
+ * short-circuits on reference-equal nested fields (contentBlocks, metadata).
+ * A change that rebuilds row objects per emit would silently degrade this to
+ * O(transcript bytes) per streaming tick; keep that invariant upstream.
+ */
+function reconcileMessageIdentities(
+  previous: AgentMessage[],
+  next: AgentMessage[],
+): AgentMessage[] {
+  const previousById = new Map(previous.map((message) => [message.id, message]));
+  let unchanged = next.length === previous.length;
+  const reconciled = next.map((message, index) => {
+    const prior = previousById.get(message.id);
+    if (prior && (prior === message || deepEqual(prior, message))) {
+      if (prior !== previous[index]) unchanged = false;
+      return prior;
+    }
+    unchanged = false;
+    return message;
+  });
+  return unchanged ? previous : reconciled;
 }
 
 function isOptimisticUserMessage(message: AgentMessage): boolean {
@@ -757,13 +791,11 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
       typeof metadata?.lastSeenMessageId === 'string' ? metadata.lastSeenMessageId : undefined,
     sandboxId: typeof metadata?.sandboxId === 'string' ? metadata.sandboxId : undefined,
     sandboxPath: typeof metadata?.sandboxPath === 'string' ? metadata.sandboxPath : undefined,
-    sandboxBranch:
-      typeof metadata?.sandboxBranch === 'string' ? metadata.sandboxBranch : undefined,
+    sandboxBranch: typeof metadata?.sandboxBranch === 'string' ? metadata.sandboxBranch : undefined,
     waitingForAgentIdsKey: Array.isArray(session.waitingForAgentIds)
       ? session.waitingForAgentIds.join(',')
       : undefined,
-    turnInFlight:
-      (session as { turnInFlight?: unknown }).turnInFlight === true ? true : undefined,
+    turnInFlight: session.turnInFlight === true ? true : undefined,
     liveTurnOpen: session.liveTurnOpen === true ? true : undefined,
     liveTurnOpenedAt:
       typeof session.liveTurnOpenedAt === 'string' ? session.liveTurnOpenedAt : undefined,
@@ -771,8 +803,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     // upgrade backfills harnessVersion on legacy rows and first activation
     // materializes harnessFeatures — those upserts must not be swallowed
     // (e.g. the AgentCard "Harness vX.Y" menu item would never appear).
-    harnessVersion:
-      typeof session.harnessVersion === 'string' ? session.harnessVersion : undefined,
+    harnessVersion: typeof session.harnessVersion === 'string' ? session.harnessVersion : undefined,
     harnessFeaturesKey: session.harnessFeatures
       ? Object.entries(session.harnessFeatures)
           .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1215,10 +1246,12 @@ agentSessionReducer.with(updateMessage, (state, { payload: [agentId, messageId, 
 agentSessionReducer.with(replaceMessages, (state, { payload: [agentId, messages] }) => {
   const session = getSession(state, agentId);
   if (!session) return state;
-  return setSession(state, agentId, {
-    ...session,
-    messages: normalizeSortPruneMessages(messages),
-  });
+  const nextMessages = reconcileMessageIdentities(
+    session.messages,
+    normalizeSortPruneMessages(messages),
+  );
+  if (nextMessages === session.messages) return state;
+  return setSession(state, agentId, { ...session, messages: nextMessages });
 });
 agentSessionReducer.with(removeMessage, (state, { payload: [agentId, messageId] }) => {
   const session = getSession(state, agentId);

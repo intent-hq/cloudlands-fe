@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { extractAllContent, type AgentMessage } from '$shared/types';
   import PinnedUserPrompt from '$lib/components/chat/PinnedUserPrompt.svelte';
+  import ChatMessage from '$lib/components/chat/ChatMessage.svelte';
   import EventWakeupBanner from '$lib/components/chat/EventWakeupBanner.svelte';
   import ConversationTurnGap from '$lib/components/chat/ConversationTurnGap.svelte';
   import {
@@ -13,6 +15,11 @@
     USER_MESSAGE_SURFACE_CLASS,
     USER_MESSAGE_TEXT_CLASS,
   } from '$lib/components/chat/user-message-surface';
+  import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { store } from '$store/renderer/store';
+
+  const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  onDestroy(disposeStore);
 
   interface Props {
     panelId: string;
@@ -21,7 +28,7 @@
     zoom?: number;
     streamText?: string;
     paginationHeight?: number;
-    finishedVariant?: 'agent:idle' | 'agent:reportToParent';
+    finishedVariant?: 'agent:idle' | 'agent:reportToParent' | 'agent:created' | 'agent:completed';
     labelLength?: 'short' | 'long';
     chiefVariant?: boolean;
   }
@@ -40,11 +47,14 @@
   let pinned = $state<PinnedPromptState | null>(null);
   let scrollElement = $state<HTMLElement | null>(null);
   let scrollbarGutterWidth = $state(0);
+  let syntheticScrollbarGutterWidth = $state(0);
   $effect(() => {
     const element = scrollElement;
     if (!element) return;
     const measure = () => {
-      scrollbarGutterWidth = measureScrollbarGutterWidth(element);
+      const measuredGutter = measureScrollbarGutterWidth(element);
+      syntheticScrollbarGutterWidth = measuredGutter === 0 ? 16 : 0;
+      scrollbarGutterWidth = measuredGutter || syntheticScrollbarGutterWidth;
     };
     const observer = new ResizeObserver(measure);
     observer.observe(element);
@@ -55,6 +65,26 @@
     id: `${panelId}-prompt`,
     role: 'user',
     contentBlocks: [{ type: 'text', text: streamText }],
+  } as AgentMessage);
+  const attributedMessage = $derived({
+    id: `${panelId}-attributed`,
+    role: 'user',
+    contentBlocks: [
+      {
+        type: 'text',
+        text:
+          labelLength === 'long'
+            ? 'A deliberately long sent-message preview that must truncate without increasing the disclosure row height.'
+            : 'Status update',
+      },
+    ],
+    metadata: {
+      type: 'agent_message',
+      fromAgentId: 'agent-sender-geometry',
+      fromAgentName:
+        labelLength === 'long' ? 'A sender with an intentionally long attribution name' : 'Builder',
+    },
+    timestamp: new Date().toISOString(),
   } as AgentMessage);
   const finishedAgentName = $derived(
     labelLength === 'long'
@@ -83,13 +113,19 @@
 
 <section class:dark={theme === 'dark'} style:width="{width}px" style:zoom data-panel={panelId}>
   <div class="grid grid-cols-2 gap-4 bg-background p-4 text-foreground">
-    <div data-testid="sent-card" class={USER_MESSAGE_SURFACE_CLASS}>
-      <span data-testid="ordinary-user-text" class={USER_MESSAGE_TEXT_CLASS}>
-        Sent message <a data-testid="ordinary-user-link" href="#message">link</a>
-        <code data-testid="ordinary-user-code">code</code>
-      </span>
+    <div>
+      <div data-testid="sent-card" class={USER_MESSAGE_SURFACE_CLASS}>
+        <span data-testid="ordinary-user-text" class={USER_MESSAGE_TEXT_CLASS}>
+          Sent message <a data-testid="ordinary-user-link" href="#message">link</a>
+          <code data-testid="ordinary-user-code">code</code>
+        </span>
+      </div>
+      <div class="mt-4" data-testid="attributed-message-lane">
+        <ChatMessage message={attributedMessage} />
+      </div>
     </div>
     <div>
+      <div data-testid="event-predecessor"></div>
       <EventWakeupBanner
         metadata={finishedMetadata}
         asDivider
@@ -127,7 +163,7 @@
       bind:this={scrollElement}
       data-testid="sticky-scroll"
       class="forced-scrollbar h-[420px] overflow-y-auto"
-      style="scrollbar-gutter: stable"
+      style="scrollbar-gutter: stable; padding-inline-end: {syntheticScrollbarGutterWidth}px"
       use:trackPinnedPrompt={{ enabled: true, onChange: (next) => (pinned = next) }}
     >
       <div style:height="{paginationHeight}px"></div>
@@ -157,7 +193,8 @@
 </section>
 
 <style>
-  /* Deterministic classic scrollbar so the gutter is nonzero in CT runs. */
+  /* Prefer a classic scrollbar. The host reserves the same 16px lane when
+     Chromium uses an overlay scrollbar, which keeps the geometry test strict. */
   .forced-scrollbar::-webkit-scrollbar {
     width: 16px;
   }

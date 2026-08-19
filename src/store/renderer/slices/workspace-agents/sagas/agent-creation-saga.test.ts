@@ -11,7 +11,12 @@ import { AgentStatus } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { agentSessionLaunchAgentRequested } from '../../agent-session/agent-session-slice';
-import { createAgentFromConfigRequested, createAgentRequested } from '../workspace-agents-slice';
+import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
+import {
+  createAgentFromConfigRequested,
+  createAgentRequested,
+  createAgentWithSpecialistRequested,
+} from '../workspace-agents-slice';
 import { agentCreationSaga } from './agent-creation-saga';
 
 const WS = 'ws-create-saga';
@@ -83,6 +88,50 @@ describe('agentCreationSaga', () => {
       }),
     );
     expect(mocks.createAgent.mock.calls[0][1]).not.toHaveProperty('agentId');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('opens created agents in the panel captured by the creation trigger', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const { channel, dispatched, task } = start();
+    channel.put(
+      createAgentRequested(WS, undefined, {
+        panelLayoutId: 'layout-1',
+        panelId: 'working-panel',
+      }),
+    );
+    await settle();
+
+    expect(dispatched).toContainEqual(
+      openAgentTabRequested(WS, {
+        agentId: AGENT,
+        panelLayoutId: 'layout-1',
+        sourcePanelId: 'working-panel',
+      }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('opens specialist agents in the panel captured by the creation trigger', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const { channel, dispatched, task } = start();
+    channel.put(
+      createAgentWithSpecialistRequested(WS, null, {
+        panelLayoutId: 'layout-1',
+        panelId: 'working-panel',
+      }),
+    );
+    await settle();
+
+    expect(dispatched).toContainEqual(
+      openAgentTabRequested(WS, {
+        agentId: AGENT,
+        panelLayoutId: 'layout-1',
+        sourcePanelId: 'working-panel',
+      }),
+    );
     task.cancel();
     await task.toPromise();
   });

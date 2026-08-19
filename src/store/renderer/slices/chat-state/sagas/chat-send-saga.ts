@@ -88,6 +88,17 @@ type LifecycleSendOptions = {
   priority?: 'interrupt';
 };
 
+function hasSendableMessageContent(
+  text: string,
+  blocks?: Pick<LifecycleSendOptions, 'imageBlocks' | 'fileBlocks'>,
+): boolean {
+  return (
+    text.trim().length > 0 ||
+    (blocks?.imageBlocks?.length ?? 0) > 0 ||
+    (blocks?.fileBlocks?.length ?? 0) > 0
+  );
+}
+
 function* waitForTranscriptRefresh(agentId: string, wsId: string): SagaGenerator<void> {
   while (true) {
     const { settled, unmounted } = yield* race({
@@ -261,7 +272,7 @@ function* handleSend(action: SendAction): SagaGenerator<void> {
     yield* call(sendQueuedNow, agentId, payload.wsId, payload.queuedMessageId);
     return;
   }
-  if (!payload.text) return;
+  if (!hasSendableMessageContent(payload.text, payload)) return;
   const forceSubmit = payload.forceSubmit === true;
   yield* dispatchToLifecycle(
     agentId,
@@ -349,7 +360,7 @@ function* retryLastMessage(
   let settled = false;
   try {
     const lastAttempted = yield* selectChatLastAttemptedMessage.effect(agentId);
-    if (!lastAttempted?.text.trim()) {
+    if (!lastAttempted || !hasSendableMessageContent(lastAttempted.text, lastAttempted.options)) {
       yield* call(showNothingToRetry);
       yield* put(action.success(undefined as void));
       settled = true;

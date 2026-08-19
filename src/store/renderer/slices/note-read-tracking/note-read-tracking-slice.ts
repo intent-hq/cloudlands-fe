@@ -1,6 +1,6 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import type { NoteReadRecord } from "$shared/types/user-activity.types";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import type { NoteReadRecord } from '$shared/types/user-activity.types';
 
 // ============================================================================
 // Types
@@ -30,25 +30,22 @@ export const initialState: NoteReadTrackingState = {
 
 function withoutUnreadNoteId(
   unreadNoteIds: Record<string, boolean>,
-  noteId: string
+  noteId: string,
 ): Record<string, boolean> {
   if (!noteId || !unreadNoteIds[noteId]) {
     return unreadNoteIds;
   }
 
-   
   const { [noteId]: _removed, ...rest } = unreadNoteIds;
   return rest;
 }
 
 /** Clear the currently viewed note */
-export const clearCurrentlyViewed = createAction(
-  "noteReadTracking/clearCurrentlyViewed"
-);
+export const clearCurrentlyViewed = createAction('noteReadTracking/clearCurrentlyViewed');
 
 /** Optimistically mark a note as read (reducer handles state, saga handles IPC) */
 export const markNoteRead = createAction(
-  "noteReadTracking/markNoteRead",
+  'noteReadTracking/markNoteRead',
   (workspaceId: string, noteId: string) => ({
     workspaceId,
     noteId,
@@ -59,17 +56,15 @@ export const markNoteRead = createAction(
 /** Trigger debounced refresh of unread notes */
 export const refreshUnreadNotes = createAction<
   [workspaceId: string, notes: Array<{ id: string; updatedAt: string; createdAt?: string }>]
->("noteReadTracking/refreshUnreadNotes");
+>('noteReadTracking/refreshUnreadNotes');
 
 /** Clear all cached state (e.g., workspace switch) */
-export const clearCache = createAction(
-  "noteReadTracking/clearCache"
-);
+export const clearCache = createAction('noteReadTracking/clearCache');
 
 /** Request to create a new note (handled by saga) */
-export const createNoteRequested = createAction<[wsId: string]>(
-  "noteReadTracking/createNoteRequested"
-);
+export const createNoteRequested = createAction<
+  [wsId: string, options?: { panelLayoutId?: string; panelId?: string }]
+>('noteReadTracking/createNoteRequested');
 
 // ============================================================================
 // Reducer
@@ -77,23 +72,22 @@ export const createNoteRequested = createAction<[wsId: string]>(
 
 export const noteReadTrackingReducer = createReducer<NoteReadTrackingState>(initialState);
 noteReadTrackingReducer.with(clearCurrentlyViewed, (state) => {
-    if (!state.currentlyViewedNoteId) return state;
-    return { ...state, currentlyViewedNoteId: null };
-  });
+  if (!state.currentlyViewedNoteId) return state;
+  return { ...state, currentlyViewedNoteId: null };
+});
 noteReadTrackingReducer.with(markNoteRead, (state, { payload }) => {
-    const { noteId, now } = payload;
-    const existing = state.readRecords[noteId];
-    return {
-      ...state,
-      readRecords: {
-        ...state.readRecords,
-        [noteId]: {
-          lastReadAt: now,
-          readCount: (existing?.readCount ?? 0) + 1,
-        },
+  const { noteId, now } = payload;
+  const existing = state.readRecords[noteId];
+  return {
+    ...state,
+    readRecords: {
+      ...state.readRecords,
+      [noteId]: {
+        lastReadAt: now,
+        readCount: (existing?.readCount ?? 0) + 1,
       },
-      unreadNoteIds: withoutUnreadNoteId(state.unreadNoteIds, noteId),
-    };
-  });
+    },
+    unreadNoteIds: withoutUnreadNoteId(state.unreadNoteIds, noteId),
+  };
+});
 noteReadTrackingReducer.with(clearCache, () => ({ ...initialState }));
-

@@ -46,7 +46,7 @@
   toastOptions={{
     classes: {
       toast:
-        'group toast w-full min-w-0 max-w-full group-[.toaster]:bg-card group-[.toaster]:text-foreground group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:shadow-lg',
+        'group toast w-full min-w-0 max-w-full group-[.toaster]:bg-card group-[.toaster]:text-foreground group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:shadow-(--elevation-overlay)',
       description: 'group-[.toast]:text-subtle text-sm',
       actionButton:
         'group-[.toast]:bg-transparent group-[.toast]:text-foreground group-[.toast]:border group-[.toast]:border-border group-[.toast]:hover:bg-muted group-[.toast]:px-4 group-[.toast]:py-2 group-[.toast]:text-sm group-[.toast]:font-semibold group-[.toast]:transition-colors',
@@ -97,19 +97,11 @@
     max-width: 100%;
     padding: 1rem 1.25rem;
     align-items: flex-start !important;
-    box-shadow:
-      0 10px 15px -3px rgb(0 0 0 / 0.08),
-      0 4px 6px -4px rgb(0 0 0 / 0.08);
+    box-shadow: var(--elevation-overlay);
   }
 
   :global([data-sonner-toast] [data-icon]) {
     margin-top: 2px;
-  }
-
-  :global(.dark [data-sonner-toast]) {
-    box-shadow:
-      0 10px 15px -3px rgb(0 0 0 / 0.25),
-      0 4px 6px -4px rgb(0 0 0 / 0.25);
   }
 
   :global([data-sonner-toast] [data-description]) {
@@ -173,7 +165,7 @@
     font-size: 0.75rem;
     font-weight: 600;
     line-height: 1rem;
-    box-shadow: 0 4px 8px rgb(0 0 0 / 0.08);
+    box-shadow: var(--elevation-raised);
     cursor: pointer;
   }
 

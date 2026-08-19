@@ -117,7 +117,9 @@
             aria-label={m.workspace_import_progress_ariaLabel()}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuenow={progressFraction != null ? Math.round(progressFraction * 100) : undefined}
+            aria-valuenow={progressFraction != null
+              ? Math.round(progressFraction * 100)
+              : undefined}
             data-testid="import-progress-bar"
           >
             {#if progressFraction != null}
@@ -159,7 +161,7 @@
           {/if}
         {:else}
           <p class="flex items-center gap-2 text-sm" data-testid="import-result-failed">
-            <Fa icon={faCircleXmark} class="text-red-500 shrink-0" />
+            <Fa icon={faCircleXmark} class="text-error-foreground shrink-0" />
             <span class="font-semibold">{m.workspace_import_result_failed_title()}</span>
           </p>
           <p class="text-xs text-subtle" data-testid="import-failed-reason">

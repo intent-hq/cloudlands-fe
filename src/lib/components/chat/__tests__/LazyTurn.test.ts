@@ -161,7 +161,7 @@ describe('LazyTurn lifecycle', () => {
   it('does not thrash content↔placeholder when the intersection state jitters at the boundary', async () => {
     // Repro regime: follow-bottom pinned during streaming. Every frame the
     // tail mutates and the scroller re-pins, so a turn sitting at the
-    // IntersectionObserver boundary (rootMargin '50% 0px') is reported
+    // IntersectionObserver boundary (rootMargin '100% 0px') is reported
     // alternately inside/outside the extended viewport on consecutive
     // frames. Without a settle window on the swap-out edge, each
     // notification performs a full content↔placeholder DOM swap — a 60fps

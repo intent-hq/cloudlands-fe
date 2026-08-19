@@ -36,7 +36,7 @@ const electronMocks = vi.hoisted(() => {
       send: vi.fn(),
     };
 
-    constructor(_options: unknown) {
+    constructor(_options: Record<string, unknown>) {
       this.id = constructed.length + 1;
       constructed.push(this);
     }

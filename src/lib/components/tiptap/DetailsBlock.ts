@@ -93,7 +93,7 @@ export const DetailsBlock = Node.create({
     return [
       'details',
       mergeAttributes(HTMLAttributes, {
-        class: 'details-block my-2 rounded-md border border-border/50 p-3',
+        class: 'details-block my-2 rounded-md border border-border p-3',
       }),
       0,
     ];

@@ -73,8 +73,10 @@ export interface PanelState {
   id: string;
   tabs: PanelTab[];
   activeTabId: string | null;
-  /** True only for the untouched placeholder seeded beside a new coordinator chat. */
+  /** True for an untouched reusable blank panel that the next user item can consume. */
   pristine?: boolean;
+  /** Pinned panels are preserved when reusable-panel mode collapses the layout. */
+  pinned?: boolean;
 }
 
 /** Node in the panel layout tree - either a panel or a split container */
@@ -117,7 +119,7 @@ export interface WorkspacePanelLayout {
 }
 
 export interface NewWorkspacePanelLifecycle {
-  /** Coordinator creation uses the seeded pristine placeholder flow. */
+  /** Coordinator creation fills the seeded reusable panel when Spec is first written. */
   coordinator?: boolean;
   initialAgentId: string | null;
   initialAgentPending: boolean;
@@ -130,7 +132,7 @@ export interface NewWorkspacePanelLifecycle {
 
 export interface PanelRevealRequest {
   panelId: string;
-  tabId: string;
+  tabId: string | null;
   requestId: string;
 }
 

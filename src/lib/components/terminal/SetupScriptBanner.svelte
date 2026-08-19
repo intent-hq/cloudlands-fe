@@ -299,7 +299,7 @@
     ></div>
 
     <!-- Header -->
-    <div class="flex items-center justify-between px-3 py-2 border-b border-border/50">
+    <div class="flex items-center justify-between px-3 py-2 border-b border-border">
       <div class="flex items-start gap-2">
         <!-- <Fa icon={faWandMagicSparkles} class="w-3.5 h-3.5 text-primary/70 mt-1" /> -->
         <div class="flex flex-col">
@@ -329,7 +329,7 @@
     </div>
 
     <!-- Script name -->
-    <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border/30">
+    <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border">
       <span class="text-xs text-subtle">{m.terminal_setupBanner_name_label()}</span>
       <input
         type="text"

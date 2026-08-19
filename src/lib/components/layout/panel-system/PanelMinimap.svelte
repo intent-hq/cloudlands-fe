@@ -21,6 +21,8 @@
     size?: number;
     /** Click handler */
     onclick?: () => void;
+    /** Menu trigger attributes and handlers when used as a dropdown trigger. */
+    triggerProps?: Record<string, unknown>;
   }
 
   let {
@@ -28,7 +30,18 @@
     class: className,
     size = 12,
     onclick,
+    triggerProps,
   }: Props = $props();
+
+  function handleClick(event: MouseEvent) {
+    (triggerProps?.onclick as ((event: MouseEvent) => void) | undefined)?.(event);
+    onclick?.();
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    (triggerProps?.onkeydown as ((event: KeyboardEvent) => void) | undefined)?.(event);
+    if (!event.defaultPrevented && event.key === 'Enter') onclick?.();
+  }
 
   // Calculate panel rectangles from layout tree
   interface PanelRect {
@@ -91,6 +104,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  {...triggerProps}
   class={cn(
     'panel-minimap relative pr-0.75 cursor-pointer rounded transition-all duration-150 text-subtle opacity-50 z-10',
     className,
@@ -101,8 +115,8 @@
   title={panelRects.length === 1
     ? m.layout_panelMinimap_tooltip_one({ count: panelRects.length })
     : m.layout_panelMinimap_tooltip_many({ count: panelRects.length })}
-  {onclick}
-  onkeydown={(e) => e.key === 'Enter' && onclick?.()}
+  onclick={handleClick}
+  onkeydown={handleKeydown}
 >
   <svg
     width={size}

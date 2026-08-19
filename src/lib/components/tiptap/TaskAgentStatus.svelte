@@ -1,20 +1,20 @@
 <script lang="ts">
   import {
     selectAgentIsResponding,
-    selectAgentSessionStreamingContent,
     selectAgentSession,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectChatReceivedFirstChunk } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { restoreAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { createLogger } from '$lib/utils/client-logger';
-  import { AgentStatus, type ContentBlock, type ToolUseBlock } from '$shared/types';
+  import { AgentStatus, type ToolUseBlock } from '$shared/types';
   import { onMount, onDestroy } from 'svelte';
-  import { getLastMeaningfulLine } from '$lib/utils/text-utils';
-  import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
+  import { getLastMeaningfulLine, stripUserMessagePrefixes } from '$lib/utils/text-utils';
   import { taskAgentPollingManager } from './task-agent-polling-manager';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
+  import { classifyTool } from '$lib/components/chat/tool-classifier';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -51,6 +51,10 @@
   const serviceAgent$ = selectAgentSession(agentId);
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
   const agentIsResponding$ = selectAgentIsResponding(agentId);
+  // Per-turn "response text landed this turn" flag (chat-state): reset by
+  // `agent:stream:end`, flipped by the first text-bearing activity ping.
+  // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
+  const receivedFirstChunk$ = selectChatReceivedFirstChunk(agentId);
 
   // Force reactivity with a version counter that updates when we detect changes
   let version = $state(0);
@@ -78,10 +82,6 @@
   // Track final state when agent completes - keeps UI showing after completion
   let finalStatus = $state<'complete' | 'error' | null>(null);
   let isStreamActive = $state(false);
-
-  // Streaming text is derived from Redux-owned agent-session messages.
-  // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
-  const streamingContent$ = selectAgentSessionStreamingContent(agentId);
 
   async function tryLoadAgent() {
     if (triedLoading) return;
@@ -304,51 +304,10 @@
   // Only hide if loading explicitly failed (agent doesn't exist and we tried loading)
   const shouldShow = $derived(!loadFailed);
 
-  // Get digest from either live Redux streaming content or agent session.
-  // Live streaming content takes precedence when present.
-  const agentDigest = $derived.by(() => {
-    // First check currently streaming Redux content.
-    const streamingDigest = AuggieTextParser.extractDigest($streamingContent$).digest;
-    if (streamingDigest) {
-      return streamingDigest;
-    }
-    // Fall back to session-stored digest
-    const sessionDigest = storeAgent?.digest || serviceAgent?.digest;
-    if (sessionDigest) {
-      return sessionDigest;
-    }
-
-    // Check the last message's text content for an embedded <agent_digest> tag
-    // This handles the case where the agent sent a digest in the last turn
-    const messages = storeAgent?.messages || serviceAgent?.messages;
-    if (messages && messages.length > 0) {
-      // Look for the last assistant message
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const msg = messages[i];
-        if (msg.role !== 'assistant') continue;
-
-        // Extract text from contentBlocks
-        if (msg.contentBlocks && msg.contentBlocks.length > 0) {
-          const textContent = msg.contentBlocks
-            .filter((block: ContentBlock) => block.type === 'text')
-            .map((block: ContentBlock) => ('text' in block ? block.text : '') || '')
-            .join(' ')
-            .trim();
-
-          if (textContent) {
-            // Try to extract digest from the text content
-            const { digest } = AuggieTextParser.extractDigest(textContent);
-            if (digest) {
-              return digest;
-            }
-          }
-        }
-        break; // Only check the last assistant message
-      }
-    }
-
-    return null;
-  });
+  // Wire digest (AgentLite, PROTOCOL §5.5): push-applied by
+  // `agent:stream:activity` while responding and persisted on the session —
+  // no client-side extraction from stream buffers or the transcript.
+  const agentDigest = $derived(storeAgent?.digest || serviceAgent?.digest || null);
 
   // Debug logging - only log once when agent is first found to avoid log spam
   let hasLoggedAgentFound = false;
@@ -389,89 +348,73 @@
     return 'idle';
   });
 
-  // Get the latest message or streaming content
+  // Latest content preview, from the wire AgentLite preview fields
+  // (PROTOCOL §5.5) — already server-cleaned by `clean_response_text`; the
+  // transcript is never re-derived (monorepo#2852). Precedence mirrors
+  // AgentCard:
+  //   1. while a turn is live, the push-applied `lastAgentResponse`
+  //      (refreshed ~1s by `agent:stream:activity`) — gated on the per-turn
+  //      `receivedFirstChunk` flag so a leftover previous-turn response
+  //      doesn't masquerade as this turn's text;
+  //   2. the live `lastToolUse` overlay while streaming (tool-only stretches);
+  //   3. freshness-wins: the user's newest message when `lastMessageRole`
+  //      is 'user' (lastAgentResponse is then the PREVIOUS turn's text);
+  //   4. the persisted `lastAgentResponse`, then the persisted `lastToolUse`.
   const latestContent = $derived.by(() => {
-    // First check Redux-owned streaming content for real-time updates.
-    const streamingContent = AuggieTextParser.stripDigestTagsForDisplay($streamingContent$);
-    if (isStreamActive && streamingContent) {
-      const lastLine = getLastMeaningfulLine(streamingContent);
-      return {
-        text: lastLine || m.tiptap_taskAgentStatus_working_label(),
-        isStreaming: true,
-      };
+    if (!storeAgent && !serviceAgent) return null;
+    const session = storeAgent || serviceAgent;
+    if (!session) return null;
+
+    const isLive = agentStatus === 'streaming' || agentStatus === 'active';
+
+    if (isLive && $receivedFirstChunk$ && session.lastAgentResponse) {
+      const lastLine = getLastMeaningfulLine(session.lastAgentResponse);
+      if (lastLine) {
+        return { text: lastLine, isStreaming: true };
+      }
     }
 
-    if (!storeAgent && !serviceAgent) return null;
-
-    // Otherwise show the last message
-    const messages = storeAgent?.messages || serviceAgent?.messages;
-    if (messages && messages.length > 0) {
-      // Get the last message (could be user or assistant)
-      const lastMsg = messages[messages.length - 1];
-
-      // If last message is from user, show that
-      if (lastMsg.role === 'user') {
-        if (lastMsg.contentBlocks && lastMsg.contentBlocks.length > 0) {
-          const textBlocks = lastMsg.contentBlocks
-            .filter((block: ContentBlock) => block.type === 'text')
-            .map((block: ContentBlock) => ('text' in block ? block.text : '') || '')
-            .join(' ')
-            .trim();
-          if (textBlocks) {
-            const lastLine = getLastMeaningfulLine(textBlocks);
-            return {
-              text: lastLine,
-              isStreaming: false,
-            };
+    // Hidden tool labels (classifyTool) fall through to the user line /
+    // persisted text instead of rendering a blank row — the live wire
+    // `lastToolUse` carries no input, so e.g. in-flight workspace_api calls
+    // classify hidden. Mirrors AgentCard's `hasRenderableLiveTool` gate.
+    const toolInput = (session.lastToolUse?.input as Record<string, unknown>) || {};
+    const toolBlock: ToolUseBlock | undefined =
+      session.lastToolUse?.name && !classifyTool(session.lastToolUse.name, toolInput).hidden
+        ? {
+            type: 'tool_use',
+            id: `preview-tool:${agentId}`,
+            name: session.lastToolUse.name,
+            input: toolInput,
           }
-        }
-        // Fallback for user messages with legacy content field
-        const legacyContent = (lastMsg as { content?: string }).content;
-        if (typeof legacyContent === 'string' && legacyContent) {
-          return {
-            text: getLastMeaningfulLine(legacyContent),
-            isStreaming: false,
-          };
-        }
+        : undefined;
+
+    // Live tool overlay: while streaming, `lastToolUse` is the in-flight tool
+    // signal (cleared at turn boundaries); prefer it over stale text.
+    if (isLive && session.isStreaming && toolBlock) {
+      return { toolBlock, isStreaming: true };
+    }
+
+    // Freshness-wins: the newest transcript message is the user's, so the
+    // persisted lastAgentResponse is the previous turn's text.
+    if (session.lastMessageRole === 'user' && session.lastUserMessage) {
+      const firstLine = stripUserMessagePrefixes(session.lastUserMessage)
+        .split('\n')[0]
+        ?.trim();
+      if (firstLine) {
+        return { text: firstLine, isStreaming: false };
       }
+    }
 
-      // Find the last assistant message
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const msg = messages[i];
-        if (msg.role === 'user') continue;
-
-        // Extract text from contentBlocks - check both text and content fields
-        if (msg.contentBlocks && msg.contentBlocks.length > 0) {
-          // First check for text blocks
-          const textBlocks = msg.contentBlocks
-            .filter((block: ContentBlock) => block.type === 'text')
-            .map((block: ContentBlock) => ('text' in block ? block.text : '') || '')
-            .join(' ')
-            .trim();
-
-          if (textBlocks) {
-            // Get the last meaningful line - CSS will handle truncation
-            const lastLine = getLastMeaningfulLine(textBlocks);
-            return {
-              text: lastLine,
-              isStreaming: false,
-            };
-          }
-
-          // If no text blocks, surface the latest tool_use block so the template
-          // can render the same icon+label UI used in ToolCall.svelte.
-          const toolBlocks = msg.contentBlocks.filter(
-            (block: ContentBlock): block is ToolUseBlock => block.type === 'tool_use',
-          );
-          if (toolBlocks.length > 0) {
-            const lastToolBlock = toolBlocks[toolBlocks.length - 1];
-            return {
-              toolBlock: lastToolBlock,
-              isStreaming: agentStatus === 'streaming' || agentStatus === 'active',
-            };
-          }
-        }
+    if (session.lastAgentResponse) {
+      const lastLine = getLastMeaningfulLine(session.lastAgentResponse);
+      if (lastLine) {
+        return { text: lastLine, isStreaming: false };
       }
+    }
+
+    if (toolBlock) {
+      return { toolBlock, isStreaming: isLive };
     }
 
     return null;
@@ -564,7 +507,7 @@
     </div>
 
     <div class="status-icon">
-      <AugieAvatarWithState {agentId} size={19} />
+      <AgentAvatarWithState {agentId} size={19} />
     </div>
   </button>
 {/if}

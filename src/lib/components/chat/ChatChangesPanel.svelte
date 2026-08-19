@@ -180,7 +180,7 @@
   const logger = createLogger('ChatChangesPanel');
   import {
     faChevronDown,
-    faChevronRight,
+    faChevronLeft,
     faCodeCompare,
     faArrowUpRightFromSquare,
     faPlus,
@@ -193,7 +193,7 @@
   import { faNote } from '$lib/icons/faNote';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import InlineDiffItem from './InlineDiffItem.svelte';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
   import { safeSlide } from '$lib/utils/animations';
   import { onDestroy, tick, untrack } from 'svelte';
@@ -2641,7 +2641,7 @@
                         onclick={() => toggleCommitGroup(group.hash)}
                       >
                         <Fa
-                          icon={expandedCommits.has(group.hash) ? faChevronDown : faChevronRight}
+                          icon={expandedCommits.has(group.hash) ? faChevronDown : faChevronLeft}
                           class="text-subtle w-2.5! h-2.5! shrink-0"
                         />
                         <!-- Author avatar -->
@@ -2828,7 +2828,7 @@
                 title={m.chat_changesPanel_openAgent_title()}
               >
                 <span class="shrink-0">
-                  <AuggieAvatar agentId={displayAgentId ?? undefined} size={14} />
+                  <AgentAvatar agentId={displayAgentId ?? undefined} size={14} />
                 </span>
                 <span class="truncate">{agentName}</span>
               </button>
@@ -2890,7 +2890,7 @@
         class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer shrink"
       >
         <Fa
-          icon={expandedFiles.has(expandKey) ? faChevronDown : faChevronRight}
+          icon={expandedFiles.has(expandKey) ? faChevronDown : faChevronLeft}
           class="text-subtle w-2.5! h-2.5! shrink-0"
         />
 

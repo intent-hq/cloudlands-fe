@@ -1,5 +1,3 @@
-import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
-import { faCircle } from '@fortawesome/free-solid-svg-icons';
 import { formatInteger } from '$lib/i18n/format';
 import { m } from '$shared/paraglide/messages.js';
 import type {
@@ -7,26 +5,6 @@ import type {
   WorkspaceTabStatusCategory,
   WorkspaceTabStatusItem,
 } from '$store/renderer/slices/hud/hud-types';
-
-export interface WorkspaceTabStatusPresentation {
-  icon: IconDefinition;
-  className: string;
-  label: string;
-}
-
-const CATEGORY_VISUALS: Record<
-  WorkspaceTabStatusCategory,
-  Pick<WorkspaceTabStatusPresentation, 'icon' | 'className'>
-> = {
-  failed: { icon: faCircle, className: 'text-destructive' },
-  blocker: { icon: faCircle, className: 'text-destructive' },
-  question: { icon: faCircle, className: 'text-warning' },
-  discussion: { icon: faCircle, className: 'text-warning' },
-  needs_input: { icon: faCircle, className: 'text-warning' },
-  review: { icon: faCircle, className: 'text-warning' },
-  unread: { icon: faCircle, className: 'text-info' },
-  running: { icon: faCircle, className: 'text-success' },
-};
 
 function categoryLabel(category: WorkspaceTabStatusCategory): string {
   switch (category) {
@@ -47,12 +25,6 @@ function categoryLabel(category: WorkspaceTabStatusCategory): string {
     case 'running':
       return m.hud_agentState_running_label();
   }
-}
-
-export function getWorkspaceTabStatusPresentation(
-  category: WorkspaceTabStatusCategory,
-): WorkspaceTabStatusPresentation {
-  return { ...CATEGORY_VISUALS[category], label: categoryLabel(category) };
 }
 
 export function formatWorkspaceTabStatusDetail(item: WorkspaceTabStatusItem): string {

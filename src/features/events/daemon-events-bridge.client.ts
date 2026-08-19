@@ -712,6 +712,7 @@ function dispatchStreamUpdate(
   // agent-stream-saga re-checks coverage for dispatches buffered across a
   // registration install.
   const covered = hasStandingChatSubscription(agentId);
+
   appStore.dispatch(
     agentStreamUpdateReceived({
       workspaceId: state.workspaceId,

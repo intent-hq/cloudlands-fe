@@ -15,9 +15,6 @@
   import {
     selectAgentSession,
     selectAgentIsResponding,
-    selectAgentSessionHasStreamOwnedMessage,
-    selectAgentSessionStreamingContent,
-    selectAgentIsWaiting,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectChatReceivedFirstChunk } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import {
@@ -33,9 +30,10 @@
   import { classifyTool } from './tool-classifier';
   import { deriveAgentCardPreview } from './agent-card-preview';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
+  import { renderInlineMarkdownPlainText } from './inline-markdown-snippet';
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
-  import { getAvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+  import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
   import { safeSlide } from '$lib/utils/animations';
@@ -45,7 +43,7 @@
     getPanelLayoutManager,
     hasPanelLayoutManager,
   } from '$features/layout/panel-layout-adapter';
-  import type { Workspace } from '$shared/types';
+  import type { AgentSession, Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import HarnessFeaturesModal from './HarnessFeaturesModal.svelte';
 
@@ -88,8 +86,12 @@
     hidePreview?: boolean;
     /** Render as a compact single row (used by event wake-up banners). */
     inline?: boolean;
+    /** Use the stable single-line row grammar for the workspace Agents panel. */
+    panelRow?: boolean;
     /** Optional row typography override supplied by compact parent disclosures. */
     typographyClass?: string;
+    /** Optional inline-row geometry supplied by compact parent disclosures. */
+    inlineRowClass?: string;
     /** Compact status text shown after the agent name. */
     statusLabel?: string;
     /** Optional workspace to load agent session from (for home page usage) */
@@ -106,6 +108,10 @@
     headerActions?: Snippet;
     openPanelCount?: number;
     activeInPanel?: boolean;
+    /** Optional timestamp supplied by list data before the session selector is hydrated. */
+    updatedAt?: AgentSession['updatedAt'];
+    /** Disable navigation, mutation, editing, and file operations in isolated previews. */
+    readOnly?: boolean;
   }
 
   let {
@@ -121,7 +127,9 @@
     showStateBorder = false,
     hidePreview = false,
     inline = false,
+    panelRow = false,
     typographyClass = '',
+    inlineRowClass = 'px-1.5 py-1',
     statusLabel,
     workspace = null,
     isCompleted = false,
@@ -129,9 +137,12 @@
     headerActions,
     openPanelCount = 0,
     activeInPanel = false,
+    updatedAt: updatedAtProp = undefined,
+    readOnly = false,
   }: Props = $props();
 
   const logger = createLogger('AgentCard');
+  const INLINE_PEEK_TYPOGRAPHY_CLASS = 'font-normal! text-muted-foreground';
 
   // svelte-ignore state_referenced_locally -- selectors are initialized with the current agent; the effect below mirrors prop changes.
   const agentIdStore = writable(agentId);
@@ -143,7 +154,7 @@
 
   $effect(() => {
     const wsId = workspace?.id;
-    if (wsId) {
+    if (wsId && !readOnly) {
       appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
     }
   });
@@ -176,6 +187,7 @@
 
   // Start editing the agent name
   async function startEditing() {
+    if (readOnly) return;
     editingValue = displayName;
     isEditing = true;
     await tick();
@@ -241,6 +253,7 @@
 
   // Handle double-click on name
   function handleNameDoubleClick(e: MouseEvent) {
+    if (readOnly) return;
     e.preventDefault();
     e.stopPropagation();
     startEditing();
@@ -248,6 +261,7 @@
 
   // Handle keyboard events on the card button
   function handleCardKeydown(e: KeyboardEvent) {
+    if (readOnly) return;
     if (onclick && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();
       e.stopPropagation();
@@ -262,6 +276,7 @@
 
   // Context menu handlers
   function handleContextMenu(e: MouseEvent) {
+    if (readOnly) return;
     e.preventDefault();
     e.stopPropagation();
     contextMenu = { x: e.clientX, y: e.clientY };
@@ -420,7 +435,6 @@
   // above handles the disk restore.
   const agent$ = selectAgentSession(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
-  const agentIsWaiting$ = selectAgentIsWaiting(agentIdStore);
   const agentData = $derived(getAgentPeekData($agent$));
 
   // Get parent agent ID from metadata (for delegation info)
@@ -440,14 +454,9 @@
   // Get line changes for this agent
   const lineChanges$ = selectAgentLineStats(agentIdStore);
 
-  // Streaming state is derived from Redux-owned stream lifecycle/message state.
-  const streamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
-  const hasStreamOwnedMessage$ = selectAgentSessionHasStreamOwnedMessage(agentIdStore);
   // Per-turn "response text landed this turn" flag (chat-state): reset by
   // `agent:stream:end`, flipped by the first text-bearing activity ping.
   const receivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
-  const streamingBuffer = $derived($streamingContent$);
-  const isStreamActive = $derived($agentIsResponding$ && !$agentIsWaiting$);
 
   // Extract display data
   const displayName = $derived(agentData?.name || agentName || m.chat_shared_agentName_fallback());
@@ -458,19 +467,14 @@
   // fields; null when none is pending (retired on agent:updated clear).
   const attentionRequest = $derived(getAgentAttentionRequest($agent$));
 
-  // Use centralized getAvatarState for consistent state calculation
+  // Use the canonical session state derivation for every agent surface.
   const avatarState = $derived(
-    getAvatarState(
-      {
-        isStreaming: isStreamActive || ($agentIsResponding$ && !$agentIsWaiting$),
-        status: $agentIsWaiting$ ? 'waiting' : agentData?.status,
-      },
-      {
-        hasPermissionRequest: $agentPermCount > 0,
-        isCompleted,
-        attentionKind: attentionRequest?.kind ?? null,
-      },
-    ),
+    getAvatarStateForSession($agent$, {
+      hasPermissionRequest: $agentPermCount > 0,
+      isActive: selected,
+      isCompleted,
+      attentionKind: attentionRequest?.kind ?? null,
+    }),
   );
 
   // Get specialist ID from agent metadata (for avatar overlay)
@@ -485,26 +489,19 @@
     return typeof path === 'string' && path.length > 0 ? path : null;
   });
 
-  // Preview precedence while a turn is live:
-  //   1. the stream-owned chat.subscribe buffer (viewed agent only —
-  //      character-level progress from the standing delta stream);
-  //   2. the session's push-applied `lastAgentResponse` (refreshed ~1s by
-  //      `agent:stream:activity`, intentd#792) so a non-viewed watched
-  //      agent's preview advances mid-turn instead of freezing on stale
-  //      transcript-derived peek text — gated on the per-turn
+  // Preview precedence:
+  //   1. while a turn is live, the session's push-applied `lastAgentResponse`
+  //      (refreshed ~1s by `agent:stream:activity`, intentd#792; already
+  //      server-cleaned by `clean_response_text`) — gated on the per-turn
   //      `receivedFirstChunk` flag (reset by `agent:stream:end`, flipped by
   //      a text-bearing `agent:stream:activity`) so a leftover previous-turn
   //      `lastAgentResponse` doesn't masquerade as this turn's text in the
   //      pre-first-token window;
-  //   3. the persisted transcript peek text (idle agents) — agent-peek-utils
-  //      falls back to the wire `lastAgentResponse` when the loaded
-  //      transcript has no assistant message.
+  //   2. the persisted wire preview (idle agents) — agent-peek-utils serves
+  //      the wire `lastAgentResponse` verbatim; no stream buffer or
+  //      transcript re-derivation (monorepo#2843).
   // Tool previews (lastToolUse) only kick in when there's no text to show.
   const liveResponseLine = $derived.by(() => {
-    if (isStreamActive && $hasStreamOwnedMessage$ && streamingBuffer) {
-      const line = getLastMeaningfulLine(streamingBuffer);
-      if (line) return line;
-    }
     if ($agentIsResponding$ && $receivedFirstChunk$ && $agent$?.lastAgentResponse) {
       const line = getLastMeaningfulLine($agent$.lastAgentResponse);
       if (line) return line;
@@ -551,7 +548,7 @@
       !hasRenderableLiveTool,
   );
 
-  const updatedAt = $derived($agent$?.updatedAt);
+  const updatedAt = $derived(updatedAtProp ?? $agent$?.updatedAt);
 
   // Border color based on state - only show colored border if showStateBorder is true
   const isRunning = $derived(avatarState === 'running' || avatarState === 'responding');
@@ -610,9 +607,35 @@
       lastUserMsg,
     }),
   );
+  const inlinePreviewSource = $derived.by(() => {
+    if (!preview || preview.kind === 'live-tool' || preview.kind === 'last-tool') return '';
+    if (preview.kind !== 'attention') return preview.text;
+    const label =
+      preview.attention.kind === 'blocker'
+        ? m.chat_agentCard_attentionBlocker_label()
+        : m.chat_agentCard_attentionDiscussion_label();
+    return preview.attention.reason ? `${label} · ${preview.attention.reason}` : label;
+  });
+  let inlinePreviewText = $state('');
+
+  $effect(() => {
+    const value = inlinePreviewSource;
+    let cancelled = false;
+    if (!value) {
+      inlinePreviewText = '';
+      return;
+    }
+    void renderInlineMarkdownPlainText(value).then((cleaned) => {
+      if (!cancelled) inlinePreviewText = cleaned;
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
 
   // Handle click - navigate to agent
   function handleClick(event: MouseEvent | KeyboardEvent) {
+    if (readOnly) return;
     if (onclick) {
       onclick(event);
     } else {
@@ -644,19 +667,35 @@
   >
     <button
       type="button"
-      class="flex w-full min-w-0 max-w-full overflow-hidden text-left gap-2 transition-colors duration-150 cursor-pointer group border {inline
-        ? 'type-body items-center rounded-md px-1.5 py-1'
-        : 'px-1.75 pt-1.25 pb-1.5'} {selected || showBorder
-        ? `bg-background border-border ${glowClass} shadow-xs`
-        : 'border-transparent'} {headerActions ? 'pr-14' : ''} {typographyClass}"
+      class="flex w-full min-w-0 max-w-full overflow-hidden text-left gap-2 transition-colors duration-150 cursor-pointer group border {panelRow
+        ? 'h-10 items-center rounded-md border-transparent px-2 py-2 type-body font-normal hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
+        : inline
+          ? `type-body items-center rounded-md ${inlineRowClass}`
+          : 'px-1.75 pt-1.25 pb-1.5'} {panelRow
+        ? selected
+          ? 'bg-muted/70 text-foreground'
+          : 'bg-transparent'
+        : selected || showBorder
+          ? `bg-background border-border ${glowClass} shadow-xs`
+          : 'border-transparent'} {typographyClass}"
       onclick={handleClick}
       onkeydown={handleCardKeydown}
       oncontextmenu={handleContextMenu}
+      aria-disabled={readOnly}
+      tabindex={readOnly ? -1 : undefined}
+      data-agent-panel-row={panelRow ? agentId : undefined}
     >
-      <div class="relative shrink-0 {inline ? '' : 'mt-[-0.8px] -mb-1'}">
-        <AugieAvatarWithState
+      <div
+        class="agent-card-avatar-wrapper relative shrink-0 {panelRow
+          ? 'agent-card-avatar-wrapper--panel'
+          : inline
+            ? ''
+            : 'mt-[-0.8px] -mb-1'}"
+        data-testid="agent-card-avatar-wrapper"
+      >
+        <AgentAvatarWithState
           {agentId}
-          size={20}
+          variant={panelRow ? 'emphasized' : 'standard'}
           state={avatarState}
           specialist={specialist as import('$lib/constants/specialists').BuiltinSpecialistId | null}
           {provider}
@@ -664,22 +703,30 @@
       </div>
 
       <div
-        class="agent-card-content flex min-w-0 max-w-full flex-1 overflow-hidden {inline
-          ? 'flex-row items-center gap-2'
-          : 'flex-col'}"
+        class="agent-card-content flex min-w-0 max-w-full flex-1 overflow-hidden {headerActions
+          ? 'mr-14'
+          : ''} {inline || panelRow ? 'flex-row items-center gap-2' : 'flex-col'}"
       >
         <!-- Header row -->
         <div
           class="agent-card-header flex w-full min-w-0 max-w-full items-center gap-1.5 overflow-hidden {inline
             ? 'inline-agent-card-header'
-            : 'pr-1.5'}"
+            : panelRow
+              ? 'agent-panel-row-header'
+              : 'pr-1.5'}"
         >
           <!-- Avatar with streaming indicator -->
 
           <div
-            class="flex-1 min-w-0 flex items-center {typographyClass
+            class="flex-1 min-w-0 flex items-center {panelRow
+              ? 'gap-1.5 overflow-hidden'
+              : inline
+                ? 'gap-0'
+                : 'gap-1.5'} {typographyClass
               ? 'font-normal'
-              : 'font-medium'} {inline ? 'overflow-hidden' : ''}"
+              : panelRow
+                ? 'font-normal'
+                : 'font-medium'} {inline ? 'overflow-hidden' : ''}"
           >
             {#if isEditing}
               <!-- svelte-ignore a11y_autofocus -->
@@ -695,13 +742,27 @@
             {:else}
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <h3
-                class="min-w-0 shrink whitespace-nowrap truncate text-foreground/90 group-hover:text-foreground {inline
-                  ? 'type-body'
-                  : 'text-sm'}"
+                class="whitespace-nowrap {panelRow
+                  ? 'min-w-0 flex-1 truncate type-body font-normal text-foreground'
+                  : inline
+                    ? typographyClass
+                      ? 'shrink-0 type-body font-normal text-foreground!'
+                      : 'shrink-0 type-body font-normal text-foreground'
+                    : 'shrink-0 text-sm font-normal text-foreground'}"
+                data-testid="agent-card-name"
+                data-agent-row-name={panelRow ? '' : undefined}
                 ondblclick={handleNameDoubleClick}
               >
                 {displayName}
               </h3>
+            {/if}
+            {#if statusLabel}
+              <span
+                class="type-body shrink-0 truncate whitespace-nowrap font-normal text-muted-foreground"
+                data-testid="agent-card-status"
+              >
+                {statusLabel}
+              </span>
             {/if}
             <!-- {#if specialist}
             <span
@@ -713,45 +774,83 @@
               {specialistDisplayName}
             </span>
           {/if} -->
-            {#if delegatedByName && !inline}
+            {#if delegatedByName && (!inline || panelRow)}
               <span
-                class="delegated-by-text ml-1 min-w-0 shrink truncate whitespace-nowrap text-ui text-subtle"
+                class="delegated-by-text min-w-0 shrink truncate whitespace-nowrap text-ui text-subtle {panelRow
+                  ? 'max-w-[40%]'
+                  : 'ml-1'}"
               >
                 {m.chat_agentCard_delegatedBy_label({ name: delegatedByName })}
               </span>
             {/if}
-            {#if isBackground}
+            {#if isBackground && !panelRow}
               <div class="ml-auto px-1 py-0.5 text-ui font-bold bg-muted text-subtle rounded mr-1">
                 {m.chat_agentCard_background_badge()}
               </div>
             {/if}
+
+            <!-- Inline mode: preview inline after name -->
+            {#if inline && !hidePreview && preview}
+              {#if preview.kind === 'live-tool' || preview.kind === 'last-tool'}
+                <div
+                  class="ml-2.5 min-w-0 flex-1 overflow-hidden whitespace-nowrap text-sm {INLINE_PEEK_TYPOGRAPHY_CLASS}"
+                  data-testid="agent-card-preview"
+                >
+                  <AgentPreviewToolLabel
+                    toolUse={preview.toolUse}
+                    showIcon={false}
+                    class={INLINE_PEEK_TYPOGRAPHY_CLASS}
+                  />
+                </div>
+              {:else}
+                <p
+                  class="ml-2.5 min-w-0 flex-1 truncate whitespace-nowrap text-sm {INLINE_PEEK_TYPOGRAPHY_CLASS}"
+                  data-testid="agent-card-preview"
+                  title={inlinePreviewText}
+                  aria-label={inlinePreviewText}
+                >
+                  {inlinePreviewText}
+                </p>
+              {/if}
+            {/if}
           </div>
 
-          <div class="flex items-center gap-2 shrink-0">
-            <OpenPanelIndicator count={openPanelCount} active={activeInPanel} />
-            {#if $lineChanges$ && ($lineChanges$.additions > 0 || $lineChanges$.deletions > 0)}
-              <LineChangeStats
-                additions={$lineChanges$.additions}
-                deletions={$lineChanges$.deletions}
-                size="xs"
-              />
-            {/if}
-            {#if updatedAt}
-              <RelativeTime date={updatedAt} compact class="text-ui text-subtle" />
-            {/if}
-          </div>
+          {#if !inline || panelRow}
+            <div
+              class="flex shrink-0 items-center gap-1.5"
+              data-agent-row-trailing={panelRow ? '' : undefined}
+            >
+              <OpenPanelIndicator count={openPanelCount} active={activeInPanel} />
+              {#if panelRow && isBackground}
+                <span
+                  class="shrink-0 rounded bg-muted px-1 py-0.5 text-ui font-bold text-subtle"
+                  data-agent-background-badge
+                >
+                  {m.chat_agentCard_background_badge()}
+                </span>
+              {/if}
+              {#if !panelRow && $lineChanges$ && ($lineChanges$.additions > 0 || $lineChanges$.deletions > 0)}
+                <LineChangeStats
+                  additions={$lineChanges$.additions}
+                  deletions={$lineChanges$.deletions}
+                  size="xs"
+                />
+              {/if}
+              {#if updatedAt && !headerActions}
+                <span class="shrink-0" data-agent-row-time={panelRow ? '' : undefined}>
+                  <RelativeTime
+                    date={updatedAt}
+                    compact
+                    class="text-ui text-subtle {panelRow ? 'tabular-nums' : ''}"
+                  />
+                </span>
+              {/if}
+            </div>
+          {/if}
         </div>
 
-        {#if inline && statusLabel}
-          <span class="max-w-[40%] shrink-0 truncate text-ui text-subtle">{statusLabel}</span>
-        {/if}
-
-        <!-- Message preview: one persistent container rendering the derived
-             `preview` value (see agent-card-preview.ts for the precedence
-             chain). Content swaps in place — no per-branch transitions — so
-             source flips don't height-animate; the section as a whole still
-             slides when the preview appears/disappears entirely. -->
-        {#if !hidePreview && preview}
+        <!-- Non-inline mode: preview below header as before -->
+        {#if !inline && !hidePreview && preview}
           <div
             class="mt-0.5 w-full min-w-0 max-w-full overflow-hidden"
             data-testid="agent-card-preview-row"
@@ -801,8 +900,20 @@
       </div>
     </button>
     {#if headerActions}
-      <div class="absolute right-1.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1">
-        {@render headerActions()}
+      <div
+        class="absolute right-3 top-1/2 z-10 h-6 w-14 shrink-0 -translate-y-1/2"
+        data-testid="agent-card-trailing-slot"
+      >
+        {#if updatedAt}
+          <RelativeTime
+            date={updatedAt}
+            compact
+            class="type-caption tabular-nums absolute inset-0 flex items-center justify-end text-right {INLINE_PEEK_TYPOGRAPHY_CLASS} transition-opacity group-hover/watch:opacity-0 group-focus-within/watch:opacity-0"
+          />
+        {/if}
+        <div class="absolute inset-0 flex items-center justify-end gap-1">
+          {@render headerActions()}
+        </div>
       </div>
     {/if}
   </div>
@@ -810,7 +921,7 @@
 
 {@render agentCardContent()}
 
-{#if contextMenu}
+{#if contextMenu && !readOnly}
   <SidebarContextMenu
     x={contextMenu.x}
     y={contextMenu.y}
@@ -828,6 +939,24 @@
 {/if}
 
 <style>
+  .agent-card-avatar-wrapper {
+    display: inline-flex;
+    box-sizing: border-box;
+    width: var(--agent-avatar-standard-surface-size);
+    height: var(--agent-avatar-standard-surface-size);
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--agent-avatar-standard-corner-radius);
+    line-height: 0;
+  }
+
+  .agent-card-avatar-wrapper--panel {
+    width: var(--agent-avatar-emphasized-surface-size);
+    height: var(--agent-avatar-emphasized-surface-size);
+    border-radius: var(--agent-avatar-emphasized-corner-radius);
+  }
+
   /* Hide text content when container is too narrow (< 80px) */
   @container (max-width: 80px) {
     .agent-card-content {

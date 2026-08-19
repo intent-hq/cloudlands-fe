@@ -25,7 +25,32 @@ vi.mock('$lib/i18n/locale', () => ({
 }));
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
 
-import { hydrateActivityLogPresets, setAgentFontStyle, setCodeFontFamily, setGroupByRepo, setGithubLinkDefaultAction, setHasCompletedProviderSetup, setLanguagePreference, setNoteFontStyle, setShowArchived, setShowReasoningBlocks, setSpellcheckEnabled, setSystemFonts } from '../user-preferences-slice';
+import {
+  cycleNoteFontStyle,
+  deleteActivityLogPreset,
+  hydrateActivityLogPresets,
+  saveActivityLogPreset,
+  setAgentFontStyle,
+  setCodeFontFamily,
+  setGroupByRepo,
+  setGithubLinkDefaultAction,
+  setHasCompletedProviderSetup,
+  setLanguagePreference,
+  setNoteFontStyle,
+  setPanelOpenMode,
+  setPanelStackDirection,
+  setShowArchived,
+  setShowReasoningBlocks,
+  setSpellcheckEnabled,
+  setSystemFonts,
+  toggleGroupByRepo,
+  toggleHasCompletedProviderSetup,
+  toggleShowArchived,
+  toggleShowReasoningBlocks,
+  toggleSpellcheck,
+  togglePanelOpenMode,
+  togglePanelStackDirection,
+} from '../user-preferences-slice';
 import {
   hydrateUserPreferencesWorker,
   loadSystemFontsWorker,
@@ -124,6 +149,8 @@ describe('userPreferencesPersistenceSaga', () => {
       activityLogPresets: [preset],
       'language-preference': 'de',
       'github-links:defaultAction': 'copy-link',
+      'panel-layout:openMode': 'pin',
+      'panel-layout:stackDirection': 'left',
     };
     mocks.getJSON.mockImplementation((key: string) => stored[key]);
     const dispatch = vi.fn();
@@ -142,6 +169,8 @@ describe('userPreferencesPersistenceSaga', () => {
       [hydrateActivityLogPresets([preset])],
       [setLanguagePreference('de')],
       [setGithubLinkDefaultAction('copy-link')],
+      [setPanelOpenMode('pin')],
+      [setPanelStackDirection('left')],
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([]);
   });
@@ -161,6 +190,93 @@ describe('userPreferencesPersistenceSaga', () => {
     expect(dispatch.mock.calls).toEqual([]);
   });
 
+  it('persists every audited trigger using exact legacy keys and post-state values', async () => {
+    const state = {
+      userPreferences: {
+        spellcheckEnabled: true,
+        showArchived: true,
+        groupByRepo: false,
+        hasCompletedProviderSetup: true,
+        showReasoningBlocks: true,
+        agentFontStyle: 'monospace',
+        noteFontStyle: 'sans',
+        codeFontFamily: 'Monaco',
+        activityLogPresets: [preset],
+        languagePreference: 'de',
+        githubLinkDefaultAction: 'start-workspace',
+        panelOpenMode: 'pin',
+        panelStackDirection: 'left',
+      },
+    };
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => state },
+      userPreferencesPersistenceSaga,
+    );
+    await settle();
+    mocks.setJSON.mockClear();
+    vi.mocked(window.electronAPI.invoke).mockClear();
+
+    const actions = [
+      setSpellcheckEnabled(true),
+      toggleSpellcheck(),
+      setShowArchived(true),
+      toggleShowArchived(),
+      setGroupByRepo(false),
+      toggleGroupByRepo(),
+      setHasCompletedProviderSetup(true),
+      toggleHasCompletedProviderSetup(),
+      setShowReasoningBlocks(true),
+      toggleShowReasoningBlocks(),
+      setAgentFontStyle('monospace'),
+      setNoteFontStyle('sans'),
+      cycleNoteFontStyle(),
+      setCodeFontFamily('Monaco'),
+      saveActivityLogPreset(preset),
+      deleteActivityLogPreset(0),
+      setLanguagePreference('de'),
+      setGithubLinkDefaultAction('start-workspace'),
+      setPanelOpenMode('pin'),
+      togglePanelOpenMode(),
+      setPanelStackDirection('left'),
+      togglePanelStackDirection(),
+    ];
+    for (const action of actions) {
+      channel.put(action);
+      await settle();
+    }
+
+    expect(mocks.setJSON.mock.calls).toEqual([
+      ['note-spellcheck-settings', { enabled: true }],
+      ['note-spellcheck-settings', { enabled: true }],
+      ['workspace-list:showArchived', true],
+      ['workspace-list:showArchived', true],
+      ['workspace-list:groupByRepo', false],
+      ['workspace-list:groupByRepo', false],
+      ['workspace-list:completedProviderSetup', true],
+      ['workspace-list:completedProviderSetup', true],
+      ['chat:showReasoningBlocks', true],
+      ['chat:showReasoningBlocks', true],
+      ['agent-font-settings', { fontStyle: 'monospace' }],
+      ['note-font-settings', { fontStyle: 'sans' }],
+      ['note-font-settings', { fontStyle: 'sans' }],
+      ['code-font-settings', { fontFamily: 'Monaco' }],
+      ['activityLogPresets', [preset]],
+      ['activityLogPresets', [preset]],
+      ['language-preference', 'de'],
+      ['github-links:defaultAction', 'start-workspace'],
+      ['panel-layout:openMode', 'pin'],
+      ['panel-layout:openMode', 'pin'],
+      ['panel-layout:stackDirection', 'left'],
+      ['panel-layout:stackDirection', 'left'],
+    ]);
+    expect(mocks.applyLanguagePreference.mock.calls).toEqual([['de']]);
+    expect(vi.mocked(window.electronAPI.invoke).mock.calls).toEqual([
+      ['app:set-language-preference', { preference: 'de' }],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
   it('skips main-process language IPC outside Electron', async () => {
     mocks.isElectron.mockReturnValue(false);
     await runSaga(

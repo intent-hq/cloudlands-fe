@@ -22,6 +22,7 @@ export default {
           DEFAULT: 'hsl(var(--destructive) / <alpha-value>)',
           foreground: 'hsl(var(--destructive-foreground) / <alpha-value>)',
         },
+        'error-foreground': 'hsl(var(--error-foreground) / <alpha-value>)',
         muted: {
           DEFAULT: 'hsl(var(--muted) / <alpha-value>)',
           foreground: 'hsl(var(--muted-foreground) / <alpha-value>)',

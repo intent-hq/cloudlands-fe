@@ -54,6 +54,7 @@ function openBrowserTab(
   workspaceId?: string,
   allowDuplicate?: boolean,
   requestedUrl?: string,
+  pin?: boolean,
 ): { success: boolean; message: string; tabId?: string } {
   const workspacePayload = workspaceCommandPayload(workspaceId);
   if (!workspacePayload) {
@@ -97,6 +98,7 @@ function openBrowserTab(
       tabId,
       ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
       ...(requestedUrl === undefined ? {} : { requestedUrl }),
+      ...(pin === undefined ? {} : { pin }),
     },
   );
   if (!delivery.delivered) {
@@ -110,7 +112,7 @@ function openBrowserTab(
       message: `Cannot open browser tab: workspace ${workspacePayload.workspaceId} is not open in any window.`,
     };
   }
-  logger.info('Sent browser:open-tab', { url, position, workspaceId, tabId, allowDuplicate });
+  logger.info('Sent browser:open-tab', { url, position, workspaceId, tabId, allowDuplicate, pin });
   // i18n-ignore (agent-facing protocol message, not user-facing)
   return { success: true, message: `Opening browser tab with URL: ${url}`, tabId };
 }
@@ -264,8 +266,8 @@ export async function executeBrowserActions(
 ): Promise<ExecutionResult> {
   return executeActions(
     { actions, tabId },
-    (url, position, allowDuplicate, requestedUrl) =>
-      openBrowserTab(url, position, workspaceId, allowDuplicate, requestedUrl),
+    (url, position, allowDuplicate, requestedUrl, pin) =>
+      openBrowserTab(url, position, workspaceId, allowDuplicate, requestedUrl, pin),
     agentId,
     workspaceId,
     getDaemonLoopbackContext,

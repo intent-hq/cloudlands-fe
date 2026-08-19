@@ -14,6 +14,7 @@ import ArrowsInIcon from 'phosphor-svelte/lib/ArrowsInIcon';
 import ArrowsInLineVerticalIcon from 'phosphor-svelte/lib/ArrowsInLineVerticalIcon';
 import ArrowsLeftRightIcon from 'phosphor-svelte/lib/ArrowsLeftRightIcon';
 import ArrowsOutIcon from 'phosphor-svelte/lib/ArrowsOutIcon';
+import ArrowsOutLineVerticalIcon from 'phosphor-svelte/lib/ArrowsOutLineVerticalIcon';
 import AsteriskIcon from 'phosphor-svelte/lib/AsteriskIcon';
 import AtIcon from 'phosphor-svelte/lib/AtIcon';
 import BellIcon from 'phosphor-svelte/lib/BellIcon';
@@ -56,6 +57,7 @@ import CrosshairIcon from 'phosphor-svelte/lib/CrosshairIcon';
 import CubeIcon from 'phosphor-svelte/lib/CubeIcon';
 import CursorClickIcon from 'phosphor-svelte/lib/CursorClickIcon';
 import CursorTextIcon from 'phosphor-svelte/lib/CursorTextIcon';
+import HandIcon from 'phosphor-svelte/lib/HandIcon';
 import DatabaseIcon from 'phosphor-svelte/lib/DatabaseIcon';
 import DesktopIcon from 'phosphor-svelte/lib/DesktopIcon';
 import DotsSixIcon from 'phosphor-svelte/lib/DotsSixIcon';
@@ -184,6 +186,7 @@ const iconComponents: Record<string, Component<any>> = {
   'arrow-down': ArrowDownIcon,
   'arrow-left': ArrowLeftIcon,
   'arrow-pointer': CursorClickIcon,
+  hand: HandIcon,
   'arrow-right': ArrowRightIcon,
   'arrow-right-arrow-left': ArrowsLeftRightIcon,
   'arrow-rotate-left': ArrowCounterClockwiseIcon,
@@ -192,6 +195,7 @@ const iconComponents: Record<string, Component<any>> = {
   'arrow-up-from-bracket': UploadSimpleIcon,
   'arrow-up-right-from-square': ArrowSquareOutIcon,
   'arrows-in-line-vertical': ArrowsInLineVerticalIcon,
+  'arrows-out-line-vertical': ArrowsOutLineVerticalIcon,
   'arrows-rotate': ArrowsClockwiseIcon,
   asterisk: AsteriskIcon,
   at: AtIcon,
@@ -393,6 +397,7 @@ export const faArrowUp = icon('arrow-up');
 export const faArrowUpFromBracket = icon('arrow-up-from-bracket');
 export const faArrowUpRightFromSquare = icon('arrow-up-right-from-square');
 export const faArrowsInLineVertical = icon('arrows-in-line-vertical');
+export const faArrowsOutLineVertical = icon('arrows-out-line-vertical');
 export const faArrowsRotate = icon('arrows-rotate');
 export const faAsterisk = icon('asterisk');
 export const faAt = icon('at');
@@ -470,6 +475,7 @@ export const faExpandAlt = icon('expand-alt');
 export const faExternalLink = icon('arrow-up-right-from-square');
 export const faExternalLinkAlt = icon('up-right-from-square');
 export const faEye = icon('eye');
+export const faHand = icon('hand');
 export const faEyeSlash = icon('eye-slash');
 export const faFile = icon('file');
 export const faFileAlt = icon('file-lines');

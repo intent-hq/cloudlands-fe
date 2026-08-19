@@ -5,13 +5,13 @@
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import Fa from 'svelte-fa';
   import {
-  faChevronDown,
-  faChevronRight,
-  faPlus,
-  faCheck,
-  faLaptop,
-  faXmark,
-} from '@fortawesome/free-solid-svg-icons';
+    faChevronDown,
+    faChevronRight,
+    faPlus,
+    faCheck,
+    faLaptop,
+    faXmark,
+  } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
   import { performanceMonitor } from '$lib/utils/performance';
@@ -202,52 +202,56 @@
           {selectedSetup?.name || m.workspace_remoteSetupSelector_localEnvironment_value()}
         </Select.Trigger>
         <Select.Content wrapperClass="py-0!" class="max-w-[400px] min-w-[300px]" portal>
-        <div class="px-4 pt-2 pb-3">
-          <h2 class="text-base font-semibold text-foreground">{m.workspace_remoteSetupSelector_whereRun_label()}</h2>
-          <p class="text-sm text-subtle mt-1">
-            {m.workspace_remoteSetupSelector_whereRun_description()}
-          </p>
-        </div>
-        <Select.Item class="rounded-b-none! cursor-pointer" value="">
-          <div class="flex items-center gap-2">
-            <Fa icon={faLaptop} size="sm" />
-            <span class="text-subtle">{m.workspace_remoteSetupSelector_localEnvironment_label()}</span>
+          <div class="px-4 pt-2 pb-3">
+            <h2 class="text-base font-semibold text-foreground">
+              {m.workspace_remoteSetupSelector_whereRun_label()}
+            </h2>
+            <p class="text-sm text-subtle mt-1">
+              {m.workspace_remoteSetupSelector_whereRun_description()}
+            </p>
           </div>
-        </Select.Item>
-        {#each applicableSetups as setup (setup.id)}
-          <Select.Item class="rounded-none! cursor-pointer" value={setup.id}>
-            <div class="flex items-center gap-2 w-full cursor-pointer">
-              <ServerIcon size={14} />
-              <div class="flex-1 min-w-0">
-                <div class="text-sm">{setup.name}</div>
-                <div class="text-xs text-subtle">
-                  {setup.transport === 'websocket'
-                    ? setup.wsUrl
-                    : `${setup.username}@${setup.host}:${setup.port}`}
-                </div>
-              </div>
-              <button
-                onclick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  removeSetup(setup.id);
-                }}
-                class="ml-1 p-0.5 rounded text-muted-foreground hover:text-destructive-foreground hover:bg-destructive/10"
-                title={m.workspace_remoteSetupSelector_removeSetup_tooltip()}
+          <Select.Item class="rounded-b-none! cursor-pointer" value="">
+            <div class="flex items-center gap-2">
+              <Fa icon={faLaptop} size="sm" />
+              <span class="text-subtle"
+                >{m.workspace_remoteSetupSelector_localEnvironment_label()}</span
               >
-                <Fa icon={faXmark} size="xs" />
-              </button>
             </div>
           </Select.Item>
-        {/each}
-        <div class="border-t border-border"></div>
-        <button
-          onclick={handleAddNewSetup}
-          class="w-full text-left px-2 py-1.5 hover:bg-accent flex items-center gap-2 text-sm cursor-pointer rounded-b-sm"
-        >
-          <Fa icon={faPlus} size="sm" />
-          {m.workspace_remoteSetupSelector_addRemoteSetup_label()}
-        </button>
+          {#each applicableSetups as setup (setup.id)}
+            <Select.Item class="rounded-none! cursor-pointer" value={setup.id}>
+              <div class="flex items-center gap-2 w-full cursor-pointer">
+                <ServerIcon size={14} />
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm">{setup.name}</div>
+                  <div class="text-xs text-subtle">
+                    {setup.transport === 'websocket'
+                      ? setup.wsUrl
+                      : `${setup.username}@${setup.host}:${setup.port}`}
+                  </div>
+                </div>
+                <button
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    removeSetup(setup.id);
+                  }}
+                  class="ml-1 p-0.5 rounded text-muted-foreground hover:text-error-foreground hover:bg-destructive/10"
+                  title={m.workspace_remoteSetupSelector_removeSetup_tooltip()}
+                >
+                  <Fa icon={faXmark} size="xs" />
+                </button>
+              </div>
+            </Select.Item>
+          {/each}
+          <div class="border-t border-border"></div>
+          <button
+            onclick={handleAddNewSetup}
+            class="w-full text-left px-2 py-1.5 hover:bg-accent flex items-center gap-2 text-sm cursor-pointer rounded-b-sm"
+          >
+            <Fa icon={faPlus} size="sm" />
+            {m.workspace_remoteSetupSelector_addRemoteSetup_label()}
+          </button>
         </Select.Content>
       </Select.Root>
     </div>
@@ -283,7 +287,11 @@
         <Select.Trigger class="w-full">
           <div class="flex items-center gap-2">
             <ServerIcon size={16} class="text-ghost" />
-            <Select.Value placeholder={selectedSetup ? selectedSetup.name : m.workspace_remoteSetupSelector_noRemoteSetup_placeholder()} />
+            <Select.Value
+              placeholder={selectedSetup
+                ? selectedSetup.name
+                : m.workspace_remoteSetupSelector_noRemoteSetup_placeholder()}
+            />
           </div>
         </Select.Trigger>
         <Select.Content>
@@ -295,7 +303,9 @@
 
           {#if applicableSetups.length > 0}
             <div class="border-t pt-1">
-              <div class="px-2 py-1 text-xs text-subtle">{m.workspace_remoteSetupSelector_recentSetups_label()}</div>
+              <div class="px-2 py-1 text-xs text-subtle">
+                {m.workspace_remoteSetupSelector_recentSetups_label()}
+              </div>
               {#each applicableSetups as setup (setup.id)}
                 <button
                   onclick={() => selectSetup(setup)}
@@ -327,7 +337,7 @@
                         removeSetup(setup.id);
                       }
                     }}
-                    class="p-0.5 rounded text-muted-foreground hover:text-destructive-foreground hover:bg-destructive/10 cursor-pointer"
+                    class="p-0.5 rounded text-muted-foreground hover:text-error-foreground hover:bg-destructive/10 cursor-pointer"
                     title={m.workspace_remoteSetupSelector_removeSetup_tooltip()}
                   >
                     <Fa icon={faXmark} size="xs" />

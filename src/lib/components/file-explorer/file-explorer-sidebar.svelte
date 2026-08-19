@@ -14,7 +14,7 @@
     faImage,
     faArchive,
     faCog,
-    faChevronRight,
+    faChevronLeft,
     faChevronDown,
     faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
@@ -157,7 +157,7 @@
                 <Fa icon={faSpinner} size="lg" class="w-6 h-6 animate-spin text-subtle" />
               </div>
             {:else if $feError$}
-              <div class="px-4 py-2 text-sm text-destructive-foreground">
+              <div class="px-4 py-2 text-sm text-error-foreground">
                 {$feError$}
               </div>
             {:else if $rootNode$}
@@ -185,7 +185,7 @@
                           <Fa icon={faSpinner} size="xs" class="w-3 h-3 animate-spin" />
                         {:else if node.children.length > 0}
                           <Fa
-                            icon={nodeExpanded ? faChevronDown : faChevronRight}
+                            icon={nodeExpanded ? faChevronDown : faChevronLeft}
                             size="xs"
                             class="w-3 h-3"
                           />

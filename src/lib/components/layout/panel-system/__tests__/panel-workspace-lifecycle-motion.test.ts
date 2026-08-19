@@ -11,12 +11,12 @@ describe('panel and workspace lifecycle motion', () => {
     const columns = source('../../../workspace/WorkspaceColumnsView.svelte');
 
     expect(tabs).toContain('data-workspace-tab-motion={workspaceId}');
-    expect(tabs).toContain('animate:flip={{ duration: 180, easing: cubicOut }}');
+    expect(tabs).toContain('animate:flip={{ duration: isDragged ? 0 : 180, easing: cubicOut }}');
     expect(tabs).not.toContain('in:fly=');
     expect(tabs).not.toContain('out:fly=');
     expect(columns).toContain('data-workspace-column-motion={workspaceId}');
     expect(columns).toContain(
-      "lifecycleMotionReady && columnsReady && anchoredWorkspaceId === null ? 180 : 0",
+      'lifecycleMotionReady && columnsReady && anchoredWorkspaceId === null ? 180 : 0',
     );
     expect(columns).toContain("transition:resize={{ axis: 'x', duration: layoutMotionDuration }}");
     expect(columns).not.toContain('isResizingWorkspaceColumn');

@@ -15,7 +15,7 @@
   import AgentHierarchyCard, { CARD_WIDTH, CARD_HEIGHT } from './AgentHierarchyCard.svelte';
   import BackgroundAgentCard, { BG_CARD_SIZE } from './BackgroundAgentCard.svelte';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { formatRelativeTime } from '$lib/utils/timeFormatting';
   import Fa from 'svelte-fa';
   import { faGear } from '@fortawesome/free-solid-svg-icons';
@@ -518,7 +518,7 @@
             {#each row as item}
               {#if item.type === 'batch'}
                 <div
-                  class="batch-group-box relative z-10 bg-background border border-border/50 rounded-xl"
+                  class="batch-group-box relative z-10 bg-background border border-border rounded-xl"
                   style="padding: {BOX_PADDING}px; margin-top: -{BOX_PADDING}px; display: grid; grid-template-columns: repeat({item.cols}, auto); gap: {GAPX}px;"
                 >
                   {#each item.children as child (child.agent.agentId)}
@@ -565,7 +565,7 @@
           <div class="utility-corrals flex flex-col gap-4">
             {#each utilityAgentGroups as group (group.id)}
               <div
-                class="utility-corral border border-dashed border-border/50 rounded-lg p-3 min-w-20"
+                class="utility-corral border border-dashed border-border rounded-lg p-3 min-w-20"
               >
                 <div class="corral-label text-xs text-subtle font-medium mb-2 text-center">
                   {group.label}
@@ -605,7 +605,7 @@
           <div class="p-3 space-y-2">
             <!-- Header with avatar and name -->
             <div class="flex items-center gap-2">
-              <AuggieAvatar size={24} agentId={hoveredAgent.agentId} />
+              <AgentAvatar size={24} agentId={hoveredAgent.agentId} />
               <div class="flex-1 min-w-0">
                 <div class="font-medium text-sm truncate">{hoveredAgent.name}</div>
                 {#if hoveredAgent.specialist}

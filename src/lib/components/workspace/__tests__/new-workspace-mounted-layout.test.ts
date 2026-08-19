@@ -5,6 +5,7 @@ import type { ReduxStoreContext } from '$store/renderer/types';
 import { initAppStore, store as appStore } from '$store/renderer/store';
 import {
   bootstrapNewWorkspaceLayout,
+  clearPanelLayout,
   openTabInNewRootColumn,
   revealDeferredSpecTab,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -56,36 +57,50 @@ function mountedPanels(): HTMLElement[] {
 }
 
 describe('mounted new workspace layout', () => {
-  it('shows chat plus one reserved panel, then reveals Spec without duplication', async () => {
-    const workspaceId = `mounted-bootstrap-${++sequence}`;
-    appStore.dispatch(bootstrapNewWorkspaceLayout(workspaceId, 'agent-1', 'Coordinator', true));
-    const result = render(PanelLayout, {
-      props: { workspaceId, layoutId: workspaceId },
-      context: new Map([[STORE_CONTEXT, storeContext]]),
-    });
+  it.each([true, false])(
+    'shows one focused pinned initial agent when coordinator=%s, then reveals Spec once',
+    async (coordinator) => {
+      const workspaceId = `mounted-bootstrap-${++sequence}`;
+      const agentTitle = coordinator ? 'Coordinator' : 'Initial agent';
+      appStore.dispatch(clearPanelLayout(workspaceId));
+      appStore.dispatch(
+        bootstrapNewWorkspaceLayout(workspaceId, 'agent-1', agentTitle, coordinator),
+      );
+      const result = render(PanelLayout, {
+        props: { workspaceId, layoutId: workspaceId },
+        context: new Map([[STORE_CONTEXT, storeContext]]),
+      });
 
-    await waitFor(() => expect(mountedPanels()).toHaveLength(2));
-    expect(mountedPanels().map((panel) => panel.textContent)).toEqual([
-      expect.stringContaining('Coordinator'),
-      expect.not.stringContaining('Spec'),
-    ]);
+      await waitFor(() => expect(mountedPanels()).toHaveLength(1));
+      expect(mountedPanels()[0].textContent).toContain(agentTitle);
+      expect(mountedPanels()[0].textContent).not.toContain('Spec');
+      const workspace = appStore.state.panelLayout.byWorkspaceId[workspaceId];
+      const agentPanels = Object.values(workspace.panels).filter((panel) =>
+        panel.tabs.some((tab) => tab.type === 'agent' && tab.agentId === 'agent-1'),
+      );
+      expect(agentPanels).toHaveLength(1);
+      expect(agentPanels[0]).toMatchObject({ pinned: true });
+      expect(workspace.focusedPanelId).toBe(agentPanels[0].id);
 
-    appStore.dispatch(revealDeferredSpecTab(workspaceId, 'spec:created', 'Spec', 10));
-    await waitFor(() =>
-      expect(mountedPanels().map((panel) => panel.textContent)).toEqual([
-        expect.stringContaining('Coordinator'),
-        expect.stringContaining('Spec'),
-      ]),
-    );
+      appStore.dispatch(revealDeferredSpecTab(workspaceId, 'spec:created', 'Spec', 10));
+      await waitFor(() =>
+        expect(mountedPanels().map((panel) => panel.textContent)).toEqual([
+          expect.stringContaining('Spec'),
+          expect.stringContaining(agentTitle),
+        ]),
+      );
 
-    result.unmount();
-    render(PanelLayout, {
-      props: { workspaceId, layoutId: workspaceId },
-      context: new Map([[STORE_CONTEXT, storeContext]]),
-    });
-    await waitFor(() => expect(mountedPanels()).toHaveLength(2));
-    expect(mountedPanels().filter((panel) => panel.textContent?.includes('Spec'))).toHaveLength(1);
-  });
+      result.unmount();
+      render(PanelLayout, {
+        props: { workspaceId, layoutId: workspaceId },
+        context: new Map([[STORE_CONTEXT, storeContext]]),
+      });
+      await waitFor(() => expect(mountedPanels()).toHaveLength(2));
+      expect(mountedPanels().filter((panel) => panel.textContent?.includes('Spec'))).toHaveLength(
+        1,
+      );
+    },
+  );
 
   it.each(['light', 'dark'] as const)(
     'keeps the %s first-open agent columns and empty surface equivalent after remount',
@@ -123,7 +138,7 @@ describe('mounted new workspace layout', () => {
       );
       expect(firstEmptyPanel?.classList.contains('bg-sidebar')).toBe(true);
       expect(firstEmptyPanel?.classList.contains('bg-card')).toBe(false);
-      expect(firstEmptyPanel?.querySelector('[data-mounted-panel]')).toBeTruthy();
+      expect(firstEmptyPanel?.matches('[data-mounted-panel]')).toBe(true);
       expect(firstPopulatedPanel?.classList.contains('bg-card')).toBe(true);
       expect(firstPopulatedPanel?.classList.contains('bg-sidebar')).toBe(false);
 

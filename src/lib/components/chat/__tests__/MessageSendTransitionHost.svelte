@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import {
     animateMessageSend,
     captureMessageSendOrigin,
     createMessageSendLaunchBubble,
+    settleFollowedSendAtBottom,
     type MessageSendOrigin,
   } from '../message-send-transition';
   import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from '../user-message-surface';
@@ -14,7 +15,10 @@
     followBottom?: boolean;
     rapidCount?: number;
     responseStart?: boolean;
+    subscriptionOpen?: boolean;
     theme?: 'light' | 'dark';
+    width?: number;
+    zoom?: number;
   }
 
   let {
@@ -23,13 +27,23 @@
     followBottom = true,
     rapidCount = 1,
     responseStart = false,
+    subscriptionOpen = false,
     theme = 'light',
+    width = 720,
+    zoom = 1,
   }: Props = $props();
   let scrollContainer: HTMLDivElement;
   let composer: HTMLDivElement;
   let messages = $state<Array<{ id: string; text: string }>>([]);
   let responseVisible = $state(false);
+  let subscriptionSettled = $state(false);
   let settledCount = $state(0);
+  const activeControllers = new Set<AbortController>();
+
+  onDestroy(() => {
+    for (const controller of activeControllers) controller.abort();
+    activeControllers.clear();
+  });
 
   interface PreparedSend {
     id: string;
@@ -58,20 +72,38 @@
       prepared.map(async ({ id, origin, launchBubble }) => {
         const target = scrollContainer.querySelector<HTMLElement>(`[data-send-target="${id}"]`);
         if (!target) return;
-        await animateMessageSend({
-          origin,
-          target,
-          scrollContainer,
-          launchBubble,
-          followBottom,
-        });
-        settledCount += 1;
+        const controller = new AbortController();
+        activeControllers.add(controller);
+        try {
+          await animateMessageSend({
+            origin,
+            target,
+            scrollContainer,
+            launchBubble,
+            followBottom,
+            signal: controller.signal,
+          });
+          settledCount += 1;
+        } finally {
+          activeControllers.delete(controller);
+        }
       }),
     );
+    if (subscriptionOpen) {
+      subscriptionSettled = true;
+      await tick();
+      await settleFollowedSendAtBottom(scrollContainer, () => followBottom);
+    }
   }
 </script>
 
-<div class={theme} data-testid="send-transition-host" data-panel-id={panelId}>
+<div
+  class={theme}
+  style:width="{width}px"
+  style:zoom
+  data-testid="send-transition-host"
+  data-panel-id={panelId}
+>
   <div
     bind:this={scrollContainer}
     class="h-64 overflow-y-auto bg-background p-3 text-foreground"
@@ -91,6 +123,12 @@
     {/each}
     {#if responseVisible}
       <div class="h-12" data-testid="response-start">Response started</div>
+    {/if}
+    {#if subscriptionOpen}
+      <div class="h-12" data-testid="subscription-card">
+        Subscription card
+        {#if subscriptionSettled}<div class="h-20">Expanded subscriptions</div>{/if}
+      </div>
     {/if}
   </div>
   <div bind:this={composer} class="bg-background p-3" data-testid="send-composer">

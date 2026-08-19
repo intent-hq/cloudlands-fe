@@ -20,7 +20,11 @@ import {
   upsertSession,
 } from '../../agent-session/agent-session-slice';
 import { selectSelectedModel } from '../../model/model-selectors';
-import { openTab, openTabInAdjacentOrSplit } from '../../panel-layout/panel-layout-slice';
+import { openTab, openTabInNewRootColumn } from '../../panel-layout/panel-layout-slice';
+import {
+  selectPanelOpenMode,
+  selectPanelStackDirection,
+} from '../../user-preferences/user-preferences-selectors';
 import { selectEffectiveDefaultProviderId } from '../../provider-catalog/provider-catalog-selectors';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
 import {
@@ -89,7 +93,12 @@ function* openCreatedAgent(
     closable: true,
   };
   if (options.openInAdjacentPanel) {
-    yield* put(openTabInAdjacentOrSplit(wsId, tab, options.sourcePanelId));
+    yield* put(
+      openTabInNewRootColumn(wsId, tab, {
+        panelOpenMode: yield* selectPanelOpenMode.effect(),
+        panelStackDirection: yield* selectPanelStackDirection.effect(),
+      }),
+    );
   } else if (options.panelId) {
     yield* put(openTab(wsId, tab, options.panelId));
   } else {
@@ -102,7 +111,7 @@ function providerForModel(model: string, fallback: string): string {
 }
 
 function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): SagaGenerator<void> {
-  const [wsId, agentType] = action.payload;
+  const [wsId, agentType, options] = action.payload;
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   const agents = yield* selectAllWorkspaceAgents.effect(wsId);
@@ -127,7 +136,13 @@ function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): Sag
       return;
     }
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
-    yield* put(openAgentTabRequested(wsId, { agentId: result.agent.id }));
+    yield* put(
+      openAgentTabRequested(wsId, {
+        agentId: result.agent.id,
+        panelLayoutId: options?.panelLayoutId,
+        sourcePanelId: options?.panelId,
+      }),
+    );
   } catch (error) {
     logger.error('Failed to create agent', { workspaceId: wsId, error });
   }
@@ -136,7 +151,7 @@ function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): Sag
 function* createSpecialistAgent(
   action: ReturnType<typeof createAgentWithSpecialistRequested>,
 ): SagaGenerator<void> {
-  const [wsId, specialistId] = action.payload;
+  const [wsId, specialistId, options] = action.payload;
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   const agents = yield* selectAllWorkspaceAgents.effect(wsId);
@@ -176,7 +191,13 @@ function* createSpecialistAgent(
       return;
     }
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
-    yield* put(openAgentTabRequested(wsId, { agentId: result.agent.id }));
+    yield* put(
+      openAgentTabRequested(wsId, {
+        agentId: result.agent.id,
+        panelLayoutId: options?.panelLayoutId,
+        sourcePanelId: options?.panelId,
+      }),
+    );
   } catch (error) {
     logger.error('Failed to create specialist agent', { workspaceId: wsId, error });
   }

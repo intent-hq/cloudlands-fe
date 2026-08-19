@@ -1,5 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { cycleNoteFontStyle, deleteActivityLogPreset, hydrateActivityLogPresets, initialState, resetNotificationSettings, saveActivityLogPreset, setCodeFontFamily, setGroupByRepo, setGithubLinkDefaultAction, setHasCompletedProviderSetup, setNotificationEnabled, setNoteFontStyle, setLanguagePreference, setShowArchived, setSpellcheckEnabled, setShowReasoningBlocks, setSoundEnabled, setSoundOnlyWhenUnfocused, setSystemFonts, setVolume, setZoomFactor, type AgentFontStyle, toggleGroupByRepo, toggleHasCompletedProviderSetup, toggleShowArchived, toggleShowReasoningBlocks, setUpdateChannel, toggleSpellcheck, type UserPreferencesState, userPreferencesReducer } from './user-preferences-slice';
+import {
+  cycleNoteFontStyle,
+  deleteActivityLogPreset,
+  hydrateActivityLogPresets,
+  initialState,
+  resetNotificationSettings,
+  saveActivityLogPreset,
+  setCodeFontFamily,
+  setGroupByRepo,
+  setGithubLinkDefaultAction,
+  setHasCompletedProviderSetup,
+  setNotificationEnabled,
+  setPanelOpenMode,
+  setPanelStackDirection,
+  setNoteFontStyle,
+  setLanguagePreference,
+  setShowArchived,
+  setSpellcheckEnabled,
+  setShowReasoningBlocks,
+  setSoundEnabled,
+  setSoundOnlyWhenUnfocused,
+  setSystemFonts,
+  setVolume,
+  setZoomFactor,
+  type AgentFontStyle,
+  toggleGroupByRepo,
+  toggleHasCompletedProviderSetup,
+  toggleShowArchived,
+  toggleShowReasoningBlocks,
+  setUpdateChannel,
+  toggleSpellcheck,
+  togglePanelOpenMode,
+  togglePanelStackDirection,
+  type UserPreferencesState,
+  userPreferencesReducer,
+} from './user-preferences-slice';
 import {
   selectAgentFontStyle,
   selectAgentFontStyleLabel,
@@ -18,6 +53,8 @@ import {
   selectNoteFontStyleLabel,
   selectNotificationEnabled,
   selectNotificationVolume,
+  selectPanelOpenMode,
+  selectPanelStackDirection,
   selectShowArchived,
   selectShowReasoningBlocks,
   selectSoundEnabled,
@@ -82,6 +119,34 @@ describe('userPreferencesReducer', () => {
     });
   });
 
+  describe('panel open mode', () => {
+    it('defaults to normal and supports set and toggle actions', () => {
+      expect(initialState.panelOpenMode).toBe('normal');
+      const pinned = userPreferencesReducer(initialState, setPanelOpenMode('pin'));
+      expect(pinned.panelOpenMode).toBe('pin');
+      expect(userPreferencesReducer(pinned, togglePanelOpenMode()).panelOpenMode).toBe('normal');
+    });
+
+    it('selects normal for legacy state without the preference', () => {
+      expect(selectPanelOpenMode.select({ userPreferences: undefined } as any)).toBe('normal');
+    });
+  });
+
+  describe('panel stack direction', () => {
+    it('defaults to right and supports set and toggle actions', () => {
+      expect(initialState.panelStackDirection).toBe('right');
+      const left = userPreferencesReducer(initialState, setPanelStackDirection('left'));
+      expect(left.panelStackDirection).toBe('left');
+      expect(userPreferencesReducer(left, togglePanelStackDirection()).panelStackDirection).toBe(
+        'right',
+      );
+    });
+
+    it('selects right for legacy state without the preference', () => {
+      expect(selectPanelStackDirection.select({ userPreferences: undefined } as any)).toBe('right');
+    });
+  });
+
   describe('setZoomFactor', () => {
     const state: UserPreferencesState = { ...initialState, zoomFactor: 1.0 };
 
@@ -139,7 +204,6 @@ describe('userPreferencesReducer', () => {
   });
 
   describe('font settings actions', () => {
-
     it('updates and cycles note font style', () => {
       expect(
         userPreferencesReducer(initialState, setNoteFontStyle('monospace')).noteFontStyle,

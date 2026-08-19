@@ -59,6 +59,40 @@ function message(
 }
 
 describe('ChatMessage action overlays', () => {
+  it('keeps one canonical identity when an outer transcript row owns it', () => {
+    const standalone = render(ChatMessage, {
+      props: { message: message('user', '2026-06-02T14:35:20.000Z') },
+    });
+    expect(
+      standalone.container.querySelectorAll(
+        '[data-message-id="user-message"][data-message-role="user"]',
+      ),
+    ).toHaveLength(1);
+    standalone.unmount();
+
+    const outerRow = document.createElement('div');
+    outerRow.dataset.messageId = 'user-message';
+    outerRow.dataset.messageRole = 'user';
+    document.body.append(outerRow);
+    const nested = render(ChatMessage, {
+      target: outerRow,
+      props: {
+        message: message('user', '2026-06-02T14:35:20.000Z'),
+        ownsMessageIdentity: false,
+      },
+    });
+
+    try {
+      expect(
+        document.querySelectorAll('[data-message-id="user-message"][data-message-role="user"]'),
+      ).toHaveLength(1);
+      expect(nested.container.querySelector('[data-message-id], [data-message-role]')).toBeNull();
+    } finally {
+      nested.unmount();
+      outerRow.remove();
+    }
+  });
+
   it('affirms message actions and timestamps in every required visual state', async () => {
     const timestamp = new Date('2026-06-02T14:35:20.000Z');
     const observed = await exerciseVisualStates(() => {

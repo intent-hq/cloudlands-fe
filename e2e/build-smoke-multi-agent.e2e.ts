@@ -190,7 +190,7 @@ test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
       console.log('✅ Delegation toggle shows "1 delegated"');
 
       // 3c. Avatar preview row — when collapsed, child avatar(s) render
-      //     inside the toggle button (AugieAvatarWithState, up to 4)
+      //     inside the toggle button (AgentAvatarWithState, up to 4)
       const avatarPreview = delegationToggle.locator('.avatar');
       await expect(avatarPreview).toHaveCount(1, { timeout: 5_000 });
       console.log('✅ Avatar preview shows 1 child avatar in collapsed toggle');

@@ -91,10 +91,10 @@
 
 {#if hasValidPath}
   <DropdownMenu bind:open={dropdownOpen} align="end">
-    {#snippet trigger({ toggle }: { toggle: () => void })}
+    {#snippet trigger({ props })}
       <Button
+        {...props}
         variant="ghost-light"
-        onclick={toggle}
         size={buttonSize}
         class="
           {sizeClasses[size]} {variantClasses[variant]} {className}"

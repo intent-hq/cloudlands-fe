@@ -12,7 +12,21 @@ const makeReadable = <T>(value: T) => ({
 const agentFlags = vi.hoisted(() => ({ isResponding: false, isBlockedWaiting: false }));
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: () => makeReadable(null),
+  selectAgentSession: () =>
+    makeReadable(
+      agentFlags.isResponding || agentFlags.isBlockedWaiting
+        ? {
+            id: 'agent-1',
+            backendSessionId: null,
+            workspaceId: 'workspace-1',
+            name: 'Agent',
+            status: agentFlags.isBlockedWaiting ? 'waiting' : 'active',
+            messages: [],
+            isResponding: agentFlags.isResponding,
+            isWaitingForOtherAgents: agentFlags.isBlockedWaiting,
+          }
+        : null,
+    ),
   selectAgentIsResponding: () => makeReadable(agentFlags.isResponding),
   selectAgentIsWaiting: () => makeReadable(agentFlags.isBlockedWaiting),
   selectAgentIsBlockedWaiting: () => makeReadable(agentFlags.isBlockedWaiting),
@@ -34,7 +48,7 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectAgentLineStats: () => makeReadable(null),
 }));
 
-vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
+vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => ({
   default: (await import('./mocks/MockAvatarWithState.svelte')).default,
 }));
 
@@ -118,6 +132,32 @@ describe('isCompleted avatar state wiring', () => {
     ).toEqual([]);
   });
 
+  it('uses the emphasized single-line grammar for Agents-panel rows', () => {
+    render(AgentCard, {
+      props: {
+        agentId: 'agent-panel',
+        agentName: 'A very long agent name',
+        panelRow: true,
+        hidePreview: true,
+        isBackground: true,
+        openPanelCount: 2,
+        lastResponseSummary: 'must not be exposed',
+      },
+    });
+
+    const row = screen.getByRole('button');
+    expect(row.getAttribute('data-agent-panel-row')).toBe('agent-panel');
+    expect(row.className).toContain('h-10');
+    expect(row.className).toContain('border-transparent');
+    expect(screen.getByTestId('mock-avatar-with-state').dataset.variant).toBe('emphasized');
+    expect(row.querySelector('[data-agent-row-name]')?.className).toContain('truncate');
+    expect(row.querySelector('[data-agent-row-trailing]')).toBeTruthy();
+    expect(row.querySelector('[data-agent-background-badge]')).toBeTruthy();
+    expect(row.querySelector('[data-panel-open-count="2"]')).toBeTruthy();
+    expect(screen.queryByTestId('agent-card-preview')).toBeNull();
+    expect(row.textContent).not.toContain('must not be exposed');
+  });
+
   it('AgentCard renders running, not completed, for a re-woken completed agent', () => {
     agentFlags.isResponding = true;
 
@@ -135,7 +175,6 @@ describe('isCompleted avatar state wiring', () => {
   });
 
   it('AgentCard renders waiting for a genuinely blocked agent', () => {
-    agentFlags.isResponding = true;
     agentFlags.isBlockedWaiting = true;
 
     render(AgentCard, { props: { agentId: 'agent-1' } });

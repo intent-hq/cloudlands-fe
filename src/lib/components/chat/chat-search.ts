@@ -1,6 +1,7 @@
 import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 import { groupContentBlocks, parseSuggestedPrompts } from '$lib/utils/messageParser';
+import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
 
 export interface ChatSearchMatch {
   messageId: string;
@@ -14,6 +15,7 @@ export function extractSearchableContent(message: AgentMessage): string {
   if (message.role === 'user') {
     if (message.metadata?.type === 'event_notification') return '';
     if (extractAllContent(message).trimStart().startsWith('[WORKSPACE EVENTS]')) return '';
+    return parseSuggestedPrompts(getPresentedUserMessageText(message)).cleanedContent;
   }
 
   const grouped = groupContentBlocks(blocks, !!message.isStreaming);

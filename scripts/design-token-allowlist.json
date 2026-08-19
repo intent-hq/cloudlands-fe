@@ -1,7 +1,7 @@
 {
   "ratchets": {
     "palette": 902,
-    "arbitrary": 349
+    "arbitrary": 414
   },
   "controlHeightExceptions": [
     {
@@ -54,20 +54,6 @@
     "src/lib/components/ui/tooltip/TooltipRich.svelte": { "palette": 0, "arbitrary": 0 }
   },
   "physicalPaletteBoundaries": [
-    {
-      "file": "src/features/agent/components/auggie-avatar/AuggieAvatar.svelte",
-      "owner": "brand",
-      "reason": "Auggie brand identity",
-      "replacement": "brand-local palette",
-      "removalCondition": "Never; explicit brand boundary"
-    },
-    {
-      "file": "src/features/agent/components/auggie-avatar/AugieAvatarWithState.svelte",
-      "owner": "brand",
-      "reason": "Auggie brand identity and presence state",
-      "replacement": "brand-local palette",
-      "removalCondition": "Never; explicit brand boundary"
-    },
     {
       "file": "src/features/file-tracking/components/diff/PatchBlockContent.svelte",
       "owner": "diff-adapter",

@@ -387,7 +387,7 @@
   >
     <!-- Expanded Terminal Panel -->
     <div
-      class="terminal-panel relative flex flex-col bg-sidebar border-t border-border/50 shadow-2xl w-full"
+      class="terminal-panel relative flex flex-col bg-sidebar border-t border-border shadow-2xl w-full"
       class:is-resizing={isResizing}
       style="height: {$height}vh;"
       transition:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
@@ -404,7 +404,7 @@
 
       <!-- Header Bar -->
       <div
-        class="flex items-center justify-between h-9 px-3 bg-sidebar/50 border-b border-border/30 shrink-0"
+        class="flex items-center justify-between h-9 px-3 bg-sidebar/50 border-b border-border shrink-0"
       >
         <!-- Title (click to edit) -->
         <div class="flex items-center gap-2">
@@ -475,7 +475,7 @@
 
       <!-- Tab Bar - integrated into the terminal panel for root overlay -->
       <div
-        class="flex items-center justify-between h-9 px-1 bg-sidebar backdrop-blur-xl border-t border-border/50 shrink-0"
+        class="flex items-center justify-between h-9 px-1 bg-sidebar backdrop-blur-xl border-t border-border shrink-0"
       >
         <div class="flex items-center h-full min-w-0 overflow-x-auto scrollbar-none">
           <div class="pl-2 pr-3">
@@ -487,7 +487,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class={cn(
-                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-subtle cursor-pointer transition-all duration-150 min-w-0 max-w-90 whitespace-nowrap border-x border-border/50 -ml-px group/tab',
+                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-subtle cursor-pointer transition-all duration-150 min-w-0 max-w-90 whitespace-nowrap border-x border-border -ml-px group/tab',
                 'hover:text-foreground hover:bg-muted/80',
                 isActive && 'text-foreground bg-background shadow-sm',
               )}

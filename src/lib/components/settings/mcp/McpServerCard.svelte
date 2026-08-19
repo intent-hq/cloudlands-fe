@@ -7,14 +7,14 @@
   import Switch from '$lib/components/ui/switch/switch.svelte';
   import Dropdown from '$lib/components/ui/dropdown/Dropdown.svelte';
   import {
-  faEllipsisV,
-  faChevronDown,
-  faPen,
-  faCopy,
-  faKey,
-  faTrash,
-  faRotateRight,
-} from '@fortawesome/free-solid-svg-icons';
+    faEllipsisV,
+    faChevronDown,
+    faPen,
+    faCopy,
+    faKey,
+    faTrash,
+    faRotateRight,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -85,7 +85,12 @@
   // Dropdown options - use type: 'action' to prevent checkmarks
   const dropdownOptions = $derived([
     { type: 'action' as const, value: 'edit', label: m.settings_mcp_action_edit(), icon: faPen },
-    { type: 'action' as const, value: 'copy', label: m.settings_mcp_action_copyJson(), icon: faCopy },
+    {
+      type: 'action' as const,
+      value: 'copy',
+      label: m.settings_mcp_action_copyJson(),
+      icon: faCopy,
+    },
     ...(server.authType && server.authType !== 'none'
       ? [
           {
@@ -102,7 +107,7 @@
       value: 'delete',
       label: m.settings_mcp_action_delete(),
       icon: faTrash,
-      class: 'text-destructive-foreground',
+      class: 'text-error-foreground',
     },
   ]);
 
@@ -139,9 +144,7 @@
     name = name.replace(suffixPattern, '');
 
     // Replace underscores and dashes with spaces, then title-case
-    return name
-      .replace(/[_-]/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase());
+    return name.replace(/[_-]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
   async function handleCopyJson() {
@@ -173,7 +176,11 @@
       <!-- Server info -->
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2">
-          <span class="font-medium text-sm truncate" title={matchedPreset ? matchedPreset.label : server.name}>{matchedPreset ? matchedPreset.label : server.name}</span>
+          <span
+            class="font-medium text-sm truncate"
+            title={matchedPreset ? matchedPreset.label : server.name}
+            >{matchedPreset ? matchedPreset.label : server.name}</span
+          >
           {#if server.toolCount > 0}
             <span class="text-xs text-subtle">
               {server.toolCount === 1
@@ -183,10 +190,16 @@
           {/if}
           <!-- Status badge -->
           {#if statusBadges[server.status]}
-            <span class="text-ui-sm px-1.5 py-0.5 rounded-full whitespace-nowrap {statusBadges[server.status].class}">{statusBadges[server.status].label}</span>
+            <span
+              class="text-ui-sm px-1.5 py-0.5 rounded-full whitespace-nowrap {statusBadges[
+                server.status
+              ].class}">{statusBadges[server.status].label}</span
+            >
           {/if}
         </div>
-        <p class="text-xs text-subtle truncate">{matchedPreset ? matchedPreset.description : displayCommand()}</p>
+        <p class="text-xs text-subtle truncate">
+          {matchedPreset ? matchedPreset.description : displayCommand()}
+        </p>
 
         <!-- Error / stopped message (shown inline when server has issues) -->
         {#if isRetryable && server.errorMessage}
@@ -194,7 +207,9 @@
             class="mt-1 text-xs line-clamp-2 {server.status === 'stopped'
               ? 'text-orange-600 dark:text-orange-400'
               : 'text-red-500 dark:text-red-400'}"
-          >{server.errorMessage}</p>
+          >
+            {server.errorMessage}
+          </p>
         {:else if server.status === 'stopped'}
           <p class="mt-1 text-xs text-orange-600 dark:text-orange-400 line-clamp-2">
             {m.settings_mcp_serverStoppedMessage()}
@@ -213,7 +228,7 @@
                 ? m.settings_mcp_hideTools({ count: formatInteger(server.tools.length) })
                 : m.settings_mcp_showTools({ count: formatInteger(server.tools.length) })}
             </span>
-            <div class="transition-transform duration-200 {showTools ? 'rotate-180' : ''}">
+            <div class="transition-transform duration-200 {showTools ? '' : 'rotate-90'}">
               <Fa icon={faChevronDown} size="xs" />
             </div>
           </button>
@@ -242,11 +257,7 @@
         </button>
       {/if}
       <!-- Toggle switch -->
-      <Switch
-        checked={!server.disabled}
-        onCheckedChange={() => onToggle(server.name)}
-        size="sm"
-      />
+      <Switch checked={!server.disabled} onCheckedChange={() => onToggle(server.name)} size="sm" />
 
       <!-- Actions dropdown -->
       <Dropdown
@@ -264,7 +275,10 @@
         {#snippet item({ option })}
           <div class="flex items-center gap-2 w-full {option.class || ''}">
             {#if option.icon}
-              <Fa icon={option.icon} class="h-3.5 w-3.5 shrink-0 {option.class ? '' : 'opacity-50'}" />
+              <Fa
+                icon={option.icon}
+                class="h-3.5 w-3.5 shrink-0 {option.class ? '' : 'opacity-50'}"
+              />
             {/if}
             <span class="font-medium">{option.label}</span>
           </div>

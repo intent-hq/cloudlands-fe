@@ -97,6 +97,23 @@ beforeEach(() => {
   mocks.handlers.clear();
   mocks.getAllWebContents.mockReturnValue([]);
   mocks.fromId.mockReturnValue(undefined);
+  mocks.sendToWorkspaceWindows.mockReturnValue(DELIVERED);
+});
+
+describe('focusTab', () => {
+  it('forwards explicit pin intent with the exact tab focus request', async () => {
+    const service = await loadService();
+    mocks.fromId.mockReturnValue(fakeWebview(42, 'http://a/'));
+    service.registerTab('tab-1', 42);
+
+    await expect(service.focusTab('tab-1', 'ws-1', true)).resolves.toBe(true);
+    expect(mocks.sendToWorkspaceWindows).toHaveBeenCalledWith(
+      'ws-1',
+      IPC_CHANNELS.BROWSER.FOCUS_TAB,
+      { tabId: 'tab-1', workspaceId: 'ws-1', pin: true },
+    );
+    service.unregisterTab('tab-1');
+  });
 });
 
 describe('listAllTabs vs closeTab registry agreement (#2536)', () => {

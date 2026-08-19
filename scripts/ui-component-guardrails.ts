@@ -41,7 +41,6 @@ export const uiComponentGuardrails = {
     'relative:src/lib/components/ui/list/index.ts': 2,
     'relative:src/lib/components/ui/menu/index.ts': 1,
     'relative:src/lib/components/ui/scroll-area/index.ts': 2,
-    'relative:src/lib/components/ui/sidebar-context-menu/types.ts': 1,
     'relative:src/lib/components/ui/skeleton/index.ts': 3,
     'relative:src/lib/components/ui/switch/index.ts': 1,
     'relative:src/lib/components/ui/textarea/textarea.svelte': 1,
@@ -49,5 +48,5 @@ export const uiComponentGuardrails = {
     'relative:src/lib/components/ui/tooltip/Tooltip.svelte': 2,
     'relative:src/lib/components/ui/tooltip/index.ts': 2,
   },
-  rawControls: { button: 626, input: 85, select: 0, textarea: 11 },
+  rawControls: { button: 625, input: 85, select: 0, textarea: 11 },
 } as const;

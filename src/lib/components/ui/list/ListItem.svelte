@@ -11,7 +11,7 @@
     variant?: 'default' | 'ghost' | 'subtle';
     size?: 'sm' | 'md';
     icon?: any; // FontAwesome icon or Lucide icon component
-    iconComponent?: any; // For custom icon components like AuggieAvatar (Svelte 5 components)
+    iconComponent?: any; // For custom icon components like AgentAvatar (Svelte 5 components)
     iconProps?: Record<string, any>; // Props to pass to the icon component
     iconClass?: string;
     title?: string;

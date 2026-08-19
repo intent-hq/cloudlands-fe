@@ -144,12 +144,11 @@
 .comment-highlight.comment-selected {
   background-color: hsl(var(--warning) / 0.4);
   border-bottom-width: 3px;
-  box-shadow: 0 2px 4px hsl(var(--foreground) / 0.1);
+  box-shadow: var(--elevation-raised);
 }
 
 .dark .comment-highlight.comment-selected {
   background-color: hsl(var(--warning) / 0.25);
-  box-shadow: 0 2px 4px hsl(var(--foreground) / 0.3);
 }
 
 /* Hovered comment highlight */
@@ -193,7 +192,7 @@
   align-items: center;
   justify-content: center;
   font-weight: bold;
-  box-shadow: 0 1px 3px hsl(var(--foreground) / 0.2);
+  box-shadow: var(--elevation-raised);
 }
 
 /* Comment sidebar styles */
@@ -222,12 +221,12 @@
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: 8px;
-  box-shadow: 0 1px 3px hsl(var(--foreground) / 0.05);
+  box-shadow: var(--elevation-raised);
   transition: all 0.2s ease;
 }
 
 .comment-bubble:hover {
-  box-shadow: 0 2px 6px hsl(var(--foreground) / 0.1);
+  box-shadow: var(--elevation-overlay);
   transform: translateY(-1px);
 }
 

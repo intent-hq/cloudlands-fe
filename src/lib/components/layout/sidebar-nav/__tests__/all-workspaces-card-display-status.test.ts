@@ -397,7 +397,7 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     // the grouping must still be the BE-sent one.
     await waitFor(() => {
       const card = screen.getByTestId('workspace-card');
-      expect(card.getAttribute('data-running')).toBe('true');
+      expect(card.getAttribute('data-running')).toBe('false');
     });
     const headers = getRedesignedGroupHeaders();
     expect(headers).toContain('PR Merged');

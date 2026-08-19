@@ -1510,7 +1510,9 @@
           </button>
         {:else if activeTab === 'github'}
           <!-- GitHub: URL input with prefix (path-less pick — no clone destination) -->
-          <div class="flex items-center rounded-lg bg-sidebar focus-within:ring-1 focus-within:ring-ring">
+          <div
+            class="flex items-center rounded-lg bg-sidebar focus-within:ring-1 focus-within:ring-ring"
+          >
             <Fa icon={faGithub} class="ml-3" />
             <!-- i18n-ignore (domain prefix) -->
             <span class="text-sm pl-1.5 shrink-0 select-none">github.com/</span>
@@ -1649,7 +1651,7 @@
           <!-- Validation error for project name -->
           {#if newRepoNameError}
             <div class="mt-2 px-1">
-              <span class="text-sm text-red-500">{newRepoNameError}</span>
+              <span class="text-sm text-error-foreground">{newRepoNameError}</span>
             </div>
           {:else if newRepoFullPath}
             <!-- Full path preview + status message + action button -->
@@ -1729,7 +1731,7 @@
                     e.preventDefault();
                     handleRemoveRemoteSetup(setup.id);
                   }}
-                  class="ml-1 p-0.5 rounded text-muted-foreground hover:text-destructive-foreground hover:bg-destructive/10"
+                  class="ml-1 p-0.5 rounded text-muted-foreground hover:text-error-foreground hover:bg-destructive/10"
                   title={m.workspace_repoSelector_removeSetup_tooltip()}
                 >
                   <Fa icon={faXmark} size="xs" />

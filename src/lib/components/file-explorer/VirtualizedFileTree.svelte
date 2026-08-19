@@ -19,7 +19,7 @@
   import { toast } from 'svelte-sonner';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
   import LineChangesBadge from '../shared/LineChangesBadge.svelte';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import Fa from 'svelte-fa';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
@@ -1227,7 +1227,7 @@
                   selected={isFocused}
                   tabindex={-1}
                   icon={faChevronDown}
-                  iconClass={`opacity-50 [&>svg]:w-2! [&>svg]:mr-1! ${gitColor} transition-transform duration-150 ${flatNode.isExpanded ? '' : '-rotate-90'}`}
+                  iconClass={`opacity-50 [&>svg]:w-2! [&>svg]:mr-1! ${gitColor} transition-transform duration-150 ${flatNode.isExpanded ? '' : 'rotate-90'}`}
                   title={displayName}
                   titleClass={gitColor}
                   onclick={() => handleItemClick(flatNode, absoluteIndex)}
@@ -1290,7 +1290,7 @@
                         onSelectAgent?.(agentId);
                       }}
                     >
-                      <AuggieAvatar {agentId} size={16} />
+                      <AgentAvatar {agentId} size={16} />
                     </button>
                   {/each}
                 </div>

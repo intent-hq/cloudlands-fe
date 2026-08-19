@@ -19,6 +19,8 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToNote } from '$lib/utils/workspace-navigation';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
+  import ChatMessageNavigator from '$lib/components/chat/ChatMessageNavigator.svelte';
+  import type { ChatNavigationState } from '$lib/components/chat/chat-message-navigation';
   import * as Menu from '$lib/components/ui/menu';
   import AgentViewSettingsDropdown from './AgentViewSettingsDropdown.svelte';
 
@@ -117,6 +119,14 @@
   let agentCopyFeedback = $state<string | null>(null);
   let agentCopyTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let isAgentDeleting = $state(false);
+  let chatPanelRef = $state<{
+    scrollToBottom: () => void;
+    navigateToUserMessage: (messageId: string) => Promise<boolean>;
+  } | null>(null);
+  let chatNavigationState = $state<ChatNavigationState>({
+    isAtBottom: true,
+    userMessages: [],
+  });
 
   onDestroy(() => {
     if (agentCopyTimeoutId) {
@@ -175,11 +185,24 @@
       subtitleParts.push(m.layout_panelTabBar_delegatedBy_label({ name: delegatedByName }));
     const subtitle = subtitleParts.length > 0 ? subtitleParts.join(' · ') : undefined;
     untrack(() => {
-      headerContext.registerActions({ display: agentDisplayActions, actions: agentActions });
+      headerContext.registerActions({
+        primary: agentPrimaryActions,
+        display: agentDisplayActions,
+        actions: agentActions,
+      });
       headerContext.registerState({ subtitle });
     });
   });
 </script>
+
+{#snippet agentPrimaryActions()}
+  <ChatMessageNavigator
+    messages={chatNavigationState.userMessages}
+    isAtBottom={chatNavigationState.isAtBottom}
+    onSelectMessage={(messageId) => chatPanelRef?.navigateToUserMessage(messageId) ?? false}
+    onScrollToBottom={() => chatPanelRef?.scrollToBottom()}
+  />
+{/snippet}
 
 {#snippet agentDisplayActions()}
   <AgentViewSettingsDropdown embedded />
@@ -229,12 +252,14 @@
     {#key tab.agentId}
       <div class="flex h-full min-h-0 w-full flex-1">
         <ChatPanel
+          bind:this={chatPanelRef}
           workspace={$workspace}
           agentId={tab.agentId}
           {agentModel}
           {isActive}
           {isPanelFocused}
           {isInitialWorkspaceAgent}
+          onNavigationStateChange={(state) => (chatNavigationState = state)}
         />
       </div>
     {/key}

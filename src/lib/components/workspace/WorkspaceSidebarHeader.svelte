@@ -583,13 +583,13 @@
   </div>
 
   <DropdownMenu bind:open={dropdownOpen} align="end">
-    {#snippet trigger({ toggle }: { toggle: () => void })}
+    {#snippet trigger({ props })}
       <Button
+        {...props}
         variant="ghost-light"
         size="icon-sm"
         aria-label={m.workspace_sidebarHeader_actions_ariaLabel()}
         class="opacity-50 group-hover:opacity-70 hover:!opacity-100 transition-opacity duration-150"
-        onclick={toggle}
         disabled={isDeleting}
       >
         {#if isDeleting}

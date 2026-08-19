@@ -6,6 +6,7 @@ import {
   insertHorizontalPanelInLayout,
   insertHorizontalPanel,
   normalizeTablessPanelLayout,
+  movePanelToRootEdgeInLayout,
   removeForeignWorkspaceTabs,
   findRootHorizontalPanelIndex,
   removePanelPreservingHorizontalWidths,
@@ -193,13 +194,36 @@ describe('tabless panel layout', () => {
       },
       'p3',
       'p1',
-      1000,
+      1008,
     );
 
     if (result?.type !== 'split') throw new Error('Expected horizontal split');
     expect(result.sizes[0]).toBeCloseTo((600 / 1500) * 100);
     expect(result.sizes[1]).toBeCloseTo((500 / 1500) * 100);
     expect(result.sizes[2]).toBeCloseTo((400 / 1500) * 100);
+  });
+
+  it('uses an explicit chat insertion width without changing existing column pixels', () => {
+    const result = insertHorizontalPanelInLayout(
+      {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'panel', panelId: 'p1' },
+          { type: 'panel', panelId: 'p2' },
+        ],
+        sizes: [60, 40],
+      },
+      'chat',
+      'p1',
+      1008,
+      700,
+    );
+
+    if (result?.type !== 'split') throw new Error('Expected horizontal split');
+    expect(result.sizes[0]).toBeCloseTo((600 / 1700) * 100);
+    expect(result.sizes[1]).toBeCloseTo((700 / 1700) * 100);
+    expect(result.sizes[2]).toBeCloseTo((400 / 1700) * 100);
   });
 
   it('removes a horizontal panel without changing surviving column pixels', () => {
@@ -225,6 +249,34 @@ describe('tabless panel layout', () => {
     if (result.node?.type === 'split') {
       expect(result.node.sizes).toEqual([40, 60]);
     }
+  });
+
+  it('moves a root panel and its explicit width together', () => {
+    const result = movePanelToRootEdgeInLayout(
+      {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'panel', panelId: 'reusable' },
+          { type: 'panel', panelId: 'target' },
+          { type: 'panel', panelId: 'older' },
+        ],
+        sizes: [20, 55, 25],
+      },
+      'target',
+      'before',
+    );
+
+    expect(result).toMatchObject({
+      type: 'split',
+      direction: 'horizontal',
+      children: [
+        { type: 'panel', panelId: 'target' },
+        { type: 'panel', panelId: 'reusable' },
+        { type: 'panel', panelId: 'older' },
+      ],
+      sizes: [expect.closeTo(55, 8), expect.closeTo(20, 8), expect.closeTo(25, 8)],
+    });
   });
 
   it('inserts a full-height column after the focused vertical stack', () => {
@@ -467,6 +519,30 @@ describe('tabless panel layout', () => {
         expect.closeTo(96, 8),
         expect.closeTo(500, 8),
         expect.closeTo(364, 8),
+      ]);
+    }
+  });
+
+  it('persists viewport-equalized pixels instead of stale intrinsic ratios', () => {
+    const root = {
+      type: 'split' as const,
+      direction: 'horizontal' as const,
+      sizes: [320, 500, 364].map((width) => (width / 1184) * 100),
+      children: ['p1', 'p2', 'p3'].map((panelId) => ({
+        type: 'panel' as const,
+        panelId,
+      })),
+    };
+
+    const renderedWidths = [1184 / 3, 1184 / 3, 1184 / 3];
+    const resized = resizeRootHorizontalPanel(root, 1184, 1264, 0, renderedWidths);
+
+    expect(resized.node.type).toBe('split');
+    if (resized.node.type === 'split') {
+      expect(resized.node.sizes.map((size) => (size / 100) * resized.nextWidth)).toEqual([
+        expect.closeTo(renderedWidths[0] + 80, 8),
+        expect.closeTo(renderedWidths[1], 8),
+        expect.closeTo(renderedWidths[2], 8),
       ]);
     }
   });

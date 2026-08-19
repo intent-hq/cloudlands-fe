@@ -75,6 +75,20 @@ function byCreatedOrder(left: AgentSession, right: AgentSession): number {
   return normalizedLeft - normalizedRight || String(left.id).localeCompare(String(right.id));
 }
 
+function newestUserMessageTimestamp(agent: AgentSession): number | null {
+  let newest: number | null = null;
+  for (const message of agent.messages) {
+    if (message.role !== 'user') continue;
+    const timestamp = new Date(message.timestamp).getTime();
+    if (Number.isFinite(timestamp) && (newest === null || timestamp > newest)) newest = timestamp;
+  }
+  if (newest !== null || !agent.lastUserMessage) return newest;
+  // AgentLite restores omit transcripts. Its persisted preview proves a user
+  // message exists, and lastActivity is the available durable ordering stamp.
+  const restoredTimestamp = new Date(agent.lastActivity ?? agent.updatedAt).getTime();
+  return Number.isFinite(restoredTimestamp) ? restoredTimestamp : null;
+}
+
 /** Resolve the daemon-owned initial agent without inventing a replacement. */
 export function resolveCanonicalInitialAgent(agents: AgentSession[]): AgentSession | null {
   const ordered = [...agents].sort(byCreatedOrder);
@@ -87,6 +101,60 @@ export function resolveCanonicalInitialAgent(agents: AgentSession[]): AgentSessi
     null
   );
 }
+
+/** Resolve the primary agent that should fill an otherwise empty restored layout. */
+export function resolveEmptyLayoutAgent(
+  agents: AgentSession[],
+  workspaceId: string,
+  allowInitialAgent = false,
+): AgentSession | null {
+  const eligibleAgents = agents.filter(
+    (agent) =>
+      String(agent.workspaceId) === workspaceId &&
+      agent.status !== 'deleted' &&
+      !agent.pendingDeleteAt,
+  );
+  if (allowInitialAgent) {
+    const initialAgent = [...eligibleAgents]
+      .sort(byCreatedOrder)
+      .find(
+        (agent) =>
+          agent.isInitialAgent === true ||
+          agent.metadata?.isInitialAgent === true ||
+          agent.agentMetadata?.isInitialAgent === true,
+      );
+    if (initialAgent) return initialAgent;
+  }
+  const orderedPrimaryAgents = agents
+    .filter(
+      (agent) =>
+        String(agent.workspaceId) === workspaceId &&
+        agent.status !== 'deleted' &&
+        !agent.pendingDeleteAt &&
+        agent.isInitialAgent !== true &&
+        agent.metadata?.isInitialAgent !== true &&
+        agent.agentMetadata?.isInitialAgent !== true &&
+        agent.isBackground !== true &&
+        agent.metadata?.isBackground !== true &&
+        !agent.parentSessionId &&
+        typeof agent.metadata?.createdByAgentId !== 'string',
+    )
+    .sort(byCreatedOrder);
+  let newestAgent: AgentSession | null = null;
+  let newestTimestamp = Number.NEGATIVE_INFINITY;
+  for (const agent of orderedPrimaryAgents) {
+    const timestamp = newestUserMessageTimestamp(agent);
+    if (timestamp !== null && timestamp > newestTimestamp) {
+      newestAgent = agent;
+      newestTimestamp = timestamp;
+    }
+  }
+  return newestAgent;
+}
+
+export const selectEmptyLayoutAgent = store.createSelector((state, wsId: string) =>
+  resolveEmptyLayoutAgent(selectAllWorkspaceAgents.select(state, wsId), wsId),
+);
 
 export const selectInitialAgentId = store.createSelector((state, wsId: string) => {
   const workspaceState = getWorkspaceAgentState(state, wsId);

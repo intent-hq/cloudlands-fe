@@ -104,7 +104,7 @@ describe('Gate C generated migration ledger', () => {
 
     expect(
       ledger.find(({ oldImport }) => oldImport.endsWith('dropdown-menu.svelte'))?.callers,
-    ).toHaveLength(16);
+    ).toHaveLength(17);
     expect(ledger.find(({ oldImport }) => oldImport.endsWith('/dropdown'))).toMatchObject({
       replacement: 'ledger:src/lib/components/ui/dropdown/dropdown-caller-ledger.ts',
       callers: expect.arrayContaining(['src/lib/components/settings/mcp/McpServerCard.svelte']),
@@ -121,9 +121,9 @@ describe('Gate C generated migration ledger', () => {
       '$lib/components/ui/ProviderIcon.svelte',
       '$lib/components/ui/ViewSettingsDropdown.svelte',
       '$lib/components/ui/WorkspaceActionsMenu.svelte',
-      '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte',
-      '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte',
-      '$lib/components/ui/auggie-avatar/avatar-state',
+      '$lib/components/ui/agent-avatar/AgentAvatar.svelte',
+      '$lib/components/ui/agent-avatar/AgentAvatarWithState.svelte',
+      '$lib/components/ui/agent-avatar/avatar-state',
       '$lib/components/ui/content-header',
       '$lib/components/ui/diff',
       '$lib/components/ui/tab',
@@ -134,7 +134,7 @@ describe('Gate C generated migration ledger', () => {
     const retained = new Map(
       buildUiMigrationLedger(root).map((entry) => [entry.oldImport, entry.callers.length]),
     );
-    expect(retained.get('$lib/components/ui/dropdown-menu.svelte')).toBe(16);
+    expect(retained.get('$lib/components/ui/dropdown-menu.svelte')).toBe(17);
     expect(retained.get('$lib/components/ui/dropdown')).toBe(7);
     expect(retained.get('$lib/components/ui/grouped-combobox')).toBe(1);
     expect(retained.get('$lib/components/ui/searchable-combobox')).toBe(1);

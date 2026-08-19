@@ -12,18 +12,21 @@
    * Fixed width for consistent layout and connector line alignment.
    */
   import type { AgentNode } from './types';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
-  import type { AvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+  import {
+    getAvatarState,
+    getAvatarStateForSession,
+  } from '$features/agent/components/agent-avatar/avatar-state';
   import { Spinner } from '$lib/components/ui/indicators';
   import { classifyTool } from '$lib/components/chat/tool-classifier';
   import {
     selectAgentAttentionRequest,
+    selectAgentSession,
     selectAgentIsResponding,
     selectAgentIsThinking,
     selectAgentIsWaiting,
     selectAgentIsWaitingForOtherAgents,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import type { AgentAttentionKind } from '$shared/utils/agent-attention';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import Fa from 'svelte-fa';
   import {
@@ -51,6 +54,8 @@
 
   // svelte-ignore state_referenced_locally -- hierarchy cards are mounted per agent; selector subscriptions are initialized once.
   const agentIsResponding$ = selectAgentIsResponding(agent.agentId);
+  // svelte-ignore state_referenced_locally -- hierarchy cards are mounted per agent; selector subscriptions are initialized once.
+  const agentSession$ = selectAgentSession(agent.agentId);
   // Get names of agents we're waiting for
   const waitingForNames = $derived.by(() => {
     if (!agent.waitingForAgentIds || agent.waitingForAgentIds.length === 0) return [];
@@ -68,30 +73,22 @@
   // svelte-ignore state_referenced_locally -- hierarchy cards are mounted per agent; selector subscriptions are initialized once.
   const attentionRequest$ = selectAgentAttentionRequest(agent.agentId);
 
-  // Map agent status to avatar state
-  function getAvatarState(
-    status: AgentNode['status'],
-    waitingForOtherAgents: boolean,
-    responding: boolean,
-    attentionKind: AgentAttentionKind | null,
-  ): AvatarState {
-    if (status === 'completed') return 'completed';
-    if (status === 'failed') return 'failed';
-    if (attentionKind === 'discussion') return 'attention-discussion';
-    if (attentionKind === 'blocker') return 'attention-blocker';
-    if (waitingForOtherAgents) return 'waiting';
-    if (responding) return 'running';
-    return 'idle';
-  }
-
-  const avatarState = $derived(
-    getAvatarState(
-      agent.status,
-      $agentIsWaitingForOtherAgents$,
-      $agentIsResponding$,
-      $attentionRequest$?.kind ?? null,
-    ),
-  );
+  const avatarState = $derived.by(() => {
+    const options = { attentionKind: $attentionRequest$?.kind ?? null };
+    if ($agentSession$) return getAvatarStateForSession($agentSession$, options);
+    return getAvatarState(
+      {
+        status: agent.status,
+        isResponding: $agentIsResponding$,
+        isWaitingForOtherAgents: $agentIsWaitingForOtherAgents$,
+      },
+      {
+        ...options,
+        isCompleted: agent.status === 'completed',
+        isFailed: agent.status === 'failed',
+      },
+    );
+  });
 </script>
 
 <div class="agent-card-wrapper flex items-center gap-3 shadow">
@@ -120,7 +117,7 @@
     <div
       class="avatar-wrapper h-9 w-12 flex items-center justify-center bg-background rounded-full"
     >
-      <AugieAvatarWithState
+      <AgentAvatarWithState
         agentId={agent.agentId}
         size={24}
         state={avatarState}
@@ -201,9 +198,9 @@
               >
             {/if}
           </div>
-          {#if !toolDisplay && (agent.streamingText || agent.lastResponse)}
+          {#if !toolDisplay && agent.lastResponse}
             <div class="text-ui text-subtle truncate w-full px-1 leading-tight">
-              {agent.streamingText || agent.lastResponse}
+              {agent.lastResponse}
             </div>
           {/if}
         </div>

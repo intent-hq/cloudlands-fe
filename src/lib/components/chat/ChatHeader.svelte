@@ -11,21 +11,21 @@
   import { isPendingAgentSession } from '$shared/types';
   import Fa from 'svelte-fa';
   import {
-  faRobot,
-  faTrash,
-  faSearch,
-  faChevronDown,
-  faSpinner,
-} from '@fortawesome/free-solid-svg-icons';
+    faRobot,
+    faTrash,
+    faSearch,
+    faChevronDown,
+    faSpinner,
+  } from '@fortawesome/free-solid-svg-icons';
   import { Badge } from '$lib/components/ui/badge';
   import * as Tooltip from '$lib/components/ui/tooltip';
 
   import {
-  selectSpecialists,
-  selectUserOverrides,
-  selectSpecialistById,
-  selectEffectiveModel,
-} from '$store/renderer/slices/specialists/specialists-selectors';
+    selectSpecialists,
+    selectUserOverrides,
+    selectSpecialistById,
+    selectEffectiveModel,
+  } from '$store/renderer/slices/specialists/specialists-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -52,7 +52,10 @@
   // Reactive store subscriptions for Svelte reactivity
   const specialists$ = selectSpecialists();
   const userOverrides$ = selectUserOverrides();
-  $effect(() => { void $specialists$; void $userOverrides$; });
+  $effect(() => {
+    void $specialists$;
+    void $userOverrides$;
+  });
 
   // Get specialist info from session metadata using unified lookup
   // Includes built-in and custom specialists
@@ -224,7 +227,7 @@
       </button>
 
       <button
-        class="p-2 bg-transparent border-none text-muted-foreground cursor-pointer rounded-md transition-all duration-200 hover:bg-muted hover:text-destructive-foreground"
+        class="p-2 bg-transparent border-none text-muted-foreground cursor-pointer rounded-md transition-all duration-200 hover:bg-muted hover:text-error-foreground"
         onclick={onDelete}
         title={m.chat_chatHeader_deleteChat_title()}
       >

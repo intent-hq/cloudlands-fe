@@ -49,5 +49,5 @@
   >
     {attribution.displayName}
   </span>
-  <span class="text-subtle">{stateLabel}</span>
+  <span class="font-normal text-muted-foreground">{stateLabel}</span>
 </div>

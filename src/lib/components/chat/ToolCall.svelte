@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ContentBlock, ToolUseBlock } from '$shared/types';
   import Fa from 'svelte-fa';
-  import { safeSlide } from '$lib/utils/animations';
+  import { faEye, faHand } from '$lib/icons/phosphor-icons';
   import ToolDetails from './ToolDetails.svelte';
   import { parseToolResult } from './tool-result-parser';
   import { isHydrationPending, truncatedToolBlockIds } from './block-hydration';
@@ -12,29 +12,18 @@
   import { noteUrl } from '$shared/constants/intent-links';
   import { handleIntentLink } from '$lib/utils/workspaces-link-handler';
   import { getPanelIdFromEvent } from '$lib/components/layout/panel-system/panel-context';
-  import McpIcon from '$lib/components/settings/mcp/McpIcon.svelte';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import {
-    COMPACT_TOOL_ICON_BOX_CLASS,
-    COMPACT_TOOL_ROW_CLASS,
-    COMPACT_TOOL_SENTENCE_CLASS,
+    CHAT_OPERATIONAL_ICON_CLASS,
     COMPACT_TOOL_TRAILING_CLASS,
-    OPERATIONAL_ROW_CONTAINER_CLASS,
+    OPERATIONAL_INLINE_DETAILS_CLASS,
   } from './operational-disclosure-row';
   import { buildToolDisplayModel } from './tool-display-model';
-
-  /** MCP sources that have brand icons in McpIcon */
-  const BRANDED_MCP_ICONS = new Set([
-    'figma',
-    'sentry',
-    'playwright',
-    'github',
-    'linear',
-    'slack',
-    'context7',
-  ]);
+  import ToolStatusIcon from './ToolStatusIcon.svelte';
+  import ChatOperationalRow from './ChatOperationalRow.svelte';
+  import { resolveToolLeadingIcon } from './tool-leading-icon';
 
   interface Props {
     toolUse: ToolUseBlock;
@@ -43,6 +32,7 @@
     /** The paired tool_result BLOCK (not payload) — carries §5.5 slim flags. */
     resultBlock?: ContentBlock | null;
     workspaceId?: string;
+    adjacentOperationalRow?: boolean;
     /** Agent session id; with `messageId`, enables lazy block hydration (§5.5). */
     agentId?: string;
     /** Persisted message id owning these blocks (hydration fetch key). */
@@ -55,6 +45,7 @@
     result = null,
     resultBlock = null,
     workspaceId,
+    adjacentOperationalRow = false,
     agentId,
     messageId,
   }: Props = $props();
@@ -133,11 +124,54 @@
       toolState,
     }),
   );
+  const leadingIcon = $derived.by(() => {
+    const action = toolUse.input?.action ?? toolUse.input?.method;
+    const actions = Array.isArray(toolUse.input?.actions)
+      ? toolUse.input.actions
+          .map((item) =>
+            typeof item === 'object' && item ? (item as { action?: unknown }).action : null,
+          )
+          .filter((item): item is string => typeof item === 'string')
+      : undefined;
+    const kind = resolveToolLeadingIcon({
+      toolName: toolUse.name,
+      category: toolDisplay.category,
+      action: actions?.length ? actions : typeof action === 'string' ? action : undefined,
+      toolKind: toolUse.metadata?.toolKind,
+    });
+    return kind === 'eye' ? faEye : faHand;
+  });
+
+  // Check if tool event is truly empty: completed successfully with no meaningful
+  // content (whitespace-only, empty array/object, null/undefined) and no input params
+  const isEmptyEvent = $derived.by(() => {
+    if (toolState === 'error' || toolState === 'running') return false;
+    if (toolDisplay.hidden) return false; // Already handled by hidden flag
+    if (displayModel.isOkOnlyWorkspaceResult) return false; // ok-only mutations are intentionally content-free
+
+    // Check if result is empty
+    const resultIsEmpty =
+      result === null ||
+      result === undefined ||
+      (typeof result === 'string' && result.trim() === '') ||
+      (Array.isArray(result) && result.length === 0) ||
+      (typeof result === 'object' && !Array.isArray(result) && Object.keys(result).length === 0);
+
+    // Check if input has any non-internal params
+    const inputIsEmpty = !Object.keys(toolUse.input || {}).some((key) => !key.startsWith('_'));
+
+    return resultIsEmpty && inputIsEmpty && !displayModel.sentence;
+  });
+
+  // Should render: not hidden, not empty
+  const shouldRender = $derived(!toolDisplay.hidden && !isEmptyEvent);
 
   let expanded = $state(false);
   const isExpandable = $derived(displayModel.hasDetails);
-  const hasInlineFile = $derived(
-    displayModel.sentenceSegments.some((segment) => segment.kind === 'file'),
+  const hasTrailing = $derived(
+    displayModel.status === 'success' ||
+      displayModel.status === 'error' ||
+      Boolean(toolDisplay.noteId),
   );
   const detailsId = $derived(`tool-details-${toolUse.id}`);
 
@@ -155,7 +189,7 @@
     toggleExpanded();
   }
 
-  function openFile(event: MouseEvent) {
+  function openFile(event: MouseEvent | KeyboardEvent) {
     event.preventDefault();
     event.stopPropagation();
     if (!workspaceId || !toolDisplay.filePath) return;
@@ -167,147 +201,150 @@
       }),
     );
   }
-
-  // Transition function for expand/collapse animation
-  function expand(node: Element) {
-    return safeSlide(node, { duration: 150 });
-  }
 </script>
+
+{#snippet leading()}
+  <Fa icon={leadingIcon} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
+{/snippet}
+
+{#snippet summary()}
+  {#each displayModel.sentenceSegments as segment}
+    {#if segment.kind === 'file'}
+      {#if workspaceId && isExpandable}
+        <span
+          role="button"
+          tabindex="0"
+          data-testid="tool-call-file-link"
+          class="min-w-0 cursor-pointer truncate whitespace-pre font-normal underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+          data-tool-secondary
+          aria-label={displayModel.accessibleSentence}
+          onclick={(event) => {
+            event.stopPropagation();
+            openFile(event);
+          }}
+          onkeydown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              event.stopPropagation();
+              openFile(event);
+            }
+          }}>{segment.text}</span
+        >
+      {:else if workspaceId}
+        <button
+          type="button"
+          data-testid="tool-call-file-link"
+          class="min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+          data-tool-secondary
+          aria-label={displayModel.accessibleSentence}
+          onclick={openFile}>{segment.text}</button
+        >
+      {:else}
+        <span
+          data-testid="tool-call-file-name"
+          class="min-w-0 truncate whitespace-pre font-normal"
+          data-tool-secondary>{segment.text}</span
+        >
+      {/if}
+    {:else}
+      <span
+        class="shrink-0 whitespace-pre font-normal"
+        data-tool-primary={segment.kind === 'primary' ? '' : undefined}
+        data-tool-secondary={segment.kind === 'secondary' ? '' : undefined}>{segment.text}</span
+      >
+    {/if}
+  {/each}
+{/snippet}
+
+{#snippet trailing()}
+  {#if displayModel.status === 'success'}
+    <ToolStatusIcon status="completed" />
+  {:else if displayModel.status === 'error'}
+    <ToolStatusIcon status="error" />
+  {:else if toolDisplay.noteId}
+    <a
+      href={noteUrl(toolDisplay.noteId)}
+      data-testid="tool-call-note-link"
+      class="{COMPACT_TOOL_TRAILING_CLASS} hover:underline"
+      aria-label={displayModel.accessibleSentence}
+      onclick={async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const openInAdjacentPanel = event.metaKey || event.ctrlKey;
+        await handleIntentLink(noteUrl(toolDisplay.noteId!), {
+          workspaceId,
+          sourcePanelId: getPanelIdFromEvent(event),
+          openInAdjacentPanel,
+        });
+      }}
+    >
+      {m.chat_toolClassifier_open_label()}
+    </a>
+  {/if}
+{/snippet}
+
+{#snippet details()}
+  <!-- While the full block is being hydrated (§5.5), the slim preview
+       renders below with a fetching notice; the merged full body replaces
+       it reactively when the fetch settles. -->
+  {#if hydrationPending}
+    <div
+      class="type-caption flex items-center gap-2 px-2 py-1 text-subtle"
+      data-testid="tool-call-hydration-loading"
+    >
+      <Fa icon={toolDisplay.icon} size={12} class="animate-pulse" />
+      <span>{m.chat_toolCall_loadingFullOutput_label()}</span>
+    </div>
+  {/if}
+  <ToolDetails
+    input={toolUse.input}
+    {result}
+    {parsedResult}
+    isError={toolState === 'error'}
+    pending={toolState === 'running'}
+    isTerminal={toolDisplay.category === 'terminal'}
+    {workspaceId}
+    suppressOkOnlyResult={displayModel.isOkOnlyWorkspaceResult}
+  />
+{/snippet}
 
 <!-- Special rendering for Augment Context Engine tools -->
 {#if isContextEngine}
-  <ContextEngineToolCall {toolUse} {toolState} {result} onExpand={requestHydration} />
-{:else if !toolDisplay.hidden}
-  <div
-    class={OPERATIONAL_ROW_CONTAINER_CLASS}
-    data-tool-use-id={toolUse.id}
-    data-tool-call-id={toolUse.toolCallId || undefined}
-    data-conversation-layer="tool-activity"
-  >
-    <!-- Running state: animate-pulse on the icon indicates running state -->
-    <div class={COMPACT_TOOL_ROW_CLASS} data-operational-disclosure-row data-compact-tool-row>
-      <!-- Category icon: show MCP brand logo for known MCPs, otherwise generic FA icon -->
-      {#if hasInlineFile && isExpandable}
-        <button
-          type="button"
-          class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running'
-            ? 'animate-pulse'
-            : ''} cursor-pointer border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:text-foreground"
-          data-tool-icon
-          data-testid="tool-call-disclosure"
-          aria-label={m.chat_toolCall_technicalDetails_label()}
-          aria-expanded={expanded}
-          aria-controls={detailsId}
-          title={m.chat_toolCall_technicalDetails_label()}
-          onclick={toggleExpanded}
-        >
-          {#if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
-            <McpIcon iconName={toolDisplay.mcpSource} label={toolDisplay.mcpSource} size={15} />
-          {:else}
-            <Fa icon={toolDisplay.icon} size={14} class="h-3.5! w-3.5!" />
-          {/if}
-        </button>
-      {:else if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
-        <div
-          class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
-          data-tool-icon
-        >
-          <McpIcon iconName={toolDisplay.mcpSource} label={toolDisplay.mcpSource} size={15} />
-        </div>
-      {:else}
-        <div
-          class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
-          data-tool-icon
-        >
-          <Fa icon={toolDisplay.icon} size={14} class="h-3.5! w-3.5!" />
-        </div>
-      {/if}
-
-      {#if hasInlineFile}
-        <span
-          class="{COMPACT_TOOL_SENTENCE_CLASS} flex items-baseline"
-          data-testid="tool-call-summary"
-          data-tool-sentence
-          aria-label={displayModel.accessibleSentence}
-          title={displayModel.accessibleSentence}
-        >
-          {#each displayModel.sentenceSegments as segment}
-            {#if segment.kind === 'file'}
-              {#if workspaceId}
-                <button
-                  type="button"
-                  data-testid="tool-call-file-link"
-                  class="min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal text-inherit underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
-                  aria-label={displayModel.accessibleSentence}
-                  onclick={openFile}>{segment.text}</button
-                >
-              {:else}
-                <span data-testid="tool-call-file-name" class="min-w-0 truncate whitespace-pre"
-                  >{segment.text}</span
-                >
-              {/if}
-            {:else}
-              <span class="shrink-0 whitespace-pre">{segment.text}</span>
-            {/if}
-          {/each}
-        </span>
-      {:else if isExpandable}
-        <button
-          type="button"
-          class="{COMPACT_TOOL_SENTENCE_CLASS} cursor-pointer"
-          data-testid="tool-call-summary"
-          data-tool-sentence
-          aria-label={displayModel.accessibleSentence}
-          aria-expanded={expanded}
-          aria-controls={detailsId}
-          title={m.chat_toolCall_technicalDetails_label()}
-          onclick={toggleExpanded}
-          onkeydown={handleDisclosureKeydown}>{displayModel.sentence}</button
-        >
-      {:else}
-        <span
-          class={COMPACT_TOOL_SENTENCE_CLASS}
-          data-testid="tool-call-summary"
-          data-tool-sentence
-          aria-label={displayModel.accessibleSentence}
-          title={displayModel.accessibleSentence}>{displayModel.sentence}</span
-        >
-      {/if}
-
-      {#if displayModel.status === 'success'}
-        <span
-          class="{COMPACT_TOOL_TRAILING_CLASS} text-success"
-          data-testid="tool-call-status"
-          data-tool-status="success">{m.chat_toolCall_success_label()}</span
-        >
-      {:else if displayModel.status === 'error'}
-        <span
-          class="{COMPACT_TOOL_TRAILING_CLASS} text-destructive"
-          data-testid="tool-call-status"
-          data-tool-status="error">{m.chat_toolCall_failed_label()}</span
-        >
-      {:else if toolDisplay.noteId}
-        <a
-          href={noteUrl(toolDisplay.noteId)}
-          data-testid="tool-call-note-link"
-          class="{COMPACT_TOOL_TRAILING_CLASS} hover:underline"
-          aria-label={displayModel.accessibleSentence}
-          onclick={async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-            await handleIntentLink(noteUrl(toolDisplay.noteId!), {
-              workspaceId,
-              sourcePanelId: getPanelIdFromEvent(e),
-              openInAdjacentPanel,
-            });
-          }}
-        >
-          {m.chat_toolClassifier_open_label()}
-        </a>
-      {/if}
-    </div>
-  </div>
+  <ContextEngineToolCall
+    {toolUse}
+    {toolState}
+    {result}
+    {adjacentOperationalRow}
+    onExpand={requestHydration}
+  />
+{:else if shouldRender}
+  <ChatOperationalRow
+    {leading}
+    {summary}
+    trailing={hasTrailing ? trailing : undefined}
+    showChevron={false}
+    details={expanded ? details : undefined}
+    interactive={isExpandable}
+    {expanded}
+    controls={detailsId}
+    ariaLabel={displayModel.accessibleSentence}
+    title={isExpandable
+      ? m.chat_toolCall_technicalDetails_label()
+      : displayModel.accessibleSentence}
+    summaryTitle={displayModel.accessibleSentence}
+    onclick={toggleExpanded}
+    onkeydown={handleDisclosureKeydown}
+    {detailsId}
+    detailsClass={OPERATIONAL_INLINE_DETAILS_CLASS}
+    {adjacentOperationalRow}
+    streaming={toolState === 'running'}
+    toolIcon
+    disclosureTestId="tool-call-disclosure"
+    summaryTestId="tool-call-summary"
+    toolUseId={toolUse.id}
+    toolCallId={toolUse.toolCallId || undefined}
+    conversationLayer="tool-activity"
+  />
 
   <!-- Inline image preview for Figma screenshots (always visible, not just when expanded) -->
   {#if !expanded && parsedResult?.type === 'figma' && parsedResult.figmaScreenshot && toolState === 'completed'}
@@ -318,7 +355,7 @@
         if (isExpandable) expanded = !expanded;
       }}
     >
-      <div class="overflow-hidden rounded border border-border/40">
+      <div class="overflow-hidden rounded border border-border">
         <img
           src={`data:${parsedResult.figmaScreenshotMimeType || 'image/png'};base64,${parsedResult.figmaScreenshot}`}
           alt={m.chat_toolCall_figmaDesign_alt()}
@@ -328,38 +365,4 @@
       </div>
     </button>
   {/if}
-
-  {#if expanded}
-    <div id={detailsId} class="ml-1" transition:expand>
-      <!-- While the full block is being hydrated (§5.5), the slim preview
-           renders below with a fetching notice; the merged full body replaces
-           it reactively when the fetch settles. -->
-      {#if hydrationPending}
-        <div
-          class="type-caption flex items-center gap-2 px-2 py-1 text-subtle"
-          data-testid="tool-call-hydration-loading"
-        >
-          <Fa icon={toolDisplay.icon} size={12} class="animate-pulse" />
-          <span>{m.chat_toolCall_loadingFullOutput_label()}</span>
-        </div>
-      {/if}
-      <ToolDetails
-        input={toolUse.input}
-        {result}
-        {parsedResult}
-        isError={toolState === 'error'}
-        pending={toolState === 'running'}
-        isTerminal={toolDisplay.category === 'terminal'}
-        {workspaceId}
-        suppressOkOnlyResult={displayModel.isOkOnlyWorkspaceResult}
-      />
-    </div>
-  {/if}
 {/if}
-
-<style>
-  /* PERF: Tool call container uses CSS containment for rendering isolation */
-  .tool-call-container {
-    contain: layout style;
-  }
-</style>

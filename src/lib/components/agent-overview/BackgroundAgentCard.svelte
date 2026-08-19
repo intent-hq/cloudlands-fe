@@ -1,6 +1,6 @@
 <script lang="ts" module>
   // Fixed size for background agent avatars - exported for layout calculations
-  export const BG_CARD_SIZE = 50; // Increased to accommodate status indicator
+  export const BG_CARD_SIZE = 50;
 </script>
 
 <script lang="ts">
@@ -8,21 +8,19 @@
    * BackgroundAgentCard Component
    *
    * A simplified avatar-only card for background/permanent crew agents.
-   * Shows just the avatar with a circular muted background.
-   * When running, shows thinking/tool call indicator below.
+   * Shows just the state-colored avatar with a circular muted background.
    */
   import type { AgentNode } from './types';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
-  import type { AvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
-  import { Spinner } from '$lib/components/ui/indicators';
-  import Fa from 'svelte-fa';
-  import { classifyTool } from '$lib/components/chat/tool-classifier';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+  import {
+    getAvatarState,
+    getAvatarStateForSession,
+  } from '$features/agent/components/agent-avatar/avatar-state';
   import {
     selectAgentAttentionRequest,
+    selectAgentSession,
     selectAgentIsWaitingForOtherAgents,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import type { AgentAttentionKind } from '$shared/utils/agent-attention';
-  import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
 
   interface Props {
     agent: AgentNode;
@@ -33,30 +31,29 @@
 
   let { agent, onclick, onmouseenter, onmouseleave }: Props = $props();
 
-  const isActive = $derived(agent.status === 'responding');
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; agentId is stable per card
   const agentIsWaitingForOtherAgents$ = selectAgentIsWaitingForOtherAgents(agent.agentId);
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; agentId is stable per card
   const attentionRequest$ = selectAgentAttentionRequest(agent.agentId);
+  // svelte-ignore state_referenced_locally - selector readables must be created at component init; agentId is stable per card
+  const agentSession$ = selectAgentSession(agent.agentId);
 
-  // Map agent status to avatar state
-  function getAvatarState(
-    status: AgentNode['status'],
-    waitingForOtherAgents: boolean,
-    attentionKind: AgentAttentionKind | null,
-  ): AvatarState {
-    if (status === 'completed') return 'completed';
-    if (status === 'failed') return 'failed';
-    if (attentionKind === 'discussion') return 'attention-discussion';
-    if (attentionKind === 'blocker') return 'attention-blocker';
-    if (waitingForOtherAgents) return 'waiting';
-    if (status === 'responding') return 'running';
-    return 'idle';
-  }
-
-  const avatarState = $derived(
-    getAvatarState(agent.status, $agentIsWaitingForOtherAgents$, $attentionRequest$?.kind ?? null),
-  );
+  const avatarState = $derived.by(() => {
+    const options = { attentionKind: $attentionRequest$?.kind ?? null };
+    if ($agentSession$) return getAvatarStateForSession($agentSession$, options);
+    return getAvatarState(
+      {
+        status: agent.status,
+        isResponding: agent.status === 'responding',
+        isWaitingForOtherAgents: $agentIsWaitingForOtherAgents$,
+      },
+      {
+        ...options,
+        isCompleted: agent.status === 'completed',
+        isFailed: agent.status === 'failed',
+      },
+    );
+  });
 </script>
 
 <button
@@ -67,42 +64,11 @@
   {onmouseenter}
   {onmouseleave}
 >
-  <AugieAvatarWithState
+  <span class="sr-only">{agent.name}</span>
+  <AgentAvatarWithState
     agentId={agent.agentId}
     size={32}
     state={avatarState}
     specialist={agent.specialist as 'spec-writer' | 'implementor' | 'verifier' | null}
   />
-
-  <!-- Status indicator for running agents -->
-  {#if isActive}
-    <div
-      class="status-indicator absolute bottom-0 transform translate-y-1/2 flex items-center justify-center"
-    >
-      {#if agent.activeToolName}
-        {@const toolDisplay = classifyTool(agent.activeToolName, {})}
-        {#if toolDisplay.hidden}
-          <!-- No usable label yet: fall back to the spinner, never an icon-only placeholder -->
-          <Spinner seed={agent.agentId} size={4} />
-        {:else}
-          <Fa icon={toolDisplay.icon} class="w-3 h-3 text-ghost" />
-        {/if}
-      {:else}
-        <Spinner seed={agent.agentId} size={4} />
-      {/if}
-    </div>
-  {:else if $attentionRequest$?.timestamp}
-    <!-- Compact "X ago" for a pending attention request -->
-    <div
-      class="status-indicator absolute bottom-0 transform translate-y-1/2 flex items-center justify-center"
-    >
-      <RelativeTime
-        date={$attentionRequest$.timestamp}
-        compact
-        class="text-ui leading-none {$attentionRequest$.kind === 'blocker'
-          ? 'text-destructive'
-          : 'text-warning'}"
-      />
-    </div>
-  {/if}
 </button>

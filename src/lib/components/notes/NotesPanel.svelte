@@ -92,7 +92,7 @@
         {/each}
       </div>
     {:else if $error$}
-      <div class="text-xs text-destructive-foreground px-1">
+      <div class="text-xs text-error-foreground px-1">
         {$error$}
       </div>
     {:else if filteredNotes.length === 0}

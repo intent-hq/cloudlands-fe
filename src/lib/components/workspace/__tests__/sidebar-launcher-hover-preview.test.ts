@@ -29,28 +29,39 @@ describe('sidebar launcher hover previews', () => {
     );
   });
 
-  it('shows the latest user message and prefers the streaming response', () => {
+  it('shows the wire lastUserMessage and serves the wire lastAgentResponse', () => {
+    // Both previews come from the wire AgentLite fields (PROTOCOL §5.5) —
+    // no stream-buffer override; while streaming the daemon push-applies
+    // lastAgentResponse (~1s agent:stream:activity cadence, monorepo#2843).
     const agent = {
       id: 'agent-1',
-      messages: [
-        {
-          id: 'user-1',
-          role: 'user',
-          timestamp: '2026-07-28T00:00:00.000Z',
-          contentBlocks: [{ type: 'text', text: '[Current view] Review @context[note] this UI' }],
-        },
-        {
-          id: 'assistant-1',
-          role: 'assistant',
-          timestamp: '2026-07-28T00:00:01.000Z',
-          contentBlocks: [{ type: 'text', text: 'Older response' }],
-        },
-      ],
+      messages: [],
+      lastUserMessage: '[Current view] Review @context[note] this UI',
+      lastAgentResponse: 'Wire response',
     } as AgentSession;
 
-    expect(getAgentLauncherPreview(agent, 'Streaming response')).toEqual({
+    expect(getAgentLauncherPreview(agent)).toEqual({
       lastUserMessage: 'Review this UI',
-      response: 'Streaming response',
+      response: 'Wire response',
+    });
+  });
+
+  it('keeps the wire lastAgentResponse while a live tool call is in flight', () => {
+    // getAgentPeekData clears lastResponse in favor of the live tool overlay
+    // (chip-capable surfaces render the tool); this text-only hover card
+    // falls back to the wire lastAgentResponse instead of an empty row.
+    const agent = {
+      id: 'agent-1',
+      messages: [],
+      isStreaming: true,
+      lastToolUse: { name: 'read_file' },
+      lastUserMessage: 'Review this UI',
+      lastAgentResponse: 'Text emitted before the tool call',
+    } as AgentSession;
+
+    expect(getAgentLauncherPreview(agent)).toEqual({
+      lastUserMessage: 'Review this UI',
+      response: 'Text emitted before the tool call',
     });
   });
 
@@ -122,9 +133,8 @@ describe('sidebar launcher hover previews', () => {
 
   it('wraps both agent and note launcher items in rich hover cards', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
-    expect(sidebar).toContain(
-      'selectAgentSessionStreamingContent.select(appStore.state, agent.id)',
-    );
+    expect(sidebar).toContain('getAgentLauncherPreview(agent)');
+    expect(sidebar).not.toContain('selectAgentSessionStreamingContent');
     expect(sidebar).toContain('label: m.chat_agentThread_you_label(),');
     expect(sidebar).toContain('label: m.workspace_fileChanges_agent_label(),');
     expect(sidebar).toContain('rows={[{ text: getNoteLauncherPreview(note) }]}');
@@ -135,8 +145,8 @@ describe('sidebar launcher hover previews', () => {
     expect(sidebar).toContain('open={openLauncherHoverKey === `agent:${agent.id}`}');
     expect(sidebar).toContain('open={openLauncherHoverKey === `note:${note.id}`}');
     expect(sidebar).toContain(
-      'isolate grid h-7 w-full min-w-0 grid-flow-col items-start overflow-visible',
+      'isolate grid h-9 w-full min-w-0 grid-flow-col items-start overflow-visible',
     );
-    expect(sidebar).toContain('data-launcher-pack="bounded-distribution"');
+    expect(sidebar).toContain('data-launcher-pack="left"');
   });
 });

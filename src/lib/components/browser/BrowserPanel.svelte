@@ -9,24 +9,18 @@
    * - Highlights the currently focused browser tab's URL
    */
   import { Input } from '$lib/components/ui/input';
-  import {
-  ListContainer,
-  ListItem,
-} from '$lib/components/ui/list';
+  import { ListContainer, ListItem } from '$lib/components/ui/list';
   import { cn } from '$lib/utils';
 
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
   import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
-  addRecentUrl,
-  removeRecentUrl,
-  clearRecentUrls,
-  initBrowserWorkspace,
-} from '$store/renderer/slices/browser/browser-slice';
-  import {
-  faGlobe,
-  faTimes,
-} from '@fortawesome/free-solid-svg-icons';
+    addRecentUrl,
+    removeRecentUrl,
+    clearRecentUrls,
+    initBrowserWorkspace,
+  } from '$store/renderer/slices/browser/browser-slice';
+  import { faGlobe, faTimes } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '../ui/button/button.svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -87,7 +81,9 @@
     }
 
     inputError = '';
-    appStore.dispatch(addRecentUrl(workspaceId, normalized, undefined, undefined, new Date().toISOString()));
+    appStore.dispatch(
+      addRecentUrl(workspaceId, normalized, undefined, undefined, new Date().toISOString()),
+    );
     onOpenUrl(normalized);
     urlInput = '';
   }
@@ -106,7 +102,9 @@
 
   // Handle clicking a recent URL
   function handleUrlClick(url: string) {
-    appStore.dispatch(addRecentUrl(workspaceId, url, undefined, undefined, new Date().toISOString())); // Move to top of recents
+    appStore.dispatch(
+      addRecentUrl(workspaceId, url, undefined, undefined, new Date().toISOString()),
+    ); // Move to top of recents
     onOpenUrl(url);
   }
 
@@ -147,7 +145,9 @@
       const b = new URL(focusedBrowserUrl);
       // Compare origin + pathname (ignoring trailing slash)
       const normalizePathname = (p: string) => (p.endsWith('/') ? p.slice(0, -1) : p);
-      return a.origin === b.origin && normalizePathname(a.pathname) === normalizePathname(b.pathname);
+      return (
+        a.origin === b.origin && normalizePathname(a.pathname) === normalizePathname(b.pathname)
+      );
     } catch {
       // Fallback to simple string comparison
       return url === focusedBrowserUrl;
@@ -179,14 +179,16 @@
       </Button>
     </div>
     {#if inputError}
-      <p class="text-xs text-destructive-foreground mt-1">{inputError}</p>
+      <p class="text-xs text-error-foreground mt-1">{inputError}</p>
     {/if}
   </div>
 
   <!-- Recent URLs -->
   {#if $recentUrls$.length > 0}
     <div class="flex items-center justify-between px-4 py-1">
-      <span class="text-ui uppercase tracking-wider text-muted-foreground">{m.browser_panel_recent_label()}</span>
+      <span class="text-ui uppercase tracking-wider text-muted-foreground"
+        >{m.browser_panel_recent_label()}</span
+      >
       <button
         type="button"
         class="text-ui text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
@@ -210,7 +212,7 @@
           />
           <button
             type="button"
-            class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/url:opacity-100 p-1 text-muted-foreground hover:text-destructive-foreground transition-all cursor-pointer"
+            class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/url:opacity-100 p-1 text-muted-foreground hover:text-error-foreground transition-all cursor-pointer"
             onclick={(e) => handleDeleteUrl(e, entry.url)}
             title={m.browser_panel_remove_tooltip()}
           >

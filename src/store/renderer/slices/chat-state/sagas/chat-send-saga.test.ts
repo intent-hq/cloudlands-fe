@@ -153,6 +153,50 @@ describe('chatSendSaga', () => {
     __resetAgentQueueReadServiceForTests();
   });
 
+  it.each([
+    { mode: 'text-only', text: 'hello', fileBlocks: undefined },
+    {
+      mode: 'attachment-only',
+      text: '',
+      fileBlocks: [
+        {
+          type: 'file' as const,
+          attachmentId: 'att-uuid-1',
+          fileName: 'dump.har',
+          mimeType: 'application/json',
+          size: 42,
+        },
+      ],
+    },
+    {
+      mode: 'mixed',
+      text: 'inspect this',
+      fileBlocks: [
+        {
+          type: 'file' as const,
+          attachmentId: 'att-uuid-1',
+          fileName: 'dump.har',
+          mimeType: 'application/json',
+          size: 42,
+        },
+      ],
+    },
+  ])('accepts a $mode message', async ({ text, fileBlocks }) => {
+    mocks.send.mockResolvedValue(undefined);
+    const run = harness();
+    run.channel.put(sendMessage(AGENT, { wsId: WS, text, fileBlocks }));
+    await settle();
+
+    expect(mocks.send).toHaveBeenCalledWith(
+      AGENT,
+      text,
+      expect.objectContaining({ id: WS }),
+      expect.objectContaining({ fileBlocks }),
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('sends exact lifecycle options while processing same-agent work FIFO', async () => {
     let resolveFirst!: () => void;
     mocks.send
@@ -465,9 +509,9 @@ describe('chatSendSaga', () => {
     expect(run.dispatch).toHaveBeenCalledWith(
       chatQueuedRetryRecordSet(AGENT, 'queued-superseded', { text: 'later' }, 'turn-superseded'),
     );
-    expect(
-      run.dispatch.mock.calls.some(([action]) => action.type === replaceAgentQueue.type),
-    ).toBe(false);
+    expect(run.dispatch.mock.calls.some(([action]) => action.type === replaceAgentQueue.type)).toBe(
+      false,
+    );
     // The guard trip must be followed by a reconciling hydrate: client-side
     // apply order cannot rank the superseding snapshot against the echo, so
     // the daemon's true queue is re-read instead of trusting either side
@@ -512,14 +556,14 @@ describe('chatSendSaga', () => {
       },
     ];
 
-    // Direct send: fileBlocks reach sendAgentMessage's options verbatim.
+    // Direct attachment-only send: fileBlocks reach sendAgentMessage's options verbatim.
     mocks.send.mockResolvedValue(undefined);
     const directRun = harness();
-    directRun.channel.put(sendMessage(AGENT, { wsId: WS, text: 'see file', fileBlocks }));
+    directRun.channel.put(sendMessage(AGENT, { wsId: WS, text: '', fileBlocks }));
     await settle();
     expect(mocks.send).toHaveBeenCalledWith(
       AGENT,
-      'see file',
+      '',
       expect.objectContaining({ id: WS }),
       expect.objectContaining({ fileBlocks }),
     );
@@ -537,15 +581,15 @@ describe('chatSendSaga', () => {
     const queueRun = harness(
       session({ status: AgentStatus.Active, isStreaming: true, isProcessing: true }),
     );
-    queueRun.channel.put(sendMessage(AGENT, { wsId: WS, text: 'later file', fileBlocks }));
+    queueRun.channel.put(sendMessage(AGENT, { wsId: WS, text: '', fileBlocks }));
     await settle();
-    expect(mocks.queue).toHaveBeenCalledWith(AGENT, 'later file', { fileBlocks });
+    expect(mocks.queue).toHaveBeenCalledWith(AGENT, '', { fileBlocks });
     expect(mocks.send).not.toHaveBeenCalled();
     expect(queueRun.dispatch).toHaveBeenCalledWith(
       chatQueuedRetryRecordSet(
         AGENT,
         'queued-1',
-        { text: 'later file', options: { fileBlocks } },
+        { text: '', options: { fileBlocks } },
         'turn-queued',
       ),
     );
@@ -556,15 +600,13 @@ describe('chatSendSaga', () => {
     // Retry: the recorded attempt's fileBlocks are resent.
     mocks.send.mockResolvedValue(undefined);
     const retryRun = harness();
-    retryRun.setChat(
-      chatLastAttemptedMessageSet(AGENT, { text: 'see file', options: { fileBlocks } }),
-    );
+    retryRun.setChat(chatLastAttemptedMessageSet(AGENT, { text: '', options: { fileBlocks } }));
     const retry = agentSessionRetryLastMessageRequested(AGENT, WS);
     retryRun.channel.put(retry);
     await expect(retry.promise).resolves.toBeUndefined();
     expect(mocks.send).toHaveBeenCalledWith(
       AGENT,
-      'see file',
+      '',
       expect.objectContaining({ id: WS }),
       expect.objectContaining({ fileBlocks }),
     );

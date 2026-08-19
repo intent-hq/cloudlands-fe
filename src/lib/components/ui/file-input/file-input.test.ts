@@ -87,7 +87,7 @@ describe('FileInput', () => {
     expect(getByRole('status').textContent).toContain('workspace-rules.json');
     expect(getByRole('alert').textContent).toContain('invalid');
     expect(input.getAttribute('aria-invalid')).toBe('true');
-    expect(getByRole('alert').className).toContain('text-destructive-foreground');
+    expect(getByRole('alert').className).toContain('text-error-foreground');
   });
 
   it('renders invalid text and control boundaries with AA semantic contrast', () => {
@@ -104,7 +104,7 @@ describe('FileInput', () => {
     expect(getByRole('button').className.split(/\s+/)).toContain(
       'aria-invalid:border-destructive-foreground',
     );
-    expect(getByRole('alert').className.split(/\s+/)).toContain('text-destructive-foreground');
+    expect(getByRole('alert').className.split(/\s+/)).toContain('text-error-foreground');
 
     const css = readFileSync(resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
     for (const mode of ['light', 'dark'] as const) {

@@ -130,7 +130,7 @@ describe('UI component inventory gate', () => {
       'src/lib/components/file-tracking/CodeChangesPanel.svelte',
       'src/lib/components/settings/ColorThemeSettings.svelte',
     ]);
-    expect(dropdownMenu?.callers).toHaveLength(16);
+    expect(dropdownMenu?.callers).toHaveLength(17);
     expect(dropdownMenu?.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');
     expect(buildUiComponentInventory().components).toEqual(components);
   });

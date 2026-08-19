@@ -207,7 +207,7 @@ vi.mock('$lib/components/chat/AttachmentPreview.svelte', async () => ({
   default: (await import('../../workspace/initializer/__tests__/mocks/MockComponent.svelte'))
     .default,
 }));
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
   default: (await import('../../workspace/initializer/__tests__/mocks/MockComponent.svelte'))
     .default,
 }));

@@ -15,15 +15,17 @@ import {
 import {
   closePanel,
   closeActiveTab,
+  openBlankWorkingPanel,
   reopenClosedTab,
-  splitPanel,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { selectPanelStackDirection } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
   selectPanels,
   selectFocusedPanelId,
   selectRecentlyClosed,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+import { toggleSidebar } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 import { resolveEmptyWindowDestination } from './empty-window-destination';
 import type { KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
 import { m } from '$shared/paraglide/messages.js';
@@ -65,8 +67,9 @@ interface WorkspaceTabNavigationStore {
       | ReturnType<typeof reopenLastClosedWorkspaceTab>
       | ReturnType<typeof closePanel>
       | ReturnType<typeof closeActiveTab>
+      | ReturnType<typeof openBlankWorkingPanel>
       | ReturnType<typeof reopenClosedTab>
-      | ReturnType<typeof splitPanel>,
+      | ReturnType<typeof toggleSidebar>,
   ): unknown;
 }
 
@@ -227,8 +230,7 @@ export function reopenPanelOrWorkspaceTab(
 }
 
 /**
- * Cmd+T: open an empty new panel next to the focused panel on the
- * current workspace route.
+ * Cmd+T: clear or create the reusable working panel on the current workspace route.
  */
 export function openNewPanel(
   store: WorkspaceTabNavigationStore,
@@ -238,14 +240,13 @@ export function openNewPanel(
   const workspaceId = match && match[1] !== 'new' ? match[1] : null;
   if (!workspaceId) return null;
 
-  const panels = selectPanels.select(store.state, workspaceId);
-  const panelIds = Object.keys(panels);
-  const focusedPanelId = selectFocusedPanelId.select(store.state, workspaceId);
-  const targetId =
-    focusedPanelId && panels[focusedPanelId] ? focusedPanelId : panelIds[panelIds.length - 1];
-  const action = splitPanel(workspaceId, targetId, 'horizontal');
+  const action = openBlankWorkingPanel(
+    workspaceId,
+    undefined,
+    selectPanelStackDirection.select(store.state),
+  );
   store.dispatch(action);
-  return action.payload.newPanelId;
+  return selectFocusedPanelId.select(store.state, workspaceId);
 }
 
 export function selectWorkspaceTabByPosition(
@@ -272,6 +273,7 @@ export function registerWorkspaceTabShortcuts({
   toggleWorkspaceViewMode,
 }: RegisterWorkspaceTabShortcutsOptions): void {
   const mod = isMac ? { meta: true } : { ctrl: true };
+  const sidebarChord = getShortcutChord('TOGGLE_SIDEBAR', isMac);
   const workspaceViewModeChord = getShortcutChord('WORKSPACE_VIEW_MODE', isMac);
   const withRoute = (action: (currentPath: string) => unknown) => () => action(getCurrentPath());
 
@@ -281,6 +283,12 @@ export function registerWorkspaceTabShortcuts({
     global: true,
     description: m.workspace_shortcuts_newSpace_description(),
     action: openNewWorkspace,
+  });
+  register({
+    ...sidebarChord,
+    global: true,
+    description: SHORTCUTS.TOGGLE_SIDEBAR.label,
+    action: () => store.dispatch(toggleSidebar()),
   });
   register({
     ...workspaceViewModeChord,

@@ -99,7 +99,11 @@ function* syncThemeManager(manager: ThemeManager) {
   yield* put(setThemePreference(snapshot.preference));
   yield* put(setThemeName(snapshot.name));
   yield* put(setThemeCustomization(snapshot.customization));
-  yield* call(syncWindowTheme, snapshot.preference);
+  const nativeTheme =
+    snapshot.customization.hasCustomTheme && snapshot.customization.activePresetId === null
+      ? snapshot.name
+      : snapshot.preference;
+  yield* call(syncWindowTheme, nativeTheme);
 }
 
 function withSuppressedListener(operation: () => void): void {

@@ -58,7 +58,7 @@
 </script>
 
 <div
-  class="group/launcher relative flex h-11 min-w-0 w-full cursor-pointer items-center overflow-hidden rounded-lg border border-border bg-card px-3 text-foreground transition-colors"
+  class="group/launcher relative flex h-11 min-w-0 w-full cursor-pointer items-center overflow-hidden rounded-lg border border-border bg-sidebar px-3 text-foreground transition-colors"
   data-sidebar-launcher="browser"
   data-sidebar-card-surface
 >

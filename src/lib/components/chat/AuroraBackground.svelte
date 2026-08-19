@@ -3,7 +3,7 @@
    * Aurora Background Component
    *
    * Creates a subtle WebGL-powered northern lights effect that appears behind
-   * the chat input when streaming. Uses colors from the AuggieAvatar palette
+   * the chat input when streaming. Uses the seeded agent color palette
    * seeded by the agent ID for consistency.
    *
    * Performance optimizations:
@@ -14,7 +14,7 @@
    */
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
-  import { colors } from '$features/agent/components/auggie-avatar/avatar-constants';
+  import { agentColorPalette } from '$lib/utils/agent-colors';
   import { stringToSeededRandom } from '$lib/utils/hash';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
 
@@ -135,7 +135,7 @@
   // Generate colors based on agent ID seed - pick one base color and hue shift
   function getAuroraColors(seed: string): [string, string, string] {
     const random = stringToSeededRandom(seed);
-    const baseColor = random.pick(colors);
+    const baseColor = random.pick([...agentColorPalette]);
     // Small hue shifts to keep colors in similar range (like avatar does with 30deg)
     const color2 = hueShiftColor(baseColor, 15);
     const color3 = hueShiftColor(baseColor, -10);
@@ -294,7 +294,7 @@
         0.15 + sin(time * 0.8 + r1) * 0.35 + cos(time * 0.5 + r1) * 0.15,
         0.25 + cos(time * 0.7 + r1) * 0.4
       );
-      float b1 = blob(uv, c1, 0.5);
+      float b1 = blob(uv, c1, 0.56);
       b1 *= 0.6 + fbm(uv * 2.5 + time * 0.6 + r1) * 0.6;
 
       // Blob 2 - sweeps across
@@ -302,7 +302,7 @@
         0.85 + cos(time * 0.7 + r2) * 0.4,
         0.3 + sin(time * 0.65 + r2) * 0.45
       );
-      float b2 = blob(uv, c2, 0.45);
+      float b2 = blob(uv, c2, 0.504);
       b2 *= 0.6 + fbm(uv * 2.8 + time * 0.5 + r2) * 0.6;
 
       // Blob 3 - circular orbit
@@ -310,7 +310,7 @@
         0.35 + sin(time * 0.9 + r3) * 0.3,
         0.2 + cos(time * 0.85 + r3) * 0.4
       );
-      float b3 = blob(uv, c3, 0.55);
+      float b3 = blob(uv, c3, 0.616);
       b3 *= 0.6 + fbm(uv * 2.2 + time * 0.55 + r3) * 0.6;
 
       // Blob 4 - figure 8 motion
@@ -318,7 +318,7 @@
         0.5 + sin(time * 1.0 + r4) * 0.35,
         0.35 + sin(time * 2.0 + r4) * 0.25
       );
-      float b4 = blob(uv, c4, 0.48);
+      float b4 = blob(uv, c4, 0.538);
       b4 *= 0.6 + fbm(uv * 3.0 + time * 0.6 + r4) * 0.6;
 
       // Blob 5 - opposite phase
@@ -326,7 +326,7 @@
         0.65 + cos(time * 0.85 + r5) * 0.35,
         0.28 + sin(time * 0.75 + r5) * 0.4
       );
-      float b5 = blob(uv, c5, 0.42);
+      float b5 = blob(uv, c5, 0.47);
       b5 *= 0.6 + fbm(uv * 2.6 + time * 0.5 + r5) * 0.6;
 
       // Mix 5 colors with their blob weights

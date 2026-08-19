@@ -11,7 +11,7 @@
   import { slide } from 'svelte/transition';
   import { invoke } from '$lib/electron-bridge';
   import { parseSemanticId, getSemanticId } from '$shared/types/notes-primitives';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { onMount } from 'svelte';
@@ -221,7 +221,7 @@
             }}
             title={m.notes_referenceBlock_viewAgent_tooltip()}
           >
-            <AuggieAvatar agentId={linkedAgentId} size={16} />
+            <AgentAvatar agentId={linkedAgentId} size={16} />
           </button>
         {:else}
           <Fa icon={faCode} size="xs" class="shrink-0 text-muted-foreground" />

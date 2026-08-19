@@ -9,7 +9,9 @@
   import Fa from 'svelte-fa';
   import { faArrowRight } from '@fortawesome/free-solid-svg-icons';
   import { faFile } from '@fortawesome/free-regular-svg-icons';
+  import { formatInteger } from '$lib/i18n/format';
   import type { AgentMessage } from '$shared/types';
+  import { m } from '$shared/paraglide/messages.js';
   import {
     getFileChangesFromMessages,
     getFileChangesFromMessage,
@@ -22,6 +24,14 @@
     type JsonValue,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
+  import {
+    CHAT_OPERATIONAL_CONTAINER_CLASS,
+    CHAT_OPERATIONAL_ICON_CLASS,
+    CHAT_OPERATIONAL_LEADING_CLASS,
+    CHAT_OPERATIONAL_ROW_CLASS,
+    CHAT_OPERATIONAL_SUMMARY_CLASS,
+    CHAT_OPERATIONAL_TRAILING_CLASS,
+  } from './operational-disclosure-row';
 
   interface Props {
     /** Workspace that owns this conversation */
@@ -40,6 +50,8 @@
     agentId?: string;
     /** Turn number within the conversation */
     turnNumber?: number;
+    /** Keep the production row inert in deterministic catalog previews. */
+    readOnly?: boolean;
   }
 
   let {
@@ -51,6 +63,7 @@
     isStreaming = false,
     agentId,
     turnNumber,
+    readOnly = false,
   }: Props = $props();
 
   function createMessageSummaryMemo() {
@@ -89,11 +102,17 @@
   // Only show if there are changes
   let hasChanges = $derived(summary.totalFiles > 0);
 
-  let displayLabel = $derived(
-    `${summary.totalFiles} file${summary.totalFiles !== 1 ? 's' : ''} changed${suffix ? ` ${suffix}` : ''}`,
-  );
+  let displayLabel = $derived.by(() => {
+    const count = formatInteger(summary.totalFiles);
+    const filesChanged =
+      summary.totalFiles === 1
+        ? m.chat_changesPanel_filesChanged_one({ count })
+        : m.chat_changesPanel_filesChanged_many({ count });
+    return `${filesChanged}${suffix ? ` ${suffix}` : ''}`;
+  });
 
   function handleClick(event: MouseEvent) {
+    if (readOnly) return;
     // Navigate to chat changes view
     // Pass message reference for reactive updates during streaming
     const sourcePanelId = (event.currentTarget as HTMLElement)
@@ -117,25 +136,33 @@
 </script>
 
 {#if hasChanges}
-  <div class="mt-4 w-full {isAggregate ? 'mb-1' : ''}" data-testid="file-changes-surface">
+  <div
+    class="{CHAT_OPERATIONAL_CONTAINER_CLASS} mt-4 {isAggregate ? 'mb-1' : ''}"
+    data-chat-operational-row
+    data-testid="file-changes-surface"
+  >
     <button
+      type="button"
       onclick={handleClick}
-      class="type-caption group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1.5 py-1 text-muted-foreground transition-colors duration-[var(--motion-fast)] hover:bg-muted/30 hover:text-foreground"
+      aria-disabled={readOnly}
+      tabindex={readOnly ? -1 : undefined}
+      class="{CHAT_OPERATIONAL_ROW_CLASS} group cursor-pointer text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      data-operational-disclosure-row
+      data-compact-tool-row
     >
-      <div class="flex min-w-0 flex-1 items-center gap-2">
-        <Fa icon={faFile} class="w-4 shrink-0 opacity-40" size="xs" />
-        <span class="truncate min-w-0 text-left flex-1">
-          {displayLabel}
-        </span>
+      <span class={CHAT_OPERATIONAL_LEADING_CLASS} data-operational-leading>
+        <Fa icon={faFile} class={CHAT_OPERATIONAL_ICON_CLASS} />
+      </span>
+      <span class={CHAT_OPERATIONAL_SUMMARY_CLASS} data-operational-summary>
+        {displayLabel}
+      </span>
 
-        <!-- <LineChangesBadge
-          additions={summary.totalAdditions}
-          deletions={summary.totalDeletions}
-          size="xs"
-        /> -->
-      </div>
-
-      <Fa icon={faArrowRight} class="opacity-30 w-3 h-3 shrink-0 transition-colors" />
+      <span class={CHAT_OPERATIONAL_TRAILING_CLASS} data-operational-trailing>
+        <Fa
+          icon={faArrowRight}
+          class="h-3.5! w-3.5! shrink-0 opacity-30 transition-opacity group-hover:opacity-50"
+        />
+      </span>
     </button>
   </div>
 {/if}

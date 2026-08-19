@@ -23,6 +23,9 @@
   import { Button } from '$lib/components/ui/button';
   import AgentCard from './AgentCard.svelte';
   import InlineAgentAvatar from './InlineAgentAvatar.svelte';
+  import AgentAvatarStack, {
+    type AgentAvatarStackItem,
+  } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import {
     groupDoneCount,
     isGroupDeliveryPending,
@@ -38,6 +41,7 @@
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_ICON_CLASS,
+    SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
   } from './subscription-disclosure';
 
   interface Props {
@@ -69,6 +73,9 @@
   const orderedAgentIds = $derived(
     sortWorkingAgentsFirst(group.expectedAgentIds, completedAgentIdSet),
   );
+  const orderedAgentStackItems = $derived(
+    orderedAgentIds.map((agentId): AgentAvatarStackItem => ({ key: agentId, agentId })),
+  );
   const doneCount = $derived(groupDoneCount(group));
   const totalCount = $derived(uniqueAgentIds(group.expectedAgentIds).length);
   const remainingCount = $derived(Math.max(0, totalCount - doneCount));
@@ -88,12 +95,12 @@
   data-testid="delegation-group-section"
 >
   <div
-    class="flex min-h-9 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3 py-2 text-sm text-subtle"
+    class="flex min-h-9 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3 py-2 {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
     data-testid="delegation-group-header"
   >
     <button
       type="button"
-      class="flex min-w-0 flex-1 items-center gap-1.5 rounded border-none bg-transparent p-0 text-left font-[inherit] text-subtle cursor-pointer hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      class="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       class:text-warning={deliveryPending}
       data-testid="group-summary-toggle"
       aria-expanded={!isCollapsed}
@@ -125,24 +132,25 @@
     <!-- Inline agent avatars when collapsed -->
     {#if isCollapsed}
       <div
-        class="flex min-w-0 shrink items-center -space-x-1.5 overflow-hidden"
+        class="min-w-0 shrink overflow-hidden"
         data-testid="group-avatar-strip"
         transition:fade={{ duration: 150 }}
       >
-        {#each orderedAgentIds.slice(0, 5) as agentId (agentId)}
-          <div animate:flip={{ duration: 200 }}>
-            <InlineAgentAvatar
-              {agentId}
-              {workspace}
-              isCompleted={completedAgentIdSet.has(agentId)}
-            />
-          </div>
-        {/each}
-        {#if orderedAgentIds.length > 5}
-          <span class="text-ui text-subtle pl-2">
-            +{orderedAgentIds.length - 5}
-          </span>
-        {/if}
+        {#snippet delegationAvatar(item: AgentAvatarStackItem)}
+          <InlineAgentAvatar
+            agentId={item.agentId}
+            {workspace}
+            isCompleted={completedAgentIdSet.has(item.agentId)}
+          />
+        {/snippet}
+        <AgentAvatarStack
+          items={orderedAgentStackItems}
+          maxVisible={5}
+          adaptive
+          interactive
+          variant="standard"
+          itemContent={delegationAvatar}
+        />
       </div>
     {/if}
 
@@ -211,6 +219,7 @@
       <span class="inline-flex" data-testid="group-chevron">
         <Fa
           icon={faChevronDown}
+          size={16}
           class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {isCollapsed
             ? 'rotate-90'
             : ''}"
@@ -223,13 +232,13 @@
   {#if !isCollapsed}
     <div
       id={agentListId}
-      class="flex w-full min-w-0 max-w-full flex-col gap-0.5 overflow-hidden border-t border-border/40 pt-1.5 pr-2 pb-0.5 pl-4.5 font-family-child"
+      class="flex w-full min-w-0 max-w-full flex-col gap-0.5 overflow-hidden border-t border-border pt-1.5 pr-2 pb-0.5 pl-4.5 font-family-child"
       data-testid="delegation-group-agent-list"
       transition:safeSubscriptionSlide
     >
       {#each orderedAgentIds.slice(0, 5) as agentId (agentId)}
         <div
-          class="w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 pt-0.5 first:border-t-0 first:pt-0"
+          class="w-full min-w-0 max-w-full overflow-hidden border-t border-border pt-0.5 first:border-t-0 first:pt-0"
           animate:flip={{ duration: 200 }}
           transition:safeSlide={{ axis: 'y', duration: 200 }}
         >

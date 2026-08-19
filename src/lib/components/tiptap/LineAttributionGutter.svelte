@@ -29,7 +29,7 @@
   import { listenSync } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
   import type { WorkspaceId, NoteId } from '$shared/types';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -498,7 +498,7 @@
         style:top="{span.labelTop - span.top}px"
       >
         {#if span.author?.type === 'agent'}
-          <AuggieAvatar size={20} agentId={span.author.id} />
+          <AgentAvatar size={20} agentId={span.author.id} />
         {/if}
         <div class="flex flex-col gap-0.5 text-right">
           <div>{formatTimestamp(span.timestamp)}</div>

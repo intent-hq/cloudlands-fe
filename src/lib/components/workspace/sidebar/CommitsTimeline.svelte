@@ -44,7 +44,7 @@
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import type { UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
@@ -761,7 +761,7 @@
                 size={12}
                 class="text-subtle shrink-0 transition-transform {isExpanded
                   ? 'rotate-0'
-                  : '-rotate-90'}"
+                  : 'rotate-90'}"
               />
               {#if commitFiles.length > 0}
                 <LineChangesBadge
@@ -775,7 +775,7 @@
             <!-- Show auggie avatar instead of commit icon when made by an agent - hides on hover to show chevron -->
             {#if commit.agentId}
               <span class="shrink-0 group-hover:opacity-0 transition-opacity pointer-events-none">
-                <AuggieAvatar agentId={commit.agentId} size={14} class="mr-[-2px]" />
+                <AgentAvatar agentId={commit.agentId} size={14} class="mr-[-2px]" />
               </span>
             {:else}
               <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
@@ -947,12 +947,12 @@
             <Fa
               icon={faChevronDown}
               size="xs"
-              class="opacity-50 transition-transform {olderCommits.length > 0 ? 'rotate-180' : ''}"
+              class="opacity-50 transition-transform {olderCommits.length > 0 ? '' : 'rotate-90'}"
             />
           {/if}
         </span>
       </div>
-      <div class="absolute top-4.5 left-0 right-0 flex-1 border-t border-border/50"></div>
+      <div class="absolute top-4.5 left-0 right-0 flex-1 border-t border-border"></div>
     </button>
   {/if}
 
@@ -988,7 +988,7 @@
                 size={12}
                 class="text-subtle shrink-0 transition-transform {isExpanded
                   ? 'rotate-0'
-                  : '-rotate-90'}"
+                  : 'rotate-90'}"
               />
               {#if commitFiles.length > 0}
                 <LineChangesBadge

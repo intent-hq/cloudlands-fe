@@ -134,7 +134,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('data-testid="sidebar-launchers"');
     expect(sidebar).toContain('data-launcher-layout="tiles"');
     expect(sidebar).toContain('h-56 w-full auto-rows-fr grid-cols-2 gap-3');
-    expect(sidebar).toContain('rounded-lg border border-border bg-card p-2 text-foreground');
+    expect(sidebar).toContain('rounded-lg border border-border bg-sidebar p-2 text-foreground');
     expect(sidebar).toContain('data-sidebar-overlay');
     expect(sidebar).toContain('sidebar-expanded-card relative');
     expect(tabs).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
@@ -156,8 +156,8 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('data-sidebar-context={note.id}');
     expect(sidebar).not.toContain('data-sidebar-change={changePath}');
     expect(sidebar).toContain('const LAUNCHER_ICON_LIMIT = 6');
-    expect(sidebar).toContain('grid h-7 w-full min-w-0 grid-flow-col items-start overflow-visible');
-    expect(sidebar).toContain('data-launcher-pack="bounded-distribution"');
+    expect(sidebar).toContain('grid h-9 w-full min-w-0 grid-flow-col items-start overflow-visible');
+    expect(sidebar).toContain('data-launcher-pack="left"');
     expect(sidebar).toContain('deriveAgentLauncherItems(');
     expect(sidebar).toContain('LAUNCHER_ICON_LIMIT,');
     expect(sidebar).toContain('deriveNoteLauncherItems(');
@@ -172,10 +172,10 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('m.ui_openCombo_openInApp_tooltip()');
     expect(sidebar).not.toContain('m.ui_openCombo_open_label()');
     expect(sidebar).not.toContain('faChevronDown');
-    expect(sidebar).toContain('onclick={() => handleOpenAgentInPanel(agent.id)}');
+    expect(sidebar).toContain('handleOpenAgentInPanel(agent.id);');
     expect(sidebar).toContain('onclick={() => handleOpenNoteInPanel(note.id as string)}');
     expect(sidebar).toContain('rounded-sm outline-none transition-colors');
-    expect(sidebar).toContain('rounded-lg border border-border bg-card');
+    expect(sidebar).toContain('rounded-lg border border-border bg-sidebar');
     expect(sidebar).not.toContain('focus-visible:ring-0');
   });
 

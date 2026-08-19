@@ -45,7 +45,7 @@
     faBoxOpen,
     faCheck,
     faChevronDown,
-    faChevronRight,
+    faChevronLeft,
     faCode,
     faFile,
     faFolder,
@@ -770,7 +770,7 @@
         <span class="truncate min-w-0" title={action.label}>{action.label}</span>
         {#if action.submenu}
           <Fa
-            icon={openSubmenuLabel === action.label ? faChevronDown : faChevronRight}
+            icon={openSubmenuLabel === action.label ? faChevronDown : faChevronLeft}
             size="12"
             class="ml-auto opacity-50"
           />

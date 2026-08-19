@@ -44,8 +44,8 @@ vi.mock('$lib/components/settings/mcp/McpIcon.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
-  default: (await import('./mocks/AuggieAvatar.svelte')).default,
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
+  default: (await import('./mocks/AgentAvatar.svelte')).default,
 }));
 
 import ToolCall from '../ToolCall.svelte';
@@ -70,6 +70,8 @@ describe('ToolCall conversation legibility', () => {
     expect(disclosure.getAttribute('title')).toBe('Technical details');
     expect(container.textContent).not.toContain('Details');
     expect(container.querySelector('#tool-details-tool-1')).toBeNull();
+    expect(container.querySelector('[data-operational-chevron]')).toBeNull();
+    expect(container.querySelector('[data-operational-trailing]')).toBeNull();
 
     container.style.width = '120px';
     const row = container.querySelector('[data-conversation-layer="tool-activity"]')!;
@@ -84,6 +86,7 @@ describe('ToolCall conversation legibility', () => {
     await fireEvent.keyDown(disclosure, { key: 'Enter' });
     expect(disclosure.getAttribute('aria-expanded')).toBe('true');
     expect(container.querySelector('#tool-details-tool-1')).toBeTruthy();
+    expect(container.querySelector('[data-operational-chevron]')).toBeNull();
     expect(container.querySelector('[data-conversation-layer="tool-activity"]')).toBeTruthy();
   });
 

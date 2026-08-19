@@ -6,9 +6,10 @@
   import UnsavedIndicator from '$lib/components/ui/indicators/UnsavedIndicator.svelte';
   import AgentBadge from '$lib/components/ui/indicators/AgentBadge.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import AugieAvatarWithState, {
-    type AvatarState,
-  } from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import AgentAvatarStack, {
+    type AgentAvatarStackItem,
+  } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
+  import type { AvatarState } from '$features/agent/components/agent-avatar/avatar-state';
 
   interface RunningAgent {
     agentId: string;
@@ -64,6 +65,14 @@
   }: Props = $props();
 
   let isHovered = $state(false);
+  const runningAgentStackItems = $derived(
+    runningAgents.map(({ agentId, state, specialist }): AgentAvatarStackItem => ({
+      key: agentId,
+      agentId,
+      state,
+      specialist,
+    })),
+  );
 </script>
 
 <!-- svelte-ignore a11y_interactive_supports_focus -->
@@ -74,6 +83,7 @@
   data-tab-id={id}
   aria-selected={active}
   aria-label={m.ui_tab_spaceTab_ariaLabel({ id: id ?? '' })}
+  aria-describedby={runningAgents.length > 2 ? `tab-${id ?? 'untitled'}-agent-overflow` : undefined}
   class={cn(
     'tab-button group/tab-button relative h-9 px-1 text-sm font-medium cursor-pointer',
     active ? 'bg-sidebar text-foreground rounded-t-lg' : '',
@@ -148,18 +158,12 @@
       <div class="flex items-center gap-1 ml-auto">
         <!-- Running/unread agents with avatars -->
         {#if runningAgents.length > 0}
-          <div class="flex items-center -space-x-1">
-            {#each runningAgents.slice(0, 2) as { agentId, state, specialist } (agentId)}
-              <AugieAvatarWithState {agentId} size={14} {state} {specialist} class="" />
-            {/each}
-            {#if runningAgents.length > 2}
-              <div
-                class="flex items-center justify-center w-3.5 h-3.5 text-ui font-medium text-subtle"
-              >
-                +{runningAgents.length - 2}
-              </div>
-            {/if}
-          </div>
+          <AgentAvatarStack
+            items={runningAgentStackItems}
+            maxVisible={2}
+            variant="emphasized"
+            overflowId={`tab-${id ?? 'untitled'}-agent-overflow`}
+          />
         {:else if agentCount > 0}
           <!-- Fallback to agent count badge if no running agents -->
           <AgentBadge count={agentCount} />

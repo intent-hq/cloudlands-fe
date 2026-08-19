@@ -18,11 +18,14 @@ import {
   selectUpdateChannel,
   selectNoteFontStyle,
   selectAgentFontStyle,
+  selectPanelOpenMode,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
   setAgentFontStyle,
   setNoteFontStyle,
+  setPanelOpenMode,
   setUpdateChannel,
+  togglePanelOpenMode,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
   GENERAL_ACCESSIBILITY_FIXTURE,
@@ -90,7 +93,7 @@ let storeContext: ReduxStoreContext | undefined;
 const originalInvoke = window.electronAPI!.invoke;
 let setChannelResponse: { success: boolean; error?: { message: string } };
 
-function renderSettingsTab(tab: 'general' | 'advanced') {
+function renderSettingsTab(tab: 'general' | 'appearance' | 'advanced') {
   window.history.pushState({}, '', `/settings?tab=${tab}`);
   mocks.page.url = new URL(window.location.href);
   return render(SettingsPage, {
@@ -99,6 +102,7 @@ function renderSettingsTab(tab: 'general' | 'advanced') {
 }
 
 const renderGeneral = () => renderSettingsTab('general');
+const renderAppearance = () => renderSettingsTab('appearance');
 const renderAdvanced = () => renderSettingsTab('advanced');
 
 function installDispatchRecorder() {
@@ -133,6 +137,7 @@ beforeEach(() => {
   appStore.dispatch(setUpdateChannel('stable'));
   appStore.dispatch(setNoteFontStyle('monospace'));
   appStore.dispatch(setAgentFontStyle('monospace'));
+  appStore.dispatch(setPanelOpenMode('normal'));
   appStore.dispatch(simulateSetState({ status: 'idle' }));
   vi.clearAllMocks();
   (globalThis as typeof globalThis & { __APP_VERSION__: string }).__APP_VERSION__ = '2.0.10';
@@ -155,7 +160,27 @@ afterAll(() => {
   storeContext = undefined;
 });
 
-describe('General settings migration', () => {
+describe('Settings migration', () => {
+  it('moves the panel-open preference into Appearance settings', async () => {
+    const recorder = installDispatchRecorder();
+    const general = renderGeneral();
+    expect(screen.queryByRole('switch', { name: 'Open new panels pinned' })).toBeNull();
+    general.unmount();
+
+    renderAppearance();
+    const toggle = screen.getByRole('switch', { name: 'Open new panels pinned' });
+
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(toggle);
+
+    await waitFor(() => expect(selectPanelOpenMode.select(appStore.state)).toBe('pin'));
+    expect(recorder.calls).toContainEqual(togglePanelOpenMode());
+    expect(readFileSync('src/lib/components/layout/WindowTitleBar.svelte', 'utf8')).not.toContain(
+      'data-titlebar-panel-open-mode',
+    );
+    recorder.restore();
+  });
+
   it('dispatches the exact Redux update-channel action without a direct backend request', async () => {
     const recorder = installDispatchRecorder();
     renderGeneral();

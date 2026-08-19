@@ -4,21 +4,16 @@
   Tool-call-style display for AI reasoning/thinking content.
 -->
 <script lang="ts">
-  import { safeSlide } from '$lib/utils/animations';
   import Fa from 'svelte-fa';
   import { faBrain } from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import { extractReasoningHeading } from './reasoning-heading';
   import {
-    OPERATIONAL_DISCLOSURE_CLASS,
+    CHAT_OPERATIONAL_ICON_CLASS,
     OPERATIONAL_EXPANDED_CONTENT_CLASS,
-    OPERATIONAL_ICON_BOX_CLASS,
-    OPERATIONAL_ICON_CLASS,
-    OPERATIONAL_PRIMARY_CLASS,
-    OPERATIONAL_ROW_CONTAINER_CLASS,
-    OPERATIONAL_ROW_LINE_CLASS,
-    OPERATIONAL_SUMMARY_CLASS,
   } from './operational-disclosure-row';
+  import ChatOperationalRow from './ChatOperationalRow.svelte';
 
   interface Props {
     content: string;
@@ -27,6 +22,7 @@
     autoExpandWhileStreaming?: boolean;
     workspaceId?: string;
     class?: string;
+    adjacentOperationalRow?: boolean;
   }
 
   let {
@@ -35,6 +31,7 @@
     autoExpandWhileStreaming = true,
     workspaceId,
     class: className = '',
+    adjacentOperationalRow = false,
   }: Props = $props();
 
   // Auto-expand while streaming, collapse when done
@@ -54,54 +51,82 @@
     isExpanded = !isExpanded;
   }
 
-  // Generate a brief summary from the content
-  const summary = $derived.by(() => {
-    if (!content) return m.chat_shared_processing_fallback();
-    // Take first 100 chars, clean up
-    const cleaned = content.replace(/\n+/g, ' ').trim();
-    if (cleaned.length <= 80) return cleaned;
-    return cleaned.substring(0, 80).trim() + '...';
-  });
+  function handleDisclosureKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    toggle();
+  }
+
+  const reasoningContent = $derived(extractReasoningHeading(content));
+  const instanceId = $props.id();
+  const detailsId = `reasoning-details-${instanceId}`;
+  const toggleLabel = $derived(reasoningContent.heading ?? m.chat_thinkingBlock_thinking_label());
 </script>
 
-<div class="{OPERATIONAL_ROW_CONTAINER_CLASS} {className}" data-testid="reasoning-tool-call">
-  <div class={OPERATIONAL_ROW_LINE_CLASS} data-operational-disclosure-row>
-    <span class={OPERATIONAL_ICON_BOX_CLASS} data-operational-icon-box aria-hidden="true">
-      <Fa
-        icon={faBrain}
-        size={14}
-        class="{OPERATIONAL_ICON_CLASS} {isStreaming ? 'animate-pulse' : ''}"
-      />
-    </span>
-    <button
-      class="{OPERATIONAL_DISCLOSURE_CLASS} cursor-pointer"
-      onclick={toggle}
-      aria-expanded={isExpanded}
-    >
-      <span class="shrink-0 whitespace-nowrap {OPERATIONAL_PRIMARY_CLASS}">
-        {isStreaming
-          ? m.chat_thinkingBlock_thinking_label()
-          : m.chat_thinkingBlock_reasoning_label()}
-      </span>
-      {#if !isExpanded}
-        <span class={OPERATIONAL_SUMMARY_CLASS} data-testid="reasoning-summary">{summary}</span>
-      {/if}
-    </button>
-  </div>
+{#snippet leading()}
+  <Fa
+    icon={faBrain}
+    size={16}
+    class="{CHAT_OPERATIONAL_ICON_CLASS} {isStreaming ? 'animate-pulse' : ''}"
+  />
+{/snippet}
 
-  {#if isExpanded}
-    <div
-      class="{OPERATIONAL_EXPANDED_CONTENT_CLASS} type-caption ml-5 text-muted-foreground [&_p]:my-2 [&_p:first-child]:mt-0 [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
-      data-operational-expanded-content
-      transition:safeSlide={{ duration: 150 }}
-    >
-      <MarkdownViewer {content} {isStreaming} {workspaceId} taskBlockRenderMode="content" />
-    </div>
-  {/if}
-</div>
+{#snippet summary()}
+  <span class="min-w-0 truncate whitespace-nowrap font-normal">{toggleLabel}</span>
+{/snippet}
+
+{#snippet details()}
+  <div class="reasoning-expanded-body" data-reasoning-expanded-body>
+    <MarkdownViewer
+      content={reasoningContent.body}
+      {isStreaming}
+      {workspaceId}
+      taskBlockRenderMode="content"
+    />
+  </div>
+{/snippet}
+
+<ChatOperationalRow
+  {leading}
+  {summary}
+  showChevron={false}
+  details={isExpanded ? details : undefined}
+  interactive
+  expanded={isExpanded}
+  controls={detailsId}
+  {detailsId}
+  ariaLabel={toggleLabel}
+  summaryTitle={toggleLabel}
+  onclick={toggle}
+  onkeydown={handleDisclosureKeydown}
+  detailsClass="{OPERATIONAL_EXPANDED_CONTENT_CLASS} pb-2 type-caption text-muted-foreground [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
+  {adjacentOperationalRow}
+  streaming={isStreaming}
+  testId="reasoning-tool-call"
+  disclosureTestId="reasoning-disclosure"
+  summaryTestId="reasoning-summary"
+  class={className}
+/>
 
 <style>
-  .tool-call-container {
-    contain: layout style;
+  .reasoning-expanded-body :global(.markdown-viewer),
+  .reasoning-expanded-body :global(.markdown-viewer > .ProseMirror) {
+    display: flex;
+    flex-direction: column;
+    row-gap: 0.5rem;
+  }
+
+  .reasoning-expanded-body :global(.markdown-viewer > *),
+  .reasoning-expanded-body :global(.markdown-viewer > .ProseMirror > *) {
+    margin-block: 0 !important;
+  }
+
+  .reasoning-expanded-body :global(.markdown-viewer :is(h1, h2, h3, h4, h5, h6):not(:first-child)) {
+    margin-block-start: 1.5rem !important;
+  }
+
+  .reasoning-expanded-body :global(.markdown-viewer :is(br + strong, p > strong:only-child)) {
+    display: block;
+    margin-block-start: 1.5rem;
   }
 </style>

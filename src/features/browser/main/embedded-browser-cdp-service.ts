@@ -462,7 +462,7 @@ class EmbeddedBrowserCdpService {
    *          message reached no window or the tab never mounted within the
    *          bounded wait; throws when workspaceId is missing
    */
-  async focusTab(tabId: string, workspaceId?: string): Promise<boolean> {
+  async focusTab(tabId: string, workspaceId?: string, pin?: boolean): Promise<boolean> {
     if (!tabId) {
       logger.warn('Cannot focus tab - no tabId provided');
       return false;
@@ -478,12 +478,13 @@ class EmbeddedBrowserCdpService {
     const delivery = sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.FOCUS_TAB, {
       tabId,
       workspaceId,
+      ...(pin === undefined ? {} : { pin }),
     });
     if (!delivery.delivered) {
       logger.warn('Focus request for browser tab reached no window', { tabId, workspaceId });
       return false;
     }
-    logger.info('Sent focus request for browser tab', { tabId, workspaceId });
+    logger.info('Sent focus request for browser tab', { tabId, workspaceId, pin });
 
     // Success means "the tab is now addressable": already-mounted tabs
     // resolve immediately, unmounted-but-listed tabs resolve when the

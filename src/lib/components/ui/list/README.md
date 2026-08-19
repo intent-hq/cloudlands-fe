@@ -24,7 +24,7 @@ A flexible list item component with consistent height and spacing.
 - `variant`: "default" | "ghost" | "subtle" - Visual style variant
 - `size`: "sm" | "md" - Size of the item (affects padding, font size, min height)
 - `icon`: FontAwesome icon
-- `iconComponent`: Custom icon component (e.g., AuggieAvatar)
+- `iconComponent`: Custom icon component (e.g., AgentAvatar)
 - `iconProps`: Props to pass to the icon component
 - `title`: Main text content
 - `subtitle`: Secondary text content
@@ -83,7 +83,7 @@ An empty state component for when there are no items.
 
 ```svelte
 <ListItem
-  iconComponent={AuggieAvatar}
+  iconComponent={AgentAvatar}
   iconProps={{ agentId: '123', size: 16 }}
   title="Agent Name"
   subtitle="Last message..."

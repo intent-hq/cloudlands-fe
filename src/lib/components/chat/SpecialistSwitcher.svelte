@@ -1,6 +1,6 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import {
     selectSpecialists,
     filterPickableSpecialists,
@@ -72,7 +72,7 @@
       )}
       title={option.description}
     >
-      <AuggieAvatar seed="blank" size={avatarSize} specialist={option.id} />
+      <AgentAvatar agentId="blank" size={avatarSize} specialist={option.id} />
       <span class={cn('font-medium', textSize)}>{option.name}</span>
     </button>
   {/each}

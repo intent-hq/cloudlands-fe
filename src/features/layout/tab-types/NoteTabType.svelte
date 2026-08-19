@@ -19,7 +19,10 @@
     selectInitialAgentId,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import {
+    selectNoteById,
+    selectWorkspaceNotesState,
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { createNote, deleteNote } from '$features/notes/notes-write-service';
   import { isSpecNote } from '$shared/constants/notes';
   import { invoke } from '$lib/electron-bridge';
@@ -38,6 +41,7 @@
   import { faCheck, faCopy, faNoteSticky, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
+  import NoteContentSurface, { type NoteContentState } from './NoteContentSurface.svelte';
 
   const logger = createLogger('NoteTabType');
 
@@ -51,6 +55,8 @@
 
   // svelte-ignore state_referenced_locally
   const note = selectNoteById(workspaceId, tab.noteId);
+  // svelte-ignore state_referenced_locally
+  const notesState = selectWorkspaceNotesState(workspaceId);
 
   // Version history state
   let showVersionHistory = $state(false);
@@ -128,6 +134,14 @@
     if (MIMIC_SPEC_WRITING) return false;
     if (isSpecNote(tab.noteId)) return !isInitialSpecWriteInProgress;
     return true;
+  });
+
+  const noteContentState = $derived.by<NoteContentState>(() => {
+    if (!tab.noteId) return 'missing';
+    if (!$note) return $notesState.loading || !$notesState.initialized ? 'loading' : 'missing';
+    if (!noteEditable) return 'read-only';
+    if (!$note.content?.trim()) return 'empty';
+    return 'editor';
   });
 
   async function handleCopyNote() {
@@ -242,7 +256,7 @@
   {/if}
 {/snippet}
 
-<div class="h-full bg-background text-foreground" data-note-tab-surface>
+<NoteContentSurface state={noteContentState}>
   {#if tab.noteId}
     {#if !$note}
       <div class="flex flex-col h-full">
@@ -281,4 +295,4 @@
       <p>{m.layout_noteTab_noNoteSelected_label()}</p>
     </div>
   {/if}
-</div>
+</NoteContentSurface>

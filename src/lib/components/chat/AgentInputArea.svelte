@@ -1,16 +1,9 @@
 <script lang="ts">
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
-  import {
-  faStop,
-  faPaperPlane,
-  faPlus,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faStop, faPaperPlane, faPlus } from '@fortawesome/free-solid-svg-icons';
   import type { AgentSession, Workspace } from '$shared/types';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
@@ -60,7 +53,9 @@
   // PERF: Memoized computed values
   // Allow sending with just context references (no text required)
   const canSend = $derived(
-    !disabled && !isProcessing && (currentMessage.trim().length > 0 || contextReferences.length > 0),
+    !disabled &&
+      !isProcessing &&
+      (currentMessage.trim().length > 0 || contextReferences.length > 0),
   );
   const inputDisabled = $derived(disabled || isProcessing);
 
@@ -180,7 +175,7 @@
         >
           <span>{ref.name || ref.type || m.chat_shared_context_fallback()}</span>
           <button
-            class="flex items-center justify-center size-4 p-0 bg-transparent border-none text-muted-foreground cursor-pointer transition-colors hover:text-destructive-foreground"
+            class="flex items-center justify-center size-4 p-0 bg-transparent border-none text-muted-foreground cursor-pointer transition-colors hover:text-error-foreground"
             onclick={() => {
               const newRefs = contextReferences.filter((r) => r !== ref);
               onContextUpdate?.({ references: newRefs });

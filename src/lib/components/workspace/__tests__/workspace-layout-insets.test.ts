@@ -20,9 +20,8 @@ describe('WorkspaceLayout panel insets', () => {
       /\{#if sidebarSide === 'left'\}([\s\S]*?)\{\/if\}/,
     )?.[1];
 
-    expect(rightBranch).toContain(
-      "main-content-area flex h-full min-w-0 z-10 {columnMode ? '' : 'pl-2 sm:pl-3'}",
-    );
+    expect(rightBranch).toContain('main-content-area flex h-full min-w-0 z-10 bg-sidebar');
+    expect(rightBranch).toContain("'pl-2 sm:pl-3'");
     expect(leftBranch).toContain('main-content-area flex h-full min-w-0 z-10');
     expect(leftBranch).not.toContain('sm:pl-3');
   });

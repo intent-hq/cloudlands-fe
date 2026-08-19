@@ -1,19 +1,20 @@
-import { store } from "../../store";
+import { store } from '../../store';
 import {
   AgentStatus,
   type AgentSession,
   type AgentMessage,
   type QueuedMessage,
-} from "$shared/types";
-import { AgentActivationState, getAgentProvider } from "$shared/types/agent-session";
-import { getContentBlockText } from "$shared/utils/content-block-helpers";
+} from '$shared/types';
+import { AgentActivationState, getAgentProvider } from '$shared/types/agent-session';
+import { getContentBlockText } from '$shared/utils/content-block-helpers';
 import {
   getAgentAttentionRequest,
   type AgentAttentionRequest,
-} from "$shared/utils/agent-attention";
-import type { StoredAgentSession } from "./agent-session-types";
-import { selectAgentQueueMessages } from "../agent-queue/agent-queue-selectors";
-import { selectEffectiveDefaultProviderId } from "../provider-catalog/provider-catalog-selectors";
+} from '$shared/utils/agent-attention';
+import { isAgentBlockedWaitingState, isAgentRunningState } from '$shared/utils/agent-runtime-state';
+import type { StoredAgentSession } from './agent-session-types';
+import { selectAgentQueueMessages } from '../agent-queue/agent-queue-selectors';
+import { selectEffectiveDefaultProviderId } from '../provider-catalog/provider-catalog-selectors';
 
 // ============================================================================
 // Internal helpers
@@ -112,64 +113,20 @@ function isAgentWaiting(stored: StoredAgentSession): boolean {
 }
 
 /**
- * Whether the turn is live in the daemon's sense — `isResponding` or the
- * transient FE-owned send signals. `isWaitingOnTool` is deliberately excluded:
- * it is the discriminator the blocked-waiting predicate below tests against.
- */
-function isTurnInFlight(stored: StoredAgentSession): boolean {
-  return (
-    stored.isResponding === true ||
-    stored.isStreaming === true ||
-    stored.isProcessing === true
-  );
-}
-
-/**
- * Waiting state that genuinely blocks on someone else — the hourglass
- * indicator. It is the BE-owned waiting signals MINUS the ones a live turn
- * contradicts:
- *
- * - `isWaitingForOtherAgents` is the daemon's explicit peer/child pause and
- *   can legitimately hold mid-turn, so it counts unconditionally. A wake
- *   clears the parked flag in the reducer (`chatQueueProcessingReceived`,
- *   and the running-transition clear in `updateSessionFields`).
- * - `isWaitingOnTool` on an in-flight turn is the agent executing a tool —
- *   work, not a block.
- * - A `Waiting` STATUS is a coarse between-turns marker with no dedicated
- *   clear path of its own: the daemon revises it on the next
- *   `agent:status-changed`, which is exactly the signal that can lag a
- *   turn start (a queue drain opens the busy flags before it lands). So it
- *   only counts when no turn is in flight; the dedicated flags above still
- *   raise the hourglass for a genuine mid-turn block.
+ * Purple waiting is an explicit Waiting status or peer/child pause with no
+ * active turn. `turnInFlight`, the sticky `liveTurnOpen`, runtime flags, and
+ * `isWaitingOnTool` all win because they describe work that is still running.
  */
 function isAgentBlockedWaiting(stored: StoredAgentSession): boolean {
-  if (isTerminalAgentStatus(stored.status)) return false;
-  if (isAgentWaitingForOtherAgents(stored)) return true;
-  if (isTurnInFlight(stored)) return false;
-  return stored.status === AgentStatus.Waiting || stored.isWaitingOnTool === true;
+  return isAgentBlockedWaitingState(stored);
 }
 
 /**
- * Active-thread state driven by BE-owned activity flags (PROTOCOL.md §5.5:
- * `isResponding`, `isWaitingOnTool`) plus transient FE-owned signals
- * (optimistic `isStreaming`/`isProcessing` set on send, `ACTIVATING`) and the
- * agent status. The FE no longer infers "working" from raw message internals.
+ * Active-thread state driven by BE-owned activity flags and turn-liveness,
+ * plus transient FE-owned send signals and the running lifecycle statuses.
  */
 function isActiveAgentThread(stored: StoredAgentSession): boolean {
-  if (isTerminalAgentStatus(stored.status)) {
-    return false;
-  }
-
-  return (
-    stored.isProcessing === true ||
-    stored.isStreaming === true ||
-    stored.isResponding === true ||
-    stored.isWaitingOnTool === true ||
-    stored.activationState === AgentActivationState.ACTIVATING ||
-    stored.status === AgentStatus.Active ||
-    stored.status === AgentStatus.Processing ||
-    stored.status === AgentStatus.Waiting
-  );
+  return isAgentRunningState(stored);
 }
 
 // ============================================================================
@@ -205,6 +162,11 @@ export const selectAgentSessionsByIds = store.createSelector(
     }
     return result;
   },
+);
+
+/** Select the canonical session map for dynamic component-owned ID sets. */
+export const selectAgentSessionsById = store.createSelector(
+  (state): Readonly<Record<string, AgentSession>> => state.agentSessions?.byAgentId ?? {},
 );
 
 /** Select messages for a given agent (ordered array) */
@@ -376,11 +338,7 @@ export const selectAgentSessionWorkspaceId = store.createSelector(
  * slash-bearing non-codex ids (HuggingFace-style `org/model`) are never split.
  */
 const LEGACY_CODEX_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh']);
-const LEGACY_CODEX_EFFORT_MODELS = new Set([
-  'gpt-5.3-codex',
-  'gpt-5.2-codex',
-  'gpt-5.1-codex-max',
-]);
+const LEGACY_CODEX_EFFORT_MODELS = new Set(['gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.1-codex-max']);
 
 export const selectAgentReasoningEffort = store.createSelector(
   (state, agentId: string): string | undefined => {
@@ -407,8 +365,7 @@ export const selectAgentReasoningEffort = store.createSelector(
 
 /** Select whether a session exists for a given agent. */
 export const selectAgentSessionExists = store.createSelector(
-  (state, agentId: string): boolean =>
-    state.agentSessions?.byAgentId[agentId] !== undefined,
+  (state, agentId: string): boolean => state.agentSessions?.byAgentId[agentId] !== undefined,
 );
 
 /**
@@ -436,59 +393,51 @@ export const selectAgentActivationWaitComplete = store.createSelector(
  * Canonical selector for agent responding state. Preserves the established active
  * thread semantics from session flags/statuses and streaming assistant messages.
  */
-export const selectAgentIsResponding = store.createSelector(
-  (state, agentId: string): boolean => {
-    const stored = state.agentSessions?.byAgentId[agentId];
-    if (!stored) return false;
-    return isActiveAgentThread(stored);
-  },
-);
+export const selectAgentIsResponding = store.createSelector((state, agentId: string): boolean => {
+  const stored = state.agentSessions?.byAgentId[agentId];
+  if (!stored) return false;
+  return isActiveAgentThread(stored);
+});
 
 /** @deprecated Renderer-visible queues live in agentQueue. Use selectAgentQueueMessages directly. */
 export const selectAgentQueuedMessages = store.createSelector(
-  (state, agentId: string): QueuedMessage[] =>
-    selectAgentQueueMessages.select(state, agentId),
+  (state, agentId: string): QueuedMessage[] => selectAgentQueueMessages.select(state, agentId),
 );
 
 /** Select all agents that are currently streaming */
-export const selectAllStreamingAgents = store.createSelector(
-  (state): AgentSession[] => {
-    const byAgentId = state.agentSessions?.byAgentId ?? {};
-    const result: AgentSession[] = [];
-    for (const id of Object.keys(byAgentId)) {
-      const stored = byAgentId[id];
-      if (stored?.isStreaming === true) {
-        const materialized = materializeSession(stored);
-        if (materialized) result.push(materialized);
-      }
+export const selectAllStreamingAgents = store.createSelector((state): AgentSession[] => {
+  const byAgentId = state.agentSessions?.byAgentId ?? {};
+  const result: AgentSession[] = [];
+  for (const id of Object.keys(byAgentId)) {
+    const stored = byAgentId[id];
+    if (stored?.isStreaming === true) {
+      const materialized = materializeSession(stored);
+      if (materialized) result.push(materialized);
     }
-    return result;
-  },
-);
+  }
+  return result;
+});
 
 /** Select all agents with live work that should retain workspace interest. */
-export const selectAllRetainedAgentSessions = store.createSelector(
-  (state): AgentSession[] => {
-    const byAgentId = state.agentSessions?.byAgentId ?? {};
-    const result: AgentSession[] = [];
-    for (const id of Object.keys(byAgentId)) {
-      const stored = byAgentId[id];
-      if (stored && (isActiveAgentThread(stored) || isAgentWaitingForOtherAgents(stored))) {
-        const materialized = materializeSession(stored);
-        if (materialized) result.push(materialized);
-      }
+export const selectAllRetainedAgentSessions = store.createSelector((state): AgentSession[] => {
+  const byAgentId = state.agentSessions?.byAgentId ?? {};
+  const result: AgentSession[] = [];
+  for (const id of Object.keys(byAgentId)) {
+    const stored = byAgentId[id];
+    if (stored && (isActiveAgentThread(stored) || isAgentBlockedWaiting(stored))) {
+      const materialized = materializeSession(stored);
+      if (materialized) result.push(materialized);
     }
-    return result;
-  },
-);
+  }
+  return result;
+});
 
 /**
  * Canonical selector for active agent thread state that drives the Agent Overview
  * `Thinking...` label and specialist avatar animation.
  */
-export const selectAgentIsThinking = store.createSelector(
-  (state, agentId: string): boolean =>
-    selectAgentIsResponding.select(state, agentId),
+export const selectAgentIsThinking = store.createSelector((state, agentId: string): boolean =>
+  selectAgentIsResponding.select(state, agentId),
 );
 
 /**
@@ -506,24 +455,21 @@ export const selectAgentIsWaitingForOtherAgents = store.createSelector(
 
 /**
  * Canonical selector for agent waiting state. Driven by BE-owned signals:
- * explicit Waiting status, the daemon's `isWaitingOnTool` flag (unresolved
- * tool_use on the in-flight turn), and the `isWaitingForOtherAgents` flag.
+ * explicit Waiting status, the daemon's `isWaitingOnTool` activity flag, and
+ * the `isWaitingForOtherAgents` flag. This raw reason selector is not the
+ * avatar color; `selectAgentIsBlockedWaiting` applies active-turn precedence.
  */
-export const selectAgentIsWaiting = store.createSelector(
-  (state, agentId: string): boolean => {
-    const stored = state.agentSessions?.byAgentId[agentId];
-    if (!stored) return false;
-    return isAgentWaiting(stored) || selectAgentIsWaitingForOtherAgents.select(state, agentId);
-  },
-);
+export const selectAgentIsWaiting = store.createSelector((state, agentId: string): boolean => {
+  const stored = state.agentSessions?.byAgentId[agentId];
+  if (!stored) return false;
+  return isAgentWaiting(stored) || selectAgentIsWaitingForOtherAgents.select(state, agentId);
+});
 
 /**
  * Status-indicator variant of `selectAgentIsWaiting`: true only for waits that
- * genuinely block on something outside the agent (explicit `Waiting` status,
- * paused on peer/child agents, or a tool wait with no live turn behind it).
- * A tool executing inside an in-flight responding turn is active work, so this
- * returns false there and the surface renders "running" rather than the
- * hourglass.
+ * genuinely block on something outside the agent. Tool execution is always
+ * active evidence, and a live orchestration turn wins over a concurrent
+ * peer-wait flag. Purple appears only after the turn ends.
  */
 export const selectAgentIsBlockedWaiting = store.createSelector(
   (state, agentId: string): boolean => {
@@ -555,20 +501,19 @@ export const selectAgentAttentionRequest = store.createSelector(
  *
  * Returns true whenever the agent is actively doing work and is NOT in a
  * terminal state (Completed/Error/Deleted). It is true for any of the BE-owned
- * activity flags (`isResponding`, `isWaitingOnTool`, `isWaitingForOtherAgents`),
+ * activity flags (`isResponding`, `isWaitingOnTool`, `turnInFlight`),
  * the transient FE-owned `isStreaming`/`isProcessing`/`ACTIVATING` send signals,
- * and status `Active`/`Processing`/`Waiting`. It is false for terminal statuses
- * and for genuinely idle/cleanly-ended turns.
+ * the sticky `liveTurnOpen`, a `lastToolUse.status === "running"`, and status
+ * `Active`/`Processing`. It is false for blocked waits, terminal statuses, and
+ * genuinely idle/cleanly-ended turns.
  *
  * This is the single source of truth UI surfaces should consult when gating
  * idle-only affordances (such as next-steps links). It composes the existing
  * active-thread and waiting-for-other-agents semantics so it stays consistent
  * with `selectAgentIsResponding` and `selectAgentIsWaiting`.
  */
-export const selectAgentIsRunning = store.createSelector(
-  (state, agentId: string): boolean => {
-    const stored = state.agentSessions?.byAgentId[agentId];
-    if (!stored) return false;
-    return isActiveAgentThread(stored) || isAgentWaitingForOtherAgents(stored);
-  },
-);
+export const selectAgentIsRunning = store.createSelector((state, agentId: string): boolean => {
+  const stored = state.agentSessions?.byAgentId[agentId];
+  if (!stored) return false;
+  return isActiveAgentThread(stored);
+});

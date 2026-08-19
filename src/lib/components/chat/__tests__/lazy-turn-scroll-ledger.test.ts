@@ -1,15 +1,26 @@
 /**
  * Behavioral tests for the LazyTurn height ledger (lazy-turn-scroll-ledger.ts).
  *
- * With overflow-anchor: none on the chat scroller, ANY height change of a
- * turn above the reader's viewport must be compensated via scrollTop or the
- * visible transcript jumps. The v2.37.0 one-shot swap compensation missed
+ * When native anchoring is unavailable, a height change of a turn above the
+ * reader's viewport must be compensated via scrollTop or the visible
+ * transcript jumps. The v2.37.0 one-shot swap compensation missed
  * late-settling content after the swap flush — the intermittent 20–30px
  * top-of-chat jump while scrolling through history. The ledger reconciles the
  * turn's height on every swap flush and every ResizeObserver fire.
  */
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { createHeightLedger, snapshotScroller } from '../lazy-turn-scroll-ledger';
+import { isFollowingBottom, isNativeScrollAnchoringActive } from '$lib/utils/smartScroll';
+
+vi.mock('$lib/utils/smartScroll', () => ({
+  isFollowingBottom: vi.fn(() => false),
+  isNativeScrollAnchoringActive: vi.fn(() => false),
+}));
+
+afterEach(() => {
+  vi.mocked(isFollowingBottom).mockReturnValue(false);
+  vi.mocked(isNativeScrollAnchoringActive).mockReturnValue(false);
+});
 
 interface FakeTurn {
   height: number;
@@ -203,6 +214,34 @@ describe('LazyTurn height ledger', () => {
     h.ledger.account(); // ResizeObserver fires for the same change
     h.ledger.account();
     expect(h.scroller.scrollTop).toBe(after);
+  });
+
+  it('defers bottom ownership while follow is active but advances its baseline', () => {
+    const h = makeHarness({ height: 500, contentTop: 200, connected: true });
+    h.ledger.account();
+    vi.mocked(isFollowingBottom).mockReturnValue(true);
+    h.turn.height = 540;
+    h.ledger.account();
+    expect(h.scroller.scrollTop).toBe(1000);
+
+    vi.mocked(isFollowingBottom).mockReturnValue(false);
+    h.turn.height = 550;
+    h.ledger.account();
+    expect(h.scroller.scrollTop).toBe(1010);
+  });
+
+  it('defers visible-anchor ownership while native anchoring is active', () => {
+    const h = makeHarness({ height: 500, contentTop: 200, connected: true });
+    h.ledger.account();
+    vi.mocked(isNativeScrollAnchoringActive).mockReturnValue(true);
+    h.turn.height = 540;
+    h.ledger.account();
+    expect(h.scroller.scrollTop).toBe(1000);
+
+    vi.mocked(isNativeScrollAnchoringActive).mockReturnValue(false);
+    h.turn.height = 550;
+    h.ledger.account();
+    expect(h.scroller.scrollTop).toBe(1010);
   });
 
   it('interleaves swap-flush and resize accounting without drift', () => {

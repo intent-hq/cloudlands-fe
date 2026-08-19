@@ -16,7 +16,6 @@ export const spinnerMetadata = parseUiComponentMetadata({
     'src/features/layout/components/panel-tabs/Tab.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/components/agent-overview/AgentHierarchyCard.svelte',
-    'src/lib/components/agent-overview/BackgroundAgentCard.svelte',
     'src/lib/components/chat/LiveStreamPhaseIndicator.svelte',
     'src/lib/components/chat/TypingIndicator.svelte',
   ],

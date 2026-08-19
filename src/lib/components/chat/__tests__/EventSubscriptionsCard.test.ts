@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
@@ -41,8 +41,16 @@ function rect(top: number, height: number): DOMRect {
 }
 
 describe('EventSubscriptionsCard', () => {
+  it('promotes the agent cohort header and omits the outer header for an agent-only card', async () => {
+    const card = await renderCard('agents');
+    expect(card.parentElement?.classList.contains('hidden')).toBe(false);
+    expect(screen.getByTestId('mock-agent-event-section')).toBeTruthy();
+    expect(screen.getAllByText('Waiting for 1 agent')).toHaveLength(1);
+    expect(screen.queryByTestId('event-subscriptions-outer-header')).toBeNull();
+    expect(screen.queryByTestId('event-subscriptions-summary')).toBeNull();
+  });
+
   it.each([
-    ['agents', 'mock-agent-event-section'],
     ['hooks', 'mock-hook-event-section'],
     ['prs', 'mock-pr-event-section'],
   ])('shows one bounded card for a %s-only subscription', async (agentId, testId) => {
@@ -59,44 +67,52 @@ describe('EventSubscriptionsCard', () => {
     expect(screen.getByTestId('mock-hook-event-section')).toBeTruthy();
     expect(screen.getByTestId('mock-pr-event-section')).toBeTruthy();
     expect(screen.getByText('Subscribed to 3 events')).toBeTruthy();
+    expect(screen.getByTestId('event-subscriptions-outer-header')).toBeTruthy();
+    expect(screen.getByText('Waiting for 1 agent')).toBeTruthy();
     expect(card.querySelectorAll('[data-conversation-layer="event-subscriptions"]')).toHaveLength(
       0,
     );
   });
 
-  it('starts collapsed and toggles every category without removing the card', async () => {
+  it('starts expanded and toggles every category without removing the card', async () => {
     const card = await renderCard('agents-hooks-prs');
     const toggle = screen.getByRole('button', { name: 'Subscribed to 3 events' });
     const body = screen.getByTestId('event-subscriptions-body');
 
     expect(toggle.className).toContain('w-full');
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.className).toContain('px-3!');
+    expect(toggle.className).toContain('py-2!');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(toggle.getAttribute('aria-controls')).toBe(body.id);
-    expect(body.classList.contains('hidden')).toBe(true);
+    expect(body.classList.contains('hidden')).toBe(false);
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(body.getAttribute('aria-hidden')).toBe('true');
+    await waitFor(() => expect(screen.queryByTestId('event-subscriptions-body')).toBeNull());
+    expect(card.isConnected).toBe(true);
     await fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(body.classList.contains('hidden')).toBe(false);
-    expect(card.isConnected).toBe(true);
-    await fireEvent.keyDown(toggle, { key: 'Enter' });
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(body.classList.contains('hidden')).toBe(true);
+    await waitFor(() => expect(screen.queryByTestId('event-subscriptions-body')).not.toBeNull());
+    expect(screen.getByTestId('event-subscriptions-body').getAttribute('aria-hidden')).toBe(
+      'false',
+    );
     expect(card.parentElement?.className).not.toMatch(/pb-(8|12)|mb-(8|12)/);
   });
 
-  it('persists the expanded state across remounts in the session', async () => {
+  it('persists a collapsed override across remounts in the session', async () => {
     const first = render(EventSubscriptionsCard, {
       props: { workspaceId: 'workspace-a', agentId: 'agents-hooks-prs' },
     });
     await tick();
     await fireEvent.click(screen.getByRole('button', { name: 'Subscribed to 3 events' }));
-    expect(screen.getByTestId('event-subscriptions-body').classList.contains('hidden')).toBe(false);
+    await waitFor(() => expect(screen.queryByTestId('event-subscriptions-body')).toBeNull());
     first.unmount();
 
     await renderCard('agents-hooks-prs');
     expect(
       screen.getByRole('button', { name: 'Subscribed to 3 events' }).getAttribute('aria-expanded'),
-    ).toBe('true');
-    expect(screen.getByTestId('event-subscriptions-body').classList.contains('hidden')).toBe(false);
+    ).toBe('false');
+    expect(screen.queryByTestId('event-subscriptions-body')).toBeNull();
   });
 
   it('hides the entire bounded surface when every category is empty', async () => {

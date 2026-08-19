@@ -269,7 +269,7 @@
 
 /* Tool result display - Subtle style */
 .tool-result {
-  @apply my-2 pl-4 border-l-2 border-zinc-200 dark:border-zinc-800;
+  @apply my-2 pl-4 border-l-2 border-border;
   @apply text-xs;
 }
 

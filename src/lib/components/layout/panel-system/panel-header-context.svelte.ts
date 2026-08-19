@@ -29,6 +29,8 @@ export interface PanelHeaderState {
 }
 
 export interface PanelHeaderActions {
+  /** Stable controls rendered directly in the panel header before the action menu. */
+  primary?: Snippet;
   /** Presentation and view controls shown in the Display section. */
   display?: Snippet;
   /** Commands that act on the current content shown in the Actions section. */

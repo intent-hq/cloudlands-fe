@@ -6,14 +6,20 @@
    * Uses similar styling to AgentCard but more compact for visualization.
    */
   import type { AgentNode } from './types';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
-  import { getAvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+  import {
+    getAvatarState,
+    getAvatarStateForSession,
+  } from '$features/agent/components/agent-avatar/avatar-state';
 
   import {
     selectSpecialistName,
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
-  import { selectAgentAttentionRequest } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import {
+    selectAgentAttentionRequest,
+    selectAgentSession,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import { store as appStore } from '$store/renderer/store';
@@ -28,19 +34,21 @@
 
   // svelte-ignore state_referenced_locally -- graph cards are mounted per agent; selector subscriptions are initialized once.
   const attentionRequest$ = selectAgentAttentionRequest(node.agentId);
+  // svelte-ignore state_referenced_locally -- graph cards are mounted per agent; selector subscriptions are initialized once.
+  const agentSession$ = selectAgentSession(node.agentId);
 
   // Get avatar state from agent status
-  const state = $derived(
-    getAvatarState(
+  const state = $derived.by(() => {
+    const options = { attentionKind: $attentionRequest$?.kind ?? null };
+    if ($agentSession$) return getAvatarStateForSession($agentSession$, options);
+    return getAvatarState(
       {
-        isStreaming: node.status === 'responding',
+        isResponding: node.status === 'responding',
         status: node.status,
       },
-      {
-        attentionKind: $attentionRequest$?.kind ?? null,
-      },
-    ),
-  );
+      { ...options, isCompleted: node.status === 'completed', isFailed: node.status === 'failed' },
+    );
+  });
 
   // Get specialist ID (accepts any specialist including team specialists)
   const specialist = $derived.by(() => {
@@ -64,25 +72,18 @@
   class="agent-node-card flex flex-col items-center gap-1 p-2 rounded-lg border transition-all duration-200 cursor-pointer
     {node.isCoordinator
     ? 'bg-primary/5 border-primary/30 shadow-sm'
-    : 'bg-background/95 border-border/50 hover:border-border'}
+    : 'bg-background/95 border-border hover:border-border'}
     {isActive ? 'ring-2 ring-primary/40' : ''}"
   {onclick}
 >
   <!-- Avatar -->
-  <div class="relative">
-    <AugieAvatarWithState
+  <div>
+    <AgentAvatarWithState
       agentId={node.agentId}
       size={node.isCoordinator ? 32 : 24}
       {state}
       specialist={specialist as BuiltinSpecialistId | null}
     />
-    {#if node.isCoordinator}
-      <div
-        class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-primary rounded-full flex items-center justify-center"
-      >
-        <span class="text-xs text-primary-foreground font-bold leading-none">★</span>
-      </div>
-    {/if}
   </div>
 
   <!-- Name -->

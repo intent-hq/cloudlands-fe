@@ -1,5 +1,10 @@
 import type { Proposal } from './proposal';
 import { isProposalKind } from './proposal';
+import type { MessageRole } from './agent-message';
+
+export type VideoSource =
+  | { kind: 'inline'; data: string; mimeType: string }
+  | { kind: 'remote'; url: string; mimeType?: string };
 
 /**
  * Unified ContentBlock Type Definition
@@ -31,6 +36,7 @@ export interface ContentBlock {
     | 'thinking'
     | 'image'
     | 'audio'
+    | 'video'
     | 'file'
     | 'nav-link'
     | 'proposal';
@@ -124,6 +130,8 @@ export interface ContentBlock {
   mimeType?: string;
   /** Transcript for audio content */
   transcript?: string;
+  /** Normalized source for assistant-produced video content */
+  source?: VideoSource;
   /** File name (for file type) */
   fileName?: string;
   /** Attachment-registry UUID for attachment-reference file blocks (no bytes) */
@@ -148,6 +156,7 @@ export function isContentBlock(value: any): value is ContentBlock {
         'thinking',
         'image',
         'audio',
+        'video',
         'file',
         'nav-link',
         'proposal',
@@ -155,6 +164,177 @@ export function isContentBlock(value: any): value is ContentBlock {
       (value.kind === 'nav-link' && typeof value.target === 'string') ||
       (isProposalKind(value.kind) && !!value.preview))
   );
+}
+
+export type VideoContentBlock = ContentBlock & { type: 'video'; source: VideoSource };
+
+const VIDEO_EXTENSION_PATTERN = /\.(?:mp4|webm|mov|m4v)$/i;
+const VIDEO_MIME_PATTERN = /^video\/[a-z0-9][a-z0-9.+-]*$/i;
+const REMOTE_VIDEO_MIME_TYPES = new Set([
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'video/x-m4v',
+  'video/m4v',
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getVideoMimeType(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const mimeType = value.split(';', 1)[0].trim().toLowerCase();
+  return VIDEO_MIME_PATTERN.test(mimeType) ? mimeType : undefined;
+}
+
+function getRemoteVideoSource(
+  value: unknown,
+  mimeValue: unknown,
+): Extract<VideoSource, { kind: 'remote' }> | null {
+  if (typeof value !== 'string' || value.length === 0 || value !== value.trim()) return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || url.username || url.password) return null;
+  const mimeType = getVideoMimeType(mimeValue);
+  const supportedMimeType =
+    mimeType && REMOTE_VIDEO_MIME_TYPES.has(mimeType) ? mimeType : undefined;
+  if (!supportedMimeType && !VIDEO_EXTENSION_PATTERN.test(url.pathname)) return null;
+  return {
+    kind: 'remote',
+    url: value,
+    ...(supportedMimeType ? { mimeType: supportedMimeType } : {}),
+  };
+}
+
+function videoBlock(
+  candidate: Record<string, unknown>,
+  source: VideoSource,
+  fileName?: unknown,
+): VideoContentBlock {
+  return {
+    type: 'video',
+    source,
+    ...(typeof candidate.id === 'string' ? { id: candidate.id } : {}),
+    ...(isRecord(candidate.metadata) ? { metadata: candidate.metadata } : {}),
+    ...(typeof fileName === 'string' && fileName.length > 0 ? { fileName } : {}),
+  };
+}
+
+function normalizeVideoCandidate(value: unknown): VideoContentBlock | null {
+  if (!isRecord(value)) return null;
+  const type = value.type;
+
+  if ((type === 'file' || type === 'blob') && typeof value.data === 'string' && value.data) {
+    const mimeType = getVideoMimeType(value.mimeType);
+    if (mimeType) {
+      return videoBlock(value, { kind: 'inline', data: value.data, mimeType }, value.fileName);
+    }
+  }
+
+  if (type === 'resource' && isRecord(value.resource)) {
+    const resource = value.resource;
+    const mimeType = getVideoMimeType(resource.mimeType);
+    if (mimeType && typeof resource.blob === 'string' && resource.blob) {
+      return videoBlock(value, { kind: 'inline', data: resource.blob, mimeType }, resource.name);
+    }
+    const source = getRemoteVideoSource(resource.uri, resource.mimeType);
+    return source ? videoBlock(value, source, resource.name) : null;
+  }
+
+  if (type === 'resource_link') {
+    const source = getRemoteVideoSource(value.uri, value.mimeType);
+    return source ? videoBlock(value, source, value.name) : null;
+  }
+
+  if (type === 'file') {
+    const source = getRemoteVideoSource(value.url ?? value.uri, value.mimeType);
+    return source ? videoBlock(value, source, value.fileName) : null;
+  }
+
+  return null;
+}
+
+function normalizeNestedVideoBlocks(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  let changed = false;
+  const normalized = value.map((item) => {
+    const next = normalizeAssistantVideoBlock(item);
+    if (next !== item) changed = true;
+    return next;
+  });
+  return changed ? normalized : value;
+}
+
+function normalizeAssistantVideoBlock(value: unknown): unknown {
+  const video = normalizeVideoCandidate(value);
+  if (video) return video;
+  if (!isRecord(value) || value.type !== 'tool_result') return value;
+
+  const output = normalizeNestedVideoBlocks(value.output);
+  const content = normalizeNestedVideoBlocks(value.content);
+  if (output === value.output && content === value.content) return value;
+  return { ...value, output, content };
+}
+
+/** Normalize supported assistant media shapes without changing wire or user attachment data. */
+export function normalizeAgentVideoContentBlocks(
+  blocks: readonly ContentBlock[],
+  role: MessageRole,
+): ContentBlock[] {
+  if (role !== 'assistant') return blocks as ContentBlock[];
+  let changed = false;
+  const normalized = blocks.map((block) => {
+    const next = normalizeAssistantVideoBlock(block) as ContentBlock;
+    if (next !== block) changed = true;
+    return next;
+  });
+  return changed ? normalized : (blocks as ContentBlock[]);
+}
+
+function videoSourceIdentity(source: VideoSource): string {
+  return source.kind === 'inline'
+    ? `inline:${source.mimeType}:${source.data}`
+    : `remote:${source.url}`;
+}
+
+/** Keep the first occurrence of each normalized video source, including nested tool results. */
+export function dedupeAgentVideoContentBlocks(blocks: readonly ContentBlock[]): ContentBlock[] {
+  const seen = new Set<string>();
+
+  function dedupeArray(values: readonly unknown[]): unknown[] {
+    let changed = false;
+    const result: unknown[] = [];
+    for (const value of values) {
+      if (isRecord(value) && value.type === 'video' && isRecord(value.source)) {
+        const source = value.source as VideoSource;
+        const key = videoSourceIdentity(source);
+        if (seen.has(key)) {
+          changed = true;
+          continue;
+        }
+        seen.add(key);
+      }
+
+      if (isRecord(value) && value.type === 'tool_result') {
+        const output = Array.isArray(value.output) ? dedupeArray(value.output) : value.output;
+        const content = Array.isArray(value.content) ? dedupeArray(value.content) : value.content;
+        if (output !== value.output || content !== value.content) {
+          result.push({ ...value, output, content });
+          changed = true;
+          continue;
+        }
+      }
+      result.push(value);
+    }
+    return changed ? result : (values as unknown[]);
+  }
+
+  return dedupeArray(blocks) as ContentBlock[];
 }
 
 /**

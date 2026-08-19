@@ -14,6 +14,7 @@ import {
 import PendingSendTransitionHost from './PendingSendTransitionHost.svelte';
 
 const originalAnimate = HTMLElement.prototype.animate;
+const originalScrollTo = HTMLElement.prototype.scrollTo;
 
 function stubAnimate(implementation: () => { finished: Promise<void>; cancel?: () => void }) {
   const animate = vi.fn(implementation);
@@ -63,6 +64,12 @@ function appendRow(scrollContainer: HTMLElement, key: string): HTMLElement {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+  Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+    configurable: true,
+    value: function ({ top }: ScrollToOptions) {
+      this.scrollTop = Number(top ?? this.scrollTop);
+    },
+  });
 });
 
 afterEach(() => {
@@ -75,6 +82,14 @@ afterEach(() => {
     });
   } else {
     delete (HTMLElement.prototype as { animate?: typeof HTMLElement.prototype.animate }).animate;
+  }
+  if (originalScrollTo) {
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+      configurable: true,
+      value: originalScrollTo,
+    });
+  } else {
+    delete (HTMLElement.prototype as { scrollTo?: typeof HTMLElement.prototype.scrollTo }).scrollTo;
   }
   vi.restoreAllMocks();
   vi.useRealTimers();

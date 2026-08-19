@@ -38,6 +38,7 @@
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
+  import { togglePanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     openWorkspaceBrowser,
     openWorkspaceNote,
@@ -83,7 +84,7 @@
   import { selectCurrentChanges } from '$store/renderer/slices/changes/changes-selectors';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { extractContentFromBlocks } from '$shared/types/agent-message.conversion';
   import {
     compareWorkspaceActivityDisplayTimeDesc,
@@ -805,6 +806,9 @@
       case 'workspace-view-mode':
         void toggleWorkspaceViewModeWithTransition();
         return true;
+      case 'toggle-panel-open-mode':
+        appStore.dispatch(togglePanelOpenMode());
+        return true;
       default:
         return true;
     }
@@ -1041,7 +1045,7 @@
                 <!-- Icon or Avatar -->
                 {#if item.type === 'agent'}
                   <div class="flex-none mt-0.5">
-                    <AuggieAvatar agentId={item.id} size={18} />
+                    <AgentAvatar agentId={item.id} size={18} />
                   </div>
                 {:else if item.navigationIcon}
                   <IntentNavigationIcon

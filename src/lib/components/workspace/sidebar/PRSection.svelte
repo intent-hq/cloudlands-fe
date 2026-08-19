@@ -1114,7 +1114,7 @@
                     size={12}
                     class="text-subtle shrink-0 transition-transform {isPRExpanded
                       ? 'rotate-0'
-                      : '-rotate-90'}"
+                      : 'rotate-90'}"
                   />
                   <LineChangesBadge
                     additions={prTotalAdditions}
@@ -1199,7 +1199,7 @@
           <!-- Labeled divider between PR sub-sections (monorepo#2053) -->
           <div class="flex items-center gap-2 pt-2 pb-1">
             <span class="text-xs text-ghost shrink-0">{label}</span>
-            <div class="h-px flex-1 bg-border dark:bg-border/20"></div>
+            <div class="h-px flex-1 bg-border dark:bg-border"></div>
           </div>
         {/snippet}
         {#if hasAnyPRs}

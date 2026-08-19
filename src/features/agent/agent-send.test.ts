@@ -170,6 +170,28 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     expect(params).not.toHaveProperty('sessionId');
   }, 30000);
 
+  it('sends attachment-only content on the wire with an empty text field', async () => {
+    const fileBlocks = [
+      {
+        type: 'file' as const,
+        attachmentId: 'att-uuid-1',
+        fileName: 'dump.har',
+        mimeType: 'application/json',
+        size: 42,
+      },
+    ];
+
+    await sendMessage(AGENT, '', workspace(), { fileBlocks });
+
+    const sendCall = backendRequestMock.mock.calls.find((c) => c[0] === 'agent.sendMessage')!;
+    expect(sendCall[1]).toMatchObject({
+      agentId: AGENT,
+      workspaceId: WS,
+      content: '',
+      fileBlocks,
+    });
+  }, 30000);
+
   it('handles queued response (auto-queue race) by clearing streaming and seeding the queue', async () => {
     // When agent.sendMessage returns { success: true, queued: true,
     // queuedMessage } (auto-queue race during interrupt), the FE must NOT

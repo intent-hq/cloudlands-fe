@@ -219,9 +219,9 @@ describe('wizard gate while waiting on delegated agents', () => {
 
   it('REGRESSION: questions pend while the agent only waits on other agents (own turn ended)', () => {
     const state = stateWith(waitingSession);
-    // Sanity: the broad running gate is true here — gating the wizard on it
-    // is exactly the bug (the wizard never mounted during the waiting window).
-    expect(selectAgentIsRunning.select(state, AGENT_ID)).toBe(true);
+    // A settled peer wait is blocked waiting, not active work. The wizard must
+    // remain available throughout this waiting window.
+    expect(selectAgentIsRunning.select(state, AGENT_ID)).toBe(false);
     const pending = deriveWizardPendingQuestions(state, AGENT_ID, transcript);
     expect(pending).not.toBeNull();
     expect(pending!.messageId).toBe('msg-a1');

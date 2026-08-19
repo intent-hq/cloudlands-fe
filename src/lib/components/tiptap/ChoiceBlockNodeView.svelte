@@ -10,10 +10,7 @@
    * are passed directly as reactive props via $props().
    */
   import type { NodeViewProps } from '@tiptap/core';
-  import {
-  NodeViewWrapper,
-  NodeViewContent,
-} from '$lib/utils/tiptap/svelte-node-view';
+  import { NodeViewWrapper, NodeViewContent } from '$lib/utils/tiptap/svelte-node-view';
   import { m } from '$shared/paraglide/messages.js';
 
   // Props are passed directly from SvelteNodeViewRenderer and are reactive via $state
@@ -49,7 +46,7 @@
   <!-- Delete button - only visible on hover -->
   {#if isHovered}
     <button
-      class="absolute top-2 right-2 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive-foreground transition-colors"
+      class="absolute top-2 right-2 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-error-foreground transition-colors"
       onclick={handleDelete}
       onkeydown={handleKeyDown}
       aria-label={m.tiptap_choiceBlock_delete_label()}

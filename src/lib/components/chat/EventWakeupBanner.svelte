@@ -9,14 +9,22 @@
   import { faBell, faChevronDown, faRotate } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { safeSlide } from '$lib/utils/animations';
+  import { getActivityLabel } from '$features/events/activity-labels';
+  import type { WorkspaceEvent } from '$features/events/types';
   import InlineAgentAvatar from './InlineAgentAvatar.svelte';
+  import AgentAvatarStack, {
+    type AgentAvatarStackItem,
+  } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import { categorizeEventTypes, firstNonEmptyString } from './event-wake-summary';
   import {
     SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
     SUBSCRIPTION_CARD_SURFACE_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
+    SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
     SUBSCRIPTION_ICON_CLASS,
+    EVENT_WAKEUP_IN_THREAD_SPACING_CLASS,
+    safeSubscriptionRowTransition,
     safeSubscriptionSlide,
   } from './subscription-disclosure';
   import type { Workspace } from '$shared/types';
@@ -61,7 +69,7 @@
     metadata,
     asDivider = false,
     embedded = false,
-    compact = false,
+    compact: _compact = false,
     messageText = '',
     showSummary = true,
     showAgentCards = true,
@@ -72,84 +80,110 @@
   const detailsId = `${componentId}-event-wakeup-details`;
   let detailsOpen = $state(false);
 
-  // Get a friendly summary description for the banner
-  // Note: This is a function that uses parsedEvents, which is $derived
-  // We access parsedEvents directly since it's already reactive
+  function localizedActivityLabel(type: string, data: Record<string, unknown>): string {
+    const name = firstNonEmptyString(data.agentName, data.name, data.agentId);
+    if (name) {
+      if (type === 'agent:idle') {
+        return m.events_activity_nameFinished_label({ name });
+      }
+      if (type === 'agent:reportToParent') {
+        return m.events_activity_nameSentMessage_label({ name });
+      }
+      if (type === 'agent:completed') return m.events_activity_nameCompleted_label({ name });
+      if (type === 'agent:failed') return m.events_activity_nameFailed_label({ name });
+      if (type === 'agent:created')
+        return m.events_activity_createdAgentName_label({ agentName: name });
+      if (type === 'agent:status-changed') {
+        const status = firstNonEmptyString(data.status, data.newStatus);
+        if (
+          [
+            'waiting',
+            'waiting_for_input',
+            'discussion_needed',
+            'blocked',
+            'review_required',
+          ].includes(status ?? '')
+        ) {
+          return m.events_activity_nameIsWaiting_label({ name });
+        }
+        if (status === 'failed' || status === 'error') {
+          return m.events_activity_nameEncounteredError_label({ name });
+        }
+      }
+    }
+
+    return getActivityLabel({
+      id: '',
+      workspaceId: workspace?.id ? String(workspace.id) : '',
+      timestamp: '',
+      type: type as WorkspaceEvent['type'],
+      actor: { type: 'agent', name },
+      data,
+    });
+  }
+
+  function joinActivityLabels(labels: string[]): string {
+    return labels.reduce((summary, label) =>
+      summary ? m.chat_eventWakeup_summaryJoin_label({ first: summary, second: label }) : label,
+    );
+  }
+
+  // Describe small wakes in daemon order. Large bursts remain count-only.
   const friendlySummary = $derived.by((): string => {
     const types = metadata?.eventTypes || [];
-    if (types.length === 0) return m.chat_eventWakeup_subscriptionUpdate_label();
+    const structured = Array.isArray(metadata?.events) ? metadata.events : [];
+    const legacy =
+      structured.length === 0
+        ? parsedEvents.map((event) => ({
+            type: event.type,
+            data: { agentId: event.agentId, agentName: event.agentName },
+          }))
+        : [];
+    const events =
+      structured.length > 0
+        ? structured
+        : legacy.length > 0
+          ? legacy
+          : types.map((type) => ({ type, data: {} }));
+    const count = metadata?.eventCount || events.length;
 
-    // Get agent names from parsed events for completion events
-    const idleAgentNames = parsedEvents
-      .filter((e) => (e.type === 'agent:idle' || e.type === 'agent:reportToParent') && e.agentName)
-      .map((e) => e.agentName!);
-
-    const createdAgentNames = parsedEvents
-      .filter((e) => e.type === 'agent:created' && e.agentName)
-      .map((e) => e.agentName!);
-
-    // Count agent events from metadata types (fallback when parsing fails)
-    const agentIdleCount = types.filter(
-      (t) => t === 'agent:idle' || t === 'agent:reportToParent',
-    ).length;
-    const agentCreatedCount = types.filter((t) => t === 'agent:created').length;
-
-    // Build summary with agent names when available
-    const parts: string[] = [];
-
-    if (idleAgentNames.length > 0) {
-      // We have parsed agent names - use them
-      if (idleAgentNames.length === 1) {
-        parts.push(m.chat_eventWakeup_agentFinished_named({ name: idleAgentNames[0] }));
-      } else if (idleAgentNames.length === 2) {
-        parts.push(
-          m.chat_eventWakeup_agentsFinished_pair({
-            first: idleAgentNames[0],
-            second: idleAgentNames[1],
-          }),
-        );
-      } else {
-        parts.push(
-          m.chat_eventWakeup_agentsFinished_overflow({
-            name: idleAgentNames[0],
-            count: formatInteger(idleAgentNames.length - 1),
-          }),
-        );
-      }
-    } else if (agentIdleCount > 0) {
-      // Fallback: we know there are idle events but couldn't parse names
-      parts.push(
-        agentIdleCount === 1
-          ? m.chat_eventWakeup_agentFinished_label()
-          : m.chat_eventWakeup_agentsFinished_count({ count: formatInteger(agentIdleCount) }),
-      );
+    if (count >= 5) {
+      return m.chat_eventWakeup_eventCount_many({ count: formatInteger(count) });
     }
+    if (events.length === 0) return m.chat_eventWakeup_subscriptionUpdate_label();
 
-    if (createdAgentNames.length > 0) {
-      if (createdAgentNames.length === 1) {
-        parts.push(m.chat_eventWakeup_newAgent_named({ name: createdAgentNames[0] }));
-      } else {
-        parts.push(
-          m.chat_eventWakeup_newAgents_count({ count: formatInteger(createdAgentNames.length) }),
-        );
+    const labels: string[] = [];
+    const seen = new Set<string>();
+    for (const event of events) {
+      const label = localizedActivityLabel(event.type, event.data);
+      if (!seen.has(label)) {
+        seen.add(label);
+        labels.push(label);
       }
-    } else if (agentCreatedCount > 0) {
-      // Fallback: we know there are created events but couldn't parse names
-      parts.push(
-        agentCreatedCount === 1
-          ? m.chat_eventWakeup_newAgent_label()
-          : m.chat_eventWakeup_newAgents_count({ count: formatInteger(agentCreatedCount) }),
-      );
     }
+    return labels.length > 0
+      ? joinActivityLabels(labels)
+      : count === 1
+        ? m.chat_eventWakeup_eventCount_one({ count: formatInteger(count) })
+        : m.chat_eventWakeup_eventCount_many({ count: formatInteger(count) });
+  });
 
-    parts.push(...categorizeEventTypes(types));
-
-    if (parts.length === 0)
-      return types.length === 1
-        ? m.chat_eventWakeup_eventCount_one({ count: formatInteger(types.length) })
-        : m.chat_eventWakeup_eventCount_many({ count: formatInteger(types.length) });
-    if (parts.length === 1) return parts[0];
-    return m.chat_eventWakeup_summaryJoin_label({ first: parts[0], second: parts[1] });
+  const agentSummaryRoles = $derived.by((): { name: string; status: string } | null => {
+    if ((metadata?.eventCount ?? 0) !== 1) return null;
+    const event = Array.isArray(metadata?.events) ? metadata.events[0] : undefined;
+    if (!event || (event.type !== 'agent:idle' && event.type !== 'agent:reportToParent')) {
+      return null;
+    }
+    const data = 'data' in event ? event.data : event;
+    const name = firstNonEmptyString(data.agentName);
+    if (!name) return null;
+    return {
+      name,
+      status:
+        event.type === 'agent:reportToParent'
+          ? m.chat_msgAttribution_sentMessage_after()
+          : m.events_activity_partFinished_label().trim(),
+    };
   });
 
   // Parse event details from message text
@@ -162,6 +196,7 @@
   }
 
   interface EventDetail {
+    key: string;
     type: string;
     agentId?: string;
     label: string;
@@ -182,8 +217,19 @@
     return type === 'agent:idle' || type === 'agent:reportToParent' || type === 'agent:created';
   }
 
+  function isAgentCompletionEvent(type: string): boolean {
+    return type === 'agent:idle' || type === 'agent:reportToParent';
+  }
+
+  function agentStatusLabel(type: string): string {
+    return type === 'agent:reportToParent'
+      ? m.chat_msgAttribution_sentMessage_after()
+      : m.events_activity_partFinished_label().trim();
+  }
+
   const eventDetails = $derived.by((): EventDetail[] => {
     if (!Array.isArray(metadata?.events)) return [];
+    const occurrences = new Map<string, number>();
 
     // Preserve daemon order and duplicates: each entry represents a distinct trigger.
     return metadata.events.flatMap((event) => {
@@ -194,19 +240,25 @@
           : {};
       const datetime = typeof event.timestamp === 'string' ? event.timestamp : undefined;
       const timestamp = datetime ? formatDateTime(datetime) : '';
+      const agentId = firstNonEmptyString(data.agentId);
+      const summary = firstNonEmptyString(
+        data.completionReport,
+        data.report,
+        data.lastResponseSummary,
+      );
+      const identity = `${event.type}:${datetime ?? ''}:${agentId ?? ''}:${summary ?? ''}`;
+      const occurrence = occurrences.get(identity) ?? 0;
+      occurrences.set(identity, occurrence + 1);
       return [
         {
+          key: `${identity}:${occurrence}`,
           type: event.type,
-          agentId: firstNonEmptyString(data.agentId),
+          agentId,
           label: eventTypeLabel(event.type),
           agentName: firstNonEmptyString(data.agentName),
           datetime,
           timestamp: timestamp || undefined,
-          summary: firstNonEmptyString(
-            data.completionReport,
-            data.report,
-            data.lastResponseSummary,
-          ),
+          summary,
         },
       ];
     });
@@ -300,6 +352,13 @@
 
     return Array.from(agentMap.values());
   });
+  const agentEventsById = $derived(new Map(agentEvents.map((event) => [event.agentId, event])));
+  const agentEventStackItems = $derived(
+    agentEvents.map((event): AgentAvatarStackItem => ({
+      key: event.agentId,
+      agentId: event.agentId,
+    })),
+  );
 
   function usesHeaderAgentIdentity(event: EventDetail): boolean {
     return (
@@ -339,9 +398,7 @@
   <div
     class="event-wakeup-banner group/banner {SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {embedded
       ? ''
-      : SUBSCRIPTION_CARD_SURFACE_CLASS}"
-    class:mt-3={!embedded && compact}
-    class:mt-4={!embedded && !compact}
+      : `${SUBSCRIPTION_CARD_SURFACE_CLASS} ${EVENT_WAKEUP_IN_THREAD_SPACING_CLASS}`}"
     data-testid="event-wakeup-card"
     data-embedded={embedded}
     data-external-spacing-owner={!embedded ? 'event-wakeup-card' : undefined}
@@ -351,29 +408,33 @@
     {#if showSummary || (showAgentCards && agentEvents.length > 0)}
       <div class="relative w-full min-w-0 max-w-full overflow-hidden">
         {#if showSummary}
-          <div
-            class="flex min-h-9 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3 py-2 text-sm font-medium text-muted-foreground"
-            data-testid="event-wakeup-header"
-          >
+          <div class={SUBSCRIPTION_DISCLOSURE_ROW_CLASS} data-testid="event-wakeup-header">
             {#if showAgentCards && agentEvents.length > 0}
               <div
-                class="flex min-w-0 shrink items-center -space-x-1.5 overflow-hidden"
+                class="flex min-w-0 shrink-0 items-center overflow-hidden"
                 data-testid="event-wakeup-avatar-stack"
               >
-                {#each agentEvents.slice(0, 5) as event (event.agentId)}
-                  <InlineAgentAvatar
-                    agentId={event.agentId}
-                    agentName={event.agentName}
-                    {workspace}
-                    isCompleted={event.type !== 'agent:created'}
-                    onclick={(pointerEvent) => openAgent(pointerEvent, event.agentId)}
-                  />
-                {/each}
-                {#if agentEvents.length > 5}
-                  <span class="pl-2 text-ui text-subtle" data-testid="event-wakeup-avatar-overflow">
-                    +{formatInteger(agentEvents.length - 5)}
-                  </span>
-                {/if}
+                {#snippet wakeupAvatar(item: AgentAvatarStackItem)}
+                  {@const event = agentEventsById.get(item.agentId)}
+                  {#if event}
+                    <InlineAgentAvatar
+                      agentId={event.agentId}
+                      agentName={event.agentName}
+                      {workspace}
+                      isCompleted={event.type !== 'agent:created'}
+                      onclick={(pointerEvent) => openAgent(pointerEvent, event.agentId)}
+                    />
+                  {/if}
+                {/snippet}
+                <AgentAvatarStack
+                  items={agentEventStackItems}
+                  maxVisible={5}
+                  align="start"
+                  interactive
+                  variant="standard"
+                  overflowTestId="event-wakeup-avatar-overflow"
+                  itemContent={wakeupAvatar}
+                />
               </div>
             {:else}
               <Fa
@@ -385,15 +446,43 @@
             <button
               type="button"
               class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 overflow-hidden rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={friendlySummary}
               aria-expanded={detailsOpen}
               aria-controls={detailsId}
               onclick={() => (detailsOpen = !detailsOpen)}
               data-testid="event-wakeup-summary"
             >
-              <span class="min-w-0 flex-1 truncate">{friendlySummary}</span>
-              <span class="inline-flex h-6 w-6 shrink-0 items-center justify-center">
+              {#if agentSummaryRoles}
+                <span
+                  class="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden"
+                  title={friendlySummary}
+                  aria-hidden="true"
+                >
+                  <strong
+                    class="type-body min-w-0 truncate font-normal text-muted-foreground"
+                    data-testid="event-wakeup-agent-name"
+                  >
+                    {agentSummaryRoles.name}
+                  </strong>
+                  <span
+                    class="type-body min-w-0 shrink truncate font-normal text-muted-foreground"
+                    data-testid="event-wakeup-status"
+                  >
+                    {agentSummaryRoles.status}
+                  </span>
+                </span>
+              {:else}
+                <span class="min-w-0 flex-1 truncate" title={friendlySummary} aria-hidden="true"
+                  >{friendlySummary}</span
+                >
+              {/if}
+              <span
+                class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                data-testid="event-wakeup-chevron-column"
+              >
                 <Fa
                   icon={faChevronDown}
+                  size={16}
                   class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {detailsOpen
                     ? ''
                     : 'rotate-90'}"
@@ -405,7 +494,7 @@
           {#if detailsOpen}
             <div
               id={detailsId}
-              class="w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 px-3 py-2"
+              class="w-full min-w-0 max-w-full overflow-hidden border-t border-border px-3 py-2"
               role="region"
               aria-label={m.chat_eventWakeup_subscriptionWakeup_tooltip()}
               data-testid="event-wakeup-details"
@@ -413,29 +502,49 @@
             >
               {#if displayEventDetails.length > 0}
                 <ol class="min-w-0 space-y-2">
-                  {#each displayEventDetails as event, index (index)}
-                    <li class="min-w-0" data-testid="event-wakeup-detail">
-                      {#if !usesHeaderAgentIdentity(event) || event.timestamp}
-                        <div
-                          class="type-caption flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-subtle"
-                        >
-                          {#if !usesHeaderAgentIdentity(event)}
-                            <span class="font-medium text-primary">{event.label}</span>
+                  {#each displayEventDetails as event (event.key)}
+                    <li
+                      class="min-w-0 overflow-hidden"
+                      data-testid="event-wakeup-detail"
+                      data-event-detail-key={event.key}
+                      transition:safeSubscriptionRowTransition
+                    >
+                      {#if !usesHeaderAgentIdentity(event)}
+                        <div class="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+                          {#if event.agentName && isAgentCompletionEvent(event.type)}
+                            <strong
+                              class="type-body min-w-0 break-words font-medium text-foreground [overflow-wrap:anywhere]"
+                            >
+                              {event.agentName}
+                            </strong>
+                            <span class="type-caption font-normal text-muted-foreground">
+                              {agentStatusLabel(event.type)}
+                            </span>
+                          {:else}
+                            <span class="type-caption font-medium text-primary">{event.label}</span>
                             {#if event.agentName}
-                              <span class="min-w-0 break-words [overflow-wrap:anywhere]">
+                              <span
+                                class="type-caption min-w-0 break-words font-normal text-muted-foreground [overflow-wrap:anywhere]"
+                              >
                                 {event.agentName}
                               </span>
                             {/if}
                           {/if}
-                          {#if event.timestamp}
-                            <time class="shrink-0" datetime={event.datetime}>{event.timestamp}</time
-                            >
-                          {/if}
                         </div>
+                      {/if}
+                      {#if event.timestamp}
+                        <time
+                          class="type-caption mt-0.5 block w-fit tabular-nums font-normal text-subtle"
+                          datetime={event.datetime}
+                          data-testid="event-wakeup-timestamp"
+                        >
+                          {event.timestamp}
+                        </time>
                       {/if}
                       {#if event.summary}
                         <p
-                          class="type-caption mt-0.5 max-w-full whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]"
+                          class="type-body mt-1.5 w-full max-w-[68ch] whitespace-pre-wrap font-normal text-foreground [overflow-wrap:anywhere]"
+                          data-testid="event-wakeup-report"
                         >
                           {event.summary}
                         </p>

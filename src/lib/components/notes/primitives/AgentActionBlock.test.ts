@@ -25,8 +25,8 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faCheck: { iconName: 'check' },
 }));
 
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
-  default: (await import('./__tests__/AuggieAvatarMock.svelte')).default,
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
+  default: (await import('./__tests__/AgentAvatarMock.svelte')).default,
 }));
 
 vi.mock('svelte-sonner', () => ({

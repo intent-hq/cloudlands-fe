@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
-import { groupIntoTurns, indexConversationTurns } from '../conversation-turns';
+import {
+  groupIntoTurns,
+  hasOperationalAssistantMessageBoundary,
+  hasOperationalAssistantTurnBoundary,
+  hasToolOnlyAssistantMessageBoundary,
+  hasToolOnlyAssistantTurnBoundary,
+  indexConversationTurns,
+  isOperationalOnlyAssistantMessage,
+  isToolOnlyAssistantMessage,
+} from '../conversation-turns';
 
 const message = (id: string, role: AgentMessage['role'], type?: string): AgentMessage =>
   ({ id, role, contentBlocks: [], metadata: type ? { type } : undefined }) as AgentMessage;
@@ -38,5 +47,82 @@ describe('conversation turn indexing', () => {
     expect(indexed.globalIndexByTurnKey.get('group-1-turn-0')).toBe(1);
     expect(indexed.turnKeyByMessageId.get('assistant-1')).toBe('user-1');
     expect(indexed.turnKeyByMessageId.get('orphan-2')).toBe('group-1-turn-0');
+  });
+
+  it('classifies only visible tool-only assistant boundaries', () => {
+    const toolMessage = (id: string) =>
+      ({
+        ...message(id, 'assistant'),
+        contentBlocks: [
+          { type: 'tool_use', id: `${id}-tool`, name: 'view', input: { path: 'src/a.ts' } },
+          { type: 'tool_result', id: `${id}-result`, tool_use_id: `${id}-tool`, output: 'ok' },
+          { type: 'text', text: '   ' },
+        ],
+      }) as AgentMessage;
+    const first = toolMessage('tool-a');
+    const second = toolMessage('tool-b');
+    const prose = {
+      ...message('prose', 'assistant'),
+      contentBlocks: [{ type: 'text', text: 'Visible prose' }],
+    } as AgentMessage;
+
+    expect(isToolOnlyAssistantMessage(first)).toBe(true);
+    expect(hasToolOnlyAssistantMessageBoundary(first, second)).toBe(true);
+    expect(hasToolOnlyAssistantMessageBoundary(first, prose)).toBe(false);
+    expect(hasToolOnlyAssistantMessageBoundary(message('user', 'user'), second)).toBe(false);
+  });
+
+  it('compacts assistant-only turn boundaries but not user or notice boundaries', () => {
+    const tool = (id: string) =>
+      ({
+        ...message(id, 'assistant'),
+        contentBlocks: [{ type: 'tool_use', id, name: 'view', input: { path: 'src/a.ts' } }],
+      }) as AgentMessage;
+    const current = { userMessage: null, assistantMessages: [tool('a')], noticeMessages: [] };
+    const next = { userMessage: null, assistantMessages: [tool('b')], noticeMessages: [] };
+
+    expect(hasToolOnlyAssistantTurnBoundary(current, next)).toBe(true);
+    expect(
+      hasToolOnlyAssistantTurnBoundary(current, { ...next, userMessage: message('u', 'user') }),
+    ).toBe(false);
+    expect(
+      hasToolOnlyAssistantTurnBoundary(current, {
+        ...next,
+        noticeMessages: [message('n', 'system', 'model_changed')],
+      }),
+    ).toBe(false);
+  });
+
+  it('compacts operational-only tool and reasoning turn boundaries without compacting prose', () => {
+    const tool = {
+      ...message('tool', 'assistant'),
+      contentBlocks: [
+        { type: 'tool_use', id: 'tool-call', name: 'view', input: { path: 'src/a.ts' } },
+        { type: 'tool_result', id: 'result', tool_use_id: 'tool-call', output: 'ok' },
+      ],
+    } as AgentMessage;
+    const reasoning = {
+      ...message('reasoning', 'assistant'),
+      contentBlocks: [{ type: 'thinking', id: 'thinking', text: 'Inspect the result' }],
+    } as AgentMessage;
+    const prose = {
+      ...message('prose', 'assistant'),
+      contentBlocks: [{ type: 'text', text: 'Visible prose' }],
+    } as AgentMessage;
+    const turn = (assistant: AgentMessage) => ({
+      userMessage: null,
+      assistantMessages: [assistant],
+      noticeMessages: [],
+    });
+
+    expect(isOperationalOnlyAssistantMessage(tool)).toBe(true);
+    expect(isOperationalOnlyAssistantMessage(reasoning)).toBe(true);
+    expect(isOperationalOnlyAssistantMessage(prose)).toBe(false);
+    expect(hasOperationalAssistantMessageBoundary(tool, reasoning)).toBe(true);
+    expect(hasOperationalAssistantMessageBoundary(reasoning, tool)).toBe(true);
+    expect(hasOperationalAssistantMessageBoundary(tool, prose)).toBe(false);
+    expect(hasOperationalAssistantTurnBoundary(turn(tool), turn(reasoning))).toBe(true);
+    expect(hasOperationalAssistantTurnBoundary(turn(reasoning), turn(tool))).toBe(true);
+    expect(hasOperationalAssistantTurnBoundary(turn(tool), turn(prose))).toBe(false);
   });
 });

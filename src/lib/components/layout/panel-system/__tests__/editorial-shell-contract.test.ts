@@ -14,7 +14,7 @@ describe('editorial workspace shell presentation contract', () => {
     );
     expect(layout).toContain("use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24 }}");
     expect(layout).toContain('data-testid="panel-workspace-inset"');
-    expect(layout).toContain('w-max min-w-full');
+    expect(layout).toContain('flex h-full w-max min-w-full');
     expect(layout).not.toMatch(/\bpr-0\b/);
   });
 
@@ -29,12 +29,15 @@ describe('editorial workspace shell presentation contract', () => {
     expect(workspace).toContain('position: absolute');
   });
 
-  it('uses a clipped semantic card surface with a consistent light border', () => {
+  it('uses one clipped semantic shell for the panel background, radius, and border', () => {
     const panel = source('../Panel.svelte');
+    const container = source('../PanelContainer.svelte');
 
-    expect(panel).toContain('overflow-hidden rounded-lg border border-border/50');
-    expect(panel).toContain("? 'bg-transparent text-sidebar-foreground'");
+    expect(panel).toContain('overflow-hidden rounded-lg border border-border');
+    expect(panel).toContain("? 'bg-sidebar text-sidebar-foreground'");
     expect(panel).toContain(": 'bg-card text-card-foreground'");
+    expect(panel).toContain('data-empty-panel-surface={');
+    expect(container).not.toContain("isEmptySurface && 'bg-sidebar text-sidebar-foreground'");
     expect(panel).toContain('width: 100%');
     expect(panel).toContain('min-width: 0');
     expect(panel).not.toContain('min-width: 30em');
@@ -70,7 +73,7 @@ describe('editorial workspace shell presentation contract', () => {
   it('renders one content-aware header per panel without the legacy tab strip', () => {
     const tabBar = source('../PanelTabBar.svelte');
 
-    expect(tabBar).toContain('border-b border-border/50 bg-card');
+    expect(tabBar).toContain('border-b border-border bg-card');
     expect(tabBar).toContain('showTabStrip = false');
     expect(tabBar).toContain("!showTabStrip && 'hidden'");
     expect(tabBar).toContain('data-panel-tab-bar');
@@ -127,11 +130,15 @@ describe('editorial workspace shell presentation contract', () => {
     expect(tabDefinitions).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
     expect(sidebar).toContain('grid h-56 w-full auto-rows-fr grid-cols-2 gap-3');
     expect(launcherMarkup).toContain('h-full min-h-0');
-    expect(launcherMarkup).toContain('rounded-lg border border-border bg-card p-2 text-foreground');
-    expect(sidebar).toContain('<AuggieAvatar');
-    expect(launcherMarkup).toContain('data-sidebar-agent={agent.id}');
+    expect(launcherMarkup).toContain(
+      'rounded-lg border border-border bg-sidebar p-2 text-foreground',
+    );
+    expect(sidebar).toContain('<AgentAvatar');
+    expect(sidebar).toContain('data-sidebar-agent={agent.id}');
+    expect(launcherMarkup).toContain('itemContent={launcherAgentAvatar}');
     expect(launcherMarkup).toContain('data-sidebar-context={note.id}');
-    expect(launcherMarkup).not.toContain('data-sidebar-change');
+    expect(launcherMarkup).toContain('data-sidebar-changes-resource');
+    expect(launcherMarkup).not.toContain('data-sidebar-change=');
     expect(launcherMarkup).not.toContain('content={`${tab.label}:');
     expect(launcherMarkup).toContain('data-files-open-in');
     expect(launcherMarkup).not.toContain('faFolderTree');
@@ -142,7 +149,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(headerAction).toContain('data-sidebar-close');
     expect(headerAction).toContain('hover:bg-muted/50!');
     expect(sidebar).toContain('sidebar-expanded-card relative z-10 flex');
-    expect(sidebar).toContain('rounded-lg border border-border bg-card');
+    expect(sidebar).toContain('rounded-lg border border-border bg-sidebar');
     expect(sidebar).not.toContain('.sidebar-expanded-card :global(*)');
     expect(sidebar).not.toContain('view-transition-name: sidebar-section');
     expect(sidebar).toContain('in:cardMorph|global');
@@ -213,7 +220,7 @@ describe('editorial workspace shell presentation contract', () => {
     const navigation = source('../../sidebar-nav/SidebarNav.svelte');
     const sidebarPanel = source('../../sidebar-nav/SidebarPanel.svelte');
 
-    expect(appLayout).toContain('workspace-frame-row flex flex-1 min-h-0 pb-2 pl-2');
+    expect(appLayout).toContain('workspace-frame-row flex flex-1 min-h-0 bg-transparent pb-2 pl-2');
     expect(appLayout).toContain('workspace-frame relative');
     expect(appLayout).not.toContain('<ChiefNotch />');
     expect(appLayout).not.toContain('clip-path: var(--workspace-clip');
@@ -227,16 +234,23 @@ describe('editorial workspace shell presentation contract', () => {
     expect(sidebarPanel).toContain("transition:slide={{ axis: 'x', duration: 200 }}");
   });
 
-  it('keeps the renderer fully transparent above the native window tint', () => {
+  it('owns shell, page, and sidebar surfaces with resolved app theme tokens', () => {
     const appCss = source('../../../../../app.css');
+    const appHtml = source('../../../../../app.html');
     const appLayout = source('../../../../../routes/(app)/+layout.svelte');
+    const sidebarPanel = source('../../sidebar-nav/SidebarPanel.svelte');
 
-    expect(appCss).toContain('background-color: transparent');
+    expect(appCss).toMatch(/html,\s*body\s*{[^}]*background-color:\s*transparent;/s);
+    expect(appCss).toMatch(/#app\s*{[^}]*background-color:\s*transparent;/s);
+    expect(appHtml).toMatch(/html,\s*body,\s*#app\s*{\s*background:\s*transparent;/s);
+    expect(appHtml).toMatch(/#splash\s*{[^}]*background:\s*transparent;/s);
+    expect(appLayout).toContain('overflow-hidden bg-transparent text-foreground');
     expect(appLayout).not.toContain('background-color: hsl(var(--background) /');
     expect(appLayout).toContain('class="workspace-main flex');
     expect(appLayout).toContain("'rounded-xl bg-sidebar border border-border shadow-sm'");
+    expect(sidebarPanel).toContain('relative text-sidebar-foreground');
+    expect(sidebarPanel).not.toContain('relative bg-sidebar text-sidebar-foreground');
     expect(appLayout).not.toContain('backdrop-filter:');
-    expect(appLayout).not.toContain('flex flex-col bg-background"');
   });
 
   it('moves collapsed terminal controls into the workspace sidebar', () => {
@@ -252,7 +266,7 @@ describe('editorial workspace shell presentation contract', () => {
     );
     expect(dock).toContain('{#each $terminals$.slice(0, 1) as terminal (terminal.id)}');
     expect(dock).toContain('data-dev-script-count');
-    expect(dock).toContain('rounded-lg border border-border bg-card px-3 text-foreground');
+    expect(dock).toContain('rounded-lg border border-border bg-sidebar px-3 text-foreground');
     expect(dock).toContain('border-0 bg-transparent p-0');
     expect(dock).not.toContain('faPlus');
     expect(dock).not.toContain('faChevron');

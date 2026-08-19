@@ -30,7 +30,7 @@
 
 {#snippet loadingPanel()}
   <div
-    class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border/50 bg-card text-card-foreground"
+    class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card text-card-foreground"
     data-loading-panel
   >
     <div

@@ -85,13 +85,15 @@ describe('workspace column layout contract', () => {
       'utf8',
     );
 
-    expect(columns).toContain('overflow-hidden rounded-lg bg-sidebar');
+    expect(columns).toContain(
+      'overflow-hidden rounded-xl border border-border bg-sidebar shadow-sm',
+    );
     expect(columns).not.toContain(
       "import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte'",
     );
     expect(columns).not.toContain('w-[22.5rem]');
-    expect(columns).toContain('gap-2');
-    expect(columns).toContain('pl-2 pr-2 pt-2');
+    expect(columns).toContain('flex h-full min-h-0 w-max min-w-full gap-3');
+    expect(columns).toContain('style:padding="var(--workspace-reveal-inset)"');
     expect(columns).toContain('scrollbar-none h-full min-h-0 w-full overflow-x-auto');
     expect(columns).toContain('selectPanelCanvasWidthsByWorkspaceId');
     expect(columns).toContain('livePanelCanvasWidths[workspaceId]');
@@ -107,9 +109,10 @@ describe('workspace column layout contract', () => {
     expect(surface).not.toContain('onDestroy(async () => {');
     expect(surface).not.toContain('flushPendingAgentDeletionsRequested');
     expect(panelLayout).toContain("contained ? 'overflow-hidden py-2 px-2'");
+    expect(panelLayout).toContain('panel-layout h-full w-full flex flex-col bg-sidebar');
     expect(panelLayout).toContain('panelLayoutScopeMounted(mountedLayoutId)');
     expect(panelLayout).toContain('panelLayoutScopeUnmounted(mountedLayoutId)');
-    expect(noteTab).toContain('class="h-full bg-background text-foreground"');
+    expect(noteTab).toContain('<NoteContentSurface state={noteContentState}>');
     expect(columns).toContain('onCloseWorkspace={(event) => closeWorkspace(workspaceId, event)}');
     expect(columns).not.toContain('absolute right-2 top-2');
     expect(surface).toContain('{onCloseWorkspace}');
@@ -124,6 +127,7 @@ describe('workspace column layout contract', () => {
     expect(columns).not.toContain('w-[26rem]');
     expect(columns).not.toContain('class:ring-1');
     expect(surface).toContain('data-loading={!$workspace}');
+    expect(surface).toContain('disableSidebarWidthTransition={columnMode}');
     expect(titleBar).toContain('class:workspace-columns-titlebar={overlayWorkspaceColumns}');
     expect(titleBar).toContain('.window-title-bar-wrapper.workspace-columns-titlebar');
     expect(titleBar).toContain('pointer-events: none');
