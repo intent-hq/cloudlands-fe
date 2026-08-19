@@ -330,7 +330,7 @@
                 <Button
                   variant="ghost-light"
                   size="xs"
-                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal text-left min-[284px]:whitespace-nowrap"
+                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
                   data-testid="monitored-pr-check-flush-item"
                   onclick={() => handleCheckAndFlush(monitor, close)}
                 >
@@ -342,7 +342,7 @@
                 <Button
                   variant="ghost-light"
                   size="xs"
-                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal text-left min-[284px]:whitespace-nowrap"
+                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
                   data-testid="monitored-pr-open-in-app-item"
                   onclick={() => handleOpenInApp(monitor, close)}
                 >
@@ -354,7 +354,7 @@
                 <Button
                   variant="ghost-light"
                   size="xs"
-                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal text-left min-[284px]:whitespace-nowrap"
+                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
                   data-testid="monitored-pr-open-external-item"
                   onclick={() => handleOpenExternal(monitor, close)}
                 >
@@ -366,7 +366,7 @@
                 <Button
                   variant="ghost-light"
                   size="xs"
-                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal text-left min-[284px]:whitespace-nowrap"
+                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
                   data-testid="monitored-pr-cancel-item"
                   onclick={() => handleCancel(monitor, close)}
                 >
