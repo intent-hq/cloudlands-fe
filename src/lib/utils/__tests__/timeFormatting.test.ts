@@ -11,6 +11,7 @@ import {
   afterEach,
 } from 'vitest';
 import {
+  buildDateGroupKeys,
   formatRelativeTime,
   formatChatTime,
   formatDateSeparator,
@@ -127,6 +128,42 @@ describe('timeFormatting', () => {
       expect(groups).toHaveLength(2);
       expect(groups[0].messages).toHaveLength(2);
       expect(groups[1].messages).toHaveLength(1);
+    });
+  });
+
+  describe('buildDateGroupKeys', () => {
+    it('keys groups by calendar day', () => {
+      const groups = [
+        { date: new Date('2025-12-12T09:00:00') },
+        { date: new Date('2025-12-13T10:00:00') },
+      ];
+      expect(buildDateGroupKeys(groups)).toEqual(['2025-12-12', '2025-12-13']);
+    });
+
+    it('is stable across a same-day prepend (key does not depend on group contents)', () => {
+      const before = groupMessagesByDate([
+        { id: 'm3', timestamp: NOW },
+        { id: 'm4', timestamp: NOW },
+      ]);
+      const after = groupMessagesByDate([
+        { id: 'm1', timestamp: new Date(NOW.getTime() - 60000) },
+        { id: 'm2', timestamp: new Date(NOW.getTime() - 30000) },
+        { id: 'm3', timestamp: NOW },
+        { id: 'm4', timestamp: NOW },
+      ]);
+      expect(buildDateGroupKeys(after)).toEqual(buildDateGroupKeys(before));
+    });
+
+    it('disambiguates duplicate days from unsorted timestamps', () => {
+      const day = new Date('2025-12-13T10:00:00');
+      const otherDay = new Date('2025-12-12T10:00:00');
+      const keys = buildDateGroupKeys([{ date: day }, { date: otherDay }, { date: day }]);
+      expect(new Set(keys).size).toBe(3);
+      expect(keys[2]).toBe(`${keys[0]}#1`);
+    });
+
+    it('returns an empty list for no groups', () => {
+      expect(buildDateGroupKeys([])).toEqual([]);
     });
   });
 
