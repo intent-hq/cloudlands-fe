@@ -1992,6 +1992,8 @@
   "chat_modelPicker_installAuggieHint_label": "\"npm install -g @augmentcode/auggie\"로 설치하거나 Auggie 설정 흐름을 사용하세요.",
   "chat_modelPicker_installCliHint_label": "{provider} CLI를 설치하고 \"{command}\"가 PATH에 있는지 확인하세요.",
   "chat_modelPicker_installCodex_description": "Codex CLI를 설치하면 사용 가능한 모든 모델을 볼 수 있습니다.",
+  "chat_modelPicker_legacyModels_ariaLabel": "레거시 모델 표시 전환",
+  "chat_modelPicker_legacyModels_label": "레거시 모델",
   "chat_modelPicker_loadFailed_label": "모델을 로드하지 못했습니다",
   "chat_modelPicker_loadingMore_label": "더 많은 모델 로드 중…",
   "chat_modelPicker_loadingProviderModels_label": "{provider} 모델 로드 중…",

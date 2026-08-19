@@ -18,7 +18,7 @@ export interface AuggieModel {
   description?: string;
   /** Ordering priority within the model list. Lower = higher priority. Models with priority 1 are primary, 2 are secondary. */
   modelGroupPriority?: number;
-  /** Whether this is a legacy/deprecated model - should be hidden from the picker */
+  /** Whether Auggie reports this as a legacy model. */
   isLegacyModel?: boolean;
   /** Cost tier: 1 = cheap ($), 2 = moderate ($$), 3 = expensive ($$$) */
   costTier?: number;

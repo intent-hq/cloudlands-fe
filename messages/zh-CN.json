@@ -1992,6 +1992,8 @@
   "chat_modelPicker_installAuggieHint_label": "通过 \"npm install -g @augmentcode/auggie\" 安装，或使用 Auggie 设置流程。",
   "chat_modelPicker_installCliHint_label": "安装 {provider} CLI 并确保 \"{command}\" 在 PATH 中。",
   "chat_modelPicker_installCodex_description": "安装 Codex CLI 以查看你所有可用的模型。",
+  "chat_modelPicker_legacyModels_ariaLabel": "切换旧版模型显示",
+  "chat_modelPicker_legacyModels_label": "旧版模型",
   "chat_modelPicker_loadFailed_label": "加载模型失败",
   "chat_modelPicker_loadingMore_label": "正在加载更多模型…",
   "chat_modelPicker_loadingProviderModels_label": "正在加载 {provider} 模型…",
