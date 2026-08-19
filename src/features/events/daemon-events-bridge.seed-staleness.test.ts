@@ -43,9 +43,9 @@ import { store as appStore } from '$store/renderer/store';
 import { agentStreamSaga } from '$store/renderer/slices/agent-session/sagas/agent-stream-saga';
 import {
   bulkUpsertSessions,
-  clearAllSessions,
   replaceMessages,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   __resetDaemonEventsBridgeForTests,
   routeDaemonEventsNotification,
@@ -55,6 +55,8 @@ import {
 const WS = 'ws-seed-staleness';
 const AGENT = 'agent-seed-staleness';
 const MESSAGE_ID = '01b2c3d4-5e6f-7abc-8def-0123456789ab';
+const clearAllSessions = () =>
+  workspaceDeleted(WS, Object.keys(appStore.state.agentSessions.byAgentId));
 
 const STALE_TEXT = '<group:Implementing>\n\nWriting the fir';
 const FRESH_TEXT = '<group:Implementing>\n\nWriting the first draft of the migration.';

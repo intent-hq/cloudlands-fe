@@ -9,8 +9,6 @@ import {
   emptyEntry,
   makeKey,
   setSubscriptionSnapshot,
-  setWokenUp,
-  clearWokenUp,
   resetSubscriptionUI,
   removeWatchedAgent,
   subscriptionSnapshotFetchFailed,

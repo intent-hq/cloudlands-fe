@@ -3707,6 +3707,12 @@ describe('daemonEventsBridge (legacy mock-IPC relay — daemon events → listen
     expect(seen).toEqual([{ workspaceId: WS, changes: { title: 'Renamed' } }]);
   });
 
+  // `pr:linked` / `pr:updated` / `pr:unlinked` are no longer re-emitted onto
+  // the legacy `workspace:updated` mock-IPC channel — they are dispatched
+  // directly to the workspace slice via `handlePrEvent`. The Redux path is
+  // covered by the "daemonEventsBridge (pr:linked / pr:updated / pr:unlinked
+  // → workspace slice)" suite below.
+
   it('re-emits agent:status-changed and agent:idle onto their legacy channels (and still dispatches the lifecycle)', async () => {
     appStore.dispatch(clearAllSessions());
     seedSession({ isStreaming: true, status: AgentStatus.Active });
@@ -5095,10 +5101,8 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
 
   it('a pending refetch is dropped if the tasks slice is cleared during the debounce window', async () => {
     const CLEARED_WS = 'ws-bridge-tasks-cleared';
-    const { loadWorkspaceTasksSucceeded } =
+    const { loadWorkspaceTasksSucceeded, clearWorkspaceTasks } =
       await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
-    const { removeWorkspaceEntity } =
-      await import('$store/renderer/slices/workspace/workspace-slice');
     appStore.dispatch(
       loadWorkspaceTasksSucceeded(CLEARED_WS, [], { total: 0, completed: 0, inProgress: 0 }),
     );
@@ -5109,7 +5113,7 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
     handler(noteEnvelope(CLEARED_WS, 'note:deleted', 'note-y'));
     // Workspace unmounted/deleted while the debounce is pending — the timer
     // re-checks `initialized` at fire time and must not issue a task.list.
-    appStore.dispatch(removeWorkspaceEntity(CLEARED_WS));
+    appStore.dispatch(clearWorkspaceTasks(CLEARED_WS));
     vi.advanceTimersByTime(2000);
 
     expect(taskListCalls(CLEARED_WS)).toHaveLength(0);

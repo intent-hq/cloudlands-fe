@@ -45,9 +45,9 @@ import { store as appStore } from '$store/renderer/store';
 import { agentStreamSaga } from '$store/renderer/slices/agent-session/sagas/agent-stream-saga';
 import {
   bulkUpsertSessions,
-  clearAllSessions,
   replaceMessages,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   __resetDaemonEventsBridgeForTests,
   routeDaemonEventsNotification,
@@ -62,6 +62,8 @@ import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 const WS = 'ws-sole-writer';
 const AGENT = 'agent-sole-writer';
 const MESSAGE_ID = '01b2c3d4-5e6f-7abc-8def-0123456789ab';
+const clearAllSessions = () =>
+  workspaceDeleted(WS, Object.keys(appStore.state.agentSessions.byAgentId));
 const STREAM_ID = 'stream-sole-writer';
 
 const TAIL_TEXT = 'All checks pass — the migration is complete.';

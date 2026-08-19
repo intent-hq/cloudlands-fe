@@ -1117,14 +1117,6 @@ export const bulkUpsertSessions = createAction<
   [sessions: AgentSession[], options?: BulkUpsertSessionsOptions]
 >('agentSessions/bulkUpsertSessions');
 
-/** Remove all sessions for a workspace */
-export const removeWorkspaceSessions = createAction<[wsId: string]>(
-  'agentSessions/removeWorkspaceSessions',
-);
-
-/** Clear all sessions */
-export const clearAllSessions = createAction('agentSessions/clearAllSessions');
-
 /**
  * Prepend OLDER rows to the scrollback history segment (normalize/dedup/sort).
  * Past `HISTORY_SEGMENT_MAX`, prunes from the NEWEST side of history and sets
@@ -1260,20 +1252,6 @@ agentSessionReducer.with(bulkUpsertSessions, (state, { payload: [sessions, optio
   }
   return next;
 });
-agentSessionReducer.with(removeWorkspaceSessions, (state, { payload: [wsId] }) => {
-  const agentIds = state.agentIdsByWorkspace[wsId] ?? [];
-  if (agentIds.length === 0 && !state.agentIdsByWorkspace[wsId]) return state;
-  const byAgentId = { ...state.byAgentId };
-  for (const id of agentIds) {
-    delete byAgentId[id];
-  }
-
-  const { [wsId]: _, ...restWorkspaces } = state.agentIdsByWorkspace;
-  return removeHistorySegmentsFor(
-    { ...state, byAgentId, agentIdsByWorkspace: restWorkspaces },
-    agentIds,
-  );
-});
 agentSessionReducer.with(workspaceDeleted, (state, { payload: [wsId, agentIds] }) => {
   const indexedAgentIds = state.agentIdsByWorkspace[wsId] ?? [];
   const doomed = new Set<string>([...indexedAgentIds, ...agentIds]);
@@ -1355,34 +1333,6 @@ agentSessionReducer.with(chatStopCompleted, (state, { payload: [agentId] }) =>
     isResponding: false,
   }),
 );
-agentSessionReducer.with(chatReset, (state, { payload: [agentId] }) =>
-  removeHistorySegment(
-    updateSessionFields(state, agentId, {
-      isStreaming: false,
-      isProcessing: false,
-      isResponding: false,
-    }),
-    agentId,
-  ),
-);
-agentSessionReducer.with(chatStreamingReconciled, (state, { payload: { agentId } }) =>
-  updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true }),
-);
-agentSessionReducer.with(chatInitialized, (state, { payload: [agentId, data] }) => {
-  const session = getSession(state, agentId);
-  if (!session) return state;
-  // chatInitialized may only CLEAR streaming flags, never SET them.
-  // Setting isStreaming=true is chatSendStarted's responsibility.
-  // The saga captures a streaming-state snapshot that can be stale by
-  // the time chatInitialized is dispatched — if agent:idle already
-  // cleared the flags, re-introducing isStreaming=true causes the UI
-  // to think the agent is still streaming and blocks follow-up messages.
-  if (!data.isStreaming) {
-    if (!session.isStreaming && !session.isProcessing) return state;
-    return updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false });
-  }
-  return state;
-});
 agentSessionReducer.with(streamCompleted, (state, { payload: [agentId] }) =>
   updateSessionFields(state, agentId, {
     isStreaming: false,

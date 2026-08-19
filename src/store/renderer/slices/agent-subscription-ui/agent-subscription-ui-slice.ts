@@ -160,55 +160,6 @@ agentSubscriptionUIReducer.with(markAgentAsViewed, (state, { payload: [agentId] 
   }
   return changed ? { ...state, entries } : state;
 });
-agentSubscriptionUIReducer.with(setWokenUp, (state, { payload }) => {
-  const key = makeKey(payload.workspaceId, payload.agentId);
-  const existing = state.entries[key] ?? emptyEntry;
-  return {
-    ...state,
-    entries: {
-      ...state.entries,
-      [key]: {
-        ...existing,
-        waitingState: 'woken',
-        wokenUpInfo: payload.info,
-      },
-    },
-  };
-});
-agentSubscriptionUIReducer.with(clearWokenUp, (state, { payload: [workspaceId, agentId] }) => {
-  const key = makeKey(workspaceId, agentId);
-  const existing = state.entries[key];
-  if (!existing) return state;
-  // Don't override 'completed' state — let the cleanup timer handle it
-  if (existing.waitingState === 'completed') {
-    return {
-      ...state,
-      entries: {
-        ...state.entries,
-        [key]: {
-          ...existing,
-          wokenUpInfo: null,
-        },
-      },
-    };
-  }
-  return {
-    ...state,
-    entries: {
-      ...state.entries,
-      [key]: {
-        ...existing,
-        waitingState:
-          existing.waitingState === 'woken'
-            ? existing.subscriptions.length > 0 || existing.delegationGroups.length > 0
-              ? 'waiting'
-              : 'idle'
-            : existing.waitingState,
-        wokenUpInfo: null,
-      },
-    },
-  };
-});
 agentSubscriptionUIReducer.with(
   resetSubscriptionUI,
   (state, { payload: [workspaceId, agentId] }) => {

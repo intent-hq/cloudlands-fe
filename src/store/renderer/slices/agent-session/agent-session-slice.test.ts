@@ -32,7 +32,6 @@ import {
   computeMessageContentHash,
   hasCanonicalId,
   isTimestampClose,
-  replaceMessageById,
   HISTORY_SEGMENT_MAX,
   prependHistoryMessages,
   appendHistoryMessages,
@@ -44,8 +43,6 @@ import {
 import {
   chatSendFailed,
   chatSendStarted,
-  chatInitialized,
-  chatReset,
   streamCompleted,
 } from '../chat-state/chat-state-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
@@ -5621,24 +5618,8 @@ describe('history segment (scrollback)', () => {
       expect(getHistory(state, 'a1')).toBeUndefined();
     });
 
-    it('removeWorkspaceSessions drops history segments for the workspace agents', () => {
-      const state = agentSessionReducer(withHistory(), removeWorkspaceSessions('ws-1'));
-      expect(getHistory(state, 'a1')).toBeUndefined();
-    });
-
     it('workspaceDeleted drops history segments for the doomed agents', () => {
       const state = agentSessionReducer(withHistory(), workspaceDeleted('ws-1', ['a1']));
-      expect(getHistory(state, 'a1')).toBeUndefined();
-    });
-
-    it('clearAllSessions drops all history segments', () => {
-      const state = agentSessionReducer(withHistory(), clearAllSessions());
-      expect(state.historySegmentsByAgentId).toBeUndefined();
-      expect(state).toEqual(initialState);
-    });
-
-    it('chatReset drops the history segment', () => {
-      const state = agentSessionReducer(withHistory(), chatReset('a1'));
       expect(getHistory(state, 'a1')).toBeUndefined();
     });
   });
