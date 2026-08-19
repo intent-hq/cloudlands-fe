@@ -158,6 +158,7 @@ function storeState(
     },
     tabState: { currentTabId: activeWorkspaceId },
     connections: { activeId: activeBackendId },
+    workspaceAgents: { byWorkspaceId: {} },
   };
 }
 
@@ -787,9 +788,7 @@ describe('panelLayoutSaga', () => {
 
       const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
       const tabs = Object.values(workspace.panels).flatMap((panel: any) => panel.tabs);
-      expect(tabs).toEqual([
-        expect.objectContaining({ type: 'agent', agentId: expectedAgentId }),
-      ]);
+      expect(tabs).toEqual([expect.objectContaining({ type: 'agent', agentId: expectedAgentId })]);
       expect(workspace.focusedPanelId).toBeTruthy();
       expect(workspace.pendingFocusTabId).toBe(tabs[0].id);
       expect(
@@ -962,9 +961,9 @@ describe('panelLayoutSaga', () => {
       channel.put(workspaceMounted(WS_1));
       await settle();
 
-      expect(
-        dispatch.mock.calls.some(([action]) => action.type === updateTabBrowserUrl.type),
-      ).toBe(false);
+      expect(dispatch.mock.calls.some(([action]) => action.type === updateTabBrowserUrl.type)).toBe(
+        false,
+      );
       await cancelSaga(task);
     });
 
@@ -976,9 +975,9 @@ describe('panelLayoutSaga', () => {
       await settle();
 
       expect(mocks.resolveBrowserLinkUrl).not.toHaveBeenCalled();
-      expect(
-        dispatch.mock.calls.some(([action]) => action.type === updateTabBrowserUrl.type),
-      ).toBe(false);
+      expect(dispatch.mock.calls.some(([action]) => action.type === updateTabBrowserUrl.type)).toBe(
+        false,
+      );
       await cancelSaga(task);
     });
 
@@ -1050,9 +1049,9 @@ describe('panelLayoutSaga', () => {
       await settle();
 
       // The late resolution must not clobber the newer navigation.
-      expect(
-        dispatch.mock.calls.some(([action]) => action.type === updateTabBrowserUrl.type),
-      ).toBe(false);
+      expect(dispatch.mock.calls.some(([action]) => action.type === updateTabBrowserUrl.type)).toBe(
+        false,
+      );
       await cancelSaga(task);
     });
 

@@ -1,5 +1,6 @@
 import type { AgentSession, Note } from '$shared/types';
 import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
+import { stripInternalDeliveryNotes } from '$lib/utils/user-message-presentation';
 import {
   stripGroupTags,
   stripMarkdownFormatting,
@@ -189,7 +190,9 @@ export function getAgentLauncherPreview(
   streamingContent = '',
 ): AgentLauncherPreview {
   const peek = getAgentPeekData(agent);
-  const lastUserMessage = stripUserMessagePrefixes(peek?.lastUserMessage ?? '')
+  const lastUserMessage = stripUserMessagePrefixes(
+    stripInternalDeliveryNotes(peek?.lastUserMessage ?? ''),
+  )
     .replace(/\s+/g, ' ')
     .trim();
   const liveResponse = stripGroupTags(streamingContent).trim();
