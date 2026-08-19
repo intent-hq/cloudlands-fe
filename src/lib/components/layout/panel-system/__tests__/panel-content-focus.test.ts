@@ -15,11 +15,11 @@ import { shouldBlurActiveElement } from '../panel-content-focus';
 
 function buildPanels(): { panelA: HTMLElement; panelB: HTMLElement } {
   document.body.innerHTML = `
-    <div data-panel-id="panel-a">
+    <div data-panel-id="panel-a" data-layout-id="layout-1">
       <input id="url-bar" type="text" />
       <div id="webview-host" tabindex="0"></div>
     </div>
-    <div data-panel-id="panel-b">
+    <div data-panel-id="panel-b" data-layout-id="layout-1">
       <textarea id="chat-input"></textarea>
     </div>
     <input id="outside" type="text" />
@@ -67,10 +67,23 @@ describe('shouldBlurActiveElement', () => {
     expect(shouldBlurActiveElement(document.activeElement, 'panel-a')).toBe(true);
   });
 
-  it('never blurs when nothing focusable is active', () => {
+  it('treats document.body as outside any panel (harmless no-op blur)', () => {
     buildPanels();
     expect(shouldBlurActiveElement(document.body, 'panel-a')).toBe(true);
+  });
+
+  it('returns false when activeElement is null', () => {
     expect(shouldBlurActiveElement(null, 'panel-a')).toBe(false);
+  });
+
+  it('scopes ownership by layout id when provided', () => {
+    buildPanels();
+    const urlBar = document.getElementById('url-bar') as HTMLInputElement;
+    urlBar.focus();
+
+    expect(shouldBlurActiveElement(document.activeElement, 'panel-a', 'layout-1')).toBe(false);
+    // Colliding panel id from a different layout is still outside
+    expect(shouldBlurActiveElement(document.activeElement, 'panel-a', 'layout-2')).toBe(true);
   });
 });
 
@@ -78,11 +91,17 @@ describe('PanelLayout reveal blur contract (#2895)', () => {
   const layout = readFileSync(resolve(__dirname, '../PanelLayout.svelte'), 'utf8');
 
   it('routes every dispatchFocusPanelContent blur through shouldBlurActiveElement', () => {
-    const fn = layout.slice(
-      layout.indexOf('function dispatchFocusPanelContent'),
-      layout.indexOf('function focusCycledPanel'),
-    );
-    expect(fn).toContain('shouldBlurActiveElement(document.activeElement, panelId)');
+    const start = layout.indexOf('function dispatchFocusPanelContent');
+    const end = layout.indexOf('function focusCycledPanel');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const fn = layout.slice(start, end);
+    const blurCount = fn.split('document.activeElement.blur()').length - 1;
+    const guardedCount = fn.split(
+      'shouldBlurActiveElement(document.activeElement, panelId, targetLayoutId)',
+    ).length - 1;
+    expect(blurCount).toBeGreaterThan(0);
+    expect(guardedCount).toBe(blurCount);
     expect(fn).not.toContain('document.activeElement instanceof HTMLElement');
   });
 });

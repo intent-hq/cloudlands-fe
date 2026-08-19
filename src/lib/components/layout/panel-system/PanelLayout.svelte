@@ -1006,11 +1006,12 @@
     panelId: string,
     targetLayoutManager = layoutManager,
     targetWorkspaceId = workspaceId,
+    targetLayoutId = effectiveLayoutId,
   ) {
     const panel = targetLayoutManager.getPanel(panelId);
     if (!panel || !panel.activeTabId) {
       // No active tab, blur focus left behind outside the target panel
-      if (shouldBlurActiveElement(document.activeElement, panelId)) {
+      if (shouldBlurActiveElement(document.activeElement, panelId, targetLayoutId)) {
         document.activeElement.blur();
       }
       return;
@@ -1040,8 +1041,11 @@
         // stale focus from previously focused content — but never focus the
         // user just placed inside this panel (its webview, URL bar, etc.),
         // or clicking into a browser tab would blur itself 100 ms later
-        // (intent-hq/monorepo#2895).
-        if (shouldBlurActiveElement(document.activeElement, panelId)) {
+        // (intent-hq/monorepo#2895). Skip entirely if this panel lost focus
+        // while the callback was queued, so a stale callback cannot blur
+        // focus the user has since placed in another panel.
+        if (selectFocusedPanelId.select(appStore.state, targetLayoutId) !== panelId) return;
+        if (shouldBlurActiveElement(document.activeElement, panelId, targetLayoutId)) {
           document.activeElement.blur();
         }
       }
@@ -1068,7 +1072,12 @@
         appStore.dispatch(markPanelTouched(boundaryTarget.layoutId, targetPanelId));
         const targetLayoutManager = getPanelLayoutManager(boundaryTarget.layoutId);
         targetLayoutManager.focusPanel(targetPanelId);
-        dispatchFocusPanelContent(targetPanelId, targetLayoutManager, boundaryTarget.workspaceId);
+        dispatchFocusPanelContent(
+          targetPanelId,
+          targetLayoutManager,
+          boundaryTarget.workspaceId,
+          boundaryTarget.layoutId,
+        );
         return true;
       }
     }

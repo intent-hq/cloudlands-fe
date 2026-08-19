@@ -10,12 +10,20 @@
  * making it impossible to keep focus or type.
  *
  * The blur must only clear focus that lives OUTSIDE the target panel.
+ *
+ * Panel ids are session-scoped (`panel-${Date.now()}-${counter}`), so two
+ * persisted layouts can in principle carry colliding ids. When
+ * `targetLayoutId` is provided, ownership additionally requires the panel's
+ * `data-layout-id` to match, so a colliding id in another layout is still
+ * treated as outside.
  */
 export function shouldBlurActiveElement(
   activeElement: Element | null,
   targetPanelId: string,
+  targetLayoutId?: string,
 ): activeElement is HTMLElement {
   if (!(activeElement instanceof HTMLElement)) return false;
   const owningPanel = activeElement.closest<HTMLElement>('[data-panel-id]');
-  return owningPanel?.dataset.panelId !== targetPanelId;
+  if (owningPanel?.dataset.panelId !== targetPanelId) return true;
+  return targetLayoutId !== undefined && owningPanel.dataset.layoutId !== targetLayoutId;
 }
