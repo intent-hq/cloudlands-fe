@@ -230,6 +230,11 @@ class AutoUpdateService {
       // flips and the normal download flow supersedes the pending artifact.
       if (this.state.status === 'downloaded' && info.version === this.state.updateInfo?.version) {
         logger.info('Feed still offers the already-downloaded version; staying downloaded');
+        // This early return skips updateStatus(), so a queued channel-switch
+        // recheck must be released here directly — this is a terminal check
+        // outcome exactly like the fall-through 'available' path below
+        // (PR #1482 review).
+        this.maybeRunQueuedChannelSwitchRecheck('available');
         return;
       }
       this.state.updateInfo = {
@@ -568,7 +573,14 @@ class AutoUpdateService {
     // store) the autoDownload token its late-arriving result carries.
     this.channelSwitchEpoch++;
 
-    if (this.state.status === 'checking') {
+    // Gate on the in-flight check session, not just the broadcast status: a
+    // check running while an artifact is 'downloaded' suppresses the
+    // 'checking' status for its entire lifetime (see setupEventHandlers), so
+    // a status-only gate misses it — the switch would run an immediate
+    // "fresh" check that electron-updater dedups onto the still-in-flight
+    // old-feed request, and the new feed would never actually be queried
+    // (PR #1482 review).
+    if (this.checkSessionActive || this.state.status === 'checking') {
       logger.info('Channel switched during in-flight check; queueing recheck against new feed');
       this.channelSwitchRecheckQueued = true;
       // Ensure the watchdog is armed so a hung in-flight check still reaches
@@ -705,7 +717,9 @@ class AutoUpdateService {
    * a terminal state. Every terminal path funnels through updateStatus()
    * (update-available / update-not-available / error event, watchdog timeout,
    * null-result and rejection paths in checkForUpdates()), so this is the
-   * single choke point. Deferred to a microtask so the settling handler's
+   * single choke point — except the same-version early return in
+   * 'update-available' (it keeps 'downloaded' without a status change), which
+   * calls this directly. Deferred to a microtask so the settling handler's
    * trailing logic (isManualCheck bookkeeping) runs before the fresh check
    * flips the flags for its own session. The old-feed check may have found
    * an update ('available' terminal, autoDownload possibly already
