@@ -23,7 +23,6 @@ import {
   selectSettingsWorkspaceIds,
 } from '../workspace-settings-selectors';
 import {
-  loadAutoCommitSettings,
   refreshAutoCommitSettings,
   setAutoCommitEnabled,
   syncWorkspaceSettings,
@@ -126,7 +125,7 @@ export function* hydrateWorkspaceAutoCommitWorker(workspaceId: string): SagaGene
       });
       return;
     }
-    yield* put(loadAutoCommitSettings(workspaceId, settings.autoCommitEnabled));
+    yield* put(setAutoCommitEnabled(workspaceId, settings.autoCommitEnabled));
   } catch (error) {
     logger.warn('Failed to hydrate auto-commit settings from daemon', { workspaceId, error });
   }
