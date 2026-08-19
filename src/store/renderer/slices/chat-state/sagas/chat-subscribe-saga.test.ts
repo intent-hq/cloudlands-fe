@@ -1607,10 +1607,14 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       const finalC2 = 'agent-2917-final-c2';
       for (const id of [hopA, hopB, finalC1, finalC2]) seedSession(id);
 
-      // Churn hops: two workspaces opened and closed within ~2s each. Their
-      // subscribes issue promptly (no queueing behind prior closes) and the
-      // fake unsubscribe settles synchronously, so the hops leave no barrier
-      // behind by the time the final workspace mounts.
+      // Churn hops: two workspaces opened and closed within ~2s each. The
+      // hops are modeled as viewed/clear cycles inside the single harness
+      // workspace WS rather than actual workspace switches — mechanically
+      // equivalent because handleViewed's sweep predicate is realm-scoped
+      // (chief vs. workspace), not per-workspace. Their subscribes issue
+      // promptly (no queueing behind prior closes) and the fake unsubscribe
+      // settles synchronously, so the hops leave no barrier behind by the
+      // time the final workspace mounts.
       openChat(hopA);
       appStore.dispatch(markAgentAsViewed(hopA));
       appStore.dispatch(clearCurrentlyViewedAgent(hopA));
