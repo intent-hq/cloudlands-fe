@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { Locator } from '@playwright/test';
+import { PANEL_COLUMN_RAIL_WIDTH } from '$shared/panel-layout-sizing';
 import PanelWorkspaceColumnClipHarness from './mocks/PanelWorkspaceColumnClipHarness.svelte';
 
 // Earlier specs in the shared CT page may leave a resized viewport behind;
@@ -207,7 +208,7 @@ test('reflows the workspace column to the retained panel width after close', asy
   await expect(component.locator('[data-panel-id]')).toHaveCount(1);
   await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(596);
   const geometry = await measureGeometry(component);
-  expect(geometry.columnWidth).toBe(360 + 596 + 16);
+  expect(geometry.columnWidth).toBe(360 + 596 + 16 + PANEL_COLUMN_RAIL_WIDTH);
   expect(geometry.panelWidths).toEqual([596]);
   expect(geometry.lastPanelRight!).toBeLessThanOrEqual(geometry.columnRight);
 });

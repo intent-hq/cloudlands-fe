@@ -20,6 +20,7 @@
   } from '$features/layout/panel-cycle-navigation';
   import PanelContainer from './PanelContainer.svelte';
   import PanelCanvasFrame from './PanelCanvasFrame.svelte';
+  import PanelColumnRail from './PanelColumnRail.svelte';
   import {
     getPanelCanvasWidths,
     getPanelPreferredWidths,
@@ -97,6 +98,11 @@
     resizePanelLayoutRightEdge,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { selectPanelColumnCount } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import {
+    setPanelColumnCount,
+    type PanelColumnCount,
+  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     getAutomaticPanelCanvasWidth,
     getPanelDefaultWidth,
@@ -172,6 +178,8 @@
   const panelCanvasWidthSource$ = selectPanelCanvasWidthSource(workspaceIdStore);
   const pendingPanelReveal$ = selectPendingPanelReveal(workspaceIdStore);
   const restoreStatus$ = selectRestoreStatus(workspaceIdStore);
+  const panelIds$ = selectPanelIds(workspaceIdStore);
+  const panelColumnCount$ = selectPanelColumnCount();
   const isDragging$ = selectIsDragging();
   // Keep the root renderer on the split branch when the first adjacent panel
   // opens. The existing panel then retains its keyed component instance while
@@ -487,7 +495,7 @@
       event.clientY,
       panelLayoutMotionElement.getBoundingClientRect(),
     );
-    if (!position) return;
+    if (!position || position === 'above' || position === 'below') return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -503,7 +511,7 @@
       event.clientY,
       panelLayoutMotionElement.getBoundingClientRect(),
     );
-    if (!position) return;
+    if (!position || position === 'above' || position === 'below') return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -900,6 +908,10 @@
     commitPanelMoveWithoutReplay(() => {
       layoutManager.movePanel(draggedPanelId, targetPanelId, position);
     });
+  }
+
+  function handlePanelColumnCountChange(count: PanelColumnCount) {
+    appStore.dispatch(setPanelColumnCount(count));
   }
 
   /**
@@ -1336,6 +1348,7 @@
         <PanelContainer
           node={stableContainerRoot}
           panels={$panels$}
+          panelOrder={$panelIds$}
           focusedPanelId={active ? $focusedPanelId$ : null}
           zoomedPanelId={keyboardShortcuts.zoomedPanelId}
           dominantPanelId={$expandedPanelId$}
@@ -1404,40 +1417,43 @@
   class="panel-layout h-full w-full flex flex-col bg-sidebar"
   aria-label={m.layout_panelLayout_ariaLabel()}
 >
-  <!-- Main panel area -->
-  <div
-    bind:this={panelWorkspaceInset}
-    use:measurePanelViewportWidth
-    class={cn(
-      'flex-1 min-h-0 overflow-y-hidden scrollbar-none bg-sidebar',
-      contained ? 'overflow-hidden py-2 px-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3',
-    )}
-    data-testid="panel-workspace-inset"
-    use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24 }}
-  >
-    <!-- The flex track makes the fixed-width canvas participate in max-content
-         sizing, which keeps the container's right padding in the scroll range. -->
-    <div class={contained ? 'h-full w-full min-w-0' : 'flex h-full w-max min-w-full'}>
-      {#key effectiveLayoutId}
-        <PanelCanvasFrame
-          sizing={canvasSizing}
-          viewportWidth={panelViewportWidth}
-          panelColumnWidths={panelColumnPreferredWidths}
-          resetPanelColumnWidths={$panelColumnDefaultWidths$}
-          canvasWidth={effectivePanelCanvasWidth}
-          canvasWidthSource={effectivePanelCanvasWidthSource}
-          transientWidthDelta={panelCanvasResizeDelta}
-          scrollContainer={panelWorkspaceInset}
-          onWidthChange={handlePanelCanvasWidthChange}
-          onResizeStart={handlePanelCanvasResizeStart}
-          onResizePreview={handlePanelOuterResizePreview}
-          onResizeEnd={handlePanelCanvasResizeEnd}
-          onResizeCancel={handlePanelCanvasResizeCancel}
-        >
-          {@render panelCanvas()}
-        </PanelCanvasFrame>
-      {/key}
+  <div class="flex min-h-0 flex-1">
+    <!-- Main panel area -->
+    <div
+      bind:this={panelWorkspaceInset}
+      use:measurePanelViewportWidth
+      class={cn(
+        'min-h-0 min-w-0 flex-1 overflow-y-hidden scrollbar-none bg-sidebar',
+        contained ? 'overflow-hidden py-2 px-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3',
+      )}
+      data-testid="panel-workspace-inset"
+      use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24 }}
+    >
+      <!-- The flex track makes the fixed-width canvas participate in max-content
+           sizing, which keeps the container's right padding in the scroll range. -->
+      <div class={contained ? 'h-full w-full min-w-0' : 'flex h-full w-max min-w-full'}>
+        {#key effectiveLayoutId}
+          <PanelCanvasFrame
+            sizing={canvasSizing}
+            viewportWidth={panelViewportWidth}
+            panelColumnWidths={panelColumnPreferredWidths}
+            resetPanelColumnWidths={$panelColumnDefaultWidths$}
+            canvasWidth={effectivePanelCanvasWidth}
+            canvasWidthSource={effectivePanelCanvasWidthSource}
+            transientWidthDelta={panelCanvasResizeDelta}
+            scrollContainer={panelWorkspaceInset}
+            onWidthChange={handlePanelCanvasWidthChange}
+            onResizeStart={handlePanelCanvasResizeStart}
+            onResizePreview={handlePanelOuterResizePreview}
+            onResizeEnd={handlePanelCanvasResizeEnd}
+            onResizeCancel={handlePanelCanvasResizeCancel}
+          >
+            {@render panelCanvas()}
+          </PanelCanvasFrame>
+        {/key}
+      </div>
     </div>
+    <PanelColumnRail count={$panelColumnCount$} onCountChange={handlePanelColumnCountChange} />
   </div>
 </div>
 <!-- Leader key indicator -->

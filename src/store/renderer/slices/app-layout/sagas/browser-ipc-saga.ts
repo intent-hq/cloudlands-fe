@@ -20,7 +20,6 @@ import {
   selectAllTabs,
   selectHiddenTabs,
   selectPanelLayoutWorkspaces,
-  selectPanels,
 } from '../../panel-layout/panel-layout-selectors';
 import {
   hydrateWorkspaceLayout,
@@ -28,7 +27,6 @@ import {
 } from '../../panel-layout/sagas/panel-layout-saga';
 import {
   closeTab,
-  focusPanel,
   openTab,
   openTabInRightmostColumnRequested,
   setActiveTab,

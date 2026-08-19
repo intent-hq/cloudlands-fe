@@ -178,16 +178,15 @@ test.describe('chat message navigator production path', () => {
         .toContain(state.theme);
       const header = component.locator('[data-panel-content-header]');
       const headerActions = header.locator('[data-panel-header-actions]');
-      const title = header.getByText('Navigation agent', { exact: true });
-      const pinButton = headerActions.locator('[data-panel-pin]');
+      const title = header.locator('[data-panel-header-title]');
+      const titleText = header.getByText('Navigation agent', { exact: true });
       const listButton = headerActions.getByTestId('chat-message-navigator-trigger');
       const downButton = headerActions.getByTestId('chat-scroll-to-bottom-button');
       const panelActionsButton = headerActions.getByTestId('panel-actions-trigger');
       const closeButton = headerActions.getByTestId('panel-close-button');
       await expectUniqueVisible(header);
       await expectUniqueVisible(headerActions);
-      await expectUniqueVisible(title);
-      await expectUniqueVisible(pinButton);
+      await expectUniqueVisible(titleText);
       await expectUniqueVisible(listButton);
       await expectUniqueVisible(downButton);
       await expectUniqueVisible(panelActionsButton);
@@ -196,15 +195,8 @@ test.describe('chat message navigator production path', () => {
       expect(
         await headerActions
           .locator('button')
-          .evaluateAll((buttons) =>
-            buttons.map((button) =>
-              button.hasAttribute('data-panel-pin')
-                ? 'panel-pin'
-                : button.getAttribute('data-testid'),
-            ),
-          ),
+          .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-testid'))),
       ).toEqual([
-        'panel-pin',
         'chat-message-navigator-trigger',
         'chat-scroll-to-bottom-button',
         'panel-actions-trigger',
@@ -214,7 +206,6 @@ test.describe('chat message navigator production path', () => {
         titleBox,
         actionsBox,
         headerBox,
-        pinButtonBox,
         listButtonBox,
         downButtonBox,
         listIconBox,
@@ -224,7 +215,6 @@ test.describe('chat message navigator production path', () => {
         title.boundingBox(),
         headerActions.boundingBox(),
         header.boundingBox(),
-        pinButton.boundingBox(),
         listButton.boundingBox(),
         downButton.boundingBox(),
         listButton.locator('svg').boundingBox(),
@@ -241,7 +231,6 @@ test.describe('chat message navigator production path', () => {
         !titleBox ||
         !actionsBox ||
         !headerBox ||
-        !pinButtonBox ||
         !listButtonBox ||
         !downButtonBox ||
         !listIconBox ||
@@ -258,8 +247,6 @@ test.describe('chat message navigator production path', () => {
       expect(arrowIconBox.width).toBeCloseTo(16, 0);
       expect(arrowIconBox.height).toBeCloseTo(16, 0);
       expect(arrowComputedSize).toEqual({ width: 16, height: 16 });
-      expect(pinButtonBox.width).toBeCloseTo(28, 0);
-      expect(pinButtonBox.height).toBeCloseTo(28, 0);
       expect(listButtonBox.width).toBeCloseTo(28, 0);
       expect(listButtonBox.height).toBeCloseTo(28, 0);
       expect(downButtonBox.width).toBeCloseTo(28, 0);
@@ -494,8 +481,7 @@ test.describe('chat message navigator production path', () => {
         .poll(() => scrollContainer.evaluate((element) => element.scrollTop))
         .toBeCloseTo(selectedScrollTop, 0);
       await expect(downButton).toBeEnabled();
-      await pinButton.focus();
-      await page.keyboard.press('Tab');
+      await listButton.focus();
       const focusDialog = await pickerForTrigger(page, listButton);
       await expect(
         focusDialog.getByRole('combobox', { name: 'Filter user messages' }),
@@ -526,22 +512,18 @@ test.describe('chat message navigator production path', () => {
     const component = await mount(ChatMessageNavigatorIntegrationHost);
     const header = component.locator('[data-panel-content-header]');
     const headerActions = header.locator('[data-panel-header-actions]');
-    const pinButton = headerActions.locator('[data-panel-pin]');
     const trigger = headerActions.getByTestId('chat-message-navigator-trigger');
     const downButton = headerActions.getByTestId('chat-scroll-to-bottom-button');
     const outside = headerActions.getByTestId('panel-actions-trigger');
     const title = header.getByText('Navigation agent', { exact: true });
     await expectUniqueVisible(header);
     await expectUniqueVisible(headerActions);
-    await expectUniqueVisible(pinButton);
     await expectUniqueVisible(trigger);
     await expectUniqueVisible(downButton);
     await expectUniqueVisible(outside);
     await expectUniqueVisible(title);
 
-    await pinButton.focus();
-    await expect(pinButton).toBeFocused();
-    await page.keyboard.press('Tab');
+    await trigger.focus();
     let dialog = await pickerForTrigger(page, trigger);
     await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
     await page.keyboard.press('Escape');

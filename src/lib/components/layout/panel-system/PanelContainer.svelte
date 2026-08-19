@@ -39,6 +39,7 @@
   interface Props {
     node: PanelLayoutNode;
     panels: Record<string, PanelState>;
+    panelOrder: readonly string[];
     focusedPanelId: string | null;
     workspaceId: string;
     layoutId: string;
@@ -129,6 +130,7 @@
   let {
     node,
     panels,
+    panelOrder,
     focusedPanelId,
     workspaceId,
     layoutId,
@@ -687,6 +689,7 @@
 
 {#if node.type === 'panel'}
   {@const panel = panels[node.panelId]}
+  {@const panelIndex = panelOrder.indexOf(node.panelId)}
   <div class="h-full w-full min-h-0 min-w-0">
     {#if panel}
       <Panel
@@ -711,6 +714,12 @@
           onTabMoveToPanel?.(node.panelId, tabId, fromPanelId, insertIndex)}
         onPanelMove={(draggedPanelId, position) =>
           onPanelMove?.(draggedPanelId, node.panelId, position)}
+        onMoveLeft={panelIndex > 0
+          ? () => onPanelMove?.(node.panelId, panelOrder[panelIndex - 1], 'before')
+          : undefined}
+        onMoveRight={panelIndex >= 0 && panelIndex < panelOrder.length - 1
+          ? () => onPanelMove?.(node.panelId, panelOrder[panelIndex + 1], 'after')
+          : undefined}
         onPanelMovePreview={(draggedPanelId, targetPanelId, position) =>
           onPanelMovePreview?.(draggedPanelId, targetPanelId, position)}
         {onTabRename}
@@ -759,6 +768,7 @@
           <PanelContainer
             node={item.child}
             {panels}
+            {panelOrder}
             {focusedPanelId}
             {workspaceId}
             {layoutId}

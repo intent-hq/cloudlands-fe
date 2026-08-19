@@ -23,7 +23,6 @@
     historyCount = 8,
     closedHistoryCount = 0,
     initialActiveTabId = 'note-history',
-    pinned = true,
   }: {
     theme?: 'light' | 'dark';
     width?: number;
@@ -32,7 +31,6 @@
     historyCount?: number;
     closedHistoryCount?: number;
     initialActiveTabId?: string;
-    pinned?: boolean;
   } = $props();
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });

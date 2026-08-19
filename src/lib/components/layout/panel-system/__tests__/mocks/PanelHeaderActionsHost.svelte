@@ -22,6 +22,8 @@
   let contentCount = $state(0);
   let zoomCount = $state(0);
   let splitCount = $state(0);
+  let moveLeftCount = $state(0);
+  let moveRightCount = $state(0);
   let closeCount = $state(0);
 
   const activeTab = $derived<PanelTab>({
@@ -50,6 +52,8 @@
   data-content-count={contentCount}
   data-zoom-count={zoomCount}
   data-split-count={splitCount}
+  data-move-left-count={moveLeftCount}
+  data-move-right-count={moveRightCount}
   data-close-count={closeCount}
 >
   <PanelTabBar
@@ -60,6 +64,8 @@
     contentActions={{ display: contentDisplayAction, actions: contentCommandAction }}
     onZoomToggle={() => (zoomCount += 1)}
     onSplitHorizontal={() => (splitCount += 1)}
+    onMoveLeft={() => (moveLeftCount += 1)}
+    onMoveRight={() => (moveRightCount += 1)}
     onClosePanel={() => (closeCount += 1)}
     isFocused
   />

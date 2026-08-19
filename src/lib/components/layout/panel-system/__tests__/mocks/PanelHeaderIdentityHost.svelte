@@ -18,16 +18,12 @@
     width = 280,
     height = 320,
     zoom = 1,
-    pinned = true,
-    pinMode = true,
   }: {
     identityType?: IdentityType;
     theme?: 'light' | 'dark';
     width?: number;
     height?: number;
     zoom?: number;
-    pinned?: boolean;
-    pinMode?: boolean;
   } = $props();
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });

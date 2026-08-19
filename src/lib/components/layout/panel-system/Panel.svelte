@@ -39,7 +39,7 @@
     PANEL_DRAG_MIME,
     clearDraggedPanelState,
     getDraggedPanelId,
-    getPanelDragPlacement,
+    getPanelColumnDragPlacement,
     type PanelDragPlacement,
   } from './panel-drag';
   import { store as appStore } from '$store/renderer/store';
@@ -72,6 +72,8 @@
     onTabMoveToPanel?: (tabId: string, fromPanelId: string, insertIndex?: number) => void;
     /** Handler for dropping a whole panel onto this panel (reorder) */
     onPanelMove?: (draggedPanelId: string, position: PanelDragPlacement) => void;
+    onMoveLeft?: () => void;
+    onMoveRight?: () => void;
     onPanelMovePreview?: (
       draggedPanelId: string,
       targetPanelId: string,
@@ -112,6 +114,8 @@
     onTabDrop,
     onTabMoveToPanel,
     onPanelMove,
+    onMoveLeft,
+    onMoveRight,
     onPanelMovePreview,
     onTabRename,
     onCreateAgent,
@@ -320,9 +324,8 @@
 
   function getPanelPlacement(e: DragEvent): PanelDragPlacement {
     if (!panelRef) return 'after';
-    return getPanelDragPlacement(
+    return getPanelColumnDragPlacement(
       e.clientX,
-      e.clientY,
       panelRef.getBoundingClientRect(),
       panelDropPlacement,
     );
@@ -511,6 +514,8 @@
         {onTabClose}
         {onTabReorder}
         {onTabMoveToPanel}
+        {onMoveLeft}
+        {onMoveRight}
         {onCloseOtherTabs}
         {onCloseTabsToRight}
         {onCloseAllTabs}

@@ -63,11 +63,7 @@ import {
   selectPanelLayoutWorkspace,
   selectPanelLayoutWorkspaceIds,
 } from '../panel-layout-selectors';
-import {
-  getPanelOrder,
-  normalizeTablessPanelLayout,
-  removeForeignWorkspaceTabs,
-} from '../panel-layout-tabless';
+import { normalizeTablessPanelLayout, removeForeignWorkspaceTabs } from '../panel-layout-tabless';
 import { migratePanelCanvasWidth } from '../panel-layout-width-provenance';
 import {
   clearPanelLayout,

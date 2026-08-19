@@ -236,10 +236,14 @@ describe('mounted panel header actions menu', () => {
   it('runs enabled actions once, keeps disabled items inert, and preserves close behavior', async () => {
     const onZoomToggle = vi.fn();
     const onSplitHorizontal = vi.fn();
+    const onMoveLeft = vi.fn();
+    const onMoveRight = vi.fn();
     const onClosePanel = vi.fn();
     const { container } = renderHeader('browser', {
       onZoomToggle,
       onSplitHorizontal,
+      onMoveLeft,
+      onMoveRight,
       onClosePanel,
     });
     const trigger = panelTrigger(container);
@@ -247,6 +251,14 @@ describe('mounted panel header actions menu', () => {
     await fireEvent.click(trigger);
     await fireEvent.click(await screen.findByRole('menuitem', { name: /Zoom Panel/i }));
     expect(onZoomToggle).toHaveBeenCalledOnce();
+
+    await fireEvent.click(trigger);
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move left' }));
+    expect(onMoveLeft).toHaveBeenCalledOnce();
+
+    await fireEvent.click(trigger);
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move right' }));
+    expect(onMoveRight).toHaveBeenCalledOnce();
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
 
     await fireEvent.click(trigger);

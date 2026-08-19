@@ -78,6 +78,14 @@ for (const [index, panelType] of panelTypes.entries()) {
     await expect(component).toHaveAttribute('data-split-count', '1');
 
     await trigger.click();
+    await page.getByRole('menuitem', { name: 'Move left' }).click();
+    await expect(component).toHaveAttribute('data-move-left-count', '1');
+
+    await trigger.click();
+    await page.getByRole('menuitem', { name: 'Move right' }).click();
+    await expect(component).toHaveAttribute('data-move-right-count', '1');
+
+    await trigger.click();
     await expect(page.getByRole('menuitem', { name: /Split down/i })).toHaveAttribute(
       'aria-disabled',
       'true',

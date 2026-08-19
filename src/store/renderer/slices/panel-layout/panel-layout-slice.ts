@@ -1408,7 +1408,6 @@ panelLayoutReducer.with(bootstrapNewWorkspaceLayout, (state, { payload }) => {
     initialAgentId,
     initialAgentTitle,
     coordinator,
-    panelId,
     placeholderPanelId,
     tabId,
     timestamp,
@@ -1447,7 +1446,7 @@ panelLayoutReducer.with(bootstrapNewWorkspaceLayout, (state, { payload }) => {
     : bootstrapped;
 });
 panelLayoutReducer.with(resolveNewWorkspaceInitialAgent, (state, { payload }) => {
-  const { wsId, agentId, title, panelId, tabId, timestamp } = payload;
+  const { wsId, agentId, title, tabId, timestamp } = payload;
   const ws = getWorkspaceState(state, wsId);
   const lifecycle = ws.newWorkspaceLifecycle;
   if (!lifecycle?.initialAgentPending) return state;

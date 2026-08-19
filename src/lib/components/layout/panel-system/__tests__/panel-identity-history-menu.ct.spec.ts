@@ -22,7 +22,8 @@ test('opens by click, focus, and hover and activates the stable ordered history'
     'note-history',
   );
   await expect(menu.getByRole('searchbox')).toBeVisible();
-  await menu.locator('[data-panel-identity-back]').click();
+  await page.keyboard.press('Escape');
+  await component.locator('[data-panel-identity-back]').click();
   await expect(component).toHaveAttribute('data-active-tab', 'file-history');
 
   await trigger.click();
@@ -88,7 +89,7 @@ test('opens by click, focus, and hover and activates the stable ordered history'
   expect(hoverOpenStates.slice(hoverOpenStates.indexOf('true'))).toEqual(['true']);
 });
 
-test('shows reusable-column history and closes its hover menu after pointer exit', async ({
+test('shows recently closed history and closes its hover menu after pointer exit', async ({
   mount,
   page,
 }) => {
@@ -97,7 +98,6 @@ test('shows reusable-column history and closes its hover menu after pointer exit
       historyCount: 1,
       closedHistoryCount: 2,
       initialActiveTabId: 'agent-history',
-      pinned: false,
     },
   });
   const trigger = component.locator('[data-panel-identity-history-trigger]');
@@ -107,7 +107,7 @@ test('shows reusable-column history and closes its hover menu after pointer exit
   await expect(menu).toBeVisible({ timeout: 1_000 });
   await expect(menu.locator('[data-panel-identity-item]')).toHaveCount(3);
   await expect(menu.locator('[data-panel-identity-item="note-history"]')).toBeVisible();
-  await menu.locator('[data-panel-identity-back]').focus();
+  await component.locator('[data-panel-identity-back]').focus();
   await page.mouse.move(0, 0);
   await expect(trigger).toHaveAttribute('aria-expanded', 'false', { timeout: 200 });
   await expect(menu).toBeHidden({ timeout: 500 });
@@ -170,30 +170,24 @@ test('keeps agent metadata out of the inline header and in current details', asy
   );
 });
 
-test('uses the neutral menu highlight for visible keyboard focus', async ({ mount, page }) => {
+test('keeps history navigation in the header with visible keyboard focus', async ({
+  mount,
+  page,
+}) => {
   const component = await mount(PanelIdentityHistoryHost, { props: { historyCount: 3 } });
   const trigger = component.locator('[data-panel-identity-history-trigger]');
+  const back = component.locator('[data-panel-identity-back]');
+  const forward = component.locator('[data-panel-identity-forward]');
 
-  await page.keyboard.press('Tab');
+  await expect(back).toBeVisible();
+  await expect(forward).toBeVisible();
+  await trigger.click();
   const menu = page.getByRole('menu', { name: 'Panel history' });
-  const focusedBack = menu.locator('[data-panel-identity-back]');
-  await expect(focusedBack).toBeFocused();
-  // The focus highlight transitions in; poll until it has painted.
-  await expect
-    .poll(() => focusedBack.evaluate((node) => getComputedStyle(node).backgroundColor))
-    .not.toBe('rgba(0, 0, 0, 0)');
-  await expect
-    .poll(() => focusedBack.evaluate((node) => getComputedStyle(node).borderColor))
-    .not.toBe('rgba(0, 0, 0, 0)');
-  expect(await focusedBack.evaluate((node) => getComputedStyle(node).boxShadow)).not.toMatch(
-    /[1-9][0-9.]*(?:px)/,
-  );
-  await expect(menu).toHaveClass(/focus-visible:border-border/);
-  await expect(menu).not.toHaveClass(/focus-visible:border-input/);
-  // The base menu keeps the ring color token; the consumer neutralizes the
-  // ring by forcing its width to zero.
-  await expect(menu).toHaveClass(/focus-visible:ring-0/);
-  await expect(trigger).not.toHaveClass(/focus-visible:ring-ring/);
+  await expect(menu.locator('[data-panel-identity-navigation]')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await back.focus();
+  await expect(back).toBeFocused();
+  await expect(back).toHaveClass(/focus-visible:ring-2/);
 });
 
 test('keeps the portalled menu inside narrow light/dark viewports at 100% and 200% zoom', async ({

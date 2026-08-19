@@ -39,7 +39,7 @@
   import { locateItemInSidebarRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import Fa from 'svelte-fa';
-  import { Tooltip } from '$lib/components/ui/tooltip';
+  import { Tooltip, TooltipShortcut } from '$lib/components/ui/tooltip';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import Portal from '$lib/components/ui/Portal.svelte';
@@ -155,6 +155,8 @@
     onTabReorder?: (fromIndex: number, toIndex: number) => void;
     /** Handler for moving a tab from another panel to this panel's tab bar */
     onTabMoveToPanel?: (tabId: string, fromPanelId: string, insertIndex?: number) => void;
+    onMoveLeft?: () => void;
+    onMoveRight?: () => void;
     onCloseOtherTabs?: (tabId: string) => void;
     onCloseTabsToRight?: (tabId: string) => void;
     onCloseAllTabs?: () => void;
@@ -191,6 +193,8 @@
     onTabClose,
     onTabReorder,
     onTabMoveToPanel,
+    onMoveLeft,
+    onMoveRight,
     onCloseOtherTabs,
     onCloseTabsToRight,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1358,6 +1362,24 @@
             close();
           }}
         />
+        <Menu.CommandItem
+          icon={faArrowLeft}
+          label={m.layout_panelTabBar_moveLeft_label()}
+          disabled={!onMoveLeft}
+          onclick={() => {
+            onMoveLeft?.();
+            close();
+          }}
+        />
+        <Menu.CommandItem
+          icon={faArrowRight}
+          label={m.layout_panelTabBar_moveRight_label()}
+          disabled={!onMoveRight}
+          onclick={() => {
+            onMoveRight?.();
+            close();
+          }}
+        />
       </div>
 
       <Menu.Separator />
@@ -1802,6 +1824,7 @@
                   type="button"
                   class="panel-header-leading-surface flex size-6 items-center justify-center rounded-md outline-none hover:bg-accent focus-visible:bg-accent focus-visible:text-accent-foreground"
                   aria-label={m.layout_panelTabBar_identityHistory_ariaLabel()}
+                  title={m.layout_panelTabBar_identityHistory_ariaLabel()}
                   onfocus={handleIdentityTriggerFocus}
                   data-testid={activeTab.type === 'agent'
                     ? 'panel-header-agent-avatar-slot'
@@ -1886,7 +1909,7 @@
               {#if showIdentityHistory}
                 <div data-panel-identity-history-section>
                   <Menu.Separator />
-                  <div class="flex items-center gap-2 px-1 py-1" data-panel-identity-navigation>
+                  <div class="flex items-center gap-2 px-1 py-1">
                     <div
                       class="shrink-0 px-1 text-base font-medium text-muted-foreground"
                       data-panel-identity-history-title
@@ -1912,30 +1935,6 @@
                         />
                       </label>
                     {/if}
-                    <div class="ml-auto flex shrink-0 items-center gap-1">
-                      <Button
-                        variant="ghost-light"
-                        size="icon-sm"
-                        class="focus:border-border focus:bg-accent focus:text-accent-foreground focus:ring-0 focus-visible:border-border focus-visible:ring-0"
-                        disabled={!backPanelTabId}
-                        aria-label={m.ui_contentHeader_goBack_tooltip()}
-                        onclick={() => activateIdentityTab(backPanelTabId)}
-                        data-panel-identity-back
-                      >
-                        <Fa icon={faArrowLeft} size="xs" />
-                      </Button>
-                      <Button
-                        variant="ghost-light"
-                        size="icon-sm"
-                        class="focus:border-border focus:bg-accent focus:text-accent-foreground focus:ring-0 focus-visible:border-border focus-visible:ring-0"
-                        disabled={!forwardPanelTabId}
-                        aria-label={m.ui_contentHeader_goForward_tooltip()}
-                        onclick={() => activateIdentityTab(forwardPanelTabId)}
-                        data-panel-identity-forward
-                      >
-                        <Fa icon={faArrowRight} size="xs" />
-                      </Button>
-                    </div>
                   </div>
                   <div class="max-h-64 overflow-y-auto overscroll-contain" data-panel-identity-list>
                     {#each filteredIdentityTabs as tab (tab.id)}
@@ -1966,6 +1965,44 @@
             </Menu.Content>
           </Menu.Root>
         </span>
+        <div class="flex shrink-0 items-center" data-panel-identity-navigation>
+          <TooltipShortcut
+            label={m.ui_contentHeader_goBack_tooltip()}
+            shortcut="cmd+["
+            side="bottom"
+            delayDuration={300}
+          >
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              class="size-6! focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+              disabled={!backPanelTabId}
+              aria-label={m.ui_contentHeader_goBack_tooltip()}
+              onclick={() => activateIdentityTab(backPanelTabId)}
+              data-panel-identity-back
+            >
+              <Fa icon={faArrowLeft} size="xs" />
+            </Button>
+          </TooltipShortcut>
+          <TooltipShortcut
+            label={m.ui_contentHeader_goForward_tooltip()}
+            shortcut="cmd+]"
+            side="bottom"
+            delayDuration={300}
+          >
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              class="size-6! focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+              disabled={!forwardPanelTabId}
+              aria-label={m.ui_contentHeader_goForward_tooltip()}
+              onclick={() => activateIdentityTab(forwardPanelTabId)}
+              data-panel-identity-forward
+            >
+              <Fa icon={faArrowRight} size="xs" />
+            </Button>
+          </TooltipShortcut>
+        </div>
         <!-- Single content title; type/category is conveyed by the content itself. -->
         <div class="panel-header-title min-w-0 shrink" data-panel-header-title>
           {#if isTabRenameable(activeTab) && onTabRename}
@@ -2250,6 +2287,31 @@
         </button>
         <div class="border-t border-border"></div>
         <!-- Split options -->
+        {#if contextMenuTab.source === 'panel'}
+          <button
+            class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!onMoveLeft}
+            onclick={() => {
+              onMoveLeft?.();
+              closeContextMenu();
+            }}
+          >
+            <Fa icon={faArrowLeft} size="xs" class="text-ghost" />
+            {m.layout_panelTabBar_moveLeft_label()}
+          </button>
+          <button
+            class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!onMoveRight}
+            onclick={() => {
+              onMoveRight?.();
+              closeContextMenu();
+            }}
+          >
+            <Fa icon={faArrowRight} size="xs" class="text-ghost" />
+            {m.layout_panelTabBar_moveRight_label()}
+          </button>
+          <div class="border-t border-border"></div>
+        {/if}
         <button
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
           onclick={() => {
