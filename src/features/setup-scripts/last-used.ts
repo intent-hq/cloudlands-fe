@@ -9,17 +9,27 @@
  * corrupt or unavailable localStorage can never throw into a caller.
  */
 
+import type { SetupScriptNameSource } from './repo-config';
+
 // i18n-ignore (storage key, not user-facing)
 export const LAST_USED_SETUP_SCRIPTS_STORAGE_KEY = 'setup-scripts:last-used-by-repo';
 
 /** Newest N repos kept; older entries are evicted on write. */
 export const MAX_REPOS = 20;
 
+const NAME_SOURCES: readonly SetupScriptNameSource[] = ['repo-config', 'custom', 'named'];
+
 export interface LastUsedSetupScript {
   name: string;
   content: string;
   /** ISO timestamp of the workspace creation that used the script. */
   usedAt: string;
+  /**
+   * True identity of `name` at record time — drives display-label
+   * localization on restore. Absent on entries written before the field
+   * existed; readers treat those as `'named'` (pass-through display).
+   */
+  nameSource?: SetupScriptNameSource;
 }
 
 type LastUsedMap = Record<string, LastUsedSetupScript>;
@@ -42,7 +52,9 @@ function isValidEntry(value: unknown): value is LastUsedSetupScript {
     typeof entry.name === 'string' &&
     typeof entry.content === 'string' &&
     entry.content.trim().length > 0 &&
-    typeof entry.usedAt === 'string'
+    typeof entry.usedAt === 'string' &&
+    (entry.nameSource === undefined ||
+      NAME_SOURCES.includes(entry.nameSource as SetupScriptNameSource))
   );
 }
 
@@ -72,10 +84,12 @@ function readMap(): LastUsedMap {
 export function getLastUsedSetupScript(
   repoPath: string,
   githubUrl?: string | null,
-): { name: string; content: string } | undefined {
+): { name: string; content: string; nameSource: SetupScriptNameSource } | undefined {
   if (!repoPath) return undefined;
   const entry = readMap()[storageKey(repoPath, githubUrl)];
-  return entry ? { name: entry.name, content: entry.content } : undefined;
+  return entry
+    ? { name: entry.name, content: entry.content, nameSource: entry.nameSource ?? 'named' }
+    : undefined;
 }
 
 /**
@@ -87,7 +101,7 @@ export function getLastUsedSetupScript(
  */
 export function recordLastUsedSetupScript(
   repoPath: string,
-  script: { name: string; content: string },
+  script: { name: string; content: string; nameSource?: SetupScriptNameSource },
   githubUrl?: string | null,
 ): void {
   const content = script.content.trim();
@@ -98,6 +112,7 @@ export function recordLastUsedSetupScript(
       name: script.name,
       content,
       usedAt: new Date().toISOString(),
+      nameSource: script.nameSource ?? 'named',
     };
     const entries = Object.entries(map);
     if (entries.length > MAX_REPOS) {

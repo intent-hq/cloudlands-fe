@@ -17,7 +17,8 @@ const { backendRequestMock, mockWorkspace, mockDismissed, recordLastUsedMock } =
   }),
 );
 
-vi.mock('$features/setup-scripts', () => ({
+vi.mock('$features/setup-scripts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$features/setup-scripts')>()),
   recordLastUsedSetupScript: recordLastUsedMock,
 }));
 

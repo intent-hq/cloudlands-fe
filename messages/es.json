@@ -1524,6 +1524,7 @@
   "workspace_setupScriptEditor_customScript_name": "Script personalizado",
   "workspace_setupScriptEditor_custom_name": "Personalizado",
   "workspace_setupScriptEditor_example_before": "p. ej.",
+  "workspace_setupScriptEditor_fromRepoConfig_name": "Desde la configuración del repositorio",
   "workspace_setupScriptEditor_generate_description": "Analice su repositorio y cree un script de configuración automáticamente.",
   "workspace_setupScriptEditor_generate_label": "Generar",
   "workspace_setupScriptEditor_lastUsed_description": "El script usado la última vez que creaste un workspace para este repositorio",

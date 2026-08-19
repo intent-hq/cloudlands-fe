@@ -1524,6 +1524,7 @@
   "workspace_setupScriptEditor_customScript_name": "Benutzerdefiniertes Skript",
   "workspace_setupScriptEditor_custom_name": "Benutzerdefiniert",
   "workspace_setupScriptEditor_example_before": "z. B.",
+  "workspace_setupScriptEditor_fromRepoConfig_name": "Aus der Repo-Konfiguration",
   "workspace_setupScriptEditor_generate_description": "Analysieren Sie Ihr Repo und erstellen Sie automatisch ein Setup-Skript.",
   "workspace_setupScriptEditor_generate_label": "Generieren",
   "workspace_setupScriptEditor_lastUsed_description": "Das Skript, das bei der letzten Workspace-Erstellung für dieses Repository verwendet wurde",

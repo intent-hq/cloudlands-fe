@@ -138,10 +138,11 @@ vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateToSettings: vi.fn(),
 }));
 
-vi.mock('$features/setup-scripts', () => ({
+vi.mock('$features/setup-scripts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$features/setup-scripts')>()),
   SETUP_SCRIPT_TEMPLATES: [],
   getTemplateContent: vi.fn(() => ''),
-  chooseDefaultSetupScript: vi.fn(() => ({ content: '', name: 'Custom' })),
+  chooseDefaultSetupScript: vi.fn(() => ({ content: '', name: 'Custom', source: 'custom' })),
   fetchRepoConfigSetupScript: vi.fn(async () => null),
   fetchGitHubRepoConfigSetupScript: vi.fn(async () => null),
   probeRepoConfigSetupScript: vi.fn(),
