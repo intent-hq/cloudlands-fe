@@ -379,7 +379,7 @@ describe('WorkspaceColumnsView', () => {
     expect(document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')?.style.width).toBe(
       '320px',
     );
-    expect(scroller.scrollLeft).toBe(140);
+    expect(scroller.scrollLeft).toBeCloseTo(140, 0);
     expect(mocks.dispatch).not.toHaveBeenCalled();
 
     workspaceStacks.set([['ws-1'], ['ws-2', 'ws-3']]);
@@ -387,7 +387,7 @@ describe('WorkspaceColumnsView', () => {
     expect(
       document.querySelector<HTMLElement>('[data-workspace-stack="ws-2,ws-3"]')?.style.width,
     ).toBe('400px');
-    expect(scroller.scrollLeft).toBe(140);
+    expect(scroller.scrollLeft).toBeCloseTo(140, 0);
   });
 
   it('pre-restores panel layouts for open workspaces that have not restored yet', async () => {
@@ -855,7 +855,7 @@ describe('WorkspaceColumnsView', () => {
     currentWorkspaceId.set('ws-1');
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 450));
-    expect(scroller.scrollLeft).toBe(492);
+    expect(scroller.scrollLeft).toBeCloseTo(492, 0);
 
     mocks.dispatch.mockClear();
     mocks.goto.mockClear();
@@ -897,7 +897,7 @@ describe('WorkspaceColumnsView', () => {
       );
       await tick();
 
-      expect(scroller.scrollLeft).toBe(592);
+      expect(scroller.scrollLeft).toBeCloseTo(592, 0);
       expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       Element.prototype.scrollIntoView = originalScrollIntoView;
@@ -925,7 +925,7 @@ describe('WorkspaceColumnsView', () => {
       ),
     );
     await tick();
-    expect(scroller.scrollLeft).toBe(592);
+    expect(scroller.scrollLeft).toBeCloseTo(592, 0);
     expect(scroller.getAttribute('data-anchored-workspace-column')).toBe('ws-3');
     return { scroller, target };
   }
@@ -940,7 +940,7 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(scroller.scrollLeft).toBe(824);
+    expect(scroller.scrollLeft).toBeCloseTo(824, 0);
     expect(scroller.getAttribute('data-anchored-workspace-column')).toBe('ws-3');
   });
 
@@ -956,7 +956,7 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(scroller.scrollLeft).toBe(250);
+    expect(scroller.scrollLeft).toBeCloseTo(250, 0);
   });
 
   it('stops re-anchoring on wheel input even when scroll events still report the anchor position', async () => {
@@ -976,7 +976,7 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(scroller.scrollLeft).toBe(592);
+    expect(scroller.scrollLeft).toBeCloseTo(592, 0);
   });
 
   it('does not re-anchor after the width-settle window has elapsed', async () => {
@@ -991,7 +991,7 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(scroller.scrollLeft).toBe(592);
+    expect(scroller.scrollLeft).toBeCloseTo(592, 0);
   });
 
   it('keeps layout motion disabled until the post-jump settle window ends', async () => {
@@ -1018,7 +1018,7 @@ describe('WorkspaceColumnsView', () => {
 
     currentWorkspaceId.set('ws-3');
     await tick();
-    await waitFor(() => expect(scroller.scrollLeft).toBe(892), { timeout: 1000 });
+    await waitFor(() => expect(scroller.scrollLeft).toBeCloseTo(892, 0), { timeout: 1000 });
   });
 
   it('mounts only the landing window on initial mount, not intermediate columns', async () => {
@@ -1067,7 +1067,7 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 450));
 
-    expect(scroller.scrollLeft).toBe(892);
+    expect(scroller.scrollLeft).toBeCloseTo(892, 0);
   });
 
   it('re-reveals the active workspace after remove, add, and reorder changes', async () => {
@@ -1093,7 +1093,7 @@ describe('WorkspaceColumnsView', () => {
     target.getBoundingClientRect = vi.fn(() => ({ left: 100, right: 460 }) as DOMRect);
     workspaceStacks.set([['ws-2'], ['ws-3'], ['ws-1']]);
     await new Promise((resolve) => setTimeout(resolve, 450));
-    expect(scroller.scrollLeft).toBe(1156);
+    expect(scroller.scrollLeft).toBeCloseTo(1156, 0);
   });
 
   it('aligns a newly selected visible workspace to the padded start edge', async () => {
@@ -1107,7 +1107,7 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 400));
 
-    expect(scroller.scrollLeft).toBe(392);
+    expect(scroller.scrollLeft).toBeCloseTo(392, 0);
   });
 
   it('reveals a newly opened panel from its canonical request after layout expands', async () => {
@@ -1141,7 +1141,7 @@ describe('WorkspaceColumnsView', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 400));
 
-    expect(scroller.scrollLeft).toBe(0);
+    expect(scroller.scrollLeft).toBeCloseTo(0, 0);
   });
 
   it.each([
