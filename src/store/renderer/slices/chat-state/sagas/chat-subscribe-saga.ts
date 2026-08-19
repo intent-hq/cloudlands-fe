@@ -37,7 +37,12 @@
  *    ChatPanel remount the new instance re-initializes (deduped against the
  *    standing subscription) before the old instance's trailing clear lands,
  *    and closing the subscription then would drop the snapshot meta and
- *    strand that hydration (monorepo#2864). A clear scoped to a
+ *    strand that hydration (monorepo#2864). Each spared agent is revisited
+ *    when its hydration settles or fails: a live remounted panel keeps its
+ *    agent tab open (or re-viewed the agent), so the subscription stays; a
+ *    genuine panel close mid-load left no tab behind, so the deferred close
+ *    runs then — the spare defers the teardown, it never cancels it.
+ *    A clear scoped to a
  *    chief-workspace agent instead closes exactly that subscription,
  *    regardless of which agent remains viewed: the swap exempts chief
  *    subscriptions, so the Chief panel's own destroy (collapse /
@@ -106,6 +111,7 @@ import {
   chatUtilityFooterReady,
   initializeChatRequested,
   refreshChatTranscriptRequested,
+  transcriptHydrationFailed,
   transcriptHydrationSettled,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
@@ -155,6 +161,7 @@ import {
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectCurrentlyViewedAgentId } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
+import { selectAgentHasOpenPanelTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 
 const logger = createLogger('ChatSubscribeSaga');
 
@@ -223,6 +230,14 @@ interface SubscriptionCoordinator {
   locallyStartedTurns: Set<string>;
   /** One bounded reveal-gate watcher per agent (see revealGateWatcher). */
   revealGateWatchers: Map<string, Task>;
+  /**
+   * Agents spared from an applied clear's close-all sweep because their
+   * transcript hydration sat in `loading` (monorepo#2864). Revisited when
+   * that hydration settles/fails: an agent with no open panel tab and not
+   * re-viewed had its panel genuinely closed mid-load, so the deferred close
+   * runs then instead of leaking the subscription.
+   */
+  pendingClearWhileLoading: Set<string>;
 }
 
 function createCompletion(): TransitionCompletion {
@@ -828,6 +843,9 @@ function enqueueClose(
   }
   slot.desiredToken = undefined;
   slot.acquisition?.cancelPending();
+  // Any close retires a pending deferred clear — the teardown it deferred is
+  // now happening through this path.
+  coordinator.pendingClearWhileLoading.delete(agentId);
   const completion = createCompletion();
   return enqueue(slot, { kind: 'close', clearResumeAnchor, completion });
 }
@@ -1032,6 +1050,25 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
 }
 
 /**
+ * Revisit an agent spared from an applied clear's close-all sweep because
+ * its hydration was `loading` (monorepo#2864), now that the hydration has
+ * settled or failed. The spare exists for the same-agent remount, whose live
+ * panel keeps its agent tab open (or re-views the agent) — so when neither
+ * holds, the panel was genuinely closed mid-load and the deferred close runs
+ * now instead of leaking the subscription until an unrelated swap or session
+ * teardown.
+ */
+function* runDeferredClearIfPanelGone(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+): SagaGenerator<void> {
+  if (!coordinator.pendingClearWhileLoading.delete(agentId)) return;
+  if ((yield* selectCurrentlyViewedAgentId.effect()) === agentId) return;
+  if (yield* selectAgentHasOpenPanelTab.effect(agentId)) return;
+  enqueueClose(coordinator, agentId);
+}
+
+/**
  * Replay a deferred pre-session seq-0 snapshot now that the agent's session
  * exists in the store. Re-enqueued through the events channel so it runs
  * through the same entry/token/deletion guards as a live emit. When newer
@@ -1132,6 +1169,7 @@ type ChatSubscribeAction =
   | ReturnType<typeof chatSendStarted>
   | ReturnType<typeof markAgentAsViewed>
   | ReturnType<typeof transcriptHydrationSettled>
+  | ReturnType<typeof transcriptHydrationFailed>
   | ReturnType<typeof refreshChatTranscriptRequested>
   | ReturnType<typeof chatTranscriptSnapshotRerequested>
   | ReturnType<typeof clearCurrentlyViewedAgent>
@@ -1179,6 +1217,10 @@ function* routeLifecycleAction(
       yield* startRevealGateWatcher(coordinator, agentId);
     }
     enqueueHydrationSettled(coordinator, agentId);
+    yield* runDeferredClearIfPanelGone(coordinator, agentId);
+  } else if (action.type === transcriptHydrationFailed.type) {
+    const [agentId] = action.payload as ReturnType<typeof transcriptHydrationFailed>['payload'];
+    yield* runDeferredClearIfPanelGone(coordinator, agentId);
   } else if (action.type === refreshChatTranscriptRequested.type) {
     const [wsId, agentId] = action.payload as ReturnType<
       typeof refreshChatTranscriptRequested
@@ -1205,14 +1247,20 @@ function* routeLifecycleAction(
       // dropping the snapshot meta with no seq-0 emit coming (the remount's
       // open was consumed by the dedup). Spare agents whose transcript
       // hydration sits in `loading`: an in-flight hydration means a live
-      // panel is actively waiting on this subscription's snapshot. A genuine
-      // close-mid-load leaves the subscription standing until the next swap
-      // or session teardown reaps it — strictly better than stranding a
-      // remounted panel for the full bounded wait.
+      // panel is actively waiting on this subscription's snapshot. The spare
+      // defers the close, it never cancels it: each spared agent is recorded
+      // and revisited when its hydration settles/fails
+      // (runDeferredClearIfPanelGone), so a genuine close-mid-load still
+      // tears the subscription down instead of leaking it.
       const hydrating = new Set<string>();
       for (const slotAgentId of coordinator.slots.keys()) {
         if ((yield* selectTranscriptHydration.effect(slotAgentId)) === 'loading') {
           hydrating.add(slotAgentId);
+        }
+      }
+      for (const [slotAgentId, slot] of coordinator.slots.entries()) {
+        if (slot.wsId !== CHIEF_WORKSPACE_ID && hydrating.has(slotAgentId)) {
+          coordinator.pendingClearWhileLoading.add(slotAgentId);
         }
       }
       closeMatchingSlots(
@@ -1267,6 +1315,7 @@ function disposeCoordinator(coordinator: SubscriptionCoordinator): string[] {
   // Watcher tasks are forked children of the root saga — cancellation
   // retires them; only the bookkeeping map needs clearing.
   coordinator.revealGateWatchers.clear();
+  coordinator.pendingClearWhileLoading.clear();
   return agentIds;
 }
 
@@ -1278,6 +1327,7 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
     events: createChannel(buffers.expanding<ChatSubscriptionEvent>()),
     locallyStartedTurns: new Set(),
     revealGateWatchers: new Map(),
+    pendingClearWhileLoading: new Set(),
   };
   const lifecycleActions = yield* actionChannel(
     [
@@ -1285,6 +1335,7 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
       chatSendStarted,
       markAgentAsViewed,
       transcriptHydrationSettled,
+      transcriptHydrationFailed,
       refreshChatTranscriptRequested,
       chatTranscriptSnapshotRerequested,
       clearCurrentlyViewedAgent,

@@ -75,6 +75,10 @@ import {
   updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import {
+  clearPanelLayout,
+  openTab,
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   selectAwaitingSwitchBackSnapshot,
@@ -98,6 +102,7 @@ import {
   removePendingAgentDeletion,
   setPendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
+import { hasReplayableChatSnapshot } from '$features/agent/utils/chat-subscription-registry';
 import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
 import { selectTranscriptSnapshotMeta } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
@@ -206,6 +211,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
   afterAll(() => stopSaga?.());
   afterEach(() => {
     appStore.dispatch(clearAllSessions());
+    appStore.dispatch(clearPanelLayout(WS));
     clearPendingAgentDeletions();
     fakeSubscriptions.length = 0;
     vi.clearAllMocks();
@@ -1493,6 +1499,10 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       // registration (monorepo#2692) — the user-visible reopen stall.
       const agentId = 'agent-sub-reopen-remount';
       seedSession(agentId);
+      // The remounted panel's agent tab is (still) open in the layout.
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'Agent Sub', closable: true, agentId }),
+      );
       const sub = openChat(agentId);
       appStore.dispatch(markAgentAsViewed(agentId));
       sub.handler({ ...transcript([makeMessage('m-reopen', 'hello')]), fromSnapshot: true });
@@ -1515,8 +1525,89 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       // remount's own open was consumed by the dedup).
       expect(sub.unsubscribe).not.toHaveBeenCalled();
       expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toBeDefined();
+
+      // Hydration settles: the deferred-clear revisit sees the panel's agent
+      // tab still open and keeps the subscription (the spare was for THIS
+      // live panel, not a leak).
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(sub.unsubscribe).not.toHaveBeenCalled();
     },
   );
+
+  it(
+    'runs the deferred close once hydration settles when the panel was genuinely closed mid-load (no leaked subscription, monorepo#2864)',
+    async () => {
+      // Genuine final panel close while hydration is still `loading`: the
+      // applied clear's sweep spares the agent (indistinguishable from a
+      // same-agent remount at that instant), but once hydration settles with
+      // no open agent tab and no re-view, the deferred close must run —
+      // otherwise the standing subscription leaks until an unrelated view
+      // switch or session teardown (PR #1462 review).
+      const agentId = 'agent-sub-close-mid-load';
+      seedSession(agentId);
+      const sub = openChat(agentId);
+      appStore.dispatch(markAgentAsViewed(agentId));
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+
+      // Panel closes mid-load: no agent tab remains, the trailing clear
+      // applies, and the sweep spares the loading agent (deferred).
+      appStore.dispatch(clearCurrentlyViewedAgent(agentId));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+      // Hydration settles: no open tab, agent not re-viewed — the deferred
+      // close tears the subscription down now.
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+    },
+  );
+
+  it(
+    'runs the deferred close once hydration fails when the panel was genuinely closed mid-load (monorepo#2864)',
+    async () => {
+      // Same leak, failure edge: a hydration that FAILS after the spare must
+      // also revisit the deferred close — `loading` never wedges the spare.
+      const agentId = 'agent-sub-close-mid-load-failed';
+      seedSession(agentId);
+      const sub = openChat(agentId);
+      appStore.dispatch(markAgentAsViewed(agentId));
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+
+      appStore.dispatch(clearCurrentlyViewedAgent(agentId));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+      appStore.dispatch(transcriptHydrationFailed(agentId));
+      await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+    },
+  );
+
+  it('flips the replayable-snapshot flag true on a snapshot emit and false on close (registry wiring, monorepo#2864)', async () => {
+    // End-to-end pin of the registry wiring the chat-read saga's immediate
+    // escalation consults: a dropped set-site would silently degrade the
+    // fast path back to the full wait, a missed clear-site would re-request
+    // against a torn-down registration.
+    const agentId = 'agent-sub-replayable-wiring';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    expect(hasReplayableChatSnapshot(agentId)).toBe(false);
+
+    sub.handler({ ...transcript([makeMessage('m-rw', 'hello')]), fromSnapshot: true });
+    expect(hasReplayableChatSnapshot(agentId)).toBe(true);
+
+    // A non-snapshot delta emit clears it — the registration's latest
+    // transcript can no longer answer a re-request without a fresh emit.
+    sub.handler(transcript([makeMessage('m-rw', 'hello'), makeMessage('m-rw-2', 'more')]));
+    expect(hasReplayableChatSnapshot(agentId)).toBe(false);
+
+    sub.handler({ ...transcript([makeMessage('m-rw-3', 'snap')]), fromSnapshot: true });
+    expect(hasReplayableChatSnapshot(agentId)).toBe(true);
+
+    appStore.dispatch(removeSession(agentId));
+    await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+    expect(hasReplayableChatSnapshot(agentId)).toBe(false);
+  });
 
   describe('chief-workspace exemption from the viewed-agent swap (monorepo#1421)', () => {
     const CHIEF_AGENT = 'agent-sub-chief';
