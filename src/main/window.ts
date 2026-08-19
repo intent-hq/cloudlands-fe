@@ -14,6 +14,7 @@ import {
   getWindowAppearanceOptions,
   getWindowTitleBarOptions,
 } from '../shared/main/window-appearance';
+import { resolveAppDockIconPath, resolveAppIconPath } from './utils/resolve-app-icon';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -27,32 +28,17 @@ const logger = new Logger('Main');
  * Optionally sets the macOS dock icon.
  */
 function resolveIcon(setDockIcon: boolean): string | undefined {
-  const isDev = process.env.NODE_ENV === 'development';
-  if (!isDev) return undefined;
+  const resolutionOptions = {
+    isPackaged: app.isPackaged,
+    nodeEnv: process.env.NODE_ENV,
+    platform: process.platform,
+  };
+  const iconPath = resolveAppIconPath(resolutionOptions);
+  const dockIconPath = resolveAppDockIconPath(resolutionOptions);
 
-  const iconPngPath = path.join(__dirname, '../../src/assets/icons/icon.png');
-  const iconIcoPath = path.join(__dirname, '../../src/assets/icons/icon.ico');
-  const iconIcnsPath = path.join(__dirname, '../../src/assets/icons/icon.icns');
-
-  const platformIconPath = process.platform === 'win32' ? iconIcoPath : iconPngPath;
-  let iconPath: string | undefined;
-  if (fs.existsSync(platformIconPath)) {
-    iconPath = platformIconPath;
-  } else if (fs.existsSync(iconPngPath)) {
-    iconPath = iconPngPath;
-  } else if (fs.existsSync(iconIcoPath)) {
-    iconPath = iconIcoPath;
-  } else if (fs.existsSync(iconIcnsPath)) {
-    iconPath = iconIcnsPath;
-  }
-
-  if (setDockIcon && process.platform === 'darwin') {
+  if (dockIconPath && setDockIcon) {
     try {
-      if (fs.existsSync(iconPngPath)) {
-        app.dock?.setIcon(nativeImage.createFromPath(iconPngPath));
-      } else if (fs.existsSync(iconIcnsPath)) {
-        app.dock?.setIcon(nativeImage.createFromPath(iconIcnsPath));
-      }
+      app.dock?.setIcon(nativeImage.createFromPath(dockIconPath));
     } catch (e) {
       logger.warn('Failed to set dev dock icon:', e);
     }
@@ -672,7 +658,10 @@ export async function createWindowForDeepLink(
   const { workArea } = screen.getPrimaryDisplay();
   const bounds = { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height };
 
-  const newWindow = new BrowserWindow(buildWindowOptions({ bounds, title: resolveAppTitle() }));
+  const iconPath = resolveIcon(false);
+  const newWindow = new BrowserWindow(
+    buildWindowOptions({ bounds, title: resolveAppTitle(), iconPath }),
+  );
   forwardRendererConsoleToMainLog(newWindow);
 
   const encodedAction = encodeURIComponent(JSON.stringify(action));
