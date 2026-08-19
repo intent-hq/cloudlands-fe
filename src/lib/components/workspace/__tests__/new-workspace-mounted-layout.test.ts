@@ -6,6 +6,7 @@ import { initAppStore, store as appStore } from '$store/renderer/store';
 import {
   bootstrapNewWorkspaceLayout,
   clearPanelLayout,
+  initializeLayout,
   openTabInNewRootColumn,
   revealDeferredSpecTab,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -57,45 +58,82 @@ function mountedPanels(): HTMLElement[] {
 }
 
 describe('mounted new workspace layout', () => {
-  it.each([true, false])(
-    'shows one focused initial agent column when coordinator=%s, then reveals Spec once',
-    async (coordinator) => {
-      const workspaceId = `mounted-bootstrap-${++sequence}`;
-      const agentTitle = coordinator ? 'Coordinator' : 'Initial agent';
-      appStore.dispatch(clearPanelLayout(workspaceId));
-      appStore.dispatch(
-        bootstrapNewWorkspaceLayout(workspaceId, 'agent-1', agentTitle, coordinator),
-      );
-      const result = render(PanelLayout, {
-        props: { workspaceId, layoutId: workspaceId },
-        context: new Map([[STORE_CONTEXT, storeContext]]),
-      });
+  it('reveals Spec once to the right of the coordinator across repeat and remount', async () => {
+    const workspaceId = `mounted-bootstrap-${++sequence}`;
+    appStore.dispatch(clearPanelLayout(workspaceId));
+    appStore.dispatch(bootstrapNewWorkspaceLayout(workspaceId, 'agent-1', 'Coordinator', true));
+    const result = render(PanelLayout, {
+      props: { workspaceId, layoutId: workspaceId },
+      context: new Map([[STORE_CONTEXT, storeContext]]),
+    });
 
-      await waitFor(() => expect(mountedPanels()).toHaveLength(1));
-      expect(mountedPanels()[0].textContent).toContain(agentTitle);
-      expect(mountedPanels()[0].textContent).not.toContain('Spec');
-      const workspace = appStore.state.panelLayout.byWorkspaceId[workspaceId];
-      const agentPanels = Object.values(workspace.panels).filter((panel) =>
-        panel.tabs.some((tab) => tab.type === 'agent' && tab.agentId === 'agent-1'),
-      );
-      expect(agentPanels).toHaveLength(1);
-      expect(agentPanels[0]).not.toHaveProperty('pinned');
-      expect(workspace.focusedPanelId).toBe(agentPanels[0].id);
+    await waitFor(() => expect(mountedPanels()).toHaveLength(1));
+    expect(mountedPanels()[0].textContent).toContain('Coordinator');
+    expect(mountedPanels()[0].textContent).not.toContain('Spec');
 
-      appStore.dispatch(revealDeferredSpecTab(workspaceId, 'spec:created', 'Spec', 10));
-      await waitFor(() => expect(mountedPanels()[0].textContent).toContain('Spec'));
+    appStore.dispatch(revealDeferredSpecTab(workspaceId, 'spec:created', 'Spec', 10));
+    await waitFor(() => expect(mountedPanels()).toHaveLength(2));
+    expect(mountedPanels()[0].textContent).toContain('Coordinator');
+    expect(mountedPanels()[0].textContent).not.toContain('Spec');
+    expect(mountedPanels()[1].textContent).toContain('Spec');
 
-      result.unmount();
-      render(PanelLayout, {
-        props: { workspaceId, layoutId: workspaceId },
-        context: new Map([[STORE_CONTEXT, storeContext]]),
-      });
-      await waitFor(() => expect(mountedPanels()).toHaveLength(1));
+    const revealed = appStore.state.panelLayout.byWorkspaceId[workspaceId];
+    appStore.dispatch(revealDeferredSpecTab(workspaceId, 'spec:updated', 'Spec', 20));
+    expect(appStore.state.panelLayout.byWorkspaceId[workspaceId]).toBe(revealed);
+    await waitFor(() =>
       expect(mountedPanels().filter((panel) => panel.textContent?.includes('Spec'))).toHaveLength(
         1,
-      );
-    },
-  );
+      ),
+    );
+
+    result.unmount();
+    render(PanelLayout, {
+      props: { workspaceId, layoutId: workspaceId },
+      context: new Map([[STORE_CONTEXT, storeContext]]),
+    });
+    await waitFor(() => expect(mountedPanels()).toHaveLength(2));
+    expect(mountedPanels()[0].textContent).toContain('Coordinator');
+    expect(mountedPanels()[1].textContent).toContain('Spec');
+    expect(mountedPanels().filter((panel) => panel.textContent?.includes('Spec'))).toHaveLength(1);
+  });
+
+  it('does not reveal Spec for a non-coordinator workspace', async () => {
+    const workspaceId = `mounted-bootstrap-${++sequence}`;
+    appStore.dispatch(clearPanelLayout(workspaceId));
+    appStore.dispatch(bootstrapNewWorkspaceLayout(workspaceId, 'agent-1', 'Initial agent', false));
+    render(PanelLayout, {
+      props: { workspaceId, layoutId: workspaceId },
+      context: new Map([[STORE_CONTEXT, storeContext]]),
+    });
+
+    appStore.dispatch(revealDeferredSpecTab(workspaceId, 'spec:created', 'Spec', 10));
+    await waitFor(() => expect(mountedPanels()).toHaveLength(1));
+    expect(mountedPanels()[0].textContent).toContain('Initial agent');
+    expect(mountedPanels()[0].textContent).not.toContain('Spec');
+  });
+
+  it('does not replay Spec reveal from a restored revealed lifecycle', async () => {
+    const workspaceId = `mounted-bootstrap-${++sequence}`;
+    appStore.dispatch(clearPanelLayout(workspaceId));
+    appStore.dispatch(bootstrapNewWorkspaceLayout(workspaceId, 'agent-1', 'Coordinator', true));
+    appStore.dispatch(revealDeferredSpecTab(workspaceId, 'spec:created', 'Spec', 10));
+    const persisted = structuredClone(appStore.state.panelLayout.byWorkspaceId[workspaceId]);
+
+    appStore.dispatch(clearPanelLayout(workspaceId));
+    appStore.dispatch(initializeLayout(workspaceId, persisted));
+    render(PanelLayout, {
+      props: { workspaceId, layoutId: workspaceId },
+      context: new Map([[STORE_CONTEXT, storeContext]]),
+    });
+
+    await waitFor(() => expect(mountedPanels()).toHaveLength(2));
+    const restored = appStore.state.panelLayout.byWorkspaceId[workspaceId];
+    appStore.dispatch(revealDeferredSpecTab(workspaceId, 'spec:updated', 'Spec', 20));
+    expect(appStore.state.panelLayout.byWorkspaceId[workspaceId]).toBe(restored);
+    expect(mountedPanels()[0].textContent).toContain('Coordinator');
+    expect(mountedPanels()[1].textContent).toContain('Spec');
+    expect(mountedPanels().filter((panel) => panel.textContent?.includes('Spec'))).toHaveLength(1);
+  });
 
   it.each(['light', 'dark'] as const)(
     'keeps the %s first-open agent columns and empty surface equivalent after remount',

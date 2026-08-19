@@ -21,7 +21,7 @@ import {
 } from '../../panel-layout/panel-layout-selectors';
 import {
   closeActiveTab,
-  openTab,
+  openTabInRightmostColumnRequested,
   reopenClosedTab,
   selectNextTab,
   selectPreviousTab,
@@ -72,7 +72,7 @@ function* newBrowser(data: WorkspaceCommandPayload | null): SagaGenerator<void> 
   if (!isWorkspaceCommandPayload(data)) return;
   const workspaceId = data.workspaceId;
   yield* put(
-    openTab(workspaceId, {
+    openTabInRightmostColumnRequested(workspaceId, {
       type: 'browser',
       title: 'Browser',
       browserUrl: 'about:blank',

@@ -12,7 +12,7 @@ import {
   createNoteRequested,
   markNoteRead,
 } from '../../note-read-tracking/note-read-tracking-slice';
-import { openTab } from '../../panel-layout/panel-layout-slice';
+import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/panel-layout-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   addOptimisticNote,
@@ -189,7 +189,7 @@ describe('notesWriteSaga', () => {
     await run.task.toPromise();
   });
 
-  it('handles createNoteRequested with legacy defaults then marks read before opening the tab', async () => {
+  it('preserves an explicit panel target when createNoteRequested opens the new note', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(NOW));
     const created = note({
@@ -233,6 +233,51 @@ describe('notesWriteSaga', () => {
         opened.payload.timestamp,
       ),
     ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('routes untargeted createNoteRequested through configured rightmost-column placement', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW));
+    const created = note({
+      id: NoteId('note-created'),
+      title: 'New Note',
+      content: '',
+    });
+    vi.spyOn(appClient.notes, 'create').mockResolvedValue({ success: true });
+    vi.spyOn(appClient.notes, 'list').mockResolvedValue([note(), created]);
+    const run = harness();
+
+    run.channel.put(createNoteRequested(WS, { panelLayoutId: 'nested-layout' }));
+    await settle();
+
+    const orderedSuccess = run.actions.filter((action) => {
+      if (action.type === addOptimisticNote.type) {
+        return String((action.payload as [string, Note])[1].id) === 'note-created';
+      }
+      return (
+        action.type === markNoteRead.type || action.type === openTabInRightmostColumnRequested.type
+      );
+    });
+    const opened = orderedSuccess[2] as ReturnType<typeof openTabInRightmostColumnRequested>;
+    expect(orderedSuccess).toEqual([
+      addOptimisticNote(WS, created),
+      markNoteRead(WS, 'note-created'),
+      openTabInRightmostColumnRequested(
+        'nested-layout',
+        {
+          type: 'note',
+          title: 'New Note',
+          closable: true,
+          noteId: 'note-created',
+          workspaceId: WS,
+        },
+        { newTabId: opened.payload.newTabId },
+        opened.payload.timestamp,
+      ),
+    ]);
+    expect(run.actions.some((action) => action.type === openTab.type)).toBe(false);
     run.task.cancel();
     await run.task.toPromise();
   });
