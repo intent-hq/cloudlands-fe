@@ -32,7 +32,12 @@
  *    non-chief subscriptions — but only when the clear actually applied (no
  *    agent remains viewed after the reducer). A background panel's trailing
  *    scoped clear is ignored by the reducer, so the viewed agent's
- *    subscription survives (monorepo#1215). A clear scoped to a
+ *    subscription survives (monorepo#1215). An applied clear still spares
+ *    agents whose transcript hydration sits in `loading`: on a same-agent
+ *    ChatPanel remount the new instance re-initializes (deduped against the
+ *    standing subscription) before the old instance's trailing clear lands,
+ *    and closing the subscription then would drop the snapshot meta and
+ *    strand that hydration (monorepo#2864). A clear scoped to a
  *    chief-workspace agent instead closes exactly that subscription,
  *    regardless of which agent remains viewed: the swap exempts chief
  *    subscriptions, so the Chief panel's own destroy (collapse /
@@ -142,6 +147,7 @@ import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-dele
 import {
   clearStandingChatSubscription,
   markStandingChatSubscription,
+  setReplayableChatSnapshot,
 } from '$features/agent/utils/chat-subscription-registry';
 import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
 import {
@@ -455,10 +461,19 @@ function* handleSubscriptionEvent(
       const preSession = yield* selectAgentSession.effect(event.agentId);
       if (!preSession) {
         entry.pendingSnapshot = event.transcript;
+        setReplayableChatSnapshot(event.agentId, true);
         return;
       }
       entry.pendingSnapshot = undefined;
     }
+    // Mirror of emitOrCycleSnapshot's no-wire paths: a held pre-session
+    // snapshot or a snapshot-typed lastTranscript can answer a re-request
+    // without a fresh emit. The chat-read saga consults this to escalate
+    // immediately instead of stranding a wait window (monorepo#2864).
+    setReplayableChatSnapshot(
+      event.agentId,
+      entry.pendingSnapshot !== undefined || event.transcript.fromSnapshot === true,
+    );
     // §7.1 `resumed: false` snapshot: the retained transcript MUST be
     // discarded (see applyTranscript). Snapshot emits only — the settled
     // re-apply of the same transcript must not wipe the background
@@ -1181,7 +1196,29 @@ function* routeLifecycleAction(
     if (scopeAgentId && (yield* isChiefChatAgent(coordinator, scopeAgentId))) {
       enqueueClose(coordinator, scopeAgentId);
     } else if ((yield* selectCurrentlyViewedAgentId.effect()) === null) {
-      closeMatchingSlots(coordinator, (_agentId, slot) => slot.wsId !== CHIEF_WORKSPACE_ID);
+      // Same-agent remount hole in the monorepo#1215 guard (monorepo#2864):
+      // on a ChatPanel remount for the SAME agent, the new instance's
+      // initializeChatRequested dedupes against the standing subscription and
+      // its markAgentAsViewed is a reducer no-op (already viewed) — so the
+      // old instance's trailing scoped clear APPLIES (viewed → null) and
+      // would close the very subscription the remounted panel depends on,
+      // dropping the snapshot meta with no seq-0 emit coming (the remount's
+      // open was consumed by the dedup). Spare agents whose transcript
+      // hydration sits in `loading`: an in-flight hydration means a live
+      // panel is actively waiting on this subscription's snapshot. A genuine
+      // close-mid-load leaves the subscription standing until the next swap
+      // or session teardown reaps it — strictly better than stranding a
+      // remounted panel for the full bounded wait.
+      const hydrating = new Set<string>();
+      for (const slotAgentId of coordinator.slots.keys()) {
+        if ((yield* selectTranscriptHydration.effect(slotAgentId)) === 'loading') {
+          hydrating.add(slotAgentId);
+        }
+      }
+      closeMatchingSlots(
+        coordinator,
+        (agentId, slot) => slot.wsId !== CHIEF_WORKSPACE_ID && !hydrating.has(agentId),
+      );
     }
   } else if (action.type === upsertSession.type) {
     const [session] = action.payload as [AgentSession];

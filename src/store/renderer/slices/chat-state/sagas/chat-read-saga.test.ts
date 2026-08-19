@@ -40,6 +40,10 @@ import {
 } from '../chat-state-slice';
 import { hydratedBlockKey } from '../chat-state-types';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  clearAllStandingChatSubscriptions,
+  setReplayableChatSnapshot,
+} from '$features/agent/utils/chat-subscription-registry';
 import { chatReadSaga } from './chat-read-saga';
 
 const WS = 'ws-chat';
@@ -128,7 +132,10 @@ function applySnapshot(
 }
 
 describe('chatReadSaga (single-transfer hydration)', () => {
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    vi.clearAllMocks();
+    clearAllStandingChatSubscriptions();
+  });
 
   it('settles from the standing subscription snapshot without any conversation fetch', async () => {
     mocks.get.mockResolvedValue(session());
@@ -418,6 +425,65 @@ describe('chatReadSaga (single-transfer hydration)', () => {
       expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
       expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual(['m-retry']);
       expect(mocks.getConversation).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Defense-in-depth for the reopen snapshot stall (monorepo#2864): the
+  // standing subscription already holds a replayable snapshot (its seq-0
+  // emit was consumed before this hydration attached — e.g. a teardown
+  // reset dropped the meta) so no new emit is coming. The saga must
+  // escalate immediately instead of stranding the first ~8s wait window.
+  it('escalates immediately when the standing subscription already holds a replayable snapshot', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.get.mockResolvedValue(session());
+      setReplayableChatSnapshot(AGENT, true);
+      const run = harness();
+      run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+      // No wait window elapses: the re-request goes out right away.
+      await vi.advanceTimersByTimeAsync(50);
+      expect(
+        run.dispatch.mock.calls.filter(
+          ([action]) => action.type === chatTranscriptSnapshotRerequested.type,
+        ),
+      ).toHaveLength(1);
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
+
+      // The subscribe saga answers by replaying the held snapshot.
+      applySnapshot(run, [message('m-replayed', 'replayed')]);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+      expect(mocks.getConversation).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Cold open: no replayable snapshot yet — the seq-0 emit is in flight and
+  // the plain bounded wait must run without an immediate escalation (an
+  // early force-cycle would only churn a healthy opening subscription).
+  it('does not escalate early on a cold open without a replayable snapshot', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.get.mockResolvedValue(session());
+      const run = harness();
+      run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(
+        run.dispatch.mock.calls.filter(
+          ([action]) => action.type === chatTranscriptSnapshotRerequested.type,
+        ),
+      ).toHaveLength(0);
+      applySnapshot(run, [message('m-cold', 'cold open')]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
       run.task.cancel();
       await run.task.toPromise();
     } finally {

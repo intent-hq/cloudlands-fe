@@ -1463,10 +1463,10 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
   });
 
   // Reopen snapshot stall (monorepo#2864) — same-agent hole in the
-  // monorepo#1215 cross-agent guard. `it.fails` documents today's broken
-  // behavior deterministically: the inner assertions state the CORRECT
-  // behavior and currently fail; the companion fix task flips this to `it`.
-  it.fails(
+  // monorepo#1215 cross-agent guard, closed by sparing agents whose
+  // transcript hydration sits in `loading` from the applied clear's
+  // close-all sweep.
+  it(
     "keeps the standing subscription when a same-agent remount's trailing clearCurrentlyViewedAgent lands after the new instance re-initialized (reopen snapshot stall, monorepo#2864)",
     async () => {
       // Same-agent ChatPanel remount (tab close + immediate reopen of the
