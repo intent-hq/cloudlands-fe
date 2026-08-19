@@ -1,5 +1,5 @@
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
-import { call, type SagaGenerator } from 'typed-redux-saga';
+import { call, delay, select, type SagaGenerator } from 'typed-redux-saga';
 
 import { closeWorkspaceTabAndNavigateAway } from '$features/workspace/navigate-away-if-viewing';
 import { createLogger } from '$lib/utils/client-logger';
@@ -23,12 +23,22 @@ const logger = createLogger('WorkspaceTabReconciliationSaga');
  * workspace is the one on screen — the same helper the live-event path uses.
  * Known limitation (no reducer change): `closeWorkspaceTab` records the pruned
  * tab in the recently-closed reopen stack.
+ *
+ * The worker yields one macrotask and re-reads the selector before closing
+ * anything: multi-action flows (e.g. delete-with-undo's
+ * `removeWorkspaceEntity` + `markWorkspacePendingDeletion`) emit between their
+ * dispatches, and pruning synchronously on the first emission would act on a
+ * half-applied state. `takeLatest` cancels the parked worker when the next
+ * dispatch changes the prunable set, and the fresh re-read covers anything a
+ * cancellation-free burst may have changed.
  */
 export function* workspaceTabReconciliationSaga(): SagaGenerator<void> {
   yield* takeLatestFromSelector(
     selectWorkspaceTabsToReconcile,
-    function* ({ payload }: SelectorChannelPayload<string[]>): SagaGenerator<void> {
-      for (const workspaceId of payload) {
+    function* (_: SelectorChannelPayload<string[]>): SagaGenerator<void> {
+      yield* delay(0);
+      const tabsToClose = yield* select(selectWorkspaceTabsToReconcile.select);
+      for (const workspaceId of tabsToClose) {
         try {
           yield* call(closeWorkspaceTabAndNavigateAway, workspaceId);
         } catch (error) {

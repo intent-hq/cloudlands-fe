@@ -176,7 +176,7 @@ describe('lifecycleReadSaga', () => {
     expect(mocks.workspaces.recentViews.mock.calls).toEqual([[]]);
     expect(run.actions).toEqual([
       { type: 'workspace/replaceWorkspaceList', payload: [[workspace]] },
-      { type: 'workspace/setWorkspaceHasLoaded', payload: [true] },
+      { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local'] },
       { type: 'workspace/loadRecencyData', payload: [{ lastViewedAt: { [WS]: 42 } }] },
     ]);
     await stop(run.task);

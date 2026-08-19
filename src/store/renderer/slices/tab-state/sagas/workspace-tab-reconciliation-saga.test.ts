@@ -4,6 +4,12 @@ import { runSaga, stdChannel } from 'redux-saga';
 import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import {
+  connectionsListReceived,
+  connectionsReducer,
+} from '../../connections/connections-slice';
+import {
+  markWorkspacePendingDeletion,
+  removeWorkspaceEntity,
   replaceWorkspaceList,
   setPendingCreation,
   setWorkspaceHasLoaded,
@@ -28,7 +34,12 @@ vi.mock('$features/workspace/navigate-away-if-viewing', () => ({
 }));
 
 const settle = async () => {
-  for (let i = 0; i < 6; i++) await Promise.resolve();
+  // The saga worker parks on `delay(0)` (a macrotask) before re-reading the
+  // selector, so flush timers as well as microtasks.
+  for (let i = 0; i < 3; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (let j = 0; j < 6; j++) await Promise.resolve();
+  }
 };
 
 function makeWorkspace(overrides: Partial<Workspace> & { id: string }): Workspace {
@@ -60,13 +71,16 @@ function persistedTabs(
   };
 }
 
-const SET_ACTIVE_BACKEND = 'test/setActiveBackend';
+/** `connectionsListReceived` payload switching the active backend. */
+function backendActive(activeId: string) {
+  return connectionsListReceived({ connections: [], activeId });
+}
 
 function createHarness() {
   let state = {
     tabState: tabStateReducer(undefined, { type: '@@INIT' }),
     workspace: workspaceReducer(undefined, { type: '@@INIT' }),
-    connections: { activeId: 'local' },
+    connections: connectionsReducer(undefined, { type: '@@INIT' }),
   };
   const channel = stdChannel();
   const listeners = new Set<() => void>();
@@ -74,10 +88,7 @@ function createHarness() {
     state = {
       tabState: tabStateReducer(state.tabState, action as never),
       workspace: workspaceReducer(state.workspace, action as never),
-      connections:
-        action.type === SET_ACTIVE_BACKEND
-          ? { activeId: action.payload as string }
-          : state.connections,
+      connections: connectionsReducer(state.connections, action as never),
     };
     channel.put(action);
     for (const listener of listeners) listener();
@@ -117,10 +128,11 @@ describe('workspaceTabReconciliationSaga', () => {
 
   it('prunes tabs whose workspace is missing from the loaded list', async () => {
     const harness = createHarness();
+    harness.dispatch(backendActive('local'));
     harness.dispatch(loadWorkspaceTabsState(persistedTabs(['ws-A', 'ws-ghost'])));
     harness.dispatch(workspaceTabsHydrated('local'));
     harness.dispatch(replaceWorkspaceList([makeWorkspace({ id: 'ws-A' })]));
-    harness.dispatch(setWorkspaceHasLoaded(true));
+    harness.dispatch(setWorkspaceHasLoaded(true, 'local'));
     await settle();
 
     expect(prunedIds()).toEqual(['ws-ghost']);
@@ -130,6 +142,7 @@ describe('workspaceTabReconciliationSaga', () => {
 
   it('prunes tabs whose workspace is archived', async () => {
     const harness = createHarness();
+    harness.dispatch(backendActive('local'));
     harness.dispatch(loadWorkspaceTabsState(persistedTabs(['ws-A', 'ws-archived'])));
     harness.dispatch(workspaceTabsHydrated('local'));
     harness.dispatch(
@@ -142,7 +155,7 @@ describe('workspaceTabReconciliationSaga', () => {
         }),
       ]),
     );
-    harness.dispatch(setWorkspaceHasLoaded(true));
+    harness.dispatch(setWorkspaceHasLoaded(true, 'local'));
     await settle();
 
     expect(prunedIds()).toEqual(['ws-archived']);
@@ -151,10 +164,11 @@ describe('workspaceTabReconciliationSaga', () => {
 
   it('skips reconciliation entirely when the loaded workspace list is empty', async () => {
     const harness = createHarness();
+    harness.dispatch(backendActive('local'));
     harness.dispatch(loadWorkspaceTabsState(persistedTabs(['ws-A', 'ws-B'])));
     harness.dispatch(workspaceTabsHydrated('local'));
     harness.dispatch(replaceWorkspaceList([]));
-    harness.dispatch(setWorkspaceHasLoaded(true));
+    harness.dispatch(setWorkspaceHasLoaded(true, 'local'));
     await settle();
 
     expect(prunedIds()).toEqual([]);
@@ -164,6 +178,7 @@ describe('workspaceTabReconciliationSaga', () => {
 
   it('never prunes optimistic tabs or workspaces with a pending creation', async () => {
     const harness = createHarness();
+    harness.dispatch(backendActive('local'));
     harness.dispatch(
       loadWorkspaceTabsState(
         persistedTabs(['ws-A', 'ws-optimistic', 'ws-pending'], ['ws-optimistic']),
@@ -172,18 +187,43 @@ describe('workspaceTabReconciliationSaga', () => {
     harness.dispatch(workspaceTabsHydrated('local'));
     harness.dispatch(setPendingCreation(makeWorkspace({ id: 'ws-pending' })));
     harness.dispatch(replaceWorkspaceList([makeWorkspace({ id: 'ws-A' })]));
-    harness.dispatch(setWorkspaceHasLoaded(true));
+    harness.dispatch(setWorkspaceHasLoaded(true, 'local'));
     await settle();
 
     expect(prunedIds()).toEqual([]);
     await finish(harness);
   });
 
+  it('never prunes a workspace inside the delete-undo grace window', async () => {
+    const harness = createHarness();
+    harness.dispatch(backendActive('local'));
+    harness.dispatch(loadWorkspaceTabsState(persistedTabs(['ws-A', 'ws-deleting'])));
+    harness.dispatch(workspaceTabsHydrated('local'));
+    harness.dispatch(
+      replaceWorkspaceList([makeWorkspace({ id: 'ws-A' }), makeWorkspace({ id: 'ws-deleting' })]),
+    );
+    harness.dispatch(setWorkspaceHasLoaded(true, 'local'));
+    await settle();
+    expect(prunedIds()).toEqual([]);
+
+    // Delete-with-undo removes the entity from the collection up front while
+    // the daemon owns the grace window — the background tab must survive so
+    // an undo can restore it.
+    harness.dispatch(removeWorkspaceEntity('ws-deleting'));
+    harness.dispatch(markWorkspacePendingDeletion('ws-deleting'));
+    await settle();
+
+    expect(prunedIds()).toEqual([]);
+    expect(Object.keys(harness.getState().tabState.openTabs)).toEqual(['ws-A', 'ws-deleting']);
+    await finish(harness);
+  });
+
   it('waits for both hydration and a completed list load before pruning', async () => {
     const harness = createHarness();
+    harness.dispatch(backendActive('local'));
     harness.dispatch(loadWorkspaceTabsState(persistedTabs(['ws-ghost'])));
     harness.dispatch(replaceWorkspaceList([makeWorkspace({ id: 'ws-A' })]));
-    harness.dispatch(setWorkspaceHasLoaded(true));
+    harness.dispatch(setWorkspaceHasLoaded(true, 'local'));
     await settle();
     expect(prunedIds()).toEqual([]);
 
@@ -194,25 +234,76 @@ describe('workspaceTabReconciliationSaga', () => {
     await finish(harness);
   });
 
+  it('does not prune before the connections list has been received', async () => {
+    const harness = createHarness();
+    // Boot: hydration + list load both land while `activeId` is still the
+    // boot-time local default — the true active backend may be remote, so
+    // nothing may be pruned yet.
+    harness.dispatch(loadWorkspaceTabsState(persistedTabs(['ws-A', 'ws-ghost'])));
+    harness.dispatch(workspaceTabsHydrated('local'));
+    harness.dispatch(replaceWorkspaceList([makeWorkspace({ id: 'ws-A' })]));
+    harness.dispatch(setWorkspaceHasLoaded(true, 'local'));
+    await settle();
+    expect(prunedIds()).toEqual([]);
+
+    // The connections list confirms local is really active → safe to prune.
+    harness.dispatch(backendActive('local'));
+    await settle();
+
+    expect(prunedIds()).toEqual(['ws-ghost']);
+    await finish(harness);
+  });
+
   it('does not prune while hydration belongs to a different backend, and re-runs after the switch re-hydrates', async () => {
     const harness = createHarness();
+    harness.dispatch(backendActive('local'));
     harness.dispatch(loadWorkspaceTabsState(persistedTabs(['ws-A'])));
     harness.dispatch(workspaceTabsHydrated('local'));
     harness.dispatch(replaceWorkspaceList([makeWorkspace({ id: 'ws-A' })]));
-    harness.dispatch(setWorkspaceHasLoaded(true));
+    harness.dispatch(setWorkspaceHasLoaded(true, 'local'));
     await settle();
     expect(prunedIds()).toEqual([]);
 
     // Backend switch: the strip is stale (hydratedBackendId !== activeId), so
     // the remote backend's list must not prune the not-yet-rehydrated tabs.
-    harness.dispatch({ type: SET_ACTIVE_BACKEND, payload: 'remote-1' });
+    harness.dispatch(backendActive('remote-1'));
     harness.dispatch(replaceWorkspaceList([makeWorkspace({ id: 'ws-remote' })]));
+    harness.dispatch(setWorkspaceHasLoaded(true, 'remote-1'));
     await settle();
     expect(prunedIds()).toEqual([]);
 
     // Re-hydration for the new backend settles with a ghost tab → pruned.
     harness.dispatch(loadWorkspaceTabsState(persistedTabs(['ws-remote', 'ws-stale'])));
     harness.dispatch(workspaceTabsHydrated('remote-1'));
+    await settle();
+
+    expect(prunedIds()).toEqual(['ws-stale']);
+    await finish(harness);
+  });
+
+  it('does not reconcile a re-hydrated strip against the previous backend\'s list', async () => {
+    const harness = createHarness();
+    harness.dispatch(backendActive('local'));
+    harness.dispatch(loadWorkspaceTabsState(persistedTabs(['ws-A'])));
+    harness.dispatch(workspaceTabsHydrated('local'));
+    harness.dispatch(replaceWorkspaceList([makeWorkspace({ id: 'ws-A' })]));
+    harness.dispatch(setWorkspaceHasLoaded(true, 'local'));
+    await settle();
+    expect(prunedIds()).toEqual([]);
+
+    // Switch: the strip re-hydrates for remote-1 BEFORE its workspace-list
+    // RPC returns. `hasLoaded` is still true from the previous backend, but
+    // `loadedBackendId` is stale — the remote tabs must not be compared
+    // against the local list.
+    harness.dispatch(backendActive('remote-1'));
+    harness.dispatch(loadWorkspaceTabsState(persistedTabs(['ws-remote', 'ws-stale'])));
+    harness.dispatch(workspaceTabsHydrated('remote-1'));
+    await settle();
+    expect(prunedIds()).toEqual([]);
+
+    // The remote list lands → only the genuinely stale tab is pruned.
+    harness.dispatch(replaceWorkspaceList([makeWorkspace({ id: 'ws-remote' })]));
+    harness.dispatch(setWorkspaceHasLoaded(true, 'remote-1'));
     await settle();
 
     expect(prunedIds()).toEqual(['ws-stale']);

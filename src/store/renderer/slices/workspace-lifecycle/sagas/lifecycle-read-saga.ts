@@ -7,6 +7,7 @@ import { getAgentLineStats } from '$features/line-changes/line-changes.client';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import type { Workspace } from '$shared/types';
+import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import {
   takeLeadingByAgent,
   takeLeadingByWorkspace,
@@ -122,8 +123,9 @@ function* refreshWorkspaces(): SagaGenerator<void> {
     [appClient.workspaces, appClient.workspaces.list],
     { includeArchived: true },
   );
+  const backendId = yield* selectActiveBackendId();
   yield* put(replaceWorkspaceList(workspaces));
-  yield* put(setWorkspaceHasLoaded(true));
+  yield* put(setWorkspaceHasLoaded(true, backendId));
   const recentViews: Awaited<ReturnType<typeof appClient.workspaces.recentViews>> = yield* call([
     appClient.workspaces,
     appClient.workspaces.recentViews,
