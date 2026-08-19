@@ -1,6 +1,6 @@
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 
-import { WorkspaceStatus, type Workspace } from '$shared/types';
+import { type Workspace } from '$shared/types';
 import { store } from '../../store';
 import { getActiveBackendId } from '../../utils/backend-storage-namespace';
 import { serializeWorkspaceTabsState } from './tab-state-slice';
@@ -80,7 +80,9 @@ const NO_TABS_TO_RECONCILE: string[] = [];
 
 /**
  * Open workspace-tab IDs whose workspace is missing from the loaded workspace
- * list or archived — the tabs the reconciliation saga should close.
+ * list — the tabs the reconciliation saga should close. A workspace that
+ * still EXISTS in the list is never prunable, regardless of archived status:
+ * archived workspaces keep their tabs.
  *
  * Returns the empty list (i.e. "do nothing") until it is provably safe to
  * prune:
@@ -120,9 +122,7 @@ export const selectWorkspaceTabsToReconcile = store.createSelector((state): stri
       if (state.tabState.optimisticTabs[workspaceId]) return false;
       if (state.workspace.pendingCreations[workspaceId]) return false;
       if (state.workspace.pendingDeletions[workspaceId]) return false;
-      const workspace = getItem(state.workspace.workspaces, workspaceId as Workspace['id']);
-      if (!workspace) return true;
-      return workspace.status === WorkspaceStatus.Archived || workspace.archived === true;
+      return !getItem(state.workspace.workspaces, workspaceId as Workspace['id']);
     });
   return prunable.length === 0 ? NO_TABS_TO_RECONCILE : prunable;
 });

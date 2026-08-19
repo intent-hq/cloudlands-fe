@@ -9,8 +9,9 @@ const logger = createLogger('WorkspaceTabReconciliationSaga');
 
 /**
  * Reconcile the hydrated workspace-tab strip against the loaded workspace
- * list: close tabs whose workspace no longer exists or is archived (matching
- * the daemon events bridge's live archive/delete tab-close behavior).
+ * list: close tabs whose workspace no longer exists in the list. Archived
+ * workspaces keep their tabs — only truly missing (deleted/unknown)
+ * workspaces are pruned.
  *
  * All triggering and guarding lives in `selectWorkspaceTabsToReconcile`, which
  * only yields tab IDs once the strip is hydrated for the ACTIVE backend and a

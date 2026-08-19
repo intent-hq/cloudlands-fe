@@ -140,7 +140,7 @@ describe('workspaceTabReconciliationSaga', () => {
     await finish(harness);
   });
 
-  it('prunes tabs whose workspace is archived', async () => {
+  it('keeps tabs whose workspace is archived (only missing workspaces are pruned)', async () => {
     const harness = createHarness();
     harness.dispatch(backendActive('local'));
     harness.dispatch(loadWorkspaceTabsState(persistedTabs(['ws-A', 'ws-archived'])));
@@ -158,7 +158,8 @@ describe('workspaceTabReconciliationSaga', () => {
     harness.dispatch(setWorkspaceHasLoaded(true, 'local'));
     await settle();
 
-    expect(prunedIds()).toEqual(['ws-archived']);
+    expect(prunedIds()).toEqual([]);
+    expect(Object.keys(harness.getState().tabState.openTabs)).toEqual(['ws-A', 'ws-archived']);
     await finish(harness);
   });
 
