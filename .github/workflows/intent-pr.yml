@@ -187,15 +187,18 @@ jobs:
   # Release-PR fast path (ported from intentd's ci.yml release-fast-path job;
   # intent-hq/monorepo#1374): release-please PRs change only version strings +
   # changelog (CHANGELOG.md / package.json / .release-please-manifest.json),
-  # so the built/tested code is identical to what main already validated and
-  # the heavy jobs (checks / build-web / test) add no signal — their wall time
-  # just delays the release. This job diffs the PR against its base and emits
-  # fast_path=true only when the diff has exactly the release shape (files ⊆
+  # and intentd sidecar pin bumps (auto-pin-intentd.yml) change only the pin
+  # value in intentd.version — in both cases the built/tested code is
+  # identical to what main already validated and the heavy jobs (checks /
+  # build-web / test) add no signal — their wall time just delays the
+  # release. This job diffs the PR against its base and emits fast_path=true
+  # only when the diff has exactly one of those shapes (release: files ⊆
   # {CHANGELOG.md, package.json, .release-please-manifest.json}, pure
   # modifications, and every non-changelog change is a uniform old→new
-  # version-string flip; see scripts/release-pr-fast-path.mjs). The diff shape
-  # is the ONLY signal — never branch name or author — so a PR can't spoof its
-  # way past the heavy checks: any real code change breaks the shape.
+  # version-string flip; pin bump: intentd.version alone, with nothing but
+  # the pin value changed; see scripts/release-pr-fast-path.mjs). The diff
+  # shape is the ONLY signal — never branch name or author — so a PR can't
+  # spoof its way past the heavy checks: any real code change breaks the shape.
   # Fail-safe, not fail-open: the heavy jobs skip only when the output is
   # exactly 'true' (script error, missing output, or job failure leaves it
   # empty and falls back to full CI), and pr-title / conflict-markers / route

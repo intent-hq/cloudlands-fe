@@ -22,6 +22,7 @@
  */
 
 const agentsWithStandingSubscription = new Set<string>();
+const agentsWithReplayableSnapshot = new Set<string>();
 
 /** Whether a standing chat.subscribe registration currently covers this agent. */
 export function hasStandingChatSubscription(agentId: string): boolean {
@@ -36,9 +37,32 @@ export function markStandingChatSubscription(agentId: string): void {
 /** Record that this agent's standing registration closed. */
 export function clearStandingChatSubscription(agentId: string): void {
   agentsWithStandingSubscription.delete(agentId);
+  agentsWithReplayableSnapshot.delete(agentId);
 }
 
 /** Drop every entry (coordinator dispose / test reset). */
 export function clearAllStandingChatSubscriptions(): void {
   agentsWithStandingSubscription.clear();
+  agentsWithReplayableSnapshot.clear();
+}
+
+/**
+ * Whether the agent's standing registration can answer a snapshot re-request
+ * WITHOUT a fresh wire emit — it holds a deferred pre-session snapshot or its
+ * last reconciled transcript IS a snapshot. Consulted by the chat-read saga
+ * at hydration start (intent-hq/monorepo#2864): true with no recorded
+ * snapshot meta means the seq-0 emit was already consumed before this
+ * hydration attached and no new one is coming, so the read saga escalates
+ * (`chatTranscriptSnapshotRerequested`) immediately instead of stranding a
+ * full bounded wait window. False on a cold open, whose seq-0 emit is still
+ * in flight and settles the plain wait.
+ */
+export function hasReplayableChatSnapshot(agentId: string): boolean {
+  return agentsWithReplayableSnapshot.has(agentId);
+}
+
+/** Record whether this agent's registration holds a replayable snapshot. */
+export function setReplayableChatSnapshot(agentId: string, replayable: boolean): void {
+  if (replayable) agentsWithReplayableSnapshot.add(agentId);
+  else agentsWithReplayableSnapshot.delete(agentId);
 }

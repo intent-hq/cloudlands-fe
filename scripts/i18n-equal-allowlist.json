@@ -1387,9 +1387,7 @@
   "workspace_terminalDock_shell_label": [
     "de",
     "es",
-    "fr",
-    "zh-CN",
-    "zh-TW"
+    "fr"
   ],
   "workspace_tokenUsage_agentFallback_label": [
     "de",

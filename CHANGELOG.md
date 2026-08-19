@@ -4,6 +4,36 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.70.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.69.0...v2.70.0) (2026-08-19)
+
+
+### 🚀 Features
+
+* extend release fast path to intentd.version pin bumps ([#1473](https://github.com/intent-hq/cloudlands-fe/issues/1473)) ([94cef84](https://github.com/intent-hq/cloudlands-fe/commit/94cef84c287905e08eaf10eb35456f65c89adfbe))
+
+
+### 🐛 Bug Fixes
+
+* **panel:** never blur focus inside the panel being revealed ([#1464](https://github.com/intent-hq/cloudlands-fe/issues/1464)) ([4921c3a](https://github.com/intent-hq/cloudlands-fe/commit/4921c3a45e41e60d351358920015a64e9b6b238c))
+
+## [2.69.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.68.0...v2.69.0) (2026-08-19)
+
+
+### 🚀 Features
+
+* add headless intentd install hint to connect dialog ([#1469](https://github.com/intent-hq/cloudlands-fe/issues/1469)) ([54ab234](https://github.com/intent-hq/cloudlands-fe/commit/54ab23498ee9249cca1605690210de53fa5b63ff))
+* infinite scrollback for ChatPanel ([#1453](https://github.com/intent-hq/cloudlands-fe/issues/1453)) ([0067dd2](https://github.com/intent-hq/cloudlands-fe/commit/0067dd2cd32b316682921a11a1ff9f492bc4864a))
+* show full-path tooltip on recent local repo hover ([#1468](https://github.com/intent-hq/cloudlands-fe/issues/1468)) ([22b2972](https://github.com/intent-hq/cloudlands-fe/commit/22b2972c0b2875991df26b180b6f8c1e382ba65a))
+* update app and development icons ([#1448](https://github.com/intent-hq/cloudlands-fe/issues/1448)) ([6843918](https://github.com/intent-hq/cloudlands-fe/commit/68439188aba07149096bec8554531edaa7f918c0))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.22 ([#1470](https://github.com/intent-hq/cloudlands-fe/issues/1470)) ([b1b6155](https://github.com/intent-hq/cloudlands-fe/commit/b1b615520f0f4baf4594a830326cad55d66818e9))
+* center monitored-PR menu item content vertically ([#1466](https://github.com/intent-hq/cloudlands-fe/issues/1466)) ([57dff23](https://github.com/intent-hq/cloudlands-fe/commit/57dff234963e0a0af9a357afc0240f194d326233))
+* keep the standing chat subscription alive across a same-agent panel remount ([#1462](https://github.com/intent-hq/cloudlands-fe/issues/1462)) ([111a2f7](https://github.com/intent-hq/cloudlands-fe/commit/111a2f7770b59c15e0ea899a9aa914db4b303351))
+* never render raw agent ids in EventWakeupBanner ([#1449](https://github.com/intent-hq/cloudlands-fe/issues/1449)) ([73a20b9](https://github.com/intent-hq/cloudlands-fe/commit/73a20b95008d3a46b49439dc8f44d2fbbbbf901d))
+
 ## [2.68.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.67.1...v2.68.0) (2026-08-19)
 
 

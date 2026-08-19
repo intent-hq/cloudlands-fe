@@ -111,6 +111,7 @@
     createRepoConfigProbeScheduler,
     resolveSetupScriptParam,
     REPO_CONFIG_SCRIPT_NAME,
+    type SetupScriptNameSource,
   } from '$features/setup-scripts';
   import {
     getLastUsedSetupScript,
@@ -290,6 +291,7 @@
           } else {
             setupScript = '';
             setupScriptName = 'Custom';
+            setupScriptNameSource = 'custom';
             isCustomSetupScript = false;
           }
         }
@@ -311,6 +313,7 @@
       applyScript: (script) => {
         setupScript = script;
         setupScriptName = REPO_CONFIG_SCRIPT_NAME;
+        setupScriptNameSource = 'repo-config';
         isCustomSetupScript = false;
       },
     });
@@ -422,6 +425,7 @@
   let setupScript = $state('');
   let showSetupScript = $state(false);
   let setupScriptName = $state('Custom');
+  let setupScriptNameSource = $state<SetupScriptNameSource>('custom');
   let isCustomSetupScript = $state(false);
 
   // User-picked model for the initial Coordinator agent (step 3 picker).
@@ -491,6 +495,7 @@
     });
     setupScript = choice.content;
     setupScriptName = choice.name;
+    setupScriptNameSource = choice.source;
     isCustomSetupScript = false;
   }
 
@@ -1250,6 +1255,7 @@
           {
             name: setupScriptName || m.onboarding_page_customScript_label(),
             content: setupScript,
+            nameSource: setupScriptName ? setupScriptNameSource : 'named',
           },
           projectSelection.type === 'github' ? projectSelection.githubUrl : undefined,
         );
@@ -1561,6 +1567,7 @@
                           bind:setupScript
                           bind:showSetupScript
                           bind:setupScriptName
+                          bind:setupScriptNameSource
                           bind:isCustomSetupScript
                           repoConfigScript={repoConfigScriptRepo === projectSelection?.repoPath
                             ? repoConfigScript

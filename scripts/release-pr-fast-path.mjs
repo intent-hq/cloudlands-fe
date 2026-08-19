@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // release-pr-fast-path.mjs — decide whether a PR diff has the exact shape of a
-// release-please release PR (version/changelog-only), so CI can skip the heavy
-// jobs. Ported from intentd's scripts/release-pr-fast-path.sh (same design:
+// known safe-to-skip PR, so CI can skip the heavy jobs. Two shapes are
+// recognized: a release-please release PR (version/changelog-only) and an
+// intentd sidecar pin bump (intentd.version-only; see auto-pin-intentd.yml).
+// Ported from intentd's scripts/release-pr-fast-path.sh (same design:
 // shape-based match, fail-safe fallback to full CI).
 //
 // Usage: node scripts/release-pr-fast-path.mjs <base-ref-or-sha> [<head-ref-or-sha>]
@@ -14,7 +16,7 @@
 //   - Exits non-zero only on unexpected errors; callers must treat a non-zero
 //     exit as a non-match.
 //
-// Match conditions (all must hold; diff is taken from merge-base(base, head)):
+// Release shape (all must hold; diff is taken from merge-base(base, head)):
 //   1. Changed files ⊆ { CHANGELOG.md, package.json,
 //      .release-please-manifest.json }, all pure modifications (no
 //      adds/deletes/renames), and package.json is among them.
@@ -27,6 +29,16 @@
 //      to B at head, and is byte-identical to its base blob after replacing
 //      the literal string `"B"` with `"A"`.
 //   CHANGELOG.md content is unconstrained (it does not affect the build).
+//
+// Pin-bump shape (all must hold; mutually exclusive with the release shape —
+// a diff mixing intentd.version with any other file matches neither):
+//   1. The diff is exactly one file, intentd.version, a pure modification.
+//   2. Base and head each contain exactly one non-comment, non-blank pin
+//      line; both parse as a bare X.Y.Z(-prerelease) version (no leading
+//      'v'; same grammar as parseVersionPin), and old pin A != new pin B.
+//   3. The head file is byte-identical to the base file after replacing the
+//      new pin line B with the old pin line A — i.e. nothing but the pin
+//      value changed (a comment edit or added line breaks the match).
 //
 // Git history requirements (shallow CI checkouts): the <base> and <head>
 // commits — and ideally their merge-base — must be present locally. With
@@ -42,6 +54,15 @@ import { fileURLToPath } from 'node:url';
 
 const ALLOWED_FILES = new Set(['CHANGELOG.md', 'package.json', '.release-please-manifest.json']);
 const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z.+-]*$/;
+const PIN_FILE = 'intentd.version';
+// Pins are bare X.Y.Z(-prerelease) versions (no leading 'v'); same grammar as
+// the canonical pin parser (parseVersionPin in scripts/fetch-sidecar-lib.mjs
+// and src/features/backend/main/intentd-version-pin.ts).
+const PIN_VERSION_RE = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+
+// Pin lines: everything but blank and '#'-comment lines (mirrors
+// auto-pin-intentd.yml's `grep -Ev '^[[:space:]]*(#|$)'`).
+const pinLines = (text) => text.split('\n').filter((line) => !/^[\t ]*(#|$)/.test(line));
 
 function git(cwd, ...args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -53,7 +74,8 @@ function noMatch(reason) {
 
 /**
  * Evaluate whether the base..head diff has the release-please release-PR
- * shape. Returns { fastPath: true } or { fastPath: false, reason }.
+ * shape or the intentd.version pin-bump shape. Returns { fastPath: true }
+ * or { fastPath: false, reason }.
  * Throws on unexpected errors (unresolvable refs, git failures).
  */
 export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
@@ -74,12 +96,45 @@ export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
     mergeBase = base;
   }
 
-  // --- Condition 1: allowed file set, modifications only ---------------------
   const diff = git(cwd, 'diff', '--name-status', mergeBase, head)
     .split('\n')
     .filter((line) => line.length > 0)
     .map((line) => line.split('\t'));
   if (diff.length === 0) return noMatch('empty diff');
+
+  const show = (revision, path) => git(cwd, 'show', `${revision}:${path}`);
+
+  // --- Pin-bump shape: intentd.version alone, pure modification --------------
+  if (diff.length === 1 && diff[0][1] === PIN_FILE) {
+    const [status] = diff[0];
+    if (status !== 'M') return noMatch(`non-modification change (${status} ${PIN_FILE})`);
+    const pinBase = show(mergeBase, PIN_FILE);
+    const pinHead = show(head, PIN_FILE);
+    const baseLines = pinLines(pinBase);
+    const headLines = pinLines(pinHead);
+    if (baseLines.length !== 1) {
+      return noMatch(`expected exactly one pin line at base (found ${baseLines.length})`);
+    }
+    if (headLines.length !== 1) {
+      return noMatch(`expected exactly one pin line at head (found ${headLines.length})`);
+    }
+    const [pinA] = baseLines;
+    const [pinB] = headLines;
+    if (!PIN_VERSION_RE.test(pinA)) return noMatch(`unparseable base pin '${pinA}'`);
+    if (!PIN_VERSION_RE.test(pinB)) return noMatch(`unparseable head pin '${pinB}'`);
+    if (pinA === pinB) return noMatch(`no pin change in ${PIN_FILE}`);
+    // The pin line is exactly the bare version (no other line can equal it:
+    // every other line is blank or a comment), so a whole-line replacement
+    // reverts only the pin value.
+    const reverted = pinHead
+      .split('\n')
+      .map((line) => (line === pinB ? pinA : line))
+      .join('\n');
+    if (reverted !== pinBase) return noMatch(`non-pin change in ${PIN_FILE}`);
+    return { fastPath: true };
+  }
+
+  // --- Condition 1: allowed file set, modifications only ---------------------
   for (const [status, path] of diff) {
     if (status !== 'M') return noMatch(`non-modification change (${status} ${path})`);
     if (!ALLOWED_FILES.has(path)) return noMatch(`disallowed file: ${path}`);
@@ -87,7 +142,6 @@ export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
   const changed = new Set(diff.map(([, path]) => path));
   if (!changed.has('package.json')) return noMatch('package.json unchanged (no version delta)');
 
-  const show = (revision, path) => git(cwd, 'show', `${revision}:${path}`);
   const parseJson = (text) => {
     try {
       return JSON.parse(text);

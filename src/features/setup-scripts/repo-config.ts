@@ -11,6 +11,7 @@
  */
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { m } from '$shared/paraglide/messages.js';
 
 /**
  * User-facing label for a setup script sourced from the repo config.
@@ -22,6 +23,33 @@ export const REPO_CONFIG_SCRIPT_NAME = 'From repo config';
 
 /** Script-list entry id for the repo-config script in SetupScriptEditor. */
 export const REPO_CONFIG_SCRIPT_ID = 'repo-config';
+
+/**
+ * True identity of a setup-script name, tracked by the call sites that know
+ * where the name came from: `'repo-config'` for the repo-committed script,
+ * `'custom'` for the empty/custom fallback, `'named'` for everything that
+ * carries its own display name (saved scripts, templates, generated scripts).
+ */
+export type SetupScriptNameSource = 'repo-config' | 'custom' | 'named';
+
+/**
+ * Localized display label for a setup-script name. Localizes only when the
+ * entry's true identity (`source`) is a sentinel — `'repo-config'` and
+ * `'custom'` map to their localized messages; `'named'` passes the name
+ * through unchanged, so a user-saved script literally named "From repo
+ * config" or "Custom" keeps its own name. Display-only — identity
+ * comparisons and saved-script matching must keep using the English
+ * sentinel constants.
+ */
+export function setupScriptDisplayName(name: string, source: SetupScriptNameSource): string {
+  if (source === 'repo-config') {
+    return m.workspace_setupScriptEditor_fromRepoConfig_name();
+  }
+  if (source === 'custom') {
+    return m.workspace_setupScriptEditor_custom_name();
+  }
+  return name;
+}
 
 /**
  * Typed subset of the repo-committed `.intent/config.json` that the frontend
@@ -148,6 +176,8 @@ export function resolveSetupScriptParam(options: {
 export interface SetupScriptChoice {
   content: string;
   name: string;
+  /** Which branch produced the name — drives display-label localization. */
+  source: SetupScriptNameSource;
 }
 
 /**
@@ -157,18 +187,18 @@ export interface SetupScriptChoice {
  */
 export function chooseDefaultSetupScript(options: {
   repoConfigScript: string | null;
-  lastUsed: { name: string; content: string } | undefined;
+  lastUsed: { name: string; content: string; nameSource?: SetupScriptNameSource } | undefined;
   genericTemplate: { name: string; content: string } | undefined;
 }): SetupScriptChoice {
   const { repoConfigScript, lastUsed, genericTemplate } = options;
   if (repoConfigScript) {
-    return { content: repoConfigScript, name: REPO_CONFIG_SCRIPT_NAME };
+    return { content: repoConfigScript, name: REPO_CONFIG_SCRIPT_NAME, source: 'repo-config' };
   }
   if (lastUsed) {
-    return { content: lastUsed.content, name: lastUsed.name };
+    return { content: lastUsed.content, name: lastUsed.name, source: lastUsed.nameSource ?? 'named' };
   }
   if (genericTemplate) {
-    return { content: genericTemplate.content, name: genericTemplate.name };
+    return { content: genericTemplate.content, name: genericTemplate.name, source: 'named' };
   }
-  return { content: '', name: 'Custom' };
+  return { content: '', name: 'Custom', source: 'custom' };
 }

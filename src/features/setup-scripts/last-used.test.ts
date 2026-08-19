@@ -52,7 +52,32 @@ afterEach(() => {
 describe('recordLastUsedSetupScript / getLastUsedSetupScript', () => {
   it('round-trips the script for a repo', () => {
     recordLastUsedSetupScript('/repo/a', { name: 'My script', content: 'echo hi' });
-    expect(getLastUsedSetupScript('/repo/a')).toEqual({ name: 'My script', content: 'echo hi' });
+    expect(getLastUsedSetupScript('/repo/a')).toEqual({
+      name: 'My script',
+      content: 'echo hi',
+      nameSource: 'named',
+    });
+  });
+
+  it('round-trips an explicit nameSource and defaults missing ones to named', () => {
+    recordLastUsedSetupScript('/repo/a', {
+      name: 'From repo config',
+      content: 'echo repo',
+      nameSource: 'repo-config',
+    });
+    expect(getLastUsedSetupScript('/repo/a')?.nameSource).toBe('repo-config');
+
+    // Entries written before the field existed carry no nameSource — the
+    // reader folds them to 'named' (display pass-through).
+    localStorage.setItem(
+      LAST_USED_SETUP_SCRIPTS_STORAGE_KEY,
+      JSON.stringify({ '/repo/legacy': { name: 'Custom', content: 'echo x', usedAt: 'now' } }),
+    );
+    expect(getLastUsedSetupScript('/repo/legacy')).toEqual({
+      name: 'Custom',
+      content: 'echo x',
+      nameSource: 'named',
+    });
   });
 
   it('returns undefined for an unknown repo or empty repoPath', () => {
@@ -75,7 +100,11 @@ describe('recordLastUsedSetupScript / getLastUsedSetupScript', () => {
   it('overwrites the previous entry for the same repo', () => {
     recordLastUsedSetupScript('/repo/a', { name: 'Old', content: 'echo old' });
     recordLastUsedSetupScript('/repo/a', { name: 'New', content: 'echo new' });
-    expect(getLastUsedSetupScript('/repo/a')).toEqual({ name: 'New', content: 'echo new' });
+    expect(getLastUsedSetupScript('/repo/a')).toEqual({
+      name: 'New',
+      content: 'echo new',
+      nameSource: 'named',
+    });
   });
 
   it('keys GitHub selections by path + URL so repos sharing a clone path stay separate', () => {
@@ -92,10 +121,12 @@ describe('recordLastUsedSetupScript / getLastUsedSetupScript', () => {
     expect(getLastUsedSetupScript('/clones/x', 'https://github.com/owner-a/x')).toEqual({
       name: 'A script',
       content: 'echo a',
+      nameSource: 'named',
     });
     expect(getLastUsedSetupScript('/clones/x', 'https://github.com/owner-b/x')).toEqual({
       name: 'B script',
       content: 'echo b',
+      nameSource: 'named',
     });
     // A local repo at the same path is yet another identity.
     expect(getLastUsedSetupScript('/clones/x')).toBeUndefined();
@@ -118,7 +149,21 @@ describe('recordLastUsedSetupScript / getLastUsedSetupScript', () => {
     );
     expect(getLastUsedSetupScript('/repo/bad')).toBeUndefined();
     expect(getLastUsedSetupScript('/repo/blank')).toBeUndefined();
-    expect(getLastUsedSetupScript('/repo/good')).toEqual({ name: 'S', content: 'echo ok' });
+    expect(getLastUsedSetupScript('/repo/good')).toEqual({
+      name: 'S',
+      content: 'echo ok',
+      nameSource: 'named',
+    });
+
+    // A malformed nameSource invalidates the entry rather than leaking an
+    // unknown value into display logic.
+    localStorage.setItem(
+      LAST_USED_SETUP_SCRIPTS_STORAGE_KEY,
+      JSON.stringify({
+        '/repo/bad-source': { name: 'S', content: 'echo x', usedAt: 'now', nameSource: 'bogus' },
+      }),
+    );
+    expect(getLastUsedSetupScript('/repo/bad-source')).toBeUndefined();
 
     // A corrupt map is replaced wholesale on the next write.
     localStorage.setItem(LAST_USED_SETUP_SCRIPTS_STORAGE_KEY, '{ not json');

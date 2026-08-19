@@ -21,6 +21,8 @@ vi.mock('../embedded-browser-cdp-service', () => ({
     registerTab: vi.fn(),
     unregisterTab: vi.fn(),
     waitForTabRegistration: vi.fn().mockResolvedValue(true),
+    reportTabViewBounds: vi.fn(),
+    clearTabViewBounds: vi.fn(),
   },
 }));
 
@@ -28,13 +30,15 @@ import { registerBrowserHandlers } from '../browser.ipc';
 
 type IpcHandler = (event: unknown, data: unknown) => Promise<unknown>;
 
-function registerAndGetExecHandler(): IpcHandler {
+function registerAndGetHandler(channel: string): IpcHandler {
   registerBrowserHandlers();
-  const entry = vi
-    .mocked(ipcMain.handle)
-    .mock.calls.find(([channel]) => channel === IPC_CHANNELS.BROWSER.EXEC);
-  expect(entry, 'browser:exec handler must be registered').toBeDefined();
+  const entry = vi.mocked(ipcMain.handle).mock.calls.find(([ch]) => ch === channel);
+  expect(entry, `${channel} handler must be registered`).toBeDefined();
   return entry![1] as IpcHandler;
+}
+
+function registerAndGetExecHandler(): IpcHandler {
+  return registerAndGetHandler(IPC_CHANNELS.BROWSER.EXEC);
 }
 
 describe('browser:exec IPC workspace routing', () => {
@@ -149,4 +153,49 @@ describe('browser:exec IPC workspace routing', () => {
       });
     },
   );
+});
+
+// Visible webview bounds reports for scale-to-fit (docs/protocol §5.9):
+// a full payload records bounds, a tabId-only payload is an explicit clear
+// (the element stopped displaying the tab — unmount/handoff).
+describe('browser:report-tab-bounds IPC', () => {
+  beforeEach(async () => {
+    vi.mocked(ipcMain.handle).mockReset();
+    const { embeddedBrowserCdp } = await import('../embedded-browser-cdp-service');
+    vi.mocked(embeddedBrowserCdp.reportTabViewBounds).mockClear();
+    vi.mocked(embeddedBrowserCdp.clearTabViewBounds).mockClear();
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('routes a full payload to reportTabViewBounds', async () => {
+    const { embeddedBrowserCdp } = await import('../embedded-browser-cdp-service');
+    const handler = registerAndGetHandler(IPC_CHANNELS.BROWSER.REPORT_TAB_BOUNDS);
+
+    await handler({}, { tabId: 'tab-1', width: 640, height: 400 });
+
+    expect(embeddedBrowserCdp.reportTabViewBounds).toHaveBeenCalledWith('tab-1', 640, 400);
+    expect(embeddedBrowserCdp.clearTabViewBounds).not.toHaveBeenCalled();
+  });
+
+  it('treats a tabId-only payload as an explicit bounds clear', async () => {
+    const { embeddedBrowserCdp } = await import('../embedded-browser-cdp-service');
+    const handler = registerAndGetHandler(IPC_CHANNELS.BROWSER.REPORT_TAB_BOUNDS);
+
+    await handler({}, { tabId: 'tab-1' });
+
+    expect(embeddedBrowserCdp.clearTabViewBounds).toHaveBeenCalledWith('tab-1');
+    expect(embeddedBrowserCdp.reportTabViewBounds).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-positive dimensions via schema validation', async () => {
+    const { embeddedBrowserCdp } = await import('../embedded-browser-cdp-service');
+    const handler = registerAndGetHandler(IPC_CHANNELS.BROWSER.REPORT_TAB_BOUNDS);
+
+    const result = await handler({}, { tabId: 'tab-1', width: 0, height: 400 });
+
+    expect(result).toMatchObject({ success: false, error: { code: 'VALIDATION_ERROR' } });
+    expect(embeddedBrowserCdp.reportTabViewBounds).not.toHaveBeenCalled();
+    expect(embeddedBrowserCdp.clearTabViewBounds).not.toHaveBeenCalled();
+  });
 });

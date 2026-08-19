@@ -153,6 +153,7 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // (isElectron() gate) and the request never fires in this build, so the
   // invoke is statically present but unreachable.
   ['browser:register-tab', undefined],
+  ['browser:report-tab-bounds', undefined],
   ['browser:list-tabs-response', undefined],
   // Chat-input context enrichment (context-api getWorkspaceInfo). The caller
   // folds an absent info payload to the Workspace object it already holds.

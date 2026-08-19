@@ -619,8 +619,15 @@ export function setupSystemIPC() {
       AppSetLanguagePreferenceSchema,
       async (_event, validated) => {
         try {
-          const { setMainLanguagePreference } = await import('../../../main/main-locale');
+          const { setMainLanguagePreference, getMainActiveLocale } = await import(
+            '../../../main/main-locale'
+          );
           const changed = setMainLanguagePreference(validated.preference);
+          logger.info('Language preference synced from renderer', {
+            preference: validated.preference,
+            activeLocale: getMainActiveLocale(),
+            changed,
+          });
           if (changed) {
             app.emit('main-locale-changed');
           }

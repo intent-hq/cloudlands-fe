@@ -24,6 +24,10 @@
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import SetupScriptModal from '$lib/components/modals/SetupScriptModal.svelte';
+  import {
+    setupScriptDisplayName,
+    type SetupScriptNameSource,
+  } from '$features/setup-scripts';
   import IssueSuggestions from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import WorkspaceCreationError from '$features/onboarding/steps/WorkspaceCreationError.svelte';
@@ -64,6 +68,7 @@
     setupScript: string;
     showSetupScript: boolean;
     setupScriptName: string;
+    setupScriptNameSource: SetupScriptNameSource;
     isCustomSetupScript: boolean;
     /** Repo-committed `.intent/config.json` script, forwarded to SetupScriptModal. */
     repoConfigScript: string | null;
@@ -127,6 +132,7 @@
     setupScript = $bindable(),
     showSetupScript = $bindable(),
     setupScriptName = $bindable(),
+    setupScriptNameSource = $bindable(),
     isCustomSetupScript = $bindable(),
     repoConfigScript,
     hideSetupScriptControl = false,
@@ -651,7 +657,7 @@
               <span>{m.onboarding_promptStep_setupEnvWith_before()}</span>
               <span
                 class="max-w-full break-words rounded-md border border-border bg-card/50 px-1.5 py-1.25 font-medium text-foreground"
-                >{setupScriptName}</span
+                >{setupScriptDisplayName(setupScriptName, setupScriptNameSource)}</span
               >
               <span class="text-muted-foreground"
                 >{m.onboarding_promptStep_setupEnvWith_after()}</span
@@ -666,6 +672,7 @@
           {repoConfigScript}
           bind:value={setupScript}
           bind:scriptName={setupScriptName}
+          bind:scriptNameSource={setupScriptNameSource}
           bind:isCustomScript={isCustomSetupScript}
           onClose={() => onShowSetupScriptChange(false)}
         />
