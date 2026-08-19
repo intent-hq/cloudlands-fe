@@ -75,6 +75,9 @@ describe("gitWriteService (fake seam, real store)", () => {
     const result = await stageFiles(WS, ["a.ts"]);
 
     expect(gitApi.stage).toHaveBeenCalledWith(WS, ["a.ts"]);
+    expect(gitApi.stage).toHaveBeenCalledTimes(1);
+    expect(gitApi.status).toHaveBeenCalledWith(WS);
+    expect(gitApi.status).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true });
     const file = selectGitStatus.select(appStore.state, WS)?.files.find((f) => f.path === "a.ts");
     expect(file?.staged).toBe(true);
@@ -89,13 +92,15 @@ describe("gitWriteService (fake seam, real store)", () => {
     expect(selectGitStatus.select(appStore.state, WS)?.branch).toBe("reconciled");
   });
 
-  it("rolls back to the pre-stage snapshot when staging fails", async () => {
+  it("rolls back to the pre-stage snapshot when staging fails and status is unavailable", async () => {
     appStore.dispatch(setGitStatus(WS, makeStatus()));
-    gitApi.stage.mockResolvedValueOnce({ success: false, error: "no" } as never);
+    const failure = { success: false, error: "no" } as const;
+    gitApi.stage.mockResolvedValueOnce(failure as never);
 
     const result = await stageFiles(WS, ["a.ts"]);
 
-    expect(result.success).toBe(false);
+    expect(result).toBe(failure);
+    expect(gitApi.status).toHaveBeenCalledWith(WS, { forceRefresh: true });
     const file = selectGitStatus.select(appStore.state, WS)?.files.find((f) => f.path === "a.ts");
     expect(file?.staged).toBe(false);
   });
@@ -177,17 +182,42 @@ describe("gitWriteService (fake seam, real store)", () => {
     });
   });
 
-  it("leaves the changes slice untouched when staging fails", async () => {
-    appStore.dispatch(setGitStatus(WS, makeStatus()));
-    const seeded = [makeTracked("a.ts", ChangeStage.Unstaged)];
+  it("returns the stage failure and reconciles both slices from fresh status", async () => {
+    const staleStatus = makeStatus({
+      files: [
+        { path: "a.ts", status: GitFileStatus.Modified, staged: false },
+        { path: "kept.ts", status: GitFileStatus.Modified, staged: false },
+      ],
+    });
+    const freshStatus = makeStatus({
+      branch: "reconciled",
+      files: [{ path: "kept.ts", status: GitFileStatus.Modified, staged: false }],
+    });
+    const staleRow = makeTracked("a.ts", ChangeStage.Unstaged);
+    const keptRow = makeTracked("kept.ts", ChangeStage.Unstaged);
+    const seeded = [staleRow, keptRow];
+    const failure = { success: false, error: "no" } as const;
+    appStore.dispatch(setGitStatus(WS, staleStatus));
     appStore.dispatch(setChanges(WS, seeded));
-    gitApi.stage.mockResolvedValueOnce({ success: false, error: "no" } as never);
+    gitApi.stage.mockResolvedValueOnce(failure as never);
+    gitApi.status.mockImplementationOnce(async () => {
+      expect(selectGitStatus.select(appStore.state, WS)).toEqual(staleStatus);
+      return freshStatus as never;
+    });
 
     const result = await stageFiles(WS, ["a.ts"]);
 
-    expect(result.success).toBe(false);
-    expect(gitApi.status).not.toHaveBeenCalled();
-    expect(selectFileTrackingChanges.select(appStore.state, WS)).toBe(seeded);
+    expect(result).toBe(failure);
+    expect(gitApi.stage).toHaveBeenCalledWith(WS, ["a.ts"]);
+    expect(gitApi.stage).toHaveBeenCalledTimes(1);
+    expect(gitApi.status).toHaveBeenCalledWith(WS, { forceRefresh: true });
+    expect(gitApi.status).toHaveBeenCalledTimes(1);
+    expect(selectGitStatus.select(appStore.state, WS)).toEqual(freshStatus);
+    expect(selectFileTrackingChanges.select(appStore.state, WS)).toEqual([
+      { ...keptRow, status: "modified" },
+    ]);
+    expect(selectFileTrackingChangesTruncated.select(appStore.state, WS)).toBe(false);
+    expect(selectFileTrackingTotalChangesCount.select(appStore.state, WS)).toBe(1);
   });
 
   it("leaves the changes slice untouched when unstaging fails", async () => {
