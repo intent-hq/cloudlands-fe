@@ -574,7 +574,14 @@ describe('browserIpcSaga', () => {
     expect(actions).toEqual([
       {
         type: 'panelLayout/closeTab',
-        payload: { wsId: 'ws-2', tabId: 'browser-1', panelId: undefined, timestamp: NOW },
+        // Main-driven closes destroy (never hide) the tab (monorepo#2857).
+        payload: {
+          wsId: 'ws-2',
+          tabId: 'browser-1',
+          panelId: undefined,
+          timestamp: NOW,
+          destroy: true,
+        },
       },
     ]);
     task.cancel();

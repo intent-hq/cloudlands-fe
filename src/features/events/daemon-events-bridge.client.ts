@@ -179,7 +179,11 @@ import {
   removeAgent,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { removeWatchedAgent } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
-import { pruneRecentlyClosed } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import {
+  destroyOwnedTabsForWorkspace,
+  destroyTabsByOwnerAgent,
+  pruneRecentlyClosed,
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
   applyTaskStatusChanged,
   loadWorkspaceTasksRequested,
@@ -2358,6 +2362,21 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
     closeWorkspaceTabAndNavigateAway(workspaceId).catch((error) => {
       logger.warn('closeWorkspaceTabAndNavigateAway failed after workspace:updated archive', error);
     });
+    // Workspace archive discards all tabs (protocol §5.9, monorepo#2857):
+    // destroy the agent-owned browser tabs — visible and hidden — whose
+    // pinned webviews would otherwise stay mounted offscreen indefinitely,
+    // and drop main's CDP/ownership registrations for their owners.
+    const ownerAgentIds = collectOwnedTabAgentIds(workspaceId);
+    appStore.dispatch(destroyOwnedTabsForWorkspace(workspaceId));
+    for (const agentId of ownerAgentIds) {
+      void invoke(IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId }).catch((error: unknown) => {
+        logger.warn('Failed to clear main-process registrations for archived workspace tabs', {
+          workspaceId,
+          agentId,
+          error,
+        });
+      });
+    }
   } else if (changes.status === WorkspaceStatus.Active || changes.archived === false) {
     appStore.dispatch(restoreWorkspaceTab(workspaceId));
   }
@@ -2400,10 +2419,60 @@ function handleWorkspaceDeletedEvent(workspaceId: string): void {
     agentSessions?: { agentIdsByWorkspace: Record<string, string[]> };
   };
   const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
+  // Resolve owned-tab agents BEFORE the purge: `workspaceDeleted` drops the
+  // whole panel-layout entry (destroying the pinned webviews), so main's
+  // CDP/ownership registrations must be collected first (monorepo#2857).
+  const ownerAgentIds = collectOwnedTabAgentIds(workspaceId);
   appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
+  for (const agentId of ownerAgentIds) {
+    void invoke(IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId }).catch((error: unknown) => {
+      logger.warn('Failed to clear main-process registrations for deleted workspace tabs', {
+        workspaceId,
+        agentId,
+        error,
+      });
+    });
+  }
   navigateAwayIfViewing(workspaceId).catch((error) => {
     logger.warn('navigateAwayIfViewing failed after workspace:deleted', error);
   });
+}
+
+/**
+ * Owner agent IDs of the agent-owned browser tabs (visible and hidden) in a
+ * workspace's panel layout — the set whose main-process CDP/ownership
+ * registrations need clearing when the workspace's tabs are discarded on
+ * archive/delete (monorepo#2857).
+ */
+function collectOwnedTabAgentIds(workspaceId: string): Set<string> {
+  const layout = (
+    appStore.state as {
+      panelLayout?: {
+        byWorkspaceId: Record<
+          string,
+          {
+            panels: Record<string, { tabs: Array<{ type: string; ownerAgentId?: string }> }>;
+            hiddenTabs?: Array<{ type: string; ownerAgentId?: string }>;
+          }
+        >;
+      };
+    }
+  ).panelLayout?.byWorkspaceId[workspaceId];
+  const ownerAgentIds = new Set<string>();
+  if (!layout) return ownerAgentIds;
+  for (const panel of Object.values(layout.panels)) {
+    for (const tab of panel.tabs) {
+      if (tab.type === 'browser' && typeof tab.ownerAgentId === 'string') {
+        ownerAgentIds.add(tab.ownerAgentId);
+      }
+    }
+  }
+  for (const tab of layout.hiddenTabs ?? []) {
+    if (tab.type === 'browser' && typeof tab.ownerAgentId === 'string') {
+      ownerAgentIds.add(tab.ownerAgentId);
+    }
+  }
+  return ownerAgentIds;
 }
 
 /**
@@ -3241,6 +3310,19 @@ export function routeDaemonEventsNotification(
       appStore.dispatch(removeSession(data.agentId));
       appStore.dispatch(removeWatchedAgent(workspaceId, data.agentId));
       appStore.dispatch(pruneRecentlyClosed(workspaceId, { agentId: data.agentId }));
+      // Owned browser tabs die with their agent (monorepo#2857): the
+      // deletion COMMIT (not the schedule — agent.cancelDelete during the
+      // grace window restores tabs intact) destroys visible and hidden owned
+      // tabs, then clears main's CDP/ownership registrations.
+      appStore.dispatch(destroyTabsByOwnerAgent(workspaceId, data.agentId));
+      void invoke(IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId: data.agentId }).catch(
+        (error: unknown) => {
+          logger.warn('Failed to clear main-process registrations for deleted agent tabs', {
+            agentId: data.agentId,
+            error,
+          });
+        },
+      );
       // Tombstone the id so an `agent.get`/`agent.list` begun before this
       // event (returning the pre-delete row) cannot resurrect it after the
       // removals above. An immediate delete has no schedule event, so no

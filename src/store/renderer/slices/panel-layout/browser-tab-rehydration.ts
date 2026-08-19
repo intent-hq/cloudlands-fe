@@ -67,18 +67,22 @@ export interface RehydratableBrowserTab {
  * restore exactly as before and are never returned.
  */
 export function collectRehydratableBrowserTabs(
-  layout: Pick<WorkspacePanelLayout, 'panels'>,
+  layout: Pick<WorkspacePanelLayout, 'panels' | 'hiddenTabs'>,
 ): RehydratableBrowserTab[] {
   const out: RehydratableBrowserTab[] = [];
-  for (const panel of Object.values(layout.panels) as PanelState[]) {
-    for (const tab of panel.tabs) {
-      if (tab.type !== 'browser' || !tab.browserRequestedUrl || !tab.browserUrl) continue;
-      out.push({
-        tabId: tab.id,
-        requestedUrl: tab.browserRequestedUrl,
-        storedUrl: tab.browserUrl,
-      });
-    }
+  const allTabs = [
+    ...Object.values(layout.panels).flatMap((panel: PanelState) => panel.tabs),
+    // Hidden owned tabs keep live offscreen webviews, so their URLs need the
+    // same re-resolution as visible ones (monorepo#2857).
+    ...(layout.hiddenTabs ?? []),
+  ];
+  for (const tab of allTabs) {
+    if (tab.type !== 'browser' || !tab.browserRequestedUrl || !tab.browserUrl) continue;
+    out.push({
+      tabId: tab.id,
+      requestedUrl: tab.browserRequestedUrl,
+      storedUrl: tab.browserUrl,
+    });
   }
   return out;
 }

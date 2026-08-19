@@ -8,7 +8,10 @@ import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-erro
 import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { closeTabsByAgentId } from '../../panel-layout/panel-layout-slice';
+import {
+  closeTabsByAgentId,
+  destroyTabsByOwnerAgent,
+} from '../../panel-layout/panel-layout-slice';
 import { ensureAgentSessionLoaded } from '../workspace-agents-slice';
 
 const logger = createLogger('AgentReadSaga');
@@ -38,6 +41,9 @@ function* loadAgentSessionSaga(wsId: string, agentId: string) {
       // tab (speculative load) the close is a no-op.
       logger.warn('Agent no longer exists on daemon; closing stale tabs', { wsId, agentId });
       yield* put(closeTabsByAgentId(wsId, agentId));
+      // A deletion missed while the app was closed: destroy the dead
+      // agent's owned browser tabs too (monorepo#2857).
+      yield* put(destroyTabsByOwnerAgent(wsId, agentId));
       return;
     }
     logger.error('Failed to load agent session', error);

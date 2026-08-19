@@ -140,6 +140,10 @@ const ReportTabBoundsSchema = z.object({
   height: z.number().positive().optional(),
 });
 
+const ClearAgentTabsSchema = z.object({
+  agentId: z.string(),
+});
+
 const ExecSchema = z.object({
   actions: z.array(z.record(z.unknown())),
   tabId: z.string().optional(),
@@ -364,6 +368,21 @@ export function registerBrowserHandlers(): void {
         return { success: true };
       },
       IPC_CHANNELS.BROWSER.REPORT_TAB_BOUNDS,
+    ),
+  );
+
+  // Clear main's registrations (CDP registry + ownership + tab cache) for a
+  // deleted agent's owned tabs — the renderer already removed them from the
+  // layout on the agent:deleted commit (monorepo#2857).
+  ipcMain.handle(
+    IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS,
+    createSafeValidatedHandler(
+      ClearAgentTabsSchema,
+      async (_event, validated) => {
+        const tabIds = embeddedBrowserCdp.clearAgentTabs(validated.agentId);
+        return { success: true, tabIds };
+      },
+      IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS,
     ),
   );
 

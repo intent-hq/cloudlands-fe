@@ -9,6 +9,7 @@ import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { removeTerminal } from '../terminals/terminals-slice';
+import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type {
   PanelTab,
   PanelTabType,
@@ -103,6 +104,7 @@ export const emptyWorkspaceState: WorkspacePanelLayoutState = {
   focusedPanelId: 'default',
   canvasWidth: null,
   canvasWidthSource: null,
+  hiddenTabs: [],
   restoreStatus: 'idle',
   pendingFocusTabId: null,
   pendingPanelReveal: null,
@@ -135,6 +137,7 @@ export const initializeLayout = createAction(
     layout: Pick<WorkspacePanelLayoutState, 'root' | 'panels' | 'focusedPanelId'> & {
       canvasWidth?: number | null;
       canvasWidthSource?: WorkspacePanelLayoutState['canvasWidthSource'];
+      hiddenTabs?: PanelTab[];
       deferSpecTab?: boolean;
       newWorkspaceLifecycle?: WorkspacePanelLayoutState['newWorkspaceLifecycle'];
     },
@@ -293,13 +296,20 @@ export const openTabWithPanelModeRequested = createAction(
   }),
 );
 
+/**
+ * Close a tab. A user close of an agent-owned browser tab is a UI-level hide
+ * (monorepo#2857): the tab moves to `hiddenTabs` with its webview kept alive
+ * offscreen. `destroy: true` (agent/main-driven closes, agent deletion)
+ * genuinely removes the tab — including from `hiddenTabs`.
+ */
 export const closeTab = createAction(
   'panelLayout/closeTab',
-  (wsId: string, tabId: string, panelId?: string, timestamp?: number) => ({
+  (wsId: string, tabId: string, panelId?: string, timestamp?: number, destroy?: boolean) => ({
     wsId,
     tabId,
     panelId,
     timestamp: timestamp ?? Date.now(),
+    destroy: destroy === true,
   }),
 );
 
@@ -815,11 +825,15 @@ function closePanelHelper(
     ws.focusedPanelId === panelId ? (Object.keys(remainingPanels)[0] ?? null) : ws.focusedPanelId;
 
   const closableRemovedTabs = removedPanel.tabs.filter((tab) => tab.closable !== false);
+  // Owned browser tabs removed with their panel are hidden, not closed
+  // (monorepo#2857) — kept alive in hiddenTabs, never in recentlyClosed.
+  const { hidden: hiddenRemovedTabs, closed: closedRemovedTabs } =
+    partitionRemovedTabs(closableRemovedTabs);
   const focusHistory = ws.focusHistory.filter((entry) => entry.panelId !== panelId);
   const newRecentlyClosed =
-    closableRemovedTabs.length > 0 && timestamp !== undefined
+    closedRemovedTabs.length > 0 && timestamp !== undefined
       ? [
-          ...closableRemovedTabs.map((tab) => ({
+          ...closedRemovedTabs.map((tab) => ({
             tab: { ...tab },
             panelId,
             closedAt: timestamp,
@@ -849,6 +863,10 @@ function closePanelHelper(
     savedCanvasWidthBeforeExpand: undefined,
     savedCanvasWidthSourceBeforeExpand: undefined,
     recentlyClosed: newRecentlyClosed,
+    hiddenTabs:
+      hiddenRemovedTabs.length > 0
+        ? [...ws.hiddenTabs, ...hiddenRemovedTabs.map((tab) => ({ ...tab }))]
+        : ws.hiddenTabs,
     pendingPanelReveal: ws.pendingPanelReveal?.panelId === panelId ? null : ws.pendingPanelReveal,
     pendingFocusTabId: removedPanel.tabs.some((tab) => tab.id === ws.pendingFocusTabId)
       ? null
@@ -968,6 +986,45 @@ function saveToHistory(
   return { ...ws, layoutHistory, historyIndex };
 }
 
+/**
+ * A user close of an agent-owned browser tab is a UI-level hide, not a
+ * destroy (monorepo#2857): the tab leaves its panel but stays alive in
+ * `hiddenTabs` (webview kept mounted offscreen, still in listTabs for its
+ * owner). Destruction happens only via explicit destroy closes (agent
+ * closeTab, agent deletion) or workspace archive/delete.
+ */
+function isHideOnCloseTab(tab: PanelTab): boolean {
+  return (
+    tab.type === 'browser' && typeof tab.ownerAgentId === 'string' && tab.ownerAgentId.length > 0
+  );
+}
+
+/**
+ * Partition tabs removed by a user-driven bulk close: owned browser tabs are
+ * hidden (kept alive), the rest genuinely close into `recentlyClosed`.
+ */
+function partitionRemovedTabs(removed: PanelTab[]): { hidden: PanelTab[]; closed: PanelTab[] } {
+  const hidden: PanelTab[] = [];
+  const closed: PanelTab[] = [];
+  for (const tab of removed) {
+    (isHideOnCloseTab(tab) ? hidden : closed).push(tab);
+  }
+  return { hidden, closed };
+}
+
+/** Drop hidden tabs that a restored snapshot re-added to a visible panel. */
+function dropTabsPresentInPanels(
+  hiddenTabs: PanelTab[],
+  panels: Record<string, PanelState>,
+): PanelTab[] {
+  if (hiddenTabs.length === 0) return hiddenTabs;
+  const visibleIds = new Set(
+    Object.values(panels).flatMap((panel) => panel.tabs.map((tab) => tab.id)),
+  );
+  const filtered = hiddenTabs.filter((tab) => !visibleIds.has(tab.id));
+  return filtered.length === hiddenTabs.length ? hiddenTabs : filtered;
+}
+
 /** Strip spec tabs from panels if deferSpecTab is active */
 function stripSpecTabs(panels: Record<string, PanelState>): Record<string, PanelState> {
   const result: Record<string, PanelState> = {};
@@ -1021,6 +1078,49 @@ export const updateTabFavicon = createAction<[wsId: string, tabId: string, favic
  */
 export const setTabOwnerAgent = createAction<[wsId: string, tabId: string, ownerAgentId: string]>(
   'panelLayout/setTabOwnerAgent',
+);
+
+/**
+ * Destroy ALL browser tabs owned by an agent — visible and hidden alike
+ * (monorepo#2857). Dispatched when the agent's deletion commits
+ * (`agent:deleted`): owned tabs never outlive their owner, and there is no
+ * release-to-unowned path.
+ */
+export const destroyTabsByOwnerAgent = createAction(
+  'panelLayout/destroyTabsByOwnerAgent',
+  (wsId: string, agentId: string, timestamp?: number) => ({
+    wsId,
+    agentId,
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
+/**
+ * Destroy every agent-owned browser tab in a workspace — visible and hidden
+ * (monorepo#2857). Dispatched on workspace archive: the protocol contract
+ * discards all tabs on archive/delete, and pinned owned webviews would
+ * otherwise stay mounted offscreen for the archived workspace indefinitely.
+ */
+export const destroyOwnedTabsForWorkspace = createAction(
+  'panelLayout/destroyOwnedTabsForWorkspace',
+  (wsId: string, timestamp?: number) => ({
+    wsId,
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
+/**
+ * Restore a hidden (user-closed) agent-owned browser tab back into a panel
+ * (monorepo#2857): removed from `hiddenTabs` and opened in the focused panel,
+ * keeping its id so the live webview and main's registrations stay attached.
+ */
+export const restoreHiddenTab = createAction(
+  'panelLayout/restoreHiddenTab',
+  (wsId: string, tabId: string, timestamp?: number) => ({
+    wsId,
+    tabId,
+    timestamp: timestamp ?? Date.now(),
+  }),
 );
 
 // `tabId` scopes the retarget to one specific tab (e.g. a candidate click in
@@ -1175,6 +1275,7 @@ panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
     panels: layout.panels,
     focusedPanelId: layout.focusedPanelId,
     ...canvasWidthState,
+    hiddenTabs: layout.hiddenTabs ?? [],
     deferSpecTab: layout.deferSpecTab ?? false,
     newWorkspaceLifecycle: layout.newWorkspaceLifecycle ?? null,
     pendingFocusTabId: null,
@@ -1489,7 +1590,7 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
 });
 // --- Close Tab ---
 panelLayoutReducer.with(closeTab, (state, { payload }) => {
-  const { wsId, tabId, panelId, timestamp } = payload;
+  const { wsId, tabId, panelId, timestamp, destroy } = payload;
   let ws = getWorkspaceState(state, wsId);
 
   // Find the panel containing this tab
@@ -1502,11 +1603,29 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
       }
     }
   }
-  if (!targetPanelId || !ws.panels[targetPanelId]) return state;
+  if (!targetPanelId || !ws.panels[targetPanelId]) {
+    // A destroy may target a tab that only lives in hiddenTabs (already
+    // user-hidden); drop it from there (monorepo#2857).
+    if (destroy && ws.hiddenTabs.some((t) => t.id === tabId)) {
+      return setWorkspaceState(state, wsId, {
+        ...ws,
+        hiddenTabs: ws.hiddenTabs.filter((t) => t.id !== tabId),
+      });
+    }
+    return state;
+  }
 
   const panel = ws.panels[targetPanelId];
   const tabIndex = panel.tabs.findIndex((t) => t.id === tabId);
-  if (tabIndex === -1) return state;
+  if (tabIndex === -1) {
+    if (destroy && ws.hiddenTabs.some((t) => t.id === tabId)) {
+      return setWorkspaceState(state, wsId, {
+        ...ws,
+        hiddenTabs: ws.hiddenTabs.filter((t) => t.id !== tabId),
+      });
+    }
+    return state;
+  }
 
   ws = saveToHistory(ws, timestamp);
   const closedTab = panel.tabs[tabIndex];
@@ -1522,11 +1641,16 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
     }
   }
 
-  // Add to recently closed
-  const recentlyClosed = [
-    { tab: { ...closedTab }, panelId: targetPanelId, closedAt: timestamp },
-    ...ws.recentlyClosed,
-  ].slice(0, MAX_RECENTLY_CLOSED);
+  const hideInsteadOfClose = !destroy && isHideOnCloseTab(closedTab);
+  // Owned browser tabs never enter recentlyClosed: hidden ones stay alive
+  // and restorable in place (reopening would duplicate the live tab), and
+  // destroyed ones die with their agent and are not resurrectable.
+  const recentlyClosed = isHideOnCloseTab(closedTab)
+    ? ws.recentlyClosed
+    : [
+        { tab: { ...closedTab }, panelId: targetPanelId, closedAt: timestamp },
+        ...ws.recentlyClosed,
+      ].slice(0, MAX_RECENTLY_CLOSED);
 
   ws = {
     ...ws,
@@ -1535,6 +1659,7 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
       [targetPanelId]: { ...panel, tabs: newTabs, activeTabId: newActiveTabId },
     },
     recentlyClosed,
+    hiddenTabs: hideInsteadOfClose ? [...ws.hiddenTabs, { ...closedTab }] : ws.hiddenTabs,
   };
 
   // Close empty panel if there are others
@@ -1604,6 +1729,98 @@ panelLayoutReducer.with(closeTabsByAgentId, (state, { payload }) => {
     result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp));
   }
   return result;
+});
+// --- Destroy Tabs By Owner Agent (monorepo#2857) ---
+panelLayoutReducer.with(destroyTabsByOwnerAgent, (state, { payload }) => {
+  const { wsId, agentId, timestamp } = payload;
+  const ws = getWorkspaceState(state, wsId);
+  const tabsToDestroy: { tabId: string; panelId?: string }[] = [];
+  for (const [pId, panel] of Object.entries(ws.panels)) {
+    for (const tab of panel.tabs) {
+      if (tab.type === 'browser' && tab.ownerAgentId === agentId) {
+        tabsToDestroy.push({ tabId: tab.id, panelId: pId });
+      }
+    }
+  }
+  const hiddenOwned = ws.hiddenTabs.filter(
+    (tab) => tab.type === 'browser' && tab.ownerAgentId === agentId,
+  );
+  if (tabsToDestroy.length === 0 && hiddenOwned.length === 0) return state;
+  let result = state;
+  if (hiddenOwned.length > 0) {
+    result = setWorkspaceState(result, wsId, {
+      ...ws,
+      hiddenTabs: ws.hiddenTabs.filter(
+        (tab) => !(tab.type === 'browser' && tab.ownerAgentId === agentId),
+      ),
+    });
+  }
+  for (const { tabId, panelId } of tabsToDestroy) {
+    result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp, true));
+  }
+  return result;
+});
+// --- Destroy Owned Tabs For Workspace (monorepo#2857) ---
+panelLayoutReducer.with(destroyOwnedTabsForWorkspace, (state, { payload }) => {
+  const { wsId, timestamp } = payload;
+  const ws = getWorkspaceState(state, wsId);
+  const tabsToDestroy: { tabId: string; panelId?: string }[] = [];
+  for (const [pId, panel] of Object.entries(ws.panels)) {
+    for (const tab of panel.tabs) {
+      if (tab.type === 'browser' && typeof tab.ownerAgentId === 'string') {
+        tabsToDestroy.push({ tabId: tab.id, panelId: pId });
+      }
+    }
+  }
+  const hasHiddenOwned = ws.hiddenTabs.some(
+    (tab) => tab.type === 'browser' && typeof tab.ownerAgentId === 'string',
+  );
+  if (tabsToDestroy.length === 0 && !hasHiddenOwned) return state;
+  let result = state;
+  if (hasHiddenOwned) {
+    result = setWorkspaceState(result, wsId, {
+      ...ws,
+      hiddenTabs: ws.hiddenTabs.filter(
+        (tab) => !(tab.type === 'browser' && typeof tab.ownerAgentId === 'string'),
+      ),
+    });
+  }
+  for (const { tabId, panelId } of tabsToDestroy) {
+    result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp, true));
+  }
+  return result;
+});
+// --- Restore Hidden Tab (monorepo#2857) ---
+panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
+  const { wsId, tabId, timestamp } = payload;
+  let ws = getWorkspaceState(state, wsId);
+  const hiddenTab = ws.hiddenTabs.find((tab) => tab.id === tabId);
+  if (!hiddenTab) return state;
+  const targetPanelId =
+    ws.focusedPanelId && ws.panels[ws.focusedPanelId]
+      ? ws.focusedPanelId
+      : Object.keys(ws.panels)[0];
+  if (!targetPanelId) return state;
+
+  ws = saveToHistory(ws, timestamp);
+  const panel = ws.panels[targetPanelId];
+  ws = {
+    ...ws,
+    hiddenTabs: ws.hiddenTabs.filter((tab) => tab.id !== tabId),
+    panels: {
+      ...ws.panels,
+      [targetPanelId]: {
+        ...panel,
+        tabs: [...panel.tabs, { ...hiddenTab }],
+        activeTabId: hiddenTab.id,
+        pristine: false,
+      },
+    },
+    focusedPanelId: targetPanelId,
+    pendingPanelReveal: createPanelRevealRequest(targetPanelId, hiddenTab.id, hiddenTab.id),
+  };
+  ws = addToFocusHistory(ws, targetPanelId, hiddenTab.id, timestamp);
+  return setWorkspaceState(state, wsId, ws);
 });
 // --- Prune Recently Closed ---
 panelLayoutReducer.with(pruneRecentlyClosed, (state, { payload: [wsId, match] }) => {
@@ -1786,6 +2003,12 @@ panelLayoutReducer.with(updateTabTitle, (state, { payload: [wsId, tabId, newTitl
       });
     }
   }
+  if (ws.hiddenTabs.some((t) => t.id === tabId)) {
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      hiddenTabs: ws.hiddenTabs.map((t) => (t.id === tabId ? { ...t, title: newTitle } : t)),
+    });
+  }
   return state;
 });
 // --- Update Tab Browser URL ---
@@ -1814,6 +2037,24 @@ panelLayoutReducer.with(
           panels: { ...ws.panels, [pId]: { ...panel, tabs: newTabs } },
         });
       }
+    }
+    // Hidden owned tabs keep a live webview, so agent-driven navigation must
+    // keep syncing their persisted URL (monorepo#2857).
+    if (ws.hiddenTabs.some((t) => t.id === tabId && t.type === 'browser')) {
+      const newHidden = ws.hiddenTabs.map((t) => {
+        if (t.id !== tabId || t.type !== 'browser') return t;
+        const kept =
+          requestedUrl === undefined
+            ? rebaseRequestedUrlForNavigation(t.browserUrl, newUrl, t.browserRequestedUrl)
+            : (requestedUrl ?? undefined);
+        const { browserRequestedUrl: _dropped, ...rest } = t;
+        return {
+          ...rest,
+          browserUrl: newUrl,
+          ...(kept !== undefined ? { browserRequestedUrl: kept } : {}),
+        };
+      });
+      return setWorkspaceState(state, wsId, { ...ws, hiddenTabs: newHidden });
     }
     return state;
   },
@@ -1846,6 +2087,14 @@ panelLayoutReducer.with(updateTabFavicon, (state, { payload: [wsId, tabId, favic
         panels: { ...ws.panels, [pId]: { ...panel, tabs: newTabs } },
       });
     }
+  }
+  if (ws.hiddenTabs.some((t) => t.id === tabId && t.type === 'browser')) {
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      hiddenTabs: ws.hiddenTabs.map((t) =>
+        t.id === tabId && t.type === 'browser' ? { ...t, faviconUrl } : t,
+      ),
+    });
   }
   return state;
 });
@@ -1881,9 +2130,13 @@ panelLayoutReducer.with(closeOtherTabs, (state, { payload }) => {
   if (!panel.tabs.find((t) => t.id === tabId)) return state;
 
   ws = saveToHistory(ws, timestamp);
-  const closed: RecentlyClosedTab[] = panel.tabs
-    .filter((t) => t.id !== tabId && t.closable !== false)
-    .map((t) => ({ tab: { ...t }, panelId: targetPanelId, closedAt: timestamp }));
+  const removed = panel.tabs.filter((t) => t.id !== tabId && t.closable !== false);
+  const { hidden, closed: genuinelyClosed } = partitionRemovedTabs(removed);
+  const closed: RecentlyClosedTab[] = genuinelyClosed.map((t) => ({
+    tab: { ...t },
+    panelId: targetPanelId,
+    closedAt: timestamp,
+  }));
   const recentlyClosed = [...closed, ...ws.recentlyClosed].slice(0, MAX_RECENTLY_CLOSED);
   const keptTabs = panel.tabs.filter((t) => t.id === tabId || t.closable === false);
 
@@ -1891,6 +2144,8 @@ panelLayoutReducer.with(closeOtherTabs, (state, { payload }) => {
     ...ws,
     panels: { ...ws.panels, [targetPanelId]: { ...panel, tabs: keptTabs, activeTabId: tabId } },
     recentlyClosed,
+    hiddenTabs:
+      hidden.length > 0 ? [...ws.hiddenTabs, ...hidden.map((t) => ({ ...t }))] : ws.hiddenTabs,
   };
   return setWorkspaceState(state, wsId, ws);
 });
@@ -1905,10 +2160,13 @@ panelLayoutReducer.with(closeTabsToRight, (state, { payload }) => {
   if (tabIndex === -1) return state;
 
   ws = saveToHistory(ws, timestamp);
-  const closed: RecentlyClosedTab[] = panel.tabs
-    .slice(tabIndex + 1)
-    .filter((t) => t.closable !== false)
-    .map((t) => ({ tab: { ...t }, panelId: targetPanelId, closedAt: timestamp }));
+  const removed = panel.tabs.slice(tabIndex + 1).filter((t) => t.closable !== false);
+  const { hidden, closed: genuinelyClosed } = partitionRemovedTabs(removed);
+  const closed: RecentlyClosedTab[] = genuinelyClosed.map((t) => ({
+    tab: { ...t },
+    panelId: targetPanelId,
+    closedAt: timestamp,
+  }));
   const recentlyClosed = [...closed, ...ws.recentlyClosed].slice(0, MAX_RECENTLY_CLOSED);
   const keptTabs = panel.tabs.filter((t, i) => i <= tabIndex || t.closable === false);
   const activeTabId = keptTabs.some((t) => t.id === panel.activeTabId)
@@ -1919,6 +2177,8 @@ panelLayoutReducer.with(closeTabsToRight, (state, { payload }) => {
     ...ws,
     panels: { ...ws.panels, [targetPanelId]: { ...panel, tabs: keptTabs, activeTabId } },
     recentlyClosed,
+    hiddenTabs:
+      hidden.length > 0 ? [...ws.hiddenTabs, ...hidden.map((t) => ({ ...t }))] : ws.hiddenTabs,
   };
   return setWorkspaceState(state, wsId, ws);
 });
@@ -1931,9 +2191,13 @@ panelLayoutReducer.with(closeAllTabs, (state, { payload }) => {
   const panel = ws.panels[targetPanelId];
 
   ws = saveToHistory(ws, timestamp);
-  const closed: RecentlyClosedTab[] = panel.tabs
-    .filter((t) => t.closable !== false)
-    .map((t) => ({ tab: { ...t }, panelId: targetPanelId, closedAt: timestamp }));
+  const removed = panel.tabs.filter((t) => t.closable !== false);
+  const { hidden, closed: genuinelyClosed } = partitionRemovedTabs(removed);
+  const closed: RecentlyClosedTab[] = genuinelyClosed.map((t) => ({
+    tab: { ...t },
+    panelId: targetPanelId,
+    closedAt: timestamp,
+  }));
   const recentlyClosed = [...closed, ...ws.recentlyClosed].slice(0, MAX_RECENTLY_CLOSED);
   const keptTabs = panel.tabs.filter((t) => t.closable === false);
   const activeTabId = keptTabs[0]?.id ?? null;
@@ -1942,6 +2206,8 @@ panelLayoutReducer.with(closeAllTabs, (state, { payload }) => {
     ...ws,
     panels: { ...ws.panels, [targetPanelId]: { ...panel, tabs: keptTabs, activeTabId } },
     recentlyClosed,
+    hiddenTabs:
+      hidden.length > 0 ? [...ws.hiddenTabs, ...hidden.map((t) => ({ ...t }))] : ws.hiddenTabs,
   };
 
   if (keptTabs.length === 0 && Object.keys(ws.panels).length > 1) {
@@ -1959,28 +2225,36 @@ panelLayoutReducer.with(closeAllOthersEverywhere, (state, { payload }) => {
 
   ws = saveToHistory(ws, timestamp);
   let allClosed: RecentlyClosedTab[] = [];
+  let allHidden: PanelTab[] = [];
 
   // Close tabs in other panels
   const newPanels: Record<string, PanelState> = {};
   for (const [pId, panel] of Object.entries(ws.panels)) {
+    const removed =
+      pId === targetPanelId
+        ? panel.tabs.filter((t) => t.id !== tabId && t.closable !== false)
+        : panel.tabs.filter((t) => t.closable !== false);
+    const { hidden, closed: genuinelyClosed } = partitionRemovedTabs(removed);
+    allHidden = [...allHidden, ...hidden.map((t) => ({ ...t }))];
+    allClosed = [
+      ...allClosed,
+      ...genuinelyClosed.map((t) => ({ tab: { ...t }, panelId: pId, closedAt: timestamp })),
+    ];
     if (pId === targetPanelId) {
-      const closed = panel.tabs
-        .filter((t) => t.id !== tabId && t.closable !== false)
-        .map((t) => ({ tab: { ...t }, panelId: pId, closedAt: timestamp }));
-      allClosed = [...allClosed, ...closed];
       const keptTabs = panel.tabs.filter((t) => t.id === tabId || t.closable === false);
       newPanels[pId] = { ...panel, tabs: keptTabs, activeTabId: tabId };
     } else {
-      const closed = panel.tabs
-        .filter((t) => t.closable !== false)
-        .map((t) => ({ tab: { ...t }, panelId: pId, closedAt: timestamp }));
-      allClosed = [...allClosed, ...closed];
       const keptTabs = panel.tabs.filter((t) => t.closable === false);
       newPanels[pId] = { ...panel, tabs: keptTabs, activeTabId: keptTabs[0]?.id ?? null };
     }
   }
   const recentlyClosed = [...allClosed, ...ws.recentlyClosed].slice(0, MAX_RECENTLY_CLOSED);
-  ws = { ...ws, panels: newPanels, recentlyClosed };
+  ws = {
+    ...ws,
+    panels: newPanels,
+    recentlyClosed,
+    hiddenTabs: allHidden.length > 0 ? [...ws.hiddenTabs, ...allHidden] : ws.hiddenTabs,
+  };
 
   // Clean up empty panels
   for (const pId of Object.keys(ws.panels)) {
@@ -2498,6 +2772,9 @@ panelLayoutReducer.with(goBack, (state, { payload: { wsId, timestamp } }) => {
     panels,
     focusedPanelId: snapshot.focusedPanelId,
     ...canvasWidthState,
+    // A snapshot that re-adds a since-hidden owned tab must not leave a
+    // duplicate live in hiddenTabs (monorepo#2857).
+    hiddenTabs: dropTabsPresentInPanels(ws.hiddenTabs, panels),
     layoutHistory,
     historyIndex,
   });
@@ -2524,6 +2801,7 @@ panelLayoutReducer.with(goForward, (state, { payload: [wsId] }) => {
     panels,
     focusedPanelId: snapshot.focusedPanelId,
     ...canvasWidthState,
+    hiddenTabs: dropTabsPresentInPanels(ws.hiddenTabs, panels),
     historyIndex,
   });
 });
@@ -2768,6 +3046,15 @@ panelLayoutReducer.with(
 );
 // --- Clear Panel Layout ---
 panelLayoutReducer.with(clearPanelLayout, (state, { payload: [wsId] }) => {
+  return clearWorkspaceState(state, wsId);
+});
+// --- Cross-slice: workspace deletion drops the whole layout entry ---
+// Unlike `workspaceUnmounted` (state persists for workspace switching), a
+// permanent delete must remove the entry — otherwise pinned agent-owned
+// webviews (visible or hidden, exempt from cap eviction; monorepo#2857)
+// would stay mounted offscreen forever for a workspace that no longer exists.
+panelLayoutReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
+  if (!state.byWorkspaceId[wsId]) return state;
   return clearWorkspaceState(state, wsId);
 });
 // --- Open Tab In Adjacent Or Split ---

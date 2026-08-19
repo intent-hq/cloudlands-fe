@@ -5223,6 +5223,63 @@ describe('daemonEventsBridge (workspace:deleted → purge agent/chat state)', ()
     expect(after.chatState.byAgentId[OTHER_AGENT]).toBeDefined();
   });
 
+  it('drops the panel layout entry and clears main registrations for owned tabs (monorepo#2857)', async () => {
+    const { initializeLayout, closeTab } = await import(
+      '$store/renderer/slices/panel-layout/panel-layout-slice'
+    );
+    appStore.dispatch(
+      initializeLayout(WS, {
+        root: { type: 'panel', panelId: 'p1' },
+        panels: {
+          p1: {
+            id: 'p1',
+            tabs: [
+              {
+                id: 'owned-del',
+                type: 'browser',
+                title: 'O',
+                closable: true,
+                browserUrl: 'http://o/',
+                ownerAgentId: 'agent-del-owner',
+              },
+            ],
+            activeTabId: 'owned-del',
+          },
+        },
+        focusedPanelId: 'p1',
+      } as never),
+    );
+    // Hide it so the purge is proven to cover hiddenTabs too.
+    appStore.dispatch(closeTab(WS, 'owned-del', 'p1', 1000));
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    invokeSpy.mockClear();
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-workspace-deleted-owned-tabs',
+          workspaceId: WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:deleted',
+          actor: { type: 'user', id: 'u1' },
+          data: { workspaceId: WS },
+        },
+      },
+    });
+
+    const state = appStore.state as {
+      panelLayout: { byWorkspaceId: Record<string, unknown> };
+    };
+    expect(state.panelLayout.byWorkspaceId[WS]).toBeUndefined();
+    const clearCalls = invokeSpy.mock.calls.filter(
+      (call: unknown[]) => call[0] === 'browser:clear-agent-tabs',
+    );
+    expect(clearCalls.map((call: unknown[]) => call[1])).toEqual([{ agentId: 'agent-del-owner' }]);
+  });
+
   it('drops workspace:deleted events lacking a workspaceId envelope', async () => {
     appStore.dispatch(
       bulkUpsertSessions([
@@ -6378,6 +6435,80 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     expect(ws.archived).toBe(true);
     expect(ws.status).toBe('Archived');
     expect(ws.archivedAt).toBe('2026-07-25T12:00:00.000Z');
+  });
+
+  it('destroys agent-owned browser tabs (visible + hidden) and clears main registrations on archive (monorepo#2857)', async () => {
+    await seedWorkspace();
+    const { initializeLayout, closeTab } = await import(
+      '$store/renderer/slices/panel-layout/panel-layout-slice'
+    );
+    appStore.dispatch(
+      initializeLayout(WS_UPD, {
+        root: { type: 'panel', panelId: 'p1' },
+        panels: {
+          p1: {
+            id: 'p1',
+            tabs: [
+              {
+                id: 'owned-visible',
+                type: 'browser',
+                title: 'V',
+                closable: true,
+                browserUrl: 'http://v/',
+                ownerAgentId: 'agent-arch-1',
+              },
+              {
+                id: 'owned-hideme',
+                type: 'browser',
+                title: 'H',
+                closable: true,
+                browserUrl: 'http://h/',
+                ownerAgentId: 'agent-arch-2',
+              },
+              {
+                id: 'plain',
+                type: 'browser',
+                title: 'P',
+                closable: true,
+                browserUrl: 'http://p/',
+              },
+            ],
+            activeTabId: 'owned-visible',
+          },
+        },
+        focusedPanelId: 'p1',
+      } as never),
+    );
+    // User-hide one owned tab so both lifecycle states are covered.
+    appStore.dispatch(closeTab(WS_UPD, 'owned-hideme', 'p1', 1000));
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    invokeSpy.mockClear();
+
+    handler(updatedNotification({ archived: true, status: 'Archived' }));
+
+    const layout = (
+      appStore.state as {
+        panelLayout: {
+          byWorkspaceId: Record<
+            string,
+            {
+              panels: Record<string, { tabs: Array<{ id: string }> }>;
+              hiddenTabs: Array<{ id: string }>;
+            }
+          >;
+        };
+      }
+    ).panelLayout.byWorkspaceId[WS_UPD];
+    expect(layout.hiddenTabs).toHaveLength(0);
+    expect(layout.panels.p1.tabs.map((t) => t.id)).toEqual(['plain']);
+    const clearCalls = invokeSpy.mock.calls.filter(
+      (call: unknown[]) => call[0] === 'browser:clear-agent-tabs',
+    );
+    expect(clearCalls.map((call: unknown[]) => call[1])).toEqual(
+      expect.arrayContaining([{ agentId: 'agent-arch-1' }, { agentId: 'agent-arch-2' }]),
+    );
+    expect(clearCalls).toHaveLength(2);
   });
 
   it('clears archivedAt on an explicit null in the unarchive delta and restores Active', async () => {

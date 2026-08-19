@@ -949,6 +949,34 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
+   * Destroy-side cleanup for ALL tabs owned by an agent whose deletion
+   * committed (monorepo#2857): detach debuggers, drop registry + ownership
+   * records, and purge the tabs from the per-workspace tab cache so a stale
+   * reply cannot resurrect them. The renderer removes the layout/hidden
+   * entries itself (destroyTabsByOwnerAgent) and calls this over IPC.
+   */
+  clearAgentTabs(agentId: string): string[] {
+    const tabIds: string[] = [];
+    for (const [tabId, ownership] of this.tabOwnership) {
+      if (ownership.ownerAgentId === agentId) tabIds.push(tabId);
+    }
+    for (const tabId of tabIds) {
+      this.unregisterTab(tabId);
+      this.clearTabOwnership(tabId);
+      for (const [key, tabs] of this.panelBrowserTabsCache) {
+        this.panelBrowserTabsCache.set(
+          key,
+          tabs.filter((t) => t.tabId !== tabId),
+        );
+      }
+    }
+    if (tabIds.length > 0) {
+      logger.info('Cleared owned tabs for deleted agent', { agentId, tabIds });
+    }
+    return tabIds;
+  }
+
+  /**
    * Atomically claim an unowned tab for an agent (monorepo#2857).
    *
    * First claim wins: main's single-threaded event loop makes the

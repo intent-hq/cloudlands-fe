@@ -361,6 +361,7 @@ const ALLOWED_CHANNELS = [
   "browser:close-tab",
   "browser:tab-navigated",
   "browser:tab-owner-changed",
+  "browser:clear-agent-tabs",
   "file-tracking:agent-file-changed",
   "streaming:start",
   "streaming:stop",

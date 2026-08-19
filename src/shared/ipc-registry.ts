@@ -496,6 +496,8 @@ export const IPC_CHANNELS = {
     TAB_NAVIGATED: 'browser:tab-navigated',
     /** A tab's owner agent changed (claim/agent open) - main->renderer event */
     TAB_OWNER_CHANGED: 'browser:tab-owner-changed',
+    /** Clear main's registrations for a deleted agent's owned tabs (renderer->main) */
+    CLEAR_AGENT_TABS: 'browser:clear-agent-tabs',
   },
 
   // File Tracking
