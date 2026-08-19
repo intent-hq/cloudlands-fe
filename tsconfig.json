@@ -14,7 +14,6 @@
     "target": "ES2022",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["vite/client", "svelte", "node", "vitest/globals"],
-    "baseUrl": ".",
     "paths": {
       "$lib": ["./src/lib"],
       "$lib/*": ["./src/lib/*"],
