@@ -199,9 +199,10 @@ jobs:
   # Fail-safe, not fail-open: the heavy jobs skip only when the output is
   # exactly 'true' (script error, missing output, or job failure leaves it
   # empty and falls back to full CI), and pr-title / conflict-markers / route
-  # / gate still run on every PR. Unlike intentd's matrix build job, all three
-  # heavy jobs here are non-matrix and the only required context is "CI Gate"
-  # (which always runs), so a job-level skip is safe.
+  # / gate still run on every PR. The only required context is "CI Gate"
+  # (which always runs), and a job-level skip is safe for every heavy job —
+  # including the test-ct shard matrix, where skipping the job reports
+  # 'skipped' for the whole matrix (no per-leg required contexts exist).
   release-fast-path:
     name: Release PR Fast Path
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
