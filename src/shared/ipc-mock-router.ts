@@ -147,14 +147,12 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
     'remote-fs:exists',
     { success: false, error: 'Remote SSH file access is not available in this build' },
   ],
-  // Electron-main CDP plumbing: EmbeddedBrowser's webContents registration
-  // (caller `.catch`es and logs) and the browser IPC saga's response arm for
-  // the browser:list-tabs-request event. The saga only subscribes in Electron
-  // (isElectron() gate) and the request never fires in this build, so the
-  // invoke is statically present but unreachable.
-  ['browser:register-tab', undefined],
-  ['browser:report-tab-bounds', undefined],
-  ['browser:list-tabs-response', undefined],
+  // (browser:list-tabs-response / browser:register-tab /
+  // browser:report-tab-bounds are forwarded to the real preload bridge in
+  // browser-ipc-bridge-seeder.ts — the packaged app's main process DOES fire
+  // browser:list-tabs-request, and an allowlisted absence here swallowed the
+  // saga's reply so agent listTabs/closeTab/dedupe failed persistently;
+  // intent-hq/monorepo#2926.)
   // Chat-input context enrichment (context-api getWorkspaceInfo). The caller
   // folds an absent info payload to the Workspace object it already holds.
   ['workspace:get-info', undefined],
