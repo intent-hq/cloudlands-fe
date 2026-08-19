@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.70.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.69.0...v2.70.0) (2026-08-19)
+
+
+### 🚀 Features
+
+* extend release fast path to intentd.version pin bumps ([#1473](https://github.com/intent-hq/cloudlands-fe/issues/1473)) ([94cef84](https://github.com/intent-hq/cloudlands-fe/commit/94cef84c287905e08eaf10eb35456f65c89adfbe))
+
+
+### 🐛 Bug Fixes
+
+* **panel:** never blur focus inside the panel being revealed ([#1464](https://github.com/intent-hq/cloudlands-fe/issues/1464)) ([4921c3a](https://github.com/intent-hq/cloudlands-fe/commit/4921c3a45e41e60d351358920015a64e9b6b238c))
+
 ## [2.69.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.68.0...v2.69.0) (2026-08-19)
 
 
