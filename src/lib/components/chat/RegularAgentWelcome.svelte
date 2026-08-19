@@ -12,7 +12,7 @@
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import type { AgentSession } from '$shared/types/agent-session';
   import { isPendingAgentSession } from '$shared/types/agent-session';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DropdownMenu from '../ui/dropdown-menu.svelte';
   import Button from '../ui/button/button.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -83,8 +83,9 @@
         side="bottom"
         contentClass="w-[min(28rem,calc(100vw-2rem))] overflow-hidden p-0!"
       >
-        {#snippet trigger()}
+        {#snippet trigger({ props })}
           <button
+            {...props}
             type="button"
             class={cn(
               'group flex w-full cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left shadow-xs transition-colors',
@@ -93,7 +94,7 @@
             data-testid="specialist-picker-trigger"
           >
             <div class="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted/50">
-              <AuggieAvatar seed="blank" size={24} specialist={specialistInfo?.id ?? null} />
+              <AgentAvatar agentId="blank" size={24} specialist={specialistInfo?.id ?? null} />
             </div>
             <div class="min-w-0 flex-1">
               <div class="type-body truncate font-medium text-foreground">{displayLabel}</div>
@@ -139,7 +140,7 @@
                 <div
                   class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted/50"
                 >
-                  <AuggieAvatar seed="blank" size={22} />
+                  <AgentAvatar agentId="blank" size={22} />
                 </div>
                 <div class="min-w-0 flex-1">
                   <div class="type-body font-medium text-foreground">
@@ -172,7 +173,7 @@
                   <div
                     class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted/50"
                   >
-                    <AuggieAvatar seed="blank" size={22} specialist={specialist.id} />
+                    <AgentAvatar agentId="blank" size={22} specialist={specialist.id} />
                   </div>
                   <div class="min-w-0 flex-1">
                     <div class="type-body font-medium text-foreground">{specialist.name}</div>

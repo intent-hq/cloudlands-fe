@@ -216,7 +216,7 @@
     <!-- Image Viewer -->
     <div class="flex-1 flex flex-col">
       <!-- Image Controls -->
-      <div class="flex items-center gap-2 p-2 border-b border-border/50 bg-muted/30">
+      <div class="flex items-center gap-2 p-2 border-b border-border bg-muted/30">
         <Button
           size="icon"
           variant="ghost"
@@ -288,7 +288,7 @@
   {:else if fileType === 'svg'}
     <!-- SVG Viewer with code toggle -->
     <div class="flex-1 flex flex-col">
-      <div class="flex items-center gap-2 p-2 border-b border-border/50 bg-muted/30">
+      <div class="flex items-center gap-2 p-2 border-b border-border bg-muted/30">
         <Button
           size="icon"
           variant="ghost"

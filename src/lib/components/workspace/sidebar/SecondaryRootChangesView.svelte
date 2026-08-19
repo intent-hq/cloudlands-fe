@@ -14,7 +14,7 @@
   import { openWorkspaceCommitChangeset } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
   import type { GitStatus, CommitInfo, WorkspaceId } from '$shared/types';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import type { UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
@@ -289,7 +289,7 @@
       <Skeleton class="h-5 w-3/4 rounded" />
     </div>
   {:else if loadError}
-    <p class="text-xs text-destructive-foreground">
+    <p class="text-xs text-error-foreground">
       {m.workspace_sidebarChanges_rootLoadFailed_error()}
     </p>
   {:else}
@@ -305,12 +305,9 @@
               <span class="shrink-0 w-3 text-center font-mono {statusColor(file.status)}"
                 >{file.status}</span
               >
-              <span class="truncate min-w-0 text-foreground" title={file.path}
-                >{file.path}</span
-              >
+              <span class="truncate min-w-0 text-foreground" title={file.path}>{file.path}</span>
               {#if file.staged}
-                <span
-                  class="shrink-0 px-1 py-px rounded bg-muted text-muted-foreground text-xs"
+                <span class="shrink-0 px-1 py-px rounded bg-muted text-muted-foreground text-xs"
                   >{m.workspace_fileChanges_staged_label()}</span
                 >
               {/if}
@@ -355,11 +352,11 @@
                 <Fa
                   icon={faChevronDown}
                   size="xs"
-                  class="opacity-50 transition-transform {olderExpanded ? 'rotate-180' : ''}"
+                  class="opacity-50 transition-transform {olderExpanded ? '' : 'rotate-90'}"
                 />
               </span>
             </div>
-            <div class="absolute top-3.5 left-0 right-0 flex-1 border-t border-border/50"></div>
+            <div class="absolute top-3.5 left-0 right-0 flex-1 border-t border-border"></div>
           </Button>
 
           {#if olderExpanded}
@@ -427,7 +424,7 @@
         <Fa
           icon={faChevronDown}
           size={12}
-          class="text-subtle shrink-0 transition-transform {isExpanded ? 'rotate-0' : '-rotate-90'}"
+          class="text-subtle shrink-0 transition-transform {isExpanded ? 'rotate-0' : 'rotate-90'}"
         />
         {#if commitFiles.length > 0}
           <LineChangesBadge
@@ -441,7 +438,7 @@
       <!-- Auggie avatar instead of commit icon when made by an agent - hides on hover to show chevron -->
       {#if commit.agentId}
         <span class="shrink-0 group-hover:opacity-0 transition-opacity pointer-events-none">
-          <AuggieAvatar agentId={commit.agentId} size={14} class="mr-[-2px]" />
+          <AgentAvatar agentId={commit.agentId} size={14} class="mr-[-2px]" />
         </span>
       {:else}
         <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />

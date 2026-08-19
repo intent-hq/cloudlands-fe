@@ -150,6 +150,18 @@ describe('themeSaga', () => {
     remove.mockRestore();
   });
 
+  it('keeps system preference on the native theme channel', async () => {
+    mocks.manager.getTheme.mockReturnValue('system');
+    mocks.manager.isDark.mockReturnValue(false);
+    const task = runSaga({ channel: stdChannel(), dispatch: vi.fn() }, themeSaga);
+
+    await settle();
+
+    expect(mocks.invoke).toHaveBeenLastCalledWith('window:set-theme', { theme: 'system' });
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('surfaces an unknown preset as an exact terminal error action', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
@@ -242,6 +254,51 @@ describe('themeSaga', () => {
     task.cancel();
     await task.toPromise();
   });
+
+  it.each([
+    { base: 'light' as const, custom: 'dark' as const },
+    { base: 'dark' as const, custom: 'light' as const },
+  ])(
+    'syncs a $custom single custom theme over a $base base and reverts on clear',
+    async ({ base, custom }) => {
+      mocks.manager.getTheme.mockReturnValue(base);
+      mocks.manager.isDark.mockReturnValue(base === 'dark');
+      mocks.manager.setCustomTheme.mockImplementation(() => {
+        mocks.manager.hasCustomTheme.mockReturnValue(true);
+        mocks.manager.getCustomThemeName.mockReturnValue('Imported');
+        mocks.manager.getActivePresetId.mockReturnValue(null);
+        mocks.manager.isDark.mockReturnValue(custom === 'dark');
+      });
+      mocks.manager.clearCustomTheme.mockImplementation(() => {
+        mocks.manager.hasCustomTheme.mockReturnValue(false);
+        mocks.manager.getCustomThemeName.mockReturnValue(null);
+        mocks.manager.getActivePresetId.mockReturnValue(null);
+        mocks.manager.isDark.mockReturnValue(base === 'dark');
+      });
+      const importChannel = stdChannel();
+      const importTask = runSaga({ channel: importChannel, dispatch: vi.fn() }, themeSaga);
+      await settle();
+      mocks.invoke.mockClear();
+
+      importChannel.put(importCustomTheme({ name: 'Imported', type: custom, colors: {} }));
+      await settle();
+      expect(mocks.invoke).toHaveBeenLastCalledWith('window:set-theme', { theme: custom });
+      importTask.cancel();
+      await importTask.toPromise();
+
+      mocks.invoke.mockClear();
+      const restoreChannel = stdChannel();
+      const restoreTask = runSaga({ channel: restoreChannel, dispatch: vi.fn() }, themeSaga);
+      await settle();
+      expect(mocks.invoke).toHaveBeenLastCalledWith('window:set-theme', { theme: custom });
+
+      restoreChannel.put(clearThemeCustomization());
+      await settle();
+      expect(mocks.invoke).toHaveBeenLastCalledWith('window:set-theme', { theme: base });
+      restoreTask.cancel();
+      await restoreTask.toPromise();
+    },
+  );
 
   it('surfaces custom import and clear failures as theme error actions', async () => {
     const channel = stdChannel();

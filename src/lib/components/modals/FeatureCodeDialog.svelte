@@ -92,7 +92,10 @@
           color: 'text-yellow-400',
         };
       } else {
-        feedback = { message: m.modals_featureCode_invalidCode_feedback(), color: 'text-red-400' };
+        feedback = {
+          message: m.modals_featureCode_invalidCode_feedback(),
+          color: 'text-error-foreground',
+        };
       }
     } finally {
       isActivating = false;

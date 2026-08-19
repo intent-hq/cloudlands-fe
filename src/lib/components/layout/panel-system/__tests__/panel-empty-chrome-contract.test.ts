@@ -33,6 +33,15 @@ describe('empty panel chrome', () => {
     expect(panel).not.toContain('tabindex="-1"');
   });
 
+  it('keeps empty-state actions pristine until their content replaces the panel', () => {
+    const panel = source('../Panel.svelte');
+    const emptyState = source('../PanelEmptyState.svelte');
+
+    expect(emptyState).toContain('data-panel-empty-state');
+    expect(panel).toContain("target.closest('[data-panel-empty-state]')");
+    expect(panel).toContain('if (!isEmptyStateInteraction(event.target)) markUserTouch()');
+  });
+
   it('uses UI typography for every keyboard shortcut', () => {
     const appCss = source('../../../../../app.css');
     const svelteSource = collectSvelteFiles(resolve(process.cwd(), 'src'))

@@ -77,7 +77,7 @@
               <div class="flex hover:bg-muted/50">
                 <!-- Line number -->
                 <div
-                  class="w-10 shrink-0 select-none border-r border-border/50 px-2 text-right text-subtle"
+                  class="w-10 shrink-0 select-none border-r border-border px-2 text-right text-subtle"
                 >
                   {annotation.line + i}
                 </div>

@@ -124,7 +124,7 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => 
   })),
 }));
 
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 

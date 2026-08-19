@@ -13,7 +13,7 @@
  *      re-derive previews (monorepo#2843).
  */
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 
 import AgentCard from '../AgentCard.svelte';
 import { store as appStore } from '$store/renderer/store';
@@ -187,7 +187,7 @@ describe('AgentCard live tool preview (tool-only stretches)', () => {
 
     const preview = await screen.findByTestId('agent-card-preview');
     expect(preview.textContent).not.toContain('stale persisted text');
-    expect(preview.textContent?.toLowerCase()).toContain('read');
+    await waitFor(() => expect(preview.textContent?.toLowerCase()).toContain('read'));
   });
 
   it('lets push-applied live text outrank the live tool label', async () => {
@@ -523,9 +523,7 @@ describe('AgentCard this-turn live text vs previous-turn report (monorepo#1327)'
     // tool_use blocks are never consulted).
     seedSession({
       isStreaming: true,
-      messages: [
-        assistantMessage('wrapped up <agent_digest>old transcript digest</agent_digest>'),
-      ],
+      messages: [assistantMessage('wrapped up <agent_digest>old transcript digest</agent_digest>')],
       metadata: { completionReport: 'report from the last turn' } as AgentSession['metadata'],
     });
     appStore.dispatch(updateSession(agentId, { lastToolUse: { name: 'read_file' } }));

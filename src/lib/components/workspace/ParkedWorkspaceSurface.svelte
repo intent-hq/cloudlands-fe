@@ -40,11 +40,11 @@
 
 <div class="flex h-full min-h-0 w-full" data-workspace-surface-placeholder={workspaceId}>
   <div
-    class="flex h-full min-h-0 shrink-0 flex-col border-r border-border/60 bg-sidebar"
+    class="flex h-full min-h-0 shrink-0 flex-col border-r border-border bg-sidebar"
     style:width={`${sidebarWidth}px`}
   >
     <header
-      class="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3"
+      class="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3"
       data-workspace-title-region
       draggable="true"
     >

@@ -201,7 +201,7 @@ describe('notesWriteSaga', () => {
     const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([note(), created]);
     const run = harness();
 
-    run.channel.put(createNoteRequested(WS));
+    run.channel.put(createNoteRequested(WS, { panelLayoutId: WS, panelId: 'working-panel' }));
     await settle();
 
     expect(create.mock.calls).toEqual([
@@ -227,7 +227,7 @@ describe('notesWriteSaga', () => {
           noteId: 'note-created',
           workspaceId: WS,
         },
-        undefined,
+        'working-panel',
         opened.payload.newTabId,
         false,
         opened.payload.timestamp,

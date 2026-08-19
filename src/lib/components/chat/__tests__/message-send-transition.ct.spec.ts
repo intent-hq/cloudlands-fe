@@ -69,10 +69,13 @@ test('follows the bottom without smooth-scroll competition and preserves manual 
   mount,
   page,
 }) => {
-  await mount(MessageSendTransitionHost, { props: { panelId: 'follow' } });
+  await mount(MessageSendTransitionHost, {
+    props: { panelId: 'follow', subscriptionOpen: true },
+  });
   const followed = page.locator('[data-panel-id="follow"]');
   await followed.getByTestId('send-button').click();
   await expect(followed.getByTestId('settled-count')).toHaveText('1');
+  await expect(followed.getByTestId('subscription-card')).toContainText('Expanded subscriptions');
   const followPosition = await followed.getByTestId('send-scroll').evaluate((node) => ({
     top: node.scrollTop,
     bottom: node.scrollHeight - node.clientHeight,
@@ -80,7 +83,7 @@ test('follows the bottom without smooth-scroll competition and preserves manual 
   expect(Math.abs(followPosition.top - followPosition.bottom)).toBeLessThan(1);
 
   await mount(MessageSendTransitionHost, {
-    props: { panelId: 'manual', followBottom: false },
+    props: { panelId: 'manual', followBottom: false, subscriptionOpen: true },
   });
   const manual = page.locator('[data-panel-id="manual"]');
   await manual.getByTestId('send-scroll').evaluate((node) => (node.scrollTop = 48));
@@ -117,4 +120,48 @@ test('keeps simultaneous panel transitions isolated and honors reduced motion', 
   await left.getByTestId('send-button').click();
   await expect(left.getByTestId('settled-count')).toHaveText('2');
   expect(await page.locator('[data-message-send-transition]').count()).toBe(0);
+});
+
+test('frame-samples cleanup across theme, width, zoom, and follow states', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(MessageSendTransitionHost, { props: { panelId: 'matrix' } });
+  for (const state of [
+    { theme: 'light' as const, width: 720, zoom: 1, followBottom: true },
+    { theme: 'dark' as const, width: 320, zoom: 1, followBottom: false },
+    { theme: 'light' as const, width: 720, zoom: 2, followBottom: true },
+    { theme: 'dark' as const, width: 320, zoom: 2, followBottom: false },
+  ]) {
+    await component.update({ props: { panelId: 'matrix', ...state } });
+    const scroll = component.getByTestId('send-scroll');
+    if (!state.followBottom) await scroll.evaluate((node) => (node.scrollTop = 48));
+    const before = await scroll.evaluate((node) => node.scrollTop);
+    await component.getByTestId('send-button').click();
+    const frames = await captureTransitionFrames(page, 'matrix');
+
+    expect(frames.length).toBeGreaterThan(4);
+    expect(frames.every(({ opacity }) => opacity === '1')).toBe(true);
+    expect(await page.locator('[data-message-send-transition]').count()).toBe(0);
+    if (!state.followBottom) {
+      expect(await scroll.evaluate((node) => node.scrollTop)).toBe(before);
+    }
+  }
+});
+
+test('cancels an active overlay on resize and component destroy', async ({ mount, page }) => {
+  const resized = await mount(MessageSendTransitionHost, {
+    props: { panelId: 'resize', width: 720 },
+  });
+  await resized.getByTestId('send-button').click();
+  await expect(page.locator('[data-message-send-owner="resize"]')).toBeVisible();
+  await resized.update({ props: { panelId: 'resize', width: 320 } });
+  await expect(page.locator('[data-message-send-owner="resize"]')).toHaveCount(0);
+  await resized.unmount();
+
+  const destroyed = await mount(MessageSendTransitionHost, { props: { panelId: 'destroy' } });
+  await destroyed.getByTestId('send-button').click();
+  await expect(page.locator('[data-message-send-owner="destroy"]')).toBeVisible();
+  await destroyed.unmount();
+  await expect(page.locator('[data-message-send-owner="destroy"]')).toHaveCount(0);
 });

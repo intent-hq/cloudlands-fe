@@ -146,6 +146,14 @@ export const selectGithubLinkDefaultAction = store.createSelector((state) => {
   return state.userPreferences?.githubLinkDefaultAction ?? 'show-choices';
 });
 
+export const selectPanelOpenMode = store.createSelector((state) => {
+  return state.userPreferences?.panelOpenMode ?? 'normal';
+});
+
+export const selectPanelStackDirection = store.createSelector((state) => {
+  return state.userPreferences?.panelStackDirection ?? 'right';
+});
+
 /** The concrete catalog locale the preference resolves to (explicit → system → en). */
 export const selectResolvedLocale = store.createSelector((state) => {
   return resolvePreferenceToLocale(state.userPreferences.languagePreference);

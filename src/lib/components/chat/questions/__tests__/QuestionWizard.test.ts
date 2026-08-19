@@ -67,14 +67,15 @@ describe('QuestionWizard', () => {
     expect(screen.queryByText('Selecting an option moves to the next question')).toBeNull();
   });
 
-  it('uses one semantic card with lightweight unboxed choices and an outlined input', () => {
+  it('uses one borderless card with lightweight unboxed choices and an outlined input', () => {
     const { container } = setup([LAST]);
     const wizard = container.querySelector('[data-question-wizard]');
     const options = Array.from(container.querySelectorAll('[data-question-option]'));
     const input = screen.getByPlaceholderText('Or type your own answer…');
 
     expect(wizard?.className).toContain('bg-card');
-    expect(wizard?.className).toContain('border-border/70');
+    expect(wizard?.className).not.toContain('border');
+    expect(wizard?.className).not.toContain('shadow');
     expect(wizard?.className).toContain('rounded-(--radius-large)');
     expect(options).toHaveLength(2);
     expect(options.every((option) => option.className.includes('border-0'))).toBe(true);

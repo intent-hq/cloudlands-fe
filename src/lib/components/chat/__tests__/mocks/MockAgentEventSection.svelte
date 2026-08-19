@@ -12,4 +12,8 @@
   });
 </script>
 
-{#if visible}<div data-testid="mock-agent-event-section"></div>{/if}
+{#if visible}
+  <div data-testid="mock-agent-event-section">
+    <button type="button" data-testid="mock-agent-cohort-header">Waiting for {count} agent</button>
+  </div>
+{/if}

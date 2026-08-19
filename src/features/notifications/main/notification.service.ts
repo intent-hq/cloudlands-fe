@@ -122,7 +122,7 @@ interface NotificationStructuredContent {
   taskTitle?: string;
   /** ACP provider id (auggie, claude-code, codex, ...). */
   provider?: string;
-  /** Idle agent's id — seeds AuggieAvatar's deterministic gradient colors. */
+  /** Idle agent's id — seeds AgentAvatar's deterministic gradient colors. */
   agentId?: string;
 }
 

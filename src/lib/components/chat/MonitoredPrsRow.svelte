@@ -49,11 +49,14 @@
   import { store as appStore } from '$store/renderer/store';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import {
+    safeSubscriptionRowTransition,
     safeSubscriptionSlide,
+    SUBSCRIPTION_ACTION_ICON_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_ICON_CLASS,
     SUBSCRIPTION_ICON_BUTTON_CLASS,
+    SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
   } from './subscription-disclosure';
   import { getExpandedPrMonitorId, setExpandedPrMonitorId } from './agent-subscriptions-view-state';
@@ -266,12 +269,16 @@
     {#each activeMonitors as monitor (monitor.monitorId)}
       {@const detailsId = `monitored-pr-details-${monitor.monitorId}`}
       <div
-        class="border-t border-border/40 first:border-t-0"
+        class="overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
         data-monitor-state={monitor.state}
+        data-subscription-motion-row="pr-monitor"
         role="group"
         aria-label={monitorLabel(monitor)}
+        transition:safeSubscriptionRowTransition
       >
-        <div class="flex min-h-9 min-w-0 max-w-full items-center gap-2 px-3 py-2 text-subtle">
+        <div
+          class="flex min-h-9 min-w-0 max-w-full items-center gap-2 px-3 py-2 text-muted-foreground"
+        >
           <Button
             variant="plain"
             type="button"
@@ -297,16 +304,17 @@
             collisionPadding={12}
             contentClass="monitored-pr-menu-content p-0"
           >
-            {#snippet trigger({ toggle }: { toggle: () => void })}
+            {#snippet trigger({ props })}
               <Button
+                {...props}
                 variant="plain"
                 size="icon-xs"
                 type="button"
                 onclick={(event) => {
                   event.stopPropagation();
-                  toggle();
+                  (props.onclick as ((event: MouseEvent) => void) | undefined)?.(event);
                 }}
-                class="h-6 w-6 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+                class="h-6 w-6 border-0 {SUBSCRIPTION_ACTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
                 data-testid="monitored-pr-chip"
                 aria-label={m.chat_monitoredPrs_row_ariaLabel()}
               >
@@ -387,6 +395,7 @@
             <span data-testid="monitored-pr-chevron">
               <Fa
                 icon={faChevronDown}
+                size={16}
                 class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {expandedMonitorId ===
                 monitor.monitorId
                   ? ''

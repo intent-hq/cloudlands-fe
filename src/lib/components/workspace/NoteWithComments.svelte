@@ -1800,7 +1800,7 @@
             try {
               if (editor && !editor.isDestroyed && editor.view) {
                 editor.view.focus();
-                editor.commands.focus('end');
+                editor.commands.focus('start');
               }
             } catch {
               // Editor view may not be fully mounted yet - safe to ignore
@@ -2241,7 +2241,7 @@
     border-radius: 0.5rem;
     margin: 1.5rem 0;
     /* Subtle shadow for images that break out of text column */
-    box-shadow: 0 1px 3px 0 hsl(var(--foreground) / 0.04);
+    box-shadow: var(--elevation-raised);
   }
 
   /* Highlight for comment marks */

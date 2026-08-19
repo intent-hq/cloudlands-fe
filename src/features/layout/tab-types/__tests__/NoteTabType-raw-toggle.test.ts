@@ -20,6 +20,20 @@ const mockState = vi.hoisted(() => {
     };
   }
 
+  const defaultNote = {
+    id: 'note-1',
+    workspaceId: 'ws-1',
+    title: 'Note 1',
+    content: 'Note content',
+    contentType: 'markdown',
+    tags: [],
+    isPinned: false,
+    isArchived: false,
+    visibility: 'private',
+    createdAt: '2026-05-11T00:00:00.000Z',
+    updatedAt: '2026-05-11T00:00:00.000Z',
+  };
+
   return {
     dispatch: vi.fn(),
     rawViewEnabled: store(false),
@@ -27,20 +41,10 @@ const mockState = vi.hoisted(() => {
     noteFontStyle: store('sans'),
     scrollPosition: store(0),
     initialSpecWriteInProgress: store(false),
+    notesState: store({ loading: false, initialized: true }),
     workspace: store({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' }),
-    note: store({
-      id: 'note-1',
-      workspaceId: 'ws-1',
-      title: 'Note 1',
-      content: 'Note content',
-      contentType: 'markdown',
-      tags: [],
-      isPinned: false,
-      isArchived: false,
-      visibility: 'private',
-      createdAt: '2026-05-11T00:00:00.000Z',
-      updatedAt: '2026-05-11T00:00:00.000Z',
-    }),
+    defaultNote,
+    note: store<typeof defaultNote | undefined>(defaultNote),
   };
 });
 
@@ -92,6 +96,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: Object.assign(() => mockState.note, { select: () => mockState.note.get() }),
+  selectWorkspaceNotesState: () => mockState.notesState,
 }));
 vi.mock('$features/notes/notes-write-service', () => ({
   createNote: vi.fn(),
@@ -143,6 +148,9 @@ describe('NoteTabType raw note view toggle', () => {
     mockState.rawViewEnabled.set(false);
     mockState.spellcheckEnabled.set(true);
     mockState.noteFontStyle.set('sans');
+    mockState.notesState.set({ loading: false, initialized: true });
+    mockState.note.set({ ...mockState.defaultNote });
+    mockState.initialSpecWriteInProgress.set(false);
   });
 
   afterEach(() => {
@@ -174,6 +182,48 @@ describe('NoteTabType raw note view toggle', () => {
       const enabledToggle = screen.getByRole('menuitemcheckbox', { name: 'Raw Markdown' });
       expect(enabledToggle.getAttribute('aria-checked')).toBe('true');
     });
+  });
+
+  it.each([
+    { state: 'editor', note: { ...mockState.defaultNote }, loading: false, initialized: true },
+    {
+      state: 'empty',
+      note: { ...mockState.defaultNote, content: '' },
+      loading: false,
+      initialized: true,
+    },
+    { state: 'loading', note: undefined, loading: true, initialized: false },
+    { state: 'missing', note: undefined, loading: false, initialized: true },
+  ])('labels the $state note content surface', async ({ state, note, loading, initialized }) => {
+    mockState.note.set(note);
+    mockState.notesState.set({ loading, initialized });
+    const { container } = render(NoteTabTypeHeaderHarness, {
+      props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
+    });
+
+    await waitFor(() =>
+      expect(
+        container
+          .querySelector('[data-note-content-surface]')
+          ?.getAttribute('data-note-content-state'),
+      ).toBe(state),
+    );
+  });
+
+  it('labels the initial Spec writing view as read-only', async () => {
+    mockState.note.set({ ...mockState.defaultNote, id: 'spec', content: '' });
+    mockState.initialSpecWriteInProgress.set(true);
+    const { container } = render(NoteTabTypeHeaderHarness, {
+      props: { tab: { id: 'tab-1', type: 'note', title: 'Spec', noteId: 'spec' } },
+    });
+
+    await waitFor(() =>
+      expect(
+        container
+          .querySelector('[data-note-content-surface]')
+          ?.getAttribute('data-note-content-state'),
+      ).toBe('read-only'),
+    );
   });
 
   it('offers font and spellcheck controls in the Display section', async () => {

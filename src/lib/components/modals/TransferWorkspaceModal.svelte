@@ -248,7 +248,10 @@
           <div class="space-y-1">
             <span class="block text-xs text-subtle">{m.workspace_transfer_servers_label()}</span>
             {#if connections.length === 0}
-              <p class="text-xs text-subtle bg-muted/50 rounded p-2" data-testid="transfer-empty-servers">
+              <p
+                class="text-xs text-subtle bg-muted/50 rounded p-2"
+                data-testid="transfer-empty-servers"
+              >
                 {m.workspace_transfer_emptyServers_message()}
               </p>
             {:else}
@@ -262,8 +265,7 @@
                       : 'border-border hover:bg-muted/50'}"
                     data-testid="transfer-server-{conn.id}"
                     aria-pressed={isSelected({ kind: 'server', connectionId: conn.id })}
-                    onclick={() =>
-                      onSelectDestination?.({ kind: 'server', connectionId: conn.id })}
+                    onclick={() => onSelectDestination?.({ kind: 'server', connectionId: conn.id })}
                   >
                     <Fa icon={conn.isLocal ? faLaptop : faServer} class="text-subtle shrink-0" />
                     <span class="truncate">{formatConnectionLabel(conn)}</span>
@@ -310,7 +312,7 @@
               {m.workspace_transfer_planLoading_message()}
             </p>
           {:else if planStatus === 'error'}
-            <p class="text-xs text-red-500" data-testid="transfer-plan-error">
+            <p class="text-xs text-error-foreground" data-testid="transfer-plan-error">
               {m.workspace_transfer_planFailed_error({ error: planError ?? '' })}
             </p>
           {:else if plan}
@@ -378,7 +380,9 @@
             <div class="space-y-1 text-xs text-subtle">
               {#if plan.manifest.git.hasRepository}
                 {#if plan.manifest.git.branch}
-                  <p>{m.workspace_transfer_gitBranch_label({ branch: plan.manifest.git.branch })}</p>
+                  <p>
+                    {m.workspace_transfer_gitBranch_label({ branch: plan.manifest.git.branch })}
+                  </p>
                 {/if}
                 {#if plan.manifest.git.sandboxBranches.length > 0}
                   <p>
@@ -416,7 +420,9 @@
               : m.workspace_transfer_progress_ariaLabel()}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuenow={progressFraction != null ? Math.round(progressFraction * 100) : undefined}
+            aria-valuenow={progressFraction != null
+              ? Math.round(progressFraction * 100)
+              : undefined}
             data-testid="transfer-progress-bar"
           >
             {#if progressFraction != null}
@@ -525,13 +531,13 @@
                 {m.workspace_transfer_finalizing_message()}
               </p>
             {:else if finalizeStatus === 'error'}
-              <p class="text-xs text-red-500" data-testid="transfer-finalize-error">
+              <p class="text-xs text-error-foreground" data-testid="transfer-finalize-error">
                 {m.workspace_transfer_finalizeFailed_error({ error: finalizeError ?? '' })}
               </p>
             {/if}
           {:else}
             <p class="flex items-center gap-2 text-sm" data-testid="transfer-result-failed">
-              <Fa icon={faCircleXmark} class="text-red-500 shrink-0" />
+              <Fa icon={faCircleXmark} class="text-error-foreground shrink-0" />
               <span class="font-semibold">
                 {isDownload
                   ? m.workspace_transfer_result_downloadFailed_title()

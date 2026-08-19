@@ -25,6 +25,7 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
   endDrag: () => ({ type: 'tabState/endDrag' }),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectRecentlyClosed: () => readable([]),
   selectPanelLayoutWorkspace: { select: () => null },
 }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -50,26 +51,31 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectAllWorkspaceAgents: () => readable([]),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentIsResponding: { select: () => false },
-  selectAgentIsWaiting: { select: () => false },
+  selectAgentIsResponding: () => readable(false),
+  selectAgentIsBlockedWaiting: () => readable(false),
+  selectAgentAttentionRequest: () => readable(null),
   selectAgentSession: () => readable(null),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: () => readable([]),
 }));
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectPanelOpenMode: () => readable('normal'),
+  selectPanelStackDirection: () => readable('right'),
+}));
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
-  default: (await import('$lib/components/workspace/__tests__/mocks/MockAugieAvatar.svelte'))
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
+  default: (await import('$lib/components/workspace/__tests__/mocks/MockAgentAvatar.svelte'))
     .default,
 }));
-vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
-  default: (await import('$lib/components/workspace/__tests__/mocks/MockAugieAvatar.svelte'))
+vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => ({
+  default: (await import('$lib/components/workspace/__tests__/mocks/MockAgentAvatar.svelte'))
     .default,
 }));
 vi.mock('../PanelEmptyState.svelte', async () => ({
-  default: (await import('$lib/components/workspace/__tests__/mocks/MockAugieAvatar.svelte'))
+  default: (await import('$lib/components/workspace/__tests__/mocks/MockAgentAvatar.svelte'))
     .default,
 }));
 vi.mock('../PanelContentRenderer.svelte', async () => ({

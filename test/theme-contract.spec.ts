@@ -134,6 +134,17 @@ function luminance(color: string): number {
   return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
 }
 
+function hslChannels(value: string): [number, number, number] {
+  const match = value.match(/^([\d.]+)\s+([\d.]+)%\s+([\d.]+)%$/);
+  if (!match) throw new Error(`Browser did not resolve HSL channels: ${value}`);
+  return match.slice(1).map(Number) as [number, number, number];
+}
+
+function alpha(color: string): number {
+  const channels = color.match(/[\d.]+/g)?.map(Number) ?? [];
+  return channels.length === 4 ? channels[3] : 1;
+}
+
 function expectLegible(colors: Record<string, string>): void {
   for (const role of ROLES) expect(colors[role], role).toMatch(/^rgba?\(/);
   for (const [foreground, background] of PAIRS) {
@@ -176,6 +187,107 @@ test('browser computes complete explicit light and dark contracts', async ({ pag
         (first, second) => second - first,
       );
       expect((values[0] + 0.05) / (values[1] + 0.05), `border on ${surface}`).toBeLessThan(2.25);
+    }
+  }
+});
+
+test('sidebar stays two HSL points toward contrast at 100% and 200%', async ({ context, page }) => {
+  const fixture = `<style>
+    ${TOKEN_CSS}
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    #sidebar-shell { width: 240px; height: 320px; padding: 12px; background: hsl(var(--sidebar)); color: hsl(var(--sidebar-foreground)); border: 1px solid hsl(var(--sidebar-border)); }
+    #card { width: 120px; height: 40px; background: hsl(var(--card)); }
+    #input { width: 120px; height: 32px; background: hsl(var(--background)); border: 2px solid hsl(var(--input)); }
+    #menu { width: 120px; height: 40px; background: hsl(var(--popover)); }
+    #selected { width: 120px; height: 40px; background: hsl(var(--sidebar-accent)); }
+  </style><aside id="sidebar-shell"><div id="card"></div><input id="input"><div id="menu"></div><div id="selected"></div></aside>`;
+  const cdp = await context.newCDPSession(page);
+  const baseline = new Map<string, unknown>();
+
+  for (const zoom of [1, 2]) {
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 1200 / zoom,
+      height: 800 / zoom,
+      deviceScaleFactor: zoom,
+      mobile: false,
+      screenWidth: 1200,
+      screenHeight: 800,
+    });
+    await page.setContent(fixture);
+    for (const mode of ['light', 'dark'] as const) {
+      const evidence = await page.evaluate((theme) => {
+        document.documentElement.className = theme;
+        const root = getComputedStyle(document.documentElement);
+        const style = (selector: string) => getComputedStyle(document.querySelector(selector)!);
+        const shell = style('#sidebar-shell');
+        const rect = document.querySelector('#sidebar-shell')!.getBoundingClientRect();
+        const roleColor = (role: string) => {
+          const probe = document.createElement('div');
+          probe.style.backgroundColor = `hsl(var(--${role}))`;
+          document.body.append(probe);
+          const color = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          return color;
+        };
+        return {
+          background: root.getPropertyValue('--background').trim(),
+          sidebar: root.getPropertyValue('--sidebar').trim(),
+          themeSidebar: root.getPropertyValue('--theme-sidebar').trim(),
+          shellColor: shell.backgroundColor,
+          expectedShellColor: roleColor('sidebar'),
+          foreground: shell.color,
+          nested: {
+            card: style('#card').backgroundColor,
+            cardToken: roleColor('card'),
+            input: style('#input').backgroundColor,
+            inputToken: roleColor('background'),
+            inputBorder: style('#input').borderTopColor,
+            inputBorderToken: roleColor('input'),
+            menu: style('#menu').backgroundColor,
+            menuToken: roleColor('popover'),
+            selected: style('#selected').backgroundColor,
+            selectedToken: roleColor('sidebar-accent'),
+            shellBorder: shell.borderTopColor,
+            shellBorderToken: roleColor('sidebar-border'),
+          },
+          geometry: {
+            width: rect.width,
+            height: rect.height,
+            padding: shell.padding,
+            borderWidth: shell.borderTopWidth,
+          },
+          devicePixelRatio: window.devicePixelRatio,
+        };
+      }, mode);
+      const background = hslChannels(evidence.background);
+      const sidebar = hslChannels(evidence.sidebar);
+      expect(sidebar.slice(0, 2), `${mode} at ${zoom}x`).toEqual(background.slice(0, 2));
+      expect(sidebar[2] - background[2], `${mode} at ${zoom}x`).toBe(mode === 'light' ? -2 : 2);
+      expect(evidence.sidebar).toBe(evidence.themeSidebar);
+      expect(evidence.shellColor).toBe(evidence.expectedShellColor);
+      expect(alpha(evidence.shellColor)).toBe(1);
+      expect(evidence.foreground).toMatch(/^rgb/);
+      expect(evidence.nested).toMatchObject({
+        card: evidence.nested.cardToken,
+        input: evidence.nested.inputToken,
+        inputBorder: evidence.nested.inputBorderToken,
+        menu: evidence.nested.menuToken,
+        selected: evidence.nested.selectedToken,
+        shellBorder: evidence.nested.shellBorderToken,
+      });
+      expect(evidence.geometry).toEqual({
+        width: 240,
+        height: 320,
+        padding: '12px',
+        borderWidth: '1px',
+      });
+      expect(evidence.devicePixelRatio).toBe(zoom);
+      if (zoom === 1) baseline.set(mode, { nested: evidence.nested, geometry: evidence.geometry });
+      else
+        expect({ nested: evidence.nested, geometry: evidence.geometry }).toEqual(
+          baseline.get(mode),
+        );
     }
   }
 });

@@ -512,9 +512,7 @@
     background-color: hsl(var(--popover));
     border: 1px solid hsl(var(--border));
     border-radius: 6px;
-    box-shadow:
-      0 1px 2px hsl(var(--foreground) / 0.04),
-      0 4px 16px hsl(var(--foreground) / 0.08);
+    box-shadow: var(--elevation-overlay);
     padding: 3px;
     transform: translateX(-50%);
     animation: bubbleMenuFadeIn 0.12s ease-out;

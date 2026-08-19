@@ -66,11 +66,11 @@
   </p>
   <!-- Combined path input -->
   <div
-    class="flex items-center rounded-lg border border-border/50 bg-card/50 text-sm overflow-hidden focus-within:border-ring"
+    class="flex items-center rounded-lg border border-border bg-card/50 text-sm overflow-hidden focus-within:border-ring"
   >
     <button
       type="button"
-      class="flex items-center gap-1.5 shrink-0 px-3 py-3 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer border-r border-border/30"
+      class="flex items-center gap-1.5 shrink-0 px-3 py-3 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer border-r border-border"
       onclick={handleSelectParentFolder}
       title={m.onboarding_newProjectTab_changeParent_tooltip()}
     >
@@ -93,7 +93,7 @@
     />
   </div>
   {#if nameError}
-    <p class="text-sm text-red-500 px-1">{nameError}</p>
+    <p class="text-sm text-error-foreground px-1">{nameError}</p>
   {/if}
 </div>
 

@@ -23,8 +23,8 @@
  * bridge-less build) — every caller is fire-and-forget or try/catch-guarded,
  * matching the former allowlist disposition.
  */
-import { emitMockIpcEvent, registerMockIpcHandler } from "$shared/ipc-mock-router";
-import { IPC_CHANNELS } from "$shared/ipc-registry";
+import { emitMockIpcEvent, registerMockIpcHandler } from '$shared/ipc-mock-router';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 const WINDOW_STATE_INVOKE_CHANNELS = [
   IPC_CHANNELS.WINDOW.SET_IN_WORKSPACE,
@@ -32,14 +32,25 @@ const WINDOW_STATE_INVOKE_CHANNELS = [
   IPC_CHANNELS.WINDOW.SET_THEME,
 ] as const;
 
+/** Forward the selected app theme to Electron's registered main-process handler. */
+export function registerWindowThemeBridge(): void {
+  registerMockIpcHandler(IPC_CHANNELS.WINDOW.SET_THEME, async (payload?: unknown) => {
+    const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+    if (bridge && typeof bridge.invoke === 'function') {
+      return bridge.invoke(IPC_CHANNELS.WINDOW.SET_THEME, payload);
+    }
+    return undefined;
+  });
+}
+
 /** Register the window workspace-state invoke bridge handlers. Idempotent. */
 export function registerWindowStateBridge(): void {
   for (const channel of WINDOW_STATE_INVOKE_CHANNELS) {
     // Forward exactly one payload argument — the real preload bridge signature
     // is `invoke(channel, data?)`, so extra args would be silently dropped.
     registerMockIpcHandler(channel, async (payload?: unknown) => {
-      const bridge = typeof window !== "undefined" ? window.electronAPI : undefined;
-      if (bridge && typeof bridge.invoke === "function") {
+      const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (bridge && typeof bridge.invoke === 'function') {
         return bridge.invoke(channel, payload);
       }
       return undefined;
@@ -56,8 +67,8 @@ export function registerWindowStateBridge(): void {
  */
 export function registerWindowFullScreenBridge(): void {
   registerMockIpcHandler(IPC_CHANNELS.WINDOW.SET_FULL_SCREEN, async (payload?: unknown) => {
-    const bridge = typeof window !== "undefined" ? window.electronAPI : undefined;
-    if (bridge && typeof bridge.invoke === "function") {
+    const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+    if (bridge && typeof bridge.invoke === 'function') {
       return bridge.invoke(IPC_CHANNELS.WINDOW.SET_FULL_SCREEN, payload);
     }
     const wantFullScreen = !!(payload as { fullScreen?: boolean } | undefined)?.fullScreen;
@@ -73,13 +84,13 @@ export function registerWindowFullScreenBridge(): void {
     }
   });
   registerMockIpcHandler(IPC_CHANNELS.WINDOW.GET_FULL_SCREEN, async (payload?: unknown) => {
-    const bridge = typeof window !== "undefined" ? window.electronAPI : undefined;
-    if (bridge && typeof bridge.invoke === "function") {
+    const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+    if (bridge && typeof bridge.invoke === 'function') {
       return bridge.invoke(IPC_CHANNELS.WINDOW.GET_FULL_SCREEN, payload);
     }
     return {
       success: true,
-      fullScreen: typeof document !== "undefined" && !!document.fullscreenElement,
+      fullScreen: typeof document !== 'undefined' && !!document.fullscreenElement,
     };
   });
 }
@@ -92,19 +103,20 @@ export function registerWindowFullScreenBridge(): void {
  * the DOM `fullscreenchange` event drives the same channel.
  */
 export function registerWindowFullScreenEventRelay(): void {
-  if (typeof window === "undefined") return;
+  if (typeof window === 'undefined') return;
   const bridge = window.electronAPI;
-  if (bridge && typeof bridge.on === "function") {
-    bridge.on("window:fullscreen", (fullScreen: boolean) => {
-      emitMockIpcEvent("window:fullscreen", fullScreen);
+  if (bridge && typeof bridge.on === 'function') {
+    bridge.on('window:fullscreen', (fullScreen: boolean) => {
+      emitMockIpcEvent('window:fullscreen', fullScreen);
     });
-  } else if (typeof document !== "undefined") {
-    document.addEventListener("fullscreenchange", () => {
-      emitMockIpcEvent("window:fullscreen", !!document.fullscreenElement);
+  } else if (typeof document !== 'undefined') {
+    document.addEventListener('fullscreenchange', () => {
+      emitMockIpcEvent('window:fullscreen', !!document.fullscreenElement);
     });
   }
 }
 
 registerWindowStateBridge();
+registerWindowThemeBridge();
 registerWindowFullScreenBridge();
 registerWindowFullScreenEventRelay();

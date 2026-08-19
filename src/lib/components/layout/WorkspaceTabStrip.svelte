@@ -9,10 +9,13 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
+  import WorkspaceStatusIcon from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
+  import { formatWorkspaceTabStatusSummary } from '$lib/components/workspace/utils/workspace-tab-status-presentation';
   import {
-    formatWorkspaceTabStatusSummary,
-    getWorkspaceTabStatusPresentation,
-  } from '$lib/components/workspace/utils/workspace-tab-status-presentation';
+    getWorkspaceStatusPresentation,
+    resolveWorkspaceStatusState,
+    type WorkspaceStatusPresentationState,
+  } from '$lib/components/workspace/utils/workspace-status-presentation';
   import { getWorkspaceViewTransitionName } from '$lib/components/workspace/workspace-view-transition';
   import {
     closeWorkspaceTab,
@@ -22,10 +25,11 @@
     startDrag,
   } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
-    getWorkspaceDragPlacement,
-    isWorkspaceStackPlacement,
-    type WorkspaceDragPlacement,
-  } from '$lib/components/workspace/utils/workspace-drag-placement';
+    getReleasedWorkspaceTabMove,
+    getWorkspaceTabInsertionIndex,
+    proposeWorkspaceTabOrder,
+    type WorkspaceTabSlot,
+  } from '$lib/components/workspace/utils/workspace-tab-drag';
   import {
     selectCurrentWorkspaceTabId,
     selectWorkspaceTabOrder,
@@ -59,14 +63,25 @@
   // them in the strip so inactive tabs do not disappear during refresh.
   const visibleTabIds = $derived($workspaceTabOrder$);
 
+  interface WorkspaceTabDragSession {
+    originalOrder: string[];
+    startClientX: number;
+    pointerOffsetX: number;
+    origin: { left: number; top: number; width: number; height: number };
+    slots: WorkspaceTabSlot[];
+  }
+
   let draggedWorkspaceId = $state<string | null>(null);
-  let dragOverWorkspaceId = $state<string | null>(null);
-  let dragOverPlacement = $state<WorkspaceDragPlacement | null>(null);
+  let dragSession = $state<WorkspaceTabDragSession | null>(null);
+  let dragClientX = $state(0);
+  let proposedTabOrder = $state<string[] | null>(null);
+  const renderedTabOrder = $derived(proposedTabOrder ?? $workspaceTabOrder$);
   let reorderAnnouncement = $state('');
   let activeStreamsVersion = $state(0);
   let stripElement = $state<HTMLDivElement | null>(null);
   let isOverflowing = $state(false);
   const tabButtons = new Map<string, HTMLButtonElement>();
+  const tabSurfaces = new Map<string, HTMLElement>();
   const ACTIVE_TAB_EDGE_GAP = 2;
   // Active tab bounds drive the parent border mask that hides the sidebar
   // border under the active tab. Svelte's animate:flip moves tabs via CSS
@@ -89,7 +104,7 @@
   $effect(() => {
     const strip = stripElement;
     if (!strip) return;
-    void visibleTabIds;
+    void renderedTabOrder;
     const updateOverflow = () => {
       isOverflowing = strip.scrollWidth > strip.clientWidth;
     };
@@ -100,7 +115,7 @@
   });
 
   $effect(() => {
-    void visibleTabIds;
+    void renderedTabOrder;
     if (activeTabBoundsPollers.size === 0) return;
     onActiveTabTrackingChange?.(true);
     let framesLeft = FLIP_ANIMATION_FRAMES;
@@ -130,11 +145,16 @@
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
   }
 
-  function tabAccessibleLabel(title: string, status?: WorkspaceTabStatus): string {
-    if (!status) return title;
+  function tabAccessibleLabel(
+    title: string,
+    workspaceState: WorkspaceStatusPresentationState,
+    status?: WorkspaceTabStatus,
+  ): string {
     return m.layout_workspaceTabStrip_status_ariaLabel({
       name: title,
-      statuses: formatWorkspaceTabStatusSummary(status),
+      statuses: status
+        ? formatWorkspaceTabStatusSummary(status)
+        : getWorkspaceStatusPresentation(workspaceState).accessibleName,
     });
   }
 
@@ -229,6 +249,15 @@
     };
   }
 
+  function registerTabSurface(node: HTMLElement, workspaceId: string) {
+    tabSurfaces.set(workspaceId, node);
+    return {
+      destroy() {
+        tabSurfaces.delete(workspaceId);
+      },
+    };
+  }
+
   async function openWorkspace(workspaceId: string, restoreFocus = false) {
     appStore.dispatch(openWorkspaceTab(workspaceId));
     await goto(`/workspace/${workspaceId}`);
@@ -294,61 +323,110 @@
     void openWorkspace(targetId, true);
   }
 
+  function ordersMatch(first: string[], second: string[]) {
+    return first.length === second.length && first.every((id, index) => id === second[index]);
+  }
+
+  $effect(() => {
+    if (
+      !draggedWorkspaceId &&
+      proposedTabOrder &&
+      ordersMatch(proposedTabOrder, $workspaceTabOrder$)
+    ) {
+      proposedTabOrder = null;
+    }
+  });
+
   function handleDragStart(event: DragEvent, workspaceId: string) {
+    if (!event.dataTransfer) return;
+    const target = event.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    const startClientX = event.clientX;
+    const originalOrder = [...visibleTabIds];
     draggedWorkspaceId = workspaceId;
-    event.dataTransfer?.setData('text/plain', workspaceId);
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+    dragClientX = startClientX;
+    proposedTabOrder = originalOrder;
+    dragSession = {
+      originalOrder,
+      startClientX,
+      pointerOffsetX: Math.max(0, Math.min(startClientX - rect.left, rect.width)),
+      origin: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      slots: originalOrder.flatMap((id) => {
+        if (id === workspaceId) return [];
+        const slotRect = tabSurfaces.get(id)?.getBoundingClientRect();
+        return slotRect ? [{ id, centerX: slotRect.left + slotRect.width / 2 }] : [];
+      }),
+    };
+    event.dataTransfer.setData('text/plain', workspaceId);
+    event.dataTransfer.effectAllowed = 'move';
+    const transparentDragImage = document.createElement('div');
+    transparentDragImage.style.cssText =
+      'position:fixed;left:-10000px;top:-10000px;width:1px;height:1px;opacity:0;';
+    document.body.append(transparentDragImage);
+    event.dataTransfer.setDragImage?.(transparentDragImage, 0, 0);
+    requestAnimationFrame(() => transparentDragImage.remove());
     appStore.dispatch(startDrag());
   }
 
-  function handleDragOver(event: DragEvent, workspaceId: string) {
-    if (!draggedWorkspaceId || draggedWorkspaceId === workspaceId) return;
+  function handleDragOver(event: DragEvent) {
+    if (!draggedWorkspaceId || !dragSession) return;
     event.preventDefault();
-    const placement = getWorkspaceDragPlacement(
+    handleDragMove(event);
+    const insertionIndex = getWorkspaceTabInsertionIndex(
       event.clientX,
-      event.clientY,
-      (event.currentTarget as HTMLElement).getBoundingClientRect(),
+      dragSession.pointerOffsetX,
+      dragSession.origin.width,
+      dragSession.slots,
     );
-    dragOverWorkspaceId = workspaceId;
-    dragOverPlacement = placement;
-    if (!isWorkspaceStackPlacement(placement)) {
-      appStore.dispatch(moveWorkspace(draggedWorkspaceId, workspaceId, placement));
-    }
+    const nextOrder = proposeWorkspaceTabOrder(
+      dragSession.originalOrder,
+      draggedWorkspaceId,
+      insertionIndex,
+    );
+    if (!proposedTabOrder || !ordersMatch(nextOrder, proposedTabOrder))
+      proposedTabOrder = nextOrder;
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
   }
 
-  function handleDragLeave(event: DragEvent, workspaceId: string) {
-    const nextTarget = event.relatedTarget;
-    const currentTarget = event.currentTarget as HTMLElement | null;
-    if (nextTarget instanceof Node && currentTarget?.contains(nextTarget)) return;
-    if (dragOverWorkspaceId === workspaceId) {
-      dragOverWorkspaceId = null;
-      dragOverPlacement = null;
-    }
+  function handleDragMove(event: DragEvent) {
+    if (!draggedWorkspaceId || !dragSession) return;
+    if (event.clientX === 0 && event.clientY === 0) return;
+    dragClientX = event.clientX;
   }
 
-  function handleDrop(event: DragEvent, workspaceId: string) {
+  function finishDrag(keepProposedOrder = false) {
+    if (!draggedWorkspaceId) return;
+    draggedWorkspaceId = null;
+    dragSession = null;
+    if (!keepProposedOrder) proposedTabOrder = null;
+    appStore.dispatch(endDrag());
+  }
+
+  function handleDrop(event: DragEvent) {
+    if (!draggedWorkspaceId || !dragSession) return;
     event.preventDefault();
-    const sourceId = draggedWorkspaceId ?? event.dataTransfer?.getData('text/plain');
-    if (sourceId && sourceId !== workspaceId && dragOverPlacement) {
-      const targetIndex = visibleTabIds.indexOf(workspaceId);
-      appStore.dispatch(moveWorkspace(sourceId, workspaceId, dragOverPlacement));
+    handleDragOver(event);
+    const releasedOrder = proposedTabOrder ?? dragSession.originalOrder;
+    const releasedIndex = releasedOrder.indexOf(draggedWorkspaceId);
+    const move = getReleasedWorkspaceTabMove(
+      dragSession.originalOrder,
+      releasedOrder,
+      draggedWorkspaceId,
+    );
+    if (move) {
+      appStore.dispatch(moveWorkspace(draggedWorkspaceId, move.targetId, move.placement));
       reorderAnnouncement = m.layout_workspaceTabStrip_reorderAnnouncement({
-        name: workspaceById.get(sourceId)?.title || m.layout_workspaceTabStrip_untitled_label(),
-        position: targetIndex + 1,
+        name:
+          workspaceById.get(draggedWorkspaceId)?.title ||
+          m.layout_workspaceTabStrip_untitled_label(),
+        position: releasedIndex + 1,
       });
     }
-    draggedWorkspaceId = null;
-    dragOverWorkspaceId = null;
-    dragOverPlacement = null;
-    appStore.dispatch(endDrag());
+    finishDrag(Boolean(move));
   }
 
   function handleDragEnd() {
-    draggedWorkspaceId = null;
-    dragOverWorkspaceId = null;
-    dragOverPlacement = null;
-    appStore.dispatch(endDrag());
+    finishDrag();
   }
 </script>
 
@@ -371,52 +449,64 @@
     )}
     aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
     role="tablist"
+    tabindex="-1"
     data-workspace-tab-strip
     data-app-region-clip
+    ondragover={handleDragOver}
+    ondrop={handleDrop}
   >
-    {#each $workspaceTabOrder$ as workspaceId (workspaceId)}
+    {#each renderedTabOrder as workspaceId (workspaceId)}
       {@const workspace = workspaceById.get(workspaceId)}
+      {@const isDragged = draggedWorkspaceId === workspaceId}
       {@const isCurrent =
         workspaceId ===
         (activeWorkspaceId === undefined ? $currentWorkspaceTabId$ : activeWorkspaceId)}
       <div
         class="min-w-0 shrink-0"
         data-workspace-tab-motion={workspaceId}
-        animate:flip={{ duration: 180, easing: cubicOut }}
+        style:width={isDragged ? `${dragSession?.origin.width ?? 160}px` : undefined}
+        style:height={isDragged ? `${dragSession?.origin.height ?? 32}px` : undefined}
+        animate:flip={{ duration: isDragged ? 0 : 180, easing: cubicOut }}
       >
         {#if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
           {@const tabStatus = $workspaceTabStatuses$[workspaceId]}
-          {@const leadingStatus = tabStatus?.categories[0]}
+          {@const workspaceStatusState = resolveWorkspaceStatusState(workspace)}
           {@const workspaceTitle =
             workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label()}
+          {#if isDragged}
+            <div
+              class="h-full w-full rounded-md border border-border bg-sidebar/35"
+              aria-hidden="true"
+              data-workspace-tab-placeholder={workspaceId}
+            ></div>
+          {/if}
           <div
             class={cn(
-              'group/workspace-tab relative flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow,opacity,transform] motion-reduce:transition-none',
+              'group/workspace-tab flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow] motion-reduce:transition-none',
               isCurrent
                 ? 'rounded-t-md border-border border-b-transparent bg-sidebar text-foreground'
                 : 'rounded-md border-transparent text-muted-foreground hover:bg-sidebar/50 hover:text-foreground',
-              draggedWorkspaceId === workspaceId && 'scale-[0.98] opacity-45',
-              dragOverWorkspaceId === workspaceId &&
-                isWorkspaceStackPlacement(dragOverPlacement) &&
-                'ring-1 ring-ring/40',
+              isDragged ? 'pointer-events-none fixed z-50 cursor-grabbing shadow-lg' : 'relative',
             )}
             data-workspace-tab={workspaceId}
             data-active={isCurrent}
-            data-dragging={draggedWorkspaceId === workspaceId}
-            data-workspace-drop-placement={dragOverWorkspaceId === workspaceId
-              ? dragOverPlacement
-              : undefined}
+            data-dragging={isDragged}
             style:view-transition-name={$workspaceViewMode$ === 'single'
               ? getWorkspaceViewTransitionName(workspaceId)
               : undefined}
+            style:left={isDragged && dragSession
+              ? `${dragSession.origin.left + dragClientX - dragSession.startClientX}px`
+              : undefined}
+            style:top={isDragged && dragSession ? `${dragSession.origin.top}px` : undefined}
+            style:width={isDragged && dragSession ? `${dragSession.origin.width}px` : undefined}
+            style:height={isDragged && dragSession ? `${dragSession.origin.height}px` : undefined}
             use:reportActiveTabBounds={isCurrent}
+            use:registerTabSurface={workspaceId}
             role="presentation"
             draggable={true}
             ondragstart={(event) => handleDragStart(event, workspaceId)}
-            ondragover={(event) => handleDragOver(event, workspaceId)}
-            ondragleave={(event) => handleDragLeave(event, workspaceId)}
-            ondrop={(event) => handleDrop(event, workspaceId)}
+            ondrag={handleDragMove}
             ondragend={handleDragEnd}
           >
             {#if isCurrent}
@@ -454,16 +544,6 @@
                 />
               </svg>
             {/if}
-            {#if dragOverWorkspaceId === workspaceId && isWorkspaceStackPlacement(dragOverPlacement)}
-              <span
-                class={cn(
-                  'pointer-events-none absolute inset-x-4 z-10 h-[38%] rounded-sm bg-ring/15 ring-1 ring-inset ring-ring/50 transition-[top,bottom] duration-(--motion-fast)',
-                  dragOverPlacement === 'above' ? 'top-0.5' : 'bottom-0.5',
-                )}
-                aria-hidden="true"
-                data-workspace-stack-preview={dragOverPlacement}
-              ></span>
-            {/if}
             <TooltipRich
               side="bottom"
               align="start"
@@ -489,7 +569,7 @@
                 role="tab"
                 aria-selected={isCurrent}
                 aria-current={isCurrent ? 'page' : undefined}
-                aria-label={tabAccessibleLabel(workspaceTitle, tabStatus)}
+                aria-label={tabAccessibleLabel(workspaceTitle, workspaceStatusState, tabStatus)}
                 tabindex={isCurrent ? 0 : -1}
                 data-workspace-tab-hover-trigger
               >
@@ -500,31 +580,12 @@
                   class="pointer-events-none ml-auto flex shrink-0 items-center gap-1"
                   data-workspace-tab-controls
                 >
-                  {#if leadingStatus}
-                    {@const presentation = getWorkspaceTabStatusPresentation(
-                      leadingStatus.category,
-                    )}
-                    <span
-                      class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end gap-px overflow-hidden"
-                      data-workspace-tab-status-cluster
-                    >
-                      <span
-                        class={cn(
-                          'flex size-4 shrink-0 items-center justify-center',
-                          presentation.className,
-                        )}
-                        data-workspace-tab-status={leadingStatus.category}
-                        data-workspace-status-icon={presentation.icon.iconName}
-                        data-status-count={leadingStatus.count}
-                        data-status-leading="true"
-                        role="img"
-                        aria-label={presentation.label}
-                        title={presentation.label}
-                      >
-                        <Fa icon={presentation.icon} class="size-3.5" />
-                      </span>
-                    </span>
-                  {/if}
+                  <span
+                    class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end overflow-hidden"
+                    data-workspace-tab-status-cluster
+                  >
+                    <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
+                  </span>
                   <span class="size-5 shrink-0" data-workspace-tab-close-space aria-hidden="true"
                   ></span>
                 </span>
@@ -560,6 +621,7 @@
               ? getWorkspaceViewTransitionName(workspaceId)
               : undefined}
             use:reportActiveTabBounds={isCurrent}
+            use:registerTabSurface={workspaceId}
             role="presentation"
           >
             {#if isCurrent}

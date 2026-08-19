@@ -77,7 +77,7 @@
     <div class="relative flex flex-col items-center">
       <div class="w-3 h-3 rounded-full {getTimelineColor(categoryIndex)} ring-4 ring-background shrink-0"></div>
       {#if !isLast || filesWithPatches.length > 0}
-        <div class="w-0.5 flex-1 bg-border/50 min-h-5"></div>
+        <div class="w-0.5 flex-1 bg-border min-h-5"></div>
       {/if}
     </div>
 
@@ -95,7 +95,7 @@
         <!-- Timeline line -->
         <div class="relative flex flex-col items-center w-3">
           <!-- Connecting line -->
-          <div class="w-0.5 flex-1 bg-border/50 {fileIndex === filesWithPatches.length - 1 && isLast ? 'h-1/2' : ''}"></div>
+          <div class="w-0.5 flex-1 bg-border {fileIndex === filesWithPatches.length - 1 && isLast ? 'h-1/2' : ''}"></div>
           <!-- File dot -->
           <div class="absolute top-4 w-2 h-2 rounded-full bg-muted-foreground/30 ring-2 ring-background"></div>
         </div>
@@ -112,11 +112,11 @@
               fileDescription={file.summary}
               {onSendMessage}
               {isSending}
-              class="rounded-lg border border-border/50 overflow-hidden"
+              class="rounded-lg border border-border overflow-hidden"
             />
           {:else}
             <!-- File without patch (just show name) -->
-            <div class="rounded-lg border border-border/50 bg-card p-4">
+            <div class="rounded-lg border border-border bg-card p-4">
               <div class="flex items-center gap-2">
                 <svg class="h-4 w-4 text-ghost" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M3.5 1.5A1.5 1.5 0 0 1 5 0h6a1.5 1.5 0 0 1 1.5 1.5v12A1.5 1.5 0 0 1 11 15H5a1.5 1.5 0 0 1-1.5-1.5v-12z"/>

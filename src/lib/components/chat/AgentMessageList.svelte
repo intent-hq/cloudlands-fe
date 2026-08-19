@@ -13,6 +13,8 @@
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import { fade } from 'svelte/transition';
   import { m } from '$shared/paraglide/messages.js';
+  import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
+  import { extractSearchableContent } from './chat-search';
 
   interface Props {
     messages?: AgentMessage[];
@@ -64,7 +66,7 @@
 
     const lowerQuery = searchQuery.toLowerCase();
     const result = messages.filter((msg) => {
-      const content = extractAllContent(msg);
+      const content = extractSearchableContent(msg);
       return content.toLowerCase().includes(lowerQuery);
     });
 
@@ -126,7 +128,7 @@
              regardless of the exact role the daemon persists. -->
         <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
       {:else if message.role === 'user'}
-        <ChatMessage {message} onCopy={() => handleCopy(extractAllContent(message))} />
+        <ChatMessage {message} onCopy={() => handleCopy(getPresentedUserMessageText(message))} />
       {:else if message.role === 'assistant'}
         <div class="assistant-message-container">
           {#if isStreaming && index === messages.length - 1}

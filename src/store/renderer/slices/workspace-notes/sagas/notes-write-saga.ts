@@ -421,27 +421,34 @@ function* handleCreateAction(action: ReturnType<typeof createNote>) {
 }
 
 function* handleCreateRequested(action: ReturnType<typeof createNoteRequested>) {
-  const [workspaceId] = action.payload;
+  const [workspaceId, options] = action.payload;
   if (!workspaceId) return;
   yield* race({
-    create: call(createRequestedNote, workspaceId),
+    create: call(createRequestedNote, workspaceId, options),
     cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
   });
 }
 
-function* createRequestedNote(workspaceId: string) {
+function* createRequestedNote(
+  workspaceId: string,
+  options?: { panelLayoutId?: string; panelId?: string },
+) {
   const title = m.notes_writeService_newNote_title();
   const noteId = yield* call(createNewNote, workspaceId, { title, content: '', tags: [] });
   if (!noteId) return;
   yield* put(markNoteRead(workspaceId, noteId));
   yield* put(
-    openTab(workspaceId, {
-      type: 'note',
-      title,
-      closable: true,
-      noteId,
-      workspaceId,
-    }),
+    openTab(
+      options?.panelLayoutId ?? workspaceId,
+      {
+        type: 'note',
+        title,
+        closable: true,
+        noteId,
+        workspaceId,
+      },
+      options?.panelId,
+    ),
   );
 }
 

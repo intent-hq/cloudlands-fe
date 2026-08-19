@@ -149,6 +149,80 @@ describe('theme color contract', () => {
     },
   );
 
+  it('keeps the approved global card colors in light and dark modes', () => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+    expect(tokenValue(css, 'theme-light-card')).toBe('0 0% 100%');
+    expect(tokenValue(css, 'theme-dark-card')).toBe('154 16% 3%');
+  });
+
+  it.each(['light', 'dark'] as const)(
+    'keeps the %s on-surface error foreground readable on normal surfaces',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const values = tokenValues(css, mode);
+      expect(tokenValue(css, 'error-foreground')).toBe('var(--destructive-foreground)');
+      for (const surface of ['background', 'card', 'popover', 'muted', 'sidebar'] as const) {
+        expect(
+          contrast(values['destructive-foreground'], values[surface]),
+          `error-foreground on ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    },
+  );
+
+  it('maps on-surface error content to the system text color in forced-colors mode', () => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+    expect(css).toMatch(
+      /@media \(forced-colors: active\)\s*{\s*:where\(\.text-error-foreground\)\s*{\s*color:\s*CanvasText !important;/,
+    );
+  });
+
+  it.each([
+    ['light', -2],
+    ['dark', 2],
+  ] as const)('keeps the %s sidebar exactly two HSL points toward contrast', (mode, delta) => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+    const values = tokenValues(css, mode);
+    const background = hslChannels(values.background);
+    const sidebar = hslChannels(values.sidebar);
+
+    expect(sidebar.slice(0, 2)).toEqual(background.slice(0, 2));
+    expect(sidebar[2] - background[2]).toBe(delta);
+    expect(values.sidebar).not.toContain('/');
+    expect(tokenValue(css, 'sidebar')).toBe('var(--theme-sidebar)');
+    expect(tokenValue(css, `theme-${mode}-sidebar`)).toBe(values.sidebar);
+  });
+
+  it('keeps canonical sidebar shells on the shared token without local color overrides', () => {
+    const sidebar = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/components/ui/sidebar/sidebar.svelte'),
+      'utf8',
+    );
+    const provider = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/components/ui/sidebar/sidebar-provider.svelte'),
+      'utf8',
+    );
+    const skeleton = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/components/workspace/SidebarSkeleton.svelte'),
+      'utf8',
+    );
+    const navigationPanel = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/components/layout/sidebar-nav/SidebarPanel.svelte'),
+      'utf8',
+    );
+
+    expect(sidebar.match(/\bbg-sidebar\b/g)).toHaveLength(3);
+    expect(sidebar).not.toMatch(/bg-\[#[\da-f]+\]/i);
+    expect(provider).toContain('has-data-[variant=inset]:bg-sidebar');
+    expect(skeleton).toContain('bg-sidebar text-sidebar-foreground');
+    expect(navigationPanel).toContain(
+      'sidebar-panel h-full flex flex-col relative text-sidebar-foreground',
+    );
+    for (const source of [sidebar, provider, skeleton, navigationPanel]) {
+      expect(source).not.toMatch(/--sidebar\s*:/);
+    }
+  });
+
   it('lets light, dark, and system modes select the same semantic contract', () => {
     const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
     expect(css).toMatch(/:root\s*{[^}]*color-scheme:\s*light dark/s);
@@ -191,7 +265,7 @@ describe('theme color contract', () => {
     expect(hslChannels(light.background)[2]).toBeGreaterThan(hslChannels(light.sidebar)[2]);
     expect(hslChannels(light.accent)[2]).toBeLessThan(hslChannels(light.sidebar)[2]);
     expect(hslChannels(dark.popover)[2]).toBeGreaterThan(hslChannels(dark.card)[2]);
-    expect(hslChannels(dark.card)[2]).toBeGreaterThan(hslChannels(dark.background)[2]);
+    expect(dark.card).toBe(dark.background);
   });
 
   it.each(['light', 'dark'] as const)('keeps %s control boundaries and focus at 3:1', (mode) => {
@@ -329,6 +403,29 @@ describe('theme color contract', () => {
     }
     expect(css).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration: 0\.01ms/,
+    );
+  });
+
+  it('uses distinct black elevation shadows for light and dark surfaces', () => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+    const lightRaised = tokenValue(css, 'theme-light-elevation-raised');
+    const lightOverlay = tokenValue(css, 'theme-light-elevation-overlay');
+    const darkRaised = tokenValue(css, 'theme-dark-elevation-raised');
+    const darkOverlay = tokenValue(css, 'theme-dark-elevation-overlay');
+
+    for (const shadow of [lightRaised, lightOverlay, darkRaised, darkOverlay]) {
+      expect(shadow).toContain('rgb(0 0 0 /');
+      expect(shadow).not.toContain('var(--foreground)');
+    }
+    expect(lightRaised).not.toBe(lightOverlay);
+    expect(darkRaised).not.toBe(darkOverlay);
+    expect(tokenValue(css, 'elevation-raised')).toBe('var(--theme-light-elevation-raised)');
+    expect(tokenValue(css, 'elevation-overlay')).toBe('var(--theme-light-elevation-overlay)');
+    expect(css).toMatch(
+      /\.dark\s*{[^}]*--elevation-raised:\s*var\(--theme-dark-elevation-raised\)/s,
+    );
+    expect(css).toMatch(
+      /\.dark\s*{[^}]*--elevation-overlay:\s*var\(--theme-dark-elevation-overlay\)/s,
     );
   });
 

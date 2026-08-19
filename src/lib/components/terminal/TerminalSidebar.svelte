@@ -15,7 +15,7 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { writable } from 'svelte/store';
 
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import { ListContainer, ListItem, ListSection } from '$lib/components/ui/list';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -959,7 +959,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 class="shrink-0 flex-none"
                 style="min-width: 16px; min-height: 16px; width: 16px; height: 16px;"
               >
-                <AugieAvatarWithState agentId={$_scriptDetectAgentId$} state="running" size={16} />
+                <AgentAvatarWithState agentId={$_scriptDetectAgentId$} state="running" size={16} />
               </div>
               <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
             </button>
@@ -1033,13 +1033,13 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               type="text"
               bind:value={newName}
               placeholder={m.terminal_quakeOverlay_name_placeholder()}
-              class="w-full text-xs bg-muted/50 border border-border/40 rounded-md px-2 py-1.5 outline-none focus:border-primary/50 focus:bg-background text-foreground placeholder:text-muted-foreground/50 transition-colors"
+              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary/50 focus:bg-background text-foreground placeholder:text-muted-foreground/50 transition-colors"
             />
             <input
               type="text"
               bind:value={newCommand}
               placeholder={m.terminal_sidebar_command_placeholder()}
-              class="w-full text-xs bg-muted/50 border border-border/40 rounded-md px-2 py-1.5 outline-none focus:border-primary/50 focus:bg-background text-foreground placeholder:text-muted-foreground/50 font-mono transition-colors"
+              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary/50 focus:bg-background text-foreground placeholder:text-muted-foreground/50 font-mono transition-colors"
             />
             <div class="flex items-center gap-1.5 justify-end">
               <Button variant="ghost-light" size="xs" onclick={() => (showAddForm = false)}>
@@ -1186,7 +1186,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                   <div class="border-t border-border my-1"></div>
                   <button
                     type="button"
-                    class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors text-destructive-foreground hover:bg-destructive/10"
+                    class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors text-error-foreground hover:bg-destructive/10"
                     onclick={() => handleContextMenuAction('delete')}
                   >
                     {selectedScriptIds.size > 1

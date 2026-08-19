@@ -116,6 +116,21 @@ export const selectHudAttentionByWorkspaceId = store.createSelector(
   (state) => state.hud.attentionByWorkspaceId,
 );
 
+export const selectHudQuestionsByAgentId = store.createSelector(
+  (state) => state.hud?.questionsByAgentId ?? {},
+);
+
+/** Whether an agent has a captured, unanswered question. */
+export const selectHudAgentHasPendingQuestion = store.createSelector((state, agentId: string) => {
+  const question = state.hud?.questionsByAgentId?.[agentId];
+  if (!question) return false;
+  const metadata = (state.agentSessions?.byAgentId[agentId]?.metadata ?? {}) as Record<
+    string,
+    unknown
+  >;
+  return !isQuestionMessageDismissed(metadata, question.messageId);
+});
+
 /** Pending grid-card click for the takeover overlay; null when none. */
 export const selectHudTakeoverRequestWorkspaceId = store.createSelector(
   (state) => state.hud.takeoverRequestWorkspaceId,

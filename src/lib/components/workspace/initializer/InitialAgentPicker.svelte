@@ -1,6 +1,6 @@
 <script lang="ts">
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
 
   import {
     selectSpecialists,
@@ -587,10 +587,10 @@
       {m.workspace_initialAgentPicker_teamMode_label()}
     </div>
     <div class="flex items-center gap-1 py-1.5">
-      <AuggieAvatar seed="blank" size={22} specialist="spec-writer" />
+      <AgentAvatar agentId="blank" size={22} specialist="spec-writer" />
       <span class="text-subtle text-xs mx-0.5">→</span>
-      <AuggieAvatar seed="blank" size={22} specialist="implementor" />
-      <AuggieAvatar seed="blank" size={22} specialist="verifier" />
+      <AgentAvatar agentId="blank" size={22} specialist="implementor" />
+      <AgentAvatar agentId="blank" size={22} specialist="verifier" />
     </div>
     <div class="text-sm text-subtle leading-snug">
       {m.workspace_initialAgentPicker_teamMode_description()}
@@ -662,8 +662,9 @@
         side="bottom"
         contentClass="p-0!"
       >
-        {#snippet trigger({ toggle }: { toggle: () => void })}
+        {#snippet trigger({ props })}
           <button
+            {...isTeamMode ? {} : props}
             type="button"
             tabindex={isTeamMode ? -1 : 0}
             onclick={(e) => {
@@ -672,12 +673,12 @@
                 return;
               }
               e.stopPropagation();
-              toggle();
+              (props.onclick as ((event: MouseEvent) => void) | undefined)?.(e);
             }}
             class="specialist-trigger"
           >
-            <AuggieAvatar
-              seed="blank"
+            <AgentAvatar
+              agentId="blank"
               size={20}
               specialist={currentSpecialistInfo ? displayedSpecialist : null}
             />
@@ -704,7 +705,7 @@
                 : ''}"
               onclick={() => handleSpecialistSelect(null)}
             >
-              <AuggieAvatar seed="blank" size={20} />
+              <AgentAvatar agentId="blank" size={20} />
               <div class="flex flex-col min-w-0">
                 <span class="font-medium text-foreground text-sm"
                   >{m.workspace_initialAgentPicker_general_label()}</span
@@ -726,7 +727,7 @@
                     : ''}"
                   onclick={() => handleSpecialistSelect(specialist.id)}
                 >
-                  <AuggieAvatar seed="blank" size={20} specialist={specialist.id} />
+                  <AgentAvatar agentId="blank" size={20} specialist={specialist.id} />
                   <div class="flex flex-col min-w-0">
                     <span class="font-medium text-foreground text-sm">{specialist.name}</span>
                     <span class="text-xs text-subtle truncate">{specialist.description}</span>

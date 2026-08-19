@@ -12,6 +12,9 @@ import {
   configuredVisualStates,
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
+import { followToBottom } from '$lib/utils/smartScroll';
+
+vi.mock('$lib/utils/smartScroll', () => ({ followToBottom: vi.fn() }));
 
 const originalAnimate = HTMLElement.prototype.animate;
 
@@ -86,6 +89,7 @@ afterEach(() => {
   }
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.mocked(followToBottom).mockClear();
   vi.useRealTimers();
 });
 
@@ -119,7 +123,7 @@ describe('message send transition', () => {
     expect(observed).toEqual(configuredVisualStates);
   });
 
-  it('uses one compositor transform and an instant bottom-follow adjustment', async () => {
+  it('uses one compositor transform and delegates bottom follow to the scroll authority', async () => {
     const { composer, target, scrollContainer } = fixture();
     const animate = stubAnimate(() => ({ finished: Promise.resolve() }));
     const origin = captureMessageSendOrigin(composer);
@@ -129,8 +133,10 @@ describe('message send transition', () => {
 
     expect(MESSAGE_SEND_TRANSITION_DURATION_MS).toBe(280);
     expect(MESSAGE_SEND_TRANSITION_EASING).toBe('cubic-bezier(0.2, 0, 0, 1)');
-    expect(scrollContainer.scrollTop).toBe(300);
+    expect(scrollContainer.scrollTop).toBe(240);
     expect(scrollContainer.scrollTo).not.toHaveBeenCalled();
+    expect(followToBottom).toHaveBeenCalledOnce();
+    expect(followToBottom).toHaveBeenCalledWith(scrollContainer);
     expect(animate).toHaveBeenCalledWith(
       expect.any(Array),
       expect.objectContaining({ duration: 280, easing: MESSAGE_SEND_TRANSITION_EASING }),
@@ -216,6 +222,24 @@ describe('message send transition', () => {
     await transition;
 
     expect(cancel).toHaveBeenCalledOnce();
+    expect(document.querySelector('[data-message-send-transition]')).toBeNull();
+  });
+
+  it('cancels fixed geometry immediately when the viewport resizes', async () => {
+    const { composer, target, scrollContainer } = fixture();
+    const cancel = vi.fn();
+    stubAnimate(() => ({ finished: new Promise<void>(() => {}), cancel }));
+
+    const transition = animateMessageSend({
+      origin: captureMessageSendOrigin(composer),
+      target,
+      scrollContainer,
+    });
+    window.dispatchEvent(new Event('resize'));
+    await transition;
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(target.style.visibility).toBe('');
     expect(document.querySelector('[data-message-send-transition]')).toBeNull();
   });
 

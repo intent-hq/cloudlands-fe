@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { cleanup, render, screen, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$store/renderer/store', async () => {
@@ -33,7 +33,9 @@ afterEach(cleanup);
 describe('screenshot-shaped mixed compact tool sequence', () => {
   it('renders every collapsed tool as one aligned sentence without secondary columns', () => {
     const { container } = render(MixedToolRowsHarness);
-    const rows = [...container.querySelectorAll('[data-compact-tool-row]')];
+    const rows = [
+      ...container.querySelectorAll('[data-chat-operational-row][data-tool-use-id]'),
+    ].map((host) => host.querySelector('[data-compact-tool-row]')!);
     expect(rows).toHaveLength(11);
 
     const stableClasses = (element: Element) =>
@@ -44,8 +46,10 @@ describe('screenshot-shaped mixed compact tool sequence', () => {
     const rowClasses = new Set(rows.map(stableClasses));
     expect(rowClasses.size).toBe(1);
     for (const row of rows) {
-      expect(row.className).toContain('grid-cols-[1rem_minmax(0,1fr)_auto]');
-      expect(row.className).toContain('min-h-5');
+      expect(row.className).toContain(
+        'grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto]',
+      );
+      expect(row.className).toContain('h-7');
       expect(row.querySelectorAll('[data-tool-icon]')).toHaveLength(1);
       expect(row.querySelectorAll('[data-tool-sentence]')).toHaveLength(1);
       expect(row.querySelectorAll('[data-testid="tool-call-path"]')).toHaveLength(0);
@@ -59,7 +63,7 @@ describe('screenshot-shaped mixed compact tool sequence', () => {
     const sentences = [...container.querySelectorAll('[data-tool-sentence]')];
     for (const sentence of sentences) {
       expect(stableClasses(sentence)).toContain(
-        'block min-w-0 max-w-full truncate whitespace-nowrap',
+        'block min-w-0 max-w-full truncate overflow-hidden text-ellipsis whitespace-nowrap',
       );
     }
     expect(container.textContent).toContain('Read tool-classifier.ts lines 1–120');
@@ -70,15 +74,23 @@ describe('screenshot-shaped mixed compact tool sequence', () => {
 
   it('keeps complete accessible provenance and semantic trailing states', () => {
     const { container } = render(MixedToolRowsHarness);
-    const read = screen.getAllByTestId('tool-call-summary')[0];
-    expect(read.getAttribute('aria-label')).toContain(
+    const readRow = container.querySelector('[data-tool-use-id="read-a"]')! as HTMLElement;
+    const readDisclosure = within(readRow)
+      .getAllByRole('button', { name: /Read .*tool-classifier\.ts lines 1–120/i })
+      .find((control) => control.tagName === 'BUTTON')!;
+    expect(readDisclosure.getAttribute('aria-label')).toContain(
       '/Users/example/repository/src/lib/components/chat/tool-classifier.ts',
     );
 
     const successRows = container.querySelectorAll('[data-tool-status="success"]');
-    expect(successRows).toHaveLength(2);
-    expect(successRows[0].textContent).toBe('Success');
-    expect(container.querySelector('[data-tool-status="error"]')?.textContent).toBe('Failed');
+    expect(successRows).toHaveLength(3);
+    expect(successRows[0].textContent?.trim()).toBe('Success');
+    expect(container.querySelector('[data-tool-status="error"]')?.textContent?.trim()).toBe(
+      'Failed',
+    );
+    expect(successRows[0].getAttribute('role')).toBe('img');
+    expect(successRows[0].getAttribute('aria-label')).toBe('Success');
+    expect(successRows[0].querySelector('[data-icon="circle-check"]')).toBeTruthy();
 
     const sequence = screen.getByTestId('mixed-tool-sequence');
     sequence.setAttribute('style', 'width: 120px; max-width: 120px; overflow: hidden');

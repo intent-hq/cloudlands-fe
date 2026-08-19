@@ -9,6 +9,8 @@ export type BrowserOpenTabPayload = WorkspaceCommandPayload & {
   tabId?: string;
   /** Skip the panel layout's equivalent-tab dedupe and always create a new tab. */
   allowDuplicate?: boolean;
+  /** Pin the panel resolved by this exact open request. */
+  pin?: boolean;
   /**
    * Pre-rewrite URL when `url` came out of the loopback/tunnel rewrite;
    * persisted with the tab so a restart can re-run the rewrite
@@ -35,6 +37,8 @@ export type BrowserTabNavigatedPayload = WorkspaceCommandPayload & {
 
 export type BrowserFocusTabPayload = WorkspaceCommandPayload & {
   tabId: string;
+  /** Pin the panel that contains the focused browser tab. */
+  pin?: boolean;
 };
 
 export type BrowserListTabsRequestPayload = WorkspaceCommandPayload & {

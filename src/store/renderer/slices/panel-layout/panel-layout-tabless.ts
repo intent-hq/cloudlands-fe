@@ -4,6 +4,7 @@ import {
   getAcceptedIndependentPanelResizeWidth,
   getAutomaticPanelCanvasWidth,
   getPanelDefaultWidth,
+  PANEL_SPLIT_GUTTER_WIDTH,
   type PanelCanvasSizing,
   type PanelDefaultWidthTier,
 } from '../../../../shared/panel-layout-sizing';
@@ -180,6 +181,7 @@ export function resizeRootHorizontalPanel(
   previousWidth: number,
   requestedNextWidth: number,
   panelIndex: number,
+  previousPanelWidths?: readonly number[],
 ): { node: PanelLayoutNode; nextWidth: number } {
   if (
     node.type !== 'split' ||
@@ -198,14 +200,39 @@ export function resizeRootHorizontalPanel(
   if (lastIndex < 1) return { node, nextWidth: previousWidth };
   const targetIndex =
     panelIndex < 0 || panelIndex > lastIndex ? lastIndex : Math.max(0, panelIndex);
-  const previousTargetWidth = (previousWidth * sizes[targetIndex]) / 100;
+  const hasRenderedWidths =
+    previousPanelWidths?.length === node.children.length &&
+    previousPanelWidths.every((width) => Number.isFinite(width) && width > 0);
+  const renderedWidths = hasRenderedWidths
+    ? [...previousPanelWidths!]
+    : sizes.map((size) => (previousWidth * size) / 100);
+  const previousTargetWidth = renderedWidths[targetIndex];
   const nextWidth = getAcceptedIndependentPanelResizeWidth(
     previousWidth,
     previousTargetWidth,
     requestedNextWidth,
   );
+  if (!hasRenderedWidths) {
+    return {
+      node: resizePanelTreeAtHorizontalIndex(node, previousWidth, nextWidth, targetIndex),
+      nextWidth,
+    };
+  }
+
+  const nextTargetWidth = previousTargetWidth + nextWidth - previousWidth;
+  renderedWidths[targetIndex] = nextTargetWidth;
+  const children = [...node.children];
+  children[targetIndex] = resizePanelTreeRightEdge(
+    children[targetIndex],
+    previousTargetWidth,
+    nextTargetWidth,
+  );
   return {
-    node: resizePanelTreeAtHorizontalIndex(node, previousWidth, nextWidth, targetIndex),
+    node: {
+      ...node,
+      children,
+      sizes: renderedWidths.map((width) => (width / nextWidth) * 100),
+    },
     nextWidth,
   };
 }
@@ -229,6 +256,7 @@ export function insertHorizontalPanelInLayout(
     countHorizontalPanelColumns(root),
     'content',
   ),
+  requestedPanelWidth: number = DEFAULT_PANEL_WIDTH,
 ): PanelLayoutNode | null {
   const panelNode: PanelLayoutNode = { type: 'panel', panelId };
   const safeCanvasWidth =
@@ -237,7 +265,14 @@ export function insertHorizontalPanelInLayout(
     existingCanvasWidth > 0
       ? existingCanvasWidth
       : getAutomaticPanelCanvasWidth(countHorizontalPanelColumns(root), 'content');
-  const newColumnSize = (DEFAULT_PANEL_WIDTH / (safeCanvasWidth + DEFAULT_PANEL_WIDTH)) * 100;
+  const panelWidth =
+    Number.isFinite(requestedPanelWidth) && requestedPanelWidth > 0
+      ? requestedPanelWidth
+      : DEFAULT_PANEL_WIDTH;
+  const existingGapWidth =
+    PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, countHorizontalPanelColumns(root) - 1);
+  const existingPanelWidth = Math.max(1, safeCanvasWidth - existingGapWidth);
+  const newColumnSize = (panelWidth / (existingPanelWidth + panelWidth)) * 100;
 
   if (root.type !== 'split' || root.direction !== 'horizontal') {
     return {
@@ -266,11 +301,18 @@ export function appendHorizontalPanelToLayout(
   root: PanelLayoutNode,
   panelId: string,
   existingCanvasWidth?: number | null,
+  panelWidth?: number,
 ): PanelLayoutNode {
   const rightmostPanelId = getPanelOrder(root).at(-1);
   if (!rightmostPanelId) return root;
   return (
-    insertHorizontalPanelInLayout(root, panelId, rightmostPanelId, existingCanvasWidth) ?? root
+    insertHorizontalPanelInLayout(
+      root,
+      panelId,
+      rightmostPanelId,
+      existingCanvasWidth,
+      panelWidth,
+    ) ?? root
   );
 }
 
@@ -576,9 +618,12 @@ export function movePanelToRootEdgeInLayout(
       const destinationIndex = insertBefore ? 0 : root.children.length - 1;
       if (sourceIndex === destinationIndex) return null;
       const children = [...root.children];
+      const sizes = normalizeSizes(root.sizes, root.children.length);
       const [source] = children.splice(sourceIndex, 1);
+      const [sourceSize] = sizes.splice(sourceIndex, 1);
       children.splice(insertBefore ? 0 : children.length, 0, source);
-      return { ...root, children };
+      sizes.splice(insertBefore ? 0 : sizes.length, 0, sourceSize);
+      return { ...root, children, sizes };
     }
   }
 
@@ -637,6 +682,7 @@ export function normalizeTablessPanelLayout(layout: LayoutShape): LayoutShape {
         tabs: tab ? [tab] : [],
         activeTabId: tab?.id ?? null,
         ...(panel.pristine !== undefined ? { pristine: panel.pristine && !tab } : {}),
+        ...(panel.pinned !== undefined ? { pinned: panel.pinned } : {}),
       };
       panelIds.push(panelId);
       if (

@@ -8,10 +8,7 @@
    */
 
   import Fa from 'svelte-fa';
-  import {
-  faCodeCommit,
-  faSpinner,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCodeCommit, faSpinner } from '@fortawesome/free-solid-svg-icons';
 
   import { openWorkspaceCommitChangeset } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -33,18 +30,14 @@
 
   function handleOpenCommitChangeset() {
     if (status?.state === 'committed') {
-      appStore.dispatch(
-        openWorkspaceCommitChangeset(workspaceId, status.hash, status.message),
-      );
+      appStore.dispatch(openWorkspaceCommitChangeset(workspaceId, status.hash, status.message));
     }
   }
 </script>
 
 {#if status}
   <div class="w-full">
-    <div
-      class="w-full flex items-center gap-2 px-2 py-1.5 text-subtle rounded-lg min-w-0"
-    >
+    <div class="w-full flex items-center gap-2 px-2 py-1.5 text-subtle rounded-lg min-w-0">
       <div class="flex items-center gap-2 flex-1 min-w-0">
         {#if status.state === 'committing'}
           <Fa icon={faSpinner} class="opacity-30 animate-spin" size="xs" />
@@ -81,7 +74,7 @@
                 })}
               </span>
             {:else}
-              <span class="text-red-500/70">{m.chat_autoCommitStatus_failed_label()}</span>
+              <span class="text-error-foreground">{m.chat_autoCommitStatus_failed_label()}</span>
               <span class="text-subtle">
                 {m.chat_autoCommitStatus_hooksFailedAfter_label({
                   count: formatInteger(status.retryCount),

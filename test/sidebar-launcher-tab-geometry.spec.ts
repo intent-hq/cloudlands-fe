@@ -88,9 +88,10 @@ async function mountStripMatrix(
   await page.addStyleTag({ content: 'body { margin: 0; }' });
   await page.evaluate(async ({ width, zoom, theme }) => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
-    const [{ mount, tick }, { default: Strip }] = await Promise.all([
+    const [{ mount, tick }, { default: Strip }, icons] = await Promise.all([
       import('/@id/svelte'),
       import('/src/lib/components/workspace/SidebarExpandedTabStrip.svelte'),
+      import('/src/lib/icons/phosphor-icons.ts'),
     ]);
     document.body.replaceChildren();
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -101,9 +102,20 @@ async function mountStripMatrix(
         target.dataset.stripScenario = `${count}-${activeIndex}`;
         target.style.cssText = `width:${width}px; margin:12px; zoom:${zoom};`;
         document.body.append(target);
+        const tabIcons = [
+          icons.faRobot,
+          icons.faAlignLeft,
+          icons.faCode,
+          icons.faFolderTree,
+          icons.faGlobe,
+          icons.faTerminal,
+          icons.faFile,
+          icons.faGear,
+        ];
         const tabs = Array.from({ length: count }, (_, index) => ({
           id: `tab-${index}`,
           label: `Very long workspace tab label ${index + 1}`,
+          icon: tabIcons[index],
         }));
         mount(Strip, {
           target,
@@ -250,10 +262,12 @@ function expectEqual(values: number[], tolerance = 0.75) {
   expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(tolerance);
 }
 
-function expectOverlappingDeck(rects: Array<{ x: number; width: number }>) {
+function expectSegmentedDeck(rects: Array<{ x: number; width: number }>) {
   for (let index = 1; index < rects.length; index += 1) {
     expect(rects[index].x).toBeGreaterThan(rects[index - 1].x);
-    expect(rects[index].x).toBeLessThan(rects[index - 1].x + rects[index - 1].width);
+    expect(
+      Math.abs(rects[index].x - (rects[index - 1].x + rects[index - 1].width)),
+    ).toBeLessThanOrEqual(1);
   }
 }
 
@@ -287,7 +301,9 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
     { width: 360, zoom: 1, theme: 'light' as const, agentCount: 0, noteCount: 0 },
     { width: 280, zoom: 1, theme: 'dark' as const, agentCount: 1, noteCount: 1 },
     { width: 280, zoom: 1.5, theme: 'light' as const, agentCount: 3, noteCount: 3 },
+    { width: 360, zoom: 1, theme: 'dark' as const, agentCount: 6, noteCount: 6 },
     { width: 260, zoom: 2, theme: 'dark' as const, agentCount: 8, noteCount: 8 },
+    { width: 360, zoom: 1.5, theme: 'light' as const, agentCount: 26, noteCount: 26 },
   ]) {
     await mountSidebar(page, { ...geometry, selectedTab: 'overview' });
     const cards = page.locator('[data-sidebar-launcher-grid] [data-sidebar-launcher]');
@@ -335,24 +351,173 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
     expect(compactHeights).toEqual([44, 44]);
 
     const iconBounds = await cards.evaluateAll((elements) =>
-      elements.slice(0, 2).map((card) => {
+      elements.slice(1, 2).map((card) => {
         const cardRect = card.getBoundingClientRect();
         const scale = cardRect.width / (card as HTMLElement).offsetWidth;
+        const stack = card.querySelector<HTMLElement>('[data-sidebar-launcher-icons]')!;
+        const stackRect = stack.getBoundingClientRect();
         const inset = Number((card as HTMLElement).dataset.launcherInlineInset ?? 0) * scale;
-        const items = [...card.querySelectorAll<HTMLElement>('[data-launcher-preview-item]')].map(
-          (item) => item.getBoundingClientRect(),
-        );
-        return items.map((item) => ({
-          left: item.left - cardRect.left,
-          right: cardRect.right - item.right,
-          inset,
-        }));
+        const labelLeft =
+          card.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!.getBoundingClientRect()
+            .left - cardRect.left;
+        const items = [...card.querySelectorAll<HTMLElement>('[data-launcher-preview-item]')];
+        return items.map((item) => {
+          const visibleSurface =
+            item.querySelector<HTMLElement>('[data-sidebar-launcher-glyph]') ?? item;
+          const itemRect = item.getBoundingClientRect();
+          const visibleRect = visibleSurface.getBoundingClientRect();
+          const overflowText = item.querySelector<HTMLElement>('span[aria-hidden="true"]');
+          const overflowTextRect = overflowText?.getBoundingClientRect();
+          return {
+            left: itemRect.left - cardRect.left,
+            visibleLeft: visibleRect.left - cardRect.left,
+            visibleWidth: visibleRect.width,
+            right: cardRect.right - itemRect.right,
+            width: itemRect.width,
+            inset,
+            labelLeft,
+            scale,
+            overflow:
+              item.hasAttribute('data-sidebar-agent-overflow') ||
+              item.hasAttribute('data-sidebar-context-overflow'),
+            overflowText: overflowText?.textContent ?? '',
+            overflowTextLeft: overflowTextRect ? overflowTextRect.left - itemRect.left : 0,
+            overflowTextRight: overflowTextRect ? itemRect.right - overflowTextRect.right : 0,
+            scrollWidth: item.scrollWidth,
+            clientWidth: item.clientWidth,
+            availableWidth: stackRect.width,
+          };
+        });
       }),
     );
     expect(
       iconBounds.flat().every(({ left, right, inset }) => left >= inset && right >= inset),
     ).toBe(true);
-
+    for (const bounds of iconBounds) {
+      const total = geometry.noteCount;
+      if (total === 0) {
+        expect(bounds).toHaveLength(0);
+        continue;
+      }
+      const renderedOverflow = bounds.find(({ overflow }) => overflow);
+      const reservedOverflowWidth = renderedOverflow
+        ? renderedOverflow.width / renderedOverflow.scale
+        : 36;
+      const expectedLimit = Math.max(
+        1,
+        Math.min(
+          6,
+          Math.floor(
+            (bounds[0].availableWidth / bounds[0].scale - 36 - reservedOverflowWidth) / 15,
+          ) + 1,
+        ),
+      );
+      const expectedVisible = Math.min(total, expectedLimit);
+      const expectedOverflow = total - expectedVisible;
+      const expectedCount = expectedVisible + (expectedOverflow > 0 ? 1 : 0);
+      expect(bounds).toHaveLength(expectedCount);
+      expect(Math.abs(bounds[0].visibleLeft - bounds[0].labelLeft)).toBeLessThanOrEqual(0.5);
+      expect(
+        bounds
+          .filter(({ overflow }) => !overflow)
+          .every(({ width, scale }) => Math.abs(width - 36 * scale) <= 0.5),
+      ).toBe(true);
+      expect(
+        bounds
+          .filter(({ overflow }) => overflow)
+          .every(({ width, scale }) => width >= 36 * scale - 0.5),
+      ).toBe(true);
+      expect(
+        bounds
+          .filter(({ overflow }) => !overflow)
+          .every(({ visibleWidth, scale }) => Math.abs(visibleWidth - 20 * scale) <= 0.5),
+      ).toBe(true);
+      const steps = bounds.slice(1).map((item, itemIndex) => item.left - bounds[itemIndex].left);
+      expect(steps.every((step) => step > 0 && step <= 36 * bounds[0].scale)).toBe(true);
+      const visibleBounds = bounds.filter(({ overflow }) => !overflow);
+      const visibleSteps = visibleBounds
+        .slice(1)
+        .map((item, itemIndex) => item.visibleLeft - visibleBounds[itemIndex].visibleLeft);
+      if (visibleSteps.length > 1) expectEqual(visibleSteps, 0.75);
+      expect(visibleSteps.every((step) => Math.abs(step - 15 * bounds[0].scale) <= 0.5)).toBe(true);
+      expect(
+        visibleSteps.every(
+          (step) => Math.abs(20 * bounds[0].scale - step - 5 * bounds[0].scale) <= 0.5,
+        ),
+      ).toBe(true);
+      if (expectedOverflow > 0) {
+        const overflow = bounds.at(-1)!;
+        expect(overflow.overflow).toBe(true);
+        expect(steps.at(-1)).toBeCloseTo(36 * bounds[0].scale, 1);
+        expect(overflow.overflowText).toBe(`+${expectedOverflow}`);
+        expect(overflow.overflowTextLeft).toBeGreaterThanOrEqual(0);
+        expect(overflow.overflowTextRight).toBeGreaterThanOrEqual(0);
+        expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+      }
+    }
+    const cardAlignment = await surfaces.evaluateAll((elements) =>
+      elements.map((card) => {
+        const element = card as HTMLElement;
+        const cardRect = element.getBoundingClientRect();
+        const scale = cardRect.width / element.offsetWidth;
+        const label = element.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!;
+        const stack = element.querySelector<HTMLElement>('[data-sidebar-launcher-icons]');
+        const visibleSurface =
+          element.querySelector<HTMLElement>('[data-sidebar-launcher-glyph]') ??
+          element.querySelector<HTMLElement>(
+            '[data-sidebar-changes-resource] [data-resource-icon-tile]',
+          );
+        const id =
+          element.dataset.sidebarLauncher ??
+          (element.hasAttribute('data-workspace-terminal-dock') ? 'shell' : 'unknown');
+        let leadingLeft: number;
+        if (visibleSurface) {
+          leadingLeft = visibleSurface.getBoundingClientRect().left;
+        } else if (stack) {
+          leadingLeft =
+            stack.getBoundingClientRect().left +
+            Number(stack.dataset.launcherVisibleOffset ?? 0) * scale;
+        } else {
+          const style = getComputedStyle(element);
+          leadingLeft =
+            cardRect.left +
+            (Number.parseFloat(style.borderLeftWidth) + Number.parseFloat(style.paddingLeft)) *
+              scale;
+        }
+        return {
+          id,
+          delta: Math.abs(label.getBoundingClientRect().left - leadingLeft),
+        };
+      }),
+    );
+    expect(cardAlignment.map(({ id }) => id).sort()).toEqual([
+      'agents',
+      'browser',
+      'changes',
+      'context',
+      'files',
+      'shell',
+    ]);
+    expect(
+      cardAlignment.every(({ delta }) => delta <= 0.5),
+      JSON.stringify(cardAlignment),
+    ).toBe(true);
+    const changesGeometry = await cards
+      .filter({ has: page.locator('[data-sidebar-changes-resource]') })
+      .evaluate((card) => {
+        const scale = card.getBoundingClientRect().width / (card as HTMLElement).offsetWidth;
+        return {
+          target:
+            card
+              .querySelector<HTMLElement>('[data-sidebar-changes-resource]')!
+              .getBoundingClientRect().width / scale,
+          visible:
+            card.querySelector<HTMLElement>('[data-resource-icon-tile]')!.getBoundingClientRect()
+              .width / scale,
+        };
+      });
+    expect(changesGeometry.target).toBeCloseTo(36, 1);
+    expect(changesGeometry.visible).toBeCloseTo(20, 1);
     const labelRows = await cards.evaluateAll((elements) =>
       elements.map((card) => {
         const cardRect = card.getBoundingClientRect();
@@ -392,6 +557,251 @@ test('compact grid cards keep equal geometry and padding through hover at narrow
     await page.mouse.move(0, 0);
     await page.waitForTimeout(300);
     expect(await boxes(cards)).toEqual(before);
+  }
+});
+
+test('Agents card shares adaptive stack geometry for 1, 3, and large counts', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1200, height: 1000 });
+  for (const agentCount of [1, 3, 26]) {
+    for (const theme of ['light', 'dark'] as const) {
+      for (const zoom of [1, 2]) {
+        await mountSidebar(page, {
+          width: 260,
+          zoom,
+          theme,
+          selectedTab: 'overview',
+          agentCount,
+          noteCount: 3,
+        });
+        for (const direction of ['ltr', 'rtl'] as const) {
+          await page.evaluate((dir) => {
+            document.documentElement.dir = dir;
+          }, direction);
+          const card = page.locator('[data-sidebar-launcher="agents"]');
+          const stack = card.locator('[data-agent-avatar-stack]');
+          await expect
+            .poll(() => stack.locator('[data-agent-avatar-stack-item]').count())
+            .toBeGreaterThan(0);
+          const geometry = await card.evaluate((element) => {
+            const action = element.querySelector<HTMLElement>(
+              '[data-testid="agent-panel-toggle"]',
+            )!;
+            const stack = element.querySelector<HTMLElement>('[data-agent-avatar-stack]')!;
+            const overflow = stack.querySelector<HTMLElement>('[data-agent-avatar-overflow]');
+            const items = [
+              ...stack.querySelectorAll<HTMLElement>('[data-agent-avatar-stack-item]'),
+            ];
+            const box = (node: Element) => {
+              const rect = node.getBoundingClientRect();
+              return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+            };
+            const stackBox = box(stack);
+            const overflowBox = overflow ? box(overflow) : null;
+            return {
+              card: box(element),
+              action: box(action),
+              align: stack.dataset.agentAvatarStackAlign,
+              overlap: stack.dataset.agentAvatarStackOverlap,
+              items: items.map((item) => ({
+                box: box(item),
+                zIndex: Number(getComputedStyle(item).zIndex),
+                mask: getComputedStyle(item).maskImage,
+                state: item.querySelector<HTMLElement>('[data-agent-avatar-with-state]')?.dataset
+                  .avatarState,
+              })),
+              overflow: overflow?.textContent ?? null,
+              centerDelta: overflowBox
+                ? Math.abs(
+                    (overflowBox.top + overflowBox.bottom) / 2 -
+                      (stackBox.top + stackBox.bottom) / 2,
+                  )
+                : 0,
+              direction: getComputedStyle(stack).direction,
+              devicePixelRatio: window.devicePixelRatio,
+            };
+          });
+          const visibleCount = geometry.items.length;
+          expect(geometry.align).toBe('start');
+          expect(geometry.overlap).toBe('later-on-top');
+          expect(geometry.items.map(({ zIndex }) => zIndex)).toEqual(
+            Array.from({ length: visibleCount }, (_, index) => index + 1),
+          );
+          expect(geometry.items.map(({ state }) => state)).toEqual([
+            'running',
+            ...Array.from({ length: visibleCount - 1 }, () => 'idle'),
+          ]);
+          expect(geometry.items.at(-1)?.mask).toBe('none');
+          expect(geometry.items.slice(0, -1).every(({ mask }) => mask.includes('url('))).toBe(true);
+          const steps = geometry.items
+            .slice(1)
+            .map(({ box }, index) => box.left - geometry.items[index].box.left);
+          expect(steps.every((step) => (direction === 'ltr' ? step > 0 : step < 0))).toBe(true);
+          if (agentCount <= 3) {
+            expect(visibleCount).toBe(agentCount);
+            expect(geometry.overflow).toBeNull();
+          } else {
+            expect(visibleCount).toBeLessThan(agentCount);
+            expect(geometry.overflow).toBe(`+${agentCount - visibleCount}`);
+          }
+          expect(geometry.centerDelta * geometry.devicePixelRatio).toBeLessThanOrEqual(0.5);
+          expect(geometry.action.left - geometry.card.left).toBeCloseTo(zoom, 1);
+          expect(geometry.card.right - geometry.action.right).toBeCloseTo(zoom, 1);
+          expect(geometry.action.top - geometry.card.top).toBeCloseTo(zoom, 1);
+          expect(geometry.card.bottom - geometry.action.bottom).toBeCloseTo(zoom, 1);
+          expect(geometry.direction).toBe(direction);
+          await expect(card.locator('[data-sidebar-agent]')).toHaveCount(visibleCount);
+          await expect(card.locator('[data-agent-avatar-overflow] button')).toHaveCount(0);
+        }
+        await page.locator('[data-testid="agent-panel-toggle"]').click();
+        await expect(page.locator('[data-sidebar-overlay]')).toBeVisible();
+        await expect(page.locator('[data-sidebar-tab-strip]')).toHaveAttribute(
+          'data-active-tab',
+          'agents',
+        );
+      }
+    }
+  }
+});
+
+test('launcher cards preserve note focus and the full Agents card target', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 1000 });
+  await mountSidebar(page, {
+    width: 320,
+    zoom: 1,
+    theme: 'light',
+    selectedTab: 'overview',
+    agentCount: 8,
+    noteCount: 8,
+  });
+
+  const agentStack = page.locator('[data-sidebar-launcher="agents"] [data-agent-avatar-stack]');
+  const notes = page.locator('[data-sidebar-context]');
+  const visibleAgents = await agentStack.locator('[data-agent-avatar-stack-item]').count();
+  expect(visibleAgents).toBeGreaterThan(0);
+  expect(visibleAgents).toBeLessThanOrEqual(6);
+  await expect(agentStack.locator('[data-agent-avatar-overflow]')).toHaveText(
+    `+${8 - visibleAgents}`,
+  );
+  await expect(agentStack.locator('button[data-sidebar-agent]')).toHaveCount(visibleAgents);
+  const visibleNotes = await notes.count();
+  expect(visibleNotes).toBeGreaterThan(0);
+  expect(visibleNotes).toBeLessThanOrEqual(6);
+  await expect(page.locator('[data-sidebar-context-overflow]')).toHaveText(`+${8 - visibleNotes}`);
+  await expect(notes.nth(0).locator('[data-panel-open-marker]')).toHaveAttribute(
+    'data-panel-open-state',
+    'open',
+  );
+
+  await notes.nth(0).focus();
+  await expect(notes.nth(0)).toBeFocused();
+  await expect(page.locator('[data-sidebar-hover-card="note"]')).toBeVisible();
+
+  const cardAction = page.locator('[data-testid="agent-panel-toggle"]');
+  await cardAction.focus();
+  await expect(cardAction).toBeFocused();
+  await cardAction.click();
+  await expect(page.locator('[data-sidebar-overlay]')).toBeVisible();
+  await expect(page.locator('[data-sidebar-tab-strip]')).toHaveAttribute(
+    'data-active-tab',
+    'agents',
+  );
+});
+
+test('visible Agents stack avatars support hover, focus, Enter, and Space', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 1000 });
+  await mountSidebar(page, {
+    width: 260,
+    zoom: 1,
+    theme: 'light',
+    selectedTab: 'overview',
+    agentCount: 3,
+    noteCount: 3,
+  });
+
+  const buttons = page.locator('[data-sidebar-launcher="agents"] [data-sidebar-agent]');
+  await expect(buttons).toHaveCount(3);
+  expect(
+    await buttons.evaluateAll((items) =>
+      items.map((item) => item.getAttribute('data-sidebar-agent')),
+    ),
+  ).toEqual(['agent-running', 'agent-1', 'agent-2']);
+
+  await buttons.nth(0).hover();
+  await expect(page.locator('[data-sidebar-hover-card="agent"]')).toBeVisible();
+  await page.mouse.move(0, 0);
+  await buttons.nth(1).focus();
+  await expect(buttons.nth(1)).toBeFocused();
+  await expect(page.locator('[data-sidebar-hover-card="agent"]')).toBeVisible();
+
+  await buttons.nth(1).evaluate((button) => {
+    button.addEventListener('click', () => {
+      button.setAttribute(
+        'data-keyboard-clicks',
+        String(Number(button.getAttribute('data-keyboard-clicks') ?? 0) + 1),
+      );
+    });
+  });
+  await page.keyboard.press('Enter');
+  await expect(buttons.nth(1)).toHaveAttribute('data-keyboard-clicks', '1');
+
+  await buttons.nth(2).focus();
+  await buttons.nth(2).evaluate((button) => {
+    button.addEventListener('click', () => {
+      button.setAttribute(
+        'data-keyboard-clicks',
+        String(Number(button.getAttribute('data-keyboard-clicks') ?? 0) + 1),
+      );
+    });
+  });
+  await page.keyboard.press('Space');
+  await expect(buttons.nth(2)).toHaveAttribute('data-keyboard-clicks', '1');
+  await expect(page.locator('[data-sidebar-overlay]')).toHaveCount(0);
+});
+
+test('Changes PR action stays in the trailing card area at normal and narrow zoom', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 1000 });
+  for (const scenario of [
+    { width: 360, zoom: 1 },
+    { width: 220, zoom: 2 },
+  ]) {
+    await mountSidebar(page, {
+      ...scenario,
+      theme: 'light',
+      selectedTab: 'overview',
+      hasPullRequest: true,
+    });
+    const card = page.locator('[data-sidebar-launcher="changes"]');
+    const action = card.locator('[data-sidebar-pr-link]');
+    await expect(action).toHaveCount(1);
+    await expect(action).toHaveAttribute('data-sidebar-pr-url', /\/pull\/42$/);
+    const geometry = await card.evaluate((element) => {
+      const box = (selector: string) => {
+        const rect = element.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, width: rect.width };
+      };
+      const label = element.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!;
+      const cardRect = element.getBoundingClientRect();
+      return {
+        card: { left: cardRect.left, right: cardRect.right, width: cardRect.width },
+        row: box('[data-sidebar-label-row]'),
+        label: box('[data-sidebar-launcher-label]'),
+        action: box('[data-sidebar-pr-link]'),
+        labelClientWidth: label.clientWidth,
+        labelScrollWidth: label.scrollWidth,
+      };
+    });
+    expect(geometry.action.width).toBeCloseTo(24 * scenario.zoom, 1);
+    expect(geometry.card.right - geometry.action.right).toBeCloseTo(9 * scenario.zoom, 1);
+    expect(geometry.label.right).toBeLessThanOrEqual(geometry.action.left);
+    expect(geometry.row.right).toBeCloseTo(geometry.action.right, 1);
+    expect(geometry.labelScrollWidth).toBeGreaterThanOrEqual(geometry.labelClientWidth);
+    await action.focus();
+    await expect(action).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(action).toHaveCount(1);
   }
 });
 
@@ -490,6 +900,60 @@ test('Browser and Shell compact cards expand into tested six-member deck bodies'
   await expect(page.locator('[data-workspace-shell-list]')).toBeVisible();
 });
 
+test('expanded footer collapses from every surrounding hit area without swallowing navigator clicks', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 1000 });
+  await mountSidebar(page, {
+    width: 360,
+    zoom: 1,
+    selectedTab: 'agents',
+    reducedMotion: true,
+  });
+
+  const footer = page.locator('[data-sidebar-expanded-footer]');
+  const strip = page.locator('[data-sidebar-tab-strip]');
+  const openAgents = async () => {
+    await page.locator('[data-sidebar-launcher="agents"] .launcher-tile-action').click();
+    await expect(page.locator('[data-sidebar-overlay]')).toBeVisible();
+    await expect(strip).toHaveAttribute('data-active-tab', 'agents');
+  };
+
+  for (const area of ['left', 'right', 'above', 'below'] as const) {
+    const footerBox = await footer.boundingBox();
+    const stripBox = await strip.boundingBox();
+    expect(footerBox).not.toBeNull();
+    expect(stripBox).not.toBeNull();
+    const x =
+      area === 'left'
+        ? footerBox!.x + 2
+        : area === 'right'
+          ? footerBox!.x + footerBox!.width - 2
+          : stripBox!.x + stripBox!.width / 2;
+    const y =
+      area === 'above'
+        ? footerBox!.y + 2
+        : area === 'below'
+          ? footerBox!.y + footerBox!.height - 2
+          : stripBox!.y + stripBox!.height / 2;
+
+    await page.mouse.click(x, y);
+    await expect(page.locator('[data-sidebar-launcher-grid]')).toBeVisible();
+    await openAgents();
+  }
+
+  await strip.dispatchEvent('click');
+  await expect(page.locator('[data-sidebar-overlay]')).toBeVisible();
+  await expect(strip).toHaveAttribute('data-active-tab', 'agents');
+
+  await strip.locator('[data-sidebar-collapsed-tab="context"] button').dispatchEvent('click');
+  await expect(page.locator('[data-sidebar-overlay]')).toBeVisible();
+  await expect(strip).toHaveAttribute('data-active-tab', 'context');
+
+  await strip.locator('[data-sidebar-collapsed-tab="context"] button').dispatchEvent('click');
+  await expect(page.locator('[data-sidebar-launcher-grid]')).toBeVisible();
+});
+
 test('tab deck previews inactive tabs without changing current content and transfers close on activation', async ({
   page,
 }) => {
@@ -507,23 +971,20 @@ test('tab deck previews inactive tabs without changing current content and trans
     const inactiveTabs = strip.locator('[data-sidebar-collapsed-tab]:not([data-active="true"])');
     const expandedCard = page.locator('.sidebar-expanded-card');
     const expandedTab = strip.locator('[data-sidebar-collapsed-tab][data-expanded="true"]');
-    const labels = strip.locator('[data-sidebar-tab-strip-label]');
+    const icons = strip.locator('[data-sidebar-tab-strip-icon]');
     const closes = strip.locator('[data-sidebar-tab-close]');
     await expect(activeTab).toHaveCount(1);
     await expect(tabs).toHaveCount(6);
-    await expect(strip.locator('svg')).toHaveCount(0);
+    await expect(strip.locator('svg')).toHaveCount(6);
     await expect(expandedTab).toHaveCount(1);
-    await expect(labels).toHaveCount(1);
+    await expect(icons).toHaveCount(6);
     await expect(closes).toHaveCount(1);
     const stripBefore = await strip.boundingBox();
     const cardBefore = await expandedCard.boundingBox();
     const headerBefore = await expandedCard.locator('h6').first().textContent();
     const activeId = await activeTab.getAttribute('data-sidebar-collapsed-tab');
-    const activeBefore = (await boxes(activeTab))[0].width;
-    const edgeWidths = (await boxes(inactiveTabs)).map(({ width }) => width);
-    expectEqual(edgeWidths);
-    expect(activeBefore).toBeGreaterThan(Math.max(...edgeWidths) * 3);
-    expectOverlappingDeck(await boxes(tabs));
+    expectEqual((await boxes(tabs)).map(({ width }) => width));
+    expectSegmentedDeck(await boxes(tabs));
     const cardSurfaceStyles = await cardStyles(
       page.locator('.sidebar-expanded-card, [data-sidebar-tab-strip] [data-sidebar-card-surface]'),
     );
@@ -532,23 +993,16 @@ test('tab deck previews inactive tabs without changing current content and trans
     expect(cardSurfaceStyles.every(({ borderWidth }) => borderWidth === '1px')).toBe(true);
     expect(new Set(cardSurfaceStyles.map(({ borderColor }) => borderColor)).size).toBe(1);
     const tabButtonStyles = await cardStyles(tabs.locator('button'));
-    expect(tabButtonStyles[0].radii[0]).not.toBe('0px');
-    expect(tabButtonStyles[0].radii[3]).not.toBe('0px');
-    expect(tabButtonStyles[0].radii[1]).toBe('0px');
-    expect(tabButtonStyles[0].radii[2]).toBe('0px');
-    expect(tabButtonStyles.at(-1)!.radii[0]).toBe('0px');
-    expect(tabButtonStyles.at(-1)!.radii[3]).toBe('0px');
-    expect(tabButtonStyles.at(-1)!.radii[1]).not.toBe('0px');
-    expect(tabButtonStyles.at(-1)!.radii[2]).not.toBe('0px');
-    expect(
-      tabButtonStyles.slice(1, -1).every(({ radii }) => radii.every((radius) => radius === '0px')),
-    ).toBe(true);
+    expect(tabButtonStyles.every(({ radii }) => radii.every((radius) => radius !== '0px'))).toBe(
+      true,
+    );
+    await expect(strip.locator('.sidebar-expanded-tab-indicator')).toHaveCount(1);
     const activeLayer = (await cardStyles(activeTab))[0].zIndex;
     expect(activeLayer).toBeGreaterThan(
       Math.max(...(await cardStyles(inactiveTabs)).map(({ zIndex }) => zIndex)),
     );
-    await expect(labels).toBeAttached();
-    await expect(activeTab.locator('[data-sidebar-tab-strip-label]')).toHaveCount(1);
+    await expect(icons).toHaveCount(6);
+    await expect(activeTab.locator('[data-sidebar-tab-strip-icon]')).toHaveCount(1);
     await expect(activeTab.locator('[data-sidebar-tab-close][data-visible="true"]')).toHaveCount(1);
 
     await inactiveTabs.nth(0).hover();
@@ -557,11 +1011,11 @@ test('tab deck previews inactive tabs without changing current content and trans
     await expect(strip).toHaveAttribute('data-active-tab', activeId!);
     await expect(strip).toHaveAttribute('data-preview-tab', previewId!);
     await expect(expandedTab).toHaveAttribute('data-sidebar-collapsed-tab', previewId!);
-    await expect(labels).toHaveCount(1);
-    await expect(inactiveTabs.nth(0).locator('[data-sidebar-tab-strip-label]')).toHaveCount(1);
-    await expect(activeTab.locator('[data-sidebar-tab-strip-label]')).toHaveCount(0);
+    await expect(icons).toHaveCount(6);
+    await expect(inactiveTabs.nth(0).locator('[data-sidebar-tab-strip-icon]')).toHaveCount(1);
+    await expect(activeTab.locator('[data-sidebar-tab-strip-icon]')).toHaveCount(1);
     await expect(activeTab.locator('[data-sidebar-tab-close]')).toHaveCount(1);
-    await expect(activeTab.locator('[data-sidebar-tab-close][data-visible="true"]')).toHaveCount(0);
+    await expect(activeTab.locator('[data-sidebar-tab-close][data-visible="true"]')).toHaveCount(1);
     const previewLayer = (await cardStyles(inactiveTabs.nth(0)))[0].zIndex;
     const previewLayers = (await cardStyles(tabs)).map(({ zIndex }) => zIndex);
     expect(previewLayer).toBe(Math.max(...previewLayers));
@@ -584,11 +1038,12 @@ test('tab deck previews inactive tabs without changing current content and trans
         };
       });
     expect(previewButtonStyle.cursor).toBe('pointer');
-    expect(previewButtonStyle.paddingLeft).toBe('16px');
-    expect(previewButtonStyle.paddingRight).toBe('16px');
+    expect(previewButtonStyle.paddingLeft).toBe('8px');
+    expect(previewButtonStyle.paddingRight).toBe('8px');
     expect(previewButtonStyle.radii.every((radius) => radius !== '0px')).toBe(true);
-    expect((await boxes(inactiveTabs.nth(0)))[0].width).toBeGreaterThan(
-      (await boxes(activeTab))[0].width * 3,
+    expect((await boxes(inactiveTabs.nth(0)))[0].width).toBeCloseTo(
+      (await boxes(activeTab))[0].width,
+      0,
     );
     expect(await expandedCard.locator('h6').first().textContent()).toBe(headerBefore);
     expect(await strip.boundingBox()).toEqual(stripBefore);
@@ -614,18 +1069,32 @@ test('tab deck previews inactive tabs without changing current content and trans
     await keyboardPreview.locator('button').focus();
     await keyboardPreview.locator('button').press(geometry.zoom === 1 ? 'Enter' : 'Space');
     await expect(strip).toHaveAttribute('data-active-tab', keyboardPreviewId!);
+    await expect(strip).toHaveAttribute('data-slide-direction', 'right');
+    await expect(page.locator('[data-sidebar-overlay]')).toHaveAttribute(
+      'data-sidebar-switch-direction',
+      'right',
+    );
     const transferredActive = strip.locator(
       `[data-sidebar-collapsed-tab="${keyboardPreviewId}"][data-active="true"]`,
     );
     await expect(transferredActive.locator('[data-sidebar-tab-close]')).toHaveCount(1);
     await expect(strip.locator('[data-sidebar-tab-close]')).toHaveCount(1);
-    await expect(transferredActive.locator('[data-sidebar-tab-strip-label]')).toHaveCount(1);
-    await transferredActive.locator('[data-sidebar-tab-close]').click();
+    await expect(transferredActive.locator('[data-sidebar-tab-strip-icon]')).toHaveCount(1);
+    await strip.locator(`[data-sidebar-collapsed-tab="${activeId}"] button`).click();
+    await expect(strip).toHaveAttribute('data-active-tab', activeId!);
+    await expect(strip).toHaveAttribute('data-slide-direction', 'left');
+    await expect(page.locator('[data-sidebar-overlay]')).toHaveAttribute(
+      'data-sidebar-switch-direction',
+      'left',
+    );
+    await strip
+      .locator(`[data-sidebar-collapsed-tab="${activeId}"][data-active="true"] button`)
+      .click();
     await expect(page.locator('[data-sidebar-launcher-grid]')).toBeVisible();
   }
 });
 
-test('overlapping deck keeps one text card and current-owned close for every 2â€“8 tab position', async ({
+test('segmented deck keeps one icon per card and current-owned close for every 2â€“8 tab position', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -646,21 +1115,22 @@ test('overlapping deck keeps one text card and current-owned close for every 2â€
         await expect(tabs).toHaveCount(count);
         await expect(active).toHaveAttribute('data-sidebar-collapsed-tab', `tab-${activeIndex}`);
         await expect(expanded).toHaveAttribute('data-sidebar-collapsed-tab', `tab-${activeIndex}`);
-        await expect(strip.locator('[data-sidebar-tab-strip-label]')).toHaveCount(1);
+        await expect(strip.locator('[data-sidebar-tab-strip-label]')).toHaveCount(0);
         await expect(strip.locator('[data-sidebar-tab-close]')).toHaveCount(1);
         await expect(active.locator('[data-sidebar-tab-close][data-visible="true"]')).toHaveCount(
           1,
         );
-        await expect(
-          strip.locator('svg, [data-status], [data-sidebar-tab-strip-icon]'),
-        ).toHaveCount(0);
+        await expect(strip.locator('[data-sidebar-tab-strip-icon]')).toHaveCount(count);
+        await expect(strip.locator('svg')).toHaveCount(count);
         const stripBox = await strip.boundingBox();
-        const activeWidth = (await boxes(active))[0].width;
-        const inactiveWidths = (await boxes(inactive)).map(({ width }) => width);
-        expect(activeWidth).toBeGreaterThan(Math.max(...inactiveWidths) * 2);
-        expectEqual(inactiveWidths);
-        expectOverlappingDeck(await boxes(tabs));
-        expect((await boxes(tabs)).every(({ height }) => height === stripBox!.height)).toBe(true);
+        expectEqual((await boxes(tabs)).map(({ width }) => width));
+        expectSegmentedDeck(await boxes(tabs));
+        const tabHeights = (await boxes(tabs)).map(({ height }) => height);
+        expectEqual(tabHeights);
+        expect(Math.max(...tabHeights)).toBeLessThan(stripBox!.height);
+        expect(
+          (await boxes(tabs)).every(({ width, height }) => Math.abs(width - height) <= 2),
+        ).toBe(true);
         const restingRadii = await tabs.evaluateAll((elements) =>
           elements.map((element) => {
             const style = getComputedStyle(element.querySelector('button')!);
@@ -672,10 +1142,7 @@ test('overlapping deck keeps one text card and current-owned close for every 2â€
             ];
           }),
         );
-        expect(restingRadii[0][0]).not.toBe('0px');
-        expect(restingRadii[0][3]).not.toBe('0px');
-        expect(restingRadii.at(-1)?.[1]).not.toBe('0px');
-        expect(restingRadii.at(-1)?.[2]).not.toBe('0px');
+        expect(restingRadii.every((radii) => radii.every((radius) => radius !== '0px'))).toBe(true);
         const gaps = await tabs
           .locator('button')
           .evaluateAll((buttons) => buttons.map((button) => getComputedStyle(button).columnGap));
@@ -686,9 +1153,9 @@ test('overlapping deck keeps one text card and current-owned close for every 2â€
             return [style.paddingLeft, style.paddingRight];
           }),
         );
-        expect(
-          horizontalPadding.every(([left, right]) => left === '16px' && right === '16px'),
-        ).toBe(true);
+        expect(horizontalPadding.every(([left, right]) => left === '8px' && right === '8px')).toBe(
+          true,
+        );
 
         await active.hover();
         await expect(active).toHaveAttribute('data-raised', 'true');
@@ -728,15 +1195,15 @@ test('overlapping deck keeps one text card and current-owned close for every 2â€
           });
           expect(previewStyle.cursor).toBe('pointer');
           expect(previewStyle.radii.every((radius) => radius !== '0px')).toBe(true);
-          await expect(strip.locator('[data-sidebar-tab-strip-label]')).toHaveCount(1);
+          await expect(strip.locator('[data-sidebar-tab-strip-icon]')).toHaveCount(count);
           await expect(active.locator('[data-sidebar-tab-close]')).toHaveCount(1);
           await expect(active.locator('[data-sidebar-tab-close][data-visible="true"]')).toHaveCount(
-            0,
+            1,
           );
           const previewStripBox = await strip.boundingBox();
           expect(previewStripBox?.width).toBe(stripBox?.width);
           expect(previewStripBox?.height).toBe(stripBox?.height);
-          expectOverlappingDeck(await boxes(tabs));
+          expectSegmentedDeck(await boxes(tabs));
           await page.mouse.move(0, 0);
           await expect(expanded).toHaveAttribute(
             'data-sidebar-collapsed-tab',
@@ -790,13 +1257,13 @@ test('reduced motion settles tab allocation immediately and mode transitions res
   await expect(strip).toHaveAttribute('data-active-tab', activeId!);
   await expect(strip).toHaveAttribute('data-preview-tab', previewId!);
   await expect(expanded).toHaveAttribute('data-sidebar-collapsed-tab', previewId!);
-  await expect(active.locator('[data-sidebar-tab-close][data-visible="true"]')).toHaveCount(0);
+  await expect(active.locator('[data-sidebar-tab-close][data-visible="true"]')).toHaveCount(1);
   expect(await strip.boundingBox()).toEqual(stripBefore);
 
   await page.mouse.move(0, 0);
   await expect(expanded).toHaveAttribute('data-sidebar-collapsed-tab', activeId!);
   await expect(active.locator('button')).toHaveAttribute('data-tab-action', 'close');
-  await active.locator('[data-sidebar-tab-close]').click();
+  await active.locator('button').click();
   const gridCards = page.locator('[data-sidebar-launcher-grid] [data-sidebar-launcher]');
   await expect(gridCards).toHaveCount(4);
   const restored = await boxes(gridCards);

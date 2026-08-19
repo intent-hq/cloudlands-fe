@@ -2,6 +2,8 @@
  * @vitest-environment jsdom
  */
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('svelte-fa', async () => ({
@@ -19,6 +21,8 @@ import type { Workspace } from '$shared/types';
 import {
   SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
   SUBSCRIPTION_CARD_SURFACE_CLASS,
+  SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
+  EVENT_WAKEUP_IN_THREAD_SPACING_CLASS,
 } from '../subscription-disclosure';
 
 type Metadata = {
@@ -57,6 +61,24 @@ afterEach(() => {
 });
 
 describe('EventWakeupBanner details disclosure', () => {
+  it('uses only named standard avatar geometry in the production wake-up stack', () => {
+    const avatarSource = readFileSync(
+      resolve(process.cwd(), 'src/lib/components/chat/InlineAgentAvatar.svelte'),
+      'utf8',
+    );
+    const bannerSource = readFileSync(
+      resolve(process.cwd(), 'src/lib/components/chat/EventWakeupBanner.svelte'),
+      'utf8',
+    );
+
+    expect(avatarSource).toContain('variant="standard"');
+    expect(avatarSource).not.toContain('size={18}');
+    expect(avatarSource).not.toContain('rounded-full');
+    expect(bannerSource).toContain('<AgentAvatarStack');
+    expect(bannerSource).toContain('variant="standard"');
+    expect(bannerSource).not.toMatch(/-space-x-|translate-y-|top-\[/);
+  });
+
   it('uses the shared compact subscription card shell, header rhythm, and separator', async () => {
     renderBanner({
       type: 'event_notification',
@@ -72,19 +94,21 @@ describe('EventWakeupBanner details disclosure', () => {
     ]) {
       expect(card.classList.contains(token)).toBe(true);
     }
-    expect(card.classList.contains('mt-4')).toBe(true);
+    expect(card.classList.contains(EVENT_WAKEUP_IN_THREAD_SPACING_CLASS)).toBe(true);
     expect(card.classList.contains('mb-4')).toBe(false);
     expect(card.getAttribute('data-external-spacing-owner')).toBe('event-wakeup-card');
+    for (const token of ['px-1.5', 'py-1']) {
+      expect(card.classList.contains(token)).toBe(false);
+    }
     const header = screen.getByTestId('event-wakeup-header');
-    expect(header.className).toContain('items-center');
-    expect(header.className).toContain('px-3');
-    expect(header.className).toContain('py-2');
-    expect(header.className).toContain('min-h-9');
+    for (const token of SUBSCRIPTION_DISCLOSURE_ROW_CLASS.split(' ')) {
+      expect(header.classList.contains(token)).toBe(true);
+    }
 
     await fireEvent.click(summary);
     const details = screen.getByTestId('event-wakeup-details');
     expect(details.className).toContain('border-t');
-    expect(details.className).toContain('border-border/40');
+    expect(details.className).toContain('border-border');
     expect(details.className).toContain('px-3');
     expect(details.className).toContain('py-2');
     expect(details.className).not.toContain('border-l');
@@ -104,8 +128,7 @@ describe('EventWakeupBanner details disclosure', () => {
     for (const token of SUBSCRIPTION_CARD_SURFACE_CLASS.split(' ')) {
       expect(card.classList.contains(token)).toBe(false);
     }
-    expect(card.classList.contains('mt-3')).toBe(false);
-    expect(card.classList.contains('mt-4')).toBe(false);
+    expect(card.classList.contains(EVENT_WAKEUP_IN_THREAD_SPACING_CLASS)).toBe(false);
     expect(card.classList.contains('mb-4')).toBe(false);
     expect(card.getAttribute('data-embedded')).toBe('true');
     expect(card.hasAttribute('data-external-spacing-owner')).toBe(false);
@@ -161,7 +184,7 @@ describe('EventWakeupBanner details disclosure', () => {
     const items = within(details).getAllByTestId('event-wakeup-detail');
     expect(items).toHaveLength(4);
     expect(items.map((item) => item.textContent)).toEqual([
-      expect.stringContaining('Agent finished'),
+      expect.stringContaining('Builder finished'),
       expect.stringContaining('note changes'),
       expect.stringContaining('custom:signal'),
       expect.stringContaining('custom:signal'),
@@ -207,6 +230,90 @@ describe('EventWakeupBanner details disclosure', () => {
     expect(report.className).toContain('whitespace-pre-wrap');
   });
 
+  it('assigns semantic, compact typography roles without a larger type class', async () => {
+    const reportText =
+      'Preserve this report exactly.\n\nUnicode 你好世界 and token-' + 'unbroken'.repeat(20);
+    renderBanner({
+      type: 'event_notification',
+      eventCount: 1,
+      eventTypes: ['agent:idle'],
+      events: [
+        {
+          type: 'agent:idle',
+          timestamp: '2026-08-12T12:00:00.000Z',
+          data: { agentName: 'Builder', completionReport: reportText },
+        },
+      ],
+    });
+
+    const name = screen.getByTestId('event-wakeup-agent-name');
+    const status = screen.getByTestId('event-wakeup-status');
+    expect(name.tagName).toBe('STRONG');
+    expect(name.className).toContain('type-body');
+    expect(name.className).toContain('font-normal');
+    expect(name.className).toContain('text-muted-foreground');
+    expect(status.tagName).toBe('SPAN');
+    expect(status.className).toContain('type-body');
+    expect(status.className).toContain('font-normal');
+    expect(status.className).toContain('text-muted-foreground');
+
+    await fireEvent.click(screen.getByTestId('event-wakeup-summary'));
+    const timestamp = screen.getByTestId('event-wakeup-timestamp');
+    const report = screen.getByTestId('event-wakeup-report');
+    expect(timestamp.tagName).toBe('TIME');
+    expect(timestamp.className).toContain('type-caption');
+    expect(timestamp.className).toContain('tabular-nums');
+    expect(timestamp.className).toContain('text-subtle');
+    expect(report.tagName).toBe('P');
+    expect(report.textContent).toBe(reportText);
+    expect(report.className).toContain('type-body');
+    expect(report.className).toContain('max-w-[68ch]');
+    expect(report.className).toContain('[overflow-wrap:anywhere]');
+
+    for (const element of [name, status, timestamp, report]) {
+      expect(element.className).not.toMatch(/type-(?:title|display)|text-(?:base|lg|xl|2xl)/);
+    }
+  });
+
+  it('keeps finished and sent-a-message summaries on identical collapsed geometry', async () => {
+    const { rerender } = renderBanner({
+      type: 'event_notification',
+      eventCount: 1,
+      eventTypes: ['agent:idle'],
+      events: [
+        {
+          type: 'agent:idle',
+          timestamp: '2026-08-12T12:00:00.000Z',
+          data: { agentName: 'Builder' },
+        },
+      ],
+    });
+    const finishedHeaderClass = screen.getByTestId('event-wakeup-header').className;
+    const finishedSummaryClass = screen.getByTestId('event-wakeup-summary').className;
+    expect(screen.getByTestId('event-wakeup-status').textContent?.trim()).toBe('finished');
+
+    await rerender({
+      metadata: {
+        type: 'event_notification',
+        eventCount: 1,
+        eventTypes: ['agent:reportToParent'],
+        events: [
+          {
+            type: 'agent:reportToParent',
+            timestamp: '2026-08-12T12:00:00.000Z',
+            data: { agentName: 'Builder' },
+          },
+        ],
+      },
+      asDivider: true,
+      showAgentCards: false,
+    });
+
+    expect(screen.getByTestId('event-wakeup-status').textContent?.trim()).toBe('sent a message');
+    expect(screen.getByTestId('event-wakeup-header').className).toBe(finishedHeaderClass);
+    expect(screen.getByTestId('event-wakeup-summary').className).toBe(finishedSummaryClass);
+  });
+
   it('retains useful legacy type and count-only fallbacks', async () => {
     const { rerender } = renderBanner({
       type: 'event_notification',
@@ -226,6 +333,78 @@ describe('EventWakeupBanner details disclosure', () => {
     expect(screen.getByTestId('event-wakeup-details').textContent).toContain(
       '3 events triggered this response',
     );
+  });
+
+  it.each([
+    ['one event', [{ type: 'agent:idle', data: { agentName: 'Alpha' } }], 'Alpha finished'],
+    [
+      'two events with failure',
+      [
+        { type: 'agent:idle', data: { agentName: 'Alpha' } },
+        { type: 'agent:failed', data: { agentName: 'Beta' } },
+      ],
+      'Alpha finished & Beta failed',
+    ],
+    [
+      'four ordered events with duplicate and attention',
+      [
+        { type: 'agent:idle', data: { agentName: 'Alpha' } },
+        { type: 'agent:idle', data: { agentName: 'Alpha' } },
+        { type: 'agent:status-changed', data: { agentName: 'Beta', status: 'waiting' } },
+        { type: 'custom:unknown', data: {} },
+      ],
+      'Alpha finished & Beta is waiting & Custom unknown',
+    ],
+  ])('uses a descriptive, ordered, deduplicated header for %s', (_, events, expected) => {
+    renderBanner({
+      type: 'event_notification',
+      eventCount: events.length,
+      eventTypes: events.map((event) => event.type),
+      events: events.map((event, index) => ({
+        ...event,
+        timestamp: `2026-08-16T03:0${index}:00.000Z`,
+      })),
+    });
+
+    const summary = screen.getByTestId('event-wakeup-summary');
+    expect(summary.getAttribute('aria-label')).toBe(expected);
+    expect(within(summary).getByTitle(expected)).toBeTruthy();
+  });
+
+  it('keeps five-event bursts count-only and exposes the full truncated header accessibly', async () => {
+    const events = Array.from({ length: 5 }, (_, index) => ({
+      type: 'agent:completed',
+      timestamp: `2026-08-16T03:0${index}:00.000Z`,
+      data: { agentName: `Agent ${index}` },
+    }));
+    const { rerender } = renderBanner({
+      type: 'event_notification',
+      eventCount: events.length,
+      eventTypes: events.map((event) => event.type),
+      events,
+    });
+    expect(screen.getByTestId('event-wakeup-summary').getAttribute('aria-label')).toBe('5 events');
+
+    const longName = 'Long agent identity '.repeat(8).trim();
+    await rerender({
+      metadata: {
+        type: 'event_notification',
+        eventCount: 1,
+        eventTypes: ['agent:failed'],
+        events: [
+          {
+            type: 'agent:failed',
+            timestamp: '2026-08-16T03:00:00.000Z',
+            data: { agentName: longName },
+          },
+        ],
+      },
+      asDivider: true,
+      showAgentCards: false,
+    });
+    const fullLabel = `${longName} failed`;
+    expect(screen.getByTestId('event-wakeup-summary').getAttribute('aria-label')).toBe(fullLabel);
+    expect(within(screen.getByTestId('event-wakeup-summary')).getByTitle(fullLabel)).toBeTruthy();
   });
 
   it('renders PR notifications and a navigable legacy completion avatar inside the same surface', async () => {

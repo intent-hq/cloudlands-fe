@@ -510,17 +510,12 @@
         <div
           class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3"
         >
-          <div class="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+          <div class="flex items-center gap-2 text-sm text-error-foreground">
             <span class="font-medium">{m.codeReview_panel_reviewFailed_label()}</span>
             <span>{error}</span>
           </div>
           {#if onRerun}
-            <Button
-              variant="ghost"
-              size="xs"
-              class="mt-2 text-red-600 dark:text-red-400"
-              onclick={onRerun}
-            >
+            <Button variant="ghost" size="xs" class="mt-2 text-error-foreground" onclick={onRerun}>
               <Fa icon={faRotateRight} class="h-3 w-3 mr-1" />
               {m.codeReview_panel_tryAgain_label()}
             </Button>
@@ -596,7 +591,7 @@
               transition:fly={{ y: 8, duration: 200, delay: i * 100 }}
             >
               <!-- Header skeleton -->
-              <div class="flex items-center gap-3 px-4 py-3 border-b border-border/50">
+              <div class="flex items-center gap-3 px-4 py-3 border-b border-border">
                 <Skeleton class="h-8 w-8 rounded-full" />
                 <div class="flex-1 space-y-1">
                   <Skeleton class="h-4 w-32" />
@@ -609,7 +604,7 @@
                 <Skeleton class="h-3 w-5/6" />
               </div>
               <!-- Footer skeleton -->
-              <div class="px-4 py-2 border-t border-border/50">
+              <div class="px-4 py-2 border-t border-border">
                 <Skeleton class="h-6 w-20" />
               </div>
             </div>

@@ -1,19 +1,15 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { onDestroy, untrack } from 'svelte';
+  import { untrack } from 'svelte';
   import {
     faArrowUpRightFromSquare,
     faBoxArchive,
     faTrash,
   } from '@fortawesome/free-solid-svg-icons';
   import WorkspaceCard from '$lib/components/workspace/WorkspaceCard.svelte';
-  import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
+  import SidebarOverflowMenu from '$lib/components/ui/sidebar-context-menu/SidebarOverflowMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
-  import { store as appStore } from "$store/renderer/store";
-  import {
-    decrementContextMenuOpen,
-    incrementContextMenuOpen,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { store as appStore } from '$store/renderer/store';
   import {
     requestArchiveWorkspace,
     requestDeleteWorkspace,
@@ -29,8 +25,6 @@
 
   let { workspaceIds }: Props = $props();
   let workspacesById = $state<Record<string, Workspace | undefined>>({});
-  let overflowMenu: { workspaceId: string; x: number; y: number } | null = $state(null);
-  let hadOverflowMenu = false;
 
   function blockContextMenuCapture(node: HTMLElement) {
     const handleContextMenu = (event: MouseEvent) => {
@@ -87,45 +81,12 @@
     }
   }
 
-  function openOverflowMenu(event: MouseEvent, workspaceId: string) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    overflowMenu = {
-      workspaceId,
-      x: rect.left,
-      y: rect.bottom + 4,
-    };
-  }
-
-  function closeOverflowMenu() {
-    overflowMenu = null;
-  }
-
-  $effect(() => {
-    const isOpen = overflowMenu !== null;
-
-    if (isOpen && !hadOverflowMenu) {
-      appStore.dispatch(incrementContextMenuOpen());
-    } else if (!isOpen && hadOverflowMenu) {
-      appStore.dispatch(decrementContextMenuOpen());
-    }
-
-    hadOverflowMenu = isOpen;
-  });
-
-  onDestroy(() => {
-    if (hadOverflowMenu) appStore.dispatch(decrementContextMenuOpen());
-  });
-
   function getOverflowMenuItems(workspaceId: string): SidebarMenuEntry[] {
     return [
       {
         id: 'open',
         label: m.chat_chatWorkspaceCard_menu_open_label(),
         onClick: () => {
-          closeOverflowMenu();
           void handleWorkspaceClick(workspaceId);
         },
       },
@@ -134,7 +95,6 @@
         label: m.chat_chatWorkspaceCard_menu_openNewWindow_label(),
         icon: faArrowUpRightFromSquare,
         onClick: () => {
-          closeOverflowMenu();
           void handleWorkspaceOpenInNewWindow(workspaceId);
         },
       },
@@ -145,7 +105,6 @@
         icon: faBoxArchive,
         onClick: () => {
           appStore.dispatch(requestArchiveWorkspace(workspaceId));
-          closeOverflowMenu();
         },
       },
       {
@@ -155,7 +114,6 @@
         destructive: true,
         onClick: () => {
           appStore.dispatch(requestDeleteWorkspace(workspaceId));
-          closeOverflowMenu();
         },
       },
     ];
@@ -170,27 +128,22 @@
         <WorkspaceCard
           {workspace}
           variant="compact"
-          class="rounded-md border border-border/40 bg-background/40"
+          class="rounded-md border border-border bg-background/40"
           onClick={(event) => handleWorkspaceClick(workspaceId, event)}
         >
           {#snippet actions()}
-            <button
-              type="button"
+            <SidebarOverflowMenu
+              items={getOverflowMenuItems(workspaceId)}
+              orientation="horizontal"
               class="flex h-5 w-5 -my-1 cursor-pointer items-center justify-center rounded text-ghost transition-all hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:outline-none"
-              aria-label={m.chat_chatWorkspaceCard_actionsFor_ariaLabel({
+              ariaLabel={m.chat_chatWorkspaceCard_actionsFor_ariaLabel({
                 name: workspace.title || workspace.id,
               })}
-              aria-haspopup="menu"
-              aria-expanded={overflowMenu?.workspaceId === workspaceId}
-              title={m.chat_chatWorkspaceCard_actions_title()}
-              onclick={(event) => openOverflowMenu(event, workspaceId)}
-            >
-              ⋯
-            </button>
+            />
           {/snippet}
         </WorkspaceCard>
       {:else}
-        <div class="rounded-md border border-border/50 bg-muted/10 px-3 py-2 text-left">
+        <div class="rounded-md border border-border bg-muted/10 px-3 py-2 text-left">
           <div class="truncate font-mono text-xs text-foreground">{workspaceId}</div>
           <div class="mt-0.5 text-xs text-subtle">
             {m.chat_chatWorkspaceCard_notFound_label()}
@@ -199,13 +152,4 @@
       {/if}
     {/each}
   </div>
-
-  {#if overflowMenu}
-    <SidebarContextMenu
-      x={overflowMenu.x}
-      y={overflowMenu.y}
-      items={getOverflowMenuItems(overflowMenu.workspaceId)}
-      onClickOutside={closeOverflowMenu}
-    />
-  {/if}
 {/if}

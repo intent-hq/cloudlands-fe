@@ -7,7 +7,7 @@
    */
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
-  import { faChevronDown, faChevronRight, faFile } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faChevronLeft, faFile } from '@fortawesome/free-solid-svg-icons';
   import type { WalkthroughSection as SectionType, WalkthroughAnnotation } from './types';
   import WalkthroughDiffViewer from './WalkthroughDiffViewer.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -66,7 +66,7 @@
     class="w-full flex items-center gap-3 px-4 py-3 bg-muted/30 hover:bg-muted/50 transition-colors text-left"
     onclick={toggleExpanded}
   >
-    <Fa icon={expanded ? faChevronDown : faChevronRight} class="h-3.5 w-3.5 text-ghost" />
+    <Fa icon={expanded ? faChevronDown : faChevronLeft} class="h-3.5 w-3.5 text-ghost" />
 
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2">

@@ -17,7 +17,7 @@
     faComment,
     faUser,
     faChevronDown,
-    faChevronUp,
+    faChevronLeft,
     faLightbulb,
     faInfoCircle,
     faExclamationCircle,
@@ -182,21 +182,18 @@
 
   <!-- Suggested changes section (collapsible) -->
   {#if hasConversation}
-    <div class="border-t border-slate-200 dark:border-slate-700">
+    <div class="border-t border-border">
       <button
         type="button"
         onclick={() => (showSuggestedChanges = !showSuggestedChanges)}
         class="w-full flex items-center justify-between px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
       >
         <span class="font-medium">{m.codeReview_commentThread_suggestedChanges_label()}</span>
-        <Fa icon={showSuggestedChanges ? faChevronUp : faChevronDown} class="h-3 w-3" />
+        <Fa icon={showSuggestedChanges ? faChevronDown : faChevronLeft} class="h-3 w-3" />
       </button>
 
       {#if showSuggestedChanges}
-        <div
-          class="px-4 pb-3 divide-y divide-slate-100 dark:divide-slate-700"
-          transition:slide={{ duration: 150 }}
-        >
+        <div class="px-4 pb-3 divide-y divide-border" transition:slide={{ duration: 150 }}>
           {#each messages as msg, i (msg.id)}
             <div
               class="flex items-start gap-3 py-2"
@@ -233,7 +230,7 @@
   <!-- Agent responding indicator -->
   {#if isAgentResponding}
     <div
-      class="flex items-center gap-2 px-4 py-2 text-xs text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700"
+      class="flex items-center gap-2 px-4 py-2 text-xs text-slate-500 dark:text-slate-400 border-t border-border"
     >
       <Fa icon={faSpinner} class="h-3 w-3 animate-spin" />
       <span>{m.codeReview_commentThread_agentResponding_label()}</span>
@@ -241,7 +238,7 @@
   {/if}
 
   <!-- Ask a question section -->
-  <div class="border-t border-slate-200 dark:border-slate-700 px-4 py-2">
+  <div class="border-t border-border px-4 py-2">
     {#if showReplyInput}
       <div class="flex items-center gap-2" transition:slide={{ duration: 100 }}>
         <input
@@ -250,7 +247,7 @@
           onkeydown={handleKeydown}
           placeholder={m.codeReview_commentThread_followUp_placeholder()}
           disabled={isSending}
-          class="flex-1 h-8 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500/50 disabled:opacity-50"
+          class="flex-1 h-8 rounded-md border border-border bg-white dark:bg-slate-800 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500/50 disabled:opacity-50"
         />
         <button
           type="button"

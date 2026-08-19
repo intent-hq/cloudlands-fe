@@ -123,10 +123,6 @@ vi.mock('$store/renderer/slices/workspace-summaries/workspace-summaries-selector
   ),
 }));
 
-vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
-  default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
-}));
-
 const baseWorkspace = {
   id: 'ws-1',
   title: 'Hover Card Workspace',
@@ -135,6 +131,7 @@ const baseWorkspace = {
   timeline: [],
   conversationInfo: [],
   status: WorkspaceStatusEnum.Active,
+  displayStatus: 'idle',
   createdAt: '2026-05-05T00:00:00.000Z',
   updatedAt: '2026-05-05T00:00:00.000Z',
   lastActivity: '2026-05-05T19:00:00.000Z',
@@ -356,6 +353,88 @@ describe('WorkspaceHoverCard', () => {
     expect(status.className).not.toMatch(/line-clamp|truncate|text-ellipsis/);
   });
 
+  it('renders title, repository, and named semantic status as three ordered rows', async () => {
+    const { container } = await renderHoverCard({ displayStatus: 'in_progress' });
+    const header = container.querySelector('[data-workspace-hover-card-header]');
+    const rows = header?.querySelectorAll(
+      '[data-workspace-hover-card-title-row], [data-workspace-hover-card-repo-row], [data-workspace-hover-card-status-row]',
+    );
+    const statusRow = container.querySelector('[data-workspace-hover-card-status-row]');
+
+    expect(rows).toHaveLength(3);
+    expect([...rows!].map((row) => normalizedText(row))).toEqual([
+      'Hover Card Workspace',
+      'augment/intent',
+      'In progress',
+    ]);
+    expect(statusRow?.querySelector('[data-workspace-status="in_progress"]')).toBeTruthy();
+    expect(statusRow?.querySelector('[data-workspace-status]')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    );
+  });
+
+  it('keeps one shared workspace icon and named agent surfaces through live state changes', async () => {
+    mocks.agentSessionsByWorkspace['ws-1'] = [
+      {
+        id: 'agent-running',
+        name: 'Running Agent',
+        status: 'running',
+        messages: [],
+      } as AgentSession,
+      {
+        id: 'agent-waiting',
+        name: 'Waiting Agent',
+        status: 'waiting',
+        messages: [],
+      } as AgentSession,
+    ];
+
+    const view = await renderHoverCard({
+      displayStatus: 'in_progress',
+      agentSummary: { agentIds: ['agent-running', 'agent-waiting'] },
+    });
+    const workspaceIcon = view.container.querySelector('[data-workspace-status]');
+    const agentIcons = view.container.querySelectorAll('[data-agent-avatar-with-state]');
+
+    expect(view.container.querySelectorAll('[data-workspace-status]')).toHaveLength(1);
+    expect(workspaceIcon?.getAttribute('data-workspace-status')).toBe('in_progress');
+    expect(workspaceIcon?.getAttribute('data-workspace-status-visual')).toBe('dot');
+    expect(workspaceIcon?.getAttribute('data-workspace-status-icon')).toBeNull();
+    expect(agentIcons).toHaveLength(2);
+    expect([...agentIcons].map((icon) => icon.getAttribute('data-avatar-variant'))).toEqual([
+      'standard',
+      'standard',
+    ]);
+    expect([...agentIcons].map((icon) => icon.getAttribute('data-avatar-state'))).toEqual([
+      'running',
+      'waiting',
+    ]);
+
+    await view.rerender({
+      workspace: { ...baseWorkspace, displayStatus: 'blocked' } as Workspace,
+    });
+    expect(view.container.querySelector('[data-workspace-status]')).toBe(workspaceIcon);
+    expect(workspaceIcon?.getAttribute('data-workspace-status')).toBe('blocked');
+    expect(workspaceIcon?.getAttribute('data-workspace-status-icon')).toBe('xmark');
+  });
+
+  it('uses named card-stack agent indicators for unread cover-card summaries', async () => {
+    const { container } = await renderHoverCard({
+      attention: 'unread',
+      agentSummary: { agentIds: ['agent-unread-1', 'agent-unread-2'] },
+    });
+
+    const stack = container.querySelector('[data-workspace-hover-card-agent-stack]');
+    const avatars = stack?.querySelectorAll('[data-agent-avatar-with-state]') ?? [];
+    expect(avatars).toHaveLength(2);
+    expect(
+      [...avatars].every((avatar) => avatar.getAttribute('data-avatar-variant') === 'card-stack'),
+    ).toBe(true);
+    expect(
+      [...avatars].every((avatar) => avatar.getAttribute('data-avatar-state') === 'unread'),
+    ).toBe(true);
+  });
+
   it('does not render status placeholder text when the workspace status message is empty', async () => {
     const { container } = await renderHoverCard({ statusMessage: '   ' });
 
@@ -374,7 +453,7 @@ describe('WorkspaceHoverCard', () => {
     expect(root.className.split(/\s+/)).not.toContain('border');
     expect(root.className.split(/\s+/)).not.toContain('border-border');
     expect(root.className).not.toMatch(/rounded/);
-    expect(root.className).toContain('shadow-2xl');
+    expect(root.className).toContain('shadow-(--elevation-overlay)');
     expect(root.className).toContain('ring-1');
   });
 

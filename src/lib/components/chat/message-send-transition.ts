@@ -1,4 +1,5 @@
 import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
+import { followToBottom } from '$lib/utils/smartScroll';
 
 export const MESSAGE_SEND_TRANSITION_DURATION_MS = 280;
 export const MESSAGE_SEND_TRANSITION_EASING = 'cubic-bezier(0.2, 0, 0, 1)';
@@ -124,6 +125,22 @@ export function dismissMessageSendLaunchBubble(bubble: HTMLElement | null): Prom
   });
 }
 
+export function settleFollowedSendAtBottom(
+  scrollContainer: HTMLElement,
+  shouldFollow: () => boolean,
+): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (scrollContainer.isConnected && shouldFollow()) {
+          followToBottom(scrollContainer);
+        }
+        resolve();
+      });
+    });
+  });
+}
+
 export function animateMessageSend({
   origin,
   target,
@@ -134,6 +151,7 @@ export function animateMessageSend({
   signal,
 }: AnimateMessageSendOptions): Promise<void> {
   let animation: Animation | null = null;
+  let geometryObserver: ResizeObserver | null = null;
   let watchdog: ReturnType<typeof setTimeout> | null = null;
   let overlay: HTMLElement | null = launchBubble ?? null;
   let settled = false;
@@ -145,6 +163,7 @@ export function animateMessageSend({
   const owner: TargetTransitionOwner = { cancel: () => cleanup() };
   const handleAbort = () => cleanup();
   const handlePageHide = () => cleanup();
+  const handleViewportResize = () => cleanup();
   const handleVisibilityChange = () => {
     if (document.hidden) cleanup();
   };
@@ -156,6 +175,8 @@ export function animateMessageSend({
     signal?.removeEventListener('abort', handleAbort);
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     window.removeEventListener('pagehide', handlePageHide);
+    window.removeEventListener('resize', handleViewportResize);
+    geometryObserver?.disconnect();
     try {
       animation?.cancel();
     } catch {
@@ -171,10 +192,7 @@ export function animateMessageSend({
 
   try {
     if (followBottom) {
-      scrollContainer.scrollTop = Math.max(
-        0,
-        scrollContainer.scrollHeight - scrollContainer.clientHeight,
-      );
+      followToBottom(scrollContainer);
     }
     if (reducedMotion || !target.isConnected || signal?.aborted || document.hidden) {
       cleanup();
@@ -223,6 +241,19 @@ export function animateMessageSend({
     signal?.addEventListener('abort', handleAbort, { once: true });
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('pagehide', handlePageHide, { once: true });
+    window.addEventListener('resize', handleViewportResize, { once: true });
+    if (typeof ResizeObserver !== 'undefined') {
+      geometryObserver = new ResizeObserver(() => {
+        const currentRect = target.getBoundingClientRect();
+        if (
+          Math.abs(currentRect.width - targetRect.width) > 0.5 ||
+          Math.abs(currentRect.height - targetRect.height) > 0.5
+        ) {
+          cleanup();
+        }
+      });
+      geometryObserver.observe(target);
+    }
     watchdog = setTimeout(cleanup, MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS);
     if (signal?.aborted || document.hidden) {
       cleanup();

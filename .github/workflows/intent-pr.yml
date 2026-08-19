@@ -458,7 +458,9 @@ jobs:
       contents: read
     env:
       GIT_TERMINAL_PROMPT: '0'
-      NODE_OPTIONS: '--max-old-space-size=4096'
+      # The full CT Vite bundle transforms more than 7,400 modules and needs
+      # headroom while Rollup renders chunks.
+      NODE_OPTIONS: '--max-old-space-size=8192'
     steps:
       - name: Checkout
         uses: actions/checkout@v7

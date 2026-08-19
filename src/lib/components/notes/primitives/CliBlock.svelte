@@ -15,7 +15,7 @@
   import { invoke, listenSync } from '$lib/electron-bridge';
   import { toast } from 'svelte-sonner';
   import { onDestroy } from 'svelte';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
   import {
@@ -191,7 +191,7 @@
           }}
           title={m.notes_cliBlock_viewAgent_tooltip()}
         >
-          <AuggieAvatar agentId={linkedAgentId} size={16} />
+          <AgentAvatar agentId={linkedAgentId} size={16} />
         </button>
       {:else}
         <Fa icon={faTerminal} size="sm" class="shrink-0 text-muted-foreground" />

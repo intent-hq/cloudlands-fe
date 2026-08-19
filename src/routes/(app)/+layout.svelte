@@ -91,6 +91,7 @@
     selectWorkspaceLoading,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectZoomFactor } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { togglePanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     selectBootRouteGateResolved,
     selectLocalSetupGate,
@@ -187,6 +188,7 @@
       currentWorkspaceId !== 'new' &&
       $page.url.pathname.startsWith('/workspace/'),
   );
+  let workspaceColumnsOverlap = $state(false);
   const globalModals = selectGlobalModals();
   const featureCodeDialogOpen = selectFeatureCodeDialogOpen();
   const isPaletteOpen$ = selectIsPaletteOpen();
@@ -565,6 +567,15 @@
       // i18n-ignore (shortcut registry metadata, not rendered in UI)
       register({ key: 'p', ctrl: true, description: 'Quick Open (Win/Linux)', action: openFile });
     }
+    register({
+      key: 'p',
+      meta: isMac,
+      ctrl: !isMac,
+      alt: true,
+      description: 'Toggle Panel Open Mode', // i18n-ignore (shortcut registry metadata, not rendered in UI)
+      skipInEditableElements: true,
+      action: () => appStore.dispatch(togglePanelOpenMode()),
+    });
     // Cmd+Shift+P (Mac) / Ctrl+Shift+P (Win/Linux) -> command palette (VS Code-style)
     register({
       key: 'p',
@@ -911,7 +922,7 @@
 <TooltipProvider>
   <!-- Main Layout with Title Bar -->
   <div
-    class="panel-layout-container relative h-screen w-screen overflow-hidden text-foreground flex flex-col"
+    class="panel-layout-container relative h-screen w-screen overflow-hidden bg-transparent text-foreground flex flex-col"
     aria-label={m.layout_appShell_shell_ariaLabel()}
     data-testid="app-ready"
   >
@@ -920,10 +931,11 @@
 
     <!-- Main Content Area with Sidebar Nav -->
     <ErrorBoundary componentName="MainLayout">
-      <div class="workspace-frame-row flex flex-1 min-h-0 pb-2 pl-2">
+      <div class="workspace-frame-row flex flex-1 min-h-0 bg-transparent pb-2 pl-2">
         <!-- Sidebar Panel (persistent, pushes content) -->
         <div
-          class="flex min-h-0 shrink-0"
+          class="workspace-sidebar-frame relative z-40 flex min-h-0 shrink-0 bg-transparent"
+          class:workspace-columns-overlap={showWorkspaceColumns && workspaceColumnsOverlap}
           style:padding-top={showWorkspaceColumns
             ? `${getCounterScaledTitlebarHeight($zoomFactor)}px`
             : undefined}
@@ -933,7 +945,12 @@
         </div>
 
         <!-- Workspace content area -->
-        <div class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1">
+        <div
+          class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1 bg-transparent"
+          style:padding-top={showWorkspaceColumns
+            ? `${getCounterScaledTitlebarHeight($zoomFactor)}px`
+            : undefined}
+        >
           <main
             class="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden {showWorkspaceColumns
               ? ''
@@ -947,6 +964,7 @@
             >
               {#if showWorkspaceColumns}
                 <WorkspaceColumnsView
+                  onHorizontalOverlapChange={(overlap) => (workspaceColumnsOverlap = overlap)}
                   onMountedWorkspaceIdsChange={(mounted) => (columnsMountedWorkspaceIds = mounted)}
                 />
               {:else}

@@ -151,26 +151,24 @@ describe('browserIpcSaga', () => {
     };
     await emit({ url: 'https://new.test', position: 'replace', workspaceId: 'ws-1' });
 
-    expect(actions).toEqual([
+    expect(actions).toMatchObject([
       {
-        type: 'panelLayout/openTabInAdjacentOrSplit',
+        type: 'panelLayout/openTabInNewRootColumn',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://one.test'),
           sourcePanelId: undefined,
-          animated: false,
           force: false,
           newTabId: `tab-${NOW}-i`,
           timestamp: NOW,
         },
       },
       {
-        type: 'panelLayout/openTabInAdjacentOrSplit',
+        type: 'panelLayout/openTabInNewRootColumn',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://two.test'),
           sourcePanelId: undefined,
-          animated: false,
           force: false,
           newTabId: `tab-${NOW}-i`,
           timestamp: NOW,
@@ -188,12 +186,11 @@ describe('browserIpcSaga', () => {
         },
       },
       {
-        type: 'panelLayout/openTabInAdjacentOrSplit',
+        type: 'panelLayout/openTabInNewRootColumn',
         payload: {
           wsId: 'ws-2',
           tab: TAB('https://four.test'),
           sourcePanelId: undefined,
-          animated: false,
           force: false,
           newTabId: `tab-${NOW}-i`,
           timestamp: NOW,
@@ -247,14 +244,13 @@ describe('browserIpcSaga', () => {
       tabId: 'tab-main-3',
     });
 
-    expect(actions).toEqual([
+    expect(actions).toMatchObject([
       {
-        type: 'panelLayout/openTabInAdjacentOrSplit',
+        type: 'panelLayout/openTabInNewRootColumn',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://one.test'),
           sourcePanelId: undefined,
-          animated: false,
           force: false,
           allowDuplicate: true,
           newTabId: 'tab-main-1',
@@ -289,6 +285,35 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
+  it('pins the panel correlated to an explicit browser open request', async () => {
+    const actions: any[] = [];
+    const task = start((action: any) => {
+      actions.push(action);
+      if (action.type === 'panelLayout/openTabInNewRootColumn') {
+        state.panelLayout.byWorkspaceId['ws-1'] = {
+          panels: {},
+          pendingPanelReveal: {
+            panelId: 'panel-resolved',
+            tabId: 'browser-reused',
+            requestId: action.payload.newTabId,
+          },
+        };
+      }
+    });
+
+    await emit({ url: 'https://pinned.test', workspaceId: 'ws-1', tabId: 'request-1', pin: true });
+
+    expect(actions.map((action) => action.type)).toEqual([
+      'panelLayout/openTabInNewRootColumn',
+      'panelLayout/setPanelPinned',
+    ]);
+    expect(actions[1]).toMatchObject({
+      payload: { wsId: 'ws-1', panelId: 'panel-resolved', pinned: true },
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('persists the payload requestedUrl on the opened tab (monorepo#2789)', async () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));
@@ -312,9 +337,9 @@ describe('browserIpcSaga', () => {
       requestedUrl: 'http://daemon.localhost:3000/',
     });
 
-    expect(actions).toEqual([
+    expect(actions).toMatchObject([
       {
-        type: 'panelLayout/openTabInAdjacentOrSplit',
+        type: 'panelLayout/openTabInNewRootColumn',
         payload: {
           wsId: 'ws-1',
           tab: {
@@ -322,7 +347,6 @@ describe('browserIpcSaga', () => {
             browserRequestedUrl: 'http://daemon.localhost:3000/',
           },
           sourcePanelId: undefined,
-          animated: false,
           force: false,
           newTabId: `tab-${NOW}-i`,
           timestamp: NOW,
@@ -337,6 +361,29 @@ describe('browserIpcSaga', () => {
         payload: { wsId: 'ws-1', tabId: 'browser-1', panelId: undefined, timestamp: NOW },
       },
     ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not pin when the pending reveal belongs to another request', async () => {
+    const actions: any[] = [];
+    const task = start((action: any) => {
+      actions.push(action);
+      if (action.type === 'panelLayout/openTabInNewRootColumn') {
+        state.panelLayout.byWorkspaceId['ws-1'] = {
+          panels: {},
+          pendingPanelReveal: {
+            panelId: 'panel-other',
+            tabId: 'browser-other',
+            requestId: 'another-request',
+          },
+        };
+      }
+    });
+
+    await emit({ url: 'https://stale.test', workspaceId: 'ws-1', tabId: 'request-1', pin: true });
+
+    expect(actions.map((action) => action.type)).toEqual(['panelLayout/openTabInNewRootColumn']);
     task.cancel();
     await task.toPromise();
   });
@@ -500,12 +547,15 @@ describe('browserIpcSaga', () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));
 
-    await emit({ tabId: 'browser-1', workspaceId: 'ws-background' }, 'browser:focus-tab');
+    await emit(
+      { tabId: 'browser-1', workspaceId: 'ws-background', pin: true },
+      'browser:focus-tab',
+    );
 
     expect(actions).toEqual([
       {
         type: 'appLayout/focusBrowserTabRequested',
-        payload: ['ws-background', 'browser-1'],
+        payload: ['ws-background', 'browser-1', true],
       },
     ]);
     task.cancel();
@@ -674,7 +724,11 @@ describe('browserIpcSaga', () => {
       return { actions, task };
     };
     const hostedState = (wsId: string) => {
-      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [[wsId]] } };
+      state = {
+        panelLayout: { byWorkspaceId: {} },
+        tabState: { workspaceStacks: [[wsId]] },
+        workspaceAgents: { byWorkspaceId: {} },
+      };
     };
     const seedStorage = (wsId: string, tabs: unknown[]) => {
       mocks.storage.set(`${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${wsId}`, persistedLayout(tabs));
@@ -920,7 +974,7 @@ describe('browserIpcSaga', () => {
       await emit({ tabId: 'browser-1', workspaceId: 'ws-hyd-err-3' }, 'browser:focus-tab');
       expect(actions).toContainEqual({
         type: 'appLayout/focusBrowserTabRequested',
-        payload: ['ws-hyd-err-3', 'browser-1'],
+        payload: ['ws-hyd-err-3', 'browser-1', undefined],
       });
 
       // The saga is still alive: a later healthy request is answered.

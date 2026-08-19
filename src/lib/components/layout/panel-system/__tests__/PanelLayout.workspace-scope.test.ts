@@ -32,7 +32,9 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectPanelCanvasWidth: readableSelector(null),
   selectPanelCanvasWidthSource: readableSelector(null),
   selectPanelIds: readableSelector([]),
+  selectPendingPanelReveal: readableSelector(null),
   selectRestoreStatus: readableSelector('pending'),
+  selectRecentlyClosed: readableSelector([]),
 }));
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
   selectIsTerminalOverlayOpen: readableSelector(true),

@@ -2982,7 +2982,7 @@
               tooltipSide="top"
               aria-label={m.chat_richInput_micStop_label()}
               aria-pressed="true"
-              class="text-destructive-foreground animate-pulse"
+              class="text-error-foreground animate-pulse"
               data-testid="initializer-mic-button"
             >
               <Fa icon={faMicrophone} size="xs" />
@@ -3019,7 +3019,7 @@
               tooltipSide="top"
             >
               {#if isEnhancing}
-                <Fa icon={faStop} size="xs" class="text-destructive-foreground" />
+                <Fa icon={faStop} size="xs" class="text-error-foreground" />
               {:else}
                 <Fa icon={faMagicWandSparkles} size="xs" />
               {/if}
@@ -3059,9 +3059,9 @@
           transition:slide={{ axis: 'y', duration: 200 }}
         >
           <div class="flex items-start gap-3">
-            <Fa icon={faExclamationTriangle} class="text-destructive-foreground mt-0.5 shrink-0" />
+            <Fa icon={faExclamationTriangle} class="text-error-foreground mt-0.5 shrink-0" />
             <div>
-              <p class="font-medium text-destructive-foreground">
+              <p class="font-medium text-error-foreground">
                 {m.workspace_compactInitializer_gitNotInstalled_label()}
               </p>
               <p class="text-subtle mt-1">

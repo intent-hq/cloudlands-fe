@@ -97,7 +97,11 @@
       class="w-full flex items-center gap-2 px-1.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
       onclick={() => (isExpanded = !isExpanded)}
     >
-      <Fa icon={faChevronDown} size="xs" class="opacity-50 transition-transform duration-200 {isExpanded ? '' : '-rotate-90'}" />
+      <Fa
+        icon={faChevronDown}
+        size="xs"
+        class="opacity-50 transition-transform duration-200 {isExpanded ? '' : 'rotate-90'}"
+      />
       <span>{m.workspace_skills_title()}</span>
       <span class="ml-auto text-ui opacity-60">{$skills$.length}</span>
     </button>

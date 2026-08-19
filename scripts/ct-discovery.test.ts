@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const repoRoot = path.resolve(__dirname, '..');
 const launcher = path.join(repoRoot, 'scripts', 'run-ct-tests.mjs');
+const navigatorTestDir = path.join(repoRoot, 'src/lib/components/chat/__tests__');
 
 function runLauncher(args: string[]): Promise<{ code: number | null; output: string }> {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -33,6 +35,21 @@ describe('playwright component-test discovery (run-ct-tests.mjs)', () => {
     expect(totals, `expected a "Total: N tests in M files" line in:\n${output}`).not.toBeNull();
     expect(Number(totals![1])).toBeGreaterThanOrEqual(1);
     expect(Number(totals![2])).toBeGreaterThanOrEqual(1);
+    expect(output).toContain('chat-message-navigator.ct.spec.ts');
+    expect(output).toContain('chat message navigator production path');
     // First run compiles the CT transform and is slow; be generous.
   }, 120_000);
+
+  it('keeps navigator discovery on the production integration fixture', () => {
+    const specSource = readFileSync(
+      path.join(navigatorTestDir, 'chat-message-navigator.ct.spec.ts'),
+      'utf8',
+    );
+    expect(specSource).toContain("from './ChatMessageNavigatorIntegrationHost.svelte'");
+    expect(specSource).not.toContain('ChatMessageNavigatorHost.svelte');
+    expect(
+      existsSync(path.join(navigatorTestDir, 'ChatMessageNavigatorIntegrationHost.svelte')),
+    ).toBe(true);
+    expect(existsSync(path.join(navigatorTestDir, 'ChatMessageNavigatorHost.svelte'))).toBe(false);
+  });
 });

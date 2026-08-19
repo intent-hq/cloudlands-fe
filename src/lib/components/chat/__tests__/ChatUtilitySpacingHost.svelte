@@ -31,14 +31,14 @@
 
 <div class="{theme} bg-background p-3 text-foreground" data-testid="utility-host">
   <div
-    class="flex min-h-96 w-full flex-col {compact ? 'pb-3' : 'pb-2'}"
+    class="flex min-h-96 w-full flex-col {compact ? 'pb-3' : 'pb-6'}"
     data-testid="utility-column"
     data-streaming={streaming}
   >
     <div class="h-12" data-testid="transcript-tail">Transcript tail</div>
     <div class="mt-auto" data-testid="transcript-utility-stack">
       <div class="w-full {compact ? 'mt-6' : 'mt-8'}" data-testid="subscription-utility-area">
-        <section class="overflow-hidden rounded-lg border border-border/60 bg-card/80 shadow-sm">
+        <section class="overflow-hidden rounded-lg border border-border bg-card/80 shadow-sm">
           <button
             type="button"
             class="w-full px-3 py-2 text-left"
@@ -47,7 +47,7 @@
             Event subscriptions
           </button>
           {#if expanded}
-            <div class="border-t border-border/40 px-3 py-2" data-testid="subscription-body">
+            <div class="border-t border-border px-3 py-2" data-testid="subscription-body">
               Expanded subscription details
             </div>
           {/if}

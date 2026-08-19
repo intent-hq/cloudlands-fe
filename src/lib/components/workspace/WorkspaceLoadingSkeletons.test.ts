@@ -72,7 +72,7 @@ describe('workspace loading skeletons', () => {
       loadingPanels.every(
         (panel) =>
           panel.classList.contains('rounded-lg') &&
-          panel.classList.contains('border-border/50') &&
+          panel.classList.contains('border-border') &&
           panel.classList.contains('bg-card') &&
           panel.classList.contains('text-card-foreground') &&
           ![...panel.classList].some((className) => className.startsWith('shadow-')),

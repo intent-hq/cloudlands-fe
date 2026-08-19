@@ -2,14 +2,7 @@
  * Tests for time formatting utilities
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   buildDateGroupKeys,
   formatRelativeTime,

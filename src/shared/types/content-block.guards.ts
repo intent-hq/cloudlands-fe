@@ -5,7 +5,7 @@
  * These guards narrow the type and provide type safety for specific block types.
  */
 
-import type { ContentBlock } from './content-block';
+import type { ContentBlock, VideoContentBlock } from './content-block';
 
 /**
  * Check if a ContentBlock is a text block
@@ -68,14 +68,24 @@ export function isAudioBlock(
   );
 }
 
+/** Check if a ContentBlock is a normalized assistant video block. */
+export function isVideoBlock(block: ContentBlock): block is VideoContentBlock {
+  return (
+    block.type === 'video' &&
+    !!block.source &&
+    ((block.source.kind === 'inline' &&
+      typeof block.source.data === 'string' &&
+      typeof block.source.mimeType === 'string') ||
+      (block.source.kind === 'remote' && typeof block.source.url === 'string'))
+  );
+}
+
 /**
  * Check if a ContentBlock is a file block — either the legacy inline-data
  * variant (`data` + `mimeType`) or an attachment-reference block carrying an
  * `attachmentId` instead of bytes.
  */
-export function isFileBlock(
-  block: ContentBlock,
-): block is ContentBlock & { fileName: string } {
+export function isFileBlock(block: ContentBlock): block is ContentBlock & { fileName: string } {
   return (
     block.type === 'file' &&
     typeof block.fileName === 'string' &&
@@ -119,10 +129,13 @@ export function isToolBlock(
 }
 
 /**
- * Check if a ContentBlock is a media block (image, audio, or file)
+ * Check if a ContentBlock is a media block (image, audio, video, or file)
  */
 export function isMediaBlock(
   block: ContentBlock,
-): block is ContentBlock & { type: 'image' | 'audio' | 'file'; data: string } {
-  return (block.type === 'image' || block.type === 'audio' || block.type === 'file') && !!block.data;
+): block is ContentBlock & { type: 'image' | 'audio' | 'video' | 'file' } {
+  return (
+    ((block.type === 'image' || block.type === 'audio' || block.type === 'file') && !!block.data) ||
+    isVideoBlock(block)
+  );
 }

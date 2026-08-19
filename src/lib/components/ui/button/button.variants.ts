@@ -10,7 +10,7 @@ export const buttonVariants = tv({
       default:
         'border-border bg-card text-foreground shadow-xs hover:border-input hover:bg-secondary hover:text-foreground active:border-input active:bg-muted',
       destructive:
-        'border-destructive-foreground/25 bg-card text-destructive-foreground shadow-xs hover:border-destructive-foreground/40 hover:bg-destructive focus-visible:ring-destructive/35 active:bg-destructive/80',
+        'border-destructive-foreground/25 bg-card text-error-foreground shadow-xs hover:border-destructive-foreground/40 hover:bg-destructive hover:text-destructive-foreground focus-visible:ring-destructive/35 active:bg-destructive/80',
       outline:
         'border-border bg-transparent text-foreground shadow-none hover:border-input hover:bg-secondary hover:text-foreground active:bg-muted',
       secondary:

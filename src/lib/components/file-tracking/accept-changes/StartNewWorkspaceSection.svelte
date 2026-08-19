@@ -6,7 +6,7 @@
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
   import {
-  faChevronRight,
+  faChevronDown,
   faCodeBranch,
   faServer,
   faSpinner,
@@ -90,10 +90,8 @@
     onclick={() => (isExpanded = !isExpanded)}
   >
     <Fa
-      icon={faChevronRight}
-      class="h-2 w-2 text-subtle transition-transform duration-150 {isExpanded
-        ? 'rotate-90'
-        : ''}"
+      icon={faChevronDown}
+      class="h-2 w-2 text-subtle transition-transform duration-150 {isExpanded ? '' : 'rotate-90'}"
     />
     <span class="text-sm text-subtle">{m.fileTracking_startNew_archiveAndStart_label()}</span>
   </button>

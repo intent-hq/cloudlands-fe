@@ -124,9 +124,7 @@
     background-color: hsl(var(--popover));
     border: 1px solid hsl(var(--border));
     border-radius: 8px;
-    box-shadow:
-      0 2px 4px hsl(var(--foreground) / 0.04),
-      0 8px 24px hsl(var(--foreground) / 0.12);
+    box-shadow: var(--elevation-overlay);
     padding: 8px;
     width: 280px;
     animation: launchDialogIn 0.15s ease-out;

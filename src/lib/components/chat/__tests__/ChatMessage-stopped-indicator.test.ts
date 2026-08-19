@@ -65,8 +65,8 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   ),
 }));
 
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
-  default: (await import('./mocks/AuggieAvatar.svelte')).default,
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
+  default: (await import('./mocks/AgentAvatar.svelte')).default,
 }));
 
 vi.mock('../input/SimpleRichInput.svelte', async () => ({

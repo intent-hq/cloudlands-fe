@@ -474,7 +474,7 @@
               {#each groupedPanels as group, groupIndex (group.panelId)}
                 <!-- Border between groups -->
                 {#if groupIndex > 0}
-                  <div class="border-t border-border/50 my-1"></div>
+                  <div class="border-t border-border my-1"></div>
                 {/if}
 
                 <!-- Panels in this group -->

@@ -1,6 +1,7 @@
 import type { AgentSession, Note } from '$shared/types';
 import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
-import { stripMarkdownFormatting } from '$lib/utils/text-utils';
+import { stripInternalDeliveryNotes } from '$lib/utils/user-message-presentation';
+import { stripMarkdownFormatting, stripUserMessagePrefixes } from '$lib/utils/text-utils';
 
 export interface AgentLauncherPreview {
   lastUserMessage: string;
@@ -19,11 +20,39 @@ export interface NoteLauncherState {
   overflowCount: number;
 }
 
+export function getAgentLauncherStatusPriority(state: string): number {
+  if (state === 'failed') return 3;
+  if (
+    state === 'question' ||
+    state === 'needs-permission' ||
+    state === 'attention-blocker' ||
+    state === 'attention-discussion'
+  ) {
+    return 2;
+  }
+  if (state === 'running' || state === 'responding') return 1;
+  return 0;
+}
+
+export function getLauncherPreviewLimit(
+  availableWidth: number,
+  overflowWidth: number,
+  maxLimit: number,
+  targetSize: number,
+  stepSize: number,
+): number {
+  if (availableWidth <= 0) return maxLimit;
+  const fixedWidth = targetSize + Math.max(targetSize, overflowWidth);
+  const fittingLimit = Math.floor((availableWidth - fixedWidth) / stepSize) + 1;
+  return Math.max(1, Math.min(maxLimit, fittingLimit));
+}
+
 export function deriveAgentLauncherItems(
   agents: AgentSession[],
   limit: number,
   getIsRunning: (agent: AgentSession) => boolean,
   buildPreview: (agent: AgentSession, isRunning: boolean) => AgentLauncherPreview,
+  getStatusPriority: (agent: AgentSession) => number = (agent) => Number(getIsRunning(agent)),
 ): {
   launcherAgents: AgentLauncherItem[];
   runningAgents: AgentSession[];
@@ -31,12 +60,16 @@ export function deriveAgentLauncherItems(
   overflowCount: number;
 } {
   const uniqueAgents = [...new Map(agents.map((agent) => [agent.id, agent])).values()];
-  const agentStates = uniqueAgents.map((agent) => ({ agent, isRunning: getIsRunning(agent) }));
+  const agentStates = uniqueAgents.map((agent) => ({
+    agent,
+    isRunning: getIsRunning(agent),
+    statusPriority: getStatusPriority(agent),
+  }));
   const runningAgents = agentStates.filter(({ isRunning }) => isRunning).map(({ agent }) => agent);
   const primaryAgentId = findPrimaryAgent(uniqueAgents)?.id;
   const orderedAgentStates = agentStates.sort(
     (a, b) =>
-      Number(b.isRunning) - Number(a.isRunning) ||
+      b.statusPriority - a.statusPriority ||
       Number(b.agent.hasUnread === true) - Number(a.agent.hasUnread === true) ||
       compareAgentsByLastMessage(a.agent, b.agent),
   );
@@ -153,12 +186,11 @@ export function getAgentLauncherPreview(agent: AgentSession): AgentLauncherPrevi
   // getAgentPeekData; push-applied ~1s by `agent:stream:activity` while
   // streaming) — no client-side stream-buffer re-derivation (monorepo#2843).
   const peek = getAgentPeekData(agent);
-  const lastUserMessage =
-    peek?.lastUserMessage
-      .replace(/^\[.*?\]\s*/g, '')
-      .replace(/@context\[[^\]]*\]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim() ?? '';
+  const lastUserMessage = stripUserMessagePrefixes(
+    stripInternalDeliveryNotes(peek?.lastUserMessage ?? ''),
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
 
   return {
     lastUserMessage,

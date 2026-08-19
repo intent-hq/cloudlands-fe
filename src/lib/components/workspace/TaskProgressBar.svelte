@@ -2,8 +2,8 @@
   import { cn } from '$lib/utils';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
-  import type { AvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+  import type { AvatarState } from '$features/agent/components/agent-avatar/avatar-state';
   import type { TaskStatus } from '$shared/types';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import { m } from '$shared/paraglide/messages.js';
@@ -134,7 +134,7 @@
                 <div class="text-xs leading-snug truncate">{task.title}</div>
                 {#if task.agentId}
                   <div class="flex items-center gap-1 mt-0.5">
-                    <AugieAvatarWithState
+                    <AgentAvatarWithState
                       agentId={task.agentId}
                       state={task.agentState || 'idle'}
                       size={12}
@@ -159,7 +159,7 @@
                 <div class="text-xs leading-snug truncate">{task.title}</div>
                 {#if task.agentId}
                   <div class="flex items-center gap-1 mt-0.5">
-                    <AugieAvatarWithState
+                    <AgentAvatarWithState
                       agentId={task.agentId}
                       state={task.agentState || 'idle'}
                       size={12}
@@ -176,7 +176,7 @@
 
           <!-- Completed tasks (collapsed summary) -->
           {#if completedTasks.length > 0}
-            <div class="flex flex-col gap-0.5 pt-1 border-t border-border/40">
+            <div class="flex flex-col gap-0.5 pt-1 border-t border-border">
               {#each completedTasks.slice(0, 3) as task}
                 <div class="flex items-center gap-2">
                   <div class="shrink-0">

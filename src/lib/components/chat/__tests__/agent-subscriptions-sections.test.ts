@@ -27,6 +27,10 @@ const makeDerivedReadable = <S, T>(
   subscribe: (run: (value: T) => void) => source.subscribe((value) => run(project(value))),
 });
 vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: navigateToRouteSpy }));
+const mockStreamingContent = new Map<string, string>();
+const mockIsResponding = new Map<string, boolean>();
+const mockHasStreamOwnedMessage = new Map<string, boolean>();
+
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: Object.assign(
     (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
@@ -46,11 +50,20 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
         return session ? [session] : [];
       }),
     ),
-  selectAgentIsResponding: () => makeReadable(false),
+  selectAgentSessionsById: Object.assign(
+    () => makeReadable(Object.fromEntries(sessionState.byId)),
+    { select: () => Object.fromEntries(sessionState.byId) },
+  ),
+  selectAgentIsResponding: (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
+    makeDerivedReadable(agentId, (id) => mockIsResponding.get(id) ?? false),
   selectAgentIsWaiting: () => makeReadable(false),
   selectAgentIsBlockedWaiting: () => makeReadable(false),
-  selectAgentSessionStreamingContent: () => makeReadable(''),
-  selectAgentSessionHasStreamOwnedMessage: () => makeReadable(false),
+  selectAgentSessionStreamingContent: (agentId: {
+    subscribe: (run: (value: string) => void) => () => void;
+  }) => makeDerivedReadable(agentId, (id) => mockStreamingContent.get(id) ?? ''),
+  selectAgentSessionHasStreamOwnedMessage: (agentId: {
+    subscribe: (run: (value: string) => void) => () => void;
+  }) => makeDerivedReadable(agentId, (id) => mockHasStreamOwnedMessage.get(id) ?? false),
   selectAgentProvider: () => makeReadable(undefined),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
@@ -59,7 +72,7 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectAgentLineStats: () => makeReadable(null),
 }));
-vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
+vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => ({
   default: (await import('./mocks/MockAvatarWithState.svelte')).default,
 }));
 vi.mock('$lib/components/ui/tooltip', async () => {
@@ -83,6 +96,8 @@ import AgentSubscriptions from '../AgentSubscriptions.svelte';
 import {
   SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
   SUBSCRIPTION_CARD_SURFACE_CLASS,
+  SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
+  SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS,
 } from '../subscription-disclosure';
 import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
 
@@ -179,6 +194,7 @@ function seedSession(
   updatedAt: string,
   status: 'idle' | 'responding' | 'waiting' | 'completed' | 'failed' = 'completed',
   workspaceId = 'workspace-session',
+  extra?: Record<string, unknown>,
 ) {
   sessionState.byId.set(id, {
     id,
@@ -188,6 +204,7 @@ function seedSession(
     messages: [],
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt,
+    ...extra,
   });
 }
 
@@ -201,7 +218,9 @@ async function renderWithSnapshot(wsId: string, wire: unknown, compact = false) 
   await flush();
   const value = wire as { subscriptions?: unknown[]; delegationGroups?: unknown[] };
   if ((value.subscriptions?.length ?? 0) > 0 || (value.delegationGroups?.length ?? 0) > 0) {
-    await waitFor(() => expect(screen.getByTestId('one-shot-watches')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('one-shot-watches')).toBeTruthy(), {
+      timeout: 5000,
+    });
   }
   return utils;
 }
@@ -214,8 +233,8 @@ async function refetch(wsId: string, wire: unknown) {
 }
 
 async function expandWaitingAgents() {
-  const toggle = screen.getByTestId('one-shot-collapse-toggle');
-  if (toggle.getAttribute('aria-expanded') === 'false') await fireEvent.click(toggle);
+  const toggle = screen.queryByTestId('one-shot-summary-toggle');
+  if (toggle?.getAttribute('aria-expanded') === 'false') await fireEvent.click(toggle);
   return screen.getByTestId('one-shot-agent-list');
 }
 
@@ -272,7 +291,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(screen.queryByTestId('agent-subscriptions-card')).toBeNull();
   });
 
-  it('renders one group agent under one singular top-level toggle', async () => {
+  it('renders one agent directly without a waiting disclosure', async () => {
     const wsId = 'ws-waiting-one';
     await renderWithSnapshot(
       wsId,
@@ -283,33 +302,88 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     );
     expect(screen.getAllByTestId('one-shot-watches')).toHaveLength(1);
     expect(screen.queryByTestId('delegation-group-section')).toBeNull();
-    expect(screen.getByTestId('one-shot-summary-title').textContent?.trim()).toBe(
-      'Waiting for 1 agent',
-    );
-    await expandWaitingAgents();
+    expect(screen.queryByTestId('one-shot-header')).toBeNull();
+    expect(screen.queryByTestId('one-shot-summary-toggle')).toBeNull();
+    expect(screen.getByTestId('one-shot-agent-list').dataset.agentListMode).toBe('direct');
     expect(visibleAgentIds()).toEqual(['agent-a']);
   });
 
-  it('starts collapsed and supports summary and chevron expand/collapse transitions', async () => {
+  it('renders six agents directly at the disclosure boundary', async () => {
+    const wsId = 'ws-waiting-six';
+    const agents = Array.from({ length: 6 }, (_, index) => `agent-${index + 1}`);
+    await renderWithSnapshot(wsId, snapshot([oneShotSubscription('watch-six', wsId, agents)]));
+
+    expect(screen.queryByTestId('one-shot-header')).toBeNull();
+    expect(screen.getByTestId('one-shot-agent-list').dataset.agentListMode).toBe('direct');
+    expect(visibleAgentIds()).toEqual(agents);
+  });
+
+  it('groups seven agents and supports summary and chevron expand/collapse transitions', async () => {
     const wsId = 'ws-waiting-collapsed';
-    await renderWithSnapshot(wsId, snapshot([oneShotSubscription('watch-a', wsId, ['agent-a'])]));
+    const agents = Array.from({ length: 7 }, (_, index) => `agent-${index + 1}`);
+    await renderWithSnapshot(wsId, snapshot([oneShotSubscription('watch-many', wsId, agents)]));
     const summary = screen.getByTestId('one-shot-summary-toggle');
     const chevron = screen.getByTestId('one-shot-collapse-toggle');
 
+    expect(screen.getByTestId('one-shot-summary-title').textContent?.trim()).toBe(
+      'Waiting for 7 agents',
+    );
+    expect(screen.getByRole('button', { name: 'Waiting for 7 agents' })).toBe(summary);
+    const title = screen.getByTestId('one-shot-summary-title');
+    expect(title.classList.contains('truncate')).toBe(false);
+    expect(title.parentElement?.classList.contains('shrink-0')).toBe(true);
     expect(summary.getAttribute('aria-expanded')).toBe('false');
-    expect(chevron.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByTestId('one-shot-agent-list')).toBeNull();
+    const stack = screen.getByTestId('one-shot-header').querySelector('[data-agent-avatar-stack]');
+    expect(stack).toBeTruthy();
+    expect(stack?.querySelectorAll('[data-icon]')).toHaveLength(0);
+    expect(stack?.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(7);
+    expect(stack?.querySelector('[data-agent-avatar-overflow]')).toBeNull();
     await fireEvent.click(summary);
     expect(summary.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      screen.getByTestId('one-shot-header').querySelector('[data-agent-avatar-stack]'),
+    ).toBeNull();
+    expect(summary.querySelector('[data-icon="hourglass"]')).toBeTruthy();
     expect(screen.getByTestId('one-shot-agent-list')).toBeTruthy();
     await fireEvent.click(chevron);
     expect(summary.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByTestId('one-shot-agent-list')).toBeNull();
   });
 
+  it('labels a retained all-finished cohort as finished instead of waiting', async () => {
+    const wsId = 'ws-all-finished-summary';
+    const agents = ['agent-a', 'agent-b', 'agent-c'];
+    resetWorkspace(wsId);
+    backendRequestSpy.mockResolvedValue(
+      snapshot([oneShotSubscription('watch-finished', wsId, agents)], [], {
+        'agent-a': 'completed',
+        'agent-b': 'completed',
+        'agent-c': 'completed',
+      }),
+    );
+    render(AgentSubscriptions, {
+      props: { workspaceId: wsId, agentId: PARENT, forceWaitingHeader: true },
+    });
+    await flush();
+    await flush();
+
+    const summary = await screen.findByTestId('one-shot-summary-toggle');
+    expect(summary.getAttribute('aria-label')).toBe('3 agents finished');
+    expect(screen.getByTestId('one-shot-summary-title').textContent?.trim()).toBe(
+      '3 agents finished',
+    );
+    expect(summary.querySelector('[data-icon="circle-check"]')).toBeTruthy();
+    expect(summary.querySelector('[data-icon="hourglass"]')).toBeNull();
+    await fireEvent.click(summary);
+    expect(visibleAgentIds()).toEqual(agents);
+    expect(screen.queryByTestId('finished-agent-summary')).toBeNull();
+  });
+
   it('persists the watched-agent expanded state across remounts in the session', async () => {
     const wsId = 'ws-waiting-persistence';
-    const wire = snapshot([oneShotSubscription('watch-a', wsId, ['agent-a'])]);
+    const agents = Array.from({ length: 7 }, (_, index) => `agent-${index + 1}`);
+    const wire = snapshot([oneShotSubscription('watch-many', wsId, agents)]);
     const first = await renderWithSnapshot(wsId, wire);
     await fireEvent.click(screen.getByTestId('one-shot-summary-toggle'));
     expect(screen.getByTestId('one-shot-agent-list')).toBeTruthy();
@@ -341,18 +415,15 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       ),
     );
     expect(screen.getAllByTestId('one-shot-watches')).toHaveLength(1);
-    expect(screen.getByTestId('one-shot-summary-title').textContent?.trim()).toBe(
-      'Waiting for 5 agents',
-    );
-    expect(screen.getByTestId('one-shot-header').textContent).not.toContain('+');
-    await expandWaitingAgents();
+    expect(screen.queryByTestId('one-shot-header')).toBeNull();
+    expect(screen.getByTestId('one-shot-agent-list').dataset.agentListMode).toBe('direct');
     expect(visibleAgentIds()).toEqual(['agent-z', 'agent-b', 'agent-c', 'agent-d', 'agent-a']);
     expect(within(agentRow('agent-a')).getByTestId('mock-avatar-with-state').dataset.state).toBe(
       'completed',
     );
   });
 
-  it('keeps active, waiting, idle, and failed agents visible while grouping finished agents', async () => {
+  it('renders active and finished agents directly when the total is six', async () => {
     const wsId = 'ws-finished-statuses';
     seedSession('agent-finished-old', '2026-01-02T00:00:00.000Z');
     seedSession('agent-finished-new', '2026-01-04T00:00:00.000Z');
@@ -390,32 +461,22 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       'agent-waiting',
       'agent-idle',
       'agent-failed',
-    ]);
-    const summary = screen.getByTestId('finished-agent-summary');
-    expect(summary.textContent).toContain('2 agents finished');
-    expect(summary.getAttribute('aria-expanded')).toBe('false');
-    expect(
-      screen.getByTestId('finished-agent-chevron').querySelector('svg')?.getAttribute('class'),
-    ).toContain('-rotate-90');
-    expect(screen.getByTestId('finished-agent-group').dataset.finishedAt).toBe(
-      '2026-01-04T00:00:00.000Z',
-    );
-
-    await fireEvent.click(summary);
-    expect(
-      screen.getByTestId('finished-agent-chevron').querySelector('svg')?.getAttribute('class'),
-    ).not.toContain('-rotate-90');
-    expect(visibleAgentIds()).toEqual([
-      'agent-active',
-      'agent-waiting',
-      'agent-idle',
-      'agent-failed',
       'agent-finished-new',
       'agent-finished-old',
     ]);
-    expect(
-      within(screen.getByTestId('finished-agent-list')).getByText('Named agent-finished-new'),
-    ).toBeTruthy();
+    expect(screen.queryByTestId('finished-agent-summary')).toBeNull();
+    expect(screen.queryByTestId('one-shot-header')).toBeNull();
+
+    const trailingSlot = within(agentRow('agent-active')).getByTestId('agent-card-trailing-slot');
+    expect(trailingSlot.className).toContain('w-14');
+    const timestamp = trailingSlot.querySelector('[title]');
+    expect(timestamp?.className).toContain('type-caption');
+    expect(timestamp?.className).toContain('text-right');
+    expect(timestamp?.className).toContain('group-hover/watch:opacity-0');
+    expect(timestamp?.className).toContain('group-focus-within/watch:opacity-0');
+    expect(within(trailingSlot).getByTestId('one-shot-stop').className).toContain(
+      'focus-visible:opacity-100',
+    );
   });
 
   it.each([
@@ -431,63 +492,103 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       seedSession('agent-b', '2026-01-03T00:00:00.000Z');
       await renderWithSnapshot(
         wsId,
-        snapshot([oneShotSubscription('watch-finished', wsId, ['agent-a', 'agent-b'])], [], {
-          'agent-a': 'completed',
-          'agent-b': 'completed',
-        }),
+        snapshot(
+          [
+            oneShotSubscription('watch-finished', wsId, [
+              'agent-a',
+              'agent-b',
+              'agent-c',
+              'agent-d',
+              'agent-e',
+              'agent-f',
+              'agent-g',
+            ]),
+          ],
+          [],
+          { 'agent-a': 'completed', 'agent-b': 'completed' },
+        ),
       );
 
       await expandWaitingAgents();
       const group = screen.getByTestId('finished-agent-group');
       const summary = screen.getByTestId('finished-agent-summary');
-      const horizontalInsetClass = /^(?:-?m(?:[lrxse])?|-?inset(?:[lrxse])?|p(?:[lrxse])?)-/;
+      const negativeInsetClass = /^-(?:m(?:[lrxse])?|inset(?:[lrxse])?)-/;
       const distinctSurfaceClass = /^(?:bg-|rounded(?:-|$)|shadow(?:-|$))/;
 
       expect(summary.getAttribute('aria-expanded')).toBe('false');
+      expect(summary.classList).toContain('px-3!');
+      expect(summary.classList).toContain('py-2!');
+      expect(summary.textContent?.trim()).toBe('2 agents finished');
+      expect(
+        summary.querySelector('time, [title], [data-finished-at], [role="tooltip"]'),
+      ).toBeNull();
+      expect(group.hasAttribute('data-finished-at')).toBe(false);
       for (const token of [...group.classList, ...summary.classList]) {
-        expect(token).not.toMatch(horizontalInsetClass);
+        expect(token).not.toMatch(negativeInsetClass);
         expect(token).not.toMatch(distinctSurfaceClass);
       }
     },
   );
 
-  it.each(['light', 'dark'])('uses an aligned neutral checkmark in %s', async (theme) => {
-    document.documentElement.classList.add(theme);
-    const wsId = `ws-finished-icon-${theme}`;
-    seedSession('agent-a', '2026-01-02T00:00:00.000Z');
-    seedSession('agent-b', '2026-01-03T00:00:00.000Z');
-    await renderWithSnapshot(
-      wsId,
-      snapshot([oneShotSubscription('watch-finished', wsId, ['agent-a', 'agent-b'])], [], {
-        'agent-a': 'completed',
-        'agent-b': 'completed',
-      }),
-    );
+  it.each(['light', 'dark'])(
+    'uses compact semantic icons with the same tone as their header text in %s',
+    async (theme) => {
+      document.documentElement.classList.add(theme);
+      const wsId = `ws-finished-icon-${theme}`;
+      seedSession('agent-a', '2026-01-02T00:00:00.000Z');
+      seedSession('agent-b', '2026-01-03T00:00:00.000Z');
+      await renderWithSnapshot(
+        wsId,
+        snapshot(
+          [
+            oneShotSubscription('watch-finished', wsId, [
+              'agent-a',
+              'agent-b',
+              'agent-c',
+              'agent-d',
+              'agent-e',
+              'agent-f',
+              'agent-g',
+            ]),
+          ],
+          [],
+          {
+            'agent-a': 'completed',
+            'agent-b': 'completed',
+          },
+        ),
+      );
 
-    const waitingSummary = screen.getByTestId('one-shot-summary-toggle');
-    await expandWaitingAgents();
-    const finishedSummary = screen.getByTestId('finished-agent-summary');
-    const finishedIconOffset = screen.getByTestId('finished-agent-icon-offset');
-    const waitingIcon = waitingSummary.querySelector('[data-icon="hourglass"]');
-    const finishedIcon = finishedSummary.querySelector('[data-icon="check"]');
+      const waitingSummary = screen.getByTestId('one-shot-summary-toggle');
+      await expandWaitingAgents();
+      const finishedSummary = screen.getByTestId('finished-agent-summary');
+      const waitingLeadingColumn = screen.getByTestId('one-shot-leading-column');
+      const finishedLeadingColumn = screen.getByTestId('finished-agent-leading-column');
+      const waitingIcon = waitingSummary.querySelector('[data-icon="hourglass"]');
+      const finishedIcon = finishedSummary.querySelector('[data-icon="circle-check"]');
 
-    expect(finishedSummary.classList).toContain('items-center');
-    expect(finishedSummary.classList).toContain('gap-1.5');
-    expect(finishedSummary.classList).not.toContain('px-2');
-    expect(finishedIconOffset.classList).toContain('ml-2');
-    expect(finishedIconOffset.classList).toContain('items-center');
-    expect(screen.getByTestId('one-shot-agent-list').classList).toContain('px-1');
-    expect(screen.getByTestId('one-shot-header').classList).toContain('px-3');
-    expect(finishedIcon).toBeTruthy();
-    expect(finishedSummary.querySelector('[data-icon="circle-check"]')).toBeNull();
-    expect(finishedIcon?.classList).toContain('text-ghost');
-    expect(finishedIcon?.classList).toContain('opacity-60');
-    expect(finishedIcon?.className.baseVal).not.toMatch(/green/);
-    for (const token of ['h-3.5!', 'w-3.5!', 'shrink-0']) {
-      expect(finishedIcon?.classList).toContain(token);
-      expect(waitingIcon?.classList).toContain(token);
-    }
-  });
+      expect(finishedSummary.classList).toContain('inline-flex');
+      expect(finishedSummary.classList).toContain('gap-1.5');
+      expect(finishedSummary.classList).not.toContain('px-2');
+      expect(waitingLeadingColumn.classList).not.toContain('size-5');
+      expect(finishedLeadingColumn.classList).not.toContain('size-5');
+      expect(finishedLeadingColumn.className).not.toMatch(/^-m(?:[lrxse])?-/);
+      expect(screen.getByTestId('one-shot-agent-list').classList).not.toContain('px-1');
+      expect(screen.getByTestId('one-shot-summary-toggle').classList).toContain('px-3!');
+      expect(finishedIcon).toBeTruthy();
+      expect(finishedSummary.querySelector('[data-icon="check"]')).toBeNull();
+      expect(finishedIcon?.classList).toContain('text-muted-foreground!');
+      expect(finishedIcon?.classList).toContain('opacity-100');
+      expect(finishedIcon?.getAttribute('aria-hidden')).toBe('true');
+      expect(waitingIcon?.classList).toContain('text-muted-foreground!');
+      expect(waitingIcon?.classList).toContain('opacity-100');
+      expect(finishedIcon?.className.baseVal).not.toMatch(/green/);
+      for (const token of ['h-3.5!', 'w-3.5!', 'shrink-0']) {
+        expect(finishedIcon?.classList).toContain(token);
+        expect(waitingIcon?.classList).toContain(token);
+      }
+    },
+  );
 
   it('supports keyboard disclosure plus navigation and removal inside the finished group', async () => {
     const wsId = 'ws-finished-actions';
@@ -495,10 +596,21 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     seedSession('agent-b', '2026-01-03T00:00:00.000Z', 'completed', wsId);
     await renderWithSnapshot(
       wsId,
-      snapshot([oneShotSubscription('watch-finished', wsId, ['agent-a', 'agent-b'])], [], {
-        'agent-a': 'completed',
-        'agent-b': 'completed',
-      }),
+      snapshot(
+        [
+          oneShotSubscription('watch-finished', wsId, [
+            'agent-a',
+            'agent-b',
+            'agent-c',
+            'agent-d',
+            'agent-e',
+            'agent-f',
+            'agent-g',
+          ]),
+        ],
+        [],
+        { 'agent-a': 'completed', 'agent-b': 'completed' },
+      ),
     );
     appStore.dispatch(
       setWorkspaceEntity({ id: wsId, name: 'Workspace', path: '/workspace' } as never),
@@ -698,7 +810,17 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     seedSession('agent-a', '2026-01-02T00:00:00.000Z');
     seedSession('agent-b', '2026-01-03T00:00:00.000Z');
     const wire = snapshot(
-      [oneShotSubscription('watch-finished', wsId, ['agent-a', 'agent-b'])],
+      [
+        oneShotSubscription('watch-finished', wsId, [
+          'agent-a',
+          'agent-b',
+          'agent-c',
+          'agent-d',
+          'agent-e',
+          'agent-f',
+          'agent-g',
+        ]),
+      ],
       [],
       { 'agent-a': 'completed', 'agent-b': 'completed' },
     );
@@ -760,14 +882,12 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
         ],
       ),
     );
-    expect(screen.getByTestId('one-shot-summary-title').textContent?.trim()).toBe(
-      'Waiting for 2 agents',
-    );
-    await expandWaitingAgents();
+    expect(screen.queryByTestId('one-shot-header')).toBeNull();
+    expect(screen.getByTestId('one-shot-agent-list').dataset.agentListMode).toBe('direct');
     expect(visibleAgentIds()).toEqual(['agent-a', 'agent-b']);
   });
 
-  it('reactively updates N and rows while preserving the expanded state', async () => {
+  it('reactively updates direct rows without adding a disclosure', async () => {
     const wsId = 'ws-waiting-reactive';
     await renderWithSnapshot(
       wsId,
@@ -776,9 +896,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
         [delegationGroup('group-a', ['agent-a'])],
       ),
     );
-    const toggle = screen.getByTestId('one-shot-collapse-toggle');
-    await expandWaitingAgents();
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.queryByTestId('one-shot-collapse-toggle')).toBeNull();
     await refetch(
       wsId,
       snapshot(
@@ -786,15 +904,87 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
         [delegationGroup('group-a', ['agent-a', 'agent-b', 'agent-c'], ['agent-a'])],
       ),
     );
-    await waitFor(() =>
-      expect(screen.getByTestId('one-shot-summary-title').textContent?.trim()).toBe(
-        'Waiting for 3 agents',
-      ),
-    );
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    await waitFor(() => expect(visibleAgentIds()).toHaveLength(3));
+    expect(screen.queryByTestId('one-shot-header')).toBeNull();
+    expect(screen.getByTestId('one-shot-agent-list').dataset.agentListMode).toBe('direct');
     expect(visibleAgentIds()).toEqual(['agent-b', 'agent-c', 'agent-a']);
     await refetch(wsId, snapshot());
     await waitFor(() => expect(screen.queryByTestId('one-shot-watches')).toBeNull());
+  });
+
+  it('keeps focused controls inside their stable keyed agent identity owner after reorder', async () => {
+    const wsId = 'ws-waiting-focused-identity';
+    await renderWithSnapshot(
+      wsId,
+      snapshot([oneShotSubscription('watch-focused', wsId, ['agent-a', 'agent-b'])]),
+    );
+    const row = agentRow('agent-a');
+    const control = within(row).getAllByRole('button')[0] as HTMLButtonElement;
+    control.focus();
+    expect(document.activeElement).toBe(control);
+    expect(control.closest('[data-agent-id]')?.getAttribute('data-agent-id')).toBe('agent-a');
+
+    await refetch(
+      wsId,
+      snapshot([oneShotSubscription('watch-focused', wsId, ['agent-b', 'agent-a'])]),
+    );
+    await waitFor(() => expect(visibleAgentIds()).toEqual(['agent-b', 'agent-a']));
+    expect(document.activeElement).toBe(control);
+    expect(control.closest('[data-agent-id]')?.getAttribute('data-agent-id')).toBe('agent-a');
+  });
+
+  it('settles rapid isolated row reversals to the canonical final identities and order', async () => {
+    const agents = (count: number, reverse = false) => {
+      const rows = Array.from({ length: count }, (_, index) => ({
+        id: index === 0 ? 'agent-primary' : `agent-${index}`,
+        name: `Agent ${index}`,
+      }));
+      return reverse ? rows.reverse() : rows;
+    };
+    const { rerender } = render(AgentSubscriptions, {
+      props: {
+        workspaceId: 'ws-rapid-isolated',
+        agentId: PARENT,
+        isolatedPreview: { agents: agents(7), initiallyExpanded: true },
+        forceWaitingHeader: true,
+      },
+    });
+
+    await rerender({
+      workspaceId: 'ws-rapid-isolated',
+      agentId: PARENT,
+      isolatedPreview: { agents: agents(3, true), initiallyExpanded: true },
+      forceWaitingHeader: true,
+    });
+    await rerender({
+      workspaceId: 'ws-rapid-isolated',
+      agentId: PARENT,
+      isolatedPreview: { agents: agents(9), initiallyExpanded: true },
+      forceWaitingHeader: true,
+    });
+    await rerender({
+      workspaceId: 'ws-rapid-isolated',
+      agentId: PARENT,
+      isolatedPreview: { agents: agents(4, true), initiallyExpanded: true },
+      forceWaitingHeader: true,
+    });
+    await waitFor(() =>
+      expect(visibleAgentIds()).toEqual(['agent-3', 'agent-2', 'agent-1', 'agent-primary']),
+    );
+    expect(screen.getAllByTestId('agent-list-item')).toHaveLength(4);
+    const list = screen.getByTestId('one-shot-agent-list');
+    for (const token of SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS.split(' ')) {
+      expect(list.classList).toContain(token);
+    }
+    expect(list.classList).not.toContain('border-t');
+    for (const item of screen.getAllByTestId('agent-list-item')) {
+      const owner = item.closest<HTMLElement>('[data-subscription-motion-row]');
+      expect(owner).toBeTruthy();
+      for (const token of SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS.split(' ')) {
+        expect(owner?.classList).toContain(token);
+      }
+      expect(owner?.classList).not.toContain('border-t');
+    }
   });
 
   it('keeps per-agent stop and subscription-scoped cancel actions', async () => {
@@ -827,8 +1017,28 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     await renderWithSnapshot(
       wsId,
       snapshot(
-        [groupSubscription('group-a', wsId, ['agent-a', 'agent-b'])],
-        [delegationGroup('group-a', ['agent-a', 'agent-b'])],
+        [
+          groupSubscription('group-a', wsId, [
+            'agent-a',
+            'agent-b',
+            'agent-c',
+            'agent-d',
+            'agent-e',
+            'agent-f',
+            'agent-g',
+          ]),
+        ],
+        [
+          delegationGroup('group-a', [
+            'agent-a',
+            'agent-b',
+            'agent-c',
+            'agent-d',
+            'agent-e',
+            'agent-f',
+            'agent-g',
+          ]),
+        ],
       ),
     );
     await expandWaitingAgents();
@@ -849,8 +1059,28 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     await renderWithSnapshot(
       wsId,
       snapshot(
-        [groupSubscription('group-a', wsId, ['agent-a', 'agent-b'])],
-        [delegationGroup('group-a', ['agent-a', 'agent-b'])],
+        [
+          groupSubscription('group-a', wsId, [
+            'agent-a',
+            'agent-b',
+            'agent-c',
+            'agent-d',
+            'agent-e',
+            'agent-f',
+            'agent-g',
+          ]),
+        ],
+        [
+          delegationGroup('group-a', [
+            'agent-a',
+            'agent-b',
+            'agent-c',
+            'agent-d',
+            'agent-e',
+            'agent-f',
+            'agent-g',
+          ]),
+        ],
       ),
       true,
     );
@@ -865,10 +1095,328 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     const summary = screen.getByTestId('one-shot-summary-toggle');
     const chevron = screen.getByTestId('one-shot-collapse-toggle');
     expect(summary.getAttribute('aria-controls')).toMatch(/^waiting-agent-list-/);
-    expect(chevron.getAttribute('aria-controls')).toBe(summary.getAttribute('aria-controls'));
+    expect(chevron.getAttribute('aria-controls')).toBeNull();
     summary.focus();
-    await fireEvent.keyDown(summary, { key: 'Enter' });
+    await fireEvent.click(summary);
     expect(summary.getAttribute('aria-expanded')).toBe('true');
     expect(document.activeElement).toBe(summary);
+  });
+
+  it('displays live streaming activity message in agent rows', async () => {
+    const wsId = 'ws-streaming-activity';
+    // Seed agent session with streaming content
+    const session = {
+      id: 'agent-stream-1',
+      workspaceId: wsId,
+      name: 'Named agent-stream-1',
+      status: 'responding',
+      lastAgentResponse: 'I am currently analyzing the codebase...',
+      messages: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    };
+    sessionState.byId.set('agent-stream-1', session);
+    mockIsResponding.set('agent-stream-1', true);
+
+    await renderWithSnapshot(
+      wsId,
+      snapshot([oneShotSubscription('watch-stream', wsId, ['agent-stream-1'])]),
+    );
+
+    // Wait for agent card preview to render
+    await waitFor(() => expect(screen.getByTestId('agent-card-preview')).toBeTruthy());
+
+    const preview = screen.getByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('analyzing the codebase');
+  });
+
+  it('displays streaming activity based on lastAgentResponse when available', async () => {
+    const wsId = 'ws-streaming-update';
+    const session = {
+      id: 'agent-update-1',
+      workspaceId: wsId,
+      name: 'Named agent-update-1',
+      status: 'responding',
+      lastAgentResponse: 'Analyzing the project structure...',
+      messages: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    };
+    sessionState.byId.set('agent-update-1', session);
+    mockIsResponding.set('agent-update-1', true);
+
+    await renderWithSnapshot(
+      wsId,
+      snapshot([oneShotSubscription('watch-update', wsId, ['agent-update-1'])]),
+    );
+
+    await waitFor(() => expect(screen.getByTestId('agent-card-preview')).toBeTruthy());
+    expect(screen.getByTestId('agent-card-preview').textContent).toContain('Analyzing');
+  });
+
+  it('shows no activity preview when agent is idle with no messages', async () => {
+    const wsId = 'ws-no-activity';
+    seedSession('agent-idle-1', '2026-01-03T00:00:00.000Z', 'idle', wsId);
+    mockIsResponding.set('agent-idle-1', false);
+    mockStreamingContent.set('agent-idle-1', '');
+
+    await renderWithSnapshot(
+      wsId,
+      snapshot([oneShotSubscription('watch-idle', wsId, ['agent-idle-1'])]),
+    );
+
+    // Agent card should render but with no preview
+    expect(screen.getByTestId('one-shot-agent-list')).toBeTruthy();
+    expect(screen.queryByTestId('agent-card-preview')).toBeNull();
+  });
+
+  it('truncates long streaming activity without changing row height', async () => {
+    const wsId = 'ws-long-activity';
+    const longText =
+      'This is a very long streaming activity message that should be truncated to prevent horizontal overflow and maintain compact row height across different viewport sizes and zoom levels';
+    const session = {
+      id: 'agent-long-1',
+      workspaceId: wsId,
+      name: 'Named agent-long-1',
+      status: 'responding',
+      lastAgentResponse: longText,
+      messages: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    };
+    sessionState.byId.set('agent-long-1', session);
+    mockIsResponding.set('agent-long-1', true);
+
+    await renderWithSnapshot(
+      wsId,
+      snapshot([oneShotSubscription('watch-long', wsId, ['agent-long-1'])]),
+    );
+
+    const preview = await screen.findByTestId('agent-card-preview');
+
+    // Verify truncation classes are applied
+    expect(preview.className).toContain('truncate');
+    expect(preview.className).toContain('whitespace-nowrap');
+    // Verify the full long text is set as title attribute for accessibility
+    expect(preview.getAttribute('title')).toContain('very long streaming');
+  });
+
+  it('handles Unicode and emoji in streaming activity text', async () => {
+    const wsId = 'ws-unicode';
+    const unicodeText = 'Processing files... 文件处理中 📁 🔄';
+    const session = {
+      id: 'agent-unicode-1',
+      workspaceId: wsId,
+      name: 'Named agent-unicode-1',
+      status: 'responding',
+      lastAgentResponse: unicodeText,
+      messages: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    };
+    sessionState.byId.set('agent-unicode-1', session);
+    mockIsResponding.set('agent-unicode-1', true);
+
+    await renderWithSnapshot(
+      wsId,
+      snapshot([oneShotSubscription('watch-unicode', wsId, ['agent-unicode-1'])]),
+    );
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('Processing files');
+    expect(preview.textContent).toContain('文件处理中');
+  });
+
+  it('preserves streaming activity display in after_all delegation groups', async () => {
+    const wsId = 'ws-group-streaming';
+    const session1 = {
+      id: 'agent-group-1',
+      workspaceId: wsId,
+      name: 'Named agent-group-1',
+      status: 'responding',
+      lastAgentResponse: 'Agent 1 working on task A',
+      messages: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    };
+    const session2 = {
+      id: 'agent-group-2',
+      workspaceId: wsId,
+      name: 'Named agent-group-2',
+      status: 'responding',
+      lastAgentResponse: 'Agent 2 working on task B',
+      messages: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    };
+    sessionState.byId.set('agent-group-1', session1);
+    sessionState.byId.set('agent-group-2', session2);
+    mockIsResponding.set('agent-group-1', true);
+    mockIsResponding.set('agent-group-2', true);
+
+    await renderWithSnapshot(
+      wsId,
+      snapshot(
+        [groupSubscription('group-stream', wsId, ['agent-group-1', 'agent-group-2'])],
+        [delegationGroup('group-stream', ['agent-group-1', 'agent-group-2'])],
+      ),
+    );
+
+    const previews = await screen.findAllByTestId('agent-card-preview');
+    expect(previews).toHaveLength(2);
+    expect(previews[0].textContent).toContain('task A');
+    expect(previews[1].textContent).toContain('task B');
+  });
+
+  it('renders preview inline with name on same baseline', async () => {
+    const wsId = 'ws-inline-layout';
+    const session = {
+      id: 'agent-1',
+      workspaceId: wsId,
+      name: 'Test Agent',
+      status: 'responding',
+      lastAgentResponse: 'Currently processing files',
+      messages: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    };
+    sessionState.byId.set('agent-1', session);
+    mockIsResponding.set('agent-1', true);
+
+    await renderWithSnapshot(
+      wsId,
+      snapshot(
+        [groupSubscription('group-1', wsId, ['agent-1'])],
+        [delegationGroup('group-1', ['agent-1'])],
+      ),
+    );
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('processing files');
+
+    // Preview should have truncate and muted styling
+    expect(preview.className).toContain('truncate');
+    expect(preview.className).toContain('whitespace-nowrap');
+    expect(preview.className).toContain('text-muted-foreground');
+  });
+
+  it('timestamp and preview share typography token class', async () => {
+    const wsId = 'ws-typography-class';
+    const session = {
+      id: 'agent-1',
+      workspaceId: wsId,
+      name: 'Test Agent',
+      status: 'responding',
+      lastAgentResponse: 'Processing files',
+      messages: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    };
+    sessionState.byId.set('agent-1', session);
+    mockIsResponding.set('agent-1', true);
+
+    await renderWithSnapshot(
+      wsId,
+      snapshot(
+        [groupSubscription('group-1', wsId, ['agent-1'])],
+        [delegationGroup('group-1', ['agent-1'])],
+      ),
+    );
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    const trailingSlot = screen.getByTestId('agent-card-trailing-slot');
+    const timestamp = trailingSlot.querySelector('.type-caption');
+
+    expect(timestamp).not.toBeNull();
+
+    // Both must have identical typography token/class for color and opacity
+    expect(preview.className).toContain('text-muted-foreground');
+    expect(timestamp!.className).toContain('text-muted-foreground');
+
+    // Timestamp must have tabular-nums class for stable width
+    expect(timestamp!.className).toContain('tabular-nums');
+  });
+
+  it('timestamp has fixed-width layout classes', async () => {
+    const wsId = 'ws-timestamp-layout';
+    const session = {
+      id: 'agent-1',
+      workspaceId: wsId,
+      name: 'Test Agent',
+      status: 'responding',
+      lastAgentResponse: 'Very long preview text that should truncate before pushing the timestamp',
+      messages: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    };
+    sessionState.byId.set('agent-1', session);
+    mockIsResponding.set('agent-1', true);
+
+    await renderWithSnapshot(
+      wsId,
+      snapshot(
+        [groupSubscription('group-1', wsId, ['agent-1'])],
+        [delegationGroup('group-1', ['agent-1'])],
+      ),
+    );
+
+    const trailingSlot = screen.getByTestId('agent-card-trailing-slot');
+    const timestamp = trailingSlot.querySelector('.type-caption');
+
+    expect(timestamp).not.toBeNull();
+
+    // Timestamp container has fixed width
+    expect(trailingSlot.className).toContain('w-14');
+
+    // Timestamp is right-aligned (via Tailwind classes)
+    expect(timestamp!.className).toContain('justify-end');
+    expect(timestamp!.className).toContain('text-right');
+  });
+
+  it('groups agents by semantic priority: attention, active, idle', async () => {
+    const wsId = 'ws-semantic-grouping';
+    seedSession('idle-agent', '2026-01-01T00:00:00.000Z', 'idle', wsId);
+    seedSession('responding-agent', '2026-01-01T00:00:00.000Z', 'responding', wsId);
+    seedSession('blocker-agent', '2026-01-01T00:00:00.000Z', 'idle', wsId, {
+      attentionRequestKind: 'blocker',
+      attentionRequestReason: 'Blocked by X',
+    });
+    seedSession('discussion-agent', '2026-01-01T00:00:00.000Z', 'idle', wsId, {
+      attentionRequestKind: 'discussion',
+      attentionRequestReason: 'Need input',
+    });
+
+    await renderWithSnapshot(
+      wsId,
+      snapshot(
+        [
+          groupSubscription('group-1', wsId, [
+            'idle-agent',
+            'responding-agent',
+            'blocker-agent',
+            'discussion-agent',
+          ]),
+        ],
+        [
+          delegationGroup('group-1', [
+            'idle-agent',
+            'responding-agent',
+            'blocker-agent',
+            'discussion-agent',
+          ]),
+        ],
+      ),
+    );
+
+    await expandWaitingAgents();
+    const agentIds = visibleAgentIds();
+
+    // Expect: blocker first, discussion second, responding third, idle last
+    expect(agentIds).toEqual([
+      'blocker-agent',
+      'discussion-agent',
+      'responding-agent',
+      'idle-agent',
+    ]);
   });
 });

@@ -19,7 +19,9 @@ function createGroup(root: HTMLElement | null): ObserverGroup {
       (entries) => {
         for (const entry of entries) callbacks.get(entry.target)?.(entry.isIntersecting);
       },
-      { root, rootMargin: '50% 0px', threshold: 0 },
+      // Materialize one viewport before entry so cached-height correction and
+      // late content layout settle outside the visible reading area.
+      { root, rootMargin: '100% 0px', threshold: 0 },
     ),
   };
   activeGroups.add(group);

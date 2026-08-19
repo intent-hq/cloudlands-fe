@@ -137,6 +137,8 @@ const OpenTabActionSchema = z.object({
   // the renderer so its own equivalent-tab dedupe doesn't coalesce the
   // requested duplicate.
   allowDuplicate: z.boolean().optional(),
+  // Pin the panel resolved by this open, including an existing reused panel.
+  pin: z.boolean().optional(),
 });
 
 const NavigateActionSchema = z.object({
@@ -294,6 +296,7 @@ async function executeAction(
     position?: 'adjacent' | 'replace' | 'same',
     allowDuplicate?: boolean,
     requestedUrl?: string,
+    pin?: boolean,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,
@@ -496,7 +499,10 @@ async function executeAction(
               agentId,
               openTabTarget.tunneled ? action.url : null,
             );
-            const focused = await embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId);
+            const focused =
+              action.pin === undefined
+                ? await embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId)
+                : await embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId, action.pin);
             return {
               action: 'openTab',
               success: true,
@@ -596,7 +602,11 @@ async function executeAction(
                 agentId,
                 openTabTarget.tunneled ? action.url : null,
               );
-              await embeddedBrowserCdp.focusTab(idleTabId, workspaceId);
+              if (action.pin === undefined) {
+                await embeddedBrowserCdp.focusTab(idleTabId, workspaceId);
+              } else {
+                await embeddedBrowserCdp.focusTab(idleTabId, workspaceId, action.pin);
+              }
               return {
                 action: 'openTab',
                 success: true,
@@ -646,6 +656,7 @@ async function executeAction(
           action.position,
           agentId ? true : action.allowDuplicate,
           finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
+          action.pin,
         );
         // The id the caller can address: the adopted existing tab on a
         // replace, otherwise the pre-generated id of the new tab.
@@ -881,6 +892,7 @@ export async function executeActions(
     position?: 'adjacent' | 'replace' | 'same',
     allowDuplicate?: boolean,
     requestedUrl?: string,
+    pin?: boolean,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,

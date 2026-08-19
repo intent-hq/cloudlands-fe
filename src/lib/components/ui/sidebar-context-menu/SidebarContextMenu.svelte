@@ -3,10 +3,10 @@
   import Fa from 'svelte-fa';
   import { faCheck, faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import {
-  isSeparator,
-  type SidebarMenuEntry,
-  type SidebarMenuItem,
-} from './types';
+    isSeparator,
+    type SidebarMenuEntry,
+    type SidebarMenuItem,
+  } from '$lib/components/ui/sidebar-context-menu/types';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
@@ -123,8 +123,12 @@
           <button
             type="button"
             class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2 outline-none focus-visible:bg-accent
-              {entry.disabled ? 'text-muted-foreground cursor-not-allowed' : 'text-foreground hover:bg-accent cursor-pointer'}
-              {entry.destructive && !entry.disabled ? 'text-destructive-foreground hover:text-destructive-foreground' : ''}"
+              {entry.disabled
+              ? 'text-muted-foreground cursor-not-allowed'
+              : 'text-foreground hover:bg-accent cursor-pointer'}
+              {entry.destructive && !entry.disabled
+              ? 'text-error-foreground hover:text-error-foreground'
+              : ''}"
             onclick={() => handleItemClick(entry)}
             disabled={entry.disabled}
             role="menuitem"
@@ -148,7 +152,9 @@
                 <button
                   type="button"
                   class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2 outline-none focus-visible:bg-accent
-                    {subitem.disabled ? 'text-muted-foreground cursor-not-allowed' : 'text-foreground hover:bg-accent cursor-pointer'}"
+                    {subitem.disabled
+                    ? 'text-muted-foreground cursor-not-allowed'
+                    : 'text-foreground hover:bg-accent cursor-pointer'}"
                   onclick={() => handleSubmenuItemClick(subitem)}
                   disabled={subitem.disabled}
                   role="menuitem"

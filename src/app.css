@@ -185,6 +185,10 @@ body {
   --panel-header-height: 3rem;
 }
 
+#app {
+  background-color: transparent;
+}
+
 /* Browsers default <kbd> to monospace; shortcuts use the app's UI typography. */
 kbd {
   font-family: var(--font-ui);

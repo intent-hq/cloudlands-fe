@@ -22,3 +22,18 @@ body {
 /* The .app-drag-region descendant no-drag rule lives in src/app.css: it must
    load in EVERY window, not just the (app) route group — standalone windows
    like /hud carry drag-region headers too (intent-hq/monorepo#2167). */
+
+.workspace-sidebar-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0 -1px 0 auto;
+  width: 1px;
+  pointer-events: none;
+  box-shadow: var(--elevation-raised);
+  opacity: 0;
+  transition: opacity var(--motion-fast) ease;
+}
+
+.workspace-sidebar-frame.workspace-columns-overlap:has([data-sidebar-panel])::after {
+  opacity: 1;
+}

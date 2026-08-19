@@ -63,15 +63,32 @@ test('measures the production finished-card turn gap across all required states'
                 const finished = getComputedStyle(
                   root.querySelector('[data-testid="event-wakeup-header"]')!,
                 );
+                const surface = getComputedStyle(
+                  root.querySelector('[data-testid="event-wakeup-card"]')!,
+                );
                 return {
+                  cardTop: card.top,
                   cardBottom: card.bottom,
+                  predecessorBottom: root
+                    .querySelector('[data-testid="event-predecessor"]')!
+                    .getBoundingClientRect().bottom,
                   nextRowTop: nextRow.top,
                   sentInset: [sent.paddingInlineStart, sent.paddingBlockStart],
                   finishedInset: [finished.paddingInlineStart, finished.paddingBlockStart],
+                  finishedHeight: root
+                    .querySelector('[data-testid="event-wakeup-header"]')!
+                    .getBoundingClientRect().height,
+                  surfaceInset: [surface.paddingInlineStart, surface.paddingBlockStart],
                 };
               });
               expect(measurement.finishedInset).toEqual(measurement.sentInset);
-              expect(measurement.nextRowTop - measurement.cardBottom).toBeCloseTo(48 * zoom, 1);
+              expect(measurement.finishedHeight).toBeCloseTo(36 * zoom, 1);
+              expect(measurement.surfaceInset).toEqual(['0px', '0px']);
+              const topGap = measurement.cardTop - measurement.predecessorBottom;
+              const bottomGap = measurement.nextRowTop - measurement.cardBottom;
+              expect(topGap).toBeCloseTo(32 * zoom, 1);
+              expect(bottomGap).toBeCloseTo(32 * zoom, 1);
+              expect(topGap).toBeCloseTo(bottomGap, 1);
               measuredStates += 1;
             }
           }
@@ -82,8 +99,206 @@ test('measures the production finished-card turn gap across all required states'
   expect(measuredStates).toBe(64);
 });
 
+test('matches sent-message disclosures to real finished event rows', async ({ mount, page }) => {
+  const component = await mount(ChatEventGeometryHost, { props: { panelId: 'parity' } });
+  const senderButton = component.getByTestId('agent-message-attribution');
+  const agentToggle = component.getByTestId('agent-message-disclosure-toggle');
+  const eventToggle = component.getByTestId('event-wakeup-summary');
+  let measuredStates = 0;
+
+  await expect(senderButton).toBeVisible();
+  await expect(agentToggle).toHaveAttribute('aria-expanded', 'false');
+  await senderButton.click();
+  await expect(agentToggle).toHaveAttribute('aria-expanded', 'false');
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const width of [360, 960]) {
+      for (const zoom of [1, 2]) {
+        for (const labelLength of ['short', 'long'] as const) {
+          await component.update({
+            props: { panelId: 'parity', theme, width, zoom, labelLength },
+          });
+          for (const toggle of [agentToggle, eventToggle]) {
+            if ((await toggle.getAttribute('aria-expanded')) === 'true') await toggle.click();
+          }
+          await page.waitForTimeout(180);
+
+          const collapsed = await component.evaluate((root) => {
+            const element = (testId: string) =>
+              root.querySelector(`[data-testid="${testId}"]`) as HTMLElement;
+            const rect = (node: Element) => {
+              const value = node.getBoundingClientRect();
+              return { top: value.top, right: value.right, bottom: value.bottom, left: value.left };
+            };
+            const style = (node: Element, properties: string[]) => {
+              const computed = getComputedStyle(node);
+              return Object.fromEntries(
+                properties.map((property) => [property, computed.getPropertyValue(property)]),
+              );
+            };
+            const surfaceProperties = [
+              'border-top-width',
+              'border-top-color',
+              'border-radius',
+              'background-color',
+              'box-shadow',
+            ];
+            const rowProperties = [
+              'height',
+              'padding-inline-start',
+              'padding-inline-end',
+              'padding-block-start',
+              'padding-block-end',
+              'font-family',
+              'font-size',
+              'line-height',
+              'font-weight',
+              'color',
+              'gap',
+              'align-items',
+              'justify-content',
+              'overflow-x',
+              'overflow-y',
+            ];
+            const agentCard = element('user-message-surface');
+            const eventCard = element('event-wakeup-card');
+            const agentRow = element('agent-message-disclosure-header');
+            const eventRow = element('event-wakeup-header');
+            const agentIcon = element('agent-message-avatar-column');
+            const eventIcon = eventRow.querySelector('svg')!;
+            const agentChevron = element('agent-message-chevron-column');
+            const eventChevron = element('event-wakeup-chevron-column');
+            const preview = element('agent-message-preview');
+            const senderName = element('agent-message-attribution').querySelector(
+              'span.truncate[title]',
+            )!;
+            return {
+              agentSurface: style(agentCard, surfaceProperties),
+              eventSurface: style(eventCard, surfaceProperties),
+              agentRow: style(agentRow, rowProperties),
+              eventRow: style(eventRow, rowProperties),
+              agentCardRect: rect(agentCard),
+              eventCardRect: rect(eventCard),
+              agentRowRect: rect(agentRow),
+              eventRowRect: rect(eventRow),
+              agentIconRect: rect(agentIcon),
+              eventIconRect: rect(eventIcon),
+              agentChevronRect: rect(agentChevron),
+              eventChevronRect: rect(eventChevron),
+              ellipsisStyles: [preview, senderName].map((node) => {
+                const computed = getComputedStyle(node);
+                return {
+                  hasTruncateClass: node.classList.contains('truncate'),
+                  overflowX: computed.overflowX,
+                  textOverflow: computed.textOverflow,
+                  whiteSpace: computed.whiteSpace,
+                };
+              }),
+            };
+          });
+
+          expect(collapsed.agentSurface).toEqual(collapsed.eventSurface);
+          expect(collapsed.agentRow).toEqual(collapsed.eventRow);
+          expect(collapsed.agentRow['justify-content']).toBe('flex-start');
+          expect(collapsed.agentIconRect.left - collapsed.agentRowRect.left).toBeCloseTo(
+            12 * zoom,
+            1,
+          );
+          expect(collapsed.agentRowRect.bottom - collapsed.agentRowRect.top).toBeCloseTo(
+            36 * zoom,
+            1,
+          );
+          expect(collapsed.agentRowRect.bottom - collapsed.agentRowRect.top).toBeCloseTo(
+            collapsed.eventRowRect.bottom - collapsed.eventRowRect.top,
+            1,
+          );
+          expect(collapsed.agentCardRect.bottom - collapsed.agentCardRect.top).toBeCloseTo(
+            collapsed.eventCardRect.bottom - collapsed.eventCardRect.top,
+            1,
+          );
+          expect(
+            (collapsed.agentIconRect.top + collapsed.agentIconRect.bottom) / 2 -
+              (collapsed.agentRowRect.top + collapsed.agentRowRect.bottom) / 2,
+          ).toBeCloseTo(0, 1);
+          expect(
+            (collapsed.eventIconRect.top + collapsed.eventIconRect.bottom) / 2 -
+              (collapsed.eventRowRect.top + collapsed.eventRowRect.bottom) / 2,
+          ).toBeCloseTo(0, 1);
+          expect(collapsed.agentChevronRect.right - collapsed.agentChevronRect.left).toBeCloseTo(
+            collapsed.eventChevronRect.right - collapsed.eventChevronRect.left,
+            1,
+          );
+          expect(collapsed.agentChevronRect.bottom - collapsed.agentChevronRect.top).toBeCloseTo(
+            collapsed.eventChevronRect.bottom - collapsed.eventChevronRect.top,
+            1,
+          );
+          if (labelLength === 'long') {
+            for (const ellipsisStyle of collapsed.ellipsisStyles) {
+              expect(ellipsisStyle).toEqual({
+                hasTruncateClass: true,
+                overflowX: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              });
+            }
+          }
+
+          const interactionStyle = async (state: 'hover' | 'focus', target: typeof agentToggle) => {
+            if (state === 'hover') await target.hover();
+            else await target.focus();
+            return target.evaluate((node) => {
+              const computed = getComputedStyle(node);
+              return {
+                backgroundColor: computed.backgroundColor,
+                color: computed.color,
+                boxShadow: computed.boxShadow,
+                outline: `${computed.outlineWidth} ${computed.outlineStyle} ${computed.outlineColor}`,
+              };
+            });
+          };
+          for (const state of ['hover', 'focus'] as const) {
+            expect(await interactionStyle(state, agentToggle)).toEqual(
+              await interactionStyle(state, eventToggle),
+            );
+          }
+
+          await agentToggle.click();
+          await eventToggle.click();
+          await page.waitForTimeout(180);
+          const expanded = await component.evaluate((root) => {
+            const body = (testId: string) =>
+              root.querySelector(`[data-testid="${testId}"]`) as HTMLElement;
+            const measure = (node: HTMLElement, card: HTMLElement) => {
+              const computed = getComputedStyle(node);
+              const rect = node.getBoundingClientRect();
+              const cardRect = card.getBoundingClientRect();
+              return {
+                borderTop: `${computed.borderTopWidth} ${computed.borderTopStyle} ${computed.borderTopColor}`,
+                padding: [
+                  computed.paddingInlineStart,
+                  computed.paddingInlineEnd,
+                  computed.paddingBlockStart,
+                  computed.paddingBlockEnd,
+                ],
+                inlineInsets: [rect.left - cardRect.left, cardRect.right - rect.right],
+              };
+            };
+            return {
+              agent: measure(body('agent-message-expanded-body'), body('user-message-surface')),
+              event: measure(body('event-wakeup-details'), body('event-wakeup-card')),
+            };
+          });
+          expect(expanded.agent).toEqual(expanded.event);
+          measuredStates += 1;
+        }
+      }
+    }
+  }
+  expect(measuredStates).toBe(16);
+});
+
 for (const theme of ['light', 'dark'] as const) {
-  test(`uses canonical primary user-message colors and readable content in ${theme} theme`, async ({
+  test(`uses canonical shared user-message colors and readable content in ${theme} theme`, async ({
     mount,
   }) => {
     const component = await mount(ChatEventGeometryHost, {
@@ -104,8 +319,8 @@ for (const theme of ['light', 'dark'] as const) {
         return value;
       };
       return {
-        primary: resolveToken('--primary', 'backgroundColor'),
-        primaryForeground: resolveToken('--primary-foreground', 'color'),
+        surface: resolveToken('--secondary', 'backgroundColor'),
+        surfaceForeground: resolveToken('--secondary-foreground', 'color'),
         ordinaryBackground: style('[data-testid="sent-card"]').backgroundColor,
         pinnedBackground: style('[data-testid="pinned-user-prompt"]').backgroundColor,
         ordinaryText: style('[data-testid="ordinary-user-text"]').color,
@@ -119,13 +334,13 @@ for (const theme of ['light', 'dark'] as const) {
       };
     });
 
-    expect(styles.ordinaryBackground).toBe(styles.primary);
-    expect(styles.pinnedBackground).toBe(styles.primary);
-    expect(styles.ordinaryText).toBe(styles.primaryForeground);
-    expect(styles.pinnedText).toBe(styles.primaryForeground);
-    expect(styles.linkText).toBe(styles.primaryForeground);
-    expect(styles.codeText).toBe(styles.primaryForeground);
-    expect(styles.codeBackground).not.toBe('rgba(0, 0, 0, 0)');
+    expect(styles.ordinaryBackground).toBe(styles.surface);
+    expect(styles.pinnedBackground).toBe(styles.surface);
+    expect(styles.ordinaryText).toBe(styles.surfaceForeground);
+    expect(styles.pinnedText).toBe(styles.surfaceForeground);
+    expect(styles.linkText).toBe(styles.surfaceForeground);
+    expect(styles.codeText).toBe(styles.surfaceForeground);
+    expect(styles.codeBackground).toBe('rgba(0, 0, 0, 0)');
     expect(contrastRatio(styles.pinnedText, styles.pinnedBackground)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(styles.linkText, styles.ordinaryBackground)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(styles.codeText, styles.ordinaryBackground)).toBeGreaterThanOrEqual(4.5);
@@ -151,8 +366,12 @@ for (const chiefVariant of [false, true]) {
         return { left, right, width };
       };
       const scroll = root.querySelector('[data-testid="sticky-scroll"]') as HTMLElement;
+      const overlay = root.querySelector(
+        '[data-testid="pinned-prompt-overlay-host"]',
+      ) as HTMLElement;
       return {
-        gutter: scroll.offsetWidth - scroll.clientWidth,
+        gutter: Number.parseFloat(getComputedStyle(overlay).paddingInlineEnd),
+        nativeGutter: scroll.offsetWidth - scroll.clientWidth,
         lane: rect('[data-testid="pinned-prompt-overlay-lane"]'),
         column: rect('[data-testid="conversation-column"]'),
         pinned: rect('[data-testid="pinned-user-prompt"]'),

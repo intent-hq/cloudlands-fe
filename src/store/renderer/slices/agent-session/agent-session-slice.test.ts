@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { AgentStatus, type AgentSession, type AgentMessage, type QueuedMessage } from '$shared/types';
+import {
+  AgentStatus,
+  type AgentSession,
+  type AgentMessage,
+  type QueuedMessage,
+} from '$shared/types';
 import { AgentActivationState } from '$shared/types/agent-session';
 import type { AgentSessionState } from './agent-session-types';
 import type { StoreState } from '../../types';
@@ -56,6 +61,7 @@ import {
   selectAgentIsResponding,
   selectAgentIsThinking,
   selectAgentIsWaiting,
+  selectAgentIsBlockedWaiting,
   selectAgentIsWaitingForOtherAgents,
   selectAgentIsRunning,
   selectAllRetainedAgentSessions,
@@ -307,10 +313,7 @@ describe('agent-session-slice reducer', () => {
     // Attention-request lifecycle: a re-hydration that only raises or clears
     // the attention-request fields must not be swallowed by the no-op guard.
     it('applies an upsert when an attention request is raised on an otherwise-equivalent session', () => {
-      const state = agentSessionReducer(
-        initialState,
-        upsertSession(makeSession('a1', 'ws-1')),
-      );
+      const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
 
       const next = agentSessionReducer(
         state,
@@ -334,10 +337,7 @@ describe('agent-session-slice reducer', () => {
     // swallowed by the no-op guard — the AgentCard preview renders directly
     // off them.
     it('applies an upsert when only lastMessageRole/lastUserMessage change on an otherwise-equivalent session', () => {
-      const state = agentSessionReducer(
-        initialState,
-        upsertSession(makeSession('a1', 'ws-1')),
-      );
+      const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
 
       const next = agentSessionReducer(
         state,
@@ -351,9 +351,7 @@ describe('agent-session-slice reducer', () => {
 
       expect(next).not.toBe(state);
       expect(next.byAgentId['a1'].lastMessageRole).toBe('user');
-      expect(next.byAgentId['a1'].lastUserMessage).toBe(
-        'Please also handle the empty-list case',
-      );
+      expect(next.byAgentId['a1'].lastUserMessage).toBe('Please also handle the empty-list case');
     });
 
     // Wire lastMessageId + derived hasUnread (monorepo#1597): an upsert whose
@@ -396,10 +394,7 @@ describe('agent-session-slice reducer', () => {
     // AgentCard "Harness vX.Y" menu item would never appear for already-loaded
     // sessions.
     it('applies an upsert when only harnessVersion appears on an otherwise-equivalent session (backfill)', () => {
-      const state = agentSessionReducer(
-        initialState,
-        upsertSession(makeSession('a1', 'ws-1')),
-      );
+      const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
 
       const next = agentSessionReducer(
         state,
@@ -451,9 +446,7 @@ describe('agent-session-slice reducer', () => {
 
       const next = agentSessionReducer(
         state,
-        upsertSession(
-          makeSession('a1', 'ws-1', { lastAgentResponse: 'Done — tests pass.' }),
-        ),
+        upsertSession(makeSession('a1', 'ws-1', { lastAgentResponse: 'Done — tests pass.' })),
       );
 
       expect(next).not.toBe(state);
@@ -475,10 +468,7 @@ describe('agent-session-slice reducer', () => {
 
       // The daemon clears the fields on the next user-origin delivery; the
       // re-fetched projection simply omits them.
-      const next = agentSessionReducer(
-        state,
-        upsertSession(makeSession('a1', 'ws-1')),
-      );
+      const next = agentSessionReducer(state, upsertSession(makeSession('a1', 'ws-1')));
 
       expect(next).not.toBe(state);
       expect(next.byAgentId['a1'].attentionRequestKind).toBeUndefined();
@@ -487,10 +477,7 @@ describe('agent-session-slice reducer', () => {
     });
 
     it('registers metadata-carried (AgentLite) attention fields as changes too', () => {
-      const state = agentSessionReducer(
-        initialState,
-        upsertSession(makeSession('a1', 'ws-1')),
-      );
+      const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
 
       const next = agentSessionReducer(
         state,
@@ -512,10 +499,7 @@ describe('agent-session-slice reducer', () => {
     // metadata.completionReport must not be swallowed by the no-op guard —
     // AgentCard's effectiveCompletionReport preview renders directly off it.
     it('applies an upsert when only metadata.completionReport changes on an otherwise-equivalent session', () => {
-      const state = agentSessionReducer(
-        initialState,
-        upsertSession(makeSession('a1', 'ws-1')),
-      );
+      const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
 
       const next = agentSessionReducer(
         state,
@@ -527,16 +511,11 @@ describe('agent-session-slice reducer', () => {
       );
 
       expect(next).not.toBe(state);
-      expect(next.byAgentId['a1'].metadata?.completionReport).toBe(
-        'Done — tests pass, PR ready.',
-      );
+      expect(next.byAgentId['a1'].metadata?.completionReport).toBe('Done — tests pass, PR ready.');
     });
 
     it('applies an upsert when only metadata.dismissedQuestionsMessageId changes (cross-window reconcile)', () => {
-      const state = agentSessionReducer(
-        initialState,
-        upsertSession(makeSession('a1', 'ws-1')),
-      );
+      const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
 
       const next = agentSessionReducer(
         state,
@@ -552,10 +531,7 @@ describe('agent-session-slice reducer', () => {
     });
 
     it('applies an upsert when only metadata.lastSeenMessageId changes (agent:updated convergence)', () => {
-      const state = agentSessionReducer(
-        initialState,
-        upsertSession(makeSession('a1', 'ws-1')),
-      );
+      const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
 
       const next = agentSessionReducer(
         state,
@@ -571,10 +547,7 @@ describe('agent-session-slice reducer', () => {
     });
 
     it('applies an upsert when only metadata.taskNoteId changes (post-creation task assignment)', () => {
-      const state = agentSessionReducer(
-        initialState,
-        upsertSession(makeSession('a1', 'ws-1')),
-      );
+      const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
 
       const next = agentSessionReducer(
         state,
@@ -590,10 +563,7 @@ describe('agent-session-slice reducer', () => {
     });
 
     it('applies an upsert when only the sandbox metadata fields settle (async CoW provisioning)', () => {
-      const state = agentSessionReducer(
-        initialState,
-        upsertSession(makeSession('a1', 'ws-1')),
-      );
+      const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
 
       const next = agentSessionReducer(
         state,
@@ -1247,10 +1217,7 @@ describe('agent-session-slice reducer', () => {
     it('a hydration with isActive:false or a terminal status closes the sticky liveTurnOpen slot', () => {
       // Snapshot-only close path: if the idle event is missed, the
       // authoritative isActive: false hydration must still end the turn.
-      let state = agentSessionReducer(
-        initialState,
-        upsertSession(makeSession('a1', 'ws-1')),
-      );
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
       state = agentSessionReducer(
         state,
         eventReceived('ws-1', {
@@ -1607,7 +1574,9 @@ describe('agent-session-slice reducer', () => {
     it('maps agent:session-stats-changed into session.stats without touching lifecycle fields', () => {
       let state = agentSessionReducer(
         initialState,
-        upsertSession(makeSession('a1', 'ws-1', { status: 'responding' as any, isStreaming: true })),
+        upsertSession(
+          makeSession('a1', 'ws-1', { status: 'responding' as any, isStreaming: true }),
+        ),
       );
 
       state = agentSessionReducer(
@@ -2864,7 +2833,6 @@ describe('agent-session selectors', () => {
         makeSession('activating', 'ws-1', { activationState: 'activating' as any }),
         makeSession('active-status', 'ws-1', { status: 'active' as any }),
         makeSession('processing-status', 'ws-1', { status: 'Processing' as any }),
-        makeSession('waiting-status', 'ws-1', { status: 'Waiting' as any }),
       ];
       const state = storeWith({
         byAgentId: Object.fromEntries(activeSessions.map((session) => [session.id, session])),
@@ -2874,6 +2842,16 @@ describe('agent-session selectors', () => {
       for (const session of activeSessions) {
         expect(selectAgentIsResponding.select(state, session.id)).toBe(true);
       }
+    });
+
+    it('returns false for an explicit wait after active turn evidence ends', () => {
+      const session = makeSession('waiting-status', 'ws-1', { status: 'Waiting' as any });
+      const state = storeWith({
+        byAgentId: { 'waiting-status': session },
+        agentIdsByWorkspace: {},
+      });
+
+      expect(selectAgentIsResponding.select(state, 'waiting-status')).toBe(false);
     });
 
     it('returns false for a blank idle-created agent session', () => {
@@ -3326,16 +3304,55 @@ describe('agent-session selectors', () => {
     });
   });
 
+  describe('selectAgentIsBlockedWaiting', () => {
+    it.each([
+      ['responding', { isResponding: true }, false],
+      [
+        'live AgentLite tool payload',
+        {
+          status: 'active',
+          isResponding: true,
+          isWaitingOnTool: true,
+          turnInFlight: true,
+          lastStreamActivityAt: '2026-08-17T12:04:59.000Z',
+          lastToolUse: { name: 'view', status: 'running' },
+        },
+        false,
+      ],
+      [
+        'tool with transient response flags dropped',
+        { status: 'Waiting', isWaitingOnTool: true },
+        false,
+      ],
+      ['blocked wait', { status: 'Waiting' }, true],
+      [
+        'active orchestration peer wait',
+        { isResponding: true, isWaitingForOtherAgents: true },
+        false,
+      ],
+      ['turn-in-flight peer wait', { turnInFlight: true, isWaitingForOtherAgents: true }, false],
+      ['settled peer wait', { status: 'idle', isWaitingForOtherAgents: true }, true],
+      ['stale Waiting status', { status: 'Waiting', isResponding: true }, false],
+    ] as const)('classifies %s from canonical live flags', (_name, fields, expected) => {
+      const session = makeSession('a1', 'ws-1', fields as any);
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(expected);
+    });
+  });
+
   describe('selectAgentIsRunning', () => {
     it('returns true for active session lifecycle flags and statuses', () => {
       const activeSessions = [
         makeSession('streaming', 'ws-1', { isStreaming: true }),
         makeSession('processing-flag', 'ws-1', { isProcessing: true }),
         makeSession('responding', 'ws-1', { isResponding: true }),
+        makeSession('tooling', 'ws-1', { isWaitingOnTool: true }),
+        makeSession('turn-in-flight', 'ws-1', { turnInFlight: true }),
+        makeSession('live-turn-open', 'ws-1', { liveTurnOpen: true } as any),
         makeSession('activating', 'ws-1', { activationState: 'activating' as any }),
         makeSession('status-active', 'ws-1', { status: 'active' as any }),
         makeSession('status-processing', 'ws-1', { status: 'Processing' as any }),
-        makeSession('status-waiting', 'ws-1', { status: 'Waiting' as any }),
       ];
       const state = storeWith({
         byAgentId: Object.fromEntries(activeSessions.map((s) => [s.id, s])),
@@ -3388,11 +3405,20 @@ describe('agent-session selectors', () => {
       expect(selectAgentIsRunning.select(state, 'a1')).toBe(true);
     });
 
-    it('returns true for waiting-for-other-agents relationships', () => {
+    it('returns false for a peer wait after the active turn ends', () => {
       const session = makeSession('a1', 'ws-1', {
         status: 'idle' as any,
         isStreaming: false,
         isProcessing: false,
+        isWaitingForOtherAgents: true,
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      expect(selectAgentIsRunning.select(state, 'a1')).toBe(false);
+    });
+
+    it('returns true for an actively responding orchestration turn with peer watches', () => {
+      const session = makeSession('a1', 'ws-1', {
+        isResponding: true,
         isWaitingForOtherAgents: true,
       });
       const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });

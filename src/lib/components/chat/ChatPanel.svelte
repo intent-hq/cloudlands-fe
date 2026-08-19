@@ -41,6 +41,7 @@
   import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
   import { shouldHandleChatFocusRequest, type ChatFocusRequest } from './chat-focus-ownership';
   import type { AgentMessage } from '$shared/types';
+  import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import { saveAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     agentSessionDismissQuestionsRequested,
@@ -146,20 +147,16 @@
   import { buildDateGroupKeys, groupMessagesByDate } from '$lib/utils/timeFormatting';
   import {
     animateScrollTo,
+    followToBottom,
     followBottom,
-    scrollToBottom as scrollToBottomUtil,
+    type FollowBottomState,
   } from '$lib/utils/smartScroll';
   import { getCachedChatScroll, setCachedChatScroll } from './chat-scroll-cache';
   import { createScrollBottomButtonVisibility } from './scroll-bottom-button-visibility';
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
-  import {
-    faArrowDown,
-    faLock,
-    faSquareCheck,
-    faPaperclip,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faLock, faPaperclip, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
@@ -174,6 +171,11 @@
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AttentionRequestBanner from './AttentionRequestBanner.svelte';
+  import {
+    getMessageNavigationStartScrollTop,
+    getUserMessageNavigationItems,
+    type ChatNavigationState,
+  } from './chat-message-navigation';
   import { parseSuggestedPrompts } from '$lib/utils/messageParser';
   import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
   import {
@@ -218,6 +220,11 @@
   } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
   import { selectDividerSession } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import AuroraBackground from './AuroraBackground.svelte';
+  import AuroraSofteningLayer from './AuroraSofteningLayer.svelte';
+  import {
+    CHAT_SCROLL_END_MARKER_CLASS,
+    chatTranscriptBottomInsetClass,
+  } from './chat-queue-edge-layout';
   import { invoke, listenSync } from '$lib/electron-bridge';
   import {
     selectSpecialists,
@@ -231,7 +238,12 @@
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
-  import { indexConversationTurns, type ConversationTurn } from './conversation-turns';
+  import {
+    hasOperationalAssistantMessageBoundary,
+    hasOperationalAssistantTurnBoundary,
+    indexConversationTurns,
+    type ConversationTurn,
+  } from './conversation-turns';
   import {
     collectSearchRanges,
     createRangeForSpan,
@@ -263,6 +275,7 @@
 
   // Constants
   const SCROLL_BOTTOM_THRESHOLD = 30; // pixels from bottom to consider "at bottom"
+  const SCROLL_BOTTOM_BUTTON_EPSILON = 1;
 
   interface Props {
     workspace: Workspace;
@@ -288,6 +301,7 @@
     }) => void;
     /** Whether this panel is focused (has DOM focus within panel wrapper) */
     isPanelFocused?: boolean;
+    onNavigationStateChange?: (state: ChatNavigationState) => void;
   }
 
   let {
@@ -307,6 +321,7 @@
     onFocus,
     onChatUpdate,
     isPanelFocused = false,
+    onNavigationStateChange,
   }: Props = $props();
 
   // True when this panel is rendering the Chief workspace, which opens directly
@@ -436,11 +451,29 @@
   const cachedScrollRestoreTop =
     cachedScroll && !cachedScroll.shouldFollowBottom ? cachedScroll.scrollTop : null;
   let shouldFollowBottom = $state(cachedScroll?.shouldFollowBottom ?? true);
-  // Committed (damped) visibility for the scroll-to-bottom button. Driven by
-  // the hysteresis + settle-window controller below so per-frame
-  // distance-from-bottom jitter (transient scrollHeight changes: lazy-turn
-  // placeholder swaps, image loads) can never strobe the button.
-  let scrollButtonVisible = $state(false);
+  let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
+  const userMessageNavigationItems = $derived(getUserMessageNavigationItems($agentMessages$));
+
+  $effect(() => {
+    onNavigationStateChange?.({
+      isAtBottom: distanceFromBottom <= SCROLL_BOTTOM_BUTTON_EPSILON,
+      userMessages: userMessageNavigationItems,
+    });
+  });
+
+  function handleBottomStateChange(state: FollowBottomState) {
+    distanceFromBottom = state.distanceFromBottom;
+    scrollButtonVisibility?.update(state.distanceFromBottom);
+    // Keep the cache current before a panel-layout update can recreate this
+    // chat and run the replacement instance ahead of our destroy callback.
+    if (workspace?.id && agentId && scrollContainer && $agentMessages$.length > 0) {
+      setCachedChatScroll(workspace.id, agentId, {
+        scrollTop: scrollContainer.scrollTop,
+        shouldFollowBottom: state.isFollowing,
+      });
+    }
+  }
+  let scrollButtonVisibility: ReturnType<typeof createScrollBottomButtonVisibility> | null = null;
   // Transient "scroll re-locked" confirmation: a lock icon briefly flashes when
   // scrolling crosses back to the bottom and auto-follow re-engages. Purely
   // decorative (aria-hidden, pointer-events-none) so it can never intercept
@@ -590,6 +623,13 @@
   // The pinned-prompt overlay host subtracts it so the overlay lane occupies
   // the same horizontal box as the conversation column.
   let scrollbarGutterWidth = $state(0);
+  let hasVisibleTranscriptUtility = $state(false);
+
+  $effect(() => {
+    workspace?.id;
+    agentId;
+    hasVisibleTranscriptUtility = false;
+  });
 
   $effect(() => {
     if (containerHeight > 0) {
@@ -692,6 +732,13 @@
       queueLength: visibleQueuedMessages.length,
       hasPendingQuestions: !!pendingQuestions,
       questionWizardCollapsed,
+    }),
+  );
+  const transcriptBottomInsetClass = $derived(
+    chatTranscriptBottomInsetClass({
+      isChiefWorkspace,
+      isCompactMode,
+      showQueue: queuedMessagesVisibility.showQueue,
     }),
   );
 
@@ -1660,8 +1707,7 @@
         currentCount,
         currentNewestId,
       );
-    const shouldScroll =
-      hasNewMessages && (isFirstMessage || shouldFollowBottom);
+    const shouldScroll = hasNewMessages && (isFirstMessage || shouldFollowBottom);
     if (hasNewMessages) {
       // Unread-marker entry: on the first transcript hydration with a latched
       // divider anchor, land at the "New messages" divider with follow
@@ -1693,9 +1739,8 @@
           // Guard against component destruction during tick
           if (isComponentDestroyed) return;
           const startedTransition = startPendingSendTransitions();
-          if (scrollContainer && shouldScroll && !startedTransition) {
-            scrollToBottomUtil(scrollContainer);
-          }
+          if (!startedTransition && scrollContainer && shouldScroll)
+            followToBottom(scrollContainer);
         });
       }
     }
@@ -1919,7 +1964,8 @@
     // sends anything on mount — chat-history hydration renders the daemon-
     // delivered message once it arrives.
 
-    // Scroll handling on mount
+    // Empty chats start at the top and unlock until the first send. Non-empty
+    // chats are positioned by the follow action itself.
     const initialScrollFrame = requestAnimationFrame(() => {
       if (scrollContainer) {
         if ($agentMessages$.length > 0) {
@@ -1928,8 +1974,8 @@
             // reading position (no-op when the hydration effect already did).
             applyCachedScrollRestore();
           } else {
-            // Scroll to bottom if there are messages
-            scrollToBottomUtil(scrollContainer);
+            shouldFollowBottom = true;
+            followToBottom(scrollContainer);
           }
         } else {
           // Scroll to top for empty panel (shows specialist switcher)
@@ -1971,7 +2017,8 @@
 
   $effect(() => {
     const transitionWorkspaceId = workspace?.id;
-    if (!transitionWorkspaceId) return;
+    const transitionAgentId = agentId;
+    if (!transitionWorkspaceId || !transitionAgentId) return;
     return cancelAllSendTransitions;
   });
 
@@ -2031,6 +2078,15 @@
   // Message navigation state
   let currentMessageIndex = $state(-1); // -1 means at bottom (no selection)
 
+  function getRenderedPanelHeaderBottom(): number | undefined {
+    const ownerPanel = panelElement?.closest<HTMLElement>('[data-panel-id]');
+    if (!ownerPanel) return undefined;
+    const header = Array.from(
+      ownerPanel.querySelectorAll<HTMLElement>('[data-panel-content-header]'),
+    ).find((candidate) => candidate.closest('[data-panel-id]') === ownerPanel);
+    return header?.getBoundingClientRect().bottom;
+  }
+
   /**
    * Smoothly scroll an element into view with a custom duration.
    * Uses easeOutCubic for a natural feel.
@@ -2053,7 +2109,12 @@
         containerRect.height / 2 +
         elementRect.height / 2;
     } else if (block === 'start') {
-      targetScrollTop = scrollContainer.scrollTop + (elementRect.top - containerRect.top) + 1;
+      targetScrollTop = getMessageNavigationStartScrollTop({
+        currentScrollTop: scrollContainer.scrollTop,
+        targetTop: elementRect.top,
+        containerTop: containerRect.top,
+        headerBottom: getRenderedPanelHeaderBottom(),
+      });
     } else {
       targetScrollTop = scrollContainer.scrollTop + (elementRect.bottom - containerRect.bottom) + 1;
     }
@@ -2082,7 +2143,8 @@
     // Clamp index to valid range, or -1 for "at bottom"
     if (index < 0) {
       currentMessageIndex = -1;
-      if (scrollContainer) scrollToBottomUtil(scrollContainer);
+      shouldFollowBottom = true;
+      followToBottom(scrollContainer);
       return;
     }
 
@@ -2351,7 +2413,7 @@
     const targetElement = dividerElement ?? anchorElement;
     if (!targetElement) {
       shouldFollowBottom = true;
-      scrollToBottomUtil(scrollContainer);
+      followToBottom(scrollContainer);
       scheduleDeepOpenRelease();
       return;
     }
@@ -2366,7 +2428,7 @@
       )
     ) {
       shouldFollowBottom = true;
-      scrollToBottomUtil(scrollContainer);
+      followToBottom(scrollContainer);
       scheduleDeepOpenRelease();
       return;
     }
@@ -2480,81 +2542,24 @@
     };
   });
 
-  // Track scroll distance from bottom for the lock button
-  // Use onMount pattern to avoid effect loops - scrollContainer binding can cause
-  // effects to re-run when state changes trigger re-renders
+  // The followBottom action is the only scroll authority. Its geometry callback
+  // drives this damped control state without adding a second scroll listener.
   onMount(() => {
-    let destroyed = false;
-    let readinessFrame: number | null = null;
-    let initialCalculationFrame: number | null = null;
-    let boundContainer: HTMLDivElement | null = null;
-
-    // Damps raw distanceFromBottom jitter into a stable committed button
-    // state: shows only after the distance holds beyond the hysteresis band
-    // for a settle window, hides immediately at the bottom, and flashes the
-    // re-lock confirmation only on a committed shown → hidden transition so
-    // the same jitter can never re-trigger it.
-    const buttonVisibility = createScrollBottomButtonVisibility({
+    scrollButtonVisibility = createScrollBottomButtonVisibility({
       atBottomThreshold: SCROLL_BOTTOM_THRESHOLD,
-      onVisibilityChange: (visible) => {
-        scrollButtonVisible = visible;
-      },
+      onVisibilityChange: () => {},
       onRelock: flashLockConfirmation,
     });
-
-    const handleScroll = () => {
-      if (!boundContainer) return;
-      const { scrollTop, scrollHeight, clientHeight } = boundContainer;
-      buttonVisibility.update(scrollHeight - scrollTop - clientHeight);
-    };
-
-    // Wait for scrollContainer to be bound, then set up
-    const setupWhenReady = () => {
-      readinessFrame = null;
-      if (destroyed) return;
-      if (!scrollContainer) {
-        readinessFrame = requestAnimationFrame(setupWhenReady);
-        return;
-      }
-      boundContainer = scrollContainer;
-      boundContainer.addEventListener('scroll', handleScroll, { passive: true });
-      // Initial calculation (deferred to avoid effect loops)
-      initialCalculationFrame = requestAnimationFrame(handleScroll);
-    };
-    readinessFrame = requestAnimationFrame(setupWhenReady);
+    scrollButtonVisibility.update(distanceFromBottom);
 
     return () => {
-      destroyed = true;
-      if (readinessFrame !== null) cancelAnimationFrame(readinessFrame);
-      if (initialCalculationFrame !== null) cancelAnimationFrame(initialCalculationFrame);
-      boundContainer?.removeEventListener('scroll', handleScroll);
-      buttonVisibility.destroy();
-      if (lockConfirmationTimer !== null) {
-        clearTimeout(lockConfirmationTimer);
-        lockConfirmationTimer = null;
-      }
+      scrollButtonVisibility?.destroy();
+      scrollButtonVisibility = null;
     };
   });
-
   function setPinnedPrompt(next: PinnedPromptState | null) {
     if (next?.id === pinnedPrompt?.id && next?.message === pinnedPrompt?.message) return;
-    const previousTurnKey = pinnedPrompt ? messageIdToTurnKey.get(pinnedPrompt.id) : undefined;
-    if (previousTurnKey) {
-      temporaryTurnMaterialization = releaseMaterializedTurn(
-        temporaryTurnMaterialization,
-        'pinned',
-        previousTurnKey,
-      );
-    }
     pinnedPrompt = next;
-    const nextTurnKey = next ? messageIdToTurnKey.get(next.id) : undefined;
-    if (nextTurnKey) {
-      temporaryTurnMaterialization = materializeTurn(
-        temporaryTurnMaterialization,
-        'pinned',
-        nextTurnKey,
-      );
-    }
   }
 
   // Track container height for compact mode using ResizeObserver
@@ -2696,6 +2701,10 @@
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
     cancelAllSendTransitions();
+    if (lockConfirmationTimer !== null) {
+      clearTimeout(lockConfirmationTimer);
+      lockConfirmationTimer = null;
+    }
 
     // Cache the transcript scroll state so a remount after column windowing
     // (WorkspaceColumnsView unmounting off-screen surfaces) restores the
@@ -2735,7 +2744,7 @@
     const lastAgentMessage = [...messages].reverse().find((m) => m.role === 'assistant');
 
     onChatUpdate({
-      lastUserMessage: lastUserMessage ? extractAllContent(lastUserMessage) : undefined,
+      lastUserMessage: lastUserMessage ? getPresentedUserMessageText(lastUserMessage) : undefined,
       lastAgentResponse: lastAgentMessage ? extractAllContent(lastAgentMessage) : undefined,
       isProcessing: $agentIsResponding$,
       messageCount: messages.length,
@@ -2924,7 +2933,7 @@
     // stalled or rejecting drafts.clear must never delay or skip them.
     if (options.followBottom) {
       shouldFollowBottom = true;
-      if (scrollContainer) scrollToBottomUtil(scrollContainer);
+      if (scrollContainer) followToBottom(scrollContainer);
     }
 
     if (options.historyText) {
@@ -3283,10 +3292,36 @@
   }
 
   export function scrollToBottom() {
-    if (scrollContainer) {
+    const container = scrollContainer;
+    if (!container) return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
       shouldFollowBottom = true;
-      scrollToBottomUtil(scrollContainer);
+      followToBottom(container);
+      return;
     }
+    shouldFollowBottom = false;
+    animateScrollTo(
+      () => (scrollContainer === container ? container : null),
+      Math.max(0, container.scrollHeight - container.clientHeight),
+      150,
+      () => {
+        if (scrollContainer !== container) return;
+        shouldFollowBottom = true;
+        followToBottom(container);
+      },
+    );
+  }
+
+  export async function navigateToUserMessage(messageId: string): Promise<boolean> {
+    if (!userMessageNavigationItems.some((message) => message.id === messageId)) return false;
+    const targetElement = await forceRenderAndFindMessage(messageId);
+    if (!targetElement) return false;
+    currentMessageIndex = getMessageIndex(messageId);
+    smoothScrollTo(targetElement, 'start');
+    targetElement.classList.add('message-highlight-flash');
+    setTimeout(() => targetElement.classList.remove('message-highlight-flash'), 600);
+    scheduleDeepOpenRelease();
+    return true;
   }
 
   export function getMessages() {
@@ -3393,6 +3428,8 @@
 <div
   bind:this={panelElement}
   class="group/panel flex flex-col h-full w-full min-w-0 relative z-20"
+  role="region"
+  aria-label={agentName}
   data-agent-model={agentModel}
   onfocusin={() => {
     isInternallyFocused = true;
@@ -3458,7 +3495,9 @@
              variant's user-row inset so the pinned bubble aligns with
              in-conversation user bubbles. -->
         <div
-          class={isChiefWorkspace ? 'px-0' : 'px-4 sm:px-6'}
+          class="chat-content-measure mx-auto w-full min-w-0 {isChiefWorkspace
+            ? 'px-0'
+            : 'px-4 sm:px-6'}"
           data-testid="pinned-prompt-overlay-lane"
         >
           <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
@@ -3471,7 +3510,7 @@
         </div>
       {/if}
     </div>
-    <!-- followBottom and the LazyTurn height ledger own scroll compensation. -->
+    <!-- followBottom, native anchoring, and the LazyTurn ledger own scroll compensation. -->
     <div
       bind:this={scrollContainer}
       use:trackPinnedPrompt={{
@@ -3486,20 +3525,22 @@
         // scroll target.
         follow: shouldFollowBottom && !showSearch && $agentMessages$.length > 0,
         threshold: 100,
+        layoutNeutralBottomAnchor: true,
         onFollowChange: (f) => {
           shouldFollowBottom = f;
         },
+        onScrollStateChange: handleBottomStateChange,
       }}
       class="flex-1 overflow-y-auto"
       class:agent-font-monospace={$isAgentMonospace}
-      style="scrollbar-gutter: stable; overflow-anchor: none;"
+      style="scrollbar-gutter: stable;"
+      data-testid="chat-transcript-scroll-viewport"
     >
       <div
-        class="conversation-column flex min-h-full w-full flex-col {isChiefWorkspace
+        class="conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col {isChiefWorkspace
           ? 'px-0'
-          : 'px-4 pt-2 sm:px-6'}"
-        class:pb-3={!isChiefWorkspace && isCompactMode}
-        class:pb-2={!isChiefWorkspace && !isCompactMode}
+          : 'px-4 pt-8 sm:px-6'} {transcriptBottomInsetClass}"
+        data-testid="chat-transcript-inner"
       >
         <!-- Task Assignment Pill -->
         {#if $agentTasks$.length > 0}
@@ -3649,7 +3690,7 @@
                 {/if}
                 <!-- Conversation turn container - constrains sticky behavior -->
                 <div class="conversation-turn">
-                  <div class="message-nav-target z-10 mb-9 bg-transparent">
+                  <div class="message-nav-target z-10 mb-8 bg-transparent">
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
@@ -3669,6 +3710,7 @@
                       <ChatMessage
                         {agentId}
                         messageId={message.id}
+                        ownsMessageIdentity={false}
                         {workspace}
                         isStreaming={isCurrentlyStreaming}
                         backendSessionId={auggieSessionId}
@@ -3755,7 +3797,7 @@
                 {/if}
                 <!-- Conversation turn container - constrains sticky behavior -->
                 <div class="conversation-turn">
-                  <div class="message-nav-target z-10 mb-9">
+                  <div class="message-nav-target z-10 mb-8">
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
@@ -3775,6 +3817,7 @@
                       <ChatMessage
                         {agentId}
                         messageId={message.id}
+                        ownsMessageIdentity={false}
                         {workspace}
                         isStreaming={isCurrentlyStreaming}
                         backendSessionId={auggieSessionId}
@@ -3917,8 +3960,16 @@
                   {@const nextTurnIsEventNotification = isEventWakeMessage(
                     nextTurn?.userMessage ?? undefined,
                   )}
+                  {@const nextTurnHasUserMessage = Boolean(
+                    nextTurn?.userMessage && !nextTurnIsEventNotification,
+                  )}
                   {@const isLastTurnInConversation =
                     globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1}
+                  {@const compactOperationalTurnBoundary = hasOperationalAssistantTurnBoundary(
+                    turn,
+                    nextTurn,
+                  )}
+                  {@const zeroOperationalTurnBoundary = compactOperationalTurnBoundary}
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- PERF: LazyTurn defers rendering of off-screen turns -->
                   <!-- PERF: Only force-visible the last turn during streaming, not all turns -->
@@ -3961,6 +4012,7 @@
                             data-pinned-prompt-id={message.id}
                             data-message-index={globalIndex}
                             class="message-nav-target relative z-10"
+                            class:mb-8={turn.assistantMessages.length > 0}
                             class:bg-sidebar={isChiefWorkspace}
                             class:bg-card={!isChiefWorkspace}
                             use:attachPinnedPromptMessage={message}
@@ -4000,7 +4052,9 @@
                             data-pinned-prompt-id={message.id}
                             data-send-app-message-id={message.appMessageId}
                             data-message-index={globalIndex}
-                            class="message-nav-target relative z-20 mb-4"
+                            class="message-nav-target relative z-20"
+                            class:mb-5={isAutomatedMessage(message)}
+                            class:mb-7={!isAutomatedMessage(message)}
                             class:invisible={pendingSendMessageIds.has(
                               String(message.appMessageId ?? ''),
                             )}
@@ -4012,6 +4066,7 @@
                               <ChatMessage
                                 {agentId}
                                 messageId={message.id}
+                                ownsMessageIdentity={false}
                                 {workspace}
                                 onEditSubmit={(newText, model, blocks) =>
                                   handleEditMessage(message.id, newText, model, blocks)}
@@ -4078,6 +4133,16 @@
                             assistantIndex === turn.assistantMessages.length - 1}
                           {@const isLastMessage = isLastTurn && isLastAssistant}
                           {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
+                          {@const compactPreviousMessageBoundary =
+                            hasOperationalAssistantMessageBoundary(
+                              turn.assistantMessages[assistantIndex - 1],
+                              message,
+                            )}
+                          {@const compactNextMessageBoundary =
+                            hasOperationalAssistantMessageBoundary(
+                              message,
+                              turn.assistantMessages[assistantIndex + 1],
+                            )}
                           {@const turnNumber = getMessageTurnNumber(message.id)}
                           {@const globalIndex = getMessageIndex(message.id)}
                           <div
@@ -4086,10 +4151,14 @@
                             data-message-index={globalIndex}
                             data-turn-number={turnNumber}
                             class="message-nav-target"
+                            data-operational-message-seam={compactPreviousMessageBoundary
+                              ? 'true'
+                              : undefined}
                           >
                             <ChatMessage
                               {agentId}
                               messageId={message.id}
+                              ownsMessageIdentity={false}
                               {workspace}
                               isStreaming={isCurrentlyStreaming}
                               onEditSubmit={(newText, model, blocks) =>
@@ -4126,7 +4195,13 @@
                             </div>
                           {/if}
                           <!-- Show file changes after each assistant turn -->
-                          <div class="w-full mb-1">
+                          <div
+                            class="w-full"
+                            class:mb-1={!compactNextMessageBoundary &&
+                              !(isLastAssistant && compactOperationalTurnBoundary) &&
+                              !(isLastAssistant && nextTurnHasUserMessage)}
+                            data-after-assistant-message={message.id}
+                          >
                             <ChatFileChangesSummary
                               workspaceId={workspace.id}
                               {message}
@@ -4156,6 +4231,9 @@
                       currentIsEventNotification={isEventNotification}
                       currentHasAssistantMessages={turn.assistantMessages.length > 0}
                       nextIsEventNotification={nextTurnIsEventNotification}
+                      nextHasUserMessage={nextTurnHasUserMessage}
+                      compactOperationalSeam={compactOperationalTurnBoundary}
+                      zeroToolSeam={zeroOperationalTurnBoundary}
                     />
                   {/if}
                   <!-- Turn-boundary divider placement: the anchor is this turn's
@@ -4248,6 +4326,7 @@
                 workspaceId={workspace.id}
                 {agentId}
                 compact={isCompactMode}
+                bind:visible={hasVisibleTranscriptUtility}
               />
             {/key}
           {/if}
@@ -4255,7 +4334,7 @@
           <!-- Queued messages remain in the same scroll/follow surface. -->
           {#if queuedMessagesVisibility.showQueue}
             <div
-              class="mt-6 {isChiefWorkspace
+              class="relative z-20 mt-6 {isChiefWorkspace
                 ? 'w-full'
                 : 'queued-message-utility-wide -mx-4 sm:-mx-6'}"
               data-testid="queued-message-utility-area"
@@ -4273,28 +4352,11 @@
           {/if}
         </div>
 
-        <!-- Scroll anchor - ensures proper scroll to absolute bottom -->
-        <div class="min-h-px min-w-6 shrink-0"></div>
+        <!-- Zero-size semantic end marker; followBottom owns exact bottom anchoring. -->
+        <div class={CHAT_SCROLL_END_MARKER_CLASS} data-testid="chat-scroll-end-marker"></div>
       </div>
     </div>
-    <!-- Scroll-to-bottom button: rendered only while scrolled up so no
-         invisible control overlaps the message actions bar or lingers in the
-         tab order while at the bottom. Auto-follow re-locks on click or on
-         scrolling back to the bottom; scrolling up unlocks it. Visibility is
-         the damped (hysteresis + settle window) state, not the raw distance,
-         so per-frame scroll-metric jitter cannot strobe the button. -->
-    {#if $agentMessages$.length > 0 && scrollButtonVisible}
-      <Button
-        variant="outline"
-        size="icon-xs"
-        data-testid="chat-scroll-to-bottom-button"
-        onclick={() => scrollToBottom()}
-        class="absolute bottom-2 right-2 text-muted-foreground bg-sidebar rounded-sm transition-all opacity-0 group-hover/panel:opacity-100 focus-visible:opacity-100 active:scale-95"
-        title={m.chat_chatPanel_scrollToBottom_tooltip()}
-      >
-        <Fa icon={faArrowDown} class="w-3! h-3!" />
-      </Button>
-    {:else if showLockConfirmation}
+    {#if showLockConfirmation}
       <!-- Transient re-lock confirmation: purely decorative feedback that
            auto-follow re-engaged on reaching the bottom. Never interactive:
            aria-hidden keeps it out of the accessibility tree and
@@ -4312,73 +4374,93 @@
   <!-- Message Input with Aurora Background -->
   <div
     bind:this={composerElement}
-    class="conversation-composer relative z-20 w-full"
+    class="conversation-composer relative z-10 w-full"
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}
+    data-testid="chat-composer-shell"
   >
     <!-- Aurora northern lights effect during streaming -->
     {#if $agentSessionIsStreaming$}
       <div
-        class="absolute -inset-x-2 -bottom-2 pointer-events-none z-0 overflow-hidden"
-        transition:fade
+        class="pointer-events-none absolute -inset-x-2 -bottom-2 z-0 overflow-hidden"
         style="height: calc(100% + 10rem);"
+        data-testid="composer-aurora-host"
+        transition:fade
       >
         <AuroraBackground {agentId} />
+        <AuroraSofteningLayer />
       </div>
     {/if}
 
-    {#if pendingQuestions}
-      {#key pendingQuestions.messageId}
-        <div class="w-full" data-testid="question-wizard-slot">
-          <QuestionWizard
-            questions={pendingQuestions.questions}
-            collapsed={questionWizardCollapsed}
-            onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
-            onComplete={handleQuestionWizardComplete}
-            onDismiss={handleQuestionWizardDismiss}
+    <div
+      class="composer-prompt-layer relative z-10 w-full border-t border-border"
+      class:pb-3={!hasVisibleTranscriptUtility}
+      style:padding-inline-end="{scrollbarGutterWidth}px"
+      data-testid="composer-prompt-layer"
+      data-has-transcript-utility={hasVisibleTranscriptUtility}
+    >
+      <div
+        class="chat-content-measure mx-auto w-full min-w-0"
+        data-testid="chat-composer-controls-inner"
+      >
+        {#if pendingQuestions}
+          {#key pendingQuestions.messageId}
+            <div class="w-full" data-testid="question-wizard-slot">
+              <QuestionWizard
+                questions={pendingQuestions.questions}
+                collapsed={questionWizardCollapsed}
+                onToggleCollapsed={(collapsed) => (questionWizardCollapsed = collapsed)}
+                onComplete={handleQuestionWizardComplete}
+                onDismiss={handleQuestionWizardDismiss}
+              />
+            </div>
+          {/key}
+        {/if}
+        {#if !pendingQuestions || questionWizardCollapsed}
+          {#if draftManager.gateVisible}
+            <ChatDraftLoadingGate />
+          {/if}
+          <SimpleRichInput
+            bind:this={inputComponent}
+            bind:contextItems
+            bind:value={inputValue}
+            onvaluechange={(value) => {
+              if (workspace?.id && agentId) {
+                appStore.dispatch(setChatDraft(workspace.id, agentId, value));
+              }
+            }}
+            onsubmit={handleSend}
+            onforcesubmit={handleForceSubmit}
+            onstop={handleStop}
+            onHistoryPrev={handleHistoryPrev}
+            onHistoryNext={handleHistoryNext}
+            disabled={!workspace || !$agentSession$}
+            inputLocked={draftManager.gateActive}
+            isStreaming={$agentSessionIsStreaming$}
+            isResponding={$agentIsResponding$}
+            {workspace}
+            currentContext={currentMainPanelContext}
+            {agentId}
+            selectedModel={hydratedInputModel}
+            compactMode={isCompactMode}
+            editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
+            contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
+            edgeDocked
+            externalDropTarget
+            requiresModelSwitchConfirmation={!canChangeProvider}
+            providerId={inputProviderId}
           />
-        </div>
-      {/key}
-    {/if}
-    {#if !pendingQuestions || questionWizardCollapsed}
-      {#if draftManager.gateVisible}
-        <ChatDraftLoadingGate />
-      {/if}
-      <SimpleRichInput
-        bind:this={inputComponent}
-        bind:contextItems
-        bind:value={inputValue}
-        onvaluechange={(value) => {
-          if (workspace?.id && agentId) {
-            appStore.dispatch(setChatDraft(workspace.id, agentId, value));
-          }
-        }}
-        onsubmit={handleSend}
-        onforcesubmit={handleForceSubmit}
-        onstop={handleStop}
-        onHistoryPrev={handleHistoryPrev}
-        onHistoryNext={handleHistoryNext}
-        disabled={!workspace || !$agentSession$}
-        inputLocked={draftManager.gateActive}
-        isStreaming={$agentSessionIsStreaming$}
-        isResponding={$agentIsResponding$}
-        {workspace}
-        currentContext={currentMainPanelContext}
-        {agentId}
-        selectedModel={hydratedInputModel}
-        compactMode={isCompactMode}
-        editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
-        contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
-        edgeDocked
-        externalDropTarget
-        requiresModelSwitchConfirmation={!canChangeProvider}
-        providerId={inputProviderId}
-      />
-    {/if}
+        {/if}
+      </div>
+    </div>
   </div>
 </div>
 
 <style>
+  .chat-content-measure {
+    max-width: 70em;
+  }
+
   /* Keep style invalidation local without paint-containing sticky descendants. */
   /* Chromium can flash sticky layers as they cross a paint-containment boundary. */
   :global(.conversation-turn) {
@@ -4446,6 +4528,11 @@
   /* Subtle flash animation for input when draft prompt is applied */
   .input-flash :global(.rich-input-container) {
     animation: input-flash 0.6s ease-out;
+  }
+
+  /* The full-width prompt layer owns the docked divider. */
+  .composer-prompt-layer :global(.rich-input-container) {
+    border-top-width: 0;
   }
 
   @keyframes input-flash {

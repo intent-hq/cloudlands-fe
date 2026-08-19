@@ -33,11 +33,20 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     }),
   selectAgentSessionsByIds: () =>
     readable([
-      { id: 'agent-a', updatedAt: '2026-08-13T10:00:00Z' },
+      { id: 'agent-a', status: 'active', updatedAt: '2026-08-13T10:00:00Z' },
       { id: 'agent-b', updatedAt: '2026-08-13T11:00:00Z' },
+      { id: 'agent-c', updatedAt: '2026-08-13T12:00:00Z' },
     ]),
+  selectAgentSessionsById: Object.assign(() => readable({}), {
+    select: () => ({
+      'agent-a': { id: 'agent-a', status: 'active' },
+      'agent-b': { id: 'agent-b', status: 'completed' },
+      'agent-c': { id: 'agent-c', status: 'completed' },
+    }),
+  }),
   selectAgentIsResponding: () => readable(false),
   selectAgentIsWaiting: () => readable(false),
+  selectAgentIsBlockedWaiting: () => readable(false),
   selectAgentSessionStreamingContent: () => readable(''),
   selectAgentSessionHasStreamOwnedMessage: () => readable(false),
 }));
@@ -60,13 +69,13 @@ vi.mock('$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-sele
         id: 'watch-1',
         workspaceId: 'ws-1',
         agentId: 'agent-parent',
-        actorIds: ['agent-a', 'agent-b'],
+        actorIds: ['agent-a', 'agent-b', 'agent-c'],
         eventTypes: ['agent:idle'],
         createdAt: '2026-08-13T09:00:00Z',
       },
     ]),
   selectAgentSubscriptionStatuses: () =>
-    readable({ 'agent-a': 'completed', 'agent-b': 'completed' }),
+    readable({ 'agent-a': 'running', 'agent-b': 'completed', 'agent-c': 'completed' }),
   selectDelegationGroups: () => readable([]),
   selectWokenUpInfo: () => readable(null),
   selectWaitingState: () => readable('waiting'),
@@ -114,7 +123,7 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
     openTabInAdjacentOrSplit: vi.fn(),
   }),
 }));
-vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
+vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => ({
   default: (await import('./mocks/MockAvatarWithState.svelte')).default,
 }));
 vi.mock('$features/navigation/link-handler', () => ({
@@ -127,7 +136,10 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 });
 
 import EventSubscriptionsCard from '../EventSubscriptionsCard.svelte';
-import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
+import {
+  resetAgentSubscriptionsViewStateForTests,
+  setEventSubscriptionsExpanded,
+} from '../agent-subscriptions-view-state';
 
 const originalInnerWidth = window.innerWidth;
 const typographyStyle = document.createElement('style');
@@ -139,6 +151,11 @@ function typography(element: HTMLElement) {
     fontWeight: style.fontWeight,
     lineHeight: style.lineHeight,
   };
+}
+
+function tone(element: Element) {
+  const style = getComputedStyle(element);
+  return { color: style.color, opacity: style.opacity };
 }
 
 beforeAll(() => {
@@ -173,13 +190,13 @@ describe('subscription row typography', () => {
     document.documentElement.classList.add(theme);
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
     document.body.style.zoom = zoom;
+    setEventSubscriptionsExpanded('ws-1', 'agent-parent', true);
     render(EventSubscriptionsCard, {
       props: { workspaceId: 'ws-1', agentId: 'agent-parent' },
     });
 
     await waitFor(() => expect(screen.getByTestId('event-subscriptions-summary')).toBeTruthy());
-    await fireEvent.click(screen.getByTestId('event-subscriptions-summary'));
-    await fireEvent.click(screen.getByTestId('one-shot-summary-toggle'));
+    await fireEvent.click(await screen.findByTestId('one-shot-summary-toggle'));
     const finishedSummary = screen.getByTestId('finished-agent-summary');
     if (finishedSummary.getAttribute('aria-expanded') === 'false') {
       await fireEvent.click(finishedSummary);
@@ -199,6 +216,39 @@ describe('subscription row typography', () => {
       expect(typography(row)).toEqual(expected);
       expect(row.classList).toContain('type-body');
       expect(row.classList).toContain('font-normal');
+    }
+  });
+
+  it('renders semantic header icons on the header text tone at narrow 200% zoom', async () => {
+    document.documentElement.classList.add('dark');
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 });
+    document.body.style.zoom = '2';
+    setEventSubscriptionsExpanded('ws-1', 'agent-parent', true);
+    render(EventSubscriptionsCard, {
+      props: { workspaceId: 'ws-1', agentId: 'agent-parent' },
+    });
+
+    await waitFor(() => expect(screen.getByTestId('event-subscriptions-summary')).toBeTruthy());
+    await fireEvent.click(await screen.findByTestId('one-shot-summary-toggle'));
+    const rows = [
+      [
+        screen.getByTestId('event-subscriptions-summary'),
+        screen.getByTestId('event-subscriptions-summary-title'),
+      ],
+      [screen.getByTestId('one-shot-summary-toggle'), screen.getByTestId('one-shot-summary-title')],
+      [
+        screen.getByTestId('finished-agent-summary'),
+        screen.getByTestId('finished-agent-summary-title'),
+      ],
+      [screen.getByTestId('background-hook-summary'), screen.getByText('Watch CI')],
+      [screen.getByTestId('monitored-pr-summary'), screen.getByText(/Polish subscriptions/)],
+    ] as const;
+
+    for (const [row, label] of rows) {
+      const icon = row.querySelector('svg')!;
+      expect(icon.classList).toContain('text-muted-foreground!');
+      expect(icon.classList).toContain('opacity-100');
+      expect(tone(icon)).toEqual(tone(label));
     }
   });
 });

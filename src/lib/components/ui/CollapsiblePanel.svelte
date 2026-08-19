@@ -82,10 +82,9 @@
         {/if}
         <h3 class="m-0 text-sm font-medium">{title}</h3>
         <div
-          class="transition-all mt-[2px] duration-200 text-subtle {!hovering &&
-          showChevronOnHover
+          class="transition-all mt-[2px] duration-200 text-subtle {!hovering && showChevronOnHover
             ? 'opacity-0'
-            : 'opacity-100'} {collapsed ? '-rotate-90' : ''}"
+            : 'opacity-100'} {collapsed ? 'rotate-90' : ''}"
         >
           <Fa icon={faChevronDown} size="xs" />
         </div>

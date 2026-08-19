@@ -11,7 +11,7 @@
    */
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
-  import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
   import { parsePatch, type DiffLine } from './patch-utils';
   import type { WalkthroughAnnotation } from './types';
   import WalkthroughAnnotationCard from './WalkthroughAnnotationCard.svelte';
@@ -110,7 +110,7 @@
     class="w-full flex items-center gap-2 px-3 py-2 bg-muted/50 border-b border-border hover:bg-muted/70 transition-colors text-left"
     onclick={toggleCollapsed}
   >
-    <Fa icon={collapsed ? faChevronRight : faChevronDown} class="h-3 w-3 text-ghost" />
+    <Fa icon={collapsed ? faChevronLeft : faChevronDown} class="h-3 w-3 text-ghost" />
     <span class="text-sm font-mono truncate flex-1">{fileName}</span>
     <span class="text-xs text-subtle">
       {annotations.length === 1
@@ -133,7 +133,7 @@
 
                 <!-- Line numbers -->
                 <div
-                  class="w-16 shrink-0 px-2 text-right text-subtle select-none border-r border-border/50"
+                  class="w-16 shrink-0 px-2 text-right text-subtle select-none border-r border-border"
                 >
                   <span class="inline-block w-6">{line.oldNum ?? ''}</span>
                   <span class="inline-block w-6">{line.newNum ?? ''}</span>

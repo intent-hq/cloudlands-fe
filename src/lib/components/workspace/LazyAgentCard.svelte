@@ -37,13 +37,18 @@
 <script lang="ts">
   import { onMount, type ComponentProps } from 'svelte';
   import AgentCard from '$lib/components/chat/AgentCard.svelte';
+  import { WORKSPACE_AGENT_ROW_HEIGHT } from './workspace-agents-list-utils';
 
   type Props = ComponentProps<typeof AgentCard> & {
     cacheKey: string;
     estimatedHeight?: number;
   };
 
-  let { cacheKey, estimatedHeight = 48, ...agentCardProps }: Props = $props();
+  let {
+    cacheKey,
+    estimatedHeight = WORKSPACE_AGENT_ROW_HEIGHT,
+    ...agentCardProps
+  }: Props = $props();
   let container = $state<HTMLDivElement | null>(null);
   let isVisible = $state(false);
   // svelte-ignore state_referenced_locally -- initial placeholder height is intentionally read once.

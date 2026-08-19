@@ -22,7 +22,7 @@
    */
   import type { AgentSession } from '$shared/types';
 
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
@@ -135,7 +135,7 @@
             title={m.chat_agentsList_agentThread_title()}
           >
             <div class="flex items-start gap-2 w-full">
-              <AuggieAvatar
+              <AgentAvatar
                 agentId={agent.id}
                 size={18}
                 specialist={specialistId === 'spec-writer' ||
@@ -180,7 +180,7 @@
             onclick={(e) => handleAgentClick(e, agent)}
             title={getAgentDisplayName(agent)}
           >
-            <AuggieAvatar
+            <AgentAvatar
               agentId={agent.id}
               size={18}
               specialist={collapsedSpecialistId === 'spec-writer' ||

@@ -6,7 +6,7 @@
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import {
     selectSpecialists,
@@ -52,10 +52,10 @@
 </script>
 
 <DropdownMenu bind:open={dropdownOpen} align="start" side="bottom">
-  {#snippet trigger({ toggle }: { toggle: () => void })}
+  {#snippet trigger({ props })}
     <button
+      {...props}
       type="button"
-      onclick={toggle}
       class={cn(
         variant === 'bare'
           ? 'group inline-flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-sm font-normal leading-5 text-foreground transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer'
@@ -64,7 +64,7 @@
       )}
     >
       {#if variant !== 'bare'}
-        <AuggieAvatar seed="blank" size={16} specialist={value} />
+        <AgentAvatar agentId="blank" size={16} specialist={value} />
       {/if}
       <span
         class={variant === 'bare'
@@ -94,7 +94,7 @@
         )}
         onclick={() => handleSelect(null)}
       >
-        <AuggieAvatar seed="blank" size={20} specialist={null} />
+        <AgentAvatar agentId="blank" size={20} specialist={null} />
         <div class="flex flex-col">
           <span class="font-medium text-foreground">{m.chat_shared_general_fallback()}</span>
           <span class="text-xs text-subtle">{m.chat_shared_noSpecializedBehavior_label()}</span>
@@ -114,7 +114,7 @@
           )}
           onclick={() => handleSelect(specialist.id)}
         >
-          <AuggieAvatar seed="blank" size={20} specialist={specialist.id} />
+          <AgentAvatar agentId="blank" size={20} specialist={specialist.id} />
           <div class="flex flex-col min-w-0">
             <span class="font-medium text-foreground">{specialist.name}</span>
             <span class="text-xs text-subtle truncate">{specialist.description}</span>

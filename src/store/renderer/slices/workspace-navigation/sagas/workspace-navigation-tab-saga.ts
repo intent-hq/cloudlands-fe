@@ -10,8 +10,12 @@ import { createLogger } from '$lib/utils/client-logger';
 import { isBinaryExtension } from '$shared/binary-file-extensions';
 import { m } from '$shared/paraglide/messages.js';
 import { selectPanel } from '../../panel-layout/panel-layout-selectors';
-import { openTab, openTabInAdjacentOrSplit } from '../../panel-layout/panel-layout-slice';
+import { openTabInNewRootColumn } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
+import {
+  selectPanelOpenMode,
+  selectPanelStackDirection,
+} from '../../user-preferences/user-preferences-selectors';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import {
   chatChangesDedupId,
@@ -35,15 +39,16 @@ function* openWorkspaceTab(
   adjacent: boolean,
   sourcePanelId?: string,
 ): SagaGenerator<void> {
-  if (adjacent) {
-    yield* put(
-      openTabInAdjacentOrSplit(workspaceId, tab, sourcePanelId, {
-        force: true,
-      }),
-    );
-    return;
-  }
-  yield* put(openTab(workspaceId, tab, sourcePanelId, undefined, true));
+  void adjacent;
+  void sourcePanelId;
+  yield* put(
+    openTabInNewRootColumn(workspaceId, tab, {
+      force: true,
+      sourcePanelId,
+      panelOpenMode: yield* selectPanelOpenMode.effect(),
+      panelStackDirection: yield* selectPanelStackDirection.effect(),
+    }),
+  );
 }
 
 function commitTitle(commitHash: string, commitMessage?: string): string {

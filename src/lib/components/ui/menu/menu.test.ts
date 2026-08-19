@@ -152,11 +152,16 @@ describe('Menu metadata and compatibility', () => {
   async function verifyLegacyTrigger(stopPropagation: boolean) {
     render(LegacyMenuHarness, { props: { stopPropagation } });
     const trigger = screen.getByRole('button', { name: 'Legacy actions closed' });
+    expect(trigger.getAttribute('data-slot')).toBe('menu-trigger');
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
     trigger.focus();
     await fireEvent.click(trigger);
     await waitFor(() => expect(screen.getByTestId('legacy-open').textContent).toBe('true'));
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByRole('button', { name: 'Legacy actions open' })).toBe(trigger);
-    expect(await screen.findByRole('menuitem', { name: 'Legacy command' })).toBeTruthy();
+    const command = await screen.findByRole('menuitem', { name: 'Legacy command' });
+    expect(document.body.contains(command)).toBe(true);
     await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
     await waitFor(() => expect(screen.getByTestId('legacy-open').textContent).toBe('false'));
     expect(screen.getByRole('button', { name: 'Legacy actions closed' })).toBe(trigger);
@@ -169,6 +174,65 @@ describe('Menu metadata and compatibility', () => {
 
   it('preserves stopped-propagation trigger state and focus restoration', async () => {
     await verifyLegacyTrigger(true);
+  });
+
+  it('syncs the shared open state after Escape, reopen, and outside pointer dismissal', async () => {
+    render(LegacyMenuHarness);
+    const trigger = screen.getByRole('button', { name: 'Legacy actions closed' });
+
+    await fireEvent.click(trigger);
+    await fireEvent.keyDown(await screen.findByRole('menu'), { key: 'Escape' });
+    await waitFor(() => expect(screen.getByTestId('legacy-open').textContent).toBe('false'));
+
+    await fireEvent.click(trigger);
+    await screen.findByRole('menu');
+    await fireEvent.pointerDown(document.body, {
+      button: 0,
+      pointerType: 'mouse',
+      clientX: 100,
+      clientY: 100,
+    });
+
+    await waitFor(() => expect(screen.getByTestId('legacy-open').textContent).toBe('false'));
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it.each(['Enter', ' '])(
+    'opens the legacy trigger with %s and updates ARIA state',
+    async (key) => {
+      render(LegacyMenuHarness);
+      const trigger = screen.getByRole('button', { name: 'Legacy actions closed' });
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key });
+      await screen.findByRole('menu');
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    },
+  );
+
+  it('closes the previous menu when another shared trigger opens', async () => {
+    render(LegacyMenuHarness, { props: { label: 'First actions' } });
+    render(LegacyMenuHarness, { props: { label: 'Second actions' } });
+    const first = screen.getByRole('button', { name: 'First actions closed' });
+    const second = screen.getByRole('button', { name: 'Second actions closed' });
+
+    await fireEvent.click(first);
+    await screen.findByRole('button', { name: 'First actions open' });
+    await fireEvent.keyDown(second, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'First actions open' })).toBeNull(),
+    );
+    expect(screen.getByRole('button', { name: 'Second actions open' })).toBe(second);
+    expect(screen.getAllByRole('menu')).toHaveLength(1);
+  });
+
+  it('runs a legacy action once and closes the menu', async () => {
+    render(LegacyMenuHarness);
+    await fireEvent.click(screen.getByRole('button', { name: 'Legacy actions closed' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Legacy command' }));
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    expect(screen.getByTestId('legacy-action-count').textContent).toBe('1');
   });
 
   it('uses compact editorial rows, semantic selected states, and a contained overlay surface', async () => {
@@ -207,5 +271,4 @@ describe('Menu metadata and compatibility', () => {
       /max-height: min\(24rem, (calc\()?100dvh - 1rem\)?\)/,
     );
   });
-
 });

@@ -319,7 +319,7 @@
     <div
       class="bg-destructive/20 border-y border-destructive/20 px-3 py-1.5 flex items-center justify-between"
     >
-      <div class="flex items-center gap-2 text-sm text-destructive-foreground font-medium">
+      <div class="flex items-center gap-2 text-sm text-error-foreground font-medium">
         <div class="w-4 h-4 rounded-full bg-destructive flex items-center justify-center">
           <Fa icon={faXmark} size="xs" />
         </div>
@@ -330,7 +330,7 @@
       <Button
         variant="outline"
         size="sm"
-        class="h-7 text-xs bg-background border border-border text-destructive-foreground"
+        class="h-7 text-xs bg-background border border-border text-error-foreground"
         onclick={handleAskAgent}
       >
         <Fa icon={faWandMagicSparkles} size="sm" class="mr-1.5" />

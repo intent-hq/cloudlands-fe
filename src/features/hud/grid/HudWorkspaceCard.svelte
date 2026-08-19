@@ -234,7 +234,7 @@
     pointer-events: none;
     background: repeating-linear-gradient(
       135deg,
-      hsl(var(--destructive-foreground)) 0 2px,
+      hsl(var(--error-foreground)) 0 2px,
       transparent 2px 14px
     );
     opacity: 0.07;

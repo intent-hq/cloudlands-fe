@@ -691,13 +691,11 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
       typeof metadata?.lastSeenMessageId === 'string' ? metadata.lastSeenMessageId : undefined,
     sandboxId: typeof metadata?.sandboxId === 'string' ? metadata.sandboxId : undefined,
     sandboxPath: typeof metadata?.sandboxPath === 'string' ? metadata.sandboxPath : undefined,
-    sandboxBranch:
-      typeof metadata?.sandboxBranch === 'string' ? metadata.sandboxBranch : undefined,
+    sandboxBranch: typeof metadata?.sandboxBranch === 'string' ? metadata.sandboxBranch : undefined,
     waitingForAgentIdsKey: Array.isArray(session.waitingForAgentIds)
       ? session.waitingForAgentIds.join(',')
       : undefined,
-    turnInFlight:
-      (session as { turnInFlight?: unknown }).turnInFlight === true ? true : undefined,
+    turnInFlight: session.turnInFlight === true ? true : undefined,
     liveTurnOpen: session.liveTurnOpen === true ? true : undefined,
     liveTurnOpenedAt:
       typeof session.liveTurnOpenedAt === 'string' ? session.liveTurnOpenedAt : undefined,
@@ -705,8 +703,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     // upgrade backfills harnessVersion on legacy rows and first activation
     // materializes harnessFeatures — those upserts must not be swallowed
     // (e.g. the AgentCard "Harness vX.Y" menu item would never appear).
-    harnessVersion:
-      typeof session.harnessVersion === 'string' ? session.harnessVersion : undefined,
+    harnessVersion: typeof session.harnessVersion === 'string' ? session.harnessVersion : undefined,
     harnessFeaturesKey: session.harnessFeatures
       ? Object.entries(session.harnessFeatures)
           .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))

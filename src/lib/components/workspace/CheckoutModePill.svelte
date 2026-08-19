@@ -272,7 +272,7 @@
           {/each}
         </ul>
       {/if}
-      <div class="mt-0.5 flex flex-col gap-1 border-t border-border/50 pt-1.5 text-xs">
+      <div class="mt-0.5 flex flex-col gap-1 border-t border-border pt-1.5 text-xs">
         <div class="text-subtle">{m.workspace_diskUsagePill_shrink_description()}</div>
         <button
           type="button"

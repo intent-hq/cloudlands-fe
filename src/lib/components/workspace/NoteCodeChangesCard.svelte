@@ -10,7 +10,7 @@
    */
 
   import Fa from 'svelte-fa';
-  import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
   import { faFile } from '@fortawesome/free-regular-svg-icons';
   import type { Note, AgentMessage, AgentSession } from '$shared/types';
   import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -248,13 +248,13 @@
               <LineChangesBadge additions={totalAdditions} deletions={totalDeletions} size="xs" />
             {/if}
           </div>
-          <Fa icon={isExpanded ? faChevronDown : faChevronRight} class="text-subtle" size="xs" />
+          <Fa icon={isExpanded ? faChevronDown : faChevronLeft} class="text-subtle" size="xs" />
         </button>
 
         <!-- File List -->
         {#if isExpanded && hasChanges}
-          <div class="border-t border-border/30" transition:slide={{ duration: 150 }}>
-            <div class="divide-y divide-border/20">
+          <div class="border-t border-border" transition:slide={{ duration: 150 }}>
+            <div class="divide-y divide-border">
               {#each displayedChanges as change (change.filePath)}
                 <button
                   onclick={() => handleFileClick(change)}
@@ -282,7 +282,7 @@
 
             <!-- Footer -->
             {#if hasMoreFiles && !isExpanded}
-              <div class="px-4 py-2 border-t border-border/30">
+              <div class="px-4 py-2 border-t border-border">
                 <span class="text-xs text-subtle">
                   {m.workspace_noteCodeChanges_moreFiles_label({
                     count: formatInteger(changes.length - MAX_VISIBLE_FILES),

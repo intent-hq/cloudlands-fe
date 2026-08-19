@@ -4,7 +4,6 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { cn } from '$lib/utils';
   import {
-    getNoteIcon,
     getNoteTitle,
     sortNotes,
     isChildNote,
@@ -13,7 +12,6 @@
     getNoteDepth,
     isHiddenByAnyCollapsedAncestor,
     parseTaskStats,
-    getNoteIconClass,
   } from './utils';
   import {
     faChevronDown,
@@ -26,11 +24,11 @@
   import { m } from '$shared/paraglide/messages.js';
   import { selectUnreadNoteIds } from '$store/renderer/slices/note-read-tracking/note-read-tracking-selectors';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import {
     type AvatarState,
     getAvatarState,
-  } from '$features/agent/components/auggie-avatar/avatar-state';
+  } from '$features/agent/components/agent-avatar/avatar-state';
   import {
     selectAgentIsResponding,
     selectAgentIsWaiting,
@@ -60,6 +58,7 @@
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import OpenPanelIndicator from './OpenPanelIndicator.svelte';
+  import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
 
   interface Props {
     notes: Note[];
@@ -541,7 +540,7 @@
                     {/if}
                   </svg>
                 {:else}
-                  <Fa icon={getNoteIcon(note)} class={cn('w-3.5 h-3.5', getNoteIconClass(note))} />
+                  <ResourceIconTile kind="note" />
                 {/if}
                 <input
                   bind:this={editInputRef}
@@ -593,13 +592,16 @@
                         onclick={onClick}
                         title={m.workspace_notesPanel_openAgent_tooltip()}
                       >
-                        <AugieAvatarWithState {agentId} size={16} {state} {specialist} />
+                        <AgentAvatarWithState {agentId} size={16} {state} {specialist} />
                       </button>
                     {/each}
                     {#if activeAgents.length > 3}
-                      <div class="text-ui text-subtle ml-1">
+                      <span
+                        class="ml-1! inline-flex w-max flex-none items-center bg-transparent text-xs leading-none text-subtle"
+                        data-agent-avatar-overflow
+                      >
                         +{activeAgents.length - 3}
-                      </div>
+                      </span>
                     {/if}
                   </div>
                 {/if}
@@ -698,8 +700,6 @@
               {@const activeAgents = getActiveAgentsForNote(note)}
               <div class="relative flex-1 w-full flex items-center gap-1">
                 <ListItem
-                  icon={getNoteIcon(note)}
-                  iconClass={getNoteIconClass(note)}
                   title={getNoteTitle(note)}
                   active={selectedNoteId === note.id}
                   indent={depth}
@@ -709,6 +709,9 @@
                   onclick={() => onOpenNote?.(note.id)}
                   class="cursor-pointer flex-1"
                 >
+                  {#snippet iconSnippet()}
+                    <ResourceIconTile kind="note" />
+                  {/snippet}
                   {#if isUnread}
                     <span
                       class="absolute top-0 -left-1 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
@@ -728,13 +731,16 @@
                         onclick={onClick}
                         title={m.workspace_notesPanel_openAgent_tooltip()}
                       >
-                        <AugieAvatarWithState {agentId} size={16} {state} {specialist} />
+                        <AgentAvatarWithState {agentId} size={16} {state} {specialist} />
                       </button>
                     {/each}
                     {#if activeAgents.length > 3}
-                      <div class="text-ui text-subtle ml-1">
+                      <span
+                        class="ml-1! inline-flex w-max flex-none items-center bg-transparent text-xs leading-none text-subtle"
+                        data-agent-avatar-overflow
+                      >
                         +{activeAgents.length - 3}
-                      </div>
+                      </span>
                     {/if}
                   </div>
                 {/if}

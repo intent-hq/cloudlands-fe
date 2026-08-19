@@ -14,12 +14,7 @@
 
   import { TrackedChangeDiffViewer } from '$features/file-tracking/components/diff';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import {
-    openTab,
-    openTabInAdjacentOrSplit,
-  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import { selectFocusedPanelId } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import { requestPanelFocus } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { openTabWithPanelModeRequested } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
@@ -144,12 +139,9 @@
   });
 
   // Open the file in the editor
-  function handleGoToFile(e?: MouseEvent) {
+  function handleGoToFile(_event?: MouseEvent) {
     if (!filePath) return;
     const fileName = filePath.split('/').pop() || filePath;
-    const openInAdjacentPanel = e?.metaKey || e?.ctrlKey || false;
-    const panelElement = (e?.target as HTMLElement | null)?.closest('[data-panel-id]');
-    const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
     const tabData = {
       type: 'file' as const,
       title: fileName,
@@ -158,15 +150,7 @@
       workspaceId,
     };
     const store = appStore;
-    if (openInAdjacentPanel) {
-      store.dispatch(openTabInAdjacentOrSplit(workspaceId, tabData, sourcePanelId));
-      const focusedId = selectFocusedPanelId.select(store.state, workspaceId);
-      if (focusedId) {
-        store.dispatch(requestPanelFocus(workspaceId, focusedId));
-      }
-    } else {
-      store.dispatch(openTab(workspaceId, tabData));
-    }
+    store.dispatch(openTabWithPanelModeRequested(workspaceId, tabData));
   }
 
   // Register header actions

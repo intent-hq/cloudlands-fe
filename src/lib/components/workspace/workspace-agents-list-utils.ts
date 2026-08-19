@@ -8,6 +8,8 @@ export interface FlatWorkspaceAgentRow {
 
 /** Threshold above which a flat top-level foreground list switches to virtual scrolling. */
 export const WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD = 20;
+/** Stable height for every selectable row in the Agents panel. */
+export const WORKSPACE_AGENT_ROW_HEIGHT = 40;
 
 export function isBackgroundAgentSession(agent: AgentSession): boolean {
   return !!(agent.isBackground || agent.metadata?.isBackground);

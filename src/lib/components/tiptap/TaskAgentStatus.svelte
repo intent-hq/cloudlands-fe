@@ -12,7 +12,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { getLastMeaningfulLine, stripUserMessagePrefixes } from '$lib/utils/text-utils';
   import { taskAgentPollingManager } from './task-agent-polling-manager';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
   import { classifyTool } from '$lib/components/chat/tool-classifier';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -507,7 +507,7 @@
     </div>
 
     <div class="status-icon">
-      <AugieAvatarWithState {agentId} size={19} />
+      <AgentAvatarWithState {agentId} size={19} />
     </div>
   </button>
 {/if}

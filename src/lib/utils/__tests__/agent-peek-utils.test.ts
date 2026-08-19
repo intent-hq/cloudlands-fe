@@ -74,10 +74,15 @@ describe('getAgentPeekData', () => {
   });
 
   it('passes messages and fileChanges through unchanged', () => {
-    const messages = [makeUserMessage('hello'), makeAssistantMessage([{ type: 'text', text: 'hi' }])];
+    const messages = [
+      makeUserMessage('hello'),
+      makeAssistantMessage([{ type: 'text', text: 'hi' }]),
+    ];
     const session = {
       ...makeSession(messages),
-      fileChanges: [{ path: 'src/a.ts', type: 'modify' as const, timestamp: '2026-08-18T00:00:00Z' }],
+      fileChanges: [
+        { path: 'src/a.ts', type: 'modify' as const, timestamp: '2026-08-18T00:00:00Z' },
+      ],
     };
     const data = getAgentPeekData(session);
     expect(data?.messages).toBe(messages);

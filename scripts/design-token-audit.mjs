@@ -99,6 +99,7 @@ const runtimePatterns = [
   /^--color-(?:white|black)$/,
   /^--color-[a-z]+-[0-9]{2,3}$/,
   /^--radix-/,
+  /^--bits-popover-content-available-(height|width)$/,
   // Set by bits-ui at runtime on dropdown-menu content; externally owned, not a design token.
   /^--bits-dropdown-menu-content-available-height$/,
 ];

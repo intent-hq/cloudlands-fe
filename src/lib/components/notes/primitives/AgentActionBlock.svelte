@@ -16,7 +16,7 @@
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -194,7 +194,7 @@
           onclick={(e) => handleOpenAgent(e, linkedAgentId)}
           title={m.notes_agentActionBlock_viewAgent_tooltip()}
         >
-          <AuggieAvatar agentId={linkedAgentId} size={16} />
+          <AgentAvatar agentId={linkedAgentId} size={16} />
         </button>
       {:else}
         <Fa icon={faRobot} size="sm" class="shrink-0 text-muted-foreground" />

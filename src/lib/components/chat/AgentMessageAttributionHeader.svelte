@@ -8,17 +8,25 @@
    */
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
-  import { Button } from '$lib/components/ui/button';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+  import { getAvatarState } from '$features/agent/components/agent-avatar/avatar-state';
   import type { AgentMessageAttribution } from '$lib/utils/agent-message-attribution';
+  import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
+  import {
+    selectAgentIsResponding,
+    selectAgentIsWaiting,
+    selectAgentProvider,
+    selectAgentSession,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import {
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
-    SUBSCRIPTION_COMPACT_DISCLOSURE_ROW_CLASS,
+    SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
   } from './subscription-disclosure';
 
   interface Props {
@@ -27,6 +35,8 @@
     expanded: boolean;
     controlsId: string;
     ontoggle: () => void;
+    /** Explicit identity fallback for isolated surfaces before the sender session is available. */
+    specialist?: string | null;
     /** Optional class name */
     class?: string;
   }
@@ -37,10 +47,43 @@
     expanded,
     controlsId,
     ontoggle,
+    specialist = null,
     class: className = '',
   }: Props = $props();
 
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+  // The component is keyed by message sender in the transcript. Initialize all
+  // selector readables once so identity and semantic state stay live while the
+  // message row remains mounted.
+  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by sender id.
+  const senderSession$ = selectAgentSession(attribution.fromAgentId);
+  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by sender id.
+  const senderIsResponding$ = selectAgentIsResponding(attribution.fromAgentId);
+  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by sender id.
+  const senderIsWaiting$ = selectAgentIsWaiting(attribution.fromAgentId);
+  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by sender id.
+  const senderPermissionCount$ = selectPendingCount(attribution.fromAgentId);
+  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by sender id.
+  const senderProvider$ = selectAgentProvider(attribution.fromAgentId);
+  const senderSpecialist = $derived(
+    specialist ??
+      $senderSession$?.metadata?.specialist ??
+      $senderSession$?.agentMetadata?.specialist ??
+      null,
+  );
+  const senderAttentionRequest = $derived(getAgentAttentionRequest($senderSession$));
+  const senderAvatarState = $derived(
+    getAvatarState(
+      {
+        isStreaming: $senderIsResponding$ && !$senderIsWaiting$,
+        status: $senderIsWaiting$ ? 'waiting' : $senderSession$?.status,
+      },
+      {
+        hasPermissionRequest: $senderPermissionCount$ > 0,
+        attentionKind: senderAttentionRequest?.kind ?? null,
+      },
+    ),
+  );
 
   function handleClick(e: MouseEvent) {
     e.preventDefault();
@@ -70,29 +113,42 @@
 </script>
 
 <div
-  class="{SUBSCRIPTION_COMPACT_DISCLOSURE_ROW_CLASS} {className}"
+  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} font-normal text-muted-foreground {className}"
   data-testid="agent-message-disclosure-header"
 >
   <button
     type="button"
-    class="flex min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded border-none bg-transparent p-0 text-left font-inherit transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+    class="flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     style="max-width: 40%;"
     onclick={handleClick}
     ondblclick={(event) => event.stopPropagation()}
     title={m.chat_msgAttribution_openAgent_title({ name: attribution.displayName })}
     data-testid="agent-message-attribution"
   >
-    <span class="shrink-0" data-testid="agent-message-avatar-column">
-      <AuggieAvatar agentId={attribution.fromAgentId} size={14} />
+    <span
+      class="shrink-0"
+      aria-hidden="true"
+      data-testid="agent-message-avatar-column"
+      data-agent-message-leading-identity
+    >
+      <AgentAvatarWithState
+        agentId={attribution.fromAgentId}
+        specialist={senderSpecialist}
+        provider={$senderProvider$}
+        state={senderAvatarState}
+        variant="standard"
+      />
     </span>
-    <span class="min-w-0 truncate font-medium text-foreground" title={attribution.displayName}>
+    <span
+      class="min-w-0 truncate font-normal text-muted-foreground"
+      title={attribution.displayName}
+    >
       {attribution.displayName}
     </span>
   </button>
-  <Button
+  <button
     type="button"
-    variant="plain"
-    class="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 overflow-hidden rounded border-none bg-transparent p-0 text-left font-inherit text-subtle transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+    class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 overflow-hidden rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     onclick={handleToggle}
     ondblclick={(event) => event.stopPropagation()}
     aria-expanded={expanded}
@@ -105,7 +161,7 @@
     <span class="shrink-0 whitespace-nowrap">{m.chat_msgAttribution_sentMessage_after()}</span>
     {#if preview}
       <span
-        class="min-w-0 flex-1 truncate whitespace-nowrap text-ghost"
+        class="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground"
         title={preview}
         data-testid="agent-message-preview"
       >
@@ -115,15 +171,16 @@
       <span class="min-w-0 flex-1"></span>
     {/if}
     <span
-      class="inline-flex h-5 w-5 shrink-0 items-center justify-center"
+      class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
       data-testid="agent-message-chevron-column"
     >
       <Fa
         icon={faChevronDown}
+        size={16}
         class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {expanded
           ? ''
           : 'rotate-90'}"
       />
     </span>
-  </Button>
+  </button>
 </div>

@@ -79,9 +79,9 @@
   {#each prompts as prompt, i}
     <button
       type="button"
-      class="flex items-center gap-2.5 rounded-lg border border-border/40 bg-card/30
+      class="flex items-center gap-2.5 rounded-lg border border-border bg-card/30
              px-3 py-2.5 text-left text-sm transition-all duration-150
-             hover:bg-card/60 hover:border-border/60 hover:shadow-sm
+             hover:bg-card/60 hover:border-border hover:shadow-sm
              disabled:opacity-40 disabled:cursor-not-allowed
              cursor-pointer"
       in:fly={{ y: 8, duration: 200, delay: 50 * i }}

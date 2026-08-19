@@ -306,7 +306,7 @@
               <!-- Stack Trace Details - Full width with proper overflow handling -->
               {#if showDetails && errorInfo}
                 <div class="w-full pt-6 border-t border-border" transition:slide={{ axis: 'y' }}>
-                  <div class="bg-muted/60 rounded-lg p-4 border border-border/50">
+                  <div class="bg-muted/60 rounded-lg p-4 border border-border">
                     <pre
                       class="text-xs font-mono text-subtle leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">{errorInfo}</pre>
                   </div>

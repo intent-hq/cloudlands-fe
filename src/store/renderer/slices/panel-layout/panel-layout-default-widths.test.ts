@@ -38,8 +38,19 @@ describe('panel layout default width tiers', () => {
     const root = horizontalRoot('agent', 'note');
     const layoutPanels = panels('agent', 'note');
 
-    expect(getHorizontalPanelColumnDefaultWidths(root, layoutPanels, 1200)).toEqual([500, 720]);
-    expect(getAutomaticPanelLayoutCanvasWidth(root, layoutPanels, 'content', 1200)).toBe(1220);
+    expect(getHorizontalPanelColumnDefaultWidthTiers(root, layoutPanels)).toEqual([
+      'chat',
+      'medium',
+    ]);
+    expect(getHorizontalPanelColumnDefaultWidths(root, layoutPanels, 1200)).toEqual([700, 720]);
+    expect(getAutomaticPanelLayoutCanvasWidth(root, layoutPanels, 'content', 1200)).toBe(1428);
+  });
+
+  it('clamps only chat defaults to a narrow usable viewport', () => {
+    const root = horizontalRoot('agent', 'note');
+    const layoutPanels = panels('agent', 'note');
+
+    expect(getHorizontalPanelColumnDefaultWidths(root, layoutPanels, 480)).toEqual([480, 500]);
   });
 
   it('resolves adjacent browser and note panels to responsive defaults', () => {

@@ -89,6 +89,7 @@ describe('ChatPanel draft restore/save (mounted)', () => {
     flushSync();
 
     expect(screen.getByRole('status').textContent).toContain('Loading draft message');
+    expect(screen.getByRole('status').querySelector('svg')).toBeNull();
   });
 
   it('never shows the loading gate when the restore settles under 500ms', async () => {

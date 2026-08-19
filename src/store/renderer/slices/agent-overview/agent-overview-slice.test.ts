@@ -124,7 +124,7 @@ describe("selectGraphState", () => {
     const graph = selectGraphState.select(makeOverviewState(session), WS);
     const agentNode = graph.nodes.find((node) => node.type === "agent" && node.agentId === "a1");
 
-    expect(agentNode?.status).toBe("responding");
+    expect(agentNode?.status).toBe("waiting");
     expect(agentNode && "isWaiting" in agentNode).toBe(false);
     expect(agentNode && "isWaitingForOtherAgents" in agentNode).toBe(false);
   });

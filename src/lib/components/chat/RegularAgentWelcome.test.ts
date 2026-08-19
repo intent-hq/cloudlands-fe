@@ -68,7 +68,7 @@ vi.mock('$lib/components/ui/dropdown-menu.svelte', async () => ({
     .default,
 }));
 
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
   default: (await import('../workspace/initializer/__tests__/mocks/MockComponent.svelte')).default,
 }));
 
@@ -100,8 +100,10 @@ describe('RegularAgentWelcome specialist picker', () => {
     const trigger = screen.getByTestId('specialist-picker-trigger');
     expect(trigger.textContent).toContain('General');
     expect(trigger.textContent).toContain('No specialized behavior');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
 
     await fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
     const option = document.querySelector<HTMLButtonElement>(
       '[data-specialist-option="ui-designer"]',
     );

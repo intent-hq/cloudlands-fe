@@ -5,7 +5,7 @@
    * A compact badge that shows which agent made a change.
    * Clicking opens the agent drawer and scrolls to the relevant turn.
    */
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import type { AgentAttribution } from '$features/file-tracking/types';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
@@ -94,7 +94,7 @@
   {#if !compact}
     <span class="text-subtle">{m.shared_agentAttribution_editedBy_label()}</span>
   {/if}
-  <AuggieAvatar agentId={attribution.agentId} size={avatarSize} />
+  <AgentAvatar agentId={attribution.agentId} size={avatarSize} />
   {#if !compact}
     <span class="text-foreground truncate max-w-[150px] font-medium">
       {displayName}

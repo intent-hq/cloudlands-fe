@@ -8,7 +8,7 @@
    */
   import Button from '$lib/components/ui/button/button.svelte';
   import MicroKeySlotSquare from '$features/hardware-console/components/MicroKeySlotSquare.svelte';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
 
   /**
    * Structured content parts of `notification:show` (mirrors the wire
@@ -72,7 +72,7 @@
       </div>
       <!-- Line 2: provider-aware agent avatar + specialist (+ task title). -->
       <div class="flex items-center gap-1.5 mt-0.5">
-        <AuggieAvatar
+        <AgentAvatar
           agentId={structured.agentId}
           provider={structured.provider}
           specialist={structured.specialist}

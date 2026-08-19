@@ -224,7 +224,7 @@ Respond with ONLY:
   {onGoBack}
   {onGoForward}
 >
-  {#snippet children({ toggle })}
-    <PanelMinimap {layoutRoot} onclick={toggle} />
+  {#snippet children({ props })}
+    <PanelMinimap {layoutRoot} triggerProps={props} />
   {/snippet}
 </LayoutPresetDropdown>

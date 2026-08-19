@@ -136,7 +136,7 @@
   {/if}
 
   {#if $error$}
-    <p class="text-sm text-destructive-foreground">{$error$}</p>
+    <p class="text-sm text-error-foreground">{$error$}</p>
   {/if}
 
   <div class="flex flex-col items-start gap-2 mt-9">
@@ -150,7 +150,9 @@
         {m.onboarding_githubStep_skipForNow_label()}
         <span class="ml-1 opacity-50">⌘↵</span>
       </Button>
-      <p class="text-xs text-muted-foreground">{m.onboarding_githubStep_connectLater_description()}</p>
+      <p class="text-xs text-muted-foreground">
+        {m.onboarding_githubStep_connectLater_description()}
+      </p>
     {/if}
   </div>
 </div>

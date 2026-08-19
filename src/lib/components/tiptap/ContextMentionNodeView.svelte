@@ -179,7 +179,7 @@
   function getLevelColor(level: string | undefined): string {
     if (!level) return '';
     const l = level.toLowerCase();
-    if (l === 'error' || l === 'fatal') return 'text-red-500';
+    if (l === 'error' || l === 'fatal') return 'text-error-foreground';
     if (l === 'warning') return 'text-yellow-500';
     return 'text-subtle';
   }
@@ -340,7 +340,7 @@
 
           <!-- Footer: project + timestamps -->
           {#if meta && (meta.project || meta.createdAt || meta.author)}
-            <div class="flex items-center gap-2 pt-1 border-t border-border/30">
+            <div class="flex items-center gap-2 pt-1 border-t border-border">
               {#if meta.project}
                 <span class="text-ui text-subtle">{meta.project}</span>
               {/if}

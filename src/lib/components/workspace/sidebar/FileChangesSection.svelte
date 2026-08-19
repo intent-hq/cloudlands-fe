@@ -32,7 +32,7 @@
     type AgentChangeGroup,
     groupFilesByAgent,
   } from '$lib/components/file-tracking/accept-changes/types';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
@@ -690,7 +690,7 @@
                   </span>
                   {#if group.agentId}
                     {@const hasAnyActions = !isLocked || getLinkedNoteId(group.agentId)}
-                    <AuggieAvatar
+                    <AgentAvatar
                       class="-mt-0.5 {hasAnyActions ? 'group-hover/agent-header:opacity-0' : ''}"
                       agentId={group.agentId}
                       size={15}
@@ -905,7 +905,7 @@
 
                   {#if group.agentId}
                     {@const hasAnyActions = !isLocked || getLinkedNoteId(group.agentId)}
-                    <AuggieAvatar
+                    <AgentAvatar
                       class="-mt-0.5 {hasAnyActions ? 'group-hover/agent-header:opacity-0' : ''}"
                       agentId={group.agentId}
                       size={15}

@@ -51,7 +51,7 @@
     faPlus,
     faXmark,
     faChevronDown,
-    faChevronUp,
+    faChevronLeft,
     faTerminal,
     faBan,
     faPlay,
@@ -1538,7 +1538,7 @@
               ? m.terminal_quakeOverlay_collapse_ariaLabel()
               : m.terminal_quakeOverlay_expand_ariaLabel()}
           >
-            <Fa icon={$isOpen ? faChevronDown : faChevronUp} size="xs" />
+            <Fa icon={$isOpen ? faChevronDown : faChevronLeft} size="xs" />
           </Button>
         </div>
       </div>

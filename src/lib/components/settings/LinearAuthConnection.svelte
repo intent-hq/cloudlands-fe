@@ -1,8 +1,8 @@
 <script lang="ts">
   import {
-  LINEAR_ISSUE_FILTER_OPTIONS,
-  type LinearIssueFilter,
-} from '$features/linear-auth/constants';
+    LINEAR_ISSUE_FILTER_OPTIONS,
+    type LinearIssueFilter,
+  } from '$features/linear-auth/constants';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import { Select } from '$lib/components/ui/select';
   import { safeLocalStorage } from '$lib/utils/safe-storage';
@@ -12,16 +12,16 @@
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import {
-  selectLinearIsAuthenticated,
-  selectLinearIsAuthenticating,
-  selectLinearError,
-  selectLinearRequiresDaemonAuth,
-} from '$store/renderer/slices/linear-auth/linear-auth-selectors';
+    selectLinearIsAuthenticated,
+    selectLinearIsAuthenticating,
+    selectLinearError,
+    selectLinearRequiresDaemonAuth,
+  } from '$store/renderer/slices/linear-auth/linear-auth-selectors';
   import {
-  initializeLinearAuth,
-  connectLinear,
-  logoutLinear,
-} from '$store/renderer/slices/linear-auth/linear-auth-slice';
+    initializeLinearAuth,
+    connectLinear,
+    logoutLinear,
+  } from '$store/renderer/slices/linear-auth/linear-auth-slice';
   import Input from '$lib/components/ui/input/input.svelte';
 
   interface Props {
@@ -116,7 +116,7 @@
         {m.settings_connections_linear_description()}
       </p>
       {#if $error$}
-        <p class="text-xs text-destructive-foreground pl-6">{$error$}</p>
+        <p class="text-xs text-error-foreground pl-6">{$error$}</p>
       {/if}
     </div>
 
@@ -134,7 +134,7 @@
         <span class="text-ghost">·</span>
         <button
           type="button"
-          class="text-muted-foreground hover:text-destructive-foreground cursor-pointer transition-colors"
+          class="text-muted-foreground hover:text-error-foreground cursor-pointer transition-colors"
           onclick={handleLinearDisconnect}
           disabled={isDisconnectingLinear}
         >
@@ -162,7 +162,7 @@
         <Input
           type="password"
           bind:value={apiKeyDraft}
-          placeholder={'lin_api_...' /* i18n-ignore (API key format) */}
+          placeholder={/* i18n-ignore (credential format example) */ 'lin_api_...'}
           class="h-7 text-xs flex-1"
           aria-label={m.settings_connections_linear_apiKeyAriaLabel()}
           onkeydown={(e) => {

@@ -34,12 +34,11 @@ import {
   faGlobe,
   faGear,
   faHouse,
-  faPencil,
   faCodeCommit,
   faRobot,
   faCode,
 } from '@fortawesome/free-solid-svg-icons';
-import { faNote } from '$lib/icons/faNote';
+import { RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
 import { m } from '$shared/paraglide/messages.js';
 
 /**
@@ -114,7 +113,7 @@ export function registerAllTabTypes(): void {
   tabTypeRegistry.register({
     type: 'agent',
     component: AgentTabType,
-    defaultWidthTier: 'narrow',
+    defaultWidthTier: 'chat',
     icon: faComment,
     get defaultTitle() {
       return m.layout_tabTypes_agent_title();
@@ -131,7 +130,7 @@ export function registerAllTabTypes(): void {
     type: 'note',
     component: NoteTabType,
     defaultWidthTier: 'medium',
-    icon: faNote,
+    icon: RESOURCE_ICON_BY_KIND.note,
     get defaultTitle() {
       return m.layout_tabTypes_note_title();
     },
@@ -179,7 +178,7 @@ export function registerAllTabTypes(): void {
     type: 'changes',
     component: ChangesTabType,
     defaultWidthTier: 'wide',
-    icon: faPencil,
+    icon: RESOURCE_ICON_BY_KIND.changes,
     get defaultTitle() {
       return m.layout_tabTypes_changes_title();
     },
@@ -195,7 +194,7 @@ export function registerAllTabTypes(): void {
     type: 'local-changes',
     component: LocalChangesTabType,
     defaultWidthTier: 'wide',
-    icon: faPencil,
+    icon: RESOURCE_ICON_BY_KIND.changes,
     get defaultTitle() {
       return m.layout_tabTypes_localChanges_title();
     },
@@ -211,7 +210,7 @@ export function registerAllTabTypes(): void {
     type: 'chat-changes',
     component: ChatChangesTabType,
     defaultWidthTier: 'wide',
-    icon: faPencil,
+    icon: RESOURCE_ICON_BY_KIND.changes,
     get defaultTitle() {
       return m.layout_tabTypes_chatChanges_title();
     },
@@ -226,7 +225,7 @@ export function registerAllTabTypes(): void {
     type: 'activity-changes',
     component: ActivityChangesTabType,
     defaultWidthTier: 'wide',
-    icon: faCodeBranch,
+    icon: RESOURCE_ICON_BY_KIND.changes,
     get defaultTitle() {
       return m.layout_tabTypes_activityChanges_title();
     },

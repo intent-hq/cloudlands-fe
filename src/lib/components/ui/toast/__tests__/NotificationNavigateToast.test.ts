@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 
-// AuggieAvatar's selector modules call store.createSelector at load time —
+// AgentAvatar's selector modules call store.createSelector at load time —
 // mock them with plain readables so the component renders without the app
 // store (same seams as notification-ipc-service.test.ts).
 vi.mock('$store/renderer/slices/theme/theme-selectors', () => ({

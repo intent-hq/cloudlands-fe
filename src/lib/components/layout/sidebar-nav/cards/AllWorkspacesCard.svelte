@@ -306,15 +306,6 @@
       : liveGroups;
   });
 
-  function _isRunning(ws: Workspace): boolean {
-    // Streaming-based UI affordance only (the running dot on the card); the
-    // status grouping above renders the BE displayStatus verbatim and is never
-    // influenced by this signal.
-    void activeStreamsVersion;
-    const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
-    return ws.activity === 'agent_running' || streamingAgentIds.length > 0;
-  }
-
   function _getStreamingIds(ws: Workspace): string[] {
     void activeStreamsVersion;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
@@ -457,7 +448,6 @@
             <WorkspaceCard
               {workspace}
               variant="compact"
-              isRunning={_isRunning(workspace)}
               isUnread={_isUnread(workspace)}
               isPinned={$pinnedIds$.includes(workspace.id)}
               streamingAgentIds={_getStreamingIds(workspace)}
@@ -522,7 +512,11 @@
     {:else if filteredWorkspaces.length === 0}
       <div class="px-2 pb-3 text-xs text-subtle">{m.ui_dropdown_noResults_label()}</div>
     {:else}
-      <div class="overflow-y-auto flex-1 min-h-0 pb-2" use:scrollFade>
+      <div
+        class="overflow-y-auto flex-1 min-h-0 pt-1 pb-2"
+        data-workspace-list-scroll
+        use:scrollFade
+      >
         {#if $viewMode$ === 'recent'}
           {#each filteredWorkspaces as workspace, i (workspace.id)}
             {#if i > 0 && !$pinnedIds$.includes(workspace.id) && $pinnedIds$.includes(filteredWorkspaces[i - 1].id)}
@@ -531,7 +525,6 @@
             <WorkspaceCard
               {workspace}
               variant="compact"
-              isRunning={_isRunning(workspace)}
               isUnread={_isUnread(workspace)}
               isPinned={$pinnedIds$.includes(workspace.id)}
               trailingLabel={workspace.status === WorkspaceStatusEnum.Archived
@@ -572,7 +565,6 @@
                   <WorkspaceCard
                     {workspace}
                     variant="compact"
-                    isRunning={_isRunning(workspace)}
                     isUnread={_isUnread(workspace)}
                     isPinned={$pinnedIds$.includes(workspace.id)}
                     trailingLabel={workspace.status === WorkspaceStatusEnum.Archived
@@ -624,7 +616,6 @@
               <WorkspaceCard
                 {workspace}
                 variant="compact"
-                isRunning={_isRunning(workspace)}
                 isUnread={_isUnread(workspace)}
                 isPinned={$pinnedIds$.includes(workspace.id)}
                 trailingLabel={workspace.status === WorkspaceStatusEnum.Archived

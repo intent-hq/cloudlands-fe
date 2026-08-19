@@ -20,7 +20,7 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import {
     focusBrowserTabRequested,
     openAgentTabRequested,
@@ -74,12 +74,8 @@
   const toolWorkspace = selectWorkspaceById(toolWorkspaceIdStore);
 
   let copied = $state(false);
-  let showRaw = $state(false);
   const sanitizedInput = $derived(sanitizeToolPayload(input) as Record<string, any>);
   const sanitizedResult = $derived(sanitizeToolPayload(result));
-
-  // Whether this tool call has a rich (non-raw) preview available
-  const hasRichPreview = $derived(parsedResult != null && parsedResult.type !== 'unknown');
 
   // Disposition summary for batch delegate results ("2 started · 1 held · 1 skipped").
   // The started count always shows; held/skipped/failed only when non-zero.
@@ -215,66 +211,67 @@
 
 {#snippet rawDetails()}
   {#if inputEntries || result != null}
-    <details class="mt-2 rounded border border-border/50 bg-muted/20">
-      <summary
-        class="type-caption cursor-pointer select-none px-2 py-1.5 text-muted-foreground hover:text-foreground"
-      >
-        {m.chat_toolCall_technicalDetails_label()}
-      </summary>
-      <div class="flex flex-col gap-2 border-t border-border/50 p-2">
-        {#if inputEntries}
-          <div>
-            <div class="type-caption mb-1 text-subtle">
-              {m.chat_toolDetails_input_label()}
-            </div>
-            <pre
-              class="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-subtle">{JSON.stringify(
-                sanitizedInput,
-                null,
-                2,
-              )}</pre>
+    <div class="flex min-w-0 flex-col gap-2" data-tool-raw-details>
+      {#if inputEntries}
+        <section class="min-w-0" data-tool-detail-section="input">
+          <div class="type-caption mb-1 text-muted-foreground">
+            {m.chat_toolDetails_input_label()}
           </div>
-        {/if}
-        {#if result != null}
-          <div>
-            <div class="type-caption mb-1 text-subtle">
-              {m.chat_toolDetails_result_label()}
-            </div>
-            <pre
-              class="m-0 max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-subtle">{typeof sanitizedResult ===
-              'string'
-                ? sanitizedResult
-                : JSON.stringify(sanitizedResult, null, 2)}</pre>
+          <pre
+            class="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-subtle">{JSON.stringify(
+              sanitizedInput,
+              null,
+              2,
+            )}</pre>
+        </section>
+      {/if}
+      {#if result != null}
+        <section class="min-w-0" data-tool-detail-section="output">
+          <div class="type-caption mb-1 text-muted-foreground">
+            {m.chat_toolDetails_result_label()}
           </div>
-        {/if}
-      </div>
-    </details>
+          <pre
+            class="m-0 max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-subtle">{typeof sanitizedResult ===
+            'string'
+              ? sanitizedResult
+              : JSON.stringify(sanitizedResult, null, 2)}</pre>
+        </section>
+      {/if}
+    </div>
   {/if}
 {/snippet}
 
 {#snippet fallbackDetails()}
-  <!-- Keep unknown payloads hidden until technical details are explicitly disclosed. -->
+  <!-- The parent operational row is the only disclosure control. -->
   {@render rawDetails()}
 {/snippet}
 
-<div class="flex flex-col text-sm">
+<div class="flex min-w-0 flex-col text-sm" data-tool-details-inline>
   <!-- Error display -->
   {#if isError}
-    <div class="rounded-md border border-border overflow-hidden mb-2 divide-y divide-border">
+    <div class="flex min-w-0 flex-col gap-2" data-tool-detail-error>
       {#if errorText}
-        <div class="px-3 py-2 flex items-start gap-2">
-          <Fa icon={faExclamationTriangle} size="xs" class="text-red-500/70 mt-0.5 shrink-0" />
+        <div class="flex min-w-0 items-start gap-2">
+          <Fa
+            icon={faExclamationTriangle}
+            size="xs"
+            class="text-error-foreground mt-0.5 shrink-0"
+          />
           <pre
-            class="m-0 whitespace-pre-wrap font-mono text-xs text-red-600 dark:text-red-400">{errorText}</pre>
+            class="m-0 min-w-0 whitespace-pre-wrap break-words font-mono text-xs text-error-foreground">{errorText}</pre>
         </div>
       {:else}
-        <div class="px-3 py-2 flex items-start gap-2">
-          <Fa icon={faExclamationTriangle} size="xs" class="text-red-500/70 mt-0.5 shrink-0" />
+        <div class="flex min-w-0 items-start gap-2">
+          <Fa
+            icon={faExclamationTriangle}
+            size="xs"
+            class="text-error-foreground mt-0.5 shrink-0"
+          />
           <span class="text-xs text-subtle">{m.chat_toolDetails_noErrorDetails_label()}</span>
         </div>
       {/if}
       {#if inputEntries || result != null}
-        <div class="px-3 pb-2">{@render rawDetails()}</div>
+        {@render rawDetails()}
       {/if}
     </div>
   {:else if pending}
@@ -311,7 +308,7 @@
   {:else if result || parsedResult}
     <!-- Output Section (no Input section - hidden for cleaner display) -->
     <div class="flex flex-col">
-      <div class="p-2 bg-muted/30 relative group/details">
+      <div class="relative min-w-0 group/details">
         <!-- Featured input (query/request) shown at top with border below -->
         {#if featuredInput}
           <div class="pb-2 mb-2 border-b border-border text-subtle italic">
@@ -319,30 +316,14 @@
           </div>
         {/if}
 
-        <!-- Top-right action buttons (appear on hover) -->
+        <!-- Copy remains available without adding a second disclosure control. -->
         <div
-          class="absolute top-2 right-2 flex items-center gap-1 transition-all z-10 {showRaw
-            ? 'opacity-100'
-            : 'opacity-0 group-hover/details:opacity-100'}"
+          class="absolute top-0 right-0 z-10 flex items-center opacity-0 transition-opacity group-hover/details:opacity-100 focus-within:opacity-100"
         >
-          <!-- Raw/Formatted toggle - only when rich preview exists -->
-          {#if hasRichPreview}
-            <button
-              class="px-1.5 py-0.5 rounded text-ui font-medium bg-muted/80 border border-border/50 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
-              onclick={() => (showRaw = !showRaw)}
-              title={showRaw
-                ? m.chat_toolDetails_showFormatted_title()
-                : m.chat_toolDetails_showRaw_title()}
-            >
-              {showRaw
-                ? m.chat_toolDetails_formatted_label()
-                : m.chat_toolCall_technicalDetails_label()}
-            </button>
-          {/if}
           <!-- Copy button - Skip for file-view since CodeBlock has its own copy button -->
           {#if (parsedResult?.content || parsedResult?.newContent) && parsedResult?.type !== 'file-view'}
             <button
-              class="p-1.5 rounded bg-muted/80 border border-border/50 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
+              class="cursor-pointer border-0 bg-transparent p-1 text-muted-foreground transition-colors hover:text-foreground"
               onclick={() =>
                 copyToClipboard(
                   input.content || parsedResult?.newContent || parsedResult?.content || '',
@@ -354,36 +335,7 @@
           {/if}
         </div>
 
-        {#if showRaw && hasRichPreview}
-          <!-- Raw data view (toggled) -->
-          <div class="overflow-hidden rounded flex flex-col gap-2">
-            {#if input && Object.keys(input).length > 0}
-              <div>
-                <div class="text-xs font-medium text-subtle mb-1">
-                  {m.chat_toolDetails_input_label()}
-                </div>
-                <pre
-                  class="m-0 p-2 font-mono text-xs leading-relaxed overflow-x-auto max-h-48 overflow-y-auto text-subtle bg-muted/30 rounded">{JSON.stringify(
-                    sanitizedInput,
-                    null,
-                    2,
-                  )}</pre>
-              </div>
-            {/if}
-            {#if result != null}
-              <div>
-                <div class="text-xs font-medium text-subtle mb-1">
-                  {m.chat_toolDetails_result_label()}
-                </div>
-                <pre
-                  class="m-0 p-2 font-mono text-xs leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-subtle bg-muted/30 rounded">{typeof sanitizedResult ===
-                  'string'
-                    ? sanitizedResult
-                    : JSON.stringify(sanitizedResult, null, 2)}</pre>
-              </div>
-            {/if}
-          </div>
-        {:else if parsedResult && parsedResult.type !== 'unknown'}
+        {#if parsedResult && parsedResult.type !== 'unknown'}
           {#if (parsedResult.type === 'file-edit' || parsedResult.type === 'note-edit') && parsedResult.oldContent && parsedResult.newContent}
             <!-- Diff view using DiffViewer component -->
             <DiffViewer
@@ -398,7 +350,7 @@
           {:else if parsedResult.type === 'note-edit' && (parsedResult.newContent || parsedResult.content)}
             <!-- Note edit without diff - render markdown -->
             <div
-              class="overflow-hidden rounded border border-border/40 bg-muted/20 max-h-72 overflow-y-auto"
+              class="overflow-hidden rounded border border-border bg-muted/20 max-h-72 overflow-y-auto"
             >
               <div class="p-3">
                 <MarkdownRenderer
@@ -495,11 +447,11 @@
                 {@const fileName = snippet.path.split('/').pop() || snippet.path}
                 {@const dirPath = snippet.path.split('/').slice(0, -1).join('/')}
                 <div
-                  class="group/snippet rounded-md overflow-hidden border border-border/60 hover:border-border transition-colors"
+                  class="group/snippet rounded-md overflow-hidden border border-border hover:border-border transition-colors"
                 >
                   <!-- File header with icon-like styling -->
                   <div
-                    class="flex items-center gap-1.5 px-2 py-1 bg-muted/50 border-b border-border/40"
+                    class="flex items-center gap-1.5 px-2 py-1 bg-muted/50 border-b border-border"
                   >
                     <span class="font-mono text-xs font-medium text-muted-foreground"
                       >{fileName}</span
@@ -522,7 +474,7 @@
                 </div>
               {/each}
               {#if parsedResult.snippets.length > 8}
-                <div class="text-center text-xs text-subtle py-1 border-t border-border/30 mt-1">
+                <div class="text-center text-xs text-subtle py-1 border-t border-border mt-1">
                   {plural(
                     parsedResult.snippets.length - 8,
                     m.chat_toolDetails_moreResults_one,
@@ -621,7 +573,7 @@
           {:else if parsedResult.type === 'note-view' && parsedResult.content}
             <!-- Note view - rendered markdown -->
             <div
-              class="overflow-hidden rounded border border-border/40 bg-muted/20 max-h-72 overflow-y-auto"
+              class="overflow-hidden rounded border border-border bg-muted/20 max-h-72 overflow-y-auto"
             >
               <div class="p-3">
                 <MarkdownRenderer content={parsedResult.content} className="text-sm" />
@@ -687,7 +639,7 @@
                     );
                   }}
                 >
-                  <AuggieAvatar agentId={agent.agentId} size={18} class="shrink-0" />
+                  <AgentAvatar agentId={agent.agentId} size={18} class="shrink-0" />
                   <span class="text-sm font-medium text-foreground truncate flex-1"
                     >{agent.name}</span
                   >
@@ -698,7 +650,7 @@
                   {/if}
                 </button>
               {/each}
-              <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
+              <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                 {plural(
                   parsedResult.agents.length,
                   m.chat_toolDetails_agentCount_one,
@@ -740,7 +692,7 @@
               {/if}
               {#if parsedResult.taskContent}
                 <div
-                  class="overflow-hidden rounded border border-border/40 bg-muted/20 p-3 max-h-48 overflow-y-auto"
+                  class="overflow-hidden rounded border border-border bg-muted/20 p-3 max-h-48 overflow-y-auto"
                 >
                   <MarkdownRenderer content={parsedResult.taskContent} className="text-sm" />
                 </div>
@@ -808,7 +760,7 @@
                       );
                     }}
                   >
-                    <AuggieAvatar {agentId} size={14} class="shrink-0" />
+                    <AgentAvatar {agentId} size={14} class="shrink-0" />
                     <span>{agentName}</span>
                   </button>
                 {:else}
@@ -874,7 +826,7 @@
                     m.chat_toolDetails_totalComments_one,
                     m.chat_toolDetails_totalComments_many,
                   )}
-                  <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
+                  <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                     {parsedResult.commentThreads.length === 1
                       ? m.chat_toolDetails_inThreads_one({
                           comments: commentsPart,
@@ -930,7 +882,7 @@
                     {/if}
                   </button>
                 {/each}
-                <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
+                <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                   {plural(
                     parsedResult.notes.length,
                     m.chat_toolDetails_noteCount_one,
@@ -946,7 +898,7 @@
             <div class="flex flex-col gap-2">
               {#if parsedResult.figmaScreenshot}
                 <!-- Inline Figma screenshot -->
-                <div class="overflow-hidden rounded border border-border/40">
+                <div class="overflow-hidden rounded border border-border">
                   <img
                     src={`data:${parsedResult.figmaScreenshotMimeType || 'image/png'};base64,${parsedResult.figmaScreenshot}`}
                     alt={m.chat_toolDetails_figmaScreenshot_alt()}
@@ -995,7 +947,7 @@
             <div class="flex flex-col gap-2">
               {#if parsedResult.screenshotBase64 || parsedResult.screenshotUrl}
                 <!-- Inline screenshot -->
-                <div class="overflow-hidden rounded border border-border/40">
+                <div class="overflow-hidden rounded border border-border">
                   <img
                     src={parsedResult.screenshotUrl ||
                       `data:image/png;base64,${parsedResult.screenshotBase64}`}
@@ -1006,7 +958,7 @@
                       : ''}
                   />
                   {#if parsedResult.screenshotWidth && parsedResult.screenshotHeight}
-                    <div class="px-2 py-1 text-ui text-subtle border-t border-border/30">
+                    <div class="px-2 py-1 text-ui text-subtle border-t border-border">
                       {parsedResult.screenshotWidth} × {parsedResult.screenshotHeight}
                     </div>
                   {/if}
@@ -1040,7 +992,7 @@
                       {/if}
                     </button>
                   {/each}
-                  <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
+                  <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                     {plural(
                       parsedResult.browserTabs.length,
                       m.chat_toolDetails_tabCount_one,
@@ -1087,10 +1039,10 @@
                   <Fa
                     icon={faExclamationTriangle}
                     size="xs"
-                    class="text-red-500/70 mt-0.5 shrink-0"
+                    class="text-error-foreground mt-0.5 shrink-0"
                   />
                   <pre
-                    class="m-0 whitespace-pre-wrap font-mono text-xs text-red-600 dark:text-red-400">{parsedResult.error}</pre>
+                    class="m-0 whitespace-pre-wrap font-mono text-xs text-error-foreground">{parsedResult.error}</pre>
                 </div>
               {/if}
               {#if parsedResult.content && !parsedResult.screenshotBase64 && !parsedResult.screenshotUrl && !parsedResult.browserTabs?.length && !parsedResult.evaluateResult && !parsedResult.accessibilityTree && !parsedResult.error}
@@ -1145,7 +1097,7 @@
               </div>
               <!-- Stats row -->
               <div
-                class="px-3 py-2 border-t border-border/50 bg-muted/20 flex items-center gap-4 text-xs"
+                class="px-3 py-2 border-t border-border bg-muted/20 flex items-center gap-4 text-xs"
               >
                 <div class="flex items-center gap-1">
                   <span class="text-subtle">{m.chat_toolDetails_events_label()}</span>
@@ -1164,14 +1116,14 @@
               </div>
               <!-- Stacktrace summary (if available) -->
               {#if issue.stacktraceSummary}
-                <div class="px-3 py-2 border-t border-border/50 bg-muted/10">
+                <div class="px-3 py-2 border-t border-border bg-muted/10">
                   <pre
                     class="m-0 font-mono text-ui leading-relaxed text-subtle overflow-x-auto">{issue.stacktraceSummary}</pre>
                 </div>
               {/if}
               <!-- Link to Sentry -->
               {#if issue.url}
-                <div class="px-3 py-1.5 border-t border-border/50 bg-muted/10">
+                <div class="px-3 py-1.5 border-t border-border bg-muted/10">
                   <a
                     href={issue.url}
                     target="_blank"
@@ -1228,7 +1180,7 @@
                   {/if}
                 </div>
               {/each}
-              <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
+              <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                 {plural(
                   parsedResult.sentryIssues.length,
                   m.chat_toolDetails_issueCount_one,
@@ -1291,7 +1243,7 @@
                   </div>
                 </div>
               {/each}
-              <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
+              <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                 {plural(
                   parsedResult.githubIssues.length,
                   m.chat_toolDetails_resultCount_one,
@@ -1345,7 +1297,7 @@
                   (s, f) => s + f.deletions,
                   0,
                 )}
-                <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1 flex gap-2">
+                <div class="text-xs text-subtle pt-1 border-t border-border mt-1 flex gap-2">
                   <span
                     >{plural(
                       parsedResult.githubFiles.length,
@@ -1373,7 +1325,7 @@
                         parsedResult.githubOverallStatus === 'error'
                       ? 'text-red-600 dark:text-red-400'
                       : 'text-amber-600 dark:text-amber-400'}
-                <div class="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-border/30">
+                <div class="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-border">
                   <span class="text-sm font-medium {overallColor}"
                     >{m.chat_toolDetails_overall_label({
                       status: parsedResult.githubOverallStatus,
@@ -1426,7 +1378,7 @@
                 {@const failed = parsedResult.githubChecks.filter((c) =>
                   ['failure', 'error', 'timed_out'].includes(c.conclusion || c.status),
                 ).length}
-                <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1 flex gap-2">
+                <div class="text-xs text-subtle pt-1 border-t border-border mt-1 flex gap-2">
                   <span
                     >{plural(
                       parsedResult.githubChecks.length,

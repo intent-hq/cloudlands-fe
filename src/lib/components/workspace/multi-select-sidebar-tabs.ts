@@ -3,12 +3,11 @@ import {
   faAsterisk,
   faFolderTree,
   faGlobe,
-  faPencil,
   faRobot,
   faTerminal,
 } from '@fortawesome/free-solid-svg-icons';
 import { m } from '$shared/paraglide/messages.js';
-import { faNote } from '$lib/icons/faNote';
+import { RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
 
 export interface TabDefinition {
   id: string;
@@ -47,7 +46,7 @@ export const TAB_DEFINITIONS: TabDefinition[] = [
     get label() {
       return m.workspace_multiSelectSidebar_contextTab_label();
     },
-    icon: faNote,
+    icon: RESOURCE_ICON_BY_KIND.note,
     get description() {
       return m.workspace_multiSelectSidebar_contextTab_description();
     },
@@ -57,7 +56,7 @@ export const TAB_DEFINITIONS: TabDefinition[] = [
     get label() {
       return m.workspace_multiSelectSidebar_changesTab_label();
     },
-    icon: faPencil,
+    icon: RESOURCE_ICON_BY_KIND.changes,
     get description() {
       return m.workspace_multiSelectSidebar_changesTab_description();
     },

@@ -105,6 +105,7 @@ describe('B2 caller metadata regression', () => {
       ],
       switch: [
         'src/lib/component-catalog/CatalogControls.svelte',
+        'src/lib/component-catalog/ChatPolishGeometryControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/components/debug/DebugPanel.svelte',
         'src/lib/components/file-tracking/CodeChangesPanel.svelte',
@@ -123,6 +124,7 @@ describe('B2 caller metadata regression', () => {
         'src/lib/components/settings/LegacyImportSettings.svelte',
         'src/lib/components/settings/McpServersSettings.svelte',
         'src/lib/components/settings/NotificationSettings.svelte',
+        'src/lib/components/settings/PanelOpenModeSettings.svelte',
         'src/lib/components/settings/RtkSettings.svelte',
         'src/lib/components/settings/WebSocketApiSettings.svelte',
         'src/lib/components/settings/WorkspaceApiSettings.svelte',
@@ -174,6 +176,7 @@ describe('B2 caller metadata regression', () => {
         { path: 'src/lib/components/settings/LegacyImportSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/McpServersSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/NotificationSettings.svelte', count: 3 },
+        { path: 'src/lib/components/settings/PanelOpenModeSettings.svelte', count: 2 },
         { path: 'src/lib/components/settings/RtkSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/WorkspaceApiSettings.svelte', count: 1 },

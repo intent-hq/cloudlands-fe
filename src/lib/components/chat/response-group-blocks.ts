@@ -52,8 +52,7 @@ export function getResponseGroupPreviewBlock(
 ): ContentBlock | undefined {
   if (!blocks) return undefined;
 
-  for (let index = blocks.length - 1; index >= 0; index -= 1) {
-    const block = blocks[index];
+  for (const block of blocks) {
     if (
       block.type === 'tool_use' ||
       block.type === 'text' ||

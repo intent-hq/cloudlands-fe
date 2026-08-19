@@ -11,7 +11,7 @@
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
 
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -104,9 +104,9 @@
         <!-- Avatar -->
         <div class="shrink-0">
           {#if isBuiltInSpecialistId(specialist.id)}
-            <AuggieAvatar seed="blank" size={20} specialist={specialist.id} />
+            <AgentAvatar agentId="blank" size={20} specialist={specialist.id} />
           {:else}
-            <AuggieAvatar seed="blank" size={20} />
+            <AgentAvatar agentId="blank" size={20} />
           {/if}
         </div>
 

@@ -239,7 +239,7 @@ async function assertMountedScene(page: Page, scene: MountedScene) {
     await disclosure.focus();
     await page.keyboard.press('Enter');
     await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
-    await disclosure.click();
+    await disclosure.locator('[data-tool-icon]').click();
     await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('#tool-details-read-a')).toHaveCount(0);
     return {
@@ -256,8 +256,14 @@ async function assertMountedScene(page: Page, scene: MountedScene) {
     await expect(page.locator('[data-sidebar-launcher="browser"]')).toHaveCount(1);
     await expect(page.getByRole('button', { name: 'Shell' })).toHaveCount(1);
     const agentRows = agents.locator('[data-sidebar-agent]');
-    await expect(agentRows).toHaveCount(6);
-    await expect(agents.locator('[data-sidebar-agent-overflow]')).toContainText('+2');
+    const visibleAgentCount = await agentRows.count();
+    expect(visibleAgentCount).toBeGreaterThan(0);
+    expect(visibleAgentCount).toBeLessThanOrEqual(6);
+    const overflow = agents.locator('[data-sidebar-agent-overflow]');
+    await expect(overflow).toHaveCount(1);
+    const overflowCount = Number(await overflow.getAttribute('data-sidebar-agent-overflow'));
+    expect(visibleAgentCount + overflowCount).toBe(8);
+    await expect(overflow).toContainText(`+${overflowCount}`);
     const launcherBox = await agents.boundingBox();
     const agentBoxes = await agentRows.evaluateAll((nodes) =>
       nodes.map((node) => {

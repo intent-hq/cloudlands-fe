@@ -595,7 +595,7 @@
         'absolute z-50 min-w-full w-max',
         collisionBoundary ? 'flex flex-col' : 'top-full left-0 mt-1',
         'overflow-hidden rounded-md border border-border',
-        'bg-popover text-popover-foreground shadow-md',
+        'bg-popover text-popover-foreground shadow-(--elevation-overlay)',
         contentClass,
       )}
       style={collisionBoundary ? inlineStyle : undefined}
@@ -618,7 +618,7 @@
       class={cn(
         'w-max flex flex-col',
         'overflow-hidden rounded-md border border-border',
-        'bg-popover text-popover-foreground shadow-md',
+        'bg-popover text-popover-foreground shadow-(--elevation-overlay)',
         contentClass,
       )}
       style={portalStyle}
@@ -849,7 +849,7 @@
             data-submenu
             class={cn(
               'min-w-45 overflow-hidden rounded-md border border-border',
-              'bg-popover text-popover-foreground shadow-md py-1',
+              'bg-popover text-popover-foreground shadow-(--elevation-overlay) py-1',
             )}
             style={submenuStyle}
             onmouseleave={() => (openSubmenu = null)}

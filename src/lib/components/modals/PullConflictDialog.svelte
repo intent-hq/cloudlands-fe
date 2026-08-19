@@ -207,7 +207,7 @@
         <!-- Header -->
         <div class="px-6 py-4 border-b border-border flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <div class="text-destructive-foreground">
+            <div class="text-error-foreground">
               <Fa icon={faExclamationTriangle} size="lg" />
             </div>
             <div>
@@ -236,7 +236,7 @@
           </p>
           {#if error}
             <div
-              class="bg-destructive/10 py-2.5 px-3.5 text-sm text-destructive-foreground whitespace-pre-wrap break-words max-h-32 overflow-auto"
+              class="bg-destructive/10 py-2.5 px-3.5 text-sm text-error-foreground whitespace-pre-wrap break-words max-h-32 overflow-auto"
             >
               {error}
             </div>
@@ -250,8 +250,8 @@
             <!-- Open in dropdown (combined IDEs and terminals) -->
             {#if $installedEditors$.length > 0}
               <DropdownMenu bind:open={dropdownOpen} align="start" portal={true}>
-                {#snippet trigger({ toggle }: { toggle: () => void })}
-                  <Button variant="outline" onclick={toggle} class="w-full justify-between gap-2">
+                {#snippet trigger({ props })}
+                  <Button {...props} variant="outline" class="w-full justify-between gap-2">
                     <span class="flex items-center gap-2">
                       <Fa icon={faArrowUpRightFromSquare} size="sm" />
                       <span>{m.modals_pullConflict_openIn_label()}</span>

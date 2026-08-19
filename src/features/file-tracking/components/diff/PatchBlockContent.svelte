@@ -11,7 +11,7 @@
   import Fa from 'svelte-fa';
   import { faCheck, faRotateLeft, faSpinner, faPlusMinus } from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DiffViewer from './DiffViewer.svelte';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -108,7 +108,7 @@
           }}
           title={m.ui_patchBlock_viewAgent_tooltip()}
         >
-          <AuggieAvatar agentId={linkedAgentId} size={16} />
+          <AgentAvatar agentId={linkedAgentId} size={16} />
         </button>
       {/if}
       <button
@@ -122,7 +122,7 @@
         <span class="type-body flex-1 truncate text-left font-medium text-foreground">{label}</span>
         <span class="type-caption shrink-0 tabular-nums">
           <span class="text-success">+{diffStats.addCount}</span>
-          <span class="ml-1 text-destructive-foreground">-{diffStats.removeCount}</span>
+          <span class="ml-1 text-error-foreground">-{diffStats.removeCount}</span>
         </span>
         {#if isApplied}
           <span class="type-caption shrink-0 font-medium text-success">

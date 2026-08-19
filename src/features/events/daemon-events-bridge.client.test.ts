@@ -809,6 +809,81 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
+  it('does not replace chat.subscribe prose with a tool-only legacy candidate', async () => {
+    seedSession({
+      isStreaming: true,
+      status: AgentStatus.Active,
+      messages: [
+        {
+          id: MESSAGE_ID,
+          role: 'assistant',
+          isStreaming: true,
+          contentBlocks: [
+            { type: 'text', id: `${MESSAGE_ID}:0`, text: 'I will inspect the logs first.' },
+            {
+              type: 'tool_use',
+              id: `${MESSAGE_ID}:1`,
+              name: 'Read',
+              input: { path: 'src/lib.rs' },
+              toolCallId: 't1',
+              metadata: { toolKind: 'file', status: 'started' },
+            },
+          ],
+        } as AgentMessage,
+      ],
+    });
+    await primeBridge();
+
+    capturedHandlers[0]!(
+      notification('agent:tool:call', {
+        agentId: AGENT,
+        toolName: 'Read',
+        toolKind: 'file',
+        toolCallId: 't1',
+        input: { path: 'src/lib.rs' },
+        status: 'started',
+        messageId: MESSAGE_ID,
+        blockIndex: 1,
+        blockId: `${MESSAGE_ID}:1`,
+      }),
+    );
+
+    expect(readAssistantMessages()[0]?.contentBlocks).toEqual([
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'I will inspect the logs first.' },
+      {
+        type: 'tool_use',
+        id: `${MESSAGE_ID}:1`,
+        name: 'Read',
+        input: { path: 'src/lib.rs' },
+        toolCallId: 't1',
+        metadata: { toolKind: 'file', status: 'started' },
+      },
+    ]);
+
+    capturedHandlers[0]!(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        streamId: STREAM_ID,
+      }),
+    );
+
+    expect(readAssistantMessages()[0]).toMatchObject({
+      isStreaming: false,
+      contentBlocks: [
+        { type: 'text', id: `${MESSAGE_ID}:0`, text: 'I will inspect the logs first.' },
+        {
+          type: 'tool_use',
+          id: `${MESSAGE_ID}:1`,
+          name: 'Read',
+          input: { path: 'src/lib.rs' },
+          toolCallId: 't1',
+          metadata: { toolKind: 'file', status: 'started' },
+        },
+      ],
+    });
+  });
+
   // Regression: the daemon's `map_tool_call_update` (crates/intent-acp) emits
   // `agent:tool:call` events on every ACP `tool_call_update` where unchanged
   // fields default to empty (`toolName: ""`, `toolKind: "other"`, `input: null`)

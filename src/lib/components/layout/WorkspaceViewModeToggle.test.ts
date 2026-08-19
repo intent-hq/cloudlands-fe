@@ -39,6 +39,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectZoomFactor: () => readable(1),
   selectCounterScale: () => readable(1),
+  selectPanelOpenMode: () => readable('normal'),
 }));
 vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-selectors', () => ({
   selectOnboardingActive: () => onboardingActive,

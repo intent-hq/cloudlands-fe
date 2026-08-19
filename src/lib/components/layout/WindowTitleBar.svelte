@@ -372,7 +372,12 @@
     position: relative;
     z-index: 50;
     overflow: visible;
+    background: transparent;
     -webkit-app-region: drag;
+  }
+
+  .window-title-bar {
+    background: transparent;
   }
 
   .window-title-bar-wrapper.workspace-columns-titlebar {

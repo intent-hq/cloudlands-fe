@@ -199,7 +199,7 @@
         </div>
         {#if totalCost !== null}
           <div
-            class="flex justify-between gap-3 text-sm border-t border-border/50 pt-1"
+            class="flex justify-between gap-3 text-sm border-t border-border pt-1"
             data-testid="token-usage-total-cost"
           >
             <span class="text-subtle">{m.workspace_tokenUsage_totalCost_label()}</span>

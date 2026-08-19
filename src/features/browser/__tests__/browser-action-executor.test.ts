@@ -61,6 +61,30 @@ describe('browser-action-executor', () => {
   // URL Validation via openTab
   // =========================================================================
   describe('openTab URL validation', () => {
+    it('accepts an explicit pin request and forwards it to the opener', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'https://example.com', pin: true }] },
+        mockOpenTabFn,
+      );
+      expect(result.success).toBe(true);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'https://example.com',
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+    });
+
+    it('rejects a non-boolean pin request before opening a tab', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'https://example.com', pin: 'yes' }] },
+        mockOpenTabFn,
+      );
+      expect(result.success).toBe(false);
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+
     it('should allow http:// URLs', async () => {
       const result = await executeActions(
         { actions: [{ action: 'openTab', url: 'http://localhost:3000' }] },
@@ -69,6 +93,7 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(true);
       expect(mockOpenTabFn).toHaveBeenCalledWith(
         'http://localhost:3000',
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -91,6 +116,7 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(true);
       expect(mockOpenTabFn).toHaveBeenCalledWith(
         'file:///Users/me/index.html',
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -653,6 +679,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'http://127.0.0.1:3000/x?q=1',
+        undefined,
       );
       expect(result.results[0]?.result).toMatchObject({
         requestedUrl: 'http://127.0.0.1:3000/x?q=1',
@@ -678,6 +705,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'http://daemon.localhost:3000/',
+        undefined,
       );
       const payload = result.results[0]?.result as Record<string, unknown>;
       expect(payload.rewritten).toBe(true);
@@ -697,6 +725,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'http://client.localhost:5173/',
+        undefined,
       );
       const payload = result.results[0]?.result as Record<string, unknown>;
       expect(payload.rewritten).toBe(true);
@@ -794,6 +823,7 @@ describe('browser-action-executor', () => {
           undefined,
           undefined,
           url,
+          undefined,
         );
         expect(result.results[0]?.result).toMatchObject({
           requestedUrl: url,
@@ -813,6 +843,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
       );
       expect(result.results[0]?.result).toEqual({ success: true, message: 'opened' });
     });
@@ -827,6 +858,7 @@ describe('browser-action-executor', () => {
       );
       expect(mockOpenTabFn).toHaveBeenCalledWith(
         'https://example.com/x',
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -930,6 +962,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'http://127.0.0.1:3000/x?q=1',
+        undefined,
       );
     });
 
@@ -949,6 +982,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'http://daemon.localhost:3000/',
+        undefined,
       );
     });
 
@@ -979,6 +1013,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'http://daemon.localhost:3000/',
+        undefined,
       );
     });
 
@@ -1044,6 +1079,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'http://127.0.0.1:3000/x?q=1',
+        undefined,
       );
       expect(result.results[0]?.result).toMatchObject({
         tunneled: true,
@@ -1130,6 +1166,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'http://daemon.localhost:3000/',
+        undefined,
       );
       expect(result.results[0]?.result).not.toHaveProperty('tunneled');
     });
@@ -1151,6 +1188,7 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'http://daemon.localhost:3000/',
+        undefined,
       );
       expect(result.results[0]?.result).not.toHaveProperty('tunneled');
     });
@@ -1424,6 +1462,38 @@ describe('browser-action-executor', () => {
       });
     });
 
+    it('forwards pin intent when it reuses an exact-URL model tab', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-dup');
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/board', pin: true }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-dup', 'ws-1', true);
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+
+    it('forwards pin intent when it navigates and reuses an idle model tab', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle');
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/board', pin: true }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-idle', 'ws-1', true);
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+
     it('takes precedence over idle-tab reuse (no navigation of an idle tab)', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-dup');
@@ -1465,6 +1535,7 @@ describe('browser-action-executor', () => {
         undefined,
         true,
         undefined,
+        undefined,
       );
     });
 
@@ -1481,6 +1552,7 @@ describe('browser-action-executor', () => {
       expect(embeddedBrowserCdp.findModelTabByExactUrl).not.toHaveBeenCalled();
       expect(mockOpenTabFn).toHaveBeenCalledWith(
         'http://localhost:3000/board',
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -1539,6 +1611,7 @@ describe('browser-action-executor', () => {
         'http://localhost:3000/board',
         undefined,
         true,
+        undefined,
         undefined,
       );
       // The new tab is leased at open time so it counts as model-opened; a

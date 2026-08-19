@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentSession, Note } from '$shared/types';
-import { deriveAgentLauncherItems, deriveNoteLauncherItems } from './sidebar-launcher-preview';
+import {
+  deriveAgentLauncherItems,
+  deriveNoteLauncherItems,
+  getAgentLauncherPreview,
+  getAgentLauncherStatusPriority,
+  getLauncherPreviewLimit,
+} from './sidebar-launcher-preview';
 
 function agent(id: string, overrides: Partial<AgentSession> = {}): AgentSession {
   return {
@@ -15,6 +21,25 @@ function agent(id: string, overrides: Partial<AgentSession> = {}): AgentSession 
 }
 
 describe('sidebar launcher primary ordering', () => {
+  it('hides exact delivery notes from the launcher preview', () => {
+    const note =
+      '[SYSTEM NOTE] This message was queued at 2026-01-01T00:00:00Z and waited 8s before delivery.';
+    const session = agent('queued', {
+      lastUserMessage: `Visible prompt\n\n${note}`,
+    });
+
+    expect(getAgentLauncherPreview(session).lastUserMessage).toBe('Visible prompt');
+  });
+  it.each([
+    { width: 82, overflow: 36, expected: 1 },
+    { width: 92, overflow: 36, expected: 2 },
+    { width: 132, overflow: 36, expected: 4 },
+    { width: 152, overflow: 36, expected: 6 },
+    { width: 132, overflow: 52, expected: 3 },
+  ])('fits $expected exact-step previews in a $width px stack', ({ width, overflow, expected }) => {
+    expect(getLauncherPreviewLimit(width, overflow, 6, 36, 16)).toBe(expected);
+  });
+
   it('keeps the marked initial coordinator first even when another agent is running', () => {
     const state = deriveAgentLauncherItems(
       [agent('worker'), agent('coordinator', { isInitialAgent: true })],
@@ -26,6 +51,36 @@ describe('sidebar launcher primary ordering', () => {
     expect(state.launcherAgents.map(({ agent: item }) => item.id)).toEqual([
       'coordinator',
       'worker',
+    ]);
+  });
+
+  it('sorts remaining agents by failed, question, running, then idle priority', () => {
+    const states = new Map([
+      ['failed', 'failed'],
+      ['question', 'question'],
+      ['permission', 'needs-permission'],
+      ['running', 'running'],
+      ['idle', 'idle'],
+      ['coordinator', 'idle'],
+    ]);
+    const agents = ['idle', 'running', 'question', 'coordinator', 'failed', 'permission'].map(
+      (id) => agent(id, { isInitialAgent: id === 'coordinator' }),
+    );
+    const state = deriveAgentLauncherItems(
+      agents,
+      6,
+      ({ id }) => id === 'running',
+      () => ({ lastUserMessage: '', response: '' }),
+      ({ id }) => getAgentLauncherStatusPriority(states.get(id) ?? 'idle'),
+    );
+
+    expect(state.launcherAgents.map(({ agent: item }) => item.id)).toEqual([
+      'coordinator',
+      'failed',
+      'permission',
+      'question',
+      'running',
+      'idle',
     ]);
   });
 

@@ -5,6 +5,7 @@ import type { PanelState, PanelTab } from '$store/renderer/slices/panel-layout/p
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
+  panelOpenMode: 'pin' as 'normal' | 'pin',
   state: {
     panelLayout: {
       byWorkspaceId: {
@@ -46,6 +47,7 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
   endDrag: () => ({ type: 'tabState/endDrag' }),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectRecentlyClosed: () => readable([]),
   selectPanelLayoutWorkspace: {
     select: () => mocks.state.panelLayout.byWorkspaceId['workspace-1'],
   },
@@ -73,30 +75,35 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectAllWorkspaceAgents: () => readable([]),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentIsResponding: { select: () => false },
-  selectAgentIsWaiting: { select: () => false },
+  selectAgentIsResponding: () => readable(false),
+  selectAgentIsBlockedWaiting: () => readable(false),
+  selectAgentAttentionRequest: () => readable(null),
   selectAgentSession: () => readable(null),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: () => readable([]),
 }));
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectPanelOpenMode: () => readable(mocks.panelOpenMode),
+  selectPanelStackDirection: () => readable('right'),
+}));
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
-  default: (await import('$lib/components/workspace/__tests__/mocks/MockAugieAvatar.svelte'))
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
+  default: (await import('$lib/components/workspace/__tests__/mocks/MockAgentAvatar.svelte'))
     .default,
 }));
-vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
-  default: (await import('$lib/components/workspace/__tests__/mocks/MockAugieAvatar.svelte'))
+vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => ({
+  default: (await import('$lib/components/workspace/__tests__/mocks/MockAgentAvatar.svelte'))
     .default,
 }));
 vi.mock('../PanelEmptyState.svelte', async () => ({
-  default: (await import('$lib/components/workspace/__tests__/mocks/MockAugieAvatar.svelte'))
+  default: (await import('$lib/components/workspace/__tests__/mocks/MockAgentAvatar.svelte'))
     .default,
 }));
 vi.mock('../PanelContentRenderer.svelte', async () => ({
-  default: (await import('$lib/components/workspace/__tests__/mocks/MockAugieAvatar.svelte'))
+  default: (await import('$lib/components/workspace/__tests__/mocks/MockAgentAvatar.svelte'))
     .default,
 }));
 vi.mock('svelte-fa', async () => ({
@@ -167,6 +174,7 @@ function renderTabBar(props: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   mocks.dispatch.mockClear();
+  mocks.panelOpenMode = 'pin';
   setDraggedPanelId(null);
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     callback(0);
@@ -413,13 +421,36 @@ describe('panel and tab drag MIME routing', () => {
 });
 
 describe('panel context menu routing', () => {
-  it('keeps only the kebab and Close visible while grouping panel controls in the menu', async () => {
+  it('hides the direct pin control while pin mode is off', () => {
+    mocks.panelOpenMode = 'normal';
+    const { container } = renderTabBar({ onClosePanel: vi.fn() });
+
+    expect(container.querySelector('[data-panel-pin]')).toBeNull();
+  });
+
+  it('keeps pin, kebab, and Close visible while grouping other panel controls in the menu', async () => {
     const { container } = renderTabBar({ onClosePanel: vi.fn() });
     const directActions = container.querySelector<HTMLElement>('.panel-actions')!;
 
-    expect(directActions.querySelectorAll('button')).toHaveLength(2);
+    expect(directActions.querySelectorAll('button')).toHaveLength(3);
+    const pinButton = directActions.querySelector<HTMLButtonElement>('[data-panel-pin]')!;
+    expect(directActions.querySelector('button')).toBe(pinButton);
+    expect(pinButton.getAttribute('aria-label')).toBe('Pin panel');
+    expect(pinButton.getAttribute('aria-pressed')).toBe('false');
     expect(directActions.querySelector('[data-testid="panel-actions-trigger"]')).toBeTruthy();
     expect(directActions.querySelector('[data-testid="panel-close-button"]')).toBeTruthy();
+
+    await fireEvent.click(pinButton);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panelLayout/setPanelPinned',
+        payload: expect.objectContaining({
+          wsId: 'workspace-1',
+          panelId: 'target-panel',
+          pinned: true,
+        }),
+      }),
+    );
 
     await fireEvent.click(
       directActions.querySelector<HTMLElement>('[data-testid="panel-actions-trigger"]')!,
@@ -438,7 +469,7 @@ describe('panel context menu routing', () => {
     const icon = container.querySelector<SVGElement>('[data-testid="panel-actions-trigger"] svg');
 
     expect(icon?.getAttribute('viewBox')).toBe('0 0 16 16');
-    expect(icon?.getAttribute('class')).toContain('size-4');
+    expect(icon?.getAttribute('class')).toContain('size-3');
     expect(icon?.querySelector('path')?.getAttribute('d')).toContain('M8 2a1.5');
   });
 

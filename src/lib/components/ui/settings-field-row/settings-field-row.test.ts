@@ -23,7 +23,7 @@ describe('SettingsFieldRow', () => {
     expect(getByText(/Controls the volume/).className).toContain('type-body');
     expect(container.querySelector('[data-field-control]')?.className).toContain('max-w-full');
     expect(container.querySelector('[data-field-leading]')).toBeNull();
-    expect(getByRole('alert').className).toContain('text-destructive-foreground');
+    expect(getByRole('alert').className).toContain('text-error-foreground');
   });
 
   it('publishes the complete settings field state matrix', () => {

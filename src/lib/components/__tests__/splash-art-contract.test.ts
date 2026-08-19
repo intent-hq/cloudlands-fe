@@ -13,7 +13,7 @@ describe('pre-hydration splash art', () => {
     expect(source).toContain("token('--foreground'");
     expect(source).not.toContain('dark ? 0.14 : 0.09');
     expect(source).not.toContain("token('--info'");
-    expect(source).toMatch(/html,\s*body\s*{\s*background: transparent;/);
+    expect(source).toMatch(/html,\s*body,\s*#app\s*{\s*background: transparent;/);
     expect(source).toContain('background: transparent');
     expect(source).toContain('context.clearRect(0, 0, width, height)');
     expect(source).not.toContain('context.fillRect(0, 0, width, height)');

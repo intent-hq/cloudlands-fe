@@ -17,11 +17,41 @@ import {
   selectHasCompletedProviderSetup,
   selectLanguagePreference,
   selectNoteFontStyle,
+  selectPanelOpenMode,
+  selectPanelStackDirection,
   selectShowArchived,
   selectShowReasoningBlocks,
   selectSpellcheckEnabled,
 } from '../user-preferences-selectors';
-import { cycleNoteFontStyle, deleteActivityLogPreset, FONT_STYLES, hydrateActivityLogPresets, saveActivityLogPreset, setAgentFontStyle, setCodeFontFamily, setGroupByRepo, setGithubLinkDefaultAction, setHasCompletedProviderSetup, setLanguagePreference, setNoteFontStyle, setShowArchived, setShowReasoningBlocks, setSpellcheckEnabled, setSystemFonts, toggleGroupByRepo, toggleHasCompletedProviderSetup, toggleShowArchived, toggleShowReasoningBlocks, toggleSpellcheck, type ActivityLogPresetPreference, type FontStyle } from '../user-preferences-slice';
+import {
+  cycleNoteFontStyle,
+  deleteActivityLogPreset,
+  FONT_STYLES,
+  hydrateActivityLogPresets,
+  saveActivityLogPreset,
+  setAgentFontStyle,
+  setCodeFontFamily,
+  setGroupByRepo,
+  setGithubLinkDefaultAction,
+  setHasCompletedProviderSetup,
+  setLanguagePreference,
+  setNoteFontStyle,
+  setPanelOpenMode,
+  setPanelStackDirection,
+  setShowArchived,
+  setShowReasoningBlocks,
+  setSpellcheckEnabled,
+  setSystemFonts,
+  toggleGroupByRepo,
+  toggleHasCompletedProviderSetup,
+  toggleShowArchived,
+  toggleShowReasoningBlocks,
+  toggleSpellcheck,
+  togglePanelOpenMode,
+  togglePanelStackDirection,
+  type ActivityLogPresetPreference,
+  type FontStyle,
+} from '../user-preferences-slice';
 
 const SPELLCHECK_STORAGE_KEY = 'note-spellcheck-settings';
 const SHOW_ARCHIVED_STORAGE_KEY = 'workspace-list:showArchived';
@@ -34,6 +64,8 @@ const CODE_STORAGE_KEY = 'code-font-settings';
 const ACTIVITY_LOG_PRESETS_STORAGE_KEY = 'activityLogPresets';
 const LANGUAGE_PREFERENCE_STORAGE_KEY = 'language-preference';
 const GITHUB_LINK_DEFAULT_ACTION_STORAGE_KEY = 'github-links:defaultAction';
+const PANEL_OPEN_MODE_STORAGE_KEY = 'panel-layout:openMode';
+const PANEL_STACK_DIRECTION_STORAGE_KEY = 'panel-layout:stackDirection';
 
 type ListSystemFontsResponse = {
   success?: boolean;
@@ -132,6 +164,18 @@ export function* hydrateUserPreferencesWorker() {
   if (isGithubLinkDefaultAction(githubLinkDefaultAction)) {
     yield* put(setGithubLinkDefaultAction(githubLinkDefaultAction));
   }
+
+  const panelOpenMode = yield* getLocalStorageJSON<unknown>(PANEL_OPEN_MODE_STORAGE_KEY);
+  if (panelOpenMode === 'normal' || panelOpenMode === 'pin') {
+    yield* put(setPanelOpenMode(panelOpenMode));
+  }
+
+  const panelStackDirection = yield* getLocalStorageJSON<unknown>(
+    PANEL_STACK_DIRECTION_STORAGE_KEY,
+  );
+  if (panelStackDirection === 'left' || panelStackDirection === 'right') {
+    yield* put(setPanelStackDirection(panelStackDirection));
+  }
 }
 
 export function* persistSpellcheckWorker() {
@@ -210,6 +254,17 @@ export function* persistGithubLinkDefaultActionWorker() {
   );
 }
 
+export function* persistPanelOpenModeWorker() {
+  yield* setLocalStorageJSON(PANEL_OPEN_MODE_STORAGE_KEY, yield* selectPanelOpenMode.effect());
+}
+
+export function* persistPanelStackDirectionWorker() {
+  yield* setLocalStorageJSON(
+    PANEL_STACK_DIRECTION_STORAGE_KEY,
+    yield* selectPanelStackDirection.effect(),
+  );
+}
+
 function* watchUserPreferenceWrites() {
   yield* takeEvery([setSpellcheckEnabled, toggleSpellcheck], persistSpellcheckWorker);
   yield* takeEvery([setShowArchived, toggleShowArchived], persistShowArchivedWorker);
@@ -231,6 +286,11 @@ function* watchUserPreferenceWrites() {
   );
   yield* takeEvery(setLanguagePreference, persistLanguagePreferenceWorker);
   yield* takeEvery(setGithubLinkDefaultAction, persistGithubLinkDefaultActionWorker);
+  yield* takeEvery([setPanelOpenMode, togglePanelOpenMode], persistPanelOpenModeWorker);
+  yield* takeEvery(
+    [setPanelStackDirection, togglePanelStackDirection],
+    persistPanelStackDirectionWorker,
+  );
 }
 
 /** Unregistered until the S20 middleware cutover. */

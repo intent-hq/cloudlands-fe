@@ -15,6 +15,7 @@ import { buffers, channel, type Channel } from 'redux-saga';
 
 import { clearPanelLayoutAdapter } from '$features/layout/panel-layout-adapter';
 import { m } from '$shared/paraglide/messages.js';
+import type { AgentSession } from '$shared/types';
 import {
   loadPanelLayoutHistory,
   savePanelLayoutHistory,
@@ -35,7 +36,16 @@ import {
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  selectPanelOpenMode,
+  selectPanelStackDirection,
+} from '../../user-preferences/user-preferences-selectors';
+import {
+  setPanelOpenMode,
+  togglePanelOpenMode,
+} from '../../user-preferences/user-preferences-slice';
+import {
   resolveCanonicalInitialAgent,
+  resolveEmptyLayoutAgent,
   selectAllWorkspaceAgents,
 } from '../../workspace-agents/workspace-agents-selectors';
 import { setAgents, setInitialAgentId } from '../../workspace-agents/workspace-agents-slice';
@@ -50,11 +60,19 @@ import {
   collectRehydratableBrowserTabs,
   type RehydratableBrowserTab,
 } from '../browser-tab-rehydration';
-import { selectPanelLayoutWorkspace } from '../panel-layout-selectors';
-import { normalizeTablessPanelLayout, removeForeignWorkspaceTabs } from '../panel-layout-tabless';
+import {
+  selectPanelLayoutWorkspace,
+  selectPanelLayoutWorkspaceIds,
+} from '../panel-layout-selectors';
+import {
+  getPanelOrder,
+  normalizeTablessPanelLayout,
+  removeForeignWorkspaceTabs,
+} from '../panel-layout-tabless';
 import { migratePanelCanvasWidth } from '../panel-layout-width-provenance';
 import {
   clearPanelLayout,
+  collapseToReusablePanel,
   bootstrapNewWorkspaceLayout,
   closeActiveTab,
   closeAllOthersEverywhere,
@@ -81,8 +99,10 @@ import {
   moveTabToSplit,
   moveTabToSplitLevel,
   openTab,
+  openBlankWorkingPanel,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
+  openTabWithPanelModeRequested,
   observeDeferredSpecGeneration,
   panelLayoutScopeMounted,
   panelLayoutScopeUnmounted,
@@ -98,6 +118,7 @@ import {
   selectPreviousTab,
   setActiveTab,
   setDeferSpecTab,
+  setPanelPinned,
   setRestoreStatus,
   splitPanel,
   toggleExpandPanel,
@@ -121,6 +142,7 @@ const PERSIST_ACTIONS = [
   openTab,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
+  collapseToReusablePanel,
   closeTab,
   closeActiveTab,
   closeTabsByType,
@@ -161,6 +183,7 @@ const PERSIST_ACTIONS = [
   updateTabFavicon,
   updateFileTabPath,
   consumePendingFocus,
+  setPanelPinned,
 ];
 
 const HISTORY_ACTIONS = [
@@ -249,6 +272,57 @@ function getWsId(action: { payload?: unknown }): string | undefined {
   return undefined;
 }
 
+function workspaceNeedsReusablePanelCollapse(workspace: WorkspacePanelLayoutState): boolean {
+  const panels = Object.values(workspace.panels);
+  const unpinned = panels.filter(
+    (panel) => panel.pinned !== true && !panel.tabs.some((tab) => tab.closable === false),
+  );
+  return (
+    unpinned.length > 1 ||
+    (unpinned.length === 1 &&
+      unpinned[0].tabs.length === 0 &&
+      unpinned[0].pristine !== true &&
+      panels.some((panel) => panel.pinned))
+  );
+}
+
+function* enforceReusablePanelInvariant(action: { payload?: unknown }): SagaGenerator<void> {
+  if ((yield* selectPanelOpenMode.effect()) !== 'pin') return;
+  const wsId = getWsId(action);
+  if (!wsId) return;
+  const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
+  if (workspace !== emptyWorkspaceState && workspaceNeedsReusablePanelCollapse(workspace)) {
+    yield* put(collapseToReusablePanel(wsId, undefined, yield* selectPanelStackDirection.effect()));
+  }
+}
+
+function* collapseAllWorkspacesForPanelMode(): SagaGenerator<void> {
+  if ((yield* selectPanelOpenMode.effect()) !== 'pin') return;
+  const panelStackDirection = yield* selectPanelStackDirection.effect();
+  const workspaceIds = yield* selectPanelLayoutWorkspaceIds.effect();
+  for (const wsId of workspaceIds) {
+    yield* put(collapseToReusablePanel(wsId, undefined, panelStackDirection));
+  }
+}
+
+function* openTabWithPanelMode(
+  action: ReturnType<typeof openTabWithPanelModeRequested>,
+): SagaGenerator<void> {
+  const { wsId, tab, options, timestamp } = action.payload;
+  yield* put(
+    openTabInNewRootColumn(
+      wsId,
+      tab,
+      {
+        ...options,
+        panelOpenMode: yield* selectPanelOpenMode.effect(),
+        panelStackDirection: yield* selectPanelStackDirection.effect(),
+      },
+      timestamp,
+    ),
+  );
+}
+
 function collectPanelIds(node: PanelLayoutNode, panelIds: Set<string>): boolean {
   if (node.type === 'panel') {
     if (typeof node.panelId !== 'string' || node.panelId.length === 0) return false;
@@ -280,7 +354,8 @@ export function isStoredLayoutValid(value: unknown): value is WorkspacePanelLayo
     if (
       layout.canvasWidthSource !== undefined &&
       layout.canvasWidthSource !== null &&
-      layout.canvasWidthSource !== 'explicit'
+      layout.canvasWidthSource !== 'explicit' &&
+      layout.canvasWidthSource !== 'intrinsic'
     ) {
       return false;
     }
@@ -307,6 +382,7 @@ export function isStoredLayoutValid(value: unknown): value is WorkspacePanelLayo
     for (const [panelId, panel] of Object.entries(layout.panels)) {
       if (!panel || panel.id !== panelId || !Array.isArray(panel.tabs)) return false;
       if (panel.pristine !== undefined && typeof panel.pristine !== 'boolean') return false;
+      if (panel.pinned !== undefined && typeof panel.pinned !== 'boolean') return false;
       if (
         !panel.tabs.every((tab) => tab && typeof tab === 'object' && typeof tab.id === 'string')
       ) {
@@ -355,7 +431,49 @@ function normalizeLayoutForWorkspace(
   if (layout.newWorkspaceLifecycle !== undefined) {
     normalized.newWorkspaceLifecycle = layout.newWorkspaceLifecycle;
   }
+  const order = getPanelOrder(normalized.root);
+  const initialAgentId = normalized.newWorkspaceLifecycle?.initialAgentId;
+  const initialPanelId = order.find((panelId) =>
+    normalized.panels[panelId]?.tabs.some(
+      (tab) => tab.type === 'agent' && (!initialAgentId || String(tab.agentId) === initialAgentId),
+    ),
+  );
+  if (initialPanelId && normalized.panels[initialPanelId].pinned === undefined) {
+    normalized.panels = {
+      ...normalized.panels,
+      [initialPanelId]: { ...normalized.panels[initialPanelId], pinned: true },
+    };
+  }
   return normalized;
+}
+
+function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): SagaGenerator<void> {
+  if (!restoredWorkspaceIds.has(wsId)) return;
+  const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
+  if (layout.newWorkspaceLifecycle || hasAnyTab(layout)) return;
+  const availableAgents = agents ?? (yield* selectAllWorkspaceAgents.effect(wsId));
+  const agent = resolveEmptyLayoutAgent(
+    availableAgents,
+    wsId,
+    layout.restoreStatus === 'empty',
+  );
+  if (!agent) return;
+  yield* put(
+    openTabInAdjacentOrSplit(
+      wsId,
+      {
+        type: 'agent',
+        title: agent.name,
+        agentId: String(agent.id),
+        workspaceId: wsId,
+        closable: true,
+      },
+      layout.focusedPanelId ?? undefined,
+      { force: true },
+    ),
+  );
+  const opened = yield* selectPanelLayoutWorkspace.effect(wsId);
+  if (opened.focusedPanelId) yield* put(setPanelPinned(wsId, opened.focusedPanelId, true));
 }
 
 /**
@@ -423,6 +541,18 @@ export function* handleWorkspaceMountedRestore(
   if (!isValidWorkspaceId(wsId)) return;
   mountedWorkspaceIds.add(wsId);
   if (restoredWorkspaceIds.has(wsId)) return;
+  const current = yield* selectPanelLayoutWorkspace.effect(wsId);
+  if (current.newWorkspaceLifecycle && current.restoreStatus === 'restored') {
+    // A fresh workspace can reduce its bootstrap before this saga starts or
+    // reattaches. That in-memory lifecycle is authoritative: restoring a
+    // missing storage entry here would replace it with a visually empty layout.
+    restoredWorkspaceIds.add(wsId);
+    restoredUnderBackendIds.add(wsId);
+    yield* call(resolvePendingInitialAgent, wsId);
+    yield* call(persistPanelLayout, action);
+    yield* call(reconcileDeferredSpec, wsId);
+    return;
+  }
   restoredWorkspaceIds.add(wsId);
   let settleInflight!: () => void;
   inflightRestores.set(
@@ -436,8 +566,10 @@ export function* handleWorkspaceMountedRestore(
     yield* put(setRestoreStatus(wsId, 'pending'));
     const stored = yield* call(loadLayoutFromStorage, wsId);
     if (stored === null) {
+      yield* put(resetLayout(wsId));
       yield* put(setRestoreStatus(wsId, 'empty'));
     } else if (stored === 'invalid') {
+      yield* put(resetLayout(wsId));
       yield* put(setRestoreStatus(wsId, 'invalid'));
     } else {
       const normalized = normalizeLayoutForWorkspace(wsId, stored);
@@ -453,6 +585,7 @@ export function* handleWorkspaceMountedRestore(
       yield* spawn(rehydrateTunneledBrowserTabs, wsId, collectRehydratableBrowserTabs(normalized));
     }
     restoredUnderBackendIds.add(wsId);
+    yield* call(reconcileEmptyRestoredLayout, wsId);
     completed = true;
   } finally {
     // A failed or cancelled restore releases the dedup guard so a later
@@ -725,18 +858,27 @@ function* resolveInitialAgentFromSnapshot(
   yield* put(resolveNewWorkspaceInitialAgent(workspaceId, agentId, initial.name));
 }
 
+function* reconcileAgentsFromSnapshot(action: ReturnType<typeof setAgents>): SagaGenerator<void> {
+  yield* call(resolveInitialAgentFromSnapshot, action);
+  const [workspaceId, agents] = action.payload;
+  yield* call(reconcileEmptyRestoredLayout, workspaceId, agents);
+}
+
+function* resolvePendingInitialAgent(wsId: string): SagaGenerator<void> {
+  const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
+  if (!workspace.newWorkspaceLifecycle?.initialAgentPending) return;
+  const initial = resolveCanonicalInitialAgent(yield* selectAllWorkspaceAgents.effect(wsId));
+  if (!initial) return;
+  const agentId = String(initial.id);
+  yield* put(setInitialAgentId(wsId, agentId));
+  yield* put(resolveNewWorkspaceInitialAgent(wsId, agentId, initial.name));
+}
+
 function* handleNewWorkspaceBootstrap(
   action: ReturnType<typeof bootstrapNewWorkspaceLayout>,
 ): SagaGenerator<void> {
-  const { wsId, initialAgentId } = action.payload;
-  if (!initialAgentId) {
-    const initial = resolveCanonicalInitialAgent(yield* selectAllWorkspaceAgents.effect(wsId));
-    if (initial) {
-      const agentId = String(initial.id);
-      yield* put(setInitialAgentId(wsId, agentId));
-      yield* put(resolveNewWorkspaceInitialAgent(wsId, agentId, initial.name));
-    }
-  }
+  const { wsId } = action.payload;
+  yield* call(resolvePendingInitialAgent, wsId);
   restoredWorkspaceIds.add(wsId);
   restoredUnderBackendIds.add(wsId);
   yield* call(persistPanelLayout, action);
@@ -780,6 +922,7 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
       yield* spawn(rehydrateTunneledBrowserTabs, wsId, collectRehydratableBrowserTabs(normalized));
     }
     restoredUnderBackendIds.add(wsId);
+    yield* call(reconcileEmptyRestoredLayout, wsId);
     completed = true;
   } finally {
     // Mirror the mount path: a failed or cancelled re-restore releases the
@@ -852,6 +995,13 @@ export function* panelLayoutSaga(options?: {
   }): SagaGenerator<void> {
     yield* queueHistorySave(historyMailboxes, action);
   }
+  function* handleBlankWorkingPanel(
+    action: ReturnType<typeof openBlankWorkingPanel>,
+  ): SagaGenerator<void> {
+    yield* fork(persistPanelLayout, action);
+    yield* fork(enforceReusablePanelInvariant, action);
+    yield* queueHistorySaveForAction(action);
+  }
   function* handleWorkspaceUnmountedAction(
     action: ReturnType<typeof workspaceUnmounted> | ReturnType<typeof panelLayoutScopeUnmounted>,
   ): SagaGenerator<void> {
@@ -866,12 +1016,16 @@ export function* panelLayoutSaga(options?: {
   }
   try {
     yield* takeEvery(bootstrapNewWorkspaceLayout, handleNewWorkspaceBootstrap);
-    yield* takeEvery(setAgents, resolveInitialAgentFromSnapshot);
+    yield* takeEvery(setAgents, reconcileAgentsFromSnapshot);
     yield* takeEvery(
       [applyNoteCreated, applyNoteUpdated, loadWorkspaceNotesSucceeded],
       reconcileSpecFromNoteAction,
     );
     yield* takeEvery(PERSIST_ACTIONS, persistPanelLayout);
+    yield* takeEvery(PERSIST_ACTIONS, enforceReusablePanelInvariant);
+    yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
+    yield* takeEvery(openTabWithPanelModeRequested, openTabWithPanelMode);
+    yield* takeEvery([setPanelOpenMode, togglePanelOpenMode], collapseAllWorkspacesForPanelMode);
     yield* takeEvery(clearPanelLayout, clearPersistedLayout);
     const historyWatcher = yield* takeEvery(HISTORY_ACTIONS, queueHistorySaveForAction);
     yield* takeLatest(initializeLayout, loadHistoryForWorkspace);

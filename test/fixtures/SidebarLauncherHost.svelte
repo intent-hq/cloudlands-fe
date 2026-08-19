@@ -10,6 +10,7 @@
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { initializeLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   let {
     width,
@@ -96,6 +97,43 @@
       })),
     } as never),
   );
+  const openTabs = [
+    initialAgentCount > 0
+      ? {
+          id: 'agent-tab',
+          type: 'agent' as const,
+          title: 'Running agent',
+          agentId: 'agent-running',
+          workspaceId,
+          closable: true,
+        }
+      : null,
+    initialNoteCount > 0
+      ? {
+          id: 'note-tab',
+          type: 'note' as const,
+          title: 'Context note 1',
+          noteId: 'note-0',
+          workspaceId,
+          closable: true,
+        }
+      : null,
+  ].filter((tab) => tab !== null);
+  if (openTabs.length > 0) {
+    store.dispatch(
+      initializeLayout(workspaceId, {
+        root: { type: 'panel', panelId: 'launcher-panel' },
+        panels: {
+          'launcher-panel': {
+            id: 'launcher-panel',
+            tabs: openTabs,
+            activeTabId: openTabs[0].id,
+          },
+        },
+        focusedPanelId: 'launcher-panel',
+      }),
+    );
+  }
   // svelte-ignore state_referenced_locally - each test host applies its initial mode once
   store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, [selectedTab]));
   $effect(() => store.dispatch(setThemeName(theme)));

@@ -35,7 +35,7 @@
 
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { slide } from 'svelte/transition';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import EntityChip from './EntityChip.svelte';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
@@ -211,7 +211,7 @@
             status === 'success'
               ? 'text-emerald-500/80 dark:text-emerald-400/70'
               : status === 'error'
-                ? 'text-red-400/80 dark:text-red-400/70'
+                ? 'text-error-foreground'
                 : 'text-ghost'}
           {@const prevEvent = index > 0 ? dedupedEvents[index - 1] : null}
           {@const thisTime = new Date(event.timestamp).getTime()}
@@ -297,7 +297,7 @@
               <!-- Expanded details -->
               {#if isExpanded}
                 <div
-                  class="mt-2 p-2 rounded-md bg-muted/40 text-xs font-mono text-subtle overflow-auto max-h-[40em] border border-border/50"
+                  class="mt-2 p-2 rounded-md bg-muted/40 text-xs font-mono text-subtle overflow-auto max-h-[40em] border border-border"
                   transition:slide={{ duration: 150 }}
                 >
                   <pre>{JSON.stringify(event, null, 2)}</pre>
@@ -313,7 +313,7 @@
                 onclick={(e) => onShowAgent?.(event.actor.id!, e)}
                 title={m.log_timeline_openAgent_tooltip()}
               >
-                <AuggieAvatar size={24} agentId={event.actor.id} />
+                <AgentAvatar size={24} agentId={event.actor.id} />
               </button>
             {/if}
           </div>
