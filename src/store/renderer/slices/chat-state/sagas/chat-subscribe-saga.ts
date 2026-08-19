@@ -1303,6 +1303,24 @@ function* routeLifecycleAction(
         coordinator,
         (agentId, slot) => slot.wsId !== CHIEF_WORKSPACE_ID && !hydrating.has(agentId),
       );
+    } else if (scopeAgentId) {
+      // Another agent is still viewed, so this scoped clear was a reducer
+      // no-op (monorepo#1215's cross-agent guard) — but the CLEARED agent's
+      // own slot may still be standing: a sibling spared from the viewed
+      // -agent swap (monorepo#2917) whose deferred-clear marker was retired
+      // at hydration settle while its panel tab was open. When that tab
+      // later closes (deactivation/destroy dispatch this scoped clear), no
+      // sweep would otherwise reach the sibling and its subscription would
+      // leak until an unrelated swap or session teardown. Close the scoped
+      // agent's OWN slot — never the viewed agent's, preserving the #1215
+      // guard: immediately when no panel tab hosts it, deferred through the
+      // spare-then-revisit contract when its hydration is still loading with
+      // a hosting tab (a live panel is waiting on the snapshot).
+      if (!(yield* selectAgentHasOpenPanelTab.effect(scopeAgentId))) {
+        enqueueClose(coordinator, scopeAgentId);
+      } else if ((yield* selectTranscriptHydration.effect(scopeAgentId)) === 'loading') {
+        coordinator.pendingClearWhileLoading.add(scopeAgentId);
+      }
     }
   } else if (action.type === upsertSession.type) {
     const [session] = action.payload as [AgentSession];
