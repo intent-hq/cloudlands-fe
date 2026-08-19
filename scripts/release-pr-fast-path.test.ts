@@ -10,6 +10,8 @@ import { evaluateFastPath } from './release-pr-fast-path.mjs';
 
 const VERSION_A = '2.28.0';
 const VERSION_B = '2.29.0';
+const PIN_A = '0.7.21';
+const PIN_B = '0.7.22';
 
 const basePackageJson = (version: string, extra: Record<string, string> = {}) =>
   JSON.stringify(
@@ -24,6 +26,9 @@ const basePackageJson = (version: string, extra: Record<string, string> = {}) =>
 
 const baseManifest = (version: string) => `{\n  ".": "${version}"\n}\n`;
 
+const basePinFile = (version: string, comment = 'Exact intentd version bundled as the sidecar.') =>
+  `# ${comment}\n# Bump by PR.\n${version}\n`;
+
 const tempDirs: string[] = [];
 
 function initRepo(): string {
@@ -37,6 +42,7 @@ function initRepo(): string {
   writeFileSync(join(dir, 'package.json'), basePackageJson(VERSION_A));
   writeFileSync(join(dir, '.release-please-manifest.json'), baseManifest(VERSION_A));
   writeFileSync(join(dir, 'CHANGELOG.md'), '# Changelog\n\n## 2.28.0\n\n- old entry\n');
+  writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_A));
   writeFileSync(join(dir, 'src.ts'), 'export const value = 1;\n');
   git('add', '-A');
   git('commit', '-qm', 'base');
@@ -156,5 +162,93 @@ describe('release-pr-fast-path', () => {
   it('rejects an empty diff', () => {
     const dir = initRepo();
     expect(evaluate(dir)).toEqual({ fastPath: false, reason: 'empty diff' });
+  });
+
+  it('matches an intentd.version-only pin bump', () => {
+    const dir = initRepo();
+    writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+    commit(dir);
+    expect(evaluate(dir)).toEqual({ fastPath: true });
+  });
+
+  it('rejects a comment-only edit to intentd.version (identical pin)', () => {
+    const dir = initRepo();
+    writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_A, 'Reworded comment.'));
+    commit(dir);
+    expect(evaluate(dir)).toEqual({
+      fastPath: false,
+      reason: 'no pin change in intentd.version',
+    });
+  });
+
+  it('rejects a pin change combined with a comment edit', () => {
+    const dir = initRepo();
+    writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B, 'Reworded comment.'));
+    commit(dir);
+    expect(evaluate(dir)).toEqual({
+      fastPath: false,
+      reason: 'non-pin change in intentd.version',
+    });
+  });
+
+  it('rejects a pin bump alongside another file change', () => {
+    const dir = initRepo();
+    writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+    writeFileSync(join(dir, 'src.ts'), 'export const value = 2;\n');
+    commit(dir);
+    expect(evaluate(dir)).toEqual({
+      fastPath: false,
+      reason: 'disallowed file: intentd.version',
+    });
+  });
+
+  it('rejects a blank-line-only change to intentd.version (identical pin)', () => {
+    const dir = initRepo();
+    writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_A) + '\n');
+    commit(dir);
+    expect(evaluate(dir)).toEqual({
+      fastPath: false,
+      reason: 'no pin change in intentd.version',
+    });
+  });
+
+  it('rejects an invalid pin version string', () => {
+    const dir = initRepo();
+    writeFileSync(join(dir, 'intentd.version'), basePinFile(`v${PIN_B}`));
+    commit(dir);
+    expect(evaluate(dir)).toEqual({
+      fastPath: false,
+      reason: `unparseable head pin 'v${PIN_B}'`,
+    });
+  });
+
+  it.each(['1', '1.2', '1.2.3+build'])(
+    'rejects a pin outside the parseVersionPin grammar (%s)',
+    (pin) => {
+      const dir = initRepo();
+      writeFileSync(join(dir, 'intentd.version'), basePinFile(pin));
+      commit(dir);
+      expect(evaluate(dir)).toEqual({
+        fastPath: false,
+        reason: `unparseable head pin '${pin}'`,
+      });
+    },
+  );
+
+  it('matches a pin bump to a prerelease version', () => {
+    const dir = initRepo();
+    writeFileSync(join(dir, 'intentd.version'), basePinFile(`${PIN_B}-beta.1`));
+    commit(dir);
+    expect(evaluate(dir)).toEqual({ fastPath: true });
+  });
+
+  it('rejects multiple pin lines', () => {
+    const dir = initRepo();
+    writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_A) + `${PIN_B}\n`);
+    commit(dir);
+    expect(evaluate(dir)).toEqual({
+      fastPath: false,
+      reason: 'expected exactly one pin line at head (found 2)',
+    });
   });
 });
