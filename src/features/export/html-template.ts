@@ -1,7 +1,12 @@
 /**
  * HTML template with inlined CSS for light and dark themes
  */
-import { formatDateTime } from '$lib/i18n/format';
+import { createFormatters } from '$shared/i18n/formatters';
+import { getLocale } from '$shared/paraglide/runtime.js';
+
+// Live Paraglide locale binding — keeps this module main-process safe (no
+// renderer-only `$lib/i18n` import, which would clobber main's locale).
+const { formatDateTime } = createFormatters(() => getLocale());
 
 const LIGHT_THEME_CSS = `
   :root {
