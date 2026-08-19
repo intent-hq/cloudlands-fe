@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.67.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.66.5...v2.67.0) (2026-08-19)
+
+
+### 🚀 Features
+
+* polish desktop UI geometry and interactions ([#1373](https://github.com/intent-hq/cloudlands-fe/issues/1373)) ([96e48a0](https://github.com/intent-hq/cloudlands-fe/commit/96e48a0baf89d68a377528c95aa515ebc460378e))
+
+
+### 🐛 Bug Fixes
+
+* **chat:** hide the workspace setup card during the transcript skeleton state ([#1446](https://github.com/intent-hq/cloudlands-fe/issues/1446)) ([93eeb56](https://github.com/intent-hq/cloudlands-fe/commit/93eeb56e624143757fd09053063aa0056468a62c))
+
 ## [2.66.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.66.4...v2.66.5) (2026-08-19)
 
 
