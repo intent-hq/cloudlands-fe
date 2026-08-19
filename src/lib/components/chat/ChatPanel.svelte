@@ -143,7 +143,7 @@
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
   import { deriveWizardPendingQuestions } from './questions/wizard-gate';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
-  import { groupMessagesByDate } from '$lib/utils/timeFormatting';
+  import { buildDateGroupKeys, groupMessagesByDate } from '$lib/utils/timeFormatting';
   import {
     animateScrollTo,
     followBottom,
@@ -1523,6 +1523,10 @@
   // Grouped messages for display (include ALL messages)
   // We'll handle the streaming state when rendering
   let groupedMessages = $derived(groupMessagesByDate($agentMessages$));
+
+  // Keyed by calendar day (not first message ID) so a same-day older-history
+  // prepend does not change the group key and recreate its rendered turns.
+  const dateGroupKeys = $derived(buildDateGroupKeys(groupedMessages));
 
   // ── "New messages" divider (unread marker, PROTOCOL §5.5 agent.markSeen) ──
   // The divider is entry-only and frozen per viewing session: on the first
@@ -3930,8 +3934,11 @@
                   <NewMessagesDivider />
                 {/if}
               {/snippet}
-              <!-- PERF: Use keyed each blocks for efficient list diffing -->
-              {#each conversationTurnIndex.groups as indexedGroup, groupIndex (indexedGroup.group.messages[0]?.id ?? groupIndex)}
+              <!-- PERF: Use keyed each blocks for efficient list diffing.
+                   Group key is the calendar day so a same-day older-history
+                   prepend (which changes the group's first message) does not
+                   destroy and recreate the group's rendered turns. -->
+              {#each conversationTurnIndex.groups as indexedGroup, groupIndex (dateGroupKeys[groupIndex] ?? groupIndex)}
                 {@const turns = indexedGroup.turns}
                 {#each turns as turn, turnIndex (turn.userMessage?.id ?? `turn-${turnIndex}`)}
                   {@const turnKey = turn.userMessage?.id ?? `group-${groupIndex}-turn-${turnIndex}`}

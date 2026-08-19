@@ -88,6 +88,23 @@ export function groupMessagesByDate<T extends { timestamp?: Date | string | null
 }
 
 /**
+ * Stable render keys for date groups: the calendar day, not the first
+ * message ID. An older-history prepend into an existing day then keeps that
+ * group's key (and its keyed DOM subtree) intact. Duplicate days — only
+ * possible with unsorted timestamps — get an occurrence suffix so keys stay
+ * unique.
+ */
+export function buildDateGroupKeys(groups: Array<{ date: Date }>): string[] {
+  const seen = new Map<string, number>();
+  return groups.map(({ date }) => {
+    const day = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+    const occurrence = seen.get(day) ?? 0;
+    seen.set(day, occurrence + 1);
+    return occurrence === 0 ? day : `${day}#${occurrence}`;
+  });
+}
+
+/**
  * Check if a timestamp should show a time separator
  * (e.g., if more than 5 minutes have passed since the last message)
  */
