@@ -160,20 +160,23 @@ afterAll(() => {
 });
 
 describe('Settings migration', () => {
-  it('exposes the fixed-column preference through Appearance settings', async () => {
+  it('keeps the fixed-column preference in the workspace rail instead of settings', async () => {
     const recorder = installDispatchRecorder();
     const general = renderGeneral();
     expect(document.querySelector('[data-panel-column-count]')).toBeNull();
     general.unmount();
 
     renderAppearance();
-    expect(document.querySelector('[data-panel-column-count="1"]')).toBeTruthy();
+    expect(document.querySelector('[data-panel-column-count]')).toBeNull();
     appStore.dispatch(setPanelColumnCount(3));
     await waitFor(() => expect(selectPanelColumnCount.select(appStore.state)).toBe(3));
     expect(recorder.calls).toContainEqual(setPanelColumnCount(3));
     expect(readFileSync('src/lib/components/layout/WindowTitleBar.svelte', 'utf8')).not.toContain(
       'data-titlebar-panel-open-mode',
     );
+    expect(
+      readFileSync('src/lib/components/layout/panel-system/PanelColumnRail.svelte', 'utf8'),
+    ).toContain('data-panel-column-count');
     recorder.restore();
   });
 

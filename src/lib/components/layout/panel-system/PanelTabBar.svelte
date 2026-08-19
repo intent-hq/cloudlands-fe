@@ -2288,8 +2288,10 @@
         <div class="border-t border-border"></div>
         <!-- Split options -->
         {#if contextMenuTab.source === 'panel'}
-          <button
-            class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+          <Button
+            variant="ghost-light"
+            size="sm"
+            class="h-auto w-full justify-start rounded-none px-3 py-1.5 text-left"
             disabled={!onMoveLeft}
             onclick={() => {
               onMoveLeft?.();
@@ -2298,9 +2300,11 @@
           >
             <Fa icon={faArrowLeft} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_moveLeft_label()}
-          </button>
-          <button
-            class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+          </Button>
+          <Button
+            variant="ghost-light"
+            size="sm"
+            class="h-auto w-full justify-start rounded-none px-3 py-1.5 text-left"
             disabled={!onMoveRight}
             onclick={() => {
               onMoveRight?.();
@@ -2309,7 +2313,7 @@
           >
             <Fa icon={faArrowRight} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_moveRight_label()}
-          </button>
+          </Button>
           <div class="border-t border-border"></div>
         {/if}
         <button

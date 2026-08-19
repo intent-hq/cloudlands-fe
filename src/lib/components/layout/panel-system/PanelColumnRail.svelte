@@ -3,7 +3,6 @@
   import type { PanelColumnCount } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { isPanelColumnCount } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { Button } from '$lib/components/ui/button';
-  import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { PANEL_COLUMN_RAIL_WIDTH } from '$shared/panel-layout-sizing';
 
@@ -54,31 +53,32 @@
 {/snippet}
 
 <aside
-  class="flex h-full shrink-0 justify-center border-l border-border/60 bg-sidebar px-3 py-3"
+  class="flex h-full shrink-0 justify-center border-l border-border bg-sidebar px-3 py-3"
   style:width={`${PANEL_COLUMN_RAIL_WIDTH}px`}
   aria-label={m.layout_panelColumnRail_ariaLabel()}
   data-panel-column-rail
 >
-  <DropdownMenu align="end" side="bottom" contentClass="w-44">
-    <!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
-    {#snippet trigger({ props }: { props: Record<string, unknown> })}
-      <Button
-        {...props}
-        variant="outline"
-        size="sm"
-        class="h-8 min-w-14 gap-1.5 rounded-lg bg-card/80 px-2 shadow-xs backdrop-blur-sm transition-colors motion-reduce:transition-none"
-        aria-label={m.layout_panelColumnRail_currentCount_ariaLabel({ count })}
-        tooltip={m.layout_panelColumnRail_currentCount_tooltip({ count })}
-        tooltipSide="left"
-        data-panel-column-count-trigger
-      >
-        <span class="size-5" data-panel-column-count-icon>{@render columnIcon(count)}</span>
-        <span class="type-caption tabular-nums text-foreground" data-panel-column-count
-          >{count}</span
+  <Menu.Root>
+    <Menu.Trigger>
+      {#snippet child({ props })}
+        <Button
+          {...props}
+          variant="outline"
+          size="sm"
+          class="h-8 min-w-14 gap-1.5 rounded-lg bg-card/80 px-2 shadow-xs backdrop-blur-sm transition-colors motion-reduce:transition-none"
+          aria-label={m.layout_panelColumnRail_currentCount_ariaLabel({ count })}
+          tooltip={m.layout_panelColumnRail_currentCount_tooltip({ count })}
+          tooltipSide="left"
+          data-panel-column-count-trigger
         >
-      </Button>
-    {/snippet}
-    {#snippet content()}
+          <span class="size-5" data-panel-column-count-icon>{@render columnIcon(count)}</span>
+          <span class="type-caption tabular-nums text-foreground" data-panel-column-count
+            >{count}</span
+          >
+        </Button>
+      {/snippet}
+    </Menu.Trigger>
+    <Menu.Content align="end" side="bottom" class="w-44">
       <Menu.RadioGroup value={String(count)} onValueChange={handleCountChange}>
         {#each columnCounts as option}
           <Menu.RadioItem value={String(option)}>
@@ -87,6 +87,6 @@
           </Menu.RadioItem>
         {/each}
       </Menu.RadioGroup>
-    {/snippet}
-  </DropdownMenu>
+    </Menu.Content>
+  </Menu.Root>
 </aside>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { Button } from '$lib/components/ui/button';
   import type { PanelColumnCount } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import PanelColumnRail from '../../PanelColumnRail.svelte';
 
@@ -35,8 +36,8 @@
   data-testid="panel-column-rail-host"
   data-current-count={count}
 >
-  <button class="absolute" type="button" data-testid="before-column-rail">Before columns</button>
+  <Button class="absolute" type="button" data-testid="before-column-rail">Before columns</Button>
   <div class="min-w-0 flex-1" data-panel-content></div>
   <PanelColumnRail {count} onCountChange={(nextCount) => (count = nextCount)} />
-  <button class="absolute" type="button" data-testid="after-column-rail">After columns</button>
+  <Button class="absolute" type="button" data-testid="after-column-rail">After columns</Button>
 </section>

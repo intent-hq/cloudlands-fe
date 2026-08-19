@@ -12,7 +12,7 @@ test.beforeAll(async () => {
   server = await createServer({
     configFile: false,
     root: process.cwd(),
-    cacheDir: process.env.PANEL_MODE_VITE_CACHE_DIR,
+    cacheDir: process.env.PANEL_COLUMNS_VITE_CACHE_DIR,
     plugins: [svelte({ configFile: resolve('svelte.config.js') })],
     resolve: {
       alias: [
@@ -41,103 +41,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => server?.close());
 
-test('keeps one reusable left panel across wide, narrow, and reduced-motion cases', async ({
-  page,
-}) => {
-  for (const reducedMotion of ['no-preference', 'reduce'] as const) {
-    await page.emulateMedia({ reducedMotion });
-    for (const width of [1440, 720]) {
-      await page.setViewportSize({ width, height: 800 });
-      await page.goto(`${baseUrl}src/app.html`);
-      const result = await page.evaluate(async () => {
-        const layout =
-          await import('/src/store/renderer/slices/panel-layout/panel-layout-slice.ts');
-        const preferences =
-          await import('/src/store/renderer/slices/user-preferences/user-preferences-slice.ts');
-        const panel = (id: string, tabId: string, pinned = false) => ({
-          id,
-          tabs: [{ id: tabId, type: 'note', title: tabId, noteId: tabId, closable: true }],
-          activeTabId: tabId,
-          pinned,
-        });
-        let state = {
-          byWorkspaceId: {
-            ws: {
-              ...layout.emptyWorkspaceState,
-              root: {
-                type: 'split' as const,
-                direction: 'horizontal' as const,
-                children: [
-                  { type: 'panel' as const, panelId: 'pinned' },
-                  { type: 'panel' as const, panelId: 'active' },
-                  { type: 'panel' as const, panelId: 'other' },
-                ],
-                sizes: [30, 40, 30],
-              },
-              panels: {
-                pinned: panel('pinned', 'keep', true),
-                active: panel('active', 'active-old'),
-                other: panel('other', 'close-me'),
-              },
-              focusedPanelId: 'active',
-            },
-          },
-        };
-        const pinPreference = preferences.userPreferencesReducer(
-          preferences.initialState,
-          preferences.setPanelOpenMode('pin'),
-        );
-        localStorage.setItem('panel-layout:openMode', JSON.stringify(pinPreference.panelOpenMode));
-        state = layout.panelLayoutReducer(
-          state,
-          layout.openTabInNewRootColumn(
-            'ws',
-            { type: 'note', title: 'First', noteId: 'first', closable: true },
-            { panelOpenMode: pinPreference.panelOpenMode, force: true },
-            1,
-          ),
-        );
-        const first = state.byWorkspaceId.ws;
-        state = layout.panelLayoutReducer(
-          state,
-          layout.openTabInNewRootColumn(
-            'ws',
-            { type: 'note', title: 'Second', noteId: 'second', closable: true },
-            { panelOpenMode: pinPreference.panelOpenMode, force: true },
-            2,
-          ),
-        );
-        const second = state.byWorkspaceId.ws;
-        const order = (node: typeof second.root): string[] =>
-          node.type === 'panel' ? [node.panelId] : node.children.flatMap(order);
-        return {
-          storedMode: JSON.parse(localStorage.getItem('panel-layout:openMode') ?? 'null'),
-          firstPanels: Object.keys(first.panels),
-          secondPanels: Object.keys(second.panels),
-          order: order(second.root),
-          activeTabs: second.panels.active.tabs.map((tab) => tab.noteId),
-          pinnedTabs: second.panels.pinned.tabs.map((tab) => tab.noteId),
-          recentlyClosed: second.recentlyClosed.map((entry) => entry.tab.noteId),
-          reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
-        };
-      });
-      expect(result).toMatchObject({
-        storedMode: 'pin',
-        firstPanels: ['pinned', 'active'],
-        secondPanels: ['pinned', 'active'],
-        order: ['active', 'pinned'],
-        activeTabs: ['second'],
-        pinnedTabs: ['keep'],
-        reducedMotion: reducedMotion === 'reduce',
-      });
-      expect(result.recentlyClosed).toEqual(
-        expect.arrayContaining(['active-old', 'close-me', 'first']),
-      );
-    }
-  }
-});
-
-test('preserves columns when returning to normal mode and toggles from the keyboard', async ({
+test('walks fixed column counts from one through four and recovers removed content', async ({
   page,
 }) => {
   await page.goto(`${baseUrl}src/app.html`);
@@ -145,149 +49,119 @@ test('preserves columns when returning to normal mode and toggles from the keybo
     const layout = await import('/src/store/renderer/slices/panel-layout/panel-layout-slice.ts');
     const preferences =
       await import('/src/store/renderer/slices/user-preferences/user-preferences-slice.ts');
-    let preference = preferences.initialState;
-    addEventListener('keydown', (event) => {
-      if (event.altKey && event.metaKey && event.key.toLowerCase() === 'p') {
-        preference = preferences.userPreferencesReducer(
-          preference,
-          preferences.togglePanelOpenMode(),
+    let state = {
+      byWorkspaceId: {
+        ws: {
+          ...layout.emptyWorkspaceState,
+          root: { type: 'panel' as const, panelId: 'p1' },
+          panels: {
+            p1: {
+              id: 'p1',
+              tabs: [{ id: 'tab-1', type: 'note' as const, title: 'One', noteId: 'one' }],
+              activeTabId: 'tab-1',
+            },
+          },
+          focusedPanelId: 'p1',
+        },
+      },
+    };
+    const panelIds = () => {
+      const root = state.byWorkspaceId.ws.root;
+      return root.type === 'panel'
+        ? [root.panelId]
+        : root.children.map((child) => (child.type === 'panel' ? child.panelId : ''));
+    };
+    const counts: number[] = [];
+
+    for (const count of [1, 2, 3, 4] as const) {
+      state = layout.panelLayoutReducer(
+        state,
+        layout.reconcilePanelColumnCount('ws', count, count),
+      );
+      counts.push(panelIds().length);
+      if (count > 1) {
+        state = layout.panelLayoutReducer(
+          state,
+          layout.openTabInRightmostColumn(
+            'ws',
+            { type: 'note', title: `Note ${count}`, noteId: `note-${count}` },
+            { force: true, newTabId: `tab-${count}` },
+            count,
+          ),
         );
       }
-    });
-    dispatchEvent(new KeyboardEvent('keydown', { key: 'p', altKey: true, metaKey: true }));
-    const keyboardMode = preference.panelOpenMode;
-    let state = layout.panelLayoutReducer(
-      undefined,
-      layout.initializeLayout('one', {
-        root: { type: 'panel', panelId: 'one-a' },
-        panels: { 'one-a': { id: 'one-a', tabs: [], activeTabId: null, pinned: true } },
-        focusedPanelId: 'one-a',
-      }),
-    );
-    state = layout.panelLayoutReducer(
-      state,
-      layout.openTabInNewRootColumn(
-        'one',
-        { type: 'note', title: 'Pinned mode', noteId: 'pin', closable: true },
-        { panelOpenMode: preference.panelOpenMode, force: true },
-        1,
-      ),
-    );
-    const beforeNormal = JSON.stringify(state.byWorkspaceId.one.root);
-    preference = preferences.userPreferencesReducer(
-      preference,
-      preferences.setPanelOpenMode('normal'),
-    );
-    const afterToggle = JSON.stringify(state.byWorkspaceId.one.root);
-    state = layout.panelLayoutReducer(
-      state,
-      layout.openTabInNewRootColumn(
-        'one',
-        { type: 'note', title: 'Normal mode', noteId: 'normal', closable: true },
-        { panelOpenMode: preference.panelOpenMode, force: true },
-        2,
-      ),
+    }
+    for (const count of [3, 2, 1] as const) {
+      state = layout.panelLayoutReducer(
+        state,
+        layout.reconcilePanelColumnCount('ws', count, 10 + count),
+      );
+      counts.push(panelIds().length);
+    }
+    const preference = preferences.userPreferencesReducer(
+      preferences.initialState,
+      preferences.setPanelColumnCount(4),
     );
     return {
-      keyboardMode,
-      finalMode: preference.panelOpenMode,
-      preserved: beforeNormal === afterToggle,
-      panelCount: Object.keys(state.byWorkspaceId.one.panels).length,
+      counts,
+      preference: preference.panelColumnCount,
+      panelIds: panelIds(),
+      tabs: state.byWorkspaceId.ws.panels.p1.tabs.map((tab) => tab.id),
+      activeTabId: state.byWorkspaceId.ws.panels.p1.activeTabId,
     };
   });
+
   expect(result).toEqual({
-    keyboardMode: 'pin',
-    finalMode: 'normal',
-    preserved: true,
-    panelCount: 3,
+    counts: [1, 2, 3, 4, 3, 2, 1],
+    preference: 4,
+    panelIds: ['p1'],
+    tabs: ['tab-1', 'tab-2', 'tab-3', 'tab-4'],
+    activeTabId: 'tab-1',
   });
 });
 
-test('keeps newest pins next to the reusable panel and preserves unpinned width', async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
-  for (const zoom of [1, 2]) {
-    await page.goto(`${baseUrl}src/app.html`);
-    const result = await page.evaluate(async (zoomFactor) => {
-      document.documentElement.style.zoom = String(zoomFactor);
-      const layout = await import('/src/store/renderer/slices/panel-layout/panel-layout-slice.ts');
-      const panel = (id: string, tabId: string, pinned: boolean) => ({
-        id,
-        tabs: [{ id: tabId, type: 'note' as const, title: tabId, noteId: tabId, closable: true }],
-        activeTabId: tabId,
-        pinned,
-      });
-      let state = {
-        byWorkspaceId: {
-          ws: {
-            ...layout.emptyWorkspaceState,
-            root: {
-              type: 'split' as const,
-              direction: 'horizontal' as const,
-              children: [
-                { type: 'panel' as const, panelId: 'reusable' },
-                { type: 'panel' as const, panelId: 'older' },
-              ],
-              sizes: [60, 40],
-            },
-            panels: {
-              reusable: panel('reusable', 'reusable-tab', false),
-              older: panel('older', 'older-tab', true),
-            },
-            focusedPanelId: 'reusable',
-            canvasWidth: 1000,
-            canvasWidthSource: 'explicit' as const,
+test('opens new content in the configured rightmost column', async ({ page }) => {
+  await page.goto(`${baseUrl}src/app.html`);
+  const result = await page.evaluate(async () => {
+    const layout = await import('/src/store/renderer/slices/panel-layout/panel-layout-slice.ts');
+    let state = layout.panelLayoutReducer(
+      undefined,
+      layout.initializeLayout('ws', {
+        root: { type: 'panel', panelId: 'left' },
+        panels: {
+          left: {
+            id: 'left',
+            tabs: [{ id: 'left-tab', type: 'note', title: 'Left', noteId: 'left' }],
+            activeTabId: 'left-tab',
           },
         },
-      };
-      state = layout.panelLayoutReducer(state, layout.setPanelPinned('ws', 'reusable', true, 1));
-      state = layout.panelLayoutReducer(
-        state,
-        layout.openTabInNewRootColumn(
-          'ws',
-          { type: 'note', title: 'Next', noteId: 'next', closable: true },
-          { panelOpenMode: 'pin', force: true, newTabId: 'next-tab' },
-          2,
-        ),
-      );
-      const afterPin = state.byWorkspaceId.ws;
-      const order = (node: typeof afterPin.root): string[] =>
-        node.type === 'panel' ? [node.panelId] : node.children.flatMap(order);
-      const sizing = await import('/src/shared/panel-layout-sizing.ts');
-      const panelWidth = (workspace: typeof afterPin, panelId: string) => {
-        if (workspace.root.type !== 'split' || workspace.root.direction !== 'horizontal') return 0;
-        const index = workspace.root.children.findIndex(
-          (child) => child.type === 'panel' && child.panelId === panelId,
-        );
-        const usableWidth =
-          (workspace.canvasWidth ?? 0) -
-          sizing.PANEL_SPLIT_GUTTER_WIDTH * (workspace.root.children.length - 1);
-        return usableWidth * ((workspace.root.sizes[index] ?? 0) / 100);
-      };
-      const pinnedOrder = order(afterPin.root);
-      const targetWidthBeforeUnpin = panelWidth(afterPin, 'older');
-      state = layout.panelLayoutReducer(state, layout.setPanelPinned('ws', 'older', false, 3));
-      const afterUnpin = state.byWorkspaceId.ws;
-      return {
-        zoom: getComputedStyle(document.documentElement).zoom,
-        pinnedOrder,
-        unpinnedOrder: order(afterUnpin.root),
-        panels: Object.keys(afterUnpin.panels),
-        focus: afterUnpin.focusedPanelId,
-        targetTab: afterUnpin.panels.older.activeTabId,
-        targetWidthDelta: Math.abs(panelWidth(afterUnpin, 'older') - targetWidthBeforeUnpin),
-      };
-    }, zoom);
+        focusedPanelId: 'left',
+      }),
+    );
+    state = layout.panelLayoutReducer(state, layout.reconcilePanelColumnCount('ws', 2, 1));
+    state = layout.panelLayoutReducer(
+      state,
+      layout.openTabInRightmostColumn(
+        'ws',
+        { type: 'note', title: 'Right', noteId: 'right' },
+        { force: true, newTabId: 'right-tab' },
+        2,
+      ),
+    );
+    const workspace = state.byWorkspaceId.ws;
+    const rightPanelId =
+      workspace.root.type === 'split' && workspace.root.children[1]?.type === 'panel'
+        ? workspace.root.children[1].panelId
+        : '';
+    return {
+      focusedPanelId: workspace.focusedPanelId,
+      leftTabs: workspace.panels.left.tabs.map((tab) => tab.id),
+      rightPanelId,
+      rightTabs: workspace.panels[rightPanelId]?.tabs.map((tab) => tab.id),
+    };
+  });
 
-    expect(result).toEqual({
-      zoom: String(zoom),
-      pinnedOrder: [expect.stringMatching(/^panel-/), 'reusable', 'older'],
-      unpinnedOrder: ['older', 'reusable'],
-      panels: ['reusable', 'older'],
-      focus: 'older',
-      targetTab: 'older-tab',
-      targetWidthDelta: expect.closeTo(0, 6),
-    });
-  }
+  expect(result.focusedPanelId).toBe(result.rightPanelId);
+  expect(result.leftTabs).toEqual(['left-tab']);
+  expect(result.rightTabs).toEqual(['right-tab']);
 });
