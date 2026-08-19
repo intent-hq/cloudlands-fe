@@ -161,6 +161,18 @@ const ClaimTabActionSchema = z.object({
   height: ViewportDimensionSchema.optional(),
 });
 
+// Change an owned tab's emulated viewport (docs/protocol §5.9). Omitted
+// height keeps the tab's current emulated height; there is no
+// reset-to-native form. tabId is explicit (no sequence-level default),
+// like claimTab: a resize is a significant state change and must name its
+// target.
+const ResizeTabActionSchema = z.object({
+  action: z.literal('resizeTab'),
+  tabId: z.string(),
+  width: ViewportDimensionSchema,
+  height: ViewportDimensionSchema.optional(),
+});
+
 const NavigateActionSchema = z.object({
   action: z.literal('navigate'),
   url: z.string(),
@@ -220,6 +232,7 @@ const BrowserActionSchema = z.discriminatedUnion('action', [
   GetSummaryActionSchema,
   OpenTabActionSchema,
   ClaimTabActionSchema,
+  ResizeTabActionSchema,
   NavigateActionSchema,
   CloseTabActionSchema,
   OpenTunnelActionSchema,
@@ -325,6 +338,7 @@ const OWNERSHIP_ENFORCED_ACTIONS = new Set([
   'snapshot',
   'startSession',
   'resetTab',
+  'resizeTab',
   'navigate',
   'closeTab',
 ]);
@@ -881,6 +895,28 @@ async function executeAction(
             alreadyOwned: claim.alreadyOwned,
             ...size,
           },
+        };
+      }
+
+      case 'resizeTab': {
+        // Ownership enforcement above already rejected agent calls on tabs
+        // the agent does not own. What remains: only agent-owned tabs are
+        // emulated and resizable — unowned (user) tabs are always native
+        // with no size op (docs/protocol §5.9), which a user-initiated
+        // (agentId-less) call can still reach.
+        const size = embeddedBrowserCdp.resizeTab(action.tabId, action.width, action.height);
+        if (!size) {
+          return {
+            action: 'resizeTab',
+            success: false,
+            // i18n-ignore (agent-facing protocol error, not user-facing)
+            error: `Tab ${action.tabId} is not agent-owned, so it has no emulated viewport to resize — unowned (user) tabs are always native. Claim it first with { action: "claimTab", tabId: "${action.tabId}", width: <px> }.`,
+          };
+        }
+        return {
+          action: 'resizeTab',
+          success: true,
+          result: { tabId: action.tabId, ...size },
         };
       }
 

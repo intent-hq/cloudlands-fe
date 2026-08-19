@@ -120,6 +120,16 @@ class EmbeddedBrowserCdpService {
   /** Pending resolvers waiting for a tabId to register, keyed by tabId. */
   private registrationWaiters = new Map<string, Set<(registered: boolean) => void>>();
 
+  /**
+   * Renderer-reported bounds (CSS px) of each tab's visible webview element,
+   * keyed by tabId. Used to scale-to-fit emulated (agent-owned) tabs when
+   * they are visible in a panel — the emulated viewport keeps its size, only
+   * the displayed image is scaled (docs/protocol §5.9). Entries are dropped
+   * with the registration when the backing webContents is destroyed and
+   * re-reported on remount.
+   */
+  private tabViewBounds = new Map<string, { width: number; height: number }>();
+
   constructor() {
     // Listen for browser tab list responses from renderer
     ipcMain.handle(
@@ -281,6 +291,11 @@ class EmbeddedBrowserCdpService {
     logger.info('Registering browser tab', { tabId, webContentsId });
     this.tabRegistry.set(tabId, webContentsId);
 
+    // Owned tabs are always emulated (docs/protocol §5.9): (re)apply the
+    // recorded viewport on every registration so emulation survives
+    // unmount/remount and offscreen↔visible host handoffs.
+    this.applyViewportEmulation(tabId);
+
     // Resolve any callers waiting for this tab to mount (openTab/focusTab).
     const waiters = this.registrationWaiters.get(tabId);
     if (waiters) {
@@ -302,6 +317,9 @@ class EmbeddedBrowserCdpService {
         logger.info('WebContents destroyed, cleaning up tab registry', { tabId, webContentsId });
         if (this.tabRegistry.get(tabId) === webContentsId) {
           this.tabRegistry.delete(tabId);
+          // Bounds belong to the destroyed webview element; a remount
+          // re-reports them.
+          this.tabViewBounds.delete(tabId);
         }
         this.attachedDebuggers.delete(webContentsId);
       });
@@ -636,6 +654,7 @@ class EmbeddedBrowserCdpService {
     // too, but unmounted tabs have no webContents to fire it.
     this.unregisterTab(tabId);
     this.clearTabOwnership(tabId);
+    this.tabViewBounds.delete(tabId);
     for (const [key, tabs] of this.panelBrowserTabsCache) {
       this.panelBrowserTabsCache.set(
         key,
@@ -814,6 +833,10 @@ class EmbeddedBrowserCdpService {
       ...(recorded !== undefined ? { requestedUrl: recorded } : {}),
       emulatedSize: size ?? previous?.emulatedSize ?? { ...DEFAULT_AGENT_VIEWPORT },
     });
+    // Owned tabs are always emulated (docs/protocol §5.9): apply the size
+    // right away when the tab is mounted (claims/adoptions of live tabs);
+    // unmounted tabs get it on their next registerTab.
+    this.applyViewportEmulation(tabId);
   }
 
   /**
@@ -826,6 +849,81 @@ class EmbeddedBrowserCdpService {
   /** A tab's emulated viewport size, when it is agent-owned. */
   getTabEmulatedSize(tabId: string): { width: number; height: number } | undefined {
     return this.tabOwnership.get(tabId)?.emulatedSize;
+  }
+
+  /**
+   * Change an owned tab's emulated viewport (docs/protocol §5.9 resizeTab).
+   * Omitted `height` keeps the tab's current emulated height. The caller
+   * (executor) enforces ownership; this records the new size and re-applies
+   * emulation to the mounted webview (an unmounted tab picks the size up on
+   * its next registration).
+   *
+   * @returns the recorded size, or undefined when the tab is not agent-owned
+   *          (unowned tabs are always native — there is no size op for them).
+   */
+  resizeTab(
+    tabId: string,
+    width: number,
+    height?: number,
+  ): { width: number; height: number } | undefined {
+    const ownership = this.tabOwnership.get(tabId);
+    if (!ownership) return undefined;
+    const size = { width, height: height ?? ownership.emulatedSize.height };
+    ownership.emulatedSize = size;
+    logger.info('Resized agent tab viewport', { tabId, ...size });
+    this.applyViewportEmulation(tabId);
+    return size;
+  }
+
+  /**
+   * Record the on-screen bounds (CSS px) of a tab's visible webview element,
+   * reported by the renderer, and re-fit the emulation scale. Scale-to-fit
+   * only shrinks (docs/protocol §5.9): an emulated viewport smaller than the
+   * element renders 1:1.
+   */
+  reportTabViewBounds(tabId: string, width: number, height: number): void {
+    if (!(width > 0) || !(height > 0)) return;
+    const previous = this.tabViewBounds.get(tabId);
+    if (previous && previous.width === width && previous.height === height) return;
+    this.tabViewBounds.set(tabId, { width, height });
+    this.applyViewportEmulation(tabId);
+  }
+
+  /**
+   * Apply CDP device-metrics viewport emulation to an owned tab's mounted
+   * webContents (docs/protocol §5.9): the page lays out at the emulated
+   * size and the displayed image is scaled to fit the hosting webview
+   * element when the renderer has reported its bounds (capped at 1 — never
+   * upscaled). Owned tabs are always emulated; there is no reset-to-native
+   * path. Fire-and-forget: unmounted tabs are skipped (registerTab
+   * re-applies on mount) and CDP failures are logged, never thrown — sizing
+   * must not fail the ownership bookkeeping that triggered it.
+   */
+  private applyViewportEmulation(tabId: string): void {
+    const size = this.tabOwnership.get(tabId)?.emulatedSize;
+    if (!size) return;
+    const webContentsId = this.resolveTabId(tabId);
+    if (webContentsId === undefined) return;
+    const bounds = this.tabViewBounds.get(tabId);
+    const scale = bounds
+      ? Math.min(1, bounds.width / size.width, bounds.height / size.height)
+      : 1;
+    void this.sendCommand(webContentsId, 'Emulation.setDeviceMetricsOverride', {
+      width: size.width,
+      height: size.height,
+      // 0 preserves the display's native device scale factor.
+      deviceScaleFactor: 0,
+      mobile: false,
+      scale,
+    }).catch((error) => {
+      logger.warn('Failed to apply viewport emulation', {
+        tabId,
+        webContentsId,
+        ...size,
+        scale,
+        error: (error as Error).message,
+      });
+    });
   }
 
   /**
@@ -887,6 +985,9 @@ class EmbeddedBrowserCdpService {
         tabId: tab.tabId,
         ownerAgentId: tab.ownerAgentId,
       });
+      // The tab may have registered before its ownership was known (restart
+      // races dom-ready against the first tab-list reply) — apply now.
+      this.applyViewportEmulation(tab.tabId);
     }
   }
 

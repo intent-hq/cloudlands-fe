@@ -174,6 +174,153 @@ describe('embedded browser CDP workspace routing', () => {
     });
   });
 
+  // Viewport emulation for agent-owned tabs (docs/protocol §5.9): owned tabs
+  // are always emulated at their recorded size; scale-to-fit shrinks the
+  // displayed image to the reported webview bounds without changing layout.
+  describe('viewport emulation (§5.9)', () => {
+    function mountedWebContents() {
+      const sendCommand = vi.fn().mockResolvedValue(undefined);
+      const wc = {
+        isDestroyed: () => false,
+        once: vi.fn(),
+        debugger: {
+          isAttached: () => true,
+          sendCommand,
+          on: vi.fn(),
+        },
+      };
+      mocks.fromId.mockReturnValue(wc);
+      return sendCommand;
+    }
+
+    async function flushAsync() {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    it('applies device-metrics emulation when a mounted tab is claimed', async () => {
+      const sendCommand = mountedWebContents();
+      embeddedBrowserCdp.registerTab('tab-emu-1', 301);
+      sendCommand.mockClear();
+
+      embeddedBrowserCdp.claimTab('tab-emu-1', 'agent-1', { width: 1024, height: 768 });
+      await flushAsync();
+
+      expect(sendCommand).toHaveBeenCalledWith('Emulation.setDeviceMetricsOverride', {
+        width: 1024,
+        height: 768,
+        deviceScaleFactor: 0,
+        mobile: false,
+        scale: 1,
+      });
+    });
+
+    it('re-applies the recorded viewport when an owned tab registers (remount)', async () => {
+      const sendCommand = mountedWebContents();
+      embeddedBrowserCdp.setTabOwner('tab-emu-2', 'agent-1', undefined, {
+        width: 390,
+        height: 844,
+      });
+      sendCommand.mockClear();
+
+      embeddedBrowserCdp.registerTab('tab-emu-2', 302);
+      await flushAsync();
+
+      expect(sendCommand).toHaveBeenCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 390, height: 844 }),
+      );
+    });
+
+    it('resizeTab records the new size, keeps height when omitted, and re-emulates', async () => {
+      const sendCommand = mountedWebContents();
+      embeddedBrowserCdp.registerTab('tab-emu-3', 303);
+      embeddedBrowserCdp.setTabOwner('tab-emu-3', 'agent-1', undefined, {
+        width: 1280,
+        height: 800,
+      });
+      sendCommand.mockClear();
+
+      const size = embeddedBrowserCdp.resizeTab('tab-emu-3', 390);
+      await flushAsync();
+
+      expect(size).toEqual({ width: 390, height: 800 });
+      expect(embeddedBrowserCdp.getTabEmulatedSize('tab-emu-3')).toEqual({
+        width: 390,
+        height: 800,
+      });
+      expect(sendCommand).toHaveBeenCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 390, height: 800 }),
+      );
+    });
+
+    it('resizeTab returns undefined for unowned tabs and applies nothing', async () => {
+      const sendCommand = mountedWebContents();
+      embeddedBrowserCdp.registerTab('tab-emu-4', 304);
+      sendCommand.mockClear();
+
+      expect(embeddedBrowserCdp.resizeTab('tab-emu-4', 800)).toBeUndefined();
+      await flushAsync();
+      expect(sendCommand).not.toHaveBeenCalled();
+    });
+
+    it('scale-to-fit shrinks the display to reported bounds but never upscales', async () => {
+      const sendCommand = mountedWebContents();
+      embeddedBrowserCdp.registerTab('tab-emu-5', 305);
+      embeddedBrowserCdp.setTabOwner('tab-emu-5', 'agent-1', undefined, {
+        width: 1280,
+        height: 800,
+      });
+      sendCommand.mockClear();
+
+      // Element half the emulated size → scale 0.5.
+      embeddedBrowserCdp.reportTabViewBounds('tab-emu-5', 640, 400);
+      await flushAsync();
+      expect(sendCommand).toHaveBeenCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 1280, height: 800, scale: 0.5 }),
+      );
+
+      // Element larger than the emulated size → capped at 1 (no upscale).
+      sendCommand.mockClear();
+      embeddedBrowserCdp.reportTabViewBounds('tab-emu-5', 2000, 1500);
+      await flushAsync();
+      expect(sendCommand).toHaveBeenCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ scale: 1 }),
+      );
+    });
+
+    it('ignores duplicate and non-positive bounds reports', async () => {
+      const sendCommand = mountedWebContents();
+      embeddedBrowserCdp.registerTab('tab-emu-6', 306);
+      embeddedBrowserCdp.setTabOwner('tab-emu-6', 'agent-1');
+      embeddedBrowserCdp.reportTabViewBounds('tab-emu-6', 640, 400);
+      await flushAsync();
+      sendCommand.mockClear();
+
+      embeddedBrowserCdp.reportTabViewBounds('tab-emu-6', 640, 400);
+      embeddedBrowserCdp.reportTabViewBounds('tab-emu-6', 0, 400);
+      embeddedBrowserCdp.reportTabViewBounds('tab-emu-6', 640, -1);
+      await flushAsync();
+
+      expect(sendCommand).not.toHaveBeenCalled();
+    });
+
+    it('applies nothing for unmounted owned tabs (registration re-applies later)', async () => {
+      const sendCommand = vi.fn().mockResolvedValue(undefined);
+      mocks.fromId.mockReturnValue(undefined);
+
+      embeddedBrowserCdp.setTabOwner('tab-emu-unmounted', 'agent-1', undefined, {
+        width: 1024,
+        height: 768,
+      });
+      await flushAsync();
+
+      expect(sendCommand).not.toHaveBeenCalled();
+    });
+  });
+
   it('fails a close with a clear error when the workspace is not open in any window', async () => {
     mocks.sendToWorkspaceWindows.mockImplementation(
       (workspaceId: string, channel: string, payload: { requestId?: string }) => {

@@ -133,6 +133,12 @@ const UnregisterTabSchema = z.object({
   tabId: z.string(),
 });
 
+const ReportTabBoundsSchema = z.object({
+  tabId: z.string(),
+  width: z.number().positive(),
+  height: z.number().positive(),
+});
+
 const ExecSchema = z.object({
   actions: z.array(z.record(z.unknown())),
   tabId: z.string().optional(),
@@ -339,6 +345,20 @@ export function registerBrowserHandlers(): void {
         return { success: true };
       },
       IPC_CHANNELS.BROWSER.UNREGISTER_TAB,
+    ),
+  );
+
+  // Visible webview element bounds, reported by the renderer so emulated
+  // (agent-owned) tabs scale-to-fit their panel (docs/protocol §5.9).
+  ipcMain.handle(
+    IPC_CHANNELS.BROWSER.REPORT_TAB_BOUNDS,
+    createSafeValidatedHandler(
+      ReportTabBoundsSchema,
+      async (_event, validated) => {
+        embeddedBrowserCdp.reportTabViewBounds(validated.tabId, validated.width, validated.height);
+        return { success: true };
+      },
+      IPC_CHANNELS.BROWSER.REPORT_TAB_BOUNDS,
     ),
   );
 

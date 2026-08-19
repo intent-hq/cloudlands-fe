@@ -476,6 +476,8 @@ export const IPC_CHANNELS = {
     REGISTER_TAB: 'browser:register-tab',
     /** Unregister a browser tab when it's closed */
     UNREGISTER_TAB: 'browser:unregister-tab',
+    /** Report a visible webview element's bounds for viewport scale-to-fit */
+    REPORT_TAB_BOUNDS: 'browser:report-tab-bounds',
     /** Execute code with access to browser CDP API */
     EXEC: 'browser:exec',
     /** Resolve a URL through the loopback rewrite → probe → tunnel pipeline */

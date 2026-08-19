@@ -351,6 +351,7 @@ const ALLOWED_CHANNELS = [
   "panel-layout:save",
   "browser:register-tab",
   "browser:unregister-tab",
+  "browser:report-tab-bounds",
   "browser:exec",
   "browser:resolve-url",
   "browser:focus-tab",
