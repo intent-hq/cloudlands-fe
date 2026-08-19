@@ -6,6 +6,7 @@
 
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger } from '$lib/i18n/format';
+import { looksLikeAgentId } from '$shared/utils/agent-name-utils';
 
 export interface EventWakeMetadata {
   type?: string;
@@ -35,6 +36,30 @@ export function firstNonEmptyString(...values: unknown[]): string | undefined {
     if (typeof value === 'string' && value.trim().length > 0) return value;
   }
   return undefined;
+}
+
+/**
+ * Extract agentId + display name from one legacy wake-message event line
+ * (the text after the "N. [type] " prefix). Name sources, in order: a quoted
+ * "Name", else the daemon's unquoted `Child agent NAME (agent-id)` wording.
+ * Names that are themselves agent-id-shaped are dropped so callers never
+ * render a raw UUID.
+ */
+export function parseLegacyEventLine(rawSummary: string): {
+  agentId?: string;
+  agentName?: string;
+} {
+  // Extract agentId - try new format first: {{agentId:xxx}}
+  let agentId = rawSummary.match(/\{\{agentId:([^}]+)\}\}/)?.[1];
+  // Fallback: old format with ID in parentheses: (agent-xxx-xxx-xxx)
+  if (!agentId) agentId = rawSummary.match(/\((agent-[a-f0-9-]+)\)/i)?.[1];
+
+  let agentName = rawSummary.match(/"([^"]+)"/)?.[1];
+  if (!agentName) {
+    agentName = rawSummary.match(/child agent\s+(.+?)\s*\(agent-[a-f0-9-]+\)/i)?.[1];
+  }
+  if (agentName && looksLikeAgentId(agentName)) agentName = undefined;
+  return { agentId, agentName };
 }
 
 /** Parse agent events from message text and/or metadata. */
@@ -68,15 +93,7 @@ export function parseAgentEvents(text: string, metadata?: EventWakeMetadata): Pa
   for (const line of lines) {
     const eventMatch = line.match(/^\d+\.\s*\[([^\]]+)\]\s*(.+)$/);
     if (eventMatch) {
-      const rawSummary = eventMatch[2];
-      const agentIdMatch = rawSummary.match(/\{\{agentId:([^}]+)\}\}/);
-      let agentId = agentIdMatch?.[1];
-      if (!agentId) {
-        const oldFormatMatch = rawSummary.match(/\((agent-[a-f0-9-]+)\)/i);
-        agentId = oldFormatMatch?.[1];
-      }
-      const agentNameMatch = rawSummary.match(/"([^"]+)"/);
-      const agentName = agentNameMatch?.[1];
+      const { agentId, agentName } = parseLegacyEventLine(eventMatch[2]);
       if (
         agentId &&
         (COMPLETION_EVENT_TYPES.has(eventMatch[1]) || eventMatch[1] === 'agent:created')

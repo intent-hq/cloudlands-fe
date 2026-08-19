@@ -15,7 +15,13 @@
   import AgentAvatarStack, {
     type AgentAvatarStackItem,
   } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
-  import { categorizeEventTypes, firstNonEmptyString } from './event-wake-summary';
+  import {
+    categorizeEventTypes,
+    firstNonEmptyString,
+    parseLegacyEventLine,
+  } from './event-wake-summary';
+  import { looksLikeAgentId } from '$shared/utils/agent-name-utils';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import {
     SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
     SUBSCRIPTION_CARD_SURFACE_CLASS,
@@ -80,8 +86,21 @@
   const detailsId = `${componentId}-event-wakeup-details`;
   let detailsOpen = $state(false);
 
+  /**
+   * Best display name for an event's agent: the payload's name field, else a
+   * live agent-session store lookup by agentId — never an id-shaped value.
+   * Undefined when unresolvable so callers fall back to generic labels.
+   */
+  function resolveAgentName(data: Record<string, unknown>): string | undefined {
+    const wireName = firstNonEmptyString(data.agentName, data.name);
+    if (wireName && !looksLikeAgentId(wireName)) return wireName;
+    const agentId = firstNonEmptyString(data.agentId);
+    const stored = agentId ? selectAgentSession.select(appStore.state, agentId)?.name : undefined;
+    return stored && !looksLikeAgentId(stored) ? stored : undefined;
+  }
+
   function localizedActivityLabel(type: string, data: Record<string, unknown>): string {
-    const name = firstNonEmptyString(data.agentName, data.name, data.agentId);
+    const name = resolveAgentName(data);
     if (name) {
       if (type === 'agent:idle') {
         return m.events_activity_nameFinished_label({ name });
@@ -112,13 +131,20 @@
       }
     }
 
+    // Strip id-shaped name fields so getActivityLabel's generators fall back
+    // to their generic labels instead of rendering a raw agent id.
+    const safeData: Record<string, unknown> = { ...data };
+    for (const field of ['agentName', 'name'] as const) {
+      const value = safeData[field];
+      if (typeof value === 'string' && looksLikeAgentId(value)) delete safeData[field];
+    }
     return getActivityLabel({
       id: '',
       workspaceId: workspace?.id ? String(workspace.id) : '',
       timestamp: '',
       type: type as WorkspaceEvent['type'],
       actor: { type: 'agent', name },
-      data,
+      data: safeData,
     });
   }
 
@@ -175,7 +201,7 @@
       return null;
     }
     const data = 'data' in event ? event.data : event;
-    const name = firstNonEmptyString(data.agentName);
+    const name = resolveAgentName(data);
     if (!name) return null;
     return {
       name,
@@ -255,7 +281,7 @@
           type: event.type,
           agentId,
           label: eventTypeLabel(event.type),
-          agentName: firstNonEmptyString(data.agentName),
+          agentName: resolveAgentName(data),
           datetime,
           timestamp: timestamp || undefined,
           summary,
@@ -278,7 +304,7 @@
         return {
           type: event.type,
           agentId: data.agentId as string | undefined,
-          agentName: data.agentName as string | undefined,
+          agentName: resolveAgentName(data),
           completionReport: firstNonEmptyString(data.completionReport, data.report),
           lastResponseSummary: data.lastResponseSummary as string | undefined,
         };
@@ -295,22 +321,7 @@
       // Match numbered event line: "1. [agent:idle] ..."
       const eventMatch = line.match(/^\d+\.\s*\[([^\]]+)\]\s*(.+)$/);
       if (eventMatch) {
-        const rawSummary = eventMatch[2];
-
-        // Extract agentId - try new format first: {{agentId:xxx}}
-        let agentIdMatch = rawSummary.match(/\{\{agentId:([^}]+)\}\}/);
-        let agentId = agentIdMatch?.[1];
-
-        // Fallback: try old format with ID in parentheses: (agent-xxx-xxx-xxx)
-        if (!agentId) {
-          const oldFormatMatch = rawSummary.match(/\((agent-[a-f0-9-]+)\)/i);
-          agentId = oldFormatMatch?.[1];
-        }
-
-        // Extract agent name from quotes: "AgentName"
-        const agentNameMatch = rawSummary.match(/"([^"]+)"/);
-        const agentName = agentNameMatch?.[1];
-
+        const { agentId, agentName } = parseLegacyEventLine(eventMatch[2]);
         events.push({
           type: eventMatch[1],
           agentId,

@@ -8,6 +8,7 @@
 import type { WorkspaceEvent } from '../../events/types';
 import { smartTruncate } from './smart-truncate';
 import { m } from '$shared/paraglide/messages.js';
+import { looksLikeAgentId } from '$shared/utils/agent-name-utils';
 
 export interface EntityRef {
   type: 'file' | 'note' | 'agent' | 'branch' | 'command' | 'text' | 'blank';
@@ -33,14 +34,6 @@ function parseFilePath(path: string): { filename: string; directory: string } {
  * Takes an agent ID and returns the agent name, or undefined if not found
  */
 export type AgentNameResolver = (agentId: string) => string | undefined;
-
-/**
- * Check if a name looks like an agent ID (UUID-like format)
- */
-function looksLikeAgentId(name: string): boolean {
-  // Agent IDs typically start with 'agent-' followed by a UUID pattern
-  return /^agent-[a-f0-9-]{36}$/i.test(name);
-}
 
 function getActorName(event: WorkspaceEvent, resolver?: AgentNameResolver): string {
   if (!event?.actor) return m.log_friendlyLabels_agentFallback_label();

@@ -17,7 +17,8 @@ vi.mock('../InlineAgentAvatar.svelte', async () => ({
 import EventWakeupBanner from '../EventWakeupBanner.svelte';
 import { store as appStore } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-import type { Workspace } from '$shared/types';
+import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+import type { AgentSession, Workspace } from '$shared/types';
 import {
   SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
   SUBSCRIPTION_CARD_SURFACE_CLASS,
@@ -533,5 +534,96 @@ describe('EventWakeupBanner details disclosure', () => {
     await fireEvent.click(summary, { detail: 0 });
     expect(summary.getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByTestId('event-wakeup-details')).toBeTruthy();
+  });
+});
+
+describe('EventWakeupBanner agent-id suppression', () => {
+  const AGENT_UUID = 'agent-579724c1-fe68-450e-8188-43b7afb964c6';
+
+  it('renders the generic label, never the UUID, for a wake with agentId but no agentName', () => {
+    renderBanner({
+      type: 'event_notification',
+      eventCount: 1,
+      eventTypes: ['agent:idle'],
+      events: [
+        {
+          type: 'agent:idle',
+          timestamp: '2026-08-12T12:00:00.000Z',
+          data: { agentId: AGENT_UUID },
+        },
+      ],
+    });
+
+    const summary = screen.getByTestId('event-wakeup-summary');
+    expect(summary.getAttribute('aria-label')).toBe('Agent finished');
+    expect(summary.textContent).not.toContain(AGENT_UUID);
+  });
+
+  it('rejects an id-shaped agentName and falls back to the generic label', () => {
+    renderBanner({
+      type: 'event_notification',
+      eventCount: 1,
+      eventTypes: ['agent:idle'],
+      events: [
+        {
+          type: 'agent:idle',
+          timestamp: '2026-08-12T12:00:00.000Z',
+          data: { agentId: AGENT_UUID, agentName: AGENT_UUID },
+        },
+      ],
+    });
+
+    const summary = screen.getByTestId('event-wakeup-summary');
+    expect(summary.getAttribute('aria-label')).toBe('Agent finished');
+    expect(summary.textContent).not.toContain(AGENT_UUID);
+  });
+
+  it('resolves the display name from the live agent-session store when the event has only an id', () => {
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: AGENT_UUID,
+          workspaceId: WORKSPACE.id,
+          name: 'Implementor',
+          messages: [],
+        } as unknown as AgentSession,
+      ]),
+    );
+
+    renderBanner({
+      type: 'event_notification',
+      eventCount: 1,
+      eventTypes: ['agent:idle'],
+      events: [
+        {
+          type: 'agent:idle',
+          timestamp: '2026-08-12T12:00:00.000Z',
+          data: { agentId: AGENT_UUID },
+        },
+      ],
+    });
+
+    const summary = screen.getByTestId('event-wakeup-summary');
+    expect(summary.getAttribute('aria-label')).toBe('Implementor finished');
+    expect(screen.getByTestId('event-wakeup-agent-name').textContent?.trim()).toBe('Implementor');
+  });
+
+  it('parses the unquoted legacy "Child agent NAME (agent-id)" wording into the name', () => {
+    renderBanner(
+      {
+        type: 'event_notification',
+        eventCount: 1,
+        eventTypes: ['agent:idle'],
+      },
+      {
+        messageText: `[WORKSPACE EVENTS]\n1. [agent:idle] Child agent Builder (agent-00000000-0000-4000-8000-000000000000) completed.`,
+        showAgentCards: true,
+        workspace: WORKSPACE,
+      },
+    );
+
+    const summary = screen.getByTestId('event-wakeup-summary');
+    expect(summary.getAttribute('aria-label')).toBe('Builder finished');
+    expect(summary.textContent).not.toContain('agent-00000000');
   });
 });
