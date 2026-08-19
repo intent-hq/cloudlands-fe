@@ -5,6 +5,7 @@ import {
   fork,
   join,
   put,
+  spawn,
   takeEvery,
   takeLatest,
   takeLeading,
@@ -425,9 +426,14 @@ export function* handleWorkspaceMountedRestore(
       const normalized = normalizeLayoutForWorkspace(wsId, stored);
       yield* put(initializeLayout(wsId, normalized));
       yield* put(setRestoreStatus(wsId, 'restored'));
-      // Forked: re-resolving tunneled tabs goes over IPC and must not delay
-      // the restore settling (hydration callers wait on it).
-      yield* fork(rehydrateTunneledBrowserTabs, wsId, collectRehydratableBrowserTabs(normalized));
+      // Detached (spawn, not fork): re-resolving tunneled tabs goes over IPC
+      // (rewrite → reachability probe → tunnel fallback, 1.5s+ per dead
+      // port) and must not delay the restore settling. An attached fork
+      // would: `call(handleWorkspaceMountedRestore)` from
+      // `hydrateWorkspaceLayout` only returns once attached forks finish,
+      // leaving browser IPC callers blocked in waitForWorkspaceLayoutRestore
+      // past main's 500ms listTabs timeout (monorepo#2789).
+      yield* spawn(rehydrateTunneledBrowserTabs, wsId, collectRehydratableBrowserTabs(normalized));
     }
     restoredUnderBackendIds.add(wsId);
     completed = true;
@@ -748,8 +754,13 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
       yield* put(initializeLayout(wsId, normalized));
       yield* put(setRestoreStatus(wsId, 'restored'));
       // Mirror the mount path: restored tunneled tabs re-resolve against the
-      // incoming backend's live tunnel state (monorepo#2789).
-      yield* fork(rehydrateTunneledBrowserTabs, wsId, collectRehydratableBrowserTabs(normalized));
+      // incoming backend's live tunnel state (monorepo#2789). Detached
+      // (spawn, not fork): handleBackendSwitch `call`s this generator once
+      // per mounted workspace with every workspace's inflightRestores entry
+      // pre-registered, so an attached fork would serialize dead-port probes
+      // into the restore loop and leave later workspaces' waiters (browser
+      // IPC listTabs) blocked past main's 500ms timeout.
+      yield* spawn(rehydrateTunneledBrowserTabs, wsId, collectRehydratableBrowserTabs(normalized));
     }
     restoredUnderBackendIds.add(wsId);
     completed = true;

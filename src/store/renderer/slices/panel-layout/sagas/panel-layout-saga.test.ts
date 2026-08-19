@@ -109,6 +109,7 @@ import {
   type WorkspacePanelLayout,
 } from '../panel-layout-types';
 import {
+  hydrateWorkspaceLayout,
   isStoredLayoutValid,
   panelLayoutSaga,
   waitForWorkspaceLayoutRestore,
@@ -639,6 +640,75 @@ describe('panelLayoutSaga', () => {
       expect(dispatch.mock.calls.map(([action]) => action)).toContainEqual(
         updateTabBrowserUrl(WS_1, 'tab-b', FRESH_TUNNEL, REQUESTED),
       );
+      await cancelSaga(task);
+    });
+
+    it('settles hydration while rehydration probes are still in flight (listTabs must not time out)', async () => {
+      mocks.getJSON.mockReturnValue(browserLayout());
+      // A never-settling resolution simulates the dead-port reachability
+      // probe (1.5s+ per tab). Hydration callers (browser IPC listTabs, with
+      // main's 500ms timeout) wait on the restore settling — an attached
+      // rehydration fork would hold `call(handleWorkspaceMountedRestore)`
+      // open until every probe finishes.
+      mocks.resolveBrowserLinkUrl.mockReturnValue(new Promise(() => {}));
+      const { channel, dispatch, task } = startSaga();
+      await settle();
+
+      let hydrated = false;
+      const state = storeState();
+      const waiter = runSaga({ channel, dispatch, getState: () => state }, function* () {
+        yield* hydrateWorkspaceLayout(WS_1);
+        hydrated = true;
+      });
+      await settle();
+
+      expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalled();
+      expect(hydrated).toBe(true);
+      expect(dispatch.mock.calls.map(([action]) => action)).toContainEqual(
+        setRestoreStatus(WS_1, 'restored'),
+      );
+      await waiter.toPromise();
+      await cancelSaga(task);
+    });
+
+    it('settles every mounted workspace on switch while rehydration probes are still in flight', async () => {
+      const remoteKey2 = `backend:${REMOTE_ID}:${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${WS_2}`;
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === REMOTE_STORAGE_KEY_1 || key === remoteKey2 ? browserLayout() : undefined,
+      );
+      // Both workspaces restore a tunneled tab whose probe never settles. An
+      // attached fork would serialize the probes into the switch restore
+      // loop, leaving WS_2's pre-registered inflight entry pending.
+      mocks.resolveBrowserLinkUrl.mockReturnValue(new Promise(() => {}));
+      let backendId = LOCAL_CONNECTION_ID;
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const getState = () => storeState(WS_1, backendId);
+      const task = runSaga({ channel, dispatch, getState }, panelLayoutSaga, {
+        activeWorkspaceId: WS_1,
+      });
+      await settle();
+      channel.put(workspaceMounted(WS_2));
+      await settle();
+      dispatch.mockClear();
+
+      backendId = REMOTE_ID;
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      await settle();
+
+      let waited = false;
+      const waiter = runSaga({ channel, dispatch, getState }, function* () {
+        yield* waitForWorkspaceLayoutRestore(WS_2);
+        waited = true;
+      });
+      await settle();
+
+      expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalled();
+      expect(waited).toBe(true);
+      const dispatched = dispatch.mock.calls.map(([action]) => action);
+      expect(dispatched).toContainEqual(setRestoreStatus(WS_1, 'restored'));
+      expect(dispatched).toContainEqual(setRestoreStatus(WS_2, 'restored'));
+      await waiter.toPromise();
       await cancelSaga(task);
     });
   });
