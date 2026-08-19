@@ -8,7 +8,8 @@
  * the preview line's source precedence:
  *   1. the viewed-agent chat.subscribe streaming buffer (character-level),
  *   2. the session's push-applied `lastAgentResponse` while responding,
- *   3. the transcript-derived peek text otherwise.
+ *   3. the wire `lastAgentResponse` (AgentLite, PROTOCOL §5.5) otherwise —
+ *      the loaded transcript is never consulted to re-derive previews.
  */
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
@@ -91,6 +92,7 @@ describe('AgentCard live preview precedence', () => {
     seedSession({
       status: AgentStatus.Idle,
       messages: [assistantMessage('second-row preview text')],
+      lastAgentResponse: 'second-row preview text',
     });
 
     const { container } = render(AgentCard, { props: { agentId } });
@@ -120,21 +122,22 @@ describe('AgentCard live preview precedence', () => {
     expect(preview.textContent).not.toContain('coarser activity preview');
   });
 
-  it('falls back to the transcript-derived peek text when the agent is not responding', async () => {
-    // Idle agent: the turn's final text is in the transcript; a leftover
-    // lastAgentResponse from the finished turn must not override it.
+  it('serves the wire lastAgentResponse verbatim when the agent is not responding', async () => {
+    // Idle agent: the wire preview field is authoritative (the daemon updates
+    // it at turn end via clean_response_text); the loaded transcript is never
+    // consulted to re-derive the preview.
     seedSession({
       isStreaming: false,
       status: AgentStatus.Idle,
-      messages: [assistantMessage('final persisted answer')],
+      messages: [assistantMessage('stale transcript text')],
     });
-    appStore.dispatch(updateSession(agentId, { lastAgentResponse: 'mid-turn leftover' }));
+    appStore.dispatch(updateSession(agentId, { lastAgentResponse: 'wire final answer' }));
 
     render(AgentCard, { props: { agentId } });
 
     const preview = await screen.findByTestId('agent-card-preview');
-    expect(preview.textContent).toContain('final persisted answer');
-    expect(preview.textContent).not.toContain('mid-turn leftover');
+    expect(preview.textContent).toContain('wire final answer');
+    expect(preview.textContent).not.toContain('stale transcript text');
   });
 
   it('shows the live session digest while responding (over the preview line)', async () => {
@@ -209,13 +212,14 @@ describe('AgentCard live tool preview (tool-only stretches)', () => {
     expect(screen.queryByText('Parser rewrite in progress')).toBeNull();
   });
 
-  it('keeps the transcript preview once the agent is no longer responding', async () => {
-    // Idle agent: a leftover lastToolUse from the finished turn must not
-    // override the turn's persisted final text.
+  it('keeps the wire response preview over a leftover lastToolUse once idle', async () => {
+    // Idle agent: response text keeps precedence — a persisted lastToolUse
+    // only drives the preview when there is no response text.
     seedSession({
       isStreaming: false,
       status: AgentStatus.Idle,
-      messages: [assistantMessage('final persisted answer')],
+      messages: [],
+      lastAgentResponse: 'final persisted answer',
     });
     appStore.dispatch(updateSession(agentId, { lastToolUse: { name: 'read_file' } }));
 
@@ -228,7 +232,8 @@ describe('AgentCard live tool preview (tool-only stretches)', () => {
   it('degrades to the existing preview when the daemon sends no lastToolUse', async () => {
     seedSession({
       isStreaming: true,
-      messages: [assistantMessage('stale persisted text from last turn')],
+      messages: [],
+      lastAgentResponse: 'stale persisted text from last turn',
     });
 
     render(AgentCard, { props: { agentId } });
@@ -334,7 +339,10 @@ describe('AgentCard user-message-newest preview (freshness wins)', () => {
     expect(preview.textContent).not.toContain('panel: chat');
   });
 
-  it('previews the user first line via the transcript-derived fallback when the wire field is absent', async () => {
+  it('renders no preview from the transcript when the wire fields are absent (no fallback)', async () => {
+    // Decision (monorepo#2843): no transcript fallback — absent wire preview
+    // fields yield an empty preview even when the loaded transcript has
+    // messages, so the FE never re-derives what the daemon already cleans.
     seedSession({
       status: AgentStatus.Idle,
       isStreaming: false,
@@ -346,10 +354,8 @@ describe('AgentCard user-message-newest preview (freshness wins)', () => {
 
     render(AgentCard, { props: { agentId } });
 
-    const preview = await screen.findByTestId('agent-card-preview');
-    expect(preview.textContent).toContain('new user question');
-    expect(preview.textContent).not.toContain('with a second line');
-    expect(preview.textContent).not.toContain('previous assistant answer');
+    await screen.findByText('Watched Agent');
+    expect(screen.queryByTestId('agent-card-preview')).toBeNull();
   });
 
   it('keeps the user first line mid-turn while no streamed text exists yet (beats a leftover digest)', async () => {
@@ -412,6 +418,8 @@ describe('AgentCard user-message-newest preview (freshness wins)', () => {
       status: AgentStatus.Idle,
       isStreaming: false,
       messages: [userMessage('the question'), assistantMessage('the final answer')],
+      lastUserMessage: 'the question',
+      lastAgentResponse: 'the final answer',
       lastMessageRole: 'assistant',
     });
 
@@ -495,31 +503,25 @@ describe('AgentCard this-turn live text vs previous-turn report (monorepo#1327)'
     // metadata + transcript digest), parent sent a follow-up, and the new
     // turn does tool-only work — no text yet, so no receivedFirstChunk flip.
     // While responding, the stale summaries must never be the preview; the
-    // chain falls through to the latest tool_use preview instead.
+    // chain falls through to the wire lastToolUse preview instead (transcript
+    // tool_use blocks are never consulted).
     seedSession({
       isStreaming: true,
       messages: [
-        assistantMessage('wrapped up <agent_digest>old transcript digest</agent_digest>', {
-          contentBlocks: [
-            {
-              type: 'text',
-              text: 'wrapped up <agent_digest>old transcript digest</agent_digest>',
-            },
-            { type: 'tool_use', id: 'tool-1', name: 'view', input: { path: 'src/foo.ts' } },
-          ],
-        }),
+        assistantMessage('wrapped up <agent_digest>old transcript digest</agent_digest>'),
       ],
       metadata: { completionReport: 'report from the last turn' } as AgentSession['metadata'],
     });
+    appStore.dispatch(updateSession(agentId, { lastToolUse: { name: 'read_file' } }));
 
     render(AgentCard, {
       props: { agentId, lastResponseSummary: 'summary from the last turn' },
     });
 
-    // Pin the preview to the tool label (classifyTool subject for the seeded
-    // tool_use) so a regression to lastResponse/lastUserMsg cannot pass.
+    // Pin the preview to the tool label (classifyTool verb for the wire
+    // lastToolUse) so a regression to lastResponse/lastUserMsg cannot pass.
     const preview = await screen.findByTestId('agent-card-preview');
-    expect(preview.textContent).toMatch(/foo\.ts/);
+    expect(preview.textContent?.toLowerCase()).toContain('read');
     expect(screen.queryByText(/old transcript digest/)).toBeNull();
     expect(screen.queryByText('report from the last turn')).toBeNull();
     expect(screen.queryByText('summary from the last turn')).toBeNull();
