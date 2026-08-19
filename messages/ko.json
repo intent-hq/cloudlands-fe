@@ -41,6 +41,7 @@
   "menu_quit_app": "{appName} 종료",
   "menu_view": "보기",
   "menu_reload": "새로고침",
+  "menu_toggle_devtools": "개발자 도구 전환",
   "menu_actual_size": "실제 크기",
   "menu_zoom_in": "확대",
   "menu_zoom_out": "축소",

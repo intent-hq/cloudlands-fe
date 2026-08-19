@@ -26,108 +26,34 @@ function makeSession(messages: AgentMessage[]): AgentSession {
   } as AgentSession;
 }
 
+function makeUserMessage(text: string): AgentMessage {
+  return {
+    id: 'u1',
+    role: 'user',
+    contentBlocks: [{ type: 'text', text } as any],
+    timestamp: new Date().toISOString(),
+  } as AgentMessage;
+}
+
 describe('getAgentPeekData', () => {
   it('returns null for a null agent', () => {
     expect(getAgentPeekData(null)).toBeNull();
     expect(getAgentPeekData(undefined)).toBeNull();
   });
 
-  it('exposes lastResponse when the assistant message is text-only', () => {
-    const session = makeSession([makeAssistantMessage([{ type: 'text', text: 'Hello world' }])]);
+  it('serves the wire preview fields verbatim', () => {
+    const session = {
+      ...makeSession([]),
+      lastAgentResponse: 'wire response',
+      lastUserMessage: 'wire user message',
+      digest: 'Wire digest summary',
+      lastMessageRole: 'assistant' as const,
+    };
     const data = getAgentPeekData(session);
-    expect(data?.lastResponse).toBe('Hello world');
-    expect(data?.lastToolUse).toBeUndefined();
-  });
-
-  it('exposes lastToolUse when the assistant message is tool-only', () => {
-    const session = makeSession([
-      makeAssistantMessage([
-        { type: 'tool_use', id: 't1', name: 'view', input: { path: 'foo.ts' } },
-      ]),
-    ]);
-    const data = getAgentPeekData(session);
-    expect(data?.lastResponse).toBe('');
-    expect(data?.lastToolUse?.name).toBe('view');
-    expect((data?.lastToolUse?.input as any)?.path).toBe('foo.ts');
-  });
-
-  it('prefers tool preview when the latest block is a tool_use after text', () => {
-    const session = makeSession([
-      makeAssistantMessage([
-        { type: 'text', text: 'Let me read the file' },
-        { type: 'tool_use', id: 't1', name: 'view', input: { path: 'foo.ts' } },
-      ]),
-    ]);
-    const data = getAgentPeekData(session);
-    expect(data?.lastResponse).toBe('');
-    expect(data?.lastToolUse?.name).toBe('view');
-  });
-
-  it('prefers text when a later text block follows a tool_use', () => {
-    const session = makeSession([
-      makeAssistantMessage([
-        { type: 'tool_use', id: 't1', name: 'view', input: { path: 'foo.ts' } },
-        { type: 'text', text: 'Done reading' },
-      ]),
-    ]);
-    const data = getAgentPeekData(session);
-    expect(data?.lastResponse).toBe('Done reading');
-    expect(data?.lastToolUse).toBeUndefined();
-  });
-
-  it('ignores trailing tool_result blocks when picking the latest block', () => {
-    const session = makeSession([
-      makeAssistantMessage([
-        { type: 'text', text: 'Ran it' },
-        { type: 'tool_use', id: 't1', name: 'view', input: { path: 'foo.ts' } },
-        { type: 'tool_result', tool_use_id: 't1', content: 'ok' },
-      ]),
-    ]);
-    const data = getAgentPeekData(session);
-    expect(data?.lastToolUse?.name).toBe('view');
-    expect(data?.lastResponse).toBe('');
-  });
-
-  it('ignores empty trailing text blocks when picking the latest block', () => {
-    const session = makeSession([
-      makeAssistantMessage([
-        { type: 'tool_use', id: 't1', name: 'view', input: { path: 'foo.ts' } },
-        { type: 'text', text: '   ' },
-      ]),
-    ]);
-    const data = getAgentPeekData(session);
-    expect(data?.lastToolUse?.name).toBe('view');
-  });
-
-  it('extracts digest from text but still surfaces trailing tool_use', () => {
-    const session = makeSession([
-      makeAssistantMessage([
-        { type: 'text', text: 'Working <agent_digest>Short summary</agent_digest>' },
-        { type: 'tool_use', id: 't1', name: 'view', input: { path: 'foo.ts' } },
-      ]),
-    ]);
-    const data = getAgentPeekData(session);
-    expect(data?.digest).toBe('Short summary');
-    expect(data?.lastToolUse?.name).toBe('view');
-    expect(data?.lastResponse).toBe('');
-  });
-
-  it('extracts the last user message independently of assistant tool previews', () => {
-    const userMessage: AgentMessage = {
-      id: 'u1',
-      role: 'user',
-      contentBlocks: [{ type: 'text', text: 'please read foo' } as any],
-      timestamp: new Date().toISOString(),
-    } as AgentMessage;
-    const session = makeSession([
-      userMessage,
-      makeAssistantMessage([
-        { type: 'tool_use', id: 't1', name: 'view', input: { path: 'foo.ts' } },
-      ]),
-    ]);
-    const data = getAgentPeekData(session);
-    expect(data?.lastUserMessage).toBe('please read foo');
-    expect(data?.lastToolUse?.name).toBe('view');
+    expect(data?.lastResponse).toBe('wire response');
+    expect(data?.lastUserMessage).toBe('wire user message');
+    expect(data?.digest).toBe('Wire digest summary');
+    expect(data?.lastMessageRole).toBe('assistant');
   });
 
   it('returns empty previews for an empty session', () => {
@@ -136,6 +62,8 @@ describe('getAgentPeekData', () => {
     expect(data?.lastResponse).toBe('');
     expect(data?.lastUserMessage).toBe('');
     expect(data?.lastToolUse).toBeUndefined();
+    expect(data?.digest).toBeUndefined();
+    expect(data?.lastMessageRole).toBeUndefined();
   });
 
   it('does not expose derived activity state', () => {
@@ -145,209 +73,131 @@ describe('getAgentPeekData', () => {
     expect(data?.status).toBe(AgentStatus.Active);
   });
 
-  describe('lastMessageRole (wire field + transcript-derived fallback)', () => {
-    function makeUserMessage(text: string): AgentMessage {
-      return {
-        id: 'u1',
-        role: 'user',
-        contentBlocks: [{ type: 'text', text } as any],
-        timestamp: new Date().toISOString(),
-      } as AgentMessage;
-    }
-
-    it('passes the wire lastMessageRole through verbatim', () => {
-      const session = { ...makeSession([]), lastMessageRole: 'user' as const };
-      expect(getAgentPeekData(session)?.lastMessageRole).toBe('user');
-    });
-
-    it('prefers the wire field over the transcript when both are present', () => {
-      // Mid-turn the daemon overlays "assistant" once streamed text is
-      // derivable, even while the loaded transcript still ends on the user.
-      const session = {
-        ...makeSession([makeUserMessage('newest is mine')]),
-        lastMessageRole: 'assistant' as const,
-      };
-      expect(getAgentPeekData(session)?.lastMessageRole).toBe('assistant');
-    });
-
-    it('derives user from a loaded transcript when the wire field is absent', () => {
-      const session = makeSession([
-        makeAssistantMessage([{ type: 'text', text: 'previous answer' }]),
-        makeUserMessage('follow-up question'),
-      ]);
-      expect(getAgentPeekData(session)?.lastMessageRole).toBe('user');
-    });
-
-    it('derives assistant when the newest transcript message is the reply', () => {
-      const session = makeSession([
-        makeUserMessage('question'),
-        makeAssistantMessage([{ type: 'text', text: 'answer' }]),
-      ]);
-      expect(getAgentPeekData(session)?.lastMessageRole).toBe('assistant');
-    });
-
-    it('treats trailing system/error rows as transparent', () => {
-      const systemMessage = {
-        id: 's1',
-        role: 'system',
-        contentBlocks: [{ type: 'text', text: 'housekeeping' } as any],
-        timestamp: new Date().toISOString(),
-      } as AgentMessage;
-      const session = makeSession([makeUserMessage('newest real message'), systemMessage]);
-      expect(getAgentPeekData(session)?.lastMessageRole).toBe('user');
-    });
-
-    it('is undefined with no wire field and no transcript (older daemon)', () => {
-      expect(getAgentPeekData(makeSession([]))?.lastMessageRole).toBeUndefined();
-    });
+  it('passes messages and fileChanges through unchanged', () => {
+    const messages = [
+      makeUserMessage('hello'),
+      makeAssistantMessage([{ type: 'text', text: 'hi' }]),
+    ];
+    const session = {
+      ...makeSession(messages),
+      fileChanges: [
+        { path: 'src/a.ts', type: 'modify' as const, timestamp: '2026-08-18T00:00:00Z' },
+      ],
+    };
+    const data = getAgentPeekData(session);
+    expect(data?.messages).toBe(messages);
+    expect(data?.fileChanges).toEqual([
+      { path: 'src/a.ts', action: 'modify', timestamp: '2026-08-18T00:00:00Z' },
+    ]);
   });
 
-  describe('wire preview fallback (AgentLite §5.5 lastAgentResponse/lastUserMessage)', () => {
-    function makeUserMessage(text: string): AgentMessage {
-      return {
-        id: 'u1',
-        role: 'user',
-        contentBlocks: [{ type: 'text', text } as any],
-        timestamp: new Date().toISOString(),
-      } as AgentMessage;
-    }
-
-    it('falls back to wire lastAgentResponse when the transcript has no assistant message', () => {
+  describe('wire authority over the loaded transcript', () => {
+    it('previews the cleaned wire text over a transcript ending in a suggested-prompts block (monorepo#2843)', () => {
+      // The daemon's clean_response_text strips the multi-line
+      // <!-- suggested-prompts --> block before serving lastAgentResponse;
+      // the hydrated transcript still carries the raw text. The preview must
+      // render the cleaned wire text, never a suggested-prompt line.
+      const rawText = [
+        'Here is the actual final answer line.',
+        '',
+        '<!-- suggested-prompts',
+        '- Try running the tests',
+        '- Open a PR',
+        '-->',
+      ].join('\n');
       const session = {
-        ...makeSession([makeUserMessage('initial delegation prompt')]),
-        lastAgentResponse: 'Real last response from the wire',
+        ...makeSession([makeAssistantMessage([{ type: 'text', text: rawText }])]),
+        lastAgentResponse: 'Here is the actual final answer line.',
       };
       const data = getAgentPeekData(session);
-      expect(data?.lastResponse).toBe('Real last response from the wire');
-      // Transcript-derived user message stays authoritative
-      expect(data?.lastUserMessage).toBe('initial delegation prompt');
+      expect(data?.lastResponse).toBe('Here is the actual final answer line.');
+      expect(data?.lastResponse).not.toContain('suggested-prompts');
+      expect(data?.lastResponse).not.toContain('Open a PR');
     });
 
-    it('falls back to wire fields when the transcript is empty', () => {
+    it('never derives lastResponse from transcript messages when the wire field is absent', () => {
+      const session = makeSession([
+        makeAssistantMessage([{ type: 'text', text: 'transcript answer' }]),
+      ]);
+      expect(getAgentPeekData(session)?.lastResponse).toBe('');
+    });
+
+    it('never derives lastUserMessage from transcript messages when the wire field is absent', () => {
+      const session = makeSession([makeUserMessage('transcript user message')]);
+      expect(getAgentPeekData(session)?.lastUserMessage).toBe('');
+    });
+
+    it('never derives a digest from transcript messages', () => {
+      const session = makeSession([
+        makeAssistantMessage([
+          { type: 'text', text: 'answer <agent_digest>Transcript digest</agent_digest>' },
+        ]),
+      ]);
+      expect(getAgentPeekData(session)?.digest).toBeUndefined();
+    });
+
+    it('never derives lastToolUse from transcript tool_use blocks', () => {
+      const session = makeSession([
+        makeAssistantMessage([
+          { type: 'tool_use', id: 't1', name: 'view', input: { path: 'foo.ts' } },
+        ]),
+      ]);
+      expect(getAgentPeekData(session)?.lastToolUse).toBeUndefined();
+    });
+
+    it('prefers the wire lastAgentResponse over a hydrated transcript', () => {
       const session = {
-        ...makeSession([]),
-        lastAgentResponse: 'wire response',
+        ...makeSession([makeAssistantMessage([{ type: 'text', text: 'transcript answer' }])]),
+        lastAgentResponse: 'cleaned wire response',
+      };
+      expect(getAgentPeekData(session)?.lastResponse).toBe('cleaned wire response');
+    });
+
+    it('prefers the wire lastUserMessage over a hydrated transcript', () => {
+      const session = {
+        ...makeSession([makeUserMessage('transcript user message')]),
         lastUserMessage: 'wire user message',
       };
-      const data = getAgentPeekData(session);
-      expect(data?.lastResponse).toBe('wire response');
-      expect(data?.lastUserMessage).toBe('wire user message');
-    });
-
-    it('hides exact trailing delivery notes from wire preview text', () => {
-      const note =
-        '[SYSTEM NOTE] This message was queued at 2026-01-01T00:00:00Z and waited 8s before delivery.';
-      const session = {
-        ...makeSession([]),
-        lastUserMessage: `wire user message\n\n${note}`,
-      };
-
       expect(getAgentPeekData(session)?.lastUserMessage).toBe('wire user message');
     });
 
-    it('keeps the transcript-derived response when an assistant message exists', () => {
-      const session = {
-        ...makeSession([makeAssistantMessage([{ type: 'text', text: 'transcript answer' }])]),
-        lastAgentResponse: 'stale wire response',
-      };
-      expect(getAgentPeekData(session)?.lastResponse).toBe('transcript answer');
-    });
-
-    it('does not override a tool-only transcript assistant message', () => {
-      const session = {
-        ...makeSession([
-          makeAssistantMessage([
-            { type: 'tool_use', id: 't1', name: 'view', input: { path: 'foo.ts' } },
-          ]),
-        ]),
-        lastAgentResponse: 'stale wire response',
-      };
-      const data = getAgentPeekData(session);
-      expect(data?.lastResponse).toBe('');
-      expect(data?.lastToolUse?.name).toBe('view');
-    });
-
-    it('extracts a digest from the wire fallback text', () => {
-      const session = {
-        ...makeSession([]),
-        lastAgentResponse: 'Full details here <agent_digest>Concise summary</agent_digest>',
-      };
-      const data = getAgentPeekData(session);
-      expect(data?.digest).toBe('Concise summary');
-      expect(data?.lastResponse).toBe('Full details here');
-    });
-
-    it('fabricates nothing when both transcript and wire fields are absent', () => {
-      const data = getAgentPeekData(makeSession([]));
-      expect(data?.lastResponse).toBe('');
-      expect(data?.lastUserMessage).toBe('');
-      expect(data?.digest).toBeUndefined();
-    });
-
-    it('surfaces the wire digest field when the transcript has no assistant message', () => {
-      const session = {
-        ...makeSession([]),
-        lastAgentResponse: 'wire response',
-        digest: 'Wire digest summary',
-      };
-      const data = getAgentPeekData(session);
-      expect(data?.digest).toBe('Wire digest summary');
-      expect(data?.lastResponse).toBe('wire response');
-    });
-
-    it('prefers a digest extracted from the fallback text over the wire digest field', () => {
+    it('does not re-extract <agent_digest> from the wire response text', () => {
+      // The daemon strips digest spans at the source; the FE serves the wire
+      // fields verbatim without a defensive extraction pass.
       const session = {
         ...makeSession([]),
         lastAgentResponse: 'Body <agent_digest>Embedded digest</agent_digest>',
         digest: 'Wire digest summary',
       };
       const data = getAgentPeekData(session);
-      expect(data?.digest).toBe('Embedded digest');
-      expect(data?.lastResponse).toBe('Body');
-    });
-
-    it('keeps the transcript-derived digest authoritative when an assistant message exists', () => {
-      const session = {
-        ...makeSession([
-          makeAssistantMessage([
-            { type: 'text', text: 'answer <agent_digest>Transcript digest</agent_digest>' },
-          ]),
-        ]),
-        digest: 'Stale wire digest',
-      };
-      const data = getAgentPeekData(session);
-      expect(data?.digest).toBe('Transcript digest');
-      expect(data?.lastResponse).toBe('answer');
-    });
-
-    it('applies the wire fallback when the transcript has only system rows', () => {
-      const systemMessage = {
-        id: 's1',
-        role: 'system',
-        contentBlocks: [{ type: 'text', text: 'housekeeping' } as any],
-        timestamp: new Date().toISOString(),
-      } as AgentMessage;
-      const session = {
-        ...makeSession([systemMessage]),
-        lastAgentResponse: 'wire response',
-        lastUserMessage: 'wire user message',
-        digest: 'Wire digest summary',
-      };
-      const data = getAgentPeekData(session);
-      expect(data?.lastResponse).toBe('wire response');
-      expect(data?.lastUserMessage).toBe('wire user message');
+      expect(data?.lastResponse).toBe('Body <agent_digest>Embedded digest</agent_digest>');
       expect(data?.digest).toBe('Wire digest summary');
     });
+  });
 
-    it('renders the tool chip from the wire lastToolUse for a never-opened agent (no response text)', () => {
-      // A never-opened agent whose newest message ended on a tool call: the
-      // AgentLite / agent:last-message preview carries lastToolUse but no
-      // lastAgentResponse.
+  describe('lastMessageRole (wire field, served verbatim)', () => {
+    it('passes the wire lastMessageRole through verbatim', () => {
+      const session = { ...makeSession([]), lastMessageRole: 'user' as const };
+      expect(getAgentPeekData(session)?.lastMessageRole).toBe('user');
+    });
+
+    it('is undefined when the wire field is absent, even with a loaded transcript', () => {
+      const session = makeSession([
+        makeUserMessage('question'),
+        makeAssistantMessage([{ type: 'text', text: 'answer' }]),
+      ]);
+      expect(getAgentPeekData(session)?.lastMessageRole).toBeUndefined();
+    });
+  });
+
+  describe('lastToolUse (wire field, streaming/idle gating)', () => {
+    it('renders the tool chip from the wire lastToolUse when idle with no response text', () => {
       const session = {
         ...makeSession([]),
         lastToolUse: { name: 'str-replace-editor', input: { path: 'src/x.ts' } },
       };
       const data = getAgentPeekData(session);
+      expect(data?.lastToolUse?.id).toBe('wire-tool:agent-1');
       expect(data?.lastToolUse?.name).toBe('str-replace-editor');
       expect((data?.lastToolUse?.input as any)?.path).toBe('src/x.ts');
       expect(data?.lastResponse).toBe('');
@@ -364,16 +214,17 @@ describe('getAgentPeekData', () => {
       expect(data?.lastToolUse).toBeUndefined();
     });
 
-    it('does not double-apply the wire lastToolUse while the live streaming overlay owns it', () => {
+    it('lets the live streaming overlay win and clears lastResponse', () => {
       const session = {
         ...makeSession([]),
         isStreaming: true,
+        lastAgentResponse: 'previous turn response',
         lastToolUse: { name: 'launch-process', status: 'running' },
       };
       const data = getAgentPeekData(session);
-      // The streaming overlay path renders it (live-tool id), not the wire path.
       expect(data?.lastToolUse?.id).toBe('live-tool:agent-1');
       expect(data?.lastToolUse?.name).toBe('launch-process');
+      expect(data?.lastResponse).toBe('');
     });
   });
 });

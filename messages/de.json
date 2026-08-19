@@ -41,6 +41,7 @@
   "menu_quit_app": "{appName} beenden",
   "menu_view": "Ansicht",
   "menu_reload": "Neu laden",
+  "menu_toggle_devtools": "Entwicklertools umschalten",
   "menu_actual_size": "Originalgröße",
   "menu_zoom_in": "Vergrößern",
   "menu_zoom_out": "Verkleinern",

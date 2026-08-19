@@ -41,6 +41,7 @@
   "menu_quit_app": "Quitter {appName}",
   "menu_view": "Affichage",
   "menu_reload": "Recharger",
+  "menu_toggle_devtools": "Basculer les outils de développement",
   "menu_actual_size": "Taille réelle",
   "menu_zoom_in": "Zoom avant",
   "menu_zoom_out": "Zoom arrière",

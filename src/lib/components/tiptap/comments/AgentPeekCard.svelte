@@ -65,10 +65,8 @@
   const agent$ = selectAgentSession(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
   const agentData = $derived(getAgentPeekData($agent$));
-  console.log('LOAD');
   $effect(() => {
     if (!workspaceId) return;
-    console.log('LOAD');
     appStore.dispatch(ensureAgentSessionLoaded(workspaceId, agentId));
   });
 

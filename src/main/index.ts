@@ -320,6 +320,7 @@ import { isCdpMcpBridgeEnabled } from './utils/cdp-debug';
 import { confirmQuitWithRunningAgents } from './quit-confirmation';
 import { m } from '../shared/paraglide/messages.js';
 import { sendWorkspaceCommand as sendWorkspaceMenuCommand } from './menu-workspace-command';
+import { toggleWindowDevTools } from './menu-devtools-toggle';
 
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { registerVoiceLocalHandlers } from '../features/voice/main/voice-local.ipc';
@@ -1290,7 +1291,17 @@ app.whenReady().then(async () => {
           },
           { role: 'forceReload' },
           { type: 'separator' },
-          { role: 'toggleDevTools' },
+          {
+            label: m.menu_toggle_devtools(),
+            accelerator: isMacOS ? 'Alt+Command+I' : 'Ctrl+Shift+I',
+            // Don't use role: 'toggleDevTools' — it targets
+            // getFocusedWebContents(), which can be a hidden offscreen
+            // keep-alive <webview> guest (intent-hq/monorepo#2844). Always
+            // toggle DevTools for the focused window's own renderer.
+            click: () => {
+              toggleWindowDevTools(BrowserWindow.getFocusedWindow());
+            },
+          },
           { type: 'separator' },
           {
             label: m.menu_actual_size(),
