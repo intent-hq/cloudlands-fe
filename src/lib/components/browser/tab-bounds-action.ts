@@ -22,6 +22,19 @@ function report(tabId: string, width: number, height: number): void {
     });
 }
 
+/**
+ * Explicitly clear a tab's recorded bounds (scale back to 1). Sent when this
+ * element stops displaying the tab — a visible→offscreen handoff re-registers
+ * the tab with a new webContents BEFORE the old guest's destroyed event fires,
+ * so main's destroyed-hook cleanup cannot cover it (its handoff guard is
+ * false) and the offscreen host would inherit a stale visible-panel scale.
+ */
+function clear(tabId: string): void {
+  window.electronAPI?.invoke('browser:report-tab-bounds', { tabId }).catch((err) => {
+    logger.debug('Failed to clear tab bounds', { tabId, error: err });
+  });
+}
+
 export function reportTabBounds(node: HTMLElement, tabId: string | undefined) {
   let currentTabId = tabId;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -52,11 +65,19 @@ export function reportTabBounds(node: HTMLElement, tabId: string | undefined) {
 
   return {
     update(nextTabId: string | undefined) {
+      if (nextTabId === currentTabId) return;
+      clearTimeout(debounceTimer);
+      if (currentTabId) clear(currentTabId);
       currentTabId = nextTabId;
+      if (currentTabId) {
+        const rect = node.getBoundingClientRect();
+        report(currentTabId, rect.width, rect.height);
+      }
     },
     destroy() {
       clearTimeout(debounceTimer);
       observer?.disconnect();
+      if (currentTabId) clear(currentTabId);
     },
   };
 }

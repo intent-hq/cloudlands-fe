@@ -319,6 +319,87 @@ describe('embedded browser CDP workspace routing', () => {
 
       expect(sendCommand).not.toHaveBeenCalled();
     });
+
+    it('an explicit bounds clear drops the recorded bounds and re-applies at scale 1', async () => {
+      const sendCommand = mountedWebContents();
+      embeddedBrowserCdp.registerTab('tab-emu-clear', 307);
+      embeddedBrowserCdp.setTabOwner('tab-emu-clear', 'agent-1', undefined, {
+        width: 1280,
+        height: 800,
+      });
+      embeddedBrowserCdp.reportTabViewBounds('tab-emu-clear', 640, 400);
+      await flushAsync();
+      sendCommand.mockClear();
+
+      embeddedBrowserCdp.clearTabViewBounds('tab-emu-clear');
+      await flushAsync();
+
+      expect(sendCommand).toHaveBeenCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 1280, height: 800, scale: 1 }),
+      );
+
+      // Clearing again is a no-op (nothing recorded).
+      sendCommand.mockClear();
+      embeddedBrowserCdp.clearTabViewBounds('tab-emu-clear');
+      await flushAsync();
+      expect(sendCommand).not.toHaveBeenCalled();
+    });
+
+    // Regression: a visible→offscreen handoff re-registers the tab with a new
+    // webContentsId BEFORE the old guest's destroyed fires, so the destroyed
+    // hook's handoff guard is false and cannot drop the visible element's
+    // bounds. The renderer's explicit clear (destroy() of the bounds action)
+    // must restore scale 1 on the offscreen host.
+    it('handoff regression: explicit clear removes stale visible bounds after register-before-destroy', async () => {
+      const sendCommand = vi.fn().mockResolvedValue(undefined);
+      let destroyedCallback: (() => void) | undefined;
+      mocks.fromId.mockImplementation((id: number) => ({
+        isDestroyed: () => false,
+        once: (event: string, cb: () => void) => {
+          if (event === 'destroyed' && id === 401) destroyedCallback = cb;
+        },
+        debugger: { isAttached: () => true, sendCommand, on: vi.fn() },
+      }));
+
+      // Visible host mounts and reports its (smaller) panel bounds.
+      embeddedBrowserCdp.registerTab('tab-handoff-scale', 401);
+      embeddedBrowserCdp.setTabOwner('tab-handoff-scale', 'agent-1', undefined, {
+        width: 1280,
+        height: 800,
+      });
+      embeddedBrowserCdp.reportTabViewBounds('tab-handoff-scale', 640, 400);
+      await flushAsync();
+
+      // Handoff: offscreen host registers FIRST — stale bounds still apply.
+      sendCommand.mockClear();
+      embeddedBrowserCdp.registerTab('tab-handoff-scale', 402);
+      await flushAsync();
+      expect(sendCommand).toHaveBeenCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ scale: 0.5 }),
+      );
+
+      // The visible element's explicit clear restores scale 1...
+      sendCommand.mockClear();
+      embeddedBrowserCdp.clearTabViewBounds('tab-handoff-scale');
+      await flushAsync();
+      expect(sendCommand).toHaveBeenCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 1280, height: 800, scale: 1 }),
+      );
+
+      // ...and the old guest's late destroyed must not clobber the newer
+      // registration (handoff guard) — emulation still targets the new host.
+      destroyedCallback?.();
+      sendCommand.mockClear();
+      embeddedBrowserCdp.resizeTab('tab-handoff-scale', 390);
+      await flushAsync();
+      expect(sendCommand).toHaveBeenCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 390, height: 800, scale: 1 }),
+      );
+    });
   });
 
   it('fails a close with a clear error when the workspace is not open in any window', async () => {

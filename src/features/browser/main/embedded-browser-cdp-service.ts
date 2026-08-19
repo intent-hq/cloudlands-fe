@@ -890,6 +890,20 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
+   * Explicitly drop a tab's recorded view bounds and re-apply emulation at
+   * scale 1. Sent by the renderer when the visible element stops displaying
+   * the tab: a visible→offscreen handoff re-registers the tab with a new
+   * webContents BEFORE the old guest's destroyed event fires, so the
+   * destroyed-hook cleanup (guarded on the registry still pointing at the
+   * destroyed webContents) cannot cover it — without this the offscreen host
+   * would inherit a stale visible-panel scale.
+   */
+  clearTabViewBounds(tabId: string): void {
+    if (!this.tabViewBounds.delete(tabId)) return;
+    this.applyViewportEmulation(tabId);
+  }
+
+  /**
    * Apply CDP device-metrics viewport emulation to an owned tab's mounted
    * webContents (docs/protocol §5.9): the page lays out at the emulated
    * size and the displayed image is scaled to fit the hosting webview
