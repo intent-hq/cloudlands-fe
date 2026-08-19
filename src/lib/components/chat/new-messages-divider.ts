@@ -69,6 +69,26 @@ export function dividerVisibleWhenScrolledToBottom(
 }
 
 /**
+ * Entry-scroll target when landing on the divider: position the container's
+ * scrollTop so the divider's top edge sits at ~20% of the viewport height
+ * from the viewport top, maximizing visible unseen content below it.
+ *
+ * `dividerOffsetTop` is the divider's top edge relative to the scrollable
+ * content (container scrollTop + rect delta); `viewportHeight` /
+ * `scrollHeight` are the container's clientHeight / scrollHeight. The result
+ * is clamped to `[0, maxScrollTop]`.
+ */
+export function dividerEntryScrollTop(
+  dividerOffsetTop: number,
+  viewportHeight: number,
+  scrollHeight: number,
+): number {
+  const maxScrollTop = Math.max(0, scrollHeight - viewportHeight);
+  const target = dividerOffsetTop - 0.2 * viewportHeight;
+  return Math.min(Math.max(0, target), maxScrollTop);
+}
+
+/**
  * Turn-boundary placement: when the latched anchor is a turn's LAST rendered
  * message and another turn follows, the divider renders after the inter-turn
  * spacer (directly above the next turn) instead of inside the anchor's turn.

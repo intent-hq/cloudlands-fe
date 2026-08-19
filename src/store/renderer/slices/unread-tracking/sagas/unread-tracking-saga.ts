@@ -7,6 +7,7 @@ import {
   markAgentSeenOnUserSend,
   newestPersistedMessageId,
 } from '$features/agent/mark-agent-seen';
+import { clearCachedChatScroll } from '$lib/components/chat/chat-scroll-cache';
 import {
   selectAgentMessages,
   selectAgentSessionHasStreamingTailMessage,
@@ -127,6 +128,16 @@ function* readDividerBoundarySnapshot(
 
 function* finishBoundary(boundary: DividerSessionBoundary): SagaGenerator<void> {
   yield* call(markAgentSeenAtBoundary, boundary.agentIds);
+  // Leaving the agent (workspace switch / tab close) ends the reading
+  // session: drop the cached transcript scroll so the next entry lands at
+  // the bottom or the unread divider, never a stale clamped position.
+  // Runs after the awaited seen-marker wire call, i.e. after Svelte's
+  // unmount flush, so the departing panel's destroy-time cache write cannot
+  // repopulate the entry we just cleared. Chief-card close keeps its cache —
+  // the hover card is not a workspace surface remount.
+  if (boundary.kind !== 'chief-card-close') {
+    yield* call(clearCachedChatScroll, boundary.agentIds);
+  }
   for (const agentId of boundary.agentIds) {
     const hasStreamingTailMessage =
       yield* selectAgentSessionHasStreamingTailMessage.effect(agentId);

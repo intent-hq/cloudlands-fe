@@ -7,6 +7,7 @@ import {
   resolveLatchedDividerAnchor,
   dividerVisibleWhenScrolledToBottom,
   dividerDefersToTurnBoundary,
+  dividerEntryScrollTop,
 } from '../new-messages-divider';
 import { indexConversationTurns } from '../conversation-turns';
 import type { AgentMessage } from '$shared/types';
@@ -163,6 +164,27 @@ describe('turn-boundary divider placement (ChatPanel contract)', () => {
       panel.match(/@render newMessagesDividerAfter\([^)]+,\s*dividerAtTurnBoundary,?\s*\)/g) ?? [];
     expect(allSites.length).toBe(4);
     expect(withFlag.length).toBe(allSites.length);
+  });
+});
+
+describe('dividerEntryScrollTop', () => {
+  it('places the divider top at 20% of the viewport height from the top', () => {
+    // 600px viewport → divider lands 120px below the viewport top.
+    expect(dividerEntryScrollTop(1000, 600, 5000)).toBe(880);
+  });
+
+  it('clamps at 0 when the divider is near the top of the content', () => {
+    // Ideal target would be 50 - 120 = -70.
+    expect(dividerEntryScrollTop(50, 600, 5000)).toBe(0);
+  });
+
+  it('clamps at max scrollTop when the divider is near the content bottom', () => {
+    // Ideal target 4900 - 120 = 4780 exceeds max scrollTop 5000 - 600 = 4400.
+    expect(dividerEntryScrollTop(4900, 600, 5000)).toBe(4400);
+  });
+
+  it('returns 0 when the content is shorter than the viewport', () => {
+    expect(dividerEntryScrollTop(300, 600, 500)).toBe(0);
   });
 });
 

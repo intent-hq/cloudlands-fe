@@ -44,6 +44,21 @@ export function setCachedChatScroll(
   cache.set(cacheKey(workspaceId, agentId), scroll);
 }
 
+/**
+ * Drop the cached entries for `agentIds` across all workspaces. Called at
+ * divider-session boundaries (workspace switch, tab close): leaving the agent
+ * ends the reading session, so the next entry must land at the bottom or the
+ * unread divider instead of a stale reading position.
+ */
+export function clearCachedChatScroll(agentIds: readonly string[]): void {
+  if (agentIds.length === 0) return;
+  const ids = new Set(agentIds);
+  for (const key of [...cache.keys()]) {
+    const agentId = key.slice(key.indexOf('\u0000') + 1);
+    if (ids.has(agentId)) cache.delete(key);
+  }
+}
+
 /** Test-only: reset the process-lifetime cache between test cases. */
 export function clearChatScrollCacheForTests(): void {
   cache.clear();

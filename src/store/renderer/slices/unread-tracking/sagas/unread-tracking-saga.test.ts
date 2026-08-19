@@ -14,6 +14,11 @@ vi.mock('$features/agent/mark-agent-seen', async (importOriginal) => {
   };
 });
 
+import {
+  clearChatScrollCacheForTests,
+  getCachedChatScroll,
+  setCachedChatScroll,
+} from '$lib/components/chat/chat-scroll-cache';
 import { sendMessage } from '../../chat-state/chat-state-slice';
 import { closeTab } from '../../panel-layout/panel-layout-slice';
 import { closePanel } from '../../sidebar-nav/sidebar-nav-slice';
@@ -132,7 +137,10 @@ describe('detectDividerSessionBoundary', () => {
 });
 
 describe('unreadTrackingSaga', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearChatScrollCacheForTests();
+  });
 
   it('owns user-send and terminal-stream mark-seen triggers', async () => {
     const channel = stdChannel();
@@ -240,6 +248,66 @@ describe('unreadTrackingSaga', () => {
     expect(dispatch).toHaveBeenCalledWith({
       type: 'unreadTracking/endDividerSession',
       payload: ['a1'],
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('clears the cached chat scroll for affected agents on tab close', async () => {
+    // Regression (top-landing on re-entry): a stale cached position must not
+    // survive a tab-close boundary — the next open lands at the bottom or
+    // the divider, not at a clamped old scrollTop.
+    setCachedChatScroll('ws-1', 'a1', { scrollTop: 987, shouldFollowBottom: false });
+    setCachedChatScroll('ws-1', 'other', { scrollTop: 55, shouldFollowBottom: false });
+    const channel = stdChannel();
+    let current = snapshot({ dividerSessionAgentIds: ['a1'], openAgentTabIds: ['a1'] });
+    const { task } = startSaga(channel, vi.fn(), () => state(current));
+    await settle();
+    current = snapshot({ dividerSessionAgentIds: ['a1'] });
+    channel.put(closeTab('ws-1', 'tab-a1'));
+    await settle();
+    expect(getCachedChatScroll('ws-1', 'a1')).toBeUndefined();
+    expect(getCachedChatScroll('ws-1', 'other')).toEqual({
+      scrollTop: 55,
+      shouldFollowBottom: false,
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('clears the cached chat scroll for affected agents on workspace switch', async () => {
+    setCachedChatScroll('ws-1', 'a1', { scrollTop: 987, shouldFollowBottom: false });
+    const channel = stdChannel();
+    let current = snapshot({ activeWorkspaceId: 'ws-1', dividerSessionAgentIds: ['a1'] });
+    const { task, notify } = startSaga(channel, vi.fn(), () => state(current));
+    await settle();
+    current = { ...current, activeWorkspaceId: 'ws-2' };
+    notify();
+    await settle();
+    expect(getCachedChatScroll('ws-1', 'a1')).toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps the cached chat scroll on a chief-card-close boundary', async () => {
+    setCachedChatScroll('ws-1', 'chief-1', { scrollTop: 321, shouldFollowBottom: false });
+    const channel = stdChannel();
+    let current = snapshot({
+      chiefCardVisible: true,
+      chiefSessionAgentIds: ['chief-1'],
+      dividerSessionAgentIds: ['chief-1'],
+    });
+    const { task } = startSaga(channel, vi.fn(), () => state(current));
+    await settle();
+    current = snapshot({
+      chiefSessionAgentIds: ['chief-1'],
+      dividerSessionAgentIds: ['chief-1'],
+    });
+    channel.put(closePanel());
+    await settle();
+    expect(getCachedChatScroll('ws-1', 'chief-1')).toEqual({
+      scrollTop: 321,
+      shouldFollowBottom: false,
     });
     task.cancel();
     await task.toPromise();
