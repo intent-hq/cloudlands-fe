@@ -87,6 +87,12 @@ export interface HudSystemView {
   version: string | null;
   /** Epoch-ms of the last successful poll; null before the first one. */
   fetchedAtMs: number | null;
+  /**
+   * Short daemon hostname (everything before the first `.`) when connected
+   * to a REMOTE daemon (`hostLocality === 'remote'`, §5.7/§5.14) and the poll
+   * reported one; null for local daemons, unknown locality, or no hostname.
+   */
+  remoteHostname: string | null;
 }
 
 /**
@@ -100,12 +106,15 @@ export interface HudSystemView {
  * rendered and the SYSTEM panel freezes the last-known uptime while down.
  */
 export const selectHudSystem = store.createSelector((state): HudSystemView => {
-  const { health, stats, lastUpdated } = state.daemonHealth;
+  const { health, stats, lastUpdated, hostLocality } = state.daemonHealth;
+  const hostname = stats?.hostname;
   return {
     online: health !== 'down',
     uptimeSeconds: typeof stats?.uptimeSeconds === 'number' ? stats.uptimeSeconds : null,
     version: stats?.version ?? null,
     fetchedAtMs: lastUpdated ? Date.parse(lastUpdated) : null,
+    remoteHostname:
+      hostLocality === 'remote' && hostname ? (hostname.split('.', 1)[0] ?? hostname) : null,
   };
 });
 
