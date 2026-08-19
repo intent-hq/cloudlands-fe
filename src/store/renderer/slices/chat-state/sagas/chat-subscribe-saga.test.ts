@@ -1583,6 +1583,90 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     },
   );
 
+  // Cold-open snapshot miss under rapid workspace switching (monorepo#2917) —
+  // the viewed-agent swap (handleViewed) sweeps ALL other same-realm slots
+  // with no hydration-loading spare: when the final workspace double-mounts
+  // two ChatPanels, the second panel's markAgentAsViewed closes the first
+  // panel's still-acquiring cold-open slot (desiredToken cleared +
+  // cancelPending), so its chat.subscribe — which issued promptly — resolves
+  // straight into an unsubscribe and its seq-0 snapshot is token-dropped.
+  // Both of that panel's opens are already consumed (init + its own viewed),
+  // so no snapshot is coming: the chat-read saga strands a full
+  // SNAPSHOT_WAIT_MS window and logs the wait-window warning before the
+  // re-request escalation force-cycles a fresh registration.
+  // it.fails: asserts the DESIRED behavior (the sibling cold open survives
+  // the swap while its hydration is loading — the same spare-then-revisit
+  // contract monorepo#2864 gave the applied-clear sweep); flip to `it` when
+  // the fix lands.
+  it.fails(
+    'spares a sibling cold open mid-acquisition from the viewed-agent swap during a double ChatPanel mount (monorepo#2917)',
+    async () => {
+      const hopA = 'agent-2917-hop-a';
+      const hopB = 'agent-2917-hop-b';
+      const finalC1 = 'agent-2917-final-c1';
+      const finalC2 = 'agent-2917-final-c2';
+      for (const id of [hopA, hopB, finalC1, finalC2]) seedSession(id);
+
+      // Churn hops: two workspaces opened and closed within ~2s each. Their
+      // subscribes issue promptly (no queueing behind prior closes) and the
+      // fake unsubscribe settles synchronously, so the hops leave no barrier
+      // behind by the time the final workspace mounts.
+      openChat(hopA);
+      appStore.dispatch(markAgentAsViewed(hopA));
+      appStore.dispatch(clearCurrentlyViewedAgent(hopA));
+      openChat(hopB);
+      appStore.dispatch(markAgentAsViewed(hopB));
+      appStore.dispatch(clearCurrentlyViewedAgent(hopB));
+      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === hopA)).toHaveLength(1);
+      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === hopB)).toHaveLength(1);
+
+      // Final workspace double-mounts two ChatPanels (both agent tabs open in
+      // the layout). Both cold opens issue chat.subscribe immediately; over
+      // WSS the acquisition resolves asynchronously.
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'C1', closable: true, agentId: finalC1 }),
+      );
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'C2', closable: true, agentId: finalC2 }),
+      );
+      const c1 = delayNextSubscription(finalC1);
+      appStore.dispatch(transcriptHydrationStarted(finalC1));
+      appStore.dispatch(markAgentAsViewed(finalC1));
+      const c2 = delayNextSubscription(finalC2);
+      appStore.dispatch(transcriptHydrationStarted(finalC2));
+      // The second panel's viewed effect — today this closes C1's
+      // still-acquiring slot (no hydration-loading spare in the swap sweep).
+      appStore.dispatch(markAgentAsViewed(finalC2));
+
+      // Both WSS acquisitions resolve after the sweep ran.
+      c1.acquisition.resolve(c1.subscription.unsubscribe);
+      c2.acquisition.resolve(c2.subscription.unsubscribe);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // The daemon emits both seq-0 snapshots.
+      c2.subscription.handler({
+        ...transcript([makeMessage('m-2917-c2', 'c2 snapshot')]),
+        fromSnapshot: true,
+      });
+      c1.subscription.handler({
+        ...transcript([makeMessage('m-2917-c1', 'c1 snapshot')]),
+        fromSnapshot: true,
+      });
+
+      // The last-viewed panel hydrates fine…
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, finalC2)).toBeDefined();
+
+      // …and the sibling cold open must survive the swap (its hydration is
+      // loading with a mounted panel): the snapshot applies instead of
+      // stranding the read saga for a full wait window.
+      expect(c1.subscription.unsubscribe).not.toHaveBeenCalled();
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, finalC1)).toBeDefined();
+      expect(selectAgentMessages.select(appStore.state, finalC1).map((m) => m.id)).toContain(
+        'm-2917-c1',
+      );
+    },
+  );
+
   it('flips the replayable-snapshot flag true on a snapshot emit and false on close (registry wiring, monorepo#2864)', async () => {
     // End-to-end pin of the registry wiring the chat-read saga's immediate
     // escalation consults: a dropped set-site would silently degrade the
