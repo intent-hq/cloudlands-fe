@@ -1462,6 +1462,62 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     );
   });
 
+  // Reopen snapshot stall (monorepo#2864) — same-agent hole in the
+  // monorepo#1215 cross-agent guard. `it.fails` documents today's broken
+  // behavior deterministically: the inner assertions state the CORRECT
+  // behavior and currently fail; the companion fix task flips this to `it`.
+  it.fails(
+    "keeps the standing subscription when a same-agent remount's trailing clearCurrentlyViewedAgent lands after the new instance re-initialized (reopen snapshot stall, monorepo#2864)",
+    async () => {
+      // Same-agent ChatPanel remount (tab close + immediate reopen of the
+      // same conversation, or a column-windowing remount) where the NEW
+      // instance mounts BEFORE the old instance's onDestroy runs:
+      //
+      //   1. New instance onMount → initializeChatRequested: deduped against
+      //      the still-open standing subscription (slot.desiredToken set).
+      //      Its viewed effect's markAgentAsViewed no-ops in the reducer
+      //      (the agent is already viewed). The chat-read saga starts
+      //      hydration and waits for a seq-0 snapshot application.
+      //   2. THEN the old instance's onDestroy emits its scoped
+      //      clearCurrentlyViewedAgent — SAME agent, so the monorepo#1215
+      //      cross-agent guard cannot help: the reducer clears the viewed
+      //      agent to null, and the saga's viewed===null branch closes
+      //      EVERY non-chief subscription — including the one the new
+      //      instance was just deduped against. The phase-null teardown
+      //      drops the snapshot meta.
+      //
+      // With the subscription closed and both opens already consumed, no
+      // seq-0 snapshot is coming: hydration strands for the full
+      // SNAPSHOT_WAIT_MS window (~8s) until the
+      // chatTranscriptSnapshotRerequested escalation force-cycles a fresh
+      // registration (monorepo#2692) — the user-visible reopen stall.
+      const agentId = 'agent-sub-reopen-remount';
+      seedSession(agentId);
+      const sub = openChat(agentId);
+      appStore.dispatch(markAgentAsViewed(agentId));
+      sub.handler({ ...transcript([makeMessage('m-reopen', 'hello')]), fromSnapshot: true });
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
+
+      // New instance mounts: both dispatches dedupe against the standing
+      // subscription; the read saga enters loading.
+      appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
+      appStore.dispatch(markAgentAsViewed(agentId));
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(1);
+
+      // Old instance's onDestroy trailing clear — scoped to the SAME agent.
+      appStore.dispatch(clearCurrentlyViewedAgent(agentId));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // The trailing clear must not tear down the subscription the
+      // remounted panel depends on: closing it drops the snapshot meta and
+      // strands hydration with no seq-0 emit coming (nothing reopens — the
+      // remount's own open was consumed by the dedup).
+      expect(sub.unsubscribe).not.toHaveBeenCalled();
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toBeDefined();
+    },
+  );
+
   describe('chief-workspace exemption from the viewed-agent swap (monorepo#1421)', () => {
     const CHIEF_AGENT = 'agent-sub-chief';
 
