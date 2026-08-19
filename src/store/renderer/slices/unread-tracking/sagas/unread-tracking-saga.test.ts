@@ -86,6 +86,13 @@ const settle = async () => {
   await Promise.resolve();
 };
 
+// The boundary cache-clear is deferred one macrotask (past Svelte's
+// microtask teardown flush), so tests asserting it must settle timers too.
+const settlePastTeardown = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 1));
+  await settle();
+};
+
 function startSaga(
   channel: ReturnType<typeof stdChannel>,
   dispatch: ReturnType<typeof vi.fn>,
@@ -265,12 +272,34 @@ describe('unreadTrackingSaga', () => {
     await settle();
     current = snapshot({ dividerSessionAgentIds: ['a1'] });
     channel.put(closeTab('ws-1', 'tab-a1'));
-    await settle();
+    await settlePastTeardown();
     expect(getCachedChatScroll('ws-1', 'a1')).toBeUndefined();
     expect(getCachedChatScroll('ws-1', 'other')).toEqual({
       scrollTop: 55,
       shouldFollowBottom: false,
     });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('wins over the departing panel destroy-time cache write after the boundary', async () => {
+    // Regression: Svelte flushes the closing ChatPanel's onDestroy in a
+    // microtask AFTER the boundary action dispatches, and that write must not
+    // repopulate the entry the boundary just cleared. A synchronous clear
+    // loses this race; the deferred clear must win.
+    setCachedChatScroll('ws-1', 'a1', { scrollTop: 987, shouldFollowBottom: false });
+    const channel = stdChannel();
+    let current = snapshot({ dividerSessionAgentIds: ['a1'], openAgentTabIds: ['a1'] });
+    const { task } = startSaga(channel, vi.fn(), () => state(current));
+    await settle();
+    current = snapshot({ dividerSessionAgentIds: ['a1'] });
+    channel.put(closeTab('ws-1', 'tab-a1'));
+    // Emulate the departing panel's teardown flush: a microtask-scheduled
+    // destroy-time cache write landing after the boundary was handled.
+    await Promise.resolve();
+    setCachedChatScroll('ws-1', 'a1', { scrollTop: 987, shouldFollowBottom: false });
+    await settlePastTeardown();
+    expect(getCachedChatScroll('ws-1', 'a1')).toBeUndefined();
     task.cancel();
     await task.toPromise();
   });
@@ -283,7 +312,7 @@ describe('unreadTrackingSaga', () => {
     await settle();
     current = { ...current, activeWorkspaceId: 'ws-2' };
     notify();
-    await settle();
+    await settlePastTeardown();
     expect(getCachedChatScroll('ws-1', 'a1')).toBeUndefined();
     task.cancel();
     await task.toPromise();

@@ -1,5 +1,5 @@
 import { takeEveryFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
-import { all, call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { all, call, delay, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   markAgentSeenAtBoundary,
@@ -126,17 +126,25 @@ function* readDividerBoundarySnapshot(
   return { ...stateSnapshot, activeWorkspaceId };
 }
 
+// Svelte flushes the departing ChatPanel's teardown in a microtask after the
+// boundary action dispatches, and that panel writes its scroll state into the
+// cache from onDestroy. Defer the clear one macrotask so it runs after the
+// teardown flush and the stale destroy-time write cannot repopulate the
+// entries we just cleared.
+function* clearCachedChatScrollAfterTeardown(agentIds: string[]): SagaGenerator<void> {
+  yield* delay(0);
+  yield* call(clearCachedChatScroll, agentIds);
+}
+
 function* finishBoundary(boundary: DividerSessionBoundary): SagaGenerator<void> {
   yield* call(markAgentSeenAtBoundary, boundary.agentIds);
   // Leaving the agent (workspace switch / tab close) ends the reading
   // session: drop the cached transcript scroll so the next entry lands at
   // the bottom or the unread divider, never a stale clamped position.
-  // Runs after the awaited seen-marker wire call, i.e. after Svelte's
-  // unmount flush, so the departing panel's destroy-time cache write cannot
-  // repopulate the entry we just cleared. Chief-card close keeps its cache —
-  // the hover card is not a workspace surface remount.
+  // Chief-card close keeps its cache — the hover card is not a workspace
+  // surface remount.
   if (boundary.kind !== 'chief-card-close') {
-    yield* call(clearCachedChatScroll, boundary.agentIds);
+    yield* fork(clearCachedChatScrollAfterTeardown, boundary.agentIds);
   }
   for (const agentId of boundary.agentIds) {
     const hasStreamingTailMessage =
