@@ -223,14 +223,10 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       yield* put(setActiveTab(workspaceId, existing.id));
       return;
     }
-    const openAction = openTab(
+    const openAction = openTabInRightmostColumnRequested(
       workspaceId,
       browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
-      undefined,
-      newTabId,
-      undefined,
-      undefined,
-      allowDuplicate,
+      { newTabId, allowDuplicate },
     );
     yield* put(openAction);
     return;

@@ -94,6 +94,7 @@ import {
   observeDeferredSpecGeneration,
   panelLayoutScopeMounted,
   panelLayoutScopeUnmounted,
+  preparePanelLayoutBackendRestore,
   reconcileStaleAgentTabs,
   reconcilePanelColumnCount,
   setPanelColumnCount,
@@ -854,6 +855,7 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
   restoredWorkspaceIds.add(wsId);
   let completed = false;
   try {
+    yield* put(preparePanelLayoutBackendRestore(wsId));
     yield* put(setRestoreStatus(wsId, 'pending'));
     const stored = yield* call(loadLayoutFromStorage, wsId);
     if (stored === null || stored === 'invalid') {

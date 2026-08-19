@@ -78,6 +78,7 @@ import {
   openTabInRightmostColumnRequested,
   panelLayoutScopeMounted,
   panelLayoutScopeUnmounted,
+  preparePanelLayoutBackendRestore,
   reconcilePanelColumnCount,
   reconcileStaleAgentTabs,
   reorderTabs,
@@ -1674,6 +1675,48 @@ describe('panelLayoutSaga', () => {
   });
 
   describe('multi-backend namespacing', () => {
+    it('restores independent counts when switching between backend namespaces', async () => {
+      const localLayout: WorkspacePanelLayout = {
+        version: PANEL_LAYOUT_PERSISTENCE_VERSION,
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'local-left' },
+            { type: 'panel', panelId: 'local-right' },
+          ],
+          sizes: [50, 50],
+        },
+        panels: {
+          'local-left': { id: 'local-left', tabs: [], activeTabId: null },
+          'local-right': { id: 'local-right', tabs: [], activeTabId: null },
+        },
+        focusedPanelId: 'local-left',
+        canvasWidth: null,
+        canvasWidthSource: null,
+        columnCount: 2,
+      };
+      const initialLayout = panelLayoutReducer(undefined, setPanelColumnCount(WS_1, 2, 10))
+        .byWorkspaceId[WS_1];
+      const run = startRestoreSaga(localLayout, [], initialLayout);
+      await settle();
+      expect(run.getState().panelLayout.byWorkspaceId[WS_1].columnCount).toBe(2);
+
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === REMOTE_STORAGE_KEY_1 ? layout : localLayout,
+      );
+      run.setBackendId(REMOTE_ID);
+      run.send(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      await settle();
+      expect(run.getState().panelLayout.byWorkspaceId[WS_1].columnCount).toBe(1);
+
+      run.setBackendId(LOCAL_CONNECTION_ID);
+      run.send(connectionsListReceived({ connections: [], activeId: LOCAL_CONNECTION_ID }));
+      await settle();
+      expect(run.getState().panelLayout.byWorkspaceId[WS_1].columnCount).toBe(2);
+      await cancelSaga(run.task);
+    });
+
     it('keeps the bare legacy key for the local backend', async () => {
       mocks.getJSON.mockReturnValue(undefined);
       const { channel, task } = startSaga(storeState(null, LOCAL_CONNECTION_ID));
@@ -1724,6 +1767,7 @@ describe('panelLayoutSaga', () => {
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        preparePanelLayoutBackendRestore(WS_1),
         setRestoreStatus(WS_1, 'pending'),
         initializeLayout(WS_1, layout),
         setRestoreStatus(WS_1, 'restored'),
@@ -1757,9 +1801,11 @@ describe('panelLayoutSaga', () => {
       // adds WS_1 at saga start, workspaceMounted adds WS_2 later), which is
       // guaranteed in JS — a reordering here means the switch loop changed.
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        preparePanelLayoutBackendRestore(WS_1),
         setRestoreStatus(WS_1, 'pending'),
         initializeLayout(WS_1, layout),
         setRestoreStatus(WS_1, 'restored'),
+        preparePanelLayoutBackendRestore(WS_2),
         setRestoreStatus(WS_2, 'pending'),
         initializeLayout(WS_2, layout),
         setRestoreStatus(WS_2, 'restored'),
@@ -1807,6 +1853,7 @@ describe('panelLayoutSaga', () => {
       await waiter.toPromise();
       expect(waited).toBe(true);
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        preparePanelLayoutBackendRestore(WS_1),
         setRestoreStatus(WS_1, 'pending'),
         initializeLayout(WS_1, layout),
         setRestoreStatus(WS_1, 'restored'),
@@ -1837,6 +1884,7 @@ describe('panelLayoutSaga', () => {
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        preparePanelLayoutBackendRestore(WS_1),
         setRestoreStatus(WS_1, 'pending'),
         initializeLayout(WS_1, layout),
         setRestoreStatus(WS_1, 'restored'),
@@ -1863,15 +1911,17 @@ describe('panelLayoutSaga', () => {
 
       const dispatched = dispatch.mock.calls.map(([action]) => action);
       expect(dispatched.map((action) => action.type)).toEqual([
+        preparePanelLayoutBackendRestore.type,
         setRestoreStatus.type,
         resetLayout.type,
         loadLayoutHistory.type,
         setRestoreStatus.type,
       ]);
-      expect(dispatched[0]).toEqual(setRestoreStatus(WS_1, 'pending'));
-      expect(dispatched[1].payload.wsId).toBe(WS_1);
-      expect(dispatched[2]).toEqual(loadLayoutHistory(WS_1, [], 0));
-      expect(dispatched[3]).toEqual(setRestoreStatus(WS_1, 'empty'));
+      expect(dispatched[0]).toEqual(preparePanelLayoutBackendRestore(WS_1));
+      expect(dispatched[1]).toEqual(setRestoreStatus(WS_1, 'pending'));
+      expect(dispatched[2].payload.wsId).toBe(WS_1);
+      expect(dispatched[3]).toEqual(loadLayoutHistory(WS_1, [], 0));
+      expect(dispatched[4]).toEqual(setRestoreStatus(WS_1, 'empty'));
       await cancelSaga(task);
     });
 
@@ -1900,6 +1950,7 @@ describe('panelLayoutSaga', () => {
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        preparePanelLayoutBackendRestore(WS_2),
         setRestoreStatus(WS_2, 'pending'),
         initializeLayout(WS_2, layout),
         setRestoreStatus(WS_2, 'restored'),

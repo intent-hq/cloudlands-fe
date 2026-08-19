@@ -205,11 +205,10 @@ describe('browserIpcSaga', () => {
         payload: { wsId: 'ws-1', tabId: 'browser-1', panelId: undefined, timestamp: NOW },
       },
       {
-        type: 'panelLayout/openTab',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://new.test'),
-          panelId: undefined,
           newTabId: `tab-${NOW}-i`,
           force: false,
           timestamp: NOW,
@@ -433,11 +432,10 @@ describe('browserIpcSaga', () => {
         },
       },
       {
-        type: 'panelLayout/openTab',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://three.test'),
-          panelId: undefined,
           newTabId: 'tab-main-3',
           force: false,
           timestamp: NOW,

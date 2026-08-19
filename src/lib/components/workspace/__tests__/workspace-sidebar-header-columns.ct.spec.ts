@@ -14,9 +14,9 @@ for (const theme of ['light', 'dark'] as const) {
         const component = await mount(WorkspaceSidebarHeaderColumnsHost, {
           props: { theme, width, zoom, initialCount: 2 },
         });
-        const controls = component.locator('[data-sidebar-header-controls]');
+        const controls = component.locator('[data-workspace-header-actions]');
         const columnTrigger = controls.locator('[data-panel-column-count-trigger]');
-        const actionsTrigger = controls.locator('[data-workspace-actions-trigger]');
+        const actionsTrigger = controls.locator('[data-workspace-actions-kebab]');
         const [hostBox, controlsBox, columnBox, actionsBox] = await Promise.all([
           component.boundingBox(),
           controls.boundingBox(),
@@ -54,5 +54,5 @@ test('updates the workspace-scoped count and keeps keyboard focus order', async 
   await expect(trigger.locator('rect')).toHaveCount(4);
 
   await page.keyboard.press('Tab');
-  await expect(component.locator('[data-workspace-actions-trigger]')).toBeFocused();
+  await expect(component.locator('[data-workspace-actions-kebab]')).toBeFocused();
 });

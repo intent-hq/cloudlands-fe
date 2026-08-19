@@ -23,7 +23,7 @@ describe('workspaceNavigationLayoutSaga', () => {
     );
     await settle();
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
+      type: 'panelLayout/openTabInRightmostColumnRequested',
       payload: {
         wsId: 'ws-1',
         tab: {
@@ -74,7 +74,7 @@ describe('workspaceNavigationLayoutSaga', () => {
     await settle();
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
+      type: 'panelLayout/openTabInRightmostColumnRequested',
       payload: {
         wsId: 'ws-1',
         tab: { type: 'note', title: 'note-1', noteId: 'note-1', workspaceId: 'ws-1' },

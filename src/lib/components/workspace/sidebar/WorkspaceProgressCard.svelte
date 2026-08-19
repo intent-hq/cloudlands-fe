@@ -25,6 +25,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
+  import * as Menu from '$lib/components/ui/menu';
   import WorkspaceActionsMenu, {
     type MenuAction,
   } from '$features/workspace/components/WorkspaceActionsMenu.svelte';
@@ -76,6 +77,12 @@
   } from '$store/renderer/slices/workspace/workspace-types';
   import { store as appStore } from '$store/renderer/store';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
+  import { selectPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { setPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import {
+    isPanelColumnCount,
+    type PanelColumnCount,
+  } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -104,6 +111,8 @@
 
   // ✅ At component init — selectors use getContext(); dispatch uses the configured app store
   const sidebarSide$ = selectSidebarSide();
+  const panelColumnCount$ = selectPanelColumnCount(workspaceIdStore);
+  const panelColumnCounts = [1, 2, 3, 4] as const;
   const notes = selectAllNotes(workspaceIdStore);
   const workspace = selectWorkspaceById(workspaceIdStore);
   // BE-owned task progress rollup served verbatim from the workspace-tasks slice
@@ -277,6 +286,19 @@
   $effect(() => {
     if (hideActionsMenu) dropdownOpen = false;
   });
+
+  function handlePanelColumnCountChange(value: string) {
+    const count = Number(value);
+    if (workspaceId && isPanelColumnCount(count)) {
+      appStore.dispatch(setPanelColumnCount(workspaceId, count));
+    }
+  }
+
+  function panelColumnCountLabel(value: PanelColumnCount) {
+    return value === 1
+      ? m.workspace_sidebarHeader_panelColumns_count_one({ count: value })
+      : m.workspace_sidebarHeader_panelColumns_count_many({ count: value });
+  }
 
   // Derive the workspace path display
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
@@ -877,6 +899,30 @@
   const workflowAction = $derived(displayAction?.id === 'view-pr' ? undefined : displayAction);
 </script>
 
+{#snippet panelColumnIcon(value: PanelColumnCount)}
+  {@const width = value * 4 + (value - 1) * 2}
+  <svg
+    viewBox="0 0 24 18"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linejoin="round"
+    aria-hidden="true"
+    data-panel-column-icon={value}
+  >
+    {#each Array.from({ length: value }) as _, index}
+      <rect
+        x={12 - width / 2 + index * 6}
+        y="2"
+        width="4"
+        height="14"
+        rx="1"
+        vector-effect="non-scaling-stroke"
+      />
+    {/each}
+  </svg>
+{/snippet}
+
 {#snippet sidebarToggleIconSnippet()}
   <SidebarIcon size={12} side={$sidebarSide$} class="opacity-50" />
 {/snippet}
@@ -926,6 +972,52 @@
 
       <div class="flex shrink-0 -mt-0.5 -mr-2 items-center gap-0.5" data-workspace-header-actions>
         {#if !hideActionsMenu}
+          <Menu.Root>
+            <Menu.Trigger>
+              {#snippet child({ props })}
+                <Button
+                  {...props}
+                  variant="ghost-light"
+                  size="icon-sm"
+                  class="shrink-0"
+                  aria-label={m.workspace_sidebarHeader_panelColumns_currentCount_ariaLabel({
+                    count: $panelColumnCount$,
+                  })}
+                  tooltip={m.workspace_sidebarHeader_panelColumns_currentCount_tooltip({
+                    count: $panelColumnCount$,
+                  })}
+                  tooltipSide="bottom"
+                  data-panel-column-count-trigger
+                >
+                  <span class="size-5" data-panel-column-count-icon
+                    >{@render panelColumnIcon($panelColumnCount$)}</span
+                  >
+                  <span class="sr-only" data-panel-column-count>{$panelColumnCount$}</span>
+                </Button>
+              {/snippet}
+            </Menu.Trigger>
+            <Menu.Content
+              align="end"
+              side="bottom"
+              class="w-44"
+              aria-label={m.workspace_sidebarHeader_panelColumns_ariaLabel()}
+            >
+              <Menu.RadioGroup
+                value={String($panelColumnCount$)}
+                onValueChange={handlePanelColumnCountChange}
+              >
+                {#each panelColumnCounts as option}
+                  <Menu.RadioItem value={String(option)}>
+                    <span class="size-5 text-muted-foreground"
+                      >{@render panelColumnIcon(option)}</span
+                    >
+                    <span>{panelColumnCountLabel(option)}</span>
+                  </Menu.RadioItem>
+                {/each}
+              </Menu.RadioGroup>
+            </Menu.Content>
+          </Menu.Root>
+
           <DropdownMenu bind:open={dropdownOpen}>
             {#snippet trigger({ props })}
               <Button
@@ -933,6 +1025,7 @@
                 variant="ghost-light"
                 size="icon-sm"
                 data-workspace-actions-kebab
+                data-workspace-actions-trigger
                 aria-label={m.workspace_progressCard_actions_ariaLabel()}
                 class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
                 disabled={isDeleting}

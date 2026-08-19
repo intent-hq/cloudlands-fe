@@ -6,11 +6,12 @@
     clearPanelLayout,
     initializeLayout,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { selectPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import type { PanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import WorkspaceSidebarHeader from '../../WorkspaceSidebarHeader.svelte';
+  import WorkspaceProgressCard from '../../sidebar/WorkspaceProgressCard.svelte';
 
   let {
     theme = 'light',
@@ -42,6 +43,7 @@
   } as Workspace;
 
   $effect(() => {
+    store.dispatch(setWorkspaceEntity(workspace));
     store.dispatch(clearPanelLayout(workspaceId));
     store.dispatch(
       initializeLayout(workspaceId, {
@@ -71,5 +73,5 @@
   data-current-count={$count$}
   data-testid="workspace-sidebar-header-columns-host"
 >
-  <WorkspaceSidebarHeader {workspace} {workspaceId} />
+  <WorkspaceProgressCard {workspaceId} />
 </section>

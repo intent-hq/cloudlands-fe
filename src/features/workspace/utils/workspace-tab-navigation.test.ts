@@ -423,6 +423,11 @@ describe('global workspace tab navigation', () => {
         'p1',
         'p2',
       ]);
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].panels.p1.tabs).toHaveLength(1);
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].panels.p2.tabs).toHaveLength(0);
+      expect(
+        store.state.panelLayout.byWorkspaceId['ws-2'].layoutHistory.at(-1)?.panels.p2.tabs,
+      ).toHaveLength(1);
     });
 
     it('returns null outside workspace routes', () => {

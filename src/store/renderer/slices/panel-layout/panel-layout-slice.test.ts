@@ -7,6 +7,7 @@ import {
   setRestoreStatus,
   openTab,
   openTabInRightmostColumn,
+  preparePanelLayoutBackendRestore,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
   openBlankWorkingPanel,
@@ -97,6 +98,111 @@ describe('panelLayoutReducer', () => {
   });
 
   describe('initializeLayout', () => {
+    it('keeps a selected workspace count when a partial refresh omits it', () => {
+      const selected = panelLayoutReducer(undefined, setPanelColumnCount(WS, 2, 10));
+      const refreshed = panelLayoutReducer(
+        selected,
+        initializeLayout(WS, {
+          root: { type: 'panel', panelId: 'refreshed' },
+          panels: { refreshed: { id: 'refreshed', tabs: [], activeTabId: null } },
+          focusedPanelId: 'refreshed',
+        }),
+      );
+
+      expect(refreshed.byWorkspaceId[WS].columnCount).toBe(2);
+    });
+
+    it('keeps a selected workspace count when a same-backend refresh has an older count', () => {
+      const selected = panelLayoutReducer(undefined, setPanelColumnCount(WS, 2, 10));
+      const refreshed = panelLayoutReducer(
+        selected,
+        initializeLayout(WS, {
+          root: { type: 'panel', panelId: 'restored' },
+          panels: { restored: { id: 'restored', tabs: [], activeTabId: null } },
+          focusedPanelId: 'restored',
+          columnCount: 1,
+        }),
+      );
+
+      expect(refreshed.byWorkspaceId[WS].columnCount).toBe(2);
+    });
+
+    it('accepts the persisted count after entering a new backend namespace', () => {
+      let state = panelLayoutReducer(undefined, setPanelColumnCount(WS, 2, 10));
+      state = panelLayoutReducer(state, preparePanelLayoutBackendRestore(WS));
+      state = panelLayoutReducer(
+        state,
+        initializeLayout(WS, {
+          root: { type: 'panel', panelId: 'incoming' },
+          panels: { incoming: { id: 'incoming', tabs: [], activeTabId: null } },
+          focusedPanelId: 'incoming',
+          columnCount: 1,
+        }),
+      );
+
+      expect(state.byWorkspaceId[WS].columnCount).toBe(1);
+      expect(state.byWorkspaceId[WS].columnCountInitialized).toBe(true);
+    });
+
+    it('derives a fresh workspace count when no selection or snapshot count exists', () => {
+      const initialized = panelLayoutReducer(
+        undefined,
+        initializeLayout(WS, {
+          root: {
+            type: 'split',
+            direction: 'horizontal',
+            children: [
+              { type: 'panel', panelId: 'left' },
+              { type: 'panel', panelId: 'right' },
+            ],
+            sizes: [50, 50],
+          },
+          panels: {
+            left: { id: 'left', tabs: [], activeTabId: null },
+            right: { id: 'right', tabs: [], activeTabId: null },
+          },
+          focusedPanelId: 'left',
+        }),
+      );
+
+      expect(initialized.byWorkspaceId[WS].columnCount).toBe(2);
+    });
+
+    it('keeps independent counts through navigation, remount, hydration, and backend refresh', () => {
+      const otherWorkspace = 'other-ws';
+      let state = panelLayoutReducer(undefined, setPanelColumnCount(WS, 2, 10));
+      state = panelLayoutReducer(state, setPanelColumnCount(otherWorkspace, 3, 20));
+      state = panelLayoutReducer(
+        state,
+        openTabInRightmostColumn(
+          WS,
+          { type: 'note', title: 'Navigation', noteId: 'navigation', closable: true },
+          {},
+          30,
+        ),
+      );
+      state = panelLayoutReducer(state, setRestoreStatus(WS, 'pending'));
+      state = panelLayoutReducer(
+        state,
+        initializeLayout(WS, {
+          root: { type: 'panel', panelId: 'remounted' },
+          panels: { remounted: { id: 'remounted', tabs: [], activeTabId: null } },
+          focusedPanelId: 'remounted',
+          columnCount: 1,
+        }),
+      );
+      state = panelLayoutReducer(
+        state,
+        initializeLayout(WS, {
+          root: { type: 'panel', panelId: 'hydrated' },
+          panels: { hydrated: { id: 'hydrated', tabs: [], activeTabId: null } },
+          focusedPanelId: 'hydrated',
+        }),
+      );
+
+      expect(state.byWorkspaceId[WS].columnCount).toBe(2);
+      expect(state.byWorkspaceId[otherWorkspace].columnCount).toBe(3);
+    });
     it('sets root, panels, and focusedPanelId', () => {
       const layout = {
         root: { type: 'panel' as const, panelId: 'p1' },

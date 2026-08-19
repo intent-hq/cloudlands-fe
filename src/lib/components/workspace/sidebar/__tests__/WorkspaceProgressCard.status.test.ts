@@ -10,6 +10,11 @@ import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const storeState = {
+    panelLayout: {
+      byWorkspaceId: {
+        'ws-1': { columnCount: 2 },
+      },
+    },
     workspace: {
       pendingTitleMutations: {} as Record<string, { token: number }>,
     },

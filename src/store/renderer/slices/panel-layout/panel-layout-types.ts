@@ -225,6 +225,8 @@ export interface WorkspacePanelLayoutState {
   canvasWidth: number | null;
   canvasWidthSource: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
   columnCount: PanelColumnCount;
+  /** Preserves an established count during same-backend restore and hydration. */
+  columnCountInitialized?: boolean;
   restoreStatus: PanelLayoutRestoreStatus;
   pendingFocusTabId: string | null;
   pendingPanelReveal?: PanelRevealRequest | null;

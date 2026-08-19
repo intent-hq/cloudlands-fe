@@ -120,6 +120,7 @@ export const emptyWorkspaceState: WorkspacePanelLayoutState = {
   canvasWidthSource: null,
   hiddenTabs: createCollection('id'),
   columnCount: 1,
+  columnCountInitialized: false,
   restoreStatus: 'idle',
   pendingFocusTabId: null,
   pendingPanelReveal: null,
@@ -161,6 +162,11 @@ export const initializeLayout = createAction(
     wsId,
     layout,
   }),
+);
+
+export const preparePanelLayoutBackendRestore = createAction(
+  'panelLayout/preparePanelLayoutBackendRestore',
+  (wsId: string) => [wsId] as const,
 );
 
 export const bootstrapNewWorkspaceLayout = createAction(
@@ -1404,14 +1410,21 @@ panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
     focusedPanelId: layout.focusedPanelId,
     ...canvasWidthState,
     hiddenTabs: createCollection('id', layout.hiddenTabs ?? []),
-    columnCount: isPanelColumnCount(layout.columnCount)
-      ? layout.columnCount
-      : (Math.min(4, Math.max(1, countHorizontalPanelColumns(layout.root))) as PanelColumnCount),
+    columnCount: ws.columnCountInitialized
+      ? ws.columnCount
+      : isPanelColumnCount(layout.columnCount)
+        ? layout.columnCount
+        : (Math.min(4, Math.max(1, countHorizontalPanelColumns(layout.root))) as PanelColumnCount),
+    columnCountInitialized: true,
     deferSpecTab: layout.deferSpecTab ?? false,
     newWorkspaceLifecycle: layout.newWorkspaceLifecycle ?? null,
     pendingFocusTabId: null,
     pendingPanelReveal: null,
   });
+});
+panelLayoutReducer.with(preparePanelLayoutBackendRestore, (state, { payload: [wsId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, { ...ws, columnCountInitialized: false });
 });
 panelLayoutReducer.with(bootstrapNewWorkspaceLayout, (state, { payload }) => {
   const {
@@ -2552,11 +2565,10 @@ panelLayoutReducer.with(setPanelColumnCount, (state, { payload }) => {
   const { wsId, count, newPanelIds, timestamp } = payload;
   if (!isPanelColumnCount(count)) return state;
   const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(
-    state,
-    wsId,
-    reconcileWorkspacePanelColumns(ws, count, newPanelIds, timestamp, true),
-  );
+  return setWorkspaceState(state, wsId, {
+    ...reconcileWorkspacePanelColumns(ws, count, newPanelIds, timestamp, true),
+    columnCountInitialized: true,
+  });
 });
 // --- Update Sizes ---
 panelLayoutReducer.with(movePanel, (state, { payload }) => {
@@ -2757,6 +2769,7 @@ panelLayoutReducer.with(resetLayout, (state, { payload }) => {
   return setWorkspaceState(state, wsId, {
     ...ws,
     ...defaultLayout,
+    columnCountInitialized: true,
     expandedPanelId: null,
     savedSizesBeforeExpand: [],
     savedCanvasWidthBeforeExpand: undefined,
