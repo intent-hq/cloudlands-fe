@@ -23,6 +23,13 @@ export type BrowserOpenTabPayload = WorkspaceCommandPayload & {
    * user-opened tabs (unowned).
    */
   ownerAgentId?: string;
+  /**
+   * With position "replace": the exact tab main resolved (and, for agent
+   * opens, ownership-checked) as the adoption target. The renderer replaces
+   * only this tab; if it no longer exists a new tab is created instead of
+   * replacing whichever tab is first now (monorepo#2857 TOCTOU).
+   */
+  replaceTabId?: string;
 };
 
 export type BrowserCloseTabPayload = WorkspaceCommandPayload & {

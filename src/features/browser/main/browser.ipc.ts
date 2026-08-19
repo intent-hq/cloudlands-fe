@@ -58,6 +58,7 @@ function openBrowserTab(
   requestedUrl?: string,
   pin?: boolean,
   ownerAgentId?: string,
+  replaceTabId?: string,
 ): { success: boolean; message: string; tabId?: string } {
   const workspacePayload = workspaceCommandPayload(workspaceId);
   if (!workspacePayload) {
@@ -103,6 +104,7 @@ function openBrowserTab(
       ...(requestedUrl === undefined ? {} : { requestedUrl }),
       ...(pin === undefined ? {} : { pin }),
       ...(ownerAgentId === undefined ? {} : { ownerAgentId }),
+      ...(replaceTabId === undefined ? {} : { replaceTabId }),
     },
   );
   if (!delivery.delivered) {
@@ -270,8 +272,17 @@ export async function executeBrowserActions(
 ): Promise<ExecutionResult> {
   return executeActions(
     { actions, tabId },
-    (url, position, allowDuplicate, requestedUrl, pin, ownerAgentId) =>
-      openBrowserTab(url, position, workspaceId, allowDuplicate, requestedUrl, pin, ownerAgentId),
+    (url, position, allowDuplicate, requestedUrl, pin, ownerAgentId, replaceTabId) =>
+      openBrowserTab(
+        url,
+        position,
+        workspaceId,
+        allowDuplicate,
+        requestedUrl,
+        pin,
+        ownerAgentId,
+        replaceTabId,
+      ),
     agentId,
     workspaceId,
     getDaemonLoopbackContext,

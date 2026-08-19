@@ -402,6 +402,7 @@ async function executeAction(
     requestedUrl?: string,
     pin?: boolean,
     ownerAgentId?: string,
+    replaceTabId?: string,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,
@@ -715,6 +716,11 @@ async function executeAction(
           }
           // A replace adopts an existing tab, which is a manipulation of that
           // tab — agents may only replace tabs they own (monorepo#2857).
+          // The checked target is bound into the open payload below
+          // (replaceTabId) so the renderer replaces exactly this tab — a
+          // layout change between this check and the renderer handling the
+          // open cannot redirect the replace onto a different (possibly
+          // other-agent-owned) tab.
           if (agentId && replaceTargetTabId) {
             const owner = await embeddedBrowserCdp.resolveTabOwner(replaceTargetTabId, workspaceId);
             if (owner !== agentId) {
@@ -730,6 +736,8 @@ async function executeAction(
         // persists it with the tab and a restart can re-run the rewrite
         // (intent-hq/monorepo#2789). Agent opens pass the owner so the
         // renderer persists ownership with the tab (monorepo#2857).
+        // The resolved replace target (when any) is bound into the payload
+        // so the renderer adopts exactly the checked tab (TOCTOU, #2857).
         const result = openTabFn(
           finalRewrite.url,
           action.position,
@@ -737,6 +745,7 @@ async function executeAction(
           finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
           action.pin,
           agentId,
+          ...(replaceTargetTabId === undefined ? [] : ([replaceTargetTabId] as const)),
         );
         // The id the caller can address: the adopted existing tab on a
         // replace, otherwise the pre-generated id of the new tab.
@@ -818,8 +827,20 @@ async function executeAction(
         // Verify the tab exists in the requesting workspace's panel layout
         // (also hydrates persisted ownership after a restart). The
         // check-and-set inside claimTab stays synchronous, so a competing
-        // claim cannot interleave after this point.
-        const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
+        // claim cannot interleave after this point. A stale (cached) tab
+        // list is not proof the tab still exists — the tab may have been
+        // closed while the renderer was unavailable — so a claim must not
+        // record ownership from it; the persistence event would be a no-op
+        // and the "claimed" tab may be gone.
+        const { tabs, stale } = await embeddedBrowserCdp.listAllTabs(workspaceId);
+        if (stale) {
+          return {
+            action: 'claimTab',
+            success: false,
+            // i18n-ignore (agent-facing protocol error, not user-facing)
+            error: `Cannot claim tab ${action.tabId}: the tab list for workspace ${workspaceId} could not be refreshed (renderer unavailable), so the tab's existence cannot be verified. Retry shortly.`,
+          };
+        }
         if (!tabs.some((t) => t.tabId === action.tabId)) {
           return {
             action: 'claimTab',
@@ -1049,6 +1070,7 @@ export async function executeActions(
     requestedUrl?: string,
     pin?: boolean,
     ownerAgentId?: string,
+    replaceTabId?: string,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,

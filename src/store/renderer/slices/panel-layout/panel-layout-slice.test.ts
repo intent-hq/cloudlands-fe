@@ -1865,6 +1865,21 @@ describe('panelLayoutReducer', () => {
       expect(result.panels.p1.tabs.at(-1)).toMatchObject({ type: 'note', title: 'A' });
       expect(result.recentlyClosed.map((entry) => entry.tab.id)).toEqual(['t2']);
     });
+
+    it('reopens an agent-owned browser tab as unowned — the close cleared ownership (monorepo#2857)', () => {
+      const state = stateWithPanel('p1', [
+        { id: 't1', type: 'browser', title: 'B', browserUrl: 'http://a/', ownerAgentId: 'agent-1' },
+        { id: 't2', type: 'note', title: 'A' },
+      ]);
+      const afterClose = panelLayoutReducer(state, closeTab(WS, 't1', 'p1', 1000));
+      expect(afterClose.byWorkspaceId[WS].recentlyClosed[0].tab.ownerAgentId).toBe('agent-1');
+
+      const afterReopen = panelLayoutReducer(afterClose, reopenClosedTab(WS, 1001));
+      const reopened = afterReopen.byWorkspaceId[WS].panels.p1.tabs.at(-1);
+      expect(reopened).toMatchObject({ type: 'browser', browserUrl: 'http://a/' });
+      expect(reopened?.ownerAgentId).toBeUndefined();
+      expect(reopened && 'ownerAgentId' in reopened).toBe(false);
+    });
   });
 
   describe('closePanel', () => {

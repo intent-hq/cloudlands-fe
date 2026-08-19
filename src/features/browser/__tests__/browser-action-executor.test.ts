@@ -474,6 +474,17 @@ describe('browser-action-executor', () => {
 
       expect(result.success).toBe(true);
       expect(embeddedBrowserCdp.listAllTabs).toHaveBeenCalledWith('ws-1');
+      // The ownership-checked adoption target is bound into the open payload
+      // so the renderer replaces exactly this tab (TOCTOU, monorepo#2857).
+      expect(openTabWithId).toHaveBeenCalledExactlyOnceWith(
+        'http://example.com',
+        'replace',
+        true,
+        undefined,
+        undefined,
+        'agent-1',
+        'tab-existing',
+      );
       expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledExactlyOnceWith(
         'tab-existing',
       );
@@ -2318,6 +2329,26 @@ describe('browser-action-executor', () => {
 
       expect(result.results[0]?.success).toBe(false);
       expect(embeddedBrowserCdp.claimTab).not.toHaveBeenCalled();
+    });
+
+    it('refuses to claim from a stale (cached) tab list — the tab may no longer exist', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+        tabs: [{ tabId: 'tab-1', url: 'http://a/', title: 'A', mounted: false }] as any,
+        stale: true,
+      });
+
+      const result = await executeActions(
+        { actions: [{ action: 'claimTab', tabId: 'tab-1', width: 1024 }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.results[0]?.success).toBe(false);
+      expect(result.results[0]?.error).toContain('could not be refreshed');
+      expect(embeddedBrowserCdp.claimTab).not.toHaveBeenCalled();
+      expect(embeddedBrowserCdp.notifyTabOwnerChanged).not.toHaveBeenCalled();
     });
   });
 });

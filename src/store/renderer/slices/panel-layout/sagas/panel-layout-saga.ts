@@ -182,7 +182,6 @@ const PERSIST_ACTIONS = [
   updateTabTitle,
   updateTabBrowserUrl,
   updateTabFavicon,
-  setTabOwnerAgent,
   updateFileTabPath,
   consumePendingFocus,
   setPanelPinned,
@@ -1024,6 +1023,11 @@ export function* panelLayoutSaga(options?: {
       reconcileSpecFromNoteAction,
     );
     yield* takeEvery(PERSIST_ACTIONS, persistPanelLayout);
+    // Ownership changes must persist (rehydration source for the main-process
+    // registry, monorepo#2857) but never alter panel structure, so the
+    // reusable-panel invariant has no reason to observe them — a dedicated
+    // watcher keeps single ownership per the saga-watcher-ownership gate.
+    yield* takeEvery(setTabOwnerAgent, persistPanelLayout);
     yield* takeEvery(PERSIST_ACTIONS, enforceReusablePanelInvariant);
     yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
     yield* takeEvery(openTabWithPanelModeRequested, openTabWithPanelMode);

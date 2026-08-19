@@ -1650,7 +1650,12 @@ panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
   if (!targetPanelId || !ws.panels[targetPanelId]) return state;
 
   const panel = ws.panels[targetPanelId];
-  const newTab: PanelTab = { ...closed.tab, id: newTabId };
+  // The genuine close cleared main's ownership of an agent-owned browser tab
+  // (monorepo#2857); a reopen is a fresh, unowned tab — carrying the stale
+  // ownerAgentId forward would resurrect ownership in main's registry (via
+  // layout rehydration) and block other agents from claiming the tab.
+  const { ownerAgentId: _staleOwner, ...closedTab } = closed.tab;
+  const newTab: PanelTab = { ...closedTab, id: newTabId };
 
   ws = {
     ...ws,

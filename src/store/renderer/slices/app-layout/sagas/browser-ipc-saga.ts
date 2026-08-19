@@ -174,7 +174,20 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   const position = data.position ?? 'adjacent';
   if (position === 'replace') {
     const tabs = yield* selectAllTabs.effect(workspaceId);
-    const existing = tabs.find((tab) => tab.type === 'browser');
+    // Main resolves (and, for agent opens, ownership-checks) the adoption
+    // target and binds it into the payload as replaceTabId; replace only
+    // that exact tab so a layout change since the check cannot redirect the
+    // replace onto a different (possibly other-agent-owned) tab
+    // (monorepo#2857 TOCTOU). When it's gone — or on legacy payloads without
+    // replaceTabId — a user open falls back to the first browser tab, while
+    // an agent open must NOT (main never ownership-checked that tab): it
+    // opens a new tab instead.
+    const replaceTabId = typeof data.replaceTabId === 'string' ? data.replaceTabId : undefined;
+    const existing = replaceTabId
+      ? tabs.find((tab) => tab.type === 'browser' && tab.id === replaceTabId)
+      : ownerAgentId
+        ? undefined
+        : tabs.find((tab) => tab.type === 'browser');
     if (existing) {
       yield* put(updateTabBrowserUrl(workspaceId, existing.id, data.url, requestedUrl ?? null));
       // An agent replace adopts the existing tab — record its new owner
