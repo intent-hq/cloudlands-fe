@@ -202,6 +202,14 @@ class AutoUpdateService {
   private setupEventHandlers() {
     autoUpdater.on('checking-for-update', () => {
       logger.info('Checking for updates...');
+      // A re-check with an artifact already downloaded keeps the
+      // 'downloaded' UI: a same-version answer re-resolves from
+      // electron-updater's downloaded-file cache and lands back at
+      // 'downloaded' with no user-visible regression, and a newer version
+      // flips state through 'update-available' below anyway.
+      if (this.state.status === 'downloaded') {
+        return;
+      }
       this.updateStatus('checking');
     });
 
@@ -214,6 +222,16 @@ class AutoUpdateService {
       // date" toast because `isManualCheck` stayed latched from this check.
       this.isManualCheck = false;
       logger.info('Update available', { version: info.version });
+      // A re-check while this same version is already downloaded must not
+      // regress the UI to 'available' (a new Download click): keep
+      // 'downloaded' and let autoDownload re-resolve from the
+      // downloaded-file cache — 'update-downloaded' fires again and re-lands
+      // 'downloaded'. A different (newer) version falls through: updateInfo
+      // flips and the normal download flow supersedes the pending artifact.
+      if (this.state.status === 'downloaded' && info.version === this.state.updateInfo?.version) {
+        logger.info('Feed still offers the already-downloaded version; staying downloaded');
+        return;
+      }
       this.state.updateInfo = {
         version: info.version,
         releaseDate: info.releaseDate,
@@ -348,11 +366,14 @@ class AutoUpdateService {
       return this.state;
     }
 
-    // Skip if downloading or already downloaded
-    if (this.state.status === 'downloading' || this.state.status === 'downloaded') {
-      logger.debug('Skipping update check - already in progress or complete', {
-        status: this.state.status,
-      });
+    // Skip only while a download is in flight. A 'downloaded' state does
+    // NOT skip: checks keep running so a newer feed version can supersede
+    // the pending artifact (updateInfo flips, autoDownload replaces it, and
+    // 'update-downloaded' lands the state back at 'downloaded'); the event
+    // handlers suppress the user-visible regressions when the feed re-offers
+    // the already-downloaded version.
+    if (this.state.status === 'downloading') {
+      logger.debug('Skipping update check - download in progress');
       return this.state;
     }
 
@@ -453,12 +474,10 @@ class AutoUpdateService {
    * This will send an "up to date" notification if no updates are available
    */
   async checkForUpdatesManual(): Promise<UpdateState> {
-    // If update is already downloaded, just notify the user
-    if (this.state.status === 'downloaded') {
-      logger.info('Manual check: Update already downloaded');
-      this.sendToRenderer('auto-update:status-changed', this.state);
-      return this.state;
-    }
+    // A 'downloaded' state does not early-return: a manual check must still
+    // query the feed so a newer version can supersede the pending artifact.
+    // A same-version answer keeps the 'downloaded' UI (no "up to date" toast,
+    // no regression to a Download prompt) — see setupEventHandlers().
 
     // If currently downloading, notify the user of progress
     if (this.state.status === 'downloading') {
@@ -549,9 +568,11 @@ class AutoUpdateService {
    * re-enables it once a download validated against the current feed
    * completes, same-version case included: electron-updater re-resolves from
    * its downloaded-file cache); cancels an in-flight download via its token;
-   * and resets state to idle so checkForUpdatesManual()/checkForUpdates()
-   * early-return guards (downloading/downloaded) cannot adopt the stale
-   * outcome. No-op for statuses with nothing to discard. Called on a direct
+   * and resets state to idle so the 'downloading' skip guard cannot block
+   * the fresh check and no stale old-feed updateInfo survives into it (a
+   * kept 'downloaded' updateInfo would let the new feed's same-version
+   * answer masquerade as the old artifact and skip re-validation). No-op
+   * for statuses with nothing to discard. Called on a direct
    * channel switch and by the queued recheck a switch-while-checking arms
    * (the old-feed check may have settled into any of these states by then).
    */
@@ -573,8 +594,9 @@ class AutoUpdateService {
         status,
       });
     }
-    // Reset so the fresh check can actually run — checkForUpdatesManual()
-    // and checkForUpdates() both skip downloading/downloaded states.
+    // Reset so the fresh check runs against a clean slate: 'downloading'
+    // still skips checks, and the stale updateInfo must not be mistaken for
+    // an artifact validated against the new feed.
     this.state.updateInfo = null;
     this.updateStatus('idle'); // also clears progress and error
   }
@@ -666,9 +688,9 @@ class AutoUpdateService {
    * flips the flags for its own session. The old-feed check may have found
    * an update ('available' terminal, autoDownload possibly already
    * downloading by recheck time), so the stale outcome is neutralized first —
-   * otherwise checkForUpdatesManual()'s downloading/downloaded early-return
-   * guards would adopt the OLD channel's artifact and never query the new
-   * feed (PR #1162 review).
+   * otherwise the 'downloading' skip guard (or a kept old-feed
+   * updateInfo/quit-install) would adopt the OLD channel's artifact and
+   * never query the new feed (PR #1162 review).
    */
   private maybeRunQueuedChannelSwitchRecheck(status: UpdateStatus) {
     if (!this.channelSwitchRecheckQueued) return;
