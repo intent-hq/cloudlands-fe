@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   FORCE_VISIBLE_TURN_COUNT,
+  INITIAL_LAZY_MODE_TRACKER,
   LAZY_TURN_THRESHOLD,
   isOlderHistoryPrepend,
   isTurnInRecentWindow,
+  nextLazyMode,
   shouldVirtualizeTurns,
 } from '../chat-turn-virtualization';
 
@@ -40,5 +42,51 @@ describe('older-history prepend detection', () => {
 
   it('does not flag a transition to an empty list', () => {
     expect(isOlderHistoryPrepend(3, 'm-newest', 0, undefined)).toBe(false);
+  });
+
+  it('intentionally matches interior insertions (growth with unchanged newest row)', () => {
+    // e.g. a late-arriving row with an older timestamp sorting mid-list, or the
+    // near-simultaneous-send ordering repair — these stay scroll-neutral too.
+    expect(isOlderHistoryPrepend(3, 'm-newest', 4, 'm-newest')).toBe(true);
+  });
+});
+
+describe('latched lazy-mode decision', () => {
+  const over = LAZY_TURN_THRESHOLD + 5;
+
+  it('virtualizes an already-large transcript on initial mount', () => {
+    const next = nextLazyMode(INITIAL_LAZY_MODE_TRACKER, 100, 'm-100', over);
+    expect(next.mode).toBe(true);
+  });
+
+  it('keeps a small transcript unvirtualized on initial mount', () => {
+    const next = nextLazyMode(INITIAL_LAZY_MODE_TRACKER, 4, 'm-4', 2);
+    expect(next.mode).toBe(false);
+  });
+
+  it('latches the reveal-time mode across an older-history prepend past the threshold', () => {
+    const revealed = nextLazyMode(INITIAL_LAZY_MODE_TRACKER, 8, 'm-8', 4);
+    expect(revealed.mode).toBe(false);
+    const prepended = nextLazyMode(revealed, 490, 'm-8', over);
+    expect(prepended.mode).toBe(false);
+  });
+
+  it('flips at the threshold on a genuine append after a latched prepend', () => {
+    const revealed = nextLazyMode(INITIAL_LAZY_MODE_TRACKER, 8, 'm-8', 4);
+    const prepended = nextLazyMode(revealed, 490, 'm-8', over);
+    const appended = nextLazyMode(prepended, 491, 'm-appended', over + 1);
+    expect(appended.mode).toBe(true);
+  });
+
+  it('re-evaluation with unchanged inputs is idempotent', () => {
+    const first = nextLazyMode(INITIAL_LAZY_MODE_TRACKER, 100, 'm-100', over);
+    const second = nextLazyMode(first, 100, 'm-100', over);
+    expect(second).toEqual(first);
+  });
+
+  it('fails open when a prepend coalesces with an append (newest row changed)', () => {
+    const revealed = nextLazyMode(INITIAL_LAZY_MODE_TRACKER, 8, 'm-8', 4);
+    const coalesced = nextLazyMode(revealed, 491, 'm-appended', over);
+    expect(coalesced.mode).toBe(true);
   });
 });

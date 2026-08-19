@@ -196,9 +196,10 @@
     type LazyTurnHeightCache,
   } from './lazy-turn-height-cache';
   import {
+    INITIAL_LAZY_MODE_TRACKER,
     isOlderHistoryPrepend,
     isTurnInRecentWindow,
-    shouldVirtualizeTurns,
+    nextLazyMode,
   } from './chat-turn-virtualization';
   import {
     EMPTY_TEMPORARY_TURN_MATERIALIZATION,
@@ -1600,29 +1601,19 @@
   // Count user messages as proxy for turns (each user message starts a turn)
   const totalTurnCount = $derived($agentMessages$.filter((m) => m.role === 'user').length);
 
-  // PERF: Enable lazy loading only for larger conversations. Latched across
-  // background older-history prepends: when the transcript grows but the
-  // newest row is unchanged (the post-reveal backfill of a truncated
-  // snapshot), flipping lazy mode on would rewrap every already-rendered turn
-  // in LazyTurn and repaint the whole visible list, so the prepend keeps the
-  // mode decided at reveal. Genuine appends still follow the threshold.
-  let lazyModeTracker = { count: 0, newestId: undefined as string | undefined, mode: false };
+  // PERF: Enable lazy loading only for larger conversations, latched across
+  // background older-history prepends (see nextLazyMode). Mutating the plain
+  // (non-$state) tracker inside the derived is safe: re-evaluation with
+  // unchanged inputs is idempotent (`unchanged` → latch), and deriveds are
+  // lazy, so the latch is best-effort — a prepend coalesced with an append
+  // into one observed transition recomputes from the threshold, failing open
+  // to the pre-latch behavior. Do not make the tracker stateful.
+  let lazyModeTracker = INITIAL_LAZY_MODE_TRACKER;
   const shouldUseLazyLoading = $derived.by(() => {
     const currentCount = $agentMessages$.length;
     const currentNewestId = $agentMessages$[currentCount - 1]?.id;
-    const unchanged =
-      currentCount === lazyModeTracker.count && currentNewestId === lazyModeTracker.newestId;
-    const latch =
-      unchanged ||
-      isOlderHistoryPrepend(
-        lazyModeTracker.count,
-        lazyModeTracker.newestId,
-        currentCount,
-        currentNewestId,
-      );
-    const mode = latch ? lazyModeTracker.mode : shouldVirtualizeTurns(totalTurnCount);
-    lazyModeTracker = { count: currentCount, newestId: currentNewestId, mode };
-    return mode;
+    lazyModeTracker = nextLazyMode(lazyModeTracker, currentCount, currentNewestId, totalTurnCount);
+    return lazyModeTracker.mode;
   });
 
   // PERF: Pre-compute message index and turn number maps for O(1) lookups

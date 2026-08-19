@@ -161,6 +161,15 @@ function normalizeSortPruneMessages(messages: AgentMessage[]): AgentMessage[] {
  * older-history prepend does not re-render the already-rendered suffix of the
  * transcript. Returns the previous array itself when the replacement is
  * entirely equivalent (position-for-position), letting the reducer no-op.
+ *
+ * PERF: this runs on every `replaceMessages` dispatch, including per-emit
+ * transcript applies during streaming. Its per-emit cost stays O(rows) only
+ * because upstream emitters preserve unchanged-row identity — the transcript
+ * reconciler reuses unchanged message objects across emits and the
+ * older-history saga merges against the store's own rows — so each deepEqual
+ * short-circuits on reference-equal nested fields (contentBlocks, metadata).
+ * A change that rebuilds row objects per emit would silently degrade this to
+ * O(transcript bytes) per streaming tick; keep that invariant upstream.
  */
 function reconcileMessageIdentities(
   previous: AgentMessage[],

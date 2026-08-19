@@ -784,6 +784,28 @@ describe('agent-session-slice reducer', () => {
       expect(next).toBe(state);
     });
 
+    it('no-ops when a store already at the cap fully prunes a prepend-shaped replacement', () => {
+      const messages: AgentMessage[] = [];
+      for (let i = 0; i < MAX_MESSAGES_PER_AGENT; i++) {
+        const ts = `2024-06-01T${String(Math.floor(i / 3600)).padStart(2, '0')}:${String(Math.floor((i % 3600) / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}.000Z`;
+        messages.push(makeUniqueMessage(`m-${i}`, 'user', ts));
+      }
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { messages })),
+      );
+      expect(getMsgs(state, 'a1')).toHaveLength(MAX_MESSAGES_PER_AGENT);
+      const olderPrepend = [
+        makeUniqueMessage('m-older-1', 'user', '2024-01-01T00:00:01.000Z'),
+        makeUniqueMessage('m-older-2', 'user', '2024-01-01T00:00:02.000Z'),
+      ];
+      const next = agentSessionReducer(
+        state,
+        replaceMessages('a1', [...olderPrepend, ...messages.map((m) => ({ ...m }))]),
+      );
+      expect(next).toBe(state);
+    });
+
     it('gives a changed row a new identity while unchanged rows keep theirs', () => {
       const m1 = makeUniqueMessage('m1', 'assistant', '2024-01-01T00:00:01.000Z');
       const m2 = makeUniqueMessage('m2', 'assistant', '2024-01-01T00:00:02.000Z');
