@@ -3570,8 +3570,8 @@
             />
           </div>
         {:else if shouldShowTranscriptSkeleton( { isFirstHydrationLoading, hasSession: Boolean($agentSession$), hydrationSettled: $transcriptHydration$ === 'settled', hasMessages: $agentMessages$.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt) } )}
-          <!-- Skeleton: initial newest-window hydration is unresolved. -->
-          <!-- Skeleton loading state when session is not yet initialized or transcript is loading -->
+          <!-- Skeleton: initial newest-window hydration is unresolved (session
+               not yet initialized or transcript still loading). -->
           {@render transcriptSkeletonRows()}
         {:else}
           <!-- Pending initial prompt - shown as optimistic UI immediately -->
