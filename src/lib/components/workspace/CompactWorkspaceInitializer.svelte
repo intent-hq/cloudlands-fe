@@ -16,6 +16,7 @@
     chooseDefaultSetupScript,
     createRepoConfigProbeScheduler,
     resolveSetupScriptParam,
+    setupScriptDisplayName,
     REPO_CONFIG_SCRIPT_NAME,
   } from '$features/setup-scripts';
   import {
@@ -3265,7 +3266,7 @@
                     >{m.workspace_compactInitializer_detectingSetupScript_label()}</span
                   >
                 {:else}
-                  {setupScriptName}
+                  {setupScriptDisplayName(setupScriptName)}
                 {/if}
               </span>
               <p class="text-sm text-subtle">

@@ -16,12 +16,15 @@ vi.mock('$lib/client', () => ({
 }));
 
 import { invoke } from '$lib/electron-bridge';
+import { m } from '$shared/paraglide/messages.js';
+import { overwriteGetLocale } from '$shared/paraglide/runtime.js';
 import {
   chooseDefaultSetupScript,
   fetchGitHubRepoConfigSetupScript,
   fetchRepoConfigSetupScript,
   parseRepoConfigSetupScript,
   resolveSetupScriptParam,
+  setupScriptDisplayName,
   toRepoConfigSubset,
   REPO_CONFIG_SCRIPT_NAME,
 } from './repo-config';
@@ -270,5 +273,35 @@ describe('resolveSetupScriptParam (monorepo#1862)', () => {
         repoConfigScriptRepo: '/repo/b',
       }),
     ).toBe('echo repo-config');
+  });
+});
+
+describe('setupScriptDisplayName', () => {
+  afterEach(() => overwriteGetLocale(() => 'en'));
+
+  it('maps the repo-config sentinel to the localized label', () => {
+    overwriteGetLocale(() => 'fr');
+    expect(setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME)).toBe(
+      m.workspace_setupScriptEditor_fromRepoConfig_name(),
+    );
+    expect(setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME)).not.toBe(REPO_CONFIG_SCRIPT_NAME);
+  });
+
+  it('maps the Custom sentinel to the localized label', () => {
+    overwriteGetLocale(() => 'de');
+    expect(setupScriptDisplayName('Custom')).toBe(m.workspace_setupScriptEditor_custom_name());
+    expect(setupScriptDisplayName('Custom')).not.toBe('Custom');
+  });
+
+  it('renders the English labels in the base locale', () => {
+    overwriteGetLocale(() => 'en');
+    expect(setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME)).toBe('From repo config');
+    expect(setupScriptDisplayName('Custom')).toBe('Custom');
+  });
+
+  it('passes through any other name unchanged', () => {
+    overwriteGetLocale(() => 'ja');
+    expect(setupScriptDisplayName('My saved script')).toBe('My saved script');
+    expect(setupScriptDisplayName('Copy config files only')).toBe('Copy config files only');
   });
 });

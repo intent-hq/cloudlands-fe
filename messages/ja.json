@@ -1524,6 +1524,7 @@
   "workspace_setupScriptEditor_customScript_name": "カスタムスクリプト",
   "workspace_setupScriptEditor_custom_name": "カスタム",
   "workspace_setupScriptEditor_example_before": "例:",
+  "workspace_setupScriptEditor_fromRepoConfig_name": "リポジトリ構成から",
   "workspace_setupScriptEditor_generate_description": "リポジトリを分析してセットアップスクリプトを自動作成します。",
   "workspace_setupScriptEditor_generate_label": "生成",
   "workspace_setupScriptEditor_lastUsed_description": "このリポジトリで前回ワークスペースを作成したときに使用したスクリプト",

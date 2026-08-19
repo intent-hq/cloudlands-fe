@@ -1524,6 +1524,7 @@
   "workspace_setupScriptEditor_customScript_name": "사용자 지정 스크립트",
   "workspace_setupScriptEditor_custom_name": "사용자 지정",
   "workspace_setupScriptEditor_example_before": "예:",
+  "workspace_setupScriptEditor_fromRepoConfig_name": "저장소 구성에서",
   "workspace_setupScriptEditor_generate_description": "저장소를 분석하여 설정 스크립트를 자동으로 만듭니다.",
   "workspace_setupScriptEditor_generate_label": "생성",
   "workspace_setupScriptEditor_lastUsed_description": "이 리포지토리에서 마지막으로 워크스페이스를 만들 때 사용한 스크립트",

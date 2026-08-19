@@ -17,6 +17,7 @@
   getLastUsedSetupScript,
   REPO_CONFIG_SCRIPT_ID,
   REPO_CONFIG_SCRIPT_NAME,
+  setupScriptDisplayName,
   type ProjectType,
 } from '$features/setup-scripts';
 
@@ -319,7 +320,7 @@
             class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId === REPO_CONFIG_SCRIPT_ID ? 'bg-background text-foreground ring-1 ring-border' : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
             onclick={() => handleScriptSelect(REPO_CONFIG_SCRIPT_ID)}
           >
-            <span class="text-sm">{REPO_CONFIG_SCRIPT_NAME}</span>
+            <span class="text-sm">{setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME)}</span>
             <p class="text-xs text-subtle mt-0.5 line-clamp-1">{m.workspace_setupScriptEditor_repoConfig_description()}</p>
           </button>
         </div>
@@ -422,7 +423,7 @@
     >
       <Fa icon={faTerminal} size="xs" />
       <span class="text-sm font-normal text-subtle">{m.workspace_setupScriptEditor_setupScript_label()}</span>
-      <span class="text-subtle font-normal">{displayLabel}</span>
+      <span class="text-subtle font-normal">{setupScriptDisplayName(displayLabel)}</span>
     </Button>
 
     <!-- Expanded Content (non-compact mode renders inside, compact mode renders via slot) -->

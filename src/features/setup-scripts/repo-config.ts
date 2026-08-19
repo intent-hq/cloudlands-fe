@@ -11,6 +11,7 @@
  */
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { m } from '$shared/paraglide/messages.js';
 
 /**
  * User-facing label for a setup script sourced from the repo config.
@@ -22,6 +23,24 @@ export const REPO_CONFIG_SCRIPT_NAME = 'From repo config';
 
 /** Script-list entry id for the repo-config script in SetupScriptEditor. */
 export const REPO_CONFIG_SCRIPT_ID = 'repo-config';
+
+/**
+ * Localized display label for a setup-script name. Maps the persisted
+ * identity sentinels (`REPO_CONFIG_SCRIPT_NAME`, `'Custom'`) to their
+ * localized messages; any other name (templates, user-named scripts) passes
+ * through unchanged. Display-only — identity comparisons and saved-script
+ * matching must keep using the English sentinel constants.
+ */
+export function setupScriptDisplayName(name: string): string {
+  if (name === REPO_CONFIG_SCRIPT_NAME) {
+    return m.workspace_setupScriptEditor_fromRepoConfig_name();
+  }
+  // i18n-ignore (persisted identity sentinel; comparison only, not rendered)
+  if (name === 'Custom') {
+    return m.workspace_setupScriptEditor_custom_name();
+  }
+  return name;
+}
 
 /**
  * Typed subset of the repo-committed `.intent/config.json` that the frontend
