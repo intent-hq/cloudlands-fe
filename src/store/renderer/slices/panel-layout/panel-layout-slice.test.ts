@@ -1546,6 +1546,48 @@ describe('panelLayoutReducer', () => {
       expect(result.panels.p1.tabs).toEqual([expect.objectContaining({ id: 'one' })]);
     });
 
+    it('walks counts one through four and recovers removed content in surviving history', () => {
+      let state = stateWithPanel('p1', [{ id: 'tab-1', type: 'note', title: 'One' }]);
+      const panelIds = () => {
+        const root = state.byWorkspaceId[WS].root;
+        if (root.type === 'panel') return [root.panelId];
+        return root.children.map((child) => {
+          if (child.type !== 'panel') throw new Error('Expected flat fixed columns');
+          return child.panelId;
+        });
+      };
+
+      for (const count of [1, 2, 3, 4] as const) {
+        state = panelLayoutReducer(state, reconcilePanelColumnCount(WS, count, count));
+        expect(panelIds()).toHaveLength(count);
+        if (count > 1) {
+          state = panelLayoutReducer(
+            state,
+            openTab(
+              WS,
+              { type: 'note', title: `Note ${count}`, noteId: `note-${count}` },
+              panelIds().at(-1),
+              `tab-${count}`,
+              true,
+              count,
+            ),
+          );
+        }
+      }
+
+      for (const count of [3, 2, 1] as const) {
+        state = panelLayoutReducer(state, reconcilePanelColumnCount(WS, count, 10 + count));
+        expect(panelIds()).toHaveLength(count);
+      }
+      expect(state.byWorkspaceId[WS].panels.p1.tabs.map((tab) => tab.id)).toEqual([
+        'tab-1',
+        'tab-2',
+        'tab-3',
+        'tab-4',
+      ]);
+      expect(state.byWorkspaceId[WS].panels.p1.activeTabId).toBe('tab-1');
+    });
+
     it('merges removed right columns into the surviving rightmost history', () => {
       const state = emptyState();
       state.byWorkspaceId[WS] = {

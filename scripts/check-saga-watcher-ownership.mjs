@@ -56,19 +56,19 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
   },
   {
     pattern:
-      /panel-layout-slice\.ts#(?:initializeLayout|openTab|openTabInAdjacentOrSplit|closeTab|closeActiveTab|reopenClosedTab|setActiveTab|moveTabToPanel|moveTabToSplit|moveTabToSplitLevel|closeOtherTabs|closeTabsToRight|closeAllTabs|closeAllOthersEverywhere|splitPanel|closePanel|resetLayout|goBack|goForward)$/,
+      /panel-layout-slice\.ts#(?:initializeLayout|openTab|openTabInAdjacentOrSplit|openTabInRightmostColumn|closeTab|closeActiveTab|reopenClosedTab|setActiveTab|moveTabToPanel|moveTabToSplit|moveTabToSplitLevel|closeOtherTabs|closeTabsToRight|closeAllTabs|closeAllOthersEverywhere|splitPanel|closePanel|resetLayout|goBack|goForward)$/,
     rationale:
       'layout persistence and delayed history snapshots intentionally observe the same actions',
   },
   {
     pattern:
-      /panel-layout-slice\.ts#(?:openTabInNewRootColumn|collapseToReusablePanel|closeTabsByType|closeTabsByAgentId|destroyTabsByOwnerAgent|destroyOwnedTabsForWorkspace|restoreHiddenTab|selectNextTab|selectPreviousTab|reorderTabs|focusPanel|markPanelTouched|updateSizes|updateSplitSizes|resizePanelLayoutRightEdge|resizePanelLayoutAtHorizontalPanel|toggleExpandPanel|goBackInFocusHistory|goForwardInFocusHistory|setDeferSpecTab|observeDeferredSpecGeneration|revealDeferredSpecTab|resolveNewWorkspaceInitialAgent|reconcileStaleAgentTabs|updateTabTitle|updateTabBrowserUrl|updateTabFavicon|updateFileTabPath|consumePendingFocus|setPanelPinned)$/,
+      /panel-layout-slice\.ts#(?:openTabInNewRootColumn|closeTabsByType|closeTabsByAgentId|destroyTabsByOwnerAgent|destroyOwnedTabsForWorkspace|restoreHiddenTab|selectNextTab|selectPreviousTab|reorderTabs|focusPanel|markPanelTouched|updateSizes|updateSplitSizes|resizePanelLayoutRightEdge|resizePanelLayoutAtHorizontalPanel|toggleExpandPanel|goBackInFocusHistory|goForwardInFocusHistory|setDeferSpecTab|observeDeferredSpecGeneration|revealDeferredSpecTab|resolveNewWorkspaceInitialAgent|reconcileStaleAgentTabs|updateTabTitle|updateTabBrowserUrl|updateTabFavicon|updateFileTabPath|consumePendingFocus)$/,
     rationale:
-      'layout persistence and reusable-panel invariant enforcement are independent',
+      'layout persistence and specialized panel effects are independent',
   },
   {
-    pattern: /user-preferences-slice\.ts#(?:setPanelOpenMode|togglePanelOpenMode)$/,
-    rationale: 'preference persistence and panel-layout collapse are independent',
+    pattern: /user-preferences-slice\.ts#setPanelColumnCount$/,
+    rationale: 'preference persistence and fixed-column reconciliation are independent',
   },
 ];
 

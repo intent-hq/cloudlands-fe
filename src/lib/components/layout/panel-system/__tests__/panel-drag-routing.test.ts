@@ -5,7 +5,6 @@ import type { PanelState, PanelTab } from '$store/renderer/slices/panel-layout/p
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
-  panelOpenMode: 'pin' as 'normal' | 'pin',
   state: {
     panelLayout: {
       byWorkspaceId: {
@@ -82,10 +81,6 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: () => readable([]),
-}));
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
-  selectPanelOpenMode: () => readable(mocks.panelOpenMode),
-  selectPanelStackDirection: () => readable('right'),
 }));
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -175,7 +170,6 @@ function renderTabBar(props: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   mocks.dispatch.mockClear();
-  mocks.panelOpenMode = 'pin';
   setDraggedPanelId(null);
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     callback(0);
@@ -430,8 +424,7 @@ describe('panel and tab drag MIME routing', () => {
 });
 
 describe('panel context menu routing', () => {
-  it('hides the direct pin control while pin mode is off', () => {
-    mocks.panelOpenMode = 'normal';
+  it('does not render the removed panel pin control', () => {
     const { container } = renderTabBar({ onClosePanel: vi.fn() });
 
     expect(container.querySelector('[data-panel-pin]')).toBeNull();
@@ -498,6 +491,26 @@ describe('panel context menu routing', () => {
     expect(labels).not.toContain('Close tabs to the right');
     await fireEvent.click(moveRight!);
     expect(onMoveRight).toHaveBeenCalledOnce();
+  });
+
+  it('disables Move right at the right boundary and keeps Move left enabled', async () => {
+    const onMoveLeft = vi.fn();
+    const { container } = renderTabBar({ showTabStrip: false, onMoveLeft });
+    const header = container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
+
+    await fireEvent.contextMenu(header, { clientX: 120, clientY: 80 });
+
+    const menu = document.querySelector<HTMLElement>('[data-panel-context-menu="panel"]')!;
+    const moveLeft = Array.from(menu.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Move left'),
+    );
+    const moveRight = Array.from(menu.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Move right'),
+    );
+    expect(moveLeft?.disabled).toBe(false);
+    expect(moveRight?.disabled).toBe(true);
+    await fireEvent.click(moveLeft!);
+    expect(onMoveLeft).toHaveBeenCalledOnce();
   });
 
   it('keeps tab actions on the explicit tab-strip menu', async () => {
