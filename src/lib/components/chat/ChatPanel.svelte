@@ -2342,6 +2342,42 @@
     scrollContainer.scrollTop = cachedScrollRestoreTop;
     return true;
   }
+  // The deferred restore must never fire after the user has started
+  // scrolling: while the transcript is still shorter than the cached
+  // position (rows streaming in / LazyTurn placeholders under-reporting
+  // height) the retry loop stays pending, and a late apply would yank the
+  // viewport away from the position the user just chose.
+  function cancelPendingCachedScrollRestore() {
+    if (cachedScrollRestoreTop === null || hasConsumedCachedScrollRestore) return;
+    hasConsumedCachedScrollRestore = true;
+    if (cachedScrollRestoreRetryFrame !== null) {
+      cancelAnimationFrame(cachedScrollRestoreRetryFrame);
+      cachedScrollRestoreRetryFrame = null;
+    }
+  }
+  // First user-initiated scroll intent cancels the pending restore: wheel,
+  // touch, or a pointer grab on the scrollbar track (a pointerdown on the
+  // container itself with offsetX past the content box — clientWidth
+  // excludes the scrollbar gutter). Plain clicks inside the content are not
+  // scroll intents.
+  $effect(() => {
+    const container = scrollContainer;
+    if (!container) return;
+    const cancel = () => cancelPendingCachedScrollRestore();
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target === container && event.offsetX >= container.clientWidth) {
+        cancelPendingCachedScrollRestore();
+      }
+    };
+    container.addEventListener('wheel', cancel, { passive: true });
+    container.addEventListener('touchstart', cancel, { passive: true });
+    container.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      container.removeEventListener('wheel', cancel);
+      container.removeEventListener('touchstart', cancel);
+      container.removeEventListener('pointerdown', onPointerDown);
+    };
+  });
   // A cache write must record a real, user-held reading position: never
   // while this instance's own cached restore is still pending (until it is
   // consumed the current scrollTop is not user-chosen), and — away from the
@@ -2353,6 +2389,21 @@
     if (!scrollContainer) return false;
     if (cachedScrollRestoreTop !== null && !hasConsumedCachedScrollRestore) return false;
     if (!isFollowing && scrollContainer.scrollHeight <= scrollContainer.clientHeight) return false;
+    // Stop-looking boundary (workspace switch / tab close): the boundary
+    // saga clears the cache and ends this agent's divider session in the
+    // same dispatch tick, BEFORE Svelte's teardown flush destroys this
+    // panel. When the session this instance latched has ended, this is a
+    // boundary teardown — not a column-windowing remount — and recording
+    // would repopulate the entry the boundary just cleared, so the next
+    // entry would restore a stale position instead of following the entry
+    // policy (bottom / divider).
+    if (
+      agentId &&
+      latchedDividerSessionAgentId === agentId &&
+      selectDividerSession.select(appStore.state, agentId) === null
+    ) {
+      return false;
+    }
     return true;
   }
   // Get the auggie session ID from the most recent assistant message's metadata
@@ -3156,8 +3207,9 @@
       scheduleDeepOpenRelease();
       return;
     }
-    // Land the divider's top edge at ~20% of the viewport height from the
-    // top so most of the viewport shows unseen content.
+    // Land the divider's top edge at DIVIDER_ENTRY_VIEWPORT_FRACTION of the
+    // viewport height from the top so most of the viewport shows unseen
+    // content.
     const entryScrollTop = dividerEntryScrollTop(
       targetOffsetTop,
       scrollContainer.clientHeight,

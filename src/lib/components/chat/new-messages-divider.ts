@@ -69,9 +69,17 @@ export function dividerVisibleWhenScrolledToBottom(
 }
 
 /**
+ * Fraction of the viewport height (from the top) where the divider's top
+ * edge lands on entry — the whole placement contract of
+ * `dividerEntryScrollTop`.
+ */
+export const DIVIDER_ENTRY_VIEWPORT_FRACTION = 0.2;
+
+/**
  * Entry-scroll target when landing on the divider: position the container's
- * scrollTop so the divider's top edge sits at ~20% of the viewport height
- * from the viewport top, maximizing visible unseen content below it.
+ * scrollTop so the divider's top edge sits at
+ * `DIVIDER_ENTRY_VIEWPORT_FRACTION` of the viewport height from the viewport
+ * top, maximizing visible unseen content below it.
  *
  * `dividerOffsetTop` is the divider's top edge relative to the scrollable
  * content (container scrollTop + rect delta); `viewportHeight` /
@@ -84,7 +92,7 @@ export function dividerEntryScrollTop(
   scrollHeight: number,
 ): number {
   const maxScrollTop = Math.max(0, scrollHeight - viewportHeight);
-  const target = dividerOffsetTop - 0.2 * viewportHeight;
+  const target = dividerOffsetTop - DIVIDER_ENTRY_VIEWPORT_FRACTION * viewportHeight;
   return Math.min(Math.max(0, target), maxScrollTop);
 }
 
