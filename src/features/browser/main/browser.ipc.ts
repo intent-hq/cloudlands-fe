@@ -133,6 +133,14 @@ const UnregisterTabSchema = z.object({
   tabId: z.string(),
 });
 
+// Omitted width/height is an explicit clear: the reporting element stopped
+// displaying the tab (unmount/handoff), so its bounds no longer apply.
+const ReportTabBoundsSchema = z.object({
+  tabId: z.string(),
+  width: z.number().positive().optional(),
+  height: z.number().positive().optional(),
+});
+
 const ExecSchema = z.object({
   actions: z.array(z.record(z.unknown())),
   tabId: z.string().optional(),
@@ -339,6 +347,24 @@ export function registerBrowserHandlers(): void {
         return { success: true };
       },
       IPC_CHANNELS.BROWSER.UNREGISTER_TAB,
+    ),
+  );
+
+  // Visible webview element bounds, reported by the renderer so emulated
+  // (agent-owned) tabs scale-to-fit their panel (docs/protocol §5.9).
+  ipcMain.handle(
+    IPC_CHANNELS.BROWSER.REPORT_TAB_BOUNDS,
+    createSafeValidatedHandler(
+      ReportTabBoundsSchema,
+      async (_event, validated) => {
+        if (validated.width !== undefined && validated.height !== undefined) {
+          embeddedBrowserCdp.reportTabViewBounds(validated.tabId, validated.width, validated.height);
+        } else {
+          embeddedBrowserCdp.clearTabViewBounds(validated.tabId);
+        }
+        return { success: true };
+      },
+      IPC_CHANNELS.BROWSER.REPORT_TAB_BOUNDS,
     ),
   );
 

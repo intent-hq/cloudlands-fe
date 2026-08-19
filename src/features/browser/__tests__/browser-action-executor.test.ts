@@ -30,6 +30,7 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     getTabEmulatedSize: vi.fn().mockReturnValue(undefined),
     clearTabOwnership: vi.fn(),
     claimTab: vi.fn().mockReturnValue({ status: 'claimed', alreadyOwned: false }),
+    resizeTab: vi.fn().mockReturnValue(undefined),
     resolveTabOwner: vi.fn().mockResolvedValue(undefined),
     listAllTabs: vi.fn().mockResolvedValue({ tabs: [], stale: false }),
     screenshot: vi.fn().mockResolvedValue({ base64: '', width: 0, height: 0 }),
@@ -2021,6 +2022,7 @@ describe('browser-action-executor', () => {
       { action: 'snapshot', tabId: 'tab-x' },
       { action: 'startSession', tabId: 'tab-x' },
       { action: 'resetTab', tabId: 'tab-x' },
+      { action: 'resizeTab', tabId: 'tab-x', width: 1024 },
       { action: 'navigate', tabId: 'tab-x', url: 'https://example.test/' },
       { action: 'closeTab', tabId: 'tab-x' },
     ] as const;
@@ -2349,6 +2351,148 @@ describe('browser-action-executor', () => {
       expect(result.results[0]?.error).toContain('could not be refreshed');
       expect(embeddedBrowserCdp.claimTab).not.toHaveBeenCalled();
       expect(embeddedBrowserCdp.notifyTabOwnerChanged).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // resizeTab action (docs/protocol §5.9)
+  // =========================================================================
+  describe('resizeTab action (§5.9)', () => {
+    it('resizes an owned tab and returns the recorded size', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
+      vi.mocked(embeddedBrowserCdp.resizeTab).mockReturnValueOnce({ width: 390, height: 844 });
+
+      const result = await executeActions(
+        { actions: [{ action: 'resizeTab', tabId: 'tab-1', width: 390, height: 844 }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.resizeTab).toHaveBeenCalledWith('tab-1', 390, 844);
+      expect(result.results[0]?.result).toEqual({ tabId: 'tab-1', width: 390, height: 844 });
+    });
+
+    it('omitted height keeps the current emulated height', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
+      vi.mocked(embeddedBrowserCdp.resizeTab).mockReturnValueOnce({ width: 390, height: 768 });
+
+      const result = await executeActions(
+        { actions: [{ action: 'resizeTab', tabId: 'tab-1', width: 390 }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(embeddedBrowserCdp.resizeTab).toHaveBeenCalledWith('tab-1', 390, undefined);
+      expect(result.results[0]?.result).toEqual({ tabId: 'tab-1', width: 390, height: 768 });
+    });
+
+    it('a resize without width fails schema validation before any state change', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+
+      const result = await executeActions(
+        { actions: [{ action: 'resizeTab', tabId: 'tab-1' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(false);
+      expect(embeddedBrowserCdp.resizeTab).not.toHaveBeenCalled();
+    });
+
+    it.each([0, -100, 1.5, Number.NaN])(
+      'rejects a non-positive-integer width via schema validation: %j',
+      async (width) => {
+        const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+
+        const result = await executeActions(
+          { actions: [{ action: 'resizeTab', tabId: 'tab-1', width }] },
+          mockOpenTabFn,
+          'agent-1',
+          'ws-1',
+        );
+
+        expect(result.success).toBe(false);
+        expect(embeddedBrowserCdp.resizeTab).not.toHaveBeenCalled();
+      },
+    );
+
+    it('fails with a claimTab hint on an unowned tab reached by a user call', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resizeTab).mockReturnValueOnce(undefined);
+
+      // No agentId: user calls skip ownership enforcement, but an unowned
+      // tab has no emulated viewport to resize (§5.9: no size op for native
+      // tabs).
+      const result = await executeActions(
+        { actions: [{ action: 'resizeTab', tabId: 'tab-user', width: 800 }] },
+        mockOpenTabFn,
+        undefined,
+        'ws-1',
+      );
+
+      expect(result.results[0]?.success).toBe(false);
+      expect(result.results[0]?.error).toContain('claimTab');
+    });
+  });
+
+  // =========================================================================
+  // openTab viewport size (docs/protocol §5.9)
+  // =========================================================================
+  describe('openTab viewport size (§5.9)', () => {
+    it('records an explicit width/height on the new tab ownership', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      mockOpenTabFn.mockReturnValueOnce({ success: true, message: 'opened', tabId: 'tab-new' });
+
+      await executeActions(
+        {
+          actions: [
+            { action: 'openTab', url: 'http://localhost:3000/', width: 390, height: 844 },
+          ],
+        },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(embeddedBrowserCdp.setTabOwner).toHaveBeenCalledWith('tab-new', 'agent-1', null, {
+        width: 390,
+        height: 844,
+      });
+    });
+
+    it('defaults an omitted dimension per-axis (width→1280, height→800)', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      mockOpenTabFn.mockReturnValueOnce({ success: true, message: 'opened', tabId: 'tab-new' });
+
+      await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/', width: 390 }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(embeddedBrowserCdp.setTabOwner).toHaveBeenCalledWith('tab-new', 'agent-1', null, {
+        width: 390,
+        height: 800,
+      });
+    });
+
+    it('rejects a fractional width via schema validation before opening', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/', width: 100.5 }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(false);
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
     });
   });
 });

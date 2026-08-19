@@ -30,6 +30,7 @@
     reconcileEmbeddedBrowserUrlProp,
     recordEmbeddedBrowserNavigation,
   } from './embedded-browser-navigation-sync';
+  import { reportTabBounds } from './tab-bounds-action';
   import { isValidBrowserUrl } from './embedded-browser-url-validation';
   import Fa from 'svelte-fa';
   import {
@@ -927,6 +928,7 @@
         src={currentWebviewUrl}
         partition={BROWSER_PANEL_PARTITION}
         allowpopups
+        use:reportTabBounds={tabId}
       ></webview>
     {:else if url && !isRecreatingWebview}
       <!-- URL is invalid or blocked - show error with details -->
