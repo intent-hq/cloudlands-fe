@@ -17,6 +17,12 @@ import {
   getMainSystemLocales,
   setMainLanguagePreference,
 } from '../main-locale';
+// Evaluated after main-locale, mirroring the main-process module graph
+// (main/index.js → export.ipc → chat-html-exporter). Regression guard: this
+// chain once imported the renderer's `$lib/i18n/locale`, whose load-time
+// `overwriteGetLocale` clobbered main-locale's and pinned every main-process
+// `m.*()` call (the application menu) to English.
+import { exportChatToHtml } from '../../features/export/chat-html-exporter';
 
 describe('main-locale', () => {
   beforeEach(() => {
@@ -56,6 +62,14 @@ describe('main-locale', () => {
   it('routes main-process m.*() calls through the active locale without throwing', () => {
     setMainLanguagePreference('en', []);
     expect(m.quit_dialog_quit_button()).toBe('Quit');
+  });
+
+  it('keeps m.*() bound to main-locale with the chat export path loaded (menu localization regression)', () => {
+    // Force the exporter's module graph to fully evaluate.
+    expect(exportChatToHtml([], { title: 't' })).toContain('<!DOCTYPE html>');
+    setMainLanguagePreference('zh-CN', []);
+    expect(getMainActiveLocale()).toBe('zh-CN');
+    expect(m.menu_file()).toBe('文件');
   });
 
   it('returns an empty system-locale list under the mocked electron app', () => {

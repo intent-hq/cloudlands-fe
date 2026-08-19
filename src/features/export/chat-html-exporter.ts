@@ -1,10 +1,16 @@
 import type { AgentMessage } from '$shared/types';
-import { formatDateTime } from '$lib/i18n/format';
+import { createFormatters } from '$shared/i18n/formatters';
+import { getLocale } from '$shared/paraglide/runtime.js';
 import {
   renderContentBlock,
   escapeHtml,
 } from './content-renderer';
 import { getHtmlTemplate } from './html-template';
+
+// Bind to the live Paraglide locale so the exporter follows whichever process
+// hosts it (renderer locale service or main-locale) — importing the renderer's
+// `$lib/i18n/format` here would clobber the main process's locale override.
+const { formatDateTime } = createFormatters(() => getLocale());
 
 /**
  * Options for exporting chat to HTML
