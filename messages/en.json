@@ -41,6 +41,7 @@
   "menu_quit_app": "Quit {appName}",
   "menu_view": "View",
   "menu_reload": "Reload",
+  "menu_toggle_devtools": "Toggle Developer Tools",
   "menu_actual_size": "Actual Size",
   "menu_zoom_in": "Zoom In",
   "menu_zoom_out": "Zoom Out",

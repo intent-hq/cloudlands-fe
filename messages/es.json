@@ -41,6 +41,7 @@
   "menu_quit_app": "Salir de {appName}",
   "menu_view": "Ver",
   "menu_reload": "Recargar",
+  "menu_toggle_devtools": "Alternar herramientas de desarrollo",
   "menu_actual_size": "Tamaño real",
   "menu_zoom_in": "Acercar",
   "menu_zoom_out": "Alejar",
