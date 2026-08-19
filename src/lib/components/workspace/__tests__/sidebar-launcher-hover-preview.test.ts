@@ -46,6 +46,25 @@ describe('sidebar launcher hover previews', () => {
     });
   });
 
+  it('keeps the wire lastAgentResponse while a live tool call is in flight', () => {
+    // getAgentPeekData clears lastResponse in favor of the live tool overlay
+    // (chip-capable surfaces render the tool); this text-only hover card
+    // falls back to the wire lastAgentResponse instead of an empty row.
+    const agent = {
+      id: 'agent-1',
+      messages: [],
+      isStreaming: true,
+      lastToolUse: { name: 'read_file' },
+      lastUserMessage: 'Review this UI',
+      lastAgentResponse: 'Text emitted before the tool call',
+    } as AgentSession;
+
+    expect(getAgentLauncherPreview(agent)).toEqual({
+      lastUserMessage: 'Review this UI',
+      response: 'Text emitted before the tool call',
+    });
+  });
+
   it('creates a readable note preview from markdown content', () => {
     const note = { content: '# Plan\n\nReview **hover previews**.' } as Note;
     expect(getNoteLauncherPreview(note)).toBe('Plan\n\nReview hover previews.');

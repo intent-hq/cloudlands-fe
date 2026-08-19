@@ -162,7 +162,11 @@ export function getAgentLauncherPreview(agent: AgentSession): AgentLauncherPrevi
 
   return {
     lastUserMessage,
-    response: peek?.lastResponse?.trim() || '',
+    // getAgentPeekData clears lastResponse while a live tool call is in
+    // flight (the tool overlay wins on chip-capable surfaces); this hover
+    // card is text-only, so fall back to the wire lastAgentResponse (still
+    // server-cleaned) instead of rendering an empty response row.
+    response: peek?.lastResponse?.trim() || agent.lastAgentResponse?.trim() || '',
   };
 }
 
