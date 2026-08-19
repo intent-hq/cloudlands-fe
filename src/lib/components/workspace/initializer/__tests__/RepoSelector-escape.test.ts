@@ -274,6 +274,57 @@ describe('RepoSelector Recent list owner rendering', () => {
   });
 });
 
+describe('RepoSelector Recent list path tooltip', () => {
+  afterEach(() => {
+    mockRepos.recentRepos = [];
+    cleanup();
+  });
+
+  it('wraps a local row in the shared tooltip trigger showing its full path', async () => {
+    mockRepos.recentRepos = [{ path: '/Users/dev/app', type: 'local', name: 'app', owner: 'acme' }];
+    const { container } = render(RepoSelector, { props: {} });
+    await openDropdown(container);
+    await waitFor(() => {
+      expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy();
+    });
+
+    await fireEvent.click(screen.getByText('Copy local repo'));
+
+    const row = (await screen.findByText('app')).closest('button')!;
+    // The tooltip trigger wrapper forwards its marker onto the row button.
+    await waitFor(() => {
+      expect(row.hasAttribute('data-tooltip-trigger')).toBe(true);
+    });
+
+    await fireEvent.pointerMove(row, { pointerType: 'mouse' });
+
+    const tooltip = await screen.findByRole('tooltip', { hidden: true });
+    expect(tooltip.textContent).toContain('/Users/dev/app');
+  });
+
+  it('renders a GitHub row unwrapped with no tooltip trigger', async () => {
+    mockRepos.recentRepos = [
+      {
+        path: 'acme/app',
+        type: 'github',
+        githubUrl: 'https://github.com/acme/app',
+        name: 'app',
+        owner: 'acme',
+      },
+    ];
+    const { container } = render(RepoSelector, { props: {} });
+    await openDropdown(container);
+
+    // GitHub repos show on the default "Pick a repo" tab
+    const row = (await screen.findByText('app')).closest('button')!;
+    expect(row.hasAttribute('data-tooltip-trigger')).toBe(false);
+    expect(row.closest('[data-tooltip-trigger]')).toBeNull();
+
+    await fireEvent.pointerMove(row, { pointerType: 'mouse' });
+    expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
+  });
+});
+
 describe('RepoSelector mode tabs', () => {
   afterEach(() => {
     cleanup();
