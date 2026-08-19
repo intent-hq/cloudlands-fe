@@ -16,7 +16,7 @@ import {
   TASK_READ_TOOLS,
   DELEGATION_TOOLS,
 } from './constants';
-import { parseSuggestedPrompts } from '$lib/utils/messageParser';
+import { getLastMeaningfulLine } from '$lib/utils/text-utils';
 
 // ============================================================================
 // Status Mapping
@@ -91,8 +91,6 @@ function isExplicitlyIdleStatus(status: AgentSession['status'] | string | undefi
 // ============================================================================
 
 export interface StreamingState {
-  /** Truncated streaming text preview */
-  streamingText?: string;
   /** Name of the currently active tool call */
   activeToolName?: string;
   /** Input parameters of the currently active tool call */
@@ -102,86 +100,36 @@ export interface StreamingState {
 }
 
 /**
- * Get the last meaningful line from text, skipping empty lines
- */
-function getLastMeaningfulLine(text: string): string {
-  if (!text) return '';
-  // Strip group tags so they don't leak into previews
-  const cleaned = text.replace(/<group:[^>]+>|<\/group(?::[^>]*)?>/g, '').trim();
-  if (!cleaned) return '';
-  const lines = cleaned.split('\n');
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
-    if (line && line.length > 3) {
-      // Truncate long lines
-      return line.length > 80 ? line.slice(0, 80) + '...' : line;
-    }
-  }
-  return '';
-}
-
-/**
  * Extract streaming state from an agent session.
- * Looks at the last message to determine current activity.
+ *
+ * Preview fields come verbatim from the wire AgentLite fields (PROTOCOL §5.5):
+ * `lastAgentResponse` is already server-cleaned by `clean_response_text`
+ * (strips `<agent_digest>`, suggested-prompts blocks, group tags) and is
+ * push-applied ~1s during a live turn by `agent:stream:activity`; the active
+ * tool preview is the wire `lastToolUse` overlay while streaming (cleared at
+ * turn boundaries). The transcript is never re-crawled to derive previews
+ * (monorepo#2852).
  */
 export function getStreamingState(session: AgentSession | undefined): StreamingState {
   const result: StreamingState = {};
 
-  if (!session || !session.messages || session.messages.length === 0) {
-    return result;
-  }
+  if (!session) return result;
 
-  // Get the last assistant message
-  const lastMessage = [...session.messages].reverse().find((m) => m.role === 'assistant');
-  if (!lastMessage) return result;
-
-  // Look through content blocks for text content (for lastResponse)
-  const contentBlocks = lastMessage.contentBlocks || [];
-
-  // Always try to get the last response text
-  for (const block of contentBlocks) {
-    if (block.type === 'text' && block.text) {
-      const text = block.text.trim();
-      if (text) {
-        // Strip suggested prompts before extracting the last meaningful line
-        // Suggested prompts are HTML comments like: <!-- suggested-prompts ... -->
-        const { cleanedContent } = parseSuggestedPrompts(text);
-        result.lastResponse = getLastMeaningfulLine(cleanedContent);
-      }
-    }
+  if (session.lastAgentResponse) {
+    const line = getLastMeaningfulLine(session.lastAgentResponse);
+    if (line) result.lastResponse = line;
   }
 
   if (isExplicitlyIdleStatus(session.status) && !hasActiveResponseFlags(session)) {
     return result;
   }
 
-  // Check if the message is still streaming for active state.
-  // Use explicit === false check: undefined means the field was never set (completed message),
-  // only false means actively streaming and not yet complete.
-  const isStreaming = lastMessage.isStreaming || lastMessage.streamingComplete === false;
-  if (!isStreaming) return result;
-
-  for (const block of contentBlocks) {
-    // Check for active tool use (no result yet)
-    if (block.type === 'tool_use' && block.name) {
-      // Check if there's a corresponding tool_result
-      const hasResult = contentBlocks.some(
-        (b) => b.type === 'tool_result' && b.tool_use_id === block.id,
-      );
-      if (!hasResult) {
-        result.activeToolName = block.name;
-        result.activeToolInput = (block.input as Record<string, unknown>) || {};
-      }
-    }
-
-    // Get streaming text from text blocks
-    if (block.type === 'text' && block.text) {
-      const text = block.text.trim();
-      if (text) {
-        // Truncate to ~50 chars for preview
-        result.streamingText = text.length > 50 ? text.slice(-50) + '...' : text;
-      }
-    }
+  // Live tool overlay: only trust `lastToolUse` as the ACTIVE tool while the
+  // session is streaming — an idle leftover is the persisted preview, not an
+  // in-flight call (same gating as getAgentPeekData).
+  if (session.isStreaming && session.lastToolUse?.name) {
+    result.activeToolName = session.lastToolUse.name;
+    result.activeToolInput = (session.lastToolUse.input as Record<string, unknown>) || {};
   }
 
   return result;

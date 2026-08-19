@@ -34,8 +34,6 @@ export interface AgentNode extends BaseNode {
   createdAt: string;
   /** IDs of agents this agent is waiting for (subscriptions) */
   waitingForAgentIds?: string[];
-  /** Current streaming text preview (truncated) */
-  streamingText?: string;
   /** Name of the currently active tool call */
   activeToolName?: string;
   /** Input parameters of the currently active tool call */
