@@ -50,6 +50,7 @@
     agentSessionRetryLastMessageRequested,
     agentSessionRetryWithModelRequested,
     agentSessionStopChatRequested,
+    clearHistorySegment,
     updateSession as updateAgentSessionFields,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
@@ -1678,6 +1679,71 @@
     return null;
   }
 
+  /**
+   * Viewport ∩ below-spacer test (the downward DEAD ZONE): a settled
+   * position inside the below spacer that classified 'serial' has no other
+   * driver — too far below the gap sentinel's rootMargin, too near the
+   * hole's top edge for a seek. When it overlaps, a bounded forward gap
+   * refill fires instead: each page appends at the hole's top and shrinks
+   * the hole, so the chain converges onto the parked viewport (and never
+   * re-seeks on estimate error).
+   */
+  function viewportOverlapsBelowSpacer(): boolean {
+    const container = scrollContainer;
+    if (!container || !$historySegmentMeta$.gapToTail) return false;
+    if (virtualSpacerBelowHeight <= 0 || !belowSpacerEl) return false;
+    const top =
+      belowSpacerEl.getBoundingClientRect().top -
+      container.getBoundingClientRect().top +
+      container.scrollTop;
+    return (
+      container.scrollTop < top + virtualSpacerBelowHeight &&
+      container.scrollTop + container.clientHeight > top
+    );
+  }
+
+  /**
+   * True when the viewport sits ENTIRELY below the open history→tail hole
+   * (gap affordance + below spacer) — the user is back on the live tail.
+   */
+  function viewportFullyBelowOpenHole(): boolean {
+    const container = scrollContainer;
+    if (!container || !$historySegmentMeta$.gapToTail) return false;
+    if ($agentHistoryMessages$.length === 0) return false;
+    const edge = belowSpacerEl ?? historyGapSentinel;
+    if (!edge) return false;
+    const bottomDoc =
+      edge.getBoundingClientRect().bottom -
+      container.getBoundingClientRect().top +
+      container.scrollTop;
+    return container.scrollTop >= bottomDoc;
+  }
+
+  /**
+   * Return-to-tail collapse: a settled viewport fully below the open hole
+   * is reading the live tail, so the detached segment above it (and its
+   * Load-more affordance + below spacer) is a phantom gap that would
+   * persist forever — no downward driver can close a hole the user already
+   * jumped over. Drop the segment wholesale (`clearHistorySegment`; the
+   * saga watcher resets both walk cursors) and zero both spacers in the
+   * same flush; the prepend-anchoring effect captures a visible tail row
+   * before the DOM updates and restores its viewport offset after (native
+   * clamp when the capture was skipped near the bottom), so the removal
+   * never moves the reading position. An upward scroll afterwards re-arms
+   * the serial walk from scratch (fresh anchored seek at the tail's oldest
+   * row). Returns true when the segment was dropped.
+   */
+  function maybeCollapseHistorySegmentAtTail(): boolean {
+    if (!workspace?.id || !agentId) return false;
+    if ($fetchingOlderHistory$ || $fetchingGapFill$) return false;
+    if ($fetchingHistorySeek$ || seekLandingPending) return false;
+    if (!viewportFullyBelowOpenHole()) return false;
+    virtualSpacerHeight = 0;
+    virtualSpacerBelowHeight = 0;
+    appStore.dispatch(clearHistorySegment(agentId));
+    return true;
+  }
+
   function cancelSeekDebounce() {
     if (seekDebounceTimer !== null) {
       clearTimeout(seekDebounceTimer);
@@ -1697,6 +1763,15 @@
       if ($fetchingOlderHistory$ || $fetchingGapFill$) return;
       const target = seekTargetOrdinalAt(scrollContainer.scrollTop);
       if (target === null) {
+        // Settled without a far target: the below drivers decide. Fully
+        // below the hole collapses the segment (return-to-tail); a
+        // dead-zone overlap with the below spacer chains a bounded forward
+        // gap refill; otherwise the near-top serial trigger applies.
+        if (maybeCollapseHistorySegmentAtTail()) return;
+        if (viewportOverlapsBelowSpacer()) {
+          requestHistoryGapFill();
+          return;
+        }
         maybeRequestOlderHistory();
         return;
       }
@@ -1996,6 +2071,17 @@
         armSeekDebounce();
         return;
       }
+      // Downward dead zone / return-to-tail: a position overlapping the
+      // below spacer that classified 'serial' has NO edge-triggered driver
+      // (below the gap sentinel's rootMargin, too near the hole's edge for
+      // a seek) — and a position fully below the open hole is back on the
+      // tail. Both arm the same settle debounce; its fire re-classifies
+      // from the settled position and picks the collapse or bounded
+      // gap-refill driver.
+      if (viewportOverlapsBelowSpacer() || viewportFullyBelowOpenHole()) {
+        armSeekDebounce();
+        return;
+      }
       cancelSeekDebounce();
       maybeRequestOlderHistory();
     };
@@ -2034,6 +2120,31 @@
     if ($fetchingGapFill$ || !$historySegmentMeta$.gapToTail) return;
     appStore.dispatch(historyGapFillRequested(workspace.id, agentId));
   }
+
+  // Gap-refill chaining (mirror of the older-history settle chain above,
+  // for the forward walk): a refill page emits no scroll event, so on the
+  // fetching flag's true→false transition re-evaluate the below drivers
+  // after the anchor restore has landed. Collapse when the viewport is now
+  // fully below the hole; another bounded refill page while it still
+  // overlaps the below spacer. Stop conditions are state-derived — the gap
+  // closing (gapToTail false) or the overlap clearing ends the chain — so
+  // the loop is bounded by the hole's row count.
+  let wasFetchingGapFill = false;
+  $effect(() => {
+    const fetching = $fetchingGapFill$;
+    const settled = wasFetchingGapFill && !fetching;
+    wasFetchingGapFill = fetching;
+    if (!settled) return;
+    tick().then(() => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (isComponentDestroyed || !scrollContainer) return;
+          if (maybeCollapseHistorySegmentAtTail()) return;
+          if (viewportOverlapsBelowSpacer()) requestHistoryGapFill();
+        });
+      });
+    });
+  });
 
   // Gap sentinel: scrolling near/into the history→tail hole requests a
   // refill page (the affordance also offers a click-to-load fallback).

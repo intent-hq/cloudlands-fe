@@ -6,6 +6,7 @@ import {
   initialState,
   appendHistoryMessages,
   bulkUpsertSessions,
+  clearHistorySegment,
   prependHistoryMessages,
   seedHistoryAround,
   setHistoryOldestReached,
@@ -465,6 +466,38 @@ class WalkSim {
     const sweepBottom = Math.max(fromScrollTop, toScrollTop) + VIEWPORT_PX + 160;
     return sentinelDoc >= sweepTop && sentinelDoc <= sweepBottom;
   }
+
+  /** Mirrors ChatPanel `viewportOverlapsBelowSpacer` (the downward dead zone). */
+  viewportOverlapsBelowSpacer(): boolean {
+    if (!this.meta.gapToTail || this.below <= 0) return false;
+    const top = this.belowSpacerTopDoc();
+    return this.scrollTop < top + this.below && this.scrollTop + VIEWPORT_PX > top;
+  }
+
+  /** Mirrors ChatPanel `viewportFullyBelowOpenHole` (back on the live tail). */
+  viewportFullyBelowOpenHole(): boolean {
+    if (!this.meta.gapToTail || this.history.length === 0) return false;
+    return this.scrollTop >= this.belowSpacerTopDoc() + this.below;
+  }
+
+  /**
+   * Mirrors ChatPanel `maybeCollapseHistorySegmentAtTail` + the prepend
+   * anchoring effect: zero both spacers, drop the segment through the real
+   * reducer (the saga's clearHistorySegment watcher resets the walk
+   * continuation — mirrored here by re-pointing fetchCursor at the tail's
+   * oldest row), anchor-restore the reading position, native clamp.
+   */
+  collapseSegmentAtTail(): void {
+    const anchor = this.captureAnchor();
+    this.above = 0;
+    this.below = 0;
+    this.state = agentSessionReducer(this.state, clearHistorySegment(AGENT_ID));
+    this.fetchCursor =
+      this.tail.length > 0 ? ordinalOf(this.tail[0]) : this.conversation.length;
+    this.gapFillCursor = null;
+    this.restoreAnchor(anchor);
+    this.scrollTop = Math.min(this.scrollTop, Math.max(0, this.scrollHeight() - VIEWPORT_PX));
+  }
 }
 
 describe('full-walk scrollback harness', () => {
@@ -775,15 +808,25 @@ describe('full-walk scrollback harness', () => {
 
   /**
    * One settle round of the panel's downward drivers at a STATIC viewport
-   * (the user released the thumb): seek debounce fire (far positions),
-   * gap sentinel intersection (static check, rootMargin 160px), top
-   * trigger. Returns what fired, or 'none' when the transcript is inert.
+   * (the user released the thumb), in the seek-debounce fire order: seek
+   * (far positions), return-to-tail collapse (fully below the open hole),
+   * dead-zone gap refill (viewport ∩ below spacer), gap sentinel
+   * intersection (static check, rootMargin 160px), top trigger. Returns
+   * what fired, or 'none' when the transcript is inert.
    */
-  function settleRound(sim: WalkSim): 'seek' | 'gap-fill' | 'older' | 'none' {
+  function settleRound(sim: WalkSim): 'seek' | 'collapse' | 'gap-fill' | 'older' | 'none' {
     const target = sim.seekTargetAt(sim.scrollTop);
     if (target !== null) {
       sim.performSeek(target);
       return 'seek';
+    }
+    if (sim.viewportFullyBelowOpenHole()) {
+      sim.collapseSegmentAtTail();
+      return 'collapse';
+    }
+    if (sim.viewportOverlapsBelowSpacer()) {
+      sim.fetchGapFillPage();
+      return 'gap-fill';
     }
     if (
       sim.meta.gapToTail &&
@@ -971,5 +1014,41 @@ describe('full-walk scrollback harness', () => {
       false,
     );
     expect(sim.below, `below spacer stuck > 0 at the settled bottom — ${summary}`).toBe(0);
+  });
+
+  it('re-arms on demand: after the return-to-tail collapse an upward scroll restarts the serial walk', () => {
+    const conversation = buildConversation();
+    const sim = new WalkSim(conversation, 20);
+    walkToTop(sim);
+
+    // Flick straight to the tail and settle — the collapse drops the segment.
+    sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
+    let rounds = 0;
+    while (rounds < 20 && settleRound(sim) !== 'none') rounds += 1;
+    expect(sim.meta.gapToTail, 'collapse must close the gap').toBe(false);
+    expect(sim.meta.historyCount, 'collapse must drop the segment').toBe(0);
+    expect(sim.meta.oldestReached, 'collapse must reset the exhaustion latch').toBe(false);
+    expect(sim.above).toBe(0);
+    expect(sim.below).toBe(0);
+    expect(sim.spacerOverlapPx(), 'no blank viewport after the collapse').toBe(0);
+    sim.reconcile();
+
+    // Scroll back up: the serial walk must restart from the tail's oldest
+    // row (fresh anchored fetch) and page cleanly to the top again.
+    let steps = 0;
+    let pagesLoaded = 0;
+    while (!sim.meta.oldestReached && steps < 2000) {
+      steps += 1;
+      sim.scrollTop = Math.max(0, sim.scrollTop - VIEWPORT_PX);
+      if (sim.triggerFires()) {
+        const before = sim.meta.historyCount;
+        sim.fetchOlderPage();
+        if (sim.meta.historyCount !== before || sim.fetchCursor === 0) pagesLoaded += 1;
+      }
+    }
+    expect(pagesLoaded, 're-armed walk must actually load pages').toBeGreaterThan(0);
+    expect(sim.meta.oldestReached, 're-armed walk must reach the top again').toBe(true);
+    sim.reconcile();
+    expect(sim.above).toBe(0);
   });
 });
