@@ -34,8 +34,8 @@
 // a diff mixing intentd.version with any other file matches neither):
 //   1. The diff is exactly one file, intentd.version, a pure modification.
 //   2. Base and head each contain exactly one non-comment, non-blank pin
-//      line; both parse as a plausible bare version (no leading 'v'), and
-//      old pin A != new pin B.
+//      line; both parse as a bare X.Y.Z(-prerelease) version (no leading
+//      'v'; same grammar as parseVersionPin), and old pin A != new pin B.
 //   3. The head file is byte-identical to the base file after replacing the
 //      new pin line B with the old pin line A — i.e. nothing but the pin
 //      value changed (a comment edit or added line breaks the match).
@@ -55,9 +55,10 @@ import { fileURLToPath } from 'node:url';
 const ALLOWED_FILES = new Set(['CHANGELOG.md', 'package.json', '.release-please-manifest.json']);
 const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z.+-]*$/;
 const PIN_FILE = 'intentd.version';
-// Same strictness as VERSION_RE, but pins are bare versions (no leading 'v'),
-// so require a leading digit.
-const PIN_VERSION_RE = /^[0-9][0-9A-Za-z.+-]*$/;
+// Pins are bare X.Y.Z(-prerelease) versions (no leading 'v'); same grammar as
+// the canonical pin parser (parseVersionPin in scripts/fetch-sidecar-lib.mjs
+// and src/features/backend/main/intentd-version-pin.ts).
+const PIN_VERSION_RE = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
 
 // Pin lines: everything but blank and '#'-comment lines (mirrors
 // auto-pin-intentd.yml's `grep -Ev '^[[:space:]]*(#|$)'`).

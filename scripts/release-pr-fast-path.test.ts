@@ -222,6 +222,26 @@ describe('release-pr-fast-path', () => {
     });
   });
 
+  it.each(['1', '1.2', '1.2.3+build'])(
+    'rejects a pin outside the parseVersionPin grammar (%s)',
+    (pin) => {
+      const dir = initRepo();
+      writeFileSync(join(dir, 'intentd.version'), basePinFile(pin));
+      commit(dir);
+      expect(evaluate(dir)).toEqual({
+        fastPath: false,
+        reason: `unparseable head pin '${pin}'`,
+      });
+    },
+  );
+
+  it('matches a pin bump to a prerelease version', () => {
+    const dir = initRepo();
+    writeFileSync(join(dir, 'intentd.version'), basePinFile(`${PIN_B}-beta.1`));
+    commit(dir);
+    expect(evaluate(dir)).toEqual({ fastPath: true });
+  });
+
   it('rejects multiple pin lines', () => {
     const dir = initRepo();
     writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_A) + `${PIN_B}\n`);
