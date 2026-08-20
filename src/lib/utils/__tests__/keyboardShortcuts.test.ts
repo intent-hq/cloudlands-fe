@@ -48,6 +48,20 @@ function createSpacesManager(action: () => void, modifier: 'meta' | 'ctrl') {
   return manager;
 }
 
+function createGlobalCloseManager(action: () => void, modifier: 'meta' | 'ctrl') {
+  const manager = new KeyboardShortcutManager();
+  managers.push(manager);
+  manager.register({
+    key: 'w',
+    [modifier]: true,
+    description: 'Close Panel Tab',
+    action,
+    global: true,
+  });
+  manager.attach();
+  return manager;
+}
+
 afterEach(() => {
   for (const manager of managers.splice(0)) manager.destroy();
   document.body.replaceChildren();
@@ -179,4 +193,47 @@ describe('spaces shortcut handling', () => {
       expect(action).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('global panel-tab close shortcut handling', () => {
+  it.each([
+    ['Command+W', 'input', 'meta', () => document.createElement('input')],
+    [
+      'Command+W',
+      'editor',
+      'meta',
+      () => {
+        const editor = document.createElement('div');
+        editor.setAttribute('contenteditable', 'true');
+        return editor;
+      },
+    ],
+    ['Control+W', 'input', 'ctrl', () => document.createElement('input')],
+    [
+      'Control+W',
+      'editor',
+      'ctrl',
+      () => {
+        const editor = document.createElement('div');
+        editor.setAttribute('contenteditable', 'true');
+        return editor;
+      },
+    ],
+  ] as const)('handles %s from %s focus', (_shortcut, _context, modifier, createTarget) => {
+    const action = vi.fn();
+    createGlobalCloseManager(action, modifier);
+    const target = createTarget();
+    document.body.append(target);
+
+    const event = dispatchShortcut(target, {
+      key: 'w',
+      code: 'KeyW',
+      metaKey: modifier === 'meta',
+      ctrlKey: modifier === 'ctrl',
+      shiftKey: false,
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(action).toHaveBeenCalledOnce();
+  });
 });

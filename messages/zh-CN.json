@@ -6051,7 +6051,7 @@
   "workspace_import_result_failed_title": "导入失败",
   "workspace_import_result_failed_message": "导入未完成：{error}",
   "workspace_import_openWorkspace_label": "打开空间",
-  "workspace_shortcuts_closeSpaceTab_description": "关闭空间标签页",
+  "workspace_shortcuts_closePanelTab_description": "关闭面板标签页",
   "workspace_shortcuts_newPanel_description": "新建面板",
   "workspace_shortcuts_newSpace_description": "新建空间",
   "workspace_shortcuts_nextSpaceTab_description": "下一个空间标签页",

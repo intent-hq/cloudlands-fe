@@ -335,12 +335,19 @@ export const openTabInNewRootColumn = createAction(
  */
 export const closeTab = createAction(
   'panelLayout/closeTab',
-  (wsId: string, tabId: string, panelId?: string, timestamp?: number, destroy?: boolean) => ({
+  (
+    wsId: string,
+    tabId: string,
+    panelId?: string,
+    timestamp?: number,
+    options?: { preservePanel?: boolean; destroy?: boolean } | boolean,
+  ) => ({
     wsId,
     tabId,
     panelId,
     timestamp: timestamp ?? Date.now(),
-    destroy: destroy === true,
+    destroy: typeof options === 'boolean' ? options : options?.destroy === true,
+    preservePanel: typeof options === 'object' ? (options.preservePanel ?? false) : false,
   }),
 );
 
@@ -350,6 +357,16 @@ export const closeActiveTab = createAction(
     wsId,
     panelId,
     timestamp: timestamp ?? Date.now(),
+  }),
+);
+
+/** Close focused content, then remove its structural column only when already empty. */
+export const closeFocusedPanelTab = createAction(
+  'panelLayout/closeFocusedPanelTab',
+  (wsId: string, timestamp?: number, availableCanvasWidth?: number) => ({
+    wsId,
+    timestamp: timestamp ?? Date.now(),
+    availableCanvasWidth,
   }),
 );
 
@@ -895,6 +912,65 @@ function createFixedColumnRoot(panelIds: string[]): PanelLayoutNode {
     direction: 'horizontal',
     children: panelIds.map((panelId) => ({ type: 'panel' as const, panelId })),
     sizes: panelIds.map(() => 100 / panelIds.length),
+  };
+}
+
+function getEqualFixedColumnCanvasWidth(
+  columnCount: number,
+  availableCanvasWidth: number | undefined,
+  fallbackCanvasWidth: number | null,
+): number | null {
+  const availableWidth =
+    typeof availableCanvasWidth === 'number' &&
+    Number.isFinite(availableCanvasWidth) &&
+    availableCanvasWidth > 0
+      ? availableCanvasWidth
+      : fallbackCanvasWidth;
+  if (availableWidth === null || !Number.isFinite(availableWidth) || availableWidth <= 0) {
+    return null;
+  }
+  return getAutomaticPanelCanvasWidth(columnCount, 'viewport', availableWidth);
+}
+
+function removeFixedColumnFromHistorySnapshot(
+  snapshot: LayoutSnapshot,
+  panelId: string,
+  availableCanvasWidth: number | undefined,
+): LayoutSnapshot {
+  if (!snapshot.panels[panelId]) return snapshot;
+  const originalOrder = getPanelOrder(snapshot.root).filter((id) => snapshot.panels[id]);
+  const removedIndex = originalOrder.indexOf(panelId);
+  const panelIds = originalOrder.filter((id) => id !== panelId);
+  if (removedIndex < 0 || panelIds.length === 0) return snapshot;
+
+  const neighborId = panelIds[Math.min(removedIndex, panelIds.length - 1)];
+  const { [panelId]: removedPanel, ...panels } = snapshot.panels;
+  const neighbor = panels[neighborId];
+  if (neighbor && removedPanel.tabs.length > 0) {
+    const seenTabIds = new Set(neighbor.tabs.map((tab) => tab.id));
+    const restoredTabs = removedPanel.tabs.filter((tab) => !seenTabIds.has(tab.id));
+    const tabs = [...neighbor.tabs, ...restoredTabs];
+    panels[neighborId] = {
+      ...neighbor,
+      tabs,
+      activeTabId: neighbor.activeTabId ?? removedPanel.activeTabId ?? tabs[0]?.id ?? null,
+      pristine: tabs.length === 0 ? neighbor.pristine : false,
+    };
+  }
+
+  const canvasWidth = getEqualFixedColumnCanvasWidth(
+    panelIds.length,
+    availableCanvasWidth,
+    snapshot.canvasWidth ?? null,
+  );
+  return {
+    ...snapshot,
+    root: createFixedColumnRoot(panelIds),
+    panels,
+    focusedPanelId: snapshot.focusedPanelId === panelId ? neighborId : snapshot.focusedPanelId,
+    columnCount: isPanelColumnCount(panelIds.length) ? panelIds.length : snapshot.columnCount,
+    canvasWidth,
+    canvasWidthSource: canvasWidth === null ? null : 'explicit',
   };
 }
 
@@ -1664,7 +1740,7 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
 });
 // --- Close Tab ---
 panelLayoutReducer.with(closeTab, (state, { payload }) => {
-  const { wsId, tabId, panelId, timestamp, destroy } = payload;
+  const { wsId, tabId, panelId, timestamp, destroy, preservePanel } = payload;
   let ws = getWorkspaceState(state, wsId);
 
   // Find the panel containing this tab
@@ -1751,7 +1827,7 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
   }
 
   // Close empty panel if there are others
-  if (newTabs.length === 0 && Object.keys(ws.panels).length > 1) {
+  if (!preservePanel && newTabs.length === 0 && Object.keys(ws.panels).length > 1) {
     ws = closePanelHelper(ws, targetPanelId);
   }
 
@@ -1772,6 +1848,63 @@ panelLayoutReducer.with(closeActiveTab, (state, { payload }) => {
 
   // Delegate to closeTab reducer by dispatching inline
   return selfDispatch(state, closeTab(wsId, panel.activeTabId, targetPanelId, timestamp));
+});
+// --- Close Focused Panel Content Or Its Already-Empty Column ---
+panelLayoutReducer.with(closeFocusedPanelTab, (state, { payload }) => {
+  const { wsId, timestamp, availableCanvasWidth } = payload;
+  const ws = getWorkspaceState(state, wsId);
+  const panelId = ws.focusedPanelId;
+  if (!panelId || !ws.panels[panelId]) return state;
+
+  const panel = ws.panels[panelId];
+  if (!panel.activeTabId) {
+    if (panel.tabs.length > 0 || ws.columnCount <= 1) return state;
+    const panelIds = getPanelOrder(ws.root).filter((id) => ws.panels[id]);
+    if (
+      panelIds.length !== ws.columnCount ||
+      !isFixedColumnRoot(ws.root, panelIds) ||
+      panelIds.length <= 1
+    ) {
+      return state;
+    }
+
+    const removedIndex = panelIds.indexOf(panelId);
+    if (removedIndex < 0) return state;
+    const remainingPanelIds = panelIds.filter((id) => id !== panelId);
+    const focusedPanelId = remainingPanelIds[Math.min(removedIndex, remainingPanelIds.length - 1)];
+    const columnCount = (ws.columnCount - 1) as PanelColumnCount;
+    const canvasWidth = getEqualFixedColumnCanvasWidth(
+      columnCount,
+      availableCanvasWidth,
+      ws.canvasWidth,
+    );
+    const removed = closePanelHelper(ws, panelId);
+    if (removed === ws) return state;
+
+    return setWorkspaceState(state, wsId, {
+      ...removed,
+      root: createFixedColumnRoot(remainingPanelIds),
+      focusedPanelId,
+      columnCount,
+      columnCountInitialized: true,
+      canvasWidth,
+      canvasWidthSource: canvasWidth === null ? null : 'explicit',
+      recentlyClosed: removed.recentlyClosed.map((entry) =>
+        entry.panelId === panelId ? { ...entry, panelId: focusedPanelId } : entry,
+      ),
+      layoutHistory: removed.layoutHistory.map((snapshot) =>
+        removeFixedColumnFromHistorySnapshot(snapshot, panelId, availableCanvasWidth),
+      ),
+    });
+  }
+
+  const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId);
+  if (!activeTab || activeTab.closable === false) return state;
+
+  return selfDispatch(
+    state,
+    closeTab(wsId, activeTab.id, panelId, timestamp, { preservePanel: true }),
+  );
 });
 // --- Close Tabs By Type ---
 panelLayoutReducer.with(closeTabsByType, (state, { payload }) => {

@@ -6051,7 +6051,7 @@
   "workspace_import_result_failed_title": "Échec de l'importation",
   "workspace_import_result_failed_message": "L'importation ne s'est pas terminée : {error}",
   "workspace_import_openWorkspace_label": "Ouvrir l'espace",
-  "workspace_shortcuts_closeSpaceTab_description": "Fermer l'onglet d'espace",
+  "workspace_shortcuts_closePanelTab_description": "Fermer l'onglet du panneau",
   "workspace_shortcuts_newPanel_description": "Nouveau panneau",
   "workspace_shortcuts_newSpace_description": "Nouvel espace",
   "workspace_shortcuts_nextSpaceTab_description": "Onglet d'espace suivant",

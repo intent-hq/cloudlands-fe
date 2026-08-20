@@ -581,6 +581,7 @@
   const keyboardShortcuts = createPanelKeyboardShortcuts(
     () => layoutManager,
     (direction) => focusCycledPanel(direction),
+    () => panelViewportWidth,
   );
 
   // Register keyboard shortcuts in cache so they can be accessed from outside

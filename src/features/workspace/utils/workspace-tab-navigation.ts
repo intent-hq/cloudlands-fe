@@ -13,10 +13,13 @@ import {
   selectWorkspaceViewMode,
 } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import {
+  closeFocusedPanelTab,
   openBlankWorkingPanel,
   reopenClosedTab,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
+  selectPanelColumnCount,
+  selectFocusedPanel,
   selectFocusedPanelId,
   selectRecentlyClosed,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -27,6 +30,7 @@ import type { KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
 import { m } from '$shared/paraglide/messages.js';
 import { SHORTCUTS, getShortcutChord } from '$lib/utils/shortcuts';
 import { isWorkspaceViewModeRoute } from '$features/workspace/workspace-view-mode-action';
+import { getPanelKeyboardShortcuts } from '$features/layout/panel-keyboard-shortcuts.svelte';
 
 export type WorkspaceTabDirection = 'next' | 'previous';
 
@@ -61,6 +65,7 @@ interface WorkspaceTabNavigationStore {
       | ReturnType<typeof switchToWorkspaceTabByIndex>
       | ReturnType<typeof closeWorkspaceTab>
       | ReturnType<typeof reopenLastClosedWorkspaceTab>
+      | ReturnType<typeof closeFocusedPanelTab>
       | ReturnType<typeof openBlankWorkingPanel>
       | ReturnType<typeof reopenClosedTab>
       | ReturnType<typeof toggleSidebar>,
@@ -143,6 +148,33 @@ export function closeActiveWorkspaceTab(
   if (!workspaceId) return null;
 
   return closeWorkspaceTabById(store, workspaceId, currentPath, navigate);
+}
+
+/** Close focused content, or remove its already-empty structural column. */
+export function closeActivePanelTab(
+  store: WorkspaceTabNavigationStore,
+  currentPath: string,
+  availableCanvasWidth?: number,
+): string | null {
+  const match = currentPath.match(/^\/workspace\/([^/]+)/);
+  const workspaceId = match && match[1] !== 'new' ? match[1] : null;
+  if (!workspaceId) return null;
+
+  const panel = selectFocusedPanel.select(store.state, workspaceId);
+  if (!panel) return null;
+
+  const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId);
+  const isEmpty = panel.tabs.length === 0 && panel.activeTabId === null;
+  const canRemoveEmptyColumn =
+    isEmpty && selectPanelColumnCount.select(store.state, workspaceId) > 1;
+  if ((!activeTab || activeTab.closable === false) && !canRemoveEmptyColumn) return null;
+
+  const measuredWidth =
+    availableCanvasWidth ??
+    getPanelKeyboardShortcuts(workspaceId)?.availableCanvasWidth ??
+    undefined;
+  store.dispatch(closeFocusedPanelTab(workspaceId, undefined, measuredWidth));
+  return activeTab?.id ?? panel.id;
 }
 
 export function reopenWorkspaceTab(
@@ -264,8 +296,8 @@ export function registerWorkspaceTabShortcuts({
     ...mod,
     key: 'w',
     global: true,
-    description: m.workspace_shortcuts_closeSpaceTab_description(),
-    action: withRoute((path) => closeActiveWorkspaceTab(store, path, navigate)),
+    description: m.workspace_shortcuts_closePanelTab_description(),
+    action: withRoute((path) => closeActivePanelTab(store, path)),
   });
   register({
     ...mod,

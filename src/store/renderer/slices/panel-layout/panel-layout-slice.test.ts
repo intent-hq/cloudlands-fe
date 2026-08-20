@@ -14,6 +14,7 @@ import {
   splitPanel,
   closeTab,
   closeActiveTab,
+  closeFocusedPanelTab,
   closePanel,
   destroyOwnedTabsForWorkspace,
   destroyTabsByOwnerAgent,
@@ -61,6 +62,7 @@ import type { PanelLayoutSliceState } from './panel-layout-types';
 import {
   DEFAULT_CHAT_PANEL_WIDTH,
   DEFAULT_MEDIUM_PANEL_WIDTH,
+  getAutomaticPanelCanvasWidth,
   PANEL_SPLIT_GUTTER_WIDTH,
 } from '../../../../shared/panel-layout-sizing';
 
@@ -2011,6 +2013,242 @@ describe('panelLayoutReducer', () => {
       } finally {
         nowSpy.mockRestore();
       }
+    });
+
+    describe('closeFocusedPanelTab', () => {
+      it.each([1, 2, 3, 4] as const)(
+        'keeps a final content tab close structural in a %i-column layout',
+        (columnCount) => {
+          const panelIds = Array.from({ length: columnCount }, (_, index) => `p${index + 1}`);
+          const focusedPanelId = panelIds[columnCount - 1];
+          const state = emptyState();
+          state.byWorkspaceId[WS] = {
+            ...emptyWorkspaceState,
+            root:
+              columnCount === 1
+                ? { type: 'panel', panelId: 'p1' }
+                : {
+                    type: 'split',
+                    direction: 'horizontal',
+                    children: panelIds.map((panelId) => ({ type: 'panel' as const, panelId })),
+                    sizes: panelIds.map(
+                      (_, index) => ((index + 1) / ((columnCount * (columnCount + 1)) / 2)) * 100,
+                    ),
+                  },
+            panels: Object.fromEntries(
+              panelIds.map((panelId, index) => [
+                panelId,
+                {
+                  id: panelId,
+                  tabs: [
+                    {
+                      id: `t${index + 1}`,
+                      type: 'note' as const,
+                      title: `Tab ${index + 1}`,
+                      closable: true,
+                    },
+                  ],
+                  activeTabId: `t${index + 1}`,
+                },
+              ]),
+            ),
+            focusedPanelId,
+            columnCount,
+            canvasWidth: 1600,
+            canvasWidthSource: 'explicit',
+          };
+          const before = state.byWorkspaceId[WS];
+
+          const result = panelLayoutReducer(state, closeFocusedPanelTab(WS, 2222));
+          const workspace = result.byWorkspaceId[WS];
+
+          expect(workspace.root).toEqual(before.root);
+          expect(Object.keys(workspace.panels)).toEqual(panelIds);
+          expect(workspace.columnCount).toBe(columnCount);
+          expect(workspace.canvasWidth).toBe(1600);
+          expect(workspace.canvasWidthSource).toBe('explicit');
+          expect(workspace.focusedPanelId).toBe(focusedPanelId);
+          expect(workspace.panels[focusedPanelId]).toMatchObject({
+            tabs: [],
+            activeTabId: null,
+          });
+          expect(workspace.recentlyClosed[0]).toMatchObject({
+            tab: { id: `t${columnCount}` },
+            panelId: `p${columnCount}`,
+            closedAt: 2222,
+          });
+        },
+      );
+
+      it('uses the normal replacement tab in a multi-tab focused panel', () => {
+        const state = stateWithPanel('p1', [
+          { id: 't1', type: 'note', title: 'A' },
+          { id: 't2', type: 'note', title: 'B' },
+          { id: 't3', type: 'note', title: 'C' },
+        ]);
+        state.byWorkspaceId[WS].panels.p1.activeTabId = 't2';
+
+        const result = panelLayoutReducer(state, closeFocusedPanelTab(WS, 2222));
+
+        expect(result.byWorkspaceId[WS].panels.p1.tabs.map((tab) => tab.id)).toEqual(['t1', 't3']);
+        expect(result.byWorkspaceId[WS].panels.p1.activeTabId).toBe('t3');
+      });
+
+      it('no-ops for empty and non-closable focused panels', () => {
+        const empty = stateWithPanel('p1');
+        expect(panelLayoutReducer(empty, closeFocusedPanelTab(WS, 2222))).toBe(empty);
+
+        const locked = stateWithPanel('p1', [{ id: 't1', type: 'note', title: 'Locked' }]);
+        locked.byWorkspaceId[WS].panels.p1.tabs[0].closable = false;
+        expect(panelLayoutReducer(locked, closeFocusedPanelTab(WS, 2222))).toBe(locked);
+      });
+
+      it.each([
+        { count: 2, focusedIndex: 0, width: 640, scenario: 'first at 200% zoom' },
+        { count: 2, focusedIndex: 1, width: 1600, scenario: 'last at 100% zoom' },
+        { count: 3, focusedIndex: 0, width: 960, scenario: 'first at 100% zoom' },
+        { count: 3, focusedIndex: 1, width: 480, scenario: 'middle at 200% zoom' },
+        { count: 3, focusedIndex: 2, width: 1600, scenario: 'last at 100% zoom' },
+        { count: 4, focusedIndex: 0, width: 560, scenario: 'first at 200% zoom' },
+        { count: 4, focusedIndex: 1, width: 1600, scenario: 'middle-left at 100% zoom' },
+        { count: 4, focusedIndex: 2, width: 800, scenario: 'middle-right at 200% zoom' },
+        { count: 4, focusedIndex: 3, width: 1920, scenario: 'last at 100% zoom' },
+      ] as const)(
+        'removes the $scenario empty column and fits $count columns to $width px',
+        ({ count, focusedIndex, width }) => {
+          const panelIds = Array.from({ length: count }, (_, index) => `p${index + 1}`);
+          const focusedPanelId = panelIds[focusedIndex];
+          const state = emptyState();
+          state.byWorkspaceId[WS] = {
+            ...emptyWorkspaceState,
+            root: {
+              type: 'split',
+              direction: 'horizontal',
+              children: panelIds.map((panelId) => ({ type: 'panel' as const, panelId })),
+              sizes: panelIds.map((_, index) => index + 1),
+            },
+            panels: Object.fromEntries(
+              panelIds.map((panelId) => [
+                panelId,
+                { id: panelId, tabs: [], activeTabId: null, pristine: true },
+              ]),
+            ),
+            focusedPanelId,
+            columnCount: count,
+            canvasWidth: 2600,
+            canvasWidthSource: 'explicit',
+          };
+
+          const workspace = panelLayoutReducer(state, closeFocusedPanelTab(WS, 2222, width))
+            .byWorkspaceId[WS];
+          const remainingIds = panelIds.filter((panelId) => panelId !== focusedPanelId);
+          const expectedFocus = remainingIds[Math.min(focusedIndex, remainingIds.length - 1)];
+
+          expect(Object.keys(workspace.panels)).toEqual(remainingIds);
+          expect(workspace.columnCount).toBe(count - 1);
+          expect(workspace.focusedPanelId).toBe(expectedFocus);
+          expect(workspace.canvasWidth).toBe(
+            getAutomaticPanelCanvasWidth(count - 1, 'viewport', width),
+          );
+          expect(workspace.canvasWidth).toBeLessThanOrEqual(width);
+          if (workspace.root.type === 'split') {
+            expect(workspace.root.children).toEqual(
+              remainingIds.map((panelId) => ({ type: 'panel', panelId })),
+            );
+            expect(workspace.root.sizes).toEqual(remainingIds.map(() => 100 / remainingIds.length));
+          } else {
+            expect(workspace.root).toEqual({ type: 'panel', panelId: remainingIds[0] });
+          }
+        },
+      );
+
+      it('closes content on the first press and removes the empty column on the second press', () => {
+        const state = emptyState();
+        state.byWorkspaceId[WS] = {
+          ...emptyWorkspaceState,
+          root: {
+            type: 'split',
+            direction: 'horizontal',
+            children: [
+              { type: 'panel', panelId: 'p1' },
+              { type: 'panel', panelId: 'p2' },
+            ],
+            sizes: [35, 65],
+          },
+          panels: {
+            p1: { id: 'p1', tabs: [], activeTabId: null },
+            p2: {
+              id: 'p2',
+              tabs: [{ id: 't2', type: 'note', title: 'Two', closable: true }],
+              activeTabId: 't2',
+            },
+          },
+          focusedPanelId: 'p2',
+          columnCount: 2,
+          canvasWidth: 1800,
+          canvasWidthSource: 'explicit',
+        };
+
+        const afterFirst = panelLayoutReducer(state, closeFocusedPanelTab(WS, 1000, 900));
+        expect(afterFirst.byWorkspaceId[WS]).toMatchObject({
+          columnCount: 2,
+          focusedPanelId: 'p2',
+        });
+        expect(afterFirst.byWorkspaceId[WS].panels.p2.tabs).toEqual([]);
+
+        const afterSecond = panelLayoutReducer(afterFirst, closeFocusedPanelTab(WS, 1001, 900));
+        const workspace = afterSecond.byWorkspaceId[WS];
+        expect(workspace.root).toEqual({ type: 'panel', panelId: 'p1' });
+        expect(workspace.columnCount).toBe(1);
+        expect(workspace.focusedPanelId).toBe('p1');
+        expect(workspace.recentlyClosed[0]).toMatchObject({ tab: { id: 't2' }, panelId: 'p1' });
+        expect(workspace.layoutHistory.every((snapshot) => !snapshot.panels.p2)).toBe(true);
+
+        const backed = panelLayoutReducer(afterSecond, goBack(WS, 1002)).byWorkspaceId[WS];
+        expect(backed.columnCount).toBe(1);
+        expect(backed.panels.p2).toBeUndefined();
+
+        const reopened = panelLayoutReducer(afterSecond, reopenClosedTab(WS, 1003)).byWorkspaceId[
+          WS
+        ];
+        expect(reopened.panels.p1.tabs).toEqual([expect.objectContaining({ title: 'Two' })]);
+        expect(reopened.recentlyClosed).toEqual([]);
+      });
+
+      it('uses the latest available width for each consecutive empty-column removal', () => {
+        const state = emptyState();
+        const panelIds = ['p1', 'p2', 'p3'];
+        state.byWorkspaceId[WS] = {
+          ...emptyWorkspaceState,
+          root: {
+            type: 'split',
+            direction: 'horizontal',
+            children: panelIds.map((panelId) => ({ type: 'panel' as const, panelId })),
+            sizes: [20, 30, 50],
+          },
+          panels: Object.fromEntries(
+            panelIds.map((panelId) => [panelId, { id: panelId, tabs: [], activeTabId: null }]),
+          ),
+          focusedPanelId: 'p3',
+          columnCount: 3,
+          canvasWidth: 2400,
+          canvasWidthSource: 'explicit',
+        };
+
+        const afterWideRemoval = panelLayoutReducer(state, closeFocusedPanelTab(WS, 1000, 1600));
+        expect(afterWideRemoval.byWorkspaceId[WS].canvasWidth).toBe(1600);
+
+        const afterNarrowRemoval = panelLayoutReducer(
+          afterWideRemoval,
+          closeFocusedPanelTab(WS, 1001, 600),
+        ).byWorkspaceId[WS];
+        expect(afterNarrowRemoval).toMatchObject({
+          root: { type: 'panel', panelId: 'p1' },
+          focusedPanelId: 'p1',
+          columnCount: 1,
+          canvasWidth: 600,
+        });
+      });
     });
   });
 

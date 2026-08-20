@@ -74,6 +74,7 @@ interface KeyboardShortcutsState {
 export function createPanelKeyboardShortcuts(
   getLayoutManager: () => PanelLayoutManager,
   onCyclePanel?: (direction: PanelCycleDirection) => void,
+  getAvailableCanvasWidth: () => number | null = () => null,
 ) {
   const state = $state<KeyboardShortcutsState>({
     leaderActive: false,
@@ -433,6 +434,9 @@ export function createPanelKeyboardShortcuts(
   }
 
   return {
+    get availableCanvasWidth() {
+      return getAvailableCanvasWidth();
+    },
     get leaderActive() {
       return state.leaderActive;
     },
