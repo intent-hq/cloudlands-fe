@@ -24,9 +24,35 @@ describe('mapAgentPreviewToLatestContent', () => {
     ).toBeNull();
   });
 
-  it('filters the report kind to null (digest has its own template branch)', () => {
+  it('renders the report kind as static text (regression: idle completionReport without digest)', () => {
     expect(
-      mapAgentPreviewToLatestContent({ kind: 'report', text: 'Digest', isLive: false }),
+      mapAgentPreviewToLatestContent({ kind: 'report', text: 'Meta report', isLive: false }),
+    ).toEqual({ text: 'Meta report', isStreaming: false });
+  });
+
+  it('regression: a hidden persisted last-tool falls through to null instead of a blank row', () => {
+    const hiddenWorkspaceApi: ToolUseBlock = {
+      type: 'tool_use',
+      id: 'tool-2',
+      name: 'workspace_api',
+      input: {},
+    };
+    expect(
+      mapAgentPreviewToLatestContent({
+        kind: 'last-tool',
+        toolUse: hiddenWorkspaceApi,
+        isLive: false,
+      }),
+    ).toBeNull();
+
+    const rawMcpName: ToolUseBlock = {
+      type: 'tool_use',
+      id: 'tool-3',
+      name: 'mcp__some_server__do_thing',
+      input: {},
+    };
+    expect(
+      mapAgentPreviewToLatestContent({ kind: 'last-tool', toolUse: rawMcpName, isLive: true }),
     ).toBeNull();
   });
 

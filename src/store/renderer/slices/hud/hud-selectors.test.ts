@@ -1374,6 +1374,37 @@ describe('selectHudWorkspaceCards', () => {
     expect(card.agents.find((agent) => agent.id === 'a2')?.line).toBe('Verifying panel focus fix');
   });
 
+  it('reduces multi-line preview text (report kind) to a single line for the swap line', () => {
+    const state = cardState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 1,
+            agentIds: ['a1'],
+            agents: [{ id: 'a1', name: 'Developer', status: 'active' }],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      {
+        agentSessions: {
+          byAgentId: {
+            // The report kind carries raw digest text, which can be
+            // multi-line — the HUD line must reduce it to one line.
+            a1: {
+              lastMessageRole: 'assistant',
+              digest: 'Reviewing the selector\nAll 12 tests pass\n```\n',
+            },
+          },
+          agentIdsByWorkspace: {},
+        },
+      },
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.find((agent) => agent.id === 'a1')?.line).toBe('All 12 tests pass');
+  });
+
   it('card agent line falls back to the wire lastToolUse preview (agent:last-message apply)', () => {
     const state = cardState(
       [

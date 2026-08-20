@@ -51,6 +51,7 @@ import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
 import { classifyTool } from '$lib/utils/tool-classifier';
+import { getLastMeaningfulLine } from '$lib/utils/text-utils';
 import { selectHardwareConsoleKeySlots } from '../hardware-console/hardware-console-selectors';
 
 export const selectHudActive = store.createSelector((state) => state.hud.active);
@@ -859,7 +860,10 @@ function isTopLevelAgent(info: WorkspaceAgentInfo, metadata: Record<string, unkn
  * Render the canonical structured preview to the HUD's plain-string line:
  * text kinds carry their text, tool kinds render the classified tool label
  * (verb + subject + path, mirroring AgentPreviewToolLabel; hidden labels
- * render nothing), attention renders the request's reason text.
+ * render nothing), attention renders the request's reason text. The swap
+ * line is single-line: multi-line text kinds (report / last-user carry raw
+ * multi-line text; live-text / last-response / user arrive pre-reduced) are
+ * reduced to their last meaningful line.
  */
 function previewLineText(preview: AgentPreview | null): string | null {
   if (!preview) return null;
@@ -879,8 +883,12 @@ function previewLineText(preview: AgentPreview | null): string | null {
         .trim();
       return label || null;
     }
-    default:
-      return preview.text || null;
+    default: {
+      const text = preview.text || '';
+      if (!text) return null;
+      if (!text.includes('\n')) return text;
+      return getLastMeaningfulLine(text) || null;
+    }
   }
 }
 
