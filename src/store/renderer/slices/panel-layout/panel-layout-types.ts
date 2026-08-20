@@ -72,8 +72,9 @@ export interface PanelTab {
   /**
    * Emulated viewport of an agent-owned browser tab (monorepo#2857); absent
    * for unowned (native-sized) tabs. Persisted with the layout alongside
-   * `ownerAgentId` so the tab rehydrates at its actual size after restart
-   * instead of the default viewport.
+   * `ownerAgentId` so the tab rehydrates at its actual size after restart,
+   * and kept live by owner-changed/resize notifications from main so the UI
+   * can surface the emulated size.
    */
   emulatedSize?: { width: number; height: number };
   faviconUrl?: string;

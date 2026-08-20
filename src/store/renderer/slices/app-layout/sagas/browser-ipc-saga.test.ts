@@ -616,6 +616,85 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
+  // Owner-changed events carry the emulated viewport (claims + resizes,
+  // monorepo#2857 §5.9): a well-formed size rides along, a malformed one is
+  // dropped rather than poisoning the tab record.
+  it('persists ownership with the emulated size via browser:tab-owner-changed', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': { panels: { one: { tabs: [{ id: 'browser-1', type: 'browser' }] } } },
+        },
+      },
+    };
+
+    await emit(
+      {
+        tabId: 'browser-1',
+        workspaceId: 'ws-1',
+        ownerAgentId: 'agent-1',
+        emulatedSize: { width: 390, height: 844 },
+      },
+      'browser:tab-owner-changed',
+    );
+    // Legacy payload without a size, and a malformed size: owner only.
+    await emit(
+      { tabId: 'browser-1', workspaceId: 'ws-1', ownerAgentId: 'agent-1' },
+      'browser:tab-owner-changed',
+    );
+    await emit(
+      {
+        tabId: 'browser-1',
+        workspaceId: 'ws-1',
+        ownerAgentId: 'agent-1',
+        emulatedSize: { width: -1, height: 'x' },
+      },
+      'browser:tab-owner-changed',
+    );
+
+    expect(actions).toEqual([
+      {
+        type: 'panelLayout/setTabOwnerAgent',
+        payload: ['ws-1', 'browser-1', 'agent-1', { width: 390, height: 844 }],
+      },
+      { type: 'panelLayout/setTabOwnerAgent', payload: ['ws-1', 'browser-1', 'agent-1'] },
+      { type: 'panelLayout/setTabOwnerAgent', payload: ['ws-1', 'browser-1', 'agent-1'] },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('opens an agent tab with the payload emulatedSize persisted on the tab (§5.9)', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({
+      url: 'https://sized.test',
+      position: 'same',
+      workspaceId: 'ws-1',
+      ownerAgentId: 'agent-1',
+      emulatedSize: { width: 390, height: 844 },
+    });
+
+    expect(actions).toMatchObject([
+      {
+        type: 'panelLayout/openTab',
+        payload: {
+          wsId: 'ws-1',
+          tab: {
+            ...TAB('https://sized.test'),
+            ownerAgentId: 'agent-1',
+            emulatedSize: { width: 390, height: 844 },
+          },
+        },
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('no-ops for invalid payloads and when neither workspace source is available', async () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));

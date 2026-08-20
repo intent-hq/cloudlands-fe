@@ -178,8 +178,8 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       ? data.ownerAgentId
       : undefined;
   // Emulated viewport on agent opens; persisted with the tab alongside the
-  // owner so the size survives restart (monorepo#2857). Only meaningful for
-  // owned tabs.
+  // owner so the size survives restart and the UI can surface it
+  // (monorepo#2857, §5.9). Only meaningful for owned tabs.
   const emulatedSize =
     ownerAgentId !== undefined && isBrowserEmulatedSize(data.emulatedSize)
       ? data.emulatedSize
