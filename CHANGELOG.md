@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.72.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.71.0...v2.72.0) (2026-08-20)
+
+
+### 🚀 Features
+
+* keep checking for updates while one is downloaded and auto-supersede ([#1482](https://github.com/intent-hq/cloudlands-fe/issues/1482)) ([8fdf46f](https://github.com/intent-hq/cloudlands-fe/commit/8fdf46f184147346d1cff3d9d279faad54521fe8))
+* reconcile hydrated workspace tabs against the loaded workspace list ([#1471](https://github.com/intent-hq/cloudlands-fe/issues/1471)) ([b89b62a](https://github.com/intent-hq/cloudlands-fe/commit/b89b62a50b206ba60e0ede774d614443305b66fc))
+
 ## [2.71.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.70.0...v2.71.0) (2026-08-19)
 
 
