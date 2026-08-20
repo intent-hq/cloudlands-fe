@@ -40,7 +40,8 @@ import {
   type SectionedPRs,
   selectPrimaryPr,
   getPRStatusTooltip,
-  countOtherMonitors,
+  countOtherPrs,
+  prRepoFromUrl,
   monitorDisplayStatus,
   monitorPillStatus,
   toPullRequestStatus,
@@ -726,6 +727,64 @@ describe('mapWorkspacePRs', () => {
     expect(result).toHaveLength(1);
     expect(result[0].number).toBe(1);
   });
+
+  // The daemon-merged pool (intent-hq/intentd#1330) can carry cross-repo
+  // entries whose URL is the authoritative repo identity.
+
+  it('keeps a present entry URL as-is instead of rebuilding it', () => {
+    const prs = [makePR({ number: 7, url: 'https://github.com/other/repo/pull/7' })];
+    const result = mapWorkspacePRs(prs, null, buildUrl, getTitle, 'acme/widgets');
+    expect(result[0].url).toBe('https://github.com/other/repo/pull/7');
+    expect(result[0].htmlUrl).toBe('https://github.com/other/repo/pull/7');
+  });
+
+  it('constructs a URL only for entries lacking one', () => {
+    const prs = [makePR({ number: 7, url: '' })];
+    const result = mapWorkspacePRs(prs, null, buildUrl, getTitle, 'acme/widgets');
+    expect(result[0].url).toBe('https://github.com/pr/7');
+  });
+
+  it('annotates entries whose URL points at another repo with crossRepo context', () => {
+    const prs = [
+      makePR({ number: 1, url: 'https://github.com/acme/widgets/pull/1' }),
+      makePR({ id: 'pr-2', number: 2, url: 'https://github.com/acme/intentd/pull/2' }),
+      makePR({ id: 'pr-3', number: 3, url: 'https://github.com/other/repo/pull/3' }),
+    ];
+    const result = mapWorkspacePRs(prs, null, buildUrl, getTitle, 'acme/widgets');
+    expect(result[0].crossRepo).toBeUndefined();
+    expect(result[0].crossRepoDisplay).toBeUndefined();
+    expect(result[1].crossRepo).toBe('acme/intentd');
+    expect(result[1].crossRepoDisplay).toBe('intentd');
+    expect(result[2].crossRepo).toBe('other/repo');
+    expect(result[2].crossRepoDisplay).toBe('other/repo');
+  });
+
+  it('compares repos case-insensitively for crossRepo annotation', () => {
+    const prs = [makePR({ number: 1, url: 'https://github.com/Acme/Widgets/pull/1' })];
+    const result = mapWorkspacePRs(prs, null, buildUrl, getTitle, 'acme/widgets');
+    expect(result[0].crossRepo).toBeUndefined();
+  });
+
+  it('leaves crossRepo unset when the workspace repo is unknown', () => {
+    const prs = [makePR({ number: 1, url: 'https://github.com/other/repo/pull/1' })];
+    const result = mapWorkspacePRs(prs, null, buildUrl, getTitle);
+    expect(result[0].crossRepo).toBeUndefined();
+  });
+});
+
+// ─── prRepoFromUrl ─────────────────────────────────────────────────────────────
+
+describe('prRepoFromUrl', () => {
+  it('parses owner/name from a canonical GitHub PR URL', () => {
+    expect(prRepoFromUrl('https://github.com/acme/widgets/pull/42')).toBe('acme/widgets');
+  });
+
+  it('returns undefined for non-PR or non-GitHub URLs', () => {
+    expect(prRepoFromUrl('https://github.com/acme/widgets')).toBeUndefined();
+    expect(prRepoFromUrl('https://example.com/acme/widgets/pull/42')).toBeUndefined();
+    expect(prRepoFromUrl('')).toBeUndefined();
+    expect(prRepoFromUrl(undefined)).toBeUndefined();
+  });
 });
 
 // ─── mergeMonitoredPRs (PROTOCOL §6.9) ─────────────────────────────────────────
@@ -734,29 +793,33 @@ describe('mergeMonitoredPRs', () => {
   const workspaceRepo = 'acme/widgets';
 
   function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
+    const prNumber = overrides.prNumber ?? 42;
+    const repo = overrides.repo ?? 'acme/widgets';
     return {
       monitorId: 'mon-1',
       workspaceId: 'ws-1',
       agentId: 'agent-1',
-      repo: 'acme/widgets',
-      prNumber: 42,
+      repo,
+      prNumber,
       state: 'active',
       pendingChanges: [],
       hasPendingChanges: false,
       createdAt: '2026-08-07T10:00:00Z',
       updatedAt: '2026-08-07T10:05:00Z',
       title: 'Monitored PR',
-      url: 'https://github.com/acme/widgets/pull/42',
+      url: `https://github.com/${repo}/pull/${prNumber}`,
       ...overrides,
     };
   }
 
   function makeBasePR(overrides: Partial<PRInfo> = {}): PRInfo {
+    const number = overrides.number ?? 42;
+    const url = overrides.url ?? `https://github.com/acme/widgets/pull/${number}`;
     return {
-      number: 42,
+      number,
       title: 'Branch PR',
-      url: 'https://github.com/acme/widgets/pull/42',
-      htmlUrl: 'https://github.com/acme/widgets/pull/42',
+      url,
+      htmlUrl: url,
       status: 'open',
       ...overrides,
     };
@@ -1007,7 +1070,12 @@ describe('mergeMonitoredPRs', () => {
     const result = mergeMonitoredPRs(
       [],
       [
-        makeMonitor({ monitorId: 'mon-1', agentId: 'agent-1', repo: 'other/repo' }),
+        makeMonitor({
+          monitorId: 'mon-1',
+          agentId: 'agent-1',
+          repo: 'other/repo',
+          url: 'https://github.com/other/repo/pull/42',
+        }),
         makeMonitor({ monitorId: 'mon-2', agentId: 'agent-2' }),
       ],
       workspaceRepo,
@@ -1020,6 +1088,55 @@ describe('mergeMonitoredPRs', () => {
     const keys = result.map((pr) => (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number)));
     expect(new Set(keys).size).toBe(keys.length);
   });
+
+  // ─── URL dedup against the daemon-merged pool (intent-hq/intentd#1330) ─────
+
+  it('annotates a base row matching the monitor by URL even when the base row carries crossRepo context', () => {
+    const base = [
+      makeBasePR({
+        number: 42,
+        url: 'https://github.com/other/repo/pull/42',
+        htmlUrl: 'https://github.com/other/repo/pull/42',
+        crossRepo: 'other/repo',
+        crossRepoDisplay: 'other/repo',
+      }),
+    ];
+    const result = mergeMonitoredPRs(
+      base,
+      [makeMonitor({ repo: 'other/repo', url: 'https://github.com/other/repo/pull/42' })],
+      workspaceRepo,
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].monitorAgentId).toBe('agent-1');
+    expect(result[0].monitorOnly).toBeUndefined();
+  });
+
+  it('dedupes by URL case-insensitively', () => {
+    const result = mergeMonitoredPRs(
+      [makeBasePR({ url: 'https://github.com/Acme/Widgets/pull/42' })],
+      [makeMonitor({ url: 'https://github.com/acme/widgets/pull/42' })],
+      workspaceRepo,
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].monitorAgentId).toBe('agent-1');
+  });
+
+  it('annotates a daemon-merged monitor-origin row by URL instead of appending (no double count after open)', () => {
+    // Before opening, the daemon-merged pullRequests already carry the
+    // monitored PR; when the live monitor rows arrive the pool size must
+    // not change.
+    const base = [
+      makeBasePR({ number: 1, url: 'https://github.com/acme/widgets/pull/1' }),
+      makeBasePR({
+        number: 42,
+        url: 'https://github.com/acme/widgets/pull/42',
+        htmlUrl: 'https://github.com/acme/widgets/pull/42',
+      }),
+    ];
+    const result = mergeMonitoredPRs(base, [makeMonitor()], workspaceRepo);
+    expect(result).toHaveLength(2);
+    expect(result[1].monitorAgentId).toBe('agent-1');
+  });
 });
 
 // ─── sectionPRs (Changes tab sub-sections, monorepo#2053) ─────────────────────
@@ -1029,29 +1146,33 @@ describe('sectionPRs', () => {
   const getTitle = (pr: PullRequestInfo) => pr.title;
 
   function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
+    const prNumber = overrides.prNumber ?? 42;
+    const repo = overrides.repo ?? 'acme/widgets';
     return {
       monitorId: 'mon-1',
       workspaceId: 'ws-1',
       agentId: 'agent-1',
-      repo: 'acme/widgets',
-      prNumber: 42,
+      repo,
+      prNumber,
       state: 'active',
       pendingChanges: [],
       hasPendingChanges: false,
       createdAt: '2026-08-07T10:00:00Z',
       updatedAt: '2026-08-07T10:05:00Z',
       title: 'Monitored PR',
-      url: 'https://github.com/acme/widgets/pull/42',
+      url: `https://github.com/${repo}/pull/${prNumber}`,
       ...overrides,
     };
   }
 
   function makeBasePR(overrides: Partial<PRInfo> = {}): PRInfo {
+    const number = overrides.number ?? 42;
+    const url = overrides.url ?? `https://github.com/acme/widgets/pull/${number}`;
     return {
-      number: 42,
+      number,
       title: 'Branch PR',
-      url: 'https://github.com/acme/widgets/pull/42',
-      htmlUrl: 'https://github.com/acme/widgets/pull/42',
+      url,
+      htmlUrl: url,
       status: 'open',
       ...overrides,
     };
@@ -1281,6 +1402,75 @@ describe('sectionPRs', () => {
     const all = [...result.own, ...result.otherRoots, ...result.otherTracked];
     const keys = all.map((pr) => (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number)));
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  // ─── Cross-repo base rows from the daemon-merged pool (intentd#1330) ───────
+
+  it('partitions a cross-repo base row into otherRoots when a root matches its repo', () => {
+    const base = [
+      makeBasePR(),
+      makeBasePR({
+        number: 7,
+        url: 'https://github.com/acme/intentd/pull/7',
+        htmlUrl: 'https://github.com/acme/intentd/pull/7',
+        crossRepo: 'acme/intentd',
+        crossRepoDisplay: 'intentd',
+      }),
+    ];
+    const result = sectionPRs(base, [], workspaceRepo, [makeRoot({ pullRequests: [] })], getTitle);
+    expect(result.own.map((pr) => pr.number)).toEqual([42]);
+    expect(result.otherRoots.map((pr) => pr.number)).toEqual([7]);
+    expect(result.otherTracked).toEqual([]);
+  });
+
+  it('partitions a cross-repo base row matching no root into otherTracked', () => {
+    const base = [
+      makeBasePR({
+        number: 5,
+        url: 'https://github.com/stranger/repo/pull/5',
+        crossRepo: 'stranger/repo',
+        crossRepoDisplay: 'stranger/repo',
+      }),
+    ];
+    const result = sectionPRs(base, [], workspaceRepo, [makeRoot()], getTitle);
+    expect(result.own).toEqual([]);
+    expect(result.otherTracked.map((pr) => pr.number)).toEqual([5]);
+  });
+
+  it('does not duplicate a cross-repo base row against the same PR from the root pool (no flicker after open)', () => {
+    // Before opening, the daemon-merged pullRequests carry the root PR;
+    // after opening, gitRoot.list delivers the same PR — one row, not two.
+    const base = [
+      makeBasePR({
+        number: 7,
+        url: 'https://github.com/acme/intentd/pull/7',
+        crossRepo: 'acme/intentd',
+        crossRepoDisplay: 'intentd',
+      }),
+    ];
+    const result = sectionPRs(base, [], workspaceRepo, [makeRoot()], getTitle);
+    expect(result.otherRoots).toHaveLength(1);
+    expect(result.otherRoots[0].number).toBe(7);
+  });
+
+  it('annotates a cross-repo base row in otherTracked with its matching monitor (no double count)', () => {
+    const base = [
+      makeBasePR({
+        number: 5,
+        url: 'https://github.com/stranger/repo/pull/5',
+        crossRepo: 'stranger/repo',
+        crossRepoDisplay: 'stranger/repo',
+      }),
+    ];
+    const monitor = makeMonitor({
+      repo: 'stranger/repo',
+      prNumber: 5,
+      url: 'https://github.com/stranger/repo/pull/5',
+    });
+    const result = sectionPRs(base, [monitor], workspaceRepo, [], getTitle);
+    expect(result.otherTracked).toHaveLength(1);
+    expect(result.otherTracked[0].monitorAgentId).toBe('agent-1');
+    expect(result.otherTracked[0].monitorOnly).toBeUndefined();
   });
 });
 
@@ -1734,9 +1924,20 @@ describe('getPRStatusTooltip', () => {
   });
 });
 
-// ─── countOtherMonitors (PROTOCOL §6.9 "+N" indicator) ─────────────────────────
+// ─── countOtherPrs ("+N" indicator over the deduped pool) ──────────────────────
 
-describe('countOtherMonitors', () => {
+describe('countOtherPrs', () => {
+  function makePoolPR(overrides: Partial<PRInfo> = {}): PRInfo {
+    return {
+      number: 42,
+      title: 'Pool PR',
+      url: 'https://github.com/acme/widgets/pull/42',
+      htmlUrl: 'https://github.com/acme/widgets/pull/42',
+      status: 'open',
+      ...overrides,
+    };
+  }
+
   function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
     return {
       monitorId: 'mon-1',
@@ -1753,50 +1954,70 @@ describe('countOtherMonitors', () => {
     };
   }
 
-  it('excludes the monitor matching the primary PR in the workspace repo', () => {
-    const monitors = [makeMonitor(), makeMonitor({ monitorId: 'mon-2', prNumber: 7 })];
-    expect(countOtherMonitors(monitors, 42, 'acme', 'widgets')).toBe(1);
-  });
-
-  it('counts a same-number cross-repo monitor as "other"', () => {
-    const monitors = [makeMonitor({ repo: 'other/repo' })];
-    expect(countOtherMonitors(monitors, 42, 'acme', 'widgets')).toBe(1);
-  });
-
-  it('counts all monitors when there is no primary PR', () => {
-    const monitors = [makeMonitor(), makeMonitor({ monitorId: 'mon-2', prNumber: 7 })];
-    expect(countOtherMonitors(monitors, undefined, 'acme', 'widgets')).toBe(2);
-  });
-
-  it('matches by number alone when the workspace repo is unknown', () => {
-    const monitors = [makeMonitor({ repo: 'other/repo' })];
-    expect(countOtherMonitors(monitors, 42, undefined, undefined)).toBe(0);
-  });
-
-  it('returns 0 for no monitors', () => {
-    expect(countOtherMonitors([], 42, 'acme', 'widgets')).toBe(0);
-  });
-
-  it('counts other monitors in a merged-completed fallback pool', () => {
-    const merged = makeSnapshot({ state: 'merged' });
-    const monitors = [
-      makeMonitor({ state: 'completed', lastSnapshot: merged }),
-      makeMonitor({ monitorId: 'mon-2', prNumber: 7, state: 'completed', lastSnapshot: merged }),
+  it('excludes the primary PR from the count by URL', () => {
+    const pool = [
+      makePoolPR(),
+      makePoolPR({ number: 7, url: 'https://github.com/acme/widgets/pull/7' }),
     ];
-    expect(countOtherMonitors(monitors, 42, 'acme', 'widgets')).toBe(1);
+    expect(countOtherPrs(pool, pool[0])).toBe(1);
   });
 
-  it('excludes the cross-repo monitor matching a cross-repo primary', () => {
-    const monitors = [
-      makeMonitor({ repo: 'other/repo' }),
-      makeMonitor({ monitorId: 'mon-2', prNumber: 7 }),
+  it('matches the primary URL case-insensitively', () => {
+    const pool = [makePoolPR({ url: 'https://github.com/Acme/Widgets/pull/42' })];
+    const primary = makePoolPR({ url: 'https://github.com/acme/widgets/pull/42' });
+    expect(countOtherPrs(pool, primary)).toBe(0);
+  });
+
+  it('counts the whole pool when there is no primary PR', () => {
+    const pool = [
+      makePoolPR(),
+      makePoolPR({ number: 7, url: 'https://github.com/acme/widgets/pull/7' }),
     ];
-    expect(countOtherMonitors(monitors, 42, 'acme', 'widgets', 'other/repo')).toBe(1);
+    expect(countOtherPrs(pool, undefined)).toBe(2);
   });
 
-  it('counts the workspace-repo monitor as "other" when the primary is cross-repo', () => {
-    const monitors = [makeMonitor()];
-    expect(countOtherMonitors(monitors, 42, 'acme', 'widgets', 'other/repo')).toBe(1);
+  it('returns 0 for an empty pool', () => {
+    expect(countOtherPrs([], makePoolPR())).toBe(0);
+  });
+
+  it('counts a same-number cross-repo row as "other"', () => {
+    const pool = [
+      makePoolPR(),
+      makePoolPR({
+        url: 'https://github.com/other/repo/pull/42',
+        crossRepo: 'other/repo',
+      }),
+    ];
+    expect(countOtherPrs(pool, pool[0])).toBe(1);
+  });
+
+  it('falls back to repo-qualified number when URLs are absent', () => {
+    const pool = [
+      makePoolPR({ url: '' }),
+      makePoolPR({ number: 7, url: '' }),
+    ];
+    const primary = makePoolPR({ url: '' });
+    expect(countOtherPrs(pool, primary)).toBe(1);
+  });
+
+  it('does not double count a PR present in both the daemon-merged list and as a monitor', () => {
+    // Before opening: only the daemon-merged pullRequests. After opening:
+    // the same PR also arrives as a live monitor row. The pool is built by
+    // mergeMonitoredPRs, so the "+N" count must not change across opening.
+    const base = [
+      makePoolPR({ number: 1, url: 'https://github.com/acme/widgets/pull/1' }),
+      makePoolPR({ number: 42, url: 'https://github.com/acme/widgets/pull/42' }),
+    ];
+    const before = mergeMonitoredPRs(base, [], 'acme/widgets');
+    const after = mergeMonitoredPRs(
+      base,
+      [makeMonitor({ url: 'https://github.com/acme/widgets/pull/42' })],
+      'acme/widgets',
+    );
+    const primaryBefore = selectPrimaryPr(before);
+    const primaryAfter = selectPrimaryPr(after);
+    expect(countOtherPrs(after, primaryAfter)).toBe(countOtherPrs(before, primaryBefore));
+    expect(countOtherPrs(after, primaryAfter)).toBe(1);
   });
 });
 
