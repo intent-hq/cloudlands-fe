@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.74.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.73.1...v2.74.0) (2026-08-20)
+
+
+### 🚀 Features
+
+* adopt daemon-merged pullRequests in workspace-card PR badge ([#1500](https://github.com/intent-hq/cloudlands-fe/issues/1500)) ([242bce5](https://github.com/intent-hq/cloudlands-fe/commit/242bce59fcf24ac190913a8d85dcb80b751ff835))
+
 ## [2.73.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.73.0...v2.73.1) (2026-08-20)
 
 
