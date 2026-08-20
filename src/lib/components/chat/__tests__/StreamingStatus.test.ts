@@ -4,6 +4,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { overwriteGetLocale } from '$shared/paraglide/runtime.js';
 
 vi.mock('$lib/components/ui/button', async () => ({
   Button: (await import('./mocks/Button.svelte')).default,
@@ -24,6 +25,7 @@ import {
   formatElapsed,
   computeCompletedEvents,
   deriveErrorDisplay,
+  latestMeaningfulStatusMessage,
   shouldAppendStreamingEvent,
   SESSION_CORRUPTED,
   type StatusEvent,
@@ -32,18 +34,29 @@ import {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  overwriteGetLocale(() => 'en');
 });
 
 describe('StreamingStatus rendered UI', () => {
-  it('renders the compact legacy spinner and Thinking row while active', () => {
+  it('renders an animated Thinking row with muted localized lifecycle text while processing', () => {
     const { container } = render(StreamingStatus, {
-      props: { isProcessing: true, seed: 'agent-1' },
+      props: {
+        isProcessing: true,
+        seed: 'agent-1',
+        statusEvents: [
+          { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1000 },
+        ],
+      },
     });
 
     const row = container.firstElementChild as HTMLElement;
-    const spinner = screen.getByRole('status');
+    const status = screen.getByRole('status', { name: 'Thinking' });
+    const spinner = container.querySelector('.legacy-streaming-spinner') as HTMLElement;
     const label = screen.getByTestId('streaming-status-thinking');
+    const lifecycle = screen.getByTestId('streaming-status-lifecycle');
 
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    expect(status.getAttribute('aria-atomic')).toBe('true');
     expect(row.className).toContain('h-7');
     expect(row.className).toContain('px-[var(--operational-row-inline-padding)]');
     expect(row.className).toContain(
@@ -54,8 +67,62 @@ describe('StreamingStatus rendered UI', () => {
     expect(spinner.className).toContain('size-[var(--operational-leading-slot-size)]');
     expect(spinner.getAttribute('style')).toContain('--size: 3.5px');
     expect(label.textContent).toBe('Thinking');
-    expect(label.className).toContain('text-muted-foreground');
-    expect(label.className).toContain('font-normal');
+    expect(label.className).toContain('text-foreground');
+    expect(lifecycle.textContent).toBe('Sent prompt…');
+    expect(lifecycle.className).toContain('text-muted-foreground');
+    expect(lifecycle.className).toContain('truncate');
+    expect(row.textContent).not.toContain('·');
+    expect(lifecycle.parentElement?.className).toContain('gap-1.5');
+  });
+
+  it('shows the current lifecycle phase while streaming and updates it without a separator', async () => {
+    const { rerender } = render(StreamingStatus, {
+      props: {
+        isStreaming: true,
+        statusEvents: [
+          { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1000 },
+        ],
+      },
+    });
+
+    expect(screen.getByTestId('streaming-status-lifecycle').textContent).toBe('Sent prompt…');
+
+    await rerender({
+      isStreaming: true,
+      statusEvents: [
+        { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1000 },
+        { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 2000 },
+      ],
+    });
+
+    expect(screen.getByTestId('streaming-status-lifecycle').textContent).toBe(
+      'Streaming response…',
+    );
+    expect(screen.getByRole('status').textContent).not.toContain('·');
+  });
+
+  it('keeps the Thinking label when lifecycle phase text is missing', () => {
+    render(StreamingStatus, { props: { isProcessing: true, statusEvents: [] } });
+
+    expect(screen.getByTestId('streaming-status-thinking').textContent).toBe('Thinking');
+    expect(screen.queryByTestId('streaming-status-lifecycle')).toBeNull();
+    expect(screen.getByRole('status').getAttribute('aria-label')).toBe('Thinking');
+  });
+
+  it('uses the active locale for Thinking and preserves an already-localized lifecycle phrase', () => {
+    overwriteGetLocale(() => 'es');
+    render(StreamingStatus, {
+      props: {
+        isProcessing: true,
+        statusEvents: [
+          { phase: 'prompt', message: 'Solicitud enviada…', level: 'info', timestamp: 1000 },
+        ],
+      },
+    });
+
+    expect(screen.getByTestId('streaming-status-thinking').textContent).toBe('Pensando');
+    expect(screen.getByTestId('streaming-status-lifecycle').textContent).toBe('Solicitud enviada…');
+    expect(screen.getByRole('status').getAttribute('aria-label')).toBe('Pensando');
   });
 
   it('renders explicit failed response copy, alert semantics, and retry action for inactive errors', async () => {
@@ -279,6 +346,27 @@ describe('StreamingStatus rendered UI', () => {
 });
 
 describe('StreamingStatus utilities', () => {
+  describe('latestMeaningfulStatusMessage', () => {
+    it('selects the latest localized non-empty phase by timestamp', () => {
+      expect(
+        latestMeaningfulStatusMessage([
+          { phase: 'streaming', message: '  Streaming response… ', level: 'info', timestamp: 30 },
+          { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 20 },
+          { phase: 'missing', message: '   ', level: 'info', timestamp: 40 },
+        ]),
+      ).toBe('Streaming response…');
+    });
+
+    it('returns null when no phase has display text', () => {
+      expect(latestMeaningfulStatusMessage([])).toBeNull();
+      expect(
+        latestMeaningfulStatusMessage([
+          { phase: 'missing', message: '', level: 'info', timestamp: 10 },
+        ]),
+      ).toBeNull();
+    });
+  });
+
   describe('formatDuration', () => {
     it('formats sub-10s with non-zero decimal', () => {
       expect(formatDuration(2300)).toBe('2.3s');
