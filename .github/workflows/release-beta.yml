@@ -278,7 +278,10 @@ jobs:
             dist-electron/*.zip
             dist-electron/*.blockmap
             dist-electron/latest-mac.yml
-          retention-days: 7
+          # Consumed only by the same-run publish job; nothing downloads these
+          # cross-run, so 1 day caps Actions artifact-quota usage (~2 GB/run
+          # at ~11 alpha runs/day).
+          retention-days: 1
           if-no-files-found: error
 
       # Always delete the temporary signing keychain, restore the pre-job
@@ -445,7 +448,8 @@ jobs:
             dist-electron/*.exe
             dist-electron/*.exe.blockmap
             dist-electron/latest.yml
-          retention-days: 7
+          # Consumed only by the same-run publish job; 1 day caps quota usage.
+          retention-days: 1
           if-no-files-found: error
 
   build-linux:
@@ -611,7 +615,8 @@ jobs:
             dist-electron/*.deb
             dist-electron/*.blockmap
             dist-electron/latest-linux*.yml
-          retention-days: 7
+          # Consumed only by the same-run publish job; 1 day caps quota usage.
+          retention-days: 1
           if-no-files-found: error
 
   # Single publish gate: it needs every build job, so a failed build on any
