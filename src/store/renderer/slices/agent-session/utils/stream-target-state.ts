@@ -1,7 +1,7 @@
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { hasCanonicalId } from '$shared/utils/message-dedup';
 
-export function isInFlightAssistantMessage(message: AgentMessage): boolean {
+function isInFlightAssistantMessage(message: AgentMessage): boolean {
   return (
     message.role === 'assistant' &&
     (message.isStreaming === true || message.streamingComplete === false)
@@ -59,7 +59,7 @@ export function findStreamTargetAssistantMessage(
   return fallback;
 }
 
-export function hasFinalizedAssistantMessage(
+function hasFinalizedAssistantMessage(
   session: AgentSession | undefined,
   assistantAppMessageId?: string,
 ): boolean {

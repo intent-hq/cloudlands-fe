@@ -6,7 +6,7 @@ export interface ConversationTurn {
   noticeMessages: AgentMessage[];
 }
 
-export interface ConversationTurnGroup<TGroup> {
+interface ConversationTurnGroup<TGroup> {
   group: TGroup;
   turns: ConversationTurn[];
 }

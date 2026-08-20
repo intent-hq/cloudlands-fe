@@ -71,7 +71,7 @@ export function createTestDirectoryPath(): string {
 /**
  * Creates a mock workspace for testing
  */
-export function createMockWorkspace(): Workspace {
+function createMockWorkspace(): Workspace {
   const workspaceId = createTestWorkspaceId();
   const now = new Date().toISOString();
   return {

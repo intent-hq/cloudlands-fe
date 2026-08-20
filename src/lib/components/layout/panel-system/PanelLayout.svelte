@@ -65,7 +65,10 @@
   import { endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { animatePanelPreviewPositions, capturePanelPositions } from './panel-reorder-animation';
   import { findPanelElement, scrollPanelIntoView } from './panel-layout-scroll';
-  import { shouldBlurActiveElement } from './panel-content-focus';
+  import {
+    shouldBlurActiveElement,
+    shouldRedirectFocusToPanelContent,
+  } from './panel-content-focus';
   import { createLayoutStableRevealScheduler } from '$lib/components/workspace/utils/layout-stable-reveal';
 
   import {
@@ -1026,7 +1029,18 @@
     // Use a delay to ensure panel switch animation/rendering is complete
     // and any click event processing from the source panel has finished
     setTimeout(() => {
+      // Skip entirely if this panel lost focus while the callback was queued,
+      // so a stale callback cannot redirect or blur focus the user has since
+      // placed in another panel.
+      if (selectFocusedPanelId.select(appStore.state, targetLayoutId) !== panelId) return;
       if (focusableTypes.includes(activeTab.type)) {
+        // Only redirect focus into the panel content when the current focus
+        // lives outside the target panel — focus the user just placed inside
+        // the panel but outside the prompt (e.g. the header rename input)
+        // must not be stolen (intent-hq/monorepo#2947).
+        if (!shouldRedirectFocusToPanelContent(document.activeElement, panelId, targetLayoutId)) {
+          return;
+        }
         // Dispatch event with panel and tab info - content components will handle focus
         dispatchWindowEvent('panel:focus-content', {
           panelId,
@@ -1041,10 +1055,7 @@
         // stale focus from previously focused content — but never focus the
         // user just placed inside this panel (its webview, URL bar, etc.),
         // or clicking into a browser tab would blur itself 100 ms later
-        // (intent-hq/monorepo#2895). Skip entirely if this panel lost focus
-        // while the callback was queued, so a stale callback cannot blur
-        // focus the user has since placed in another panel.
-        if (selectFocusedPanelId.select(appStore.state, targetLayoutId) !== panelId) return;
+        // (intent-hq/monorepo#2895).
         if (shouldBlurActiveElement(document.activeElement, panelId, targetLayoutId)) {
           document.activeElement.blur();
         }

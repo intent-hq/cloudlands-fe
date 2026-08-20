@@ -298,7 +298,6 @@ Reuse the existing infrastructure instead of inventing parallel harnesses:
 | `src/shared/ipc-mock-router.ts`                   | Single in-memory mock router — register per-channel `invoke` handlers and emit mock events.       |
 | `src/shared/ipc/request-validation.ts` (+ schemas)| Zod schemas + `validateIpcRequest` / `tryValidateIpcRequest` to assert the request matches contract. |
 | `src/shared/ipc/__tests__/contracts.test.ts`      | Reference pattern for asserting IPC contracts and request schemas — extend it for new methods.    |
-| `tests/mocks/ipc.mock.ts` (`IPCMock`)             | Higher-level mock with handler/event-listener tracking when a test needs richer choreography.     |
 | `src/test-setup.ts`                               | Vitest global setup (Electron mocks, jsdom shims, temp workspace dir). New suites get this for free. |
 
 Run the targeted suite with `pnpm vitest run <files>` (see [Verification](#verification)

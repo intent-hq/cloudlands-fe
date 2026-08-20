@@ -16,7 +16,10 @@ export function createTaskAgentAssociationKeyForAgent(agentId: string): string {
   return `${TASK_AGENT_KEY_PREFIX}${agentId}`;
 }
 
-function getTaskTextOccurrenceIndex(occurrencesByText: Map<string, number>, taskText: string): number {
+function getTaskTextOccurrenceIndex(
+  occurrencesByText: Map<string, number>,
+  taskText: string,
+): number {
   const occurrenceIndex = occurrencesByText.get(taskText) ?? 0;
   occurrencesByText.set(taskText, occurrenceIndex + 1);
   return occurrenceIndex;
@@ -112,7 +115,10 @@ function findTaskAgentAssociation(
     }
   }
 
-  if ((taskTextCounts.get(taskText) ?? 0) !== 1 || (associationTextCounts.get(taskText) ?? 0) !== 1) {
+  if (
+    (taskTextCounts.get(taskText) ?? 0) !== 1 ||
+    (associationTextCounts.get(taskText) ?? 0) !== 1
+  ) {
     return null;
   }
 
@@ -122,7 +128,9 @@ function findTaskAgentAssociation(
       association.taskText === taskText &&
       (!association.taskKey || association.taskKey.startsWith(TASK_AGENT_KEY_PREFIX)),
   );
-  return uniqueTextIndex >= 0 ? { association: associations[uniqueTextIndex], index: uniqueTextIndex } : null;
+  return uniqueTextIndex >= 0
+    ? { association: associations[uniqueTextIndex], index: uniqueTextIndex }
+    : null;
 }
 
 function getTaskTextCounts(editor: Editor): Map<string, number> {
@@ -159,7 +167,9 @@ export function restoreTaskAgentAssociations(
   associations: TaskAgentAssociation[],
   logger: LoggerLike,
 ): void {
-  logger.debug('[restoreTaskAgentAssociations] Starting', { associationCount: associations.length });
+  logger.debug('[restoreTaskAgentAssociations] Starting', {
+    associationCount: associations.length,
+  });
   if (associations.length === 0) return;
 
   // Find all taskItem nodes and match by stable agent-derived key. Fall back to
@@ -229,45 +239,9 @@ export function restoreTaskAgentAssociations(
 }
 
 /**
- * Remove `delegatedAgentId` from all task items for a deleted agent.
- */
-export function removeAgentFromTasks(editor: Editor, agentId: string, logger?: LoggerLike): void {
-  const doc = editor.state.doc;
-  let removedCount = 0;
-
-  doc.descendants((node, pos) => {
-    if (node.type.name === 'taskItem' && node.attrs.delegatedAgentId === agentId) {
-      editor
-        .chain()
-        .command(({ tr }) => {
-          tr.setMeta('external-update', true);
-          return true;
-        })
-        .command(({ tr, state }) => {
-          const currentNode = state.doc.nodeAt(pos);
-          if (currentNode && currentNode.type.name === 'taskItem') {
-            tr.setNodeMarkup(pos, undefined, {
-              ...currentNode.attrs,
-              delegatedAgentId: null,
-            });
-          }
-          return true;
-        })
-        .run();
-
-      removedCount++;
-    }
-    return true;
-  });
-
-  if (removedCount > 0) {
-    logger?.info?.('[removeAgentFromTasks] Removed agent from tasks', { agentId, removedCount });
-  }
-}
-
-/**
  * Calculate the index of a task item among all task items in the document.
  * Used to determine peerOrder when manually converting checklist items to Task Notes.
+ * @public imported by NoteWithComments.svelte (knip does not track that file's imports)
  */
 export function getTaskIndexInDocument(
   editor: Editor | null | undefined,

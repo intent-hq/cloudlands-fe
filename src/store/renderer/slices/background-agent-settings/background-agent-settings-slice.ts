@@ -71,9 +71,6 @@ export type BackgroundAgentSettingsState = {
   providerSettings: Record<string, ProviderBgSettings>;
 };
 
-export const STORAGE_KEY = 'workspaces-background-agent-settings';
-export const PROVIDER_SETTINGS_KEY = 'workspaces-bg-agent-settings-per-provider';
-
 const DEFAULT_TYPE_OVERRIDES: Record<BackgroundAgentType, string> = {
   commit: '',
   pr: '',
@@ -124,14 +121,6 @@ export const saveProviderSnapshot = createAction<
 export const restoreProviderSettings = createAction<
   [payload: { defaultModel: string; typeOverrides: Record<BackgroundAgentType, string> }]
 >('backgroundAgentSettings/restoreProviderSettings');
-
-// ============================================================================
-// Saga Trigger Actions (dispatched by consumers, handled by sagas)
-// ============================================================================
-
-export const switchProvider = createAction<
-  [payload: { newProviderId: string; previousProviderId: string }]
->('backgroundAgentSettings/switchProvider');
 
 // ============================================================================
 // Reducer

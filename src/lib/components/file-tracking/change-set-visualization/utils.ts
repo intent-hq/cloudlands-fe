@@ -22,7 +22,7 @@ const MAX_LCS_LINE_COUNT = 5_000;
 /**
  * Extract file name from path
  */
-export function getFileName(path: string): string {
+function getFileName(path: string): string {
   const parts = path.split('/');
   return parts[parts.length - 1] || path;
 }
@@ -68,7 +68,7 @@ export function getLanguageFromPath(filePath: string): string {
 /**
  * Parse diff content to extract lines with their types
  */
-export function parseDiffLines(change: TrackedChange): VisualizationLine[] {
+function parseDiffLines(change: TrackedChange): VisualizationLine[] {
   const lines: VisualizationLine[] = [];
   const hasNewContent = !isEmptyContent(change.content?.newContent);
 
@@ -229,45 +229,6 @@ export function changeToFileColumn(change: TrackedChange): FileColumn {
     additions: change.stats?.additions || lines.filter((l) => l.type === 'add').length,
     deletions: change.stats?.deletions || lines.filter((l) => l.type === 'remove').length,
     change,
-  };
-}
-
-export interface ContextLinesResult {
-  lines: VisualizationLine[];
-  startIndex: number;
-}
-
-/**
- * Get context lines around a specific line, keeping the hovered line centered.
- * When near boundaries, adjusts to show more lines on the other side.
- * Returns both the lines and the start index so the caller knows which line is hovered.
- */
-export function getContextLines(
-  lines: VisualizationLine[],
-  lineIndex: number,
-  contextCount: number,
-): ContextLinesResult {
-  // Calculate ideal start (centered)
-  let start = lineIndex - contextCount;
-  let end = lineIndex + contextCount + 1;
-
-  // If near the start of the file, shift window forward
-  if (start < 0) {
-    const shift = -start;
-    start = 0;
-    end = Math.min(lines.length, end + shift);
-  }
-
-  // If near the end of the file, shift window backward
-  if (end > lines.length) {
-    const shift = end - lines.length;
-    end = lines.length;
-    start = Math.max(0, start - shift);
-  }
-
-  return {
-    lines: lines.slice(start, end),
-    startIndex: start,
   };
 }
 /**
@@ -666,7 +627,7 @@ function computeAgentChangeVisualization(
 /**
  * Parse diff lines from ChatFileChange (old/new content comparison)
  */
-export function parseChatFileChangeLines(
+function parseChatFileChangeLines(
   change: ChatFileChange | ChatFileChangeWithChunks,
 ): VisualizationLine[] {
   const changeWithChunks = change as ChatFileChangeWithChunks;

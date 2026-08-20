@@ -22,7 +22,7 @@ import type { PullRequestInfo, PullRequestStatus } from '$shared/types';
 const logger = createLogger('GitRootsService');
 
 /** How a git root came to be tracked (wire words are lowercase). */
-export type GitRootSource = 'agent' | 'auto';
+type GitRootSource = 'agent' | 'auto';
 
 /** Wire `gitRoot.list` row: the persisted `WorkspaceGitRoot` plus a live-read
  * `branch` (never persisted; absent when HEAD is unreadable). Optional fields

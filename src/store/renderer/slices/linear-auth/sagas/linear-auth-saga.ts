@@ -4,10 +4,18 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
-import { connectLinear, initializeLinearAuth, logoutLinear, setLinearAuthState, setLinearError, setLinearIsAuthenticating, startLinearAuth } from '../linear-auth-slice';
+import {
+  connectLinear,
+  initializeLinearAuth,
+  logoutLinear,
+  setLinearAuthState,
+  setLinearError,
+  setLinearIsAuthenticating,
+  startLinearAuth,
+} from '../linear-auth-slice';
 
 const logger = createLogger('LinearAuthSaga');
-export const LINEAR_TOKEN_SETTING_PATH = 'linear.token';
+const LINEAR_TOKEN_SETTING_PATH = 'linear.token';
 
 function* probe(): SagaGenerator<void> {
   try {
@@ -30,19 +38,23 @@ function* connect(apiKey: string): SagaGenerator<void> {
   yield* put(setLinearError(null));
   yield* put(setLinearIsAuthenticating(true));
   try {
-    yield* call([appClient.settings, appClient.settings.update], [
-      { path: LINEAR_TOKEN_SETTING_PATH, value: key },
-    ]);
+    yield* call(
+      [appClient.settings, appClient.settings.update],
+      [{ path: LINEAR_TOKEN_SETTING_PATH, value: key }],
+    );
     const state: Awaited<ReturnType<typeof linearAuthClient.getAuthState>> = yield* call(
       [linearAuthClient, linearAuthClient.getAuthState],
       true,
     );
     yield* put(setLinearAuthState(state.isAuthenticated, false, null));
-    if (!state.isAuthenticated) yield* put(setLinearError(m.linearAuth_service_keyRejected_error()));
+    if (!state.isAuthenticated)
+      yield* put(setLinearError(m.linearAuth_service_keyRejected_error()));
   } catch (error) {
-    yield* put(setLinearError(
-      error instanceof Error ? error.message : m.linearAuth_service_storeKeyFailed_error(),
-    ));
+    yield* put(
+      setLinearError(
+        error instanceof Error ? error.message : m.linearAuth_service_storeKeyFailed_error(),
+      ),
+    );
     logger.error('Failed to connect Linear auth', error);
   } finally {
     yield* put(setLinearIsAuthenticating(false));
@@ -53,9 +65,11 @@ function* logout(): SagaGenerator<void> {
   try {
     yield* call([appClient.settings, appClient.settings.reset], LINEAR_TOKEN_SETTING_PATH);
   } catch (error) {
-    yield* put(setLinearError(
-      error instanceof Error ? error.message : m.linearAuth_service_clearKeyFailed_error(),
-    ));
+    yield* put(
+      setLinearError(
+        error instanceof Error ? error.message : m.linearAuth_service_clearKeyFailed_error(),
+      ),
+    );
     logger.error('Failed to clear Linear auth', error);
     return;
   }
@@ -65,7 +79,8 @@ function* logout(): SagaGenerator<void> {
       true,
     );
     yield* put(setLinearAuthState(state.isAuthenticated, state.requiresDaemonAuth, null));
-    if (state.isAuthenticated) yield* put(setLinearError(m.linearAuth_service_envKeyStillActive_error()));
+    if (state.isAuthenticated)
+      yield* put(setLinearError(m.linearAuth_service_envKeyStillActive_error()));
   } catch {
     yield* put(setLinearAuthState(false, false, null));
   }
@@ -77,21 +92,15 @@ function* initializeLinearWorker(
   yield* call(probe);
 }
 
-function* startLinearWorker(
-  _action: ReturnType<typeof startLinearAuth>,
-): SagaGenerator<void> {
+function* startLinearWorker(_action: ReturnType<typeof startLinearAuth>): SagaGenerator<void> {
   yield* call(probe);
 }
 
-function* connectLinearWorker(
-  action: ReturnType<typeof connectLinear>,
-): SagaGenerator<void> {
+function* connectLinearWorker(action: ReturnType<typeof connectLinear>): SagaGenerator<void> {
   yield* call(connect, action.payload[0]);
 }
 
-function* logoutLinearWorker(
-  _action: ReturnType<typeof logoutLinear>,
-): SagaGenerator<void> {
+function* logoutLinearWorker(_action: ReturnType<typeof logoutLinear>): SagaGenerator<void> {
   yield* call(logout);
 }
 

@@ -37,6 +37,8 @@ export interface SystemStatusWirePayload {
   /** Total bytes on the volume holding the workspaces root. May be missing on older daemons. */
   workspacesDiskTotalBytes?: number;
   fingerprint?: string | null;
+  /** Local OS hostname (additive routing field, §5.7). May be missing on older daemons. */
+  hostname?: string;
   protocolVersion: string;
   host: {
     os: string;
@@ -122,6 +124,8 @@ export interface DaemonHealthStats {
   workspacesDiskAvailableBytes?: number;
   /** Total bytes on the volume holding the workspaces root. Optional for older daemons. */
   workspacesDiskTotalBytes?: number;
+  /** Daemon-reported local OS hostname (§5.7). Optional for older daemons. */
+  hostname?: string;
   os: string;
   arch: string;
   /** FE connection mode (sidecar UDS vs external WebSocket). Optional for backward compatibility. */

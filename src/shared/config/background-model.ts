@@ -34,10 +34,4 @@
  * Timeout for background requests in milliseconds.
  * Background requests should be fast, so we use a shorter timeout.
  */
-export const BACKGROUND_REQUEST_TIMEOUT_MS = 30_000; // 30 seconds
-
-/**
- * Maximum tokens for background requests.
- * Keep this low since we only need short responses.
- */
-export const BACKGROUND_MAX_TOKENS = 500;
+export const BACKGROUND_REQUEST_TIMEOUT_MS = 30_000;

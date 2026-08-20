@@ -4,11 +4,11 @@
  * Consolidated from file-tracking + line-changes slices.
  */
 
-import type { WorkspaceGitStatus } from "$features/accept-changes/types";
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
-import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
+import type { WorkspaceGitStatus } from '$features/accept-changes/types';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
+import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type {
   AcceptChangesState,
   BackgroundOperationPhase,
@@ -24,18 +24,18 @@ import type {
   LineChangeStats,
   AgentLineStatsRequestState,
   ChangesCoordinationState,
-} from "./changes-types";
+} from './changes-types';
 
 // ---------------------------------------------------------------------------
 // Empty / Initial State
 // ---------------------------------------------------------------------------
 
-export function createEmptyAcceptChangesState(): AcceptChangesState {
+function createEmptyAcceptChangesState(): AcceptChangesState {
   return {
-    commitMessage: "",
-    prTitle: "",
-    prDescription: "",
-    targetBranch: "",
+    commitMessage: '',
+    prTitle: '',
+    prDescription: '',
+    targetBranch: '',
     pendingCommitAction: null,
     pendingPRContext: null,
     isAutofillAndCommitting: false,
@@ -50,7 +50,7 @@ export function createEmptyAcceptChangesState(): AcceptChangesState {
   };
 }
 
-export function createEmptyChangesCoordinationState(): ChangesCoordinationState {
+function createEmptyChangesCoordinationState(): ChangesCoordinationState {
   return {
     lastSyncTime: 0,
     lastUpdatedAt: 0,
@@ -83,7 +83,7 @@ export const emptyWorkspaceState: FileTrackingWorkspaceState = {
 
 export const initialState: FileTrackingState = {
   byWorkspaceId: {},
-  fileListViewMode: "flat",
+  fileListViewMode: 'flat',
   mainPanelView: null,
   agentStats: {},
   agentLineStatsRequests: {},
@@ -104,93 +104,84 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 // ---------------------------------------------------------------------------
 
 // Workspace lifecycle
-export const clearWorkspace = createAction<[wsId: string]>(
-  "changes/clearWorkspace"
-);
+export const clearWorkspace = createAction<[wsId: string]>('changes/clearWorkspace');
 
 // Loading / error state
-export const setLoading = createAction<[wsId: string, loading: boolean]>(
-  "changes/setLoading"
-);
+export const setLoading = createAction<[wsId: string, loading: boolean]>('changes/setLoading');
 export const setHasLoadedInitialData = createAction<[wsId: string, hasLoaded: boolean]>(
-  "changes/setHasLoadedInitialData"
+  'changes/setHasLoadedInitialData',
 );
 
 // Data load results
 export const setChangesData = createAction(
-  "changes/setChangesData",
+  'changes/setChangesData',
   (wsId: string, changes: TrackedChange[], truncated: boolean, totalCount: number) => ({
     wsId,
     changes,
     truncated,
     totalCount,
-  })
+  }),
 );
 export const setCommitsData = createAction(
-  "changes/setCommitsData",
+  'changes/setCommitsData',
   (wsId: string, commits: CommitInfo[], boundarySha: string | null) => ({
     wsId,
     commits,
     boundarySha,
-  })
+  }),
 );
 
 // Older commits
 export const appendOlderCommits = createAction<[wsId: string, commits: CommitInfo[]]>(
-  "changes/appendOlderCommits"
+  'changes/appendOlderCommits',
 );
-export const clearOlderCommits = createAction<[wsId: string]>(
-  "changes/clearOlderCommits"
-);
+export const clearOlderCommits = createAction<[wsId: string]>('changes/clearOlderCommits');
 export const setLoadingOlderCommits = createAction<[wsId: string, loading: boolean]>(
-  "changes/setLoadingOlderCommits"
+  'changes/setLoadingOlderCommits',
 );
 
 // Optimistic updates for stage/unstage/revert
-export const setChanges = createAction<[wsId: string, changes: TrackedChange[]]>(
-  "changes/setChanges"
-);
+export const setChanges =
+  createAction<[wsId: string, changes: TrackedChange[]]>('changes/setChanges');
 
 // UI state
 export const setMainPanelView = createAction<[view: MainPanelViewState | null]>(
-  "changes/setMainPanelView"
+  'changes/setMainPanelView',
 );
-export const clearMainPanelView = createAction(
-  "changes/clearMainPanelView"
-);
+export const clearMainPanelView = createAction('changes/clearMainPanelView');
 export const unstageChangesRequested = createAction(
-  "changes/unstageChangesRequested",
+  'changes/unstageChangesRequested',
   (wsId: string, changeIds: string[], changesFromUI?: TrackedChange[]) => ({
     wsId,
     changeIds,
     changesFromUI,
-  })
+  }),
 );
 export const stageByPathRequested = createAction<[wsId: string, filePaths: string[]]>(
-  "changes/stageByPathRequested"
+  'changes/stageByPathRequested',
 );
 export const unstageByPathRequested = createAction<[wsId: string, filePaths: string[]]>(
-  "changes/unstageByPathRequested"
+  'changes/unstageByPathRequested',
 );
 export const revertChangeRequested = createAction<[wsId: string, change: TrackedChange]>(
-  "changes/revertChangeRequested"
+  'changes/revertChangeRequested',
 );
 export const revertByPathRequested = createAction<[wsId: string, filePaths: string[]]>(
-  "changes/revertByPathRequested"
+  'changes/revertByPathRequested',
 );
 export const refreshRequested = createAction<[wsId: string, forceSync?: boolean]>(
-  "changes/refreshRequested"
+  'changes/refreshRequested',
 );
 export const loadWorkspaceDataRequested = createAction<[wsId: string]>(
-  "changes/loadWorkspaceDataRequested"
+  'changes/loadWorkspaceDataRequested',
 );
 export const loadOlderCommitsRequested = createAction(
-  "changes/loadOlderCommitsRequested",
+  'changes/loadOlderCommitsRequested',
   (wsId: string, beforeSha: string, limit?: number) => ({
     wsId,
     beforeSha,
     limit,
-  })
+  }),
 );
 
 // ---------------------------------------------------------------------------
@@ -199,28 +190,28 @@ export const loadOlderCommitsRequested = createAction(
 
 /** Update agent stats (merge with existing) */
 export const updateAgentStats = createAction(
-  "changes/updateAgentStats",
+  'changes/updateAgentStats',
   (agentId: string, stats: LineChangeStats) => ({ agentId, stats }),
 );
 
 /** Saga trigger: request line-change stats for a single agent */
 export const requestAgentLineStats = createAction(
-  "changes/requestAgentLineStats",
+  'changes/requestAgentLineStats',
   (agentId: string, forceRefresh = false) => ({ agentId, forceRefresh }),
 );
 
 export const agentLineStatsRequestStarted = createAction(
-  "changes/agentLineStatsRequestStarted",
+  'changes/agentLineStatsRequestStarted',
   (agentId: string, requestedAt: string) => ({ agentId, requestedAt }),
 );
 
 export const agentLineStatsRequestSucceeded = createAction(
-  "changes/agentLineStatsRequestSucceeded",
+  'changes/agentLineStatsRequestSucceeded',
   (agentId: string, finishedAt: string) => ({ agentId, finishedAt }),
 );
 
 export const agentLineStatsRequestFailed = createAction(
-  "changes/agentLineStatsRequestFailed",
+  'changes/agentLineStatsRequestFailed',
   (agentId: string, error: string, finishedAt: string) => ({ agentId, error, finishedAt }),
 );
 
@@ -229,59 +220,52 @@ export const agentLineStatsRequestFailed = createAction(
 // ---------------------------------------------------------------------------
 
 export const setCommitMessage = createAction<[workspaceId: string, message: string]>(
-  "changes/setCommitMessage"
+  'changes/setCommitMessage',
 );
-export const setPRTitle = createAction<[workspaceId: string, title: string]>(
-  "changes/setPRTitle"
-);
+export const setPRTitle = createAction<[workspaceId: string, title: string]>('changes/setPRTitle');
 export const setPRDescription = createAction<[workspaceId: string, description: string]>(
-  "changes/setPRDescription"
+  'changes/setPRDescription',
 );
-export const setTargetBranch = createAction<[workspaceId: string, branch: string]>(
-  "changes/setTargetBranch"
-);
-export const setPendingCommitAction = createAction<[
-  workspaceId: string,
-  action: PendingCommitAction,
-]>("changes/setPendingCommitAction");
-export const setPendingPRContext = createAction<[
-  workspaceId: string,
-  context: PendingPRContext | null,
-]>("changes/setPendingPRContext");
+export const setTargetBranch =
+  createAction<[workspaceId: string, branch: string]>('changes/setTargetBranch');
+export const setPendingCommitAction = createAction<
+  [workspaceId: string, action: PendingCommitAction]
+>('changes/setPendingCommitAction');
+export const setPendingPRContext = createAction<
+  [workspaceId: string, context: PendingPRContext | null]
+>('changes/setPendingPRContext');
 export const setIsAutofillAndCommitting = createAction<[workspaceId: string, value: boolean]>(
-  "changes/setIsAutofillAndCommitting"
+  'changes/setIsAutofillAndCommitting',
 );
 export const setIsAutofillAndCreatingPR = createAction<[workspaceId: string, value: boolean]>(
-  "changes/setIsAutofillAndCreatingPR"
+  'changes/setIsAutofillAndCreatingPR',
 );
-export const startBackgroundOperation = createAction<[
-  workspaceId: string,
-  type: BackgroundOperationType,
-  startedAt: number,
-  label?: string,
-]>("changes/startBackgroundOperation");
-export const updateBackgroundOperationPhase = createAction<[
-  workspaceId: string,
-  phase: BackgroundOperationPhase,
-]>("changes/updateBackgroundOperationPhase");
+export const startBackgroundOperation = createAction<
+  [workspaceId: string, type: BackgroundOperationType, startedAt: number, label?: string]
+>('changes/startBackgroundOperation');
+export const updateBackgroundOperationPhase = createAction<
+  [workspaceId: string, phase: BackgroundOperationPhase]
+>('changes/updateBackgroundOperationPhase');
 export const clearBackgroundOperation = createAction<[workspaceId: string]>(
-  "changes/clearBackgroundOperation"
+  'changes/clearBackgroundOperation',
 );
 export const clearAcceptChangesForm = createAction<[workspaceId: string]>(
-  "changes/clearAcceptChangesForm"
+  'changes/clearAcceptChangesForm',
 );
 export const resetAcceptChangesOperations = createAction<[workspaceId: string]>(
-  "changes/resetAcceptChangesOperations"
+  'changes/resetAcceptChangesOperations',
 );
-export const setCachedGitStatus = createAction<[
-  workspaceId: string,
-  gitStatus: WorkspaceGitStatus | null,
-  cachedGitStatusTimestamp: number | null,
-]>("changes/setCachedGitStatus");
+export const setCachedGitStatus = createAction<
+  [
+    workspaceId: string,
+    gitStatus: WorkspaceGitStatus | null,
+    cachedGitStatusTimestamp: number | null,
+  ]
+>('changes/setCachedGitStatus');
 
 /** Saga trigger: fetch AcceptChangesClient.getStatus and update post-merge state */
 export const refreshAcceptChangesStatus = createAction<[workspaceId: string]>(
-  "changes/refreshAcceptChangesStatus"
+  'changes/refreshAcceptChangesStatus',
 );
 
 // ---------------------------------------------------------------------------
@@ -289,18 +273,17 @@ export const refreshAcceptChangesStatus = createAction<[workspaceId: string]>(
 // ---------------------------------------------------------------------------
 
 export const setSidebarCommitWhenReady = createAction<[workspaceId: string, value: boolean]>(
-  "changes/setSidebarCommitWhenReady"
+  'changes/setSidebarCommitWhenReady',
 );
 export const setSidebarCreatePRWhenReady = createAction<[workspaceId: string, value: boolean]>(
-  "changes/setSidebarCreatePRWhenReady"
+  'changes/setSidebarCreatePRWhenReady',
 );
 export const setSidebarMergeWhenReady = createAction<[workspaceId: string, value: boolean]>(
-  "changes/setSidebarMergeWhenReady"
+  'changes/setSidebarMergeWhenReady',
 );
-export const setPendingAutoAction = createAction<[
-  workspaceId: string,
-  pendingAutoAction: PendingAutoAction | null,
-]>("changes/setPendingAutoAction");
+export const setPendingAutoAction = createAction<
+  [workspaceId: string, pendingAutoAction: PendingAutoAction | null]
+>('changes/setPendingAutoAction');
 
 // ---------------------------------------------------------------------------
 // Reducer

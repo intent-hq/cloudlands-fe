@@ -9,7 +9,7 @@
  */
 
 /** Terminal probe result for git on the daemon host. */
-export interface GitRequirementStatus {
+interface GitRequirementStatus {
   /** Whether the git probe has settled at least once. */
   checked: boolean;
   /** `host.checkGit` availability answer; false until checked. */
@@ -19,7 +19,7 @@ export interface GitRequirementStatus {
 }
 
 /** Terminal probe result for Node.js on the daemon host. */
-export interface NodeRequirementStatus {
+interface NodeRequirementStatus {
   /** Whether the node probe has settled at least once. */
   checked: boolean;
   /** Whether node is present AND meets MINIMUM_NODE_VERSION; false until checked. */
@@ -33,7 +33,7 @@ export interface NodeRequirementStatus {
  * Informational only — gh presence NEVER gates onboarding
  * (selectAllRequirementsMet ignores it).
  */
-export interface GhRequirementStatus {
+interface GhRequirementStatus {
   /** Whether the gh probe has settled at least once. */
   checked: boolean;
   /** `host.checkGh` availability answer; false until checked. */

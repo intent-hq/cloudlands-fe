@@ -1047,12 +1047,6 @@ export const updateSession = createAction<[agentId: string, updates: Partial<Age
   'agentSessions/updateSession',
 );
 
-/** Saga-owned core send side effect trigger. */
-export const agentSessionSendMessageRequested = createAsyncAction<
-  [agentId: string, wsId: string, text: string, options?: AgentSessionSendMessageOptions],
-  void
->('agentSessions/sendMessage', 'agentSessions/sendMessageRequested');
-
 /** Saga-owned core stop side effect trigger. */
 export const agentSessionStopChatRequested = createAsyncAction<[agentId: string], void>(
   'agentSessions/stopChat',
@@ -1489,7 +1483,11 @@ agentSessionReducer.with(prependHistoryMessages, (state, { payload: [agentId, me
   // count (floor 0). An estimate only — oldestReached pins it to exactly 0.
   const startOrdinalEstimate = shiftStartOrdinalForPrepend(existing, merged);
   if (merged.length <= HISTORY_SEGMENT_MAX) {
-    return setHistorySegment(state, agentId, { ...existing, messages: merged, startOrdinalEstimate });
+    return setHistorySegment(state, agentId, {
+      ...existing,
+      messages: merged,
+      startOrdinalEstimate,
+    });
   }
   // Past the cap: prune from the NEWEST side (viewport is walking up), which
   // severs contiguity with the tail — a hole opens. Serial-walk segments
@@ -1571,10 +1569,7 @@ agentSessionReducer.with(
     const session = getSession(state, agentId);
     if (!session) return state;
     const incoming = normalizeSortHistoryMessages(messages);
-    const seeded = dropRowsPresentInTail(incoming, session.messages).slice(
-      0,
-      HISTORY_SEGMENT_MAX,
-    );
+    const seeded = dropRowsPresentInTail(incoming, session.messages).slice(0, HISTORY_SEGMENT_MAX);
     // Landing rows overlapping the tail mean the seek landed at/near the
     // newest end — the segment is contiguous with the tail (no hole), same
     // overlap rule as the gap-refill append.

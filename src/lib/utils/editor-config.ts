@@ -65,7 +65,7 @@ import { store as appStore } from '$store/renderer/store';
 const lowlight = safeLowlight;
 
 // Extend Mention to parse our span[data-mention] chips back into nodes
-export const MentionFromSpan = Mention.extend({
+const MentionFromSpan = Mention.extend({
   parseHTML() {
     return [{ tag: 'span[data-mention]' }];
   },

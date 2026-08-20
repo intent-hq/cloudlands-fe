@@ -5,10 +5,10 @@
  * Replaces the deprecated git.store.svelte.ts.
  */
 
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
-import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
+import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type {
   GitWorkspaceState,
   GitState,
@@ -17,9 +17,9 @@ import type {
   GitOperationFlagName,
   GitOperationFlags,
   PostMergeState,
-} from "./git-types";
-export type { GitOperationCompletedEvent, GitOperationFailedEvent, AutoCommitHookFailureEvent } from "./git-types";
-import type { GitStatus } from "$shared/types";
+} from './git-types';
+export type { GitOperationCompletedEvent, GitOperationFailedEvent } from './git-types';
+import type { GitStatus } from '$shared/types';
 
 export const defaultGitOperationFlags: GitOperationFlags = {
   isPushing: false,
@@ -58,38 +58,31 @@ export const initialState: GitState = {
 // ── Actions ──
 
 /** Trigger saga to load git status for a workspace */
-export const loadGitStatus = createAction<[wsId: string, forceRefresh?: boolean]>(
-  "git/loadStatus"
-);
+export const loadGitStatus = createAction<[wsId: string, forceRefresh?: boolean]>('git/loadStatus');
 
 /** Set git status result */
-export const setGitStatus = createAction(
-  "git/setStatus",
-  (wsId: string, status: GitStatus) => ({ wsId, status })
-);
+export const setGitStatus = createAction('git/setStatus', (wsId: string, status: GitStatus) => ({
+  wsId,
+  status,
+}));
 
 // ── Git Operation Event Actions ──
 
-export const setLastGitOperation = createAction<[event: GitOperationCompletedEvent]>(
-  "git/setLastGitOperation"
-);
+export const setLastGitOperation =
+  createAction<[event: GitOperationCompletedEvent]>('git/setLastGitOperation');
 
-export const setLastGitError = createAction<[event: GitOperationFailedEvent]>(
-  "git/setLastGitError"
-);
+export const setLastGitError =
+  createAction<[event: GitOperationFailedEvent]>('git/setLastGitError');
 
 // ── Sidebar git operation actions (moved from transient-ui) ──
 
-export const setPostMergeState = createAction<[
-  wsId: string,
-  postMergeState: PostMergeState | null,
-]>("git/setPostMergeState");
+export const setPostMergeState =
+  createAction<[wsId: string, postMergeState: PostMergeState | null]>('git/setPostMergeState');
 
-export const setGitOperationFlag = createAction<[
-  wsId: string,
-  flag: GitOperationFlagName,
-  value: boolean,
-]>("git/setGitOperationFlag");
+export const setGitOperationFlag =
+  createAction<[wsId: string, flag: GitOperationFlagName, value: boolean]>(
+    'git/setGitOperationFlag',
+  );
 
 // ── Reducer ──
 

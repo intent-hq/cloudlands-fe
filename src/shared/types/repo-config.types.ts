@@ -10,11 +10,10 @@
 import { z } from 'zod';
 
 /** Script mode for repo scripts (service = long-running, command = run-once). */
-export const RepoScriptModeSchema = z.enum(['service', 'command']);
-export type RepoScriptMode = z.infer<typeof RepoScriptModeSchema>;
+const RepoScriptModeSchema = z.enum(['service', 'command']);
 
 /** Script category for repo scripts. */
-export const RepoScriptCategorySchema = z.enum([
+const RepoScriptCategorySchema = z.enum([
   'dev',
   'build',
   'test',
@@ -24,7 +23,6 @@ export const RepoScriptCategorySchema = z.enum([
   'storybook',
   'other',
 ]);
-export type RepoScriptCategory = z.infer<typeof RepoScriptCategorySchema>;
 
 /**
  * Per-repository script definition (parity with intentd `RepoScript`).
@@ -35,7 +33,7 @@ export type RepoScriptCategory = z.infer<typeof RepoScriptCategorySchema>;
  * the daemon drops unknown keys inside script entries on round-trip. The FE
  * keeps them (the safer choice for a file other tools may edit).
  */
-export const RepoScriptSchema = z
+const RepoScriptSchema = z
   .object({
     name: z.string(),
     command: z.string(),
@@ -46,7 +44,6 @@ export const RepoScriptSchema = z
     autoStart: z.boolean().optional(),
   })
   .passthrough();
-export type RepoScript = z.infer<typeof RepoScriptSchema>;
 
 /**
  * Per-repository configuration stored in `.intent/config.json` in a repo

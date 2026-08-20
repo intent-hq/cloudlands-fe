@@ -6,14 +6,10 @@
 
 import type { LocalCommitInfo } from '$features/accept-changes/types';
 import type { PrMonitorSnapshot } from '$features/pr-monitor/pr-monitor-service';
-import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 import { m } from '$shared/paraglide/messages.js';
 
-/** Open in target options */
-export type OpenInTarget = 'vscode' | 'terminal' | 'finder';
-
 /** Agent attribution for file changes */
-export interface FileChangeAttribution {
+interface FileChangeAttribution {
   agentId: string;
   agentName: string;
   sessionId?: string;
@@ -38,9 +34,6 @@ export interface UIFileChange {
   /** Tooltip message explaining why the file is locked */
   lockReason?: string;
 }
-
-/** @deprecated Use UIFileChange instead - alias for backwards compatibility */
-export type FileChange = UIFileChange;
 
 /** Group of file changes by agent */
 export interface AgentChangeGroup {
@@ -104,14 +97,14 @@ export function groupFilesByAgent(files: UIFileChange[]): AgentChangeGroup[] {
 }
 
 /** Stats for a group of changes */
-export interface ChangeStats {
+interface ChangeStats {
   fileCount: number;
   additions: number;
   deletions: number;
 }
 
 /** PR status for display */
-export type PRDisplayStatus = 'open' | 'merged' | 'closed' | 'draft';
+type PRDisplayStatus = 'open' | 'merged' | 'closed' | 'draft';
 
 /** Pull request info for display */
 export interface PRInfo {
@@ -138,105 +131,11 @@ export interface PRInfo {
   monitorOnly?: boolean;
 }
 
-/** Bucket visibility state */
-export interface BucketState {
-  expanded: boolean;
-  visible: boolean;
-}
-
-/** Commit panel state */
-export interface CommitPanelState {
-  expanded: boolean;
-  message: string;
-  isGenerating: boolean;
-  isCommitting: boolean;
-}
-
-/** Push panel state */
-export interface PushPanelState {
-  isPushing: boolean;
-  error?: string;
-}
-
-/** Create PR panel state */
-export interface CreatePRPanelState {
-  expanded: boolean;
-  title: string;
-  body: string;
-  isGenerating: boolean;
-  isCreating: boolean;
-}
-
-/** Props for CollapsibleBucket */
-export interface CollapsibleBucketProps {
-  title: string;
-  icon?: IconDefinition;
-  count?: number;
-  stats?: ChangeStats;
-  expanded?: boolean;
-  onToggle?: () => void;
-  class?: string;
-}
-
-/** Props for FileList */
-export interface FileListProps {
-  files: UIFileChange[];
-  muted?: boolean;
-  showStageButtons?: boolean;
-  onFileClick?: (path: string) => void;
-  onStage?: (path: string) => void;
-  onUnstage?: (path: string) => void;
-}
-
 /** Calculate stats from files */
-export function calculateStats(files: UIFileChange[]): ChangeStats {
+function calculateStats(files: UIFileChange[]): ChangeStats {
   return {
     fileCount: files.length,
     additions: files.reduce((sum, f) => sum + f.additions, 0),
     deletions: files.reduce((sum, f) => sum + f.deletions, 0),
   };
-}
-
-/** Calculate stats from commits */
-export function calculateCommitStats(commits: LocalCommitInfo[]): ChangeStats {
-  let additions = 0;
-  let deletions = 0;
-  let fileCount = 0;
-
-  for (const commit of commits) {
-    fileCount += commit.filesChanged ?? 0;
-    for (const file of commit.files ?? []) {
-      additions += file.additions;
-      deletions += file.deletions;
-    }
-  }
-
-  return { fileCount, additions, deletions };
-}
-
-/** Get file status icon info */
-export function getFileStatusInfo(file: UIFileChange): {
-  color: string;
-  bg: string;
-  label: string;
-} {
-  // Use explicit status if available
-  if (file.status === 'added') {
-    return { color: 'text-green-500', bg: 'bg-green-500/10', label: 'Added' };
-  }
-  if (file.status === 'deleted') {
-    return { color: 'text-red-500', bg: 'bg-red-500/10', label: 'Deleted' };
-  }
-  if (file.status === 'modified' || file.status === 'renamed') {
-    return { color: 'text-blue-500', bg: 'bg-blue-500/10', label: 'Modified' };
-  }
-
-  // Fallback to stats-based heuristic (for backward compatibility)
-  if (file.additions > 0 && file.deletions === 0) {
-    return { color: 'text-green-500', bg: 'bg-green-500/10', label: 'Added' };
-  }
-  if (file.deletions > 0 && file.additions === 0) {
-    return { color: 'text-red-500', bg: 'bg-red-500/10', label: 'Deleted' };
-  }
-  return { color: 'text-blue-500', bg: 'bg-blue-500/10', label: 'Modified' };
 }

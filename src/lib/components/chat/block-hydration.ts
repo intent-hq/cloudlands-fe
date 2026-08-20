@@ -17,12 +17,10 @@ import type { HydratedBlockEntry } from '$store/renderer/slices/chat-state/chat-
 import { hydratedBlockKey } from '$store/renderer/slices/chat-state/chat-state-types';
 
 /** True when the daemon served this block slim-truncated (any body kind). */
-export function isSlimTruncatedBlock(block: ContentBlock | null | undefined): boolean {
+function isSlimTruncatedBlock(block: ContentBlock | null | undefined): boolean {
   if (!block) return false;
   return (
-    block.inputTruncated === true ||
-    block.outputTruncated === true ||
-    block.dataTruncated === true
+    block.inputTruncated === true || block.outputTruncated === true || block.dataTruncated === true
   );
 }
 

@@ -16,10 +16,7 @@
  */
 
 import { Logger } from '../../../shared/logger';
-import {
-  ReverseRpcHandlerError,
-  type JsonRpcClient,
-} from '../../backend/main/json-rpc-client';
+import { ReverseRpcHandlerError, type JsonRpcClient } from '../../backend/main/json-rpc-client';
 import type { ExecutionResult } from './browser-action-executor';
 
 const logger = new Logger('BrowserExecReverse');
@@ -47,7 +44,7 @@ interface BrowserExecParams {
 }
 
 /** `saveAsset` seam so tests can stub the daemon round-trip. */
-export type SaveAssetFn = (params: {
+type SaveAssetFn = (params: {
   workspaceId: string;
   data: string;
   mimeType: string;
@@ -67,12 +64,7 @@ export interface RegisterBrowserExecOptions {
  * imported. The daemon-initiated reverse call is the only real trigger, and
  * that path runs in the Electron main process where the import is safe.
  */
-const defaultExecutor: ExecuteBrowserActionsFn = async (
-  actions,
-  tabId,
-  agentId,
-  workspaceId,
-) => {
+const defaultExecutor: ExecuteBrowserActionsFn = async (actions, tabId, agentId, workspaceId) => {
   const { executeBrowserActions } = await import('./browser.ipc');
   return executeBrowserActions(actions, tabId, agentId, workspaceId);
 };
@@ -97,12 +89,7 @@ export function registerBrowserExecReverseHandler(
       hasWorkspaceId: !!params.workspaceId,
     });
 
-    const result = await executor(
-      params.actions,
-      params.tabId,
-      params.agentId,
-      params.workspaceId,
-    );
+    const result = await executor(params.actions, params.tabId, params.agentId, params.workspaceId);
 
     if (params.workspaceId && saveAsset && result.success) {
       await rewriteScreenshotAssets(result, params.workspaceId, saveAsset);
@@ -153,8 +140,7 @@ async function rewriteScreenshotAssets(
   for (const actionResult of result.results) {
     if (actionResult.action !== 'screenshot' || !actionResult.success) continue;
     const data = actionResult.result as
-      | { base64?: string; width?: number; height?: number }
-      | undefined;
+      { base64?: string; width?: number; height?: number } | undefined;
     if (!data?.base64) continue;
     try {
       const saved = await saveAsset({
@@ -174,10 +160,9 @@ async function rewriteScreenshotAssets(
           height: data.height,
         };
       } else {
-        logger.warn(
-          'saveAsset returned no url; keeping base64 in screenshot result',
-          { workspaceId },
-        );
+        logger.warn('saveAsset returned no url; keeping base64 in screenshot result', {
+          workspaceId,
+        });
       }
     } catch (err) {
       logger.warn('Failed to save screenshot as asset, keeping base64 in result', {

@@ -5,32 +5,19 @@
  * Safe to import from any process (no renderer dependencies).
  */
 
-import type {
-  McpServerConfig,
-  McpServerStatus,
-  McpTool,
-} from "$lib/components/settings/mcp/types";
+import type { McpServerConfig, McpServerStatus, McpTool } from '$lib/components/settings/mcp/types';
 
 // Re-export for convenience
 export type { McpServerConfig, McpServerStatus, McpTool };
 
 /** Daemon-reported runtime state (PROTOCOL §5.22 `McpServerStatus.state`). */
-export type McpDaemonServerState = "stopped" | "starting" | "running" | "error";
+type McpDaemonServerState = 'stopped' | 'starting' | 'running' | 'error';
 
 /** Daemon runtime status read via `mcp.servers.getStatus` (PROTOCOL §5.22). */
 export type McpServerRuntimeStatus = {
   serverId: string;
   state: McpDaemonServerState;
   lastError?: string;
-};
-
-/** Auth check result returned from IPC */
-export type McpAuthInfo = {
-  requiresAuth: boolean;
-  hasAuth: boolean;
-  providerName?: string;
-  providerDisplayName?: string;
-  authHint?: string;
 };
 
 /** Per-workspace MCP disabled server names. */
@@ -60,10 +47,9 @@ export type McpSettingsState = {
   /** Number of servers imported in the last JSON import (for UI feedback) */
   lastImportedCount: number | null;
   /** Advanced JSON editor save state (replace-all via the daemon seam) */
-  advancedSaveStatus: "idle" | "saving" | "saved" | "error";
+  advancedSaveStatus: 'idle' | 'saving' | 'saved' | 'error';
   /** Advanced JSON editor save error (set when advancedSaveStatus === "error") */
   advancedSaveError: string | null;
   /** Per-workspace disabled server names. */
   byWorkspaceId: Record<string, WorkspaceMcpSettingsState>;
 };
-

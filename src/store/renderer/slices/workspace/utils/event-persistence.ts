@@ -162,36 +162,6 @@ export class EventPersistenceService {
 }
 
 /**
- * Export events to JSON file
- */
-export function exportEventsToFile(events: WorkspaceEvent[], workspaceId: string): void {
-  if (!browser) return;
-
-  try {
-    const data = {
-      workspaceId,
-      exportDate: new Date().toISOString(),
-      eventCount: events.length,
-      events,
-    };
-
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `workspace-events-${workspaceId}-${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  } catch (error) {
-    logger.error('[EventPersistence] Failed to export events:', error as Error);
-  }
-}
-
-/**
  * Import events from JSON file
  */
 export async function importEventsFromFile(file: File): Promise<WorkspaceEvent[]> {

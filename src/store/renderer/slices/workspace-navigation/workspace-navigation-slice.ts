@@ -16,7 +16,7 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 
 export type WorkspaceNavigationWorkspaceStatus = 'loading' | 'ready' | 'error' | 'creating';
 export type WorkspaceNavigationDrawerType = 'agent' | 'terminal' | 'overview' | null;
-export type WorkspaceNavigationHistoryType =
+type WorkspaceNavigationHistoryType =
   | 'note'
   | 'file'
   | 'diff'
@@ -57,18 +57,18 @@ export type WorkspaceNavigationMainPanelType =
   | 'commit-changeset'
   | 'code-review';
 
-export type WorkspaceNavigationAgentTurn = {
+type WorkspaceNavigationAgentTurn = {
   agentId: string;
   sessionId?: string;
   turnNumber?: number;
 };
 
-export type WorkspaceNavigationCommit = {
+type WorkspaceNavigationCommit = {
   hash: string;
   message?: string;
 };
 
-export interface WorkspaceNavigationHistoryEntry {
+interface WorkspaceNavigationHistoryEntry {
   type: WorkspaceNavigationHistoryType;
   id?: string;
   label?: string;
@@ -130,7 +130,7 @@ export interface WorkspaceNavigationMainPanelState {
   error?: string;
 }
 
-export interface WorkspaceNavigationDrawerState {
+interface WorkspaceNavigationDrawerState {
   open: boolean;
   type: WorkspaceNavigationDrawerType;
   itemId: string | null;
@@ -141,7 +141,7 @@ export interface WorkspaceNavigationNavigationState {
   currentIndex: number;
 }
 
-export interface WorkspaceNavigationUIState {
+interface WorkspaceNavigationUIState {
   hasInitialized: boolean;
   jumpToLine?: number;
 }
@@ -162,7 +162,7 @@ export interface WorkspaceNavigationState {
   byWorkspaceId: Record<string, WorkspaceNavigationWorkspaceState>;
 }
 
-export const emptyWorkspaceNavigationState: WorkspaceNavigationWorkspaceState = {
+const emptyWorkspaceNavigationState: WorkspaceNavigationWorkspaceState = {
   version: STORAGE_VERSION,
   workspace: {
     id: '',
@@ -186,17 +186,13 @@ export const emptyWorkspaceNavigationState: WorkspaceNavigationWorkspaceState = 
   },
 };
 
-export const initialState: WorkspaceNavigationState = {
+const initialState: WorkspaceNavigationState = {
   byWorkspaceId: {},
 };
 
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
   emptyWorkspaceNavigationState,
 );
-
-export function workspaceNavigationStorageKey(wsId: string): string {
-  return `workspace:state:${wsId}`;
-}
 
 export function createWorkspaceNavigationState(
   wsId: string,
@@ -410,11 +406,11 @@ export const openWorkspaceDiff = createAction<
   ]
 >('workspaceNavigation/openWorkspaceDiff');
 
-export const openWorkspaceChangeSet = createAction<[wsId: string]>(
+const openWorkspaceChangeSet = createAction<[wsId: string]>(
   'workspaceNavigation/openWorkspaceChangeSet',
 );
 
-export const openWorkspaceAgentTurnChanges = createAction<
+const openWorkspaceAgentTurnChanges = createAction<
   [wsId: string, turn: WorkspaceNavigationAgentTurn, aggregate?: boolean]
 >('workspaceNavigation/openWorkspaceAgentTurnChanges');
 

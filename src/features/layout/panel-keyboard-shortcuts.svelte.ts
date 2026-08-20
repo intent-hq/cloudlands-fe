@@ -460,14 +460,6 @@ export type PanelKeyboardShortcuts = ReturnType<typeof createPanelKeyboardShortc
 const keyboardShortcutsCache = new Map<string, PanelKeyboardShortcuts>();
 
 /**
- * Get the keyboard shortcuts manager for a workspace.
- * Returns undefined if the manager hasn't been created yet (PanelLayout not mounted).
- */
-export function getPanelKeyboardShortcuts(workspaceId: string): PanelKeyboardShortcuts | undefined {
-  return keyboardShortcutsCache.get(workspaceId);
-}
-
-/**
  * Register a keyboard shortcuts manager for a workspace.
  * Called by PanelLayout when it creates the manager.
  */

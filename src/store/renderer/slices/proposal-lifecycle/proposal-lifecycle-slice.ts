@@ -1,5 +1,5 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   ApplyProposalRequest,
   ProposalApplyResult,
@@ -10,7 +10,7 @@ import type {
 
 export const initialState: ProposalLifecycleState = {};
 
-export const PROPOSAL_LIFECYCLE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const PROPOSAL_LIFECYCLE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export const applyProposalRequested = createAction<[request: ApplyProposalRequest]>(
   'proposalLifecycle/applyProposalRequested',
@@ -54,7 +54,9 @@ export function pruneAppliedProposalLifecycleEntries(
 }
 
 export const proposalLifecycleReducer = createReducer<ProposalLifecycleState>(initialState);
-proposalLifecycleReducer.with(proposalApplyStarted, (state, { payload: [{ proposalId, startedAt }] }) => {
+proposalLifecycleReducer.with(
+  proposalApplyStarted,
+  (state, { payload: [{ proposalId, startedAt }] }) => {
     const current = state[proposalId];
     if (
       current?.status === 'applying' ||
@@ -67,8 +69,11 @@ proposalLifecycleReducer.with(proposalApplyStarted, (state, { payload: [{ propos
       ...state,
       [proposalId]: { status: 'applying', startedAt, lastAction: 'apply' },
     };
-  });
-proposalLifecycleReducer.with(proposalApplySucceeded, (state, { payload: [{ proposalId, completedAt, result }] }) => ({
+  },
+);
+proposalLifecycleReducer.with(
+  proposalApplySucceeded,
+  (state, { payload: [{ proposalId, completedAt, result }] }) => ({
     ...state,
     [proposalId]: {
       ...state[proposalId],
@@ -79,18 +84,19 @@ proposalLifecycleReducer.with(proposalApplySucceeded, (state, { payload: [{ prop
       lastAction: 'apply',
       ...(result !== undefined ? { result } : {}),
     },
-  }));
+  }),
+);
 proposalLifecycleReducer.with(
-    proposalFailed,
-    (state, { payload: [{ proposalId, error, errorCode, completedAt, lastAction }] }) => ({
-      ...state,
-      [proposalId]: {
-        ...state[proposalId],
-        status: 'failed',
-        error,
-        errorCode,
-        completedAt,
-        lastAction,
-      },
-    }),
-  );
+  proposalFailed,
+  (state, { payload: [{ proposalId, error, errorCode, completedAt, lastAction }] }) => ({
+    ...state,
+    [proposalId]: {
+      ...state[proposalId],
+      status: 'failed',
+      error,
+      errorCode,
+      completedAt,
+      lastAction,
+    },
+  }),
+);

@@ -1,15 +1,12 @@
 import type { AgentMessage } from '$shared/types';
-import {
-  getContentBlockFingerprint,
-  getContentBlocksRichness,
-} from './content-block-helpers';
+import { getContentBlockFingerprint, getContentBlocksRichness } from './content-block-helpers';
 
 const DEFAULT_TIMESTAMP_TOLERANCE_MS = 30_000;
 const NEAR_DUPLICATE_MIN_CONTENT_LENGTH = 200;
 const NEAR_DUPLICATE_MIN_PREFIX_LENGTH = 120;
 const NEAR_DUPLICATE_MIN_PREFIX_RATIO = 0.9;
 
-export type AgentSessionMessageMergeReason =
+type AgentSessionMessageMergeReason =
   | 'accepted'
   | 'stale-would-drop-user-message'
   | 'stale-fewer-messages'
@@ -137,10 +134,7 @@ function isAssistantContentDuplicate(a: AgentMessage, b: AgentMessage): boolean 
 function isAssistantFinalizationIdentityMismatch(a: AgentMessage, b: AgentMessage): boolean {
   if (hasExplicitDifferentTurn(a, b)) return false;
   if (a.role !== 'assistant' || b.role !== 'assistant') return false;
-  return (
-    isStreamingFinalizationDuplicate(a, b) ||
-    hasExplicitSameTurn(a, b)
-  );
+  return isStreamingFinalizationDuplicate(a, b) || hasExplicitSameTurn(a, b);
 }
 
 function commonPrefixLength(a: string, b: string): number {
@@ -275,8 +269,15 @@ export function mergeAgentSessionMessagesWithPolicy({
       const lastNext = merged[merged.length - 1];
       const currentBlockCount = lastCurrent?.contentBlocks?.length ?? 0;
       const nextBlockCount = lastNext?.contentBlocks?.length ?? 0;
-      if (lastCurrent?.id === lastNext?.id && nextBlockCount < currentBlockCount && currentBlockCount > 0) {
-        merged = [...merged.slice(0, -1), { ...lastNext, contentBlocks: lastCurrent.contentBlocks }];
+      if (
+        lastCurrent?.id === lastNext?.id &&
+        nextBlockCount < currentBlockCount &&
+        currentBlockCount > 0
+      ) {
+        merged = [
+          ...merged.slice(0, -1),
+          { ...lastNext, contentBlocks: lastCurrent.contentBlocks },
+        ];
         return acceptSessionMessageMerge(merged, 'streaming-content-block-regression');
       }
     }

@@ -1,4 +1,4 @@
-export const MINIMUM_REASONING_EFFORT_PROTOCOL = '5.2';
+
 
 export function supportsReasoningEffortProtocol(protocolVersion?: string | null): boolean {
   if (!protocolVersion) return false;

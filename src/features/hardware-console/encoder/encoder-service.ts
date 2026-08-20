@@ -88,10 +88,7 @@ function navigateToWorkspace(
  * the detent navigated to, or null when there was nowhere to go (cycling
  * clamps at the ends of the activity-ordered list).
  */
-export function handleEncoderRotate(
-  direction: EncoderDirection,
-  deps: EncoderDeps = {},
-): string | null {
+function handleEncoderRotate(direction: EncoderDirection, deps: EncoderDeps = {}): string | null {
   const { navigate, dispatch, getCurrentWorkspaceId } = resolveDeps(deps);
   const state = appStore.state;
 
@@ -113,7 +110,7 @@ export function handleEncoderRotate(
  * All-workspaces sidebar panel (in its current view mode); clicks while it
  * is open cycle the view mode Recent → Repo → Status.
  */
-export function handleEncoderClick(deps: EncoderDeps = {}): void {
+function handleEncoderClick(deps: EncoderDeps = {}): void {
   const { dispatch } = resolveDeps(deps);
   const nav = appStore.state.sidebarNav;
   if (nav.panelItem === 'all-workspaces') {

@@ -491,13 +491,6 @@ export function isMacPlatform(): boolean {
 }
 
 /**
- * Get the modifier key name for the current platform
- */
-export function getModifierKey(): string {
-  return isMac ? '⌘' : 'Ctrl';
-}
-
-/**
  * Shortcut entry with display information
  */
 export interface ShortcutEntry {

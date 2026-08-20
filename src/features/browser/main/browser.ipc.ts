@@ -16,7 +16,6 @@ import { Logger } from '../../../shared/logger';
 import {
   executeActions,
   type ExecutionResult,
-  type ActionSequence,
 } from './browser-action-executor';
 import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
 import { loopbackContextFromTransport, type LoopbackRewriteContext } from './loopback-rewrite';
@@ -299,7 +298,7 @@ export async function executeBrowserActions(
 }
 
 // Re-export types for MCP tools
-export type { ExecutionResult, ActionSequence };
+export type { ExecutionResult };
 
 /**
  * Register browser IPC handlers

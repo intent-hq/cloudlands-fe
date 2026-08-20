@@ -27,11 +27,11 @@ import type {
   VendorNotificationSource,
 } from './types';
 
-export const DEFAULT_DOUBLE_PRESS_WINDOW_MS = 350;
+const DEFAULT_DOUBLE_PRESS_WINDOW_MS = 350;
 export const DEFAULT_JOYSTICK_ENGAGE_DISTANCE = 0.35;
-export const DEFAULT_JOYSTICK_RELEASE_DISTANCE = 0.2;
-export const DEFAULT_SECTOR_COUNT = 8;
-export const DEFAULT_SECTOR_DEBOUNCE_MS = 50;
+const DEFAULT_JOYSTICK_RELEASE_DISTANCE = 0.2;
+const DEFAULT_SECTOR_COUNT = 8;
+const DEFAULT_SECTOR_DEBOUNCE_MS = 50;
 
 export class HardwareInputDecoder {
   private readonly listeners = new Map<HardwareInputEventType, Set<(payload: never) => void>>();

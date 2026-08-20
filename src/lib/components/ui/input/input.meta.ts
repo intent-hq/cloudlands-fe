@@ -6,7 +6,7 @@ export const inputMetadata = parseUiComponentMetadata({
   source: 'src/lib/components/ui/input/input.svelte',
   publicImport: '$lib/components/ui/input',
   legacyImports: ['$lib/components/ui/input/index.js', '$lib/components/ui/input/input.svelte'],
-  exports: ['Input', 'Root', 'inputMetadata'],
+  exports: ['Input', 'inputMetadata'],
   category: 'primitive',
   owner: '007-B2',
   callers: [

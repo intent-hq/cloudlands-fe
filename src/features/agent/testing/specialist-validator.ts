@@ -86,7 +86,16 @@ const SPECIALIST_BEHAVIORS: SpecialistBehavior[] = [
   },
   {
     id: 'developer',
-    expectedActions: ['read_file', 'write_file', 'edit_file', 'apply_diff', 'run_command', 'read_note', 'add_to_note', 'edit_note'],
+    expectedActions: [
+      'read_file',
+      'write_file',
+      'edit_file',
+      'apply_diff',
+      'run_command',
+      'read_note',
+      'add_to_note',
+      'edit_note',
+    ],
     forbiddenActions: ['delegate_task', 'create_agent'],
     delegationExpected: false,
     implementationExpected: true,
@@ -96,7 +105,6 @@ const SPECIALIST_BEHAVIORS: SpecialistBehavior[] = [
 /**
  * Exported for testing purposes
  */
-export { SPECIALIST_BEHAVIORS };
 
 /**
  * Get expected behavior for a specialist

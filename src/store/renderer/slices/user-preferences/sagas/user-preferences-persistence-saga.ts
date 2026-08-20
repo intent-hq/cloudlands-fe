@@ -178,52 +178,52 @@ export function* hydrateUserPreferencesWorker() {
   }
 }
 
-export function* persistSpellcheckWorker() {
+function* persistSpellcheckWorker() {
   const enabled = yield* selectSpellcheckEnabled.effect();
   yield* setLocalStorageJSON(SPELLCHECK_STORAGE_KEY, { enabled });
 }
 
-export function* persistShowArchivedWorker() {
+function* persistShowArchivedWorker() {
   yield* setLocalStorageJSON(SHOW_ARCHIVED_STORAGE_KEY, yield* selectShowArchived.effect());
 }
 
-export function* persistGroupByRepoWorker() {
+function* persistGroupByRepoWorker() {
   yield* setLocalStorageJSON(GROUP_BY_REPO_STORAGE_KEY, yield* selectGroupByRepo.effect());
 }
 
-export function* persistProviderSetupWorker() {
+function* persistProviderSetupWorker() {
   yield* setLocalStorageJSON(
     COMPLETED_PROVIDER_SETUP_STORAGE_KEY,
     yield* selectHasCompletedProviderSetup.effect(),
   );
 }
 
-export function* persistShowReasoningBlocksWorker() {
+function* persistShowReasoningBlocksWorker() {
   yield* setLocalStorageJSON(
     SHOW_REASONING_BLOCKS_STORAGE_KEY,
     yield* selectShowReasoningBlocks.effect(),
   );
 }
 
-export function* persistAgentFontWorker() {
+function* persistAgentFontWorker() {
   yield* setLocalStorageJSON(AGENT_STORAGE_KEY, {
     fontStyle: yield* selectAgentFontStyle.effect(),
   });
 }
 
-export function* persistNoteFontWorker() {
+function* persistNoteFontWorker() {
   yield* setLocalStorageJSON(NOTE_STORAGE_KEY, {
     fontStyle: yield* selectNoteFontStyle.effect(),
   });
 }
 
-export function* persistCodeFontWorker() {
+function* persistCodeFontWorker() {
   yield* setLocalStorageJSON(CODE_STORAGE_KEY, {
     fontFamily: yield* selectCodeFontFamily.effect(),
   });
 }
 
-export function* persistActivityLogPresetsWorker() {
+function* persistActivityLogPresetsWorker() {
   yield* setLocalStorageJSON(
     ACTIVITY_LOG_PRESETS_STORAGE_KEY,
     yield* selectActivityLogPresets.effect(),
@@ -247,18 +247,18 @@ export function* persistLanguagePreferenceWorker(action: ReturnType<typeof setLa
   yield* call(syncLanguagePreference, storedPreference);
 }
 
-export function* persistGithubLinkDefaultActionWorker() {
+function* persistGithubLinkDefaultActionWorker() {
   yield* setLocalStorageJSON(
     GITHUB_LINK_DEFAULT_ACTION_STORAGE_KEY,
     yield* selectGithubLinkDefaultAction.effect(),
   );
 }
 
-export function* persistPanelOpenModeWorker() {
+function* persistPanelOpenModeWorker() {
   yield* setLocalStorageJSON(PANEL_OPEN_MODE_STORAGE_KEY, yield* selectPanelOpenMode.effect());
 }
 
-export function* persistPanelStackDirectionWorker() {
+function* persistPanelStackDirectionWorker() {
   yield* setLocalStorageJSON(
     PANEL_STACK_DIRECTION_STORAGE_KEY,
     yield* selectPanelStackDirection.effect(),

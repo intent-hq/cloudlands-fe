@@ -19,7 +19,7 @@ export type RecentUrl = {
 /**
  * Zoom action requested for a specific browser tab.
  */
-export type BrowserZoomAction = "in" | "out" | "reset";
+export type BrowserZoomAction = 'in' | 'out' | 'reset';
 
 /**
  * Browser state scoped to a single workspace
@@ -51,7 +51,3 @@ export type BrowserState = {
 
 /** Maximum number of recent URLs to keep per workspace */
 export const MAX_RECENT_URLS = 20;
-
-/** localStorage key prefix for browser state */
-export const BROWSER_STORAGE_KEY_PREFIX = "browser-recent-";
-

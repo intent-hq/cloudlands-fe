@@ -97,7 +97,7 @@ export class FileSystemLogRepository implements LogRepository {
         try {
           await fs.unlink(filePath);
           logger.info('Cleared log file', { file });
-        } catch  {
+        } catch {
           // File might not exist, that's okay
           logger.debug('Log file not found', { file });
         }
@@ -198,51 +198,5 @@ export class FileSystemLogRepository implements LogRepository {
       logger.error('Failed to get log stats', error as Error);
       throw error;
     }
-  }
-}
-
-/**
- * In-memory implementation for testing
- */
-export class InMemoryLogRepository implements LogRepository {
-  private logs = new Map<string, string>();
-
-  async readLogFile(type: 'main' | 'renderer'): Promise<string> {
-    return this.logs.get(type) || '';
-  }
-
-  async clearLogFile(type: 'main' | 'renderer' | 'all'): Promise<void> {
-    if (type === 'all') {
-      this.logs.clear();
-    } else {
-      this.logs.delete(type);
-    }
-  }
-
-  async appendRendererLogs(entries: RendererLogEntry[]): Promise<void> {
-    const current = this.logs.get('renderer') || '';
-    const lines = entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n';
-    this.logs.set('renderer', current + lines);
-  }
-
-  async getLogStats(): Promise<LogStats> {
-    const mainContent = this.logs.get('main') || '';
-    const rendererContent = this.logs.get('renderer') || '';
-
-    const mainLines = mainContent.split('\n').filter((l) => l.trim());
-    const rendererLines = rendererContent.split('\n').filter((l) => l.trim());
-
-    return {
-      mainLogSize: mainContent.length,
-      rendererLogSize: rendererContent.length,
-      totalLines: mainLines.length + rendererLines.length,
-      errorCount: [...mainLines, ...rendererLines].filter((l) => l.includes('[ERROR]')).length,
-      warningCount: [...mainLines, ...rendererLines].filter((l) => l.includes('[WARN]')).length,
-    };
-  }
-
-  // Test helper
-  setLog(type: 'main' | 'renderer', content: string): void {
-    this.logs.set(type, content);
   }
 }

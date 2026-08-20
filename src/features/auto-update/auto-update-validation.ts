@@ -12,5 +12,3 @@ import { z } from 'zod';
 export const SetChannelRequestSchema = z.object({
   channel: z.enum(['stable', 'beta', 'alpha']),
 });
-
-export type SetChannelRequest = z.infer<typeof SetChannelRequestSchema>;

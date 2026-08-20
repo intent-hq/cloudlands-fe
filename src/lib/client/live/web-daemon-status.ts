@@ -12,7 +12,7 @@
  */
 
 /** Connection status mirroring the main-process ConnectionStatus union. */
-export type WebDaemonConnectionStatus = 'connecting' | 'connected' | 'disconnected';
+type WebDaemonConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
 /** Live daemon-connection status surface exposed to the browser mock. */
 export interface WebDaemonStatusSource {
@@ -56,7 +56,7 @@ export function onWebDaemonStatusSourceRegistered(
 }
 
 /** Test-only: clear the registered source and registration hooks. */
-export function __resetWebDaemonStatusSourceForTests(): void {
+function __resetWebDaemonStatusSourceForTests(): void {
   currentSource = null;
   registrationHandlers.clear();
 }

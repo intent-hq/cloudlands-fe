@@ -79,21 +79,3 @@ export async function isDroidInstalled(): Promise<boolean> {
 export async function getDroidPath(): Promise<string | null> {
   return findDroidPath();
 }
-
-export type DroidResolvedCommand = {
-  command: string;
-  argsPrefix: string[];
-};
-
-/**
- * Resolve the command to run Droid.
- * Only a direct binary is supported (no npx fallback).
- */
-export async function resolveDroidCommand(): Promise<DroidResolvedCommand | null> {
-  const droidPath = await findDroidPath();
-  if (droidPath) {
-    return { command: droidPath, argsPrefix: [] };
-  }
-  return null;
-}
-

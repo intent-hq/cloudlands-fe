@@ -1,8 +1,7 @@
 import { store } from '../../store';
-import type { AgentId, AgentSession, QueuedMessage } from '$shared/types';
+import type { AgentId, AgentSession } from '$shared/types';
 import type { StoreState } from '../../types';
 import { selectAgentSession } from '../agent-session/agent-session-selectors';
-import { selectAgentQueueMessages } from '../agent-queue/agent-queue-selectors';
 import { emptyWorkspaceAgentState } from './workspace-agents-slice';
 
 function getWorkspaceAgentState(state: StoreState, wsId: string) {
@@ -200,20 +199,6 @@ export const selectActiveAgentId = store.createSelector((state, wsId: string): s
 });
 
 /**
- * Returns the ready session for an agent within a workspace, or null until the
- * agent-session slice has hydrated the session for that workspace.
- */
-export const selectWorkspaceAgentReadySession = store.createSelector(
-  (state, wsId: string, agentId: string): AgentSession | null => {
-    const session = selectAgentSession.select(state, agentId);
-    if (!session) return null;
-    if (String(session.workspaceId) === String(wsId)) return session;
-
-    return null;
-  },
-);
-
-/**
  * Get a workspace-scoped agent session. Use this instead of bridge read helpers
  * when a caller knows the workspace that owns the agent.
  */
@@ -269,13 +254,6 @@ export const selectIsInitialSpecWriteInProgress = store.createSelector(
   },
 );
 
-/** @deprecated Renderer-visible queues live in agentQueue. Use selectAgentQueueMessages directly. */
-export const selectAgentQueuedMessages = store.createSelector(
-  (state, _wsId: string, agentId: string): QueuedMessage[] => {
-    return selectAgentQueueMessages.select(state, agentId);
-  },
-);
-
 // --------------------------------------------------------------------------
 // AgentService serializable state selectors (6a migration)
 // --------------------------------------------------------------------------
@@ -284,19 +262,5 @@ export const selectAgentQueuedMessages = store.createSelector(
 export const selectDiskMessageCount = store.createSelector(
   (state, wsId: string, agentId: string): number => {
     return getWorkspaceAgentState(state, wsId).diskMessageCounts[agentId] ?? 0;
-  },
-);
-
-/** Get the last-seen timestamp for an agent:created event (for dedup) */
-export const selectRecentAgentCreatedEvent = store.createSelector(
-  (state, wsId: string, agentId: string): number | undefined => {
-    return getWorkspaceAgentState(state, wsId).recentAgentCreatedEvents[agentId];
-  },
-);
-
-/** Get the count of recent agent created events (for cleanup threshold) */
-export const selectRecentAgentCreatedEventsCount = store.createSelector(
-  (state, wsId: string): number => {
-    return Object.keys(getWorkspaceAgentState(state, wsId).recentAgentCreatedEvents).length;
   },
 );

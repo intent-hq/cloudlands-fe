@@ -5,22 +5,13 @@
  * This keeps the visual representation separate from the document structure.
  */
 
-import {
-  Plugin,
-  PluginKey,
-} from '@tiptap/pm/state';
-import {
-  Decoration,
-  DecorationSet,
-} from '@tiptap/pm/view';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
-import {
-  findCommentAnchors,
-  getAllAnchoredCommentIds,
-} from './CommentAnchor';
+import { findCommentAnchors, getAllAnchoredCommentIds } from './CommentAnchor';
 import type { CommentV2 } from '$features/comments/comment-types-v2';
 
-export const commentDecorationsKey = new PluginKey('commentDecorations');
+const commentDecorationsKey = new PluginKey('commentDecorations');
 
 // Use V2 comment type
 type AnyComment = CommentV2;
@@ -230,114 +221,3 @@ export function updateCommentDecorations(view: any) {
   const tr = view.state.tr.setMeta('commentsChanged', true);
   view.dispatch(tr);
 }
-
-/**
- * CSS styles for comment decorations
- * These should be added to your global styles or component styles
- * Uses Tailwind CSS color variables for consistent theming
- */
-// i18n-ignore (CSS stylesheet string, not user-facing text)
-export const commentDecorationStyles = `
-  /* Base comment highlight */
-  .comment-highlight {
-    background-color: hsl(var(--warning) / 0.2);
-    border-bottom: 2px solid hsl(var(--warning) / 0.5);
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .comment-highlight:hover {
-    background-color: hsl(var(--warning) / 0.3);
-    border-bottom-color: hsl(var(--warning) / 0.8);
-  }
-
-  /* Status-based styles */
-  .comment-resolved {
-    /* No highlight for resolved comments */
-    background-color: transparent;
-    border-bottom-color: transparent;
-    text-decoration: none;
-    opacity: 1;
-  }
-
-  .comment-accepted {
-    background-color: hsl(var(--success) / 0.2);
-    border-bottom-color: hsl(var(--success) / 0.5);
-  }
-
-  .comment-rejected {
-    background-color: hsl(var(--destructive) / 0.1);
-    border-bottom-color: hsl(var(--destructive) / 0.3);
-    text-decoration: line-through;
-    opacity: 0.7;
-  }
-
-  .comment-pending {
-    background-color: hsl(var(--warning) / 0.2);
-    border-bottom-color: hsl(var(--warning) / 0.5);
-  }
-
-  /* Type-based styles */
-  .comment-type-suggestion {
-    background-color: hsl(var(--primary) / 0.15);
-    border-bottom-color: hsl(var(--primary) / 0.4);
-    border-bottom-style: dashed;
-  }
-
-  .comment-type-change-request {
-    background-color: hsl(var(--destructive) / 0.15);
-    border-bottom-color: hsl(var(--destructive) / 0.4);
-    border-bottom-width: 3px;
-  }
-
-  .comment-type-question {
-    background-color: hsl(var(--accent) / 0.15);
-    border-bottom-color: hsl(var(--accent) / 0.4);
-    border-bottom-style: dotted;
-  }
-
-  /* Author type styles */
-  .comment-author-agent {
-    position: relative;
-  }
-
-  .comment-author-agent::before {
-    content: "🤖";
-    position: absolute;
-    top: -8px;
-    left: -2px;
-    font-size: 12px;
-    opacity: 0.7;
-  }
-
-  /* Point comment marker */
-  .comment-point-marker {
-    display: inline-block;
-    color: hsl(var(--warning));
-    cursor: pointer;
-    margin: 0 2px;
-    vertical-align: middle;
-    transition: transform 0.2s ease;
-  }
-
-  .comment-point-marker:hover {
-    transform: scale(1.2);
-    color: hsl(var(--warning) / 0.8);
-  }
-
-  /* Overlapping comments — each decoration wraps its own span (nodeName),
-     so overlap regions render as NESTED highlight spans, never adjacent
-     siblings (siblings are just split segments of a single comment). */
-  .comment-highlight .comment-highlight {
-    background: linear-gradient(
-      45deg,
-      hsl(var(--warning) / 0.2) 25%,
-      hsl(var(--primary) / 0.2) 25%,
-      hsl(var(--primary) / 0.2) 50%,
-      hsl(var(--warning) / 0.2) 50%,
-      hsl(var(--warning) / 0.2) 75%,
-      hsl(var(--primary) / 0.2) 75%
-    );
-    background-size: 10px 10px;
-  }
-`;

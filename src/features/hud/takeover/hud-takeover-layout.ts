@@ -14,7 +14,7 @@ export const HUD_TAKEOVER_PITCH_PX = 192;
 
 /** Edge-lane metrics inside a gutter: px between lanes, margin at each side. */
 export const HUD_TAKEOVER_LANE_PITCH_PX = 8;
-export const HUD_TAKEOVER_LANE_MARGIN_PX = 4;
+const HUD_TAKEOVER_LANE_MARGIN_PX = 4;
 
 /** Gutter floor — the mock's 192 − 180, so an edge-free map keeps today's metrics. */
 export const HUD_TAKEOVER_GUTTER_MIN_PX = HUD_TAKEOVER_PITCH_PX - HUD_TAKEOVER_CELL_PX;
@@ -38,9 +38,9 @@ export function takeoverPitchPx(maxLanes: number): number {
 }
 
 /** Overlay frame sizing (mock `openOv`: min(1560, rw−120) × min(850, rh−120)). */
-export const HUD_TAKEOVER_FRAME_MAX_W_PX = 1560;
-export const HUD_TAKEOVER_FRAME_MAX_H_PX = 850;
-export const HUD_TAKEOVER_FRAME_MARGIN_PX = 120;
+const HUD_TAKEOVER_FRAME_MAX_W_PX = 1560;
+const HUD_TAKEOVER_FRAME_MAX_H_PX = 850;
+const HUD_TAKEOVER_FRAME_MARGIN_PX = 120;
 
 /** The minimal DOMRect surface the FLIP math needs (testable without jsdom). */
 export interface HudTakeoverRect {

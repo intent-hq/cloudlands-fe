@@ -1,5 +1,5 @@
-import type { Collection } from "@augmentcode/themis/utils/collections/collection-utils";
-import type { Note, NoteVersion } from "$shared/types";
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Note, NoteVersion } from '$shared/types';
 
 export type NoteVersionsState = {
   versions: NoteVersion[];
@@ -8,7 +8,7 @@ export type NoteVersionsState = {
   noteId: string | null;
 };
 
-export type ReadyTasksState = {
+type ReadyTasksState = {
   tasks: Note[];
   loading: boolean;
   error: string | null;
@@ -16,7 +16,7 @@ export type ReadyTasksState = {
 };
 
 export type WorkspaceNotesWorkspaceState = {
-  notes: Collection<Note, "id">;
+  notes: Collection<Note, 'id'>;
   loading: boolean;
   error: string | null;
   initialized: boolean;
@@ -33,15 +33,3 @@ export type WorkspaceNotesWorkspaceState = {
 export type WorkspaceNotesState = {
   byWorkspaceId: Record<string, WorkspaceNotesWorkspaceState>;
 };
-
-/**
- * Content update event dispatched via window CustomEvent.
- * Used for editor synchronization — replaces the old callback-based system.
- */
-export type NoteContentUpdateEvent = {
-  noteId: string;
-  content: string;
-  source: "agent" | "external";
-  workspaceId: string;
-};
-

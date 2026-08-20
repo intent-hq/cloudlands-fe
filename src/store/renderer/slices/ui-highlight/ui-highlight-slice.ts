@@ -1,9 +1,9 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { UiHighlightState } from './ui-highlight-types';
 
 export const UI_HIGHLIGHT_DURATION_MS = 2000;
-export const UI_HIGHLIGHT_MAX_DURATION_MS = 30_000;
+const UI_HIGHLIGHT_MAX_DURATION_MS = 30_000;
 
 export const initialState: UiHighlightState = {
   activeById: {},
@@ -30,24 +30,24 @@ function normalizeDurationMs(durationMs: number | undefined): number | undefined
 
 export const uiHighlightReducer = createReducer<UiHighlightState>(initialState);
 uiHighlightReducer.with(requestUiHighlight, (state, { payload: [highlightId, options] }) => {
-    const id = normalizeHighlightId(highlightId);
-    if (!id) return state;
-    const durationMs = normalizeDurationMs(options?.durationMs);
+  const id = normalizeHighlightId(highlightId);
+  if (!id) return state;
+  const durationMs = normalizeDurationMs(options?.durationMs);
 
-    const { [id]: _removedDuration, ...durationMsByIdWithoutId } = state.durationMsById;
+  const { [id]: _removedDuration, ...durationMsByIdWithoutId } = state.durationMsById;
 
-    return {
-      ...state,
-      activeById: {
-        ...state.activeById,
-        [id]: (state.activeById[id] ?? 0) + 1,
-      },
-      durationMsById:
-        durationMs === undefined
-          ? durationMsByIdWithoutId
-          : {
-              ...state.durationMsById,
-              [id]: durationMs,
-            },
-    };
-  });
+  return {
+    ...state,
+    activeById: {
+      ...state.activeById,
+      [id]: (state.activeById[id] ?? 0) + 1,
+    },
+    durationMsById:
+      durationMs === undefined
+        ? durationMsByIdWithoutId
+        : {
+            ...state.durationMsById,
+            [id]: durationMs,
+          },
+  };
+});

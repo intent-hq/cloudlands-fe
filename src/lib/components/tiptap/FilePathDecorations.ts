@@ -6,18 +6,12 @@
  */
 
 import { Extension } from '@tiptap/core';
-import {
-  Plugin,
-  PluginKey,
-} from '@tiptap/pm/state';
-import {
-  Decoration,
-  DecorationSet,
-} from '@tiptap/pm/view';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { extractFilePath } from '$lib/utils/file-path-detector';
 
-export const filePathDecorationsKey = new PluginKey('filePathDecorations');
+const filePathDecorationsKey = new PluginKey('filePathDecorations');
 
 export interface FilePathDecorationOptions {
   onFilePathClick?: (filePath: string, event: MouseEvent) => void;
@@ -62,7 +56,7 @@ function createFilePathDecorations(doc: ProseMirrorNode): DecorationSet {
 /**
  * Create the file path decorations plugin
  */
-export function createFilePathDecorationsPlugin(options: FilePathDecorationOptions = {}): Plugin {
+function createFilePathDecorationsPlugin(options: FilePathDecorationOptions = {}): Plugin {
   return new Plugin({
     key: filePathDecorationsKey,
 
@@ -96,12 +90,17 @@ export function createFilePathDecorationsPlugin(options: FilePathDecorationOptio
 
         // Only handle clicks directly on or inside file path elements
         // Using matches() ensures the target is the element itself or a descendant
-        if (!target.matches('[data-file-path], [data-file-path] *, code:has([data-file-path]), code:has([data-file-path]) *')) {
+        if (
+          !target.matches(
+            '[data-file-path], [data-file-path] *, code:has([data-file-path]), code:has([data-file-path]) *',
+          )
+        ) {
           return false;
         }
 
         // Find the file path element
-        const filePathElement = target.closest('[data-file-path]') || target.querySelector('[data-file-path]');
+        const filePathElement =
+          target.closest('[data-file-path]') || target.querySelector('[data-file-path]');
         if (filePathElement) {
           const filePath = filePathElement.getAttribute('data-file-path');
           if (filePath) {
@@ -136,5 +135,3 @@ export const FilePathDecorations = Extension.create<FilePathDecorationOptions>({
     ];
   },
 });
-
-export default FilePathDecorations;

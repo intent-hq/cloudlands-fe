@@ -8,7 +8,7 @@
  */
 
 /** Per-table row stats for one workspace-scoped table included in a transfer. */
-export interface TransferTableStat {
+interface TransferTableStat {
   name: string;
   rowCount: number;
   /** Summed byte length of every column value — serialized-payload estimate. */
@@ -16,7 +16,7 @@ export interface TransferTableStat {
 }
 
 /** One asset file under `<assets_root>/<workspaceId>/` (id = file name). */
-export interface TransferAsset {
+interface TransferAsset {
   id: string;
   sizeBytes: number;
 }
@@ -26,7 +26,7 @@ export interface TransferAsset {
  * commits at export time), and sandbox branches riding in the bundle.
  * `hasRepository: false` means the archive will carry no bundle.
  */
-export interface TransferGitSummary {
+interface TransferGitSummary {
   hasRepository: boolean;
   branch?: string;
   dirtyFiles: string[];
@@ -34,7 +34,7 @@ export interface TransferGitSummary {
 }
 
 /** The versioned transfer manifest embedded in every export archive. */
-export interface TransferManifest {
+interface TransferManifest {
   formatVersion: number;
   creatingIntentdVersion: string;
   workspaceId: string;
@@ -49,7 +49,7 @@ export interface TransferManifest {
  * unmerged sandboxes). `code` is machine-readable and stable; `message` is
  * human-readable.
  */
-export interface TransferWarning {
+interface TransferWarning {
   code: string;
   message: string;
 }
@@ -76,9 +76,7 @@ export interface TransferPlanWireResult {
  * Where the transfer goes: another connected backend, or a local file
  * download.
  */
-export type TransferDestination =
-  | { kind: 'server'; connectionId: string }
-  | { kind: 'download' };
+export type TransferDestination = { kind: 'server'; connectionId: string } | { kind: 'download' };
 
 export type TransferStep = 'destination' | 'confirm' | 'transferring' | 'result';
 
@@ -88,7 +86,7 @@ export type TransferPlanStatus = 'idle' | 'loading' | 'loaded' | 'error';
  * Step-3 relay phase, mirroring the main-process `TransferRelayPhase` plus
  * the terminal outcomes the wizard renders on step 4.
  */
-export type TransferRunPhase = 'building' | 'relaying' | 'committing';
+type TransferRunPhase = 'building' | 'relaying' | 'committing';
 
 export type TransferRunStatus = 'idle' | 'running' | 'succeeded' | 'failed';
 

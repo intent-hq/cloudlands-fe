@@ -56,18 +56,3 @@ export const agentAvatarCatalogIdentities: readonly AgentAvatarCatalogIdentity[]
     specialist: null,
   })),
 ];
-
-export const agentAvatarFixtures = [
-  {
-    id: 'agent-avatar-design-status-matrix',
-    title: 'agent-avatar-design-status-matrix', // i18n-ignore (catalog fixture identifier)
-    states: [
-      ...builtinAgentAvatarDesigns,
-      ...fallbackAgentAvatarDesigns,
-      ...agentAvatarCatalogStates,
-    ],
-    themes: ['light', 'dark', 'high-contrast'],
-    viewport: 'both',
-    reducedMotion: true,
-  },
-] as const;

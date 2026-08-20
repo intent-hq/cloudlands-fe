@@ -75,44 +75,30 @@ export enum ErrorSeverity {
   CRITICAL = 'critical', // System failure
   HIGH = 'high', // Feature broken
   MEDIUM = 'medium', // Degraded experience
-  LOW = 'low', // Minor issue
+  // Minor issue
 }
 
 // Error codes for specific issues
 export enum ErrorCode {
   // Configuration errors
   INVALID_CONFIG = 'INVALID_CONFIG',
-  MISSING_PROVIDER = 'MISSING_PROVIDER',
-
   // Provider errors
   PROVIDER_UNAVAILABLE = 'PROVIDER_UNAVAILABLE',
   PROVIDER_ERROR = 'PROVIDER_ERROR',
 
   // Streaming errors
-  STREAM_INTERRUPTED = 'STREAM_INTERRUPTED',
   STREAM_TIMEOUT = 'STREAM_TIMEOUT',
 
   // Session errors
-  SESSION_NOT_FOUND = 'SESSION_NOT_FOUND',
-  SESSION_CORRUPTED = 'SESSION_CORRUPTED',
-
   // Network errors
   NETWORK_ERROR = 'NETWORK_ERROR',
-  CONNECTION_REFUSED = 'CONNECTION_REFUSED',
-  MESSAGE_SEND_FAILED = 'MESSAGE_SEND_FAILED',
-
   // Validation errors
-  VALIDATION_ERROR = 'VALIDATION_ERROR',
-  INVALID_INPUT = 'INVALID_INPUT',
-
   // System errors
   OUT_OF_MEMORY = 'OUT_OF_MEMORY',
   PERMISSION_DENIED = 'PERMISSION_DENIED',
   UNKNOWN_ERROR = 'UNKNOWN_ERROR',
 
   // Timeout and memory errors
-  TIMEOUT = 'TIMEOUT',
-  MEMORY_LIMIT = 'MEMORY_LIMIT',
 }
 
 // Recovery strategies
@@ -246,15 +232,6 @@ export interface ServiceMetrics {
   errorRate: number;
   lastFailure?: Date;
   lastSuccess?: Date;
-}
-
-// Recovery context
-export interface RecoveryContext {
-  attempt: number;
-  maxAttempts: number;
-  error: AgentError;
-  strategy: RecoveryStrategy;
-  metadata?: Record<string, any>;
 }
 
 /**
@@ -1160,6 +1137,3 @@ export interface ChaosConfig {
 
 // Export singleton instance
 export const errorHandler = ErrorHandler.getInstance();
-
-// Export alias for backward compatibility
-export const unifiedErrorHandler = errorHandler;

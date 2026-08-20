@@ -18,7 +18,6 @@ import { Logger } from '../../shared/logger';
 import {
   ProviderCatalogResponseSchema,
   PROVIDERS_CATALOG_METHOD,
-  type ProviderCatalogEntry,
   type ProviderCatalogResult,
 } from '../../shared/provider-catalog';
 import { getBackendClient } from '../../features/backend/main/backend.ipc';
@@ -64,19 +63,6 @@ export function primeProviderCatalog(): void {
 /** The cached catalog, or `undefined` before the first successful fetch. */
 export function getCachedProviderCatalog(): ProviderCatalogResult | undefined {
   return cached;
-}
-
-/** One cached registry row by id, or `undefined` when unknown/not hydrated. */
-export function getCachedProviderCatalogEntry(
-  providerId: string,
-): ProviderCatalogEntry | undefined {
-  return cached?.providers.find((p) => p.id === providerId);
-}
-
-/** Test-only: reset module state between tests. */
-export function resetProviderCatalogCacheForTests(): void {
-  cached = undefined;
-  inFlight = undefined;
 }
 
 /** Test-only: seed the cache without a live daemon connection. */

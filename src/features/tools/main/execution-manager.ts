@@ -6,7 +6,7 @@
 import { EventEmitter } from 'events';
 import { ToolExecutionStatus, type Tool, type ToolExecution, type ToolResult } from './types';
 
-export class ExecutionManager extends EventEmitter {
+class ExecutionManager extends EventEmitter {
   private executions: Map<string, ToolExecution> = new Map();
   private activeExecutions: Set<string> = new Set();
   private maxRetries = 3;

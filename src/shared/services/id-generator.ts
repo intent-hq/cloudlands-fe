@@ -121,9 +121,3 @@ export class IdGenerator {
     return unifiedIdService.isValidWorkspaceId(id);
   }
 }
-
-/**
- * Singleton instance for convenience
- * Use IdGenerator directly for static methods
- */
-export const idGenerator = new IdGenerator();

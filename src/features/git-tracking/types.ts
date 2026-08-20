@@ -66,17 +66,6 @@ export interface DiffHunk {
 }
 
 /**
- * Complete diff for a file
- */
-export interface FileDiff {
-  file: GitFileChange;
-  hunks: DiffHunk[];
-  oldContent?: string;
-  newContent?: string;
-  patch?: string;
-}
-
-/**
  * Git commit information
  */
 export interface GitCommit {
@@ -158,7 +147,7 @@ export interface PullRequest {
 /**
  * Pull request review
  */
-export interface PullRequestReview {
+interface PullRequestReview {
   id: string;
   author: string;
   state: 'approved' | 'changes_requested' | 'commented' | 'dismissed' | 'pending';
@@ -169,135 +158,13 @@ export interface PullRequestReview {
 /**
  * Pull request check/status
  */
-export interface PullRequestCheck {
+interface PullRequestCheck {
   name: string;
   status: 'queued' | 'in_progress' | 'completed';
   conclusion?: 'success' | 'failure' | 'neutral' | 'cancelled' | 'skipped' | 'timed_out';
   url?: string;
   startedAt?: string;
   completedAt?: string;
-}
-
-/**
- * GitHub issue information
- */
-export interface GitHubIssue {
-  id: string;
-  number: number;
-  title: string;
-  body?: string;
-  state: 'open' | 'closed';
-  url: string;
-  htmlUrl: string;
-  author: {
-    login: string;
-    name?: string;
-    avatarUrl?: string;
-  };
-  labels: string[];
-  createdAt: string;
-  updatedAt: string;
-  closedAt?: string;
-  comments: number;
-  /** Repository owner */
-  owner: string;
-  /** Repository name */
-  repo: string;
-}
-
-/**
- * Complete git state for a workspace
- */
-export interface GitState {
-  workspaceId: string;
-  branch: GitBranch;
-  status: {
-    isClean: boolean;
-    hasConflicts: boolean;
-    workingDirectory: GitFileChange[];
-    stagingArea: GitFileChange[];
-    ahead: number;
-    behind: number;
-  };
-  commits: GitCommit[];
-  branches: GitBranch[];
-  remotes: GitRemote[];
-  tags: GitTag[];
-  stashes: GitStash[];
-  pullRequests: PullRequest[];
-  lastFetch?: string;
-  lastSync?: string;
-}
-
-/**
- * Git remote information
- */
-export interface GitRemote {
-  name: string;
-  url: string;
-  fetch: string;
-  push?: string;
-}
-
-/**
- * Git tag information
- */
-export interface GitTag {
-  name: string;
-  sha: string;
-  message?: string;
-  tagger?: {
-    name: string;
-    email: string;
-    date: string;
-  };
-}
-
-/**
- * Git stash information
- */
-export interface GitStash {
-  index: number;
-  message: string;
-  sha: string;
-  branch?: string;
-  date: string;
-}
-
-/**
- * Git operation result
- */
-export interface GitOperationResult {
-  success: boolean;
-  operation: string;
-  message?: string;
-  error?: string;
-  changes?: GitFileChange[];
-  conflicts?: string[];
-}
-
-/**
- * Git sync status
- */
-export interface GitSyncStatus {
-  local: {
-    branch: string;
-    commit: string;
-    uncommittedChanges: number;
-  };
-  remote: {
-    branch: string;
-    commit: string;
-    ahead: number;
-    behind: number;
-  };
-  pullRequest?: {
-    number: number;
-    state: string;
-    mergeable: boolean;
-  };
-  lastSync: string;
-  syncing: boolean;
 }
 
 /**
@@ -341,35 +208,3 @@ export const GitCommitSchema = z.object({
     filesChanged: z.number(),
   }),
 });
-
-export const GitStateSchema = z.object({
-  workspaceId: z.string(),
-  branch: z.object({
-    name: z.string(),
-    current: z.boolean(),
-    remote: z.string().optional(),
-    upstream: z.string().optional(),
-    ahead: z.number(),
-    behind: z.number(),
-    lastCommit: GitCommitSchema.optional(),
-    protected: z.boolean().optional(),
-  }),
-  status: z.object({
-    isClean: z.boolean(),
-    hasConflicts: z.boolean(),
-    workingDirectory: z.array(GitFileChangeSchema),
-    stagingArea: z.array(GitFileChangeSchema),
-    ahead: z.number(),
-    behind: z.number(),
-  }),
-  commits: z.array(GitCommitSchema),
-  branches: z.array(z.any()),
-  remotes: z.array(z.any()),
-  tags: z.array(z.any()),
-  stashes: z.array(z.any()),
-  pullRequests: z.array(z.any()),
-  lastFetch: z.string().optional(),
-  lastSync: z.string().optional(),
-});
-
-export type ValidatedGitState = z.infer<typeof GitStateSchema>;

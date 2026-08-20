@@ -872,6 +872,3 @@ export class UnifiedAgentFactory {
 
 // Export singleton instance
 export const agentFactory = UnifiedAgentFactory.getInstance();
-
-// For backward compatibility
-export const unifiedAgentFactory = agentFactory;

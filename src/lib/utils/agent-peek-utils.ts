@@ -131,12 +131,3 @@ export function truncateToLines(text: string, maxLines: number): string {
   if (lines.length <= maxLines) return lines.join('\n');
   return `${lines.slice(-maxLines).join('\n')}...`;
 }
-
-/**
- * Truncate text to a specific character length
- */
-export function truncateText(text: string, maxLength: number): string {
-  if (!text) return '';
-  if (text.length <= maxLength) return text;
-  return `${text.substring(0, maxLength)}...`;
-}

@@ -8,11 +8,10 @@ import { memoryLeakDetector } from './memory-leak-detector.service';
 import type { IDisposable } from '$shared/types/disposable';
 
 // Re-export for convenience
-export type { IDisposable };
 
 const logger = new Logger({ category: 'DisposalManager' });
 
-export class DisposableStore implements IDisposable {
+class DisposableStore implements IDisposable {
   private disposables = new Set<IDisposable | (() => void)>();
   private isDisposed = false;
 
@@ -178,7 +177,7 @@ export class DisposableStore implements IDisposable {
  * Component Disposal Manager
  * Manages disposal for Svelte components
  */
-export class ComponentDisposalManager {
+class ComponentDisposalManager {
   private componentStores = new Map<string, DisposableStore>();
 
   /**
@@ -225,45 +224,6 @@ export class ComponentDisposalManager {
       components: Array.from(this.componentStores.keys()),
     };
   }
-}
-
-/**
- * Create a disposal helper for use in Svelte components
- */
-export function createDisposalHelper(componentName: string) {
-  const store = new DisposableStore();
-
-  return {
-    store,
-
-    // Helper methods for common patterns
-    addEventListener(
-      target: EventTarget,
-      event: string,
-      handler: EventListener,
-      options?: AddEventListenerOptions,
-    ) {
-      store.addEventListener(target, event, handler, options, componentName);
-    },
-
-    addElectronListener(event: string, handler: (...args: any[]) => void) {
-      store.addElectronListener(event, handler, componentName);
-    },
-
-    setTimeout(callback: () => void, delay: number) {
-      return store.setTimeout(callback, delay, componentName);
-    },
-
-    setInterval(callback: () => void, delay: number) {
-      return store.setInterval(callback, delay, componentName);
-    },
-
-    // Cleanup function to be called in component's onDestroy or $effect cleanup
-    dispose() {
-      store.dispose();
-      memoryLeakDetector.cleanupComponent(componentName);
-    },
-  };
 }
 
 // Export singleton instance

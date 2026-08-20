@@ -21,17 +21,6 @@ import { faNote } from '$lib/icons/faNote';
 export { isSpecNote };
 export { getNoteIcon } from '$features/notes/utils/note-icon-utils';
 
-export function getNoteIconClass(note: Note) {
-  // if (isSpecNote(note.id)) return 'text-yellow-500';
-  if (note.metadata?.task) {
-    const status = note.metadata.task.status;
-    if (status === 'complete') return 'text-emerald-500';
-    // if (status === 'in_progress') return 'text-sky-500';
-    if (status === 'review_required') return 'text-blue-500';
-  }
-  return 'text-muted-foreground/50';
-}
-
 /**
  * Get display title for a note
  */

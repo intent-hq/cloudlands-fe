@@ -6,7 +6,7 @@ export const badgeMetadata = parseUiComponentMetadata({
   source: 'src/lib/components/ui/badge/badge.svelte',
   publicImport: '$lib/components/ui/badge',
   legacyImports: [],
-  exports: ['Badge', 'BadgeProps', 'BadgeVariant', 'badgeMetadata', 'badgeVariants'],
+  exports: ['Badge'],
   category: 'primitive',
   owner: '007-B1',
   callers: [

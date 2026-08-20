@@ -49,7 +49,7 @@ export interface WorkspaceActivePrSummary {
 }
 
 /** Semantic identifier mapping a progress action to a component onClick handler. */
-export type WorkspaceProgressActionId =
+type WorkspaceProgressActionId =
   'review-changes' | 'commit' | 'push-or-create-pr' | 'view-pr' | 'merge-pr';
 
 /** Semantic icon key the component maps to a concrete fa-icon. */

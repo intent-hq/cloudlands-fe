@@ -1,4 +1,4 @@
-export type WebSocketApiStatusSnapshot = {
+type WebSocketApiStatusSnapshot = {
   enabled: boolean;
   token: string;
   port: number | null;

@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ToolUseBlock } from '$shared/types';
-import { deriveAgentCardPreview, type AgentCardPreviewInputs } from '../agent-card-preview';
+import { deriveAgentCardPreview, type AgentCardPreviewInputs } from '../agent-preview';
 
 const toolUse = (name: string): ToolUseBlock =>
   ({ type: 'tool_use', id: `tool-${name}`, name, input: {} }) as ToolUseBlock;

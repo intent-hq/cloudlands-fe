@@ -16,7 +16,7 @@ export interface JsonRpcErrorShape {
 }
 
 /** Canonical string codes for the reserved JSON-RPC numeric range. */
-export const JSON_RPC_ERROR_CODES: Readonly<Record<number, string>> = {
+const JSON_RPC_ERROR_CODES: Readonly<Record<number, string>> = {
   [-32700]: 'PARSE_ERROR',
   [-32600]: 'INVALID_REQUEST',
   [-32601]: 'METHOD_NOT_FOUND',

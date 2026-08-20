@@ -8,7 +8,7 @@ export interface TrustedBrowserBridgeIpcContext {
   readonly [trustedBrowserBridgeBrand]: true;
 }
 
-export type PrivilegedIpcContext = IpcMainInvokeEvent | TrustedBrowserBridgeIpcContext;
+type PrivilegedIpcContext = IpcMainInvokeEvent | TrustedBrowserBridgeIpcContext;
 
 export class IpcAuthorizationError extends Error {
   constructor(
@@ -27,7 +27,7 @@ export function createTrustedBrowserBridgeIpcContext(): TrustedBrowserBridgeIpcC
   });
 }
 
-export function isTrustedBrowserBridgeIpcContext(
+function isTrustedBrowserBridgeIpcContext(
   context: unknown,
 ): context is TrustedBrowserBridgeIpcContext {
   return (
@@ -61,7 +61,7 @@ export function isTrustedRendererUrl(
   }
 }
 
-export function assertAuthorizedIpcContext(context: PrivilegedIpcContext, channel: string): void {
+function assertAuthorizedIpcContext(context: PrivilegedIpcContext, channel: string): void {
   if (isTrustedBrowserBridgeIpcContext(context)) return;
 
   const event = context as IpcMainInvokeEvent;

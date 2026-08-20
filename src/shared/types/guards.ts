@@ -5,12 +5,7 @@
  * These guards enable type narrowing in TypeScript and runtime validation.
  */
 
-import type {
-  AgentSession,
-  AgentMessage,
-  ContentBlock,
-  ToolCall,
-} from '../types';
+import type { AgentSession, AgentMessage, ContentBlock, ToolCall } from '../types';
 import { isContentBlock as isContentBlockImpl } from './content-block';
 
 // ============================================================================
@@ -85,13 +80,6 @@ export {
   isToolUseBlock,
   isToolResultBlock,
   isThinkingBlock,
-  isImageBlock,
-  isAudioBlock,
-  hasTextContent,
-  getTextContent,
-  isErrorBlock,
-  isToolBlock,
-  isMediaBlock,
 } from './content-block.guards';
 
 // ============================================================================

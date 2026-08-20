@@ -1,6 +1,6 @@
-import type { GitHubAuthRequiredEvent } from "$features/github-auth/types";
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import type { GitHubAuthRequiredEvent } from '$features/github-auth/types';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 
 export type GitCredentialsModalError = {
   workspaceId?: string;
@@ -11,13 +11,13 @@ export type GitCredentialsModalError = {
   rawError?: string;
 };
 
-export type GitHubAuthModalState = {
+type GitHubAuthModalState = {
   open: boolean;
   pendingAuth: GitHubAuthRequiredEvent | null;
   modalKey: number;
 };
 
-export type GitCredentialsModalState = {
+type GitCredentialsModalState = {
   open: boolean;
   error: GitCredentialsModalError | null;
   shownForWorkspaceIds: Record<string, boolean>;
@@ -42,18 +42,16 @@ export const initialState: GlobalModalsState = {
 };
 
 export const openGitHubAuthModal = createAction<[pendingAuth: GitHubAuthRequiredEvent | null]>(
-  "globalModals/openGitHubAuthModal"
+  'globalModals/openGitHubAuthModal',
 );
 
-export const closeGitHubAuthModal = createAction("globalModals/closeGitHubAuthModal");
+export const closeGitHubAuthModal = createAction('globalModals/closeGitHubAuthModal');
 
 export const openGitCredentialsModal = createAction<[error: GitCredentialsModalError]>(
-  "globalModals/openGitCredentialsModal"
+  'globalModals/openGitCredentialsModal',
 );
 
-export const closeGitCredentialsModal = createAction(
-  "globalModals/closeGitCredentialsModal"
-);
+export const closeGitCredentialsModal = createAction('globalModals/closeGitCredentialsModal');
 
 export const globalModalsReducer = createReducer<GlobalModalsState>(initialState);
 globalModalsReducer.with(openGitHubAuthModal, (state, { payload: [pendingAuth] }) => ({

@@ -149,7 +149,7 @@ export function takeoverEdgeTouchesTask(
 const HUD_TAKEOVER_EDGE_TARGET_GAP_PX = 2;
 
 /** Corner radius (px) for the rounded bends in the rendered edge paths. */
-export const HUD_TAKEOVER_EDGE_CORNER_PX = 2.5;
+const HUD_TAKEOVER_EDGE_CORNER_PX = 2.5;
 
 /**
  * SVG path `d` for an orthogonal polyline: `M`/`L` runs with each interior

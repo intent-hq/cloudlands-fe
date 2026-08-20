@@ -4,17 +4,9 @@
  * Uses Voronoi-based clipping to prevent sibling folder overlap
  */
 
-import {
-  polygonHull,
-  line,
-  curveCardinalClosed,
-  Delaunay,
-} from 'd3';
+import { polygonHull, Delaunay } from 'd3';
 import type { ProcessedNode, BlobShape } from './types';
 import { DEFAULT_ECOSYSTEM_SETTINGS } from './types';
-
-// Default values (used when no settings passed)
-export const HULL_PADDING = DEFAULT_ECOSYSTEM_SETTINGS.folderPadding;
 
 // Number of noise layers for organic detail
 const WOBBLE_OCTAVES = 2;
@@ -568,20 +560,6 @@ export function computeBlobShapes(
 
   // Sort by depth (shallower = render first / on bottom)
   return blobs.sort((a, b) => a.depth - b.depth);
-}
-
-/**
- * Create smooth path string from hull points
- */
-export function createBlobPath(hull: [number, number][]): string {
-  if (hull.length < 3) return '';
-
-  const lineGenerator = line<[number, number]>()
-    .x((d) => d[0])
-    .y((d) => d[1])
-    .curve(curveCardinalClosed.tension(0.7));
-
-  return lineGenerator(hull) || '';
 }
 
 /**

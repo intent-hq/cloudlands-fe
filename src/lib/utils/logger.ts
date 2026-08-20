@@ -34,7 +34,7 @@ const LOG_LEVEL_TO_CONFIG: Record<LogLevel, ConfigLogLevel> = {
   [LogLevel.ERROR]: ConfigLogLevel.ERROR,
 };
 
-export interface LogEntry {
+interface LogEntry {
   timestamp: string;
   level: LogLevel;
   category: string;
@@ -383,13 +383,3 @@ export class Logger {
     loggerService.log(LogLevel.ERROR, this.category, message, context, error, tags);
   }
 }
-
-// Export singleton methods
-export const getLogs = loggerService.getLogs.bind(loggerService);
-export const exportLogs = loggerService.exportLogs.bind(loggerService);
-export const clearLogs = loggerService.clear.bind(loggerService);
-export const setMinLogLevel = loggerService.setMinLevel.bind(loggerService);
-export const setMaxLogEntries = loggerService.setMaxEntries.bind(loggerService);
-
-// Export a default logger instance for compatibility
-export const logger = new Logger({ category: 'default' });

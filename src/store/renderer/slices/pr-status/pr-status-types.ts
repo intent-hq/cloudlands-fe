@@ -1,16 +1,4 @@
-/**
- * PR Status Slice Types
- *
- * Types for the pr-status Redux slice. Safe to import from any process.
- */
 
-export type PRStatusRefreshResult = {
-  success: boolean;
-  error?: string;
-  skipped?: boolean;
-  skipReason?: string;
-  discovered?: boolean;
-};
 
 /**
  * Per-workspace PR status state.
@@ -27,4 +15,3 @@ export type PRStatusWorkspaceState = {
 export type PRStatusState = {
   byWorkspaceId: Record<string, PRStatusWorkspaceState>;
 };
-

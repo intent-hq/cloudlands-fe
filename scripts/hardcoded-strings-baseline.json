@@ -719,12 +719,6 @@
     {
       "path": "src/lib/components/ui/menu/LegacyMenuHarness.svelte",
       "kind": "template text",
-      "snippet": "Legacy actions",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/ui/menu/LegacyMenuHarness.svelte",
-      "kind": "template text",
       "snippet": "Legacy command",
       "count": 1
     },

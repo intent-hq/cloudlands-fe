@@ -5,10 +5,8 @@ export const DEFAULT_BROWSER_PANEL_WIDTH = 900;
 export const MIN_PANEL_CANVAS_WIDTH = 280;
 export const MIN_PANEL_SIZE_PERCENT = 10;
 export const PANEL_SPLIT_GUTTER_WIDTH = 8;
-export const CONTAINED_PANEL_INLINE_INSET = 8;
+const CONTAINED_PANEL_INLINE_INSET = 8;
 export const CONTAINED_PANEL_INLINE_CHROME = CONTAINED_PANEL_INLINE_INSET * 2;
-export const FIRST_CHAT_PREFERRED_WIDTH = DEFAULT_CHAT_PANEL_WIDTH;
-export const FIRST_CHAT_MIN_LAUNCHER_WIDTH = DEFAULT_PANEL_WIDTH;
 export const MAX_VISIBLE_ROOT_PANEL_RESIZE_COUNT = 3;
 
 export type PanelDefaultWidthTier = 'narrow' | 'chat' | 'medium' | 'wide';
@@ -74,16 +72,14 @@ export function getAcceptedIndependentPanelResizeWidth(
 export function canUseWideFirstChatLayout(availableCanvasWidth: number): boolean {
   return (
     Number.isFinite(availableCanvasWidth) &&
-    !allocatePanelWidths(
-      [FIRST_CHAT_PREFERRED_WIDTH, FIRST_CHAT_MIN_LAUNCHER_WIDTH],
-      availableCanvasWidth,
-    ).overflows
+    !allocatePanelWidths([DEFAULT_CHAT_PANEL_WIDTH, DEFAULT_PANEL_WIDTH], availableCanvasWidth)
+      .overflows
   );
 }
 
 export function getWideFirstChatSizes(availableCanvasWidth: number): [number, number] {
   const widths = allocatePanelWidths(
-    [FIRST_CHAT_PREFERRED_WIDTH, FIRST_CHAT_MIN_LAUNCHER_WIDTH],
+    [DEFAULT_CHAT_PANEL_WIDTH, DEFAULT_PANEL_WIDTH],
     availableCanvasWidth,
   ).panelWidths;
   const total = Math.max(1, widths[0] + widths[1]);

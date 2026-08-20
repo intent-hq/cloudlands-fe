@@ -7,7 +7,7 @@
 import { DiagramPrimitiveSchema } from '$shared/types/notes-primitives';
 import { m } from '$shared/paraglide/messages.js';
 
-export interface ValidationError {
+interface ValidationError {
   field: string;
   message: string;
   severity: 'error' | 'warning';
@@ -112,7 +112,9 @@ export function validateDiagram(diagram: unknown): ValidationResult {
     if (state.camera?.focus && !nodeIds.has(state.camera.focus)) {
       warnings.push({
         field: `states[${i}].camera.focus`,
-        message: m.diagram_validator_cameraFocusNonexistentNode_error({ nodeId: state.camera.focus }),
+        message: m.diagram_validator_cameraFocusNonexistentNode_error({
+          nodeId: state.camera.focus,
+        }),
         severity: 'warning',
       });
     }
@@ -148,27 +150,4 @@ export function validateDiagram(diagram: unknown): ValidationResult {
     errors,
     warnings,
   };
-}
-
-/**
- * Format validation errors for display
- */
-export function formatValidationErrors(result: ValidationResult): string {
-  const parts: string[] = [];
-
-  if (result.errors.length > 0) {
-    parts.push(m.diagram_validator_errors_label());
-    result.errors.forEach((err) => {
-      parts.push(`  - ${err.field}: ${err.message}`);
-    });
-  }
-
-  if (result.warnings.length > 0) {
-    parts.push(m.diagram_validator_warnings_label());
-    result.warnings.forEach((warn) => {
-      parts.push(`  - ${warn.field}: ${warn.message}`);
-    });
-  }
-
-  return parts.join('\n');
 }

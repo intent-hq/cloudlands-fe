@@ -1,8 +1,8 @@
 import type { AgentMessage } from '$shared/types';
 
-export type ChatPolishScenarioId = 'comprehensive-conversation';
+type ChatPolishScenarioId = 'comprehensive-conversation';
 
-export interface ChatPolishMessageFixture {
+interface ChatPolishMessageFixture {
   message: AgentMessage;
   isStreaming?: boolean;
   isSticky?: boolean;
@@ -13,7 +13,7 @@ export interface ChatPolishScenario {
   items: ChatPolishConversationItem[];
 }
 
-export type ChatPolishConversationItem =
+type ChatPolishConversationItem =
   | ({ kind: 'message' } & ChatPolishMessageFixture)
   | { kind: 'wake'; id: string; wake: ChatPolishWakeFixture }
   | {
@@ -35,10 +35,4 @@ export interface ChatPolishWakeFixture {
     timestamp: string;
     data: Record<string, unknown>;
   }>;
-}
-
-export interface ChatPolishSubscriptionFixture {
-  id: string;
-  agentCount: 0 | 1 | 6 | 7;
-  expanded: boolean;
 }

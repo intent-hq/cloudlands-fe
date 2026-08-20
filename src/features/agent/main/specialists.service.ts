@@ -38,22 +38,6 @@ const logger = new Logger('SpecialistsService');
 // Cached GitHub auth status for synchronous filtering
 let isGitHubAuthenticated = false;
 
-// Wave 2: CustomSpecialist type retained for migration compatibility only.
-// All active specialist resolution now goes through file-based system.
-export interface CustomSpecialist {
-  id: string;
-  name: string;
-  description: string;
-  codingAgent?: string;
-  model: string;
-  behaviorPrompt: string;
-  /**
-   * Optional short reminder of critical constraints.
-   * If not provided, will be auto-generated from behaviorPrompt.
-   */
-  roleReminder?: string;
-}
-
 export interface EffectiveSpecialist {
   id: string;
   name: string;
@@ -384,62 +368,6 @@ export function getAllEffectiveSpecialists(
   }
 
   return filtered;
-}
-
-/**
- * Auto-generate a role reminder from a behavior prompt.
- * Extracts the first meaningful line and optionally the first "Hard Rule" if present.
- */
-function autoGenerateRoleReminder(behaviorPrompt: string): string {
-  if (!behaviorPrompt) return '';
-
-  // Try to extract the first non-header, non-empty line as the core role description
-  const lines = behaviorPrompt.split('\n');
-  let firstMeaningfulLine = '';
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    // Skip empty lines and markdown headers
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    // Skip lines that are just bold markers
-    if (trimmed.startsWith('**') && trimmed.endsWith('**')) continue;
-    // Found a meaningful line
-    firstMeaningfulLine = trimmed.replace(/^\*\*|\*\*$/g, '').trim();
-    break;
-  }
-
-  // Try to extract the first "Hard Rule" if present
-  const hardRulesMatch = behaviorPrompt.match(/##\s*Hard Rules[\s\S]*?(?=\n##|$)/i);
-  if (hardRulesMatch) {
-    // Extract first numbered rule: "1. **Rule text** — description"
-    const firstRuleMatch = hardRulesMatch[0].match(/\d+\.\s*\*\*([^*]+)\*\*/);
-    if (firstRuleMatch) {
-      const firstRule = firstRuleMatch[1].trim();
-      if (firstMeaningfulLine) {
-        return `${firstMeaningfulLine} ${firstRule}.`;
-      }
-      return firstRule;
-    }
-  }
-
-  return firstMeaningfulLine;
-}
-
-/**
- * Get the role reminder for a specialist.
- * Returns the explicit roleReminder if defined, otherwise auto-generates from behaviorPrompt.
- *
- * @param specialist - The effective specialist configuration
- * @returns The role reminder string (may be empty if no meaningful content found)
- */
-export function getRoleReminder(specialist: EffectiveSpecialist): string {
-  // Use explicit reminder if provided
-  if (specialist.roleReminder) {
-    return specialist.roleReminder;
-  }
-
-  // Auto-generate from behavior prompt
-  return autoGenerateRoleReminder(specialist.behaviorPrompt);
 }
 
 /**

@@ -1,4 +1,4 @@
-import { store } from "../../store";
+import { store } from '../../store';
 
 export const selectAutoUpdateStatus = store.createSelector((state) => state.autoUpdate.status);
 
@@ -20,15 +20,6 @@ export const selectAutoUpdateDismissedAt = store.createSelector(
   (state) => state.autoUpdate.downloadedToastDismissedAt,
 );
 
-export const selectAutoUpdateChannel = store.createSelector(
-  (state) => state.autoUpdate.channel,
-);
-
-export const selectIsDownloading = store.createSelector(
-  (state) => state.autoUpdate.status === "downloading",
-);
-
 export const selectIsReadyToInstall = store.createSelector(
-  (state) => state.autoUpdate.status === "downloaded",
+  (state) => state.autoUpdate.status === 'downloaded',
 );
-

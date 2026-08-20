@@ -27,16 +27,12 @@ import { Logger } from '../../../shared/logger';
 const logger = new Logger('ConfigDaemonSync');
 
 /** Daemon settings-catalog paths that mirror `AppConfig` sub-keys. */
-export const NON_SECRET_DAEMON_KEYS = [
-  'permissions.rules',
-  'userRules',
-  'workspaceRules',
-] as const;
+export const NON_SECRET_DAEMON_KEYS = ['permissions.rules', 'userRules', 'workspaceRules'] as const;
 
 /** Sensitive keys — writes push through, reads never hydrate plaintext. */
-export const SECRET_DAEMON_KEYS = [] as const;
+const SECRET_DAEMON_KEYS = [] as const;
 
-export const ALL_DAEMON_KEYS = [...NON_SECRET_DAEMON_KEYS, ...SECRET_DAEMON_KEYS] as const;
+const ALL_DAEMON_KEYS = [...NON_SECRET_DAEMON_KEYS, ...SECRET_DAEMON_KEYS] as const;
 
 async function daemonGet(path: string): Promise<unknown> {
   const { getBackendClient } = await import('../../backend/main/backend.ipc');

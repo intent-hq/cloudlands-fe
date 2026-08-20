@@ -1,5 +1,5 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   AppLayoutState,
   CreateWorkspaceForRepoDetail,
@@ -7,7 +7,7 @@ import type {
   OpenNewSpaceModalDetail,
   OpenTerminalTabDetail,
   SidebarLocateTarget,
-} from "./app-layout-types";
+} from './app-layout-types';
 
 export const initialState: AppLayoutState = {
   pendingCommandPaletteAction: null,
@@ -16,46 +16,42 @@ export const initialState: AppLayoutState = {
 
 export const createFileRequested = createAction<
   [wsId: string, folderPath: string, fileName: string]
->("appLayout/createFileRequested");
+>('appLayout/createFileRequested');
 
 export const openAgentTabRequested = createAction<[wsId: string, detail: OpenAgentTabDetail]>(
-  "appLayout/openAgentTabRequested"
+  'appLayout/openAgentTabRequested',
 );
 
 export const openTerminalTabRequested = createAction<[wsId: string, detail: OpenTerminalTabDetail]>(
-  "appLayout/openTerminalTabRequested"
+  'appLayout/openTerminalTabRequested',
 );
 
 export const createWorkspaceForRepoRequested = createAction<[detail: CreateWorkspaceForRepoDetail]>(
-  "appLayout/createWorkspaceForRepoRequested"
+  'appLayout/createWorkspaceForRepoRequested',
 );
 
 export const openNewSpaceModalRequested = createAction<[detail: OpenNewSpaceModalDetail]>(
-  "appLayout/openNewSpaceModalRequested"
-);
-
-export const requestPanelFocus = createAction<[wsId: string, panelId: string]>(
-  "appLayout/requestPanelFocus"
+  'appLayout/openNewSpaceModalRequested',
 );
 
 export const focusBrowserTabRequested = createAction<[wsId: string, tabId: string, pin?: boolean]>(
-  "appLayout/focusBrowserTabRequested"
+  'appLayout/focusBrowserTabRequested',
 );
 
 export const commandPaletteNewFileRequested = createAction<[wsId: string]>(
-  "appLayout/commandPaletteNewFileRequested"
+  'appLayout/commandPaletteNewFileRequested',
 );
 
 export const commandPaletteActionConsumed = createAction<[wsId: string]>(
-  "appLayout/commandPaletteActionConsumed"
+  'appLayout/commandPaletteActionConsumed',
 );
 
-export const locateItemInSidebarRequested = createAction<[wsId: string, target: SidebarLocateTarget]>(
-  "appLayout/locateItemInSidebarRequested"
-);
+export const locateItemInSidebarRequested = createAction<
+  [wsId: string, target: SidebarLocateTarget]
+>('appLayout/locateItemInSidebarRequested');
 
 export const locateItemInSidebarConsumed = createAction<[wsId: string]>(
-  "appLayout/locateItemInSidebarConsumed"
+  'appLayout/locateItemInSidebarConsumed',
 );
 
 export const appLayoutReducer = createReducer<AppLayoutState>(initialState);

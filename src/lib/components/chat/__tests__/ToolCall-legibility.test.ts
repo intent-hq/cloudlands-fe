@@ -16,7 +16,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: { select: () => undefined },
 }));
 
-vi.mock('../tool-classifier', async () => {
+vi.mock('$lib/utils/tool-classifier', async () => {
   const { faWrench } = await import('@fortawesome/free-solid-svg-icons');
   return {
     classifyTool: () => ({

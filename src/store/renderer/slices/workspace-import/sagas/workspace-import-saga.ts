@@ -16,10 +16,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import type {
-  ImportProgressEvent,
-  ImportStartResult,
-} from '$shared/types/workspace-transfer';
+import type { ImportProgressEvent, ImportStartResult } from '$shared/types/workspace-transfer';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import {
   closeImportModal,
@@ -50,9 +47,7 @@ async function invokeImport<T>(channel: string, params?: unknown): Promise<T> {
 }
 
 /** Run the main-process import and settle the run state. */
-export function* runImport(
-  action: ReturnType<typeof importStartRequested>,
-): SagaGenerator<void> {
+function* runImport(action: ReturnType<typeof importStartRequested>): SagaGenerator<void> {
   // Only run when the reducer accepted the start (wizard open + running);
   // otherwise a start fired against a settled success screen would launch a
   // headless import whose dispatches the reducer guards drop.
@@ -84,7 +79,7 @@ export function* runImport(
 }
 
 /** `transfer:import-progress` counter frames from main → progress dispatches. */
-export function* handleImportProgress(event: ImportProgressEvent): SagaGenerator<void> {
+function* handleImportProgress(event: ImportProgressEvent): SagaGenerator<void> {
   yield* put(
     importProgressReceived({
       phase: event.phase,
@@ -97,12 +92,12 @@ export function* handleImportProgress(event: ImportProgressEvent): SagaGenerator
 }
 
 /** File menu push: open the wizard and start the import (dialog first). */
-export function* handleImportMenu(): SagaGenerator<void> {
+function* handleImportMenu(): SagaGenerator<void> {
   yield* put(importStartRequested({ reuseLastFile: false }));
 }
 
 /** Best-effort relay cancel when the wizard closes mid-run. */
-export function* cancelImportOnClose(): SagaGenerator<void> {
+function* cancelImportOnClose(): SagaGenerator<void> {
   try {
     yield* call(invokeImport, TRANSFER.IMPORT_CANCEL);
   } catch (error) {
@@ -111,7 +106,7 @@ export function* cancelImportOnClose(): SagaGenerator<void> {
 }
 
 /** Success screen: navigate to the imported workspace and close the wizard. */
-export function* openImportedWorkspace(): SagaGenerator<void> {
+function* openImportedWorkspace(): SagaGenerator<void> {
   const runStatus = yield* selectImportRunStatus.effect();
   const workspaceId = yield* selectImportWorkspaceId.effect();
   if (runStatus !== 'succeeded' || !workspaceId) return;

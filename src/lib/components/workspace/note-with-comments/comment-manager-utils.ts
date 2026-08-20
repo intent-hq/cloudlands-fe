@@ -32,11 +32,13 @@ export function destroyCommentManagerV2(manager: CommentManagerV2 | null | undef
   }
 }
 
+/** @public imported by NoteWithComments.svelte (knip does not track that file's imports) */
 export type ProcessHTMLToMarkdown = (
   html: string,
   options?: { preserveAnchors?: boolean },
 ) => string;
 
+/** @public imported by NoteWithComments.svelte (knip does not track that file's imports) */
 export function getMarkdownFromEditorPreservingAnchors({
   editor,
   processHTMLToMarkdown,

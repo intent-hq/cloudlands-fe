@@ -49,7 +49,7 @@ export function mutationErrorMessage(error: unknown): string {
 }
 
 /** Numeric JSON-RPC code the daemon returns for an optimistic-concurrency conflict (§11.4-D). */
-export const CONFLICT_RPC_CODE = -32005;
+const CONFLICT_RPC_CODE = -32005;
 
 /**
  * Detect the daemon's optimistic-concurrency conflict response EXACTLY: numeric

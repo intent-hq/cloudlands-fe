@@ -10,20 +10,11 @@
  * that move naturally with the document content.
  */
 
-import {
-  Node,
-  mergeAttributes,
-} from '@tiptap/core';
+import { Node, mergeAttributes } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('CommentAnchor');
-
-export interface CommentAnchorAttributes {
-  id: string; // Unique anchor ID like "cmt-123:start" or "cmt-123:end"
-  type: 'start' | 'end' | 'point'; // Type of anchor
-  commentId: string; // The comment this anchor belongs to
-}
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -107,104 +98,104 @@ export const CommentAnchor = Node.create({
     return {
       insertCommentAnchors:
         (commentId: string) =>
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          ({ commands, state, chain, tr }) => {
-            const { from, to } = state.selection;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        ({ commands, state, chain, tr }) => {
+          const { from, to } = state.selection;
 
-            // Debug: Log selection info
-            const $from = state.doc.resolve(from);
-            const $to = state.doc.resolve(to);
-            logger.debug('Selection info:', {
-              from,
-              to,
-              selectedText: state.doc.textBetween(from, to),
-              fromParent: $from.parent.type.name,
-              toParent: $to.parent.type.name,
-            });
+          // Debug: Log selection info
+          const $from = state.doc.resolve(from);
+          const $to = state.doc.resolve(to);
+          logger.debug('Selection info:', {
+            from,
+            to,
+            selectedText: state.doc.textBetween(from, to),
+            fromParent: $from.parent.type.name,
+            toParent: $to.parent.type.name,
+          });
 
-            // For a range selection, insert start and end anchors
-            if (from !== to) {
+          // For a range selection, insert start and end anchors
+          if (from !== to) {
             // Use a custom transaction to insert anchors without splitting nodes
             // This preserves the parent node structure (e.g., headings stay as headings)
-              return commands.command(({ tr, dispatch }) => {
-                if (!dispatch) return true;
-
-                // Create anchor nodes
-                const startAnchor = state.schema.nodes[this.name].create({
-                  id: `${commentId}:start`,
-                  type: 'start',
-                  commentId,
-                });
-                const endAnchor = state.schema.nodes[this.name].create({
-                  id: `${commentId}:end`,
-                  type: 'end',
-                  commentId,
-                });
-
-                // Insert end anchor first (so positions don't shift)
-                tr.insert(to, endAnchor);
-                // Then insert start anchor
-                tr.insert(from, startAnchor);
-
-                logger.debug('Inserted anchors via transaction at positions:', { from, to });
-                return true;
-              });
-            }
-
-            // For a point selection, insert a single point anchor
             return commands.command(({ tr, dispatch }) => {
               if (!dispatch) return true;
 
-              const pointAnchor = state.schema.nodes[this.name].create({
-                id: `${commentId}:point`,
-                type: 'point',
+              // Create anchor nodes
+              const startAnchor = state.schema.nodes[this.name].create({
+                id: `${commentId}:start`,
+                type: 'start',
+                commentId,
+              });
+              const endAnchor = state.schema.nodes[this.name].create({
+                id: `${commentId}:end`,
+                type: 'end',
                 commentId,
               });
 
-              tr.insert(from, pointAnchor);
+              // Insert end anchor first (so positions don't shift)
+              tr.insert(to, endAnchor);
+              // Then insert start anchor
+              tr.insert(from, startAnchor);
+
+              logger.debug('Inserted anchors via transaction at positions:', { from, to });
               return true;
             });
-          },
+          }
+
+          // For a point selection, insert a single point anchor
+          return commands.command(({ tr, dispatch }) => {
+            if (!dispatch) return true;
+
+            const pointAnchor = state.schema.nodes[this.name].create({
+              id: `${commentId}:point`,
+              type: 'point',
+              commentId,
+            });
+
+            tr.insert(from, pointAnchor);
+            return true;
+          });
+        },
 
       removeCommentAnchors:
         (commentId: string) =>
-          ({ state, tr, dispatch }) => {
-            let found = false;
+        ({ state, tr, dispatch }) => {
+          let found = false;
 
-            // Find and remove all anchors for this comment. Positions come
-            // from the pre-transaction doc, so map them through the
-            // transaction — otherwise the second anchor of a range pair is
-            // deleted at a stale offset and survives.
-            state.doc.descendants((node, pos) => {
-              if (node.type.name === this.name && node.attrs.commentId === commentId) {
-                found = true;
-                const mapped = tr.mapping.map(pos);
-                tr.delete(mapped, mapped + node.nodeSize);
-              }
-            });
-
-            if (found && dispatch) {
-              dispatch(tr);
-              return true;
+          // Find and remove all anchors for this comment. Positions come
+          // from the pre-transaction doc, so map them through the
+          // transaction — otherwise the second anchor of a range pair is
+          // deleted at a stale offset and survives.
+          state.doc.descendants((node, pos) => {
+            if (node.type.name === this.name && node.attrs.commentId === commentId) {
+              found = true;
+              const mapped = tr.mapping.map(pos);
+              tr.delete(mapped, mapped + node.nodeSize);
             }
+          });
 
-            return false;
-          },
+          if (found && dispatch) {
+            dispatch(tr);
+            return true;
+          }
+
+          return false;
+        },
 
       insertPointAnchor:
         (commentId: string) =>
-          ({ commands, state }) => {
-            const { from } = state.selection;
+        ({ commands, state }) => {
+          const { from } = state.selection;
 
-            return commands.insertContentAt(from, {
-              type: this.name,
-              attrs: {
-                id: `${commentId}:point`,
-                type: 'point',
-                commentId,
-              },
-            });
-          },
+          return commands.insertContentAt(from, {
+            type: this.name,
+            attrs: {
+              id: `${commentId}:point`,
+              type: 'point',
+              commentId,
+            },
+          });
+        },
     };
   },
 

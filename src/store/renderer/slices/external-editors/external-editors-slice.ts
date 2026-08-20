@@ -18,7 +18,7 @@ import { m } from '$shared/paraglide/messages.js';
 export type OpenAction = string;
 
 /** Special non-editor actions that are always available */
-export const SPECIAL_ACTIONS = ['copy', 'copy-branch'] as const;
+const SPECIAL_ACTIONS = ['copy', 'copy-branch'] as const;
 export type SpecialAction = (typeof SPECIAL_ACTIONS)[number];
 
 /** Detected editor from the main process */
@@ -45,12 +45,6 @@ export type ExternalEditorsState = {
   error: string | null;
   lastFetched: number;
 };
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-export const STORAGE_KEY = 'installed-editors-cache';
 export const CACHE_TTL_MS = 60000; // 1 minute cache
 
 const DEFAULT_ACTION: OpenAction = 'vscode';
@@ -150,11 +144,11 @@ function coercePriority(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
-export function normalizeOpenAction(action: unknown): OpenAction {
+function normalizeOpenAction(action: unknown): OpenAction {
   return coerceString(action, DEFAULT_ACTION) || DEFAULT_ACTION;
 }
 
-export function normalizeExternalEditorsError(error: unknown): string {
+function normalizeExternalEditorsError(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (isRecord(error)) {
     return (
@@ -169,7 +163,7 @@ export function normalizeExternalEditorsError(error: unknown): string {
   );
 }
 
-export function normalizeInstalledEditor(value: unknown): InstalledEditor | null {
+function normalizeInstalledEditor(value: unknown): InstalledEditor | null {
   if (!isRecord(value)) return null;
 
   const id = coerceString(value.id, '').trim();
@@ -199,7 +193,7 @@ export function normalizeInstalledEditor(value: unknown): InstalledEditor | null
   };
 }
 
-export function normalizeInstalledEditors(editors: unknown): InstalledEditor[] {
+function normalizeInstalledEditors(editors: unknown): InstalledEditor[] {
   if (!Array.isArray(editors)) return [];
   return editors.flatMap((editor) => {
     const normalized = normalizeInstalledEditor(editor);

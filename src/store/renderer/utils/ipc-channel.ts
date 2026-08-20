@@ -1,16 +1,10 @@
-import {
-  END,
-  eventChannel,
-  buffers,
-  type EventChannel,
-  type Task,
-} from "redux-saga";
-import type { NotUndefined } from "@redux-saga/types";
-import { cancel, fork, take } from "typed-redux-saga";
+import { END, eventChannel, buffers, type EventChannel, type Task } from 'redux-saga';
+import type { NotUndefined } from '@redux-saga/types';
+import { fork, take } from 'typed-redux-saga';
 
-import { listenSync } from "$lib/electron-bridge";
-import type { ElectronEventName } from "$shared/ipc-registry";
-import type { WindowEventName } from "$lib/utils/window-events";
+import { listenSync } from '$lib/electron-bridge';
+import type { ElectronEventName } from '$shared/ipc-registry';
+import type { WindowEventName } from '$lib/utils/window-events';
 
 type WindowEventChannelOptions = {
   capture?: boolean;
@@ -18,57 +12,57 @@ type WindowEventChannelOptions = {
 };
 
 export type IpcChannelBufferPolicy =
-  | { kind: "lossless"; rationale: string }
-  | { kind: "sliding"; limit: number; rationale: string }
-  | { kind: "dropping"; limit: number; rationale: string }
-  | { kind: "none"; rationale: string };
+  | { kind: 'lossless'; rationale: string }
+  | { kind: 'sliding'; limit: number; rationale: string }
+  | { kind: 'dropping'; limit: number; rationale: string }
+  | { kind: 'none'; rationale: string };
 
 export type IpcChannelOptions = { bufferPolicy?: IpcChannelBufferPolicy };
 
-export const DEFAULT_IPC_BUFFER_LIMIT = 1_000;
-export const HIGH_VOLUME_IPC_BUFFER_LIMIT = 1_000;
-export const LATEST_ONLY_IPC_BUFFER_LIMIT = 1;
+const DEFAULT_IPC_BUFFER_LIMIT = 1_000;
+const HIGH_VOLUME_IPC_BUFFER_LIMIT = 1_000;
+const LATEST_ONLY_IPC_BUFFER_LIMIT = 1;
 
 const LOSSLESS_REQUIRED_IPC_EVENTS = new Set<string>([
-  "agent:created",
-  "agent:deleted",
-  "agent:prepare-handler",
-  "agent:queue:processing",
-  "agent:queue:processing-cancelled",
-  "agent:restored",
-  "agent:stream-starting",
-  "note:created",
-  "note:deleted",
-  "note:updated",
-  "permission:event",
-  "task:status-changed",
-  "terminal:created",
-  "terminal:disposed",
-  "workspace:archived",
-  "workspace:created",
-  "workspace:deleted",
+  'agent:created',
+  'agent:deleted',
+  'agent:prepare-handler',
+  'agent:queue:processing',
+  'agent:queue:processing-cancelled',
+  'agent:restored',
+  'agent:stream-starting',
+  'note:created',
+  'note:deleted',
+  'note:updated',
+  'permission:event',
+  'task:status-changed',
+  'terminal:created',
+  'terminal:disposed',
+  'workspace:archived',
+  'workspace:created',
+  'workspace:deleted',
 ]);
 
 const LATEST_ONLY_IPC_EVENTS = new Set<string>([
-  "agent:idle",
-  "agent:status-changed",
-  "auto-update:progress",
-  "auto-update:status-changed",
-  "codex/managed-install/progress",
-  "codex/managed-install/status",
-  "window:zoom-changed",
+  'agent:idle',
+  'agent:status-changed',
+  'auto-update:progress',
+  'auto-update:status-changed',
+  'codex/managed-install/progress',
+  'codex/managed-install/status',
+  'window:zoom-changed',
 ]);
 
 const HIGH_VOLUME_BOUNDED_IPC_EVENTS = new Set<string>([
-  "events:new",
-  "file-tracking:agent-file-changed",
-  "file-tracking:changes-updated",
-  "file:changed",
-  "file:content-changed",
-  "watcher:file-changed",
-  "workspace-changes",
-  "workspace:background-enrichment-complete",
-  "workspace:updated",
+  'events:new',
+  'file-tracking:agent-file-changed',
+  'file-tracking:changes-updated',
+  'file:changed',
+  'file:content-changed',
+  'watcher:file-changed',
+  'workspace-changes',
+  'workspace:background-enrichment-complete',
+  'workspace:updated',
 ]);
 
 export function resolveIpcChannelBufferPolicy(
@@ -78,40 +72,40 @@ export function resolveIpcChannelBufferPolicy(
   if (options.bufferPolicy) return options.bufferPolicy;
   if (LOSSLESS_REQUIRED_IPC_EVENTS.has(eventName)) {
     return {
-      kind: "lossless",
-      rationale: "Lifecycle and request events must not be dropped.",
+      kind: 'lossless',
+      rationale: 'Lifecycle and request events must not be dropped.',
     };
   }
   if (LATEST_ONLY_IPC_EVENTS.has(eventName)) {
     return {
-      kind: "sliding",
+      kind: 'sliding',
       limit: LATEST_ONLY_IPC_BUFFER_LIMIT,
-      rationale: "Only the latest status or progress event is actionable.",
+      rationale: 'Only the latest status or progress event is actionable.',
     };
   }
   if (HIGH_VOLUME_BOUNDED_IPC_EVENTS.has(eventName)) {
     return {
-      kind: "sliding",
+      kind: 'sliding',
       limit: HIGH_VOLUME_IPC_BUFFER_LIMIT,
-      rationale: "Bound high-volume updates while preserving recent state.",
+      rationale: 'Bound high-volume updates while preserving recent state.',
     };
   }
   return {
-    kind: "sliding",
+    kind: 'sliding',
     limit: DEFAULT_IPC_BUFFER_LIMIT,
-    rationale: "Bound low-volume renderer notifications.",
+    rationale: 'Bound low-volume renderer notifications.',
   };
 }
 
 function createIpcBuffer<T>(policy: IpcChannelBufferPolicy) {
   switch (policy.kind) {
-    case "lossless":
+    case 'lossless':
       return buffers.expanding<T>();
-    case "sliding":
+    case 'sliding':
       return buffers.sliding<T>(policy.limit);
-    case "dropping":
+    case 'dropping':
       return buffers.dropping<T>(policy.limit);
-    case "none":
+    case 'none':
       return buffers.none<T>();
   }
 }
@@ -121,7 +115,7 @@ export function createWindowEventChannel<T extends object>(
   options: WindowEventChannelOptions = {},
 ): EventChannel<T> {
   return eventChannel<T>((emitter) => {
-    if (typeof window === "undefined") {
+    if (typeof window === 'undefined') {
       emitter(END as never);
       return () => {};
     }
@@ -152,25 +146,6 @@ function* takeEveryFromWindowEventLoop<T extends object>(
   }
 }
 
-function* takeLatestFromWindowEventLoop<T extends object>(
-  eventName: WindowEventName,
-  handler: (data: T) => Generator,
-  options: WindowEventChannelOptions,
-): Generator {
-  const channel = createWindowEventChannel<T>(eventName, options);
-  let task: Task | null = null;
-  try {
-    while (true) {
-      const data: T = yield* take(channel);
-      if (data === (END as unknown as T)) break;
-      if (task) yield* cancel(task);
-      task = yield* fork(handler, data);
-    }
-  } finally {
-    channel.close();
-  }
-}
-
 export function* takeEveryFromWindowEvent<T extends object>(
   eventName: WindowEventName,
   handler: (data: T) => Generator,
@@ -179,25 +154,20 @@ export function* takeEveryFromWindowEvent<T extends object>(
   return yield* fork(takeEveryFromWindowEventLoop<T>, eventName, handler, options);
 }
 
-export function* takeLatestFromWindowEvent<T extends object>(
-  eventName: WindowEventName,
-  handler: (data: T) => Generator,
-  options: WindowEventChannelOptions = {},
-): Generator<any, Task, any> {
-  return yield* fork(takeLatestFromWindowEventLoop<T>, eventName, handler, options);
-}
-
-export function createListenSyncChannel<T extends NotUndefined>(
+function createListenSyncChannel<T extends NotUndefined>(
   eventName: ElectronEventName,
   options: IpcChannelOptions = {},
 ): EventChannel<T> {
-  return eventChannel<T>((emitter) => {
-    if (typeof window === "undefined" || !window.electronAPI) {
-      emitter(END as never);
-      return () => {};
-    }
-    return listenSync<T>(eventName, (event) => emitter(event.payload));
-  }, createIpcBuffer<T>(resolveIpcChannelBufferPolicy(eventName, options)));
+  return eventChannel<T>(
+    (emitter) => {
+      if (typeof window === 'undefined' || !window.electronAPI) {
+        emitter(END as never);
+        return () => {};
+      }
+      return listenSync<T>(eventName, (event) => emitter(event.payload));
+    },
+    createIpcBuffer<T>(resolveIpcChannelBufferPolicy(eventName, options)),
+  );
 }
 
 function* takeEveryFromListenSyncLoop<T extends NotUndefined>(
@@ -229,14 +199,17 @@ export function createElectronChannel<T extends NotUndefined>(
   eventName: ElectronEventName,
   options: IpcChannelOptions = {},
 ): EventChannel<T> {
-  return eventChannel<T>((emitter) => {
-    if (typeof window === "undefined" || !window.electronAPI) {
-      emitter(END as never);
-      return () => {};
-    }
-    const listenerId = window.electronAPI.on(eventName, (data: T) => emitter(data));
-    return () => window.electronAPI.offById(eventName, listenerId);
-  }, createIpcBuffer<T>(resolveIpcChannelBufferPolicy(eventName, options)));
+  return eventChannel<T>(
+    (emitter) => {
+      if (typeof window === 'undefined' || !window.electronAPI) {
+        emitter(END as never);
+        return () => {};
+      }
+      const listenerId = window.electronAPI.on(eventName, (data: T) => emitter(data));
+      return () => window.electronAPI.offById(eventName, listenerId);
+    },
+    createIpcBuffer<T>(resolveIpcChannelBufferPolicy(eventName, options)),
+  );
 }
 
 function* takeEveryFromElectronChannelLoop<T extends NotUndefined>(

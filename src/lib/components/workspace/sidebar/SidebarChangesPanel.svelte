@@ -193,6 +193,7 @@
         $activePullRequest$,
         constructPrUrl,
         getPRDisplayTitle,
+        workspaceRepo,
       ),
       $prMonitors$,
       workspaceRepo,

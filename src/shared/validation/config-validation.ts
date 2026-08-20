@@ -225,11 +225,3 @@ export function validateObjectTypes(obj: any, schema: Record<string, string>): V
     warnings: [],
   };
 }
-
-export default {
-  validateAgentConfig,
-  validateStreamConfig,
-  validatePersistenceConfig,
-  hasRequiredFields,
-  validateObjectTypes,
-};

@@ -13,5 +13,3 @@ export const chatPolishFixtureAdapter = Object.freeze({
     onStickyClick: undefined,
   }),
 });
-
-export type ChatPolishFixtureAdapter = typeof chatPolishFixtureAdapter;

@@ -25,7 +25,7 @@ export function* hydrateBrowserWorkspaceWorker(
   yield* put(hydrateBrowserState(workspaceId, recentUrls));
 }
 
-export function* persistBrowserRecentUrlsWorker(
+function* persistBrowserRecentUrlsWorker(
   action:
     | ReturnType<typeof addRecentUrl>
     | ReturnType<typeof updateUrlMetadata>

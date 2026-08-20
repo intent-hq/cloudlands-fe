@@ -15,7 +15,7 @@ export interface ValidationResult {
   suggestion?: string;
 }
 
-export interface DirectoryStatus {
+interface DirectoryStatus {
   exists: boolean;
   isDirectory: boolean;
   isEmpty: boolean;
@@ -62,7 +62,7 @@ export async function validateRepoPath(
 /**
  * Check if a string looks like a GitHub URL
  */
-export function isGitHubUrl(url: string): boolean {
+function isGitHubUrl(url: string): boolean {
   const patterns = [
     /^https?:\/\/github\.com\//i,
     /^git@github\.com:/i,
@@ -426,31 +426,6 @@ export function validateBranchName(branch: string): ValidationResult {
   }
 
   return { valid: true };
-}
-
-/**
- * Sanitize a branch name to make it valid
- */
-export function sanitizeBranchName(branch: string): string {
-  return branch
-    .trim()
-    .replace(/[\s~^:?*\[\]\\]/g, '-') // Replace invalid chars with hyphen
-    .replace(/\.{2,}/g, '-') // Replace consecutive dots
-    .replace(/\/{2,}/g, '/') // Replace consecutive slashes
-    .replace(/^\/|\/$/g, '') // Remove leading/trailing slashes
-    .replace(/\.lock$/, '') // Remove .lock suffix
-    .replace(/-{2,}/g, '-') // Replace multiple hyphens with single
-    .toLowerCase();
-}
-
-/**
- * Generate a unique workspace branch name
- */
-export function generateWorkspaceBranchName(baseBranch?: string): string {
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2, 8);
-  const base = baseBranch ? sanitizeBranchName(baseBranch) : 'workspace';
-  return `${base}-${timestamp}-${random}`;
 }
 
 /**

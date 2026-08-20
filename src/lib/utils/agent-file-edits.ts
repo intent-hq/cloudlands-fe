@@ -7,12 +7,6 @@ import { Logger } from '$shared/logger';
 
 const logger = new Logger('AgentFileEdits');
 
-export interface AgentFileEdit {
-  agentId: string;
-  filePath: string;
-  timestamp: string;
-}
-
 /**
  * Get recent file edits for all agents in a workspace
  * Returns a map of file paths (relative) to arrays of agent IDs who edited them
@@ -39,9 +33,7 @@ export async function getAgentFileEdits(
         limit: 100,
       }),
     ]);
-    const events = [...changed, ...created].sort((a, b) =>
-      b.timestamp.localeCompare(a.timestamp),
-    );
+    const events = [...changed, ...created].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
     logger.info('[AgentEdits] Query result', {
       eventCount: events?.length ?? 0,
@@ -143,9 +135,7 @@ export function propagateAgentEditsToParents(
   for (const [eventPath, agentIds] of fileToAgents.entries()) {
     // Build the full path relative to file tree root
     // e.g., "src/lib/file.ts" becomes "experimental/amelia/workspaces/src/lib/file.ts"
-    const fullRelativePath = projectRelative
-      ? `${projectRelative}/${eventPath}`
-      : eventPath;
+    const fullRelativePath = projectRelative ? `${projectRelative}/${eventPath}` : eventPath;
 
     // Add the file itself
     let fileAgents = result.get(fullRelativePath);

@@ -14,7 +14,7 @@ import type {
   WebHidApiLike,
 } from '../webhid-types';
 
-export const VENDOR_COLLECTION: HidCollectionInfoLike = { usagePage: 0xff00, usage: 0x0001 };
+const VENDOR_COLLECTION: HidCollectionInfoLike = { usagePage: 0xff00, usage: 0x0001 };
 
 export class FakeHidDevice implements HidDeviceLike {
   opened = false;

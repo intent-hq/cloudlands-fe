@@ -11,7 +11,7 @@ import { formatInteger } from '$lib/i18n/format';
 // Named exports keep the status presentation on one shared visual contract.
 
 /** Accessible detail order for included task statuses (complete first, not started last). */
-export const TASK_STATUS_ORDER: readonly TaskStatus[] = [
+const TASK_STATUS_ORDER: readonly TaskStatus[] = [
   'complete',
   'in_progress',
   'review_required',

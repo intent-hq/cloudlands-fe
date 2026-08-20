@@ -3,10 +3,10 @@ import { locales } from './paraglide/runtime.js';
 import { SYSTEM_LANGUAGE_PREFERENCE } from './i18n/locale-matcher';
 import { GITHUB_LINK_DEFAULT_ACTIONS } from './utils/link-helpers';
 
-export type AppSettingValueType =
+type AppSettingValueType =
   'string' | 'boolean' | 'number' | 'object' | 'array' | 'enum' | 'status' | 'readonly';
 
-export type AppSettingSource =
+type AppSettingSource =
   /**
    * Deprecated tombstone. No APP_SETTING_DEFINITIONS entry uses this any more;
    * the union member is retained only so the audit-only facade in
@@ -91,7 +91,7 @@ export function formatSettingValue(definition: AppSettingDefinition, value: unkn
   return compactJsonSnippet(value);
 }
 
-export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
+const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
   {
     path: 'preferences.updateChannel',
     label: 'Update channel',

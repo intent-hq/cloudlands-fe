@@ -67,7 +67,7 @@ const selector = (
   configuredStates = states.filter((state) => !visualStateSet.has(state)),
 ): SemanticSelector => ({ states, assertionIncludes, configuredStates });
 
-export const semanticSelectors: Record<string, SemanticSelector[]> = {
+const semanticSelectors: Record<string, SemanticSelector[]> = {
   'CHAT-01': [
     selector(
       [...visualStates],

@@ -1,4 +1,4 @@
-export type PrBranchLookupStatus = 'loading' | 'succeeded' | 'failed';
+type PrBranchLookupStatus = 'loading' | 'succeeded' | 'failed';
 
 export interface PrBranchLookupRequest {
   owner: string;

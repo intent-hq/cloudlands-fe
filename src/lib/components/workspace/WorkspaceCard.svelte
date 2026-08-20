@@ -60,7 +60,7 @@
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import {
     constructPrUrl,
-    countOtherMonitors,
+    countOtherPrs,
     getPRStatusTooltip,
     mapWorkspacePRs,
     mergeMonitoredPRs,
@@ -193,30 +193,35 @@
     if (!workspace) return null;
     return selectWorkspaceActivePullRequest.select(appStore.state, workspace.id);
   });
-  // Primary PR for the pill: the shared oldest-unmerged / latest-merged rule
-  // (selectPrimaryPr) over the combined branch-linked + agent-monitored pool
-  // (PROTOCOL §6.9).
-  const primaryPr = $derived.by(() => {
-    if (!workspace) return undefined;
+  // Combined PR pool for the pill and "+N" indicator: the daemon-merged
+  // `pullRequests` (stored + git-root + monitor PRs, deduped by URL —
+  // intent-hq/intentd#1330; populated before the workspace is ever opened)
+  // with live monitor rows merged in by URL, so a PR arriving through both
+  // paths is one row and the badge never double-counts or flickers when
+  // opening the workspace starts the monitor stream.
+  const prPool = $derived.by(() => {
+    if (!workspace) return [];
     const ws = workspace;
     const workspaceRepo =
       ws.repositoryOwner && ws.repositoryName
         ? `${ws.repositoryOwner}/${ws.repositoryName}`
         : undefined;
-    return selectPrimaryPr(
-      mergeMonitoredPRs(
-        mapWorkspacePRs(
-          ws.pullRequests,
-          activePullRequest,
-          (prNum, fallbackUrl) =>
-            constructPrUrl(prNum, ws.repositoryOwner, ws.repositoryName, fallbackUrl),
-          (pr) => pr.title,
-        ),
-        $prMonitors$,
+    return mergeMonitoredPRs(
+      mapWorkspacePRs(
+        ws.pullRequests,
+        activePullRequest,
+        (prNum, fallbackUrl) =>
+          constructPrUrl(prNum, ws.repositoryOwner, ws.repositoryName, fallbackUrl),
+        (pr) => pr.title,
         workspaceRepo,
       ),
+      $prMonitors$,
+      workspaceRepo,
     );
   });
+  // Primary PR for the pill: the shared oldest-unmerged / latest-merged rule
+  // (selectPrimaryPr) over the combined pool (PROTOCOL §6.9).
+  const primaryPr = $derived(selectPrimaryPr(prPool));
   // The branch-linked active PR keeps its tooltip/mergeability treatment only
   // when it is the chosen primary.
   const primaryIsActivePr = $derived(
@@ -245,17 +250,8 @@
       : getPRStatusTooltip(primaryPr);
   });
 
-  // "+N" indicator: other monitored PRs in the pool beyond the primary badge.
-  const otherMonitoredPrCount = $derived.by(() => {
-    if (!workspace) return 0;
-    return countOtherMonitors(
-      $prMonitors$,
-      prNumber,
-      workspace.repositoryOwner,
-      workspace.repositoryName,
-      primaryPr?.crossRepo,
-    );
-  });
+  // "+N" indicator: other PRs in the deduped pool beyond the primary badge.
+  const otherMonitoredPrCount = $derived(countOtherPrs(prPool, primaryPr));
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') onClick?.(e);
   }

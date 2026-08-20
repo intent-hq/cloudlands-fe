@@ -75,7 +75,7 @@ interface ResultMetadata {
 }
 
 // Icons per category
-export const CATEGORY_ICONS: Record<ToolCategory, IconDefinition> = {
+const CATEGORY_ICONS: Record<ToolCategory, IconDefinition> = {
   'file-read': faFileLines,
   'file-write': faPenToSquare,
   'file-delete': faTrash,
@@ -510,23 +510,10 @@ const CONTEXT_ENGINE_TOOLS_UNDERSCORE = [
 export function isContextEngineTool(toolName: string | undefined | null): boolean {
   if (!toolName) return false;
   const cleanName = cleanToolName(toolName).toLowerCase();
-  return CONTEXT_ENGINE_TOOLS.some((tool) => cleanName === tool) ||
-    CONTEXT_ENGINE_TOOLS_UNDERSCORE.some((tool) => cleanName.includes(tool));
-}
-
-/**
- * Get the retrieval source label for a context engine tool
- */
-export function getContextEngineSource(toolName: string | undefined | null): string {
-  if (!toolName) return 'Codebase';
-  const cleanName = cleanToolName(toolName).toLowerCase();
-  if (cleanName.includes('git') || cleanName.includes('commit')) {
-    return m.chat_toolClassifier_commitHistory_label();
-  }
-  if (cleanName.includes('conversation')) {
-    return 'Conversations';
-  }
-  return 'Codebase';
+  return (
+    CONTEXT_ENGINE_TOOLS.some((tool) => cleanName === tool) ||
+    CONTEXT_ENGINE_TOOLS_UNDERSCORE.some((tool) => cleanName.includes(tool))
+  );
 }
 
 /**
@@ -536,7 +523,9 @@ export function getContextEngineSource(toolName: string | undefined | null): str
 function classifyWorkspaceApiCode(code: string): ToolCategory {
   if (!code) return 'workspace';
   // Match ws.<namespace>.method() patterns
-  const wsMatch = code.match(/ws\.(note|comment|task|agent|git|workspace|event|script|browser|terminal|file|pr|primitive|crossWorkspace)\./);
+  const wsMatch = code.match(
+    /ws\.(note|comment|task|agent|git|workspace|event|script|browser|terminal|file|pr|primitive|crossWorkspace)\./,
+  );
   if (!wsMatch) return 'workspace';
   switch (wsMatch[1]) {
     case 'note':
@@ -624,7 +613,9 @@ function detectPreFormattedToolName(
       (input.heading !== undefined || input.position !== undefined)
     ) {
       // add_to_note has both content and optional heading/position
-      const heading = input.heading ? truncate(safeStr(input.heading).replace(/^#+\s*/, ''), 20) : null;
+      const heading = input.heading
+        ? truncate(safeStr(input.heading).replace(/^#+\s*/, ''), 20)
+        : null;
       const position = input.position && input.position !== 'end' ? input.position : null;
       const suffix = heading || position;
       return {
@@ -847,10 +838,8 @@ function classifyToolInner(
     cleanedForSummary.toLowerCase() === 'workspace_api' ||
     (typeof input.code === 'string' && typeof input.summary === 'string')
   ) {
-    const acpTitle =
-      typeof input._acpTitle === 'string' ? input._acpTitle.trim() : '';
-    const summary =
-      typeof input.summary === 'string' ? input.summary.trim() : '';
+    const acpTitle = typeof input._acpTitle === 'string' ? input._acpTitle.trim() : '';
+    const summary = typeof input.summary === 'string' ? input.summary.trim() : '';
     // Skip _acpTitle if it is a raw tool identifier: an mcp__/mcp./URL-prefixed
     // name, or anything that resolves to a raw tool name after cleaning
     // (catches all variants: mcp__*__workspace_api, //local/mcp/workspace_api, etc.)
@@ -1157,7 +1146,7 @@ function classifyToolInner(
     // linear: has is_read_only + query (unique combination)
     (input.is_read_only !== undefined && input.query) ||
     // glean: has call.payload.query (nested structure unique to glean)
-    (input.call?.payload?.query)
+    input.call?.payload?.query
   ) {
     return apiDisplay(name, input);
   }
@@ -1539,7 +1528,8 @@ function apiDisplay(name: string, input: Record<string, any>): ToolDisplay {
 
   // Detect tool type by name OR input shape (ACP titles lose the tool name).
   // github-api: has summary + path starting with "/" (API path like "/repos/...")
-  const isGitHub = name.includes('github') ||
+  const isGitHub =
+    name.includes('github') ||
     (input.summary && input.path && typeof input.path === 'string' && input.path.startsWith('/'));
   // linear: has is_read_only + query
   const isLinear = name.includes('linear') || (input.is_read_only !== undefined && input.query);
@@ -1590,11 +1580,7 @@ function apiDisplay(name: string, input: Record<string, any>): ToolDisplay {
         .trim();
       if (action) subject = action;
     }
-  } else if (
-    name.includes('web-fetch') ||
-    name.includes('web_fetch') ||
-    name === 'fetch'
-  ) {
+  } else if (name.includes('web-fetch') || name.includes('web_fetch') || name === 'fetch') {
     verb = m.chat_toolClassifier_fetch_label();
     if (input.url) {
       try {
@@ -1879,7 +1865,9 @@ function workspaceDisplay(
     category = 'note';
     verb = m.chat_toolClassifier_addToNote_label();
     const noteTitle = getNoteTitle(20);
-    const heading = input.heading ? truncate(safeStr(input.heading).replace(/^#+\s*/, ''), 20) : null;
+    const heading = input.heading
+      ? truncate(safeStr(input.heading).replace(/^#+\s*/, ''), 20)
+      : null;
     // Show note title as subject, heading is already visible in the expanded view
     subject = noteTitle || (heading ? `→ ${heading}` : null);
     noteId = getNoteId();
@@ -2019,7 +2007,9 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
         break;
       case 'startSession':
         verb = m.chat_toolClassifier_start_label();
-        subject = primaryAction.name ? `session "${truncate(primaryAction.name, 30)}"` : 'capture session';
+        subject = primaryAction.name
+          ? `session "${truncate(primaryAction.name, 30)}"`
+          : 'capture session';
         break;
       case 'endSession':
         verb = m.chat_toolClassifier_end_label();
@@ -2074,8 +2064,7 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
   // ---- Playwright / npx DevTools style tools (name-based detection) ----
 
   // Helper: get element description from various input shapes
-  const getElement = () =>
-    input.element ? truncate(input.element, 30) : null;
+  const getElement = () => (input.element ? truncate(input.element, 30) : null);
 
   if (name.includes('open-browser') || name.includes('open_browser')) {
     verb = m.chat_toolClassifier_open_label();
@@ -2155,7 +2144,11 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
         : 'device';
   } else if (name.includes('performance')) {
     verb = m.chat_toolClassifier_performance_label();
-    subject = name.includes('start') ? 'start trace' : name.includes('stop') ? 'stop trace' : 'trace';
+    subject = name.includes('start')
+      ? 'start trace'
+      : name.includes('stop')
+        ? 'stop trace'
+        : 'trace';
   } else if (name.includes('tab') || name.includes('page')) {
     // list_pages, select_page, new_page, close_page
     if (name.includes('list')) {

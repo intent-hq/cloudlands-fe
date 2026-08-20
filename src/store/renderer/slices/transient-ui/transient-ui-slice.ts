@@ -3,10 +3,6 @@ import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
-export const STORAGE_KEY_PREFIX = 'workspace-transient-ui-';
-export const SAVE_DEBOUNCE_MS = 300;
-export const STALE_STATE_THRESHOLD_MS = 60 * 60 * 1000;
-
 export type SidebarTabId = 'notes' | 'changes' | 'files' | 'agents' | 'terminals' | 'browser';
 
 export interface TransientUiWorkspaceState {
@@ -21,7 +17,7 @@ export interface TransientUiState {
   byWorkspaceId: Record<string, TransientUiWorkspaceState>;
 }
 
-export function createEmptyWorkspaceTransientUiState(): TransientUiWorkspaceState {
+function createEmptyWorkspaceTransientUiState(): TransientUiWorkspaceState {
   return {
     chatDrafts: {},
     rawNoteViewByNoteId: {},
@@ -64,44 +60,46 @@ export const clearChatDraft = createAction<[workspaceId: string, agentId: string
 
 export const transientUiReducer = createReducer<TransientUiState>(initialState);
 transientUiReducer.with(setViewedFiles, (state, { payload: [workspaceId, viewedFiles] }) =>
-    updateWorkspaceState(state, workspaceId, (workspaceState) => ({
-      ...workspaceState,
-      viewedFiles,
-    })),
-  );
+  updateWorkspaceState(state, workspaceId, (workspaceState) => ({
+    ...workspaceState,
+    viewedFiles,
+  })),
+);
 transientUiReducer.with(setSidebarActiveTab, (state, { payload: [workspaceId, tab] }) =>
-    updateWorkspaceState(state, workspaceId, (workspaceState) => ({
-      ...workspaceState,
-      sidebarActiveTab: tab,
-    })),
-  );
+  updateWorkspaceState(state, workspaceId, (workspaceState) => ({
+    ...workspaceState,
+    sidebarActiveTab: tab,
+  })),
+);
 transientUiReducer.with(toggleRawNoteView, (state, { payload: [workspaceId, noteId] }) =>
-    updateWorkspaceState(state, workspaceId, (workspaceState) => {
-      const rawNoteViewByNoteId = { ...workspaceState.rawNoteViewByNoteId };
-      if (rawNoteViewByNoteId[noteId] === true) {
-        delete rawNoteViewByNoteId[noteId];
-      } else {
-        rawNoteViewByNoteId[noteId] = true;
-      }
-      return { ...workspaceState, rawNoteViewByNoteId };
-    }),
-  );
+  updateWorkspaceState(state, workspaceId, (workspaceState) => {
+    const rawNoteViewByNoteId = { ...workspaceState.rawNoteViewByNoteId };
+    if (rawNoteViewByNoteId[noteId] === true) {
+      delete rawNoteViewByNoteId[noteId];
+    } else {
+      rawNoteViewByNoteId[noteId] = true;
+    }
+    return { ...workspaceState, rawNoteViewByNoteId };
+  }),
+);
 transientUiReducer.with(setChatDraft, (state, { payload: [workspaceId, agentId, draft] }) =>
-    updateWorkspaceState(state, workspaceId, (workspaceState) => {
-      const chatDrafts = { ...workspaceState.chatDrafts };
-      if (draft) {
-        chatDrafts[agentId] = draft;
-      } else {
-        delete chatDrafts[agentId];
-      }
-      return { ...workspaceState, chatDrafts };
-    }),
-  );
-transientUiReducer.with(clearChatDraft, (state, { payload: [workspaceId, agentId] }) =>
-    updateWorkspaceState(state, workspaceId, (workspaceState) => {
-      const chatDrafts = { ...workspaceState.chatDrafts };
+  updateWorkspaceState(state, workspaceId, (workspaceState) => {
+    const chatDrafts = { ...workspaceState.chatDrafts };
+    if (draft) {
+      chatDrafts[agentId] = draft;
+    } else {
       delete chatDrafts[agentId];
-      return { ...workspaceState, chatDrafts };
-    }),
-  );
-transientUiReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
+    }
+    return { ...workspaceState, chatDrafts };
+  }),
+);
+transientUiReducer.with(clearChatDraft, (state, { payload: [workspaceId, agentId] }) =>
+  updateWorkspaceState(state, workspaceId, (workspaceState) => {
+    const chatDrafts = { ...workspaceState.chatDrafts };
+    delete chatDrafts[agentId];
+    return { ...workspaceState, chatDrafts };
+  }),
+);
+transientUiReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
+  clearWorkspaceState(state, wsId),
+);
