@@ -773,11 +773,12 @@ export function monitorPillStatus(monitor: PrMonitorRow): PullRequestStatus {
 export function countOtherPrs(pool: PRInfo[], primaryPr: PRInfo | undefined): number {
   if (!primaryPr) return pool.length;
   const primaryUrlLower = primaryPr.url.toLowerCase();
+  const primaryCrossRepoLower = primaryPr.crossRepo?.toLowerCase();
   return pool.filter(
     (pr) =>
       !(
         (pr.url && pr.url.toLowerCase() === primaryUrlLower) ||
-        (pr.number === primaryPr.number && pr.crossRepo === primaryPr.crossRepo)
+        (pr.number === primaryPr.number && pr.crossRepo?.toLowerCase() === primaryCrossRepoLower)
       ),
   ).length;
 }

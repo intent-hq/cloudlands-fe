@@ -2000,6 +2000,12 @@ describe('countOtherPrs', () => {
     expect(countOtherPrs(pool, primary)).toBe(1);
   });
 
+  it('matches the fallback crossRepo identity case-insensitively', () => {
+    const pool = [makePoolPR({ url: '', crossRepo: 'Other/Repo' })];
+    const primary = makePoolPR({ url: '', crossRepo: 'other/repo' });
+    expect(countOtherPrs(pool, primary)).toBe(0);
+  });
+
   it('does not double count a PR present in both the daemon-merged list and as a monitor', () => {
     // Before opening: only the daemon-merged pullRequests. After opening:
     // the same PR also arrives as a live monitor row. The pool is built by
