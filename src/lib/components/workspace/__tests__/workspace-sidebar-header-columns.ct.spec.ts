@@ -120,6 +120,16 @@ test('keeps the four-bar glyph visible and equal in forced colors at 200% zoom',
 
   await expect(bars).toHaveCount(4);
   await expect(icon).toHaveAttribute('stroke', 'currentColor');
+  await expect(icon).toHaveAttribute('stroke-width', '1');
+  await expect(icon).toHaveAttribute('vector-effect', 'non-scaling-stroke');
+  expect(
+    await bars.evaluateAll((elements) =>
+      elements.map((element) => [
+        element.getAttribute('stroke-width'),
+        element.getAttribute('vector-effect'),
+      ]),
+    ),
+  ).toEqual(Array.from({ length: 4 }, () => ['1', 'non-scaling-stroke']));
   const geometry = await bars.evaluateAll((elements) =>
     elements.map((element) => {
       const box = element.getBoundingClientRect();
@@ -131,5 +141,45 @@ test('keeps the four-bar glyph visible and equal in forced colors at 200% zoom',
   expect(geometry.every(({ width, height }) => width > 0 && height > 0)).toBe(true);
   expect(await icon.evaluate((element) => getComputedStyle(element).color)).not.toBe(
     'rgba(0, 0, 0, 0)',
+  );
+});
+
+test('animates count changes without scaling the one-pixel strokes', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const component = await mount(PanelHeaderActionsHost, {
+    props: { initialCount: 1, zoom: 2 },
+  });
+  const trigger = component.locator('[data-panel-column-count-trigger]');
+  const initialIcon = await trigger.locator('[data-panel-column-icon="1"]').elementHandle();
+
+  await trigger.click();
+  await page.getByRole('menuitemradio', { name: '4 columns' }).click();
+  const animatedIcon = trigger.locator('[data-panel-column-icon="4"]');
+  await expect(animatedIcon).toHaveCount(1);
+  expect(await initialIcon?.evaluate((element) => element.isConnected)).toBe(false);
+  const motion = await animatedIcon.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { name: style.animationName, duration: Number.parseFloat(style.animationDuration) };
+  });
+  expect(motion.name).toContain('panel-column-icon-change');
+  expect(motion.duration).toBeGreaterThan(0);
+  expect(
+    await animatedIcon
+      .locator('[data-panel-column-icon-bar]')
+      .evaluateAll((elements) =>
+        elements.map((element) => [
+          element.getAttribute('stroke-width'),
+          element.getAttribute('vector-effect'),
+        ]),
+      ),
+  ).toEqual(Array.from({ length: 4 }, () => ['1', 'non-scaling-stroke']));
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await trigger.click();
+  await page.getByRole('menuitemradio', { name: '3 columns' }).click();
+  const reducedIcon = trigger.locator('[data-panel-column-icon="3"]');
+  await expect(reducedIcon).toHaveCount(1);
+  expect(await reducedIcon.evaluate((element) => getComputedStyle(element).animationName)).toBe(
+    'none',
   );
 });

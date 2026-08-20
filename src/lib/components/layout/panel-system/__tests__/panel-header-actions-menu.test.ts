@@ -227,17 +227,29 @@ describe('mounted panel header actions menu', () => {
       '[data-panel-column-count-trigger]',
     )!;
 
+    let previousIcon: Element | null = null;
     for (const count of [1, 2, 3, 4]) {
       mocks.setPanelColumnCount(count);
-      await waitFor(() => {
-        expect(trigger.getAttribute('aria-label')).toBe(`Panel columns: ${count}`);
-        const icon = trigger.querySelector(`[data-panel-column-icon="${count}"]`);
-        const bars = Array.from(icon?.querySelectorAll('[data-panel-column-icon-bar]') ?? []);
-        expect(bars).toHaveLength(count);
-        expect(bars.map((bar) => [bar.getAttribute('width'), bar.getAttribute('height')])).toEqual(
-          Array.from({ length: count }, () => ['4', '14']),
-        );
-      });
+      await waitFor(() =>
+        expect(trigger.querySelector(`[data-panel-column-icon="${count}"]`)).toBeTruthy(),
+      );
+      expect(trigger.getAttribute('aria-label')).toBe(`Panel columns: ${count}`);
+      const icon = trigger.querySelector(`[data-panel-column-icon="${count}"]`)!;
+      expect(icon).not.toBe(previousIcon);
+      expect(previousIcon?.isConnected ?? false).toBe(false);
+      expect(icon.getAttribute('stroke-width')).toBe('1');
+      expect(icon.getAttribute('vector-effect')).toBe('non-scaling-stroke');
+      const bars = Array.from(icon.querySelectorAll('[data-panel-column-icon-bar]'));
+      expect(bars).toHaveLength(count);
+      expect(
+        bars.map((bar) => [
+          bar.getAttribute('width'),
+          bar.getAttribute('height'),
+          bar.getAttribute('stroke-width'),
+          bar.getAttribute('vector-effect'),
+        ]),
+      ).toEqual(Array.from({ length: count }, () => ['4', '14', '1', 'non-scaling-stroke']));
+      previousIcon = icon;
     }
   });
 

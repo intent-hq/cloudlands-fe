@@ -1400,28 +1400,32 @@
 
 {#snippet panelColumnIcon(value: PanelColumnCount)}
   {@const width = value * 4 + (value - 1) * 2}
-  <svg
-    class="panel-column-icon size-3.5! shrink-0"
-    viewBox="0 0 24 18"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    stroke-linejoin="round"
-    aria-hidden="true"
-    data-panel-column-icon={value}
-  >
-    {#each Array.from({ length: value }) as _, index}
-      <rect
-        x={12 - width / 2 + index * 6}
-        y="2"
-        width="4"
-        height="14"
-        rx="1"
-        vector-effect="non-scaling-stroke"
-        data-panel-column-icon-bar
-      />
-    {/each}
-  </svg>
+  {#key value}
+    <svg
+      class="panel-column-icon size-3.5! shrink-0"
+      viewBox="0 0 24 18"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1"
+      stroke-linejoin="round"
+      vector-effect="non-scaling-stroke"
+      aria-hidden="true"
+      data-panel-column-icon={value}
+    >
+      {#each Array.from({ length: value }) as _, index}
+        <rect
+          x={12 - width / 2 + index * 6}
+          y="2"
+          width="4"
+          height="14"
+          rx="1"
+          stroke-width="1"
+          vector-effect="non-scaling-stroke"
+          data-panel-column-icon-bar
+        />
+      {/each}
+    </svg>
+  {/key}
 {/snippet}
 
 {#snippet panelColumnCountMenu()}
@@ -2481,6 +2485,23 @@
       opacity var(--motion-fast) var(--ease-standard);
   }
 
+  .panel-column-icon {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: panel-column-icon-change var(--motion-fast) var(--ease-standard);
+  }
+
+  @keyframes panel-column-icon-change {
+    from {
+      opacity: 0.55;
+      transform: scale(0.88);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
   @media (forced-colors: active) {
     .panel-column-icon {
       color: ButtonText;
@@ -2490,6 +2511,10 @@
   @media (prefers-reduced-motion: reduce) {
     .panel-identity-navigation-clip {
       transition: none;
+    }
+
+    .panel-column-icon {
+      animation: none;
     }
   }
 </style>
