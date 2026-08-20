@@ -10,7 +10,7 @@
 import type { AgentSession } from '$shared/types';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
-export interface SidebarBrowserTabEntry {
+interface SidebarBrowserTabEntry {
   tab: PanelTab;
   /** Panel hosting the tab; undefined for hidden (user-closed) owned tabs. */
   panelId?: string;
