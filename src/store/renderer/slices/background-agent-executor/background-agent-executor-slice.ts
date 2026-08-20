@@ -21,8 +21,7 @@ import { emptyExecutorState, emptyWorkspaceState } from './background-agent-exec
 // Workspace-scoped helpers
 // ============================================================================
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
-  createWorkspaceScopedHelpers(emptyWorkspaceState);
+const { getWorkspaceState, setWorkspaceState } = createWorkspaceScopedHelpers(emptyWorkspaceState);
 
 function getExecutor(
   state: BackgroundAgentExecutorState,
@@ -80,10 +79,6 @@ export const resetExecutor = createAction<[workspaceId: string, executorType: st
   'bgExecutor/resetExecutor',
 );
 
-export const clearWorkspaceExecutors = createAction<[workspaceId: string]>(
-  'bgExecutor/clearWorkspaceExecutors',
-);
-
 // ============================================================================
 // Initial state
 // ============================================================================
@@ -111,13 +106,6 @@ backgroundAgentExecutorReducer.with(
     return setExecutor(state, workspaceId, executorType, { ...emptyExecutorState });
   },
 );
-backgroundAgentExecutorReducer.with(
-  clearWorkspaceExecutors,
-  (state, { payload: [workspaceId] }) => {
-    return clearWorkspaceState(state, workspaceId);
-  },
-);
-
 // Re-export types for convenience
 export type {
   ExecutorStatus,

@@ -55,7 +55,7 @@ export const BACKGROUND_AGENT_TYPE_INFO: Record<
 };
 
 /** Shape of per-provider cached settings */
-export interface ProviderBgSettings {
+interface ProviderBgSettings {
   defaultModel: string;
   typeOverrides: Record<BackgroundAgentType, string>;
 }
