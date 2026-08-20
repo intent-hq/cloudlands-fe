@@ -237,20 +237,74 @@ describe('mounted panel header actions menu', () => {
       const icon = trigger.querySelector(`[data-panel-column-icon="${count}"]`)!;
       expect(icon).not.toBe(previousIcon);
       expect(previousIcon?.isConnected ?? false).toBe(false);
+      expect(icon.getAttribute('class')).toContain('size-4!');
+      expect(icon.getAttribute('viewBox')).toBe('0 0 24 18');
       expect(icon.getAttribute('stroke-width')).toBe('1');
       expect(icon.getAttribute('vector-effect')).toBe('non-scaling-stroke');
       const bars = Array.from(icon.querySelectorAll('[data-panel-column-icon-bar]'));
       expect(bars).toHaveLength(count);
       expect(
         bars.map((bar) => [
+          bar.getAttribute('x'),
           bar.getAttribute('width'),
           bar.getAttribute('height'),
           bar.getAttribute('stroke-width'),
           bar.getAttribute('vector-effect'),
         ]),
-      ).toEqual(Array.from({ length: count }, () => ['4', '14', '1', 'non-scaling-stroke']));
+      ).toEqual(
+        Array.from({ length: count }, (_, index) => [
+          String(12 - (count * 4 + (count - 1) * 2) / 2 + index * 6),
+          '4',
+          '14',
+          '1',
+          'non-scaling-stroke',
+        ]),
+      );
       previousIcon = icon;
     }
+  });
+
+  it('orders populated and empty structural panel controls before Close', () => {
+    const onClosePanel = vi.fn();
+    const populated = renderHeader('note', {
+      tabs: [tab('note'), tab('browser')],
+      isRightmostPanel: true,
+      onClosePanel,
+      onTabClick: vi.fn(),
+    });
+    const populatedActions = populated.container.querySelector(
+      '[data-panel-tabless-header] [data-panel-header-actions]',
+    )!;
+    expect(
+      Array.from(populatedActions.querySelectorAll('button')).map((button) =>
+        button.getAttribute('aria-label'),
+      ),
+    ).toEqual([
+      'More',
+      'Panel history',
+      'Go back',
+      'Go forward',
+      'Panel columns: 2',
+      'Close panel',
+    ]);
+    populated.unmount();
+
+    const empty = render(PanelTabBar, {
+      props: {
+        tabs: [],
+        activeTabId: null,
+        panelId: 'panel-empty',
+        workspaceId: 'workspace-1',
+        isRightmostPanel: true,
+        onClosePanel,
+      },
+    });
+    const emptyHeader = empty.container.querySelector('[data-empty-panel-header]')!;
+    expect(
+      Array.from(emptyHeader.querySelectorAll('button')).map((button) =>
+        button.getAttribute('aria-label'),
+      ),
+    ).toEqual(['Panel columns: 2', 'Close panel']);
   });
 
   it.each(panelTypes)('opens one portalled menu from one click for the %s panel', async (type) => {

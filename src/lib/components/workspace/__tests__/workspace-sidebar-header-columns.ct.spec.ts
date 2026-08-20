@@ -26,11 +26,11 @@ for (const theme of ['light', 'dark'] as const) {
             .locator('button')
             .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
         ).toEqual([
-          'Panel columns: 2',
           'More',
           'Panel history',
           'Go back',
           'Go forward',
+          'Panel columns: 2',
           'Close panel',
         ]);
         const [headerBox, titleBox, controlsBox] = await Promise.all([
@@ -43,16 +43,84 @@ for (const theme of ['light', 'dark'] as const) {
           headerBox!.x + headerBox!.width + 0.5,
         );
         await expect(columnTrigger).toHaveAccessibleName('Panel columns: 2');
-        const columnIcon = controls.locator('[data-panel-column-icon="2"]');
-        await expect(columnIcon).toHaveCount(1);
-        await expect(columnIcon.locator('[data-panel-column-icon-bar]')).toHaveCount(2);
         for (const action of [columnTrigger, actionsTrigger, closeTrigger]) {
           const box = await action.boundingBox();
           expect(box!.width / zoom).toBeCloseTo(28, 0);
           expect(box!.height / zoom).toBeCloseTo(28, 0);
         }
+
+        for (const count of [1, 2, 3, 4]) {
+          await columnTrigger.click();
+          await page
+            .getByRole('menuitemradio', { name: `${count} column${count === 1 ? '' : 's'}` })
+            .click();
+          const columnIcon = controls.locator(`[data-panel-column-icon="${count}"]`);
+          const bars = columnIcon.locator('[data-panel-column-icon-bar]');
+          await expect(columnTrigger).toHaveAccessibleName(`Panel columns: ${count}`);
+          await expect(columnIcon).toHaveCount(1);
+          await expect(bars).toHaveCount(count);
+          const [iconBox, triggerBox] = await Promise.all([
+            columnIcon.boundingBox(),
+            columnTrigger.boundingBox(),
+          ]);
+          expect(iconBox!.width / zoom).toBeCloseTo(16, 1);
+          expect(iconBox!.height / zoom).toBeCloseTo(16, 1);
+          expect(iconBox!.x).toBeGreaterThanOrEqual(triggerBox!.x);
+          expect(iconBox!.y).toBeGreaterThanOrEqual(triggerBox!.y);
+          expect(iconBox!.x + iconBox!.width).toBeLessThanOrEqual(
+            triggerBox!.x + triggerBox!.width + 0.5,
+          );
+          expect(iconBox!.y + iconBox!.height).toBeLessThanOrEqual(
+            triggerBox!.y + triggerBox!.height + 0.5,
+          );
+          const barGeometry = await bars.evaluateAll((elements) =>
+            elements.map((element) => {
+              const box = element.getBoundingClientRect();
+              return { width: box.width, height: box.height };
+            }),
+          );
+          expect(new Set(barGeometry.map(({ width }) => width.toFixed(3))).size).toBe(1);
+          expect(new Set(barGeometry.map(({ height }) => height.toFixed(3))).size).toBe(1);
+          expect(barGeometry.every(({ width, height }) => width > 0 && height > 0)).toBe(true);
+        }
       });
     }
+  }
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  for (const zoom of [1, 2]) {
+    test(`keeps the empty ${theme} structural header ordered at ${zoom * 100}% zoom`, async ({
+      mount,
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      const component = await mount(PanelHeaderActionsHost, {
+        props: { theme, zoom, populated: false, initialCount: 4 },
+      });
+      const header = component.locator('[data-empty-panel-header]');
+      const trigger = header.locator('[data-panel-column-count-trigger]');
+      const close = header.locator('[data-testid="panel-close-button"]');
+      expect(
+        await header
+          .locator('button')
+          .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
+      ).toEqual(['Panel columns: 4', 'Close panel']);
+      const [headerBox, triggerBox, iconBox, closeBox] = await Promise.all([
+        header.boundingBox(),
+        trigger.boundingBox(),
+        trigger.locator('[data-panel-column-icon="4"]').boundingBox(),
+        close.boundingBox(),
+      ]);
+      expect(triggerBox!.x).toBeLessThan(closeBox!.x);
+      expect(iconBox!.width / zoom).toBeCloseTo(16, 1);
+      expect(iconBox!.height / zoom).toBeCloseTo(16, 1);
+      expect(triggerBox!.height / zoom).toBeCloseTo(28, 0);
+      expect(headerBox!.height / zoom).toBeGreaterThanOrEqual(triggerBox!.height / zoom);
+      expect(closeBox!.x + closeBox!.width).toBeLessThanOrEqual(
+        headerBox!.x + headerBox!.width + 0.5,
+      );
+    });
   }
 }
 
@@ -103,7 +171,7 @@ test('updates the workspace-scoped count and keeps keyboard focus order', async 
 
   await trigger.focus();
   await page.keyboard.press('Tab');
-  await expect(page.locator(':focus')).toHaveAttribute('aria-label', 'More');
+  await expect(page.locator(':focus')).toHaveAttribute('aria-label', 'Close panel');
 });
 
 test('keeps the four-bar glyph visible and equal in forced colors at 200% zoom', async ({
@@ -119,6 +187,11 @@ test('keeps the four-bar glyph visible and equal in forced colors at 200% zoom',
   const bars = icon.locator('[data-panel-column-icon-bar]');
 
   await expect(bars).toHaveCount(4);
+  const [iconBox, triggerBox] = await Promise.all([icon.boundingBox(), trigger.boundingBox()]);
+  expect(iconBox!.width / 2).toBeCloseTo(16, 1);
+  expect(iconBox!.height / 2).toBeCloseTo(16, 1);
+  expect(triggerBox!.width / 2).toBeCloseTo(28, 0);
+  expect(triggerBox!.height / 2).toBeCloseTo(28, 0);
   await expect(icon).toHaveAttribute('stroke', 'currentColor');
   await expect(icon).toHaveAttribute('stroke-width', '1');
   await expect(icon).toHaveAttribute('vector-effect', 'non-scaling-stroke');

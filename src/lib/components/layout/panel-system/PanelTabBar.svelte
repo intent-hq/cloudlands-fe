@@ -1402,7 +1402,7 @@
   {@const width = value * 4 + (value - 1) * 2}
   {#key value}
     <svg
-      class="panel-column-icon size-3.5! shrink-0"
+      class="panel-column-icon size-4! shrink-0"
       viewBox="0 0 24 18"
       fill="none"
       stroke="currentColor"
@@ -1994,7 +1994,6 @@
       <!-- Right: stable content controls, grouped actions, and close. -->
       <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
         {@render contentActions?.primary?.()}
-        {@render panelColumnCountMenu()}
         {@render panelActionsDropdown()}
         <div
           class="panel-identity-navigation-clip shrink-0 overflow-hidden"
@@ -2055,6 +2054,7 @@
             </div>
           </div>
         </div>
+        {@render panelColumnCountMenu()}
         {@render panelCloseButton()}
       </div>
     </div>

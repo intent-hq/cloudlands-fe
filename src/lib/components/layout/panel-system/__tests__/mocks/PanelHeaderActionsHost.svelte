@@ -26,6 +26,7 @@
     workspaceId = 'panel-actions-workspace',
     isRightmostPanel = true,
     theme = 'light',
+    populated = true,
   }: {
     panelType?: PanelTabType;
     width?: number;
@@ -34,6 +35,7 @@
     workspaceId?: string;
     isRightmostPanel?: boolean;
     theme?: 'light' | 'dark';
+    populated?: boolean;
   } = $props();
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
@@ -88,6 +90,13 @@
     closable: true,
     agentId: panelType === 'agent' ? 'panel-menu-agent' : undefined,
   });
+  const alternateTab = $derived<PanelTab>({
+    id: `${panelType}-alternate-tab`,
+    type: panelType,
+    title: `${panelType} alternate panel`,
+    closable: true,
+    agentId: panelType === 'agent' ? 'panel-menu-alternate-agent' : undefined,
+  });
 
   $effect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -117,8 +126,8 @@
   data-current-count={$count$}
 >
   <PanelTabBar
-    tabs={[activeTab]}
-    activeTabId={activeTab.id}
+    tabs={populated ? [activeTab, alternateTab] : []}
+    activeTabId={populated ? activeTab.id : null}
     panelId="panel-actions"
     {workspaceId}
     {isRightmostPanel}
