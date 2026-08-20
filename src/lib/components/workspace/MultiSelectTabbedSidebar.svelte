@@ -122,7 +122,6 @@
   interface Props {
     workspaceId: string;
     panelLayoutId?: string;
-    availablePanelCanvasWidth?: number;
     onCreateNote?: () => void;
     onCreateFile?: (folderPath: string, fileName?: string) => void | Promise<void>;
     onFileRenamed?: (oldPath: string, newPath: string) => void;
@@ -138,7 +137,6 @@
   let {
     workspaceId,
     panelLayoutId = workspaceId,
-    availablePanelCanvasWidth = 0,
     onCreateNote,
     onCreateFile,
     onFileRenamed,
@@ -499,9 +497,6 @@
         agentId,
         sourcePanelId,
         panelLayoutId,
-        openInNewColumn: true,
-        adaptiveFirstChat: true,
-        availablePanelCanvasWidth,
       }),
     );
   }

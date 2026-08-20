@@ -2,6 +2,11 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ensureAgentSessionLoaded } from '../../workspace-agents/workspace-agents-slice';
+import {
+  emptyWorkspaceState,
+  openTabInRightmostColumn,
+  panelLayoutReducer,
+} from '../../panel-layout/panel-layout-slice';
 import type { OpenAgentTabDetail } from '../app-layout-types';
 import { focusBrowserTabRequested, openAgentTabRequested } from '../app-layout-slice';
 import { appLayoutNavigationSaga } from './app-layout-navigation-saga';
@@ -172,6 +177,92 @@ describe('appLayoutNavigationSaga', () => {
       'workspaceAgents/ensureAgentSessionLoaded',
       'panelLayout/openTabInRightmostColumnRequested',
     ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps a normal two-column sidebar agent open in the rightmost column', async () => {
+    const channel = stdChannel();
+    const emitted: any[] = [];
+    let state: any = {
+      agentSessions: { byAgentId: { 'agent-2': { id: 'agent-2', name: 'Grace' } } },
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            ...emptyWorkspaceState,
+            root: {
+              type: 'split',
+              direction: 'horizontal',
+              children: [
+                { type: 'panel', panelId: 'left' },
+                { type: 'panel', panelId: 'right' },
+              ],
+              sizes: [50, 50],
+            },
+            panels: {
+              left: {
+                id: 'left',
+                tabs: [{ id: 'left-tab', type: 'note', title: 'Left', noteId: 'left' }],
+                activeTabId: 'left-tab',
+              },
+              right: {
+                id: 'right',
+                tabs: [{ id: 'old-right', type: 'file', title: 'Old right', filePath: 'old.ts' }],
+                activeTabId: 'old-right',
+              },
+            },
+            focusedPanelId: 'left',
+            columnCount: 2,
+          },
+        },
+      },
+    };
+    const dispatch = vi.fn((action: any) => {
+      emitted.push(action);
+      if (action.type === 'panelLayout/openTabInRightmostColumnRequested') {
+        const { wsId, tab, force, allowDuplicate, newTabId, timestamp } = action.payload;
+        state = {
+          ...state,
+          panelLayout: panelLayoutReducer(
+            state.panelLayout,
+            openTabInRightmostColumn(wsId, tab, { force, allowDuplicate, newTabId }, timestamp),
+          ),
+        };
+      } else if (action.type === 'panelLayout/openTabInNewRootColumn') {
+        state = { ...state, panelLayout: panelLayoutReducer(state.panelLayout, action) };
+      }
+    });
+    const task = runSaga({ channel, dispatch, getState: () => state }, appLayoutNavigationSaga);
+
+    channel.put(
+      openAgentTabRequested('ws-1', {
+        agentId: 'agent-2',
+        panelLayoutId: 'ws-1',
+        sourcePanelId: 'left',
+      }),
+    );
+    await settle();
+
+    const workspace = state.panelLayout.byWorkspaceId['ws-1'];
+    const rootPanelIds = workspace.root.children.map((child: any) => child.panelId);
+    expect(emitted.map((action) => action.type)).toEqual([
+      'workspaceAgents/ensureAgentSessionLoaded',
+      'panelLayout/openTabInRightmostColumnRequested',
+    ]);
+    expect(emitted.some((action) => action.type === 'panelLayout/openTabInNewRootColumn')).toBe(
+      false,
+    );
+    expect(workspace.columnCount).toBe(2);
+    expect(rootPanelIds).toEqual(['left', 'right']);
+    expect(workspace.panels.right.tabs).toEqual([
+      expect.objectContaining({ id: 'old-right' }),
+      expect.objectContaining({ type: 'agent', agentId: 'agent-2', workspaceId: 'ws-1' }),
+    ]);
+    expect(workspace.panels.right.activeTabId).toBe(workspace.panels.right.tabs[1].id);
+    expect(workspace.layoutHistory[0].panels.right).toMatchObject({
+      activeTabId: 'old-right',
+      tabs: [expect.objectContaining({ id: 'old-right' })],
+    });
     task.cancel();
     await task.toPromise();
   });
