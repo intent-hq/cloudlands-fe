@@ -149,7 +149,7 @@
   data-workspace-id={workspaceId}
 ></output>
 <input data-testid="shortcut-input" />
-<div class="relative h-96 w-[960px]" style:zoom={initialZoomFactor}>
+<div class="relative h-96 w-240" style:zoom={initialZoomFactor}>
   <div bind:this={viewport} class="h-full overflow-x-auto" data-testid="mod-w-viewport">
     <div bind:this={panelRoot} class="h-full min-w-0">
       <PanelLayout {workspaceId} layoutId={workspaceId} canvasSizing="viewport" />
