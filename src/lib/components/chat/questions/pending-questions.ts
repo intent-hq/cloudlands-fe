@@ -4,15 +4,11 @@ import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
 import { getAnsweredQuestionsMessageId } from './answer-message';
 
 /**
- * Pending Agent Q&A questions for the composer-slot wizard (wire contract:
- * pendingness is PERSISTENT — the newest question-bearing assistant message
- * keeps pending across later plain user messages AND the agent's subsequent
- * replies. It resolves only on an answer (a later user row tagged
- * `messageMetadata { type: "question_answers", answeredQuestionsMessageId }`),
- * on the `dismissedQuestionsMessageId` marker (wizard-gate), or when a NEWER
- * question-bearing assistant message supersedes it — single slot, newest set
- * wins). Dependency-light on purpose — no stores, no components — so
- * ChatPanel's derivation and the vitest suites share one implementation.
+ * Pending Agent Q&A questions for the composer-slot wizard. The daemon's
+ * three-state pending marker is authoritative when present: an empty string
+ * clears the slot, while a message id permits only that question-bearing row.
+ * Legacy sessions without the marker keep the transcript-based fallback.
+ * Dependency-light on purpose — no stores or components.
  */
 
 export interface PendingQuestionSet {
@@ -38,16 +34,26 @@ function questionsOf(message: AgentMessage): Question[] {
  * user bubble is shown, the question-bearing message is still streaming, or a
  * later user row answers it (matching `answeredQuestionsMessageId`). Because
  * this reads only the transcript, restored sessions re-surface unanswered
- * questions automatically.
+ * questions automatically when the daemon marker is absent.
  */
 export function derivePendingQuestions(
   messages: readonly AgentMessage[],
   isTurnActive: boolean,
   showingPendingUserMessage = false,
+  pendingQuestionsMessageId?: string,
 ): PendingQuestionSet | null {
   if (isTurnActive || showingPendingUserMessage || messages.length === 0) {
     return null;
   }
+  if (pendingQuestionsMessageId === '') return null;
+
+  if (pendingQuestionsMessageId !== undefined) {
+    const marked = messages.find((message) => message.id === pendingQuestionsMessageId);
+    if (!marked || marked.role !== 'assistant' || marked.isStreaming) return null;
+    const questions = questionsOf(marked);
+    return questions.length > 0 ? { messageId: marked.id, questions } : null;
+  }
+
   // Newest question-bearing assistant message wins (an older set is
   // superseded by construction); later plain user rows and assistant replies
   // do NOT resolve it.

@@ -171,6 +171,33 @@ describe('derivePendingQuestions', () => {
     expect(pending!.messageId).toBe('msg-a1');
     expect(pending!.questions[0].header).toBe('Auth method');
   });
+
+  it('uses transcript derivation when the authoritative marker is absent', () => {
+    const msg = assistantMessage([questionBlock()], { id: 'msg-a1' });
+    expect(
+      derivePendingQuestions([msg, userMessage('msg-u1')], false, false, undefined),
+    ).toMatchObject({ messageId: 'msg-a1' });
+  });
+
+  it('an authoritative empty marker suppresses an old question after later messages', () => {
+    const transcript = [
+      assistantMessage([questionBlock()], { id: 'msg-a1' }),
+      userMessage('msg-u1'),
+      assistantMessage([{ type: 'text', text: 'First follow-up.' }], { id: 'msg-a2' }),
+      userMessage('msg-u2'),
+      assistantMessage([{ type: 'text', text: 'Second follow-up.' }], { id: 'msg-a3' }),
+    ];
+    expect(derivePendingQuestions(transcript, false, false, '')).toBeNull();
+  });
+
+  it('a non-empty marker permits only its matching question-bearing message', () => {
+    const older = assistantMessage([questionBlock()], { id: 'msg-a1' });
+    const newer = assistantMessage([questionBlock({ header: 'Second round' })], { id: 'msg-a2' });
+    expect(derivePendingQuestions([older, newer], false, false, 'msg-a1')).toMatchObject({
+      messageId: 'msg-a1',
+    });
+    expect(derivePendingQuestions([older, newer], false, false, 'msg-missing')).toBeNull();
+  });
 });
 
 // ============================================================================
@@ -324,5 +351,36 @@ describe('wizard gate honors the persisted dismissal marker', () => {
     const pending = deriveWizardPendingQuestions(state, AGENT_ID, transcript);
     expect(pending).not.toBeNull();
     expect(pending!.messageId).toBe('msg-a1');
+  });
+});
+
+describe('wizard gate honors the authoritative pending marker', () => {
+  const AGENT_ID = 'agent-coordinator';
+  const transcript: AgentMessage[] = [
+    assistantMessage([questionBlock()], { id: 'msg-a1' }),
+    userMessage('msg-u1'),
+    assistantMessage([{ type: 'text', text: 'Later reply.' }], { id: 'msg-a2' }),
+  ];
+
+  it('keeps an answered question hidden after rehydration with a written empty marker', () => {
+    // The rehydrated transcript window no longer contains the older tagged
+    // answer row. The written empty marker must still prevent resurrection.
+    const rehydrated = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: '' } }),
+    );
+    expect(deriveWizardPendingQuestions(rehydrated, AGENT_ID, transcript)).toBeNull();
+  });
+
+  it('shows a newer marked question after an older set was cleared', () => {
+    const newerTranscript = [
+      ...transcript,
+      assistantMessage([questionBlock({ header: 'Second round' })], { id: 'msg-a3' }),
+    ];
+    const state = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-a3' } }),
+    );
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, newerTranscript)).toMatchObject({
+      messageId: 'msg-a3',
+    });
   });
 });
