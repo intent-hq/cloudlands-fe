@@ -7,6 +7,8 @@ import {
   resolveLatchedDividerAnchor,
   dividerVisibleWhenScrolledToBottom,
   dividerDefersToTurnBoundary,
+  dividerEntryScrollTop,
+  DIVIDER_ENTRY_VIEWPORT_FRACTION,
 } from '../new-messages-divider';
 import { indexConversationTurns } from '../conversation-turns';
 import type { AgentMessage } from '$shared/types';
@@ -163,6 +165,35 @@ describe('turn-boundary divider placement (ChatPanel contract)', () => {
       panel.match(/@render newMessagesDividerAfter\([^)]+,\s*dividerAtTurnBoundary,?\s*\)/g) ?? [];
     expect(allSites.length).toBe(4);
     expect(withFlag.length).toBe(allSites.length);
+  });
+});
+
+describe('dividerEntryScrollTop', () => {
+  // Expectations derive from the exported fraction so a placement tune
+  // updates them in lockstep. At the pinned 0.2 with a 600px viewport the
+  // divider lands 120px below the viewport top.
+  const entryOffset = DIVIDER_ENTRY_VIEWPORT_FRACTION * 600;
+
+  it('places the divider top at the entry fraction of the viewport height', () => {
+    expect(dividerEntryScrollTop(1000, 600, 5000)).toBe(1000 - entryOffset);
+  });
+
+  it('clamps at 0 when the divider is near the top of the content', () => {
+    // Ideal target 50 - entryOffset is negative.
+    expect(dividerEntryScrollTop(50, 600, 5000)).toBe(0);
+  });
+
+  it('clamps at max scrollTop when the divider is near the content bottom', () => {
+    // Ideal target 4900 - entryOffset exceeds max scrollTop 5000 - 600 = 4400.
+    expect(dividerEntryScrollTop(4900, 600, 5000)).toBe(4400);
+  });
+
+  it('returns 0 when the content is shorter than the viewport', () => {
+    expect(dividerEntryScrollTop(300, 600, 500)).toBe(0);
+  });
+
+  it('pins the entry placement contract at 20% of the viewport height', () => {
+    expect(DIVIDER_ENTRY_VIEWPORT_FRACTION).toBe(0.2);
   });
 });
 

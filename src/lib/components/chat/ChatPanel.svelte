@@ -139,6 +139,7 @@
     resolveLatchedDividerAnchor,
     dividerVisibleWhenScrolledToBottom,
     dividerDefersToTurnBoundary,
+    dividerEntryScrollTop,
   } from './new-messages-divider';
   import EventWakeupBanner from './EventWakeupBanner.svelte';
   import ConversationTurnGap from './ConversationTurnGap.svelte';
@@ -499,7 +500,13 @@
     scrollButtonVisibility?.update(state.distanceFromBottom);
     // Keep the cache current before a panel-layout update can recreate this
     // chat and run the replacement instance ahead of our destroy callback.
-    if (workspace?.id && agentId && scrollContainer && $agentMessages$.length > 0) {
+    if (
+      workspace?.id &&
+      agentId &&
+      scrollContainer &&
+      $agentMessages$.length > 0 &&
+      canRecordChatScroll(state.isFollowing)
+    ) {
       setCachedChatScroll(workspace.id, agentId, {
         scrollTop: scrollContainer.scrollTop,
         shouldFollowBottom: state.isFollowing,
@@ -2292,6 +2299,19 @@
   // One-shot guard: the cached scroll position is applied once on the first
   // transcript availability after remount, never again on later hydrations.
   let hasConsumedCachedScrollRestore = false;
+  // Retry budget once the container has rendered but is still shorter than
+  // the cached position (rows still streaming in / late layout).
+  const CACHED_SCROLL_RESTORE_MAX_ATTEMPTS = 60;
+  let cachedScrollRestoreAttempts = 0;
+  let cachedScrollRestoreRetryFrame: number | null = null;
+  function scheduleCachedScrollRestoreRetry() {
+    if (cachedScrollRestoreRetryFrame !== null) return;
+    cachedScrollRestoreRetryFrame = requestAnimationFrame(() => {
+      cachedScrollRestoreRetryFrame = null;
+      if (isComponentDestroyed) return;
+      applyCachedScrollRestore();
+    });
+  }
   // Reapply the previous instance's scroll position (see cachedScrollRestoreTop
   // above). Returns true when the cached position was consumed.
   function applyCachedScrollRestore(): boolean {
@@ -2299,14 +2319,92 @@
     // Not consumed until the container is bound, so a premature call cannot
     // silently drop the cached position.
     if (!scrollContainer) return false;
+    // Never apply (and consume) against an unrendered (skeleton/collapsed)
+    // or still-short container: the browser clamps the write to ~0 and the
+    // panel would land at the top of the transcript. Retry on animation
+    // frames until the transcript can hold the position. While the container
+    // has not rendered at all (zero client height) the retry keeps waiting;
+    // once rendered, the bounded budget ends with a clamped apply — the
+    // content is then genuinely shorter (e.g. pruned scrollback rows) and
+    // the nearest valid position is the correct landing.
+    const maxScrollTop = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+    if (maxScrollTop < cachedScrollRestoreTop) {
+      const rendered = scrollContainer.clientHeight > 0;
+      if (!rendered || cachedScrollRestoreAttempts < CACHED_SCROLL_RESTORE_MAX_ATTEMPTS) {
+        if (rendered) cachedScrollRestoreAttempts += 1;
+        scheduleCachedScrollRestoreRetry();
+        return false;
+      }
+    }
     hasConsumedCachedScrollRestore = true;
     // The unread-divider entry scroll is superseded — the user already had a
     // deliberate reading position when the panel was unmounted.
     hasAppliedNewMessagesEntryScroll = true;
-    // A cached position minted against since-pruned scrollback history rows
-    // (shorter document now) is clamped natively by the browser — the panel
-    // lands at the nearest valid position, never crashes.
     scrollContainer.scrollTop = cachedScrollRestoreTop;
+    return true;
+  }
+  // The deferred restore must never fire after the user has started
+  // scrolling: while the transcript is still shorter than the cached
+  // position (rows streaming in / LazyTurn placeholders under-reporting
+  // height) the retry loop stays pending, and a late apply would yank the
+  // viewport away from the position the user just chose.
+  function cancelPendingCachedScrollRestore() {
+    if (cachedScrollRestoreTop === null || hasConsumedCachedScrollRestore) return;
+    hasConsumedCachedScrollRestore = true;
+    if (cachedScrollRestoreRetryFrame !== null) {
+      cancelAnimationFrame(cachedScrollRestoreRetryFrame);
+      cachedScrollRestoreRetryFrame = null;
+    }
+  }
+  // First user-initiated scroll intent cancels the pending restore: wheel,
+  // touch, or a pointer grab on the scrollbar track (a pointerdown on the
+  // container itself with offsetX past the content box — clientWidth
+  // excludes the scrollbar gutter). Plain clicks inside the content are not
+  // scroll intents.
+  $effect(() => {
+    const container = scrollContainer;
+    if (!container) return;
+    const cancel = () => cancelPendingCachedScrollRestore();
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target === container && event.offsetX >= container.clientWidth) {
+        cancelPendingCachedScrollRestore();
+      }
+    };
+    container.addEventListener('wheel', cancel, { passive: true });
+    container.addEventListener('touchstart', cancel, { passive: true });
+    container.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      container.removeEventListener('wheel', cancel);
+      container.removeEventListener('touchstart', cancel);
+      container.removeEventListener('pointerdown', onPointerDown);
+    };
+  });
+  // A cache write must record a real, user-held reading position: never
+  // while this instance's own cached restore is still pending (until it is
+  // consumed the current scrollTop is not user-chosen), and — away from the
+  // bottom — never from a collapsed/unrendered container, whose clamped
+  // scrollTop of ~0 would overwrite a useful cached position and land the
+  // next mount at the top. With follow engaged the recorded scrollTop is
+  // ignored on restore, so container dimensions do not matter.
+  function canRecordChatScroll(isFollowing: boolean): boolean {
+    if (!scrollContainer) return false;
+    if (cachedScrollRestoreTop !== null && !hasConsumedCachedScrollRestore) return false;
+    if (!isFollowing && scrollContainer.scrollHeight <= scrollContainer.clientHeight) return false;
+    // Stop-looking boundary (workspace switch / tab close): the boundary
+    // saga clears the cache and ends this agent's divider session in the
+    // same dispatch tick, BEFORE Svelte's teardown flush destroys this
+    // panel. When the session this instance latched has ended, this is a
+    // boundary teardown — not a column-windowing remount — and recording
+    // would repopulate the entry the boundary just cleared, so the next
+    // entry would restore a stale position instead of following the entry
+    // policy (bottom / divider).
+    if (
+      agentId &&
+      latchedDividerSessionAgentId === agentId &&
+      selectDividerSession.select(appStore.state, agentId) === null
+    ) {
+      return false;
+    }
     return true;
   }
   // Get the auggie session ID from the most recent assistant message's metadata
@@ -3110,7 +3208,19 @@
       scheduleDeepOpenRelease();
       return;
     }
-    smoothScrollTo(targetElement, 'center');
+    // Land the divider's top edge at DIVIDER_ENTRY_VIEWPORT_FRACTION of the
+    // viewport height from the top so most of the viewport shows unseen
+    // content.
+    const entryScrollTop = dividerEntryScrollTop(
+      targetOffsetTop,
+      scrollContainer.clientHeight,
+      scrollContainer.scrollHeight,
+    );
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      scrollContainer.scrollTop = entryScrollTop;
+    } else {
+      smoothScrollToPosition(entryScrollTop);
+    }
     scheduleDeepOpenRelease();
   }
 
@@ -3383,11 +3493,23 @@
       clearTimeout(lockConfirmationTimer);
       lockConfirmationTimer = null;
     }
+    if (cachedScrollRestoreRetryFrame !== null) {
+      cancelAnimationFrame(cachedScrollRestoreRetryFrame);
+      cachedScrollRestoreRetryFrame = null;
+    }
 
     // Cache the transcript scroll state so a remount after column windowing
     // (WorkspaceColumnsView unmounting off-screen surfaces) restores the
-    // user's reading position instead of re-entering at the bottom.
-    if (workspace?.id && agentId && scrollContainer && $agentMessages$.length > 0) {
+    // user's reading position instead of re-entering at the bottom. Guarded
+    // so a collapsed container or a pending (unconsumed) restore cannot
+    // record a clamped ~0 scrollTop over a useful cached position.
+    if (
+      workspace?.id &&
+      agentId &&
+      scrollContainer &&
+      $agentMessages$.length > 0 &&
+      canRecordChatScroll(shouldFollowBottom)
+    ) {
       setCachedChatScroll(workspace.id, agentId, {
         scrollTop: scrollContainer.scrollTop,
         shouldFollowBottom,

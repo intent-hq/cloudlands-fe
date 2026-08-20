@@ -49,6 +49,10 @@ const mocks = vi.hoisted(() => {
     animateMessageSend: vi.fn(),
     createMessageSendLaunchBubble: vi.fn(),
     pendingQuestions: null as { messageId: string; questions: unknown[] } | null,
+    // Latched divider viewing session (Redux, mutated by tests): non-null
+    // while the session is live; null after a stop-looking boundary's
+    // endDividerSession.
+    dividerSessionValue: { anchorId: null } as { anchorId: string | null } | null,
     prefersReducedMotion: false,
     followBottomOptions: null as {
       follow: boolean;
@@ -127,7 +131,15 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: mocks.selector([]),
 }));
 vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () => ({
-  selectDividerSession: mocks.selector(null),
+  selectDividerSession: Object.assign(
+    () => ({
+      subscribe(run: (value: unknown) => void) {
+        run(mocks.dividerSessionValue);
+        return () => {};
+      },
+    }),
+    { select: () => mocks.dividerSessionValue },
+  ),
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectIsAgentMonospace: mocks.selector(false),
@@ -266,6 +278,7 @@ vi.mock('svelte-fa', async () => ({
 import ChatPanel from '../ChatPanel.svelte';
 import { clearDraftCacheForTests } from '../chat-draft-cache';
 import {
+  clearCachedChatScroll,
   clearChatScrollCacheForTests,
   getCachedChatScroll,
   setCachedChatScroll,
@@ -379,6 +392,7 @@ beforeEach(() => {
   mocks.awaitingUtilityFooter.set(false);
   mocks.transcriptHydration.set('settled');
   mocks.transcriptHydratedOnce.set(true);
+  mocks.dividerSessionValue = { anchorId: null };
   mocks.animateMessageSend.mockResolvedValue(undefined);
   mocks.createMessageSendLaunchBubble.mockImplementation(() => {
     const bubble = document.createElement('div');
@@ -1203,6 +1217,10 @@ describe('ChatPanel mounted lifecycle', () => {
     });
     await tick();
     const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
 
     // Simulate the user scrolling up: followBottom reports follow=false and
     // the container sits at a mid-transcript offset.
@@ -1247,13 +1265,17 @@ describe('ChatPanel mounted lifecycle', () => {
     const replacement = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });
+    const replacementScroll = replacement.container.querySelector(
+      '.overflow-y-auto',
+    ) as HTMLDivElement;
+    Object.defineProperties(replacementScroll, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
     await tick();
     await Promise.resolve();
     await tick();
     flushFrame();
-    const replacementScroll = replacement.container.querySelector(
-      '.overflow-y-auto',
-    ) as HTMLDivElement;
     expect(replacementScroll.scrollTop).toBe(432);
   });
 
@@ -1281,6 +1303,11 @@ describe('ChatPanel mounted lifecycle', () => {
     const view = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
     await tick();
     // Let the first-hydration restore (tick continuation) and the mount-time
     // rAF entry scroll both run.
@@ -1288,9 +1315,206 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
     flushFrame();
 
-    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
     expect(scrollContainer.scrollTop).toBe(987);
     expect(scrollToBottomUtil).not.toHaveBeenCalled();
+  });
+
+  it('defers the cached restore until the transcript can hold it instead of clamping to the top', async () => {
+    // Regression (top-landing on workspace re-entry): the cached position
+    // used to be applied and consumed against the still-short (skeleton)
+    // container, where the browser clamps the write to ~0 — the panel then
+    // stayed at the top once the real transcript rendered.
+    mocks.draftGet.mockResolvedValue(null);
+    setCachedChatScroll('workspace-a', 'agent-a', {
+      scrollTop: 987,
+      shouldFollowBottom: false,
+    });
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    // Real browsers clamp scrollTop writes to the scrollable range; jsdom
+    // stores them verbatim, so emulate the clamp.
+    let scrollTopValue = 0;
+    Object.defineProperty(scrollContainer, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTopValue,
+      set(value: number) {
+        const max = Math.max(0, this.scrollHeight - this.clientHeight);
+        scrollTopValue = Math.max(0, Math.min(value, max));
+      },
+    });
+
+    // First paint: the container is still collapsed (scrollHeight 0), so any
+    // restore attempt here would clamp to the top.
+    await tick();
+    await Promise.resolve();
+    await tick();
+    flushFrame();
+    expect(scrollContainer.scrollTop).toBe(0);
+
+    // The transcript finishes rendering: the container becomes tall enough
+    // to hold the cached position, and the deferred restore applies it.
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
+    flushFrame();
+    expect(scrollContainer.scrollTop).toBe(987);
+  });
+
+  it('does not overwrite a useful cached position when unmounted while collapsed', async () => {
+    // Regression (top-landing on workspace re-entry): a panel unmounted
+    // before its container ever rendered (collapsed, scrollTop 0) used to
+    // record { scrollTop: 0 } over the previous instance's real reading
+    // position, so the next mount landed at the top.
+    mocks.draftGet.mockResolvedValue(null);
+    setCachedChatScroll('workspace-a', 'agent-a', {
+      scrollTop: 987,
+      shouldFollowBottom: false,
+    });
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    // The container never rendered any scrollable content before destroy.
+    view.unmount();
+
+    expect(getCachedChatScroll('workspace-a', 'agent-a')).toEqual({
+      scrollTop: 987,
+      shouldFollowBottom: false,
+    });
+  });
+
+  it('applies the clamped position once the rendered container exhausts the retry budget', async () => {
+    // Exhausted-budget branch: the container has rendered (non-zero client
+    // height) but the transcript is genuinely shorter than the cached
+    // position (e.g. pruned scrollback rows). After the bounded retry
+    // budget, the restore applies clamped — the nearest valid position.
+    mocks.draftGet.mockResolvedValue(null);
+    setCachedChatScroll('workspace-a', 'agent-a', {
+      scrollTop: 987,
+      shouldFollowBottom: false,
+    });
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    let scrollTopValue = 0;
+    Object.defineProperty(scrollContainer, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTopValue,
+      set(value: number) {
+        const max = Math.max(0, this.scrollHeight - this.clientHeight);
+        scrollTopValue = Math.max(0, Math.min(value, max));
+      },
+    });
+    // Rendered but held too short for the cached position for the whole run.
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 800 },
+      clientHeight: { configurable: true, value: 500 },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+    expect(scrollContainer.scrollTop).toBe(0);
+
+    // Drain the bounded retry budget (60 rendered-frame attempts, plus the
+    // mount-time entry-scroll frame): the loop must terminate on its own —
+    // never an unbounded rAF retry — and the final attempt applies clamped
+    // to the nearest valid position (max scrollTop 300).
+    for (let frame = 0; frame < 100 && frames.length > 0; frame++) flushFrame();
+    expect(frames).toHaveLength(0);
+    expect(scrollContainer.scrollTop).toBe(300);
+  });
+
+  it('cancels the pending deferred restore on the first user-initiated scroll', async () => {
+    // A late deferred apply must never yank the viewport after the user has
+    // started scrolling: the first wheel/touch input while the restore is
+    // still pending cancels it for good.
+    mocks.draftGet.mockResolvedValue(null);
+    setCachedChatScroll('workspace-a', 'agent-a', {
+      scrollTop: 987,
+      shouldFollowBottom: false,
+    });
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    let scrollTopValue = 0;
+    Object.defineProperty(scrollContainer, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTopValue,
+      set(value: number) {
+        const max = Math.max(0, this.scrollHeight - this.clientHeight);
+        scrollTopValue = Math.max(0, Math.min(value, max));
+      },
+    });
+    // Container still collapsed: the restore stays pending on the rAF loop.
+    await tick();
+    await Promise.resolve();
+    await tick();
+    flushFrame();
+    expect(scrollContainer.scrollTop).toBe(0);
+
+    // The user starts scrolling before the transcript grows tall enough.
+    scrollContainer.dispatchEvent(new Event('wheel'));
+
+    // The container then becomes tall enough — the cancelled restore must
+    // NOT fire, even across further frames.
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
+    flushFrame();
+    flushFrame();
+    expect(scrollContainer.scrollTop).toBe(0);
+  });
+
+  it('does not record a destroy-time cache write after the divider session ended (boundary)', async () => {
+    // Stop-looking boundary ordering: the boundary saga clears the cache and
+    // dispatches endDividerSession in the same tick, BEFORE Svelte's
+    // teardown flush runs this panel's onDestroy. The destroy-time write
+    // must observe the ended session and refuse to repopulate the cleared
+    // entry, or re-entry would restore the stale position instead of
+    // following the entry policy (bottom / divider).
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
+    mocks.followBottomOptions?.onFollowChange?.(false);
+    await tick();
+    scrollContainer.scrollTop = 1234;
+
+    // The boundary: cache cleared, divider session ended — both before the
+    // teardown flush destroys this panel.
+    clearCachedChatScroll(['agent-a']);
+    mocks.dividerSessionValue = null;
+    view.unmount();
+
+    expect(getCachedChatScroll('workspace-a', 'agent-a')).toBeUndefined();
   });
 
   it('re-enters at the bottom on remount when the previous instance was following the bottom', async () => {
