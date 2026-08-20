@@ -156,8 +156,7 @@ export function closeActivePanelTab(
   currentPath: string,
   availableCanvasWidth?: number,
 ): string | null {
-  const match = currentPath.match(/^\/workspace\/([^/]+)/);
-  const workspaceId = match && match[1] !== 'new' ? match[1] : null;
+  const workspaceId = resolveWorkspaceTabToClose(store, currentPath);
   if (!workspaceId) return null;
 
   const panel = selectFocusedPanel.select(store.state, workspaceId);

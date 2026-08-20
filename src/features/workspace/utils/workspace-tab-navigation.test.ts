@@ -315,6 +315,46 @@ describe('global workspace tab navigation', () => {
       ]);
     });
 
+    it.each(['/', '/workspace'])(
+      'uses the Redux-current workspace for both close stages on the columns root %s',
+      (path) => {
+        const ws2 = layoutWith([makePanel('ws2-panel', ['ws2-tab'])], 'ws2-panel', [], 'ws-2')
+          .byWorkspaceId['ws-2'];
+        const ws3 = layoutWith(
+          [makePanel('ws3-left', ['left-tab']), makePanel('ws3-right', ['right-tab'])],
+          'ws3-right',
+          [],
+          'ws-3',
+        ).byWorkspaceId['ws-3'];
+        const store = makeStore('ws-3', { byWorkspaceId: { 'ws-2': ws2, 'ws-3': ws3 } }, 'columns');
+
+        expect(closeActivePanelTab(store, path, 1200)).toBe('right-tab');
+        expect(store.state.panelLayout.byWorkspaceId['ws-3'].panels['ws3-right']).toMatchObject({
+          tabs: [],
+          activeTabId: null,
+        });
+        expect(closeActivePanelTab(store, path, 1200)).toBe('ws3-right');
+
+        const result = store.state.panelLayout.byWorkspaceId['ws-3'];
+        expect(result.root).toEqual({ type: 'panel', panelId: 'ws3-left' });
+        expect(result.columnCount).toBe(1);
+        expect(result.focusedPanelId).toBe('ws3-left');
+        expect(result.canvasWidth).toBe(1200);
+        expect(store.state.panelLayout.byWorkspaceId['ws-2'].panels['ws2-panel'].tabs).toHaveLength(
+          1,
+        );
+        expect(store.state.tabState).toMatchObject({
+          currentTabId: 'ws-3',
+          openTabs: { 'ws-1': true, 'ws-2': true, 'ws-3': true },
+          recentlyClosedTabIds: [],
+        });
+        expect(store.actions.map((action) => action.type)).toEqual([
+          'panelLayout/closeFocusedPanelTab',
+          'panelLayout/closeFocusedPanelTab',
+        ]);
+      },
+    );
+
     it.each([1, 2, 3, 4] as const)(
       'retains every structural invariant when closing the final tab in a %i-column layout',
       (columnCount) => {
@@ -385,17 +425,19 @@ describe('global workspace tab navigation', () => {
       ]);
     });
 
-    it('no-ops for empty, non-closable, and non-workspace targets', () => {
+    it('no-ops for empty, non-closable, and excluded route targets', () => {
       const nonClosable = makePanel('locked', ['locked-tab']);
       nonClosable.tabs[0].closable = false;
 
-      for (const [layout, path] of [
-        [layoutWith([makePanel('empty')], 'empty'), '/workspace/ws-2'],
-        [layoutWith([nonClosable], 'locked'), '/workspace/ws-2'],
-        [layoutWith([makePanel('p1', ['t1'])], 'p1'), '/workspace/new'],
-        [layoutWith([makePanel('p1', ['t1'])], 'p1'), '/settings'],
+      for (const [layout, path, viewMode] of [
+        [layoutWith([makePanel('empty')], 'empty'), '/workspace/ws-2', 'columns'],
+        [layoutWith([nonClosable], 'locked'), '/workspace/ws-2', 'columns'],
+        [layoutWith([makePanel('p1', ['t1'])], 'p1'), '/workspace/new', 'columns'],
+        [layoutWith([makePanel('p1', ['t1'])], 'p1'), '/settings', 'columns'],
+        [layoutWith([makePanel('p1', ['t1'])], 'p1'), '/', 'single'],
+        [layoutWith([makePanel('p1', ['t1'])], 'p1'), '/workspace', 'single'],
       ] as const) {
-        const store = makeStore('ws-2', layout);
+        const store = makeStore('ws-2', layout, viewMode);
         expect(closeActivePanelTab(store, path)).toBeNull();
         expect(store.actions).toEqual([]);
       }
