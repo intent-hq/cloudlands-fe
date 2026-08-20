@@ -4,6 +4,24 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [3.1.0](https://github.com/intent-hq/cloudlands-fe/compare/v3.0.0...v3.1.0) (2026-08-20)
+
+
+### 🚀 Features
+
+* **browser:** owned-tab lifecycle — always-active webviews, hide on user close, destroy on agent deletion ([#1467](https://github.com/intent-hq/cloudlands-fe/issues/1467)) ([f8ded80](https://github.com/intent-hq/cloudlands-fe/commit/f8ded803043ac3a219c16a04c3714ba8b898cebd))
+* compact gap between batched user messages sharing queueInfo.batchId ([#1498](https://github.com/intent-hq/cloudlands-fe/issues/1498)) ([4797eb7](https://github.com/intent-hq/cloudlands-fe/commit/4797eb7c0a5a821ba8aa78b3c5eed255aa06fad0))
+
+
+### 🐛 Bug Fixes
+
+* **browser:** bridge browser:list-tabs-response to the real preload bridge so agent listTabs works in the packaged app ([#1486](https://github.com/intent-hq/cloudlands-fe/issues/1486)) ([c6eded9](https://github.com/intent-hq/cloudlands-fe/commit/c6eded93d471fc864b073944fb05851bf9ed9403))
+* bump intentd sidecar to v0.7.23 ([#1512](https://github.com/intent-hq/cloudlands-fe/issues/1512)) ([54c0da1](https://github.com/intent-hq/cloudlands-fe/commit/54c0da1e16eb7693861624e8bc3da178916adf4a))
+* never land chat at top on workspace re-entry; divider entry at 20% viewport ([#1476](https://github.com/intent-hq/cloudlands-fe/issues/1476)) ([0863481](https://github.com/intent-hq/cloudlands-fe/commit/08634815439c79d4b3466ddafe1653b46821b0f8))
+* preserve daemon-merged pullRequests pool on non-authoritative upserts ([#1509](https://github.com/intent-hq/cloudlands-fe/issues/1509)) ([72232b8](https://github.com/intent-hq/cloudlands-fe/commit/72232b8b57e5f3a12355a01efdbf43eb10eeab67))
+* spare in-flight sibling hydrations from the viewed-agent swap sweep ([#1485](https://github.com/intent-hq/cloudlands-fe/issues/1485)) ([a79ac8f](https://github.com/intent-hq/cloudlands-fe/commit/a79ac8fbc2a37067f429f6371202fbbccfaa0bb6))
+* **window:** bridge set-title, set-browser-focused, and app:get-version to main process ([#1487](https://github.com/intent-hq/cloudlands-fe/issues/1487)) ([d7043ff](https://github.com/intent-hq/cloudlands-fe/commit/d7043ff5382cbbf91488807c39a6e503fc02813a))
+
 ## [3.0.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.74.0...v3.0.0) (2026-08-20)
 
 
