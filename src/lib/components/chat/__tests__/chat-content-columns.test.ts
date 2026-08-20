@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { CHAT_TRANSCRIPT_OVERFLOW_CLASS } from '../chat-queue-edge-layout';
+
 const panel = readFileSync(
   path.resolve(process.cwd(), 'src/lib/components/chat/ChatPanel.svelte'),
   'utf8',
@@ -15,6 +17,12 @@ describe('chat content column contracts', () => {
     expect(panel).toContain('max-width: 70em');
     expect(panel).toContain('data-testid="chat-transcript-scroll-viewport"');
     expect(panel).not.toMatch(/data-testid="chat-transcript-inner"[^>]*overflow-y-auto/);
+  });
+
+  it('scrolls the transcript viewport vertically only (intent-hq/monorepo#2969)', () => {
+    expect(panel).toContain('class="flex-1 {CHAT_TRANSCRIPT_OVERFLOW_CLASS}"');
+    expect(CHAT_TRANSCRIPT_OVERFLOW_CLASS).toContain('overflow-y-auto');
+    expect(CHAT_TRANSCRIPT_OVERFLOW_CLASS).toContain('overflow-x-hidden');
   });
 
   it('keeps the prompt divider full width around a separate capped controls column', () => {

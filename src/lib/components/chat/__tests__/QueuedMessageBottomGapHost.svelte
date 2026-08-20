@@ -4,6 +4,7 @@
   import type { QueuedMessage } from '$shared/types';
   import {
     CHAT_SCROLL_END_MARKER_CLASS,
+    CHAT_TRANSCRIPT_OVERFLOW_CLASS,
     chatTranscriptBottomInsetClass,
   } from '../chat-queue-edge-layout';
 
@@ -75,7 +76,7 @@
       onFollowChange: (next) => (following = next),
       onScrollStateChange: reportBottom,
     }}
-    class="min-h-0 flex-1 overflow-y-auto"
+    class="min-h-0 flex-1 {CHAT_TRANSCRIPT_OVERFLOW_CLASS}"
     style="overflow-anchor: none;"
     data-testid="queued-gap-transcript"
     role="region"

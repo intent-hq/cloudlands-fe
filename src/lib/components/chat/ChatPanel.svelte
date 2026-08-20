@@ -247,6 +247,7 @@
   import AuroraSofteningLayer from './AuroraSofteningLayer.svelte';
   import {
     CHAT_SCROLL_END_MARKER_CLASS,
+    CHAT_TRANSCRIPT_OVERFLOW_CLASS,
     chatTranscriptBottomInsetClass,
   } from './chat-queue-edge-layout';
   import { invoke, listenSync } from '$lib/electron-bridge';
@@ -4208,7 +4209,7 @@
         },
         onScrollStateChange: handleBottomStateChange,
       }}
-      class="flex-1 overflow-y-auto"
+      class="flex-1 {CHAT_TRANSCRIPT_OVERFLOW_CLASS}"
       class:agent-font-monospace={$isAgentMonospace}
       style="scrollbar-gutter: stable;"
       data-testid="chat-transcript-scroll-viewport"
