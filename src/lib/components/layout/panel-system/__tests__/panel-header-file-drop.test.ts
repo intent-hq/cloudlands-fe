@@ -259,28 +259,32 @@ describe('panel header file drop', () => {
 
     it('clears the handler on register → unregister, without a proxy equality warning', async () => {
       const warn = vi.spyOn(console, 'warn');
-      const header = renderHeader('file');
-      const dataTransfer = fileDragData();
-      const first = makeHandler();
+      try {
+        const header = renderHeader('file');
+        const dataTransfer = fileDragData();
+        const first = makeHandler();
 
-      flushSync(() => contextRef.current!.register(first.handler));
-      const activeEnter = dragEvent('dragenter', dataTransfer);
-      await fireEvent(header, activeEnter);
-      expect(activeEnter.defaultPrevented).toBe(true);
-      expect(first.changes).toEqual([true]);
-      await fireEvent(header, dragEvent('dragleave', dataTransfer));
+        flushSync(() => contextRef.current!.register(first.handler));
+        const activeEnter = dragEvent('dragenter', dataTransfer);
+        await fireEvent(header, activeEnter);
+        expect(activeEnter.defaultPrevented).toBe(true);
+        expect(first.changes).toEqual([true]);
+        await fireEvent(header, dragEvent('dragleave', dataTransfer));
 
-      flushSync(() => contextRef.current!.unregister(first.handler));
+        flushSync(() => contextRef.current!.unregister(first.handler));
 
-      const staleEnter = dragEvent('dragenter', dataTransfer);
-      await fireEvent(header, staleEnter);
-      expect(staleEnter.defaultPrevented).toBe(false);
-      expect(first.changes).toEqual([true, false]);
-      expect(
-        warn.mock.calls.filter((call) =>
-          call.some((arg) => String(arg).includes('state_proxy_equality_mismatch'))
-        )
-      ).toEqual([]);
+        const staleEnter = dragEvent('dragenter', dataTransfer);
+        await fireEvent(header, staleEnter);
+        expect(staleEnter.defaultPrevented).toBe(false);
+        expect(first.changes).toEqual([true, false]);
+        expect(
+          warn.mock.calls.filter((call) =>
+            call.some((arg) => String(arg).includes('state_proxy_equality_mismatch'))
+          )
+        ).toEqual([]);
+      } finally {
+        warn.mockRestore();
+      }
     });
 
     it('keeps the replacement handler when a stale unregister arrives (register → replace → stale-unregister)', async () => {
