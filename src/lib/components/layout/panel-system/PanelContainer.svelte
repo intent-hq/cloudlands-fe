@@ -736,6 +736,7 @@
             direction={node.direction}
             {nodePath}
             handleIndex={item.index}
+            immediateResize={resizesRootDivider}
             onResizeStart={handleResizeStart}
             onResize={(delta) => handleResize(item.index, delta)}
             onResizeEnd={() => handleResizeEnd(item.index)}

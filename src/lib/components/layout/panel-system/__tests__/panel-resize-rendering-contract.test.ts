@@ -28,7 +28,7 @@ describe('panel resize rendering', () => {
     // the only control that changes the total canvas width.
     expect(canvas).toContain('storageKey={null}');
     expect(canvas).toContain('side="left"');
-    expect(canvas).toContain('handleClassName="right-0! panel-canvas-resize-handle"');
+    expect(canvas).toContain('handleClassName="panel-canvas-resize-handle"');
     expect(layout).toContain('panelOuterResizeCommittedWidth ?? $panelCanvasWidth$');
     expect(layout).toContain('getPanelPreferredWidths(');
     expect(layout).toContain('scrollContainer={panelWorkspaceInset}');

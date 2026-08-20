@@ -18,9 +18,15 @@ function measureFit(component: Locator) {
     const canvas = document.querySelector<HTMLElement>(
       '.panel-canvas-resize-handle',
     )!.parentElement!;
+    const handle = document.querySelector<HTMLElement>('.panel-canvas-resize-handle')!;
+    const renderedCanvas = document.querySelector<HTMLElement>(
+      '.panel-split-container.horizontal',
+    )!;
     const panels = Array.from(document.querySelectorAll<HTMLElement>('[data-panel-id]'));
     const insetRect = inset.getBoundingClientRect();
     const canvasRect = canvas.getBoundingClientRect();
+    const handleRect = handle.getBoundingClientRect();
+    const renderedCanvasRect = renderedCanvas.getBoundingClientRect();
     const rightmostRect = panels.at(-1)!.getBoundingClientRect();
     const styles = getComputedStyle(inset);
     return {
@@ -32,6 +38,8 @@ function measureFit(component: Locator) {
       insetScrollWidth: inset.scrollWidth,
       insetClientWidth: inset.clientWidth,
       canvasRight: canvasRect.right,
+      handleCenter: handleRect.left + handleRect.width / 2,
+      renderedCanvasRight: renderedCanvasRect.right,
       visibleRight: insetRect.right - (Number.parseFloat(styles.paddingRight) || 0),
       rightmostRight: rightmostRect.right,
       panelWidths: panels.map((panel) => panel.getBoundingClientRect().width),
@@ -76,6 +84,7 @@ for (const viewportWidth of [640, 1200]) {
           .toBeLessThanOrEqual(geometryTolerance);
         const fit = await measureFit(component);
 
+        expect(Math.abs(fit.handleCenter - fit.renderedCanvasRight)).toBeLessThanOrEqual(1);
         expect(fit.canvasWidth).toBeLessThanOrEqual(fit.availableWidth);
         expect(fit.canvasRight).toBeLessThanOrEqual(fit.visibleRight + geometryTolerance);
         expect(fit.rightmostRight).toBeLessThanOrEqual(fit.visibleRight + geometryTolerance);

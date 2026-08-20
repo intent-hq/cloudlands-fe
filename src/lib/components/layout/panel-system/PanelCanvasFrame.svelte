@@ -63,7 +63,7 @@
   syncWithDefaultWidth={true}
   disableWidthTransition={true}
   showHandleIndicator={true}
-  handleClassName="right-0! panel-canvas-resize-handle"
+  handleClassName="panel-canvas-resize-handle"
   {onWidthChange}
   {onResizeStart}
   onResize={(_previousWidth, nextWidth) => onResizePreview(nextWidth - widths.defaultWidth)}
@@ -73,17 +73,3 @@
 >
   {@render children()}
 </ResizablePanel>
-
-<style>
-  :global(.panel-canvas-resize-handle[data-resize-axis='x'])::before {
-    right: 0;
-    left: auto;
-    transform: none;
-  }
-
-  :global(
-    .panel-canvas-resize-handle[data-resize-indicator='short'][data-resize-axis='x']
-  )::before {
-    transform: translateY(-50%);
-  }
-</style>

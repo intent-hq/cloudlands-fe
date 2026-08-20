@@ -103,6 +103,21 @@ describe('editorial panel resize handles', () => {
     expect(document.body.classList.contains('panel-resizing')).toBe(false);
   });
 
+  it('applies commit-critical pointer deltas before a fast mouse-up', async () => {
+    const onResize = vi.fn();
+    render(PanelSplitHandle, {
+      props: { direction: 'horizontal', immediateResize: true, onResize },
+    });
+
+    const handle = screen.getByRole('button', { name: 'Resize panel' });
+    await fireEvent.mouseDown(handle, { clientX: 20 });
+    await fireEvent.mouseMove(window, { clientX: 49 });
+
+    expect(onResize).toHaveBeenCalledWith(29);
+    await fireEvent.mouseUp(window);
+    expect(onResize).toHaveBeenCalledOnce();
+  });
+
   it('reports vertical drag deltas from a horizontal resize target', async () => {
     const onResize = vi.fn();
     render(PanelSplitHandle, { props: { direction: 'vertical', onResize } });

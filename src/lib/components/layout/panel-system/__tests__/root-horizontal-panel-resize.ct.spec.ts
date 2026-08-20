@@ -10,21 +10,43 @@ const ROOT_HANDLE_SELECTOR =
 type Geometry = {
   canvasWidth: number;
   canvasVisualWidth: number;
+  canvasRight: number;
+  outerHandleCenter: number;
   panelWidths: number[];
   panelVisualWidths: number[];
+  panelLefts: number[];
+  panelRights: number[];
+  dividerCenters: number[];
 };
 
 function readGeometry(component: Locator): Promise<Geometry> {
   return component.evaluate(() => {
     const canvas = document.querySelector('.panel-canvas-resize-handle')
       ?.parentElement as HTMLElement;
+    const outerHandle = document.querySelector('.panel-canvas-resize-handle') as HTMLElement;
     const root = document.querySelector('.panel-split-container.horizontal') as HTMLElement;
     const panels = Array.from(root.querySelectorAll<HTMLElement>(':scope > .panel-split-child'));
+    const dividers = Array.from(
+      root.querySelectorAll<HTMLElement>(
+        ':scope > .panel-split-handle-wrapper > button[data-resize-axis="x"]',
+      ),
+    );
+    const canvasRect = canvas.getBoundingClientRect();
+    const outerHandleRect = outerHandle.getBoundingClientRect();
+    const panelRects = panels.map((panel) => panel.getBoundingClientRect());
     return {
       canvasWidth: canvas.offsetWidth,
-      canvasVisualWidth: canvas.getBoundingClientRect().width,
+      canvasVisualWidth: canvasRect.width,
+      canvasRight: canvasRect.right,
+      outerHandleCenter: outerHandleRect.left + outerHandleRect.width / 2,
       panelWidths: panels.map((panel) => panel.offsetWidth),
-      panelVisualWidths: panels.map((panel) => panel.getBoundingClientRect().width),
+      panelVisualWidths: panelRects.map((rect) => rect.width),
+      panelLefts: panelRects.map((rect) => rect.left),
+      panelRights: panelRects.map((rect) => rect.right),
+      dividerCenters: dividers.map((divider) => {
+        const rect = divider.getBoundingClientRect();
+        return rect.left + rect.width / 2;
+      }),
     };
   });
 }
@@ -60,6 +82,71 @@ async function dragDivider(
   return { preview, pointerUp, settled: await readGeometry(component) };
 }
 
+async function dragDividerBeforeNextFrame(
+  page: Page,
+  component: Locator,
+  dividerIndex: number,
+  cssDelta: number,
+  zoomFactor: number,
+) {
+  const immediate = await component.evaluate(
+    (_, { dividerIndex, visualDelta }) => {
+      function snapshot(): Geometry {
+        const canvas = document.querySelector('.panel-canvas-resize-handle')
+          ?.parentElement as HTMLElement;
+        const outerHandle = document.querySelector('.panel-canvas-resize-handle') as HTMLElement;
+        const root = document.querySelector('.panel-split-container.horizontal') as HTMLElement;
+        const panels = Array.from(
+          root.querySelectorAll<HTMLElement>(':scope > .panel-split-child'),
+        );
+        const dividers = Array.from(
+          root.querySelectorAll<HTMLElement>(
+            ':scope > .panel-split-handle-wrapper > button[data-resize-axis="x"]',
+          ),
+        );
+        const canvasRect = canvas.getBoundingClientRect();
+        const outerHandleRect = outerHandle.getBoundingClientRect();
+        const panelRects = panels.map((panel) => panel.getBoundingClientRect());
+        return {
+          canvasWidth: canvas.offsetWidth,
+          canvasVisualWidth: canvasRect.width,
+          canvasRight: canvasRect.right,
+          outerHandleCenter: outerHandleRect.left + outerHandleRect.width / 2,
+          panelWidths: panels.map((panel) => panel.offsetWidth),
+          panelVisualWidths: panelRects.map((rect) => rect.width),
+          panelLefts: panelRects.map((rect) => rect.left),
+          panelRights: panelRects.map((rect) => rect.right),
+          dividerCenters: dividers.map((divider) => {
+            const rect = divider.getBoundingClientRect();
+            return rect.left + rect.width / 2;
+          }),
+        };
+      }
+
+      const handle = document.querySelectorAll<HTMLElement>(
+        '.panel-split-container.horizontal > .panel-split-handle-wrapper > button[data-resize-axis="x"]',
+      )[dividerIndex];
+      const rect = handle.getBoundingClientRect();
+      const startX = rect.left + rect.width / 2;
+      const startY = rect.top + rect.height / 2;
+      handle.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, clientX: startX, clientY: startY }),
+      );
+      window.dispatchEvent(
+        new MouseEvent('mousemove', { bubbles: true, clientX: startX + visualDelta, clientY: 1 }),
+      );
+      const preview = snapshot();
+      window.dispatchEvent(
+        new MouseEvent('mouseup', { bubbles: true, clientX: startX + visualDelta, clientY: 1 }),
+      );
+      return { preview, pointerUp: snapshot() };
+    },
+    { dividerIndex, visualDelta: cssDelta * zoomFactor },
+  );
+  await nextFrames(page, 3);
+  return { ...immediate, settled: await readGeometry(component) };
+}
+
 function expectGeometry(actual: Geometry, widths: number[], zoomFactor: number) {
   const canvasWidth =
     widths.reduce((sum, width) => sum + width, 0) + GUTTER_WIDTH * (widths.length - 1);
@@ -69,6 +156,25 @@ function expectGeometry(actual: Geometry, widths: number[], zoomFactor: number) 
   actual.panelVisualWidths.forEach((width, index) =>
     expect(width).toBeCloseTo(widths[index] * zoomFactor, 0),
   );
+}
+
+function expectStableGeometry(preview: Geometry, committed: Geometry) {
+  const previewEdges = [
+    preview.canvasRight,
+    preview.outerHandleCenter,
+    ...preview.panelLefts,
+    ...preview.panelRights,
+    ...preview.dividerCenters,
+  ];
+  const committedEdges = [
+    committed.canvasRight,
+    committed.outerHandleCenter,
+    ...committed.panelLefts,
+    ...committed.panelRights,
+    ...committed.dividerCenters,
+  ];
+  expect(committedEdges).toHaveLength(previewEdges.length);
+  committedEdges.forEach((edge, index) => expect(edge).toBeCloseTo(previewEdges[index], 0));
 }
 
 const viewports = [
@@ -125,6 +231,14 @@ for (const mode of ['contained', 'uncontained'] as const) {
           .toBeCloseTo(expectedCanvasWidth, 0);
         expectGeometry(await readGeometry(component), widths, zoomFactor);
 
+        widths.splice(0, widths.length, ...resizePanelWidthsAtDivider(widths, 0, 47).panelWidths);
+        const fastRelease = await dragDividerBeforeNextFrame(page, component, 0, 47, zoomFactor);
+        expectGeometry(fastRelease.preview, widths, zoomFactor);
+        expectGeometry(fastRelease.pointerUp, widths, zoomFactor);
+        expectGeometry(fastRelease.settled, widths, zoomFactor);
+        expectStableGeometry(fastRelease.preview, fastRelease.pointerUp);
+        expectStableGeometry(fastRelease.preview, fastRelease.settled);
+
         for (const dividerIndex of [0, 1]) {
           for (const delta of [80, -120, 60, -40]) {
             const before = [...widths];
@@ -143,6 +257,8 @@ for (const mode of ['contained', 'uncontained'] as const) {
             expectGeometry(result.preview, widths, zoomFactor);
             expectGeometry(result.pointerUp, widths, zoomFactor);
             expectGeometry(result.settled, widths, zoomFactor);
+            expectStableGeometry(result.preview, result.pointerUp);
+            expectStableGeometry(result.preview, result.settled);
             before.slice(0, dividerIndex).forEach((width, index) => {
               expect(result.settled.panelWidths[index]).toBeCloseTo(width, 0);
             });
@@ -175,11 +291,21 @@ for (const zoomFactor of [1, 2]) {
     const widths = [500, 500];
     expectGeometry(await readGeometry(component), widths, zoomFactor);
 
+    widths.splice(0, widths.length, ...resizePanelWidthsAtDivider(widths, 0, 53).panelWidths);
+    const fastRelease = await dragDividerBeforeNextFrame(page, component, 0, 53, zoomFactor);
+    expectGeometry(fastRelease.preview, widths, zoomFactor);
+    expectGeometry(fastRelease.pointerUp, widths, zoomFactor);
+    expectGeometry(fastRelease.settled, widths, zoomFactor);
+    expectStableGeometry(fastRelease.preview, fastRelease.pointerUp);
+    expectStableGeometry(fastRelease.preview, fastRelease.settled);
+
     widths.splice(0, widths.length, ...resizePanelWidthsAtDivider(widths, 0, -220).panelWidths);
     const shrunk = await dragDivider(page, component, handle, -220, zoomFactor);
     expectGeometry(shrunk.preview, widths, zoomFactor);
     expectGeometry(shrunk.pointerUp, widths, zoomFactor);
     expectGeometry(shrunk.settled, widths, zoomFactor);
+    expectStableGeometry(shrunk.preview, shrunk.pointerUp);
+    expectStableGeometry(shrunk.preview, shrunk.settled);
 
     await component.getByTestId('width-plus-one').evaluate((button: HTMLButtonElement) => {
       button.click();
@@ -200,6 +326,8 @@ for (const zoomFactor of [1, 2]) {
     expectGeometry(grown.preview, widths, zoomFactor);
     expectGeometry(grown.pointerUp, widths, zoomFactor);
     expectGeometry(grown.settled, widths, zoomFactor);
+    expectStableGeometry(grown.preview, grown.pointerUp);
+    expectStableGeometry(grown.preview, grown.settled);
 
     await component.getByTestId('reload-panel-layout').evaluate((button: HTMLButtonElement) => {
       button.click();

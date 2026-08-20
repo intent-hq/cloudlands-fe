@@ -39,6 +39,8 @@
     onResize?: (delta: number) => void;
     onResizeStart?: () => void;
     onResizeEnd?: () => void;
+    /** Apply pointer deltas before mouse-up when preview geometry is commit-critical. */
+    immediateResize?: boolean;
     /** Callback when a tab is dropped on this handle's drop zones */
     onTabDropToHandle?: (
       tabId: string,
@@ -57,6 +59,7 @@
     onResize,
     onResizeStart,
     onResizeEnd,
+    immediateResize = false,
     onTabDropToHandle,
   }: Props = $props();
 
@@ -114,7 +117,11 @@
     if (delta !== 0) {
       pendingResizeDelta += delta;
       startPos = currentPos;
-      resizeFrame ??= requestAnimationFrame(flushPendingResize);
+      if (immediateResize) {
+        flushPendingResize();
+      } else {
+        resizeFrame ??= requestAnimationFrame(flushPendingResize);
+      }
     }
   }
 
