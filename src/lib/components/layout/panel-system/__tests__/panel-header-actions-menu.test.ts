@@ -4,7 +4,24 @@ import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
+const mocks = vi.hoisted(() => {
+  let columnCount = 2;
+  const subscribers = new Set<(value: number) => void>();
+  return {
+    dispatch: vi.fn(),
+    panelColumnCount: {
+      subscribe(run: (value: number) => void) {
+        subscribers.add(run);
+        run(columnCount);
+        return () => subscribers.delete(run);
+      },
+    },
+    setPanelColumnCount(value: number) {
+      columnCount = value;
+      subscribers.forEach((run) => run(value));
+    },
+  };
+});
 const readable = <T>(value: T) => ({
   subscribe(run: (current: T) => void) {
     run(value);
@@ -38,7 +55,7 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
   endDrag: () => ({ type: 'tabState/endDrag' }),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
-  selectPanelColumnCount: () => readable(2),
+  selectPanelColumnCount: () => mocks.panelColumnCount,
   selectRecentlyClosed: () => readable([]),
   selectPanelLayoutWorkspace: {
     select: (state: any) => state.panelLayout.byWorkspaceId['workspace-1'],
@@ -146,6 +163,7 @@ function dragEvent(target: Element) {
 
 beforeEach(() => {
   mocks.dispatch.mockClear();
+  mocks.setPanelColumnCount(2);
   setDraggedPanelId(null);
   Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
@@ -179,7 +197,8 @@ describe('mounted panel header actions menu', () => {
       '[data-panel-column-count-trigger]',
     )!;
     expect(trigger.getAttribute('aria-label')).toBe('Panel columns: 2');
-    expect(trigger.querySelector('[data-icon="table-columns"]')).toBeTruthy();
+    expect(trigger.querySelector('[data-icon="table-columns"]')).toBeNull();
+    expect(trigger.querySelector('[data-panel-column-icon="2"]')).toBeTruthy();
 
     await fireEvent.click(trigger);
     const radios = await screen.findAllByRole('menuitemradio');
@@ -200,6 +219,26 @@ describe('mounted panel header actions menu', () => {
         ]),
       }),
     });
+  });
+
+  it('renders one equal bar per selected count and reacts to selector updates', async () => {
+    const { container } = renderHeader('note', { isRightmostPanel: true });
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-panel-column-count-trigger]',
+    )!;
+
+    for (const count of [1, 2, 3, 4]) {
+      mocks.setPanelColumnCount(count);
+      await waitFor(() => {
+        expect(trigger.getAttribute('aria-label')).toBe(`Panel columns: ${count}`);
+        const icon = trigger.querySelector(`[data-panel-column-icon="${count}"]`);
+        const bars = Array.from(icon?.querySelectorAll('[data-panel-column-icon-bar]') ?? []);
+        expect(bars).toHaveLength(count);
+        expect(bars.map((bar) => [bar.getAttribute('width'), bar.getAttribute('height')])).toEqual(
+          Array.from({ length: count }, () => ['4', '14']),
+        );
+      });
+    }
   });
 
   it.each(panelTypes)('opens one portalled menu from one click for the %s panel', async (type) => {

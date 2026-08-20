@@ -1398,6 +1398,32 @@
   </DropdownMenu>
 {/snippet}
 
+{#snippet panelColumnIcon(value: PanelColumnCount)}
+  {@const width = value * 4 + (value - 1) * 2}
+  <svg
+    class="panel-column-icon size-3.5! shrink-0"
+    viewBox="0 0 24 18"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linejoin="round"
+    aria-hidden="true"
+    data-panel-column-icon={value}
+  >
+    {#each Array.from({ length: value }) as _, index}
+      <rect
+        x={12 - width / 2 + index * 6}
+        y="2"
+        width="4"
+        height="14"
+        rx="1"
+        vector-effect="non-scaling-stroke"
+        data-panel-column-icon-bar
+      />
+    {/each}
+  </svg>
+{/snippet}
+
 {#snippet panelColumnCountMenu()}
   {#if isRightmostPanel}
     <Menu.Root>
@@ -1417,7 +1443,7 @@
             tooltipDelayDuration={300}
             data-panel-column-count-trigger
           >
-            <Fa icon={faTableColumns} size={14} class="size-3.5!" />
+            {@render panelColumnIcon($panelColumnCount$)}
           </Button>
         {/snippet}
       </Menu.Trigger>
@@ -2453,6 +2479,12 @@
     transition:
       width var(--motion-standard) var(--ease-standard),
       opacity var(--motion-fast) var(--ease-standard);
+  }
+
+  @media (forced-colors: active) {
+    .panel-column-icon {
+      color: ButtonText;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

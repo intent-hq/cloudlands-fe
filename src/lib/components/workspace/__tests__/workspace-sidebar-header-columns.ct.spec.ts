@@ -43,7 +43,9 @@ for (const theme of ['light', 'dark'] as const) {
           headerBox!.x + headerBox!.width + 0.5,
         );
         await expect(columnTrigger).toHaveAccessibleName('Panel columns: 2');
-        await expect(controls.locator('[data-panel-column-icon]')).toHaveCount(0);
+        const columnIcon = controls.locator('[data-panel-column-icon="2"]');
+        await expect(columnIcon).toHaveCount(1);
+        await expect(columnIcon.locator('[data-panel-column-icon-bar]')).toHaveCount(2);
         for (const action of [columnTrigger, actionsTrigger, closeTrigger]) {
           const box = await action.boundingBox();
           expect(box!.width / zoom).toBeCloseTo(28, 0);
@@ -73,10 +75,61 @@ test('updates the workspace-scoped count and keeps keyboard focus order', async 
     'aria-checked',
     'true',
   );
-  await page.getByRole('menuitemradio', { name: '4 columns' }).click();
-  await expect(component).toHaveAttribute('data-current-count', '4');
-  await expect(trigger).toHaveAccessibleName('Panel columns: 4');
+  await page.keyboard.press('Escape');
 
+  for (const count of [1, 2, 3, 4]) {
+    await trigger.click();
+    await page
+      .getByRole('menuitemradio', { name: `${count} column${count === 1 ? '' : 's'}` })
+      .click();
+    await expect(component).toHaveAttribute('data-current-count', String(count));
+    await expect(trigger).toHaveAccessibleName(`Panel columns: ${count}`);
+    await expect(trigger.locator('[data-panel-column-icon-bar]')).toHaveCount(count);
+  }
+
+  await component
+    .getByTestId('restore-column-count')
+    .evaluate((button: HTMLButtonElement) => button.click());
+  await expect(component).toHaveAttribute('data-current-count', '3');
+  await expect(trigger.locator('[data-panel-column-icon="3"]')).toHaveCount(1);
+
+  await component.update({ props: { workspaceId: 'panel-actions-alternate' } });
+  await expect(component).toHaveAttribute('data-current-count', '4');
+  await expect(trigger.locator('[data-panel-column-icon="4"]')).toHaveCount(1);
+
+  await component.update({ props: { workspaceId: 'panel-actions-workspace' } });
+  await expect(component).toHaveAttribute('data-current-count', '3');
+  await expect(trigger.locator('[data-panel-column-icon="3"]')).toHaveCount(1);
+
+  await trigger.focus();
   await page.keyboard.press('Tab');
   await expect(page.locator(':focus')).toHaveAttribute('aria-label', 'More');
+});
+
+test('keeps the four-bar glyph visible and equal in forced colors at 200% zoom', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' });
+  const component = await mount(PanelHeaderActionsHost, {
+    props: { initialCount: 4, zoom: 2 },
+  });
+  const trigger = component.locator('[data-panel-column-count-trigger]');
+  const icon = trigger.locator('[data-panel-column-icon="4"]');
+  const bars = icon.locator('[data-panel-column-icon-bar]');
+
+  await expect(bars).toHaveCount(4);
+  await expect(icon).toHaveAttribute('stroke', 'currentColor');
+  const geometry = await bars.evaluateAll((elements) =>
+    elements.map((element) => {
+      const box = element.getBoundingClientRect();
+      return { width: box.width, height: box.height };
+    }),
+  );
+  expect(new Set(geometry.map(({ width }) => width.toFixed(3))).size).toBe(1);
+  expect(new Set(geometry.map(({ height }) => height.toFixed(3))).size).toBe(1);
+  expect(geometry.every(({ width, height }) => width > 0 && height > 0)).toBe(true);
+  expect(await icon.evaluate((element) => getComputedStyle(element).color)).not.toBe(
+    'rgba(0, 0, 0, 0)',
+  );
 });

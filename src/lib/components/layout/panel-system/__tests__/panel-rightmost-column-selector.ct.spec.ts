@@ -15,7 +15,13 @@ async function selectorOwner(component: Locator) {
   );
 }
 
-async function chooseCount(component: Locator, page: Page, count: 2 | 3) {
+async function expectGlyphCount(component: Locator, count: 1 | 2 | 3 | 4) {
+  const icon = component.locator(`[data-panel-column-icon="${count}"]`);
+  await expect(icon).toHaveCount(1);
+  await expect(icon.locator('[data-panel-column-icon-bar]')).toHaveCount(count);
+}
+
+async function chooseCount(component: Locator, page: Page, count: 1 | 2 | 3 | 4) {
   await component.locator('[data-panel-column-count-trigger]').click();
   await page.getByRole('menuitemradio', { name: `${count} columns` }).click();
   await expect(component.getByTestId('panel-layout-state')).toHaveAttribute(
@@ -32,10 +38,12 @@ test('keeps one real selector on the empty rightmost panel as columns grow', asy
   const selector = component.locator('[data-panel-column-count-trigger]');
 
   await expect(selector).toHaveAccessibleName('Panel columns: 1');
+  await expectGlyphCount(component, 1);
   expect(await selectorOwner(component)).toBe('initial-panel');
 
   await chooseCount(component, page, 2);
   await expect(selector).toHaveAccessibleName('Panel columns: 2');
+  await expectGlyphCount(component, 2);
   const idsAtTwo = await panelIds(component);
   expect(idsAtTwo).toHaveLength(2);
   const ownerAtTwo = await selectorOwner(component);
@@ -48,6 +56,7 @@ test('keeps one real selector on the empty rightmost panel as columns grow', asy
 
   await chooseCount(component, page, 3);
   await expect(selector).toHaveAccessibleName('Panel columns: 3');
+  await expectGlyphCount(component, 3);
   const idsAtThree = await panelIds(component);
   expect(idsAtThree).toHaveLength(3);
   const ownerAtThree = await selectorOwner(component);
@@ -73,15 +82,29 @@ test('keeps one real selector on the empty rightmost panel as columns grow', asy
     { width: 28, height: 28 },
   ]);
 
+  await chooseCount(component, page, 4);
+  await expect(selector).toHaveAccessibleName('Panel columns: 4');
+  await expectGlyphCount(component, 4);
+  const idsAtFour = await panelIds(component);
+  expect(idsAtFour).toHaveLength(4);
+  const ownerAtFour = await selectorOwner(component);
+  expect(ownerAtFour).toBe(idsAtFour.at(-1));
+  const rightmostAtFour = component.locator(`[data-panel-id="${ownerAtFour}"]`);
+  await expect(rightmostAtFour).toHaveAttribute('data-empty-panel-surface', 'true');
+  await expect(rightmostAtFour.locator('[data-empty-panel-header]')).toHaveCount(1);
+
   await component
     .getByTestId('populate-rightmost-panel')
     .evaluate((button: HTMLButtonElement) => button.click());
-  await expect(rightmost).not.toHaveAttribute('data-empty-panel-surface', 'true');
-  await expect(rightmost.locator('[data-empty-panel-header]')).toHaveCount(0);
-  await expect(rightmost.locator('[data-panel-content-header]')).toHaveCount(1);
+  await expect(rightmostAtFour).not.toHaveAttribute('data-empty-panel-surface', 'true');
+  await expect(rightmostAtFour.locator('[data-empty-panel-header]')).toHaveCount(0);
+  await expect(rightmostAtFour.locator('[data-panel-content-header]')).toHaveCount(1);
   await expect(component.locator('[data-panel-column-count-trigger]')).toHaveCount(1);
-  await expect(rightmost.getByRole('button', { name: 'Close panel' })).toHaveCount(1);
+  await expectGlyphCount(component, 4);
+  await expect(rightmostAtFour.getByRole('button', { name: 'Close panel' })).toHaveCount(1);
   await expect(
-    rightmost.locator('[data-panel-content-header] [data-panel-header-actions] button').last(),
+    rightmostAtFour
+      .locator('[data-panel-content-header] [data-panel-header-actions] button')
+      .last(),
   ).toHaveAccessibleName('Close panel');
 });

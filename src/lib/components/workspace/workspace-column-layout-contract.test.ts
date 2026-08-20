@@ -134,7 +134,8 @@ describe('workspace column layout contract', () => {
     expect(progress).not.toContain('data-panel-column-icon');
     expect(sidebarHeader).not.toContain('data-panel-column-icon');
     expect(panelTabBar).toContain('data-panel-column-count-trigger');
-    expect(panelTabBar).toContain('icon={faTableColumns}');
+    expect(panelTabBar).toContain('data-panel-column-icon={value}');
+    expect(panelTabBar).toContain('{@render panelColumnIcon($panelColumnCount$)}');
     expect(progress.indexOf('data-workspace-close')).toBeGreaterThan(
       progress.indexOf('<DropdownMenu bind:open={dropdownOpen}>'),
     );
