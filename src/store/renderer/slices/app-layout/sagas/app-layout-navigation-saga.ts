@@ -2,11 +2,7 @@ import { put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { m } from '$shared/paraglide/messages.js';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
-import {
-  selectHiddenTabs,
-  selectPanels,
-  selectPendingPanelReveal,
-} from '../../panel-layout/panel-layout-selectors';
+import { selectHiddenTabs, selectPanels } from '../../panel-layout/panel-layout-selectors';
 import {
   focusPanel,
   openTab,
