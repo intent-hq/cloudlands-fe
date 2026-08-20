@@ -460,6 +460,25 @@ describe('tab ownership registry (#2857)', () => {
     expect(service.getTabEmulatedSize('tab-sized')).toEqual({ width: 390, height: 844 });
   });
 
+  it('rehydration clamps an out-of-bounds persisted size into the schema bounds', async () => {
+    const service = await loadService();
+    wireRenderer([
+      {
+        tabId: 'tab-huge-size',
+        url: 'http://a/',
+        title: 'A',
+        ownerAgentId: 'agent-1',
+        // Passes the shape guard but exceeds the live action-schema bounds
+        // (e.g. a hand-edited layout file) — clamped to [320, 3840] and
+        // rounded, never replayed verbatim into CDP emulation.
+        emulatedSize: { width: 1e9, height: 0.5 },
+      },
+    ]);
+
+    await expect(service.resolveTabOwner('tab-huge-size', 'ws-1')).resolves.toBe('agent-1');
+    expect(service.getTabEmulatedSize('tab-huge-size')).toEqual({ width: 3840, height: 320 });
+  });
+
   it('rehydration falls back to the default viewport on a malformed persisted size', async () => {
     const service = await loadService();
     wireRenderer([

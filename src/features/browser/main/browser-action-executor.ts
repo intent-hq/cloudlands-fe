@@ -144,7 +144,10 @@ const OpenTabActionSchema = z.object({
   pin: z.boolean().optional(),
   // Emulated viewport for agent opens (monorepo#2857); omitted width
   // defaults to the standard desktop viewport (1280×800). Ignored on user
-  // (agentId-less) opens, which stay native-sized and unowned.
+  // (agentId-less) opens, which stay native-sized and unowned. Like
+  // `position`, also ignored when the per-agent exact-URL dedupe reuses an
+  // existing tab — the reused tab keeps its current viewport (use resizeTab
+  // to change it).
   width: ViewportDimensionSchema.optional(),
   height: ViewportDimensionSchema.optional(),
 });

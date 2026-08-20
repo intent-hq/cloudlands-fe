@@ -25,6 +25,20 @@ const logger = new Logger('EmbeddedBrowserCdp');
 export const DEFAULT_AGENT_VIEWPORT = { width: 1280, height: 800 } as const;
 
 /**
+ * Emulated viewport dimension bounds for agent-owned tabs (docs/protocol
+ * §5.9). Live openTab/claimTab/resizeTab requests are validated against
+ * these by the action schema; rehydration from a persisted layout clamps
+ * into the same range so a hand-edited/corrupt layout file cannot replay
+ * extreme sizes into CDP emulation (monorepo#2857).
+ */
+export const AGENT_VIEWPORT_MIN_PX = 320;
+export const AGENT_VIEWPORT_MAX_PX = 3840;
+
+function clampViewportDimension(px: number): number {
+  return Math.min(AGENT_VIEWPORT_MAX_PX, Math.max(AGENT_VIEWPORT_MIN_PX, Math.round(px)));
+}
+
+/**
  * How long (ms) to wait for a tab's webview to mount and register after an
  * openTab/focusTab request. Registration fires on the webview's dom-ready,
  * so slow page loads (e.g. dev servers over a tunnel) need a generous bound.
@@ -1048,8 +1062,15 @@ class EmbeddedBrowserCdpService {
       // deletion already committed — never resurrect those (monorepo#2857).
       if (this.clearedAgentTombstones.has(tab.ownerAgentId)) continue;
       if (this.tabOwnership.has(tab.tabId)) continue;
+      // The persisted layout file is user-editable on disk, so clamp the
+      // restored size into the same bounds the live action schema enforces —
+      // a corrupt/hand-edited value must not replay an extreme viewport
+      // into CDP emulation.
       const emulatedSize = isBrowserEmulatedSize(tab.emulatedSize)
-        ? { width: tab.emulatedSize.width, height: tab.emulatedSize.height }
+        ? {
+            width: clampViewportDimension(tab.emulatedSize.width),
+            height: clampViewportDimension(tab.emulatedSize.height),
+          }
         : { ...DEFAULT_AGENT_VIEWPORT };
       this.tabOwnership.set(tab.tabId, {
         ownerAgentId: tab.ownerAgentId,
@@ -1098,7 +1119,16 @@ class EmbeddedBrowserCdpService {
     workspaceId: string | undefined,
     ownerAgentId: string,
   ): void {
-    if (!tabId || typeof workspaceId !== 'string' || workspaceId.length === 0) return;
+    if (!tabId || typeof workspaceId !== 'string' || workspaceId.length === 0) {
+      // Without a workspaceId there is no target window to notify, so the
+      // owner/size change stays in-memory only and will not survive a
+      // restart — log it so the gap is diagnosable (the caller's action
+      // still reports success).
+      logger.debug('Skipping tab owner/size persistence notification (no workspaceId)', {
+        tabId,
+      });
+      return;
+    }
     const emulatedSize = this.tabOwnership.get(tabId)?.emulatedSize;
     sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.TAB_OWNER_CHANGED, {
       tabId,
