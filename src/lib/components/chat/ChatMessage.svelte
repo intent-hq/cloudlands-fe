@@ -36,6 +36,7 @@
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
   import { splitTextByUrls } from './message-link-utils';
+  import { findInlineMentions } from './mention-match-utils';
   import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
   import {
     isQuestionOnlyContent,
@@ -502,17 +503,10 @@
   ): MessageSegment[] {
     const segments: MessageSegment[] = [];
 
-    // Regex to match @mentions:
-    // - @context[provider|identifier|title] - context mentions (Linear, GitHub, etc.)
-    // - @note/{noteId} - note mentions
-    // - @{path} - file/folder mentions (paths with / or file extensions)
-    const mentionRegex =
-      /@(context\[[^\]]+\]|note\/[^\s]+|[^\s@]+\.[a-zA-Z]+(?::[L\d-]+)?|[^\s@]*\/[^\s]+)/g;
-
     let lastIndex = 0;
-    let match;
 
-    while ((match = mentionRegex.exec(text)) !== null) {
+    // Matching (shared with StickyMessageHeader) lives in mention-match-utils
+    for (const match of findInlineMentions(text)) {
       // Add text before the match
       if (match.index > lastIndex) {
         const textBefore = text.slice(lastIndex, match.index);
@@ -521,8 +515,8 @@
         }
       }
 
-      const fullMatch = match[0]; // e.g., "@context[linear|AU-123|Title]" or "@note/spec"
-      const captured = match[1]; // e.g., "context[linear|AU-123|Title]" or "note/spec"
+      const fullMatch = match.fullMatch; // e.g., "@context[linear|AU-123|Title]" or "@note/spec"
+      const captured = match.captured; // e.g., "context[linear|AU-123|Title]" or "note/spec"
 
       if (captured.startsWith('context[')) {
         // Context mention: @context[provider|identifier|title] or @context[base64JSON]
