@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [3.0.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.74.0...v3.0.0) (2026-08-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* /
+
+### 🐛 Bug Fixes
+
+* clip horizontal overflow from queued-messages full-bleed divider ([#1508](https://github.com/intent-hq/cloudlands-fe/issues/1508)) ([1cc62ad](https://github.com/intent-hq/cloudlands-fe/commit/1cc62adcb63fd81a4fe60dbdf0d4b3042693e1c8))
+
+
+### ⚙️ Miscellaneous Tasks
+
+* event-chain auto-cut on all release-worthy pushes with a 60-min throttle ([#1505](https://github.com/intent-hq/cloudlands-fe/issues/1505)) ([d8c3eac](https://github.com/intent-hq/cloudlands-fe/commit/d8c3eacd2e636bf5c358d90fc01670ddfcb7213c))
+
 ## [2.74.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.73.1...v2.74.0) (2026-08-20)
 
 
