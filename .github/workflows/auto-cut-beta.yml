@@ -28,7 +28,8 @@
 #     commits (chore/docs/ci/...), so such a push may find the PR unchanged
 #     but already green — merging is still correct (the tag is cut on main's
 #     tree, which carries the push). Pushes that DO carry a releasable
-#     commit (feat/fix/perf, incl. breaking `!` variants) wait for a
+#     commit (feat/fix/perf subjects, incl. breaking `!` variants, or a
+#     `BREAKING CHANGE:` / `Release-As:` footer on any type) wait for a
 #     post-push refresh of the PR head, so the cut's version + changelog
 #     account for the pushed commits.
 #   Self-retrigger stays quiet: the cut's own squash-merge push
@@ -43,9 +44,12 @@
 # - 60-minute throttle (cron and push runs): when the latest release
 #   (newest vX.Y.Z tag) was cut less than 60 minutes ago, the run logs and
 #   exits — the next cron tick (:30) retries. Keeps the broadened push
-#   trigger from cutting one release per merge during a busy hour. Fails
-#   OPEN on any tag/date lookup error (an unreadable tag list must never
-#   block releases). workflow_dispatch BYPASSES the throttle: manual means
+#   trigger from cutting one release per merge during a busy hour. The
+#   merge step re-checks the newest tag right before merging, so a run
+#   that waited on the concurrency group behind another run's cut (whose
+#   tag lands ~1 min after its merge) still defers. Fails OPEN on any
+#   tag/date lookup error (an unreadable tag list must never block
+#   releases). workflow_dispatch BYPASSES the throttle: manual means
 #   urgent.
 # - The `hold-release` label on the Release PR pauses auto-merge (skip with
 #   a notice) until the label is removed.
@@ -165,9 +169,14 @@ jobs:
       # tag) was cut less than 60 minutes ago, defer — the next cron tick
       # (:30) retries. Also quiets residual self-retriggers (e.g. the
       # release-please refresh chain) that survive the job-level
-      # chore(release) skip. Strictly fail-open: any tag/date lookup problem
-      # proceeds with the cut — an unreadable tag list must never block
-      # releases.
+      # chore(release) skip. The merge step re-checks the tag right before
+      # merging (see the pre-merge re-check there) to close the gap between
+      # this early check and the actual merge. Strictly fail-open: any
+      # tag/date lookup problem proceeds with the cut — an unreadable tag
+      # list must never block releases. Worst-case quiet-period latency:
+      # a throttled run does not reschedule itself and cron is check-once,
+      # so with no further pushes a cut can trail the previous one by up to
+      # ~2h (throttle floor + up to one full cron interval).
       - name: Throttle to one cut per hour
         id: throttle
         if: steps.token.outputs.enabled == 'true' && github.event_name != 'workflow_dispatch'
@@ -190,6 +199,10 @@ jobs:
             echo "Could not determine the latest release tag (failing open)."
             exit 0
           fi
+          # Exported for the merge step's pre-merge re-check: a different
+          # newest tag at merge time means another run cut a release while
+          # this one was waiting.
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
           # The tag points at the Release PR squash-merge commit, so its
           # committer date is when the release was cut.
@@ -319,6 +332,10 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run == true }}
           EVENT_NAME: ${{ github.event_name }}
           PUSH_SHA: ${{ github.sha }}
+          # The newest release tag the throttle step observed (empty when
+          # the throttle was skipped, i.e. workflow_dispatch); used by the
+          # pre-merge re-check below.
+          THROTTLE_TAG: ${{ steps.throttle.outputs.tag }}
         run: |
           set -euo pipefail
 
@@ -371,25 +388,42 @@ jobs:
 
           # Release-worthiness of the triggering push: release-please only
           # refreshes the Release PR when the pushed commits include a
-          # releasable type (feat/fix/perf, incl. breaking `!` variants).
+          # releasable type (feat/fix/perf subjects with the conventional
+          # `: ` separator, incl. breaking `!` variants) or a version-
+          # forcing footer (`BREAKING CHANGE:` / `BREAKING-CHANGE:` /
+          # `Release-As:` — releasable regardless of the subject type).
           # For such pushes the refresh gate in the loop waits for a
           # post-push rebuild of the PR head so the cut's version and
           # changelog account for the pushed commits. Non-releasable pushes
           # (chore/docs/ci/...) leave the PR unchanged by design, and an
           # already-green PR merges as-is — still correct, the tag is cut
-          # on main's tree, which carries the push.
+          # on main's tree, which carries the push. The push payload caps
+          # `commits` at 20 entries, so a larger push is conservatively
+          # treated as releasable (worst case: a 15-min poll that falls
+          # back to cron).
           releasable=false
           push_epoch=""
           if [[ "$EVENT_NAME" == "push" ]]; then
-            if jq -e '[.commits[]?.message // empty]
-                | map(split("\n")[0])
-                | any(test("^(feat|fix|perf)(\\([^)]*\\))?!?:"))' \
+            if jq -e '(.commits // []) as $c
+                | ($c | length) >= 20
+                  or ([$c[].message // empty]
+                      | (map(split("\n")[0])
+                         | any(test("^(feat|fix|perf)(\\([^)]*\\))?!?: ")))
+                        or any(test("(^|\\n)(BREAKING[- ]CHANGE|Release-As):"; "i")))' \
                 "$GITHUB_EVENT_PATH" >/dev/null; then
               releasable=true
             fi
             push_ts=$(jq -r '.head_commit.timestamp // empty' "$GITHUB_EVENT_PATH") || push_ts=""
             if [[ -n "$push_ts" ]]; then
               push_epoch=$(date -d "$push_ts" +%s 2>/dev/null) || push_epoch=""
+            fi
+            # head_commit.timestamp is the committer date, not the push
+            # time — clamp a future-skewed value to now so a bad clock
+            # cannot make the refresh gate unsatisfiable for the whole
+            # poll budget.
+            now=$(date +%s)
+            if [[ -n "$push_epoch" ]] && (( push_epoch > now )); then
+              push_epoch=$now
             fi
             if [[ "$releasable" == "true" && -z "$push_epoch" ]]; then
               echo "::warning::could not read the push timestamp; proceeding without the refresh gate"
@@ -572,6 +606,29 @@ jobs:
             if [[ "$unresolved" -ne 0 ]]; then
               echo "Release PR #$number has $unresolved unresolved review thread(s); skipping."
               exit 0
+            fi
+
+            # Pre-merge throttle re-check (closes the TOCTOU gap between
+            # the throttle step and this merge): a run queued on the
+            # concurrency group starts right after the previous run's merge
+            # — typically BEFORE release-please cuts that merge's tag — so
+            # its early throttle read saw the old tag and passed. If the
+            # newest vX.Y.Z tag differs from the one the throttle step
+            # observed, another cut landed while this run was waiting:
+            # defer to the next cron tick instead of cutting a second
+            # release inside the 60-min floor. Fail-open like the throttle
+            # (an unreadable tag list never blocks the merge); skipped on
+            # workflow_dispatch (THROTTLE_TAG empty — the throttle was
+            # bypassed).
+            if [[ -n "$THROTTLE_TAG" ]]; then
+              current_tag=$(gh api --paginate \
+                "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" \
+                --jq '.[].ref | sub("^refs/tags/"; "")' 2>/dev/null \
+                | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1) || current_tag=""
+              if [[ -n "$current_tag" && "$current_tag" != "$THROTTLE_TAG" ]]; then
+                echo "::notice::newest release tag moved from $THROTTLE_TAG to $current_tag while this run was waiting (another cut landed); deferring — the next cron tick retries"
+                exit 0
+              fi
             fi
 
             if [[ "$DRY_RUN" == "true" ]]; then
