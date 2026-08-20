@@ -160,7 +160,7 @@ test('app shell wash stays isolated across themes, viewports, zoom, and forced c
       expect(evidence.surfaces.card, scenario.name).not.toBe(evidence.shell);
       expect(evidence.surfaces.dialog, scenario.name).not.toBe(evidence.shell);
       expect(evidence.shell, scenario.name).toBe(
-        scenario.theme === 'light' ? 'rgba(255, 255, 255, 0.18)' : 'rgba(0, 0, 0, 0)',
+        scenario.theme === 'light' ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0)',
       );
     } else {
       expect(evidence.forcedColors, scenario.name).toBe(true);
@@ -194,5 +194,5 @@ test('keeps the semantic wash stable when Chromium exposes reduced transparency'
       shell: getComputedStyle(document.querySelector('[data-app-shell]')!).backgroundColor,
     };
   });
-  if (evidence.supported) expect(evidence.shell).toBe('rgba(255, 255, 255, 0.18)');
+  if (evidence.supported) expect(evidence.shell).toBe('rgba(255, 255, 255, 0.3)');
 });

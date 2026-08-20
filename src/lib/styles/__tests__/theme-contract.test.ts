@@ -279,7 +279,7 @@ describe('theme color contract', () => {
     const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
     const appBackground = ['app', 'background'].join('-');
 
-    expect(tokenValue(css, 'app-shell-translucency')).toBe(`hsl(var(--${appBackground}) / 0.18)`);
+    expect(tokenValue(css, 'app-shell-translucency')).toBe(`hsl(var(--${appBackground}) / 0.3)`);
     expect(css).toMatch(/\.dark\s*{[^}]*--app-shell-translucency:\s*transparent;/s);
   });
 
