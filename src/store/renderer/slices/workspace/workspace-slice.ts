@@ -72,6 +72,14 @@ export type WorkspaceState = {
   loading: boolean;
   error: string | null;
   hasLoaded: boolean;
+  /**
+   * The backend id the loaded workspace list was fetched for (stamped by the
+   * loaders alongside `setWorkspaceHasLoaded(true)`), or null when unknown.
+   * `hasLoaded` alone is global and survives a backend switch, so consumers
+   * doing destructive work (e.g. tab reconciliation) must also require this
+   * stamp to match the active backend.
+   */
+  loadedBackendId: string | null;
   isCreating: boolean;
   pendingDeletions: Record<string, boolean>;
   pendingArchives: Record<string, boolean>;
@@ -85,6 +93,7 @@ export const initialState: WorkspaceState = {
   loading: false,
   error: null,
   hasLoaded: false,
+  loadedBackendId: null,
   isCreating: false,
   pendingDeletions: {},
   pendingArchives: {},
@@ -105,7 +114,12 @@ export const setWorkspaceError = createAction<[error: string | null]>(
   'workspace/setWorkspaceError',
 );
 
-export const setWorkspaceHasLoaded = createAction<[hasLoaded: boolean]>(
+/**
+ * Mark the workspace list as loaded. Pass the backend id the list was fetched
+ * for so backend-scoped consumers can detect a stale (pre-switch) load; when
+ * omitted the previous stamp is kept (legacy/test call sites).
+ */
+export const setWorkspaceHasLoaded = createAction<[hasLoaded: boolean, backendId?: string]>(
   'workspace/setWorkspaceHasLoaded',
 );
 
@@ -364,9 +378,10 @@ workspaceReducer.with(setWorkspaceError, (state, { payload: [error] }) => {
   if (state.error === error) return state;
   return { ...state, error };
 });
-workspaceReducer.with(setWorkspaceHasLoaded, (state, { payload: [hasLoaded] }) => {
-  if (state.hasLoaded === hasLoaded) return state;
-  return { ...state, hasLoaded };
+workspaceReducer.with(setWorkspaceHasLoaded, (state, { payload: [hasLoaded, backendId] }) => {
+  const loadedBackendId = backendId === undefined ? state.loadedBackendId : backendId;
+  if (state.hasLoaded === hasLoaded && state.loadedBackendId === loadedBackendId) return state;
+  return { ...state, hasLoaded, loadedBackendId };
 });
 workspaceReducer.with(setWorkspaceCreating, (state, { payload: [isCreating] }) => {
   if (state.isCreating === isCreating) return state;
@@ -590,6 +605,7 @@ workspaceReducer.with(resetWorkspaceState, (state) => ({
   loading: false,
   error: null,
   hasLoaded: false,
+  loadedBackendId: null,
   isCreating: false,
   pendingDeletions: {},
   pendingArchives: {},

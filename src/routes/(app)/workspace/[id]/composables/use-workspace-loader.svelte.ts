@@ -12,6 +12,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { WorkspaceId } from '$shared/types/branded-ids';
 
 import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   removeWorkspaceEntity,
@@ -266,6 +267,10 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
           lastMountedWorkspaceId = null;
         }
       }
+      // Backstop: remove the ghost tab from the strip. Dispatching the raw
+      // action only updates tab state — it never navigates, so a direct-URL
+      // visit keeps rendering the not-found page for the current route.
+      appStore.dispatch(closeWorkspaceTab(workspaceId));
       loadError = { kind: 'not_found', message: openResult.error };
       workspaceState.updateState({
         workspace: { id: workspaceId, status: 'error' },
