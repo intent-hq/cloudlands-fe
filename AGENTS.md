@@ -61,6 +61,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 - **Never import from a feature's **`main/`** subtree in renderer code** (or vice-versa).
 - **Don't export utility functions from orchestration modules** — extract to a dedicated `utils/` file.
 - **Keep utilities dependency-light** — no stores, services, or side effects.
+- **Never quote the literal breaking-change footer token** — release-please treats `BREAKING CHANGE:` / `BREAKING-CHANGE:` (and `Release-As:`) appearing anywhere in a commit body as a real footer, and squash merges fold every branch commit message into the squash body, so a commit that merely *quotes* the token causes a false major bump (or, for `Release-As:`, a forced pinned version); this accidentally cut v3.0.0 — see intent-hq/monorepo#2988. Never write the literal token in commit messages, PR titles/bodies, or review comments unless an actual breaking change is intended — when describing the mechanism, write "the breaking-change footer token" or similar instead.
 
 ## Internationalization (i18n)
 
