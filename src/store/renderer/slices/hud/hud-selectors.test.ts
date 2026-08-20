@@ -22,11 +22,14 @@ import {
   selectHudAttentionItems,
   selectHudAttnCount,
   selectHudFeedItems,
+  selectHudSystem,
   selectHudTakeoverView,
   selectHudWorkspaceCards,
   selectHudWorkspaceStateBars,
   selectWorkspaceTabStatuses,
 } from './hud-selectors';
+import type { DaemonHealthState } from '../daemon-health/daemon-health-types';
+import { initialState as daemonHealthInitialState } from '../daemon-health/daemon-health-slice';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { WorkspaceTask } from '$shared/types';
 import {
@@ -3248,3 +3251,75 @@ describe('selectHudTakeoverView task relation projection', () => {
     expect(legacy && 'specLinked' in legacy).toBe(false);
   });
 });
+
+describe('selectHudSystem remote hostname', () => {
+  function healthState(overrides: Partial<DaemonHealthState>): StoreState {
+    return {
+      daemonHealth: { ...daemonHealthInitialState, ...overrides },
+    } as unknown as StoreState;
+  }
+
+  function statsWith(hostname?: string): NonNullable<DaemonHealthState['stats']> {
+    return {
+      clients: 1,
+      agents: 0,
+      listenMode: 'tcp',
+      port: 5181,
+      os: 'linux',
+      arch: 'x86_64',
+      ...(hostname !== undefined ? { hostname } : {}),
+    };
+  }
+
+  it('exposes the short hostname when the daemon reports remote locality', () => {
+    const state = healthState({
+      health: 'healthy',
+      hostLocality: 'remote',
+      stats: statsWith('intent1'),
+    });
+    expect(selectHudSystem.select(state).remoteHostname).toBe('intent1');
+  });
+
+  it('strips everything from the first dot (intent1.local → intent1)', () => {
+    const state = healthState({
+      health: 'healthy',
+      hostLocality: 'remote',
+      stats: statsWith('intent1.local'),
+    });
+    expect(selectHudSystem.select(state).remoteHostname).toBe('intent1');
+  });
+
+  it('is null for a local daemon even when a hostname is known', () => {
+    const state = healthState({
+      health: 'healthy',
+      hostLocality: 'local',
+      stats: statsWith('studio.local'),
+    });
+    expect(selectHudSystem.select(state).remoteHostname).toBeNull();
+  });
+
+  it('is null when the poll carried no hostname (older daemon)', () => {
+    const state = healthState({
+      health: 'healthy',
+      hostLocality: 'remote',
+      stats: statsWith(),
+    });
+    expect(selectHudSystem.select(state).remoteHostname).toBeNull();
+  });
+
+  it('is null before the first poll (unknown locality, no stats)', () => {
+    expect(selectHudSystem.select(healthState({})).remoteHostname).toBeNull();
+  });
+
+  it('survives the ONLINE→OFFLINE flip (stats are kept on disconnect)', () => {
+    const state = healthState({
+      health: 'down',
+      hostLocality: 'remote',
+      stats: statsWith('intent1.local'),
+    });
+    const view = selectHudSystem.select(state);
+    expect(view.online).toBe(false);
+    expect(view.remoteHostname).toBe('intent1');
+  });
+});
+

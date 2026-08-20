@@ -197,6 +197,106 @@ describe('HudFooter zones', () => {
   });
 });
 
+describe('HudFooter remote daemon hostname', () => {
+  it('shows the daemon hostname in parens when connected to a remote daemon', async () => {
+    render(HudFooter);
+    appStore.dispatch(connectionStatusChanged('connected'));
+    appStore.dispatch(
+      systemStatusSuccess(
+        systemStatusPayload({
+          hostname: 'intent1',
+          host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
+        }),
+        '2026-08-03T00:00:00.000Z',
+      ),
+    );
+    await waitFor(() => {
+      flushSync();
+      expect(screen.getByTestId('hud-footer-hostname').textContent).toBe('(intent1)');
+    });
+    expect(screen.getByTestId('hud-footer-system').textContent).toContain('ONLINE');
+  });
+
+  it('renders the SHORT hostname (intent1.local → intent1)', async () => {
+    render(HudFooter);
+    appStore.dispatch(connectionStatusChanged('connected'));
+    appStore.dispatch(
+      systemStatusSuccess(
+        systemStatusPayload({
+          hostname: 'intent1.local',
+          host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
+        }),
+        '2026-08-03T00:00:00.000Z',
+      ),
+    );
+    await waitFor(() => {
+      flushSync();
+      expect(screen.getByTestId('hud-footer-hostname').textContent).toBe('(intent1)');
+    });
+  });
+
+  it('shows no parens for a local daemon', async () => {
+    render(HudFooter);
+    appStore.dispatch(connectionStatusChanged('connected'));
+    appStore.dispatch(
+      systemStatusSuccess(
+        systemStatusPayload({ hostname: 'studio.local' }),
+        '2026-08-03T00:00:00.000Z',
+      ),
+    );
+    await waitFor(() => {
+      flushSync();
+      expect(screen.getByTestId('hud-footer-system').textContent).toContain('ONLINE');
+    });
+    expect(screen.queryByTestId('hud-footer-hostname')).toBeNull();
+    expect(screen.getByTestId('hud-footer-system').textContent).not.toContain('(');
+  });
+
+  it('shows no parens when the remote daemon reports no hostname (older daemon)', async () => {
+    render(HudFooter);
+    appStore.dispatch(connectionStatusChanged('connected'));
+    appStore.dispatch(
+      systemStatusSuccess(
+        systemStatusPayload({
+          host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
+        }),
+        '2026-08-03T00:00:00.000Z',
+      ),
+    );
+    await waitFor(() => {
+      flushSync();
+      expect(screen.getByTestId('hud-footer-system').textContent).toContain('ONLINE');
+    });
+    expect(screen.queryByTestId('hud-footer-hostname')).toBeNull();
+    expect(screen.getByTestId('hud-footer-system').textContent).not.toContain('(');
+  });
+
+  it('keeps the hostname when the remote connection drops (OFFLINE)', async () => {
+    render(HudFooter);
+    appStore.dispatch(connectionStatusChanged('connected'));
+    appStore.dispatch(
+      systemStatusSuccess(
+        systemStatusPayload({
+          hostname: 'intent1.local',
+          host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
+        }),
+        '2026-08-03T00:00:00.000Z',
+      ),
+    );
+    await waitFor(() => {
+      flushSync();
+      expect(screen.getByTestId('hud-footer-hostname').textContent).toBe('(intent1)');
+    });
+
+    appStore.dispatch(connectionStatusChanged('disconnected'));
+    await waitFor(() => {
+      flushSync();
+      expect(screen.getByTestId('hud-footer-system').textContent).toContain('OFFLINE');
+    });
+    expect(screen.getByTestId('hud-footer-hostname').textContent).toBe('(intent1)');
+  });
+});
+
 describe('HudFooter ATTENTION/FAILED counter blink gating', () => {
   it('renders zero counts static/dimmed without the blink class', () => {
     render(HudFooter);
