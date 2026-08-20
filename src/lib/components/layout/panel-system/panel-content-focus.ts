@@ -35,6 +35,11 @@ export function shouldBlurActiveElement(
  * inside the panel but outside the prompt (e.g. the header rename input) must
  * not be stolen. Unlike the blur predicate, null/body focus counts as outside
  * so normal reveal/cycle flows still focus the content.
+ *
+ * Non-HTMLElement focus (e.g. an SVG given tabindex) counts as INSIDE
+ * regardless of where it lives — a deliberate conservative bias inherited from
+ * `shouldBlurActiveElement`: suppressing a redirect only skips auto-focusing
+ * the prompt, while redirecting wrongly steals focus (the bug class itself).
  */
 export function shouldRedirectFocusToPanelContent(
   activeElement: Element | null,
