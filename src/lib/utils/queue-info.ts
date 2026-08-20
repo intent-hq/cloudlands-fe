@@ -43,6 +43,21 @@ export function getQueueInfo(metadata: unknown): QueueInfo | null {
 }
 
 /**
+ * Extract just the batch id from an opaque message metadata object. Batch
+ * entries whose wait fell below the 5-second annotation threshold carry a
+ * `queueInfo` containing ONLY `batchId` (no `queuedAt`/`waitedMs`, PROTOCOL.md
+ * §5.5), so this deliberately skips the wait-field validation `getQueueInfo`
+ * performs. Returns the id only when it is a non-empty string, else `null`.
+ */
+export function getBatchId(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const queueInfo = (metadata as Record<string, unknown>).queueInfo;
+  if (!queueInfo || typeof queueInfo !== 'object') return null;
+  const { batchId } = queueInfo as Record<string, unknown>;
+  return typeof batchId === 'string' && batchId.trim() ? batchId : null;
+}
+
+/**
  * The deterministic dequeue-wait note intentd appends to drained queue
  * entries: `\n\n[SYSTEM NOTE] This message was queued at <ISO> and waited
  * <duration> before delivery.` Deliberately does NOT match the #576
@@ -104,8 +119,10 @@ export function shouldSuppressQueueDivider(
  * `queueInfo.batchId` (one multi-message batch flush) and the current turn
  * produced no assistant output, so the rows are adjacent in the transcript.
  * Applies to every user-role row kind (plain messages, agent-to-agent cards,
- * wake/event-notification cards). Absent batchId (older daemons) never
- * matches, so those transcripts render exactly as before.
+ * wake/event-notification cards), including sub-threshold batch entries whose
+ * `queueInfo` carries only `batchId` (no wait fields) — hence `getBatchId`
+ * rather than `getQueueInfo`. Absent batchId (older daemons) never matches,
+ * so those transcripts render exactly as before.
  */
 export function isBatchedDeliverySeam(
   currentTurn: QueueDividerTurn,
@@ -114,11 +131,9 @@ export function isBatchedDeliverySeam(
   if (!nextTurn) return false;
   if (currentTurn.assistantMessages.length > 0) return false;
   const currentBatchId = currentTurn.userMessage
-    ? getQueueInfo(currentTurn.userMessage.metadata)?.batchId
-    : undefined;
+    ? getBatchId(currentTurn.userMessage.metadata)
+    : null;
   if (!currentBatchId) return false;
-  const nextBatchId = nextTurn.userMessage
-    ? getQueueInfo(nextTurn.userMessage.metadata)?.batchId
-    : undefined;
+  const nextBatchId = nextTurn.userMessage ? getBatchId(nextTurn.userMessage.metadata) : null;
   return currentBatchId === nextBatchId;
 }

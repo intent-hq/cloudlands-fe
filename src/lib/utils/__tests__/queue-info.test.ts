@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   getQueueInfo,
+  getBatchId,
   stripDequeueWaitNote,
   shouldSuppressQueueDivider,
   isBatchedDeliverySeam,
@@ -70,6 +71,33 @@ describe('getQueueInfo', () => {
     expect(
       getQueueInfo({ queueInfo: { queuedAt: '2026-01-01T11:58:00Z', waitedMs: NaN } }),
     ).toBeNull();
+  });
+});
+
+describe('getBatchId', () => {
+  it('extracts batchId from a full queueInfo (PROTOCOL §5.5)', () => {
+    expect(
+      getBatchId({
+        queueInfo: { queuedAt: '2026-01-01T11:58:00Z', waitedMs: 120000, batchId: 'batch-abc' },
+      }),
+    ).toBe('batch-abc');
+  });
+
+  it('extracts batchId from a sub-threshold batch entry carrying ONLY batchId', () => {
+    // Entries whose wait fell below the 5-second annotation threshold carry a
+    // queueInfo with just batchId — no queuedAt/waitedMs (PROTOCOL §5.5).
+    expect(getBatchId({ queueInfo: { batchId: 'batch-abc' } })).toBe('batch-abc');
+  });
+
+  it('returns null for absent, empty, or malformed batchId', () => {
+    expect(getBatchId(undefined)).toBeNull();
+    expect(getBatchId(null)).toBeNull();
+    expect(getBatchId({})).toBeNull();
+    expect(getBatchId({ queueInfo: 'soon' })).toBeNull();
+    expect(getBatchId({ queueInfo: {} })).toBeNull();
+    expect(getBatchId({ queueInfo: { batchId: '' } })).toBeNull();
+    expect(getBatchId({ queueInfo: { batchId: '   ' } })).toBeNull();
+    expect(getBatchId({ queueInfo: { batchId: 42 } })).toBeNull();
   });
 });
 
@@ -189,6 +217,23 @@ describe('isBatchedDeliverySeam', () => {
       assistantMessages: [{}],
     };
     expect(isBatchedDeliverySeam(answered, batchedTurn('batch-1'))).toBe(false);
+  });
+
+  it('matches sub-threshold batch entries whose queueInfo carries only batchId', () => {
+    // PROTOCOL §5.5: entries whose wait fell below the 5-second annotation
+    // threshold carry queueInfo = { batchId } with no queuedAt/waitedMs.
+    const subThresholdTurn = (batchId: string): QueueDividerTurn => ({
+      userMessage: { metadata: { queueInfo: { batchId } } },
+      assistantMessages: [],
+    });
+    expect(isBatchedDeliverySeam(subThresholdTurn('batch-1'), subThresholdTurn('batch-1'))).toBe(
+      true,
+    );
+    expect(isBatchedDeliverySeam(subThresholdTurn('batch-1'), batchedTurn('batch-1'))).toBe(true);
+    expect(isBatchedDeliverySeam(batchedTurn('batch-1'), subThresholdTurn('batch-1'))).toBe(true);
+    expect(isBatchedDeliverySeam(subThresholdTurn('batch-1'), subThresholdTurn('batch-2'))).toBe(
+      false,
+    );
   });
 
   it('matches wake/event-notification cards carrying the same batchId', () => {
