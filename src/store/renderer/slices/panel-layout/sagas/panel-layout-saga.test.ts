@@ -642,10 +642,8 @@ describe('panelLayoutSaga', () => {
   });
 
   it('heals and persists a restored two-column count with a one-panel tree', async () => {
-    const selected = panelLayoutReducer(undefined, setPanelColumnCount(WS_1, 2, 10)).byWorkspaceId[
-      WS_1
-    ];
-    const run = startRestoreSaga(layout, [], selected);
+    const mismatched: WorkspacePanelLayout = { ...layout, columnCount: 2 };
+    const run = startRestoreSaga(mismatched, []);
     await settle();
 
     const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
@@ -653,8 +651,11 @@ describe('panelLayoutSaga', () => {
     const repair = run.dispatch.mock.calls
       .map(([action]) => action)
       .find((action) => action.type === reconcilePanelColumnCount.type);
-    await cancelSaga(run.task);
+    const initialized = run.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === initializeLayout.type);
 
+    expect(initialized?.payload.layout.columnCount).toBe(2);
     expect(repair).toMatchObject({
       payload: { wsId: WS_1, count: 2, recordHistory: false },
     });
@@ -672,7 +673,7 @@ describe('panelLayoutSaga', () => {
       activeTabId: null,
       pristine: true,
     });
-    expect(workspace.layoutHistory).toEqual(selected.layoutHistory);
+    expect(workspace.layoutHistory).toEqual([]);
     expect(mocks.saveHistory).not.toHaveBeenCalled();
     expect(mocks.setJSON.mock.calls.at(-1)).toEqual([
       STORAGE_KEY_1,
@@ -683,6 +684,27 @@ describe('panelLayoutSaga', () => {
         columnCount: 2,
       }),
     ]);
+
+    const healed = mocks.setJSON.mock.calls.at(-1)?.[1] as WorkspacePanelLayout;
+    run.send(panelLayoutScopeUnmounted(WS_1));
+    await settle();
+    mocks.getJSON.mockReturnValue(healed);
+    run.dispatch.mockClear();
+    mocks.setJSON.mockClear();
+    run.send(panelLayoutScopeMounted(WS_1));
+    await settle();
+
+    const repeated = run.getState().panelLayout.byWorkspaceId[WS_1];
+    expect(repeated.root.type === 'split' ? repeated.root.children : []).toHaveLength(2);
+    expect(
+      run.dispatch.mock.calls.some(([action]) => action.type === reconcilePanelColumnCount.type),
+    ).toBe(false);
+    expect(mocks.setJSON.mock.calls.at(-1)?.[1]).toMatchObject({
+      root: repeated.root,
+      panels: repeated.panels,
+      columnCount: 2,
+    });
+    await cancelSaga(run.task);
   });
 
   it('restores a legacy initial-agent layout without adding pin state', async () => {
@@ -1719,6 +1741,56 @@ describe('panelLayoutSaga', () => {
   });
 
   describe('multi-backend namespacing', () => {
+    it('heals and persists a backend-scoped restore without live column state', async () => {
+      const mismatched: WorkspacePanelLayout = { ...layout, columnCount: 2 };
+      const run = startRestoreSaga(layout, []);
+      await settle();
+      run.dispatch.mockClear();
+      mocks.setJSON.mockClear();
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === REMOTE_STORAGE_KEY_1 ? mismatched : layout,
+      );
+      run.setBackendId(REMOTE_ID);
+
+      run.send(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      await settle();
+
+      const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+      const children = workspace.root.type === 'split' ? workspace.root.children : [];
+      expect(
+        run.dispatch.mock.calls.find(([action]) => action.type === initializeLayout.type)?.[0]
+          .payload.layout.columnCount,
+      ).toBe(2);
+      expect(
+        run.dispatch.mock.calls.find(
+          ([action]) => action.type === reconcilePanelColumnCount.type,
+        )?.[0],
+      ).toMatchObject({ payload: { wsId: WS_1, count: 2, recordHistory: false } });
+      expect(children).toHaveLength(2);
+      expect(children[0]).toEqual({ type: 'panel', panelId: 'panel-1' });
+      const rightPanelId = children[1]?.type === 'panel' ? children[1].panelId : '';
+      expect(workspace.panels[rightPanelId]).toEqual({
+        id: rightPanelId,
+        tabs: [],
+        activeTabId: null,
+        pristine: true,
+      });
+      expect(workspace.panels['panel-1']).toMatchObject({ activeTabId: tab.id, tabs: [tab] });
+      expect(workspace.focusedPanelId).toBe('panel-1');
+      expect(workspace.layoutHistory).toEqual([]);
+      expect(mocks.saveHistory).not.toHaveBeenCalled();
+      expect(mocks.setJSON.mock.calls.at(-1)).toEqual([
+        REMOTE_STORAGE_KEY_1,
+        expect.objectContaining({
+          root: workspace.root,
+          panels: workspace.panels,
+          focusedPanelId: 'panel-1',
+          columnCount: 2,
+        }),
+      ]);
+      await cancelSaga(run.task);
+    });
+
     it('restores independent counts when switching between backend namespaces', async () => {
       const localLayout: WorkspacePanelLayout = {
         version: PANEL_LAYOUT_PERSISTENCE_VERSION,

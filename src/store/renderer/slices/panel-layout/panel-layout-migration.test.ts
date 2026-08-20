@@ -171,6 +171,34 @@ describe('migratePanelLayoutForWorkspace', () => {
     expect(twice.panels.right.tabs.map((tab) => tab.id)).toEqual(['two', 'three']);
   });
 
+  it('preserves a current saved column count when its tree has fewer columns', () => {
+    const current: WorkspacePanelLayout = {
+      ...layout(horizontal(['left']), { left: panel('left', ['one']) }),
+      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
+      columnCount: 2,
+      focusedPanelId: 'left',
+    };
+
+    const result = migratePanelLayoutForWorkspace(WS, current);
+
+    expect(result.columnCount).toBe(2);
+    expect(order(result)).toEqual(['left']);
+    expect(result.panels.left.tabs.map((tab) => tab.id)).toEqual(['one']);
+    expect(result.focusedPanelId).toBe('left');
+  });
+
+  it('continues to derive legacy column counts from the migrated structure', () => {
+    const legacy: WorkspacePanelLayout = {
+      ...layout(horizontal(['left']), { left: panel('left', ['one']) }),
+      columnCount: 2,
+    };
+
+    const result = migratePanelLayoutForWorkspace(WS, legacy);
+
+    expect(result.columnCount).toBe(1);
+    expect(order(result)).toEqual(['left']);
+  });
+
   it('drops foreign tabs without changing non-coordinator lifecycle metadata', () => {
     const stored: WorkspacePanelLayout = {
       ...layout(horizontal(['p1']), { p1: panel('p1', ['local', 'foreign']) }),

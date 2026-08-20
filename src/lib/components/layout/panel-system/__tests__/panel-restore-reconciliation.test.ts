@@ -4,10 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ReduxStoreContext } from '$store/renderer/types';
 import { initAppStore, store as appStore } from '$store/renderer/store';
-import {
-  panelLayoutScopeMounted,
-  setPanelColumnCount,
-} from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { panelLayoutScopeMounted } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { panelLayoutSaga } from '$store/renderer/slices/panel-layout/sagas/panel-layout-saga';
 import {
   PANEL_LAYOUT_PERSISTENCE_VERSION,
@@ -60,7 +57,6 @@ beforeEach(async () => {
     },
   );
   storeContext = initAppStore(appStore);
-  appStore.dispatch(setPanelColumnCount(WORKSPACE_ID, 2, 10));
   sagaChannel = stdChannel();
   sagaTask = runSaga(
     {

@@ -108,6 +108,10 @@ export function migratePanelLayoutForWorkspace(
   workspaceId: string,
   layout: WorkspacePanelLayout,
 ): WorkspacePanelLayout {
+  const persistedColumnCount =
+    layout.version === PANEL_LAYOUT_PERSISTENCE_VERSION && isPanelColumnCount(layout.columnCount)
+      ? layout.columnCount
+      : null;
   const rootedIds: string[] = [];
   collectLeafIds(layout.root, rootedIds);
   const orderedIds = [...new Set([...rootedIds, ...Object.keys(layout.panels)])];
@@ -149,18 +153,18 @@ export function migratePanelLayoutForWorkspace(
       root: { type: 'panel', panelId },
       panels: { [panelId]: { id: panelId, tabs: [], activeTabId: null } },
       focusedPanelId: panelId,
-      columnCount: 1,
+      columnCount: persistedColumnCount ?? 1,
       canvasWidth: null,
       canvasWidthSource: null,
       ...sharedFields(layout),
     };
   }
 
-  const columnCount = Math.min(
+  const visibleColumnCount = Math.min(
     LEGACY_VISIBLE_COLUMN_LIMIT,
     availableIds.length,
   ) as PanelColumnCount;
-  const visibleIds = availableIds.slice(0, columnCount);
+  const visibleIds = availableIds.slice(0, visibleColumnCount);
   const visiblePanels = Object.fromEntries(
     visibleIds.flatMap((id) => {
       const panel = cleanedPanels.get(id);
@@ -175,7 +179,7 @@ export function migratePanelLayoutForWorkspace(
       root: { type: 'panel', panelId },
       panels: { [panelId]: { id: panelId, tabs: [], activeTabId: null } },
       focusedPanelId: panelId,
-      columnCount: 1,
+      columnCount: persistedColumnCount ?? 1,
       canvasWidth: null,
       canvasWidthSource: null,
       ...sharedFields(layout),
@@ -183,10 +187,10 @@ export function migratePanelLayoutForWorkspace(
   }
   const rightmost = visiblePanels[rightmostId];
   const tabs = [...rightmost.tabs];
-  const hasOverflow = availableIds.length > columnCount;
+  const hasOverflow = availableIds.length > visibleColumnCount;
   const visibleTabs = Object.values(visiblePanels).flatMap((panel) => panel.tabs);
   let overflowActiveTabId: string | null = null;
-  for (const panelId of availableIds.slice(columnCount)) {
+  for (const panelId of availableIds.slice(visibleColumnCount)) {
     const panel = cleanedPanels.get(panelId);
     if (!panel) continue;
     for (const tab of panel.tabs) {
@@ -221,7 +225,7 @@ export function migratePanelLayoutForWorkspace(
     focusedPanelId: visibleIds.includes(layout.focusedPanelId ?? '')
       ? layout.focusedPanelId
       : rightmostId,
-    columnCount,
+    columnCount: persistedColumnCount ?? visibleColumnCount,
     ...width,
     ...sharedFields(layout),
   };
