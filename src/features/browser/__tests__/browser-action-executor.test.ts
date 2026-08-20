@@ -53,6 +53,12 @@ vi.mock('../main/browser-capture-service', () => ({
   },
 }));
 
+// Mock the daemon client used by the owner display-name lookup (agent.list).
+const mockBackendRequest = vi.fn();
+vi.mock('../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mockBackendRequest }),
+}));
+
 import { executeActions } from '../main/browser-action-executor';
 import { browserCapture } from '../main/browser-capture-service';
 
@@ -280,7 +286,17 @@ describe('browser-action-executor', () => {
       expect(result.results[0]).toEqual({
         action: 'listTabs',
         success: true,
-        result: cachedTabs,
+        result: [
+          {
+            tabId: 'tab-1',
+            webContentsId: -1,
+            url: 'http://a/',
+            title: 'A',
+            mounted: false,
+            ownerAgentId: null,
+            mode: 'native',
+          },
+        ],
         warning:
           'The renderer did not answer the tab list request for workspace ws-slow; this list is from a cached snapshot and may be outdated.',
       });
@@ -307,6 +323,173 @@ describe('browser-action-executor', () => {
         success: false,
         error:
           'Tab list for workspace ws-silent is unavailable: the renderer did not respond and no cached tab list exists.',
+      });
+    });
+
+    // listTabs scoping + owner display info + sizing (monorepo#2857, §5.9).
+    describe('listTabs scope, owner info, and sizing', () => {
+      const threeTabs = [
+        {
+          tabId: 'tab-mine',
+          webContentsId: 1,
+          url: 'http://mine/',
+          title: 'Mine',
+          mounted: true,
+          ownerAgentId: 'agent-1',
+          emulatedSize: { width: 1024, height: 768 },
+        },
+        {
+          tabId: 'tab-other',
+          webContentsId: 2,
+          url: 'http://other/',
+          title: 'Other',
+          mounted: true,
+          ownerAgentId: 'agent-2',
+          emulatedSize: { width: 1280, height: 800 },
+        },
+        {
+          tabId: 'tab-user',
+          webContentsId: 3,
+          url: 'http://user/',
+          title: 'User',
+          mounted: true,
+        },
+      ];
+
+      async function mockThreeTabs() {
+        const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+        vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+          tabs: structuredClone(threeTabs),
+          stale: false,
+        });
+      }
+
+      it("scope defaults to 'all' and every tab carries owner + sizing info", async () => {
+        await mockThreeTabs();
+        mockBackendRequest.mockResolvedValueOnce({
+          agents: [
+            { id: 'agent-1', name: 'Alice' },
+            { id: 'agent-2', name: 'Bob' },
+          ],
+        });
+
+        const result = await executeActions(
+          { actions: [{ action: 'listTabs' }] },
+          undefined,
+          'agent-1',
+          'ws-1',
+        );
+
+        expect(result.success).toBe(true);
+        expect(mockBackendRequest).toHaveBeenCalledWith('agent.list', { workspaceId: 'ws-1' });
+        expect(result.results[0]?.result).toEqual([
+          {
+            tabId: 'tab-mine',
+            webContentsId: 1,
+            url: 'http://mine/',
+            title: 'Mine',
+            mounted: true,
+            ownerAgentId: 'agent-1',
+            ownerAgentName: 'Alice',
+            mode: 'emulated',
+            width: 1024,
+            height: 768,
+          },
+          {
+            tabId: 'tab-other',
+            webContentsId: 2,
+            url: 'http://other/',
+            title: 'Other',
+            mounted: true,
+            ownerAgentId: 'agent-2',
+            ownerAgentName: 'Bob',
+            mode: 'emulated',
+            width: 1280,
+            height: 800,
+          },
+          {
+            tabId: 'tab-user',
+            webContentsId: 3,
+            url: 'http://user/',
+            title: 'User',
+            mounted: true,
+            ownerAgentId: null,
+            mode: 'native',
+          },
+        ]);
+      });
+
+      it("scope 'mine' returns only the caller's tabs", async () => {
+        await mockThreeTabs();
+        mockBackendRequest.mockResolvedValueOnce({ agents: [{ id: 'agent-1', name: 'Alice' }] });
+
+        const result = await executeActions(
+          { actions: [{ action: 'listTabs', scope: 'mine' }] },
+          undefined,
+          'agent-1',
+          'ws-1',
+        );
+
+        expect(result.success).toBe(true);
+        const tabs = result.results[0]?.result as Array<{ tabId: string }>;
+        expect(tabs.map((t) => t.tabId)).toEqual(['tab-mine']);
+      });
+
+      it("scope 'unclaimed' returns only unowned tabs and skips the agent.list lookup", async () => {
+        await mockThreeTabs();
+
+        const result = await executeActions(
+          { actions: [{ action: 'listTabs', scope: 'unclaimed' }] },
+          undefined,
+          'agent-1',
+          'ws-1',
+        );
+
+        expect(result.success).toBe(true);
+        expect(mockBackendRequest).not.toHaveBeenCalled();
+        const tabs = result.results[0]?.result as Array<{ tabId: string }>;
+        expect(tabs.map((t) => t.tabId)).toEqual(['tab-user']);
+      });
+
+      it("scope 'mine' without an agentId (user call) fails with a descriptive error", async () => {
+        const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+
+        const result = await executeActions(
+          { actions: [{ action: 'listTabs', scope: 'mine' }] },
+          undefined,
+          undefined,
+          'ws-1',
+        );
+
+        expect(result.success).toBe(false);
+        expect(result.results[0]).toMatchObject({ action: 'listTabs', success: false });
+        expect(result.results[0]?.error).toContain('requires an agent caller');
+        expect(embeddedBrowserCdp.listAllTabs).not.toHaveBeenCalled();
+      });
+
+      it('rejects an invalid scope value at validation', async () => {
+        const result = await executeActions({
+          actions: [{ action: 'listTabs', scope: 'everything' }],
+        });
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Invalid action sequence');
+      });
+
+      it('owner display names are best-effort: a failing agent.list keeps the owner ids', async () => {
+        await mockThreeTabs();
+        mockBackendRequest.mockRejectedValueOnce(new Error('daemon offline'));
+
+        const result = await executeActions(
+          { actions: [{ action: 'listTabs' }] },
+          undefined,
+          'agent-1',
+          'ws-1',
+        );
+
+        expect(result.success).toBe(true);
+        const tabs = result.results[0]?.result as Array<Record<string, unknown>>;
+        expect(tabs[0]).toMatchObject({ ownerAgentId: 'agent-1', mode: 'emulated' });
+        expect(tabs[0]).not.toHaveProperty('ownerAgentName');
       });
     });
 

@@ -30,6 +30,7 @@ const logger = new Logger('BrowserActionExecutor');
 
 const ListTabsActionSchema = z.object({
   action: z.literal('listTabs'),
+  scope: z.enum(['mine', 'unclaimed', 'all']).optional(),
 });
 
 const FocusTabActionSchema = z.object({
@@ -343,26 +344,40 @@ const OWNERSHIP_ENFORCED_ACTIONS = new Set([
 ]);
 
 /**
- * Best-effort owner display-name lookup via the daemon's `agent.list`
- * (PROTOCOL.md §5.5), so ownership errors can name the owner. Dynamic import
- * (mirroring browser-exec-reverse) avoids a static main-process dependency
- * cycle and keeps the executor unit-testable; any failure resolves undefined
- * — the structured error still carries the owner id.
+ * Best-effort bulk owner display-name lookup via the daemon's `agent.list`
+ * (PROTOCOL.md §5.5) — one request resolves every owner in a tab list.
+ * Dynamic import (mirroring browser-exec-reverse) avoids a static
+ * main-process dependency cycle and keeps the executor unit-testable; any
+ * failure resolves an empty map — callers still carry the owner ids.
+ */
+async function resolveAgentDisplayNames(workspaceId?: string): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  if (!workspaceId) return names;
+  try {
+    const { getBackendClient } = await import('../../backend/main/backend.ipc');
+    const result = (await getBackendClient().request('agent.list', { workspaceId })) as
+      | { agents?: Array<{ id?: string; name?: string }> }
+      | undefined;
+    for (const agent of result?.agents ?? []) {
+      if (typeof agent.id === 'string' && typeof agent.name === 'string' && agent.name.length > 0) {
+        names.set(agent.id, agent.name);
+      }
+    }
+  } catch {
+    // best-effort — fall through with whatever resolved
+  }
+  return names;
+}
+
+/**
+ * Best-effort owner display-name lookup for a single agent, so ownership
+ * errors can name the owner.
  */
 async function resolveAgentDisplayName(
   agentId: string,
   workspaceId?: string,
 ): Promise<string | undefined> {
-  if (!workspaceId) return undefined;
-  try {
-    const { getBackendClient } = await import('../../backend/main/backend.ipc');
-    const result = (await getBackendClient().request('agent.list', { workspaceId })) as
-      { agents?: Array<{ id?: string; name?: string }> } | undefined;
-    const name = result?.agents?.find((a) => a.id === agentId)?.name;
-    return typeof name === 'string' && name.length > 0 ? name : undefined;
-  } catch {
-    return undefined;
-  }
+  return (await resolveAgentDisplayNames(workspaceId)).get(agentId);
 }
 
 /**
@@ -441,20 +456,56 @@ async function executeAction(
   try {
     switch (action.action) {
       case 'listTabs': {
+        const scope = action.scope ?? 'all';
+        if (scope === 'mine' && !agentId) {
+          return {
+            action: 'listTabs',
+            success: false,
+            // i18n-ignore (agent-facing protocol error, not user-facing)
+            error: `listTabs scope "mine" requires an agent caller (agentId), but this call carries none — user calls have no owned tabs. Use scope "all" or "unclaimed" instead.`,
+          };
+        }
         // listAllTabs rejects when the tab list is unavailable (renderer
         // never answered and no cache) — the catch below surfaces that as an
         // action error instead of a silent empty list (monorepo#2756 RC4).
         const { tabs, stale } = await embeddedBrowserCdp.listAllTabs(workspaceId);
+        const scoped =
+          scope === 'mine'
+            ? tabs.filter((t) => t.ownerAgentId === agentId)
+            : scope === 'unclaimed'
+              ? tabs.filter((t) => !t.ownerAgentId)
+              : tabs;
+        // Owner display info + sizing per §5.9: ownerAgentId is nullable
+        // (null = unowned), unowned tabs are always native, agent-owned
+        // tabs are always emulated with their current width/height
+        // (viewport invariant). One bulk agent.list resolves every owner's
+        // display name; best-effort — unresolvable owners keep their id.
+        const ownerNames = scoped.some((t) => t.ownerAgentId)
+          ? await resolveAgentDisplayNames(workspaceId)
+          : new Map<string, string>();
+        const result = scoped.map(({ emulatedSize, ...tab }) => {
+          const ownerAgentId = tab.ownerAgentId ?? null;
+          const ownerAgentName = ownerAgentId ? ownerNames.get(ownerAgentId) : undefined;
+          const size = emulatedSize ?? DEFAULT_AGENT_VIEWPORT;
+          return {
+            ...tab,
+            ownerAgentId,
+            ...(ownerAgentName !== undefined ? { ownerAgentName } : {}),
+            ...(ownerAgentId
+              ? { mode: 'emulated' as const, width: size.width, height: size.height }
+              : { mode: 'native' as const }),
+          };
+        });
         if (stale) {
           return {
             action: 'listTabs',
             success: true,
-            result: tabs,
+            result,
             // i18n-ignore (agent-facing protocol error, not user-facing)
             warning: `The renderer did not answer the tab list request for workspace ${workspaceId}; this list is from a cached snapshot and may be outdated.`,
           };
         }
-        return { action: 'listTabs', success: true, result: tabs };
+        return { action: 'listTabs', success: true, result };
       }
 
       case 'focusTab': {
