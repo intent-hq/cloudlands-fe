@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.73.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.73.0...v2.73.1) (2026-08-20)
+
+
+### 🐛 Bug Fixes
+
+* stop panel reveal from stealing focus inside the revealed panel ([#1502](https://github.com/intent-hq/cloudlands-fe/issues/1502)) ([568f265](https://github.com/intent-hq/cloudlands-fe/commit/568f26568c64aacb29d7f71f0a9839ea038b9b35))
+
 ## [2.73.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.72.0...v2.73.0) (2026-08-20)
 
 
