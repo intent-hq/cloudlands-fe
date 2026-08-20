@@ -56,6 +56,18 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   ),
   selectAgentIsResponding: (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
     makeDerivedReadable(agentId, (id) => mockIsResponding.get(id) ?? false),
+  selectAgentPreview: Object.assign(
+    (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
+      makeDerivedReadable(agentId, (id) => {
+        const session = sessionState.byId.get(id);
+        const text =
+          typeof session?.lastAgentResponse === 'string' ? session.lastAgentResponse : '';
+        return text
+          ? { kind: 'last-response', text, isLive: mockIsResponding.get(id) ?? false }
+          : null;
+      }),
+    { select: () => null },
+  ),
   selectAgentIsWaiting: () => makeReadable(false),
   selectAgentIsBlockedWaiting: () => makeReadable(false),
   selectAgentSessionStreamingContent: (agentId: {

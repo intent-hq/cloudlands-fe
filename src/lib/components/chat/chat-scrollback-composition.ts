@@ -7,7 +7,7 @@
 import type { AgentMessage } from '$shared/types';
 import { groupMessagesByDate, type MessageGroup } from '$lib/utils/timeFormatting';
 
-export interface ComposedTranscriptGroup extends MessageGroup<AgentMessage> {
+interface ComposedTranscriptGroup extends MessageGroup<AgentMessage> {
   /**
    * Stable turn-key base consumed by `indexConversationTurns` for orphan-turn
    * keys. Present only when history rows are rendered: keyed by origin + day
@@ -363,10 +363,8 @@ export function reconcileVirtualSpacer(
     rowHeightEma = smoothRowHeightEstimate(rowHeightEma, residentContentHeight / residentCount);
   }
   const unloadedRows = params.unloadedRows ?? totalMessages - residentCount;
-  const atBoundary =
-    exhausted || totalMessages <= 0 || residentCount <= 0 || unloadedRows <= 0;
-  const target =
-    atBoundary || rowHeightEma === null ? 0 : Math.round(unloadedRows * rowHeightEma);
+  const atBoundary = exhausted || totalMessages <= 0 || residentCount <= 0 || unloadedRows <= 0;
+  const target = atBoundary || rowHeightEma === null ? 0 : Math.round(unloadedRows * rowHeightEma);
   const drift = Math.abs(target - currentSpacerHeight);
   if (drift === 0) {
     return { spacerHeight: currentSpacerHeight, rowHeightEma, applied: false, scrollTopDelta: 0 };

@@ -50,7 +50,7 @@ export const HUD_TAKEOVER_TRIGGER_KINDS: Readonly<Record<string, HudTakeoverKind
  * takeover kinds). Every other displayStatus value (in_progress,
  * needs_attention, not_started, unknown) never takes over.
  */
-export const DISPLAY_STATUS_TAKEOVER_KINDS: Readonly<Record<string, HudTakeoverKind>> = {
+const DISPLAY_STATUS_TAKEOVER_KINDS: Readonly<Record<string, HudTakeoverKind>> = {
   idle: 'workspace_idle',
   pr_open: 'pr_open',
   pr_ready: 'pr_ready',
@@ -187,8 +187,7 @@ export function mapEventToTakeoverTrigger(
     }
   }
 
-  const raisedAtMs =
-    typeof event.timestamp === 'string' ? Date.parse(event.timestamp) : Number.NaN;
+  const raisedAtMs = typeof event.timestamp === 'string' ? Date.parse(event.timestamp) : Number.NaN;
   return {
     workspaceId,
     kind,

@@ -8,9 +8,6 @@
 import { z } from 'zod';
 import {
   AgentStatus,
-  AuthorType,
-  ContentType,
-  NoteVisibility,
   WORKSPACE_STATUS_MESSAGE_MAX_LENGTH,
   WorkspaceStatus,
 } from './types';
@@ -78,16 +75,16 @@ export const workspaceIdSchema = z.string().refine(
 
 const diffSummaryActionValues = ['create', 'modify', 'delete', 'rename'] as const;
 
-export const DiffSummaryActionSchema = z.enum(diffSummaryActionValues);
+const DiffSummaryActionSchema = z.enum(diffSummaryActionValues);
 
-export const DiffSummaryFileSchema = z.object({
+const DiffSummaryFileSchema = z.object({
   path: z.string(),
   action: DiffSummaryActionSchema,
   additions: z.number().int().nonnegative(),
   deletions: z.number().int().nonnegative(),
 });
 
-export const DiffSummarySchema = z.object({
+const DiffSummarySchema = z.object({
   schemaVersion: z.number().int(),
   updatedAt: z.string().datetime(),
   totalFiles: z.number().int().nonnegative(),
@@ -132,9 +129,7 @@ export const WorkspaceSchema = z.object({
   skipWorktree: z.boolean().optional(),
   // Wire emits a SetupScript object { script, updatedAt, ... } (PROTOCOL §5.25);
   // the string arm covers legacy FE-local values until the Workspace type is fixed.
-  setupScript: z
-    .union([z.string(), z.object({ script: z.string() }).passthrough()])
-    .optional(),
+  setupScript: z.union([z.string(), z.object({ script: z.string() }).passthrough()]).optional(),
   isRemote: z.boolean().optional(),
   diffs: z.array(z.any()).optional(),
   diffSummary: DiffSummarySchema.optional(),
@@ -172,7 +167,7 @@ export const WorkspaceSchema = z.object({
 });
 
 // SSH configuration schema for remote workspaces
-export const SSHConfigSchema = z.object({
+const SSHConfigSchema = z.object({
   host: z.string(),
   port: z.number().int().positive().default(22),
   user: z.string(),
@@ -184,7 +179,7 @@ export const SSHConfigSchema = z.object({
 });
 
 // Environment configuration schema
-export const EnvironmentConfigSchema = z.object({
+const EnvironmentConfigSchema = z.object({
   type: z.enum(['local', 'remote']),
   ssh: SSHConfigSchema.optional(),
   workspace_path: z.string().optional(),
@@ -207,22 +202,6 @@ export const CreateWorkspaceRequestSchema = z.object({
   progressId: z.string().optional(), // FE-minted correlation id echoed on git:clone:progress/done frames (PROTOCOL §5.1)
 });
 
-export const UpdateWorkspaceRequestSchema = z.object({
-  title: z.string().max(100).optional(),
-  branch: z.string().optional(),
-  baseRef: z.string().optional(),
-  status: z.nativeEnum(WorkspaceStatus).optional(),
-  statusMessage: WorkspaceStatusMessageSchema.optional(),
-  tags: z.array(z.string()).optional(),
-  // prUrl does NOT use .url() validation because empty strings can come from
-  // normalizePullRequestInfo when no URL is found
-  prUrl: z.string().nullable().optional(),
-  prNumber: z.number().nullable().optional(),
-  prStatus: z.string().nullable().optional(),
-  activePullRequest: z.any().nullable().optional(),
-  pullRequests: z.array(z.any()).optional(),
-});
-
 /**
  * First Visit State Schema
  */
@@ -234,16 +213,6 @@ export const FirstVisitStateSchema = z.object({
   navigationRailRevealed: z.boolean(),
   workspaceDockRevealed: z.boolean(),
   lastUpdated: z.string().datetime(),
-});
-
-/**
- * Note Schemas
- */
-export const AuthorSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  type: z.nativeEnum(AuthorType),
-  turnNumber: z.number().optional(),
 });
 
 /**
@@ -280,172 +249,6 @@ export const TaskMetadataSchema = z.object({
   unmetDependsOn: z.array(z.string()).optional(), // Daemon-computed unmet deps (read/push shapes, v6.8)
 });
 
-// Note: DependencyTypeSchema and NoteDependencySchema removed
-// Task orchestration now uses parentId (sidebar hierarchy) as the dependency graph
-
-export const NoteMetadataSchema = z.object({
-  author: AuthorSchema.optional(),
-  lastAccessedAt: z.string().datetime().optional(),
-  accessCount: z.number().optional(),
-  wordCount: z.number().optional(),
-  characterCount: z.number().optional(),
-  sharedWith: z.array(z.string()).optional(),
-  task: TaskMetadataSchema.optional(),
-});
-
-export const ReferenceSchema = z.object({
-  type: z.enum(['file', 'url', 'note', 'commit', 'issue', 'pull_request']),
-  target: z.string(),
-  title: z.string().optional(),
-  description: z.string().optional(),
-});
-
-export const NoteVersionSchema = z.object({
-  versionId: z.string(),
-  versionNumber: z.number(),
-  content: z.string(),
-  title: z.string(),
-  author: AuthorSchema.optional(),
-  createdAt: z.string().datetime(),
-  changeSummary: z.string().optional(),
-  diff: z.string().optional(),
-});
-
-// Schema for note IDs - allows UUIDs or special reserved IDs like 'spec'
-const noteIdSchema = z.union([z.string().uuid(), z.literal('spec')]);
-
-export const NoteSchema = z.object({
-  id: noteIdSchema, // Allow "spec" as a special ID
-  workspaceId: workspaceIdSchema,
-  title: z.string(),
-  content: z.string(),
-  contentType: z.nativeEnum(ContentType),
-  tags: z.array(z.string()),
-  isPinned: z.boolean(),
-  isArchived: z.boolean(),
-  isDefault: z.boolean().optional(),
-  parentId: noteIdSchema.optional(), // Allow special IDs as parent too
-  visibility: z.nativeEnum(NoteVisibility),
-  metadata: NoteMetadataSchema.optional(),
-  references: z.array(ReferenceSchema).optional(),
-  versions: z.array(NoteVersionSchema).optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  // Legacy compatibility fields
-  is_pinned: z.boolean().optional(),
-  created_at: z.string().datetime().optional(),
-  updated_at: z.string().datetime().optional(),
-  is_archived: z.boolean().optional(),
-});
-
-export const CreateNoteRequestSchema = z.object({
-  workspaceId: workspaceIdSchema,
-  title: z.string().min(1),
-  content: z.string(),
-  contentType: z.nativeEnum(ContentType).optional(),
-  tags: z.array(z.string()).optional(),
-  parentId: noteIdSchema.optional(), // Allow special IDs as parent too
-  visibility: z.nativeEnum(NoteVisibility).optional(),
-});
-
-export const UpdateNoteRequestSchema = z.object({
-  title: z.string().min(1).optional(),
-  content: z.string().optional(),
-  tags: z.array(z.string()).optional(),
-  isPinned: z.boolean().optional(),
-  isArchived: z.boolean().optional(),
-  visibility: z.nativeEnum(NoteVisibility).optional(),
-});
-
-/**
- * Comment Schemas
- */
-export const SuggestionDiffSchema = z.object({
-  original: z.string(),
-  proposed: z.string(),
-  lineStart: z.number().optional(),
-  lineEnd: z.number().optional(),
-});
-
-export const NoteCommentSchema = z.object({
-  id: z.string(), // Allow any string ID, not just UUIDs
-  noteId: z.string(),
-  author: z.string(),
-  authorType: z.enum(['user', 'agent']),
-  type: z.enum(['comment', 'suggestion', 'change-request', 'question', 'session']),
-  content: z.string(),
-  lineStart: z.number().optional(),
-  lineEnd: z.number().optional(),
-  section: z.string().optional(),
-  status: z.enum(['open', 'resolved', 'pending']),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  parentId: z.string().optional(), // Allow any string ID for parent
-  threadId: z.string().optional(),
-  tags: z.array(z.string()).optional(),
-  reactions: z.record(z.string(), z.string()).optional(),
-  suggestionDiff: SuggestionDiffSchema.optional(),
-  // Store exact positions for accurate mark placement
-  from: z.number().optional(),
-  to: z.number().optional(),
-  // Store anchor IDs for the new comment system
-  markId: z.string().optional(),
-  // Track whether comment anchors are orphaned (missing from document)
-  isOrphaned: z.boolean().optional(),
-  // Link to agent for "session" type comments
-  agentId: z.string().optional(),
-});
-
-export const NoteCommentsDataSchema = z.object({
-  version: z.string(),
-  comments: z.array(NoteCommentSchema),
-  lastUpdated: z.string().datetime(),
-});
-
-export const AddCommentRequestSchema = z.object({
-  id: z.string().optional(), // Allow frontend to provide its own ID
-  workspaceId: workspaceIdSchema,
-  noteId: z.string(),
-  content: z.string().min(1),
-  type: z.enum(['comment', 'suggestion', 'change-request', 'question', 'session']),
-  author: z.string(),
-  authorType: z.enum(['user', 'agent']),
-  section: z.string().optional(),
-  lineStart: z.number().optional(),
-  lineEnd: z.number().optional(),
-  parentId: z.string().optional(), // Allow any string ID for parent
-  threadId: z.string().optional(),
-  tags: z.string().optional(),
-  // Store exact positions for accurate mark placement
-  from: z.number().optional(),
-  to: z.number().optional(),
-  markId: z.string().optional(),
-  // Link to agent for "session" type comments
-  agentId: z.string().optional(),
-});
-
-export const SuggestChangeRequestSchema = z.object({
-  workspaceId: workspaceIdSchema,
-  noteId: z.string(),
-  description: z.string().min(1),
-  original: z.string(),
-  proposed: z.string(),
-  author: z.string(),
-  authorType: z.enum(['user', 'agent']),
-  lineStart: z.number().optional(),
-  lineEnd: z.number().optional(),
-  section: z.string().optional(),
-  reason: z.string().optional(),
-  tags: z.string().optional(),
-});
-
-export const UpdateCommentStatusRequestSchema = z.object({
-  workspaceId: workspaceIdSchema,
-  noteId: z.string(),
-  commentId: z.string(), // Allow any string ID
-  status: z.enum(['open', 'resolved', 'pending']),
-});
-
 /**
  * Validation helpers
  */
@@ -453,39 +256,8 @@ export function validateWorkspace(data: unknown) {
   return WorkspaceSchema.parse(data);
 }
 
-export function validateNote(data: unknown) {
-  return NoteSchema.parse(data);
-}
-
-export function validateComment(data: unknown) {
-  return NoteCommentSchema.parse(data);
-}
-
-export function validateCommentsData(data: unknown) {
-  return NoteCommentsDataSchema.parse(data);
-}
-
 export function validateFirstVisitState(data: unknown) {
   return FirstVisitStateSchema.parse(data);
-}
-
-/**
- * Safe validation (returns result instead of throwing)
- */
-export function safeValidateWorkspace(data: unknown) {
-  return WorkspaceSchema.safeParse(data);
-}
-
-export function safeValidateNote(data: unknown) {
-  return NoteSchema.safeParse(data);
-}
-
-export function safeValidateComment(data: unknown) {
-  return NoteCommentSchema.safeParse(data);
-}
-
-export function safeValidateCommentsData(data: unknown) {
-  return NoteCommentsDataSchema.safeParse(data);
 }
 
 export function safeValidateFirstVisitState(data: unknown) {

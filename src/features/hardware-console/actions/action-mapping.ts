@@ -22,10 +22,7 @@ import type { ActionKeyId, HardwareDeviceModel, LogicalKeyId } from '../input/ty
 export const ACTION_KEY_COUNT = 7;
 
 /** Supported device models, in a stable order for per-model records. */
-export const HARDWARE_CONSOLE_MODELS: readonly HardwareDeviceModel[] = [
-  'creator-micro-2',
-  'codex-micro',
-];
+const HARDWARE_CONSOLE_MODELS: readonly HardwareDeviceModel[] = ['creator-micro-2', 'codex-micro'];
 
 /** Action key ids in slot order: slot 0 = ACT06 … slot 6 = ACT12. */
 export const ACTION_KEY_IDS: readonly ActionKeyId[] = [
@@ -59,9 +56,7 @@ export const ACTION_KEY_ACTION_IDS = [
 export type ActionKeyActionId = (typeof ACTION_KEY_ACTION_IDS)[number];
 
 export function isActionKeyActionId(value: unknown): value is ActionKeyActionId {
-  return (
-    typeof value === 'string' && (ACTION_KEY_ACTION_IDS as readonly string[]).includes(value)
-  );
+  return typeof value === 'string' && (ACTION_KEY_ACTION_IDS as readonly string[]).includes(value);
 }
 
 /**
@@ -87,10 +82,7 @@ export const CODEX_MIC_LINKED_SLOT = 5;
  * pair (push-to-talk on ACT10, ACT11 unset by default) and the logo key
  * (ACT12 = unread cycling).
  */
-export const DEFAULT_ACTION_MAPPINGS: Record<
-  HardwareDeviceModel,
-  readonly ActionKeyActionId[]
-> = {
+export const DEFAULT_ACTION_MAPPINGS: Record<HardwareDeviceModel, readonly ActionKeyActionId[]> = {
   'creator-micro-2': [
     'new-workspace',
     'new-agent',
@@ -196,8 +188,7 @@ function migratePriorDefaultActionMapping(
 ): boolean {
   const mapping = mappings[model];
   const isPriorDefault = priors.some(
-    (prior) =>
-      mapping.length === prior.length && mapping.every((id, slot) => id === prior[slot]),
+    (prior) => mapping.length === prior.length && mapping.every((id, slot) => id === prior[slot]),
   );
   if (!isPriorDefault) return false;
   mappings[model] = [...DEFAULT_ACTION_MAPPINGS[model]];
@@ -239,9 +230,7 @@ export const DEFAULT_ACTION_MAPPING: readonly ActionKeyActionId[] =
   DEFAULT_ACTION_MAPPINGS['creator-micro-2'];
 
 /** The default mapping for a device model. */
-export function getDefaultActionMapping(
-  model: HardwareDeviceModel,
-): readonly ActionKeyActionId[] {
+export function getDefaultActionMapping(model: HardwareDeviceModel): readonly ActionKeyActionId[] {
   return DEFAULT_ACTION_MAPPINGS[model];
 }
 
@@ -286,10 +275,7 @@ export function normalizeActionMappingsByModel(
   for (const model of HARDWARE_CONSOLE_MODELS) {
     let entry = record[model];
     if (entry === undefined && model === 'creator-micro-2') entry = legacyMapping;
-    result[model] = normalizeActionMapping(
-      Array.isArray(entry) ? entry : undefined,
-      model,
-    );
+    result[model] = normalizeActionMapping(Array.isArray(entry) ? entry : undefined, model);
   }
   return result;
 }

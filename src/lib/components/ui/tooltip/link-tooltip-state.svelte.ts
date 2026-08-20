@@ -85,24 +85,3 @@ export function hideLinkTooltip(): void {
   if (state.copied) return;
   state.visible = false;
 }
-
-/**
- * Briefly show "Copied!" in the tooltip hint, then auto-hide.
- * Pass an anchor element to position and show the tooltip if it isn't already visible.
- */
-export function flashCopied(anchor?: HTMLAnchorElement): void {
-  if (anchor && !state.visible) {
-    const rect = anchor.getBoundingClientRect();
-    state.url = anchor.href;
-    state.x = rect.left + rect.width / 2;
-    state.y = rect.top;
-    state.visible = true;
-  }
-  state.copied = true;
-  if (copiedTimeout) clearTimeout(copiedTimeout);
-  copiedTimeout = setTimeout(() => {
-    state.copied = false;
-    state.visible = false;
-    copiedTimeout = null;
-  }, 1200);
-}

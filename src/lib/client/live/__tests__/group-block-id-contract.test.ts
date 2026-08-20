@@ -32,7 +32,7 @@
 import { describe, it, expect } from 'vitest';
 import { ChatTranscriptReconciler } from '../live-chat-client';
 import { groupContentBlocks, type ContentBlockGroup } from '$lib/utils/messageParser';
-import type { ContentBlock } from '$lib/types/agent';
+import type { ContentBlock } from '$shared/types';
 
 const AGENT = 'agent-123';
 const MSG = 'msg-turn-1';

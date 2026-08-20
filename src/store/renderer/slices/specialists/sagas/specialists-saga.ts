@@ -19,7 +19,17 @@ import { m } from '$shared/paraglide/messages.js';
 import type { SpecialistFileScope } from '$shared/specialist-file-types';
 import { settingsChanged } from '../../settings-events/settings-events-slice';
 import { selectBundledSpecialists, selectGetFileSpecialist } from '../specialists-selectors';
-import { deleteFileSpecialist, saveFileSpecialist, setBundledSpecialists, setBundledSpecialistsLoaded, setCustomSpecialistsLoaded, setFileSpecialists, setFileSpecialistsLoaded, setOverridesLoaded, type FileSpecialist } from '../specialists-slice';
+import {
+  deleteFileSpecialist,
+  saveFileSpecialist,
+  setBundledSpecialists,
+  setBundledSpecialistsLoaded,
+  setCustomSpecialistsLoaded,
+  setFileSpecialists,
+  setFileSpecialistsLoaded,
+  setOverridesLoaded,
+  type FileSpecialist,
+} from '../specialists-slice';
 
 const logger = createLogger('SpecialistsSaga');
 
@@ -35,7 +45,7 @@ interface ListContext {
  * when a `settings:changed` delta touches one of these paths
  * (intent-hq/monorepo#1925).
  */
-export const MODEL_RESOLUTION_SETTINGS_PATHS: readonly string[] = [
+const MODEL_RESOLUTION_SETTINGS_PATHS: readonly string[] = [
   'model.providerDefaults',
   'model.default',
   'providers.active',
@@ -244,7 +254,7 @@ function* watchModelResolutionSettings(context: ListContext) {
   }
 }
 
-export function createSpecialistsChannel(): EventChannel<SpecialistDef[]> {
+function createSpecialistsChannel(): EventChannel<SpecialistDef[]> {
   return eventChannel<SpecialistDef[]>(
     (emit) => appClient.specialists.subscribe(emit),
     buffers.expanding<SpecialistDef[]>(),

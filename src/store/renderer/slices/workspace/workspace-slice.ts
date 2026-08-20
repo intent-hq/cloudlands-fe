@@ -1,4 +1,4 @@
-import type { CreateWorkspaceRequest, Workspace } from '$shared/types';
+import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { shallowEqual } from 'fast-equals';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -14,52 +14,17 @@ import {
   upsertItem,
 } from '@augmentcode/themis/utils/collections/collection-utils';
 
-export type WorkspaceUpdatedEvent = {
-  workspaceId: string;
-  changes: Partial<Workspace>;
-};
-
-export type WorkspaceCreatedEvent = {
-  workspaceId: string;
-  workspace?: Workspace;
-};
-
-export type WorkspaceDeletedEvent = {
-  workspaceId: string;
-};
-
-export type WorkspaceArchivedEvent = {
-  workspaceId: string;
-};
-
-export type WorkspaceBackgroundEnrichmentEvent = {
-  workspaceId: string;
-  updates?: Partial<
-    Pick<
-      Workspace,
-      | 'repositoryOwner'
-      | 'repositoryName'
-      | 'activePullRequest'
-      | 'prStatus'
-      | 'prNumber'
-      | 'prUrl'
-      | 'pullRequests'
-      | 'agentSummary'
-    >
-  >;
-};
-
 export interface WorkspaceRecencyState {
   lastViewedAt: Record<string, number>;
 }
 
-export type PendingWorkspaceTitleMutation = {
+type PendingWorkspaceTitleMutation = {
   token: number;
   optimisticTitle: string;
   previousTitle: string;
 };
 
-export const defaultWorkspaceRecencyState: WorkspaceRecencyState = {
+const defaultWorkspaceRecencyState: WorkspaceRecencyState = {
   lastViewedAt: {},
 };
 
@@ -72,6 +37,14 @@ export type WorkspaceState = {
   loading: boolean;
   error: string | null;
   hasLoaded: boolean;
+  /**
+   * The backend id the loaded workspace list was fetched for (stamped by the
+   * loaders alongside `setWorkspaceHasLoaded(true)`), or null when unknown.
+   * `hasLoaded` alone is global and survives a backend switch, so consumers
+   * doing destructive work (e.g. tab reconciliation) must also require this
+   * stamp to match the active backend.
+   */
+  loadedBackendId: string | null;
   isCreating: boolean;
   pendingDeletions: Record<string, boolean>;
   pendingArchives: Record<string, boolean>;
@@ -85,6 +58,7 @@ export const initialState: WorkspaceState = {
   loading: false,
   error: null,
   hasLoaded: false,
+  loadedBackendId: null,
   isCreating: false,
   pendingDeletions: {},
   pendingArchives: {},
@@ -105,7 +79,12 @@ export const setWorkspaceError = createAction<[error: string | null]>(
   'workspace/setWorkspaceError',
 );
 
-export const setWorkspaceHasLoaded = createAction<[hasLoaded: boolean]>(
+/**
+ * Mark the workspace list as loaded. Pass the backend id the list was fetched
+ * for so backend-scoped consumers can detect a stale (pre-switch) load; when
+ * omitted the previous stamp is kept (legacy/test call sites).
+ */
+export const setWorkspaceHasLoaded = createAction<[hasLoaded: boolean, backendId?: string]>(
   'workspace/setWorkspaceHasLoaded',
 );
 
@@ -184,26 +163,6 @@ export const cleanupRecency = createAction<[workspaceIds: string[]]>('workspace/
 
 export const loadWorkspacesRequested = createAction<[retryCount?: number]>(
   'workspace/loadWorkspacesRequested',
-);
-
-export const createWorkspaceRequested = createAction<[request: CreateWorkspaceRequest]>(
-  'workspace/createWorkspaceRequested',
-);
-
-export const openWorkspaceRequested = createAction<[wsId: string]>(
-  'workspace/openWorkspaceRequested',
-);
-
-export const updateWorkspaceRequested = createAction<[wsId: string, changes: Partial<Workspace>]>(
-  'workspace/updateWorkspaceRequested',
-);
-
-export const duplicateWorkspaceRequested = createAction<[wsId: string, newTitle?: string]>(
-  'workspace/duplicateWorkspaceRequested',
-);
-
-export const deleteWorkspaceRequested = createAction<[wsId: string]>(
-  'workspace/deleteWorkspaceRequested',
 );
 
 // ---------------------------------------------------------------------------
@@ -364,9 +323,10 @@ workspaceReducer.with(setWorkspaceError, (state, { payload: [error] }) => {
   if (state.error === error) return state;
   return { ...state, error };
 });
-workspaceReducer.with(setWorkspaceHasLoaded, (state, { payload: [hasLoaded] }) => {
-  if (state.hasLoaded === hasLoaded) return state;
-  return { ...state, hasLoaded };
+workspaceReducer.with(setWorkspaceHasLoaded, (state, { payload: [hasLoaded, backendId] }) => {
+  const loadedBackendId = backendId === undefined ? state.loadedBackendId : backendId;
+  if (state.hasLoaded === hasLoaded && state.loadedBackendId === loadedBackendId) return state;
+  return { ...state, hasLoaded, loadedBackendId };
 });
 workspaceReducer.with(setWorkspaceCreating, (state, { payload: [isCreating] }) => {
   if (state.isCreating === isCreating) return state;
@@ -590,6 +550,7 @@ workspaceReducer.with(resetWorkspaceState, (state) => ({
   loading: false,
   error: null,
   hasLoaded: false,
+  loadedBackendId: null,
   isCreating: false,
   pendingDeletions: {},
   pendingArchives: {},

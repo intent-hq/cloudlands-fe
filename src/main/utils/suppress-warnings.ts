@@ -11,7 +11,7 @@
  * These warnings are important for production but add noise during development.
  * They will still appear in production builds.
  */
-export function suppressElectronSecurityWarnings(): void {
+function suppressElectronSecurityWarnings(): void {
   // Only suppress in development
   if (process.env.NODE_ENV !== 'development') {
     return;

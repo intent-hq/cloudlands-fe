@@ -10,9 +10,9 @@
  * - In child components: const ctx = getContext<PanelContext>(PANEL_CONTEXT_KEY)
  */
 
-import { getContext, setContext } from 'svelte';
+import { setContext } from 'svelte';
 
-export const PANEL_CONTEXT_KEY = Symbol('panel-context');
+const PANEL_CONTEXT_KEY = Symbol('panel-context');
 
 export interface PanelContext {
   /** The ID of the panel this component is rendered in */
@@ -25,20 +25,6 @@ export interface PanelContext {
  */
 export function setPanelContext(panelId: string): void {
   setContext<PanelContext>(PANEL_CONTEXT_KEY, { panelId });
-}
-
-/**
- * Get the panel context from a parent Panel component
- * Returns undefined if not inside a panel
- */
-export function getPanelContext(): PanelContext | undefined {
-  try {
-    return getContext<PanelContext>(PANEL_CONTEXT_KEY);
-  } catch {
-    // getContext throws if called outside component initialization
-    // or if no context is set
-    return undefined;
-  }
 }
 
 /**

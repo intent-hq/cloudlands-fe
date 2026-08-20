@@ -881,7 +881,7 @@ app.whenReady().then(async () => {
 
     // Build the Window menu items
     const windowMenuItems: Electron.MenuItemConstructorOptions[] = [
-      { role: 'minimize', accelerator: 'CmdOrCtrl+M' },
+      { role: 'minimize', label: m.menu_minimize(), accelerator: 'CmdOrCtrl+M' },
       { role: 'zoom', label: m.menu_window_fill() },
       { type: 'separator' },
       {
@@ -1258,11 +1258,11 @@ app.whenReady().then(async () => {
             },
           },
           { type: 'separator' },
-          { role: 'services' },
+          { role: 'services', label: m.menu_services() },
           { type: 'separator' },
           { role: 'hide', label: m.menu_hide_app({ appName }) },
-          { role: 'hideOthers' },
-          { role: 'unhide' },
+          { role: 'hideOthers', label: m.menu_hide_others() },
+          { role: 'unhide', label: m.menu_show_all() },
           { type: 'separator' },
           { role: 'quit', label: m.menu_quit_app({ appName }) },
         ],
@@ -1270,9 +1270,52 @@ app.whenReady().then(async () => {
     }
 
     // Add standard menus (File, Edit, View, Window, Help)
+    // Electron never localizes built-in role labels, so every role item gets
+    // an explicit label from the message catalog. The Edit menu mirrors the
+    // default `editMenu` role expansion for this Electron version
+    // (per-platform structure included) with the roles kept for behavior.
     template.push(
       fileMenu,
-      { role: 'editMenu' },
+      {
+        label: m.menu_edit(),
+        submenu: [
+          { role: 'undo', label: m.menu_undo() },
+          { role: 'redo', label: m.menu_redo() },
+          { type: 'separator' },
+          { role: 'cut', label: m.menu_cut() },
+          { role: 'copy', label: m.menu_copy() },
+          { role: 'paste', label: m.menu_paste() },
+          ...(isMacOS
+            ? ([
+                { role: 'pasteAndMatchStyle', label: m.menu_paste_and_match_style() },
+                { role: 'delete', label: m.menu_delete() },
+                { role: 'selectAll', label: m.menu_select_all() },
+                { type: 'separator' },
+                {
+                  label: m.menu_substitutions(),
+                  submenu: [
+                    { role: 'showSubstitutions', label: m.menu_show_substitutions() },
+                    { type: 'separator' },
+                    { role: 'toggleSmartQuotes', label: m.menu_smart_quotes() },
+                    { role: 'toggleSmartDashes', label: m.menu_smart_dashes() },
+                    { role: 'toggleTextReplacement', label: m.menu_text_replacement() },
+                  ],
+                },
+                {
+                  label: m.menu_speech(),
+                  submenu: [
+                    { role: 'startSpeaking', label: m.menu_start_speaking() },
+                    { role: 'stopSpeaking', label: m.menu_stop_speaking() },
+                  ],
+                },
+              ] as Electron.MenuItemConstructorOptions[])
+            : ([
+                { role: 'delete', label: m.menu_delete() },
+                { type: 'separator' },
+                { role: 'selectAll', label: m.menu_select_all() },
+              ] as Electron.MenuItemConstructorOptions[])),
+        ],
+      },
       {
         label: m.menu_view(),
         submenu: [
@@ -1289,7 +1332,7 @@ app.whenReady().then(async () => {
               }
             },
           },
-          { role: 'forceReload' },
+          { role: 'forceReload', label: m.menu_force_reload() },
           { type: 'separator' },
           {
             label: m.menu_toggle_devtools(),
@@ -1348,7 +1391,7 @@ app.whenReady().then(async () => {
             },
           },
           { type: 'separator' },
-          { role: 'togglefullscreen' },
+          { role: 'togglefullscreen', label: m.menu_toggle_fullscreen() },
         ],
       },
       {

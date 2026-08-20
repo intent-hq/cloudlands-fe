@@ -10,13 +10,13 @@
  */
 
 /** Espressif vendor ID used by all Work Louder consoles we support. */
-export const HARDWARE_CONSOLE_VENDOR_ID = 0x303a;
+const HARDWARE_CONSOLE_VENDOR_ID = 0x303a;
 
 /** Vendor HID collection carrying the report-6 JSON-RPC channel. */
-export const VENDOR_USAGE_PAGE = 0xff00;
-export const VENDOR_USAGE = 0x0001;
+const VENDOR_USAGE_PAGE = 0xff00;
+const VENDOR_USAGE = 0x0001;
 
-export type HardwareConsoleModel = 'creator-micro-2' | 'codex-micro';
+type HardwareConsoleModel = 'creator-micro-2' | 'codex-micro';
 
 export interface SupportedHardwareConsoleDevice {
   vendorId: number;
@@ -25,7 +25,7 @@ export interface SupportedHardwareConsoleDevice {
   name: string;
 }
 
-export const SUPPORTED_HARDWARE_CONSOLE_DEVICES: readonly SupportedHardwareConsoleDevice[] = [
+const SUPPORTED_HARDWARE_CONSOLE_DEVICES: readonly SupportedHardwareConsoleDevice[] = [
   {
     vendorId: HARDWARE_CONSOLE_VENDOR_ID,
     productId: 0x8297,

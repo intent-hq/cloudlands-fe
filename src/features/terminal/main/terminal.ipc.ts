@@ -351,42 +351,6 @@ class DaemonTerminalRegistry {
 
 const registry = new DaemonTerminalRegistry();
 
-/**
- * Backwards-compatible export shim used by MCP `ws.terminal.*` in
- * `ws-misc-api.ts`. Preserves the small surface those callers rely on
- * (`getTerminal`, `getWorkspaceTerminals`, `getInfo()`, `getBufferedOutput()`)
- * without exposing the daemon-backed internals.
- */
-export const terminalManager = {
-  getTerminal(id: string) {
-    const t = registry.getTerminal(id);
-    if (!t) return null;
-    return {
-      disposed: t.isDisposed,
-      isAlive: t.isAlive,
-      getInfo: () => t.getInfo(),
-      getBufferedOutput: () => t.getBufferedOutput(),
-    };
-  },
-  getWorkspaceTerminals(workspaceId: string) {
-    return registry.getWorkspaceTerminals(workspaceId).map((t) => ({
-      disposed: t.isDisposed,
-      isAlive: t.isAlive,
-      getInfo: () => t.getInfo(),
-      getBufferedOutput: () => t.getBufferedOutput(),
-    }));
-  },
-  disposeTerminal(id: string) {
-    return registry.dispose(id);
-  },
-  disposeAll() {
-    return registry.disposeAll();
-  },
-  disposeAllSync() {
-    registry.disposeAllSync();
-  },
-};
-
 // ---------------------------------------------------------------------------
 // Core spawn helper — delegates to `terminal.create` (PROTOCOL §5.13)
 // ---------------------------------------------------------------------------
@@ -757,7 +721,7 @@ export function registerTerminalHandlers() {
  * renderer's terminal tabs pick it up. Used by workspace setup and by the
  * `terminal:createWithCommand` handler above.
  */
-export async function createTerminalFromBackend(options: {
+async function createTerminalFromBackend(options: {
   workspaceId: WorkspaceId;
   cwd: string;
   title?: string;
@@ -842,11 +806,6 @@ export async function createTerminalFromBackend(options: {
 export async function cleanupTerminals(): Promise<void> {
   logger.info('[Terminal] Cleaning up all terminals');
   await registry.disposeAll();
-}
-
-export function cleanupTerminalsSync(): void {
-  logger.info('[Terminal] Cleaning up all terminals (sync)');
-  registry.disposeAllSync();
 }
 
 export async function cleanupWorkspaceTerminals(workspaceId: WorkspaceId): Promise<void> {

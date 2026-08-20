@@ -19,7 +19,7 @@ import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 
 /** Per-workspace live monitor state (active + completed; selectors filter). */
-export interface PrMonitorWorkspaceState {
+interface PrMonitorWorkspaceState {
   monitors: Collection<PrMonitorRow, 'monitorId'>;
 }
 
@@ -28,7 +28,7 @@ export interface PrMonitorState {
   byWorkspaceId: Record<string, PrMonitorWorkspaceState>;
 }
 
-export const emptyPrMonitorWorkspaceState: PrMonitorWorkspaceState = {
+const emptyPrMonitorWorkspaceState: PrMonitorWorkspaceState = {
   monitors: createCollection<PrMonitorRow, 'monitorId'>('monitorId'),
 };
 

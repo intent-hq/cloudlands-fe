@@ -1,4 +1,4 @@
-export type AppUiTargetCategory = 'navigation' | 'settings' | 'workspace' | 'specialist';
+type AppUiTargetCategory = 'navigation' | 'settings' | 'workspace' | 'specialist';
 
 export interface AppUiTarget {
   id: string;
@@ -14,27 +14,11 @@ export interface AppUiTarget {
   idPattern?: string;
 }
 
-export type AppUiHighlightOptions = { durationMs?: number };
-export type AppUiNavigateOptions = AppUiHighlightOptions & { highlightId?: string };
-
-export type AppUiNavigatePayload = {
-  route: string;
-  workspaceId?: string;
-  highlightId?: string;
-  durationMs?: number;
-};
-
-export type AppUiHighlightPayload = {
-  id: string;
-  workspaceId?: string;
-  durationMs?: number;
-};
-
 function settingsTarget(target: AppUiTarget): AppUiTarget {
   return { category: 'settings', ...target };
 }
 
-export const APP_UI_TARGETS: AppUiTarget[] = [
+const APP_UI_TARGETS: AppUiTarget[] = [
   {
     id: 'new-workspace',
     tab: '',

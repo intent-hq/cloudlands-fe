@@ -68,7 +68,7 @@ interface TabOwnership {
 }
 
 /** Result of an atomic claim attempt (monorepo#2857). */
-export type ClaimTabResult =
+type ClaimTabResult =
   | { status: 'claimed'; alreadyOwned: boolean }
   | { status: 'already-claimed'; ownerAgentId: string };
 
@@ -826,8 +826,7 @@ class EmbeddedBrowserCdpService {
     size?: { width: number; height: number },
   ): void {
     const previous = this.tabOwnership.get(tabId);
-    const recorded =
-      requestedUrl === null ? undefined : (requestedUrl ?? previous?.requestedUrl);
+    const recorded = requestedUrl === null ? undefined : (requestedUrl ?? previous?.requestedUrl);
     this.tabOwnership.set(tabId, {
       ownerAgentId,
       ...(recorded !== undefined ? { requestedUrl: recorded } : {}),
@@ -1029,7 +1028,11 @@ class EmbeddedBrowserCdpService {
    * panel layout persists `ownerAgentId` with the tab (monorepo#2857).
    * Fire-and-forget, mirroring notifyTabNavigated.
    */
-  notifyTabOwnerChanged(tabId: string, workspaceId: string | undefined, ownerAgentId: string): void {
+  notifyTabOwnerChanged(
+    tabId: string,
+    workspaceId: string | undefined,
+    ownerAgentId: string,
+  ): void {
     if (!tabId || typeof workspaceId !== 'string' || workspaceId.length === 0) return;
     sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.TAB_OWNER_CHANGED, {
       tabId,

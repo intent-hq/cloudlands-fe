@@ -56,7 +56,7 @@ export function hourAmPm(hour: number): string {
 
 export const pad2 = (n: number) => String(n).padStart(2, '0');
 
-export interface HourBar {
+interface HourBar {
   heightPct: number;
   outPct: number;
   /** Reasoning tokens' share of the bar; 0 when the cell reported none. */
@@ -165,7 +165,7 @@ export function hourCardModel(
   };
 }
 
-export interface MonthBar {
+interface MonthBar {
   heightPct: number;
   outPct: number;
   /** Reasoning tokens' share of the bar; 0 when the cell reported none. */

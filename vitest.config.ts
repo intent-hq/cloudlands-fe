@@ -78,8 +78,6 @@ export default defineConfig(async () => {
         // Tests with file system checks for build artifacts
         '**/agent-providers/__tests__/acp-provider-mcp-config.test.ts',
         // Integration tests with various pre-existing issues
-        '**/tests/event-integration.test.ts',
-
         '**/features/file-tracking/__tests__/file-tracking-integration.test.ts',
         '**/features/workspace/__tests__/remote-change-detector.test.ts',
         '**/features/agent/main/__tests__/edge-cases.test.ts',
@@ -126,10 +124,7 @@ export default defineConfig(async () => {
           __dirname,
           './src/lib/icons/phosphor-icons.ts',
         ),
-        'svelte-fa': path.resolve(
-          __dirname,
-          './src/lib/components/shared/icons/fa-proxy.ts',
-        ),
+        'svelte-fa': path.resolve(__dirname, './src/lib/components/shared/icons/fa-proxy.ts'),
         // Test-only stub: avoid resolving the real monaco-editor (heavy and ESM-export sensitive)
         'monaco-editor': path.resolve(__dirname, './src/__mocks__/monaco-editor'),
         // Test-only stub: avoid resolving protocol-adapter's complex dependency chain

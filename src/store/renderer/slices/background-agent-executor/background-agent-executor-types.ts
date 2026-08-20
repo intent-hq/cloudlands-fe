@@ -4,14 +4,7 @@
  */
 
 export type ExecutorStatus =
-  | 'idle'
-  | 'initializing'
-  | 'running'
-  | 'success'
-  | 'error'
-  | 'cancelled';
-
-export type BackgroundExecutorType = 'commit' | 'pr' | 'review' | 'walkthrough';
+  'idle' | 'initializing' | 'running' | 'success' | 'error' | 'cancelled';
 
 /**
  * Context data for different agent types
@@ -50,24 +43,6 @@ export interface AgentExecutorContext {
     | string[]
     | Record<string, string>
     | Array<Record<string, string | number | boolean | null | undefined>>;
-}
-
-export interface BackgroundAgentConfig {
-  type: BackgroundExecutorType | string;
-  name?: string;
-  promptPath?: string;
-  resultTag?: string;
-  resultPattern?: string; // Serialized regex pattern (not RegExp)
-  timeout?: number;
-}
-
-export interface ResultContext {
-  /** Whether this result was restored from a previous session */
-  isRestored: boolean;
-  /** The workspace ID this result was generated for */
-  workspaceId?: string;
-  /** The execution context captured when the execution started */
-  executionContext?: AgentExecutorContext;
 }
 
 /**

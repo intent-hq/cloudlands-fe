@@ -358,11 +358,13 @@ describe('channel-switch immediate update check', () => {
       .CancellationToken;
 
     // autoDownload path: the check result carries the token for the download
-    // electron-updater started on its own.
+    // electron-updater started on its own. 'update-available' fires inside
+    // doCheckForUpdates() before the checkForUpdates() promise settles, so
+    // the check session is closed by the time the result lands.
     const token = new TokenCtor();
-    checkMock.mockResolvedValue({
-      updateInfo: { version: '2.1.0' },
-      cancellationToken: token,
+    checkMock.mockImplementation(async () => {
+      updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+      return { updateInfo: { version: '2.1.0' }, cancellationToken: token };
     });
     await service.checkForUpdatesManual();
     updaterHandlers['download-progress']({
@@ -578,6 +580,116 @@ describe('channel-switch immediate update check', () => {
       provider: 'generic',
       url: expect.stringMatching(/\/beta$/),
     });
+  });
+
+  it("switch during a check running while 'downloaded' queues the recheck instead of racing a deduped check", async () => {
+    const { setChannelHandler, checkMock, feedMock, service, updater } = await setup();
+    const { default: electronUpdater } = await import('electron-updater');
+    const TokenCtor = (electronUpdater as unknown as { CancellationToken: new () => MockToken })
+      .CancellationToken;
+
+    // An artifact is downloaded and armed.
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    updaterHandlers['update-downloaded']({ version: '2.1.0' });
+    expect(service.getState().status).toBe('downloaded');
+    expect(updater.autoInstallOnAppQuit).toBe(true);
+
+    // A check is in flight against the previous feed. The 'checking' status
+    // broadcast is suppressed while 'downloaded', so status never flips.
+    const oldToken = new TokenCtor();
+    let resolveOldCheck!: (result: unknown) => void;
+    checkMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveOldCheck = resolve;
+        }),
+    );
+    const oldCheck = service.checkForUpdatesManual();
+    updaterHandlers['checking-for-update']();
+    expect(service.getState().status).toBe('downloaded');
+
+    await setChannelHandler({}, { channel: 'beta' });
+
+    // Regression (PR #1482 review): the queue gate tested
+    // `status === 'checking'`, which a downloaded-state check never sets, so
+    // the switch ran an immediate "fresh" check that electron-updater would
+    // dedup onto the still-in-flight old-feed request — the new feed was
+    // never actually queried.
+    await drainAsyncWork();
+    expect(checkMock).toHaveBeenCalledTimes(1); // recheck queued, not started
+
+    // The old feed re-offers the already-downloaded version — the terminal
+    // outcome that keeps 'downloaded' without any status change — then the
+    // check result lands, carrying the autoDownload token.
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    resolveOldCheck({ updateInfo: { version: '2.1.0' }, cancellationToken: oldToken });
+    await oldCheck;
+
+    // The queued recheck is still released (the same-version early return
+    // skips updateStatus()), neutralizes the old-feed artifact, and queries
+    // the NEW feed; the late-captured old-feed token is cancelled, not stored.
+    await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(2));
+    expect(oldToken.cancel).toHaveBeenCalledTimes(1);
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+    expect(service.getState().updateInfo).toBeNull();
+    expect(feedMock).toHaveBeenLastCalledWith({
+      provider: 'generic',
+      url: expect.stringMatching(/\/beta$/),
+    });
+  });
+
+  it("switch during a downloaded-state check: an old-feed supersede outcome is neutralized without stranding 'downloading'", async () => {
+    const { setChannelHandler, checkMock, service, updater } = await setup();
+    const { default: electronUpdater } = await import('electron-updater');
+    const TokenCtor = (electronUpdater as unknown as { CancellationToken: new () => MockToken })
+      .CancellationToken;
+
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    updaterHandlers['update-downloaded']({ version: '2.1.0' });
+    expect(service.getState().status).toBe('downloaded');
+
+    const oldToken = new TokenCtor();
+    let resolveOldCheck!: (result: unknown) => void;
+    checkMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveOldCheck = resolve;
+        }),
+    );
+    const oldCheck = service.checkForUpdatesManual();
+    updaterHandlers['checking-for-update']();
+
+    await setChannelHandler({}, { channel: 'beta' });
+    await drainAsyncWork();
+    expect(checkMock).toHaveBeenCalledTimes(1); // recheck queued, not started
+
+    // The OLD feed offers a NEWER version: the handler falls through to
+    // 'available', autoDownload starts against the old feed, and a straggling
+    // progress event lands before the check result resolves.
+    updaterHandlers['update-available']({ version: '9.9.9', releaseDate: '2026-01-01' });
+    updaterHandlers['download-progress']({
+      percent: 5,
+      bytesPerSecond: 1,
+      transferred: 5,
+      total: 100,
+    });
+    expect(service.getState().status).toBe('downloading');
+    resolveOldCheck({ updateInfo: { version: '9.9.9' }, cancellationToken: oldToken });
+    await oldCheck;
+
+    // The queued recheck neutralizes the old-feed outcome (no old-feed
+    // updateInfo survives, quit-install stays disarmed) and queries the new
+    // feed; the old-feed autoDownload token is cancelled.
+    await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(2));
+    expect(oldToken.cancel).toHaveBeenCalledTimes(1);
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+    expect(service.getState().updateInfo).toBeNull();
+
+    // The expected cancellation settles via 'update-cancelled'; its
+    // early return must not strand the status at 'downloading' (which would
+    // also block all future checks via the 'downloading' skip guard).
+    updaterHandlers['update-cancelled']({ version: '9.9.9' });
+    expect(service.getState().status).not.toBe('downloading');
   });
 
   it('a queued channel-switch recheck also fires when the in-flight check settles with an error', async () => {

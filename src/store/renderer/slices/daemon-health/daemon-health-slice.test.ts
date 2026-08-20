@@ -476,6 +476,7 @@ describe('daemonHealthReducer', () => {
         workspacesDiskAvailableBytes: 453316378624,
         workspacesDiskTotalBytes: 1099511627776,
         fingerprint: 'abc123',
+        hostname: 'studio.local',
         protocolVersion: '2.0',
         host: {
           os: 'macos',
@@ -502,6 +503,7 @@ describe('daemonHealthReducer', () => {
         memoryBytes: 104857600,
         workspacesDiskAvailableBytes: 453316378624,
         workspacesDiskTotalBytes: 1099511627776,
+        hostname: 'studio.local',
         os: 'macos',
         arch: 'aarch64',
         transport: undefined,
@@ -549,6 +551,7 @@ describe('daemonHealthReducer', () => {
         memoryBytes: undefined,
         workspacesDiskAvailableBytes: undefined,
         workspacesDiskTotalBytes: undefined,
+        hostname: undefined,
         os: 'linux',
         arch: 'x86_64',
         transport: undefined,

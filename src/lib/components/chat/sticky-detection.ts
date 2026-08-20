@@ -12,7 +12,7 @@
  */
 
 /** A row becomes sticky when its top is within this many pixels of the container top. */
-export const STICKY_ENTER_THRESHOLD_PX = 20;
+const STICKY_ENTER_THRESHOLD_PX = 20;
 
 /**
  * Compute which message should be sticky given the current scroll geometry.
@@ -67,8 +67,7 @@ export function detectStickyMessageId(
     // Enter condition: a row becomes sticky when its top is at (or very close
     // to) the scroll container top. The sticky offset is -top-px which is -1px,
     // so check if within a few pixels.
-    const isAtStickyPosition =
-      Math.abs(rect.top - scrollRect.top + 1) < STICKY_ENTER_THRESHOLD_PX;
+    const isAtStickyPosition = Math.abs(rect.top - scrollRect.top + 1) < STICKY_ENTER_THRESHOLD_PX;
 
     // The element becomes sticky if:
     // 1. It's at the sticky position (near the top)

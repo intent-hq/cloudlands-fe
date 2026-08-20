@@ -74,7 +74,7 @@ function mapProgress(progress: UpdateProgress): UpdateProgress {
   };
 }
 
-export function createAutoUpdateChannel(): EventChannel<AutoUpdateEvent> {
+function createAutoUpdateChannel(): EventChannel<AutoUpdateEvent> {
   return eventChannel<AutoUpdateEvent>((emit) => {
     const disposers = [
       autoUpdateClient.onShowToast(() => emit({ kind: 'show-toast' })),

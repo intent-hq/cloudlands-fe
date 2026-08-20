@@ -28,7 +28,7 @@ overwriteGetLocale(() => activeLocale);
  * the i18n spec: `navigator.languages` / `navigator.language` (Chromium seeds
  * these from the OS; the Electron main process uses `app.getLocale()`).
  */
-export function getSystemLocales(): readonly string[] {
+function getSystemLocales(): readonly string[] {
   if (typeof navigator === 'undefined') return [];
   if (Array.isArray(navigator.languages) && navigator.languages.length > 0) {
     return navigator.languages;

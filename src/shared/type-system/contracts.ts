@@ -6,13 +6,7 @@
  */
 
 import { z } from 'zod';
-import type {
-  WorkspaceId,
-  AgentId,
-  MessageId,
-  NoteId,
-  ThreadId,
-} from '../types/branded-ids';
+import type { WorkspaceId, AgentId, MessageId, NoteId, ThreadId } from '../types/branded-ids';
 
 // ============================================================================
 // Core Entity Schemas
@@ -21,7 +15,7 @@ import type {
 /**
  * Workspace Schema - Single source of truth for Workspace type
  */
-export const WorkspaceSchema = z.object({
+const WorkspaceSchema = z.object({
   id: z.string() as unknown as z.ZodType<WorkspaceId>,
   name: z.string().optional(),
   title: z.string(),
@@ -50,30 +44,10 @@ export const WorkspaceSchema = z.object({
   checkoutMode: z.enum(['cow', 'worktree', 'direct']).optional(),
 });
 
-export type Workspace = z.infer<typeof WorkspaceSchema>;
-
-/**
- * Agent Schema - Single source of truth for Agent type
- */
-export const AgentSchema = z.object({
-  id: z.string() as unknown as z.ZodType<AgentId>,
-  workspaceId: z.string() as unknown as z.ZodType<WorkspaceId>,
-  name: z.string(),
-  model: z.string().optional(),
-  systemPrompt: z.string().optional(),
-  status: z.enum(['initializing', 'ready', 'busy', 'error', 'stopped']),
-  provider: z.literal('augment'),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  metadata: z.record(z.any()).optional(),
-});
-
-export type Agent = z.infer<typeof AgentSchema>;
-
 /**
  * Note Schema - Single source of truth for Note type
  */
-export const NoteSchema = z.object({
+const NoteSchema = z.object({
   id: z.string() as unknown as z.ZodType<NoteId>,
   workspaceId: z.string() as unknown as z.ZodType<WorkspaceId>,
   title: z.string(),
@@ -90,33 +64,10 @@ export const NoteSchema = z.object({
   threadId: z.string().optional() as z.ZodType<ThreadId | undefined>,
 });
 
-export type Note = z.infer<typeof NoteSchema>;
-
-/**
- * Message Schema - Single source of truth for Message type
- */
-export const MessageSchema = z.object({
-  id: z.string() as unknown as z.ZodType<MessageId>,
-  appMessageId: z.string().optional(),
-  sessionId: z.string() as unknown as z.ZodType<AgentId>,
-  agentId: z.string() as unknown as z.ZodType<AgentId>,
-  role: z.enum(['user', 'assistant', 'system', 'tool']),
-  content: z.union([
-    z.string(),
-    z.array(z.any()), // ContentBlock[]
-  ]),
-  timestamp: z.string(),
-  metadata: z.record(z.any()).optional(),
-  toolCalls: z.array(z.any()).optional(),
-  parentMessageId: z.string().optional() as z.ZodType<MessageId | undefined>,
-});
-
-export type Message = z.infer<typeof MessageSchema>;
-
 /**
  * KnownRepo Schema - mirrors KnownRepo in src/shared/types/known-repo.ts
  */
-export const KnownRepoSchema = z.object({
+const KnownRepoSchema = z.object({
   path: z.string(),
   name: z.string(),
   owner: z.string().optional(),

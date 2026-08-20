@@ -485,6 +485,10 @@ function reduceAgentStreamUpdate(
   return state;
 }
 
+// ============================================================================
+// Actions
+// ============================================================================
+
 /** Begin sending a message — sets processing/streaming flags */
 export const chatSendStarted = createAction(
   'chatState/sendStarted',
@@ -1037,7 +1041,8 @@ chatStateReducer.with(transcriptHydrationSettled, (state, { payload: [agentId] }
     // in the same paint. The subscribe saga clears it (footer ready) or its
     // bounded fallback does — never wedges. Refresh re-hydrations keep the
     // transcript visible and must not re-arm.
-    awaitingUtilityFooter: agent.transcriptHydratedOnce === true ? agent.awaitingUtilityFooter : true,
+    awaitingUtilityFooter:
+      agent.transcriptHydratedOnce === true ? agent.awaitingUtilityFooter : true,
   });
 });
 chatStateReducer.with(transcriptHydrationFailed, (state, { payload: [agentId] }) =>
@@ -1186,16 +1191,14 @@ chatStateReducer.with(scrollbackGapPageSettled, (state, { payload: [agentId, pre
     scrollbackOlderToken: null,
   }),
 );
-chatStateReducer.with(
-  scrollbackSeekSettled,
-  (state, { payload: [agentId, tokens, unsupported] }) =>
-    updateAgent(state, agentId, {
-      agentId,
-      fetchingHistorySeek: false,
-      scrollbackOlderToken: tokens.nextToken,
-      scrollbackGapToken: tokens.prevToken,
-      ...(unsupported ? { historySeekUnsupported: true } : {}),
-    }),
+chatStateReducer.with(scrollbackSeekSettled, (state, { payload: [agentId, tokens, unsupported] }) =>
+  updateAgent(state, agentId, {
+    agentId,
+    fetchingHistorySeek: false,
+    scrollbackOlderToken: tokens.nextToken,
+    scrollbackGapToken: tokens.prevToken,
+    ...(unsupported ? { historySeekUnsupported: true } : {}),
+  }),
 );
 chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] }) => {
   const agent = state.byAgentId[agentId];

@@ -48,12 +48,6 @@ export const DEFAULT_CYCLE_SCOPES: Record<CycleScopeFamilyId, CycleScope> = {
   'cycle-failed-agents': 'all',
 };
 
-export function isCycleScopeFamilyId(value: unknown): value is CycleScopeFamilyId {
-  return (
-    typeof value === 'string' && (CYCLE_SCOPE_FAMILY_IDS as readonly string[]).includes(value)
-  );
-}
-
 function isCycleScope(value: unknown): value is CycleScope {
   return value === 'all' || value === 'top-level';
 }

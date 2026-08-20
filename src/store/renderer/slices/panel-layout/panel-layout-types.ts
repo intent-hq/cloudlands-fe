@@ -6,7 +6,7 @@
  */
 
 /** Serializable icon descriptor understood by the renderer's icon adapter. */
-export interface PanelTabIcon {
+interface PanelTabIcon {
   iconName: string;
   prefix?: string;
   icon?: readonly [number, number, readonly string[], string, string | readonly string[]];
@@ -124,7 +124,7 @@ export interface WorkspacePanelLayout {
   >;
 }
 
-export interface NewWorkspacePanelLifecycle {
+interface NewWorkspacePanelLifecycle {
   /** Coordinator creation fills the seeded reusable panel when Spec is first written. */
   coordinator?: boolean;
   initialAgentId: string | null;
@@ -167,7 +167,7 @@ export interface LayoutSnapshot {
 }
 
 /** Focus history entry for navigating between previously focused tabs */
-export interface FocusHistoryEntry {
+interface FocusHistoryEntry {
   panelId: string;
   tabId: string;
   timestamp: number;

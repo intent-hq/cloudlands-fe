@@ -542,23 +542,3 @@ export function getMentionSystem(config?: MentionSystemConfig): MentionSystem {
   }
   return mentionSystemInstance;
 }
-
-/**
- * Destroy the mention system singleton
- */
-export function destroyMentionSystem(): void {
-  if (mentionSystemInstance) {
-    mentionSystemInstance.destroy();
-    mentionSystemInstance = null;
-    instanceConfigHash = undefined;
-    logger.debug('[MentionSystem] Singleton instance destroyed');
-  }
-}
-
-/**
- * Reset the mention system with new configuration
- */
-export function resetMentionSystem(config?: MentionSystemConfig): MentionSystem {
-  destroyMentionSystem();
-  return getMentionSystem(config);
-}

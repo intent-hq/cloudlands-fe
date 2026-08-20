@@ -14,9 +14,8 @@
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import {
     selectAgentSession,
-    selectAgentIsResponding,
+    selectAgentPreview,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import { selectChatReceivedFirstChunk } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import {
     deleteAgentWithUndoRequested,
     ensureAgentSessionLoaded,
@@ -26,9 +25,6 @@
 
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
-  import { getLastMeaningfulLine, stripUserMessagePrefixes } from '$lib/utils/text-utils';
-  import { classifyTool } from './tool-classifier';
-  import { deriveAgentCardPreview } from './agent-card-preview';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
   import { renderInlineMarkdownPlainText } from './inline-markdown-snippet';
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
@@ -434,7 +430,6 @@
   // Reactive agent session from Redux; ensureAgentSessionLoaded dispatch
   // above handles the disk restore.
   const agent$ = selectAgentSession(agentIdStore);
-  const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
   const agentData = $derived(getAgentPeekData($agent$));
 
   // Get parent agent ID from metadata (for delegation info)
@@ -454,15 +449,8 @@
   // Get line changes for this agent
   const lineChanges$ = selectAgentLineStats(agentIdStore);
 
-  // Per-turn "response text landed this turn" flag (chat-state): reset by
-  // `agent:stream:end`, flipped by the first text-bearing activity ping.
-  const receivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
-
   // Extract display data
   const displayName = $derived(agentData?.name || agentName || m.chat_shared_agentName_fallback());
-  // filter out [Currently viewing: ...] prefixes and @context[...] mentions
-  // (raw base64/pipe format) — shared with the HUD card line derivation.
-  const lastUserMsg = $derived(stripUserMessagePrefixes(agentData?.lastUserMessage ?? ''));
   // Pending attention request (discussion/blocker) from the daemon session
   // fields; null when none is pending (retired on agent:updated clear).
   const attentionRequest = $derived(getAgentAttentionRequest($agent$));
@@ -489,63 +477,26 @@
     return typeof path === 'string' && path.length > 0 ? path : null;
   });
 
-  // Preview precedence:
-  //   1. while a turn is live, the session's push-applied `lastAgentResponse`
-  //      (refreshed ~1s by `agent:stream:activity`, intentd#792; already
-  //      server-cleaned by `clean_response_text`) — gated on the per-turn
-  //      `receivedFirstChunk` flag (reset by `agent:stream:end`, flipped by
-  //      a text-bearing `agent:stream:activity`) so a leftover previous-turn
-  //      `lastAgentResponse` doesn't masquerade as this turn's text in the
-  //      pre-first-token window;
-  //   2. the persisted wire preview (idle agents) — agent-peek-utils serves
-  //      the wire `lastAgentResponse` verbatim; no stream buffer or
-  //      transcript re-derivation (monorepo#2843).
-  // Tool previews (lastToolUse) only kick in when there's no text to show.
-  const liveResponseLine = $derived.by(() => {
-    if ($agentIsResponding$ && $receivedFirstChunk$ && $agent$?.lastAgentResponse) {
-      const line = getLastMeaningfulLine($agent$.lastAgentResponse);
-      if (line) return line;
-    }
-    return '';
+  // Single preview value for the persistent container below, from the shared
+  // canonical selector (attention → live text → live tool → user line →
+  // digest/report → persisted fallbacks; see selectAgentPreview) so
+  // preview-source flips swap content in place instead of unmount/mounting
+  // sibling blocks with height animation. The event-data props
+  // (completionReport/lastResponseSummary) are component-side fallback inputs
+  // for the idle report arm — mirrored into writables and passed as selector
+  // args (smaller diff than re-folding the report-arm precedence here).
+  // svelte-ignore state_referenced_locally -- selectors are initialized with the current props; the effect below mirrors prop changes.
+  const completionReportStore = writable<string | undefined>(completionReport);
+  // svelte-ignore state_referenced_locally -- selectors are initialized with the current props; the effect below mirrors prop changes.
+  const lastResponseSummaryStore = writable<string | undefined>(lastResponseSummary);
+  $effect(() => {
+    completionReportStore.set(completionReport);
+    lastResponseSummaryStore.set(lastResponseSummary);
   });
-  const lastResponse = $derived(
-    liveResponseLine ||
-      (agentData?.lastResponse ? getLastMeaningfulLine(agentData.lastResponse) : ''),
-  );
-
-  // Freshness-wins preview: when the newest transcript message is the user's
-  // (wire `lastMessageRole`, transcript-derived fallback in agent-peek-utils)
-  // and no streamed text exists yet for an in-flight turn, the user's first
-  // line outranks digest/completionReport/lastResponse/lastToolUse (attention
-  // requests still take top precedence). Absent role (older daemon) keeps the
-  // existing precedence. Once streamed text lands (or the daemon overlay flips
-  // the role to "assistant"), the live-preview precedence above resumes.
-  // Text source: transcript-derived first, then the wire `lastUserMessage`
-  // (AgentLite list/get projection) — agent-peek-utils applies this fallback
-  // itself; the direct session read remains as a belt-and-braces fallback.
-  const userFirstLine = $derived(
-    stripUserMessagePrefixes(agentData?.lastUserMessage || $agent$?.lastUserMessage || '')
-      .split('\n')[0]
-      ?.trim() ?? '',
-  );
-
-  // Tool-use block to preview when the latest thing the agent did was a tool
-  // call (see agent-peek-utils). Only used when there's no text to display.
-  const lastToolUse = $derived(agentData?.lastToolUse);
-  const liveToolUse = $derived(
-    $agent$?.isStreaming && $agent$?.lastToolUse ? lastToolUse : undefined,
-  );
-  const liveToolDisplay = $derived(
-    liveToolUse
-      ? classifyTool(liveToolUse.name, (liveToolUse.input as Record<string, any>) || {})
-      : null,
-  );
-  const hasRenderableLiveTool = $derived(!!liveToolUse && !liveToolDisplay?.hidden);
-  const showUserMessagePreview = $derived(
-    agentData?.lastMessageRole === 'user' &&
-      !!userFirstLine &&
-      !liveResponseLine &&
-      !hasRenderableLiveTool,
+  const preview$ = selectAgentPreview(
+    agentIdStore,
+    completionReportStore,
+    lastResponseSummaryStore,
   );
 
   const updatedAt = $derived(updatedAtProp ?? $agent$?.updatedAt);
@@ -563,51 +514,8 @@
     return 'glow-transparent';
   });
 
-  // Show completion report if available - priority order:
-  // 0. Live session digest while responding (push-applied from
-  //    `agent:stream:activity` and cleared at each turn's first ping by the
-  //    events bridge, monorepo#1327 — so mid-turn it is this turn's digest,
-  //    modulo the sub-second window before that first ping lands, during
-  //    which the previous turn's digest may briefly linger)
-  // 1. Digest from <agent_digest> tag (most concise, agent-provided summary)
-  // 2. Completion report from report_to_parent tool (prop from event data)
-  // 3. Completion report from agent metadata
-  // 4. lastResponseSummary (fallback from event data)
-  // Sources 1-4 are previous-turn summaries: while the agent is responding
-  // they must never be the preview (monorepo#1327) — including the tool-only
-  // no-text window where no `receivedFirstChunk` flip has happened yet — so
-  // the derivation yields undefined and the render chain falls through to
-  // live text / newest user message / tool preview. They remain the fallback
-  // for idle agents between turns.
-  const effectiveCompletionReport = $derived.by(() => {
-    if ($agentIsResponding$) {
-      return $agent$?.digest || undefined;
-    }
-    return (
-      agentData?.digest || completionReport || agentData?.completionReport || lastResponseSummary
-    );
-  });
-
-  // Single preview value for the persistent container below: the precedence
-  // chain (attention → live text → live tool → user line → digest/report →
-  // persisted fallbacks) collapses into one { kind, text/toolUse } value so
-  // preview-source flips swap content in place instead of unmount/mounting
-  // sibling blocks with height animation.
-  const preview = $derived(
-    deriveAgentCardPreview({
-      attentionRequest,
-      liveResponseLine,
-      liveToolUse,
-      hasRenderableLiveTool,
-      showUserMessagePreview,
-      userFirstLine,
-      effectiveCompletionReport,
-      lastResponse,
-      lastToolUse,
-      lastUserMsg,
-    }),
-  );
   const inlinePreviewSource = $derived.by(() => {
+    const preview = $preview$;
     if (!preview || preview.kind === 'live-tool' || preview.kind === 'last-tool') return '';
     if (preview.kind !== 'attention') return preview.text;
     const label =
@@ -790,14 +698,14 @@
             {/if}
 
             <!-- Inline mode: preview inline after name -->
-            {#if inline && !hidePreview && preview}
-              {#if preview.kind === 'live-tool' || preview.kind === 'last-tool'}
+            {#if inline && !hidePreview && $preview$}
+              {#if $preview$.kind === 'live-tool' || $preview$.kind === 'last-tool'}
                 <div
                   class="ml-2.5 min-w-0 flex-1 overflow-hidden whitespace-nowrap text-sm {INLINE_PEEK_TYPOGRAPHY_CLASS}"
                   data-testid="agent-card-preview"
                 >
                   <AgentPreviewToolLabel
-                    toolUse={preview.toolUse}
+                    toolUse={$preview$.toolUse}
                     showIcon={false}
                     class={INLINE_PEEK_TYPOGRAPHY_CLASS}
                   />
@@ -850,49 +758,49 @@
         </div>
 
         <!-- Non-inline mode: preview below header as before -->
-        {#if !inline && !hidePreview && preview}
+        {#if !inline && !hidePreview && $preview$}
           <div
             class="mt-0.5 w-full min-w-0 max-w-full overflow-hidden"
             data-testid="agent-card-preview-row"
             transition:safeSlide={{ axis: 'y', duration: 150 }}
           >
-            {#if preview.kind === 'attention'}
+            {#if $preview$.kind === 'attention'}
               <p
-                class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm {preview
+                class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm {$preview$
                   .attention.kind === 'blocker'
                   ? 'text-red-500'
                   : 'text-amber-500'}"
                 data-testid="agent-card-attention"
               >
-                {preview.attention.kind === 'blocker'
+                {$preview$.attention.kind === 'blocker'
                   ? m.chat_agentCard_attentionBlocker_label()
-                  : m.chat_agentCard_attentionDiscussion_label()}{#if preview.attention.reason}<span
+                  : m.chat_agentCard_attentionDiscussion_label()}{#if $preview$.attention.reason}<span
                     class="text-subtle"
                   >
-                    · {preview.attention.reason}</span
+                    · {$preview$.attention.reason}</span
                   >{/if}
               </p>
-            {:else if preview.kind === 'live-tool' || preview.kind === 'last-tool'}
+            {:else if $preview$.kind === 'live-tool' || $preview$.kind === 'last-tool'}
               <div
                 class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm text-subtle"
                 data-testid="agent-card-preview"
               >
-                <AgentPreviewToolLabel toolUse={preview.toolUse} animate={isRunning} />
+                <AgentPreviewToolLabel toolUse={$preview$.toolUse} animate={isRunning} />
               </div>
-            {:else if preview.kind === 'report'}
+            {:else if $preview$.kind === 'report'}
               <p
                 class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm text-subtle"
-                title={preview.text}
+                title={$preview$.text}
               >
-                {preview.text}
+                {$preview$.text}
               </p>
             {:else}
               <p
                 class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm text-subtle"
                 data-testid="agent-card-preview"
-                title={preview.text}
+                title={$preview$.text}
               >
-                {preview.text}
+                {$preview$.text}
               </p>
             {/if}
           </div>

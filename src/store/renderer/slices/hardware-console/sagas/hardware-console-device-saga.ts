@@ -107,7 +107,7 @@ function* watchIntegrationToggle(
  * stands — the single page is always the owner — and no channel is
  * returned. Otherwise returns the push channel for `watchConsoleOwnerPushes`.
  */
-export function* hydrateConsoleOwnerStatus() {
+function* hydrateConsoleOwnerStatus() {
   const ipc = yield* call(getConsoleOwnerBridge);
   if (ipc === null) return null;
   yield* put(consoleOwnerChanged(false));
@@ -127,7 +127,7 @@ export function* hydrateConsoleOwnerStatus() {
 }
 
 /** Applies main's per-window `owner-changed` pushes to the slice (#1928). */
-export function* watchConsoleOwnerPushes(pushes: EventChannel<boolean>) {
+function* watchConsoleOwnerPushes(pushes: EventChannel<boolean>) {
   try {
     while (true) {
       yield* put(consoleOwnerChanged(yield* take(pushes)));
@@ -138,7 +138,7 @@ export function* watchConsoleOwnerPushes(pushes: EventChannel<boolean>) {
 }
 
 /** Mutable owner flag shared with the device services' `isOwner` callbacks. */
-export interface ConsoleOwnerRef {
+interface ConsoleOwnerRef {
   current: boolean;
 }
 
@@ -150,7 +150,7 @@ export interface ConsoleOwnerRef {
  * initial emission (channel subscription) is skipped — boot attachment is
  * owned by `installHardwareConsoleLedStatus`.
  */
-export function* watchConsoleOwnerLedGate(
+function* watchConsoleOwnerLedGate(
   manager: HardwareConsoleManager,
   engine: HardwareLedEngine,
   ownerRef: ConsoleOwnerRef,
@@ -183,7 +183,7 @@ export function* watchHardwareConsoleEncoderHud() {
   yield* takeLatest([encoderHudShown, encoderHudHidden], hideEncoderHudAfterDelay);
 }
 
-export function* watchHardwareConsoleLedSnapshot(engine: HardwareLedEngine) {
+function* watchHardwareConsoleLedSnapshot(engine: HardwareLedEngine) {
   yield* takeLatestFromSelector(
     selectHardwareLedSnapshot,
     function* ({ payload }: SelectorChannelPayload<HardwareLedSnapshot>) {

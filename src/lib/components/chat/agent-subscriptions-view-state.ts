@@ -61,7 +61,3 @@ export function resetAgentSubscriptionsViewStateForTests(): void {
   finishedAgentsExpandedBySubscription.clear();
   expandedPrMonitorBySubscription.clear();
 }
-
-export function resetFinishedAgentsExpandedForTests(): void {
-  finishedAgentsExpandedBySubscription.clear();
-}

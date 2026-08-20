@@ -43,10 +43,10 @@ export const PTT_MIN_RECORDING_MS = 300;
  * Why a recording ended: a resolved gesture, the max-duration cap
  * (`auto-stop`), or a non-gesture surface's stop (`manual`).
  */
-export type PttStopReason = VoiceGestureStopReason | 'auto-stop' | 'manual';
+type PttStopReason = VoiceGestureStopReason | 'auto-stop' | 'manual';
 
 /** How a recording ended and whether the gesture requested an auto-send. */
-export interface PttOutcome {
+interface PttOutcome {
   stopReason: PttStopReason;
   autoSend: boolean;
 }

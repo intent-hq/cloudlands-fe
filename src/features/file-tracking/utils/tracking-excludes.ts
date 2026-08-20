@@ -17,7 +17,7 @@ export const DEFAULT_FILE_TRACKING_EXCLUDED_PATH_SEGMENTS = [
   '.nox',
 ] as const;
 
-export const DEFAULT_FILE_TRACKING_EXCLUDE_SAMPLE_LIMIT = 5;
+const DEFAULT_FILE_TRACKING_EXCLUDE_SAMPLE_LIMIT = 5;
 
 export interface FileTrackingExcludeCandidate {
   path?: string;

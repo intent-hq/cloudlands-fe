@@ -7,61 +7,11 @@
  * For agents without a specialist, uses "Agent" as the base name.
  */
 
-import {
-  uniqueNamesGenerator,
-  adjectives,
-  animals,
-} from 'unique-names-generator';
 
 /**
  * Maximum length for generated agent names
  */
 const MAX_NAME_LENGTH = 80;
-
-/**
- * List of adjectives to block from agent names.
- * These words may be inappropriate or could cause confusion in a professional context.
- */
-const BLOCKED_ADJECTIVES = new Set([
-  'gay',
-  'sexual',
-  'sexy',
-  'erotic',
-  'nude',
-  'naked',
-  'horny',
-  'kinky',
-  'slutty',
-  'naughty',
-  'dirty',
-  'drunk',
-  'stoned',
-  'wasted',
-  'racist',
-  'sexist',
-]);
-
-/**
- * Filtered list of adjectives that excludes inappropriate words.
- * Created once at module load for performance.
- */
-const safeAdjectives = adjectives.filter(
-  (adj) => !BLOCKED_ADJECTIVES.has(adj.toLowerCase()),
-);
-
-/**
- * Generate a random agent name in "Adjective Animal" format (e.g., "Witty Penguin", "Swift Falcon").
- * @deprecated Prefer generateSpecialistAgentName() which uses the specialist name + number.
- * Kept for backward compatibility in deep fallback paths.
- */
-export function generateRandomAgentName(): string {
-  return uniqueNamesGenerator({
-    dictionaries: [safeAdjectives, animals],
-    separator: ' ',
-    style: 'capital',
-    length: 2,
-  });
-}
 
 /**
  * Generate an agent name based on the specialist role, appending a number
@@ -99,16 +49,8 @@ export function generateSpecialistAgentName(baseName: string, existingNames: str
   return `${normalizedBase} ${counter}`;
 }
 
-/**
- * Default name for agents without a derived name.
- * Use this constant throughout the codebase for consistency.
- * @deprecated Use generateSpecialistAgentName() for new agents.
- * This constant is kept for backwards compatibility with existing code that checks for generic names.
- */
-export const DEFAULT_AGENT_NAME = 'Coordinator';
-
 // Re-export name classification functions from shared module (usable in both main and renderer)
-export { isGenericAgentName, isRandomAgentName } from '$shared/utils/agent-name-utils';
+export { isGenericAgentName } from '$shared/utils/agent-name-utils';
 
 /**
  * Generate an agent name from a message or task text.

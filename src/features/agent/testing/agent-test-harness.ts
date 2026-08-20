@@ -45,7 +45,8 @@ function rememberHarnessSession(session: AgentSession): void {
   const agentId = session.id as string;
   const workspaceId = session.workspaceId as string;
   harnessRendererState.agentSessions.byAgentId[agentId] = session;
-  const workspaceAgentIds = harnessRendererState.agentSessions.agentIdsByWorkspace[workspaceId] || [];
+  const workspaceAgentIds =
+    harnessRendererState.agentSessions.agentIdsByWorkspace[workspaceId] || [];
   if (!workspaceAgentIds.includes(agentId)) {
     harnessRendererState.agentSessions.agentIdsByWorkspace[workspaceId] = [
       ...workspaceAgentIds,
@@ -128,7 +129,7 @@ export interface OperationMetric {
   metadata?: Record<string, any>;
 }
 
-export interface TestError {
+interface TestError {
   timestamp: number;
   phase: 'setup' | 'execution' | 'teardown';
   error: Error;
@@ -517,7 +518,7 @@ export class AgentTestHarness extends EventEmitter {
     p99ResponseTime: number;
     totalOperations: number;
     memoryLeakDetected: boolean;
-    } {
+  } {
     // Calculate response time percentiles
     const responseTimes = this.metrics.performance.responseTimes.sort((a, b) => a - b);
     const avgResponseTime =
@@ -1405,11 +1406,9 @@ export class AgentTestHarness extends EventEmitter {
             metrics.totalMessages++;
 
             try {
-              await this.sendMessage(
-                agent.id,
-                `Stress test message ${i}`,
-                { streaming: options.streaming },
-              );
+              await this.sendMessage(agent.id, `Stress test message ${i}`, {
+                streaming: options.streaming,
+              });
 
               const responseTime = Date.now() - msgStartTime;
               responseTimes.push(responseTime);

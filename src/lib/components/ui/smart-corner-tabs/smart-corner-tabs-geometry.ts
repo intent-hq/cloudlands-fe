@@ -9,7 +9,7 @@ export interface SurfaceGeometry {
   outerRadius: number;
 }
 
-export const CUBIC_KAPPA = 0.55228475;
+const CUBIC_KAPPA = 0.55228475;
 
 export function clampSurfaceGeometry(input: SurfaceGeometry): SurfaceGeometry {
   const width = Math.max(1, input.width);

@@ -17,7 +17,7 @@
 /** Reads allowed on the wire at once. Sized to stay well under the daemon's overload threshold. */
 export const MAX_CONCURRENT_WORKSPACE_READS = 6;
 
-export interface WorkspaceReadSlot {
+interface WorkspaceReadSlot {
   /** `true` once this slot is owned by the caller and the read may start. */
   readonly granted: boolean;
   /** Resolves when the slot is granted. Already resolved when `granted` is `true`. */

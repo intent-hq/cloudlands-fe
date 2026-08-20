@@ -10,7 +10,7 @@ function containsPanel(node: PanelLayoutNode, panelId: string): boolean {
   return node.children.some((child) => containsPanel(child, panelId));
 }
 
-export function getCompactPanelLayoutWidth(node: PanelLayoutNode): number {
+function getCompactPanelLayoutWidth(node: PanelLayoutNode): number {
   if (node.type === 'panel') return MIN_PANEL_CANVAS_WIDTH;
   const childWidths = node.children.map(getCompactPanelLayoutWidth);
   if (node.direction === 'vertical') return Math.max(MIN_PANEL_CANVAS_WIDTH, ...childWidths);

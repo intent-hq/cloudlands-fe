@@ -237,7 +237,7 @@ export function resizeRootHorizontalPanel(
   };
 }
 
-export function createHorizontalRoot(panelIds: string[]): PanelLayoutNode {
+function createHorizontalRoot(panelIds: string[]): PanelLayoutNode {
   if (panelIds.length === 1) return { type: 'panel', panelId: panelIds[0] };
   const size = 100 / panelIds.length;
   return {

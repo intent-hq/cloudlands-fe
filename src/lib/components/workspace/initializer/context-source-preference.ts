@@ -12,12 +12,7 @@ export type ContextSourceProvider = 'github' | 'linear' | 'sentry';
 
 export const LAST_SOURCE_STORAGE_KEY = 'context-picker:last-source';
 
-const ALL_SOURCES: readonly ContextSource[] = [
-  'linear',
-  'github-issues',
-  'github-prs',
-  'sentry',
-];
+const ALL_SOURCES: readonly ContextSource[] = ['linear', 'github-issues', 'github-prs', 'sentry'];
 
 /** Alphabetical baseline order of providers. */
 const ALL_PROVIDERS: readonly ContextSourceProvider[] = ['github', 'linear', 'sentry'];
@@ -35,11 +30,11 @@ export interface ProviderConnectionState {
   sentry: boolean;
 }
 
-export function providerOfSource(source: ContextSource): ContextSourceProvider {
+function providerOfSource(source: ContextSource): ContextSourceProvider {
   return source === 'github-issues' || source === 'github-prs' ? 'github' : source;
 }
 
-export function isContextSource(value: unknown): value is ContextSource {
+function isContextSource(value: unknown): value is ContextSource {
   return typeof value === 'string' && (ALL_SOURCES as readonly string[]).includes(value);
 }
 

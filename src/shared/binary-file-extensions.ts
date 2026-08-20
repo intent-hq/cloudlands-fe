@@ -9,7 +9,7 @@
  * Known binary file extensions that should never be diffed.
  * These files will show as "Binary file" in the UI.
  */
-export const BINARY_FILE_EXTENSIONS = new Set([
+const BINARY_FILE_EXTENSIONS = new Set([
   // Machine Learning / AI / Scientific Data
   '.onnx',
   '.onnx_data',
@@ -29,10 +29,10 @@ export const BINARY_FILE_EXTENSIONS = new Set([
   '.mlmodel',
   '.pb',
   '.ckpt',
-  '.mat',    // MATLAB data files
+  '.mat', // MATLAB data files
   '.parquet', // Apache Parquet columnar data
   '.feather', // Apache Arrow Feather format
-  '.arrow',   // Apache Arrow IPC format
+  '.arrow', // Apache Arrow IPC format
 
   // WebAssembly
   '.wasm',
@@ -126,7 +126,7 @@ export const BINARY_FILE_EXTENSIONS = new Set([
 /**
  * Patterns for files that should be skipped (lock files, minified, build artifacts)
  */
-export const SKIP_FILE_PATTERNS = [
+const SKIP_FILE_PATTERNS = [
   /package-lock\.json$/,
   /yarn\.lock$/,
   /pnpm-lock\.yaml$/,
@@ -162,7 +162,7 @@ export function isBinaryExtension(filePath: string): boolean {
 /**
  * Check if a file matches skip patterns (lock files, minified, build artifacts)
  */
-export function matchesSkipPattern(filePath: string): boolean {
+function matchesSkipPattern(filePath: string): boolean {
   return SKIP_FILE_PATTERNS.some((pattern) => pattern.test(filePath));
 }
 

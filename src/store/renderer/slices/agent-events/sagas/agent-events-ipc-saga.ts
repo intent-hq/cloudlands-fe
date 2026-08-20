@@ -23,12 +23,22 @@ type AgentEvent =
   | { kind: 'auth-required'; data?: AgentAuthRequiredEvent }
   | { kind: 'plan-required'; data?: AgentPlanRequiredEvent };
 
-export function createAgentEventsChannel(): EventChannel<AgentEvent> {
+function createAgentEventsChannel(): EventChannel<AgentEvent> {
   return eventChannel<AgentEvent>((emit) => {
     if (!isElectron() || typeof window === 'undefined' || !window.electronAPI?.on) return () => {};
     const listeners = [
-      ['agent:auth-required', window.electronAPI.on('agent:auth-required', (data) => emit({ kind: 'auth-required', data }))],
-      ['agent:plan-required', window.electronAPI.on('agent:plan-required', (data) => emit({ kind: 'plan-required', data }))],
+      [
+        'agent:auth-required',
+        window.electronAPI.on('agent:auth-required', (data) =>
+          emit({ kind: 'auth-required', data }),
+        ),
+      ],
+      [
+        'agent:plan-required',
+        window.electronAPI.on('agent:plan-required', (data) =>
+          emit({ kind: 'plan-required', data }),
+        ),
+      ],
     ] as const;
     return () => {
       for (const [channel, id] of listeners) window.electronAPI.offById(channel, id);

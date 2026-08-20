@@ -11,7 +11,7 @@ import {
 } from './command-palette-utils';
 import { m } from '$shared/paraglide/messages.js';
 
-export interface PaletteCommand {
+interface PaletteCommand {
   id: string;
   label: string;
   pillLabel?: string;
@@ -21,7 +21,7 @@ export interface PaletteCommand {
   navigationIcon?: 'spaces' | 'tabs';
 }
 
-export interface WorkspaceItem {
+interface WorkspaceItem {
   id: string;
   label: string;
   icon: any;

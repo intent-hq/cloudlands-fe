@@ -8,10 +8,7 @@
  * 4. Depth-based limits - control max render depth
  */
 
-import {
-  hierarchy,
-  pack,
-} from 'd3';
+import { hierarchy, pack } from 'd3';
 import { m } from '$shared/paraglide/messages.js';
 import type { FileNode, ProcessedNode, BlobShape } from './types';
 import { getColorForExtension } from './language-colors';
@@ -373,13 +370,6 @@ export function processTree(
  */
 export function getLeafNodes(nodes: ProcessedNode[]): ProcessedNode[] {
   return nodes.filter((n) => !n.isFolder);
-}
-
-/**
- * Get folder nodes for blob shapes
- */
-export function getFolderNodes(nodes: ProcessedNode[]): ProcessedNode[] {
-  return nodes.filter((n) => n.isFolder);
 }
 
 /**

@@ -40,7 +40,7 @@ import type { AgentExecutorContext } from '$store/renderer/slices/background-age
 import type { ExecutorStatus } from '$store/renderer/slices/background-agent-executor/background-agent-executor-types';
 
 import type { Workspace } from '$shared/types';
-  import { store as appStore } from '$store/renderer/store';
+import { store as appStore } from '$store/renderer/store';
 
 export interface UseBackgroundAgentOptions {
   autoExecute?: boolean; // Execute immediately when workspace is available
@@ -87,39 +87,4 @@ export function useBackgroundAgent(
       if (wsId) appStore.dispatch(resetExecutor(wsId, type));
     },
   };
-}
-
-/**
- * Preset hooks for common use cases
- */
-export function useCommitMessage(options?: UseBackgroundAgentOptions) {
-  return useBackgroundAgent('commit', {
-    resultTag: 'COMMIT_MESSAGE',
-    timeout: 30000,
-    ...options,
-  });
-}
-
-export function usePRDescription(options?: UseBackgroundAgentOptions) {
-  return useBackgroundAgent('pr', {
-    resultTag: 'PR_DESCRIPTION',
-    timeout: 45000,
-    ...options,
-  });
-}
-
-export function useCodeReview(options?: UseBackgroundAgentOptions) {
-  return useBackgroundAgent('review', {
-    resultTag: 'CODE_REVIEW',
-    timeout: 60000,
-    ...options,
-  });
-}
-
-export function useCodeWalkthrough(options?: UseBackgroundAgentOptions) {
-  return useBackgroundAgent('walkthrough', {
-    resultTag: 'CODE_WALKTHROUGH',
-    timeout: 120000, // 2 minutes for walkthrough generation
-    ...options,
-  });
 }

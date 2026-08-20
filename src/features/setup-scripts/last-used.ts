@@ -19,7 +19,7 @@ export const MAX_REPOS = 20;
 
 const NAME_SOURCES: readonly SetupScriptNameSource[] = ['repo-config', 'custom', 'named'];
 
-export interface LastUsedSetupScript {
+interface LastUsedSetupScript {
   name: string;
   content: string;
   /** ISO timestamp of the workspace creation that used the script. */

@@ -21,5 +21,6 @@ export const badgeVariants = tv({
   },
 });
 
+/** @public contract-tested export surface (badge.test.ts scans for this export) */
 export type BadgeVariant = VariantProps<typeof badgeVariants>['variant'];
 export type BadgeProps = WithElementRef<HTMLAnchorAttributes> & { variant?: BadgeVariant };

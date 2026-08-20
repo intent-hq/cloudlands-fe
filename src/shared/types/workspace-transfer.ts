@@ -12,21 +12,9 @@
  * renderer, preload, and main.
  */
 
-import { IPC_CHANNELS } from '../ipc-registry';
-
-/** Request/response + push channel names for the transfer relay. */
-export const TRANSFER_CHANNELS = IPC_CHANNELS.TRANSFER;
-
-/**
- * Push-event channel (main → renderer). Mirrored as a literal in
- * `EVENT_CHANNELS` (ipc-registry.ts) so the preload allow-list includes it.
- */
-export const TRANSFER_PROGRESS_EVENT = 'transfer:progress';
 
 /** Where the transfer goes (mirrors the renderer's `TransferDestination`). */
-export type TransferRelayDestination =
-  | { kind: 'server'; connectionId: string }
-  | { kind: 'download' };
+type TransferRelayDestination = { kind: 'server'; connectionId: string } | { kind: 'download' };
 
 /** `transfer:start` params. */
 export interface TransferStartParams {
@@ -41,7 +29,7 @@ export interface TransferStartParams {
  *  - `relaying` — chunks are moving source → main → target/file.
  *  - `committing` — target is reassembling/committing the import.
  */
-export type TransferRelayPhase = 'building' | 'relaying' | 'committing';
+type TransferRelayPhase = 'building' | 'relaying' | 'committing';
 
 /** `transfer:progress` push payload (counters only — never bytes). */
 export interface TransferProgressEvent {
@@ -101,12 +89,6 @@ export interface TransferCancelResult {
   error?: string;
 }
 
-/**
- * Push-event channel (main → renderer) for the import-from-file flow.
- * Mirrored as a literal in `EVENT_CHANNELS` (ipc-registry.ts).
- */
-export const TRANSFER_IMPORT_PROGRESS_EVENT = 'transfer:import-progress';
-
 /** `transfer:import-start` params. */
 export interface ImportStartParams {
   /** Re-run against the previously picked file (retry) instead of a dialog. */
@@ -119,7 +101,7 @@ export interface ImportStartParams {
  *  - `uploading` — base64 chunks are moving file → main → current backend.
  *  - `committing` — the backend is reassembling/committing the import.
  */
-export type ImportRelayPhase = 'reading' | 'uploading' | 'committing';
+type ImportRelayPhase = 'reading' | 'uploading' | 'committing';
 
 /** `transfer:import-progress` push payload (counters only — never bytes). */
 export interface ImportProgressEvent {

@@ -14,30 +14,3 @@ export interface IDisposable {
    */
   dispose(): void;
 }
-
-/**
- * Check if an object is disposable
- */
-export function isDisposable(obj: any): obj is IDisposable {
-  return obj && typeof obj.dispose === 'function';
-}
-
-/**
- * Safely dispose of an object
- */
-export function safeDispose(obj: any): void {
-  if (isDisposable(obj)) {
-    try {
-      obj.dispose();
-    } catch {
-      // Silently catch disposal errors to prevent cascading failures
-    }
-  }
-}
-
-/**
- * Dispose of multiple objects
- */
-export function disposeAll(...objects: any[]): void {
-  objects.forEach(safeDispose);
-}

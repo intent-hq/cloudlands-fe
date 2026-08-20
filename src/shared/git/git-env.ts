@@ -37,7 +37,7 @@ const ASKPASS_SCRIPT_NAME =
  *
  * Returns undefined if the script cannot be found.
  */
-export function getSSHAskPassPath(): string | undefined {
+function getSSHAskPassPath(): string | undefined {
   const fs = require('fs');
 
   // Try development path first: __dirname is src/shared/git, go up to project root
@@ -62,63 +62,6 @@ export function getSSHAskPassPath(): string | undefined {
   }
 
   return undefined;
-}
-
-// ============================================================================
-// Keychain Access Detection
-// ============================================================================
-
-/**
- * Result of keychain access risk detection
- */
-export interface KeychainAccessRisk {
-  /** Whether keychain access is likely to be triggered */
-  willTriggerKeychain: boolean;
-  /** The credential helper that will be used (if any) */
-  credentialHelper: string | null;
-  /** Whether the remote uses HTTPS (vs SSH) */
-  isHttpsRemote: boolean;
-  /** The remote URL being accessed */
-  remoteUrl: string | null;
-  /** Human-readable explanation */
-  reason: string;
-}
-
-/**
- * Credential helpers that trigger macOS keychain access dialogs.
- *
- * IMPORTANT: Only include helpers that directly use the macOS Keychain in a way
- * that triggers the "allow access" dialog when credentials were stored by a
- * different application (different code signature).
- *
- * NOT included:
- * - git-credential-manager (GCM): Uses its own credential storage and OAuth flow.
- *   While GCM may use Keychain internally, it manages its own ACLs and doesn't
- *   trigger the problematic "allow access" dialog we're warning users about.
- * - manager, manager-core: These are GCM aliases, same reasoning applies.
- */
-const KEYCHAIN_CREDENTIAL_HELPERS = ['osxkeychain', 'git-credential-osxkeychain'];
-
-/**
- * Check if a URL is an HTTPS git remote (vs SSH)
- */
-export function isHttpsRemote(url: string): boolean {
-  if (!url) return false;
-  const trimmed = url.trim();
-  return trimmed.startsWith('https://') || trimmed.startsWith('http://');
-}
-
-/**
- * Check if a URL is an SSH git remote
- */
-export function isSSHRemote(url: string): boolean {
-  if (!url) return false;
-  const trimmed = url.trim();
-  return (
-    trimmed.startsWith('git@') ||
-    trimmed.startsWith('ssh://') ||
-    /^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:/.test(trimmed)
-  );
 }
 
 /**
@@ -155,69 +98,12 @@ function getSSHAuthSock(): string | undefined {
   return undefined;
 }
 
-export type GitTerminalPromptPolicy = 'disable' | 'allow' | 'inherit';
-export type GitCredentialHelperPolicy = 'disable' | 'allow' | 'inherit';
+type GitTerminalPromptPolicy = 'disable' | 'allow' | 'inherit';
+type GitCredentialHelperPolicy = 'disable' | 'allow' | 'inherit';
 
-export interface GitEnvPolicy {
+interface GitEnvPolicy {
   terminalPrompt?: GitTerminalPromptPolicy;
   credentialHelper?: GitCredentialHelperPolicy;
-}
-
-/**
- * Environment variables for git operations.
- * Properly handles both SSH and HTTPS authentication.
- *
- * Key considerations:
- * - SSH: Ensure SSH_AUTH_SOCK is available for SSH agent
- * - HTTPS: Disable prompts but allow credential helpers to work non-interactively
- *
- * Also ensures PATH includes essential system directories for macOS GUI apps.
- *
- * @example
- * ```typescript
- * import {
-  gitEnv,
-  execAsync,
-  execFileAsync,
-  execAsyncWithRetry,
-} from '@/shared/git/git-env';
- *
- * spawn('git', ['status'], { env: gitEnv });
- * exec('git status', { env: gitEnv });
- * ```
- */
-export const gitEnv: NodeJS.ProcessEnv = buildGitEnv();
-
-/**
- * Create a git environment with additional custom variables.
- * Useful when you need to add extra env vars while keeping the base git config.
- *
- * @example
- * ```typescript
- * const env = createGitEnv({ MY_VAR: 'value' }, { credentialHelper: 'allow' });
- * spawn('git', ['status'], { env });
- * ```
- */
-export function createGitEnv(
-  additionalEnv?: NodeJS.ProcessEnv,
-  policy?: GitEnvPolicy,
-): NodeJS.ProcessEnv {
-  return buildGitEnv(additionalEnv, policy);
-}
-
-/**
- * Create a base shell environment for interactive terminals.
- * Ensures PATH/SSH_AUTH_SOCK are present without forcing non-interactive git settings.
- */
-export function createShellEnv(additionalEnv?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    // Ensure PATH includes essential system directories (critical for macOS GUI apps)
-    PATH: getEnhancedPath(),
-    // Ensure SSH agent socket is available (critical for SSH-based git remotes)
-    SSH_AUTH_SOCK: getSSHAuthSock() || process.env.SSH_AUTH_SOCK,
-    ...additionalEnv,
-  };
 }
 
 // ============================================================================
@@ -225,10 +111,7 @@ export function createShellEnv(additionalEnv?: NodeJS.ProcessEnv): NodeJS.Proces
 // ============================================================================
 
 import { Buffer } from 'node:buffer';
-import {
-  hostExecStream,
-  type HostExecStreamOptions,
-} from '../main/host-exec-stream';
+import { hostExecStream, type HostExecStreamOptions } from '../main/host-exec-stream';
 
 export interface ExecOptions {
   cwd?: string;
@@ -272,7 +155,7 @@ function applyGitEnvPolicy(env: NodeJS.ProcessEnv, policy?: GitEnvPolicy): NodeJ
  * Uses lazy import to avoid circular dependency between shared/ and features/.
  * Returns undefined if not set or if settings are unavailable.
  */
-export function getConfiguredSshKeyPath(): string | undefined {
+function getConfiguredSshKeyPath(): string | undefined {
   try {
     // Lazy import to avoid circular dependency (shared/ -> features/)
     // This mirrors the pattern used by getSSHAskPassPath() with require('electron')
@@ -418,8 +301,7 @@ async function runViaHostStream(
     throw err;
   }
 
-  const exitCode =
-    typeof result.exitCode === 'number' ? result.exitCode : result.ok ? 0 : 1;
+  const exitCode = typeof result.exitCode === 'number' ? result.exitCode : result.ok ? 0 : 1;
   if (exitCode !== 0) {
     const err = new Error(`Command failed: ${label}\n${stderr}`) as ExecError;
     err.stdout = stdout;
@@ -464,355 +346,4 @@ export async function execFileAsync(
   options?: ExecOptions,
 ): Promise<ExecResult> {
   return runViaHostStream(file, args, options, `${file} ${args.join(' ')}`);
-}
-
-// ============================================================================
-// Robust exec with retry logic for transient errors
-// ============================================================================
-
-
-
-// Default timeout for exec commands (2 minutes) to prevent UI freezes
-const DEFAULT_EXEC_TIMEOUT_MS = 120_000;
-
-// Default retry configuration
-const DEFAULT_MAX_RETRIES = 3;
-const DEFAULT_INITIAL_DELAY_MS = 100;
-const DEFAULT_MAX_DELAY_MS = 2000;
-
-/**
- * Transient error codes that should trigger a retry.
- * These are typically resource exhaustion errors that resolve on their own.
- */
-const TRANSIENT_ERROR_CODES = [
-  'EAGAIN', // Resource temporarily unavailable (too many processes/file descriptors)
-  'EMFILE', // Too many open files in system
-  'ENFILE', // Too many open files
-  'EBUSY', // Resource busy
-  'ETIMEDOUT', // Connection timed out (for network operations)
-  'ECONNRESET', // Connection reset
-  'EPIPE', // Broken pipe
-];
-
-/**
- * Check if an error is transient and should be retried.
- */
-function isTransientError(error: NodeJS.ErrnoException): boolean {
-  if (!error) return false;
-
-  // Check error code
-  if (error.code && TRANSIENT_ERROR_CODES.includes(error.code)) {
-    return true;
-  }
-
-  // Check error message for transient patterns
-  const message = error.message?.toLowerCase() || '';
-  return (
-    message.includes('eagain') ||
-    message.includes('resource temporarily unavailable') ||
-    message.includes('too many open files') ||
-    message.includes('emfile') ||
-    message.includes('enfile') ||
-    message.includes('ebusy')
-  );
-}
-
-/**
- * Calculate delay with exponential backoff and jitter.
- */
-function calculateBackoffDelay(attempt: number, initialDelay: number, maxDelay: number): number {
-  // Exponential backoff: initialDelay * 2^attempt
-  const exponentialDelay = initialDelay * Math.pow(2, attempt);
-  // Add jitter (±25%) to prevent thundering herd
-  const jitter = exponentialDelay * 0.25 * (Math.random() * 2 - 1);
-  const delay = Math.min(exponentialDelay + jitter, maxDelay);
-  return Math.max(0, delay);
-}
-
-export interface RetryOptions {
-  /** Maximum number of retry attempts (default: 3) */
-  maxRetries?: number;
-  /** Initial delay in ms before first retry (default: 100) */
-  initialDelayMs?: number;
-  /** Maximum delay in ms between retries (default: 2000) */
-  maxDelayMs?: number;
-}
-
-/**
- * Execute a shell command with git-safe environment, retry logic for transient errors,
- * and EBADF fallback handling.
- *
- * This is the most robust exec function and should be used for critical operations
- * that must not fail due to transient system resource issues.
- *
- * Features:
- * - Automatic retry with exponential backoff for EAGAIN, EMFILE, EBUSY, etc.
- * - Falls back to spawn if exec fails with EBADF (broken pipe) errors
- * - Default 2 minute timeout to prevent indefinite hangs
- *
- * @example
- * ```typescript
- *
- *
- * const { stdout } = await execAsyncWithRetry('git status', { cwd: '/path/to/repo' });
- * // Or with custom retry options:
- * const { stdout } = await execAsyncWithRetry('auggie --version', {
- *   timeout: 10000,
- *   maxRetries: 5,
- *   initialDelayMs: 50,
- * });
- * ```
- */
-export async function execAsyncWithRetry(
-  command: string,
-  options?: ExecOptions & RetryOptions,
-): Promise<ExecResult> {
-  const maxRetries = options?.maxRetries ?? DEFAULT_MAX_RETRIES;
-  const initialDelayMs = options?.initialDelayMs ?? DEFAULT_INITIAL_DELAY_MS;
-  const maxDelayMs = options?.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
-  const timeout = options?.timeout ?? DEFAULT_EXEC_TIMEOUT_MS;
-
-  const execOptions: ExecOptions = {
-    ...options,
-    timeout,
-  };
-
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await execAsync(command, execOptions);
-    } catch (error) {
-      const errnoError = error as NodeJS.ErrnoException;
-      lastError = errnoError;
-
-      // If it's a transient error and we have retries left, wait and retry
-      if (isTransientError(errnoError) && attempt < maxRetries) {
-        const delay = calculateBackoffDelay(attempt, initialDelayMs, maxDelayMs);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        continue;
-      }
-
-      // If we get EBADF error, try using spawn as a fallback (no retry needed)
-      if (errnoError.code === 'EBADF' || errnoError.message?.includes('EBADF')) {
-        return execWithSpawnFallback(command, execOptions);
-      }
-
-      // Non-transient error or out of retries
-      throw error;
-    }
-  }
-
-  // Should not reach here, but just in case
-  throw lastError || new Error(`Command failed after ${maxRetries} retries: ${command}`);
-}
-
-/**
- * Fallback exec path retained for the retry wrapper's EBADF branch. The former
- * local `child_process.spawn` fallback is gone — every exec now routes through
- * the daemon — so this simply re-issues the shell-form command over
- * `host.execStream`, preserving the `{ stdout, stderr }` / throw-on-non-zero
- * contract.
- */
-function execWithSpawnFallback(command: string, options?: ExecOptions): Promise<ExecResult> {
-  const timeout = options?.timeout ?? DEFAULT_EXEC_TIMEOUT_MS;
-  const [shellCmd, shellFlag] = resolveShell(options);
-  return runViaHostStream(shellCmd, [shellFlag, command], { ...options, timeout }, command);
-}
-
-/**
- * @deprecated Use execAsyncWithRetry instead for better error handling.
- * Execute a shell command with git-safe environment and EBADF error handling.
- * Falls back to spawn if exec fails with EBADF (broken pipe) errors.
- * All commands have a default 2 minute timeout to prevent indefinite hangs.
- */
-export async function execAsyncRobust(command: string, options?: ExecOptions): Promise<ExecResult> {
-  // Delegate to the new retry-enabled function
-  return execAsyncWithRetry(command, options);
-}
-
-// ============================================================================
-// Keychain Access Detection Functions
-// ============================================================================
-
-/**
- * Get the configured credential helpers for a repository.
- * Checks local, global, and system git config.
- *
- * @param cwd - The repository path to check
- * @returns The credential helper names, or empty array if none configured
- */
-export async function getCredentialHelpers(cwd?: string): Promise<string[]> {
-  try {
-    // Check local config first, then global/system
-    const { stdout } = await execAsync('git config --get-all credential.helper', {
-      cwd,
-      timeout: 5000,
-    });
-    return stdout
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-  } catch {
-    // No credential helper configured or git command failed
-    return [];
-  }
-}
-
-/**
- * Get the remote URL for a repository.
- *
- * @param cwd - The repository path
- * @param remoteName - The remote name (default: 'origin')
- * @returns The remote URL, or null if not found
- */
-export async function getRemoteUrl(cwd: string, remoteName = 'origin'): Promise<string | null> {
-  try {
-    const { stdout } = await execAsync(`git remote get-url ${remoteName}`, {
-      cwd,
-      timeout: 5000,
-    });
-    return stdout.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Check if a credential helper is one that triggers macOS keychain access.
- */
-export function isKeychainCredentialHelper(helper: string | null): boolean {
-  if (!helper) return false;
-  const lowerHelper = helper.toLowerCase();
-  return KEYCHAIN_CREDENTIAL_HELPERS.some(
-    (kh) => lowerHelper.includes(kh.toLowerCase()) || lowerHelper === kh.toLowerCase(),
-  );
-}
-
-/**
- * Check if a credential helper is a Git Credential Manager helper.
- */
-export function isGcmCredentialHelper(helper: string | null): boolean {
-  if (!helper) return false;
-  const lowerHelper = helper.toLowerCase();
-  return (
-    lowerHelper === 'manager' ||
-    lowerHelper === 'manager-core' ||
-    lowerHelper === 'git-credential-manager' ||
-    lowerHelper.includes('git-credential-manager')
-  );
-}
-
-/**
- * Detect if a git network operation will likely trigger keychain access.
- *
- * This is used by git callers to decide whether a network operation should
- * enter the keychain consent path before running.
- *
- * @param cwd - The repository path
- * @param operation - The git operation (push, pull, fetch, clone)
- * @returns Risk assessment with details
- *
- * @example
- * ```typescript
- * const risk = await detectKeychainAccessRisk('/path/to/repo');
- * if (risk.willTriggerKeychain) {
- *   // Route through the keychain consent flow before continuing
- *   console.log(risk.reason);
- * }
- * ```
- */
-export async function detectKeychainAccessRisk(
-  cwd: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  operation: 'push' | 'pull' | 'fetch' | 'clone' = 'push',
-): Promise<KeychainAccessRisk> {
-  // Get remote URL
-  const remoteUrl = await getRemoteUrl(cwd);
-
-  // If no remote, no keychain access needed
-  if (!remoteUrl) {
-    return {
-      willTriggerKeychain: false,
-      credentialHelper: null,
-      isHttpsRemote: false,
-      remoteUrl: null,
-      reason: 'No remote configured',
-    };
-  }
-
-  // Check if it's an HTTPS remote
-  const isHttps = isHttpsRemote(remoteUrl);
-
-  // SSH remotes don't use credential helpers
-  if (!isHttps) {
-    return {
-      willTriggerKeychain: false,
-      credentialHelper: null,
-      isHttpsRemote: false,
-      remoteUrl,
-      reason: 'SSH remotes use SSH keys, not credential helpers',
-    };
-  }
-
-  // Get credential helpers (could be multiple)
-  const credentialHelpers = await getCredentialHelpers(cwd);
-
-  if (credentialHelpers.length === 0) {
-    return {
-      willTriggerKeychain: false,
-      credentialHelper: null,
-      isHttpsRemote: true,
-      remoteUrl,
-      reason: 'No credential helper configured - git will fail without credentials',
-    };
-  }
-
-  const usesGcm = credentialHelpers.some((helper) => isGcmCredentialHelper(helper));
-  const usesKeychain = credentialHelpers.some((helper) => isKeychainCredentialHelper(helper));
-  const credentialHelper = credentialHelpers[0] ?? null;
-
-  if (usesGcm) {
-    return {
-      willTriggerKeychain: false,
-      credentialHelper,
-      isHttpsRemote: true,
-      remoteUrl,
-      reason: `Using Git Credential Manager (${credentialHelper}) which does not require macOS keychain access dialogs`,
-    };
-  }
-
-  if (!usesKeychain) {
-    return {
-      willTriggerKeychain: false,
-      credentialHelper,
-      isHttpsRemote: true,
-      remoteUrl,
-      reason: `Using credential helper "${credentialHelper}" which does not use macOS keychain`,
-    };
-  }
-
-  // Cannot reliably detect when macOS will prompt for keychain access.
-  // Until detection is reliable, do not trigger the preflight consent flow.
-  return {
-    willTriggerKeychain: false,
-    credentialHelper,
-    isHttpsRemote: true,
-    remoteUrl,
-    reason: `Using keychain-based credential helper "${credentialHelper}" - cannot reliably detect if macOS will prompt`,
-  };
-}
-
-/**
- * Network operations that may trigger credential/keychain access
- */
-export const GIT_NETWORK_OPERATIONS = ['push', 'pull', 'fetch', 'clone', 'ls-remote'] as const;
-export type GitNetworkOperation = (typeof GIT_NETWORK_OPERATIONS)[number];
-
-/**
- * Check if a git command is a network operation that may need credentials
- */
-export function isNetworkOperation(command: string): boolean {
-  const lowerCommand = command.toLowerCase();
-  return GIT_NETWORK_OPERATIONS.some((op) => lowerCommand.includes(op));
 }

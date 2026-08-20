@@ -14,7 +14,7 @@ import {
 /**
  * Information about an invalid task link found in content
  */
-export interface InvalidTaskLink {
+interface InvalidTaskLink {
   /** The full matched text */
   fullMatch: string;
   /** The link text (task title) */

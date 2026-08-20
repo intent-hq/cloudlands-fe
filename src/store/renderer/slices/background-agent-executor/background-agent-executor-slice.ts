@@ -6,31 +6,28 @@
  * by executor type.
  */
 
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import type {
   BackgroundAgentExecutorState,
   ExecutorInstanceState,
   ExecutorStatus,
   AgentExecutorContext,
-} from "./background-agent-executor-types";
-import {
-  emptyExecutorState,
-  emptyWorkspaceState,
-} from "./background-agent-executor-types";
+} from './background-agent-executor-types';
+import { emptyExecutorState, emptyWorkspaceState } from './background-agent-executor-types';
 
 // ============================================================================
 // Workspace-scoped helpers
 // ============================================================================
 
-const { getWorkspaceState, setWorkspaceState } =
+const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceState);
 
 function getExecutor(
   state: BackgroundAgentExecutorState,
   workspaceId: string,
-  executorType: string
+  executorType: string,
 ): ExecutorInstanceState {
   const ws = getWorkspaceState(state, workspaceId);
   return ws.executors[executorType] ?? emptyExecutorState;
@@ -40,7 +37,7 @@ function setExecutor(
   state: BackgroundAgentExecutorState,
   workspaceId: string,
   executorType: string,
-  executor: ExecutorInstanceState
+  executor: ExecutorInstanceState,
 ): BackgroundAgentExecutorState {
   const ws = getWorkspaceState(state, workspaceId);
   return setWorkspaceState(state, workspaceId, {
@@ -53,45 +50,39 @@ function setExecutor(
 // Saga trigger actions (dispatched by consumers, handled by sagas)
 // ============================================================================
 
-export const executeBackgroundAgent = createAction<[
-  workspaceId: string,
-  executorType: string,
-  context?: AgentExecutorContext,
-]>("bgExecutor/execute");
+export const executeBackgroundAgent =
+  createAction<[workspaceId: string, executorType: string, context?: AgentExecutorContext]>(
+    'bgExecutor/execute',
+  );
 
-export const cancelExecution = createAction<[
-  workspaceId: string,
-  executorType: string,
-]>("bgExecutor/cancel");
+export const cancelExecution =
+  createAction<[workspaceId: string, executorType: string]>('bgExecutor/cancel');
 
-export const reconnectAgent = createAction<[
-  workspaceId: string,
-  executorType: string,
-  agentId: string,
-  savedState?: { status: ExecutorStatus; result: string | null },
-]>("bgExecutor/reconnect");
+export const reconnectAgent =
+  createAction<
+    [
+      workspaceId: string,
+      executorType: string,
+      agentId: string,
+      savedState?: { status: ExecutorStatus; result: string | null },
+    ]
+  >('bgExecutor/reconnect');
 
 // ============================================================================
 // Reducer actions (pure state updates, dispatched by sagas)
 // ============================================================================
 
-export const setExecutorState = createAction<[
-  workspaceId: string,
-  executorType: string,
-  updates: Partial<ExecutorInstanceState>,
-]>("bgExecutor/setExecutorState");
+export const setExecutorState = createAction<
+  [workspaceId: string, executorType: string, updates: Partial<ExecutorInstanceState>]
+>('bgExecutor/setExecutorState');
 
-export const resetExecutor = createAction<[
-  workspaceId: string,
-  executorType: string,
-]>("bgExecutor/resetExecutor");
+export const resetExecutor = createAction<[workspaceId: string, executorType: string]>(
+  'bgExecutor/resetExecutor',
+);
 
-// ============================================================================
-// Storage key
-// ============================================================================
-
-export const BG_EXECUTOR_STORAGE_KEY_PREFIX = "workspace-bg-executor-";
-export const BG_EXECUTOR_SAVE_DEBOUNCE_MS = 300;
+export const clearWorkspaceExecutors = createAction<[workspaceId: string]>(
+  'bgExecutor/clearWorkspaceExecutors',
+);
 
 // ============================================================================
 // Initial state
@@ -120,14 +111,16 @@ backgroundAgentExecutorReducer.with(
     return setExecutor(state, workspaceId, executorType, { ...emptyExecutorState });
   },
 );
+backgroundAgentExecutorReducer.with(
+  clearWorkspaceExecutors,
+  (state, { payload: [workspaceId] }) => {
+    return clearWorkspaceState(state, workspaceId);
+  },
+);
 
 // Re-export types for convenience
 export type {
   ExecutorStatus,
-  BackgroundExecutorType,
   AgentExecutorContext,
   ExecutorInstanceState,
-  BackgroundAgentConfig,
-  ResultContext,
-} from "./background-agent-executor-types";
-
+} from './background-agent-executor-types';

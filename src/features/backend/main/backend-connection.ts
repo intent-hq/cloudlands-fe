@@ -525,7 +525,7 @@ export function raceDuplexSockets(
 }
 
 /** Successful trust-on-first-use capture: the presented cert's fingerprint. */
-export interface CaptureFingerprintOk {
+interface CaptureFingerprintOk {
   ok: true;
   /** Presented cert SHA-256 fingerprint, colon-hex uppercase (PROTOCOL §1.2). */
   fingerprint: string;
@@ -542,7 +542,7 @@ export interface CaptureFingerprintOk {
 }
 
 /** Failed trust-on-first-use capture, with a machine-readable reason. */
-export interface CaptureFingerprintError {
+interface CaptureFingerprintError {
   ok: false;
   code: 'no-certificate' | 'connect-failed' | 'timeout';
   error: string;

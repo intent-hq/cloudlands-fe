@@ -91,7 +91,7 @@ export interface WorkspaceTaskProgressLike {
 }
 
 /** Generic call-to-action subtitle shown for brand-new planning workspaces. */
-export function planningPlaceholderSubtitle(): string {
+function planningPlaceholderSubtitle(): string {
   return m.workspace_phase_planningPlaceholder_subtitle();
 }
 

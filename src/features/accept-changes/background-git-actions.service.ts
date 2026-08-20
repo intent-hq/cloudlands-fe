@@ -18,17 +18,17 @@ import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('BackgroundGitActionsService');
 
-export interface CommitParams {
+interface CommitParams {
   workspaceId: string;
   commitMessage: string;
 }
 
-export interface CommitResult {
+interface CommitResult {
   success: boolean;
   error?: string;
 }
 
-export interface CreatePRParams {
+interface CreatePRParams {
   workspaceId: string;
   prTitle: string;
   prDescription: string;
@@ -36,7 +36,7 @@ export interface CreatePRParams {
   hasStaged?: boolean;
 }
 
-export interface CreatePRResult {
+interface CreatePRResult {
   success: boolean;
   error?: string;
   needsAuth?: boolean;

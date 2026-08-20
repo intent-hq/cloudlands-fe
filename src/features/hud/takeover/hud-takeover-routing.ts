@@ -28,7 +28,7 @@ import {
 export const HUD_TAKEOVER_CELL_HALF_LATTICE = HUD_TAKEOVER_CELL_PX / 2 / HUD_TAKEOVER_PITCH_PX;
 
 /** Polyline vertex in lattice units (cell centers at integers). */
-export interface HudTakeoverRoutePoint {
+interface HudTakeoverRoutePoint {
   x: number;
   y: number;
 }

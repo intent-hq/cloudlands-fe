@@ -19,7 +19,7 @@ import type { GitRootRow } from '$features/git-roots/git-roots-service';
 
 /** Per-workspace live git-root state (registered roots only; the primary
  * workspace root is synthesized by the selectors, never stored here). */
-export interface GitRootsWorkspaceState {
+interface GitRootsWorkspaceState {
   gitRoots: Collection<GitRootRow, 'id'>;
 }
 
@@ -28,7 +28,7 @@ export interface GitRootsState {
   byWorkspaceId: Record<string, GitRootsWorkspaceState>;
 }
 
-export const emptyGitRootsWorkspaceState: GitRootsWorkspaceState = {
+const emptyGitRootsWorkspaceState: GitRootsWorkspaceState = {
   gitRoots: createCollection<GitRootRow, 'id'>('id'),
 };
 

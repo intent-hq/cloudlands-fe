@@ -71,9 +71,6 @@ export type BackgroundAgentSettingsState = {
   providerSettings: Record<string, ProviderBgSettings>;
 };
 
-export const STORAGE_KEY = 'workspaces-background-agent-settings';
-export const PROVIDER_SETTINGS_KEY = 'workspaces-bg-agent-settings-per-provider';
-
 const DEFAULT_TYPE_OVERRIDES: Record<BackgroundAgentType, string> = {
   commit: '',
   pr: '',

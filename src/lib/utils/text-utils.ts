@@ -84,62 +84,6 @@ export function stripUserMessagePrefixes(text: string): string {
     .trim();
 }
 
-/** Session-level fields the preview-line derivation reads (AgentLite, PROTOCOL §5.5). */
-export interface AgentPreviewLineFields {
-  lastAgentResponse?: string | null;
-  lastUserMessage?: string | null;
-  lastMessageRole?: string | null;
-  /** Live `<agent_digest>` summary pushed by `agent:stream:activity`. */
-  digest?: string | null;
-  isResponding?: boolean;
-  /** `agent.reportToParent` report (session `metadata.completionReport`). */
-  completionReport?: string | null;
-  /**
-   * Persisted tool-call preview (AgentLite `lastToolUse`, §5.5 — also carried
-   * on `agent:last-message`): the newest message's last `tool_use` block.
-   * Only `name` is read (wire/agent content).
-   */
-  lastToolUse?: { name: string } | null;
-}
-
-/**
- * One-line message preview for an agent from its session fields — the same
- * precedence as the AgentCard footer, restricted to what the AgentLite
- * list/get projection carries (no transcript, no chat.subscribe buffer):
- *   1. the user's newest message (freshness wins: `lastMessageRole ===
- *      "user"` — the daemon overlays `"assistant"` once the in-flight turn
- *      has derivable streamed text, so a user role means `lastAgentResponse`
- *      is still the PREVIOUS turn's text) — first line, prefixes stripped;
- *   2. live response line — `lastAgentResponse` while a turn is in flight
- *      (push-applied ~1s by `agent:stream:activity`);
- *   3. the digest / completion-report summary;
- *   4. the persisted `lastAgentResponse` (idle agents);
- *   5. the persisted `lastToolUse` name (tool-only stretches with no
- *      response text — mirrors the card's last-response > last-tool order);
- *   6. the last user message as a final fallback.
- * Returns null when no source has text.
- */
-export function deriveAgentPreviewLine(fields: AgentPreviewLineFields): string | null {
-  const userFirstLine =
-    stripUserMessagePrefixes(fields.lastUserMessage ?? '')
-      .split('\n')[0]
-      ?.trim() ?? '';
-  if (fields.lastMessageRole === 'user' && userFirstLine) return userFirstLine;
-  if (fields.isResponding === true && fields.lastAgentResponse) {
-    const liveLine = getLastMeaningfulLine(fields.lastAgentResponse);
-    if (liveLine) return liveLine;
-  }
-  const report = fields.digest || fields.completionReport;
-  if (report) return getLastMeaningfulLine(report) || report;
-  const lastResponse = fields.lastAgentResponse
-    ? getLastMeaningfulLine(fields.lastAgentResponse)
-    : '';
-  if (lastResponse) return lastResponse;
-  const toolName = fields.lastToolUse?.name?.trim();
-  if (toolName) return toolName;
-  return userFirstLine || null;
-}
-
 /**
  * Get the last meaningful sentence or phrase from text
  * Useful for showing the most recent agent activity

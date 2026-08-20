@@ -5,14 +5,14 @@
  * Tracks which agent is being followed and the current file/note context.
  */
 
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import type { AgentFollowState } from "./agent-follow-types";
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import type { AgentFollowState } from './agent-follow-types';
 
 // ---------------------------------------------------------------------------
 // Initial state
 // ---------------------------------------------------------------------------
 
-export const initialState: AgentFollowState = {
+const initialState: AgentFollowState = {
   isFollowing: false,
   followedAgentId: null,
   agentColor: null,
@@ -23,6 +23,10 @@ export const initialState: AgentFollowState = {
   typingSpeed: 30,
   pendingChanges: [],
 };
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Reducer

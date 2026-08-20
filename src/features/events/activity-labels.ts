@@ -10,7 +10,7 @@ import {
   cleanToolName,
   isDeferredToolLoad,
   isRawMcpName,
-} from '$lib/components/chat/tool-classifier';
+} from '$lib/utils/tool-classifier';
 import { m } from '$shared/paraglide/messages.js';
 
 import type { WorkspaceEvent } from './types';
@@ -18,7 +18,7 @@ import type { WorkspaceEvent } from './types';
 /**
  * A part of a label that can be styled differently
  */
-export interface LabelPart {
+interface LabelPart {
   text: string;
   /** If true, render with semibold weight and foreground color */
   emphasis?: boolean;
@@ -1003,84 +1003,6 @@ export function getActivityLabel(event: WorkspaceEvent): string {
   }
 
   return event.type.replace(/[_:]/g, ' ');
-}
-
-/**
- * Get a short label (just the action verb) for compact displays
- */
-export function getActivityVerb(event: WorkspaceEvent): string {
-  const data = event.data as any;
-
-  switch (event.type) {
-    case 'file:changed':
-      switch (data?.action) {
-        case 'create':
-          return m.events_activity_verbCreated_short();
-        case 'delete':
-          return m.events_activity_verbDeleted_short();
-        case 'rename':
-          return m.events_activity_verbRenamed_short();
-        default:
-          return m.events_activity_verbUpdated_short();
-      }
-    case 'file:created':
-      return m.events_activity_verbCreated_short();
-    case 'file:deleted':
-      return m.events_activity_verbDeleted_short();
-    case 'file:renamed':
-      return m.events_activity_verbRenamed_short();
-    case 'note:created':
-      return m.events_activity_verbCreated_short();
-    case 'note:updated':
-      return m.events_activity_verbUpdated_short();
-    case 'note:deleted':
-      return m.events_activity_verbDeleted_short();
-    case 'git:commit':
-      return m.events_activity_verbCommitted_short();
-    case 'git:push':
-      return m.events_activity_verbPushed_short();
-    case 'git:pull':
-      return m.events_activity_verbPulled_short();
-    case 'agent:started':
-      return m.events_activity_verbStarted_short();
-    case 'agent:completed':
-      return m.events_activity_verbCompleted_short();
-    case 'terminal:command':
-      return m.events_activity_verbRan_short();
-    default:
-      return event.type.split(':')[1] || m.events_activity_activity_short();
-  }
-}
-
-/**
- * Get the subject of the activity (e.g., filename, note title)
- */
-export function getActivitySubject(event: WorkspaceEvent): string | null {
-  const data = event.data as any;
-
-  if (event.type.startsWith('file:') && data?.path) {
-    return parseFilePath(data.path).filename;
-  }
-
-  if (event.type.startsWith('note:') && data?.title) {
-    return data.title;
-  }
-
-  if (event.type === 'agent:tool:call' && data?.toolName) {
-    const cleaned = cleanToolName(data.toolName);
-    // Unstrippable raw MCP identifiers and deferred tool-loading selectors must
-    // never surface as the subject
-    return !cleaned || isRawMcpName(cleaned) || isDeferredToolLoad(data.toolName, data.input ?? {})
-      ? null
-      : cleaned;
-  }
-
-  if (event.type === 'terminal:command' && data?.command) {
-    const truncated = data.command.length > 30 ? `${data.command.slice(0, 27)}...` : data.command;
-    return truncated;
-  }
-
-  return null;
 }
 
 /**

@@ -43,7 +43,7 @@ export type ToolCallId = string;
 /**
  * Unique identifier for a permission option.
  */
-export type PermissionOptionId = string;
+type PermissionOptionId = string;
 
 /**
  * Extension point for implementations
@@ -95,7 +95,7 @@ export interface SessionModeState {
 /**
  * Information about a model.
  */
-export interface ModelInfo {
+interface ModelInfo {
   _meta?: Meta;
   id: ModelId;
   name: string;

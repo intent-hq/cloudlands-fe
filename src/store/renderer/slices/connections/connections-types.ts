@@ -35,7 +35,7 @@ export type {
  *   - `connecting` → an add/switch invoke is pending.
  *   - `error`      → the last operation failed (see `error`).
  */
-export type ConnectionOpStatus = 'idle' | 'connecting' | 'error';
+type ConnectionOpStatus = 'idle' | 'connecting' | 'error';
 
 /**
  * Connections slice state.
@@ -45,6 +45,13 @@ export interface ConnectionsState {
   connections: Collection<ConnectionRecord, 'id'>;
   /** id of the active connection (`LOCAL_CONNECTION_ID` for the local sidecar). */
   activeId: string;
+  /**
+   * True once at least one `connectionsListReceived` has landed. Until then
+   * `activeId` is still the boot-time `LOCAL_CONNECTION_ID` default and must
+   * not be trusted as the true active backend — destructive backend-scoped
+   * work (e.g. workspace-tab reconciliation) gates on this flag.
+   */
+  hasReceivedList: boolean;
   /** Status of the in-flight add/switch operation. */
   status: ConnectionOpStatus;
   /** Error message from the last failed add/switch operation, or null. */

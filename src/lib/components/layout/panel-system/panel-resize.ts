@@ -1,7 +1,6 @@
 import { MIN_PANEL_SIZE_PERCENT } from '$shared/panel-layout-sizing';
 
-export { MIN_PANEL_SIZE_PERCENT };
-export const MAX_PANEL_SIZE_PERCENT = 100;
+const MAX_PANEL_SIZE_PERCENT = 100;
 
 export function getPanelReferenceSize(availableSize: number, totalGutterSize: number): number {
   return Math.max(1, availableSize - totalGutterSize);

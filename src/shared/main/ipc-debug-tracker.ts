@@ -324,4 +324,3 @@ class IPCDebugTracker {
 export const ipcDebugTracker = IPCDebugTracker.getInstance();
 
 // Export for use in other modules
-export type { IPCDebugEntry };

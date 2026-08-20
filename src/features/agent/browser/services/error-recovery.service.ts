@@ -20,7 +20,7 @@ export interface RecoveryStrategy {
   onFailure?: (error: Error, attempts: number) => void;
 }
 
-export interface RecoveryResult<T> {
+interface RecoveryResult<T> {
   success: boolean;
   data?: T;
   error?: Error;
@@ -29,7 +29,7 @@ export interface RecoveryResult<T> {
 }
 
 // Common error types that can be retried
-export enum RetryableError {
+enum RetryableError {
   NETWORK = 'NETWORK',
   TIMEOUT = 'TIMEOUT',
   RATE_LIMIT = 'RATE_LIMIT',
@@ -104,7 +104,6 @@ export const DEFAULT_STRATEGIES = {
   } as RecoveryStrategy,
 };
 
- 
 type EventListenerFn = (...args: any[]) => void;
 
 // Simple browser-compatible event emitter
@@ -124,7 +123,6 @@ class SimpleEventEmitter {
     this.listeners.get(event)?.delete(listener);
   }
 
-   
   emit(event: string, ...args: any[]): void {
     this.listeners.get(event)?.forEach((listener) => {
       try {
@@ -140,7 +138,7 @@ class SimpleEventEmitter {
   }
 }
 
-export class ErrorRecoveryService extends SimpleEventEmitter {
+class ErrorRecoveryService extends SimpleEventEmitter {
   private activeRecoveries = new Map<string, AbortController>();
   private recoveryStats = new Map<string, { successes: number; failures: number }>();
 

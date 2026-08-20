@@ -4,7 +4,7 @@ import type { AutoUpdateState } from './auto-update-types';
 import type { UpdateProgress, UpdateState } from '$features/auto-update/types';
 import { m } from '$shared/paraglide/messages.js';
 
-export const initialState: AutoUpdateState = {
+const initialState: AutoUpdateState = {
   status: 'idle',
   currentVersion: '',
   updateInfo: null,

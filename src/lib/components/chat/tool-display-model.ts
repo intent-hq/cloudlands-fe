@@ -1,10 +1,10 @@
 import { m } from '$shared/paraglide/messages.js';
 import type { ParsedToolResult } from './tool-result-parser';
-import type { ToolDisplay } from './tool-classifier';
+import type { ToolDisplay } from '$lib/utils/tool-classifier';
 
 export type ToolState = 'running' | 'completed' | 'error';
 
-export interface CompactToolSentenceSegment {
+interface CompactToolSentenceSegment {
   kind: 'primary' | 'secondary' | 'file';
   text: string;
 }

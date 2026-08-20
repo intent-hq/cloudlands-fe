@@ -25,7 +25,7 @@ export interface HardwareRpcCaller {
   call<T = unknown>(method: string, params?: unknown): Promise<T>;
 }
 
-export type CodexModeProbe = 'ready' | 'unsupported-firmware' | 'no-codex-layer' | 'unknown';
+type CodexModeProbe = 'ready' | 'unsupported-firmware' | 'no-codex-layer' | 'unknown';
 
 export interface DeviceConnectionSnapshot {
   /** Firmware version from `sys.version` (e.g. "v0.6.0"), or `null` on failure. */

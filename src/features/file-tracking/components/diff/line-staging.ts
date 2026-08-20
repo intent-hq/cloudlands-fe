@@ -1,7 +1,7 @@
 import * as Diff from 'diff';
 
-export type LineStagingSide = 'additions' | 'deletions';
-export type LineStagingStage = string;
+type LineStagingSide = 'additions' | 'deletions';
+type LineStagingStage = string;
 
 interface HunkLine {
   content: string;

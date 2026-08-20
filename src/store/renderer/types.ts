@@ -14,7 +14,7 @@ export type StoreState = ToolkitStoreState<typeof configuredStore>;
 
 export type PreloadedStoreState = ToolkitPreloadedStoreState<StoreState>;
 
-export type AppStore = typeof configuredStore;
+type AppStore = typeof configuredStore;
 
 /**
  * Portable annotation type for `store.createSelector` results. Exported

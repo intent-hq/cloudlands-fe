@@ -4,7 +4,7 @@ import { m } from '$shared/paraglide/messages.js';
 
 const logger = new Logger('ReversibleActions');
 
-export interface ReversibleAction {
+interface ReversibleAction {
   id: string;
   message: string;
   action: () => Promise<void> | void;

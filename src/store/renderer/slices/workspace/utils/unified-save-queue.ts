@@ -229,7 +229,7 @@ export class UnifiedSaveQueue {
 }
 
 // Global singleton instance
-export const globalSaveQueue = new UnifiedSaveQueue({
+const globalSaveQueue = new UnifiedSaveQueue({
   debounceMs: 300,
   maxRetries: 3,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

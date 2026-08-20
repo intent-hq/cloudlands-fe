@@ -134,7 +134,7 @@ function cloneableBag(
   }
 }
 
-export function* buildWorkspaceInitializerBag() {
+function* buildWorkspaceInitializerBag() {
   const compactFormState = yield* selectCompactWorkspaceInitializerFormState.effect();
   const onboardingFormState = yield* selectWorkspaceInitializerOnboardingFormState.effect();
   const lastSelectedRepo = yield* selectWorkspaceInitializerLastSelectedRepo.effect();
@@ -226,7 +226,9 @@ export function* hydrateWorkspaceInitializerWorker() {
 
     const hydrationState: WorkspaceInitializerHydrationState = {
       compactFormState: isRecord(daemonBag.compactFormState)
-        ? stripLegacyScriptFields(daemonBag.compactFormState as CompactWorkspaceInitializerFormState)
+        ? stripLegacyScriptFields(
+            daemonBag.compactFormState as CompactWorkspaceInitializerFormState,
+          )
         : null,
       onboardingFormState: isRecord(daemonBag.onboardingFormState)
         ? stripLegacyScriptFields(
@@ -270,7 +272,7 @@ function removeOnboardingPrompt(): void {
   }
 }
 
-export function* applyDebouncedOnboardingFormWorker(
+function* applyDebouncedOnboardingFormWorker(
   action: ReturnType<typeof debounceWorkspaceInitializerOnboardingFormState>,
 ) {
   const result = yield* race({
@@ -282,7 +284,7 @@ export function* applyDebouncedOnboardingFormWorker(
   yield* put(setWorkspaceInitializerOnboardingFormState(action.payload[0]));
 }
 
-export function* resetWorkspaceInitializerWorker() {
+function* resetWorkspaceInitializerWorker() {
   yield* put(setWorkspaceInitializerOnboardingFormState(null));
   yield* call(removeOnboardingPrompt);
 }

@@ -20,7 +20,32 @@ import {
   selectPinnedWorkspaceIds,
   selectShowArchivedWorkspaces,
 } from '../sidebar-nav-selectors';
-import { CARD_PINNED_KEY, CHIEF_ACTIVE_AGENT_ID_KEY, COMBINED_PANEL_SPLIT_KEY, closeAll, closeHoverCards, closePanel, hydrateSidebarNav, LEGACY_HOME_PANEL_SPLIT_KEY, MULTISELECT_SIDEBAR_TAB_ORDER_KEY, openPanel, PANEL_ITEM_KEY, PANEL_WIDTH_KEY, PINNED_WORKSPACES_KEY, setAllSpacesViewMode, setCardPinned, setChiefActiveAgentId, setCombinedPanelSplit, setPanelWidth, setShowArchivedWorkspaces, SHOW_ARCHIVED_KEY, toggleCardPinned, togglePanel, togglePinWorkspace, VIEW_MODE_KEY } from '../sidebar-nav-slice';
+import {
+  CARD_PINNED_KEY,
+  CHIEF_ACTIVE_AGENT_ID_KEY,
+  COMBINED_PANEL_SPLIT_KEY,
+  closeAll,
+  closeHoverCards,
+  closePanel,
+  hydrateSidebarNav,
+  LEGACY_HOME_PANEL_SPLIT_KEY,
+  MULTISELECT_SIDEBAR_TAB_ORDER_KEY,
+  openPanel,
+  PANEL_ITEM_KEY,
+  PANEL_WIDTH_KEY,
+  PINNED_WORKSPACES_KEY,
+  setAllSpacesViewMode,
+  setCardPinned,
+  setChiefActiveAgentId,
+  setCombinedPanelSplit,
+  setPanelWidth,
+  setShowArchivedWorkspaces,
+  SHOW_ARCHIVED_KEY,
+  toggleCardPinned,
+  togglePanel,
+  togglePinWorkspace,
+  VIEW_MODE_KEY,
+} from '../sidebar-nav-slice';
 import type { AllSpacesViewMode, SidebarNavItem } from '../sidebar-nav-types';
 
 const PINNED_ACTIONS = [togglePinWorkspace];
@@ -83,7 +108,7 @@ function panelItem(value: unknown): SidebarNavItem | 'home' | null | undefined {
     : undefined;
 }
 
-export function* hydrateSidebarNavState(): SagaGenerator<void> {
+function* hydrateSidebarNavState(): SagaGenerator<void> {
   try {
     const backendId = yield* selectActiveBackendId();
     const data: Parameters<typeof hydrateSidebarNav>[0] = {};
@@ -227,7 +252,7 @@ function* persistChiefActiveAgentId(): SagaGenerator<void> {
  * backend's namespace, resetting to empty where it has none so the previous
  * backend's pins/tab order don't linger.
  */
-export function* watchBackendSwitch(): SagaGenerator<void> {
+function* watchBackendSwitch(): SagaGenerator<void> {
   let lastBackendId = yield* selectActiveBackendId();
   while (true) {
     yield* take(connectionsListReceived);

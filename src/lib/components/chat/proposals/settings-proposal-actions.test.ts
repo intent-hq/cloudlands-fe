@@ -28,7 +28,7 @@ import {
 } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { StoreState } from '$lib/store/types';
+import type { StoreState } from '$store/renderer/types';
 
 const providerCatalog = providerCatalogReducer(
   providerCatalogInitialState,
@@ -49,7 +49,9 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
 vi.mock('$store/renderer/store', () => ({
   store: {
     dispatch: mocks.dispatch,
-    get state() { return mocks.getState(); },
+    get state() {
+      return mocks.getState();
+    },
     createSelector: vi.fn((fn) => ({ select: fn })),
   },
 }));
@@ -194,9 +196,9 @@ describe('settings-proposal-actions', () => {
     };
     mocks.settingsUpdate.mockRejectedValueOnce(new Error('settings unavailable'));
 
-    await expect(
-      applySettingsProposalWork(makeDetail(proposal)),
-    ).rejects.toThrow('Failed to apply settings change: settings unavailable');
+    await expect(applySettingsProposalWork(makeDetail(proposal))).rejects.toThrow(
+      'Failed to apply settings change: settings unavailable',
+    );
 
     expect(mocks.dispatch).toHaveBeenCalledWith(setDefaultModel('new-model'));
     expect(mocks.dispatch).toHaveBeenCalledWith(setDefaultModel('old-model'));

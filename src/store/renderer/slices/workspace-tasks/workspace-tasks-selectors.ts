@@ -6,12 +6,12 @@
  * stored in Redux.
  */
 
-import { store } from "../../store";
-import type { WorkspaceTask } from "$shared/types";
-import { EXCLUDED_STATUSES, IN_PROGRESS_STATUSES } from "$shared/utils/task-stats";
-import { getItems } from "@augmentcode/themis/utils/collections/collection-utils";
-import { emptyWorkspaceTaskStats, emptyWorkspaceTasksState } from "./workspace-tasks-slice";
-import type { WorkspaceTaskProgress, WorkspaceTasksWorkspaceState } from "./workspace-tasks-types";
+import { store } from '../../store';
+import type { WorkspaceTask } from '$shared/types';
+import { EXCLUDED_STATUSES, IN_PROGRESS_STATUSES } from '$shared/utils/task-stats';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { emptyWorkspaceTaskStats, emptyWorkspaceTasksState } from './workspace-tasks-slice';
+import type { WorkspaceTaskProgress, WorkspaceTasksWorkspaceState } from './workspace-tasks-types';
 
 // ============================================================================
 // Per-workspace base selector
@@ -20,15 +20,6 @@ import type { WorkspaceTaskProgress, WorkspaceTasksWorkspaceState } from "./work
 export const selectWorkspaceTasksState = store.createSelector(
   (state, workspaceId: string): WorkspaceTasksWorkspaceState =>
     state.workspaceTasks.byWorkspaceId[workspaceId] ?? emptyWorkspaceTasksState,
-);
-
-/**
- * Root per-workspace task map. Subscribe to this once at component init when
- * rendering many workspaces via template helper functions, then read
- * individual workspaces with `selector.select(appStore.state, workspaceId)`.
- */
-export const selectWorkspaceTasksByWorkspaceId = store.createSelector(
-  (state): Record<string, WorkspaceTasksWorkspaceState> => state.workspaceTasks.byWorkspaceId,
 );
 
 // ============================================================================
@@ -92,7 +83,7 @@ export const selectWorkspaceTaskDisplayList = store.createSelector(
       if (EXCLUDED_STATUSES.has(task.status)) continue;
       if (IN_PROGRESS_STATUSES.has(task.status)) {
         inProgress.push(task);
-      } else if (task.status === "complete") {
+      } else if (task.status === 'complete') {
         complete.push(task);
       } else {
         pending.push(task);
@@ -102,4 +93,3 @@ export const selectWorkspaceTaskDisplayList = store.createSelector(
     return [...inProgress, ...pending, ...complete];
   },
 );
-

@@ -8,10 +8,7 @@ import {
   type ProviderAvailabilityResult,
 } from '$shared/types/provider-availability';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
-import {
-  selectHasCheckedOnce,
-  selectProviderCheckEpochMap,
-} from '../agent-availability-selectors';
+import { selectHasCheckedOnce, selectProviderCheckEpochMap } from '../agent-availability-selectors';
 import {
   checkAllProvidersComplete,
   checkAllProvidersRequested,
@@ -84,9 +81,7 @@ export function* checkAllProvidersWorker() {
   }
 }
 
-export function* handleCheckAllProvidersRequest(
-  _action: ReturnType<typeof checkAllProvidersRequested>,
-) {
+function* handleCheckAllProvidersRequest(_action: ReturnType<typeof checkAllProvidersRequested>) {
   yield* call(checkAllProvidersWorker);
 }
 

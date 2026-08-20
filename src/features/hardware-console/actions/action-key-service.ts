@@ -109,7 +109,7 @@ export function focusAgentComposer(agentId: string): void {
 let composerFocusArmedUntil = 0;
 
 /** Arm the one-shot new-agent composer focus. Exported for tests. */
-export function armComposerFocusOnNextAgentTab(now = Date.now()): void {
+function armComposerFocusOnNextAgentTab(now = Date.now()): void {
   composerFocusArmedUntil = now + COMPOSER_FOCUS_ARM_TTL_MS;
 }
 

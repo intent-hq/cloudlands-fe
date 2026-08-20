@@ -308,7 +308,7 @@ export function getHelpLink(code: string): string | undefined {
  */
 export type SupportedLocale = 'en' | 'es' | 'fr' | 'de' | 'ja' | 'zh';
 
-export const LOCALE_MESSAGES: Record<SupportedLocale, Record<string, string>> = {
+const LOCALE_MESSAGES: Record<SupportedLocale, Record<string, string>> = {
   en: USER_FRIENDLY_MESSAGES,
   es: {}, // Spanish translations would go here
   fr: {}, // French translations would go here
@@ -321,5 +321,9 @@ export const LOCALE_MESSAGES: Record<SupportedLocale, Record<string, string>> = 
  * Get localized message
  */
 export function getLocalizedMessage(code: string, locale: SupportedLocale = 'en'): string {
-  return LOCALE_MESSAGES[locale][code] || USER_FRIENDLY_MESSAGES[code] || m.errors_localized_fallback_error();
+  return (
+    LOCALE_MESSAGES[locale][code] ||
+    USER_FRIENDLY_MESSAGES[code] ||
+    m.errors_localized_fallback_error()
+  );
 }

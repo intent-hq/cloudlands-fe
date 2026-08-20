@@ -22,7 +22,7 @@ import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
 
 /** Per-workspace live hook state (all wire states; selectors filter). */
-export interface BackgroundHooksWorkspaceState {
+interface BackgroundHooksWorkspaceState {
   hooks: Collection<BackgroundHook, 'hookId'>;
 }
 
@@ -31,7 +31,7 @@ export interface BackgroundHooksState {
   byWorkspaceId: Record<string, BackgroundHooksWorkspaceState>;
 }
 
-export const emptyBackgroundHooksWorkspaceState: BackgroundHooksWorkspaceState = {
+const emptyBackgroundHooksWorkspaceState: BackgroundHooksWorkspaceState = {
   hooks: createCollection<BackgroundHook, 'hookId'>('hookId'),
 };
 

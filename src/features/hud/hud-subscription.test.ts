@@ -202,6 +202,7 @@ describe('HUD subscription (mock backend, real store)', () => {
       uptimeSeconds: null,
       version: null,
       fetchedAtMs: null,
+      remoteHostname: null,
     });
 
     // The middleware's poll result folds into daemon-health → the HUD view.

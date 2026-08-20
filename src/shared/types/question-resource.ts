@@ -12,9 +12,7 @@
  */
 export const QUESTION_RESOURCE_MIME_TYPE = 'application/vnd.intent.question+json';
 
-export const QUESTION_RESOURCE_URI_SCHEME = 'intent-question';
-
-export interface QuestionOption {
+interface QuestionOption {
   label: string;
   description?: string;
 }
@@ -42,7 +40,7 @@ function isQuestionOption(value: unknown): value is QuestionOption {
   );
 }
 
-export function isQuestion(value: unknown): value is Question {
+function isQuestion(value: unknown): value is Question {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<Question>;
   return (

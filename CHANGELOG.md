@@ -4,6 +4,53 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.74.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.73.1...v2.74.0) (2026-08-20)
+
+
+### 🚀 Features
+
+* adopt daemon-merged pullRequests in workspace-card PR badge ([#1500](https://github.com/intent-hq/cloudlands-fe/issues/1500)) ([242bce5](https://github.com/intent-hq/cloudlands-fe/commit/242bce59fcf24ac190913a8d85dcb80b751ff835))
+
+## [2.73.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.73.0...v2.73.1) (2026-08-20)
+
+
+### 🐛 Bug Fixes
+
+* stop panel reveal from stealing focus inside the revealed panel ([#1502](https://github.com/intent-hq/cloudlands-fe/issues/1502)) ([568f265](https://github.com/intent-hq/cloudlands-fe/commit/568f26568c64aacb29d7f71f0a9839ea038b9b35))
+
+## [2.73.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.72.0...v2.73.0) (2026-08-20)
+
+
+### 🚀 Features
+
+* show remote daemon hostname in HUD footer system zone ([#1481](https://github.com/intent-hq/cloudlands-fe/issues/1481)) ([ce0c3e9](https://github.com/intent-hq/cloudlands-fe/commit/ce0c3e9e7e16ccffd25d9ba877e4a18c31e8f97a))
+
+
+### 🐛 Bug Fixes
+
+* rename sidebar status group Complete to Completed ([#1479](https://github.com/intent-hq/cloudlands-fe/issues/1479)) ([6068202](https://github.com/intent-hq/cloudlands-fe/commit/60682026a1b6d12d608c3089decca2e93770e260))
+
+## [2.72.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.71.0...v2.72.0) (2026-08-20)
+
+
+### 🚀 Features
+
+* keep checking for updates while one is downloaded and auto-supersede ([#1482](https://github.com/intent-hq/cloudlands-fe/issues/1482)) ([8fdf46f](https://github.com/intent-hq/cloudlands-fe/commit/8fdf46f184147346d1cff3d9d279faad54521fe8))
+* reconcile hydrated workspace tabs against the loaded workspace list ([#1471](https://github.com/intent-hq/cloudlands-fe/issues/1471)) ([b89b62a](https://github.com/intent-hq/cloudlands-fe/commit/b89b62a50b206ba60e0ede774d614443305b66fc))
+
+## [2.71.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.70.0...v2.71.0) (2026-08-19)
+
+
+### 🚀 Features
+
+* agent viewport sizing — resizeTab, openTab width/height, scale-to-fit ([#1458](https://github.com/intent-hq/cloudlands-fe/issues/1458)) ([d436ba6](https://github.com/intent-hq/cloudlands-fe/commit/d436ba6c69a2b6059b599ee0ed146cecc8b0c06d))
+
+
+### 🐛 Bug Fixes
+
+* localize Shell tab label for zh locales and setup-script display name ([#1472](https://github.com/intent-hq/cloudlands-fe/issues/1472)) ([5e93868](https://github.com/intent-hq/cloudlands-fe/commit/5e9386863d426f974148bd964f94e769c4952559))
+* stop the chat-export path clobbering the main-process locale ([#1475](https://github.com/intent-hq/cloudlands-fe/issues/1475)) ([c9d0138](https://github.com/intent-hq/cloudlands-fe/commit/c9d01382e9b5bdcf5d54a5376dc41137e5c68b55))
+
 ## [2.70.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.69.0...v2.70.0) (2026-08-19)
 
 

@@ -5,17 +5,17 @@
  * and agents actively working.
  */
 
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
-import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
-import type { AgentLockState, AgentLockWorkspaceState } from "./agent-lock-types";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
+import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import type { AgentLockState, AgentLockWorkspaceState } from './agent-lock-types';
 
 // ---------------------------------------------------------------------------
 // Empty / Initial State
 // ---------------------------------------------------------------------------
 
-export const emptyWorkspaceState: AgentLockWorkspaceState = {
+const emptyWorkspaceState: AgentLockWorkspaceState = {
   lockedAgentIds: {},
   lockedFilePaths: {},
 };
@@ -24,7 +24,7 @@ export const initialState: AgentLockState = {
   byWorkspaceId: {},
 };
 
-const { clearWorkspaceState } =
+const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceState);
 
 // ---------------------------------------------------------------------------
@@ -33,7 +33,7 @@ const { clearWorkspaceState } =
 
 /** Trigger recomputation of agent locks for a workspace */
 export const recomputeAgentLocks = createAction<[workspaceId: string]>(
-  "agentLock/recomputeAgentLocks",
+  'agentLock/recomputeAgentLocks',
 );
 
 // ---------------------------------------------------------------------------

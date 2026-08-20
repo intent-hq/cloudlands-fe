@@ -25,7 +25,7 @@ function realBridge(): ((channel: string, payload?: unknown) => Promise<unknown>
 }
 
 /** Register the voice local-transcription bridge handlers. Idempotent. */
-export function registerVoiceLocalBridge(): void {
+function registerVoiceLocalBridge(): void {
   registerMockIpcHandler(IPC_CHANNELS.VOICE.LOCAL_AVAILABLE, async (payload?: unknown) => {
     const forward = realBridge();
     if (forward) return forward(IPC_CHANNELS.VOICE.LOCAL_AVAILABLE, payload);

@@ -5,11 +5,7 @@
  */
 
 import type { TestScenario } from './agent-test-harness';
-import {
-  delay,
-  takeMemorySnapshot,
-  compareMemorySnapshots,
-} from './agent-test-utils';
+import { delay, takeMemorySnapshot, compareMemorySnapshots } from './agent-test-utils';
 import { AgentStatus } from '../../../shared/types/agent.types';
 
 /**
@@ -197,130 +193,6 @@ export const errorRecoveryScenario: TestScenario = {
   },
 
   timeout: 10000,
-};
-
-/**
- * Concurrent operations test
- */
-export const concurrentOperationsScenario: TestScenario = {
-  name: 'Concurrent Operations',
-  description: 'Tests handling of concurrent agent operations',
-
-  async execute(harness) {
-    const agents = [];
-
-    // Create multiple agents concurrently
-    const createPromises = [];
-    for (let i = 0; i < 5; i++) {
-      createPromises.push(harness.createAgent({ name: `concurrent-agent-${i}` }));
-    }
-
-    const createdAgents = await Promise.all(createPromises);
-    agents.push(...createdAgents);
-
-    // Send messages concurrently
-    const messagePromises = [];
-    for (const agent of agents) {
-      for (let i = 0; i < 3; i++) {
-        messagePromises.push(harness.sendMessage(agent.id, `Concurrent message ${i}`));
-      }
-    }
-
-    await Promise.all(messagePromises);
-
-    // Verify all operations completed
-    const metrics = harness.getMetrics();
-    const expectedOperations = 5 + 5 * 3; // 5 creates + 15 messages
-
-    if (metrics.performance.operations.length < expectedOperations) {
-      throw new Error(
-        `Expected ${expectedOperations} operations, got ${metrics.performance.operations.length}`,
-      );
-    }
-  },
-
-  validate(metrics) {
-    return metrics.errors.length === 0 && metrics.performance.operations.every((op) => op.success);
-  },
-
-  timeout: 20000,
-};
-
-/**
- * Long-running session test
- */
-export const longRunningSessionScenario: TestScenario = {
-  name: 'Long Running Session',
-  description: 'Tests agent behavior over extended period',
-
-  async execute(harness) {
-    const agent = await harness.createAgent({
-      name: 'long-running-agent',
-    });
-
-    const startTime = Date.now();
-    const duration = 5000; // 5 seconds
-    let messageCount = 0;
-
-    // Send messages continuously for duration
-    while (Date.now() - startTime < duration) {
-      await harness.sendMessage(agent.id, `Message ${messageCount++}`);
-      await delay(100);
-    }
-
-    // Check for memory growth
-    const leaks = await harness.detectMemoryLeaks();
-    if (leaks.length > 0) {
-      throw new Error('Memory leaks detected in long-running session');
-    }
-
-    // Check performance degradation
-    const metrics = harness.getMetrics();
-    const operations = metrics.performance.operations;
-
-    if (operations.length > 10) {
-      const firstHalf = operations.slice(0, Math.floor(operations.length / 2));
-      const secondHalf = operations.slice(Math.floor(operations.length / 2));
-
-      const firstAvg = firstHalf.reduce((sum, op) => sum + op.duration, 0) / firstHalf.length;
-      const secondAvg = secondHalf.reduce((sum, op) => sum + op.duration, 0) / secondHalf.length;
-
-      // Check if performance degraded by more than 50%
-      if (secondAvg > firstAvg * 1.5) {
-        throw new Error(`Performance degradation detected: ${secondAvg}ms vs ${firstAvg}ms`);
-      }
-    }
-  },
-
-  validate(metrics) {
-    return metrics.memoryUsage.leaks.length === 0 && metrics.errors.length === 0;
-  },
-
-  timeout: 30000,
-};
-
-/**
- * Export all scenarios as a test suite
- */
-export const allScenarios: TestScenario[] = [
-  basicLifecycleScenario,
-  memoryLeakScenario,
-  streamingPerformanceScenario,
-  errorRecoveryScenario,
-  concurrentOperationsScenario,
-  longRunningSessionScenario,
-];
-
-/**
- * Export all test scenarios as an object for easier access
- */
-export const testScenarios = {
-  basicLifecycle: basicLifecycleScenario,
-  memoryLeak: memoryLeakScenario,
-  streamingPerformance: streamingPerformanceScenario,
-  errorRecovery: errorRecoveryScenario,
-  concurrentOperations: concurrentOperationsScenario,
-  longRunningSession: longRunningSessionScenario,
 };
 
 /**
