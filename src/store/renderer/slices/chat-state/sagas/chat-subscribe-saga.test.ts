@@ -1583,6 +1583,287 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     },
   );
 
+  // Cold-open snapshot miss under rapid workspace switching (monorepo#2917) —
+  // the viewed-agent swap (handleViewed) used to sweep ALL other same-realm
+  // slots with no hydration-loading spare: when the final workspace
+  // double-mounts two ChatPanels, the second panel's markAgentAsViewed closed
+  // the first panel's still-acquiring cold-open slot (desiredToken cleared +
+  // cancelPending), so its chat.subscribe — which issued promptly — resolved
+  // straight into an unsubscribe and its seq-0 snapshot was token-dropped.
+  // Both of that panel's opens were already consumed (init + its own viewed),
+  // so no snapshot was coming: the chat-read saga stranded a full
+  // SNAPSHOT_WAIT_MS window and logged the wait-window warning before the
+  // re-request escalation force-cycled a fresh registration. Fixed by
+  // extending the monorepo#2864 spare-then-revisit contract to the swap
+  // sweep: same-realm agents whose hydration is `loading` with a mounted
+  // panel are spared and revisited when the hydration settles/fails.
+  it(
+    'spares a sibling cold open mid-acquisition from the viewed-agent swap during a double ChatPanel mount (monorepo#2917)',
+    async () => {
+      const hopA = 'agent-2917-hop-a';
+      const hopB = 'agent-2917-hop-b';
+      const finalC1 = 'agent-2917-final-c1';
+      const finalC2 = 'agent-2917-final-c2';
+      for (const id of [hopA, hopB, finalC1, finalC2]) seedSession(id);
+
+      // Churn hops: two workspaces opened and closed within ~2s each. The
+      // hops are modeled as viewed/clear cycles inside the single harness
+      // workspace WS rather than actual workspace switches — mechanically
+      // equivalent because handleViewed's sweep predicate is realm-scoped
+      // (chief vs. workspace), not per-workspace. Their subscribes issue
+      // promptly (no queueing behind prior closes) and the fake unsubscribe
+      // settles synchronously, so the hops leave no barrier behind by the
+      // time the final workspace mounts.
+      openChat(hopA);
+      appStore.dispatch(markAgentAsViewed(hopA));
+      appStore.dispatch(clearCurrentlyViewedAgent(hopA));
+      openChat(hopB);
+      appStore.dispatch(markAgentAsViewed(hopB));
+      appStore.dispatch(clearCurrentlyViewedAgent(hopB));
+      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === hopA)).toHaveLength(1);
+      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === hopB)).toHaveLength(1);
+
+      // Final workspace double-mounts two ChatPanels (both agent tabs open in
+      // the layout). Both cold opens issue chat.subscribe immediately; over
+      // WSS the acquisition resolves asynchronously.
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'C1', closable: true, agentId: finalC1 }),
+      );
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'C2', closable: true, agentId: finalC2 }),
+      );
+      const c1 = delayNextSubscription(finalC1);
+      appStore.dispatch(transcriptHydrationStarted(finalC1));
+      appStore.dispatch(markAgentAsViewed(finalC1));
+      const c2 = delayNextSubscription(finalC2);
+      appStore.dispatch(transcriptHydrationStarted(finalC2));
+      // The second panel's viewed effect — today this closes C1's
+      // still-acquiring slot (no hydration-loading spare in the swap sweep).
+      appStore.dispatch(markAgentAsViewed(finalC2));
+
+      // Both WSS acquisitions resolve after the sweep ran.
+      c1.acquisition.resolve(c1.subscription.unsubscribe);
+      c2.acquisition.resolve(c2.subscription.unsubscribe);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // The daemon emits both seq-0 snapshots.
+      c2.subscription.handler({
+        ...transcript([makeMessage('m-2917-c2', 'c2 snapshot')]),
+        fromSnapshot: true,
+      });
+      c1.subscription.handler({
+        ...transcript([makeMessage('m-2917-c1', 'c1 snapshot')]),
+        fromSnapshot: true,
+      });
+
+      // The last-viewed panel hydrates fine…
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, finalC2)).toBeDefined();
+
+      // …and the sibling cold open must survive the swap (its hydration is
+      // loading with a mounted panel): the snapshot applies instead of
+      // stranding the read saga for a full wait window.
+      expect(c1.subscription.unsubscribe).not.toHaveBeenCalled();
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, finalC1)).toBeDefined();
+      expect(selectAgentMessages.select(appStore.state, finalC1).map((m) => m.id)).toContain(
+        'm-2917-c1',
+      );
+
+      // The spare defers the close, it never cancels it: the sibling's
+      // hydration settles with its panel tab still open — the deferred-clear
+      // revisit keeps the subscription (the spare was for THIS live panel).
+      appStore.dispatch(transcriptHydrationSettled(finalC1));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(c1.subscription.unsubscribe).not.toHaveBeenCalled();
+    },
+  );
+
+  it(
+    'runs the deferred close once hydration settles when the swap-spared sibling panel closed mid-load (no leaked subscription, monorepo#2917)',
+    async () => {
+      // Leak guard for the swap-sweep spare, mirroring the applied-clear
+      // sweep's (PR #1462): a sibling spared from the viewed-agent swap whose
+      // panel then genuinely closes mid-load must still be torn down once its
+      // hydration settles — otherwise the standing subscription leaks until
+      // an unrelated swap or session teardown.
+      const sibling = 'agent-2917-swap-leak-sibling';
+      const viewed = 'agent-2917-swap-leak-viewed';
+      seedSession(sibling);
+      seedSession(viewed);
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'Sibling', closable: true, agentId: sibling }),
+      );
+      const sub = openChat(sibling);
+      appStore.dispatch(markAgentAsViewed(sibling));
+      appStore.dispatch(transcriptHydrationStarted(sibling));
+
+      // The swap spares the sibling: hydration loading + mounted panel tab.
+      openChat(viewed);
+      appStore.dispatch(markAgentAsViewed(viewed));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+      // The sibling's panel closes mid-load; hydration then settles with no
+      // open tab and no re-view — the deferred close runs now.
+      appStore.dispatch(clearPanelLayout(WS));
+      appStore.dispatch(transcriptHydrationSettled(sibling));
+      await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+    },
+  );
+
+  it(
+    'runs the deferred close once hydration fails when the swap-spared sibling panel closed mid-load (monorepo#2917)',
+    async () => {
+      // Same leak, failure edge: a hydration that FAILS after the swap spare
+      // must also revisit the deferred close — `loading` never wedges it.
+      const sibling = 'agent-2917-swap-leak-fail-sibling';
+      const viewed = 'agent-2917-swap-leak-fail-viewed';
+      seedSession(sibling);
+      seedSession(viewed);
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'Sibling', closable: true, agentId: sibling }),
+      );
+      const sub = openChat(sibling);
+      appStore.dispatch(markAgentAsViewed(sibling));
+      appStore.dispatch(transcriptHydrationStarted(sibling));
+
+      openChat(viewed);
+      appStore.dispatch(markAgentAsViewed(viewed));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+      appStore.dispatch(clearPanelLayout(WS));
+      appStore.dispatch(transcriptHydrationFailed(sibling));
+      await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+    },
+  );
+
+  it(
+    'still sweeps a loading same-realm sibling with no mounted panel on the viewed-agent swap (spare requires a hosting panel tab)',
+    async () => {
+      // Swap-invariant guard: the spare is scoped to siblings a live panel is
+      // actively waiting on. A loading agent no panel tab hosts has nothing
+      // waiting on its snapshot, so the swap still closes it — no over-spare.
+      const sibling = 'agent-2917-swap-unhosted-sibling';
+      const viewed = 'agent-2917-swap-unhosted-viewed';
+      seedSession(sibling);
+      seedSession(viewed);
+      const sub = openChat(sibling);
+      appStore.dispatch(markAgentAsViewed(sibling));
+      appStore.dispatch(transcriptHydrationStarted(sibling));
+
+      openChat(viewed);
+      appStore.dispatch(markAgentAsViewed(viewed));
+      await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+    },
+  );
+
+  it(
+    "closes a swap-spared sibling's surviving subscription when its tab closes after settle while another agent stays viewed (monorepo#2917)",
+    async () => {
+      // Post-settle leak: the swap spares the sibling, its hydration settles
+      // with the tab still open (deferred-clear marker retired, subscription
+      // kept for the live panel), and the tab closes LATER while the new
+      // agent remains viewed. That close's scoped clearCurrentlyViewedAgent
+      // is a reducer no-op (monorepo#1215 guard), so no sweep would reach
+      // the sibling — the scoped-clear branch must close its own slot.
+      const sibling = 'agent-2917-post-settle-sibling';
+      const viewed = 'agent-2917-post-settle-viewed';
+      seedSession(sibling);
+      seedSession(viewed);
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'Sibling', closable: true, agentId: sibling }),
+      );
+      const siblingSub = openChat(sibling);
+      appStore.dispatch(markAgentAsViewed(sibling));
+      appStore.dispatch(transcriptHydrationStarted(sibling));
+
+      // The swap spares the sibling; its hydration then settles with the tab
+      // still open — the subscription survives for the live panel.
+      const viewedSub = openChat(viewed);
+      appStore.dispatch(markAgentAsViewed(viewed));
+      appStore.dispatch(transcriptHydrationSettled(sibling));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(siblingSub.unsubscribe).not.toHaveBeenCalled();
+
+      // The sibling's tab closes; its panel's destroy dispatches the scoped
+      // clear. Another agent is still viewed (reducer no-op) — the sibling's
+      // own subscription must be torn down, the viewed one untouched.
+      appStore.dispatch(clearPanelLayout(WS));
+      appStore.dispatch(clearCurrentlyViewedAgent(sibling));
+      await vi.waitFor(() => expect(siblingSub.unsubscribe).toHaveBeenCalledOnce());
+      expect(viewedSub.unsubscribe).not.toHaveBeenCalled();
+    },
+  );
+
+  it(
+    "a trailing scoped clear keeps a swap-spared sibling's subscription while its tab is still open (deactivation, not close)",
+    async () => {
+      // Over-close guard for the scoped-clear branch: a panel DEACTIVATION
+      // (tab switch) dispatches the same scoped clear as a destroy, but the
+      // tab is still open — the settled sibling's subscription must survive,
+      // exactly like the monorepo#1215 trailing-clear contract.
+      const sibling = 'agent-2917-deactivate-sibling';
+      const viewed = 'agent-2917-deactivate-viewed';
+      seedSession(sibling);
+      seedSession(viewed);
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'Sibling', closable: true, agentId: sibling }),
+      );
+      const siblingSub = openChat(sibling);
+      appStore.dispatch(markAgentAsViewed(sibling));
+      appStore.dispatch(transcriptHydrationStarted(sibling));
+
+      openChat(viewed);
+      appStore.dispatch(markAgentAsViewed(viewed));
+      appStore.dispatch(transcriptHydrationSettled(sibling));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(siblingSub.unsubscribe).not.toHaveBeenCalled();
+
+      // Trailing scoped clear with the tab still open: keep the subscription.
+      appStore.dispatch(clearCurrentlyViewedAgent(sibling));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(siblingSub.unsubscribe).not.toHaveBeenCalled();
+    },
+  );
+
+  it(
+    'defers a scoped clear that lands while the swap-spared sibling is still loading with an open tab, closing once it settles unhosted (monorepo#2917)',
+    async () => {
+      // Loading edge of the scoped-clear branch: the trailing clear arrives
+      // BEFORE the sibling's hydration settles (tab still open) — the branch
+      // re-marks it for the spare-then-revisit contract instead of closing a
+      // subscription a live panel is waiting on. When the tab then closes
+      // and the hydration settles, the deferred close runs.
+      const sibling = 'agent-2917-loading-clear-sibling';
+      const viewed = 'agent-2917-loading-clear-viewed';
+      seedSession(sibling);
+      seedSession(viewed);
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'Sibling', closable: true, agentId: sibling }),
+      );
+      const siblingSub = openChat(sibling);
+      appStore.dispatch(markAgentAsViewed(sibling));
+      appStore.dispatch(transcriptHydrationStarted(sibling));
+
+      openChat(viewed);
+      appStore.dispatch(markAgentAsViewed(viewed));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(siblingSub.unsubscribe).not.toHaveBeenCalled();
+
+      // Scoped clear while still loading, tab open: defer — don't cancel the
+      // in-flight hydration.
+      appStore.dispatch(clearCurrentlyViewedAgent(sibling));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(siblingSub.unsubscribe).not.toHaveBeenCalled();
+
+      // The tab closes, then hydration settles with no host and no re-view —
+      // the deferred close runs.
+      appStore.dispatch(clearPanelLayout(WS));
+      appStore.dispatch(transcriptHydrationSettled(sibling));
+      await vi.waitFor(() => expect(siblingSub.unsubscribe).toHaveBeenCalledOnce());
+    },
+  );
+
   it('flips the replayable-snapshot flag true on a snapshot emit and false on close (registry wiring, monorepo#2864)', async () => {
     // End-to-end pin of the registry wiring the chat-read saga's immediate
     // escalation consults: a dropped set-site would silently degrade the
