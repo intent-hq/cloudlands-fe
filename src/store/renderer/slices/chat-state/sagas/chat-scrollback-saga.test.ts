@@ -24,6 +24,7 @@ import {
   bulkUpsertSessions,
   initialState as agentSessionInitialState,
   prependHistoryMessages,
+  removeSession,
   updateSession,
 } from '../../agent-session/agent-session-slice';
 import {
@@ -143,7 +144,10 @@ function harness() {
 }
 
 describe('chatScrollbackSaga (on-demand history paging)', () => {
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
 
   it('seeks at the tail oldest on the first older request, then continues from the persisted token', async () => {
     const run = harness();
@@ -331,6 +335,115 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     expect(run.history()).toBeUndefined();
     expect(run.chat()?.pendingQuestionRecovery).toBeUndefined();
     expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('retries one transient recovery failure without allowing duplicate panel requests', async () => {
+    vi.useFakeTimers();
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([
+        session({
+          status: AgentStatus.Idle,
+          metadata: { pendingQuestionsMessageId: 'm-question' },
+        }),
+      ]),
+    );
+    mocks.getConversation
+      .mockRejectedValueOnce(new Error('temporary transport failure'))
+      .mockResolvedValueOnce(page([questionMessage('m-question', 10)]));
+
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    await settle();
+
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+    expect(run.chat()?.pendingQuestionRecovery?.status).toBe('loading');
+    await vi.advanceTimersByTimeAsync(250);
+    await settle();
+
+    expect(mocks.getConversation).toHaveBeenCalledTimes(2);
+    expect(run.chat()?.pendingQuestionRecovery?.status).toBe('found');
+    expect(deriveWizardPendingQuestions(run.state(), AGENT, [])).toMatchObject({
+      messageId: 'm-question',
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('exhausts bounded transport retries and does not restart for the same marker', async () => {
+    vi.useFakeTimers();
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([session({ metadata: { pendingQuestionsMessageId: 'm-question' } })]),
+    );
+    mocks.getConversation.mockRejectedValue(new Error('transport unavailable'));
+
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    await settle();
+    await vi.advanceTimersByTimeAsync(250);
+    await settle();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await settle();
+
+    expect(mocks.getConversation).toHaveBeenCalledTimes(3);
+    expect(run.chat()?.pendingQuestionRecovery).toEqual({
+      messageId: 'm-question',
+      status: 'error',
+    });
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    await vi.advanceTimersByTimeAsync(10_000);
+    await settle();
+    expect(mocks.getConversation).toHaveBeenCalledTimes(3);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('cancels a stale in-flight completion when the marker changes', async () => {
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([session({ metadata: { pendingQuestionsMessageId: 'm-old' } })]),
+    );
+    let resolveOld!: (value: ReturnType<typeof page>) => void;
+    mocks.getConversation
+      .mockReturnValueOnce(new Promise((resolve) => (resolveOld = resolve)))
+      .mockResolvedValueOnce(page([questionMessage('m-new', 11)]));
+
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-old'));
+    await settle();
+    run.dispatch(updateSession(AGENT, { metadata: { pendingQuestionsMessageId: 'm-new' } }));
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-new'));
+    await settle();
+    resolveOld(page([questionMessage('m-old', 10)]));
+    await settle();
+
+    expect(mocks.getConversation).toHaveBeenCalledTimes(2);
+    expect(run.chat()?.pendingQuestionRecovery).toMatchObject({
+      messageId: 'm-new',
+      status: 'found',
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('stops a scheduled retry when the session is removed', async () => {
+    vi.useFakeTimers();
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([session({ metadata: { pendingQuestionsMessageId: 'm-question' } })]),
+    );
+    mocks.getConversation.mockRejectedValue(new Error('temporary transport failure'));
+
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    await settle();
+    run.dispatch(removeSession(AGENT));
+    await settle();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await settle();
+
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+    expect(run.chat()?.pendingQuestionRecovery).toBeUndefined();
     run.task.cancel();
     await run.task.toPromise();
   });

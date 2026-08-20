@@ -113,6 +113,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectFetchingOlderHistory: testState.selector(false),
   selectHistoryExhausted: testState.selector(false),
   selectHistorySeekUnsupported: testState.selector(false),
+  selectPendingQuestionRecovery: testState.selector(undefined),
   selectTranscriptHydration: testState.selector({ isHydrating: false }),
   selectTranscriptHydratedOnce: testState.selector(false),
   selectTranscriptSnapshotMeta: testState.selector(undefined),

@@ -92,7 +92,7 @@ export type SerializableContextItem = Omit<ChatInputContextItem, 'file'>;
 export type TranscriptHydrationStatus = 'loading' | 'settled' | 'error';
 
 /** One bounded lookup for an authoritative question marker outside the tail page. */
-export interface PendingQuestionRecovery {
+interface PendingQuestionRecovery {
   messageId: string;
   status: 'loading' | 'found' | 'not-found' | 'error';
   /** Wizard projection retained after one successful lookup; never transcript state. */
