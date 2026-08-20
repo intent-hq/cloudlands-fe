@@ -118,12 +118,12 @@ export const syntheticFixtures: SyntheticFixture[] = [
     note: 'trailing text block containing only a prompts comment is dropped from render',
     blocks: [
       text('<group:Finishing>\nfinal work\n</group>\n'),
-      text('<!-- suggested-prompts\nArchive the workspace.\nReview the archive.\n-->\n'),
+      text('<!-- suggested-prompts\nArchive the workspace.\n-->\n'),
     ],
   },
   {
     id: 'prompts-trailing-closer',
-    note: 'final prompt line fused with the --> closer remains visible as malformed',
+    note: 'final prompt line fused with the --> closer still closes the block',
     blocks: [
       text(
         'Parked the rewrite.\n\n<!-- suggested-prompts\nResume the rewrite now.\nShow the parked diff.\nLeave rewrite parked for now. -->\n',

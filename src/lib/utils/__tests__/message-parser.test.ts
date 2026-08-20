@@ -800,47 +800,43 @@ Review code
   it('should parse Label|prompt syntax', () => {
     const content = `<!-- suggested-prompts
 Label|Full prompt text
-Second prompt
 -->`;
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts).toEqual(['Full prompt text', 'Second prompt']);
+    expect(result.prompts).toEqual(['Full prompt text']);
   });
 
   it('should strip delay:N| prefix and return plain string', () => {
     const content = `<!-- suggested-prompts
 delay:60|Check deployment
-Review deployment logs
 -->`;
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts.length).toBe(2);
+    expect(result.prompts.length).toBe(1);
     expect(result.prompts[0]).toBe('Check deployment');
   });
 
   it('should strip Label|delay:N| prefix and return plain string', () => {
     const content = `<!-- suggested-prompts
 Label|delay:30|Check build
-Review build logs
 -->`;
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts.length).toBe(2);
+    expect(result.prompts.length).toBe(1);
     expect(result.prompts[0]).toBe('Check build');
   });
 
   it('should strip delay prefix case-insensitively', () => {
     const content = `<!-- suggested-prompts
 DELAY:120|Check CI
-Review CI logs
 -->`;
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts.length).toBe(2);
+    expect(result.prompts.length).toBe(1);
     expect(result.prompts[0]).toBe('Check CI');
   });
 
@@ -1128,7 +1124,7 @@ Some trailing content.`;
     expect(result.cleanedContent).toBe('');
   });
 
-  it('requires the --> closer to stand alone on its own line', () => {
+  it('should accept a trailing --> closer with the remainder as the final prompt', () => {
     const content = [
       'Parked the rewrite.',
       '',
@@ -1140,9 +1136,24 @@ Some trailing content.`;
 
     const result = parseSuggestedPrompts(content);
 
-    expect(result.prompts).toEqual([]);
-    expect(result.cleanedContent).toBe(content);
-    expect(hasSuggestedPrompts(content)).toBe(false);
+    expect(result.prompts).toEqual([
+      'Resume the rewrite now.',
+      'Show the parked diff.',
+      'Leave rewrite parked for now.',
+    ]);
+    expect(result.cleanedContent).toBe('Parked the rewrite.');
+    expect(hasSuggestedPrompts(content)).toBe(true);
+  });
+
+  it('should apply Label| and delay:N| handling to a trailing-closer remainder', () => {
+    const content = ['<!-- suggested-prompts', 'Run tests', 'Label|delay:30|Check build -->'].join(
+      '\n',
+    );
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual(['Run tests', 'Check build']);
+    expect(result.cleanedContent).toBe('');
   });
 
   it('should reject a trailing-closer remainder that looks like body text', () => {
@@ -1211,11 +1222,11 @@ Some trailing content.`;
     expect(parseSuggestedPrompts(incomplete, { isStreaming: true }).cleanedContent).toBe('Done.');
     expect(parseSuggestedPrompts(incomplete).cleanedContent).toBe(incomplete);
 
-    const inlineCloser = 'Done.\n\n<!-- suggested-prompts\nRun tests -->\nOpen PR';
-    expect(parseSuggestedPrompts(inlineCloser, { isStreaming: true }).cleanedContent).toBe(
-      inlineCloser,
+    const embeddedCloser = 'Done.\n\n<!-- suggested-prompts\nRun --> tests\nOpen PR';
+    expect(parseSuggestedPrompts(embeddedCloser, { isStreaming: true }).cleanedContent).toBe(
+      embeddedCloser,
     );
-    expect(parseSuggestedPrompts(inlineCloser).cleanedContent).toBe(inlineCloser);
+    expect(parseSuggestedPrompts(embeddedCloser).cleanedContent).toBe(embeddedCloser);
   });
 
   it('keeps non-comment tags at the start of a streaming line', () => {

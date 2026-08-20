@@ -2015,10 +2015,7 @@
     void $fetchingHistorySeek$;
     if (!scrollContainer) return;
     untrack(() => {
-      if (
-        (exhausted && virtualSpacerHeight > 0) ||
-        (!gapOpen && virtualSpacerBelowHeight > 0)
-      ) {
+      if ((exhausted && virtualSpacerHeight > 0) || (!gapOpen && virtualSpacerBelowHeight > 0)) {
         runSpacerReconcile(true);
         return;
       }
