@@ -15,6 +15,8 @@ import { BROWSER_PROTOCOLS } from '../../../shared/constants';
 // Mock the CDP service before importing the executor
 vi.mock('../main/embedded-browser-cdp-service', () => ({
   DEFAULT_AGENT_VIEWPORT: { width: 1280, height: 800 },
+  AGENT_VIEWPORT_MIN_PX: 320,
+  AGENT_VIEWPORT_MAX_PX: 3840,
   embeddedBrowserCdp: {
     findModelTabByExactUrl: vi.fn().mockResolvedValue(undefined),
     findModelTabByRequestedUrl: vi.fn().mockResolvedValue(undefined),

@@ -12,7 +12,12 @@
 import { z } from 'zod';
 import { BROWSER_PROTOCOLS } from '../../../shared/constants';
 import { Logger } from '../../../shared/logger';
-import { DEFAULT_AGENT_VIEWPORT, embeddedBrowserCdp } from './embedded-browser-cdp-service';
+import {
+  AGENT_VIEWPORT_MAX_PX,
+  AGENT_VIEWPORT_MIN_PX,
+  DEFAULT_AGENT_VIEWPORT,
+  embeddedBrowserCdp,
+} from './embedded-browser-cdp-service';
 import { browserCapture } from './browser-capture-service';
 import type { SnapshotOptions, SessionOptions, CaptureStepOptions } from './browser-capture-types';
 import {
@@ -127,7 +132,11 @@ const GetSummaryActionSchema = z
   .strict();
 
 // Emulated viewport bounds for agent-owned tabs (monorepo#2857).
-const ViewportDimensionSchema = z.number().int().min(320).max(3840);
+const ViewportDimensionSchema = z
+  .number()
+  .int()
+  .min(AGENT_VIEWPORT_MIN_PX)
+  .max(AGENT_VIEWPORT_MAX_PX);
 
 const OpenTabActionSchema = z.object({
   action: z.literal('openTab'),
