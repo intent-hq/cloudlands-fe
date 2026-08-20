@@ -52,12 +52,18 @@
   import {
     reopenClosedTab,
     restorePanelDragLayout,
+    setPanelColumnCount,
     toggleExpandPanel,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import {
+    selectPanelColumnCount,
     selectPanelLayoutWorkspace,
     selectRecentlyClosed,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import {
+    isPanelColumnCount,
+    type PanelColumnCount,
+  } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import {
     PANEL_DRAG_MIME,
     clearDraggedPanelState,
@@ -134,6 +140,7 @@
     workspaceId: string;
     layoutId?: string;
     isFocused?: boolean;
+    isRightmostPanel?: boolean;
     /** Content-specific items to merge into the grouped panel action menu. */
     contentActions?: PanelHeaderActions | null;
     /** Legacy tab strip; the tabless shell renders only the content header. */
@@ -176,6 +183,7 @@
     workspaceId,
     layoutId,
     isFocused = false,
+    isRightmostPanel = false,
     contentActions = null,
     showTabStrip = false,
     onCreateAgent,
@@ -221,6 +229,7 @@
   let identitySearchQuery = $state('');
   let identityTriggerRef = $state<HTMLButtonElement | null>(null);
   let identityMenuRef = $state<HTMLDivElement | null>(null);
+  let identityNavigationWidth = $state(0);
   let identityHoverTimer: ReturnType<typeof setTimeout> | null = null;
   let suppressNextIdentityFocusOpen = false;
   let identityTriggerHovered = false;
@@ -254,6 +263,8 @@
   // UI updates when agents rename or their session metadata changes.
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const recentlyClosed$ = selectRecentlyClosed(panelLayoutIdStore);
+  const panelColumnCount$ = selectPanelColumnCount(workspaceIdStore);
+  const panelColumnCounts = [1, 2, 3, 4] as const;
 
   // Reactive store subscription for specialist names - ensures re-render when specialists change
   const specialists$ = selectSpecialists();
@@ -366,11 +377,27 @@
     ...tabs,
     ...$recentlyClosed$.filter((entry) => entry.panelId === panelId).map((entry) => entry.tab),
   ]);
+  const hasAlternativeIdentity = $derived(identityTabs.some((tab) => tab.id !== activeTabId));
   const backPanelTabId = $derived(getAdjacentPanelTabId(identityTabs, activeTabId, -1));
   const forwardPanelTabId = $derived(getAdjacentPanelTabId(identityTabs, activeTabId, 1));
   const filteredIdentityTabs = $derived(
     filterPanelTabs(identityTabs, identitySearchQuery, getTabTitle),
   );
+
+  $effect(() => {
+    if (!hasAlternativeIdentity && identityMenuOpen) handleIdentityOpenChange(false);
+  });
+
+  function handlePanelColumnCountChange(value: string) {
+    const count = Number(value);
+    if (isPanelColumnCount(count)) appStore.dispatch(setPanelColumnCount(workspaceId, count));
+  }
+
+  function panelColumnCountLabel(value: PanelColumnCount) {
+    return value === 1
+      ? m.workspace_sidebarHeader_panelColumns_count_one({ count: value })
+      : m.workspace_sidebarHeader_panelColumns_count_many({ count: value });
+  }
 
   function clearIdentityHoverTimer() {
     if (!identityHoverTimer) return;
@@ -1297,7 +1324,7 @@
           aria-label={m.ui_breadcrumb_more_label()}
           data-testid="panel-actions-trigger"
         >
-          <KebabIcon class="pointer-events-none size-3!" />
+          <KebabIcon class="pointer-events-none size-3.5!" />
         </Button>
       </Tooltip>
     {/snippet}
@@ -1371,6 +1398,50 @@
   </DropdownMenu>
 {/snippet}
 
+{#snippet panelColumnCountMenu()}
+  {#if isRightmostPanel}
+    <Menu.Root>
+      <Menu.Trigger>
+        {#snippet child({ props })}
+          <Button
+            {...props}
+            variant="ghost-light"
+            size="icon-sm"
+            aria-label={m.workspace_sidebarHeader_panelColumns_currentCount_ariaLabel({
+              count: $panelColumnCount$,
+            })}
+            tooltip={m.workspace_sidebarHeader_panelColumns_currentCount_tooltip({
+              count: $panelColumnCount$,
+            })}
+            tooltipSide="bottom"
+            tooltipDelayDuration={300}
+            data-panel-column-count-trigger
+          >
+            <Fa icon={faTableColumns} size={14} class="size-3.5!" />
+          </Button>
+        {/snippet}
+      </Menu.Trigger>
+      <Menu.Content
+        align="end"
+        side="bottom"
+        class="w-44"
+        aria-label={m.workspace_sidebarHeader_panelColumns_ariaLabel()}
+      >
+        <Menu.RadioGroup
+          value={String($panelColumnCount$)}
+          onValueChange={handlePanelColumnCountChange}
+        >
+          {#each panelColumnCounts as option}
+            <Menu.RadioItem value={String(option)}>
+              <span>{panelColumnCountLabel(option)}</span>
+            </Menu.RadioItem>
+          {/each}
+        </Menu.RadioGroup>
+      </Menu.Content>
+    </Menu.Root>
+  {/if}
+{/snippet}
+
 {#snippet panelCloseButton()}
   {#if onClosePanel}
     <Tooltip content={m.layout_panelTabBar_closePanel_label()} side="bottom" delayDuration={300}>
@@ -1425,18 +1496,18 @@
             {...props}
             bind:ref={identityTriggerRef}
             variant="ghost-light"
-            size="icon-xs"
-            class="size-6! focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+            size="icon-sm"
             aria-label={m.layout_panelTabBar_identityHistory_ariaLabel()}
             tooltip={m.layout_panelTabBar_identityHistory_ariaLabel()}
             tooltipSide="bottom"
+            tooltipDelayDuration={300}
             onfocus={handleIdentityTriggerFocus}
             onpointerenter={handleIdentityTriggerPointerEnter}
             onpointerleave={handleIdentityTriggerPointerLeave}
             data-testid="panel-identity-history-trigger"
             data-panel-identity-history-trigger
           >
-            <Fa icon={faClockRotateLeft} size="xs" />
+            <Fa icon={faClockRotateLeft} size={14} class="size-3.5!" />
           </Button>
         {/snippet}
       </Menu.Trigger>
@@ -1893,48 +1964,80 @@
       <!-- Right: stable content controls, grouped actions, and close. -->
       <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
         {@render contentActions?.primary?.()}
+        {@render panelColumnCountMenu()}
         {@render panelActionsDropdown()}
-        <span class="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden="true" data-panel-history-divider
-        ></span>
-        <div class="flex shrink-0 items-center" data-panel-identity-navigation>
-          {@render identityHistoryMenu()}
-          <TooltipShortcut
-            label={m.ui_contentHeader_goBack_tooltip()}
-            shortcut="cmd+["
-            side="bottom"
-            delayDuration={300}
+        <div
+          class="panel-identity-navigation-clip shrink-0 overflow-hidden"
+          class:pointer-events-none={!hasAlternativeIdentity}
+          style:width={hasAlternativeIdentity ? `${identityNavigationWidth}px` : '0px'}
+          style:opacity={hasAlternativeIdentity ? 1 : 0}
+          aria-hidden={!hasAlternativeIdentity}
+          inert={!hasAlternativeIdentity}
+          data-panel-identity-navigation-clip
+          data-expanded={hasAlternativeIdentity}
+        >
+          <div
+            bind:offsetWidth={identityNavigationWidth}
+            class="flex w-max min-w-max shrink-0 items-center"
+            data-panel-identity-navigation-measure
           >
-            <Button
-              variant="ghost-light"
-              size="icon-xs"
-              class="size-6! focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-              disabled={!backPanelTabId}
-              aria-label={m.ui_contentHeader_goBack_tooltip()}
-              onclick={() => activateIdentityTab(backPanelTabId)}
-              data-panel-identity-back
-            >
-              <Fa icon={faArrowLeft} size="xs" />
-            </Button>
-          </TooltipShortcut>
-          <TooltipShortcut
-            label={m.ui_contentHeader_goForward_tooltip()}
-            shortcut="cmd+]"
-            side="bottom"
-            delayDuration={300}
-          >
-            <Button
-              variant="ghost-light"
-              size="icon-xs"
-              class="size-6! focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-              disabled={!forwardPanelTabId}
-              aria-label={m.ui_contentHeader_goForward_tooltip()}
-              onclick={() => activateIdentityTab(forwardPanelTabId)}
-              data-panel-identity-forward
-            >
-              <Fa icon={faArrowRight} size="xs" />
-            </Button>
-          </TooltipShortcut>
+            <span
+              class="mx-1 h-4 w-px shrink-0 bg-border"
+              aria-hidden="true"
+              data-panel-history-divider
+            ></span>
+            <div class="flex shrink-0 items-center" data-panel-identity-navigation>
+              {@render identityHistoryMenu()}
+              <TooltipShortcut
+                label={m.ui_contentHeader_goBack_tooltip()}
+                shortcut="cmd+["
+                side="bottom"
+                delayDuration={300}
+              >
+                <Button
+                  variant="ghost-light"
+                  size="icon-sm"
+                  disabled={!backPanelTabId}
+                  aria-label={m.ui_contentHeader_goBack_tooltip()}
+                  onclick={() => activateIdentityTab(backPanelTabId)}
+                  data-panel-identity-back
+                >
+                  <Fa icon={faArrowLeft} size={14} class="size-3.5!" />
+                </Button>
+              </TooltipShortcut>
+              <TooltipShortcut
+                label={m.ui_contentHeader_goForward_tooltip()}
+                shortcut="cmd+]"
+                side="bottom"
+                delayDuration={300}
+              >
+                <Button
+                  variant="ghost-light"
+                  size="icon-sm"
+                  disabled={!forwardPanelTabId}
+                  aria-label={m.ui_contentHeader_goForward_tooltip()}
+                  onclick={() => activateIdentityTab(forwardPanelTabId)}
+                  data-panel-identity-forward
+                >
+                  <Fa icon={faArrowRight} size={14} class="size-3.5!" />
+                </Button>
+              </TooltipShortcut>
+            </div>
+          </div>
         </div>
+        {@render panelCloseButton()}
+      </div>
+    </div>
+  {:else if isRightmostPanel || onClosePanel}
+    <div
+      class="panel-header group/header relative flex items-center border-b border-border bg-sidebar pr-2.5"
+      style:height="var(--panel-header-height)"
+      data-panel-tabless-header
+      data-empty-panel-header
+    >
+      <div class="min-w-0 flex-1" aria-hidden="true"></div>
+      <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
+        {@render panelColumnCountMenu()}
         {@render panelCloseButton()}
       </div>
     </div>
@@ -2344,5 +2447,17 @@
   .panel-header-leading-surface {
     position: relative;
     top: 0.5px;
+  }
+
+  .panel-identity-navigation-clip {
+    transition:
+      width var(--motion-standard) var(--ease-standard),
+      opacity var(--motion-fast) var(--ease-standard);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .panel-identity-navigation-clip {
+      transition: none;
+    }
   }
 </style>

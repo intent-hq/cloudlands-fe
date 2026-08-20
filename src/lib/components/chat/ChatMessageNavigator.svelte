@@ -8,7 +8,6 @@
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
   import ScrollToBottomButton from './ScrollToBottomButton.svelte';
-  import { CHAT_ICON_SIZE } from './chat-icon-size';
   import type { UserMessageNavigationItem } from './chat-message-navigation';
 
   interface Props {
@@ -211,7 +210,6 @@
           {...props}
           variant="ghost-light"
           size="icon-sm"
-          class="focus-visible:border-border focus-visible:bg-muted focus-visible:ring-0"
           aria-label={m.chat_messageNavigator_open_ariaLabel()}
           tooltip={m.chat_messageNavigator_open_ariaLabel()}
           tooltipSide="bottom"
@@ -224,7 +222,7 @@
           onpointercancel={() => (pointerDownOnTrigger = false)}
           data-testid="chat-message-navigator-trigger"
         >
-          <Fa icon={faList} size={CHAT_ICON_SIZE.header} class="size-3!" />
+          <Fa icon={faList} size={14} class="size-3.5!" />
         </Button>
       {/snippet}
     </Popover.Trigger>

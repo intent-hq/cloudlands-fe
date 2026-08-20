@@ -24,6 +24,7 @@
     closedHistoryCount = 0,
     initialActiveTabId = 'note-history',
     closeAvailable = true,
+    isRightmostPanel = true,
   }: {
     theme?: 'light' | 'dark';
     width?: number;
@@ -33,6 +34,7 @@
     closedHistoryCount?: number;
     initialActiveTabId?: string;
     closeAvailable?: boolean;
+    isRightmostPanel?: boolean;
   } = $props();
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
@@ -175,6 +177,7 @@
     {activeTabId}
     panelId="panel-history"
     {workspaceId}
+    {isRightmostPanel}
     isFocused
     onTabClick={(tabId) => (activeTabId = tabId)}
     onTabRename={() => {}}

@@ -67,6 +67,14 @@ describe('workspace column layout contract', () => {
       path.join(SRC_ROOT, 'lib/components/workspace/sidebar/WorkspaceProgressCard.svelte'),
       'utf8',
     );
+    const sidebarHeader = fs.readFileSync(
+      path.join(SRC_ROOT, 'lib/components/workspace/WorkspaceSidebarHeader.svelte'),
+      'utf8',
+    );
+    const panelTabBar = fs.readFileSync(
+      path.join(SRC_ROOT, 'lib/components/layout/panel-system/PanelTabBar.svelte'),
+      'utf8',
+    );
     const titleBar = fs.readFileSync(
       path.join(SRC_ROOT, 'lib/components/layout/WindowTitleBar.svelte'),
       'utf8',
@@ -121,6 +129,12 @@ describe('workspace column layout contract', () => {
     expect(sidebar).toContain('hideActionsMenu={!isLauncherOverview}');
     expect(sidebar).toContain('draggable={draggableTitleRegion}');
     expect(progress).toContain('data-workspace-header-actions');
+    expect(progress).not.toContain('data-panel-column-count-trigger');
+    expect(sidebarHeader).not.toContain('data-panel-column-count-trigger');
+    expect(progress).not.toContain('data-panel-column-icon');
+    expect(sidebarHeader).not.toContain('data-panel-column-icon');
+    expect(panelTabBar).toContain('data-panel-column-count-trigger');
+    expect(panelTabBar).toContain('icon={faTableColumns}');
     expect(progress.indexOf('data-workspace-close')).toBeGreaterThan(
       progress.indexOf('<DropdownMenu bind:open={dropdownOpen}>'),
     );

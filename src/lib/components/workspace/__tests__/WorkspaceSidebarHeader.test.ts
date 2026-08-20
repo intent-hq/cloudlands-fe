@@ -185,25 +185,13 @@ describe('WorkspaceSidebarHeader status message', () => {
     });
   });
 
-  it('places the workspace-scoped column control immediately before the actions menu', async () => {
+  it('does not render the panel column control in the workspace title header', async () => {
     const { container } = await renderHeader();
     const controls = container.querySelector('[data-sidebar-header-controls]')!;
-    const columnTrigger = controls.querySelector('[data-panel-column-count-trigger]')!;
     const actionsTrigger = controls.querySelector('[data-workspace-actions-trigger]')!;
 
-    expect(columnTrigger.textContent?.trim()).toBe('2');
-    expect(columnTrigger.querySelectorAll('rect')).toHaveLength(2);
-    expect(
-      columnTrigger.compareDocumentPosition(actionsTrigger) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-
-    await fireEvent.click(columnTrigger);
-    expect(await screen.findAllByRole('menuitemradio')).toHaveLength(4);
-    await fireEvent.click(screen.getByRole('menuitemradio', { name: '4 columns' }));
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'panelLayout/setPanelColumnCount',
-      payload: ['ws-1', 4],
-    });
+    expect(controls.querySelector('[data-panel-column-count-trigger]')).toBeNull();
+    expect(actionsTrigger).toBeTruthy();
   });
 
   it('renders the workspace status message under the title', async () => {

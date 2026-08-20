@@ -122,44 +122,62 @@ test('shows recently closed history and closes its hover menu after pointer exit
   await expect(menu.locator('[data-panel-identity-item]')).toHaveCount(2);
 });
 
-test('shows the quiet search and current row for a single-entry history', async ({
+test('collapses the complete navigation group when no alternative identity exists', async ({
   mount,
   page,
 }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(PanelIdentityHistoryHost, { props: { historyCount: 1 } });
+  const clip = component.locator('[data-panel-identity-navigation-clip]');
+  const measure = component.locator('[data-panel-identity-navigation-measure]');
+  const trigger = component.locator('[data-panel-identity-history-trigger]');
 
-  await component.locator('[data-panel-identity-history-trigger]').click();
-  const menu = page.getByRole('menu', { name: 'Panel history' });
-  const search = menu.getByRole('searchbox');
-  await expect(search).toBeVisible();
-  await expect(menu.locator('[data-panel-identity-item]')).toHaveCount(1);
-  await expect(menu.locator('[data-panel-identity-item="agent-history"]')).toHaveAttribute(
-    'aria-current',
-    'page',
-  );
-  await expect(menu.locator('[data-panel-identity-current-check]')).toHaveCount(1);
+  await expect(clip).toHaveAttribute('data-expanded', 'false');
+  await expect(clip).toHaveAttribute('aria-hidden', 'true');
+  await expect(clip).toHaveAttribute('inert', '');
+  await expect(clip).toHaveCSS('width', '0px');
+  await expect(clip).toHaveCSS('opacity', '0');
+  await expect(clip).toHaveCSS('pointer-events', 'none');
+  const more = component.getByRole('button', { name: 'More' });
+  const close = component.getByRole('button', { name: 'Close panel' });
+  await more.focus();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
 
-  for (const focused of [false, true]) {
-    if (focused) await search.focus();
-    const style = await search.evaluate((node) => {
-      const computed = getComputedStyle(node);
-      return {
-        background: computed.backgroundColor,
-        border: computed.borderTopWidth,
-        hasVisibleBoxShadow: (computed.boxShadow.match(/-?\d+(?:\.\d+)?px/g) ?? []).some(
-          (value) => Number.parseFloat(value) !== 0,
-        ),
-        outline: computed.outlineStyle,
-        caret: computed.caretColor,
-        color: computed.color,
-      };
-    });
-    expect(style.background).toBe('rgba(0, 0, 0, 0)');
-    expect(style.border).toBe('0px');
-    expect(style.hasVisibleBoxShadow).toBe(false);
-    expect(style.outline).toBe('none');
-    expect(style.caret).toBe(style.color);
-  }
+  await component.update({ props: { historyCount: 3 } });
+  await expect(clip).toHaveAttribute('data-expanded', 'true');
+  await expect(clip).toHaveAttribute('aria-hidden', 'false');
+  await expect(trigger).toBeVisible();
+  await expect
+    .poll(async () => {
+      const [clipBox, measureBox] = await Promise.all([clip.boundingBox(), measure.boundingBox()]);
+      return clipBox && measureBox ? Math.abs(clipBox.width - measureBox.width) : Number.NaN;
+    })
+    .toBeLessThan(0.5);
+  const transition = await clip.evaluate((node) => getComputedStyle(node).transitionProperty);
+  expect(transition).toContain('width');
+  expect(transition).toContain('opacity');
+
+  await component.update({ props: { historyCount: 1 } });
+  await expect(clip).toHaveCSS('width', '0px');
+  await expect(clip).toHaveAttribute('inert', '');
+});
+
+test('removes spatial history motion for reduced-motion users', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(PanelIdentityHistoryHost, { props: { historyCount: 3 } });
+  const clip = component.locator('[data-panel-identity-navigation-clip]');
+
+  await expect
+    .poll(() =>
+      clip.evaluate((node) => Number.parseFloat(getComputedStyle(node).transitionDuration)),
+    )
+    .toBeLessThanOrEqual(0.00001);
+  await component.update({ props: { historyCount: 1 } });
+  await expect(clip).toHaveCSS('width', '0px');
+  expect(
+    await clip.evaluate((node) => Number.parseFloat(getComputedStyle(node).transitionDuration)),
+  ).toBeLessThanOrEqual(0.00001);
 });
 
 test('keeps agent and Spec identities in the list with one current check', async ({
@@ -216,7 +234,7 @@ test('keeps history navigation in the header with visible keyboard focus', async
   await expect(back).toBeVisible();
   await expect(forward).toBeVisible();
   const navigation = component.locator('[data-panel-identity-navigation]');
-  const actions = navigation.locator('..');
+  const actions = component.locator('[data-panel-tabless-header] [data-panel-header-actions]');
   await expect(navigation).toBeVisible();
   expect(
     await actions.evaluate((node) =>
@@ -224,7 +242,7 @@ test('keeps history navigation in the header with visible keyboard focus', async
         button.getAttribute('aria-label'),
       ),
     ),
-  ).toEqual(['More', 'Panel history', 'Go back', 'Go forward', 'Close panel']);
+  ).toEqual(['Panel columns: 1', 'More', 'Panel history', 'Go back', 'Go forward', 'Close panel']);
   const divider = actions.locator('[data-panel-history-divider]');
   await expect(divider).toHaveCount(1);
   await expect(divider).toHaveAttribute('aria-hidden', 'true');
@@ -251,7 +269,7 @@ test('keeps one hidden divider and the exact order when Close is unavailable', a
         button.getAttribute('aria-label'),
       ),
     ),
-  ).toEqual(['More', 'Panel history', 'Go back', 'Go forward']);
+  ).toEqual(['Panel columns: 1', 'More', 'Panel history', 'Go back', 'Go forward']);
   await expect(actions.locator('[data-panel-history-divider]')).toHaveCount(1);
   await expect(actions.locator('[data-testid="panel-close-button"]')).toHaveCount(0);
 });
@@ -290,7 +308,7 @@ test('keeps the portalled menu inside narrow light/dark viewports at 100% and 20
         menu.boundingBox(),
       ]);
       expect(headerBox!.height / zoom).toBeCloseTo(32, 1);
-      expect(triggerBox!.width / zoom).toBeCloseTo(24, 1);
+      expect(triggerBox!.width / zoom).toBeCloseTo(28, 1);
       expect(menuBox!.x).toBeGreaterThanOrEqual(0);
       expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(
         await page.evaluate(() => innerWidth),

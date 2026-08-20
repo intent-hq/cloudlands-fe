@@ -182,6 +182,7 @@ test.describe('chat message navigator production path', () => {
       const titleText = header.getByText('Navigation agent', { exact: true });
       const listButton = headerActions.getByTestId('chat-message-navigator-trigger');
       const downButton = headerActions.getByTestId('chat-scroll-to-bottom-button');
+      const columnButton = headerActions.locator('[data-panel-column-count-trigger]');
       const panelActionsButton = headerActions.getByTestId('panel-actions-trigger');
       const closeButton = headerActions.getByTestId('panel-close-button');
       await expectUniqueVisible(header);
@@ -189,6 +190,7 @@ test.describe('chat message navigator production path', () => {
       await expectUniqueVisible(titleText);
       await expectUniqueVisible(listButton);
       await expectUniqueVisible(downButton);
+      await expectUniqueVisible(columnButton);
       await expectUniqueVisible(panelActionsButton);
       await expectUniqueVisible(closeButton);
       await expect(downButton).toBeDisabled();
@@ -199,7 +201,11 @@ test.describe('chat message navigator production path', () => {
       ).toEqual([
         'chat-message-navigator-trigger',
         'chat-scroll-to-bottom-button',
+        null,
         'panel-actions-trigger',
+        'panel-identity-history-trigger',
+        null,
+        null,
         'panel-close-button',
       ]);
       const [
@@ -242,8 +248,8 @@ test.describe('chat message navigator production path', () => {
       expect(actionsBox.x + actionsBox.width).toBeLessThanOrEqual(
         headerBox.x + headerBox.width + 0.5,
       );
-      expect(listIconBox.width).toBeCloseTo(12, 0);
-      expect(listIconBox.height).toBeCloseTo(12, 0);
+      expect(listIconBox.width).toBeCloseTo(14, 0);
+      expect(listIconBox.height).toBeCloseTo(14, 0);
       expect(arrowIconBox.width).toBeCloseTo(16, 0);
       expect(arrowIconBox.height).toBeCloseTo(16, 0);
       expect(arrowComputedSize).toEqual({ width: 16, height: 16 });
@@ -492,6 +498,8 @@ test.describe('chat message navigator production path', () => {
       await page.keyboard.press('Tab');
       await expect(downButton).toBeFocused();
       await page.keyboard.press('Tab');
+      await expect(columnButton).toBeFocused();
+      await page.keyboard.press('Tab');
       await expect(panelActionsButton).toBeFocused();
       await downButton.click();
       await expect(downButton).toBeDisabled();
@@ -514,12 +522,14 @@ test.describe('chat message navigator production path', () => {
     const headerActions = header.locator('[data-panel-header-actions]');
     const trigger = headerActions.getByTestId('chat-message-navigator-trigger');
     const downButton = headerActions.getByTestId('chat-scroll-to-bottom-button');
+    const columnButton = headerActions.locator('[data-panel-column-count-trigger]');
     const outside = headerActions.getByTestId('panel-actions-trigger');
     const title = header.getByText('Navigation agent', { exact: true });
     await expectUniqueVisible(header);
     await expectUniqueVisible(headerActions);
     await expectUniqueVisible(trigger);
     await expectUniqueVisible(downButton);
+    await expectUniqueVisible(columnButton);
     await expectUniqueVisible(outside);
     await expectUniqueVisible(title);
 
@@ -529,6 +539,8 @@ test.describe('chat message navigator production path', () => {
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
     await expect(trigger).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(columnButton).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(outside).toBeFocused();
 

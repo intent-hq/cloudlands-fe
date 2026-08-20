@@ -38,6 +38,7 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
   endDrag: () => ({ type: 'tabState/endDrag' }),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectPanelColumnCount: () => readable(2),
   selectRecentlyClosed: () => readable([]),
   selectPanelLayoutWorkspace: {
     select: (state: any) => state.panelLayout.byWorkspaceId['workspace-1'],
@@ -147,6 +148,14 @@ beforeEach(() => {
   mocks.dispatch.mockClear();
   setDraggedPanelId(null);
   Element.prototype.scrollIntoView = vi.fn();
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     callback(0);
     return 0;
@@ -160,6 +169,39 @@ afterEach(() => {
 });
 
 describe('mounted panel header actions menu', () => {
+  it('renders the workspace column selector only for the rightmost panel and dispatches its count', async () => {
+    const left = renderHeader('note', { panelId: 'panel-left', isRightmostPanel: false });
+    expect(left.container.querySelector('[data-panel-column-count-trigger]')).toBeNull();
+    left.unmount();
+
+    const { container } = renderHeader('note', { isRightmostPanel: true });
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-panel-column-count-trigger]',
+    )!;
+    expect(trigger.getAttribute('aria-label')).toBe('Panel columns: 2');
+    expect(trigger.querySelector('[data-icon="table-columns"]')).toBeTruthy();
+
+    await fireEvent.click(trigger);
+    const radios = await screen.findAllByRole('menuitemradio');
+    expect(radios).toHaveLength(4);
+    expect(
+      screen.getByRole('menuitemradio', { name: '2 columns' }).getAttribute('aria-checked'),
+    ).toBe('true');
+    await fireEvent.click(screen.getByRole('menuitemradio', { name: '4 columns' }));
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'panelLayout/setPanelColumnCount',
+      payload: expect.objectContaining({
+        wsId: 'workspace-1',
+        count: 4,
+        newPanelIds: expect.arrayContaining([
+          expect.any(String),
+          expect.any(String),
+          expect.any(String),
+        ]),
+      }),
+    });
+  });
+
   it.each(panelTypes)('opens one portalled menu from one click for the %s panel', async (type) => {
     const { container } = renderHeader(type);
     const header = container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;

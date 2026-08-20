@@ -7,16 +7,12 @@
    * Supports drag-and-drop for cross-panel tab movement.
    */
 
-  import Fa from 'svelte-fa';
-  import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
   import type {
     PanelState,
     PanelTab,
   } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { cn } from '$lib/utils';
-  import { Button } from '$lib/components/ui/button';
-  import { Tooltip } from '$lib/components/ui/tooltip';
   import PanelTabBar from './PanelTabBar.svelte';
   import PanelContentRenderer from './PanelContentRenderer.svelte';
   import PanelEmptyState from './PanelEmptyState.svelte';
@@ -53,6 +49,7 @@
     isFocused?: boolean;
     workspaceId: string;
     layoutId: string;
+    isRightmostPanel?: boolean;
     contained?: boolean;
     onFocus?: () => void;
     onTabClick?: (tabId: string) => void;
@@ -99,6 +96,7 @@
     isFocused = false,
     workspaceId,
     layoutId,
+    isRightmostPanel = false,
     contained = false,
     onFocus,
     onTabClick,
@@ -473,24 +471,6 @@
   >
     <!-- Drop zones overlay (positioned below tab bar) -->
     <PanelDropZones activeZone={activeDropZone} isActive={isDragOver} />
-    {#if !activeTab && onClosePanel}
-      <div class="absolute right-2 top-2 z-20" data-empty-panel-close>
-        <Tooltip content={m.layout_panel_closePanel_ariaLabel()} side="bottom" delayDuration={300}>
-          <Button
-            variant="ghost-light"
-            size="icon-xs"
-            class="cursor-pointer opacity-50 hover:opacity-100 focus-visible:opacity-100"
-            onclick={(event) => {
-              event.stopPropagation();
-              onClosePanel?.();
-            }}
-            aria-label={m.layout_panel_closePanel_ariaLabel()}
-          >
-            <Fa icon={faXmark} size="xs" />
-          </Button>
-        </Tooltip>
-      </div>
-    {/if}
     <!-- Tab Bar (shows group label and actions when focused) -->
     <div
       data-panel-header
@@ -508,6 +488,7 @@
         panelId={panel.id}
         {workspaceId}
         {layoutId}
+        {isRightmostPanel}
         {isFocused}
         contentActions={headerActions.current}
         {onTabClick}

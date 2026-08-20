@@ -6,6 +6,12 @@
   } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
+  import {
+    clearPanelLayout,
+    initializeLayout,
+  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { selectPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import type { PanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import * as Menu from '$lib/components/ui/menu';
   import PanelTabBar from '../../PanelTabBar.svelte';
 
@@ -13,10 +19,34 @@
     panelType = 'agent',
     width = 240,
     zoom = 2,
-  }: { panelType?: PanelTabType; width?: number; zoom?: number } = $props();
+    initialCount = 2,
+    isRightmostPanel = true,
+    theme = 'light',
+  }: {
+    panelType?: PanelTabType;
+    width?: number;
+    zoom?: number;
+    initialCount?: PanelColumnCount;
+    isRightmostPanel?: boolean;
+    theme?: 'light' | 'dark';
+  } = $props();
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
-  onDestroy(disposeStore);
+  const workspaceId = 'panel-actions-workspace';
+  const count$ = selectPanelColumnCount(workspaceId);
+  store.dispatch(clearPanelLayout(workspaceId));
+  store.dispatch(
+    initializeLayout(workspaceId, {
+      root: { type: 'panel', panelId: 'panel-actions' },
+      panels: { 'panel-actions': { id: 'panel-actions', tabs: [], activeTabId: null } },
+      focusedPanelId: 'panel-actions',
+      columnCount: initialCount,
+    }),
+  );
+  onDestroy(() => {
+    store.dispatch(clearPanelLayout(workspaceId));
+    disposeStore();
+  });
 
   let displayCount = $state(0);
   let contentCount = $state(0);
@@ -32,6 +62,10 @@
     title: `${panelType} panel`,
     closable: true,
     agentId: panelType === 'agent' ? 'panel-menu-agent' : undefined,
+  });
+
+  $effect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
   });
 </script>
 
@@ -55,12 +89,14 @@
   data-move-left-count={moveLeftCount}
   data-move-right-count={moveRightCount}
   data-close-count={closeCount}
+  data-current-count={$count$}
 >
   <PanelTabBar
     tabs={[activeTab]}
     activeTabId={activeTab.id}
     panelId="panel-actions"
-    workspaceId="panel-actions-workspace"
+    {workspaceId}
+    {isRightmostPanel}
     contentActions={{ display: contentDisplayAction, actions: contentCommandAction }}
     onZoomToggle={() => (zoomCount += 1)}
     onSplitHorizontal={() => (splitCount += 1)}

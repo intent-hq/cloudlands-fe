@@ -618,6 +618,7 @@
         {panel}
         {workspaceId}
         {layoutId}
+        isRightmostPanel={panelOrder.at(-1) === node.panelId}
         isFocused={focusedPanelId === node.panelId}
         isZoomed={zoomedPanelId === node.panelId}
         onFocus={() => onFocusPanel?.(node.panelId)}
