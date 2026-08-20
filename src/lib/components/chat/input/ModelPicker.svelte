@@ -1063,7 +1063,14 @@
   );
   let legacyModelsExpanded = $state(false);
   let modelSearchValue = $state('');
-  const legacyModelsVisible = $derived(legacyModelsExpanded || modelSearchValue.trim().length > 0);
+  const onlyLegacyAuggieModels = $derived(
+    groupedModelOptions.some((group) => group.key === AUGGIE_LEGACY_GROUP_KEY) &&
+      !groupedModelOptions.some((group) => group.key === 'auggie'),
+  );
+  const legacyToggleDisabled = $derived(
+    modelSearchValue.trim().length > 0 || onlyLegacyAuggieModels,
+  );
+  const legacyModelsVisible = $derived(legacyModelsExpanded || legacyToggleDisabled);
 
   // The value bound to the dropdown (convert undefined to USE_DEFAULT_VALUE).
   // Bound state rather than derived so a rejected confirmModelChange can
@@ -1693,11 +1700,9 @@
         {group}
         {groupIndex}
         expanded={legacyModelsVisible}
-        disabled={modelSearchValue.trim().length > 0}
+        disabled={legacyToggleDisabled}
         onToggle={() => {
-          if (modelSearchValue.trim().length === 0) {
-            legacyModelsExpanded = !legacyModelsExpanded;
-          }
+          if (!legacyToggleDisabled) legacyModelsExpanded = !legacyModelsExpanded;
         }}
       />
     {:else if !providerTabsEnabled}

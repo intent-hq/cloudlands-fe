@@ -398,16 +398,33 @@ describe('ModelPicker legacy Auggie models', () => {
     const search = screen.getByRole('searchbox', { name: 'Search options' });
     expect(screen.queryByRole('option', { name: /Opus 4.1/ })).toBeNull();
 
-    await fireEvent.input(search, { target: { value: 'Opus' } });
+    await fireEvent.input(search, { target: { value: 'Legacy' } });
     expect(await screen.findByRole('option', { name: /Opus 4.1/ })).toBeTruthy();
     expect(legacyToggle.getAttribute('aria-expanded')).toBe('true');
-    expect(legacyToggle.hasAttribute('disabled')).toBe(true);
+    expect(legacyToggle.getAttribute('aria-disabled')).toBe('true');
+    expect(legacyToggle.hasAttribute('disabled')).toBe(false);
     await fireEvent.click(legacyToggle);
 
     await fireEvent.input(search, { target: { value: '' } });
     await waitFor(() => expect(screen.queryByRole('option', { name: /Opus 4.1/ })).toBeNull());
     expect(legacyToggle.getAttribute('aria-expanded')).toBe('false');
     expect(screen.getByRole('option', { name: /Current model/ })).toBeTruthy();
+  });
+
+  it('shows the legacy subgroup when every Auggie model is legacy', async () => {
+    mockModelState.selectedModel = 'legacy-opus';
+    mockModelState.availableModels = [];
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'legacy-opus', label: 'Opus 4.1', isLegacyModel: true }],
+    });
+    render(ModelPicker, { props: { selectedModel: 'legacy-opus', portal: false } });
+
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByRole('option', { name: /Opus 4.1/ })).toBeTruthy();
+    const legacyToggle = screen.getByRole('button', { name: 'Toggle legacy models' });
+    expect(legacyToggle.getAttribute('aria-expanded')).toBe('true');
+    expect(legacyToggle.getAttribute('aria-disabled')).toBe('true');
+    expect(legacyToggle.hasAttribute('disabled')).toBe(false);
   });
 
   it('restores an expanded subgroup after search clears', async () => {
@@ -420,7 +437,8 @@ describe('ModelPicker legacy Auggie models', () => {
     expect(legacyToggle.getAttribute('aria-expanded')).toBe('true');
 
     await fireEvent.input(search, { target: { value: 'Opus' } });
-    expect(legacyToggle.hasAttribute('disabled')).toBe(true);
+    expect(legacyToggle.getAttribute('aria-disabled')).toBe('true');
+    expect(legacyToggle.hasAttribute('disabled')).toBe(false);
     await fireEvent.input(search, { target: { value: '' } });
 
     expect(legacyToggle.getAttribute('aria-expanded')).toBe('true');

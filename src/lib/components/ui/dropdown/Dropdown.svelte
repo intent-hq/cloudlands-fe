@@ -170,7 +170,7 @@
         options: deduplicateOptions(
           group.options.filter((opt) => {
             const haystack =
-              `${group.searchLabel ?? group.label ?? ''} ${opt.label} ${opt.description ?? ''}`.toLowerCase();
+              `${group.label ?? ''} ${group.searchLabel ?? ''} ${opt.label} ${opt.description ?? ''}`.toLowerCase();
             return terms.every((term) => haystack.includes(term));
           }),
         ),

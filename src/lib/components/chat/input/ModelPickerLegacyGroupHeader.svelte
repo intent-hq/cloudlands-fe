@@ -2,6 +2,7 @@
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
+  import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -15,6 +16,10 @@
 
   let { group, groupIndex, expanded, disabled = false, onToggle }: Props = $props();
 
+  function handleClick() {
+    if (!disabled) onToggle();
+  }
+
   function handleKeydown(event: KeyboardEvent) {
     if (disabled) return;
     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -24,18 +29,17 @@
   }
 </script>
 
-<button
-  type="button"
+<Button
+  variant="ghost-light"
   class={cn(
-    'group type-caption flex w-full cursor-pointer select-none items-center gap-2 border-t border-border/70 px-3 pb-1.5 pt-2.5 font-medium text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring',
+    'group type-caption h-auto w-full justify-start rounded-none border-x-0 border-b-0 border-t border-border px-3 pb-1.5 pt-2.5 font-medium text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring aria-disabled:opacity-100',
     groupIndex > 0 && 'mt-1.5',
     disabled && 'cursor-default hover:bg-transparent hover:text-muted-foreground',
   )}
   aria-label={m.chat_modelPicker_legacyModels_ariaLabel()}
   aria-expanded={expanded}
   aria-disabled={disabled}
-  {disabled}
-  onclick={onToggle}
+  onclick={handleClick}
   onkeydown={handleKeydown}
 >
   <span>{group.label}</span>
@@ -47,4 +51,4 @@
     )}
     size={12}
   />
-</button>
+</Button>
