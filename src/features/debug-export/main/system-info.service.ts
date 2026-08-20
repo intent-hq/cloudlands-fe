@@ -12,7 +12,7 @@ import { allSamples, type MemorySnapshot, type ProcessKind } from '../../../main
 const logger = new Logger('SystemInfoService');
 
 /** One process Intent is responsible for, at the moment the bundle was created. */
-export interface SystemProcessInfo {
+interface SystemProcessInfo {
   pid: number;
   /** Which part of Intent this is: main/renderer/gpu/utility/sidecar/agent/other. */
   type: ProcessKind;
@@ -88,4 +88,3 @@ export function generateSystemInfo(memorySnapshot: MemorySnapshot | null = null)
 
   return info;
 }
-

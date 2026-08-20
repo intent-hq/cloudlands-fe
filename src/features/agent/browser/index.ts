@@ -8,18 +8,15 @@
  */
 
 // Browser-safe services that don't need Node.js APIs
-export { errorBoundary, ErrorBoundaryService } from './error-boundary.service';
+export { errorBoundary } from './error-boundary.service';
 
 // Re-export ContextItem from its canonical source for backward compatibility.
-export type { ContextItem } from '$lib/components/chat/input/context-api';
 
 import { createLogger } from '$lib/utils/client-logger';
 import { store as appStore } from '$store/renderer/store';
 import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import type { AgentSession } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
-
-
 
 const logger = createLogger('browser/index');
 
@@ -174,58 +171,4 @@ export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: Work
 // soft-hide-then-commit → daemon agent.delete, and persistence is owned by
 // the daemon on the main side via direct agent.* RPCs, PROTOCOL.md §5.5).
 
-// ============================================================================
-// Stream store-shaper registration
-// ============================================================================
-// The stream manager lifecycle lives in the main process. Register the
-// renderer store-shaper so stream activity is reflected into the renderer
-// Redux store when the manager runs in a renderer context.
 
-import { registerRendererStreamStoreShaper } from './stream-store-shaper';
-
-registerRendererStreamStoreShaper();
-
-// ============================================================================
-// Recovery Service Proxy
-// ============================================================================
-// Provides session recovery tracking for streaming sessions
-// Tracks which agents are streaming and need recovery on page reload
-
-class RecoveryServiceProxy {
-  private streamingAgents = new Set<string>();
-  private recoveryData = new Map<
-    string,
-    { agentId: string; workspaceId: string; timestamp: number }
-  >();
-
-
-  async needsRecovery(agentId: string, _workspaceId: string): Promise<boolean> {
-    // Check if there's recovery data for this agent
-    return this.recoveryData.has(agentId);
-  }
-
-
-  async recoverSession(session: AgentSession, _workspaceId: string): Promise<AgentSession> {
-    // Clear recovery data after recovery
-    this.recoveryData.delete(session.id);
-    return session;
-  }
-
-  async markStreaming(agentId: string): Promise<void> {
-    this.streamingAgents.add(agentId);
-  }
-
-  async markComplete(agentId: string): Promise<void> {
-    this.streamingAgents.delete(agentId);
-    this.recoveryData.delete(agentId);
-  }
-
-  async getStats(): Promise<{ streamingAgents: number; recoveryPending: number }> {
-    return {
-      streamingAgents: this.streamingAgents.size,
-      recoveryPending: this.recoveryData.size,
-    };
-  }
-}
-
-export const recoveryService = new RecoveryServiceProxy();

@@ -6,13 +6,9 @@
  * starting a new one.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import type { AgentSession } from '../../../../shared/types/agent-session';
-import { AgentStatus } from '../../../../shared/types/agent.types';
+import { describe, it, expect } from 'vitest';
+import type { AgentSession } from '../../../shared/types/agent-session';
+import { AgentStatus } from '../../../shared/types/agent.types';
 
 describe('Session Continuation vs New Thread', () => {
   describe('Agent Session Resume Behavior', () => {

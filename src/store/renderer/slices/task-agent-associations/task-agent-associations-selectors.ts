@@ -1,9 +1,5 @@
-import { store } from "../../store";
-import type { TaskAgentAssociation } from "./task-agent-associations-types";
-
-export const selectTaskAgentAssociationsByNoteId = store.createSelector(
-  (state, workspaceId: string) => state.taskAgentAssociations?.byWorkspaceId[workspaceId]?.byNoteId ?? {},
-);
+import { store } from '../../store';
+import type { TaskAgentAssociation } from './task-agent-associations-types';
 
 export const selectAssociationsForNote = store.createSelector(
   (state, workspaceId: string, noteId: string): TaskAgentAssociation[] =>

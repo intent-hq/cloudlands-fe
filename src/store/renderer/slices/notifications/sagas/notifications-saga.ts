@@ -37,7 +37,7 @@ type AgentListResult = {
   }>;
 };
 
-export function createNativeNotificationChannel(): EventChannel<NativeNotificationEvent> {
+function createNativeNotificationChannel(): EventChannel<NativeNotificationEvent> {
   return eventChannel<NativeNotificationEvent>((emit) => {
     if (typeof window === 'undefined' || !window.electronAPI?.on) return () => {};
     const listeners = [
@@ -56,7 +56,7 @@ export function createNativeNotificationChannel(): EventChannel<NativeNotificati
   }, buffers.sliding(1_000));
 }
 
-export function createWebNotificationChannel(): EventChannel<AgentIdleEvent> {
+function createWebNotificationChannel(): EventChannel<AgentIdleEvent> {
   return eventChannel<AgentIdleEvent>(
     (emit) =>
       addMockIpcListener('agent:idle', (payload) => {

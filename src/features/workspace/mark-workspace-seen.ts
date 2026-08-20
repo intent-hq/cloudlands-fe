@@ -24,7 +24,7 @@ function isRealWorkspaceId(workspaceId: string): boolean {
 }
 
 /** True when the given workspace's route is the one currently on screen. */
-export function isViewingWorkspace(workspaceId: string): boolean {
+function isViewingWorkspace(workspaceId: string): boolean {
   if (typeof window === 'undefined') return false;
   const prefix = `/workspace/${workspaceId}`;
   const path = window.location.pathname;

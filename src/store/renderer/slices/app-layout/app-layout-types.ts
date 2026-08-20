@@ -19,10 +19,6 @@ export type AppLayoutState = {
   pendingLocateInSidebar: PendingSidebarLocate | null;
 };
 
-export type ShowAgentDetail = {
-  agentId: string;
-};
-
 export type OpenAgentTabDetail = {
   agentId: string;
   pin?: boolean;

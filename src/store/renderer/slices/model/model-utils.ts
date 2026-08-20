@@ -14,7 +14,6 @@ import { store as appStore } from '../../store';
 import {
   selectEffectiveDefaultProviderId,
   selectNormalizedProviderId,
-  selectProviderCatalogEntry,
 } from '../provider-catalog/provider-catalog-selectors';
 /**
  * Provider model row shape — the provider-agnostic daemon catalog shape
@@ -90,28 +89,4 @@ export async function getModelsForProviderForLoadingState(
  */
 export async function getModelsForProvider(providerId: string): Promise<AuggieModel[]> {
   return (await getModelsForProviderForLoadingState(providerId)).models;
-}
-/**
- * Get models grouped by provider.
- * Utility function that takes explicit params instead of reading from stores.
- */
-export function getGroupedModels(
-  activeProviderId: string,
-  availableModels: AuggieModel[],
-): Array<{
-  providerId: string;
-  providerDisplayName: string;
-  models: AuggieModel[];
-}> {
-  const providerEntry = selectProviderCatalogEntry.select(appStore.state, activeProviderId);
-  if (!providerEntry || availableModels.length === 0) {
-    return [];
-  }
-  return [
-    {
-      providerId: providerEntry.id,
-      providerDisplayName: providerEntry.displayName,
-      models: availableModels,
-    },
-  ];
 }

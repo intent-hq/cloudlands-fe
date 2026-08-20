@@ -13,11 +13,7 @@
  */
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { isProviderAuthenticationErrorForEntry } from '$shared/provider-catalog';
-import {
-  isModelValidForProvider,
-  parseCompoundModelId,
-  splitCompoundModelId,
-} from '$shared/utils/compound-model-id';
+import { isModelValidForProvider, splitCompoundModelId } from '$shared/utils/compound-model-id';
 import { store } from '../../store';
 import type { ProviderCatalogEntry } from './provider-catalog-types';
 
@@ -132,16 +128,6 @@ export const selectNormalizedProviderId = store.createSelector(
 export const selectProviderDisplayName = store.createSelector(
   (state, providerId: string): string =>
     selectProviderCatalogEntryOrDefault.select(state, providerId)?.displayName ?? providerId,
-);
-
-/**
- * `parseCompoundModelId`-equivalent: bare model ids resolve to the
- * effective default provider ('' before any settings/catalog hydration —
- * callers seeded at connect time never observe that in practice).
- */
-export const selectParsedCompoundModelId = store.createSelector(
-  (state, compoundModelId: string): { providerId: string; modelId: string } =>
-    parseCompoundModelId(compoundModelId, selectEffectiveDefaultProviderId.select(state)),
 );
 
 /**

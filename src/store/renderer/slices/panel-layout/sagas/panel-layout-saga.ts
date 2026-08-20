@@ -453,11 +453,7 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
   const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
   if (layout.newWorkspaceLifecycle || hasAnyTab(layout)) return;
   const availableAgents = agents ?? (yield* selectAllWorkspaceAgents.effect(wsId));
-  const agent = resolveEmptyLayoutAgent(
-    availableAgents,
-    wsId,
-    layout.restoreStatus === 'empty',
-  );
+  const agent = resolveEmptyLayoutAgent(availableAgents, wsId, layout.restoreStatus === 'empty');
   if (!agent) return;
   yield* put(
     openTabInAdjacentOrSplit(
@@ -496,7 +492,7 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
  * sits on the exact stored/requested pair the probe started from and is
  * dropped as stale otherwise.
  */
-export function* rehydrateTunneledBrowserTabs(
+function* rehydrateTunneledBrowserTabs(
   wsId: string,
   tabs: RehydratableBrowserTab[],
 ): SagaGenerator<void> {
@@ -526,7 +522,7 @@ export function* rehydrateTunneledBrowserTabs(
   }
 }
 
-export function* loadLayoutFromStorage(
+function* loadLayoutFromStorage(
   wsId: string,
 ): SagaGenerator<WorkspacePanelLayout | 'invalid' | null> {
   const backendId = yield* selectActiveBackendId();
@@ -535,7 +531,7 @@ export function* loadLayoutFromStorage(
   return isStoredLayoutValid(stored) ? stored : 'invalid';
 }
 
-export function* handleWorkspaceMountedRestore(
+function* handleWorkspaceMountedRestore(
   action: ReturnType<typeof workspaceMounted> | ReturnType<typeof panelLayoutScopeMounted>,
 ): SagaGenerator<void> {
   const [wsId] = action.payload;
@@ -635,7 +631,7 @@ export function* hydrateWorkspaceLayout(wsId: string): SagaGenerator<void> {
   yield* call(handleWorkspaceMountedRestore, panelLayoutScopeMounted(wsId));
 }
 
-export function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void> {
+function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void> {
   try {
     const wsId = getWsId(action);
     if (!isValidWorkspaceId(wsId)) return;
@@ -679,7 +675,7 @@ export function* persistPanelLayout(action: { payload?: unknown }): SagaGenerato
   }
 }
 
-export function* persistHistoryToDisk(wsId: string, backendId?: string): SagaGenerator<void> {
+function* persistHistoryToDisk(wsId: string, backendId?: string): SagaGenerator<void> {
   try {
     const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
     if (workspace === emptyWorkspaceState) return;

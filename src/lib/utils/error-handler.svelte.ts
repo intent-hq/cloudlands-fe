@@ -522,20 +522,3 @@ if (typeof window !== 'undefined') {
   // i18n-ignore (dev-tools test helper)
   (window as any).testInfo = () => errorHandler.handleInfo('Test info: Operation completed');
 }
-
-// Convenience functions
-export function handleError(
-  error: Error | string,
-  context?: Record<string, any>,
-  recoverable = true,
-): string {
-  return errorHandler.handleError(error, context, recoverable);
-}
-
-export function handleWarning(message: string, context?: Record<string, any>): string {
-  return errorHandler.handleWarning(message, context);
-}
-
-export function handleInfo(message: string, context?: Record<string, any>): string {
-  return errorHandler.handleInfo(message, context);
-}

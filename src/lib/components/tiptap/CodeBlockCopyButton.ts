@@ -8,14 +8,8 @@
  */
 
 import { Extension } from '@tiptap/core';
-import {
-  Plugin,
-  PluginKey,
-} from '@tiptap/pm/state';
-import {
-  Decoration,
-  DecorationSet,
-} from '@tiptap/pm/view';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -83,7 +77,7 @@ function buildDecorations(doc: ProseMirrorNode): DecorationSet {
   return DecorationSet.create(doc, decorations);
 }
 
-export const codeBlockCopyButtonKey = new PluginKey('codeBlockCopyButton');
+const codeBlockCopyButtonKey = new PluginKey('codeBlockCopyButton');
 
 /**
  * TipTap Extension that adds copy buttons to code blocks
@@ -117,5 +111,3 @@ export const CodeBlockCopyButton = Extension.create({
     ];
   },
 });
-
-export default CodeBlockCopyButton;

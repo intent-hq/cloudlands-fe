@@ -40,7 +40,7 @@ export interface TabTypeComponentProps {
 /**
  * Definition of a tab type
  */
-export interface TabTypeDefinition {
+interface TabTypeDefinition {
   /** Unique type identifier (matches PanelTabType) */
   type: string;
 

@@ -26,23 +26,6 @@ export const LINEAR_AUTH_CHANNELS = {
 } as const;
 
 /**
- * Remote Tool ID for Linear in the legacy remote-tools API
- * From: clients/sidecar/libs/src/tools/tool-types.ts
- */
-export const LINEAR_REMOTE_TOOL_ID = 12;
-
-/**
- * Tool availability status values
- */
-export const ToolAvailabilityStatus = {
-  Unknown: 0,
-  Available: 1,
-  NeedsConfiguration: 2,
-  NeedsOAuth: 3,
-  Disabled: 4,
-} as const;
-
-/**
  * Linear issue filter types
  */
 export type LinearIssueFilter = 'assigned' | 'created' | 'subscribed' | 'team' | 'all';
@@ -101,44 +84,3 @@ export const LINEAR_ISSUE_FILTER_OPTIONS: Array<{
     },
   },
 ];
-
-/**
- * Natural language queries for each filter type
- * (i18n-ignore: agent-directed prompt content, not rendered UI text)
- */
-export const LINEAR_ISSUE_FILTER_QUERIES: Record<
-  LinearIssueFilter,
-  { summary: string; query: string }
-> = {
-  assigned: {
-    // i18n-ignore — agent-directed prompt content
-    summary: 'Fetch issues assigned to current user',
-    // i18n-ignore — agent-directed prompt content
-    query: 'List all issues assigned to me that are not completed or canceled, grouped by team',
-  },
-  created: {
-    // i18n-ignore — agent-directed prompt content
-    summary: 'Fetch issues created by current user',
-    // i18n-ignore — agent-directed prompt content
-    query: 'List all issues I created that are not completed or canceled, grouped by team',
-  },
-  subscribed: {
-    // i18n-ignore — agent-directed prompt content
-    summary: 'Fetch issues user is subscribed to',
-    // i18n-ignore — agent-directed prompt content
-    query: 'List all issues I am subscribed to that are not completed or canceled, grouped by team',
-  },
-  team: {
-    // i18n-ignore — agent-directed prompt content
-    summary: 'Fetch all active issues from user teams',
-    query:
-      // i18n-ignore — agent-directed prompt content
-      'List all active issues from my teams that are not completed or canceled, grouped by team',
-  },
-  all: {
-    // i18n-ignore — agent-directed prompt content
-    summary: 'Fetch all accessible issues',
-    // i18n-ignore — agent-directed prompt content
-    query: 'List all issues I have access to that are not completed or canceled, grouped by team',
-  },
-};

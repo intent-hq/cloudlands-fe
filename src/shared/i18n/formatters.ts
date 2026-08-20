@@ -78,7 +78,7 @@ export async function loadDateFnsLocale(tag: string): Promise<void> {
 }
 
 /** Loaded date-fns locale for `tag`, or undefined (→ date-fns default enUS). */
-export function getDateFnsLocale(tag: string): DateFnsLocale | undefined {
+function getDateFnsLocale(tag: string): DateFnsLocale | undefined {
   return dateFnsLocales.get(tag);
 }
 
@@ -134,8 +134,6 @@ export interface RelativeTimeOptions {
   /** Reference instant, defaults to now. */
   now?: Date;
 }
-
-export type Formatters = ReturnType<typeof createFormatters>;
 
 // ── Factory ─────────────────────────────────────────────────────────────────
 

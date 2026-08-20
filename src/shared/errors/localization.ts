@@ -82,7 +82,7 @@ export function getSupportedLocales(): SupportedLocale[] {
 /**
  * Detect locale from browser or system
  */
-export function detectLocale(): SupportedLocale {
+function detectLocale(): SupportedLocale {
   if (typeof navigator === 'undefined') {
     return 'en';
   }
@@ -103,27 +103,4 @@ export function detectLocale(): SupportedLocale {
 export function initializeLocalization(locale?: SupportedLocale): void {
   const localeToUse = locale || detectLocale();
   setLocale(localeToUse);
-}
-
-/**
- * Add translations for a specific locale
- * Useful for runtime translation updates
- */
-export function addTranslations(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  locale: SupportedLocale,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  translations: Record<string, string>,
-): void {
-  // This would be implemented to update LOCALE_MESSAGES
-  // For now, it's a placeholder for future enhancement
-}
-
-/**
- * Get all translations for a locale
- */
-export function getTranslations(locale: SupportedLocale): Record<string, string> {
-  // This would return all translations for a given locale
-  // For now, returns empty object for non-English locales
-  return locale === 'en' ? {} : {};
 }

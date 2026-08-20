@@ -14,14 +14,14 @@ import { z } from 'zod';
 // Base Types
 // ============================================================================
 
-export type NotePrimitiveType = 'reference' | 'cli' | 'agent_action' | 'patch' | 'diagram';
+type NotePrimitiveType = 'reference' | 'cli' | 'agent_action' | 'patch' | 'diagram';
 
-export type CreatedByType = 'user' | 'agent' | 'system';
+type CreatedByType = 'user' | 'agent' | 'system';
 
 /**
  * Base interface for all note primitives
  */
-export interface BasePrimitive {
+interface BasePrimitive {
   id: string; // UUID
   type: NotePrimitiveType;
   version: 1; // Schema version for forward compatibility
@@ -37,7 +37,7 @@ export interface BasePrimitive {
 // Reference Block Types
 // ============================================================================
 
-export type ReferenceKind = 'symbol' | 'file_range';
+type ReferenceKind = 'symbol' | 'file_range';
 
 export interface ReferenceTarget {
   /**
@@ -67,13 +67,13 @@ export interface ReferenceTarget {
   };
 }
 
-export interface ReferenceSnapshot {
+interface ReferenceSnapshot {
   code: string;
   filePath: string;
   languageId?: string;
 }
 
-export interface ReferenceDisplay {
+interface ReferenceDisplay {
   collapsedByDefault?: boolean;
   showFilePath?: boolean;
   showSymbolName?: boolean;
@@ -90,21 +90,21 @@ export interface ReferencePrimitive extends BasePrimitive {
 // CLI Command Block Types
 // ============================================================================
 
-export type CliRunStatus = 'running' | 'success' | 'error' | 'cancelled';
+type CliRunStatus = 'running' | 'success' | 'error' | 'cancelled';
 
-export interface CliLastRun {
+interface CliLastRun {
   status: CliRunStatus;
   exitCode?: number;
   startedAt: string;
   finishedAt?: string;
 }
 
-export interface CliOutputSnapshot {
+interface CliOutputSnapshot {
   stdout: string;
   stderr: string;
 }
 
-export interface CliDisplay {
+interface CliDisplay {
   collapsedOutputByDefault?: boolean;
   showCommandPrefix?: string; // e.g. "$"
 }
@@ -125,16 +125,11 @@ export interface CliPrimitive extends BasePrimitive {
 // Agent Action Block Types
 // ============================================================================
 
-export type AgentActionStatus = 'pending' | 'running' | 'success' | 'error';
+type AgentActionStatus = 'pending' | 'running' | 'success' | 'error';
 
-export type AgentActionInputKind =
-  | 'reference'
-  | 'semantic_ref'
-  | 'text'
-  | 'file_glob'
-  | 'note_section';
+type AgentActionInputKind = 'reference' | 'semantic_ref' | 'text' | 'file_glob' | 'note_section';
 
-export interface AgentActionInput {
+interface AgentActionInput {
   kind: AgentActionInputKind;
   refId?: string; // For 'reference' kind
   semanticId?: string; // For 'semantic_ref' kind
@@ -143,20 +138,20 @@ export interface AgentActionInput {
   heading?: string; // For 'note_section' kind
 }
 
-export interface AgentActionConfig {
+interface AgentActionConfig {
   temperature?: number;
   maxTokens?: number;
   [key: string]: unknown; // Agent-specific settings
 }
 
-export interface AgentActionLastRun {
+interface AgentActionLastRun {
   status: AgentActionStatus;
   startedAt: string;
   finishedAt?: string;
   errorMessage?: string;
 }
 
-export interface AgentActionResultSummary {
+interface AgentActionResultSummary {
   title?: string;
   description?: string;
   createdPrimitives?: string[]; // IDs of new primitives created by the agent
@@ -176,7 +171,7 @@ export interface AgentActionPrimitive extends BasePrimitive {
 // Patch Block Types
 // ============================================================================
 
-export type PatchApplyStatus = 'success' | 'conflict' | 'error';
+type PatchApplyStatus = 'success' | 'conflict' | 'error';
 
 export interface PatchLastApply {
   status: PatchApplyStatus;
@@ -196,7 +191,7 @@ export interface FilePatch {
   semanticRefs?: string[]; // semanticIds touched by this patch
 }
 
-export interface PatchDisplay {
+interface PatchDisplay {
   collapsedByDefault?: boolean;
   showFileNames?: boolean;
 }
@@ -233,37 +228,24 @@ export type DiagramGrammar =
  * Flowchart: process, decision, start, end
  * etc.
  */
-export type DiagramNodeKind = string;
+type DiagramNodeKind = string;
 
 /**
  * Semantic style tags for consistent theming
  */
-export type DiagramSemanticStyle =
-  | 'highlighted'
-  | 'muted'
-  | 'danger'
-  | 'success'
-  | 'inactive'
-  | 'warning'
-  | 'active';
+type DiagramSemanticStyle =
+  'highlighted' | 'muted' | 'danger' | 'success' | 'inactive' | 'warning' | 'active';
 
 /**
  * Binding types for linking diagram elements to workspace entities
  */
-export type DiagramBindingType =
-  | 'file'
-  | 'symbol'
-  | 'spec'
-  | 'note'
-  | 'timeline_event'
-  | 'metric'
-  | 'log'
-  | 'test';
+type DiagramBindingType =
+  'file' | 'symbol' | 'spec' | 'note' | 'timeline_event' | 'metric' | 'log' | 'test';
 
 /**
  * Binding to workspace entities
  */
-export interface DiagramBinding {
+interface DiagramBinding {
   type: DiagramBindingType;
   target: string; // File path, symbol ID, spec ID, etc.
   metadata?: Record<string, unknown>;
@@ -325,7 +307,7 @@ export interface DiagramModel {
 /**
  * Layout configuration
  */
-export interface DiagramLayout {
+interface DiagramLayout {
   type: 'layered' | 'force' | 'circular' | 'tree' | 'manual';
   direction?: 'LR' | 'RL' | 'TB' | 'BT';
   spacing?: number;
@@ -335,7 +317,7 @@ export interface DiagramLayout {
 /**
  * Semantic style definitions
  */
-export interface DiagramSemanticStyles {
+interface DiagramSemanticStyles {
   [key: string]: {
     class?: string;
     style?: Record<string, string>;
@@ -357,7 +339,7 @@ export interface DiagramBaseView {
 /**
  * Camera configuration for a state
  */
-export interface DiagramCamera {
+interface DiagramCamera {
   focus?: string; // Node ID to focus on
   zoom?: number;
   pan?: { x: number; y: number };
@@ -374,7 +356,7 @@ export interface DiagramNarrative {
 /**
  * Overlay for a state (e.g., metrics, annotations)
  */
-export interface DiagramOverlay {
+interface DiagramOverlay {
   type: string;
   data: Record<string, unknown>;
 }
@@ -382,7 +364,7 @@ export interface DiagramOverlay {
 /**
  * Transition animation configuration
  */
-export interface DiagramTransition {
+interface DiagramTransition {
   duration?: number; // milliseconds
   animate?: ('camera' | 'visibleEdges' | 'visibleNodes' | 'semanticStyle')[];
 }
@@ -421,18 +403,14 @@ export interface DiagramPrimitive extends BasePrimitive {
 // ============================================================================
 
 export type NotePrimitive =
-  | ReferencePrimitive
-  | CliPrimitive
-  | AgentActionPrimitive
-  | PatchPrimitive
-  | DiagramPrimitive;
+  ReferencePrimitive | CliPrimitive | AgentActionPrimitive | PatchPrimitive | DiagramPrimitive;
 
 // ============================================================================
 // Zod Schemas for Runtime Validation
 // ============================================================================
 
 // Base schema
-export const BasePrimitiveSchema = z.object({
+const BasePrimitiveSchema = z.object({
   id: z.string().uuid(),
   type: z.enum(['reference', 'cli', 'agent_action', 'patch', 'diagram']),
   version: z.literal(1),
@@ -445,7 +423,7 @@ export const BasePrimitiveSchema = z.object({
 });
 
 // Reference schemas
-export const ReferenceTargetSchema = z.object({
+const ReferenceTargetSchema = z.object({
   kind: z.enum(['symbol', 'file_range']).optional().default('file_range'),
   semanticId: z.string().optional(),
   filePath: z.string().optional(),
@@ -460,13 +438,13 @@ export const ReferenceTargetSchema = z.object({
     .optional(),
 });
 
-export const ReferenceSnapshotSchema = z.object({
+const ReferenceSnapshotSchema = z.object({
   code: z.string(),
   filePath: z.string(),
   languageId: z.string().optional(),
 });
 
-export const ReferenceDisplaySchema = z.object({
+const ReferenceDisplaySchema = z.object({
   collapsedByDefault: z.boolean().optional(),
   showFilePath: z.boolean().optional(),
   showSymbolName: z.boolean().optional(),
@@ -480,19 +458,19 @@ export const ReferencePrimitiveSchema = BasePrimitiveSchema.extend({
 });
 
 // CLI schemas
-export const CliLastRunSchema = z.object({
+const CliLastRunSchema = z.object({
   status: z.enum(['running', 'success', 'error', 'cancelled']),
   exitCode: z.number().optional(),
   startedAt: z.string().datetime(),
   finishedAt: z.string().datetime().optional(),
 });
 
-export const CliOutputSnapshotSchema = z.object({
+const CliOutputSnapshotSchema = z.object({
   stdout: z.string(),
   stderr: z.string(),
 });
 
-export const CliDisplaySchema = z.object({
+const CliDisplaySchema = z.object({
   collapsedOutputByDefault: z.boolean().optional(),
   showCommandPrefix: z.string().optional(),
 });
@@ -510,7 +488,7 @@ export const CliPrimitiveSchema = BasePrimitiveSchema.extend({
 });
 
 // Agent action schemas
-export const AgentActionInputSchema = z.object({
+const AgentActionInputSchema = z.object({
   kind: z.enum(['reference', 'semantic_ref', 'text', 'file_glob', 'note_section']),
   refId: z.string().optional(),
   semanticId: z.string().optional(),
@@ -519,21 +497,21 @@ export const AgentActionInputSchema = z.object({
   heading: z.string().optional(),
 });
 
-export const AgentActionConfigSchema = z
+const AgentActionConfigSchema = z
   .object({
     temperature: z.number().min(0).max(2).optional(),
     maxTokens: z.number().positive().optional(),
   })
   .passthrough(); // Allow additional agent-specific fields
 
-export const AgentActionLastRunSchema = z.object({
+const AgentActionLastRunSchema = z.object({
   status: z.enum(['pending', 'running', 'success', 'error']),
   startedAt: z.string().datetime(),
   finishedAt: z.string().datetime().optional(),
   errorMessage: z.string().optional(),
 });
 
-export const AgentActionResultSummarySchema = z.object({
+const AgentActionResultSummarySchema = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
   createdPrimitives: z.array(z.string()).optional(),
@@ -550,19 +528,19 @@ export const AgentActionPrimitiveSchema = BasePrimitiveSchema.extend({
 });
 
 // Patch schemas
-export const PatchLastApplySchema = z.object({
+const PatchLastApplySchema = z.object({
   status: z.enum(['success', 'conflict', 'error']),
   appliedAt: z.string().datetime(),
   errorMessage: z.string().optional(),
 });
 
-export const FilePatchSchema = z.object({
+const FilePatchSchema = z.object({
   filePath: z.string(),
   diff: z.string(),
   semanticRefs: z.array(z.string()).optional(),
 });
 
-export const PatchDisplaySchema = z.object({
+const PatchDisplaySchema = z.object({
   collapsedByDefault: z.boolean().optional(),
   showFileNames: z.boolean().optional(),
 });
@@ -575,7 +553,7 @@ export const PatchPrimitiveSchema = BasePrimitiveSchema.extend({
 });
 
 // Diagram schemas
-export const DiagramGrammarSchema = z.enum([
+const DiagramGrammarSchema = z.enum([
   'architecture',
   'sequence',
   'state_machine',
@@ -586,7 +564,7 @@ export const DiagramGrammarSchema = z.enum([
   'dependency_graph',
 ]);
 
-export const DiagramSemanticStyleSchema = z.enum([
+const DiagramSemanticStyleSchema = z.enum([
   'highlighted',
   'muted',
   'danger',
@@ -596,13 +574,13 @@ export const DiagramSemanticStyleSchema = z.enum([
   'active',
 ]);
 
-export const DiagramBindingSchema = z.object({
+const DiagramBindingSchema = z.object({
   type: z.enum(['file', 'symbol', 'spec', 'note', 'timeline_event', 'metric', 'log', 'test']),
   target: z.string(),
   metadata: z.record(z.unknown()).optional(),
 });
 
-export const DiagramNodeSchema = z.object({
+const DiagramNodeSchema = z.object({
   id: z.string(),
   label: z.string(),
   kind: z.string().optional(),
@@ -615,7 +593,7 @@ export const DiagramNodeSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
 });
 
-export const DiagramEdgeSchema = z.object({
+const DiagramEdgeSchema = z.object({
   id: z.string(),
   from: z.string(),
   to: z.string(),
@@ -629,7 +607,7 @@ export const DiagramEdgeSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
 });
 
-export const DiagramGroupSchema = z.object({
+const DiagramGroupSchema = z.object({
   id: z.string(),
   label: z.string(),
   nodeIds: z.array(z.string()),
@@ -637,27 +615,27 @@ export const DiagramGroupSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
 });
 
-export const DiagramModelSchema = z.object({
+const DiagramModelSchema = z.object({
   nodes: z.array(DiagramNodeSchema),
   edges: z.array(DiagramEdgeSchema),
   groups: z.array(DiagramGroupSchema).optional(),
 });
 
-export const DiagramLayoutSchema = z.object({
+const DiagramLayoutSchema = z.object({
   type: z.enum(['layered', 'force', 'circular', 'tree', 'manual']),
   direction: z.enum(['LR', 'RL', 'TB', 'BT']).optional(),
   spacing: z.number().optional(),
   edgeRouting: z.enum(['orthogonal', 'polyline', 'curved']).optional(),
 });
 
-export const DiagramSemanticStylesSchema = z.record(
+const DiagramSemanticStylesSchema = z.record(
   z.object({
     class: z.string().optional(),
     style: z.record(z.string()).optional(),
   }),
 );
 
-export const DiagramBaseViewSchema = z.object({
+const DiagramBaseViewSchema = z.object({
   layout: DiagramLayoutSchema,
   semanticStyles: DiagramSemanticStylesSchema.optional(),
   zoom: z.number().optional(),
@@ -666,28 +644,28 @@ export const DiagramBaseViewSchema = z.object({
   edgeRouting: z.enum(['orthogonal', 'polyline', 'curved']).optional(),
 });
 
-export const DiagramCameraSchema = z.object({
+const DiagramCameraSchema = z.object({
   focus: z.string().optional(),
   zoom: z.number().optional(),
   pan: z.object({ x: z.number(), y: z.number() }).optional(),
 });
 
-export const DiagramNarrativeSchema = z.object({
+const DiagramNarrativeSchema = z.object({
   title: z.string().optional(),
   text: z.string().optional(),
 });
 
-export const DiagramOverlaySchema = z.object({
+const DiagramOverlaySchema = z.object({
   type: z.string(),
   data: z.record(z.unknown()),
 });
 
-export const DiagramTransitionSchema = z.object({
+const DiagramTransitionSchema = z.object({
   duration: z.number().optional(),
   animate: z.array(z.enum(['camera', 'visibleEdges', 'visibleNodes', 'semanticStyle'])).optional(),
 });
 
-export const DiagramStateSchema = z.object({
+const DiagramStateSchema = z.object({
   id: z.string(),
   label: z.string().optional(),
   visibleNodes: z.array(z.string()).optional(),
@@ -719,32 +697,6 @@ export const NotePrimitiveSchema = z.discriminatedUnion('type', [
   PatchPrimitiveSchema,
   DiagramPrimitiveSchema,
 ]);
-
-// ============================================================================
-// Type Guards
-// ============================================================================
-
-export function isReferencePrimitive(primitive: NotePrimitive): primitive is ReferencePrimitive {
-  return primitive.type === 'reference';
-}
-
-export function isCliPrimitive(primitive: NotePrimitive): primitive is CliPrimitive {
-  return primitive.type === 'cli';
-}
-
-export function isAgentActionPrimitive(
-  primitive: NotePrimitive,
-): primitive is AgentActionPrimitive {
-  return primitive.type === 'agent_action';
-}
-
-export function isPatchPrimitive(primitive: NotePrimitive): primitive is PatchPrimitive {
-  return primitive.type === 'patch';
-}
-
-export function isDiagramPrimitive(primitive: NotePrimitive): primitive is DiagramPrimitive {
-  return primitive.type === 'diagram';
-}
 
 // ============================================================================
 // Semantic ID Parsing
@@ -855,13 +807,6 @@ export function isValidSemanticId(semanticId: string): boolean {
   if (!semanticId.includes('#') && semanticId.length > 0) return true;
 
   return false;
-}
-
-/**
- * Build a semantic ID from components
- */
-export function buildSemanticId(filePath: string, type: 'symbol' | 'lines', value: string): string {
-  return `${filePath}#${type}:${value}`;
 }
 
 /**

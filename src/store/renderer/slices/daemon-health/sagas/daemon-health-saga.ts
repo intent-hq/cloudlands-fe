@@ -101,8 +101,7 @@ async function notifyVersionMismatch(transport: BackendTransportInfo): Promise<b
 async function invokeRestartOrphanedSidecar() {
   if (!window.electronAPI) throw new Error('electronAPI is not available');
   return (await window.electronAPI.invoke(BACKEND.RESTART_ORPHANED_SIDECAR)) as
-    | { ok: boolean; spawned: boolean; cancelled?: boolean; reason?: string }
-    | undefined;
+    { ok: boolean; spawned: boolean; cancelled?: boolean; reason?: string } | undefined;
 }
 
 /**
@@ -186,7 +185,7 @@ function* maybeNotifyOrphanedSidecar(
   notifyState.notified = yield* call(notifyOrphanedSidecar, transport, notifyState);
 }
 
-export function* daemonStatusSaga() {
+function* daemonStatusSaga() {
   const channel: EventChannel<BackendStatusPayload> = createElectronChannel<BackendStatusPayload>(
     BACKEND.STATUS,
     {
@@ -263,7 +262,7 @@ function* watchSystemStatusPolls() {
   yield* takeLeading(pollSystemStatus, pollSystemStatusSaga);
 }
 
-export function* pollUnslothStatusSaga() {
+function* pollUnslothStatusSaga() {
   try {
     const status = yield* call(backendRequest<UnslothStatusWirePayload>, 'unsloth.status');
     yield* put(unslothStatusSuccess(status));
@@ -284,7 +283,7 @@ function* watchUnslothStatusPolls() {
   }
 }
 
-export function* stopUnslothSaga() {
+function* stopUnslothSaga() {
   try {
     const result = yield* call(backendRequest<{ stopped: boolean }>, 'unsloth.stop');
     yield* put(stopUnslothSucceeded(result.stopped));

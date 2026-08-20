@@ -1,4 +1,4 @@
-export const WORKSPACE_SURFACE_OVERSCAN_STACKS = 1;
+const WORKSPACE_SURFACE_OVERSCAN_STACKS = 1;
 
 export function resolveLiveWorkspaceIds(
   stacks: string[][],

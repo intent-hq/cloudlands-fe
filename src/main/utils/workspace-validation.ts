@@ -3,19 +3,7 @@
  */
 
 import { m } from '../../shared/paraglide/messages.js';
-import type { Workspace, CreateWorkspaceRequest, UpdateWorkspaceRequest } from '../../shared/types';
-
-export function validateWorkspace(workspace: Partial<Workspace>): string[] {
-  const errors: string[] = [];
-
-  // Title is optional - workspaces can be created without a title
-
-  if (!workspace.path) {
-    errors.push(m.workspaceValidation_pathRequired_error());
-  }
-
-  return errors;
-}
+import type { UpdateWorkspaceRequest } from '../../shared/types';
 
 export function validateWorkspaceId(id: string): string[] {
   const errors: string[] = [];
@@ -40,28 +28,6 @@ export function validateWorkspaceId(id: string): string[] {
  */
 export function isValidWorkspaceIdFormat(id: string): boolean {
   return validateWorkspaceId(id).length === 0;
-}
-
-export function validateWorkspaceTitle(title: string | undefined): string[] {
-  const errors: string[] = [];
-
-  // Title is optional - blank titles are allowed
-
-  if (title && title.length > 100) {
-    errors.push(m.workspaceValidation_titleTooLong_error());
-  }
-
-  return errors;
-}
-
-/**
- * Boolean workspace title validation helper.
- *
- * NOTE: `validateWorkspaceTitle` returns an array of errors (empty = valid).
- * Use this helper to get a simple boolean result.
- */
-export function isValidWorkspaceTitle(title: string | undefined): boolean {
-  return validateWorkspaceTitle(title).length === 0;
 }
 
 /**
@@ -254,31 +220,12 @@ export function sanitizePath(inputPath: string): string {
     .trim();
 }
 
-export function validateCreateRequest(request: CreateWorkspaceRequest): string[] {
-  const errors: string[] = [];
-
-  // Title is optional - blank titles are allowed
-
-  // Repository path is required unless a GitHub URL is provided
-  // When githubUrl is provided, the repo will be cloned to a local path
-  if (!request.repositoryPath && !request.githubUrl) {
-    errors.push(m.workspaceValidation_repoPathOrUrlRequired_error());
-  }
-
-  return errors;
-}
-
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function validateUpdateRequest(request: UpdateWorkspaceRequest): string[] {
+function validateUpdateRequest(request: UpdateWorkspaceRequest): string[] {
   const errors: string[] = [];
 
   // Update requests don't require any specific fields
   // Title can be blank (empty string) - this is allowed
 
   return errors;
-}
-
-export function isValidWorkspacePath(path: string): boolean {
-  // Basic path validation
-  return path.length > 0 && !path.includes('\0');
 }

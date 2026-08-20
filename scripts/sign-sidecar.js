@@ -95,7 +95,7 @@ async function verifySignature(binaryPath) {
  * afterPack hook for electron-builder
  * @param {Object} context - electron-builder context
  */
-export async function signSidecar(context) {
+async function signSidecar(context) {
   const { electronPlatformName, appOutDir, packager } = context;
 
   // Only sign on macOS
@@ -145,8 +145,14 @@ export async function signSidecar(context) {
   }
 
   // Only skip if auto-discovery is disabled AND no explicit identity is set
-  if (process.env.CSC_IDENTITY_AUTO_DISCOVERY === 'false' && !process.env.CSC_NAME && !process.env.CSC_LINK) {
-    console.log('Skipping sidecar signing - CSC_IDENTITY_AUTO_DISCOVERY=false and no explicit identity set');
+  if (
+    process.env.CSC_IDENTITY_AUTO_DISCOVERY === 'false' &&
+    !process.env.CSC_NAME &&
+    !process.env.CSC_LINK
+  ) {
+    console.log(
+      'Skipping sidecar signing - CSC_IDENTITY_AUTO_DISCOVERY=false and no explicit identity set',
+    );
     console.log('This is expected for local unsigned builds.');
     return;
   }

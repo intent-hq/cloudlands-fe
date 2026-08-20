@@ -3,7 +3,7 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
-export type AgentColor = {
+type AgentColor = {
   start: string;
   end: string;
   gradient: string;
@@ -27,4 +27,3 @@ export type AgentFollowState = {
   typingSpeed: number;
   pendingChanges: PendingChange[];
 };
-

@@ -32,7 +32,7 @@ import { detectOrphanedSidecar } from './intentd-orphan';
 // Re-export from the policy module so existing importers keep working; consumers
 // that only need the decision (e.g. `backend-connection.ts`) import it from
 // `intentd-spawn-policy` directly to avoid pulling in the sidecar manager.
-export { shouldSpawnSidecar, type ShouldSpawnDecision } from './intentd-spawn-policy';
+export { shouldSpawnSidecar } from './intentd-spawn-policy';
 import { shouldSpawnSidecar } from './intentd-spawn-policy';
 
 const logger = new Logger('Sidecar');
@@ -351,7 +351,7 @@ export function __resetIntentdSidecarForTesting(): void {
  * in for a startup handshake probe against a live local daemon.
  * @internal
  */
-export function __setLocalDaemonProtocolVersionForTesting(version: string | null): void {
+function __setLocalDaemonProtocolVersionForTesting(version: string | null): void {
   localDaemonProtocolVersion = version;
 }
 
@@ -1104,7 +1104,7 @@ export async function stopIntentdSidecar(gracePeriodMs = 3000): Promise<void> {
 /**
  * Check if the sidecar is currently running (process spawned and alive).
  */
-export function isSidecarRunning(): boolean {
+function isSidecarRunning(): boolean {
   return sidecarProcess !== null && sidecarProcess.exitCode === null && !sidecarProcess.killed;
 }
 

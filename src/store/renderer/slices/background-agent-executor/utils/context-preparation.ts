@@ -56,7 +56,7 @@ export async function prepareContext(
 /**
  * Helper to format DiffChunk objects into diff string
  */
-export function formatDiffChunks(data: unknown): string {
+function formatDiffChunks(data: unknown): string {
   if (!data) return '';
 
   const getLinePrefix = (lineType: string | undefined): string => {

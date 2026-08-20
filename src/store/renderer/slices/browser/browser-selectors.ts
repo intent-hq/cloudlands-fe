@@ -2,12 +2,11 @@ import { store } from '../../store';
 import { emptyBrowserWorkspaceState } from './browser-slice';
 import type { BrowserWorkspaceState, BrowserZoomAction, RecentUrl } from './browser-types';
 
-export const selectBrowserWorkspaceState = store.createSelector<
-  [wsId: string],
-  BrowserWorkspaceState
->((state, wsId) => {
-  return state.browser.byWorkspaceId[wsId] ?? emptyBrowserWorkspaceState;
-});
+const selectBrowserWorkspaceState = store.createSelector<[wsId: string], BrowserWorkspaceState>(
+  (state, wsId) => {
+    return state.browser.byWorkspaceId[wsId] ?? emptyBrowserWorkspaceState;
+  },
+);
 
 export const selectExistingBrowserWorkspaceState = store.createSelector<
   [wsId: string],

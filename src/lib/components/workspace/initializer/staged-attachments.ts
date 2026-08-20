@@ -17,7 +17,7 @@ import {
 } from '$lib/components/chat/input/attachment-placement';
 
 /** A staged (not-yet-placed) non-image file item awaiting redemption. */
-export function isStagedFileItem(item: ContextItem): boolean {
+function isStagedFileItem(item: ContextItem): boolean {
   return (
     item.type === 'file' &&
     !item.attachmentId &&
@@ -31,7 +31,7 @@ export function hasStagedFileItems(items: ContextItem[]): boolean {
 }
 
 /** Build an attachment-reference file block from a placed item (PROTOCOL §5.5). */
-export function fileBlockFromItem(item: ContextItem): FileBlock | null {
+function fileBlockFromItem(item: ContextItem): FileBlock | null {
   if (!item.attachmentId) return null;
   return {
     type: 'file',

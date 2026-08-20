@@ -45,7 +45,6 @@
     "src/features/agent/agent-providers/**/*.ts",
     "src/features/agent/error-handler.ts",
     "src/features/acp-official/**/*.ts",
-    "src/features/cortex/cortex-acp/**/*.ts",
     "!src/features/**/browser/**/*.ts"
   ],
   "exclude": [

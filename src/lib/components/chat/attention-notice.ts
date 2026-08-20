@@ -13,7 +13,7 @@
 import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 
-export type AttentionNoticeKind = 'discussion-request' | 'blocker-report' | 'turn-failure';
+type AttentionNoticeKind = 'discussion-request' | 'blocker-report' | 'turn-failure';
 
 export interface AttentionNoticeInfo {
   kind: AttentionNoticeKind;

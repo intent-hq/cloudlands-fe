@@ -295,7 +295,11 @@ function centerNodesBetween(node: LayoutNode, config: LayoutConfig): void {
 /**
  * Get the left contour of a subtree (minimum X at each level)
  */
-function getLeftContour(node: LayoutNode, modSum = 0, contour = new Map<number, number>()): Map<number, number> {
+function getLeftContour(
+  node: LayoutNode,
+  modSum = 0,
+  contour = new Map<number, number>(),
+): Map<number, number> {
   const level = node.y;
   const x = node.x + modSum;
 
@@ -314,7 +318,11 @@ function getLeftContour(node: LayoutNode, modSum = 0, contour = new Map<number, 
 /**
  * Get the right contour of a subtree (maximum X at each level)
  */
-function getRightContour(node: LayoutNode, modSum = 0, contour = new Map<number, number>()): Map<number, number> {
+function getRightContour(
+  node: LayoutNode,
+  modSum = 0,
+  contour = new Map<number, number>(),
+): Map<number, number> {
   const level = node.y;
   const x = node.x + modSum;
 
@@ -386,95 +394,4 @@ function traverseTree(node: LayoutNode, fn: (node: LayoutNode) => void): void {
   for (const child of node.layoutChildren) {
     traverseTree(child, fn);
   }
-}
-
-// ============================================================================
-// SVG Path Helpers
-// ============================================================================
-
-/**
- * Generate an SVG path for a curved connector between parent and child
- */
-export function generateConnectorPath(
-  parentX: number,
-  parentY: number,
-  childX: number,
-  childY: number,
-  nodeHeight: number,
-): string {
-  const startY = parentY + nodeHeight;
-  const endY = childY;
-  const midY = (startY + endY) / 2;
-
-  // Curved path using cubic bezier
-  return `M ${parentX} ${startY}
-          C ${parentX} ${midY}, ${childX} ${midY}, ${childX} ${endY}`;
-}
-
-/**
- * Generate an SVG path for a branching connector (one parent to multiple children)
- */
-export function generateBranchingPath(
-  parentX: number,
-  parentY: number,
-  childXPositions: number[],
-  nodeHeight: number,
-  levelSpacing: number,
-): string {
-  if (childXPositions.length === 0) return '';
-
-  const startY = parentY + nodeHeight;
-  const branchY = startY + levelSpacing * 0.4;
-  const endY = parentY + nodeHeight + levelSpacing;
-
-  const paths: string[] = [];
-
-  // Vertical line from parent
-  paths.push(`M ${parentX} ${startY} L ${parentX} ${branchY}`);
-
-  // Horizontal line spanning all children
-  const minChildX = Math.min(...childXPositions);
-  const maxChildX = Math.max(...childXPositions);
-
-  if (childXPositions.length > 1) {
-    paths.push(`M ${minChildX} ${branchY} L ${maxChildX} ${branchY}`);
-  }
-
-  // Vertical lines down to each child
-  for (const childX of childXPositions) {
-    paths.push(`M ${childX} ${branchY} L ${childX} ${endY}`);
-  }
-
-  return paths.join(' ');
-}
-
-/**
- * Generate a curved bracket path for grouped children
- */
-export function generateBracketPath(
-  centerX: number,
-  startY: number,
-  width: number,
-  height: number,
-): string {
-  const leftX = centerX - width / 2;
-  const rightX = centerX + width / 2;
-  const curveRadius = 8;
-
-  // Two paths: left branch and right branch
-  const leftPath = `M ${centerX} ${startY}
-                    L ${centerX} ${startY + height * 0.3}
-                    Q ${centerX} ${startY + height * 0.5}, ${centerX - curveRadius} ${startY + height * 0.5}
-                    L ${leftX + curveRadius} ${startY + height * 0.5}
-                    Q ${leftX} ${startY + height * 0.5}, ${leftX} ${startY + height * 0.5 + curveRadius}
-                    L ${leftX} ${startY + height}`;
-
-  const rightPath = `M ${centerX} ${startY}
-                     L ${centerX} ${startY + height * 0.3}
-                     Q ${centerX} ${startY + height * 0.5}, ${centerX + curveRadius} ${startY + height * 0.5}
-                     L ${rightX - curveRadius} ${startY + height * 0.5}
-                     Q ${rightX} ${startY + height * 0.5}, ${rightX} ${startY + height * 0.5 + curveRadius}
-                     L ${rightX} ${startY + height}`;
-
-  return `${leftPath} ${rightPath}`;
 }

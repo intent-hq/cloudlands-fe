@@ -13,7 +13,7 @@ import { store as appStore } from '$store/renderer/store';
  * @param workspaceId - The workspace ID to check
  * @returns Array of agent names that are currently streaming
  */
-export function getRunningAgentNames(workspaceId: string): string[] {
+function getRunningAgentNames(workspaceId: string): string[] {
   const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
 
   // Get all agents for this workspace from Redux
@@ -33,16 +33,6 @@ export function getRunningAgentNames(workspaceId: string): string[] {
   }
 
   return agentNames;
-}
-
-/**
- * Check if a workspace has any running agents
- * @param workspaceId - The workspace ID to check
- * @returns true if the workspace has running agents, false otherwise
- */
-export function hasRunningAgents(workspaceId: string): boolean {
-  const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
-  return streamingAgentIds.length > 0;
 }
 
 /** Hook wire states that count as active work (PROTOCOL §5.40). */

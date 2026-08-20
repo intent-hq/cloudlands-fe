@@ -160,7 +160,7 @@ export function takeoverAttentionChipLabel(signal: 'question' | 'blocker' | 'dis
  * shared per-signal prefixes (`Q:` / `Blocker:` / `Request Discussion:`) so
  * the takeover banner, footer snippet, and ATTENTION panel read identically.
  */
-export function takeoverAttentionSubtitle(
+function takeoverAttentionSubtitle(
   signal: 'question' | 'blocker' | 'discussion',
   text: string,
 ): string {

@@ -5,7 +5,7 @@ export type WorkspaceActivityTimeFields = Pick<
   'lastActivity' | 'createdAt' | 'updatedAt'
 >;
 
-export type WorkspaceActivityTimeSource = 'lastActivity' | 'createdAt' | 'updatedAt' | 'none';
+type WorkspaceActivityTimeSource = 'lastActivity' | 'createdAt' | 'updatedAt' | 'none';
 
 export interface WorkspaceActivityDisplayTime {
   time: number;

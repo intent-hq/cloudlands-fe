@@ -61,7 +61,7 @@ export function getProjectSpecialistsDirectory(workspacePath: string): string {
  * In development: ./resources/specialists
  * In production: app.getAppPath()/resources/specialists (unpacked)
  */
-export function getBundledSpecialistsDirectory(): string {
+function getBundledSpecialistsDirectory(): string {
   const isDev = !app.isPackaged;
 
   if (isDev) {
@@ -101,7 +101,7 @@ export async function ensureSpecialistsDirectory(): Promise<string> {
   }
 }
 
-export async function ensureProjectSpecialistsDirectory(workspacePath: string): Promise<string> {
+async function ensureProjectSpecialistsDirectory(workspacePath: string): Promise<string> {
   const dir = getProjectSpecialistsDirectory(workspacePath);
   try {
     await fs.mkdir(dir, { recursive: true });
@@ -362,9 +362,7 @@ export function parseModelOptionsScalar(
       model,
       hint: typeof hint === 'string' ? hint : '',
       // A non-string or empty level reads as an omitted key (inherits).
-      ...(typeof reasoningEffort === 'string' && reasoningEffort !== ''
-        ? { reasoningEffort }
-        : {}),
+      ...(typeof reasoningEffort === 'string' && reasoningEffort !== '' ? { reasoningEffort } : {}),
     });
   }
   // All entries unusable ⇒ treated as omitted (inherits), never a clear.

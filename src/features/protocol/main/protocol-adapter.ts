@@ -1054,7 +1054,7 @@ export class ProtocolAdapter {
  */
 let protocolAdapterInstance: ProtocolAdapter | undefined;
 
-export function getProtocolAdapter(): ProtocolAdapter {
+function getProtocolAdapter(): ProtocolAdapter {
   protocolAdapterInstance ??= new ProtocolAdapter();
   return protocolAdapterInstance;
 }

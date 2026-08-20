@@ -8,15 +8,15 @@
  * `workspace:tokenUsage-changed` push.
  */
 
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
-import type { TokenUsage } from "../../../../features/token-usage/token-usage-types";
-import type { TokenUsageState } from "./token-usage-types";
-import { emptyWorkspaceTokenUsageState, initialState } from "./token-usage-types";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
+import type { TokenUsage } from '../../../../features/token-usage/token-usage-types';
+import type { TokenUsageState } from './token-usage-types';
+import { emptyWorkspaceTokenUsageState, initialState } from './token-usage-types';
 
-export type { TokenUsageState, WorkspaceTokenUsageState } from "./token-usage-types";
-export { emptyWorkspaceTokenUsageState, initialState } from "./token-usage-types";
+export type { TokenUsageState } from './token-usage-types';
+export { initialState } from './token-usage-types';
 
 // ---------------------------------------------------------------------------
 // Actions
@@ -24,30 +24,31 @@ export { emptyWorkspaceTokenUsageState, initialState } from "./token-usage-types
 
 /** Request the workspace's token usage rollup from the daemon. */
 export const fetchWorkspaceTokenUsage = createAction<[wsId: string]>(
-  "tokenUsage/fetchWorkspaceTokenUsage",
+  'tokenUsage/fetchWorkspaceTokenUsage',
 );
 
 /** A rollup arrived (`workspace.getTokenUsage` read or `tokenUsage-changed` push). */
 export const tokenUsageReceived = createAction<[wsId: string, usage: TokenUsage]>(
-  "tokenUsage/tokenUsageReceived",
+  'tokenUsage/tokenUsageReceived',
 );
 
 /** A fetch failed; keep cached numbers but mark them stale. */
 export const tokenUsageFetchFailed = createAction<[wsId: string]>(
-  "tokenUsage/tokenUsageFetchFailed",
+  'tokenUsage/tokenUsageFetchFailed',
 );
 
 /** Drop the workspace entry (workspace closed/removed). */
 export const clearWorkspaceTokenUsage = createAction<[wsId: string]>(
-  "tokenUsage/clearWorkspaceTokenUsage",
+  'tokenUsage/clearWorkspaceTokenUsage',
 );
 
 // ---------------------------------------------------------------------------
 // Workspace-scoped helpers
 // ---------------------------------------------------------------------------
 
-const { setWorkspaceState, clearWorkspaceState } =
-  createWorkspaceScopedHelpers(emptyWorkspaceTokenUsageState);
+const { setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
+  emptyWorkspaceTokenUsageState,
+);
 
 // ---------------------------------------------------------------------------
 // Reducer
@@ -55,20 +56,19 @@ const { setWorkspaceState, clearWorkspaceState } =
 
 export const tokenUsageReducer = createReducer<TokenUsageState>(initialState);
 tokenUsageReducer.with(tokenUsageReceived, (state, { payload: [wsId, usage] }) =>
-    setWorkspaceState(state, wsId, {
-      byAgentId: usage.byAgentId,
-      totals: usage.totals,
-      byModel: usage.byModel,
-      lastScanAt: usage.lastScanAt,
-      isStale: false,
-    }),
-  );
+  setWorkspaceState(state, wsId, {
+    byAgentId: usage.byAgentId,
+    totals: usage.totals,
+    byModel: usage.byModel,
+    lastScanAt: usage.lastScanAt,
+    isStale: false,
+  }),
+);
 tokenUsageReducer.with(tokenUsageFetchFailed, (state, { payload: [wsId] }) => {
-    const ws = state.byWorkspaceId[wsId];
-    if (!ws || ws.isStale) return state;
-    return setWorkspaceState(state, wsId, { ...ws, isStale: true });
-  });
+  const ws = state.byWorkspaceId[wsId];
+  if (!ws || ws.isStale) return state;
+  return setWorkspaceState(state, wsId, { ...ws, isStale: true });
+});
 tokenUsageReducer.with(clearWorkspaceTokenUsage, (state, { payload: [wsId] }) =>
-    clearWorkspaceState(state, wsId),
-  );
-
+  clearWorkspaceState(state, wsId),
+);

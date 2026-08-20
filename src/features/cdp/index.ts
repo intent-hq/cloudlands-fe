@@ -37,5 +37,3 @@ export async function createCdpMCPServer(port: number = 9223): Promise<MCPServer
 
   return server;
 }
-
-export { CdpConnectionManager };

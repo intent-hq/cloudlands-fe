@@ -314,12 +314,4 @@ export class EndUserRulesManager {
   }
 }
 
-// Export singleton instance
-export const endUserRulesManager = EndUserRulesManager.getInstance();
-
-// Export legacy aliases for backward compatibility during migration
-export const workspaceRulesService = endUserRulesManager;
-export const userRulesService = endUserRulesManager;
-
 // Export class with legacy name for backward compatibility
-export { EndUserRulesManager as WorkspaceRulesService };

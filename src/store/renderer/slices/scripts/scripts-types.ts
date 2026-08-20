@@ -61,14 +61,14 @@ export type ScriptsState = {
 };
 
 // IPC event payload types
-export type ScriptStartedEvent = {
+type ScriptStartedEvent = {
   workspaceId: string;
   scriptId: string;
   pid?: number;
   startedAt: string;
 };
 
-export type ScriptStoppedEvent = {
+type ScriptStoppedEvent = {
   workspaceId: string;
   scriptId: string;
   exitCode: number | null;
@@ -76,19 +76,19 @@ export type ScriptStoppedEvent = {
   stoppedAt: string;
 };
 
-export type ScriptOutputEvent = {
+type ScriptOutputEvent = {
   workspaceId: string;
   scriptId: string;
   lines: Array<{ text: string; stream: 'stdout' | 'stderr'; timestamp: string }>;
 };
 
-export type ScriptErrorEvent = {
+type ScriptErrorEvent = {
   workspaceId: string;
   scriptId: string;
   error: string;
 };
 
-export type ScriptUrlDetectedEvent = {
+type ScriptUrlDetectedEvent = {
   workspaceId: string;
   scriptId: string;
   url: string;

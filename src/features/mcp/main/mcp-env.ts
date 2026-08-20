@@ -15,7 +15,7 @@
  * must not be inherited from the parent process baseline. This keeps control of
  * these values with the explicit overrides rather than ambient inheritance.
  */
-export const INTENT_CONTROLLED_ENV_KEYS = ['ELECTRON_RUN_AS_NODE'] as const;
+const INTENT_CONTROLLED_ENV_KEYS = ['ELECTRON_RUN_AS_NODE'] as const;
 
 /**
  * Well-known host secret env keys that must NOT be inherited by MCP children.
@@ -24,7 +24,7 @@ export const INTENT_CONTROLLED_ENV_KEYS = ['ELECTRON_RUN_AS_NODE'] as const;
  * explicit per-server `env` value can still re-introduce any of these keys
  * intentionally — the denylist only filters the parent-process baseline.
  */
-export const SECRET_ENV_KEY_DENYLIST = [
+const SECRET_ENV_KEY_DENYLIST = [
   'ANTHROPIC_API_KEY',
   'OPENAI_API_KEY',
   'GITHUB_TOKEN',
@@ -81,9 +81,7 @@ type EnvLike = Record<string, string | undefined>;
  * child processes. Drops undefined values, Intent-controlled keys, and keys that
  * look like host secrets (see SECRET_ENV_KEY_DENYLIST / isLikelySecretEnvKey).
  */
-export function buildBaselineMcpEnv(
-  parentEnv: EnvLike = process.env,
-): Record<string, string> {
+export function buildBaselineMcpEnv(parentEnv: EnvLike = process.env): Record<string, string> {
   const controlled = new Set<string>(INTENT_CONTROLLED_ENV_KEYS);
   const baseline: Record<string, string> = {};
   for (const [key, value] of Object.entries(parentEnv)) {
@@ -99,9 +97,7 @@ export function buildBaselineMcpEnv(
  * Merge env layers left-to-right; later layers win. Undefined values are
  * dropped so an override of `undefined` never blanks a baseline value.
  */
-export function mergeMcpEnv(
-  ...layers: Array<EnvLike | undefined | null>
-): Record<string, string> {
+export function mergeMcpEnv(...layers: Array<EnvLike | undefined | null>): Record<string, string> {
   const merged: Record<string, string> = {};
   for (const layer of layers) {
     if (!layer) continue;
@@ -158,9 +154,9 @@ function redactValues(values: unknown): Record<string, string> | undefined {
  * Produce a log-safe copy of an MCP config: env values and header values are
  * masked (keys preserved) so debug logs never contain secret values.
  */
-export function redactMcpEnvForLogging(config: {
+export function redactMcpEnvForLogging(config: { mcpServers: Record<string, unknown> }): {
   mcpServers: Record<string, unknown>;
-}): { mcpServers: Record<string, unknown> } {
+} {
   const mcpServers: Record<string, unknown> = {};
   for (const [name, server] of Object.entries(config.mcpServers)) {
     if (!server || typeof server !== 'object') {

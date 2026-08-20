@@ -7,7 +7,7 @@
 
 export type AgentStatus = 'idle' | 'responding' | 'waiting' | 'completed' | 'failed';
 
-export interface DelegationGroupInfo {
+interface DelegationGroupInfo {
   groupId: string;
   awaitMode: 'all';
   expectedAgentIds: string[];

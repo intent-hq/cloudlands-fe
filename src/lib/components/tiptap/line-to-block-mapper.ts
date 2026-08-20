@@ -28,7 +28,7 @@ export type LineAttributions = Map<number, AttributionInfo>;
 /**
  * Attribution for a single line within a code block
  */
-export interface CodeBlockLineAttribution {
+interface CodeBlockLineAttribution {
   /** Line index within the code block (0-based, relative to code block content start) */
   lineIndex: number;
   /** Attribution info for this line */
@@ -38,9 +38,8 @@ export interface CodeBlockLineAttribution {
 /**
  * Block attribution value - either a single attribution or per-line attributions for code blocks
  */
-export type BlockAttributionValue =
-  | AttributionInfo
-  | { type: 'codeBlock'; lines: CodeBlockLineAttribution[] };
+type BlockAttributionValue =
+  AttributionInfo | { type: 'codeBlock'; lines: CodeBlockLineAttribution[] };
 
 /**
  * Block attribution data structure (for rendering in UI)
@@ -165,7 +164,7 @@ export function mapLineAttributionsToBlocks(
     positions.forEach((pos) => {
       positionCounts.set(pos, (positionCounts.get(pos) || 0) + 1);
     });
-     
+
     const duplicates = Array.from(positionCounts.entries()).filter(([_, count]) => count > 1);
     logger.warn('[line-to-block-mapper] Duplicate positions:', duplicates);
   }

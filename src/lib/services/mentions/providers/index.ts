@@ -222,7 +222,7 @@ export class NoteProvider implements Provider {
 }
 
 // External Source Provider
-export class ExternalSourceProvider implements Provider {
+class ExternalSourceProvider implements Provider {
   id = 'external';
   triggers = ['@docs', '@external'];
 
@@ -422,7 +422,7 @@ export class CommandProvider implements Provider {
 }
 
 // Terminal Provider
-export class TerminalProvider implements Provider {
+class TerminalProvider implements Provider {
   id = 'terminal';
   triggers = ['@terminal', '@term'];
 
@@ -503,7 +503,7 @@ export class TerminalProvider implements Provider {
 }
 
 // Script Provider
-export class ScriptProvider implements Provider {
+class ScriptProvider implements Provider {
   id = 'script';
   triggers = ['@script', '@scripts'];
 
@@ -569,7 +569,7 @@ export class ScriptProvider implements Provider {
 }
 
 // Specialist Provider - lists available specialist types
-export class SpecialistProvider implements Provider {
+class SpecialistProvider implements Provider {
   id = 'specialist';
   triggers = ['@specialist', '@spec'];
 
@@ -614,7 +614,7 @@ export class SpecialistProvider implements Provider {
 }
 
 // Agent Provider - lists other agents in the workspace
-export class AgentProvider implements Provider {
+class AgentProvider implements Provider {
   id = 'agent';
   triggers = ['@agent'];
 
@@ -707,7 +707,7 @@ export class AgentProvider implements Provider {
 }
 
 // Provider Registry
-export class ProviderRegistry {
+class ProviderRegistry {
   private providers = new Map<string, Provider>();
   private defaultProviders: string[] = [];
 

@@ -14,7 +14,7 @@
 import type { ChangeCategory, DiffHunk, DiffLine, ChangePart } from './types';
 
 /** A line in the merged diff with stage annotation */
-export interface MergedDiffLine {
+interface MergedDiffLine {
   /** Line type: addition, deletion, or context */
   type: 'Addition' | 'Deletion' | 'Context';
   /** The line content (without +/- prefix) */
@@ -309,64 +309,6 @@ function mergeTwo(a: MergedHunk, b: MergedHunk): MergedHunk {
     lines: mergedLines,
     stages,
   };
-}
-
-/**
- * Get the display color for a stage category
- */
-export function getStageColor(stage: ChangeCategory): {
-  bar: string;
-  text: string;
-  bg: string;
-} {
-  switch (stage) {
-    case 'staged':
-      return {
-        bar: 'bg-emerald-500',
-        text: 'text-emerald-600 dark:text-emerald-400',
-        bg: 'bg-emerald-500/10',
-      };
-    case 'unstaged':
-      return {
-        bar: 'bg-amber-500',
-        text: 'text-amber-600 dark:text-amber-400',
-        bg: 'bg-amber-500/10',
-      };
-    case 'committed':
-    default:
-      return {
-        bar: 'bg-blue-500',
-        text: 'text-blue-600 dark:text-blue-400',
-        bg: 'bg-blue-500/10',
-      };
-  }
-}
-
-/**
- * Convert merged hunks back to a unified patch string.
- * This allows us to pass the merged diff to DiffViewer.
- */
-export function mergedHunksToPatch(hunks: MergedHunk[], fileName: string = 'file'): string {
-  if (hunks.length === 0) return '';
-
-  let patch = `diff --git a/${fileName} b/${fileName}\n`;
-  patch += `--- a/${fileName}\n`;
-  patch += `+++ b/${fileName}\n`;
-
-  for (const hunk of hunks) {
-    // Hunk header
-    patch += `@@ -${hunk.headStart},${hunk.headLines} +${hunk.wtStart},${hunk.wtLines} @@\n`;
-
-    // Lines
-    for (const line of hunk.lines) {
-      let prefix = ' ';
-      if (line.type === 'Addition') prefix = '+';
-      else if (line.type === 'Deletion') prefix = '-';
-      patch += `${prefix}${line.content}\n`;
-    }
-  }
-
-  return patch;
 }
 
 /**

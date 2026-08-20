@@ -24,13 +24,6 @@ import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 import { notifyPendingWorkClearedForAgent } from '../../agent/main/agent-process-registry';
 
-// Re-export types that consumers need
-export type {
-  AgentEventFilter,
-  AgentSubscriptionRecord,
-} from '../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
-export type { AgentStatus } from '../../../store/main/slices/agent-subscriptions/types';
-
 const logger = new Logger('AgentSubscriptionOps');
 
 function canonicalFieldsForStatus(
@@ -268,15 +261,4 @@ export function updateAgentStatus(
       ),
     );
   }
-}
-
-/** Mark agent as deleted and remove all its subscriptions. */
-export function markAgentAsDeleted(workspaceId: string, agentId: string): void {
-  agentSubscriptionState.markDeleted(workspaceId, agentId, Date.now());
-  logger.info('Agent marked as deleted', { agentId });
-  const removedCount = agentUnsubscribeAll(workspaceId, agentId);
-  logger.info('Cleaned up subscriptions for deleted agent', {
-    agentId,
-    removedSubscriptions: removedCount,
-  });
 }

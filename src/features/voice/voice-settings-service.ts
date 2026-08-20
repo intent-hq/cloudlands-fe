@@ -16,39 +16,36 @@
  * slice because nothing outside the panel consumes these values — the daemon
  * resolves provider + key server-side at `voice.transcribe` time (§5.41).
  */
-import { appClient } from "$lib/client";
+import { appClient } from '$lib/client';
 
 /** Transcription providers supported by `voice.transcribe` (§5.41). */
-export type VoiceProvider = "elevenlabs" | "openai";
+export type VoiceProvider = 'elevenlabs' | 'openai';
 
-export const VOICE_PROVIDERS: readonly VoiceProvider[] = ["elevenlabs", "openai"];
+export const VOICE_PROVIDERS: readonly VoiceProvider[] = ['elevenlabs', 'openai'];
 
 /** Daemon settings path selecting the default transcription provider (§5.12). */
-export const VOICE_PROVIDER_SETTING_PATH = "voice.provider";
+export const VOICE_PROVIDER_SETTING_PATH = 'voice.provider';
 
 /** Sensitive daemon settings paths whose secret values back the provider API keys (§5.12). */
 export const VOICE_API_KEY_SETTING_PATHS: Record<VoiceProvider, string> = {
-  elevenlabs: "voice.elevenlabs.apiKey",
-  openai: "voice.openai.apiKey",
+  elevenlabs: 'voice.elevenlabs.apiKey',
+  openai: 'voice.openai.apiKey',
 };
 
 /** Non-secret daemon settings path selecting the OpenAI transcription model (§5.12). */
-export const VOICE_OPENAI_MODEL_SETTING_PATH = "voice.openai.model";
+export const VOICE_OPENAI_MODEL_SETTING_PATH = 'voice.openai.model';
 
 /** OpenAI transcription models accepted by `voice.openai.model` (§5.41). */
-export type VoiceOpenAiModel =
-  | "gpt-4o-transcribe"
-  | "gpt-4o-mini-transcribe"
-  | "whisper-1";
+export type VoiceOpenAiModel = 'gpt-4o-transcribe' | 'gpt-4o-mini-transcribe' | 'whisper-1';
 
 export const VOICE_OPENAI_MODELS: readonly VoiceOpenAiModel[] = [
-  "gpt-4o-transcribe",
-  "gpt-4o-mini-transcribe",
-  "whisper-1",
+  'gpt-4o-transcribe',
+  'gpt-4o-mini-transcribe',
+  'whisper-1',
 ];
 
 /** Daemon-side default when the model setting is unset (openai.rs DEFAULT_MODEL). */
-export const VOICE_OPENAI_DEFAULT_MODEL: VoiceOpenAiModel = "gpt-4o-transcribe";
+export const VOICE_OPENAI_DEFAULT_MODEL: VoiceOpenAiModel = 'gpt-4o-transcribe';
 
 /**
  * Non-secret daemon settings path holding the default transcription language
@@ -57,10 +54,10 @@ export const VOICE_OPENAI_DEFAULT_MODEL: VoiceOpenAiModel = "gpt-4o-transcribe";
  * it server-side to cloud `voice.transcribe` calls, and the FE forwards it to
  * the local OS engine as the recognizer locale.
  */
-export const VOICE_LANGUAGE_SETTING_PATH = "voice.language";
+export const VOICE_LANGUAGE_SETTING_PATH = 'voice.language';
 
 /** Auto-detect sentinel: an empty string clears the language hint. */
-export const VOICE_LANGUAGE_AUTO = "";
+export const VOICE_LANGUAGE_AUTO = '';
 
 /**
  * Curated ISO-639-1 codes offered by the language selector — broad coverage
@@ -69,13 +66,38 @@ export const VOICE_LANGUAGE_AUTO = "";
  * `Intl.DisplayNames`, so the list needs no name table.
  */
 export const VOICE_LANGUAGES: readonly string[] = [
-  "en", "zh", "es", "hi", "ar", "pt", "fr", "de", "ja", "ko",
-  "ru", "it", "nl", "pl", "tr", "vi", "id", "th", "sv", "da",
-  "nb", "fi", "cs", "el", "he", "hu", "ro", "uk",
+  'en',
+  'zh',
+  'es',
+  'hi',
+  'ar',
+  'pt',
+  'fr',
+  'de',
+  'ja',
+  'ko',
+  'ru',
+  'it',
+  'nl',
+  'pl',
+  'tr',
+  'vi',
+  'id',
+  'th',
+  'sv',
+  'da',
+  'nb',
+  'fi',
+  'cs',
+  'el',
+  'he',
+  'hu',
+  'ro',
+  'uk',
 ];
 
 /** Non-secret daemon settings path holding the transcription vocabulary (string array, §5.12). */
-export const VOICE_VOCABULARY_SETTING_PATH = "voice.vocabulary";
+export const VOICE_VOCABULARY_SETTING_PATH = 'voice.vocabulary';
 
 /** Maximum length of a single vocabulary term (providers skip longer keyterms, §5.41). */
 export const VOICE_VOCABULARY_TERM_MAX_LENGTH = 50;
@@ -87,7 +109,7 @@ export const VOICE_VOCABULARY_TERM_MAX_LENGTH = 50;
  * vocabulary entirely (no derivation, no injection).
  */
 export const VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH =
-  "voice.workspaceVocabulary.maxTerms";
+  'voice.workspaceVocabulary.maxTerms';
 
 /** Range + daemon-side default for `voice.workspaceVocabulary.maxTerms` (§5.12). */
 export const VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MIN = 0;
@@ -97,7 +119,7 @@ export const VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_DEFAULT = 50;
 /** An integer within the catalog's 0..=100 range (§5.12). */
 export function isVoiceWorkspaceVocabularyMaxTerms(value: unknown): value is number {
   return (
-    typeof value === "number" &&
+    typeof value === 'number' &&
     Number.isInteger(value) &&
     value >= VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MIN &&
     value <= VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MAX
@@ -130,21 +152,21 @@ export interface VoiceSettingsSnapshot {
 }
 
 function isVoiceProvider(value: unknown): value is VoiceProvider {
-  return value === "elevenlabs" || value === "openai";
+  return value === 'elevenlabs' || value === 'openai';
 }
 
-export function isVoiceOpenAiModel(value: unknown): value is VoiceOpenAiModel {
+function isVoiceOpenAiModel(value: unknown): value is VoiceOpenAiModel {
   return VOICE_OPENAI_MODELS.includes(value as VoiceOpenAiModel);
 }
 
 /** A sensitive setting reads as configured when the daemon reports a non-empty (redacted) value. */
 function isConfigured(value: unknown): boolean {
-  return typeof value === "string" && value.length > 0;
+  return typeof value === 'string' && value.length > 0;
 }
 
 /** The vocabulary reads as a string array; anything else (older daemon) ⇒ `null`. */
 function parseVocabulary(value: unknown): string[] | null {
-  return Array.isArray(value) && value.every((term) => typeof term === "string")
+  return Array.isArray(value) && value.every((term) => typeof term === 'string')
     ? (value as string[])
     : null;
 }
@@ -174,7 +196,7 @@ export async function loadVoiceSettings(): Promise<VoiceSettingsSnapshot> {
   ]);
   return {
     available: providerEntry !== null,
-    provider: isVoiceProvider(providerEntry?.value) ? providerEntry.value : "elevenlabs",
+    provider: isVoiceProvider(providerEntry?.value) ? providerEntry.value : 'elevenlabs',
     keyConfigured: {
       elevenlabs: isConfigured(elevenlabsEntry?.value),
       openai: isConfigured(openaiEntry?.value),
@@ -197,7 +219,7 @@ export async function loadVoiceSettings(): Promise<VoiceSettingsSnapshot> {
     language:
       languageEntry === null
         ? null
-        : typeof languageEntry.value === "string"
+        : typeof languageEntry.value === 'string'
           ? languageEntry.value.trim().toLowerCase()
           : VOICE_LANGUAGE_AUTO,
     // `null` entry ⇒ daemon predates the setting (pre-5.1) ⇒ hide the field.
@@ -284,9 +306,7 @@ export async function setVoiceWorkspaceVocabularyMaxTerms(maxTerms: number): Pro
     { path: VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH, value: maxTerms },
   ]);
   if (
-    !applied.some(
-      (change) => change.path === VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH,
-    )
+    !applied.some((change) => change.path === VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH)
   ) {
     // i18n-ignore (Error.message carries the wire path; the panel maps it to a localized message)
     throw new Error(
@@ -303,11 +323,9 @@ export async function saveVoiceApiKey(provider: VoiceProvider, apiKey: string): 
   const key = apiKey.trim();
   if (!key) {
     // i18n-ignore (guard against programmer error; the panel disables Save for empty drafts)
-    throw new Error("API key must not be empty");
+    throw new Error('API key must not be empty');
   }
-  await appClient.settings.update([
-    { path: VOICE_API_KEY_SETTING_PATHS[provider], value: key },
-  ]);
+  await appClient.settings.update([{ path: VOICE_API_KEY_SETTING_PATHS[provider], value: key }]);
 }
 
 /**

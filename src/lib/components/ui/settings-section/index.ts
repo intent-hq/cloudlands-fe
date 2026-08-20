@@ -1,4 +1,3 @@
 import Root from './settings-section.svelte';
-export { settingsSectionMetadata } from './settings-section.meta';
 
-export { Root, Root as SettingsSection };
+export { Root as SettingsSection };

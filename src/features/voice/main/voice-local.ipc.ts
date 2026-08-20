@@ -57,11 +57,7 @@ export interface VoiceTranscribeLocalFailure {
 }
 
 /** SFSpeechRecognizer authorization statuses reported by the helper. */
-export type OsSpeechAuthorizationStatus =
-  | 'authorized'
-  | 'denied'
-  | 'restricted'
-  | 'notDetermined';
+type OsSpeechAuthorizationStatus = 'authorized' | 'denied' | 'restricted' | 'notDetermined';
 
 const AUTHORIZATION_STATUSES = new Set<string>([
   'authorized',

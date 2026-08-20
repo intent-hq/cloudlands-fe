@@ -7,7 +7,7 @@ import {
 import { cancelActiveTranscription } from '$features/hardware-console/voice/transcription-cancellation';
 import { pttRecordingFinished, pttSendRequested } from '../hardware-console-slice';
 
-export function* transcribeFinishedRecording(
+function* transcribeFinishedRecording(
   deps: TranscriptionDeps,
   action: ReturnType<typeof pttRecordingFinished>,
 ): SagaGenerator<void> {
@@ -19,7 +19,7 @@ export function* transcribeFinishedRecording(
   }
 }
 
-export function* sendComposerWithoutRecording(deps: TranscriptionDeps): SagaGenerator<void> {
+function* sendComposerWithoutRecording(deps: TranscriptionDeps): SagaGenerator<void> {
   yield* call(runTranscriptionFlow, null, { autoSend: true }, deps);
 }
 

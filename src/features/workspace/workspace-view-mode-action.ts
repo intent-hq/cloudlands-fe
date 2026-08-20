@@ -305,7 +305,7 @@ export function isWorkspaceViewModeRoute(pathname: string): boolean {
   );
 }
 
-export function nextWorkspaceViewMode(viewMode: WorkspaceViewMode): WorkspaceViewMode {
+function nextWorkspaceViewMode(viewMode: WorkspaceViewMode): WorkspaceViewMode {
   return viewMode === 'single' ? 'columns' : 'single';
 }
 

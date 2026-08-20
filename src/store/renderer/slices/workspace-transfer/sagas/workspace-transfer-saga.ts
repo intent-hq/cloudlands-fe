@@ -63,7 +63,7 @@ async function invokeTransfer<T>(channel: string, params?: unknown): Promise<T> 
   return (await api.invoke(channel, params)) as T;
 }
 
-export function* fetchTransferPlan(): SagaGenerator<void> {
+function* fetchTransferPlan(): SagaGenerator<void> {
   const workspaceId = yield* selectTransferWorkspaceId.effect();
   if (!workspaceId) return;
   try {
@@ -78,7 +78,7 @@ export function* fetchTransferPlan(): SagaGenerator<void> {
 }
 
 /** Step 3: run the main-process relay and settle the run state. */
-export function* runTransfer(): SagaGenerator<void> {
+function* runTransfer(): SagaGenerator<void> {
   const workspaceId = yield* selectTransferWorkspaceId.effect();
   const destination = yield* selectTransferDestinationValue.effect();
   if (!workspaceId || !destination) return;
@@ -106,7 +106,7 @@ export function* runTransfer(): SagaGenerator<void> {
 }
 
 /** `transfer:progress` counter frames from main → progress dispatches. */
-export function* handleTransferProgress(event: TransferProgressEvent): SagaGenerator<void> {
+function* handleTransferProgress(event: TransferProgressEvent): SagaGenerator<void> {
   const workspaceId = yield* selectTransferWorkspaceId.effect();
   if (!workspaceId || event.workspaceId !== workspaceId) return;
   yield* put(
@@ -153,7 +153,7 @@ function* resolveDestinationLabel(): SagaGenerator<string> {
 }
 
 /** Step 4: settle the source, optionally resume target agents + switch. */
-export function* finalizeTransfer(
+function* finalizeTransfer(
   action: ReturnType<typeof transferFinalizeRequested>,
 ): SagaGenerator<void> {
   const [{ switchToTarget }] = action.payload;
@@ -203,7 +203,7 @@ export function* finalizeTransfer(
  * and aborts a committed-but-unfinalized export's staging on the source.
  * Idempotent in main — a close with no live session is a no-op.
  */
-export function* cancelTransferOnClose(): SagaGenerator<void> {
+function* cancelTransferOnClose(): SagaGenerator<void> {
   try {
     yield* call(invokeTransfer, TRANSFER.CANCEL);
   } catch (error) {

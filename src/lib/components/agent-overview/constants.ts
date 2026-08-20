@@ -6,54 +6,8 @@
  */
 
 // ============================================================================
-// Layout Mode
-// ============================================================================
-
-export type LayoutMode = 'force' | 'hierarchical';
-
-/** Default layout mode */
-export const DEFAULT_LAYOUT_MODE: LayoutMode = 'hierarchical';
-
-/** Hierarchical layout configuration */
-export const HIERARCHICAL_LAYOUT = {
-  /** Vertical spacing between agents */
-  agentVerticalSpacing: 100,
-  /** Horizontal indent per delegation level */
-  agentIndentPerLevel: 60,
-  /** Fixed X position for notes column (left side) - fixed pixel value from left edge */
-  notesColumnX: 80, // Fixed 80px from left edge
-  /** Fixed X position for files column (right side) - fixed pixel value from right edge */
-  filesColumnXFromRight: 80, // Fixed 80px from right edge
-  /** Horizontal wiggle room for notes/files within their swim lane */
-  swimLaneWidth: 100,
-  /** Top margin for the layout */
-  topMargin: 80,
-  /** Minimum Y distance between items */
-  minYSpacing: 60,
-} as const;
-
-/** Collision padding by node type (pixels between nodes) */
-export const COLLISION_PADDING = {
-  agent: 10,
-  file: 0,
-  note: 0,
-  task: 0,
-} as const;
-
-// ============================================================================
 // Node Dimensions
 // ============================================================================
-
-/**
- * Approximate dimensions for nodes, used for collision detection.
- * Slightly larger than visual dimensions to provide spacing.
- */
-export const NODE_DIMENSIONS = {
-  agent: { width: 256, height: 100, radius: 60 },
-  file: { width: 160, height: 50, radius: 40 },
-  note: { width: 160, height: 50, radius: 40 },
-  task: { width: 160, height: 50, radius: 40 },
-} as const;
 
 /**
  * Visual card dimensions for edge endpoint calculations.
@@ -64,80 +18,6 @@ export const CARD_DIMENSIONS = {
   file: { width: 120, height: 47 },
   note: { width: 120, height: 47 },
   task: { width: 120, height: 47 },
-} as const;
-
-export type NodeDimensionType = keyof typeof NODE_DIMENSIONS;
-
-// ============================================================================
-// Force Simulation Configuration
-// ============================================================================
-
-/** Force simulation physics parameters */
-export const SIMULATION_CONFIG = {
-  /** Maximum distance for charge force - larger means nodes affect each other from farther away */
-  chargeDistanceMax: 200,
-  /** Strength of centering force for unpinned nodes (keeps unlinked nodes from drifting) */
-  centeringStrength: 0.15,
-  /** Collision detection strength */
-  collisionStrength: 1.0,
-  /** Number of collision detection iterations per tick */
-  collisionIterations: 4,
-  /** Padding between nodes for collision */
-  collisionPadding: 15,
-  /** How quickly simulation velocity decays */
-  velocityDecay: 0.5,
-  /** How quickly simulation cools down */
-  alphaDecay: 0.03,
-  /** Minimum alpha before simulation stops */
-  alphaMin: 0.001,
-  /** Alpha value for reheating simulation on updates */
-  reheatAlpha: 0.2,
-} as const;
-
-/** Repulsion strength by node type (negative = repulsion, more negative = stronger) */
-export const CHARGE_STRENGTH = {
-  agent: -100,
-  file: -30,
-  note: -30,
-  task: -30,
-} as const;
-
-/** Link distance by edge type (pixels) */
-export const LINK_DISTANCES = {
-  /** Parent-child agent delegation */
-  delegation: 120,
-  /** Agent reading a file */
-  'file-read': 90,
-  /** Agent writing to a file */
-  'file-write': 80,
-  /** Agent reading a note - closer since notes are key context */
-  'note-read': 50,
-  /** Agent writing to a note - very close since actively working with it */
-  'note-write': 40,
-  /** Agent creating a task */
-  'task-create': 50,
-  /** Agent updating a task */
-  'task-update': 50,
-  default: 80,
-} as const;
-
-/** Link strength by edge type (0-1+, higher = stronger pull) */
-export const LINK_STRENGTHS = {
-  /** Parent-child agent delegation - moderate */
-  delegation: 1.0,
-  /** Agent reading a file */
-  'file-read': 0.8,
-  /** Agent writing to a file - stronger since it's an active relationship */
-  'file-write': 1.2,
-  /** Agent reading a note - strong since notes are important context */
-  'note-read': 1.5,
-  /** Agent writing to a note - very strong to keep them close */
-  'note-write': 2.0,
-  /** Agent creating a task */
-  'task-create': 1.5,
-  /** Agent updating a task */
-  'task-update': 1.5,
-  default: 1.0,
 } as const;
 
 // ============================================================================
@@ -182,11 +62,7 @@ export const TASK_TOOLS = new Set([
 export const TASK_READ_TOOLS = new Set(['view_tasklist']);
 
 /** Tool names that indicate agent delegation operations */
-export const DELEGATION_TOOLS = new Set([
-  'delegate_task',
-  'create_sub_agent',
-  'create_agent',
-]);
+export const DELEGATION_TOOLS = new Set(['delegate_task', 'create_sub_agent', 'create_agent']);
 
 // ============================================================================
 // Timing Constants
@@ -264,5 +140,3 @@ export const EDGE_STYLES = {
     opacity: 0.5,
   },
 } as const;
-
-export type EdgeStyleType = keyof typeof EDGE_STYLES;

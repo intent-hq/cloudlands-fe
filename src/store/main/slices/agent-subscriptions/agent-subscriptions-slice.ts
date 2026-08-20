@@ -11,26 +11,21 @@
  * - One-shot subscription tracking
  */
 
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import { createWorkspaceScopedHelpers } from "../../../utils/workspace-scoped";
-import type { WorkspaceEvent } from "../../../../features/events/types";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createWorkspaceScopedHelpers } from '../../../utils/workspace-scoped';
+import type { WorkspaceEvent } from '../../../../features/events/types';
 
 // All types consolidated in ./types.ts — re-export for existing consumers
 export type {
-  SerializableDataMatcher,
-  DelegationGroup,
-  AgentEventFilter,
   AgentStatus,
   AgentSubscriptionRecord,
   QueuedEventRecord,
   DelegationGroupTrackerRecord,
-  DeliveryStats,
-  WorkspaceSubscriptionState,
   AgentSubscriptionsState,
-} from "./types";
+} from './types';
 
-export { emptyDeliveryStats, emptyWorkspaceSubscriptionState, initialState } from "./types";
+export { initialState } from './types';
 
 import type {
   AgentStatus,
@@ -38,19 +33,15 @@ import type {
   QueuedEventRecord,
   DelegationGroupTrackerRecord,
   AgentSubscriptionsState,
-} from "./types";
-import {
-  emptyWorkspaceSubscriptionState,
-  initialState,
-} from "./types";
-
+} from './types';
+import { emptyWorkspaceSubscriptionState, initialState } from './types';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
 /** Maximum number of events stored per delegation group to prevent unbounded growth. */
-export const MAX_DELEGATION_GROUP_EVENTS = 500;
+const MAX_DELEGATION_GROUP_EVENTS = 500;
 
 // ============================================================================
 // Actions
@@ -58,11 +49,11 @@ export const MAX_DELEGATION_GROUP_EVENTS = 500;
 
 // --- Subscription lifecycle ---
 export const addSubscription = createAction<[wsId: string, subscription: AgentSubscriptionRecord]>(
-  "agentSubscriptions/addSubscription"
+  'agentSubscriptions/addSubscription',
 );
 
 export const removeSubscription = createAction<[wsId: string, subscriptionId: string]>(
-  "agentSubscriptions/removeSubscription"
+  'agentSubscriptions/removeSubscription',
 );
 
 /**
@@ -86,127 +77,99 @@ export const removeSubscription = createAction<[wsId: string, subscriptionId: st
  */
 export const subscribeToDelegationGroup = createAction<
   [wsId: string, seed: AgentSubscriptionRecord]
->("agentSubscriptions/subscribeToDelegationGroup");
+>('agentSubscriptions/subscribeToDelegationGroup');
 
 export const removeAllSubscriptions = createAction<[wsId: string, agentId: string]>(
-  "agentSubscriptions/removeAllSubscriptions"
+  'agentSubscriptions/removeAllSubscriptions',
 );
 
 // --- Agent status ---
 export const setAgentStatus = createAction<[wsId: string, agentId: string, status: AgentStatus]>(
-  "agentSubscriptions/setAgentStatus"
+  'agentSubscriptions/setAgentStatus',
 );
 
 // --- Agent queues ---
 export const enqueueEvent = createAction<[wsId: string, agentId: string, event: QueuedEventRecord]>(
-  "agentSubscriptions/enqueueEvent"
+  'agentSubscriptions/enqueueEvent',
 );
 
 export const clearAgentQueue = createAction<[wsId: string, agentId: string]>(
-  "agentSubscriptions/clearAgentQueue"
+  'agentSubscriptions/clearAgentQueue',
 );
 
 // --- Delegation groups ---
 export const setDelegationGroup = createAction<
   [wsId: string, tracker: DelegationGroupTrackerRecord]
->("agentSubscriptions/setDelegationGroup");
+>('agentSubscriptions/setDelegationGroup');
 
 export const removeDelegationGroup = createAction<[wsId: string, groupId: string]>(
-  "agentSubscriptions/removeDelegationGroup"
+  'agentSubscriptions/removeDelegationGroup',
 );
 
 export const markDelegationAgentCompleted = createAction<
   [wsId: string, groupId: string, agentId: string]
->("agentSubscriptions/markDelegationAgentCompleted");
+>('agentSubscriptions/markDelegationAgentCompleted');
 
 export const markDelegationAgentDeleted = createAction<
   [wsId: string, groupId: string, agentId: string]
->("agentSubscriptions/markDelegationAgentDeleted");
+>('agentSubscriptions/markDelegationAgentDeleted');
 
-export const appendDelegationGroupEvent = createAction<
+const appendDelegationGroupEvent = createAction<
   [wsId: string, groupId: string, event: WorkspaceEvent]
->("agentSubscriptions/appendDelegationGroupEvent");
+>('agentSubscriptions/appendDelegationGroupEvent');
 
 export const markDelegationDelivered = createAction<[wsId: string, groupId: string]>(
-  "agentSubscriptions/markDelegationDelivered"
+  'agentSubscriptions/markDelegationDelivered',
 );
 
 // --- Delivery stats ---
 export const recordDeliverySuccess = createAction<
   [wsId: string, observedAt?: string],
   [wsId: string, observedAt: string]
->(
-  "agentSubscriptions/recordDeliverySuccess",
-  (wsId, observedAt) => [wsId, observedAt ?? new Date().toISOString()]
-);
+>('agentSubscriptions/recordDeliverySuccess', (wsId, observedAt) => [
+  wsId,
+  observedAt ?? new Date().toISOString(),
+]);
 
 export const recordDeliveryFailure = createAction<
   [wsId: string, observedAt?: string],
   [wsId: string, observedAt: string]
->(
-  "agentSubscriptions/recordDeliveryFailure",
-  (wsId, observedAt) => [wsId, observedAt ?? new Date().toISOString()]
-);
+>('agentSubscriptions/recordDeliveryFailure', (wsId, observedAt) => [
+  wsId,
+  observedAt ?? new Date().toISOString(),
+]);
 
 export const recordDeliveryTimeout = createAction<
   [wsId: string, observedAt?: string],
   [wsId: string, observedAt: string]
->(
-  "agentSubscriptions/recordDeliveryTimeout",
-  (wsId, observedAt) => [wsId, observedAt ?? new Date().toISOString()]
-);
+>('agentSubscriptions/recordDeliveryTimeout', (wsId, observedAt) => [
+  wsId,
+  observedAt ?? new Date().toISOString(),
+]);
 
 export const recordDroppedEvents = createAction<[wsId: string, count: number]>(
-  "agentSubscriptions/recordDroppedEvents"
+  'agentSubscriptions/recordDroppedEvents',
 );
 
 // --- Deleted agent tracking ---
 export const markAgentDeleted = createAction<[wsId: string, agentId: string, deletedAt: number]>(
-  "agentSubscriptions/markAgentDeleted"
+  'agentSubscriptions/markAgentDeleted',
 );
 
 export const evictDeletedAgent = createAction<[wsId: string, agentId: string]>(
-  "agentSubscriptions/evictDeletedAgent"
+  'agentSubscriptions/evictDeletedAgent',
 );
 
 // --- Workspace cleanup ---
-export const clearWorkspace = createAction<[wsId: string]>(
-  "agentSubscriptions/clearWorkspace"
-);
-
-// --- Saga workflow triggers ---
-
-/** Request immediate delivery of specific events to an agent. */
-export const requestDeliverEvents = createAction<
-  [wsId: string, agentId: string, events: WorkspaceEvent[]]
->("agentSubscriptions/requestDeliverEvents");
-
-/** Request delivery of all queued events for an agent. */
-export const requestDeliverQueuedEvents = createAction<
-  [wsId: string, agentId: string]
->("agentSubscriptions/requestDeliverQueuedEvents");
-
-/** Signal that a delegation group may be complete and ready for delivery. */
-export const requestDelegationGroupDelivery = createAction<
-  [wsId: string, groupId: string]
->("agentSubscriptions/requestDelegationGroupDelivery");
-
-/** Request async validation of subscriptions against agent persistence. */
-export const requestValidateSubscriptions = createAction<[wsId: string]>(
-  "agentSubscriptions/requestValidateSubscriptions"
-);
-
-/** Request eviction of stale deleted agents. */
-export const requestEvictStaleAgents = createAction<[wsId: string]>(
-  "agentSubscriptions/requestEvictStaleAgents"
-);
+export const clearWorkspace = createAction<[wsId: string]>('agentSubscriptions/clearWorkspace');
 
 // ============================================================================
 // Workspace-scoped helpers
 // ============================================================================
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
-  createWorkspaceScopedHelpers(emptyWorkspaceSubscriptionState);
+const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
+  emptyWorkspaceSubscriptionState,
+);
 
 // ============================================================================
 // Reducer

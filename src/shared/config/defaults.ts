@@ -7,32 +7,7 @@ import type { AgentId } from '$shared/types/branded-ids';
  */
 
 import type { AgentConfig, StreamConfig, PersistenceConfig, AppConfig } from './types';
-import {
-  TIMEOUTS,
-  LIMITS,
-  DEFAULTS as CONST_DEFAULTS,
-} from '../constants';
-
-
-// ============================================================================
-// Default Agent Configuration
-// ============================================================================
-
-/**
- * Get default agent configuration.
- * Use this function instead of DEFAULT_AGENT_CONFIG for new agents.
- * `model` is intentionally omitted: the daemon/provider CLI resolves the
- * default model when none is specified.
- */
-export function getDefaultAgentConfig(): AgentConfig {
-  return {
-    name: 'Agent',
-    temperature: CONST_DEFAULTS.TEMPERATURE,
-    maxTokens: CONST_DEFAULTS.MAX_TOKENS,
-    systemPrompt: undefined,
-    metadata: {},
-  };
-}
+import { TIMEOUTS, LIMITS, DEFAULTS as CONST_DEFAULTS } from '../constants';
 
 /**
  * @deprecated Use getDefaultAgentConfig() for new agents to get unique names.

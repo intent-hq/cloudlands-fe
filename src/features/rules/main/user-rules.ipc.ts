@@ -55,7 +55,7 @@ const UserRulesExportByTypeSchema = z.object({
   type: z.string().min(1, 'Rule type is required'),
 });
 
-export async function setupEndUserRulesIPC(configManager?: ConfigManager) {
+async function setupEndUserRulesIPC(configManager?: ConfigManager) {
   logger.info('Setting up end user rules IPC handlers');
 
   const endUserRulesManager = EndUserRulesManager.getInstance();
@@ -351,6 +351,4 @@ export async function setupEndUserRulesIPC(configManager?: ConfigManager) {
   logger.info('End user rules IPC handlers setup complete');
 }
 
-// Export legacy aliases for backward compatibility
-export const setupWorkspaceRulesIPC = setupEndUserRulesIPC;
 export const setupUserRulesIPC = setupEndUserRulesIPC;

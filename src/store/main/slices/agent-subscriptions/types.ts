@@ -5,35 +5,35 @@
  * DataMatcher RegExp values are stored as { pattern: string; flags: string }.
  */
 
-import type { WorkspaceEvent } from "../../../../features/events/types";
+import type { WorkspaceEvent } from '../../../../features/events/types';
 
-export type AgentStatus = "idle" | "responding" | "waiting" | "completed" | "failed";
+export type AgentStatus = 'idle' | 'responding' | 'waiting' | 'completed' | 'failed';
 
 /** Serializable version of DataMatcher — RegExp stored as { pattern, flags } */
 export interface SerializableDataMatcher {
   field: string;
-  operator: "equals" | "contains" | "starts_with" | "ends_with" | "matches";
+  operator: 'equals' | 'contains' | 'starts_with' | 'ends_with' | 'matches';
   value: string | number | boolean | { pattern: string; flags: string };
 }
 
 /** Delegation group configuration */
-export interface DelegationGroup {
+interface DelegationGroup {
   groupId: string;
-  awaitMode: "any" | "all";
+  awaitMode: 'any' | 'all';
   expectedAgentIds: string[];
 }
 
 /** Filter configuration for agent event subscriptions */
 export interface AgentEventFilter {
   eventTypes?: string[];
-  actorTypes?: ("user" | "agent" | "system" | "external" | "tool")[];
+  actorTypes?: ('user' | 'agent' | 'system' | 'external' | 'tool')[];
   actorIds?: string[];
   excludeActorIds?: string[];
   dataMatchers?: SerializableDataMatcher[];
   since?: string;
   batchWindow?: number;
   batchMaxEvents?: number;
-  priority?: "high" | "normal" | "low";
+  priority?: 'high' | 'normal' | 'low';
   delegationGroup?: DelegationGroup;
 }
 
@@ -51,7 +51,7 @@ export interface AgentSubscriptionRecord {
 export interface QueuedEventRecord {
   event: WorkspaceEvent;
   queuedAt: string;
-  priority: "high" | "normal" | "low";
+  priority: 'high' | 'normal' | 'low';
   subscriptionId?: string;
 }
 
@@ -60,7 +60,7 @@ export interface DelegationGroupTrackerRecord {
   groupId: string;
   parentAgentId: string;
   parentAgentName: string;
-  awaitMode: "any" | "all";
+  awaitMode: 'any' | 'all';
   expectedAgentIds: string[];
   completedAgentIds: string[];
   deletedAgentIds: string[];
@@ -70,7 +70,7 @@ export interface DelegationGroupTrackerRecord {
 }
 
 /** Delivery health statistics */
-export interface DeliveryStats {
+interface DeliveryStats {
   totalDeliveries: number;
   successfulDeliveries: number;
   failedDeliveries: number;
@@ -101,7 +101,7 @@ export interface AgentSubscriptionsState {
   byWorkspaceId: Record<string, WorkspaceSubscriptionState>;
 }
 
-export const emptyDeliveryStats: DeliveryStats = {
+const emptyDeliveryStats: DeliveryStats = {
   totalDeliveries: 0,
   successfulDeliveries: 0,
   failedDeliveries: 0,
@@ -124,4 +124,3 @@ export const emptyWorkspaceSubscriptionState: WorkspaceSubscriptionState = {
 export const initialState: AgentSubscriptionsState = {
   byWorkspaceId: {},
 };
-

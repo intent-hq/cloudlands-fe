@@ -11,9 +11,9 @@
  */
 
 /** Mouse back button (X1) as reported by MouseEvent.button. */
-export const MOUSE_BUTTON_BACK = 3;
+const MOUSE_BUTTON_BACK = 3;
 /** Mouse forward button (X2) as reported by MouseEvent.button. */
-export const MOUSE_BUTTON_FORWARD = 4;
+const MOUSE_BUTTON_FORWARD = 4;
 
 export type HistoryDirection = 'back' | 'forward';
 

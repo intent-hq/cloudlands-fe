@@ -126,10 +126,6 @@ export const selectPinnedWorkspaceIds = store.createSelector(
   (state) => state.sidebarNav.pinnedWorkspaceIds,
 );
 
-export const selectMultiSelectSidebarTabOrder = store.createSelector(
-  (state): string[] => state.sidebarNav.multiSelectTabOrder,
-);
-
 export const selectMultiSelectSidebarSelectedTabIds = store.createSelector(
   (state, workspaceId: string): string[] =>
     state.sidebarNav.multiSelectSelectedTabIdsByWorkspaceId[workspaceId] ?? ['overview'],

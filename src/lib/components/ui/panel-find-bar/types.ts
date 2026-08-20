@@ -1,8 +1,8 @@
-export type PanelFindBarLayout = 'floating' | 'inline';
+type PanelFindBarLayout = 'floating' | 'inline';
 
 export type PanelFindBarResultFormat = 'slash' | 'of';
 
-export type PanelFindBarResultVariant = 'muted' | 'destructive';
+type PanelFindBarResultVariant = 'muted' | 'destructive';
 
 export interface PanelFindBarProps {
   query?: string;

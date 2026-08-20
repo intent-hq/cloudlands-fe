@@ -15,13 +15,13 @@ import type { Result, NoteComment } from '../../shared/types';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { m } from '$shared/paraglide/messages.js';
 
-export interface ListCommentsParams {
+interface ListCommentsParams {
   status?: 'open' | 'resolved' | 'pending' | 'all';
   type?: 'comment' | 'suggestion' | 'change-request' | 'question' | 'session' | 'all';
   author?: string;
 }
 
-export interface AddCommentParams {
+interface AddCommentParams {
   id?: string; // Allow frontend to provide its own ID
   workspaceId: string;
   noteId: string;
@@ -42,7 +42,7 @@ export interface AddCommentParams {
   agentId?: string;
 }
 
-export interface UpdateStatusParams {
+interface UpdateStatusParams {
   workspaceId: string;
   noteId: string;
   commentId: string;
@@ -165,9 +165,7 @@ class CommentsClient {
         id: String(raw.commentId ?? raw.id ?? params.id ?? ''),
         noteId: params.noteId,
         threadId:
-          typeof raw.threadId === 'string'
-            ? raw.threadId
-            : (params.threadId ?? params.parentId),
+          typeof raw.threadId === 'string' ? raw.threadId : (params.threadId ?? params.parentId),
         content: params.content,
         author: params.author,
         authorType: params.authorType,

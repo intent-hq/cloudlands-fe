@@ -29,7 +29,7 @@
 export const CARD_VISIBILITY_ROOT_MARGIN = '200px 0px';
 
 /** Svelte action return shape for {@link CardVisibilityGate.observe}. */
-export interface CardVisibilityHandle {
+interface CardVisibilityHandle {
   update(workspaceId: string): void;
   destroy(): void;
 }

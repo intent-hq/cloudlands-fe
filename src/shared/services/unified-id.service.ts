@@ -279,5 +279,4 @@ export class UnifiedIdService {
 }
 
 // Export singleton instance
-export const idService = UnifiedIdService.getInstance();
-export const unifiedIdService = idService; // Alias for compatibility
+export const unifiedIdService = UnifiedIdService.getInstance();

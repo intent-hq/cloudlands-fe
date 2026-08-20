@@ -96,10 +96,3 @@ Tech stack: React + TypeScript + Vite + Tailwind CSS + HTML Canvas`,
     repoName: 'snake-game',
   },
 ];
-
-/**
- * Get a random starter prompt
- */
-export function getRandomStarterPrompt(): StarterPrompt {
-  return starterPrompts[Math.floor(Math.random() * starterPrompts.length)];
-}

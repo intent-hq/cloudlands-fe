@@ -194,7 +194,7 @@ const STREAM_CANCELLATION_MESSAGES: Record<StreamCancellationReason, string> = {
   session_evicted: 'Stream cancelled: session evicted after reaching the session limit',
 };
 
-export class StreamCancelledError extends Error {
+class StreamCancelledError extends Error {
   readonly reason: StreamCancellationReason;
 
   constructor(reason: StreamCancellationReason) {
@@ -1586,6 +1586,3 @@ export class StreamManager extends EventEmitter implements IDisposable {
     logger.info('StreamManager disposed successfully');
   }
 }
-
-// Export singleton instance
-export const streamManager = StreamManager.getInstance();

@@ -1109,7 +1109,7 @@ export type ElectronEventName = (typeof EVENT_CHANNELS)[number];
 export type DynamicElectronEventName = `${(typeof DYNAMIC_CHANNEL_PATTERNS)[number]}${string}`;
 
 // Helper function to get all static channels
-export function getAllChannels(): string[] {
+function getAllChannels(): string[] {
   const channels: string[] = [];
 
   function extractChannels(obj: any) {

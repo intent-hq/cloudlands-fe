@@ -35,7 +35,7 @@ export type {
  *   - `connecting` → an add/switch invoke is pending.
  *   - `error`      → the last operation failed (see `error`).
  */
-export type ConnectionOpStatus = 'idle' | 'connecting' | 'error';
+type ConnectionOpStatus = 'idle' | 'connecting' | 'error';
 
 /**
  * Connections slice state.

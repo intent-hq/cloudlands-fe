@@ -1,9 +1,9 @@
-export interface CachedTurnHeight {
+interface CachedTurnHeight {
   height: number;
   width: number;
 }
 
-export interface LazyTurnHeightCacheSnapshot {
+interface LazyTurnHeightCacheSnapshot {
   scope: string;
   size: number;
   limit: number;
@@ -31,7 +31,7 @@ export interface LazyTurnCacheScopeParts {
  * where text wraps.
  */
 export const WIDTH_TOLERANCE_PX = 1;
-export const LAZY_TURN_HEIGHT_CACHE_LIMIT = 256;
+const LAZY_TURN_HEIGHT_CACHE_LIMIT = 256;
 
 export function createLazyTurnCacheScope(parts: LazyTurnCacheScopeParts): string {
   return JSON.stringify([parts.workspaceId, parts.agentId, parts.sessionId ?? null]);

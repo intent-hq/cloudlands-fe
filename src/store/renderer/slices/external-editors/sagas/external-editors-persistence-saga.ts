@@ -12,7 +12,7 @@ import {
 const OPEN_ACTION_STORAGE_KEY = 'open-combo-button-last-action';
 const HIDDEN_EDITORS_STORAGE_KEY = 'legacy-settings:hiddenOpenInEditors';
 
-export function* hydrateHiddenEditorIdsWorker(): SagaGenerator<void> {
+function* hydrateHiddenEditorIdsWorker(): SagaGenerator<void> {
   const stored = yield* call(getLocalStorageItem, HIDDEN_EDITORS_STORAGE_KEY);
   if (!stored) return;
 
@@ -23,15 +23,13 @@ export function* hydrateHiddenEditorIdsWorker(): SagaGenerator<void> {
   }
 }
 
-export function* persistOpenActionWorker(
-  action: ReturnType<typeof setOpenAction>,
-): SagaGenerator<void> {
+function* persistOpenActionWorker(action: ReturnType<typeof setOpenAction>): SagaGenerator<void> {
   const [openAction] = action.payload;
   if (typeof openAction !== 'string') return;
   yield* call(setLocalStorageItem, OPEN_ACTION_STORAGE_KEY, openAction);
 }
 
-export function* persistHiddenEditorIdsWorker(): SagaGenerator<void> {
+function* persistHiddenEditorIdsWorker(): SagaGenerator<void> {
   const hiddenEditorIds = yield* selectHiddenEditorIds.effect();
   yield* call(setLocalStorageItem, HIDDEN_EDITORS_STORAGE_KEY, JSON.stringify(hiddenEditorIds));
 }

@@ -47,13 +47,13 @@ export const LOCAL_CONNECTION_LABEL = 'This machine (local)';
  * `value` is base64 of the `safeStorage` ciphertext when `encrypted`, else
  * the raw token string.
  */
-export interface EncryptedToken {
+interface EncryptedToken {
   encrypted: boolean;
   value: string;
 }
 
 /** A remote connection as persisted on disk (token included). */
-export interface StoredConnection {
+interface StoredConnection {
   id: string;
   label: string;
   host: string;

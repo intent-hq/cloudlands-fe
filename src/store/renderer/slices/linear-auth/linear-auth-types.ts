@@ -1,6 +1,4 @@
-import type { LinearIssueResult } from "$features/linear-auth/renderer/linear-auth.client";
-
-export type LinearIssueFilter = 'assigned' | 'created' | 'subscribed' | 'team' | 'all';
+import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
 
 export type LinearAuthSliceState = {
   /** Whether user is authenticated with Linear via the daemon */
@@ -18,4 +16,3 @@ export type LinearAuthSliceState = {
   /** Whether issues are being loaded */
   isLoadingIssues: boolean;
 };
-

@@ -18,7 +18,7 @@ import type {
 // Agent Configuration Schema
 // ============================================================================
 
-export const AgentConfigSchema = z.object({
+const AgentConfigSchema = z.object({
   name: z.string().min(1, 'Agent name is required').max(100, 'Agent name too long'),
   model: z.string().optional(),
   systemPrompt: z.string().optional(),
@@ -31,7 +31,7 @@ export const AgentConfigSchema = z.object({
 // Streaming Configuration Schema
 // ============================================================================
 
-export const StreamConfigSchema = z.object({
+const StreamConfigSchema = z.object({
   sessionId: z.string().min(1, 'Session ID is required'),
   agentId: z.string().min(1, 'Agent ID is required'),
   backpressureThreshold: z.number().min(1).optional(),
@@ -43,7 +43,7 @@ export const StreamConfigSchema = z.object({
 // Persistence Configuration Schema
 // ============================================================================
 
-export const PersistenceConfigSchema = z.object({
+const PersistenceConfigSchema = z.object({
   basePath: z.string().min(1, 'Base path is required'),
   backupEnabled: z.boolean().optional(),
   compressionEnabled: z.boolean().optional(),
@@ -55,7 +55,7 @@ export const PersistenceConfigSchema = z.object({
 // Application Configuration Schema
 // ============================================================================
 
-export const AppConfigSchema = z.object({
+const AppConfigSchema = z.object({
   agent: AgentConfigSchema,
   streaming: StreamConfigSchema,
   persistence: PersistenceConfigSchema,

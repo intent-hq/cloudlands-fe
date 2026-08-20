@@ -48,10 +48,6 @@ export const selectWorkspaceViewMode = store.createSelector((state) => {
   return state.tabState.viewMode;
 });
 
-export const selectIsWorkspaceTabOpen = store.createSelector((state, workspaceId: string) => {
-  return state.tabState.openTabs[workspaceId] === true;
-});
-
 export const selectActiveWorkspaceIds = store.createSelector((state): string[] => {
   return Object.keys(state.tabState.openTabs).filter(
     (workspaceId) => state.tabState.openTabs[workspaceId] === true,

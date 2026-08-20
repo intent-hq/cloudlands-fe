@@ -15,7 +15,7 @@ import { Logger } from '$shared/logger';
 
 const logger = new Logger('AgentCircuitBreaker');
 
-export interface CircuitBreakerConfig {
+interface CircuitBreakerConfig {
   /** Max consecutive failures before tripping circuit */
   maxConsecutiveFailures: number;
   /** Max agent starts per workspace per session */
@@ -39,8 +39,8 @@ const DEFAULT_CONFIG: CircuitBreakerConfig = {
   sessionWindowMs: 60 * 60_000,
 };
 
-export type CircuitState = 'closed' | 'open' | 'half-open';
-export type TripReason = 'consecutive_failures' | 'rate_limit' | 'spawn_limit' | 'manual';
+type CircuitState = 'closed' | 'open' | 'half-open';
+type TripReason = 'consecutive_failures' | 'rate_limit' | 'spawn_limit' | 'manual';
 
 export interface CircuitStatus {
   state: CircuitState;
@@ -63,7 +63,7 @@ interface WorkspaceCircuitState {
   listeners: Set<(status: CircuitStatus) => void>;
 }
 
-export class AgentCircuitBreaker {
+class AgentCircuitBreaker {
   private static instance: AgentCircuitBreaker;
   private config: CircuitBreakerConfig;
   private workspaces: Map<string, WorkspaceCircuitState> = new Map();

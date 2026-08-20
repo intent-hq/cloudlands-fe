@@ -93,8 +93,6 @@ const languageColors: Record<string, string> = {
   default: '#71717a',
 };
 
-export default languageColors;
-
 export function getColorForExtension(extension?: string): string {
   if (!extension) return languageColors.default;
   return languageColors[extension.toLowerCase()] || languageColors.default;

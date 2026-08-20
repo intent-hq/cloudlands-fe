@@ -11,8 +11,6 @@
  */
 
 import { promises as fs } from 'fs';
-import * as fsExtra from 'fs-extra';
-import * as path from 'path';
 
 /**
  * Sync a file to disk for durability. No-op on Windows.
@@ -26,22 +24,6 @@ export async function fsyncFile(filePath: string): Promise<void> {
     await fd.sync();
   } finally {
     await fd.close();
-  }
-}
-
-/**
- * Sync a directory to disk to ensure metadata operations (e.g. renames)
- * are durable. No-op on Windows.
- *
- * @param dirPath - Path to the directory to sync
- */
-export async function fsyncDir(dirPath: string): Promise<void> {
-  if (process.platform === 'win32') return;
-  const dirFd = await fs.open(dirPath, 'r');
-  try {
-    await dirFd.sync();
-  } finally {
-    await dirFd.close();
   }
 }
 
@@ -69,73 +51,10 @@ export async function renameWithRetry(
       const err = error as NodeJS.ErrnoException;
       if (err.code === 'EPERM' && process.platform === 'win32' && attempt < maxRetries) {
         // Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms
-        await new Promise(resolve => setTimeout(resolve, baseDelayMs * Math.pow(2, attempt)));
+        await new Promise((resolve) => setTimeout(resolve, baseDelayMs * Math.pow(2, attempt)));
         continue;
       }
       throw error;
     }
-  }
-}
-
-/**
- * Write JSON data to a file with fsync() for durability
- * Uses atomic write pattern: write to temp file, then rename
- *
- * @param filePath - Path to write to
- * @param data - Data to write
- * @param options - Write options
- * @returns Promise that resolves when data is synced to disk
- */
-export async function writeJsonWithSync(
-  filePath: string,
-  data: any,
-  options?: { spaces?: number },
-): Promise<void> {
-  const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 11)}`;
-  const spaces = options?.spaces ?? 2;
-
-  try {
-    const content = JSON.stringify(data, null, spaces);
-    await fs.writeFile(tempPath, content, 'utf-8');
-    await fsyncFile(tempPath);
-    await renameWithRetry(tempPath, filePath);
-    await fsyncDir(path.dirname(filePath));
-  } catch (error) {
-    try {
-      await fsExtra.remove(tempPath);
-    } catch {
-      // Ignore cleanup errors
-    }
-    throw error;
-  }
-}
-
-/**
- * Write text data to a file with fsync() for durability
- *
- * @param filePath - Path to write to
- * @param content - Content to write
- * @param encoding - File encoding (default: utf-8)
- * @returns Promise that resolves when data is synced to disk
- */
-export async function writeFileWithSync(
-  filePath: string,
-  content: string,
-  encoding: BufferEncoding = 'utf-8',
-): Promise<void> {
-  const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 11)}`;
-
-  try {
-    await fs.writeFile(tempPath, content, encoding);
-    await fsyncFile(tempPath);
-    await renameWithRetry(tempPath, filePath);
-    await fsyncDir(path.dirname(filePath));
-  } catch (error) {
-    try {
-      await fsExtra.remove(tempPath);
-    } catch {
-      // Ignore cleanup errors
-    }
-    throw error;
   }
 }
