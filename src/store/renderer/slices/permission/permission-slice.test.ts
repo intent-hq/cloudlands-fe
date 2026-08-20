@@ -8,6 +8,11 @@ import {
   getItems,
 } from "@augmentcode/themis/utils/collections/collection-utils";
 import { permissionReducer, permissionRequestReceived, removePermissionRequest, initialState, type PermissionState, type PermissionRequest } from "./permission-slice";
+import { selectPermissionRequestsCollection } from "./permission-selectors";
+import type { StoreState } from "../../types";
+
+const asStoreState = (permission: PermissionState): StoreState =>
+  ({ permission }) as unknown as StoreState;
 
 const makeRequest = (overrides: Partial<PermissionRequest> = {}): PermissionRequest => ({
   requestId: "req-1",
@@ -25,6 +30,13 @@ describe("permissionReducer", () => {
   it("should return initial state", () => {
     const state = permissionReducer(undefined, { type: "@@INIT" });
     expect(state).toEqual(initialState);
+  });
+
+  it("selects the permission request collection", () => {
+    const request = makeRequest();
+    const state = permissionReducer(initialState, permissionRequestReceived(request));
+
+    expect(selectPermissionRequestsCollection.select(asStoreState(state))).toEqual(state.requests);
   });
 
   describe("permissionRequestReceived", () => {

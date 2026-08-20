@@ -6,7 +6,7 @@
  */
 
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import type { AgentFollowState } from './agent-follow-types';
+import type { AgentFollowState, PendingChange } from './agent-follow-types';
 
 // ---------------------------------------------------------------------------
 // Initial state
@@ -21,7 +21,7 @@ const initialState: AgentFollowState = {
   isAnimating: false,
   isPaused: false,
   typingSpeed: 30,
-  pendingChanges: [],
+  pendingChanges: [] as PendingChange[],
 };
 
 // ---------------------------------------------------------------------------
