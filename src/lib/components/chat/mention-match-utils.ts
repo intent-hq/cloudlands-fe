@@ -7,10 +7,13 @@
  * - @note/{noteId} — note mentions
  * - @{path} — file/folder mentions (paths with / or file extensions)
  *
- * The `@` must be at the start of the text or preceded by whitespace, so email
- * addresses like clement@shv.com stay plain text instead of rendering
- * `@shv.com` as a mention chip. Runs BEFORE URL linkification
- * (splitTextByUrls), which handles the remaining text segments.
+ * The `@` must not be preceded by an email-local-part character (letters,
+ * digits, `._%+-`), so email addresses like clement@shv.com and URL userinfo
+ * like https://user@host/path stay plain text instead of rendering `@shv.com`
+ * as a mention chip — while punctuation-adjacent mentions such as
+ * `(@note/spec)` or `"@src/foo.rs"` (which the input typeahead can produce)
+ * still chip. Runs BEFORE URL linkification (splitTextByUrls), which handles
+ * the remaining text segments.
  */
 
 export interface InlineMentionMatch {
@@ -23,7 +26,7 @@ export interface InlineMentionMatch {
 }
 
 const MENTION_REGEX =
-  /(?<!\S)@(context\[[^\]]+\]|note\/[^\s]+|[^\s@]+\.[a-zA-Z]+(?::[L\d-]+)?|[^\s@]*\/[^\s]+)/g;
+  /(?<![A-Za-z0-9._%+-])@(context\[[^\]]+\]|note\/[^\s]+|[^\s@]+\.[a-zA-Z]+(?::[L\d-]+)?|[^\s@]*\/[^\s]+)/g;
 
 /** Find all inline @mentions in `text`, in order of appearance. */
 export function findInlineMentions(text: string): InlineMentionMatch[] {

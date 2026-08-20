@@ -46,6 +46,21 @@ describe('splitTextByUrls', () => {
     ]);
   });
 
+  it('excludes trailing markdown wrappers from the URL', () => {
+    expect(splitTextByUrls('see `https://example.com` please')).toEqual([
+      { type: 'text', content: 'see `' },
+      { type: 'link', url: 'https://example.com' },
+      { type: 'text', content: '` please' },
+    ]);
+    expect(splitTextByUrls('*https://example.com* and ~https://other.test~')).toEqual([
+      { type: 'text', content: '*' },
+      { type: 'link', url: 'https://example.com' },
+      { type: 'text', content: '* and ~' },
+      { type: 'link', url: 'https://other.test' },
+      { type: 'text', content: '~' },
+    ]);
+  });
+
   it('keeps balanced parentheses inside the URL', () => {
     expect(splitTextByUrls('https://en.wikipedia.org/wiki/Foo_(bar)')).toEqual([
       { type: 'link', url: 'https://en.wikipedia.org/wiki/Foo_(bar)' },

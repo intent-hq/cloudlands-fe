@@ -12,8 +12,33 @@ describe('findInlineMentions', () => {
     expect(findInlineMentions('email me at foo.bar@sub.example.co today')).toEqual([]);
   });
 
-  it('does not match an @path immediately preceded by a non-whitespace character', () => {
+  it('does not match an @path immediately preceded by a word character', () => {
     expect(findInlineMentions('see foo@src/main.rs there')).toEqual([]);
+  });
+
+  it('does not match userinfo in a URL', () => {
+    expect(findInlineMentions('fetch https://user@host/path now')).toEqual([]);
+  });
+
+  it('matches a mention wrapped in parentheses (regression)', () => {
+    // The note pattern is greedy over non-whitespace, so the closing paren is
+    // included in the capture — same behavior as before the email guard.
+    expect(findInlineMentions('see (@note/spec) for details')).toEqual([
+      { index: 5, fullMatch: '@note/spec)', captured: 'note/spec)' },
+    ]);
+  });
+
+  it('matches a mention wrapped in double quotes', () => {
+    expect(findInlineMentions('check "@src/foo.rs" now')).toEqual([
+      { index: 7, fullMatch: '@src/foo.rs', captured: 'src/foo.rs' },
+    ]);
+  });
+
+  it('matches mentions after brackets, braces, and single quotes', () => {
+    expect(findInlineMentions("{@file.ts} '@src/a.rs'")).toEqual([
+      { index: 1, fullMatch: '@file.ts', captured: 'file.ts' },
+      { index: 12, fullMatch: '@src/a.rs', captured: 'src/a.rs' },
+    ]);
   });
 
   it('matches a context mention at the start of the string', () => {

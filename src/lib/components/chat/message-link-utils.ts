@@ -10,8 +10,26 @@ export type TextLinkPart = { type: 'text'; content: string } | { type: 'link'; u
 
 const URL_REGEX = /(?:https?|intent):\/\/[^\s<>]+/g;
 
-/** Characters that are almost certainly trailing punctuation, not part of the URL. */
-const TRAILING_PUNCTUATION = new Set(['.', ',', ';', ':', '!', '?', "'", '"', '\u2019', '\u201d']);
+/**
+ * Characters that are almost certainly trailing punctuation, not part of the
+ * URL. Includes markdown wrappers (backtick, `*`, `~`) users often put around
+ * URLs in plain-text messages.
+ */
+const TRAILING_PUNCTUATION = new Set([
+  '.',
+  ',',
+  ';',
+  ':',
+  '!',
+  '?',
+  "'",
+  '"',
+  '`',
+  '*',
+  '~',
+  '\u2019',
+  '\u201d',
+]);
 
 /** Closing bracket → its opening counterpart, for balance-aware trimming. */
 const CLOSING_BRACKETS: Record<string, string> = { ')': '(', ']': '[', '}': '{' };

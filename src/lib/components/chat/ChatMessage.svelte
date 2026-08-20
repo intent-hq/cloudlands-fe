@@ -793,10 +793,13 @@
   });
 
   // Truncated attachment awaiting hydration before its lightbox opens.
+  // Keeps the pre-click thumbnail block so the settle effect can still open
+  // something if the block list shifts underneath the fetch.
   let pendingLightboxHydration = $state<{
     blockId: string;
     openerElement: HTMLButtonElement;
     index: number;
+    thumbnailBlock: ContentBlock & { data: string; mimeType: string };
   } | null>(null);
 
   function isAttachmentHydrationLoading(blockId: string | undefined): boolean {
@@ -816,7 +819,12 @@
     if (readOnly) return;
     const hydrationMessageId = message?.id ?? messageId;
     if (imageBlock.dataTruncated === true && agentId && hydrationMessageId && imageBlock.id) {
-      pendingLightboxHydration = { blockId: imageBlock.id, openerElement, index };
+      pendingLightboxHydration = {
+        blockId: imageBlock.id,
+        openerElement,
+        index,
+        thumbnailBlock: imageBlock,
+      };
       appStore.dispatch(
         messageBlockHydrationRequested(agentId, hydrationMessageId, imageBlock.id),
       );
@@ -832,15 +840,18 @@
 
   // Once the pending block's fetch settles, open the lightbox with the merged
   // block: hydrated full data on success, the original thumbnail on failure
-  // (graceful fallback — the merge leaves errored blocks untouched).
+  // (graceful fallback — the merge leaves errored blocks untouched). The
+  // block is looked up by id only — an index fallback could open a different
+  // image if the block list shifted between click and settle. If the id is
+  // gone (or the merged block is no longer a valid image), fall back to the
+  // pre-click thumbnail so the click never silently no-ops.
   $effect(() => {
     const pending = pendingLightboxHydration;
     if (!pending) return;
     if (isAttachmentHydrationLoading(pending.blockId)) return;
-    const block =
-      imageBlocks.find((b: any) => b.id === pending.blockId) ?? imageBlocks[pending.index];
+    const merged = imageBlocks.find((b: any) => b.id === pending.blockId);
+    const block = merged && isImageBlock(merged) ? merged : pending.thumbnailBlock;
     pendingLightboxHydration = null;
-    if (!block || !isImageBlock(block)) return;
     lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
     lightboxImageName =
       block.fileName ||
@@ -1486,6 +1497,7 @@
                       type="button"
                       class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary rounded"
                       class:animate-pulse={isAttachmentHydrationLoading(imageBlock.id)}
+                      aria-busy={isAttachmentHydrationLoading(imageBlock.id)}
                       onclick={(e) => {
                         if (isImageBlock(imageBlock)) {
                           openImageLightbox(imageBlock, e.currentTarget, i);

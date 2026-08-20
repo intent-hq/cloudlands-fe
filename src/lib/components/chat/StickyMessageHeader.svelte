@@ -21,7 +21,10 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import { handleLink } from '$features/navigation/link-handler';
+  import { WorkspaceId } from '$shared/types/branded-ids';
   import { findInlineMentions } from './mention-match-utils';
+  import { splitTextByUrls } from './message-link-utils';
 
   interface Props {
     message: AgentMessage;
@@ -238,7 +241,21 @@
   {/each}
   {#each parsed.segments as segment, i (i)}
     {#if segment.type === 'text'}
-      <span>{segment.content}</span>
+      <span
+        >{#each splitTextByUrls(segment.content) as part, j (j)}{#if part.type === 'link'}<a
+              href={part.url}
+              class="cursor-pointer underline underline-offset-2 hover:opacity-80"
+              title={part.url}
+              onclick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleLink(part.url, {
+                  workspaceId: workspaceId ? WorkspaceId(workspaceId) : undefined,
+                  event: e,
+                });
+              }}>{part.url}</a
+            >{:else}{part.content}{/if}{/each}</span
+      >
     {:else if segment.type === 'mention'}
       {@const isContextProvider = ['linear', 'github', 'sentry', 'browser'].includes(
         segment.mentionType,
