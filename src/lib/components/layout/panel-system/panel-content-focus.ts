@@ -27,3 +27,25 @@ export function shouldBlurActiveElement(
   if (owningPanel?.dataset.panelId !== targetPanelId) return true;
   return targetLayoutId !== undefined && owningPanel.dataset.layoutId !== targetLayoutId;
 }
+
+/**
+ * Same ownership rule for the focusable-type branch (intent-hq/monorepo#2947):
+ * only redirect focus into the panel's content (`panel:focus-content`) when the
+ * current focus lives OUTSIDE the target panel. Focus the user just placed
+ * inside the panel but outside the prompt (e.g. the header rename input) must
+ * not be stolen. Unlike the blur predicate, null/body focus counts as outside
+ * so normal reveal/cycle flows still focus the content.
+ *
+ * Non-HTMLElement focus (e.g. an SVG given tabindex) counts as INSIDE
+ * regardless of where it lives — a deliberate conservative bias inherited from
+ * `shouldBlurActiveElement`: suppressing a redirect only skips auto-focusing
+ * the prompt, while redirecting wrongly steals focus (the bug class itself).
+ */
+export function shouldRedirectFocusToPanelContent(
+  activeElement: Element | null,
+  targetPanelId: string,
+  targetLayoutId?: string,
+): boolean {
+  if (activeElement === null) return true;
+  return shouldBlurActiveElement(activeElement, targetPanelId, targetLayoutId);
+}

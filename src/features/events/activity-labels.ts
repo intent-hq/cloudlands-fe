@@ -10,7 +10,7 @@ import {
   cleanToolName,
   isDeferredToolLoad,
   isRawMcpName,
-} from '$lib/components/chat/tool-classifier';
+} from '$lib/utils/tool-classifier';
 import { m } from '$shared/paraglide/messages.js';
 
 import type { WorkspaceEvent } from './types';

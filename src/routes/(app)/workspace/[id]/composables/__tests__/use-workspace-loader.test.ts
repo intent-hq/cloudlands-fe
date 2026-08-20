@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
 import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { emptyWorkspaceAgentState } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   removeWorkspaceEntity,
@@ -226,6 +227,14 @@ describe('useWorkspaceLoader', () => {
         status: 'not_found',
       },
     });
+
+    // The ghost tab is removed from the strip on definitive not-found.
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: closeWorkspaceTab.type,
+        payload: ['loader-missing-1', expect.any(Number)],
+      }),
+    );
   });
 
   it('exposes a generic loadError for non-not-found failures', async () => {
@@ -299,6 +308,10 @@ describe('useWorkspaceLoader', () => {
       expect.objectContaining({
         workspaceData: expect.objectContaining({ status: 'not_found' }),
       }),
+    );
+    // The superseded load must not close any tab either.
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: closeWorkspaceTab.type }),
     );
   });
 
@@ -374,6 +387,14 @@ describe('useWorkspaceLoader', () => {
     const actions = dispatchMock.mock.calls.map(([action]) => action);
     expect(actions).toContainEqual(removeWorkspaceEntity(cachedWorkspace.id));
 
+    // The ghost tab is removed from the strip on definitive not-found.
+    expect(actions).toContainEqual(
+      expect.objectContaining({
+        type: closeWorkspaceTab.type,
+        payload: [cachedWorkspace.id, expect.any(Number)],
+      }),
+    );
+
     // Route loading must not dispatch workspace-scoped cleanup; tab removal owns that boundary.
     const mountedIndex = actions.findIndex((action) => action.type === workspaceMounted.type);
     expect(actions[mountedIndex]).toEqual(workspaceMounted(cachedWorkspace.id));
@@ -417,6 +438,7 @@ describe('useWorkspaceLoader', () => {
 
     const actions = dispatchMock.mock.calls.map(([action]) => action);
     expect(actions.filter((action) => action.type === removeWorkspaceEntity.type)).toEqual([]);
+    expect(actions.filter((action) => action.type === closeWorkspaceTab.type)).toEqual([]);
     expect(
       actions.filter((action) => action.type === 'workspace-lifecycle/workspaceUnmounted'),
     ).toEqual([]);
@@ -467,6 +489,7 @@ describe('useWorkspaceLoader', () => {
 
     const actions = dispatchMock.mock.calls.map(([action]) => action);
     expect(actions.filter((action) => action.type === removeWorkspaceEntity.type)).toEqual([]);
+    expect(actions.filter((action) => action.type === closeWorkspaceTab.type)).toEqual([]);
     expect(screen.getByTestId('load-error-kind').textContent).toBe('');
     expect(staleWorkspaceState.updateState).not.toHaveBeenCalledWith(
       expect.objectContaining({

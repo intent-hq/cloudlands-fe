@@ -45,6 +45,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     }),
   }),
   selectAgentIsResponding: () => readable(false),
+  selectAgentPreview: Object.assign(() => readable(null), { select: () => null }),
   selectAgentIsWaiting: () => readable(false),
   selectAgentIsBlockedWaiting: () => readable(false),
   selectAgentSessionStreamingContent: () => readable(''),

@@ -36,6 +36,7 @@ import type {
 export const initialState: ConnectionsState = {
   connections: createCollection<ConnectionRecord, 'id'>('id'),
   activeId: LOCAL_CONNECTION_ID,
+  hasReceivedList: false,
   status: 'idle',
   error: null,
   certMismatch: null,
@@ -161,6 +162,7 @@ connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) 
     ...state,
     connections: createCollection<ConnectionRecord, 'id'>('id', result.connections),
     activeId: result.activeId,
+    hasReceivedList: true,
   };
 });
 connectionsReducer.with(connectOperationStarted, (state) => {

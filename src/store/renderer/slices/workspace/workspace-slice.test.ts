@@ -130,6 +130,20 @@ describe('workspaceReducer', () => {
       expect(state.isCreating).toBe(true);
     });
 
+    it('stamps and preserves the loaded backend id', () => {
+      let state = workspaceReducer(initialState, setWorkspaceHasLoaded(true, 'remote-1'));
+      expect(state.hasLoaded).toBe(true);
+      expect(state.loadedBackendId).toBe('remote-1');
+
+      // Omitting the backend id keeps the previous stamp.
+      state = workspaceReducer(state, setWorkspaceHasLoaded(true));
+      expect(state.loadedBackendId).toBe('remote-1');
+
+      // A later load for another backend replaces it.
+      state = workspaceReducer(state, setWorkspaceHasLoaded(true, 'local'));
+      expect(state.loadedBackendId).toBe('local');
+    });
+
     it('tracks and clears pending deletion maps', () => {
       let state = workspaceReducer(initialState, markWorkspacePendingDeletion('ws-1'));
       expect(state.pendingDeletions).toEqual({ 'ws-1': true });

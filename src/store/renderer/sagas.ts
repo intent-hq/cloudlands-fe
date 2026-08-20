@@ -72,6 +72,7 @@ import { sidebarNavSaga } from './slices/sidebar-nav/sagas/sidebar-nav-saga';
 import { specialistsSaga } from './slices/specialists/sagas/specialists-saga';
 import { statsReadSaga } from './slices/stats/sagas/stats-read-saga';
 import { tabStateSaga } from './slices/tab-state/sagas/tab-state-saga';
+import { workspaceTabReconciliationSaga } from './slices/tab-state/sagas/workspace-tab-reconciliation-saga';
 import { workspaceTabCleanupSaga } from './slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga';
 import { taskAgentAssociationsSaga } from './slices/task-agent-associations/sagas/task-agent-associations-saga';
 import { terminalPersistenceSaga } from './slices/terminals/sagas/terminal-persistence-saga';
@@ -175,6 +176,7 @@ export const sagas = [
   gitRootsSaga,
   uiLayoutPersistenceSaga,
   tabStateSaga,
+  workspaceTabReconciliationSaga,
   workspaceTabCleanupSaga,
   sidebarNavSaga,
   panelLayoutSaga,

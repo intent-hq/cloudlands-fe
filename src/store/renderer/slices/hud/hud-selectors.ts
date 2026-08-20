@@ -43,11 +43,14 @@ import {
 import {
   selectAgentIsResponding,
   selectAgentIsWaiting,
+  selectAgentPreview,
+  type AgentPreview,
 } from '../agent-session/agent-session-selectors';
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
-import { deriveAgentPreviewLine } from '$lib/utils/text-utils';
+import { classifyTool } from '$lib/utils/tool-classifier';
+import { getLastMeaningfulLine } from '$lib/utils/text-utils';
 import { selectHardwareConsoleKeySlots } from '../hardware-console/hardware-console-selectors';
 
 export const selectHudActive = store.createSelector((state) => state.hud.active);
@@ -86,6 +89,12 @@ export interface HudSystemView {
   version: string | null;
   /** Epoch-ms of the last successful poll; null before the first one. */
   fetchedAtMs: number | null;
+  /**
+   * Short daemon hostname (everything before the first `.`) when connected
+   * to a REMOTE daemon (`hostLocality === 'remote'`, §5.7/§5.14) and the poll
+   * reported one; null for local daemons, unknown locality, or no hostname.
+   */
+  remoteHostname: string | null;
 }
 
 /**
@@ -99,12 +108,15 @@ export interface HudSystemView {
  * rendered and the SYSTEM panel freezes the last-known uptime while down.
  */
 export const selectHudSystem = store.createSelector((state): HudSystemView => {
-  const { health, stats, lastUpdated } = state.daemonHealth;
+  const { health, stats, lastUpdated, hostLocality } = state.daemonHealth;
+  const hostname = stats?.hostname;
   return {
     online: health !== 'down',
     uptimeSeconds: typeof stats?.uptimeSeconds === 'number' ? stats.uptimeSeconds : null,
     version: stats?.version ?? null,
     fetchedAtMs: lastUpdated ? Date.parse(lastUpdated) : null,
+    remoteHostname:
+      hostLocality === 'remote' && hostname ? (hostname.split('.', 1)[0] ?? hostname) : null,
   };
 });
 
@@ -456,12 +468,12 @@ export interface HudCardAgent {
   lastActivityTs: string | null;
   /**
    * Latest activity line for the swap animation (wire/agent content;
-   * i18n-exempt), else null. Derived by the shared
-   * `deriveAgentPreviewLine` helper (same precedence as the AgentCard
-   * footer preview: live response > newest user message > digest/report >
-   * persisted `lastAgentResponse`) over the AgentLite projection
-   * (`agent.list`, §5.5) folded in by the HUD's per-workspace hydration and
-   * kept fresh by live status events.
+   * i18n-exempt), else null. The canonical `selectAgentPreview` derivation
+   * (same precedence chain as the AgentCard footer: attention → live text →
+   * live tool → user line → digest/report → persisted fallbacks) rendered to
+   * a plain string over the AgentLite projection (`agent.list`, §5.5) folded
+   * in by the HUD's per-workspace hydration and kept fresh by live status
+   * events.
    */
   line: string | null;
   /** Delegating agent's id (`parentAgentId`, PROTOCOL §5.1 v2.9); null on roots. */
@@ -838,6 +850,42 @@ function isTopLevelAgent(info: WorkspaceAgentInfo, metadata: Record<string, unkn
   return !(typeof createdBy === 'string' && createdBy.length > 0 && createdBy !== info.id);
 }
 
+/**
+ * Render the canonical structured preview to the HUD's plain-string line:
+ * text kinds carry their text, tool kinds render the classified tool label
+ * (verb + subject + path, mirroring AgentPreviewToolLabel; hidden labels
+ * render nothing), attention renders the request's reason text. The swap
+ * line is single-line: multi-line text kinds (report / last-user carry raw
+ * multi-line text; live-text / last-response / user arrive pre-reduced) are
+ * reduced to their last meaningful line.
+ */
+function previewLineText(preview: AgentPreview | null): string | null {
+  if (!preview) return null;
+  switch (preview.kind) {
+    case 'attention':
+      return preview.attention.reason ?? null;
+    case 'live-tool':
+    case 'last-tool': {
+      const display = classifyTool(
+        preview.toolUse.name,
+        (preview.toolUse.input as Record<string, unknown>) || {},
+      );
+      if (display.hidden) return null;
+      const label = [display.verb, display.subject, display.path]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      return label || null;
+    }
+    default: {
+      const text = preview.text || '';
+      if (!text) return null;
+      if (!text.includes('\n')) return text;
+      return getLastMeaningfulLine(text) || null;
+    }
+  }
+}
+
 /** Tree-ordered card agent rows for a workspace (prefixes empty until kept). */
 function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
   return orderAgentTree(agentInfosOf(workspace)).map(({ info, depth, parentAgentId }) => {
@@ -852,20 +900,9 @@ function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
       name: info.name,
       bucket,
       lastActivityTs: info.lastActivity ?? null,
-      // Same precedence as the AgentCard footer preview (shared helper) over
-      // the AgentLite fields the HUD hydration carries.
-      line: session
-        ? deriveAgentPreviewLine({
-            lastAgentResponse: session.lastAgentResponse,
-            lastUserMessage: session.lastUserMessage,
-            lastMessageRole: session.lastMessageRole,
-            digest: session.digest,
-            isResponding: session.isResponding === true,
-            completionReport:
-              typeof metadata.completionReport === 'string' ? metadata.completionReport : null,
-            lastToolUse: session.lastToolUse,
-          })
-        : null,
+      // Canonical preview chain (selectAgentPreview — same precedence as the
+      // AgentCard footer) rendered to the HUD's plain-string line.
+      line: previewLineText(selectAgentPreview.select(state, info.id)),
       parentAgentId,
       depth,
       treePrefix: '',

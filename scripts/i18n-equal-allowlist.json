@@ -760,6 +760,12 @@
     "de",
     "fr"
   ],
+  "menu_services": [
+    "fr"
+  ],
+  "menu_substitutions": [
+    "fr"
+  ],
   "modals_connect_host_label": [
     "de",
     "es"
