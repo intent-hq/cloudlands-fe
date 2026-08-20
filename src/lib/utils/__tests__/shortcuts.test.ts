@@ -59,6 +59,23 @@ describe('shortcut registry', () => {
     });
   });
 
+  it('lists distinct panel-content and workspace-tab close shortcuts', () => {
+    expect(SHORTCUTS.CLOSE_TAB).toEqual({
+      key: 'mod+w',
+      label: 'Close Panel Tab',
+    });
+    expect(SHORTCUTS.CLOSE_WORKSPACE_TAB).toEqual({
+      key: 'mod+shift+w',
+      label: 'Close Space Tab',
+    });
+    expect(SHORTCUT_CATEGORIES.navigation.shortcuts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'mod+w', label: 'Close Panel Tab' }),
+        expect.objectContaining({ key: 'mod+shift+w', label: 'Close Space Tab' }),
+      ]),
+    );
+  });
+
   it('formats the title-bar shortcut hints for the current platform', () => {
     expect(formatShortcut('mod+o')).toBe(isMacPlatform() ? '⌘O' : 'Ctrl+O');
     expect(formatShortcut('mod+shift+l')).toBe(isMacPlatform() ? '⌘⇧L' : 'Ctrl+Shift+L');

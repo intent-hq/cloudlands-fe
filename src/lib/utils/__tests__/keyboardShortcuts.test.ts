@@ -48,7 +48,11 @@ function createSpacesManager(action: () => void, modifier: 'meta' | 'ctrl') {
   return manager;
 }
 
-function createGlobalCloseManager(action: () => void, modifier: 'meta' | 'ctrl') {
+function createGlobalCloseManager(
+  action: () => void,
+  modifier: 'meta' | 'ctrl',
+  workspaceAction?: () => void,
+) {
   const manager = new KeyboardShortcutManager();
   managers.push(manager);
   manager.register({
@@ -58,6 +62,16 @@ function createGlobalCloseManager(action: () => void, modifier: 'meta' | 'ctrl')
     action,
     global: true,
   });
+  if (workspaceAction) {
+    manager.register({
+      key: 'w',
+      [modifier]: true,
+      shift: true,
+      description: 'Close Space Tab',
+      action: workspaceAction,
+      global: true,
+    });
+  }
   manager.attach();
   return manager;
 }
@@ -231,6 +245,69 @@ describe('global panel-tab close shortcut handling', () => {
       metaKey: modifier === 'meta',
       ctrlKey: modifier === 'ctrl',
       shiftKey: false,
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(action).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['Command', 'meta'],
+    ['Control', 'ctrl'],
+  ] as const)('keeps %s+W and its Shift chord exact and distinct', (_label, modifier) => {
+    const panelAction = vi.fn();
+    const workspaceAction = vi.fn();
+    createGlobalCloseManager(panelAction, modifier, workspaceAction);
+    const input = document.createElement('input');
+    document.body.append(input);
+
+    expect(
+      dispatchShortcut(input, {
+        key: 'w',
+        code: 'KeyW',
+        metaKey: modifier === 'meta',
+        ctrlKey: modifier === 'ctrl',
+        shiftKey: false,
+      }).defaultPrevented,
+    ).toBe(true);
+    expect(panelAction).toHaveBeenCalledOnce();
+    expect(workspaceAction).not.toHaveBeenCalled();
+
+    expect(
+      dispatchShortcut(input, {
+        key: 'w',
+        code: 'KeyW',
+        metaKey: modifier === 'meta',
+        ctrlKey: modifier === 'ctrl',
+        shiftKey: true,
+      }).defaultPrevented,
+    ).toBe(true);
+    expect(panelAction).toHaveBeenCalledOnce();
+    expect(workspaceAction).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['input', () => document.createElement('input')],
+    [
+      'editor',
+      () => {
+        const editor = document.createElement('div');
+        editor.setAttribute('contenteditable', 'true');
+        return editor;
+      },
+    ],
+  ])('handles the global workspace close chord from %s focus', (_context, createTarget) => {
+    const action = vi.fn();
+    createGlobalCloseManager(vi.fn(), 'ctrl', action);
+    const target = createTarget();
+    document.body.append(target);
+
+    const event = dispatchShortcut(target, {
+      key: 'w',
+      code: 'KeyW',
+      metaKey: false,
+      ctrlKey: true,
+      shiftKey: true,
     });
 
     expect(event.defaultPrevented).toBe(true);

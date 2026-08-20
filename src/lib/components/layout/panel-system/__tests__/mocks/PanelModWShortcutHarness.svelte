@@ -26,12 +26,19 @@
     selectWorkspaceTabOrder,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
 
-  let { zoomFactor = 1, panelCount = 3 }: { zoomFactor?: number; panelCount?: 1 | 3 } = $props();
+  let {
+    zoomFactor = 1,
+    panelCount = 3,
+    isMac = false,
+  }: { zoomFactor?: number; panelCount?: 1 | 3; isMac?: boolean } = $props();
   // svelte-ignore state_referenced_locally - component-test props are fixed for each mount
   const initialZoomFactor = $state.snapshot(zoomFactor);
   // svelte-ignore state_referenced_locally - component-test props are fixed for each mount
   const initialPanelCount = $state.snapshot(panelCount);
-  const workspaceId = `mod-w-browser-${initialZoomFactor}-${initialPanelCount}`;
+  // svelte-ignore state_referenced_locally - component-test props are fixed for each mount
+  const initialIsMac = $state.snapshot(isMac);
+  const platform = initialIsMac ? 'mac' : 'non-mac';
+  const workspaceId = `mod-w-browser-${platform}-${initialZoomFactor}-${initialPanelCount}`;
   const panelIds = Array.from({ length: initialPanelCount }, (_, index) => `p${index + 1}`);
   const focusedPanelId = panelIds[Math.floor(panelIds.length / 2)];
   const initialSizes = initialPanelCount === 3 ? [20, 50, 30] : [100];
@@ -39,6 +46,7 @@
   let viewport: HTMLElement | null = $state(null);
   let panelRoot: HTMLElement | null = $state(null);
   let navigationCount = $state(0);
+  let navigationPath = $state('');
 
   appStore.dispatch(
     loadWorkspaceTabsState({
@@ -102,11 +110,14 @@
 
   onMount(() => {
     registerWorkspaceTabShortcuts({
-      isMac: false,
+      isMac: initialIsMac,
       register: (shortcut) => shortcutManager.register(shortcut),
       store: appStore,
       getCurrentPath: () => '/',
-      navigate: () => (navigationCount += 1),
+      navigate: (path) => {
+        navigationCount += 1;
+        navigationPath = path;
+      },
       openNewWorkspace: () => undefined,
       toggleWorkspaceViewMode: () => undefined,
     });
@@ -134,7 +145,10 @@
   data-tab-order={$tabOrder$.join(',')}
   data-current-tab={$currentTab$ ?? ''}
   data-navigation-count={navigationCount}
+  data-navigation-path={navigationPath}
+  data-workspace-id={workspaceId}
 ></output>
+<input data-testid="shortcut-input" />
 <div class="relative h-96 w-[960px]" style:zoom={initialZoomFactor}>
   <div bind:this={viewport} class="h-full overflow-x-auto" data-testid="mod-w-viewport">
     <div bind:this={panelRoot} class="h-full min-w-0">

@@ -277,6 +277,28 @@ describe('global workspace tab navigation', () => {
       expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
     });
 
+    it('uses the routed workspace instead of the Redux-current workspace', () => {
+      const store = makeStore('ws-1');
+      const navigate = vi.fn();
+
+      expect(closeActiveWorkspaceTab(store, '/workspace/ws-2', navigate)).toBe('ws-2');
+      expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['ws-1', 'ws-3']);
+      expect(store.state.tabState.currentTabId).toBe('ws-1');
+      expect(navigate).toHaveBeenCalledWith('/workspace/ws-1');
+    });
+
+    it.each(['/', '/workspace'])(
+      'does nothing on the columns root %s when no workspace is current',
+      (path) => {
+        const store = makeStore(null, undefined, 'columns');
+        const navigate = vi.fn();
+
+        expect(closeActiveWorkspaceTab(store, path, navigate)).toBeNull();
+        expect(store.actions).toEqual([]);
+        expect(navigate).not.toHaveBeenCalled();
+      },
+    );
+
     it.each(['/settings', '/workspace/new', '/agent/agent-1', '/'])(
       'does nothing on the non-workspace route %s',
       (path) => {
@@ -352,6 +374,16 @@ describe('global workspace tab navigation', () => {
           'panelLayout/closeFocusedPanelTab',
           'panelLayout/closeFocusedPanelTab',
         ]);
+      },
+    );
+
+    it.each(['/', '/workspace'])(
+      'does nothing on the columns root %s when no workspace is current',
+      (path) => {
+        const store = makeStore(null, undefined, 'columns');
+
+        expect(closeActivePanelTab(store, path)).toBeNull();
+        expect(store.actions).toEqual([]);
       },
     );
 
@@ -513,6 +545,55 @@ describe('global workspace tab navigation', () => {
     },
   );
 
+  it.each([
+    ['macOS', true, true, false],
+    ['Windows', false, false, true],
+    ['Linux', false, false, true],
+  ])(
+    'registers Mod+Shift+W as the global active workspace-tab close on %s',
+    (_platform, isMac, meta, ctrl) => {
+      const shortcuts: KeyboardShortcut[] = [];
+      const store = makeStore(
+        'ws-2',
+        layoutWith([makePanel('p1', ['t1']), makePanel('p2', ['t2'])], 'p2'),
+      );
+      const navigate = vi.fn();
+
+      registerWorkspaceTabShortcuts({
+        isMac,
+        register: (shortcut) => shortcuts.push(shortcut),
+        store,
+        getCurrentPath: () => '/workspace/ws-2',
+        navigate,
+        openNewWorkspace: vi.fn(),
+        toggleWorkspaceViewMode: vi.fn(),
+      });
+
+      const shortcut = shortcuts.find(
+        (candidate) => candidate.key.toLowerCase() === 'w' && candidate.shift,
+      )!;
+      expect(shortcut).toMatchObject({
+        key: 'w',
+        shift: true,
+        global: true,
+        description: 'Close Space Tab',
+      });
+      expect(Boolean(shortcut.meta)).toBe(meta);
+      expect(Boolean(shortcut.ctrl)).toBe(ctrl);
+      expect(shortcut.alt).toBeUndefined();
+      expect(shortcut.skipInEditableElements).toBeUndefined();
+
+      shortcut.action();
+      expect(store.actions.map((action) => action.type)).toEqual(['tabState/closeWorkspaceTab']);
+      expect(store.actions.map((action) => action.type)).not.toContain(
+        'panelLayout/closeFocusedPanelTab',
+      );
+      expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['ws-1', 'ws-3']);
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].panels.p2.tabs).toHaveLength(1);
+      expect(navigate).toHaveBeenCalledWith('/workspace/ws-3');
+    },
+  );
+
   describe('reopenPanelOrWorkspaceTab', () => {
     const closedPanelTab = (tabId: string, closedAt: number): RecentlyClosedTab => ({
       tab: { id: tabId, type: 'note' as const, title: tabId, closable: true },
@@ -654,6 +735,7 @@ describe('global workspace tab navigation', () => {
       'meta+shift+l',
       'meta+t',
       'meta+w',
+      'meta+shift+w',
       'meta+shift+t',
       'ctrl+tab',
       'ctrl+shift+tab',

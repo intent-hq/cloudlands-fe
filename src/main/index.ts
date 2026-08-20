@@ -829,7 +829,6 @@ app.whenReady().then(async () => {
       },
       {
         label: m.menu_close_window(),
-        accelerator: 'CmdOrCtrl+Shift+W',
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {

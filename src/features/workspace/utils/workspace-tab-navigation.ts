@@ -300,6 +300,14 @@ export function registerWorkspaceTabShortcuts({
   });
   register({
     ...mod,
+    key: 'w',
+    shift: true,
+    global: true,
+    description: m.workspace_shortcuts_closeSpaceTab_description(),
+    action: withRoute((path) => closeActiveWorkspaceTab(store, path, navigate)),
+  });
+  register({
+    ...mod,
     key: 't',
     shift: true,
     global: true,
