@@ -117,6 +117,14 @@ class EmbeddedBrowserCdpService {
    */
   private tabOwnership = new Map<string, TabOwnership>();
 
+  /**
+   * Agents whose owned tabs were destroyed via {@link clearAgentTabs}
+   * (deletion committed, monorepo#2857). An in-flight LIST_TABS_RESPONSE
+   * produced before the renderer purge could otherwise re-hydrate their
+   * ownership records; hydration skips tombstoned owners.
+   */
+  private clearedAgentTombstones = new Set<string>();
+
   /** Pending resolvers waiting for a tabId to register, keyed by tabId. */
   private registrationWaiters = new Map<string, Set<(registered: boolean) => void>>();
 
@@ -159,7 +167,14 @@ class EmbeddedBrowserCdpService {
           return;
         }
         if (!Array.isArray(data.tabs)) return;
-        const tabs = data.tabs;
+        // Drop tabs owned by tombstoned (deletion-committed) agents: a
+        // reply produced before the renderer purge must not re-enter the
+        // cache or re-hydrate ownership (monorepo#2857).
+        const tabs = data.tabs.filter(
+          (tab) =>
+            typeof tab.ownerAgentId !== 'string' ||
+            !this.clearedAgentTombstones.has(tab.ownerAgentId),
+        );
         // Re-seed the ownership registry from the renderer's persisted
         // layout so ownership survives an app restart (monorepo#2857).
         this.hydrateOwnershipFromPanelTabs(tabs);
@@ -949,6 +964,37 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
+   * Destroy-side cleanup for ALL tabs owned by an agent whose deletion
+   * committed (monorepo#2857): detach debuggers, drop registry + ownership
+   * records, and purge the tabs from the per-workspace tab cache so a stale
+   * reply cannot resurrect them. The renderer removes the layout/hidden
+   * entries itself (destroyTabsByOwnerAgent) and calls this over IPC.
+   */
+  clearAgentTabs(agentId: string): string[] {
+    // Tombstone BEFORE clearing so an in-flight LIST_TABS_RESPONSE produced
+    // pre-purge can never re-hydrate this agent's ownership records.
+    this.clearedAgentTombstones.add(agentId);
+    const tabIds: string[] = [];
+    for (const [tabId, ownership] of this.tabOwnership) {
+      if (ownership.ownerAgentId === agentId) tabIds.push(tabId);
+    }
+    for (const tabId of tabIds) {
+      this.unregisterTab(tabId);
+      this.clearTabOwnership(tabId);
+      for (const [key, tabs] of this.panelBrowserTabsCache) {
+        this.panelBrowserTabsCache.set(
+          key,
+          tabs.filter((t) => t.tabId !== tabId),
+        );
+      }
+    }
+    if (tabIds.length > 0) {
+      logger.info('Cleared owned tabs for deleted agent', { agentId, tabIds });
+    }
+    return tabIds;
+  }
+
+  /**
    * Atomically claim an unowned tab for an agent (monorepo#2857).
    *
    * First claim wins: main's single-threaded event loop makes the
@@ -989,6 +1035,9 @@ class EmbeddedBrowserCdpService {
   private hydrateOwnershipFromPanelTabs(tabs: PanelBrowserTab[]): void {
     for (const tab of tabs) {
       if (typeof tab.ownerAgentId !== 'string' || tab.ownerAgentId.length === 0) continue;
+      // A stale renderer reply may still list tabs of an agent whose
+      // deletion already committed — never resurrect those (monorepo#2857).
+      if (this.clearedAgentTombstones.has(tab.ownerAgentId)) continue;
       if (this.tabOwnership.has(tab.tabId)) continue;
       this.tabOwnership.set(tab.tabId, {
         ownerAgentId: tab.ownerAgentId,

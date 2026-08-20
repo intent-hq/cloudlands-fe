@@ -148,11 +148,13 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
     { success: false, error: 'Remote SSH file access is not available in this build' },
   ],
   // (browser:list-tabs-response / browser:register-tab /
-  // browser:report-tab-bounds are forwarded to the real preload bridge in
-  // browser-ipc-bridge-seeder.ts — the packaged app's main process DOES fire
-  // browser:list-tabs-request, and an allowlisted absence here swallowed the
-  // saga's reply so agent listTabs/closeTab/dedupe failed persistently;
-  // intent-hq/monorepo#2926.)
+  // browser:report-tab-bounds / browser:clear-agent-tabs are forwarded to the
+  // real preload bridge in browser-ipc-bridge-seeder.ts — the packaged app's
+  // main process DOES fire browser:list-tabs-request, and an allowlisted
+  // absence here swallowed the saga's reply so agent listTabs/closeTab/dedupe
+  // failed persistently; intent-hq/monorepo#2926. clear-agent-tabs (owned-tab
+  // destruction, monorepo#2857) rides the same routed-invoke path and would be
+  // swallowed the same way.)
   // Chat-input context enrichment (context-api getWorkspaceInfo). The caller
   // folds an absent info payload to the Workspace object it already holds.
   ['workspace:get-info', undefined],

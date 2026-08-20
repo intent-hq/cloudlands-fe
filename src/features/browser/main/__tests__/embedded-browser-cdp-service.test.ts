@@ -620,4 +620,43 @@ describe('embedded browser CDP workspace routing', () => {
       expect(payload).toEqual({ requestId: expect.any(String), workspaceId: 'ws-2' });
     }
   });
+
+  // Regression (monorepo#2857): a LIST_TABS_RESPONSE produced before the
+  // renderer purged a deleted agent's tabs must not re-hydrate ownership or
+  // re-enter the cache after clearAgentTabs tombstoned the agent.
+  it('ignores stale list-tabs replies for agents whose tabs were cleared', async () => {
+    const ownedTab = {
+      tabId: 'tab-tomb',
+      url: 'https://owned.test',
+      title: 'Owned',
+      ownerAgentId: 'agent-tomb',
+    };
+    // Seed ownership via a normal reply round-trip.
+    mocks.sendToWorkspaceWindows.mockImplementation(
+      (_ws: string, channel: string, payload: { requestId?: string }) => {
+        if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+        responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+          {},
+          { tabs: [ownedTab], requestId: payload.requestId },
+        );
+        return DELIVERED;
+      },
+    );
+    await embeddedBrowserCdp.requestPanelBrowserTabs('ws-tomb');
+    expect(embeddedBrowserCdp.getTabOwner('tab-tomb')).toBe('agent-tomb');
+
+    expect(embeddedBrowserCdp.clearAgentTabs('agent-tomb')).toEqual(['tab-tomb']);
+    expect(embeddedBrowserCdp.getTabOwner('tab-tomb')).toBeUndefined();
+
+    // A stale reply (same pre-purge tab list) arrives afterwards.
+    await embeddedBrowserCdp.requestPanelBrowserTabs('ws-tomb');
+    expect(embeddedBrowserCdp.getTabOwner('tab-tomb')).toBeUndefined();
+
+    // The stale tab is filtered out of the resolved list and cache too.
+    mocks.sendToWorkspaceWindows.mockReturnValue(DROPPED);
+    await expect(embeddedBrowserCdp.requestPanelBrowserTabs('ws-tomb')).resolves.toEqual({
+      tabs: [],
+      stale: true,
+    });
+  });
 });

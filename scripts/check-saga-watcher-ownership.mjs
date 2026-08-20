@@ -62,7 +62,7 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
   },
   {
     pattern:
-      /panel-layout-slice\.ts#(?:openTabInNewRootColumn|collapseToReusablePanel|closeTabsByType|closeTabsByAgentId|selectNextTab|selectPreviousTab|reorderTabs|focusPanel|markPanelTouched|updateSizes|updateSplitSizes|resizePanelLayoutRightEdge|resizePanelLayoutAtHorizontalPanel|toggleExpandPanel|goBackInFocusHistory|goForwardInFocusHistory|setDeferSpecTab|observeDeferredSpecGeneration|revealDeferredSpecTab|resolveNewWorkspaceInitialAgent|reconcileStaleAgentTabs|updateTabTitle|updateTabBrowserUrl|updateTabFavicon|updateFileTabPath|consumePendingFocus|setPanelPinned)$/,
+      /panel-layout-slice\.ts#(?:openTabInNewRootColumn|collapseToReusablePanel|closeTabsByType|closeTabsByAgentId|destroyTabsByOwnerAgent|destroyOwnedTabsForWorkspace|restoreHiddenTab|selectNextTab|selectPreviousTab|reorderTabs|focusPanel|markPanelTouched|updateSizes|updateSplitSizes|resizePanelLayoutRightEdge|resizePanelLayoutAtHorizontalPanel|toggleExpandPanel|goBackInFocusHistory|goForwardInFocusHistory|setDeferSpecTab|observeDeferredSpecGeneration|revealDeferredSpecTab|resolveNewWorkspaceInitialAgent|reconcileStaleAgentTabs|updateTabTitle|updateTabBrowserUrl|updateTabFavicon|updateFileTabPath|consumePendingFocus|setPanelPinned)$/,
     rationale:
       'layout persistence and reusable-panel invariant enforcement are independent',
   },

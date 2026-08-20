@@ -16,6 +16,7 @@ import {
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import {
   selectAllTabs,
+  selectHiddenTabs,
   selectPanelLayoutWorkspaces,
   selectPanels,
   selectPendingPanelReveal,
@@ -183,6 +184,23 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     // an agent open must NOT (main never ownership-checked that tab): it
     // opens a new tab instead.
     const replaceTabId = typeof data.replaceTabId === 'string' ? data.replaceTabId : undefined;
+    // An AGENT replace may target a hidden (user-closed) owned tab — the
+    // per-agent dedupe still reuses it (monorepo#2857). Navigate it in place
+    // and leave it hidden: the user's close is respected, the agent keeps
+    // operating on the live offscreen webview. Unowned (user) opens never
+    // take this branch: main resolves the target from a list that includes
+    // hidden tabs, and navigating one in place would look like a no-op to
+    // the user while retargeting an agent-owned tab — fall through and open
+    // a visible tab instead.
+    if (replaceTabId && ownerAgentId) {
+      const hiddenTabs = yield* selectHiddenTabs.effect(workspaceId);
+      const hidden = hiddenTabs.find((tab) => tab.type === 'browser' && tab.id === replaceTabId);
+      if (hidden) {
+        yield* put(updateTabBrowserUrl(workspaceId, hidden.id, data.url, requestedUrl ?? null));
+        yield* put(setTabOwnerAgent(workspaceId, hidden.id, ownerAgentId));
+        return;
+      }
+    }
     const existing = replaceTabId
       ? tabs.find((tab) => tab.type === 'browser' && tab.id === replaceTabId)
       : ownerAgentId
@@ -271,10 +289,16 @@ function* closeBrowser(data: BrowserCloseTabPayload | null): SagaGenerator<void>
     return;
   }
   const tabs = yield* selectAllTabs.effect(workspaceId);
-  const existing = tabs.find((tab) => tab.id === data.tabId && tab.type === 'browser');
+  const hiddenTabs = yield* selectHiddenTabs.effect(workspaceId);
+  const existing =
+    tabs.find((tab) => tab.id === data.tabId && tab.type === 'browser') ??
+    hiddenTabs.find((tab) => tab.id === data.tabId && tab.type === 'browser');
   if (!existing || existing.closable === false) return;
 
-  yield* put(closeTab(workspaceId, data.tabId));
+  // Main-driven closes (the agent closeTab op) genuinely destroy the tab —
+  // visible or hidden — never hide it (monorepo#2857): the hide-on-close
+  // rule applies to user closes only.
+  yield* put(closeTab(workspaceId, data.tabId, undefined, undefined, true));
 }
 
 function* focusBrowser(data: BrowserFocusTabPayload | null): SagaGenerator<void> {
@@ -364,7 +388,12 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
     return;
   }
 
-  const browserTabs = (yield* selectAllTabs.effect(workspaceId))
+  // Hidden (user-closed) owned tabs stay in the list: they are alive
+  // offscreen and their owner must keep seeing them (monorepo#2857).
+  const browserTabs = [
+    ...(yield* selectAllTabs.effect(workspaceId)),
+    ...(yield* selectHiddenTabs.effect(workspaceId)),
+  ]
     .filter((tab) => tab.type === 'browser')
     .map((tab) => ({
       tabId: tab.id,

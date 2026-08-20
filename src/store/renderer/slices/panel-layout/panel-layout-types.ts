@@ -5,6 +5,8 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+
 /** Serializable icon descriptor understood by the renderer's icon adapter. */
 interface PanelTabIcon {
   iconName: string;
@@ -101,6 +103,14 @@ export interface WorkspacePanelLayout {
   root: PanelLayoutNode;
   panels: Record<string, PanelState>;
   focusedPanelId: string | null;
+  /**
+   * Agent-owned browser tabs the user "closed" (monorepo#2857): a user close
+   * of an owned tab is a UI-level hide, not a destroy — the tab leaves its
+   * panel but stays here with its webview alive (offscreen) and keeps
+   * appearing in listTabs for its owner. Persisted so hidden tabs survive
+   * restart; destroyed only on agent deletion or workspace archive/delete.
+   */
+  hiddenTabs?: PanelTab[];
   /** User-resized intrinsic horizontal canvas width; null/absent uses automatic sizing. */
   canvasWidth?: number | null;
   /** Identifies a width that must survive restore; absent is a legacy automatic width. */
@@ -188,6 +198,12 @@ export interface WorkspacePanelLayoutState {
   root: PanelLayoutNode;
   panels: Record<string, PanelState>;
   focusedPanelId: string | null;
+  /**
+   * Hidden (user-closed) agent-owned browser tabs — see
+   * WorkspacePanelLayout.hiddenTabs. Persisted as a plain array; stored here
+   * as a Collection keyed by tab id.
+   */
+  hiddenTabs: Collection<PanelTab, 'id'>;
   /** Current horizontal panel canvas width in pixels; null uses the default column width. */
   canvasWidth: number | null;
   canvasWidthSource: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn() }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), invoke: vi.fn(() => Promise.resolve()) }));
 const loggerMocks = vi.hoisted(() => ({
   debug: vi.fn(),
   info: vi.fn(),
@@ -10,6 +10,7 @@ const loggerMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('$lib/client', () => ({ appClient: { agents: { get: mocks.get } } }));
+vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => loggerMocks,
   logger: loggerMocks,
@@ -24,7 +25,10 @@ import {
   bulkUpsertSessions,
   initialState as initialAgentSessionState,
 } from '../../agent-session/agent-session-slice';
-import { closeTabsByAgentId } from '../../panel-layout/panel-layout-slice';
+import {
+  closeTabsByAgentId,
+  destroyTabsByOwnerAgent,
+} from '../../panel-layout/panel-layout-slice';
 import {
   clearPendingAgentDeletions,
   removePendingAgentDeletion,
@@ -307,6 +311,14 @@ describe('agentReadSaga', () => {
       ([action]) => action.type === closeTabsByAgentId.type,
     )?.[0];
     expect(close?.payload).toMatchObject({ wsId: WS, agentId: AGENT });
+    // Missed-deletion recovery (monorepo#2857): the dead agent's owned
+    // browser tabs are destroyed and main's CDP/ownership registrations
+    // cleared — a pre-purge list-tabs reply may already have rehydrated them.
+    const destroy = dispatch.mock.calls.find(
+      ([action]) => action.type === destroyTabsByOwnerAgent.type,
+    )?.[0];
+    expect(destroy?.payload).toMatchObject({ wsId: WS, agentId: AGENT });
+    expect(mocks.invoke).toHaveBeenCalledWith('browser:clear-agent-tabs', { agentId: AGENT });
     expect(dispatch.mock.calls.some(([action]) => action.type === bulkUpsertSessions.type)).toBe(
       false,
     );
