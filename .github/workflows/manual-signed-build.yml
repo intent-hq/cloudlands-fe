@@ -6,10 +6,10 @@ name: Manual Signed Build
 # and no auto-updater manifest (latest*.yml) is uploaded anywhere — artifacts
 # are for manual install/testing only.
 #
-# The build legs are copied wholesale from release-beta.yml, including the
+# The build legs are copied wholesale from release-alpha.yml, including the
 # workaround comments (they encode incident fixes: monorepo#1074/#1282/#1340);
 # the dispatch-input + signing-gate + summary pattern follows
-# intent-manual-windows-build.yml. Intended deltas vs release-beta.yml:
+# intent-manual-windows-build.yml. Intended deltas vs release-alpha.yml:
 #   - no resolve/publish jobs, no tag guards — the dispatched ref is checked
 #     out as-is
 #   - per-platform opt-in inputs and a sign input (default on)
@@ -20,7 +20,7 @@ name: Manual Signed Build
 #     one installer never pulls the rest; no mac .zip archive and no
 #     .blockmap files (both are auto-updater material, dead weight in manual
 #     builds); 7-day retention
-#   - the Windows leg gains integrated DigiCert signing (release-beta's
+#   - the Windows leg gains integrated DigiCert signing (release-alpha's
 #     Windows leg is still unsigned; the signing steps come from
 #     intent-manual-windows-build.yml)
 
@@ -51,7 +51,7 @@ on:
 permissions:
   contents: read
 
-# Distinct from release-beta.yml's `cloudlands-release` group so manual builds
+# Distinct from release-alpha.yml's `cloudlands-release` group so manual builds
 # never queue behind (or block) a real release. Per-ref so repeat dispatches
 # on the same branch queue instead of racing on the self-hosted Linux runner.
 concurrency:
@@ -59,7 +59,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Copied from release-beta.yml build-macos; the signing steps are gated on
+  # Copied from release-alpha.yml build-macos; the signing steps are gated on
   # the `sign` input and the version-suffix step is added before packaging.
   build-macos:
     if: ${{ inputs.build_macos }}
@@ -268,9 +268,9 @@ jobs:
           fi
           rm -f "$RUNNER_TEMP/certificate.p12"
 
-  # Copied from release-beta.yml build-windows, plus the integrated DigiCert
+  # Copied from release-alpha.yml build-windows, plus the integrated DigiCert
   # signing steps from intent-manual-windows-build.yml gated on the `sign`
-  # input (release-beta's Windows leg is still unsigned; integrated signing
+  # input (release-alpha's Windows leg is still unsigned; integrated signing
   # there is a tracked follow-up).
   build-windows:
     if: ${{ inputs.build_windows }}
@@ -507,7 +507,7 @@ jobs:
             find dist-electron -maxdepth 1 -type f -name "*Setup*.exe" -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Copied from release-beta.yml build-linux. Linux packages are unsigned in
+  # Copied from release-alpha.yml build-linux. Linux packages are unsigned in
   # the release pipeline too, so the `sign` input has no effect on this leg.
   build-linux:
     if: ${{ inputs.build_linux }}

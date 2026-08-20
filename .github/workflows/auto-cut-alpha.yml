@@ -1,17 +1,15 @@
-# Auto-merge of the release-please Release PR — "auto-cut beta".
+# Auto-merge of the release-please Release PR — "auto-cut alpha".
 #
 # Merging the Release PR is what cuts a release: the squash-merge push to
 # main triggers release-please.yml, which creates the vX.Y.Z tag + GitHub
-# Release, and the tag triggers release-beta.yml (historically named "beta";
-# it builds and publishes to the rolling ALPHA channel on
-# intent-hq/cloudlands-releases — beta and stable are manual promotions of
-# an existing release). That merge used to be a manual click; this workflow
-# performs it automatically whenever the Release PR is already green — the
-# release-PR CI fast path makes that ~1 min after each refresh — so alpha
-# releases ship hands-free. Beta/stable promotion stays manual
-# (promote-beta.yml / release-stable.yml); this workflow only automates the
-# cut. "Beta"/"cut a beta" below follows the historical workflow naming and
-# means this auto-published alpha release.
+# Release, and the tag triggers release-alpha.yml (it builds and publishes
+# to the rolling ALPHA channel on intent-hq/cloudlands-releases — beta and
+# stable are manual promotions of an existing release). That merge used to
+# be a manual click; this workflow performs it automatically whenever the
+# Release PR is already green — the release-PR CI fast path makes that
+# ~1 min after each refresh — so alpha releases ship hands-free. Beta/stable
+# promotion stays manual (promote-beta.yml / release-stable.yml); this
+# workflow only automates the alpha cut.
 #
 # Triggers — event-chained cut plus an hourly cron backstop:
 # - push to main (ANY push, not just the sidecar pin bump): a merged fe
@@ -23,7 +21,7 @@
 #   refresh nuances:
 #   - a push touching `intentd.version` additionally waits for the Release
 #     PR head to carry the pushed pin (chained-cut freshness gate), so the
-#     beta actually ships the new sidecar;
+#     alpha actually ships the new sidecar;
 #   - release-please does NOT refresh the Release PR for non-releasable
 #     commits (chore/docs/ci/...), so such a push may find the PR unchanged
 #     but already green — merging is still correct (the tag is cut on main's
@@ -57,12 +55,12 @@
 #   has a semver tag newer than the published alpha channel manifest and the
 #   tag is younger than 90 minutes, a release build is running and a pin bump
 #   is imminent — cutting now would ship a stale sidecar. The age bound stops
-#   a failed intentd build from deferring fe betas forever, and the check
+#   a failed intentd build from deferring fe alphas forever, and the check
 #   fails OPEN on any lookup error (missing INTENTD_READ_PAT, unreachable
 #   manifest, unreadable tags) so an unreadable intentd never blocks fe
 #   releases.
 # - An open pin-bump PR (branch `auto/intentd-pin`) defers the cut: an
-#   in-flight intentd pin must land first so the fe beta carries the new
+#   in-flight intentd pin must land first so the fe alpha carries the new
 #   sidecar; its merge push then chains straight into a cut via the push
 #   trigger above.
 # - A BE-dependency freshness guard (cron and push runs; workflow_dispatch
@@ -109,7 +107,7 @@
 # Fail-soft when the secret is absent (same convention as the other release
 # workflows).
 
-name: Auto-cut beta
+name: Auto-cut alpha
 
 permissions: {}
 
@@ -137,7 +135,7 @@ on:
 # because a run that has already decided to merge must not be cancelled
 # mid-merge.
 concurrency:
-  group: auto-cut-beta
+  group: auto-cut-alpha
   cancel-in-progress: false
 
 jobs:
@@ -250,11 +248,11 @@ jobs:
       # In-flight intentd release guardrail (all run types): when
       # intent-hq/intentd carries a release tag whose build has not published
       # to the alpha channel yet (latest semver tag newer than the alpha.json
-      # version), cutting an fe beta now would ship a stale sidecar that the
+      # version), cutting an fe alpha now would ship a stale sidecar that the
       # imminent pin bump immediately obsoletes — defer with a notice instead;
-      # the pin merge's push-triggered run (or the next cron) cuts the beta
+      # the pin merge's push-triggered run (or the next cron) cuts the alpha
       # with the new sidecar. The 90-minute age bound stops a FAILED intentd
-      # build from deferring fe betas forever (cargo-dist builds take 20-45
+      # build from deferring fe alphas forever (cargo-dist builds take 20-45
       # min). Strictly fail-open: any lookup problem (missing
       # INTENTD_READ_PAT, unreachable manifest, unreadable tags) proceeds with
       # the cut — this guardrail must never block fe releases when intentd is
@@ -334,7 +332,7 @@ jobs:
           fi
           age_min=$(( ($(date +%s) - tag_epoch) / 60 ))
           if (( age_min < 90 )); then
-            echo "::notice::intentd $tag was cut ${age_min} min ago and its alpha has not published yet (channel has $published); deferring the beta cut so the next beta ships the new sidecar"
+            echo "::notice::intentd $tag was cut ${age_min} min ago and its alpha has not published yet (channel has $published); deferring the alpha cut so the next alpha ships the new sidecar"
             echo "defer=true" >> "$GITHUB_OUTPUT"
           else
             echo "intentd $tag is ${age_min} min old with no published alpha (its build likely failed); proceeding with the cut."
@@ -504,7 +502,7 @@ jobs:
 
           # The pin the triggering push landed on main: the Release PR head
           # must carry the same pin before the cut (i.e. release-please has
-          # refreshed the PR after a pin-bump push) so the beta actually
+          # refreshed the PR after a pin-bump push) so the alpha actually
           # ships the new sidecar. For pushes that leave the pin untouched
           # (fe-only changes) the PR head already carries the same pin and
           # the gate passes trivially. Read failures fall back to
@@ -611,7 +609,7 @@ jobs:
             # Chained-cut freshness gate (push runs only): the Release PR
             # head must already contain the pin the push landed on main —
             # otherwise release-please has not refreshed the PR yet and
-            # merging now would cut a beta with the OLD sidecar.
+            # merging now would cut an alpha with the OLD sidecar.
             if [[ -n "$push_pin" ]]; then
               head_ref=$(jq -r '.[0].headRefName' <<<"$prs")
               head_pin=$(gh api "repos/$GITHUB_REPOSITORY/contents/intentd.version?ref=$head_ref" \
@@ -650,7 +648,7 @@ jobs:
 
             # Pause guardrail: a human puts `hold-release` on the Release PR
             # to stop auto-cutting (e.g. to batch more changes or hold a bad
-            # commit out of a beta); remove the label to resume.
+            # commit out of an alpha); remove the label to resume.
             if jq -e '.[0].labels | any(.name == "hold-release")' <<<"$prs" >/dev/null; then
               echo "::notice::Release PR #$number carries the hold-release label; auto-merge paused until it is removed"
               exit 0
@@ -659,17 +657,17 @@ jobs:
             # Pipeline ordering guardrail: an open pin-bump PR (the rolling
             # `auto/intentd-pin` PR from auto-pin-intentd.yml) means a newer
             # intentd sidecar is in flight. Let it land first — its fix-typed
-            # commit refreshes the Release PR — so the fe beta carries the
+            # commit refreshes the Release PR — so the fe alpha carries the
             # new sidecar; its merge push chains straight into a fresh cut
             # run (and the next hourly run backstops it).
             # `--head` also matches fork PRs whose branch merely shares the
             # name, so restrict to same-repo heads — otherwise a fork PR
-            # named auto/intentd-pin could defer beta cuts indefinitely.
+            # named auto/intentd-pin could defer alpha cuts indefinitely.
             pin_pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
               --head auto/intentd-pin --json number,isCrossRepository \
               --jq '[.[] | select(.isCrossRepository == false)][0].number // empty')
             if [[ -n "$pin_pr" ]]; then
-              echo "::notice::Pin-bump PR #$pin_pr (auto/intentd-pin) is open; deferring the beta cut until the new sidecar pin lands"
+              echo "::notice::Pin-bump PR #$pin_pr (auto/intentd-pin) is open; deferring the alpha cut until the new sidecar pin lands"
               exit 0
             fi
 
@@ -688,7 +686,7 @@ jobs:
                 echo "$be_skew_msg — retrying in 30s."
                 sleep 30; continue
               fi
-              echo "::notice::$be_skew_msg; deferring the beta cut until the next intentd alpha advances the pin"
+              echo "::notice::$be_skew_msg; deferring the alpha cut until the next intentd alpha advances the pin"
               exit 0
             fi
 
@@ -789,7 +787,7 @@ jobs:
             fi
 
             # Squash-merge with the PAT so the push to main triggers
-            # release-please.yml (tag + GitHub Release → release-beta.yml
+            # release-please.yml (tag + GitHub Release → release-alpha.yml
             # builds and publishes to intent-hq/cloudlands-releases). The
             # squash commit title defaults to the single release commit's
             # message, which release-please writes in the same conventional
@@ -797,7 +795,7 @@ jobs:
             # state may have changed under us, and the next scheduled run
             # retries.
             if GH_TOKEN="$RELEASE_PAT" gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --squash; then
-              echo "Squash-merged Release PR #$number ($title); release-please.yml now cuts the tag and release-beta.yml publishes the beta automatically."
+              echo "Squash-merged Release PR #$number ($title); release-please.yml now cuts the tag and release-alpha.yml publishes the alpha automatically."
             else
               echo "::warning::gh pr merge failed for Release PR #$number (state changed under us?); the next scheduled run retries"
             fi

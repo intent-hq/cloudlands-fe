@@ -3,8 +3,7 @@
 # rolling 'alpha' release on intent-hq/cloudlands-releases. The rolling
 # 'beta' release is NOT touched by tag builds — beta is a promotion of an
 # existing versioned release via promote-beta.yml (and stable via
-# release-stable.yml). The file name is historical: tag builds used to
-# publish straight to beta.
+# release-stable.yml).
 name: Release Alpha
 
 on:

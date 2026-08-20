@@ -1,6 +1,6 @@
 # Promotes an existing versioned release into the rolling *beta* channel —
 # the beta counterpart of release-stable.yml. Channel model: every tag build
-# publishes to the rolling 'alpha' release (release-beta.yml); beta and
+# publishes to the rolling 'alpha' release (release-alpha.yml); beta and
 # stable are manual promotions of an existing versioned release (no new
 # build), via this workflow and release-stable.yml respectively.
 name: Promote Beta
