@@ -96,6 +96,11 @@ export function startHudGridFilterPersistence(): () => void {
     const filter = state.hud.gridFilter;
     if (filter === lastSeen) return;
     lastSeen = filter;
+    // Defensive: a backend switch destroys/recreates the HUD window, so the
+    // active id should never change within one start — but if that invariant
+    // ever breaks (e.g. a web build where windows survive a switch), skip the
+    // write rather than land it under the stale backend's key.
+    if (getActiveBackendId(state) !== backendId) return;
     persistHudGridFilter(backendId, filter);
   }
 

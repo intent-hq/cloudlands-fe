@@ -143,6 +143,28 @@ describe('hud-grid-filter-persistence (real store)', () => {
     );
   });
 
+  it('skips the write when the active backend id changed after hydration (stale-id insurance)', async () => {
+    // A backend switch destroys/recreates the HUD window, so the id should
+    // never change within one start — this is the defensive skip for the case
+    // where that invariant ever breaks (e.g. windows surviving a switch).
+    storage.set(remoteKey('remote-1'), JSON.stringify({ repo: 'r1/repo', states: [] }));
+    receiveConnections('remote-1');
+    stop = startHudGridFilterPersistence();
+    await flush();
+    expect(gridFilter()).toEqual({ repo: 'r1/repo', states: [] });
+
+    // Active id flips to remote-2 without a restart of the persistence loop.
+    receiveConnections('remote-2');
+    appStore.dispatch(hudGridFilterStateToggled('failed'));
+    await flush();
+
+    // Neither the hydrated backend's key nor the new backend's key was written.
+    expect(storage.get(remoteKey('remote-1'))).toBe(
+      JSON.stringify({ repo: 'r1/repo', states: [] }),
+    );
+    expect(storage.has(remoteKey('remote-2'))).toBe(false);
+  });
+
   it('the local backend uses the bare (un-namespaced) key', async () => {
     storage.set(HUD_GRID_FILTER_STORAGE_KEY, JSON.stringify({ repo: 'local/repo', states: [] }));
     receiveConnections(LOCAL_CONNECTION_ID);
