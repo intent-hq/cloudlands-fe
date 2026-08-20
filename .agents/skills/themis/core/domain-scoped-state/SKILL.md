@@ -119,8 +119,7 @@ export const workspaceItemsReducer = createReducer<State>(initialState)
       loadedAt: Date.now ? 0 : 0, // (store a timestamp you dispatch in, not Date.now here)
     })
   )
-  .with(clearDomain, (state, { payload: [id] }) => clearDomainState(state, id))
-  .build();
+  .with(clearDomain, (state, { payload: [id] }) => clearDomainState(state, id));
 ```
 
 Notes:

@@ -128,7 +128,7 @@ export const prefsReducer = darkMode.register(
     createReducer<PrefsState>(initialState)
       // ... other .with() cases, e.g. .with(savedAt, ...)
   )
-).build();
+);
 ```
 
 Dispatch like any other action:
@@ -152,7 +152,7 @@ const prefs = createBooleanPreference<PrefsState>({
   toggleActionName: "toggleSpellcheck",
 });
 export const { setAction: setSpellcheck, toggleAction: toggleSpellcheck } = prefs;
-export const prefsReducer = prefs.register(createReducer<PrefsState>(initialState)).build();
+export const prefsReducer = prefs.register(createReducer<PrefsState>(initialState));
 ```
 
 ### 3.2 Chaining multiple preferences
@@ -163,7 +163,7 @@ you can chain any number of preferences:
 ```typescript
 export const prefsReducer = a.register(b.register(c.register(
   createReducer<PrefsState>(initialState).with(resetAll, () => initialState)
-))).build();
+)));
 ```
 
 `.register` preserves the `initialState` field on the returned builder so
