@@ -115,7 +115,12 @@ function isAgentTurnActive(session: StoredAgentSession): boolean {
 
 /** Whether a session has a pending Q&A wizard question (dismissal-gated). */
 function hasPendingQuestion(session: StoredAgentSession): boolean {
-  const pending = derivePendingQuestions(session.messages ?? [], isAgentTurnActive(session));
+  const pending = derivePendingQuestions(
+    session.messages ?? [],
+    isAgentTurnActive(session),
+    false,
+    session.metadata?.pendingQuestionsMessageId,
+  );
   if (!pending) return false;
   const dismissedId = session.metadata?.dismissedQuestionsMessageId;
   return !(typeof dismissedId === 'string' && dismissedId === pending.messageId);

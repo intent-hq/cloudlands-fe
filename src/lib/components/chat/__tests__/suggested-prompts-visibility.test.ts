@@ -37,6 +37,7 @@ function computeSuggestedPrompts(
   isRunning: boolean,
   messages: AgentMessage[],
   showingPendingUserMessage = false,
+  pendingQuestionsMessageId?: string,
 ): SuggestedPrompt[] {
   // Mirrors ChatPanel.svelte suggestedPrompts derived gate.
   if (isRunning || messages.length === 0) {
@@ -55,7 +56,14 @@ function computeSuggestedPrompts(
   // Suggested prompts stay hidden whenever the turn has pending Agent Q&A
   // questions — including while the wizard is Ignore-collapsed (collapse is
   // transient UI state that does not affect this derivation).
-  if (derivePendingQuestions(messages, isRunning, showingPendingUserMessage)) {
+  if (
+    derivePendingQuestions(
+      messages,
+      isRunning,
+      showingPendingUserMessage,
+      pendingQuestionsMessageId,
+    )
+  ) {
     return [];
   }
   // Parse each text block on its own, mirroring MessageContent's per-block
@@ -249,7 +257,7 @@ Continue
       expect(prompts).toEqual(['Continue']);
     });
 
-    it('keeps prompts hidden while a PLAIN user message leaves the questions pending', () => {
+    it('keeps prompts hidden while the authoritative marker remains set', () => {
       const userMsg: AgentMessage = {
         id: 'msg_user_plain',
         role: 'user',
@@ -262,11 +270,12 @@ Continue
 Continue
 -->
 `);
-      const prompts = computeSuggestedPrompts(false, [
-        messageWithPromptsAndQuestions,
-        userMsg,
-        followUp,
-      ]);
+      const prompts = computeSuggestedPrompts(
+        false,
+        [messageWithPromptsAndQuestions, userMsg, followUp],
+        false,
+        messageWithPromptsAndQuestions.id,
+      );
       expect(prompts).toEqual([]);
     });
   });

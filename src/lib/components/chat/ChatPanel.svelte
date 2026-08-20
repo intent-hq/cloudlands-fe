@@ -718,12 +718,10 @@
     return [];
   });
 
-  // Agent Q&A: question blocks on the newest question-bearing assistant
-  // message (not streaming) replace the composer with the sequential wizard,
-  // and stay pending across later plain user messages and agent replies until
-  // answered, dismissed, or superseded by a newer question set. The daemon's
-  // pending marker is authoritative when present; transcript parsing remains
-  // the content source and the fallback for legacy sessions.
+  // Agent Q&A: the daemon's pending marker is authoritative when present, so
+  // its selected question-bearing assistant message stays pending across later
+  // rows until cleared, dismissed, or superseded. Transcript parsing remains
+  // the content source; legacy sessions use the daemon's non-system tail rule.
   // The gate (own active turn, NOT the broad running gate — an agent paused
   // on delegated agents has ended its turn and its questions must surface)
   // lives in deriveWizardPendingQuestions so the regression suite exercises

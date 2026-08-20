@@ -80,11 +80,9 @@ describe('predicates', () => {
     ).toBe(false);
   });
 
-  it('sessionNeedsAttention holds a pending question until the tagged answer lands', () => {
-    // Persistent pendingness (shared `derivePendingQuestions`): a later plain
-    // user message does not resolve the question — only the id-keyed
-    // `question_answers` tag does — so the cycle keeps the agent in the
-    // attention family across the intervening turn.
+  it('sessionNeedsAttention follows the authoritative pending marker', () => {
+    // A present daemon marker keeps the question authoritative across later
+    // plain messages, then a written-empty marker clears it.
     const question = {
       id: 'msg-1',
       role: 'assistant',
@@ -105,13 +103,34 @@ describe('predicates', () => {
       ],
     };
     const plainUser = { id: 'msg-2', role: 'user', contentBlocks: [] };
-    expect(sessionNeedsAttention(makeSession('a', { messages: [question] }))).toBe(true);
-    expect(sessionNeedsAttention(makeSession('a', { messages: [question, plainUser] }))).toBe(true);
+    expect(
+      sessionNeedsAttention(
+        makeSession('a', {
+          messages: [question],
+          metadata: { pendingQuestionsMessageId: 'msg-1' },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      sessionNeedsAttention(
+        makeSession('a', {
+          messages: [question, plainUser],
+          metadata: { pendingQuestionsMessageId: 'msg-1' },
+        }),
+      ),
+    ).toBe(true);
     const answer = {
       ...plainUser,
       metadata: { type: 'question_answers', answeredQuestionsMessageId: 'msg-1' },
     };
-    expect(sessionNeedsAttention(makeSession('a', { messages: [question, answer] }))).toBe(false);
+    expect(
+      sessionNeedsAttention(
+        makeSession('a', {
+          messages: [question, answer],
+          metadata: { pendingQuestionsMessageId: '' },
+        }),
+      ),
+    ).toBe(false);
   });
 
   it('sessionHasFailed matches error status only', () => {

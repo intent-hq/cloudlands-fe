@@ -1,20 +1,13 @@
 /**
- * Pending Agent Q&A derivation (wire contract): the NEWEST question-bearing
- * assistant message pends PERSISTENTLY — across later plain user messages and
- * the agent's subsequent replies — until a later user row carries the
- * matching `question_answers` metadata tag, the dismissal marker matches
- * (wizard gate), or a newer question set supersedes it. Streaming/running
- * turns never pend. Because the derivation reads only the transcript,
- * restored sessions re-surface unanswered questions automatically — covered
- * explicitly below.
+ * Pending Agent Q&A derivation (wire contract): a present daemon marker is
+ * authoritative and persistent. When an old daemon omits the marker, the FE
+ * matches its transcript-tail fallback: trailing system rows are transparent,
+ * and only a question-bearing assistant row at the non-system tail pends.
  */
 import { describe, expect, it } from 'vitest';
 import { derivePendingQuestions } from '../pending-questions';
 import { buildAnswerMessageMetadata } from '../answer-message';
-import {
-  deriveMarkedQuestionRecoveryState,
-  deriveWizardPendingQuestions,
-} from '../wizard-gate';
+import { deriveMarkedQuestionRecoveryState, deriveWizardPendingQuestions } from '../wizard-gate';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import type { StoreState } from '$store/renderer/types';
@@ -66,6 +59,15 @@ function userMessage(id = 'msg-user-1'): AgentMessage {
   };
 }
 
+function systemMessage(id = 'msg-system-1'): AgentMessage {
+  return {
+    id,
+    role: 'system',
+    contentBlocks: [{ type: 'text', text: 'interruption notice' }],
+    timestamp: new Date().toISOString(),
+  };
+}
+
 /** The wizard's answer message: tagged with the answered question set's id. */
 function answerMessage(answeredQuestionsMessageId: string, id = 'msg-answer-1'): AgentMessage {
   return {
@@ -100,30 +102,25 @@ describe('derivePendingQuestions', () => {
     expect(derivePendingQuestions([msg], false)).toBeNull();
   });
 
-  it('keeps pending across a later PLAIN user message (persistent contract)', () => {
+  it('ends the legacy fallback at a later user row', () => {
     const msg = assistantMessage([questionBlock()]);
-    const pending = derivePendingQuestions([msg, userMessage()], false);
-    expect(pending).not.toBeNull();
-    expect(pending!.messageId).toBe('msg-assistant-1');
+    expect(derivePendingQuestions([msg, userMessage()], false)).toBeNull();
   });
 
-  it("keeps pending across the agent's later reply to a plain user message", () => {
+  it("ends the legacy fallback at the agent's later question-free reply", () => {
     const msg = assistantMessage([questionBlock()]);
     const later = [
       msg,
       userMessage('msg-u1'),
       assistantMessage([{ type: 'text', text: 'Sure, doing that.' }], { id: 'msg-a2' }),
     ];
-    const pending = derivePendingQuestions(later, false);
-    expect(pending).not.toBeNull();
-    expect(pending!.messageId).toBe('msg-assistant-1');
+    expect(derivePendingQuestions(later, false)).toBeNull();
   });
 
-  it('resolves only on a later user row tagged with the matching answered id', () => {
+  it('ends the legacy fallback at any later user row', () => {
     const msg = assistantMessage([questionBlock()]);
     expect(derivePendingQuestions([msg, answerMessage('msg-assistant-1')], false)).toBeNull();
-    // A tag naming a DIFFERENT question set leaves this one pending.
-    expect(derivePendingQuestions([msg, answerMessage('msg-other')], false)).not.toBeNull();
+    expect(derivePendingQuestions([msg, answerMessage('msg-other')], false)).toBeNull();
   });
 
   it('a newer question-bearing assistant message supersedes the older set', () => {
@@ -145,12 +142,10 @@ describe('derivePendingQuestions', () => {
     expect(derivePendingQuestions([], false)).toBeNull();
   });
 
-  it('a question-less later assistant message does not resolve the older set', () => {
+  it('a question-less later assistant message ends the legacy fallback', () => {
     const earlier = assistantMessage([questionBlock()], { id: 'msg-a1' });
     const later = assistantMessage([{ type: 'text', text: 'Done.' }], { id: 'msg-a2' });
-    const pending = derivePendingQuestions([earlier, userMessage(), later], false);
-    expect(pending).not.toBeNull();
-    expect(pending!.messageId).toBe('msg-a1');
+    expect(derivePendingQuestions([earlier, userMessage(), later], false)).toBeNull();
   });
 
   it('collapses duplicate resource blocks to one question', () => {
@@ -175,11 +170,27 @@ describe('derivePendingQuestions', () => {
     expect(pending!.questions[0].header).toBe('Auth method');
   });
 
-  it('uses transcript derivation when the authoritative marker is absent', () => {
+  it('supports old-daemon payloads with the exact non-system tail fallback', () => {
     const msg = assistantMessage([questionBlock()], { id: 'msg-a1' });
+    expect(derivePendingQuestions([msg, systemMessage()], false, false, undefined)).toMatchObject({
+      messageId: 'msg-a1',
+    });
     expect(
-      derivePendingQuestions([msg, userMessage('msg-u1')], false, false, undefined),
-    ).toMatchObject({ messageId: 'msg-a1' });
+      derivePendingQuestions(
+        [msg, systemMessage(), userMessage('msg-u1')],
+        false,
+        false,
+        undefined,
+      ),
+    ).toBeNull();
+    expect(
+      derivePendingQuestions(
+        [msg, systemMessage(), assistantMessage([{ type: 'text', text: 'Later reply.' }])],
+        false,
+        false,
+        undefined,
+      ),
+    ).toBeNull();
   });
 
   it('an authoritative empty marker suppresses an old question after later messages', () => {
@@ -239,6 +250,7 @@ describe('wizard gate while waiting on delegated agents', () => {
     isStreaming: false,
     isProcessing: false,
     isWaitingForOtherAgents: true,
+    metadata: { pendingQuestionsMessageId: 'msg-a1' },
   });
   const transcript: AgentMessage[] = [
     userMessage('msg-u0'),
@@ -277,7 +289,12 @@ describe('wizard gate while waiting on delegated agents', () => {
   });
 
   it('the wizard answer message (tagged) resolves the set', () => {
-    const state = stateWith(waitingSession);
+    const state = stateWith(
+      makeStoredSession({
+        ...waitingSession,
+        metadata: { pendingQuestionsMessageId: '' },
+      }),
+    );
     const answered = [...transcript, answerMessage('msg-a1')];
     expect(deriveWizardPendingQuestions(state, AGENT_ID, answered)).toBeNull();
   });
@@ -365,6 +382,20 @@ describe('wizard gate honors the authoritative pending marker', () => {
     assistantMessage([{ type: 'text', text: 'Later reply.' }], { id: 'msg-a2' }),
   ];
 
+  it('uses the legacy tail rule for an old-daemon AgentLite without the marker field', () => {
+    const state = stateWith(makeStoredSession({ metadata: {} }));
+    const questionTail = [
+      assistantMessage([questionBlock()], { id: 'msg-old-daemon-question' }),
+      systemMessage(),
+    ];
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, questionTail)).toMatchObject({
+      messageId: 'msg-old-daemon-question',
+    });
+    expect(
+      deriveWizardPendingQuestions(state, AGENT_ID, [...questionTail, userMessage('msg-u1')]),
+    ).toBeNull();
+  });
+
   it('keeps an answered question hidden after rehydration with a written empty marker', () => {
     // The rehydrated transcript window no longer contains the older tagged
     // answer row. The written empty marker must still prevent resurrection.
@@ -372,6 +403,15 @@ describe('wizard gate honors the authoritative pending marker', () => {
       makeStoredSession({ metadata: { pendingQuestionsMessageId: '' } }),
     );
     expect(deriveWizardPendingQuestions(rehydrated, AGENT_ID, transcript)).toBeNull();
+  });
+
+  it('keeps a non-empty marker authoritative across later non-system rows', () => {
+    const state = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-a1' } }),
+    );
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, transcript)).toMatchObject({
+      messageId: 'msg-a1',
+    });
   });
 
   it('shows a newer marked question after an older set was cleared', () => {

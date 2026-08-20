@@ -1,13 +1,12 @@
 import type { AgentMessage } from '$shared/types';
 import { getQuestionFromResourceBlock, type Question } from '$shared/types/question-resource';
 import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
-import { getAnsweredQuestionsMessageId } from './answer-message';
 
 /**
  * Pending Agent Q&A questions for the composer-slot wizard. The daemon's
  * three-state pending marker is authoritative when present: an empty string
  * clears the slot, while a message id permits only that question-bearing row.
- * Legacy sessions without the marker keep the transcript-based fallback.
+ * Legacy sessions without the marker use the daemon's transcript-tail fallback.
  * Dependency-light on purpose — no stores or components.
  */
 
@@ -31,10 +30,9 @@ function questionsOf(message: AgentMessage): Question[] {
  * the canonical `selectAgentIsResponding` gate — NOT the broader
  * `selectAgentIsRunning`, which stays true while the agent merely waits on
  * delegated agents and must not suppress the wizard), an optimistic pending
- * user bubble is shown, the question-bearing message is still streaming, or a
- * later user row answers it (matching `answeredQuestionsMessageId`). Because
- * this reads only the transcript, restored sessions re-surface unanswered
- * questions automatically when the daemon marker is absent.
+ * user bubble is shown, or the question-bearing message is still streaming.
+ * When the marker is absent, trailing system rows are transparent and only a
+ * question-bearing assistant row at the non-system tail is pending.
  */
 export function derivePendingQuestions(
   messages: readonly AgentMessage[],
@@ -54,22 +52,15 @@ export function derivePendingQuestions(
     return questions.length > 0 ? { messageId: marked.id, questions } : null;
   }
 
-  // Newest question-bearing assistant message wins (an older set is
-  // superseded by construction); later plain user rows and assistant replies
-  // do NOT resolve it.
+  // Match the daemon's pre-marker fallback: trailing system rows are
+  // transparent, but the first non-system row must itself be a
+  // question-bearing assistant message.
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    if (msg.role !== 'assistant') continue;
+    if (msg.role === 'system') continue;
+    if (msg.role !== 'assistant' || msg.isStreaming) return null;
     const questions = questionsOf(msg);
-    if (questions.length === 0) continue;
-    if (msg.isStreaming) return null;
-    // Resolution is id-keyed: a later user row tagged with this message id.
-    for (let j = i + 1; j < messages.length; j++) {
-      const later = messages[j];
-      if (later.role !== 'user') continue;
-      if (getAnsweredQuestionsMessageId(later) === msg.id) return null;
-    }
-    return { messageId: msg.id, questions };
+    return questions.length > 0 ? { messageId: msg.id, questions } : null;
   }
   return null;
 }
