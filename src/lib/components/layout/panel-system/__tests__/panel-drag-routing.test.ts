@@ -47,6 +47,7 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectRecentlyClosed: () => readable([]),
+  selectPanelColumnCount: () => readable(1),
   selectPanelLayoutWorkspace: {
     select: () => mocks.state.panelLayout.byWorkspaceId['workspace-1'],
   },
@@ -169,6 +170,14 @@ function renderTabBar(props: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   mocks.dispatch.mockClear();
   setDraggedPanelId(null);
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {

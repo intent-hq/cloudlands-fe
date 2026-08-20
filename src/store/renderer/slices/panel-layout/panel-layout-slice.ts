@@ -1783,10 +1783,7 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
       return setWorkspaceState(
         state,
         wsId,
-        purgeTabFromLayoutHistory(
-          { ...ws, hiddenTabs: removeItem(ws.hiddenTabs, tabId) },
-          tabId,
-        ),
+        purgeTabFromLayoutHistory({ ...ws, hiddenTabs: removeItem(ws.hiddenTabs, tabId) }, tabId),
       );
     }
     return state;
@@ -1799,10 +1796,7 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
       return setWorkspaceState(
         state,
         wsId,
-        purgeTabFromLayoutHistory(
-          { ...ws, hiddenTabs: removeItem(ws.hiddenTabs, tabId) },
-          tabId,
-        ),
+        purgeTabFromLayoutHistory({ ...ws, hiddenTabs: removeItem(ws.hiddenTabs, tabId) }, tabId),
       );
     }
     return state;

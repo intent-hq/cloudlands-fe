@@ -30,7 +30,6 @@ import {
   openTab,
   openTabInRightmostColumnRequested,
   setActiveTab,
-  setPanelPinned,
   setTabOwnerAgent,
   updateTabBrowserUrl,
 } from '../../panel-layout/panel-layout-slice';
@@ -365,7 +364,11 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
         error: `layout hydration failed: ${readiness.message}`,
       });
     } catch (error) {
-      logger.warn('browser:list-tabs-response error reply failed', { workspaceId, requestId, error });
+      logger.warn('browser:list-tabs-response error reply failed', {
+        workspaceId,
+        requestId,
+        error,
+      });
     }
     return;
   }
@@ -499,8 +502,7 @@ export function* browserIpcSaga(): SagaGenerator<void> {
         {
           bufferPolicy: {
             kind: 'lossless',
-            rationale:
-              'Every ownership change must be persisted with the tab in arrival order.',
+            rationale: 'Every ownership change must be persisted with the tab in arrival order.',
           },
         },
       ),

@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { ReduxStoreContext } from '$store/renderer/types';
 import { initAppStore, store as appStore } from '$store/renderer/store';
 import {
@@ -117,7 +118,11 @@ describe('mounted new workspace layout', () => {
     appStore.dispatch(clearPanelLayout(workspaceId));
     appStore.dispatch(bootstrapNewWorkspaceLayout(workspaceId, 'agent-1', 'Coordinator', true));
     appStore.dispatch(revealDeferredSpecTab(workspaceId, 'spec:created', 'Spec', 10));
-    const persisted = structuredClone(appStore.state.panelLayout.byWorkspaceId[workspaceId]);
+    const current = appStore.state.panelLayout.byWorkspaceId[workspaceId];
+    const persisted = {
+      ...structuredClone(current),
+      hiddenTabs: structuredClone(getItems(current.hiddenTabs)),
+    };
 
     appStore.dispatch(clearPanelLayout(workspaceId));
     appStore.dispatch(initializeLayout(workspaceId, persisted));

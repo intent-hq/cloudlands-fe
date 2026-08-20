@@ -201,9 +201,9 @@ test.describe('chat message navigator production path', () => {
       ).toEqual([
         'chat-message-navigator-trigger',
         'chat-scroll-to-bottom-button',
-        null,
         'panel-actions-trigger',
         'panel-identity-history-trigger',
+        null,
         null,
         null,
         'panel-close-button',
@@ -498,9 +498,9 @@ test.describe('chat message navigator production path', () => {
       await page.keyboard.press('Tab');
       await expect(downButton).toBeFocused();
       await page.keyboard.press('Tab');
-      await expect(columnButton).toBeFocused();
-      await page.keyboard.press('Tab');
       await expect(panelActionsButton).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(columnButton).toBeFocused();
       await downButton.click();
       await expect(downButton).toBeDisabled();
       await expect
@@ -540,9 +540,9 @@ test.describe('chat message navigator production path', () => {
     await expect(dialog).toHaveCount(0);
     await expect(trigger).toBeFocused();
     await page.keyboard.press('Tab');
-    await expect(columnButton).toBeFocused();
-    await page.keyboard.press('Tab');
     await expect(outside).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(columnButton).toBeFocused();
 
     await trigger.press('Space');
     dialog = await pickerForTrigger(page, trigger);

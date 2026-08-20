@@ -337,7 +337,9 @@ describe('browserIpcSaga', () => {
       replaceTabId: 'browser-hidden',
     });
 
-    expect(actions.map((a: any) => a.type)).toEqual(['panelLayout/openTab']);
+    expect(actions.map((a: any) => a.type)).toEqual([
+      'panelLayout/openTabInRightmostColumnRequested',
+    ]);
     task.cancel();
     await task.toPromise();
   });
@@ -370,8 +372,8 @@ describe('browserIpcSaga', () => {
     });
 
     expect(actions.map((a: any) => a.type)).toEqual([
-      'panelLayout/openTab',
-      'panelLayout/openTab',
+      'panelLayout/openTabInRightmostColumnRequested',
+      'panelLayout/openTabInRightmostColumnRequested',
     ]);
     expect(actions).toMatchObject([
       { payload: { wsId: 'ws-1', tab: { ...TAB('https://gone.test'), ownerAgentId: 'agent-1' } } },
@@ -747,6 +749,7 @@ describe('browserIpcSaga', () => {
           panelId: undefined,
           timestamp: NOW,
           destroy: true,
+          preservePanel: false,
         },
       },
     ]);
@@ -1099,7 +1102,7 @@ describe('browserIpcSaga', () => {
 
     expect(actions).toMatchObject([
       {
-        type: 'panelLayout/openTabInNewRootColumn',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-1',
           tab: {

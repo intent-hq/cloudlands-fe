@@ -14,6 +14,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { appLayoutNavigationSaga } from '$store/renderer/slices/app-layout/sagas/app-layout-navigation-saga';
+  import { watchRightmostColumnRequests } from '$store/renderer/slices/panel-layout/sagas/panel-layout-saga';
   import { workspaceNavigationTabSaga } from '$store/renderer/slices/workspace-navigation/sagas/workspace-navigation-tab-saga';
   import {
     closePanel,
@@ -80,6 +81,7 @@
     {
       startSagas: (store) => [
         store.runSaga(appLayoutNavigationSaga),
+        store.runSaga(watchRightmostColumnRequests),
         store.runSaga(workspaceNavigationTabSaga),
       ],
     },

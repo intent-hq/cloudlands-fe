@@ -171,7 +171,10 @@ describe('Settings migration', () => {
     );
     expect(
       readFileSync('src/lib/components/workspace/WorkspaceSidebarHeader.svelte', 'utf8'),
-    ).toContain('data-panel-column-count');
+    ).not.toContain('data-panel-column-count-trigger');
+    expect(
+      readFileSync('src/lib/components/layout/panel-system/PanelTabBar.svelte', 'utf8'),
+    ).toContain('data-panel-column-count-trigger');
     recorder.restore();
   });
 

@@ -306,10 +306,10 @@ test('updates geometry for fit, overflow, scroll, resize, open, close, and reord
 });
 
 for (const route of [
-  { name: 'file', trigger: '[data-open-file]' },
-  { name: 'note', trigger: '[data-open-note]' },
-  { name: 'agent', trigger: '[data-open-agent]' },
-  { name: 'changes', trigger: '[data-open-changes]' },
+  { name: 'file', trigger: '[data-open-file]', expectedPanelCount: '3' },
+  { name: 'note', trigger: '[data-open-note]', expectedPanelCount: '3' },
+  { name: 'agent', trigger: '[data-open-agent]', expectedPanelCount: '3' },
+  { name: 'changes', trigger: '[data-open-changes]', expectedPanelCount: '2' },
 ]) {
   test(`production ${route.name} open reveals its final panel at 400px and 200% zoom`, async ({
     mount,
@@ -322,7 +322,7 @@ for (const route of [
     const state = component.locator('[data-reveal-state]');
     await component.locator(route.trigger).click();
     await expect(state).toHaveAttribute('data-saw-pending-reveal', 'true');
-    await expect(state).toHaveAttribute('data-panel-count', '3');
+    await expect(state).toHaveAttribute('data-panel-count', route.expectedPanelCount);
     await expectFocusedPanelVisible(component);
   });
 }

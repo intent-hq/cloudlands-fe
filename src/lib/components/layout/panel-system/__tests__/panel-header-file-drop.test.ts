@@ -26,6 +26,7 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectRecentlyClosed: () => readable([]),
+  selectPanelColumnCount: () => readable(1),
   selectPanelLayoutWorkspace: { select: () => null },
 }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -140,10 +141,19 @@ function renderHeader(tabType: PanelTab['type']) {
 }
 
 beforeEach(() => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   resetFileDropSpies();
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   cleanup();
 });
 

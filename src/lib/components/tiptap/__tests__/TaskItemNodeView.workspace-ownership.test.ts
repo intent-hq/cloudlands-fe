@@ -84,6 +84,9 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: { select: () => undefined },
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentPreview: () => ({
+    subscribe: (run: (value: undefined) => void) => (run(undefined), () => {}),
+  }),
   selectAgentSession: Object.assign(
     () => ({ subscribe: (run: (value: undefined) => void) => (run(undefined), () => {}) }),
     { select: () => undefined },

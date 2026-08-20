@@ -139,8 +139,11 @@ test('collapses the complete navigation group when no alternative identity exist
   await expect(clip).toHaveCSS('opacity', '0');
   await expect(clip).toHaveCSS('pointer-events', 'none');
   const more = component.getByRole('button', { name: 'More' });
+  const columns = component.getByRole('button', { name: 'Panel columns: 1' });
   const close = component.getByRole('button', { name: 'Close panel' });
   await more.focus();
+  await page.keyboard.press('Tab');
+  await expect(columns).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(close).toBeFocused();
 
@@ -242,7 +245,7 @@ test('keeps history navigation in the header with visible keyboard focus', async
         button.getAttribute('aria-label'),
       ),
     ),
-  ).toEqual(['Panel columns: 1', 'More', 'Panel history', 'Go back', 'Go forward', 'Close panel']);
+  ).toEqual(['More', 'Panel history', 'Go back', 'Go forward', 'Panel columns: 1', 'Close panel']);
   const divider = actions.locator('[data-panel-history-divider]');
   await expect(divider).toHaveCount(1);
   await expect(divider).toHaveAttribute('aria-hidden', 'true');
@@ -269,7 +272,7 @@ test('keeps one hidden divider and the exact order when Close is unavailable', a
         button.getAttribute('aria-label'),
       ),
     ),
-  ).toEqual(['Panel columns: 1', 'More', 'Panel history', 'Go back', 'Go forward']);
+  ).toEqual(['More', 'Panel history', 'Go back', 'Go forward', 'Panel columns: 1']);
   await expect(actions.locator('[data-panel-history-divider]')).toHaveCount(1);
   await expect(actions.locator('[data-testid="panel-close-button"]')).toHaveCount(0);
 });

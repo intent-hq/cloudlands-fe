@@ -481,3 +481,7 @@ export function registerPanelKeyboardShortcuts(
 export function unregisterPanelKeyboardShortcuts(workspaceId: string): void {
   keyboardShortcutsCache.delete(workspaceId);
 }
+
+export function getPanelKeyboardShortcuts(workspaceId: string): PanelKeyboardShortcuts | undefined {
+  return keyboardShortcutsCache.get(workspaceId);
+}

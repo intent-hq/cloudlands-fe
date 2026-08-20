@@ -16,7 +16,7 @@ describe('panel canvas width', () => {
     {
       viewport: 1600,
       columns: 1,
-      expected: { defaultWidth: 1200, panelWidths: [1200], overflows: false },
+      expected: { defaultWidth: 1600, panelWidths: [1600], overflows: false },
     },
     // A wide viewport does not inflate the intrinsic canvas.
     {
@@ -84,8 +84,8 @@ describe('panel canvas width', () => {
 
   it('bypasses intrinsic tiers in automatic viewport mode', () => {
     expect(getPanelCanvasWidths(3440, [720, 700], 'viewport', 1428, 'intrinsic')).toMatchObject({
-      defaultWidth: 2408,
-      panelWidths: [1200, 1200],
+      defaultWidth: 3208,
+      panelWidths: [1600, 1600],
       overflows: false,
     });
     expect(getPanelCanvasWidths(1000, [720, 700], 'viewport', 1428, 'intrinsic')).toMatchObject({
@@ -106,9 +106,9 @@ describe('panel canvas width', () => {
   });
 
   it('keeps ordinary and browser defaults stable when switching views', () => {
-    expect(getPanelCanvasWidths(1600, [500], 'viewport', null).defaultWidth).toBe(1200);
+    expect(getPanelCanvasWidths(1600, [500], 'viewport', null).defaultWidth).toBe(1600);
     expect(getPanelCanvasWidths(1600, [500], 'content', null).defaultWidth).toBe(500);
-    expect(getPanelCanvasWidths(1600, [900], 'viewport', null).defaultWidth).toBe(1200);
+    expect(getPanelCanvasWidths(1600, [900], 'viewport', null).defaultWidth).toBe(1600);
     expect(getPanelCanvasWidths(1600, [900], 'content', null).defaultWidth).toBe(900);
   });
 

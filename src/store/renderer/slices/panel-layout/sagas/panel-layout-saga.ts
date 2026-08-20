@@ -282,6 +282,10 @@ function* routeTabToRightmostColumn(
   yield* put(openTabInRightmostColumn(wsId, tab, { force, allowDuplicate, newTabId }, timestamp));
 }
 
+export function* watchRightmostColumnRequests(): SagaGenerator<void> {
+  yield* takeEvery(openTabInRightmostColumnRequested, routeTabToRightmostColumn);
+}
+
 function collectPanelIds(node: PanelLayoutNode, panelIds: Set<string>): boolean {
   if (node.type === 'panel') {
     if (typeof node.panelId !== 'string' || node.panelId.length === 0) return false;
@@ -995,7 +999,7 @@ export function* panelLayoutSaga(options?: {
     yield* takeEvery(PERSIST_ACTIONS, persistPanelLayout);
     yield* takeEvery(setTabOwnerAgent, persistPanelLayout);
     yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
-    yield* takeEvery(openTabInRightmostColumnRequested, routeTabToRightmostColumn);
+    yield* fork(watchRightmostColumnRequests);
     yield* takeEvery([clearPanelLayout, workspaceDeleted], clearPersistedLayout);
     const historyWatcher = yield* takeEvery(HISTORY_ACTIONS, queueHistorySaveForAction);
     yield* takeLatest(initializeLayout, loadHistoryForWorkspace);
