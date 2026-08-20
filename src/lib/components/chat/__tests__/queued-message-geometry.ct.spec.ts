@@ -108,17 +108,23 @@ test('never spawns a horizontal scrollbar in the transcript scroll viewport', as
     offsetHeight: (node as HTMLElement).offsetHeight,
     clientWidth: node.clientWidth,
     clientHeight: node.clientHeight,
+    scrollWidth: node.scrollWidth,
     overflowX: getComputedStyle(node).overflowX,
   }));
   const dividerWidth = await component
     .getByTestId('queued-messages-container')
     .evaluate((node) => Number.parseFloat(getComputedStyle(node, '::before').width));
 
-  // Precondition: scrollbar-gutter reserves space, so the viewport content box
-  // is narrower than the panel-wide divider (the intent-hq/monorepo#2969 repro).
+  // Preconditions: scrollbar-gutter reserves space, so the viewport content box
+  // is narrower than the panel-wide divider, which still overflows the content
+  // box (the intent-hq/monorepo#2969 repro) — the overflow-x contract, not a
+  // narrower divider, is what must neutralize it.
   expect(metrics.clientWidth).toBeLessThan(metrics.offsetWidth);
+  expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
   // Regression (intent-hq/monorepo#2969): the horizontal axis must not be
-  // user-scrollable and no horizontal scrollbar may consume viewport height.
+  // user-scrollable. The computed-style check is the primary pin — headless CT
+  // renders no classic scrollbar, so the height check below only guards
+  // scrollbar-consumed height in headful/classic-scrollbar renderings.
   expect(metrics.overflowX).toBe('hidden');
   expect(metrics.offsetHeight - metrics.clientHeight).toBe(0);
   // The divider itself still renders full-bleed against the container.
