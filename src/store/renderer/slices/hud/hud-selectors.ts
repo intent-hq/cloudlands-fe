@@ -44,11 +44,13 @@ import {
 import {
   selectAgentIsResponding,
   selectAgentIsWaiting,
+  selectAgentPreview,
+  type AgentPreview,
 } from '../agent-session/agent-session-selectors';
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
-import { deriveAgentPreviewLine } from '$lib/utils/text-utils';
+import { classifyTool } from '$lib/utils/tool-classifier';
 import { selectHardwareConsoleKeySlots } from '../hardware-console/hardware-console-selectors';
 
 export const selectHudActive = store.createSelector((state) => state.hud.active);
@@ -471,12 +473,12 @@ export interface HudCardAgent {
   lastActivityTs: string | null;
   /**
    * Latest activity line for the swap animation (wire/agent content;
-   * i18n-exempt), else null. Derived by the shared
-   * `deriveAgentPreviewLine` helper (same precedence as the AgentCard
-   * footer preview: live response > newest user message > digest/report >
-   * persisted `lastAgentResponse`) over the AgentLite projection
-   * (`agent.list`, §5.5) folded in by the HUD's per-workspace hydration and
-   * kept fresh by live status events.
+   * i18n-exempt), else null. The canonical `selectAgentPreview` derivation
+   * (same precedence chain as the AgentCard footer: attention → live text →
+   * live tool → user line → digest/report → persisted fallbacks) rendered to
+   * a plain string over the AgentLite projection (`agent.list`, §5.5) folded
+   * in by the HUD's per-workspace hydration and kept fresh by live status
+   * events.
    */
   line: string | null;
   /** Delegating agent's id (`parentAgentId`, PROTOCOL §5.1 v2.9); null on roots. */
@@ -853,6 +855,35 @@ function isTopLevelAgent(info: WorkspaceAgentInfo, metadata: Record<string, unkn
   return !(typeof createdBy === 'string' && createdBy.length > 0 && createdBy !== info.id);
 }
 
+/**
+ * Render the canonical structured preview to the HUD's plain-string line:
+ * text kinds carry their text, tool kinds render the classified tool label
+ * (verb + subject + path, mirroring AgentPreviewToolLabel; hidden labels
+ * render nothing), attention renders the request's reason text.
+ */
+function previewLineText(preview: AgentPreview | null): string | null {
+  if (!preview) return null;
+  switch (preview.kind) {
+    case 'attention':
+      return preview.attention.reason ?? null;
+    case 'live-tool':
+    case 'last-tool': {
+      const display = classifyTool(
+        preview.toolUse.name,
+        (preview.toolUse.input as Record<string, unknown>) || {},
+      );
+      if (display.hidden) return null;
+      const label = [display.verb, display.subject, display.path]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      return label || null;
+    }
+    default:
+      return preview.text || null;
+  }
+}
+
 /** Tree-ordered card agent rows for a workspace (prefixes empty until kept). */
 function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
   return orderAgentTree(agentInfosOf(workspace)).map(({ info, depth, parentAgentId }) => {
@@ -867,20 +898,9 @@ function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
       name: info.name,
       bucket,
       lastActivityTs: info.lastActivity ?? null,
-      // Same precedence as the AgentCard footer preview (shared helper) over
-      // the AgentLite fields the HUD hydration carries.
-      line: session
-        ? deriveAgentPreviewLine({
-            lastAgentResponse: session.lastAgentResponse,
-            lastUserMessage: session.lastUserMessage,
-            lastMessageRole: session.lastMessageRole,
-            digest: session.digest,
-            isResponding: session.isResponding === true,
-            completionReport:
-              typeof metadata.completionReport === 'string' ? metadata.completionReport : null,
-            lastToolUse: session.lastToolUse,
-          })
-        : null,
+      // Canonical preview chain (selectAgentPreview — same precedence as the
+      // AgentCard footer) rendered to the HUD's plain-string line.
+      line: previewLineText(selectAgentPreview.select(state, info.id)),
       parentAgentId,
       depth,
       treePrefix: '',

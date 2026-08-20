@@ -7,7 +7,7 @@
   import { isHydrationPending, truncatedToolBlockIds } from './block-hydration';
   import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
-  import { classifyTool, isContextEngineTool } from './tool-classifier';
+  import { classifyTool, isContextEngineTool } from '$lib/utils/tool-classifier';
   import ContextEngineToolCall from './ContextEngineToolCall.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
   import { handleIntentLink } from '$lib/utils/workspaces-link-handler';

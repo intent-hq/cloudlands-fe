@@ -9,7 +9,7 @@
   import type { ToolUseBlock } from '$shared/types';
   import Fa from 'svelte-fa';
   import McpIcon from '$lib/components/settings/mcp/McpIcon.svelte';
-  import { classifyTool } from './tool-classifier';
+  import { classifyTool } from '$lib/utils/tool-classifier';
   import { renderInlineMarkdownPlainText } from './inline-markdown-snippet';
   import { m } from '$shared/paraglide/messages.js';
 

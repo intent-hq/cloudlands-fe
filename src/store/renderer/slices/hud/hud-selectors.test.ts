@@ -1404,7 +1404,9 @@ describe('selectHudWorkspaceCards', () => {
       },
     );
     const [card] = selectHudWorkspaceCards.select(state);
-    expect(card.agents.find((agent) => agent.id === 'a1')?.line).toBe('str-replace-editor');
+    // The canonical chain classifies the tool block into its display label
+    // (verb + subject + path), not the raw tool name.
+    expect(card.agents.find((agent) => agent.id === 'a1')?.line).toBe('Edit x.ts src');
   });
 
   it('a merely-waiting agent (no attention) buckets idle and drops off the card rows', () => {
@@ -2150,7 +2152,10 @@ describe('selectHudWorkspaceCards', () => {
   it('joins hydrated lastAgentResponse lines onto needs-attention and idle-summary agents too', () => {
     // Sessions carry ONLY the AgentLite hydration snapshot (agent.list §5.5
     // via bulkUpsertSessions) — no live status event ever fired in this
-    // window. The line must still surface on non-running rows.
+    // window. The line must still surface on non-running rows. Canonical
+    // precedence: a pending attention request's reason outranks the
+    // hydrated lastAgentResponse on a1; a2 has no attention and falls
+    // through to the persisted response.
     const state = cardState(
       [
         makeWorkspace('ws-1', {
@@ -2172,6 +2177,7 @@ describe('selectHudWorkspaceCards', () => {
             a1: {
               status: 'waiting',
               attentionRequestKind: 'discussion',
+              attentionRequestReason: 'Need a decision on the rollout order',
               lastAgentResponse: 'Waiting on the reviewer',
               messages: [],
             },
@@ -2183,9 +2189,42 @@ describe('selectHudWorkspaceCards', () => {
     );
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.agents.map((a) => [a.id, a.bucket, a.line])).toEqual([
-      ['a1', 'needs-attention', 'Waiting on the reviewer'],
+      ['a1', 'needs-attention', 'Need a decision on the rollout order'],
       ['a2', 'running', 'Porting the fetch loop'],
     ]);
+  });
+
+  it('a reasonless attention request yields a null line without falling back (canonical chain)', () => {
+    const state = cardState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 1,
+            agentIds: ['a1'],
+            agents: [{ id: 'a1', name: 'Coordinator', status: 'waiting' }],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      {
+        agentSessions: {
+          byAgentId: {
+            a1: {
+              status: 'waiting',
+              attentionRequestKind: 'blocker',
+              lastAgentResponse: 'Old response text',
+              messages: [],
+            },
+          },
+          agentIdsByWorkspace: {},
+        },
+      },
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    const row = card.agents.find((a) => a.id === 'a1');
+    expect(row?.bucket).toBe('needs-attention');
+    expect(row?.line).toBeNull();
   });
 
   it('orders agents depth-first from parentAgentId with connector prefixes', () => {
