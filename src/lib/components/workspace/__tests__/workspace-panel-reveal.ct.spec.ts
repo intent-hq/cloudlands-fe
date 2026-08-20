@@ -372,6 +372,7 @@ test('keeps a long production Markdown file open vertically contained', async ({
         outerScrollTop: outerScrollHost?.scrollTop ?? null,
         outerScrollHeight: outerScrollHost?.scrollHeight ?? null,
         outerClientHeight: outerScrollHost?.clientHeight ?? null,
+        outerOverflowY: outerScrollHost ? getComputedStyle(outerScrollHost).overflowY : null,
         columnsScrollTop: (root.querySelector('[data-workspace-columns]') as HTMLElement | null)
           ?.scrollTop,
         insetScrollTop: inset?.scrollTop ?? null,
@@ -401,6 +402,7 @@ test('keeps a long production Markdown file open vertically contained', async ({
   expect(afterLoad.windowScrollY).toBe(before.windowScrollY);
   expect(afterOpen.outerScrollTop).toBe(before.outerScrollTop);
   expect(afterLoad.outerScrollTop).toBe(before.outerScrollTop);
+  expect(afterLoad.outerOverflowY).toBe('hidden');
   expect(afterOpen.outerScrollHeight).toBe(before.outerScrollHeight);
   expect(afterLoad.outerScrollHeight).toBe(before.outerScrollHeight);
   expect(afterLoad.outerClientHeight).toBe(before.outerClientHeight);

@@ -6,6 +6,7 @@
 
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import appLayoutSource from '../../../../../routes/(app)/+layout.svelte?raw';
   import WorkspaceColumnsView from '../../WorkspaceColumnsView.svelte';
   import WorkspaceSurface from '../../../../../routes/(app)/workspace/[id]/WorkspaceSurface.svelte';
   import { WorkspaceId } from '$shared/types/branded-ids';
@@ -20,6 +21,7 @@
     initializeLayout,
     movePanel,
     openTab,
+    openTabInNewRootColumn,
     setRestoreStatus,
     updateSplitSizes,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -68,6 +70,11 @@
   const targetTabId = `target-tab-${workspaceKey}`;
   const targetFilePath = '/tmp/reveal-target.ts';
   const timestamp = '2026-08-16T12:00:00.000Z';
+  const workspaceFrameOverflowClass = appLayoutSource.includes(
+    'class="flex-1 min-h-0 overflow-hidden"',
+  )
+    ? 'overflow-hidden'
+    : 'overflow-auto';
   const disposeStore = startRootStoreLifecycle(
     appStore,
     {
@@ -183,10 +190,18 @@
 
   function openLongReadmeAdjacent() {
     appStore.dispatch(
-      openWorkspaceFile(workspaceId, 'README.md', {
-        openInAdjacentPanel: true,
-        sourcePanelId: targetPanelId,
-      }),
+      openTabInNewRootColumn(
+        workspaceId,
+        {
+          type: 'file',
+          title: 'README.md',
+          filePath: 'README.md',
+          workspaceId,
+          closable: true,
+        },
+        { force: true, newPanelId: `readme-panel-${workspaceKey}` },
+        Date.parse(timestamp),
+      ),
     );
   }
 
@@ -267,7 +282,7 @@
 <button type="button" onclick={reorderPanels} data-reorder-panels>Reorder panels</button>
 <button type="button" onclick={closeExtraPanel} data-close-extra-panel>Close extra panel</button>
 <div
-  class="h-[480px] overflow-hidden"
+  class="h-[480px] {workspaceFrameOverflowClass}"
   data-testid="production-workspace-scroll-host"
   data-reveal-state
   data-workspace-id={workspaceId}
