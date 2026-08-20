@@ -35,6 +35,7 @@
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
+  import { splitTextByUrls } from './message-link-utils';
   import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
   import {
     isQuestionOnlyContent,
@@ -1351,7 +1352,22 @@
                 <!-- Render text with inline @mentions as chips -->
                 {#each parsedMessage.segments as segment, i (i)}
                   {#if segment.type === 'text'}
-                    <span class="whitespace-pre-wrap">{segment.content}</span>
+                    <span class="whitespace-pre-wrap"
+                      >{#each splitTextByUrls(segment.content) as part, j (j)}{#if part.type === 'link'}<a
+                            href={part.url}
+                            class="cursor-pointer break-all underline underline-offset-2 hover:opacity-80"
+                            title={part.url}
+                            onclick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const wsId = getOwningWorkspaceId();
+                              handleLink(part.url, {
+                                workspaceId: wsId ? WorkspaceId(wsId) : undefined,
+                                event: e,
+                              });
+                            }}>{part.url}</a
+                          >{:else}{part.content}{/if}{/each}</span
+                    >
                   {:else if segment.type === 'mention'}
                     {@const isContextProvider = ['linear', 'github', 'sentry', 'browser'].includes(
                       segment.mentionType,
