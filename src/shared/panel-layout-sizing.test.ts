@@ -39,14 +39,20 @@ describe('panel type default widths', () => {
 
   it('sums per-column defaults while preserving viewport and persisted-width policies', () => {
     expect(getAutomaticPanelCanvasWidth([500, 900], 'content')).toBe(1408);
+    expect(getAutomaticPanelCanvasWidth([1700], 'content', 5000)).toBe(1700);
     expect(getAutomaticPanelCanvasWidth([500, 900], 'viewport', 1600)).toBe(1600);
     expect(getAutomaticPanelCanvasWidth([500, 900], 'viewport', 1000)).toBe(1000);
     expect(getResolvedPanelCanvasWidth([500, 900], 'content', 1000, 1725)).toBe(1725);
     expect(getResolvedPanelCanvasWidth([500], 'viewport', 1600, 420)).toBe(420);
+    expect(getResolvedPanelCanvasWidth([500], 'viewport', 5000, 1800)).toBe(1800);
   });
 });
 
 describe('capped equal automatic panel allocation', () => {
+  it('uses a 1600px automatic per-panel maximum', () => {
+    expect(MAX_AUTOMATIC_PANEL_WIDTH).toBe(1600);
+  });
+
   it.each([1, 2, 3, 4])('fits %s equal column(s) inside a narrow viewport', (count) => {
     const allocation = allocateAutomaticPanelWidths(count, 300);
     const expectedWidth = (300 - PANEL_SPLIT_GUTTER_WIDTH * (count - 1)) / count;
@@ -57,17 +63,29 @@ describe('capped equal automatic panel allocation', () => {
     expect(allocation.overflows).toBe(false);
   });
 
-  it.each([1, 2, 3, 4])('caps %s column(s) at the exact 1200px threshold', (count) => {
-    const threshold = MAX_AUTOMATIC_PANEL_WIDTH * count + PANEL_SPLIT_GUTTER_WIDTH * (count - 1);
-    expect(allocateAutomaticPanelWidths(count, threshold).panelWidths).toEqual(
+  it.each([1, 2, 3, 4])('caps %s column(s) at the exact 1600px threshold', (count) => {
+    const totalGapWidth = PANEL_SPLIT_GUTTER_WIDTH * (count - 1);
+    const threshold = MAX_AUTOMATIC_PANEL_WIDTH * count + totalGapWidth;
+    const below = allocateAutomaticPanelWidths(count, threshold - 1);
+    const exact = allocateAutomaticPanelWidths(count, threshold);
+    const above = allocateAutomaticPanelWidths(count, threshold + 1);
+
+    expect(below.panelWidths).toEqual(
+      Array.from({ length: count }, () =>
+        expect.closeTo((threshold - 1 - totalGapWidth) / count, 8),
+      ),
+    );
+    expect(below.canvasWidth).toBeCloseTo(threshold - 1, 8);
+    expect(exact.panelWidths).toEqual(
       Array.from({ length: count }, () => MAX_AUTOMATIC_PANEL_WIDTH),
     );
-    expect(allocateAutomaticPanelWidths(count, threshold + 500)).toMatchObject({
+    expect(exact.canvasWidth).toBe(threshold);
+    expect(above).toMatchObject({
       panelWidths: Array.from({ length: count }, () => MAX_AUTOMATIC_PANEL_WIDTH),
       canvasWidth: threshold,
       overflows: false,
     });
-    expect(allocateAutomaticPanelWidths(count, threshold - 1).canvasWidth).toBe(threshold - 1);
+    expect(above.canvasWidth).toBeLessThan(threshold + 1);
   });
 
   it('falls back safely before measurement and for invalid counts', () => {
