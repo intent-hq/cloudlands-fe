@@ -124,7 +124,6 @@ const ENFORCED_DIRS = [
   // cortex/cortex-acp emit agent-facing prompt/wire content — intentionally
   // not enforced.
   'src/features/accept-changes',
-  'src/features/agent-testing',
   'src/features/auto-update',
   'src/features/backend',
   'src/features/cdp',
@@ -154,7 +153,6 @@ const ENFORCED_DIRS = [
   'src/features/scripts',
   'src/features/setup-scripts',
   'src/features/specialists',
-  'src/features/storage',
   'src/features/system',
   'src/features/tasks',
   'src/features/token-usage',
