@@ -53,14 +53,14 @@ export function sanitizePersistedHudGridFilter(value: unknown): HudGridFilter {
 }
 
 /** The sanitized persisted filter for `backendId` (EMPTY when absent/bad). */
-export function readPersistedHudGridFilter(backendId: string): HudGridFilter {
+function readPersistedHudGridFilter(backendId: string): HudGridFilter {
   return sanitizePersistedHudGridFilter(
     readBackendScopedJSON<unknown>(HUD_GRID_FILTER_STORAGE_KEY, backendId),
   );
 }
 
 /** Persist `filter` under `backendId`'s scoped key (best-effort). */
-export function persistHudGridFilter(backendId: string, filter: HudGridFilter): void {
+function persistHudGridFilter(backendId: string, filter: HudGridFilter): void {
   writeBackendScopedJSON(HUD_GRID_FILTER_STORAGE_KEY, backendId, filter);
 }
 
