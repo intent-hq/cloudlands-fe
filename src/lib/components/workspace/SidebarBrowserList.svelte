@@ -35,7 +35,9 @@
   // Tabs grouped by owner agent, with hidden (user-closed) owned tabs
   // listed in their owner's group; "Unclaimed" renders last (monorepo#2857).
   const groups = $derived(groupBrowserTabsByOwner(browserTabs, $hiddenTabs$, $agents$));
-  const tabCount = $derived(browserTabs.length + $hiddenTabs$.length);
+  // Derived from groups so the count matches what actually renders (the
+  // grouping skips malformed hidden entries).
+  const tabCount = $derived(groups.reduce((sum, group) => sum + group.entries.length, 0));
 
   function openBrowserTab(tabId: string, panelId: string) {
     const manager = getPanelLayoutManager(panelLayoutId);

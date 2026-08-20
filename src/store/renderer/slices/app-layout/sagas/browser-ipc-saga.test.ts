@@ -695,6 +695,28 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
+  // Only owned tabs are emulated (§5.9): a size arriving without an owner is
+  // dropped at the boundary rather than recorded on a native tab.
+  it('drops emulatedSize on unowned opens', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({
+      url: 'https://native.test',
+      position: 'same',
+      workspaceId: 'ws-1',
+      emulatedSize: { width: 390, height: 844 },
+    });
+
+    expect(actions).toHaveLength(1);
+    const open = actions[0] as { type: string; payload: { tab: Record<string, unknown> } };
+    expect(open.type).toBe('panelLayout/openTab');
+    expect(open.payload.tab).not.toHaveProperty('ownerAgentId');
+    expect(open.payload.tab).not.toHaveProperty('emulatedSize');
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('no-ops for invalid payloads and when neither workspace source is available', async () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));
