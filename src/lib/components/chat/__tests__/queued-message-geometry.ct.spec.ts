@@ -98,6 +98,33 @@ test('preserves the held hint and edit, remove, and send-now callbacks', async (
   );
 });
 
+test('never spawns a horizontal scrollbar in the transcript scroll viewport', async ({ mount }) => {
+  const component = await mount(QueuedMessageGeometryHost, {
+    props: { width: 720, contentWidth: 480, zoom: 1, messageCount: 1, scrollViewport: true },
+  });
+  const viewport = component.getByTestId('queued-message-scroll-viewport');
+  const metrics = await viewport.evaluate((node) => ({
+    offsetWidth: (node as HTMLElement).offsetWidth,
+    offsetHeight: (node as HTMLElement).offsetHeight,
+    clientWidth: node.clientWidth,
+    clientHeight: node.clientHeight,
+    overflowX: getComputedStyle(node).overflowX,
+  }));
+  const dividerWidth = await component
+    .getByTestId('queued-messages-container')
+    .evaluate((node) => Number.parseFloat(getComputedStyle(node, '::before').width));
+
+  // Precondition: scrollbar-gutter reserves space, so the viewport content box
+  // is narrower than the panel-wide divider (the intent-hq/monorepo#2969 repro).
+  expect(metrics.clientWidth).toBeLessThan(metrics.offsetWidth);
+  // Regression (intent-hq/monorepo#2969): the horizontal axis must not be
+  // user-scrollable and no horizontal scrollbar may consume viewport height.
+  expect(metrics.overflowX).toBe('hidden');
+  expect(metrics.offsetHeight - metrics.clientHeight).toBe(0);
+  // The divider itself still renders full-bleed against the container.
+  expect(dividerWidth).toBeCloseTo(720, 1);
+});
+
 test('spans the panel-width container with the top divider', async ({ mount }) => {
   const component = await mount(QueuedMessageGeometryHost, {
     props: { width: 720, contentWidth: 480, zoom: 1, messageCount: 1 },
