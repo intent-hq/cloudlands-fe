@@ -1965,8 +1965,11 @@ function handleCommentEvent(
  * converge into a single `updateWorkspaceEntity` dispatch so the sidebar PR
  * pill / PR list / progress card refresh live without waiting for the
  * workspace list to refetch. `pullRequests` is the daemon-owned per-branch PR
- * list (§6.5) folded verbatim; `pr:unlinked` does not touch it — the daemon
- * owns the array and retains merged/closed history across unlinks. This
+ * list (§6.5); the event payload carries the *stored* (unmerged) list, so the
+ * slice URL-unions it with the entity's current pool instead of replacing —
+ * background cards keep git-root / monitor PRs the daemon only folds into
+ * `workspace.list` (§6.9; monorepo#2951). `pr:unlinked` does not touch it —
+ * the daemon owns the array and retains merged/closed history across unlinks. This
  * replaces the legacy `relayLegacyIpcEvent` `workspace:updated` re-emit for
  * PR events — Redux is now the single source of truth for PR pill state.
  */

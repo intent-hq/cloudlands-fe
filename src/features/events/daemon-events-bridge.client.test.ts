@@ -6000,6 +6000,12 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     backendRequestSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
+    // The union merge semantics on setWorkspaceEntity (monorepo#2951) mean PR
+    // pools survive re-seeding — reset the slice so tests stay independent.
+    const { resetWorkspaceState } = await import(
+      '$store/renderer/slices/workspace/workspace-slice'
+    );
+    appStore.dispatch(resetWorkspaceState());
   });
 
   afterEach(() => vi.clearAllMocks());
@@ -6126,8 +6132,69 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     expect(ws.prStatus).toBe('Merged');
     // prUrl was not in the pr:updated payload; the merge must retain it.
     expect(ws.prUrl).toBe('https://example.com/pr/42');
-    // pullRequests from the pr:updated payload replaces the previous list.
+    // The entity had no pullRequests pool yet, so the pr:updated payload's
+    // list is adopted as-is (the union with an empty pool is the incoming list).
     expect(ws.pullRequests).toEqual([{ number: 42, status: 'Merged' }]);
+  });
+
+  it('pr:updated preserves merged-pool entries absent from the stored list (monorepo#2951)', async () => {
+    // A background workspace whose entity holds the daemon-MERGED pool from a
+    // workspace.list emit: the stored PR plus a git-root PR and a monitored
+    // cross-repo PR that only workspace.list folds in.
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: PR_WS,
+        title: 'PR ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        pullRequests: [
+          { number: 42, url: 'https://github.com/acme/app/pull/42', status: 'Open' },
+          { number: 7, url: 'https://github.com/acme/submodule/pull/7', status: 'Open' },
+          { number: 9, url: 'https://github.com/other/repo/pull/9', status: 'Open' },
+        ],
+      } as never),
+    );
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // pr:updated carries the narrower STORED list (§6.9) — only the linked PR.
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-pr-updated-2951',
+          workspaceId: PR_WS,
+          timestamp: '2026-01-02T00:00:01.000Z',
+          type: 'pr:updated',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: PR_WS,
+            prNumber: 42,
+            prStatus: 'Merged',
+            activePullRequest: { number: 42, merged: true },
+            pullRequests: [
+              { number: 42, url: 'https://github.com/acme/app/pull/42', status: 'Merged' },
+            ],
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    // The stored entry is refreshed in place; the git-root and monitored
+    // entries survive — the "+N" badge count must not drop.
+    expect(ws.pullRequests).toEqual([
+      { number: 42, url: 'https://github.com/acme/app/pull/42', status: 'Merged' },
+      { number: 7, url: 'https://github.com/acme/submodule/pull/7', status: 'Open' },
+      { number: 9, url: 'https://github.com/other/repo/pull/9', status: 'Open' },
+    ]);
   });
 
   it('pr:unlinked clears the active-PR fields but retains the pullRequests list', async () => {

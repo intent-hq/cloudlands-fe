@@ -350,6 +350,71 @@ describe('workspaceReducer', () => {
       expect(merged?.prStatus).toBe(pr.status);
       expect(merged?.prUrl).toBe(pr.url);
     });
+
+    it('URL-unions pullRequests on entity upserts so merged-pool entries survive (monorepo#2951)', () => {
+      // The entity holds the daemon-MERGED pool from a workspace.list emit:
+      // the stored PR plus a git-root PR only workspace.list folds in.
+      const storedPr = makePullRequest({
+        id: 'pr-42',
+        number: 42,
+        url: 'https://github.com/acme/app/pull/42',
+      });
+      const gitRootPr = makePullRequest({
+        id: 'pr-7',
+        number: 7,
+        url: 'https://github.com/acme/submodule/pull/7',
+      });
+      const existing = makeWorkspace({ id: 'ws-1', pullRequests: [storedPr, gitRootPr] });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(existing));
+
+      // A workspace.get / delta upsert carries the narrower STORED list
+      // (§6.9) with a fresher status for the stored entry.
+      const refreshedStoredPr = { ...storedPr, status: PullRequestStatus.Merged };
+      state = workspaceReducer(
+        state,
+        setWorkspaceEntity(makeWorkspace({ id: 'ws-1', pullRequests: [refreshedStoredPr] })),
+      );
+
+      // Incoming wins for the matching URL; the git-root entry survives.
+      expect(getItem(state.workspaces, 'ws-1')?.pullRequests).toEqual([
+        refreshedStoredPr,
+        gitRootPr,
+      ]);
+    });
+
+    it('matches pullRequests union keys case-insensitively by URL, falling back to number', () => {
+      const withUrl = makePullRequest({
+        id: 'pr-42',
+        number: 42,
+        url: 'https://github.com/Acme/App/pull/42',
+      });
+      const urlLess = { ...makePullRequest({ id: 'pr-9', number: 9 }), url: '' };
+      const existing = makeWorkspace({ id: 'ws-1', pullRequests: [withUrl, urlLess] });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(existing));
+
+      const incomingUrlCased = makePullRequest({
+        id: 'pr-42',
+        number: 42,
+        url: 'https://github.com/acme/app/pull/42',
+        status: PullRequestStatus.Merged,
+      });
+      const incomingUrlLess = {
+        ...makePullRequest({ id: 'pr-9', number: 9, status: PullRequestStatus.Closed }),
+        url: '',
+      };
+      state = workspaceReducer(
+        state,
+        setWorkspaceEntity(
+          makeWorkspace({ id: 'ws-1', pullRequests: [incomingUrlCased, incomingUrlLess] }),
+        ),
+      );
+
+      // Both entries dedup against their existing counterparts — no duplicates.
+      expect(getItem(state.workspaces, 'ws-1')?.pullRequests).toEqual([
+        incomingUrlCased,
+        incomingUrlLess,
+      ]);
+    });
   });
 
   describe('updateWorkspaceEntity', () => {
