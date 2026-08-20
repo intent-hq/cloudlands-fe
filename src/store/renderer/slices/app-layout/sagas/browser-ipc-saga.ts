@@ -348,11 +348,19 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
   if (readiness.status === 'hydration-failed') {
     // Truthful error: distinguish "hydration failed" from "renderer did not
     // respond" so main can reject instead of timing out (monorepo#2789).
-    yield* call(invoke, 'browser:list-tabs-response', {
-      requestId,
-      // i18n-ignore (agent-facing protocol error, not user-facing)
-      error: `layout hydration failed: ${readiness.message}`,
-    });
+    // Guarded: the reply invoke reaches the real ipcMain handler (bridged by
+    // browser-ipc-bridge-seeder, monorepo#2926), so a main-side throw would
+    // otherwise cancel the whole browserIpcSaga — main times the request out
+    // on a lost reply, which is the correct degraded outcome.
+    try {
+      yield* call(invoke, 'browser:list-tabs-response', {
+        requestId,
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        error: `layout hydration failed: ${readiness.message}`,
+      });
+    } catch (error) {
+      logger.warn('browser:list-tabs-response error reply failed', { workspaceId, requestId, error });
+    }
     return;
   }
 
@@ -372,7 +380,13 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
 
   // Echo the requestId back so main resolves the matching pending request
   // (concurrent requests must not consume each other's replies).
-  yield* call(invoke, 'browser:list-tabs-response', { tabs: browserTabs, requestId });
+  // Guarded for the same reason as the error reply above: an unhandled
+  // rejection here would cancel the whole saga and kill all six watchers.
+  try {
+    yield* call(invoke, 'browser:list-tabs-response', { tabs: browserTabs, requestId });
+  } catch (error) {
+    logger.warn('browser:list-tabs-response reply failed', { workspaceId, requestId, error });
+  }
 }
 
 function* tabOwnerChanged(data: BrowserTabOwnerChangedPayload | null): SagaGenerator<void> {
