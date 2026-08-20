@@ -1365,11 +1365,24 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
 
   const state = streamsByAgent.get(agentId);
   const turnId = typeof data?.turnId === 'string' ? data.turnId : undefined;
+  const turnCorrelation = streamTurnCorrelation(state?.messageId);
+  const turnIdCorrelation = streamTurnCorrelation(turnId);
+  const failureCorrelation =
+    turnCorrelation || turnIdCorrelation
+      ? {
+          ...(turnCorrelation ? { turnCorrelation } : {}),
+          ...(turnIdCorrelation ? { turnIdCorrelation } : {}),
+        }
+      : undefined;
   reportStreamLifecycle({
     stage: 'bridge',
     event: 'agent-failed-received',
-    turnCorrelation: streamTurnCorrelation(state?.messageId),
-    turnIdCorrelation: streamTurnCorrelation(turnId),
+    ...failureCorrelation,
+    correlationBasis: turnCorrelation
+      ? 'assistant-message'
+      : turnIdCorrelation
+        ? 'turn'
+        : 'unjoinable',
     callbackResult: 'received',
   });
   if (state) {
@@ -1394,18 +1407,28 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
     if (!hasParent) {
       recordAgentFailure({ agentId, workspaceId, error });
     }
-    appStore.dispatch(chatSendFailed(agentId, error, turnId));
+    appStore.dispatch(chatSendFailed(agentId, error, turnId, failureCorrelation));
     reportStreamLifecycle({
       stage: 'bridge',
       event: 'agent-failed-dispatched',
-      turnCorrelation: streamTurnCorrelation(state?.messageId),
-      turnIdCorrelation: streamTurnCorrelation(turnId),
+      ...failureCorrelation,
+      correlationBasis: turnCorrelation
+        ? 'assistant-message'
+        : turnIdCorrelation
+          ? 'turn'
+          : 'unjoinable',
       callbackResult: 'dispatched',
     });
   } else if (!state) {
     reportStreamLifecycle({
       stage: 'bridge',
       event: 'agent-failed-ignored',
+      ...failureCorrelation,
+      correlationBasis: turnCorrelation
+        ? 'assistant-message'
+        : turnIdCorrelation
+          ? 'turn'
+          : 'unjoinable',
       callbackResult: 'ignored',
     });
   }

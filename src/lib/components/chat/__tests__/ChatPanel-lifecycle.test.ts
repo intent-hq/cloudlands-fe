@@ -42,6 +42,9 @@ const mocks = vi.hoisted(() => {
     resizeConstructor: vi.fn(),
     agentMessages: mutableReadable<unknown[]>([]),
     chatError: mutableReadable<string | null>(null),
+    failureCorrelation: mutableReadable<
+      { turnCorrelation?: string; turnIdCorrelation?: string } | undefined
+    >(undefined),
     reportStreamLifecycle: vi.fn(),
     animateScrollTo: vi.fn(),
     awaitingSwitchBackSnapshot: mutableReadable(false),
@@ -114,6 +117,9 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
     select: () => false,
   }),
   selectChatError: Object.assign(() => mocks.chatError, { select: () => null }),
+  selectChatFailureCorrelation: Object.assign(() => mocks.failureCorrelation, {
+    select: () => undefined,
+  }),
   selectChatIsStalled: mocks.selector(false),
   selectChatLastChunkTime: mocks.selector(null),
   selectChatLiveStreamPhase: mocks.selector(null),
@@ -396,6 +402,7 @@ beforeEach(() => {
   });
   mocks.agentMessages.set([]);
   mocks.chatError.set(null);
+  mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
   mocks.awaitingUtilityFooter.set(false);
   mocks.transcriptHydration.set('settled');
@@ -421,7 +428,7 @@ afterEach(() => {
 });
 
 describe('ChatPanel mounted lifecycle', () => {
-  it('reports only DOM-observed assistant and terminal-error visibility after render', async () => {
+  it('does not attach a new pre-output terminal error to the previous assistant row', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([
       {
@@ -431,7 +438,6 @@ describe('ChatPanel mounted lifecycle', () => {
         timestamp: '2026-01-01T00:00:00.000Z',
       },
     ]);
-    mocks.chatError.set('terminal failure');
     const view = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });
@@ -444,15 +450,76 @@ describe('ChatPanel mounted lifecycle', () => {
       '[data-message-role="assistant"][data-message-id="assistant-dom-1"]',
     );
     expect(assistantRow).not.toBeNull();
-    expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
     expect(mocks.reportStreamLifecycle).toHaveBeenCalledWith(
       expect.objectContaining({
         stage: 'render',
         event: 'assistant-message-committed',
+        correlationBasis: 'assistant-message',
         blockCount: assistantRow!.querySelectorAll('[data-message-content-block]').length,
-        terminalErrorVisible: true,
         storeStreamState: 'idle',
         callbackResult: 'delivered',
+      }),
+    );
+
+    mocks.reportStreamLifecycle.mockClear();
+    mocks.failureCorrelation.set({ turnIdCorrelation: '12c09885d6571b4e' });
+    mocks.chatError.set('terminal failure');
+    await tick();
+    await tick();
+
+    expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
+    const errorDiagnostic = mocks.reportStreamLifecycle.mock.calls
+      .map(([diagnostic]) => diagnostic)
+      .find((diagnostic) => diagnostic.event === 'terminal-error-committed');
+    expect(errorDiagnostic).toEqual(
+      expect.objectContaining({
+        stage: 'render',
+        turnIdCorrelation: '12c09885d6571b4e',
+        correlationBasis: 'turn',
+        terminalErrorVisible: true,
+        storeStreamState: 'error',
+        callbackResult: 'delivered',
+      }),
+    );
+    expect(errorDiagnostic).not.toHaveProperty('turnCorrelation');
+    expect(mocks.reportStreamLifecycle).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'assistant-message-committed' }),
+    );
+  });
+
+  it('labels a DOM-observed terminal error unjoinable when no safe correlation exists', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      {
+        id: 'assistant-old-unjoinable',
+        role: 'assistant',
+        content: 'old answer',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+
+    await tick();
+    await tick();
+    mocks.reportStreamLifecycle.mockClear();
+    mocks.chatError.set('terminal failure');
+    await tick();
+    await tick();
+
+    expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
+    expect(mocks.reportStreamLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'terminal-error-committed',
+        correlationBasis: 'unjoinable',
+        terminalErrorVisible: true,
+      }),
+    );
+    expect(mocks.reportStreamLifecycle).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'terminal-error-committed',
+        turnCorrelation: expect.any(String),
       }),
     );
   });
@@ -485,8 +552,8 @@ describe('ChatPanel mounted lifecycle', () => {
       expect.objectContaining({
         stage: 'render',
         event: 'assistant-message-not-committed',
+        correlationBasis: 'assistant-message',
         blockCount: 0,
-        terminalErrorVisible: false,
         callbackResult: 'ignored',
       }),
     );

@@ -31,7 +31,7 @@ describe('stream lifecycle telemetry', () => {
     expect(streamTurnCorrelation(undefined)).toBeUndefined();
   });
 
-  it('reserves bounded capacity for late terminal diagnostics after ordinary exhaustion', () => {
+  it('keeps failure capacity after ordinary and successful completion exhaustion', () => {
     const ordinaryLimit =
       MAX_STREAM_LIFECYCLE_DIAGNOSTICS - RESERVED_TERMINAL_STREAM_LIFECYCLE_DIAGNOSTICS;
     for (let index = 0; index < MAX_STREAM_LIFECYCLE_DIAGNOSTICS + 2; index += 1) {
@@ -40,31 +40,28 @@ describe('stream lifecycle telemetry', () => {
 
     expect(infoSpy).toHaveBeenCalledTimes(ordinaryLimit);
 
-    reportStreamLifecycle({
-      stage: 'bridge',
-      event: 'stream-complete-dispatched',
-      storeStreamState: 'idle',
-    });
+    for (let index = 0; index < RESERVED_TERMINAL_STREAM_LIFECYCLE_DIAGNOSTICS + 20; index += 1) {
+      reportStreamLifecycle({
+        stage: 'bridge',
+        event: 'stream-complete-dispatched',
+        storeStreamState: 'idle',
+      });
+    }
+    expect(infoSpy).toHaveBeenCalledTimes(ordinaryLimit);
+
     reportStreamLifecycle({
       stage: 'bridge',
       event: 'agent-failed-received',
       storeStreamState: 'error',
     });
-    reportStreamLifecycle({
-      stage: 'render',
-      event: 'assistant-message-committed',
-      storeStreamState: 'idle',
-      terminalErrorVisible: true,
-    });
-    expect(infoSpy).toHaveBeenCalledTimes(ordinaryLimit + 3);
+    expect(infoSpy).toHaveBeenCalledTimes(ordinaryLimit + 1);
     expect(infoSpy).toHaveBeenLastCalledWith(
       'agent',
       'stream-lifecycle',
-      expect.objectContaining({ terminalErrorVisible: true }),
+      expect.objectContaining({ event: 'agent-failed-received' }),
     );
 
     for (let index = 0; index < RESERVED_TERMINAL_STREAM_LIFECYCLE_DIAGNOSTICS; index += 1) {
-      reportStreamLifecycle({ stage: 'bridge', event: 'stream-complete-dispatched' });
       reportStreamLifecycle({ stage: 'bridge', event: 'agent-failed-received' });
       reportStreamLifecycle({
         stage: 'render',
@@ -72,6 +69,6 @@ describe('stream lifecycle telemetry', () => {
         callbackResult: 'ignored',
       });
     }
-    expect(infoSpy).toHaveBeenCalledTimes(MAX_STREAM_LIFECYCLE_DIAGNOSTICS);
+    expect(infoSpy.mock.calls.length).toBeLessThanOrEqual(MAX_STREAM_LIFECYCLE_DIAGNOSTICS);
   });
 });

@@ -107,6 +107,7 @@
     selectAwaitingSwitchBackSnapshot,
     selectAwaitingUtilityFooter,
     selectChatError,
+    selectChatFailureCorrelation,
     selectChatLastChunkTime,
     selectChatModelUnavailable,
     selectChatReceivedFirstChunk,
@@ -391,6 +392,7 @@
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
   const chatError$ = selectChatError(agentIdStore);
+  const chatFailureCorrelation$ = selectChatFailureCorrelation(agentIdStore);
   const chatStreamingStartTime$ = selectChatStreamingStartTime(agentIdStore);
   const chatLastChunkTime$ = selectChatLastChunkTime(agentIdStore);
   const chatModelUnavailable$ = selectChatModelUnavailable(agentIdStore);
@@ -464,17 +466,44 @@
       const assistantRow = Array.from(
         panelElement?.querySelectorAll<HTMLElement>('[data-message-role="assistant"]') ?? [],
       ).find((row) => row.dataset.messageId === message.id);
+      reportStreamLifecycle({
+        stage: 'render',
+        event: assistantRow ? 'assistant-message-committed' : 'assistant-message-not-committed',
+        turnCorrelation: streamTurnCorrelation(message.id),
+        correlationBasis: 'assistant-message',
+        blockCount: assistantRow?.querySelectorAll('[data-message-content-block]').length ?? 0,
+        storeStreamState,
+        callbackResult: assistantRow ? 'delivered' : 'ignored',
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  $effect(() => {
+    const shouldObserveError = Boolean(effectiveError || $chatModelUnavailable$);
+    const failureCorrelation = $chatFailureCorrelation$;
+    if (!shouldObserveError) return;
+    let cancelled = false;
+    void (async () => {
+      await tick();
+      if (cancelled) return;
       const terminalErrorVisible = Boolean(
         panelElement?.querySelector('[data-stream-terminal-error="true"]'),
       );
       reportStreamLifecycle({
         stage: 'render',
-        event: assistantRow ? 'assistant-message-committed' : 'assistant-message-not-committed',
-        turnCorrelation: streamTurnCorrelation(message.id),
-        blockCount: assistantRow?.querySelectorAll('[data-message-content-block]').length ?? 0,
+        event: terminalErrorVisible ? 'terminal-error-committed' : 'terminal-error-not-committed',
+        ...failureCorrelation,
+        correlationBasis: failureCorrelation?.turnCorrelation
+          ? 'assistant-message'
+          : failureCorrelation?.turnIdCorrelation
+            ? 'turn'
+            : 'unjoinable',
         terminalErrorVisible,
-        storeStreamState,
-        callbackResult: assistantRow ? 'delivered' : 'ignored',
+        storeStreamState: 'error',
+        callbackResult: terminalErrorVisible ? 'delivered' : 'ignored',
       });
     })();
     return () => {

@@ -3244,7 +3244,9 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
 
     const failedCalls = dispatchCalls.filter((a) => a.type === 'chatState/sendFailed');
     expect(failedCalls).toEqual([
-      expect.objectContaining({ payload: [AGENT, 'boom', 'turn-failed-1'] }),
+      expect.objectContaining({
+        payload: [AGENT, 'boom', 'turn-failed-1', { turnIdCorrelation: '12c09885d6571b4e' }],
+      }),
     ]);
   });
 
@@ -3256,7 +3258,9 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
     handler(notification('agent:failed', { agentId: AGENT, error: 'boom', status: 'error' }));
 
     const failedCalls = dispatchCalls.filter((a) => a.type === 'chatState/sendFailed');
-    expect(failedCalls).toEqual([expect.objectContaining({ payload: [AGENT, 'boom', undefined] })]);
+    expect(failedCalls).toEqual([
+      expect.objectContaining({ payload: [AGENT, 'boom', undefined, undefined] }),
+    ]);
   });
 });
 
@@ -8545,6 +8549,49 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       const chatState = appStore.state.chatState.byAgentId[agentId];
       expect(chatState).toBeDefined();
       expect(chatState.error).toBe(errorMsg);
+      expect(chatState.failureCorrelation).toEqual({
+        turnCorrelation: '66637f77eb5cec86',
+        turnIdCorrelation: '12c09885d6571b4e',
+      });
+    });
+
+    it('keeps turn-only correlation across receipt, dispatch, and store before output', async () => {
+      const agentId = 'agent-failed-preoutput';
+      const turnId = 'turn-failed-preoutput';
+      appStore.dispatch(upsertSession({ id: agentId, name: 'Test Agent', workspaceId: WS }));
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        notification('agent:failed', {
+          agentId,
+          turnId,
+          error: 'failed before output',
+          status: 'error',
+        }),
+      );
+
+      const failureTelemetry = reportStreamLifecycleSpy.mock.calls
+        .map(([diagnostic]) => diagnostic)
+        .filter((diagnostic) => diagnostic.event.startsWith('agent-failed'));
+      expect(failureTelemetry).toEqual([
+        expect.objectContaining({
+          event: 'agent-failed-received',
+          turnIdCorrelation: '1b48e6bf735176c9',
+          correlationBasis: 'turn',
+          callbackResult: 'received',
+        }),
+        expect.objectContaining({
+          event: 'agent-failed-dispatched',
+          turnIdCorrelation: '1b48e6bf735176c9',
+          correlationBasis: 'turn',
+          callbackResult: 'dispatched',
+        }),
+      ]);
+      expect(failureTelemetry[0]).not.toHaveProperty('turnCorrelation');
+      expect(appStore.state.chatState.byAgentId[agentId]?.failureCorrelation).toEqual({
+        turnIdCorrelation: '1b48e6bf735176c9',
+      });
     });
 
     it('sets default error message when agent:failed has no explicit error', async () => {
