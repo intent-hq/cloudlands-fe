@@ -1589,8 +1589,6 @@
   "workspace_sidebarChanges_rootNoChanges_label": "変更なし",
   "workspace_sidebarChanges_rootNoCommits_label": "コミットなし",
   "workspace_sidebarChanges_rootPrimary_label": "Spaceルート",
-  "workspace_sidebarChanges_rootReadOnly_label": "読み取り専用",
-  "workspace_sidebarChanges_rootReadOnly_tooltip": "セカンダリGitルートは読み取り専用です。ステージング、コミット、PRはSpaceルートから管理します。",
   "workspace_sidebarChanges_rootRegistered_label": "ルート登録",
   "workspace_sidebarChanges_rootSelector_ariaLabel": "Gitルートを選択",
   "workspace_sidebarChanges_rootShowMoreCommits_label": "さらにコミットを表示",

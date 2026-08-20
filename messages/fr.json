@@ -1589,8 +1589,6 @@
   "workspace_sidebarChanges_rootNoChanges_label": "Aucun changement",
   "workspace_sidebarChanges_rootNoCommits_label": "Aucun commit",
   "workspace_sidebarChanges_rootPrimary_label": "Racine du Space",
-  "workspace_sidebarChanges_rootReadOnly_label": "Lecture seule",
-  "workspace_sidebarChanges_rootReadOnly_tooltip": "Les racines git secondaires sont en lecture seule. Le staging, les commits et les PRs sont gérés depuis la racine du Space.",
   "workspace_sidebarChanges_rootRegistered_label": "Racine enregistrée",
   "workspace_sidebarChanges_rootSelector_ariaLabel": "Sélectionner la racine git",
   "workspace_sidebarChanges_rootShowMoreCommits_label": "Afficher plus de commits",

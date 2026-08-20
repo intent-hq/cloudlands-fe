@@ -1590,8 +1590,6 @@
   "workspace_sidebarChanges_rootNoChanges_label": "No changes",
   "workspace_sidebarChanges_rootNoCommits_label": "No commits",
   "workspace_sidebarChanges_rootPrimary_label": "Space root",
-  "workspace_sidebarChanges_rootReadOnly_label": "Read-only",
-  "workspace_sidebarChanges_rootReadOnly_tooltip": "Secondary git roots are read-only. Staging, commits, and PRs are managed from the Space root.",
   "workspace_sidebarChanges_rootRegistered_label": "Root registered",
   "workspace_sidebarChanges_rootSelector_ariaLabel": "Select git root",
   "workspace_sidebarChanges_rootShowMoreCommits_label": "Show more commits",

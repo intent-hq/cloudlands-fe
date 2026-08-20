@@ -250,7 +250,7 @@
 </script>
 
 <div class="flex flex-col gap-3" data-testid="secondary-root-changes-view">
-  <!-- Root branch line + read-only badge + refresh -->
+  <!-- Root branch line + refresh -->
   <div class="flex items-center gap-1.5 text-subtle text-xs -ml-0.5">
     <GitBranchIcon size={12} class="shrink-0 text-ghost" />
     {#if branchName}
@@ -266,11 +266,6 @@
     {:else}
       <span class="text-ui truncate min-w-0">{branchLabel}</span>
     {/if}
-    <span
-      class="shrink-0 px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-xs uppercase tracking-wide"
-      title={m.workspace_sidebarChanges_rootReadOnly_tooltip()}
-      >{m.workspace_sidebarChanges_rootReadOnly_label()}</span
-    >
     <button
       type="button"
       class="ml-auto p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"

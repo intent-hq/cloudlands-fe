@@ -1589,8 +1589,6 @@
   "workspace_sidebarChanges_rootNoChanges_label": "변경 사항 없음",
   "workspace_sidebarChanges_rootNoCommits_label": "커밋 없음",
   "workspace_sidebarChanges_rootPrimary_label": "Space 루트",
-  "workspace_sidebarChanges_rootReadOnly_label": "읽기 전용",
-  "workspace_sidebarChanges_rootReadOnly_tooltip": "보조 Git 루트는 읽기 전용입니다. 스테이징, 커밋, PR은 Space 루트에서 관리합니다.",
   "workspace_sidebarChanges_rootRegistered_label": "루트 등록됨",
   "workspace_sidebarChanges_rootSelector_ariaLabel": "Git 루트 선택",
   "workspace_sidebarChanges_rootShowMoreCommits_label": "더 많은 커밋 표시",
