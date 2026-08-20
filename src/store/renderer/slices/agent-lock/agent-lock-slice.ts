@@ -24,8 +24,7 @@ export const initialState: AgentLockState = {
   byWorkspaceId: {},
 };
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
-  createWorkspaceScopedHelpers(emptyWorkspaceState);
+const { clearWorkspaceState } = createWorkspaceScopedHelpers(emptyWorkspaceState);
 
 // ---------------------------------------------------------------------------
 // Actions

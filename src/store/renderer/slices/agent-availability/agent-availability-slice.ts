@@ -6,7 +6,7 @@
 
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import type { AgentAvailabilityState } from './agent-availability-types';
+import type { AgentAvailabilityState, ProviderStatus } from './agent-availability-types';
 import type { NpxStatus } from '$shared/types/provider-availability';
 
 // ---------------------------------------------------------------------------
