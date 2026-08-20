@@ -841,6 +841,8 @@ app.whenReady().then(async () => {
         label: m.menu_reopen_closed_tab(),
         accelerator: 'CmdOrCtrl+Shift+T',
         enabled: inWorkspace,
+        // Let the renderer compare workspace-tab, panel-tab, and column history.
+        registerAccelerator: false,
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {

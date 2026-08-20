@@ -6,6 +6,8 @@ import { initialState as workspaceInitialState } from '$store/renderer/slices/wo
 import { tabStateReducer, type TabState } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { selectWorkspaceTabOrder } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import {
+  closeFocusedPanelTab,
+  closePanel,
   panelLayoutReducer,
   initialState as panelLayoutInitialState,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -599,6 +601,72 @@ describe('global workspace tab navigation', () => {
       tab: { id: tabId, type: 'note' as const, title: tabId, closable: true },
       panelId: 'p1',
       closedAt,
+    });
+
+    it('restores column, workspace tab, and panel tab in exact close-time order', () => {
+      const layout = layoutWith([makePanel('p1', ['t1']), makePanel('p2', ['t2'])], 'p2');
+      layout.byWorkspaceId['ws-2'].root = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'panel', panelId: 'p1' },
+          { type: 'panel', panelId: 'p2' },
+        ],
+        sizes: [35, 65],
+      };
+      layout.byWorkspaceId['ws-2'].canvasWidth = 1800;
+      layout.byWorkspaceId['ws-2'].canvasWidthSource = 'explicit';
+      const store = makeStore('ws-2', layout);
+      const navigate = vi.fn();
+
+      store.dispatch(closeFocusedPanelTab('ws-2', 1000, 1200));
+      store.state.tabState.recentlyClosedTabIds.push('ws-4');
+      store.state.tabState.recentlyClosedTabAt['ws-4'] = 2000;
+      store.dispatch(closeFocusedPanelTab('ws-2', 3000, 1200));
+
+      expect(reopenPanelOrWorkspaceTab(store, '/workspace/ws-2', navigate)).toBe('column');
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].root).toEqual({
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'panel', panelId: 'p1' },
+          { type: 'panel', panelId: 'p2' },
+        ],
+        sizes: [35, 65],
+      });
+      expect(store.state.panelLayout.byWorkspaceId['ws-2']).toMatchObject({
+        focusedPanelId: 'p2',
+        columnCount: 2,
+        canvasWidth: 1800,
+        canvasWidthSource: 'explicit',
+      });
+
+      expect(reopenPanelOrWorkspaceTab(store, '/workspace/ws-2', navigate)).toBe('workspace');
+      expect(store.state.tabState.openTabs['ws-4']).toBe(true);
+
+      expect(reopenPanelOrWorkspaceTab(store, '/workspace/ws-2', navigate)).toBe('tab');
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].panels.p2.tabs).toEqual([
+        expect.objectContaining({ title: 't2' }),
+      ]);
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].recentlyClosed).toEqual([]);
+    });
+
+    it('restores a populated column before its same-action tab entries without duplicates', () => {
+      const first = makePanel('p1', ['t1', 't2']);
+      first.activeTabId = 't2';
+      const store = makeStore('ws-2', layoutWith([first, makePanel('p2')], 'p1'));
+      const navigate = vi.fn();
+
+      store.dispatch(closePanel('ws-2', 'p1', 4000));
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].recentlyClosed).toHaveLength(2);
+
+      expect(reopenPanelOrWorkspaceTab(store, '/workspace/ws-2', navigate)).toBe('column');
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].panels.p1).toMatchObject({
+        activeTabId: 't2',
+        tabs: [{ id: 't1' }, { id: 't2' }],
+      });
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].recentlyClosed).toEqual([]);
+      expect(reopenPanelOrWorkspaceTab(store, '/workspace/ws-2', navigate)).toBeNull();
     });
 
     it('reopens the panel tab when it closed after the workspace tab', () => {

@@ -31,9 +31,11 @@ import type {
   PanelLayoutSliceState,
   LayoutSnapshot,
   RecentlyClosedTab,
+  RecentlyClosedPanelColumn,
   PanelDragLayoutSnapshot,
   PanelRevealRequest,
   PanelColumnCount,
+  SavedExpandSizes,
 } from './panel-layout-types';
 import {
   MAX_RECENTLY_CLOSED,
@@ -125,6 +127,7 @@ export const emptyWorkspaceState: WorkspacePanelLayoutState = {
   pendingFocusTabId: null,
   pendingPanelReveal: null,
   recentlyClosed: [],
+  recentlyClosedColumns: createCollection<RecentlyClosedPanelColumn, 'historyId'>('historyId'),
   layoutHistory: [],
   historyIndex: 0,
   historyLoaded: false,
@@ -363,10 +366,11 @@ export const closeActiveTab = createAction(
 /** Close focused content, then remove its structural column only when already empty. */
 export const closeFocusedPanelTab = createAction(
   'panelLayout/closeFocusedPanelTab',
-  (wsId: string, timestamp?: number, availableCanvasWidth?: number) => ({
+  (wsId: string, timestamp?: number, availableCanvasWidth?: number, columnHistoryId?: string) => ({
     wsId,
     timestamp: timestamp ?? Date.now(),
     availableCanvasWidth,
+    columnHistoryId: columnHistoryId ?? generateTabId(),
   }),
 );
 
@@ -377,6 +381,15 @@ export const reopenClosedTab = createAction(
     newTabId: generateTabId(),
     closedTabId,
     timestamp: timestamp ?? Date.now(),
+  }),
+);
+
+export const reopenClosedPanelColumn = createAction(
+  'panelLayout/reopenClosedPanelColumn',
+  (wsId: string, timestamp?: number, requestId?: string) => ({
+    wsId,
+    timestamp: timestamp ?? Date.now(),
+    requestId: requestId ?? generateTabId(),
   }),
 );
 
@@ -563,10 +576,11 @@ export const openBlankWorkingPanel = createAction(
 
 export const closePanel = createAction(
   'panelLayout/closePanel',
-  (wsId: string, panelId: string, timestamp?: number) => ({
+  (wsId: string, panelId: string, timestamp?: number, columnHistoryId?: string) => ({
     wsId,
     panelId,
     timestamp: timestamp ?? Date.now(),
+    columnHistoryId: columnHistoryId ?? generateTabId(),
   }),
 );
 
@@ -913,6 +927,137 @@ function closePanelHelper(
   };
 }
 
+function clonePanelLayoutNode(node: PanelLayoutNode): PanelLayoutNode {
+  return JSON.parse(JSON.stringify(node)) as PanelLayoutNode;
+}
+
+function clonePanelState(panel: PanelState): PanelState {
+  return JSON.parse(JSON.stringify(panel)) as PanelState;
+}
+
+function panelLayoutNodesEqual(left: PanelLayoutNode, right: PanelLayoutNode): boolean {
+  if (left.type !== right.type) return false;
+  if (left.type === 'panel' || right.type === 'panel') {
+    return left.type === 'panel' && right.type === 'panel' && left.panelId === right.panelId;
+  }
+  return (
+    left.direction === right.direction &&
+    left.sizes.length === right.sizes.length &&
+    left.sizes.every((size, index) => size === right.sizes[index]) &&
+    left.children.length === right.children.length &&
+    left.children.every((child, index) => panelLayoutNodesEqual(child, right.children[index]))
+  );
+}
+
+export function isRecentlyClosedPanelColumnRestorable(
+  workspace: WorkspacePanelLayoutState,
+  closed: RecentlyClosedPanelColumn,
+): boolean {
+  if (workspace.panels[closed.panelId]) return false;
+  if (!panelLayoutNodesEqual(workspace.root, closed.postCloseRoot)) return false;
+  if (getPanelOrder(workspace.root).some((panelId) => !workspace.panels[panelId])) return false;
+
+  const visibleTabIds = new Set(
+    Object.values(workspace.panels).flatMap((panel) => panel.tabs.map((tab) => tab.id)),
+  );
+  return (
+    closed.panel.tabs.every((tab) => !visibleTabIds.has(tab.id)) &&
+    closed.closedTabIds.every((tabId) =>
+      workspace.recentlyClosed.some(
+        (entry) => entry.tab.id === tabId && entry.closedAt === closed.closedAt,
+      ),
+    )
+  );
+}
+
+function recordClosedPanelColumn(
+  before: WorkspacePanelLayoutState,
+  after: WorkspacePanelLayoutState,
+  historyId: string,
+  panelId: string,
+  closedAt: number,
+  closedTabIds: string[],
+): WorkspacePanelLayoutState {
+  const panel = before.panels[panelId];
+  if (!panel || after.panels[panelId]) return after;
+
+  const closed: RecentlyClosedPanelColumn = {
+    historyId,
+    panelId,
+    panel: clonePanelState(panel),
+    root: clonePanelLayoutNode(before.root),
+    postCloseRoot: clonePanelLayoutNode(after.root),
+    focusedPanelId: before.focusedPanelId,
+    columnCount: before.columnCount,
+    canvasWidth: before.canvasWidth,
+    canvasWidthSource: before.canvasWidthSource,
+    expandedPanelId: before.expandedPanelId,
+    savedSizesBeforeExpand: JSON.parse(
+      JSON.stringify(before.savedSizesBeforeExpand),
+    ) as SavedExpandSizes[],
+    ...(before.savedCanvasWidthBeforeExpand === undefined
+      ? {}
+      : { savedCanvasWidthBeforeExpand: before.savedCanvasWidthBeforeExpand }),
+    ...(before.savedCanvasWidthSourceBeforeExpand === undefined
+      ? {}
+      : { savedCanvasWidthSourceBeforeExpand: before.savedCanvasWidthSourceBeforeExpand }),
+    pendingFocusTabId: before.pendingFocusTabId,
+    closedTabIds: closedTabIds.filter((tabId) =>
+      after.recentlyClosed.some((entry) => entry.tab.id === tabId && entry.closedAt === closedAt),
+    ),
+    closedAt,
+  };
+  return {
+    ...after,
+    recentlyClosedColumns: createCollection<RecentlyClosedPanelColumn, 'historyId'>(
+      'historyId',
+      [
+        closed,
+        ...getItems(
+          after.recentlyClosedColumns ??
+            createCollection<RecentlyClosedPanelColumn, 'historyId'>('historyId'),
+        ).filter((entry) => entry.historyId !== historyId),
+      ].slice(0, MAX_RECENTLY_CLOSED),
+    ),
+  };
+}
+
+function removeTabFromClosedPanelColumns(
+  workspace: WorkspacePanelLayoutState,
+  shouldRemove: (tab: PanelTab) => boolean,
+): Collection<RecentlyClosedPanelColumn, 'historyId'> {
+  const current =
+    workspace.recentlyClosedColumns ??
+    createCollection<RecentlyClosedPanelColumn, 'historyId'>('historyId');
+  let changed = false;
+  const columns = getItems(current).map((closed) => {
+    const tabs = closed.panel.tabs.filter((tab) => !shouldRemove(tab));
+    if (tabs.length === closed.panel.tabs.length) return closed;
+    changed = true;
+    const removedIds = new Set(
+      closed.panel.tabs.filter((tab) => shouldRemove(tab)).map((tab) => tab.id),
+    );
+    return {
+      ...closed,
+      panel: {
+        ...closed.panel,
+        tabs,
+        activeTabId: removedIds.has(closed.panel.activeTabId ?? '')
+          ? (tabs[0]?.id ?? null)
+          : closed.panel.activeTabId,
+      },
+      closedTabIds: closed.closedTabIds.filter((tabId) => !removedIds.has(tabId)),
+      pendingFocusTabId:
+        closed.pendingFocusTabId && removedIds.has(closed.pendingFocusTabId)
+          ? null
+          : closed.pendingFocusTabId,
+    };
+  });
+  return changed
+    ? createCollection<RecentlyClosedPanelColumn, 'historyId'>('historyId', columns)
+    : current;
+}
+
 function createFixedColumnRoot(panelIds: string[]): PanelLayoutNode {
   if (panelIds.length === 1) return { type: 'panel', panelId: panelIds[0] };
   return {
@@ -1243,7 +1388,6 @@ function purgeTabFromLayoutHistory(
   ws: WorkspacePanelLayoutState,
   tabId: string,
 ): WorkspacePanelLayoutState {
-  if (ws.layoutHistory.length === 0) return ws;
   let changed = false;
   const layoutHistory = ws.layoutHistory.map((snapshot) => {
     let snapshotChanged = false;
@@ -1265,7 +1409,15 @@ function purgeTabFromLayoutHistory(
     changed = true;
     return { ...snapshot, panels };
   });
-  return changed ? { ...ws, layoutHistory } : ws;
+  const recentlyClosedColumns = removeTabFromClosedPanelColumns(ws, (tab) => tab.id === tabId);
+  if (
+    ws.recentlyClosedColumns
+      ? recentlyClosedColumns !== ws.recentlyClosedColumns
+      : recentlyClosedColumns.ids.length > 0
+  ) {
+    changed = true;
+  }
+  return changed ? { ...ws, layoutHistory, recentlyClosedColumns } : ws;
 }
 
 /**
@@ -1868,7 +2020,7 @@ panelLayoutReducer.with(closeActiveTab, (state, { payload }) => {
 });
 // --- Close Focused Panel Content Or Its Already-Empty Column ---
 panelLayoutReducer.with(closeFocusedPanelTab, (state, { payload }) => {
-  const { wsId, timestamp, availableCanvasWidth } = payload;
+  const { wsId, timestamp, availableCanvasWidth, columnHistoryId } = payload;
   const ws = getWorkspaceState(state, wsId);
   const panelId = ws.focusedPanelId;
   if (!panelId || !ws.panels[panelId]) return state;
@@ -1898,7 +2050,7 @@ panelLayoutReducer.with(closeFocusedPanelTab, (state, { payload }) => {
     const removed = closePanelHelper(ws, panelId);
     if (removed === ws) return state;
 
-    return setWorkspaceState(state, wsId, {
+    const closedWorkspace = {
       ...removed,
       root: createFixedColumnRoot(remainingPanelIds),
       focusedPanelId,
@@ -1906,13 +2058,15 @@ panelLayoutReducer.with(closeFocusedPanelTab, (state, { payload }) => {
       columnCountInitialized: true,
       canvasWidth,
       canvasWidthSource: canvasWidth === null ? null : 'explicit',
-      recentlyClosed: removed.recentlyClosed.map((entry) =>
-        entry.panelId === panelId ? { ...entry, panelId: focusedPanelId } : entry,
-      ),
       layoutHistory: removed.layoutHistory.map((snapshot) =>
         removeFixedColumnFromHistorySnapshot(snapshot, panelId, availableCanvasWidth),
       ),
-    });
+    } satisfies WorkspacePanelLayoutState;
+    return setWorkspaceState(
+      state,
+      wsId,
+      recordClosedPanelColumn(ws, closedWorkspace, columnHistoryId, panelId, timestamp, []),
+    );
   }
 
   const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId);
@@ -2069,27 +2223,97 @@ panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
 // --- Prune Recently Closed ---
 panelLayoutReducer.with(pruneRecentlyClosed, (state, { payload: [wsId, match] }) => {
   const ws = getWorkspaceState(state, wsId);
-  if (ws.recentlyClosed.length === 0) return state;
   const { agentId, terminalId } = match;
   if (!agentId && !terminalId) return state;
+  const shouldRemove = (tab: PanelTab) =>
+    Boolean(
+      (agentId && tab.type === 'agent' && tab.agentId === agentId) ||
+      (terminalId && tab.type === 'terminal' && tab.terminalId === terminalId),
+    );
   const filtered = ws.recentlyClosed.filter((entry) => {
-    if (agentId && entry.tab.type === 'agent' && entry.tab.agentId === agentId) return false;
-    if (terminalId && entry.tab.type === 'terminal' && entry.tab.terminalId === terminalId)
-      return false;
-    return true;
+    return !shouldRemove(entry.tab);
   });
-  if (filtered.length === ws.recentlyClosed.length) return state;
-  return setWorkspaceState(state, wsId, { ...ws, recentlyClosed: filtered });
+  const recentlyClosedColumns = removeTabFromClosedPanelColumns(ws, shouldRemove);
+  const columnsChanged = ws.recentlyClosedColumns
+    ? recentlyClosedColumns !== ws.recentlyClosedColumns
+    : recentlyClosedColumns.ids.length > 0;
+  if (filtered.length === ws.recentlyClosed.length && !columnsChanged) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    recentlyClosed: filtered,
+    recentlyClosedColumns,
+  });
 });
 // --- Cross-slice: prune recentlyClosed when a terminal is removed ---
 panelLayoutReducer.with(removeTerminal, (state, { payload: [wsId, termId] }) => {
   const ws = state.byWorkspaceId[wsId];
-  if (!ws || ws.recentlyClosed.length === 0) return state;
-  const filtered = ws.recentlyClosed.filter(
-    (entry) => !(entry.tab.type === 'terminal' && entry.tab.terminalId === termId),
+  if (!ws) return state;
+  const shouldRemove = (tab: PanelTab) => tab.type === 'terminal' && tab.terminalId === termId;
+  const filtered = ws.recentlyClosed.filter((entry) => !shouldRemove(entry.tab));
+  const recentlyClosedColumns = removeTabFromClosedPanelColumns(ws, shouldRemove);
+  const columnsChanged = ws.recentlyClosedColumns
+    ? recentlyClosedColumns !== ws.recentlyClosedColumns
+    : recentlyClosedColumns.ids.length > 0;
+  if (filtered.length === ws.recentlyClosed.length && !columnsChanged) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    recentlyClosed: filtered,
+    recentlyClosedColumns,
+  });
+});
+// --- Reopen Closed Panel Column ---
+panelLayoutReducer.with(reopenClosedPanelColumn, (state, { payload }) => {
+  const { wsId, timestamp, requestId } = payload;
+  let ws = getWorkspaceState(state, wsId);
+  const closedColumns = getItems(
+    ws.recentlyClosedColumns ??
+      createCollection<RecentlyClosedPanelColumn, 'historyId'>('historyId'),
   );
-  if (filtered.length === ws.recentlyClosed.length) return state;
-  return setWorkspaceState(state, wsId, { ...ws, recentlyClosed: filtered });
+  const closedIndex = closedColumns.findIndex((closed) =>
+    isRecentlyClosedPanelColumnRestorable(ws, closed),
+  );
+  if (closedIndex < 0) return state;
+
+  const closed = closedColumns[closedIndex];
+  ws = saveToHistory(ws, timestamp);
+  const panels = { ...ws.panels, [closed.panelId]: clonePanelState(closed.panel) };
+  ws = {
+    ...ws,
+    root: clonePanelLayoutNode(closed.root),
+    panels,
+    focusedPanelId: closed.focusedPanelId,
+    hiddenTabs: dropTabsPresentInPanels(ws.hiddenTabs ?? createCollection('id'), panels),
+    columnCount: closed.columnCount,
+    columnCountInitialized: true,
+    canvasWidth: closed.canvasWidth,
+    canvasWidthSource: closed.canvasWidthSource,
+    expandedPanelId: closed.expandedPanelId,
+    savedSizesBeforeExpand: JSON.parse(
+      JSON.stringify(closed.savedSizesBeforeExpand),
+    ) as SavedExpandSizes[],
+    savedCanvasWidthBeforeExpand: closed.savedCanvasWidthBeforeExpand,
+    savedCanvasWidthSourceBeforeExpand: closed.savedCanvasWidthSourceBeforeExpand,
+    pendingFocusTabId:
+      closed.pendingFocusTabId &&
+      closed.panel.tabs.some((tab) => tab.id === closed.pendingFocusTabId)
+        ? closed.pendingFocusTabId
+        : ws.pendingFocusTabId,
+    pendingPanelReveal:
+      closed.focusedPanelId === closed.panelId
+        ? createPanelRevealRequest(closed.panelId, closed.panel.activeTabId, requestId)
+        : ws.pendingPanelReveal,
+    recentlyClosed: ws.recentlyClosed.filter(
+      (entry) => entry.closedAt !== closed.closedAt || !closed.closedTabIds.includes(entry.tab.id),
+    ),
+    recentlyClosedColumns: createCollection<RecentlyClosedPanelColumn, 'historyId'>(
+      'historyId',
+      closedColumns.filter((_, index) => index !== closedIndex),
+    ),
+  };
+  if (closed.focusedPanelId === closed.panelId && closed.panel.activeTabId) {
+    ws = addToFocusHistory(ws, closed.panelId, closed.panel.activeTabId, timestamp);
+  }
+  return setWorkspaceState(state, wsId, ws);
 });
 // --- Reopen Closed Tab ---
 panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
@@ -2687,7 +2911,7 @@ panelLayoutReducer.with(openBlankWorkingPanel, (state, { payload }) => {
 });
 // --- Close Panel ---
 panelLayoutReducer.with(closePanel, (state, { payload }) => {
-  const { wsId, panelId, timestamp } = payload;
+  const { wsId, panelId, timestamp, columnHistoryId } = payload;
   const ws = getWorkspaceState(state, wsId);
   const panel = ws.panels[panelId];
   if (!panel) return state;
@@ -2697,6 +2921,16 @@ panelLayoutReducer.with(closePanel, (state, { payload }) => {
 
   let updatedWs = saveToHistory(ws, timestamp);
   updatedWs = closePanelHelper(updatedWs, panelId, timestamp);
+  updatedWs = recordClosedPanelColumn(
+    ws,
+    updatedWs,
+    columnHistoryId,
+    panelId,
+    timestamp,
+    panel.tabs
+      .filter((tab) => tab.closable !== false && !isHideOnCloseTab(tab))
+      .map((tab) => tab.id),
+  );
   return setWorkspaceState(state, wsId, updatedWs);
 });
 panelLayoutReducer.with(reconcilePanelColumnCount, (state, { payload }) => {

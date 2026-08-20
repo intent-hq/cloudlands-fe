@@ -181,6 +181,27 @@ export interface RecentlyClosedTab {
   closedAt: number;
 }
 
+/** Exact serializable state needed to restore one explicit panel-column close. */
+export interface RecentlyClosedPanelColumn {
+  historyId: string;
+  panelId: string;
+  panel: PanelState;
+  root: PanelLayoutNode;
+  postCloseRoot: PanelLayoutNode;
+  focusedPanelId: string | null;
+  columnCount: PanelColumnCount;
+  canvasWidth: number | null;
+  canvasWidthSource: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
+  expandedPanelId: string | null;
+  savedSizesBeforeExpand: SavedExpandSizes[];
+  savedCanvasWidthBeforeExpand?: number | null;
+  savedCanvasWidthSourceBeforeExpand?:
+    import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
+  pendingFocusTabId: string | null;
+  closedTabIds: string[];
+  closedAt: number;
+}
+
 /** Layout snapshot for undo/redo navigation */
 export interface LayoutSnapshot {
   root: PanelLayoutNode;
@@ -231,6 +252,8 @@ export interface WorkspacePanelLayoutState {
   pendingFocusTabId: string | null;
   pendingPanelReveal?: PanelRevealRequest | null;
   recentlyClosed: RecentlyClosedTab[];
+  /** Optional for compatibility with transient states created before column-close history. */
+  recentlyClosedColumns?: Collection<RecentlyClosedPanelColumn, 'historyId'>;
   layoutHistory: LayoutSnapshot[];
   historyIndex: number;
   historyLoaded: boolean;

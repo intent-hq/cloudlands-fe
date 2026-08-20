@@ -15,12 +15,14 @@ import {
 import {
   closeFocusedPanelTab,
   openBlankWorkingPanel,
+  reopenClosedPanelColumn,
   reopenClosedTab,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
   selectPanelColumnCount,
   selectFocusedPanel,
   selectFocusedPanelId,
+  selectLastClosedPanelColumn,
   selectRecentlyClosed,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -67,6 +69,7 @@ interface WorkspaceTabNavigationStore {
       | ReturnType<typeof reopenLastClosedWorkspaceTab>
       | ReturnType<typeof closeFocusedPanelTab>
       | ReturnType<typeof openBlankWorkingPanel>
+      | ReturnType<typeof reopenClosedPanelColumn>
       | ReturnType<typeof reopenClosedTab>
       | ReturnType<typeof toggleSidebar>,
   ): unknown;
@@ -186,15 +189,14 @@ export function reopenWorkspaceTab(
 }
 
 /**
- * Contextual Cmd+Shift+T: reopen whichever closed most recently — a panel tab
- * (including tabs recorded when a whole panel closed) or a workspace tab —
- * by comparing close timestamps across both slices.
+ * Contextual Cmd+Shift+T: reopen the newest panel column, panel tab, or
+ * workspace tab by comparing close timestamps across both slices.
  */
 export function reopenPanelOrWorkspaceTab(
   store: WorkspaceTabNavigationStore,
   currentPath: string,
   navigate: (path: string) => unknown,
-): 'tab' | 'workspace' | null {
+): 'column' | 'tab' | 'workspace' | null {
   const match = currentPath.match(/^\/workspace\/([^/]+)/);
   const workspaceId = match && match[1] !== 'new' ? match[1] : null;
 
@@ -202,14 +204,28 @@ export function reopenPanelOrWorkspaceTab(
   const lastClosedPanelTab = workspaceId
     ? (selectRecentlyClosed.select(store.state, workspaceId)[0] ?? null)
     : null;
+  const lastClosedPanelColumn = workspaceId
+    ? selectLastClosedPanelColumn.select(store.state, workspaceId)
+    : null;
+  const lastPanelClose =
+    lastClosedPanelColumn &&
+    (!lastClosedPanelTab || lastClosedPanelColumn.closedAt >= lastClosedPanelTab.closedAt)
+      ? { kind: 'column' as const, closedAt: lastClosedPanelColumn.closedAt }
+      : lastClosedPanelTab
+        ? { kind: 'tab' as const, closedAt: lastClosedPanelTab.closedAt }
+        : null;
 
   if (
     workspaceId &&
-    lastClosedPanelTab &&
-    (!lastClosedWorkspace || lastClosedPanelTab.closedAt >= lastClosedWorkspace.closedAt)
+    lastPanelClose &&
+    (!lastClosedWorkspace || lastPanelClose.closedAt >= lastClosedWorkspace.closedAt)
   ) {
+    if (lastPanelClose.kind === 'column') {
+      store.dispatch(reopenClosedPanelColumn(workspaceId));
+      return 'column';
+    }
     store.dispatch(reopenClosedTab(workspaceId));
-    return 'tab';
+    return lastPanelClose.kind;
   }
 
   if (lastClosedWorkspace) {
