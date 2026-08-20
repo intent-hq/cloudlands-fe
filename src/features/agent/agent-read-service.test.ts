@@ -41,7 +41,7 @@ import {
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import type { AgentMessage } from '$shared/types';
-import { ensureAgentSession } from './agent-read-service';
+import { ensureAgentSession, refreshAgentSessionAfterEvent } from './agent-read-service';
 import {
   clearPendingAgentDeletions,
   removePendingAgentDeletion,
@@ -201,6 +201,60 @@ describe('agentReadService (fake seam, real store)', () => {
 
     expect(agentsApi.get).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    {
+      direction: 'clear to set',
+      firstMarker: '',
+      latestMarker: 'msg-new-pending',
+    },
+    {
+      direction: 'set to clear',
+      firstMarker: 'msg-old-pending',
+      latestMarker: '',
+    },
+  ])(
+    'runs one trailing event refresh so a $direction burst converges to the newest marker',
+    async ({ direction, firstMarker, latestMarker }) => {
+      const agentId = `agent-marker-${direction.replaceAll(' ', '-')}`;
+      let resolveFirst!: (session: AgentSession) => void;
+      let resolveSecond!: (session: AgentSession) => void;
+      agentsApi.get
+        .mockImplementationOnce(
+          () =>
+            new Promise<AgentSession>((resolve) => {
+              resolveFirst = resolve;
+            }) as never,
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise<AgentSession>((resolve) => {
+              resolveSecond = resolve;
+            }) as never,
+        );
+
+      const leading = ensureAgentSession(agentId);
+      const trailing = refreshAgentSessionAfterEvent(agentId);
+      const duplicateEvent = refreshAgentSessionAfterEvent(agentId);
+      expect(agentsApi.get).toHaveBeenCalledTimes(1);
+
+      resolveFirst(
+        makeSession({ id: agentId, metadata: { pendingQuestionsMessageId: firstMarker } }),
+      );
+      await leading;
+      await vi.waitFor(() => expect(agentsApi.get).toHaveBeenCalledTimes(2));
+
+      resolveSecond(
+        makeSession({ id: agentId, metadata: { pendingQuestionsMessageId: latestMarker } }),
+      );
+      await Promise.all([trailing, duplicateEvent]);
+
+      expect(agentsApi.get).toHaveBeenCalledTimes(2);
+      expect(
+        selectAgentSession.select(appStore.state, agentId)?.metadata?.pendingQuestionsMessageId,
+      ).toBe(latestMarker);
+    },
+  );
 
   // Regression: `agent.get` returns AgentLite (PROTOCOL §5.5) — session
   // metadata + message COUNTS, not the retained transcript. Dispatching that
