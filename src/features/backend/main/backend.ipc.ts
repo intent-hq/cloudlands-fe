@@ -1136,14 +1136,16 @@ async function performSwitchBackend(id: string): Promise<SwitchConnectionResult>
   // (1) Validate + resolve BEFORE any teardown.
   const { config, meta } = await buildConfigForConnection(id);
 
-  // (2) Capture + close the outgoing backend's windows while they're still live.
-  await windowHooks.captureAndClose(fromId);
-
-  // captureAndClose set the window-all-closed teardown guard; restore clears
-  // it at its top. A throw from any step in between would leak the guard and
-  // suppress window-all-closed handling for the rest of the session, so the
-  // finally re-clears it (idempotent — already cleared on the success path).
+  // captureAndClose sets the window-all-closed teardown guard partway through
+  // (after saving sessions, before the destroy loop); restore clears it at its
+  // top. A throw from anywhere in between — including from captureAndClose
+  // itself after the flag is set — would leak the guard and suppress
+  // window-all-closed handling for the rest of the session, so the finally
+  // re-clears it (idempotent — a no-op when unset or already cleared).
   try {
+    // (2) Capture + close the outgoing backend's windows while they're still live.
+    await windowHooks.captureAndClose(fromId);
+
     // (2.5) Cancel + notify any in-flight `host.execStream` while the old client is
     // still connected. Its per-call subscription is bound to the client we are
     // about to dispose (it could not be migrated onto a stable forwarder like the
@@ -1184,7 +1186,13 @@ async function performSwitchBackend(id: string): Promise<SwitchConnectionResult>
     // (5) Restore the incoming backend's windows (now targeting the new daemon).
     await windowHooks.restore(id);
   } finally {
-    await windowHooks.clearTeardownGuard?.();
+    try {
+      await windowHooks.clearTeardownGuard?.();
+    } catch {
+      // Best-effort: a throw from a finally would replace the in-flight
+      // exception, so a rejection here (e.g. the default hook's dynamic
+      // import) must never mask the original switch error.
+    }
   }
 
   // (6) Notify the renderer, and the main process (menu items gated on the

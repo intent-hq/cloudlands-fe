@@ -416,6 +416,51 @@ describe('switch teardown-guard hardening', () => {
     expect(clearTeardownGuard).toHaveBeenCalledTimes(1);
   });
 
+  it('clears the teardown guard when captureAndClose itself throws after setting it', async () => {
+    // The flag is set partway through captureAndClose (before the destroy
+    // loop), so a throw from the destroy loop leaks it unless captureAndClose
+    // runs INSIDE the try/finally.
+    const mod = await loadModule();
+    const captureAndClose = vi.fn(async () => {
+      throw new Error('destroy failed');
+    });
+    const restore = vi.fn(() => {});
+    const clearTeardownGuard = vi.fn(() => {});
+    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, clearTeardownGuard });
+
+    await expect(mod.switchBackend('remote-1')).rejects.toThrow('destroy failed');
+
+    expect(restore).not.toHaveBeenCalled();
+    expect(clearTeardownGuard).toHaveBeenCalledTimes(1);
+  });
+
+  it('a rejecting guard clear never masks the original switch error', async () => {
+    const mod = await loadModule();
+    const captureAndClose = vi.fn(async () => {});
+    const restore = vi.fn(() => {});
+    const clearTeardownGuard = vi.fn(async () => {
+      throw new Error('import failed');
+    });
+    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, clearTeardownGuard });
+    store.setActiveId.mockRejectedValueOnce(new Error('disk gone'));
+
+    // The try block's error surfaces, not the finally's.
+    await expect(mod.switchBackend('remote-1')).rejects.toThrow('disk gone');
+    expect(clearTeardownGuard).toHaveBeenCalledTimes(1);
+  });
+
+  it('a rejecting guard clear does not fail an otherwise-successful switch', async () => {
+    const mod = await loadModule();
+    const captureAndClose = vi.fn(async () => {});
+    const restore = vi.fn(() => {});
+    const clearTeardownGuard = vi.fn(async () => {
+      throw new Error('import failed');
+    });
+    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, clearTeardownGuard });
+
+    await expect(mod.switchBackend('remote-1')).resolves.toEqual({ activeId: 'remote-1' });
+  });
+
   it('runs the (idempotent) guard clear after restore on a successful switch', async () => {
     const mod = await loadModule();
     const order: string[] = [];
