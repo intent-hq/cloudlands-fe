@@ -161,6 +161,49 @@ describe('gracefulShutdown call ordering (AST)', () => {
     expect(calls.some((c) => c.text === 'agentBackendHandler.persistShutdownState')).toBe(false);
   });
 
+  it('window-all-closed ignores the event during a backend-switch window teardown (HUD-restore regression)', () => {
+    // A backend switch destroys every window between captureAndClose and
+    // restore, firing window-all-closed mid-switch. Without an early-return
+    // guard on isBackendSwitchWindowTeardownInProgress(), the darwin branch
+    // deletes window-sessions.json (the file the switch just wrote) so the
+    // restore half finds nothing — the user-visible symptom was the HUD (and
+    // any extra windows) not reopening after switching backends. The guard
+    // must run BEFORE the fs.unlinkSync teardown and any quit-flow calls.
+    const sf = parseIndex();
+    const handler = findWindowAllClosedHandler(sf);
+    const calls = callsitesIn(handler.body!);
+    const guardIdx = calls.findIndex((c) => c.text === 'isBackendSwitchWindowTeardownInProgress');
+    expect(guardIdx).toBeGreaterThan(-1);
+    const unlinkIdx = calls.findIndex((c) => c.text === 'fs.unlinkSync');
+    const promptIdx = calls.findIndex((c) => c.text === 'confirmQuitWithRunningAgents');
+    expect(unlinkIdx).toBeGreaterThan(-1);
+    expect(promptIdx).toBeGreaterThan(-1);
+    expect(guardIdx).toBeLessThan(unlinkIdx);
+    expect(guardIdx).toBeLessThan(promptIdx);
+
+    // The guard must early-return: a bare `return;` inside an IfStatement
+    // conditioned on the teardown check, positioned before the unlink call.
+    let guarded = false;
+    const findGuard = (n: ts.Node) => {
+      if (guarded) return;
+      if (
+        ts.isIfStatement(n) &&
+        n.expression.getText().includes('isBackendSwitchWindowTeardownInProgress') &&
+        n.pos < calls[unlinkIdx].pos
+      ) {
+        const hasReturn = (m: ts.Node): boolean =>
+          ts.isReturnStatement(m) || ts.forEachChild(m, hasReturn) === true;
+        if (hasReturn(n.thenStatement)) {
+          guarded = true;
+          return;
+        }
+      }
+      ts.forEachChild(n, findGuard);
+    };
+    findGuard(handler.body!);
+    expect(guarded).toBe(true);
+  });
+
   it('window-all-closed invokes the running-agent prompt BEFORE any backend teardown (or delegates to gracefulShutdown)', () => {
     const sf = parseIndex();
     const handler = findWindowAllClosedHandler(sf);
