@@ -11,6 +11,7 @@
 import { webContents, ipcMain } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
+import { isBrowserEmulatedSize } from '../../../shared/ipc/workspace-command-payloads';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 
 const logger = new Logger('EmbeddedBrowserCdp');
@@ -46,6 +47,12 @@ interface PanelBrowserTab {
   closable?: boolean;
   /** Persisted owner when the tab is agent-owned (monorepo#2857); null/absent = unowned. */
   ownerAgentId?: string | null;
+  /**
+   * Persisted emulated viewport when the tab is agent-owned (monorepo#2857);
+   * absent on unowned tabs and on layouts persisted before sizes were
+   * recorded (those rehydrate at the default viewport).
+   */
+  emulatedSize?: { width: number; height: number };
 }
 
 /**
@@ -1030,7 +1037,9 @@ class EmbeddedBrowserCdpService {
    * Re-seed the ownership registry from a renderer tab-list reply so
    * persisted ownership survives an app restart (monorepo#2857). Existing
    * in-memory records win (they may carry a requestedUrl / size the layout
-   * does not); rehydrated records get the default viewport until resized.
+   * does not); rehydrated records restore the layout's persisted emulated
+   * size, falling back to the default viewport when none was persisted
+   * (pre-size layouts).
    */
   private hydrateOwnershipFromPanelTabs(tabs: PanelBrowserTab[]): void {
     for (const tab of tabs) {
@@ -1039,13 +1048,17 @@ class EmbeddedBrowserCdpService {
       // deletion already committed — never resurrect those (monorepo#2857).
       if (this.clearedAgentTombstones.has(tab.ownerAgentId)) continue;
       if (this.tabOwnership.has(tab.tabId)) continue;
+      const emulatedSize = isBrowserEmulatedSize(tab.emulatedSize)
+        ? { width: tab.emulatedSize.width, height: tab.emulatedSize.height }
+        : { ...DEFAULT_AGENT_VIEWPORT };
       this.tabOwnership.set(tab.tabId, {
         ownerAgentId: tab.ownerAgentId,
-        emulatedSize: { ...DEFAULT_AGENT_VIEWPORT },
+        emulatedSize,
       });
       logger.info('Rehydrated tab ownership from panel layout', {
         tabId: tab.tabId,
         ownerAgentId: tab.ownerAgentId,
+        ...emulatedSize,
       });
       // The tab may have registered before its ownership was known (restart
       // races dom-ready against the first tab-list reply) — apply now.
@@ -1073,9 +1086,12 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Notify the renderer that a tab's owner changed (successful claim) so the
-   * panel layout persists `ownerAgentId` with the tab (monorepo#2857).
-   * Fire-and-forget, mirroring notifyTabNavigated.
+   * Notify the renderer that a tab's owner changed (successful claim) or its
+   * emulated viewport changed (resizeTab) so the panel layout persists
+   * `ownerAgentId` and `emulatedSize` with the tab (monorepo#2857).
+   * Fire-and-forget, mirroring notifyTabNavigated. The tab's current
+   * emulated size from the ownership registry rides along so the size
+   * survives restart.
    */
   notifyTabOwnerChanged(
     tabId: string,
@@ -1083,10 +1099,12 @@ class EmbeddedBrowserCdpService {
     ownerAgentId: string,
   ): void {
     if (!tabId || typeof workspaceId !== 'string' || workspaceId.length === 0) return;
+    const emulatedSize = this.tabOwnership.get(tabId)?.emulatedSize;
     sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.TAB_OWNER_CHANGED, {
       tabId,
       workspaceId,
       ownerAgentId,
+      ...(emulatedSize === undefined ? {} : { emulatedSize: { ...emulatedSize } }),
     });
   }
 

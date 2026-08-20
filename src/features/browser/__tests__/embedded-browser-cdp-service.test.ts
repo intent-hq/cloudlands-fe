@@ -47,6 +47,7 @@ type PanelTab = {
   title: string;
   closable?: boolean;
   ownerAgentId?: string;
+  emulatedSize?: { width: number; height: number };
 };
 
 /** Fake live webview backing a mounted tab. */
@@ -439,8 +440,58 @@ describe('tab ownership registry (#2857)', () => {
     expect(service.getTabOwner('tab-owned')).toBeUndefined();
     await expect(service.resolveTabOwner('tab-owned', 'ws-1')).resolves.toBe('agent-1');
     await expect(service.resolveTabOwner('tab-user', 'ws-1')).resolves.toBeUndefined();
-    // Rehydrated ownership gets the default viewport until resized.
+    // No persisted size (pre-size layout): the default viewport applies.
     expect(service.getTabEmulatedSize('tab-owned')).toEqual({ width: 1280, height: 800 });
+  });
+
+  it('rehydrates the persisted emulated size instead of the default viewport (restart)', async () => {
+    const service = await loadService();
+    wireRenderer([
+      {
+        tabId: 'tab-sized',
+        url: 'http://a/',
+        title: 'A',
+        ownerAgentId: 'agent-1',
+        emulatedSize: { width: 390, height: 844 },
+      },
+    ]);
+
+    await expect(service.resolveTabOwner('tab-sized', 'ws-1')).resolves.toBe('agent-1');
+    expect(service.getTabEmulatedSize('tab-sized')).toEqual({ width: 390, height: 844 });
+  });
+
+  it('rehydration falls back to the default viewport on a malformed persisted size', async () => {
+    const service = await loadService();
+    wireRenderer([
+      {
+        tabId: 'tab-bad-size',
+        url: 'http://a/',
+        title: 'A',
+        ownerAgentId: 'agent-1',
+        emulatedSize: { width: -1, height: Number.NaN },
+      },
+    ]);
+
+    await expect(service.resolveTabOwner('tab-bad-size', 'ws-1')).resolves.toBe('agent-1');
+    expect(service.getTabEmulatedSize('tab-bad-size')).toEqual({ width: 1280, height: 800 });
+  });
+
+  it('notifyTabOwnerChanged carries the current emulated size so the renderer persists it', async () => {
+    const service = await loadService();
+    service.setTabOwner('tab-1', 'agent-1', undefined, { width: 1024, height: 768 });
+    service.resizeTab('tab-1', 390, 844);
+
+    service.notifyTabOwnerChanged('tab-1', 'ws-1', 'agent-1');
+    expect(mocks.sendToWorkspaceWindows).toHaveBeenCalledWith(
+      'ws-1',
+      IPC_CHANNELS.BROWSER.TAB_OWNER_CHANGED,
+      {
+        tabId: 'tab-1',
+        workspaceId: 'ws-1',
+        ownerAgentId: 'agent-1',
+        emulatedSize: { width: 390, height: 844 },
+      },
+    );
   });
 
   it('listAllTabs annotates tabs with their owner and emulated size', async () => {

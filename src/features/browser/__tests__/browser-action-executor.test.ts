@@ -668,6 +668,7 @@ describe('browser-action-executor', () => {
         undefined,
         'agent-1',
         'tab-existing',
+        { width: 1280, height: 800 },
       );
       expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledExactlyOnceWith(
         'tab-existing',
@@ -964,6 +965,8 @@ describe('browser-action-executor', () => {
         'http://localhost:3000/',
         undefined,
         'agent-1',
+        undefined,
+        { width: 1280, height: 800 },
       );
     });
 
@@ -1717,6 +1720,8 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'agent-1',
+        undefined,
+        { width: 1280, height: 800 },
       );
     });
 
@@ -1796,6 +1801,8 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'agent-1',
+        undefined,
+        { width: 1280, height: 800 },
       );
       // The new tab is owned at open time so it counts as the agent's own; a
       // non-tunneled open clears any stale requested-URL identity, and the
@@ -2556,6 +2563,42 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(true);
       expect(embeddedBrowserCdp.resizeTab).toHaveBeenCalledWith('tab-1', 390, 844);
       expect(result.results[0]?.result).toEqual({ tabId: 'tab-1', width: 390, height: 844 });
+    });
+
+    it('persists the new size on the layout tab after a successful resize (monorepo#2857)', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
+      vi.mocked(embeddedBrowserCdp.resizeTab).mockReturnValueOnce({ width: 390, height: 844 });
+      vi.mocked(embeddedBrowserCdp.getTabOwner).mockReturnValueOnce('agent-1');
+
+      await executeActions(
+        { actions: [{ action: 'resizeTab', tabId: 'tab-1', width: 390, height: 844 }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      // notifyTabOwnerChanged re-broadcasts the owner with the tab's current
+      // emulated size so the renderer persists it across restarts.
+      expect(embeddedBrowserCdp.notifyTabOwnerChanged).toHaveBeenCalledWith(
+        'tab-1',
+        'ws-1',
+        'agent-1',
+      );
+    });
+
+    it('does not send a persistence notification when the resize fails (unowned tab)', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resizeTab).mockReturnValueOnce(undefined);
+
+      await executeActions(
+        { actions: [{ action: 'resizeTab', tabId: 'tab-1', width: 390 }] },
+        mockOpenTabFn,
+        undefined,
+        'ws-1',
+      );
+
+      expect(embeddedBrowserCdp.notifyTabOwnerChanged).not.toHaveBeenCalled();
     });
 
     it('omitted height keeps the current emulated height', async () => {

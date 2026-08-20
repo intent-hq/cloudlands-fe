@@ -47,7 +47,8 @@ const logger = new Logger('BrowserIPC');
  * (intent-hq/monorepo#2541). `allowDuplicate` is forwarded so the renderer's
  * own equivalent-tab dedupe doesn't override an explicit request for a
  * genuinely new tab. `ownerAgentId` (agent opens) is persisted with the tab
- * so ownership survives restart (monorepo#2857).
+ * so ownership survives restart (monorepo#2857), and `emulatedSize` (agent
+ * opens) rides along so the emulated viewport survives restart too.
  */
 function openBrowserTab(
   url: string,
@@ -58,6 +59,7 @@ function openBrowserTab(
   pin?: boolean,
   ownerAgentId?: string,
   replaceTabId?: string,
+  emulatedSize?: { width: number; height: number },
 ): { success: boolean; message: string; tabId?: string } {
   const workspacePayload = workspaceCommandPayload(workspaceId);
   if (!workspacePayload) {
@@ -104,6 +106,7 @@ function openBrowserTab(
       ...(pin === undefined ? {} : { pin }),
       ...(ownerAgentId === undefined ? {} : { ownerAgentId }),
       ...(replaceTabId === undefined ? {} : { replaceTabId }),
+      ...(emulatedSize === undefined ? {} : { emulatedSize }),
     },
   );
   if (!delivery.delivered) {
@@ -283,7 +286,7 @@ export async function executeBrowserActions(
 ): Promise<ExecutionResult> {
   return executeActions(
     { actions, tabId },
-    (url, position, allowDuplicate, requestedUrl, pin, ownerAgentId, replaceTabId) =>
+    (url, position, allowDuplicate, requestedUrl, pin, ownerAgentId, replaceTabId, emulatedSize) =>
       openBrowserTab(
         url,
         position,
@@ -293,6 +296,7 @@ export async function executeBrowserActions(
         pin,
         ownerAgentId,
         replaceTabId,
+        emulatedSize,
       ),
     agentId,
     workspaceId,

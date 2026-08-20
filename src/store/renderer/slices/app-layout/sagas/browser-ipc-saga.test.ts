@@ -888,6 +888,140 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
+  // Persisted emulated size (monorepo#2857): the size rides with the owner in
+  // both directions — list replies carry it to main for rehydration, and
+  // owner-changed events (claim / resizeTab) persist it on the layout tab.
+  it('includes the persisted emulatedSize of owned tabs in list replies (valid sizes only)', async () => {
+    const task = start();
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: {
+              one: {
+                tabs: [
+                  {
+                    id: 'tab-owned',
+                    type: 'browser',
+                    browserUrl: 'http://a/',
+                    title: 'A',
+                    ownerAgentId: 'agent-1',
+                    emulatedSize: { width: 390, height: 844 },
+                  },
+                  {
+                    id: 'tab-bad-size',
+                    type: 'browser',
+                    browserUrl: 'http://b/',
+                    title: 'B',
+                    ownerAgentId: 'agent-2',
+                    emulatedSize: { width: -1, height: 0 },
+                  },
+                  { id: 'tab-user', type: 'browser', browserUrl: 'http://c/', title: 'C' },
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    await emit({ workspaceId: 'ws-1', requestId: 'req-size' }, 'browser:list-tabs-request');
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
+      requestId: 'req-size',
+      tabs: [
+        {
+          tabId: 'tab-owned',
+          url: 'http://a/',
+          title: 'A',
+          closable: true,
+          ownerAgentId: 'agent-1',
+          emulatedSize: { width: 390, height: 844 },
+        },
+        {
+          tabId: 'tab-bad-size',
+          url: 'http://b/',
+          title: 'B',
+          closable: true,
+          ownerAgentId: 'agent-2',
+        },
+        { tabId: 'tab-user', url: 'http://c/', title: 'C', closable: true },
+      ],
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('persists the emulatedSize from a tab-owner-changed event (and tolerates its absence)', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: { one: { tabs: [{ id: 'tab-1', type: 'browser' }] } },
+          },
+        },
+      },
+    };
+
+    await emit(
+      {
+        workspaceId: 'ws-1',
+        tabId: 'tab-1',
+        ownerAgentId: 'agent-1',
+        emulatedSize: { width: 390, height: 844 },
+      },
+      'browser:tab-owner-changed',
+    );
+    // Legacy/size-less payload: owner only.
+    await emit(
+      { workspaceId: 'ws-1', tabId: 'tab-1', ownerAgentId: 'agent-1' },
+      'browser:tab-owner-changed',
+    );
+
+    expect(actions).toMatchObject([
+      {
+        type: 'panelLayout/setTabOwnerAgent',
+        payload: ['ws-1', 'tab-1', 'agent-1', { width: 390, height: 844 }],
+      },
+      {
+        type: 'panelLayout/setTabOwnerAgent',
+        payload: ['ws-1', 'tab-1', 'agent-1'],
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('persists the emulatedSize from an agent open payload on the new tab', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({
+      url: 'https://sized.test',
+      workspaceId: 'ws-1',
+      ownerAgentId: 'agent-1',
+      emulatedSize: { width: 1024, height: 768 },
+    });
+
+    expect(actions).toMatchObject([
+      {
+        type: 'panelLayout/openTabInNewRootColumn',
+        payload: {
+          wsId: 'ws-1',
+          tab: {
+            ...TAB('https://sized.test'),
+            ownerAgentId: 'agent-1',
+            emulatedSize: { width: 1024, height: 768 },
+          },
+        },
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   describe('background hydration for hosted-but-unvisited workspaces (monorepo#2789)', () => {
     const startWithReducer = () => {
       const actions: unknown[] = [];

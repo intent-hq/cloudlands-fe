@@ -430,6 +430,7 @@ async function executeAction(
     pin?: boolean,
     ownerAgentId?: string,
     replaceTabId?: string,
+    emulatedSize?: { width: number; height: number },
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,
@@ -797,19 +798,37 @@ async function executeAction(
         // one (which could silently hand the agent a user-opened tab).
         // Rewritten opens pass the original requested URL so the renderer
         // persists it with the tab and a restart can re-run the rewrite
-        // (intent-hq/monorepo#2789). Agent opens pass the owner so the
-        // renderer persists ownership with the tab (monorepo#2857).
+        // (intent-hq/monorepo#2789). Agent opens pass the owner AND the
+        // emulated viewport so the renderer persists both with the tab and
+        // a restart rehydrates ownership at the actual size (monorepo#2857).
         // The resolved replace target (when any) is bound into the payload
         // so the renderer adopts exactly the checked tab (TOCTOU, #2857).
-        const result = openTabFn(
-          finalRewrite.url,
-          action.position,
-          agentId ? true : action.allowDuplicate,
-          finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
-          action.pin,
-          agentId,
-          ...(replaceTargetTabId === undefined ? [] : ([replaceTargetTabId] as const)),
-        );
+        const emulatedSize = agentId
+          ? {
+              width: action.width ?? DEFAULT_AGENT_VIEWPORT.width,
+              height: action.height ?? DEFAULT_AGENT_VIEWPORT.height,
+            }
+          : undefined;
+        const result =
+          replaceTargetTabId === undefined && emulatedSize === undefined
+            ? openTabFn(
+                finalRewrite.url,
+                action.position,
+                agentId ? true : action.allowDuplicate,
+                finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
+                action.pin,
+                agentId,
+              )
+            : openTabFn(
+                finalRewrite.url,
+                action.position,
+                agentId ? true : action.allowDuplicate,
+                finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
+                action.pin,
+                agentId,
+                replaceTargetTabId,
+                emulatedSize,
+              );
         // The id the caller can address: the adopted existing tab on a
         // replace, otherwise the pre-generated id of the new tab.
         const effectiveTabId =
@@ -829,10 +848,7 @@ async function executeAction(
             effectiveTabId,
             agentId,
             openTabTarget.tunneled ? action.url : null,
-            {
-              width: action.width ?? DEFAULT_AGENT_VIEWPORT.width,
-              height: action.height ?? DEFAULT_AGENT_VIEWPORT.height,
-            },
+            emulatedSize,
           );
           // A replace adopted an existing tab the renderer never saw an
           // ownerAgentId open-payload for — sync it so the layout persists
@@ -961,6 +977,13 @@ async function executeAction(
             // i18n-ignore (agent-facing protocol error, not user-facing)
             error: `Tab ${action.tabId} is not agent-owned, so it has no emulated viewport to resize — unowned (user) tabs are always native. Claim it first with { action: "claimTab", tabId: "${action.tabId}", width: <px> }.`,
           };
+        }
+        // Persist the new size on the panel-layout tab so it survives
+        // restart alongside the owner (monorepo#2857). The tab is owned
+        // (resizeTab just succeeded), so an owner is always present.
+        const sizeOwner = embeddedBrowserCdp.getTabOwner(action.tabId);
+        if (sizeOwner) {
+          embeddedBrowserCdp.notifyTabOwnerChanged(action.tabId, workspaceId, sizeOwner);
         }
         return {
           action: 'resizeTab',
@@ -1156,6 +1179,7 @@ export async function executeActions(
     pin?: boolean,
     ownerAgentId?: string,
     replaceTabId?: string,
+    emulatedSize?: { width: number; height: number },
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,
