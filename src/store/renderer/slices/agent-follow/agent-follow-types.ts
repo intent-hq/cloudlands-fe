@@ -9,7 +9,7 @@ type AgentColor = {
   gradient: string;
 };
 
-type PendingChange = {
+export type PendingChange = {
   file: string;
   content: string;
   isAddition: boolean;

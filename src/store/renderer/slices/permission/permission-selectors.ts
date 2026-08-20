@@ -2,7 +2,7 @@ import { store } from '../../store';
 import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { PermissionRequest } from './permission-slice';
 
-const selectPermissionRequestsCollection = store.createSelector(
+export const selectPermissionRequestsCollection = store.createSelector(
   (state): Collection<PermissionRequest, 'requestId'> => {
     return state.permission.requests;
   },
