@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.73.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.72.0...v2.73.0) (2026-08-20)
+
+
+### 🚀 Features
+
+* show remote daemon hostname in HUD footer system zone ([#1481](https://github.com/intent-hq/cloudlands-fe/issues/1481)) ([ce0c3e9](https://github.com/intent-hq/cloudlands-fe/commit/ce0c3e9e7e16ccffd25d9ba877e4a18c31e8f97a))
+
+
+### 🐛 Bug Fixes
+
+* rename sidebar status group Complete to Completed ([#1479](https://github.com/intent-hq/cloudlands-fe/issues/1479)) ([6068202](https://github.com/intent-hq/cloudlands-fe/commit/60682026a1b6d12d608c3089decca2e93770e260))
+
 ## [2.72.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.71.0...v2.72.0) (2026-08-20)
 
 
