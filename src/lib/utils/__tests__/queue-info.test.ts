@@ -3,6 +3,7 @@ import {
   getQueueInfo,
   stripDequeueWaitNote,
   shouldSuppressQueueDivider,
+  isBatchedDeliverySeam,
   type QueueDividerTurn,
 } from '../queue-info';
 
@@ -35,6 +36,25 @@ describe('getQueueInfo', () => {
     expect(getQueueInfo(undefined)).toBeNull();
     expect(getQueueInfo(null)).toBeNull();
     expect(getQueueInfo({})).toBeNull();
+  });
+
+  it('extracts a non-empty batchId from a batch-flushed row (PROTOCOL §5.5)', () => {
+    const info = getQueueInfo({
+      queueInfo: { queuedAt: '2026-01-01T11:58:00Z', waitedMs: 120000, batchId: 'batch-abc' },
+    });
+    expect(info).toEqual({
+      queuedAt: '2026-01-01T11:58:00Z',
+      waitedMs: 120000,
+      batchId: 'batch-abc',
+    });
+  });
+
+  it('omits batchId when absent, empty, or malformed without invalidating queueInfo', () => {
+    const base = { queuedAt: '2026-01-01T11:58:00Z', waitedMs: 1000 };
+    expect(getQueueInfo({ queueInfo: base })?.batchId).toBeUndefined();
+    expect(getQueueInfo({ queueInfo: { ...base, batchId: '' } })?.batchId).toBeUndefined();
+    expect(getQueueInfo({ queueInfo: { ...base, batchId: '   ' } })?.batchId).toBeUndefined();
+    expect(getQueueInfo({ queueInfo: { ...base, batchId: 42 } })).toEqual(base);
   });
 
   it('returns null for malformed queueInfo', () => {
@@ -129,5 +149,69 @@ describe('shouldSuppressQueueDivider', () => {
     const orphan: QueueDividerTurn = { userMessage: null, assistantMessages: [{}] };
     expect(shouldSuppressQueueDivider(orphan, queuedTurn())).toBe(false);
     expect(shouldSuppressQueueDivider(queuedTurn(), orphan)).toBe(false);
+  });
+});
+
+describe('isBatchedDeliverySeam', () => {
+  // PROTOCOL §5.5-shaped metadata, exactly as intentd stamps drained rows.
+  const batchedMetadata = (batchId: string) => ({
+    queueInfo: { queuedAt: '2026-01-01T11:58:00Z', waitedMs: 120000, batchId },
+  });
+
+  const batchedTurn = (batchId: string): QueueDividerTurn => ({
+    userMessage: { metadata: batchedMetadata(batchId) },
+    assistantMessages: [],
+  });
+
+  it('matches two adjacent turns sharing a non-empty batchId', () => {
+    expect(isBatchedDeliverySeam(batchedTurn('batch-1'), batchedTurn('batch-1'))).toBe(true);
+  });
+
+  it('does not match different batchIds', () => {
+    expect(isBatchedDeliverySeam(batchedTurn('batch-1'), batchedTurn('batch-2'))).toBe(false);
+  });
+
+  it('does not match when batchId is absent on either side (older daemons)', () => {
+    const unbatched: QueueDividerTurn = {
+      userMessage: {
+        metadata: { queueInfo: { queuedAt: '2026-01-01T11:58:00Z', waitedMs: 120000 } },
+      },
+      assistantMessages: [],
+    };
+    expect(isBatchedDeliverySeam(unbatched, batchedTurn('batch-1'))).toBe(false);
+    expect(isBatchedDeliverySeam(batchedTurn('batch-1'), unbatched)).toBe(false);
+    expect(isBatchedDeliverySeam(unbatched, unbatched)).toBe(false);
+  });
+
+  it('does not match across assistant output (rows no longer adjacent)', () => {
+    const answered: QueueDividerTurn = {
+      userMessage: { metadata: batchedMetadata('batch-1') },
+      assistantMessages: [{}],
+    };
+    expect(isBatchedDeliverySeam(answered, batchedTurn('batch-1'))).toBe(false);
+  });
+
+  it('matches wake/event-notification cards carrying the same batchId', () => {
+    const wakeTurn = (batchId: string): QueueDividerTurn => ({
+      userMessage: {
+        metadata: {
+          type: 'event_notification',
+          eventTypes: ['file:modified'],
+          ...batchedMetadata(batchId),
+        },
+      },
+      assistantMessages: [],
+    });
+    expect(isBatchedDeliverySeam(wakeTurn('batch-1'), wakeTurn('batch-1'))).toBe(true);
+    expect(isBatchedDeliverySeam(batchedTurn('batch-1'), wakeTurn('batch-1'))).toBe(true);
+    expect(isBatchedDeliverySeam(wakeTurn('batch-1'), batchedTurn('batch-1'))).toBe(true);
+  });
+
+  it('never matches without a next turn or without user messages', () => {
+    expect(isBatchedDeliverySeam(batchedTurn('batch-1'), null)).toBe(false);
+    expect(isBatchedDeliverySeam(batchedTurn('batch-1'), undefined)).toBe(false);
+    const orphan: QueueDividerTurn = { userMessage: null, assistantMessages: [] };
+    expect(isBatchedDeliverySeam(orphan, batchedTurn('batch-1'))).toBe(false);
+    expect(isBatchedDeliverySeam(batchedTurn('batch-1'), orphan)).toBe(false);
   });
 });

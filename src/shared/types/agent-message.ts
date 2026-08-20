@@ -113,10 +113,13 @@ export interface MessageMetadata {
   contextReferences?: any[];
 
   // Queued-message delivery info stamped by the daemon on drained queue
-  // entries (PROTOCOL §5.5 "Dequeue-wait annotation")
+  // entries (PROTOCOL §5.5 "Dequeue-wait annotation"). `batchId` is shared by
+  // every row drained in one multi-message batch flush; absent on
+  // single-message deliveries and on rows from older daemons.
   queueInfo?: {
     queuedAt: string;
     waitedMs: number;
+    batchId?: string;
   };
 
   // Allow additional properties
