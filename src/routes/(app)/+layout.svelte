@@ -945,11 +945,7 @@
               : 'rounded-xl bg-sidebar border border-border shadow-sm'}"
             aria-label={m.layout_appShell_mainContent_ariaLabel()}
           >
-            <div
-              class="flex-1 min-h-0"
-              class:overflow-hidden={showWorkspaceColumns}
-              class:overflow-auto={!showWorkspaceColumns}
-            >
+            <div class="flex-1 min-h-0 overflow-hidden">
               {#if showWorkspaceColumns}
                 <WorkspaceColumnsView
                   onHorizontalOverlapChange={(overlap) => (workspaceColumnsOverlap = overlap)}

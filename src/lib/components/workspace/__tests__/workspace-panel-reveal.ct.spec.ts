@@ -348,6 +348,69 @@ test('explicit existing-panel focus reveals with minimum horizontal movement', a
   ).toHaveCount(2);
 });
 
+test('keeps a long production Markdown file open vertically contained', async ({ mount, page }) => {
+  const component = await mount(WorkspaceColumnsRevealHarness, {
+    props: { viewportWidth: 400, zoom: 1, workspaceKey: 'long-markdown', standalone: true },
+  });
+  await requireReadyHarness(component, page);
+  const state = component.locator('[data-reveal-state]');
+
+  const measure = () =>
+    component.evaluate((root) => {
+      const panels = [...root.querySelectorAll<HTMLElement>('[data-panel-id]')];
+      const panel = panels.at(-1) ?? null;
+      const inset = panel?.closest('[data-testid="panel-workspace-inset"]') as HTMLElement | null;
+      const markdown = panel?.querySelector<HTMLElement>('.markdown-file-editor') ?? null;
+      const outerScrollHost = root.querySelector<HTMLElement>(
+        '[data-testid="production-workspace-scroll-host"]',
+      );
+      const panelRect = panel?.getBoundingClientRect();
+      return {
+        windowScrollY: window.scrollY,
+        documentScrollHeight: document.documentElement.scrollHeight,
+        documentClientHeight: document.documentElement.clientHeight,
+        outerScrollTop: outerScrollHost?.scrollTop ?? null,
+        outerScrollHeight: outerScrollHost?.scrollHeight ?? null,
+        outerClientHeight: outerScrollHost?.clientHeight ?? null,
+        columnsScrollTop: (root.querySelector('[data-workspace-columns]') as HTMLElement | null)
+          ?.scrollTop,
+        insetScrollTop: inset?.scrollTop ?? null,
+        panelTop: panelRect?.top ?? null,
+        panelBottom: panelRect?.bottom ?? null,
+        panelHeight: panelRect?.height ?? null,
+        markdownScrollHeight: markdown?.scrollHeight ?? null,
+        markdownClientHeight: markdown?.clientHeight ?? null,
+      };
+    });
+
+  const before = await measure();
+  await component.locator('[data-open-readme]').click();
+  await expect(state).toHaveAttribute('data-panel-count', '3');
+  await expect(state).toHaveAttribute('data-pending-panel-reveal', '');
+  await expect(component.locator('[data-panel-id]').last()).toBeVisible();
+  const afterOpen = await measure();
+  await component.locator('[data-resolve-readme]').click();
+  await expect(component.locator('.markdown-file-editor')).toBeVisible();
+  await expect
+    .poll(() => component.locator('.markdown-file-editor').evaluate((node) => node.scrollHeight))
+    .toBeGreaterThan(2_000);
+  const afterLoad = await measure();
+
+  console.log(JSON.stringify({ before, afterOpen, afterLoad }, null, 2));
+  expect(afterOpen.windowScrollY).toBe(before.windowScrollY);
+  expect(afterLoad.windowScrollY).toBe(before.windowScrollY);
+  expect(afterOpen.outerScrollTop).toBe(before.outerScrollTop);
+  expect(afterLoad.outerScrollTop).toBe(before.outerScrollTop);
+  expect(afterOpen.outerScrollHeight).toBe(before.outerScrollHeight);
+  expect(afterLoad.outerScrollHeight).toBe(before.outerScrollHeight);
+  expect(afterLoad.outerClientHeight).toBe(before.outerClientHeight);
+  expect(afterOpen.columnsScrollTop).toBe(before.columnsScrollTop);
+  expect(afterLoad.columnsScrollTop).toBe(before.columnsScrollTop);
+  expect(afterOpen.documentScrollHeight).toBe(before.documentScrollHeight);
+  expect(afterLoad.documentScrollHeight).toBe(before.documentScrollHeight);
+  expect(afterLoad.markdownScrollHeight).toBeGreaterThan(afterLoad.markdownClientHeight!);
+});
+
 test('panel removal cancels a scheduled reveal without recreating the panel', async ({
   mount,
   page,
