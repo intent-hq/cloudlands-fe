@@ -129,6 +129,7 @@ import {
   type WorkspacePanelLayout,
   type WorkspacePanelLayoutState,
 } from '../panel-layout-types';
+import { countHorizontalPanelColumns } from '../panel-layout-tabless';
 import { selectPanelColumnCount } from '../panel-layout-selectors';
 
 const PERSIST_ACTIONS = [
@@ -477,7 +478,15 @@ function* loadLayoutFromStorage(
   return isStoredLayoutValid(stored) ? stored : 'invalid';
 }
 
-function* handleWorkspaceMountedRestore(
+function* reconcileRestoredPanelColumns(wsId: string): SagaGenerator<boolean> {
+  const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
+  const restoredColumnCount = countHorizontalPanelColumns(workspace.root);
+  if (restoredColumnCount >= workspace.columnCount) return false;
+  yield* put(reconcilePanelColumnCount(wsId, workspace.columnCount, undefined, false));
+  return true;
+}
+
+export function* handleWorkspaceMountedRestore(
   action: ReturnType<typeof workspaceMounted> | ReturnType<typeof panelLayoutScopeMounted>,
 ): SagaGenerator<void> {
   const [wsId] = action.payload;
@@ -505,6 +514,7 @@ function* handleWorkspaceMountedRestore(
     }),
   );
   let completed = false;
+  let repairedColumns = false;
   try {
     yield* put(setRestoreStatus(wsId, 'pending'));
     const stored = yield* call(loadLayoutFromStorage, wsId);
@@ -517,6 +527,7 @@ function* handleWorkspaceMountedRestore(
     } else {
       const normalized = normalizeLayoutForWorkspace(wsId, stored);
       yield* put(initializeLayout(wsId, normalized));
+      repairedColumns = yield* call(reconcileRestoredPanelColumns, wsId);
       yield* put(setRestoreStatus(wsId, 'restored'));
       // Detached (spawn, not fork): re-resolving tunneled tabs goes over IPC
       // (rewrite → reachability probe → tunnel fallback, 1.5s+ per dead
@@ -529,6 +540,7 @@ function* handleWorkspaceMountedRestore(
     }
     restoredUnderBackendIds.add(wsId);
     yield* call(reconcileEmptyRestoredLayout, wsId);
+    if (repairedColumns) yield* call(persistPanelLayout, { payload: { wsId } });
     completed = true;
   } finally {
     // A failed or cancelled restore releases the dedup guard so a later
@@ -854,6 +866,7 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
   if (!isValidWorkspaceId(wsId)) return;
   restoredWorkspaceIds.add(wsId);
   let completed = false;
+  let repairedColumns = false;
   try {
     yield* put(preparePanelLayoutBackendRestore(wsId));
     yield* put(setRestoreStatus(wsId, 'pending'));
@@ -865,6 +878,7 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
     } else {
       const normalized = normalizeLayoutForWorkspace(wsId, stored);
       yield* put(initializeLayout(wsId, normalized));
+      repairedColumns = yield* call(reconcileRestoredPanelColumns, wsId);
       yield* put(setRestoreStatus(wsId, 'restored'));
       // Mirror the mount path: restored tunneled tabs re-resolve against the
       // incoming backend's live tunnel state (monorepo#2789). Detached
@@ -877,6 +891,7 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
     }
     restoredUnderBackendIds.add(wsId);
     yield* call(reconcileEmptyRestoredLayout, wsId);
+    if (repairedColumns) yield* call(persistPanelLayout, { payload: { wsId } });
     completed = true;
   } finally {
     // Mirror the mount path: a failed or cancelled re-restore releases the

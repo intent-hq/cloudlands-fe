@@ -641,6 +641,50 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
+  it('heals and persists a restored two-column count with a one-panel tree', async () => {
+    const selected = panelLayoutReducer(undefined, setPanelColumnCount(WS_1, 2, 10)).byWorkspaceId[
+      WS_1
+    ];
+    const run = startRestoreSaga(layout, [], selected);
+    await settle();
+
+    const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+    const panelIds = workspace.root.type === 'split' ? workspace.root.children : [];
+    const repair = run.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === reconcilePanelColumnCount.type);
+    await cancelSaga(run.task);
+
+    expect(repair).toMatchObject({
+      payload: { wsId: WS_1, count: 2, recordHistory: false },
+    });
+    expect(panelIds).toHaveLength(2);
+    expect(panelIds[0]).toEqual({ type: 'panel', panelId: 'panel-1' });
+    expect(workspace.panels['panel-1']).toMatchObject({
+      activeTabId: tab.id,
+      tabs: [tab],
+    });
+    expect(workspace.focusedPanelId).toBe('panel-1');
+    const missingPanelId = panelIds[1]?.type === 'panel' ? panelIds[1].panelId : '';
+    expect(workspace.panels[missingPanelId]).toEqual({
+      id: missingPanelId,
+      tabs: [],
+      activeTabId: null,
+      pristine: true,
+    });
+    expect(workspace.layoutHistory).toEqual(selected.layoutHistory);
+    expect(mocks.saveHistory).not.toHaveBeenCalled();
+    expect(mocks.setJSON.mock.calls.at(-1)).toEqual([
+      STORAGE_KEY_1,
+      expect.objectContaining({
+        root: workspace.root,
+        panels: workspace.panels,
+        focusedPanelId: 'panel-1',
+        columnCount: 2,
+      }),
+    ]);
+  });
+
   it('restores a legacy initial-agent layout without adding pin state', async () => {
     const legacyAgentTab = {
       ...tab,

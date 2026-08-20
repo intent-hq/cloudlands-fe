@@ -127,6 +127,49 @@ describe('panelLayoutReducer', () => {
       expect(refreshed.byWorkspaceId[WS].columnCount).toBe(2);
     });
 
+    it('reconciles a selected count with a smaller restored tree without recording history', () => {
+      const selected = panelLayoutReducer(undefined, setPanelColumnCount(WS, 2, 10));
+      const restored = panelLayoutReducer(
+        selected,
+        initializeLayout(WS, {
+          root: { type: 'panel', panelId: 'restored' },
+          panels: {
+            restored: {
+              id: 'restored',
+              tabs: [{ id: 'active', type: 'note', title: 'Active', noteId: 'active' }],
+              activeTabId: 'active',
+            },
+          },
+          focusedPanelId: 'restored',
+          columnCount: 1,
+        }),
+      );
+      const history = restored.byWorkspaceId[WS].layoutHistory;
+      const action = reconcilePanelColumnCount(WS, 2, 20, false);
+      const reconciled = panelLayoutReducer(restored, action).byWorkspaceId[WS];
+
+      expect(reconciled.root).toMatchObject({
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'panel', panelId: 'restored' },
+          { type: 'panel', panelId: action.payload.newPanelIds[0] },
+        ],
+      });
+      expect(reconciled.panels.restored).toMatchObject({
+        activeTabId: 'active',
+        tabs: [expect.objectContaining({ id: 'active' })],
+      });
+      expect(reconciled.panels[action.payload.newPanelIds[0]]).toEqual({
+        id: action.payload.newPanelIds[0],
+        tabs: [],
+        activeTabId: null,
+        pristine: true,
+      });
+      expect(reconciled.focusedPanelId).toBe('restored');
+      expect(reconciled.layoutHistory).toBe(history);
+    });
+
     it('accepts the persisted count after entering a new backend namespace', () => {
       let state = panelLayoutReducer(undefined, setPanelColumnCount(WS, 2, 10));
       state = panelLayoutReducer(state, preparePanelLayoutBackendRestore(WS));
