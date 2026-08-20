@@ -3,16 +3,15 @@ name: react/store
 description: >-
   ReactStore import, initialization, disposal, and Store-runtime guidance for the
   React signal Store variant. Use for @augmentcode/themis/react-store,
-  inherited runSaga/dispatch/state behavior, and contrast with
-  Svelte-readable Store or StreamingStore without teaching those call modes.
+  inherited runSaga/dispatch/state behavior, and React signal selector call modes.
 type: sub-skill
 requires:
   - react
   - core/import-boundaries
 sources:
   - "@augmentcode/themis/react-store"
-  - augmentcode/themis:docs/ARCHITECTURE.md
-  - augmentcode/themis:README.md
+  - "@augmentcode/themis/docs/ARCHITECTURE.md"
+  - "@augmentcode/themis/README.md"
 triggers:
   - ReactStore
   - react-store import
@@ -28,11 +27,6 @@ matching `core/*` skills.
 ## Correct import and class choice
 
 - Use `ReactStore` from `@augmentcode/themis/react-store`.
-- Use `Store` from `@augmentcode/themis/svelte-store` only for a separate Svelte
-  app whose direct selector calls should return Svelte readables.
-- Use `StreamingStore` from `@augmentcode/themis/streaming-store` only for a
-  separate stream/Node path whose direct selector calls should return Kefir
-  observables.
 - Do not import React selector internals from `src/*` or `utils/react-selectors/*`.
 
 ```ts
@@ -60,4 +54,4 @@ const dispose = reactStore.init();
 
 - Imports use `@augmentcode/themis/react-store` for `ReactStore`.
 - React examples initialize the Store before signal selector reads.
-- The app path does not mix Svelte readable or Kefir observable Store setup.
+- The app path uses only the public ReactStore runtime and React signal selectors.

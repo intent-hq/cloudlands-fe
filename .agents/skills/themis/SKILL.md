@@ -17,8 +17,8 @@ sources:
   - ./svelte/SKILL.md
   - ./react/SKILL.md
   - ./streaming/SKILL.md
-  - augmentcode/themis:README.md
-  - augmentcode/themis:docs/ARCHITECTURE.md
+  - "@augmentcode/themis/README.md"
+  - "@augmentcode/themis/docs/ARCHITECTURE.md"
 triggers:
   - themis
   - skill router
@@ -92,7 +92,7 @@ When a consuming app asks how to install packaged AI skills, use the same eviden
 - Shared Redux/redux-saga guidance only → `npx themis install-skills:core` (root router plus `setup` and `core`).
 - Use `npx themis install-skills` or `npx themis install-skills:all` only when every package skill family is intentionally needed.
 
-Domain-specific installs refresh stale package-owned files only in the selected bundle scope and preserve unrelated project/third-party skills plus non-selected package skill families. The all-skills flow refreshes all package-owned skill families while still preserving unrelated skills. Package installation itself never copies skills automatically.
+Package installation itself never copies skills automatically. Explicit installs copy to `.agents/skills/themis/`, create or reuse `.claude/skills/themis` as its compatibility link, and preserve collisions with a warning. Repeating a command refreshes package-owned files from its manifest; `npx themis cleanup-skills` removes owned files and links before uninstall. Read the canonical workflow in [@augmentcode/themis/docs/INSTALLATION.md](@augmentcode/themis/docs/INSTALLATION.md) for destination, refresh, verification, cleanup, and maintainer details.
 
 ## Evidence to record in handoff
 

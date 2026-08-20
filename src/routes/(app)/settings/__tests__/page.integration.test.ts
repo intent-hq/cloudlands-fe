@@ -123,9 +123,6 @@ type SettingsCatalog = Awaited<ReturnType<typeof appClient.settings.list>>;
 let settingsCatalogResponse: SettingsCatalog;
 
 beforeAll(() => {
-  (window as unknown as { intentFlags?: { enableReduxLogger: boolean } }).intentFlags = {
-    enableReduxLogger: false,
-  };
   storeContext = initAppStore(appStore);
 });
 

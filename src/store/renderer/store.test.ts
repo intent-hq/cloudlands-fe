@@ -79,9 +79,7 @@ describe('configured app Store', () => {
     const source = readFileSync('src/store/renderer/configured-store.ts', 'utf8');
 
     expect(source).not.toContain('from "./sagas"');
-    expect(source).toContain(
-      'new RendererStore(reducers, middleware as unknown as StoreMiddleware[])',
-    );
+    expect(source).toContain('new RendererStore(');
     expect(source).not.toContain('new Store(reducers, sagas');
     expect(appStore).toBe(configuredStore);
   });

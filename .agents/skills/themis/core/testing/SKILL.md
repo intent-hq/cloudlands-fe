@@ -9,7 +9,7 @@ description: >-
   .isDone). Reducer tests are pure — assert reference equality on no-op
   actions. State-integrity verification must prove derived values live in
   selectors and action/selector/saga owners are not duplicated. Source:
-  docs/TESTING.md, ../SKILL.md §14.
+  @augmentcode/themis/docs/TESTING.md, ../SKILL.md §14.
 type: sub-skill
 library: themis
 requires:
@@ -17,7 +17,7 @@ requires:
   - core/sagas
   - core/state-integrity
 sources:
-  - augmentcode/themis:docs/TESTING.md
+  - "@augmentcode/themis/docs/TESTING.md"
   - ../SKILL.md
 triggers:
   - vi mock typed-redux-saga
@@ -27,7 +27,7 @@ triggers:
 ---
 # Testing — reducer, selector, and saga checks
 
-> Operational testing checklist. Human-facing examples: `docs/TESTING.md`. Saga effect details: `../sagas/SKILL.md`. Source: `../SKILL.md` §14.
+> Operational testing checklist. Human-facing examples: `@augmentcode/themis/docs/TESTING.md`. Saga effect details: `../sagas/SKILL.md`. Source: `../SKILL.md` §14.
 
 ## Use when
 
@@ -116,10 +116,10 @@ type TodosState = { items: string[]; filter: "all" | "open"; loading: boolean; e
 const setFilter = createAction<[filter: TodosState["filter"]]>("todos/setFilter");
 const loadTodos = createAsyncAction<[query: string], { query: string }, string[]>("todos/loadAsync", "todos/load", (query) => ({ query }));
 const initialState: TodosState = { items: [], filter: "all", loading: false, error: "" };
-const todosReducer = createReducer(initialState);
-todosReducer.with(setFilter, (state, { payload: [filter] }) => (state.filter === filter ? state : { ...state, filter }));
-todosReducer.with(loadTodos, (state) => ({ ...state, loading: true, error: "" }));
-todosReducer.with(loadTodos.failure, (state, { payload }) => ({ ...state, loading: false, error: payload.error.message }));
+const todosReducer = createReducer(initialState)
+  .with(setFilter, (state, { payload: [filter] }) => (state.filter === filter ? state : { ...state, filter }))
+  .with(loadTodos, (state) => ({ ...state, loading: true, error: "" }))
+  .with(loadTodos.failure, (state, { payload }) => ({ ...state, loading: false, error: payload.error.message }));
 
 describe("todosReducer", () => {
   it("keeps no-op identity and covers async failure", () => {
@@ -216,11 +216,11 @@ it("claims the todo flow works", () => {
 - Run the smallest relevant test scope first, then broader validation if needed.
 - Run architecture validation for state/actions/selectors/sagas changes when in scope: `npm run validate:architecture` in this repository, or run ESLint with the app's composed domain root config imported from `@augmentcode/themis/eslint-plugins` in a consuming app.
 - Review docs/skills examples after changing them and run the smallest relevant test scope first.
-- Manual review should confirm detailed background stays in `docs/TESTING.md` while this skill keeps only concise, gate-focused examples.
+- Manual review should confirm detailed background stays in `@augmentcode/themis/docs/TESTING.md` while this skill keeps only concise, gate-focused examples.
 
 ## See also
 
-- `docs/TESTING.md` — human reference with reducer, selector, saga, and integration examples.
+- `@augmentcode/themis/docs/TESTING.md` — human reference with reducer, selector, saga, and integration examples.
 - `core/reducers/SKILL.md` — reducer purity and reference equality.
 - Selected Store family selector skill — `.select(state)` selector testing.
 - `core/sagas/SKILL.md` — saga effect and watcher conventions.

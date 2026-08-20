@@ -97,9 +97,6 @@ function installDispatchRecorder() {
 }
 
 beforeEach(() => {
-  (window as unknown as { intentFlags?: { enableReduxLogger: boolean } }).intentFlags = {
-    enableReduxLogger: false,
-  };
   storeContext = initAppStore(appStore);
   appStore.dispatch(setThemePreference('light'));
   appStore.dispatch(

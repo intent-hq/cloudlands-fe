@@ -4,7 +4,7 @@ description: >-
   Assess React state before ReactStore adoption. Inventory useState/useReducer,
   context providers, custom hooks, external stores, derivations, effects, and
   consumers; classify shared/persistent/async-driven state vs component-local UI
-  state. Svelte store/rune assessment rules are non-applicable contrasts only.
+  state.
 type: sub-skill
 requires:
   - react
@@ -28,10 +28,6 @@ Search for state and effect patterns in React files:
 - External stores, event emitters, browser storage, or subscription wrappers.
 - `useMemo`/derived values reused across components.
 - `useEffect` blocks with fetches, timers, storage, subscriptions, or IPC.
-
-Svelte concepts such as `.store.svelte.ts`, `writable`, `derived`, `$state`,
-`$derived`, and `$effect` are not React source patterns. Mention them only when
-explaining why a Svelte migration leaf does not directly apply.
 
 ## Decision framework
 

@@ -22,7 +22,7 @@ triggers:
 ---
 # File Structure & Registration
 
-> Source: `docs/ARCHITECTURE.md` → Slice File Structure + Store Initialization; `../SKILL.md` §9.
+> Source: `@augmentcode/themis/docs/ARCHITECTURE.md` → Slice File Structure + Store Initialization; `../SKILL.md` §9.
 
 ## Setup — slice directory layout
 
@@ -39,7 +39,7 @@ src/slices/{slice-name}/
 
 Each slice directory owns exactly one `*-slice.ts` module and exactly one `*-selectors.ts` module. If a feature needs multiple logical slices, split them into sibling directories named after the slice owners instead of adding multiple slice or selectors files to one directory. Physical paths stay kebab-case, while the logical slice identity used in reducer-map keys and action namespaces is always camelCase (for example `src/slices/user-preferences/user-preferences-slice.ts` registers as `userPreferences` and emits `"userPreferences/updateTheme"`).
 
-The top-level store lives at `src/store.ts` (or wherever you export your `Store` instance) and registers all slices. `docs/ARCHITECTURE.md` shows the short form: `src/slices/<domain>/` with the same filenames.
+The top-level store lives at `src/store.ts` (or wherever you export your `Store` instance) and registers all slices. `@augmentcode/themis/docs/ARCHITECTURE.md` shows the short form: `src/slices/<domain>/` with the same filenames.
 
 ## Core Patterns
 

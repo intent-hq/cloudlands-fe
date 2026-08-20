@@ -4,8 +4,7 @@ description: >-
   Migrate React JSX/TSX components and custom hooks to ReactStore selectors and
   Store-first dispatch. Prefer direct selector signals in components/hooks, use
   selector .useValue(...args) only for necessary hook/plain-value fallback reads,
-  .select(state, ...args) in handlers/tests, and document that Svelte
-  template/readable migration rules are non-applicable contrasts.
+  .select(state, ...args) in handlers/tests.
 type: sub-skill
 requires:
   - react/component-integration
@@ -22,8 +21,8 @@ read in components and custom hooks via direct selector signals where possible,
 use `.useValue(...args)` only when a plain value is necessary, and dispatch through the
 configured `ReactStore` instance.
 
-Svelte `$selector` template syntax, readable initialization rules, `onDestroy`,
-and `lifecycle_outside_component` guidance are not active React migration steps.
+React migration steps use component/custom-hook boundaries and the explicit
+selector call modes described below.
 
 ## Before: context/custom hook consumption
 

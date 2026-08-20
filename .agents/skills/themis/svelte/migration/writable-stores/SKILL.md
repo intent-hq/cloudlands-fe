@@ -52,9 +52,9 @@ const initialState: CounterState = {
 export const setCount = createAction<[value: number]>("counter/setCount");
 export const setUsername = createAction<[value: string]>("counter/setUsername");
 
-export const counterReducer = createReducer<CounterState>(initialState);
-counterReducer.with(setCount, (state, { payload: [value] }) => ({ ...state, count: value }));
-counterReducer.with(setUsername, (state, { payload: [value] }) => ({ ...state, username: value }));
+export const counterReducer = createReducer<CounterState>(initialState)
+  .with(setCount, (state, { payload: [value] }) => ({ ...state, count: value }))
+  .with(setUsername, (state, { payload: [value] }) => ({ ...state, username: value }));
 ```
 
 ## State Updates: `store.set` / `store.update` → `dispatch(action())`
@@ -81,9 +81,9 @@ const initialState: CounterState = { count: 0 };
 export const setCount = createAction<[value: number]>("counter/setCount");
 export const increment = createAction("counter/increment");
 
-export const counterReducer = createReducer<CounterState>(initialState);
-counterReducer.with(setCount, (state, { payload: [value] }) => ({ ...state, count: value }));
-counterReducer.with(increment, (state) => ({ ...state, count: state.count + 1 }));
+export const counterReducer = createReducer<CounterState>(initialState)
+  .with(setCount, (state, { payload: [value] }) => ({ ...state, count: value }))
+  .with(increment, (state) => ({ ...state, count: state.count + 1 }));
 
 // In the component:
 declare const dispatch: (action: ReturnType<typeof setCount> | ReturnType<typeof increment>) => void;
@@ -116,9 +116,9 @@ const initialState: PreferencesState = { theme: "dark", sidebarOpen: true };
 export const setTheme = createAction<[theme: PreferencesState["theme"]]>("preferences/setTheme");
 export const setSidebarOpen = createAction<[open: boolean]>("preferences/setSidebarOpen");
 
-export const preferencesReducer = createReducer<PreferencesState>(initialState);
-preferencesReducer.with(setTheme, (state, { payload: [theme] }) => ({ ...state, theme }));
-preferencesReducer.with(setSidebarOpen, (state, { payload: [sidebarOpen] }) => ({ ...state, sidebarOpen }));
+export const preferencesReducer = createReducer<PreferencesState>(initialState)
+  .with(setTheme, (state, { payload: [theme] }) => ({ ...state, theme }))
+  .with(setSidebarOpen, (state, { payload: [sidebarOpen] }) => ({ ...state, sidebarOpen }));
 ```
 
 ### Array writable → `Collection` when lookup by id becomes important
@@ -135,8 +135,7 @@ type TodosState = { items: Collection<Todo, "id"> };
 const initialState: TodosState = { items: createCollection<Todo, "id">("id") };
 export const todoReceived = createAction<[todo: Todo]>("todos/todoReceived");
 
-export const todosReducer = createReducer<TodosState>(initialState);
-todosReducer.with(
+export const todosReducer = createReducer<TodosState>(initialState).with(
   todoReceived,
   (state, { payload: [todo] }) => ({ ...state, items: upsertItem(state.items, todo) })
 );

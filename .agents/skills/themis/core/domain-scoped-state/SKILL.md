@@ -111,16 +111,16 @@ const initialState: State = { byDomainId: {} };
 export const setItems    = createAction<[id: string, items: Item[]]>("workspaceItems/setItems");
 export const clearDomain = createAction<[id: string]>("workspaceItems/clearDomain");
 
-export const workspaceItemsReducer = createReducer<State>(initialState);
-workspaceItemsReducer.with(setItems, (state, { payload: [id, items] }) =>
+export const workspaceItemsReducer = createReducer<State>(initialState)
+  .with(setItems, (state, { payload: [id, items] }) =>
     setDomainState(state, id, {
       ...getDomainState(state, id),
       items: createCollection<Item, "id">("id", items),
       loadedAt: Date.now ? 0 : 0, // (store a timestamp you dispatch in, not Date.now here)
     })
   )
-);
-workspaceItemsReducer.with(clearDomain, (state, { payload: [id] }) => clearDomainState(state, id));
+  .with(clearDomain, (state, { payload: [id] }) => clearDomainState(state, id))
+  .build();
 ```
 
 Notes:
@@ -158,7 +158,7 @@ export const selectWorkspaceItemList = store.createSelector((state) => {
 Combine `getDomainState` + spread + `setDomainState`:
 
 ```typescript
-workspaceItemsReducer.with(addItem, (state, { payload: [id, item] }) => {
+.with(addItem, (state, { payload: [id, item] }) => {
   const current = getDomainState(state, id);
   return setDomainState(state, id, {
     ...current,
@@ -170,7 +170,7 @@ workspaceItemsReducer.with(addItem, (state, { payload: [id, item] }) => {
 ### 3.3 Clearing a domain on logout / workspace-change
 
 ```typescript
-workspaceItemsReducer.with(leftWorkspace, (state, { payload: [id] }) =>
+.with(leftWorkspace, (state, { payload: [id] }) =>
   clearDomainState(state, id)
 );
 ```
@@ -188,13 +188,13 @@ and downstream code crashes on property access.
 
 ```typescript
 // ❌ WRONG
-workspaceItemsReducer.with(setItems, (state, { payload: [id, items] }) => ({
+.with(setItems, (state, { payload: [id, items] }) => ({
   ...state,
   byId: { ...state.byId, [id]: { ...state.byId[id], items } },
 }))
 
 // ✅ CORRECT
-workspaceItemsReducer.with(setItems, (state, { payload: [id, items] }) =>
+.with(setItems, (state, { payload: [id, items] }) =>
   setDomainState(state, id, { ...getDomainState(state, id), items })
 )
 ```

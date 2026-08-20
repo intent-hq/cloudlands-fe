@@ -19,7 +19,7 @@ triggers:
 ---
 # Import Boundaries
 
-> Source: `../SKILL.md` §2; `package.json` exports map; public `@augmentcode/themis/svelte-store`; hidden root-entry implementation context; `docs/ARCHITECTURE.md` maintainer validation.
+> Source: `../SKILL.md` §2; `package.json` exports map; public `@augmentcode/themis/svelte-store`; hidden root-entry implementation context; `@augmentcode/themis/docs/ARCHITECTURE.md` maintainer validation.
 
 ## Setup — the package export surface
 

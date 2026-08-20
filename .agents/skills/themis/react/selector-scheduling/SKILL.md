@@ -54,14 +54,14 @@ configured `ReactStore` instance and tune selector coalescing only through
 
 - Do not import selector scheduler helpers from package internals or source-shaped
   paths.
-- Do not wrap selector callbacks, selector signals, or `.useValue(...args)` results with ad hoc `memoize`, `cache`, debounce, `setTimeout`, `requestAnimationFrame`, RxJS/Kefir streams, or proxy state just to reduce React renders.
+- Do not wrap selector callbacks, selector signals, or `.useValue(...args)` results with ad hoc `memoize`, `cache`, debounce, `setTimeout`, `requestAnimationFrame`, streams, or proxy state just to reduce React renders.
 - Do not manually subscribe to selector outputs from React components; pass/read the
   selector signal directly, or use `.useValue(...args)` only at necessary plain-value
   boundaries.
 - Do not rely on selector outputs as audit/event streams; they represent the
   latest derived state and may coalesce intermediate writes.
-- Do not replace this React signal scheduling model with Svelte readable or
-  `StreamingStore`/Kefir scheduling guidance in the same React app path.
+- Do not replace this React signal scheduling model with unrelated selector
+  scheduling rules in the same React app path.
 
 ## Examples
 
@@ -222,4 +222,4 @@ export function* pointerAuditSaga() {
 
 - `react/selectors` — building `ReactStore` selectors.
 - `react/selector-lifecycle` — choosing direct signal, `.useValue`, `.select`, `.effect`, and `.withStore` call modes.
-- `docs/SELECTORS.md` — selector memoization and lifecycle rules.
+- `@augmentcode/themis/docs/SELECTORS.md` — selector memoization and lifecycle rules.

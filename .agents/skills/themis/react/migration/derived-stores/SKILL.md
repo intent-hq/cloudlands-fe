@@ -3,8 +3,7 @@ name: react/migration/derived-stores
 description: >-
   Convert shared React derivations to ReactStore selectors. React sources include
   useMemo, derived custom-hook values, context selector logic, and duplicated
-  render calculations; Svelte derived/$derived primitives are non-applicable
-  contrasts.
+  render calculations.
 type: sub-skill
 requires:
   - react/selectors
@@ -21,7 +20,8 @@ selectors with `.select(state, ...args)`, consume migrated values in components
 or custom hooks with direct selector signals first, use `.useValue(...args)` only for
 necessary plain-value fallback reads, and test pure selector logic with `.select`.
 
-React sources include duplicated `useMemo`, derived custom-hook return values,context selector helpers, and render-time calculations reused across components.Svelte `derived` and `$derived` examples are not React source patterns.
+React sources include duplicated `useMemo`, derived custom-hook return values,
+context selector helpers, and render-time calculations reused across components.
 
 ## Before: duplicated React derivation
 
