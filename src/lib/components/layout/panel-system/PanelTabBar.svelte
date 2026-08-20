@@ -41,12 +41,14 @@
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import Fa from 'svelte-fa';
   import { Tooltip, TooltipShortcut } from '$lib/components/ui/tooltip';
+  import { Popover } from 'bits-ui';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { onDestroy, tick } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
+  import { Slider } from '$lib/components/ui/slider';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { startDrag, endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
@@ -266,7 +268,7 @@
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const recentlyClosed$ = selectRecentlyClosed(panelLayoutIdStore);
   const panelColumnCount$ = selectPanelColumnCount(panelLayoutIdStore);
-  const panelColumnCounts = [1, 2, 3, 4] as const;
+  let panelColumnSliderRef = $state<HTMLInputElement | null>(null);
   let preserveStructuralColumnFocus = false;
 
   // Reactive store subscription for specialist names - ensures re-render when specialists change
@@ -391,8 +393,7 @@
     if (!hasAlternativeIdentity && identityMenuOpen) handleIdentityOpenChange(false);
   });
 
-  function handlePanelColumnCountChange(value: string) {
-    const count = Number(value);
+  function handlePanelColumnCountChange(count: number) {
     if (isPanelColumnCount(count)) {
       preserveStructuralColumnFocus = count > $panelColumnCount$;
       appStore.dispatch(
@@ -401,7 +402,12 @@
     }
   }
 
-  function handlePanelColumnMenuCloseAutoFocus(event: Event) {
+  function handlePanelColumnPopoverOpenAutoFocus(event: Event) {
+    event.preventDefault();
+    panelColumnSliderRef?.focus();
+  }
+
+  function handlePanelColumnPopoverCloseAutoFocus(event: Event) {
     if (!preserveStructuralColumnFocus) return;
     event.preventDefault();
     preserveStructuralColumnFocus = false;
@@ -1444,8 +1450,8 @@
 
 {#snippet panelColumnCountMenu()}
   {#if isRightmostPanel}
-    <Menu.Root>
-      <Menu.Trigger>
+    <Popover.Root>
+      <Popover.Trigger>
         {#snippet child({ props })}
           <Button
             {...props}
@@ -1464,26 +1470,48 @@
             {@render panelColumnIcon($panelColumnCount$)}
           </Button>
         {/snippet}
-      </Menu.Trigger>
-      <Menu.Content
-        align="end"
-        side="bottom"
-        class="w-44"
-        aria-label={m.workspace_sidebarHeader_panelColumns_ariaLabel()}
-        onCloseAutoFocus={handlePanelColumnMenuCloseAutoFocus}
-      >
-        <Menu.RadioGroup
-          value={String($panelColumnCount$)}
-          onValueChange={handlePanelColumnCountChange}
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          role="dialog"
+          align="end"
+          side="bottom"
+          sideOffset={4}
+          collisionPadding={8}
+          trapFocus={false}
+          aria-label={m.workspace_sidebarHeader_panelColumns_ariaLabel()}
+          onOpenAutoFocus={handlePanelColumnPopoverOpenAutoFocus}
+          onCloseAutoFocus={handlePanelColumnPopoverCloseAutoFocus}
+          class="z-(--layer-popover) w-72 overflow-auto rounded-(--radius-medium) border border-border bg-popover p-3 text-popover-foreground shadow-(--elevation-overlay) outline-none"
+          style="max-height: var(--bits-popover-content-available-height); max-width: min(calc(100vw - var(--space-4)), calc(var(--bits-popover-content-available-width) - var(--space-2)));"
+          data-panel-column-count-popover
         >
-          {#each panelColumnCounts as option}
-            <Menu.RadioItem value={String(option)}>
-              <span>{panelColumnCountLabel(option)}</span>
-            </Menu.RadioItem>
-          {/each}
-        </Menu.RadioGroup>
-      </Menu.Content>
-    </Menu.Root>
+          <p class="type-caption text-muted-foreground">
+            {m.workspace_sidebarHeader_panelColumns_description()}
+          </p>
+          <div class="mt-3 flex items-center justify-between gap-3">
+            <span class="type-caption font-medium">
+              {m.workspace_sidebarHeader_panelColumns_label()}
+            </span>
+            <output class="type-caption tabular-nums" aria-live="polite">
+              {$panelColumnCount$}
+            </output>
+          </div>
+          <Slider
+            bind:ref={panelColumnSliderRef}
+            value={$panelColumnCount$}
+            min={1}
+            max={4}
+            step={1}
+            aria-label={m.workspace_sidebarHeader_panelColumns_ariaLabel()}
+            aria-valuetext={panelColumnCountLabel($panelColumnCount$)}
+            onValueChange={handlePanelColumnCountChange}
+            class="mt-2 w-full"
+            data-panel-column-count-slider
+          />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   {/if}
 {/snippet}
 

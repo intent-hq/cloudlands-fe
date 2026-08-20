@@ -2546,6 +2546,8 @@
   "layout_resizable_dragToResizeHeight_tooltip": "Zum Ändern der Höhe ziehen, Doppelklick zum Zurücksetzen",
   "layout_titleBar_ariaLabel": "Fenstertitelleiste",
   "workspace_sidebarHeader_panelColumns_ariaLabel": "Panelspalten",
+  "workspace_sidebarHeader_panelColumns_description": "Ändern Sie die Anzahl der Spalten für Panels in diesem Arbeitsbereich. Neu geöffnete Panels werden in der Spalte ganz rechts geöffnet.",
+  "workspace_sidebarHeader_panelColumns_label": "Spalten",
   "workspace_sidebarHeader_panelColumns_currentCount_ariaLabel": "Panelspalten: {count}",
   "workspace_sidebarHeader_panelColumns_currentCount_tooltip": "Anzahl der Panelspalten ändern. Aktuell: {count}",
   "workspace_sidebarHeader_panelColumns_count_one": "{count} Spalte",

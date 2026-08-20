@@ -23,7 +23,11 @@ async function expectGlyphCount(component: Locator, count: 1 | 2 | 3 | 4) {
 
 async function chooseCount(component: Locator, page: Page, count: 1 | 2 | 3 | 4) {
   await component.locator('[data-panel-column-count-trigger]').click();
-  await page.getByRole('menuitemradio', { name: `${count} columns` }).click();
+  await page.getByRole('slider', { name: 'Panel columns' }).evaluate((element, value) => {
+    const slider = element as HTMLInputElement;
+    slider.value = String(value);
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+  }, count);
   await expect(component.getByTestId('panel-layout-state')).toHaveAttribute(
     'data-column-count',
     String(count),

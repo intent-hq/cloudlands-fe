@@ -2547,6 +2547,8 @@
   "layout_resizable_dragToResizeHeight_tooltip": "Drag to resize height, double-click to reset",
   "layout_titleBar_ariaLabel": "Window title bar",
   "workspace_sidebarHeader_panelColumns_ariaLabel": "Panel columns",
+  "workspace_sidebarHeader_panelColumns_description": "Change the number of columns for panes in this workspace. Newly opened panes open in the rightmost column.",
+  "workspace_sidebarHeader_panelColumns_label": "Columns",
   "workspace_sidebarHeader_panelColumns_currentCount_ariaLabel": "Panel columns: {count}",
   "workspace_sidebarHeader_panelColumns_currentCount_tooltip": "Change panel column count. Current: {count}",
   "workspace_sidebarHeader_panelColumns_count_one": "{count} column",

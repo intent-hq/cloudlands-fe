@@ -2546,6 +2546,8 @@
   "layout_resizable_dragToResizeHeight_tooltip": "Arrastre para cambiar la altura, doble clic para restablecer",
   "layout_titleBar_ariaLabel": "Barra de título de la ventana",
   "workspace_sidebarHeader_panelColumns_ariaLabel": "Columnas de paneles",
+  "workspace_sidebarHeader_panelColumns_description": "Cambie el número de columnas de los paneles de este espacio de trabajo. Los paneles nuevos se abren en la columna de más a la derecha.",
+  "workspace_sidebarHeader_panelColumns_label": "Columnas",
   "workspace_sidebarHeader_panelColumns_currentCount_ariaLabel": "Columnas de paneles: {count}",
   "workspace_sidebarHeader_panelColumns_currentCount_tooltip": "Cambiar el número de columnas de paneles. Actual: {count}",
   "workspace_sidebarHeader_panelColumns_count_one": "{count} columna",

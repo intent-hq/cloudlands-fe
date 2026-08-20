@@ -187,7 +187,7 @@ afterEach(() => {
 });
 
 describe('mounted panel header actions menu', () => {
-  it('renders the workspace column selector only for the rightmost panel and dispatches its count', async () => {
+  it('renders the workspace column slider only for the rightmost panel and dispatches its count', async () => {
     const left = renderHeader('note', { panelId: 'panel-left', isRightmostPanel: false });
     expect(left.container.querySelector('[data-panel-column-count-trigger]')).toBeNull();
     left.unmount();
@@ -201,12 +201,19 @@ describe('mounted panel header actions menu', () => {
     expect(trigger.querySelector('[data-panel-column-icon="2"]')).toBeTruthy();
 
     await fireEvent.click(trigger);
-    const radios = await screen.findAllByRole('menuitemradio');
-    expect(radios).toHaveLength(4);
-    expect(
-      screen.getByRole('menuitemradio', { name: '2 columns' }).getAttribute('aria-checked'),
-    ).toBe('true');
-    await fireEvent.click(screen.getByRole('menuitemradio', { name: '4 columns' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Panel columns' });
+    expect(dialog.firstElementChild?.textContent).toBe(
+      'Change the number of columns for panes in this workspace. Newly opened panes open in the rightmost column.',
+    );
+    expect(dialog.querySelector('output')?.textContent?.trim()).toBe('2');
+    const slider = screen.getByRole('slider', { name: 'Panel columns' }) as HTMLInputElement;
+    expect(document.activeElement).toBe(slider);
+    expect(slider.valueAsNumber).toBe(2);
+    expect(slider.min).toBe('1');
+    expect(slider.max).toBe('4');
+    expect(slider.step).toBe('1');
+    expect(slider.getAttribute('aria-valuetext')).toBe('2 columns');
+    await fireEvent.input(slider, { target: { value: '4' } });
     expect(mocks.dispatch).toHaveBeenCalledWith({
       type: 'panelLayout/setPanelColumnCount',
       payload: expect.objectContaining({

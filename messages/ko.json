@@ -2546,6 +2546,8 @@
   "layout_resizable_dragToResizeHeight_tooltip": "드래그로 높이 조정, 더블 클릭으로 재설정",
   "layout_titleBar_ariaLabel": "창 제목 표시줄",
   "workspace_sidebarHeader_panelColumns_ariaLabel": "패널 열",
+  "workspace_sidebarHeader_panelColumns_description": "이 작업 공간에서 패널의 열 수를 변경합니다. 새로 연 패널은 가장 오른쪽 열에서 열립니다.",
+  "workspace_sidebarHeader_panelColumns_label": "열",
   "workspace_sidebarHeader_panelColumns_currentCount_ariaLabel": "패널 열: {count}",
   "workspace_sidebarHeader_panelColumns_currentCount_tooltip": "패널 열 수를 변경합니다. 현재: {count}",
   "workspace_sidebarHeader_panelColumns_count_one": "{count}개 열",

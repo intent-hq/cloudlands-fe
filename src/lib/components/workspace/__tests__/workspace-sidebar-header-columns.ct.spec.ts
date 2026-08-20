@@ -1,7 +1,16 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
+import type { Page } from '@playwright/test';
 import PanelHeaderActionsHost from '../../layout/panel-system/__tests__/mocks/PanelHeaderActionsHost.svelte';
 
 test.setTimeout(60_000);
+
+async function setSliderValue(page: Page, count: number) {
+  const slider = page.getByRole('slider', { name: 'Panel columns' });
+  await slider.evaluate((element: HTMLInputElement, value: number) => {
+    element.value = String(value);
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  }, count);
+}
 
 for (const theme of ['light', 'dark'] as const) {
   for (const width of [240, 560]) {
@@ -51,9 +60,8 @@ for (const theme of ['light', 'dark'] as const) {
 
         for (const count of [1, 2, 3, 4]) {
           await columnTrigger.click();
-          await page
-            .getByRole('menuitemradio', { name: `${count} column${count === 1 ? '' : 's'}` })
-            .click();
+          await setSliderValue(page, count);
+          await page.keyboard.press('Escape');
           const columnIcon = controls.locator(`[data-panel-column-icon="${count}"]`);
           const bars = columnIcon.locator('[data-panel-column-icon-bar]');
           await expect(columnTrigger).toHaveAccessibleName(`Panel columns: ${count}`);
@@ -137,19 +145,57 @@ test('updates the workspace-scoped count and keeps keyboard focus order', async 
   await trigger.focus();
   await expect(page.getByRole('tooltip')).toContainText('Change panel column count. Current: 2');
   await page.keyboard.press('Enter');
-  const radios = page.getByRole('menuitemradio');
-  await expect(radios).toHaveCount(4);
-  await expect(page.getByRole('menuitemradio', { name: '2 columns' })).toHaveAttribute(
-    'aria-checked',
-    'true',
+  const dialog = page.getByRole('dialog', { name: 'Panel columns' });
+  const slider = page.getByRole('slider', { name: 'Panel columns' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator(':scope > p')).toHaveText(
+    'Change the number of columns for panes in this workspace. Newly opened panes open in the rightmost column.',
   );
+  expect(
+    await dialog.evaluate((node) => Array.from(node.children).map((child) => child.tagName)),
+  ).toEqual(['P', 'DIV', 'INPUT']);
+  await expect(dialog.getByText('Columns', { exact: true })).toBeVisible();
+  await expect(dialog.locator('output')).toHaveText('2');
+  await expect(slider).toBeFocused();
+  await expect(slider).toHaveAttribute('min', '1');
+  await expect(slider).toHaveAttribute('max', '4');
+  await expect(slider).toHaveAttribute('step', '1');
+  await expect(slider).toHaveAttribute('aria-valuetext', '2 columns');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
+  await expect(slider).toBeFocused();
+
+  await page.keyboard.press('Home');
+  await expect(component).toHaveAttribute('data-current-count', '1');
+  await expect(dialog.locator('output')).toHaveText('1');
+  await page.keyboard.press('ArrowLeft');
+  await expect(component).toHaveAttribute('data-current-count', '1');
+  await page.keyboard.press('ArrowRight');
+  await expect(component).toHaveAttribute('data-current-count', '2');
+  await page.keyboard.press('End');
+  await expect(component).toHaveAttribute('data-current-count', '4');
+  await expect(dialog.locator('output')).toHaveText('4');
+  await expect(slider).toHaveAttribute('aria-valuetext', '4 columns');
+  await page.keyboard.press('ArrowRight');
+  await expect(component).toHaveAttribute('data-current-count', '4');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+
+  await trigger.click();
+  const sliderBox = await slider.boundingBox();
+  await slider.click({ position: { x: 1, y: sliderBox!.height / 2 } });
+  await expect(component).toHaveAttribute('data-current-count', '1');
+  await slider.click({ position: { x: sliderBox!.width - 1, y: sliderBox!.height / 2 } });
+  await expect(component).toHaveAttribute('data-current-count', '4');
   await page.keyboard.press('Escape');
 
   for (const count of [1, 2, 3, 4]) {
     await trigger.click();
-    await page
-      .getByRole('menuitemradio', { name: `${count} column${count === 1 ? '' : 's'}` })
-      .click();
+    await setSliderValue(page, count);
+    await page.keyboard.press('Escape');
     await expect(component).toHaveAttribute('data-current-count', String(count));
     await expect(trigger).toHaveAccessibleName(`Panel columns: ${count}`);
     await expect(trigger.locator('[data-panel-column-icon-bar]')).toHaveCount(count);
@@ -226,7 +272,8 @@ test('animates count changes without scaling the one-pixel strokes', async ({ mo
   const initialIcon = await trigger.locator('[data-panel-column-icon="1"]').elementHandle();
 
   await trigger.click();
-  await page.getByRole('menuitemradio', { name: '4 columns' }).click();
+  await setSliderValue(page, 4);
+  await page.keyboard.press('Escape');
   const animatedIcon = trigger.locator('[data-panel-column-icon="4"]');
   await expect(animatedIcon).toHaveCount(1);
   expect(await initialIcon?.evaluate((element) => element.isConnected)).toBe(false);
@@ -249,7 +296,8 @@ test('animates count changes without scaling the one-pixel strokes', async ({ mo
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await trigger.click();
-  await page.getByRole('menuitemradio', { name: '3 columns' }).click();
+  await setSliderValue(page, 3);
+  await page.keyboard.press('Escape');
   const reducedIcon = trigger.locator('[data-panel-column-icon="3"]');
   await expect(reducedIcon).toHaveCount(1);
   expect(await reducedIcon.evaluate((element) => getComputedStyle(element).animationName)).toBe(

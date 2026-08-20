@@ -2546,6 +2546,8 @@
   "layout_resizable_dragToResizeHeight_tooltip": "拖动调整高度，双击重置",
   "layout_titleBar_ariaLabel": "窗口标题栏",
   "workspace_sidebarHeader_panelColumns_ariaLabel": "面板列",
+  "workspace_sidebarHeader_panelColumns_description": "更改此工作区中窗格的列数。新打开的窗格会在最右侧的列中打开。",
+  "workspace_sidebarHeader_panelColumns_label": "列",
   "workspace_sidebarHeader_panelColumns_currentCount_ariaLabel": "面板列：{count}",
   "workspace_sidebarHeader_panelColumns_currentCount_tooltip": "更改面板列数。当前：{count}",
   "workspace_sidebarHeader_panelColumns_count_one": "{count} 列",

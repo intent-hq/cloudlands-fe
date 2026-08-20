@@ -2546,6 +2546,8 @@
   "layout_resizable_dragToResizeHeight_tooltip": "拖動調整高度，雙擊重設",
   "layout_titleBar_ariaLabel": "視窗標題欄",
   "workspace_sidebarHeader_panelColumns_ariaLabel": "面板欄",
+  "workspace_sidebarHeader_panelColumns_description": "變更此工作區中窗格的欄數。新開啟的窗格會在最右側的欄中開啟。",
+  "workspace_sidebarHeader_panelColumns_label": "欄",
   "workspace_sidebarHeader_panelColumns_currentCount_ariaLabel": "面板欄：{count}",
   "workspace_sidebarHeader_panelColumns_currentCount_tooltip": "變更面板欄數。目前：{count}",
   "workspace_sidebarHeader_panelColumns_count_one": "{count} 欄",

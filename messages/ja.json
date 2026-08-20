@@ -2546,6 +2546,8 @@
   "layout_resizable_dragToResizeHeight_tooltip": "ドラッグで高さを変更、ダブルクリックでリセット",
   "layout_titleBar_ariaLabel": "ウィンドウタイトルバー",
   "workspace_sidebarHeader_panelColumns_ariaLabel": "パネル列",
+  "workspace_sidebarHeader_panelColumns_description": "このワークスペース内のペインの列数を変更します。新しく開いたペインは右端の列に表示されます。",
+  "workspace_sidebarHeader_panelColumns_label": "列",
   "workspace_sidebarHeader_panelColumns_currentCount_ariaLabel": "パネル列: {count}",
   "workspace_sidebarHeader_panelColumns_currentCount_tooltip": "パネルの列数を変更します。現在: {count}",
   "workspace_sidebarHeader_panelColumns_count_one": "{count} 列",
