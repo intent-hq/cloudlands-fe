@@ -201,7 +201,7 @@
     type ChatNavigationState,
   } from './chat-message-navigation';
   import { parseSuggestedPrompts } from '$lib/utils/messageParser';
-  import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
+  import { getQueueInfo, isBatchedDeliverySeam, stripDequeueWaitNote } from '$lib/utils/queue-info';
   import {
     captureMessageSendOrigin,
     createMessageSendLaunchBubble,
@@ -4727,6 +4727,10 @@
                     nextTurn,
                   )}
                   {@const zeroOperationalTurnBoundary = compactOperationalTurnBoundary}
+                  <!-- Adjacent user rows sharing queueInfo.batchId (one batch
+                       flush) get a compact seam — covers plain user messages
+                       AND wake/event-notification cards on either side. -->
+                  {@const batchedDeliveryTurnSeam = isBatchedDeliverySeam(turn, nextTurn)}
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- PERF: LazyTurn defers rendering of off-screen turns -->
                   <!-- PERF: Only force-visible the last turn during streaming, not all turns -->
@@ -4991,6 +4995,7 @@
                       nextHasUserMessage={nextTurnHasUserMessage}
                       compactOperationalSeam={compactOperationalTurnBoundary}
                       zeroToolSeam={zeroOperationalTurnBoundary}
+                      batchedDeliverySeam={batchedDeliveryTurnSeam}
                     />
                   {/if}
                   <!-- Turn-boundary divider placement: the anchor is this turn's
