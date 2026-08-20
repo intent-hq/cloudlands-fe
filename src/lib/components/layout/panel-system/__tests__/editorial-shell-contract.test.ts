@@ -251,6 +251,7 @@ describe('editorial workspace shell presentation contract', () => {
     const appCss = source('../../../../../app.css');
     const appHtml = source('../../../../../app.html');
     const appLayout = source('../../../../../routes/(app)/+layout.svelte');
+    const appLayoutCss = source('../../../../../routes/(app)/app-layout.css');
     const sidebarPanel = source('../../sidebar-nav/SidebarPanel.svelte');
 
     expect(appCss).toMatch(/html,\s*body\s*{[^}]*background-color:\s*transparent;/s);
@@ -258,7 +259,12 @@ describe('editorial workspace shell presentation contract', () => {
     expect(appHtml).toMatch(/html,\s*body,\s*#app\s*{\s*background:\s*transparent;/s);
     expect(appHtml).toMatch(/#splash\s*{[^}]*background:\s*transparent;/s);
     expect(appLayout).toContain('overflow-hidden bg-transparent text-foreground');
+    expect(appLayout.match(/panel-layout-container/g)).toHaveLength(1);
     expect(appLayout).not.toContain('background-color: hsl(var(--background) /');
+    expect(appLayoutCss).toMatch(
+      /\.panel-layout-container\s*{\s*background-color:\s*var\(--app-shell-translucency\);\s*}/,
+    );
+    expect(appLayoutCss.match(/app-shell-translucency/g)).toHaveLength(1);
     expect(appLayout).toContain('class="workspace-main flex');
     expect(appLayout).toContain("'rounded-xl bg-sidebar border border-border shadow-sm'");
     expect(sidebarPanel).toContain('relative text-sidebar-foreground');
