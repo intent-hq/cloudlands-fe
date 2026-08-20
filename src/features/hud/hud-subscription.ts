@@ -78,6 +78,7 @@ import {
   HUD_FEED_EVENT_TYPES,
   mapEventToFeedEntry,
 } from './hud-feed-mapper';
+import { startHudGridFilterPersistence } from './hud-grid-filter-persistence';
 import { extractQuestionsFromStreamEnd } from './hud-question-capture';
 import { emitTakeoverTrigger } from './takeover/hud-takeover-bus';
 import type { HudTakeoverTrigger } from './takeover/hud-takeover-queue';
@@ -359,6 +360,10 @@ export function startHudSubscription(): () => void {
   hydratedAgentWorkspaceIds.clear();
   appStore.dispatch(hudActivated());
 
+  // Per-backend grid-filter restore + persist-on-change (thin localStorage
+  // layer under the slice; stopped before hudDeactivated resets the filter).
+  const stopGridFilterPersistence = startHudGridFilterPersistence();
+
   async function subscribe(): Promise<void> {
     // Drop the stale id first so the scope gate cannot match a foreign
     // subscription that reuses it during the resubscribe window.
@@ -443,6 +448,7 @@ export function startHudSubscription(): () => void {
     removeNotificationListener();
     removeReconnectListener();
     removeStoreListener();
+    stopGridFilterPersistence();
     if (subscriptionId) {
       void backendUnsubscribe(subscriptionId).catch(() => {});
       subscriptionId = undefined;
