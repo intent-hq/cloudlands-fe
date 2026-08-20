@@ -187,6 +187,33 @@ describe('panelLayoutReducer', () => {
       expect(state.byWorkspaceId[WS].columnCountInitialized).toBe(true);
     });
 
+    it('accepts a derived legacy count after clearing stale restore state', () => {
+      let state = panelLayoutReducer(undefined, setPanelColumnCount(WS, 3, 10));
+      const history = state.byWorkspaceId[WS].layoutHistory;
+      state = panelLayoutReducer(state, preparePanelLayoutBackendRestore(WS));
+      state = panelLayoutReducer(
+        state,
+        initializeLayout(WS, {
+          root: { type: 'panel', panelId: 'legacy' },
+          panels: { legacy: { id: 'legacy', tabs: [], activeTabId: null } },
+          focusedPanelId: 'legacy',
+          canvasWidth: null,
+          canvasWidthSource: null,
+          columnCount: 1,
+        }),
+      );
+
+      expect(state.byWorkspaceId[WS]).toMatchObject({
+        root: { type: 'panel', panelId: 'legacy' },
+        focusedPanelId: 'legacy',
+        canvasWidth: null,
+        canvasWidthSource: null,
+        columnCount: 1,
+        columnCountInitialized: true,
+      });
+      expect(state.byWorkspaceId[WS].layoutHistory).toBe(history);
+    });
+
     it('derives a fresh workspace count when no selection or snapshot count exists', () => {
       const initialized = panelLayoutReducer(
         undefined,

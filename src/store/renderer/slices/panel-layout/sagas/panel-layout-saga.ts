@@ -526,6 +526,9 @@ export function* handleWorkspaceMountedRestore(
       yield* put(setRestoreStatus(wsId, 'invalid'));
     } else {
       const normalized = normalizeLayoutForWorkspace(wsId, stored);
+      if (current.columnCountInitialized) {
+        yield* put(preparePanelLayoutBackendRestore(wsId));
+      }
       yield* put(initializeLayout(wsId, normalized));
       repairedColumns = yield* call(reconcileRestoredPanelColumns, wsId);
       yield* put(setRestoreStatus(wsId, 'restored'));

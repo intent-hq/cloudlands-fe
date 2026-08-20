@@ -386,7 +386,11 @@ describe('root horizontal resize release evidence', () => {
     });
     await waitFor(() => expect(canvasWidth()).toBe(500));
     expect(selectPanelCanvasWidth.select(appStore.state, WORKSPACE_ID)).toBeNull();
-    expect(appStore.state.panelLayout.byWorkspaceId[WORKSPACE_ID].canvasWidthSource).toBeNull();
+    expect(appStore.state.panelLayout.byWorkspaceId[WORKSPACE_ID]).toMatchObject({
+      root: { type: 'panel', panelId: 'legacy' },
+      columnCount: 1,
+      canvasWidthSource: null,
+    });
     expect(document.querySelector('[data-panel-id="legacy"]')).not.toBeNull();
     legacy.unmount();
   });

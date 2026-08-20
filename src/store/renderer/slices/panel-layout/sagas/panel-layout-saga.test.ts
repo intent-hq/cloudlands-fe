@@ -707,6 +707,73 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(run.task);
   });
 
+  it('derives a legacy one-panel count after a stale same-backend remount', async () => {
+    const selected = panelLayoutReducer(undefined, setPanelColumnCount(WS_1, 3, 10)).byWorkspaceId[
+      WS_1
+    ];
+    const current: WorkspacePanelLayout = {
+      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
+      root: selected.root,
+      panels: selected.panels,
+      focusedPanelId: selected.focusedPanelId,
+      canvasWidth: selected.canvasWidth,
+      canvasWidthSource: selected.canvasWidthSource,
+      columnCount: 3,
+    };
+    const legacy: WorkspacePanelLayout = {
+      root: { type: 'panel', panelId: 'legacy' },
+      panels: { legacy: { id: 'legacy', tabs: [tab], activeTabId: tab.id } },
+      focusedPanelId: 'legacy',
+      canvasWidth: 1600,
+    };
+    const run = startRestoreSaga(current, [], selected);
+    await settle();
+    const history = run.getState().panelLayout.byWorkspaceId[WS_1].layoutHistory;
+    mocks.getJSON.mockReturnValue(legacy);
+    run.dispatch.mockClear();
+    mocks.setJSON.mockClear();
+
+    run.send(panelLayoutScopeUnmounted(WS_1));
+    await settle();
+    run.send(panelLayoutScopeMounted(WS_1));
+    await settle();
+
+    const restored = run.getState().panelLayout.byWorkspaceId[WS_1];
+    expect(
+      run.dispatch.mock.calls.find(
+        ([action]) => action.type === preparePanelLayoutBackendRestore.type,
+      )?.[0],
+    ).toEqual(preparePanelLayoutBackendRestore(WS_1));
+    expect(
+      run.dispatch.mock.calls.find(([action]) => action.type === initializeLayout.type)?.[0].payload
+        .layout.columnCount,
+    ).toBe(1);
+    expect(
+      run.dispatch.mock.calls.some(([action]) => action.type === reconcilePanelColumnCount.type),
+    ).toBe(false);
+    expect(restored).toMatchObject({
+      root: { type: 'panel', panelId: 'legacy' },
+      focusedPanelId: 'legacy',
+      canvasWidth: null,
+      canvasWidthSource: null,
+      columnCount: 1,
+    });
+    expect(restored.panels.legacy).toMatchObject({ activeTabId: tab.id, tabs: [tab] });
+    expect(restored.layoutHistory).toBe(history);
+    expect(mocks.saveHistory).not.toHaveBeenCalled();
+    expect(mocks.setJSON.mock.calls.at(-1)).toEqual([
+      STORAGE_KEY_1,
+      expect.objectContaining({
+        root: { type: 'panel', panelId: 'legacy' },
+        focusedPanelId: 'legacy',
+        canvasWidth: null,
+        canvasWidthSource: null,
+        columnCount: 1,
+      }),
+    ]);
+    await cancelSaga(run.task);
+  });
+
   it('restores a legacy initial-agent layout without adding pin state', async () => {
     const legacyAgentTab = {
       ...tab,
