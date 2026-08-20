@@ -1737,7 +1737,7 @@ describe('panelLayoutReducer', () => {
       expect(result.panels.p1.tabs).toEqual([expect.objectContaining({ id: 'one' })]);
     });
 
-    it('fits each added structural column to the live viewport and focuses the new column', () => {
+    it('keeps added structural columns automatically fitted to the live viewport', () => {
       let state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
       state.byWorkspaceId[WS] = {
         ...state.byWorkspaceId[WS],
@@ -1761,15 +1761,12 @@ describe('panelLayoutReducer', () => {
         });
         expect(Object.keys(workspace.panels)).toHaveLength(count);
         expect(workspace.focusedPanelId).toBe(action.payload.newPanelIds[0]);
-        expect(workspace.canvasWidth).toBe(
-          getAutomaticPanelCanvasWidth(count, 'viewport', availableWidth),
-        );
-        expect(workspace.canvasWidth).toBeLessThanOrEqual(availableWidth);
-        expect(workspace.canvasWidthSource).toBe('explicit');
+        expect(workspace.canvasWidth).toBeNull();
+        expect(workspace.canvasWidthSource).toBeNull();
       }
     });
 
-    it('restores the explicit pre-fit width and fitted geometry through history', () => {
+    it('restores the explicit pre-fit width and automatic fitted geometry through history', () => {
       let state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
       state.byWorkspaceId[WS] = {
         ...state.byWorkspaceId[WS],
@@ -1793,8 +1790,8 @@ describe('panelLayoutReducer', () => {
         root: { type: 'split', direction: 'horizontal', sizes: [50, 50] },
         focusedPanelId: increase.payload.newPanelIds[0],
         columnCount: 2,
-        canvasWidth: 640,
-        canvasWidthSource: 'explicit',
+        canvasWidth: null,
+        canvasWidthSource: null,
       });
     });
 

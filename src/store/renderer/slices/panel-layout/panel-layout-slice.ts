@@ -1217,9 +1217,7 @@ function reconcileWorkspacePanelColumns(
       ? next.focusedPanelId
       : (survivingRightmostId ?? panelIds[0] ?? null);
   const canvasWidth = (() => {
-    if (fitsAvailableCanvas) {
-      return getAutomaticPanelCanvasWidth(nextColumnCount, 'viewport', availableCanvasWidth);
-    }
+    if (fitsAvailableCanvas) return null;
     if (next.canvasWidth === null || next.canvasWidthSource === 'intrinsic') return null;
     const contentWidth = Math.max(
       0,
@@ -1239,7 +1237,7 @@ function reconcileWorkspacePanelColumns(
     focusedPanelId,
     canvasWidth,
     canvasWidthSource: fitsAvailableCanvas
-      ? 'explicit'
+      ? null
       : next.canvasWidthSource === 'intrinsic'
         ? null
         : next.canvasWidthSource,

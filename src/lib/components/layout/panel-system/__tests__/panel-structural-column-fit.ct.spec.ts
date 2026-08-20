@@ -98,3 +98,28 @@ for (const viewportWidth of [640, 1200]) {
     });
   }
 }
+
+test('refits a structural 1→2 increase after the available viewport shrinks', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(PanelStructuralColumnFitHarness, {
+    props: { viewportWidth: 1200, persistedCanvasWidth: 1800 },
+  });
+
+  await selectColumnCount(component, page, 2);
+  await expect(component.locator('[data-panel-id]')).toHaveCount(2);
+  const before = await measureFit(component);
+
+  await component.update({ props: { viewportWidth: 1060, persistedCanvasWidth: 1800 } });
+  await expect
+    .poll(async () => (await measureFit(component)).insetScrollWidth)
+    .toBeLessThanOrEqual((await measureFit(component)).insetClientWidth);
+  const after = await measureFit(component);
+
+  expect(after.insetClientWidth).toBeLessThan(before.insetClientWidth);
+  expect(after.canvasWidth).toBeLessThanOrEqual(after.availableWidth);
+  expect(after.canvasRight).toBeLessThanOrEqual(after.visibleRight + 1);
+  expect(after.rightmostRight).toBeLessThanOrEqual(after.visibleRight + 1);
+});
