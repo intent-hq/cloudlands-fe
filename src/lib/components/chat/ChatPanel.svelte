@@ -450,20 +450,36 @@
     return undefined;
   });
 
-  // Svelte effects run after the DOM update. This confirms the primary
-  // transcript render boundary without observing message content.
+  // Confirm the primary transcript boundary from DOM that exists after the
+  // update. Redux values identify the expected row only; they never stand in
+  // for a rendered row or error surface.
   $effect(() => {
     const message = latestAssistantForTelemetry;
     if (!message) return;
-    reportStreamLifecycle({
-      stage: 'render',
-      event: 'assistant-message-committed',
-      turnCorrelation: streamTurnCorrelation(message.id),
-      blockCount: message.contentBlocks?.length ?? 0,
-      terminalErrorVisible: Boolean(effectiveError || $chatModelUnavailable$),
-      storeStreamState: $agentSessionIsStreaming$ ? 'streaming' : 'idle',
-      callbackResult: 'delivered',
-    });
+    const storeStreamState = $agentSessionIsStreaming$ ? 'streaming' : 'idle';
+    let cancelled = false;
+    void (async () => {
+      await tick();
+      if (cancelled) return;
+      const assistantRow = Array.from(
+        panelElement?.querySelectorAll<HTMLElement>('[data-message-role="assistant"]') ?? [],
+      ).find((row) => row.dataset.messageId === message.id);
+      const terminalErrorVisible = Boolean(
+        panelElement?.querySelector('[data-stream-terminal-error="true"]'),
+      );
+      reportStreamLifecycle({
+        stage: 'render',
+        event: assistantRow ? 'assistant-message-committed' : 'assistant-message-not-committed',
+        turnCorrelation: streamTurnCorrelation(message.id),
+        blockCount: assistantRow?.querySelectorAll('[data-message-content-block]').length ?? 0,
+        terminalErrorVisible,
+        storeStreamState,
+        callbackResult: assistantRow ? 'delivered' : 'ignored',
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
   });
 
   // monorepo#940: the daemon flags the parked error session as corrupted —

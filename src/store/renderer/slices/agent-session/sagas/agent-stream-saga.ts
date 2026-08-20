@@ -88,10 +88,12 @@ function* reportAppliedStoreState(
   event: 'update-applied' | 'update-ignored',
 ): SagaGenerator<void> {
   const session: AgentSession | undefined = yield* selectAgentSession.effect(payload.agentId);
-  const message = findStreamTargetAssistantMessage(
-    session,
-    payload.assistantAppMessageId,
-    payload.assistantMessageId,
+  const message = session?.messages.find(
+    (candidate) =>
+      candidate.role === 'assistant' &&
+      ((payload.assistantMessageId && candidate.id === payload.assistantMessageId) ||
+        (payload.assistantAppMessageId &&
+          candidate.appMessageId === payload.assistantAppMessageId)),
   );
   const chatState = yield* selectChatAgentState.effect(payload.agentId);
   const storeStreamState = chatState.error
@@ -105,7 +107,7 @@ function* reportAppliedStoreState(
     stage: 'store',
     event,
     turnCorrelation: streamTurnCorrelation(payload.assistantMessageId),
-    callbackResult: event === 'update-applied' ? 'delivered' : 'ignored',
+    callbackResult: event === 'update-applied' ? 'observed' : 'ignored',
     storeStreamState,
     ...(message?.contentBlocks ? { blockCount: message.contentBlocks.length } : {}),
   });

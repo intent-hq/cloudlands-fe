@@ -740,7 +740,7 @@ function dispatchStreamUpdate(
     stage: 'bridge',
     event: `stream-${eventType}-dispatched`,
     turnCorrelation: streamTurnCorrelation(state.messageId),
-    callbackResult: 'delivered',
+    callbackResult: 'dispatched',
     ...(contentBlocks ? { blockCount: contentBlocks.length } : {}),
   });
 }
@@ -1212,7 +1212,7 @@ function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): voi
     stage: 'bridge',
     event: 'stream-start-dispatched',
     turnCorrelation: streamTurnCorrelation(messageId),
-    callbackResult: 'delivered',
+    callbackResult: 'dispatched',
     blockCount: 0,
   });
 }
@@ -1281,7 +1281,7 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
     stage: 'bridge',
     event: 'agent-stream-end-received',
     turnCorrelation: streamTurnCorrelation(messageId ?? state?.messageId),
-    callbackResult: 'delivered',
+    callbackResult: 'received',
     blockCount: trailingBlocks.length,
   });
   if (state && (!messageId || state.messageId === messageId)) {
@@ -1331,6 +1331,13 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         ...(finishReason ? { finishReason } : {}),
       }),
     );
+    reportStreamLifecycle({
+      stage: 'bridge',
+      event: 'stream-complete-dispatched',
+      turnCorrelation: streamTurnCorrelation(messageId),
+      callbackResult: 'dispatched',
+      blockCount: trailingBlocks.length,
+    });
     return;
   }
   if (trailingBlocks.length > 0) {
@@ -1341,6 +1348,13 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
       trailingBlockCount: trailingBlocks.length,
     });
   }
+  reportStreamLifecycle({
+    stage: 'bridge',
+    event: 'agent-stream-end-ignored',
+    turnCorrelation: streamTurnCorrelation(messageId),
+    callbackResult: 'ignored',
+    blockCount: trailingBlocks.length,
+  });
 }
 
 function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): void {
@@ -1350,14 +1364,13 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
   if (typeof agentId !== 'string') return;
 
   const state = streamsByAgent.get(agentId);
+  const turnId = typeof data?.turnId === 'string' ? data.turnId : undefined;
   reportStreamLifecycle({
     stage: 'bridge',
     event: 'agent-failed-received',
-    turnCorrelation: streamTurnCorrelation(
-      state?.messageId ?? (typeof data?.turnId === 'string' ? data.turnId : undefined),
-    ),
-    callbackResult: 'delivered',
-    storeStreamState: 'error',
+    turnCorrelation: streamTurnCorrelation(state?.messageId),
+    turnIdCorrelation: streamTurnCorrelation(turnId),
+    callbackResult: 'received',
   });
   if (state) {
     dispatchStreamUpdate(agentId, state, 'error');
@@ -1376,13 +1389,25 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
   // turn-correlation id (PROTOCOL §6.6) rides along when present so the
   // failure can be attributed to the exact turn (monorepo#1057).
   if (typeof error === 'string' && error.length > 0) {
-    const turnId = typeof data?.turnId === 'string' ? data.turnId : undefined;
     const parentAgentId = data?.parentAgentId;
     const hasParent = typeof parentAgentId === 'string' && parentAgentId.length > 0;
     if (!hasParent) {
       recordAgentFailure({ agentId, workspaceId, error });
     }
     appStore.dispatch(chatSendFailed(agentId, error, turnId));
+    reportStreamLifecycle({
+      stage: 'bridge',
+      event: 'agent-failed-dispatched',
+      turnCorrelation: streamTurnCorrelation(state?.messageId),
+      turnIdCorrelation: streamTurnCorrelation(turnId),
+      callbackResult: 'dispatched',
+    });
+  } else if (!state) {
+    reportStreamLifecycle({
+      stage: 'bridge',
+      event: 'agent-failed-ignored',
+      callbackResult: 'ignored',
+    });
   }
 }
 
