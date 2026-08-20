@@ -106,7 +106,7 @@ describe('workspaceNavigationTabSaga', () => {
 
     expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
       'panelLayout/openTabInRightmostColumnRequested',
-      'panelLayout/openTab',
+      'panelLayout/openTabInRightmostColumnRequested',
       'panelLayout/openTabInRightmostColumnRequested',
       'panelLayout/openTabInRightmostColumnRequested',
     ]);
@@ -117,7 +117,6 @@ describe('workspaceNavigationTabSaga', () => {
     });
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
       payload: {
-        panelId: 'panel-agent',
         tab: {
           type: 'chat-changes',
           data: {
@@ -161,9 +160,10 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
+      type: 'panelLayout/openTabInAdjacentOrSplit',
       payload: {
-        panelId: 'panel-note',
+        sourcePanelId: 'panel-note',
+        force: true,
         tab: { type: 'note', noteId: 'note-1' },
       },
     });
@@ -171,7 +171,7 @@ describe('workspaceNavigationTabSaga', () => {
     await task.toPromise();
   });
 
-  it('forces note adjacency beside an agent and preserves file jump metadata', async () => {
+  it('keeps an unmodified agent note open rightmost and preserves adjacent file metadata', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(42);
     const channel = stdChannel();
     const dispatch = vi.fn();
@@ -217,10 +217,9 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
+      type: 'panelLayout/openTabInRightmostColumnRequested',
       payload: {
         wsId: 'ws-1',
-        panelId: 'panel-1',
         force: true,
         tab: {
           type: 'note',
@@ -232,10 +231,10 @@ describe('workspaceNavigationTabSaga', () => {
       },
     });
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
+      type: 'panelLayout/openTabInAdjacentOrSplit',
       payload: {
         wsId: 'ws-1',
-        panelId: 'panel-1',
+        sourcePanelId: 'panel-1',
         force: true,
         tab: {
           type: 'file',
@@ -252,7 +251,7 @@ describe('workspaceNavigationTabSaga', () => {
     vi.restoreAllMocks();
   });
 
-  it('opens exact commit and tracked-diff tabs with forced source routing', async () => {
+  it('uses source context only for explicit adjacent commit and diff routing', async () => {
     const change = {
       id: 'change-1',
       file: 'src/foo.ts',
@@ -282,10 +281,10 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
+      type: 'panelLayout/openTabInAdjacentOrSplit',
       payload: {
         wsId: 'ws-1',
-        panelId: 'panel-a',
+        sourcePanelId: 'panel-a',
         force: true,
         tab: {
           type: 'changes',
@@ -297,10 +296,9 @@ describe('workspaceNavigationTabSaga', () => {
       },
     });
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
+      type: 'panelLayout/openTabInRightmostColumnRequested',
       payload: {
         wsId: 'ws-1',
-        panelId: 'panel-b',
         force: true,
         tab: {
           type: 'diff',
@@ -368,10 +366,10 @@ describe('workspaceNavigationTabSaga', () => {
     );
     await settle();
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTab',
+      type: 'panelLayout/openTabInAdjacentOrSplit',
       payload: {
         wsId: 'ws-1',
-        panelId: 'panel-runtime',
+        sourcePanelId: 'panel-runtime',
         force: true,
         tab: {
           type: 'diff',

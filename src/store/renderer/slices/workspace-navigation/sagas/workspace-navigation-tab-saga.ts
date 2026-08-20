@@ -9,8 +9,10 @@ import {
 import { createLogger } from '$lib/utils/client-logger';
 import { isBinaryExtension } from '$shared/binary-file-extensions';
 import { m } from '$shared/paraglide/messages.js';
-import { selectPanel } from '../../panel-layout/panel-layout-selectors';
-import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/panel-layout-slice';
+import {
+  openTabInAdjacentOrSplit,
+  openTabInRightmostColumnRequested,
+} from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import {
@@ -35,10 +37,9 @@ function* openWorkspaceTab(
   adjacent: boolean,
   sourcePanelId?: string,
 ): SagaGenerator<void> {
-  void adjacent;
   yield* put(
-    sourcePanelId
-      ? openTab(workspaceId, tab, sourcePanelId, undefined, true)
+    adjacent
+      ? openTabInAdjacentOrSplit(workspaceId, tab, sourcePanelId, { force: true })
       : openTabInRightmostColumnRequested(workspaceId, tab, { force: true }),
   );
 }
@@ -93,12 +94,6 @@ function* openFile(action: ReturnType<typeof openWorkspaceFile>): SagaGenerator<
 function* openNote(action: ReturnType<typeof openWorkspaceNote>): SagaGenerator<void> {
   const [workspaceId, noteId, options] = action.payload;
   if (!workspaceId || !noteId) return;
-  let adjacent = options?.openInAdjacentPanel ?? false;
-  if (!adjacent && options?.sourcePanelId) {
-    const panel = yield* selectPanel.effect(workspaceId, options.sourcePanelId);
-    const activeTab = panel?.tabs.find((tab) => tab.id === panel.activeTabId);
-    adjacent = activeTab?.type === 'agent';
-  }
   const note = yield* selectNoteById.effect(workspaceId, noteId);
   yield* openWorkspaceTab(
     workspaceId,
@@ -109,7 +104,7 @@ function* openNote(action: ReturnType<typeof openWorkspaceNote>): SagaGenerator<
       workspaceId,
       closable: true,
     },
-    adjacent,
+    options?.openInAdjacentPanel ?? false,
     options?.sourcePanelId,
   );
 }
@@ -196,7 +191,7 @@ function* openChatChanges(
         ...(options?.turnNumber !== undefined ? { turnNumber: options.turnNumber } : {}),
       },
     },
-    Boolean(options?.sourcePanelId),
+    false,
     options?.sourcePanelId,
   );
 }
