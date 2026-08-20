@@ -65,21 +65,28 @@
 #   in-flight intentd pin must land first so the fe beta carries the new
 #   sidecar; its merge push then chains straight into a cut via the push
 #   trigger above.
-# - A BE-dependency freshness guard (all run types) defers the cut when it
-#   could ship fe commits whose intentd dependency is in no published
-#   sidecar: the pinned intentd version is resolved to its tag on
-#   intent-hq/intentd, and when intentd main has no commits after that tag
-#   (the expected common case) everything on fe main is safe — the cut
-#   proceeds unrestricted. When intentd main IS ahead of the pinned tag and
-#   this cut would ship fe commits merged after the tag was cut, those
-#   commits may depend on BE work that is in no published build (the
-#   intentd-first rule orders merges, not releases) — defer with a notice;
-#   the next intentd alpha advances the pin and its pin-bump push chains
-#   into a cut that re-evaluates. Automation commits (the sidecar pin bump
-#   itself, chore(release) squash merges) are exempt from the freshness
-#   test, and the check fails OPEN on any lookup error (missing
-#   INTENTD_READ_PAT, unreadable pin/tags/comparison) so an unreadable
-#   intentd never blocks fe releases.
+# - A BE-dependency freshness guard (cron and push runs; workflow_dispatch
+#   bypasses it — manual means urgent, same convention as the throttle)
+#   defers the cut when it could ship fe commits whose intentd dependency
+#   is in no published sidecar: the pinned intentd version is resolved to
+#   its tag on intent-hq/intentd, and when intentd main has no commits
+#   after that tag (the expected common case) everything on fe main is
+#   safe — the cut proceeds unrestricted. When intentd main IS ahead of
+#   the pinned tag and this cut would ship fe commits merged after the tag
+#   was cut, those commits may depend on BE work that is in no published
+#   build (the intentd-first rule orders merges, not releases) — defer
+#   with a notice; the next intentd alpha advances the pin and its
+#   pin-bump push chains into a cut that re-evaluates. While intentd
+#   cannot publish (failed build, or main ahead only by commits release-plz
+#   will never release) the deferral persists — deliberately: unlike the
+#   in-flight guard's 90-minute bound (which wards off a merely POSSIBLE
+#   imminent pin), this guard defers on confirmed unpublished dependencies,
+#   and the workflow_dispatch bypass is the operator override. Automation
+#   commits (the sidecar pin bump itself, chore(release) squash merges)
+#   are exempt from the freshness test, and the check fails OPEN on any
+#   lookup error (missing INTENTD_READ_PAT, unreadable
+#   pin/tags/comparison) so an unreadable intentd never blocks fe
+#   releases.
 # - Merge happens ONLY when GitHub already reports the PR clean: not a
 #   draft, mergeable, required check "CI Gate" green on the current head,
 #   and no unresolved review threads. Anything else logs and exits 0 (push
@@ -388,9 +395,10 @@ jobs:
             exit 0
           }
 
-          # BE-dependency freshness guard (all run types; called from the
-          # loop below so push runs re-evaluate it on every polling
-          # attempt): the cut ships fe main against the sidecar pinned in
+          # BE-dependency freshness guard (cron and push runs; the call
+          # site below skips it on workflow_dispatch — manual means urgent
+          # — and push runs re-evaluate it on every polling attempt): the
+          # cut ships fe main against the sidecar pinned in
           # intentd.version. An fe commit merged BEFORE the pinned tag was
           # cut cannot depend on BE work missing from it (the intentd-first
           # merge rule; fe lands squash/rebase merges only, both of which
@@ -430,8 +438,8 @@ jobs:
 
             # One comparison answers both questions: whether intentd main
             # moved past the pinned tag (ahead_by) and when that tag was
-            # cut (its commit's committer date). per_page=1 keeps the
-            # payload small — only top-level metadata is read.
+            # cut (its commit's committer date). Only top-level metadata is
+            # read, so per_page=1 truncating the commits array is fine.
             cmp=$(GH_TOKEN="$INTENTD_READ_PAT" gh api \
               "repos/intent-hq/intentd/compare/v$pin...main?per_page=1" 2>/dev/null) || cmp=""
             ahead=$(jq -er '.ahead_by' <<<"$cmp" 2>/dev/null) || ahead=""
@@ -465,16 +473,22 @@ jobs:
               return 1
             fi
 
-            # per_page=250 is the compare API's cap on the commits page —
-            # far above what an hourly cut cadence can accumulate, so the
-            # freshness scan sees every commit this cut would ship.
-            fresh=$(gh api "repos/$GITHUB_REPOSITORY/compare/$fe_tag...main?per_page=250" 2>/dev/null \
+            # The compare commits list is oldest→newest and paginated
+            # (250/page), so a single page would silently drop the NEWEST
+            # commits — the only ones that can postdate the cutoff — once a
+            # long-held backlog (e.g. weeks of hold-release) exceeds 250.
+            # --paginate walks every page; jq emits one per-page fresh
+            # count, summed by awk (same pattern as the reviewThreads
+            # count below).
+            fresh=$(gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/compare/$fe_tag...main?per_page=250" 2>/dev/null \
               | jq -r --argjson cutoff "$tag_epoch" '[.commits[]?
                   | select((.commit.committer.date | fromdateiso8601) > $cutoff)
                   | (.commit.message | split("\n")[0])
                   | select((test("^fix: bump intentd sidecar to v")
                             or test("^chore\\(release\\): ")) | not)
-                ] | length' 2>/dev/null) || fresh=""
+                ] | length' 2>/dev/null \
+              | awk '{ sum += $1 } END { print sum + 0 }') || fresh=""
             if ! grep -Eq '^[0-9]+$' <<<"$fresh"; then
               echo "Could not inspect the fe commits since $fe_tag (failing open)."
               return 1
@@ -660,12 +674,16 @@ jobs:
             fi
 
             # BE-dependency freshness guardrail (see be_dependency_skew
-            # above): deferral is bounded by the intentd alpha cadence —
-            # the next alpha advances the pin, and the pin-bump merge push
-            # chains straight into a fresh cut run. Push runs with poll
-            # budget left retry first, so a pin that advances mid-poll
-            # clears the skew within this very run.
-            if be_dependency_skew; then
+            # above): normally the deferral is bounded by the intentd alpha
+            # cadence — the next alpha advances the pin, and the pin-bump
+            # merge push chains straight into a fresh cut run. When intentd
+            # cannot publish (failed build, or ahead only by never-released
+            # commits) the deferral persists; workflow_dispatch bypasses
+            # this guard (manual means urgent — same convention as the
+            # throttle) so an operator can always force the cut. Push runs
+            # with poll budget left retry first, so a pin that advances
+            # mid-poll clears the skew within this very run.
+            if [[ "$EVENT_NAME" != "workflow_dispatch" ]] && be_dependency_skew; then
               if [[ "$EVENT_NAME" == "push" ]] && (( $(date +%s) < deadline )); then
                 echo "$be_skew_msg — retrying in 30s."
                 sleep 30; continue
