@@ -7,6 +7,7 @@ import {
   hudDeactivated,
   hudDisplayStatusChanged,
   hudFeedEntryReceived,
+  hudGridFilterHydrated,
   hudGridFilterRepoPicked,
   hudGridFilterStatesCleared,
   hudGridFilterStateToggled,
@@ -492,5 +493,14 @@ describe('hud-slice grid filter (header FLEET OPS menus)', () => {
     expect(state.gridFilter.states).toEqual(['wait']);
     state = hudReducer(state, hudGridFilterStatesCleared());
     expect(state.gridFilter.states).toEqual([]);
+  });
+
+  it('hudGridFilterHydrated replaces the filter while active — and is a no-op inactive', () => {
+    const restored = { repo: 'intent-hq/intentd', states: ['failed' as const] };
+    const state = hudReducer(activeState(), hudGridFilterHydrated(restored));
+    expect(state.gridFilter).toEqual(restored);
+
+    // Inactive (e.g. a stray late hydration after hudDeactivated): unchanged.
+    expect(hudReducer(initialState, hudGridFilterHydrated(restored))).toBe(initialState);
   });
 });

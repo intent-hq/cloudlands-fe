@@ -246,6 +246,13 @@ export const hudGridFilterStateToggled = createAction<[stateKey: HudCardStateKey
 );
 /** Header status-menu "All statuses" reset. */
 export const hudGridFilterStatesCleared = createAction('hud/gridFilterStatesCleared');
+/**
+ * Persisted per-backend grid filter restored on activation (already sanitized
+ * by `$features/hud/hud-grid-filter-persistence`).
+ */
+export const hudGridFilterHydrated = createAction<[filter: HudGridFilter]>(
+  'hud/gridFilterHydrated',
+);
 
 // ── Reducer ──
 
@@ -423,3 +430,7 @@ hudReducer.with(hudGridFilterStatesCleared, (state) =>
     ? state
     : { ...state, gridFilter: { ...state.gridFilter, states: [] } },
 );
+hudReducer.with(hudGridFilterHydrated, (state, { payload: [filter] }) => {
+  if (!state.active) return state;
+  return { ...state, gridFilter: filter };
+});

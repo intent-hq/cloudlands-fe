@@ -288,6 +288,14 @@ let bootReconnectTimeoutMs = 4_000;
 interface BackendWindowHooks {
   captureAndClose(fromBackendId: string): Promise<void>;
   restore(toBackendId: string): void | Promise<void>;
+  /**
+   * Idempotent failure-path clear of the window-all-closed teardown guard set
+   * by `captureAndClose`. `restore` already clears it at its top; the switch
+   * orchestration also calls this from a finally so a throw between the two
+   * halves cannot leak the guard and suppress window-all-closed handling for
+   * the rest of the session.
+   */
+  clearTeardownGuard?(): void | Promise<void>;
 }
 const defaultWindowHooks: BackendWindowHooks = {
   async captureAndClose(fromBackendId) {
@@ -301,6 +309,12 @@ const defaultWindowHooks: BackendWindowHooks = {
       restoreWindowsForBackend: (id: string) => void;
     };
     mod.restoreWindowsForBackend(toBackendId);
+  },
+  async clearTeardownGuard() {
+    const mod = (await import('../../../main/window')) as unknown as {
+      clearBackendSwitchWindowTeardownGuard: () => void;
+    };
+    mod.clearBackendSwitchWindowTeardownGuard();
   },
 };
 let windowHooks: BackendWindowHooks = defaultWindowHooks;
@@ -1122,48 +1136,64 @@ async function performSwitchBackend(id: string): Promise<SwitchConnectionResult>
   // (1) Validate + resolve BEFORE any teardown.
   const { config, meta } = await buildConfigForConnection(id);
 
-  // (2) Capture + close the outgoing backend's windows while they're still live.
-  await windowHooks.captureAndClose(fromId);
+  // captureAndClose sets the window-all-closed teardown guard partway through
+  // (after saving sessions, before the destroy loop); restore clears it at its
+  // top. A throw from anywhere in between — including from captureAndClose
+  // itself after the flag is set — would leak the guard and suppress
+  // window-all-closed handling for the rest of the session, so the finally
+  // re-clears it (idempotent — a no-op when unset or already cleared).
+  try {
+    // (2) Capture + close the outgoing backend's windows while they're still live.
+    await windowHooks.captureAndClose(fromId);
 
-  // (2.5) Cancel + notify any in-flight `host.execStream` while the old client is
-  // still connected. Its per-call subscription is bound to the client we are
-  // about to dispose (it could not be migrated onto a stable forwarder like the
-  // T8/T9 long-lived listeners), so without this the consumer's `done` would
-  // hang on remaining output and an exit frame that can never arrive. This
-  // best-effort cancels on the old daemon, then hands each consumer a terminal
-  // cancelled-by-backend-switch frame — issue #1616. Runs BEFORE dispose.
-  await cancelInflightHostExecStreamsForBackendSwitch();
+    // (2.5) Cancel + notify any in-flight `host.execStream` while the old client is
+    // still connected. Its per-call subscription is bound to the client we are
+    // about to dispose (it could not be migrated onto a stable forwarder like the
+    // T8/T9 long-lived listeners), so without this the consumer's `done` would
+    // hang on remaining output and an exit frame that can never arrive. This
+    // best-effort cancels on the old daemon, then hands each consumer a terminal
+    // cancelled-by-backend-switch frame — issue #1616. Runs BEFORE dispose.
+    await cancelInflightHostExecStreamsForBackendSwitch();
 
-  // (3) Dispose the previous client + subscriptions before connecting the new one.
-  disposeBackendClient();
+    // (3) Dispose the previous client + subscriptions before connecting the new one.
+    disposeBackendClient();
 
-  // (4) Persist the new active target and build the new client.
-  await connectionsStore.setActiveId(id);
-  currentConfig = meta ? config : null; // null => local/env default on next build
-  activeConnectionMeta = meta;
-  getBackendClient(); // constructs, wires, and starts the new client
+    // (4) Persist the new active target and build the new client.
+    await connectionsStore.setActiveId(id);
+    currentConfig = meta ? config : null; // null => local/env default on next build
+    activeConnectionMeta = meta;
+    getBackendClient(); // constructs, wires, and starts the new client
 
-  // The new client's first connect is a plain `connected`, not a `reconnected`,
-  // so its own `reconnected` event will not fire on this initial connect. Nudge
-  // the stable forwarder once here so main-process services (attached via
-  // onBackendReconnected) replay their `events.subscribe` calls against the new
-  // client — their requests queue until the fresh socket connects (T8).
-  backendReconnectForwarder.emit('reconnected');
+    // The new client's first connect is a plain `connected`, not a `reconnected`,
+    // so its own `reconnected` event will not fire on this initial connect. Nudge
+    // the stable forwarder once here so main-process services (attached via
+    // onBackendReconnected) replay their `events.subscribe` calls against the new
+    // client — their requests queue until the fresh socket connects (T8).
+    backendReconnectForwarder.emit('reconnected');
 
-  // (4.5) Label the remote by its hostname once it connects (T14). Reuses the
-  // live client's `host.status`; fire-and-forget so a slow/unreachable remote
-  // never stalls the switch — the label upgrades from `host:port` to
-  // `hostname (host:port)` asynchronously. Skipped for the local sidecar (UDS
-  // has no remote hostname to show; its label is fixed). The candidate-host
-  // refresh (#1746) piggybacks on the same post-connect window, equally
-  // fire-and-forget/fail-soft.
-  if (meta) {
-    void captureRemoteHostname(id);
-    void refreshRemoteHosts(id);
+    // (4.5) Label the remote by its hostname once it connects (T14). Reuses the
+    // live client's `host.status`; fire-and-forget so a slow/unreachable remote
+    // never stalls the switch — the label upgrades from `host:port` to
+    // `hostname (host:port)` asynchronously. Skipped for the local sidecar (UDS
+    // has no remote hostname to show; its label is fixed). The candidate-host
+    // refresh (#1746) piggybacks on the same post-connect window, equally
+    // fire-and-forget/fail-soft.
+    if (meta) {
+      void captureRemoteHostname(id);
+      void refreshRemoteHosts(id);
+    }
+
+    // (5) Restore the incoming backend's windows (now targeting the new daemon).
+    await windowHooks.restore(id);
+  } finally {
+    try {
+      await windowHooks.clearTeardownGuard?.();
+    } catch {
+      // Best-effort: a throw from a finally would replace the in-flight
+      // exception, so a rejection here (e.g. the default hook's dynamic
+      // import) must never mask the original switch error.
+    }
   }
-
-  // (5) Restore the incoming backend's windows (now targeting the new daemon).
-  await windowHooks.restore(id);
 
   // (6) Notify the renderer, and the main process (menu items gated on the
   // active backend, e.g. Help ▸ Sample intentd Process on win32 — #1889).
