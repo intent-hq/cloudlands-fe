@@ -1736,6 +1736,104 @@ describe('panelLayoutReducer', () => {
       expect(result.panels.p1.tabs).toEqual([expect.objectContaining({ id: 'one' })]);
     });
 
+    it('fits each added structural column to the live viewport and focuses the new column', () => {
+      let state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
+      state.byWorkspaceId[WS] = {
+        ...state.byWorkspaceId[WS],
+        canvasWidth: 1800,
+        canvasWidthSource: 'explicit',
+      };
+
+      for (const [count, availableWidth] of [
+        [2, 640],
+        [3, 960],
+        [4, 1200],
+      ] as const) {
+        const action = setPanelColumnCount(WS, count, count, availableWidth);
+        state = panelLayoutReducer(state, action);
+        const workspace = state.byWorkspaceId[WS];
+
+        expect(workspace.root).toMatchObject({
+          type: 'split',
+          direction: 'horizontal',
+          sizes: Array.from({ length: count }, () => 100 / count),
+        });
+        expect(Object.keys(workspace.panels)).toHaveLength(count);
+        expect(workspace.focusedPanelId).toBe(action.payload.newPanelIds[0]);
+        expect(workspace.canvasWidth).toBe(
+          getAutomaticPanelCanvasWidth(count, 'viewport', availableWidth),
+        );
+        expect(workspace.canvasWidth).toBeLessThanOrEqual(availableWidth);
+        expect(workspace.canvasWidthSource).toBe('explicit');
+      }
+    });
+
+    it('restores the explicit pre-fit width and fitted geometry through history', () => {
+      let state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
+      state.byWorkspaceId[WS] = {
+        ...state.byWorkspaceId[WS],
+        canvasWidth: 1800,
+        canvasWidthSource: 'explicit',
+      };
+      const increase = setPanelColumnCount(WS, 2, 10, 640);
+      state = panelLayoutReducer(state, increase);
+
+      state = panelLayoutReducer(state, goBack(WS, 20));
+      expect(state.byWorkspaceId[WS]).toMatchObject({
+        root: { type: 'panel', panelId: 'p1' },
+        focusedPanelId: 'p1',
+        columnCount: 1,
+        canvasWidth: 1800,
+        canvasWidthSource: 'explicit',
+      });
+
+      state = panelLayoutReducer(state, goForward(WS));
+      expect(state.byWorkspaceId[WS]).toMatchObject({
+        root: { type: 'split', direction: 'horizontal', sizes: [50, 50] },
+        focusedPanelId: increase.payload.newPanelIds[0],
+        columnCount: 2,
+        canvasWidth: 640,
+        canvasWidthSource: 'explicit',
+      });
+    });
+
+    it('keeps the existing proportional decrease behavior after a fitted increase', () => {
+      const state = emptyState();
+      state.byWorkspaceId[WS] = {
+        ...emptyWorkspaceState,
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: ['p1', 'p2', 'p3'].map((panelId) => ({
+            type: 'panel' as const,
+            panelId,
+          })),
+          sizes: [100 / 3, 100 / 3, 100 / 3],
+        },
+        panels: Object.fromEntries(
+          ['p1', 'p2', 'p3'].map((panelId) => [
+            panelId,
+            { id: panelId, tabs: [], activeTabId: null, pristine: true },
+          ]),
+        ),
+        focusedPanelId: 'p3',
+        columnCount: 3,
+        canvasWidth: 960,
+        canvasWidthSource: 'explicit',
+      };
+
+      const workspace = panelLayoutReducer(state, setPanelColumnCount(WS, 2, 10, 500))
+        .byWorkspaceId[WS];
+
+      expect(workspace.root).toMatchObject({
+        type: 'split',
+        sizes: [50, 50],
+        children: [{ panelId: 'p1' }, { panelId: 'p2' }],
+      });
+      expect(workspace.focusedPanelId).toBe('p2');
+      expect(workspace.canvasWidth).toBeCloseTo(637.333333, 6);
+    });
+
     it('sets a valid count only for the target workspace', () => {
       const state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
       state.byWorkspaceId.other = {

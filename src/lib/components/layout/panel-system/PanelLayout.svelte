@@ -1317,6 +1317,7 @@
           rootPanelReferenceSize={panelGeometryCanvasWidth > 0 ? panelGeometryCanvasWidth : null}
           rootHorizontalPanelWidths={allocatedPanelCanvas.panelWidths}
           rootCanvasResizeDelta={panelOuterResizeDelta + panelOuterResizeCommittedDelta}
+          availableCanvasWidth={panelViewportWidth}
           onFocusPanel={handleFocusPanel}
           onTabClick={handleTabClick}
           onTabClose={handleTabClose}

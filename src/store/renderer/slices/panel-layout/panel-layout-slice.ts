@@ -572,22 +572,30 @@ export const closePanel = createAction(
 
 export const reconcilePanelColumnCount = createAction(
   'panelLayout/reconcilePanelColumnCount',
-  (wsId: string, count: PanelColumnCount, timestamp?: number, recordHistory = true) => ({
+  (
+    wsId: string,
+    count: PanelColumnCount,
+    timestamp?: number,
+    recordHistory = true,
+    availableCanvasWidth?: number,
+  ) => ({
     wsId,
     count,
     newPanelIds: Array.from({ length: 3 }, () => generatePanelId()),
     timestamp: timestamp ?? Date.now(),
     recordHistory,
+    availableCanvasWidth,
   }),
 );
 
 export const setPanelColumnCount = createAction(
   'panelLayout/setPanelColumnCount',
-  (wsId: string, count: number, timestamp?: number) => ({
+  (wsId: string, count: number, timestamp?: number, availableCanvasWidth?: number) => ({
     wsId,
     count,
     newPanelIds: Array.from({ length: 3 }, () => generatePanelId()),
     timestamp: timestamp ?? Date.now(),
+    availableCanvasWidth,
   }),
 );
 
@@ -997,6 +1005,7 @@ function reconcileWorkspacePanelColumns(
   newPanelIds: string[],
   timestamp: number,
   recordHistory: boolean,
+  availableCanvasWidth?: number,
 ): WorkspacePanelLayoutState {
   const restored = restoreExpandedWorkspaceLayout(workspace);
   const originalOrder = getPanelOrder(restored.root).filter((panelId) => restored.panels[panelId]);
@@ -1049,13 +1058,23 @@ function reconcileWorkspacePanelColumns(
   }
 
   const removedSet = new Set(removedPanelIds);
-  const focusedPanelId =
-    next.focusedPanelId && !removedSet.has(next.focusedPanelId)
-      ? next.focusedPanelId
-      : (survivingRightmostId ?? panelIds[0] ?? null);
   const previousColumnCount = originalOrder.length;
   const nextColumnCount = panelIds.length;
+  const addedColumns = nextColumnCount > previousColumnCount;
+  const fitsAvailableCanvas =
+    addedColumns &&
+    typeof availableCanvasWidth === 'number' &&
+    Number.isFinite(availableCanvasWidth) &&
+    availableCanvasWidth > 0;
+  const focusedPanelId = fitsAvailableCanvas
+    ? (panelIds.at(-1) ?? null)
+    : next.focusedPanelId && !removedSet.has(next.focusedPanelId)
+      ? next.focusedPanelId
+      : (survivingRightmostId ?? panelIds[0] ?? null);
   const canvasWidth = (() => {
+    if (fitsAvailableCanvas) {
+      return getAutomaticPanelCanvasWidth(nextColumnCount, 'viewport', availableCanvasWidth);
+    }
     if (next.canvasWidth === null || next.canvasWidthSource === 'intrinsic') return null;
     const contentWidth = Math.max(
       0,
@@ -1074,7 +1093,11 @@ function reconcileWorkspacePanelColumns(
     panels,
     focusedPanelId,
     canvasWidth,
-    canvasWidthSource: next.canvasWidthSource === 'intrinsic' ? null : next.canvasWidthSource,
+    canvasWidthSource: fitsAvailableCanvas
+      ? 'explicit'
+      : next.canvasWidthSource === 'intrinsic'
+        ? null
+        : next.canvasWidthSource,
     columnCount: count,
     recentlyClosed: next.recentlyClosed.map((entry) =>
       removedSet.has(entry.panelId) && survivingRightmostId
@@ -2683,7 +2706,7 @@ panelLayoutReducer.with(closePanel, (state, { payload }) => {
   return setWorkspaceState(state, wsId, updatedWs);
 });
 panelLayoutReducer.with(reconcilePanelColumnCount, (state, { payload }) => {
-  const { wsId, count, newPanelIds, timestamp, recordHistory } = payload;
+  const { wsId, count, newPanelIds, timestamp, recordHistory, availableCanvasWidth } = payload;
   const ws = getWorkspaceState(state, wsId);
   const reconciled = reconcileWorkspacePanelColumns(
     ws,
@@ -2691,15 +2714,23 @@ panelLayoutReducer.with(reconcilePanelColumnCount, (state, { payload }) => {
     newPanelIds,
     timestamp,
     recordHistory,
+    availableCanvasWidth,
   );
   return setWorkspaceState(state, wsId, reconciled);
 });
 panelLayoutReducer.with(setPanelColumnCount, (state, { payload }) => {
-  const { wsId, count, newPanelIds, timestamp } = payload;
+  const { wsId, count, newPanelIds, timestamp, availableCanvasWidth } = payload;
   if (!isPanelColumnCount(count)) return state;
   const ws = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, {
-    ...reconcileWorkspacePanelColumns(ws, count, newPanelIds, timestamp, true),
+    ...reconcileWorkspacePanelColumns(
+      ws,
+      count,
+      newPanelIds,
+      timestamp,
+      true,
+      availableCanvasWidth,
+    ),
     columnCountInitialized: true,
   });
 });

@@ -139,6 +139,7 @@
     panelId: string;
     workspaceId: string;
     layoutId?: string;
+    availableCanvasWidth?: number;
     isFocused?: boolean;
     isRightmostPanel?: boolean;
     /** Content-specific items to merge into the grouped panel action menu. */
@@ -182,6 +183,7 @@
     panelId,
     workspaceId,
     layoutId,
+    availableCanvasWidth,
     isFocused = false,
     isRightmostPanel = false,
     contentActions = null,
@@ -263,8 +265,9 @@
   // UI updates when agents rename or their session metadata changes.
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const recentlyClosed$ = selectRecentlyClosed(panelLayoutIdStore);
-  const panelColumnCount$ = selectPanelColumnCount(workspaceIdStore);
+  const panelColumnCount$ = selectPanelColumnCount(panelLayoutIdStore);
   const panelColumnCounts = [1, 2, 3, 4] as const;
+  let preserveStructuralColumnFocus = false;
 
   // Reactive store subscription for specialist names - ensures re-render when specialists change
   const specialists$ = selectSpecialists();
@@ -390,7 +393,18 @@
 
   function handlePanelColumnCountChange(value: string) {
     const count = Number(value);
-    if (isPanelColumnCount(count)) appStore.dispatch(setPanelColumnCount(workspaceId, count));
+    if (isPanelColumnCount(count)) {
+      preserveStructuralColumnFocus = count > $panelColumnCount$;
+      appStore.dispatch(
+        setPanelColumnCount(layoutId ?? workspaceId, count, undefined, availableCanvasWidth),
+      );
+    }
+  }
+
+  function handlePanelColumnMenuCloseAutoFocus(event: Event) {
+    if (!preserveStructuralColumnFocus) return;
+    event.preventDefault();
+    preserveStructuralColumnFocus = false;
   }
 
   function panelColumnCountLabel(value: PanelColumnCount) {
@@ -1456,6 +1470,7 @@
         side="bottom"
         class="w-44"
         aria-label={m.workspace_sidebarHeader_panelColumns_ariaLabel()}
+        onCloseAutoFocus={handlePanelColumnMenuCloseAutoFocus}
       >
         <Menu.RadioGroup
           value={String($panelColumnCount$)}

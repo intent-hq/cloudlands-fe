@@ -51,6 +51,8 @@
     rootHorizontalPanelWidths?: readonly number[] | null;
     /** Live outer-canvas delta; only the final root panel absorbs it. */
     rootCanvasResizeDelta?: number;
+    /** Live usable viewport width for structural column-count changes. */
+    availableCanvasWidth?: number;
     /** Report the root split's gutter-exclusive content width. */
     onRootReferenceSizeChange?: (width: number) => void;
     nodePath?: number[]; // Path to this node in the tree (for size updates)
@@ -132,6 +134,7 @@
     rootPanelReferenceSize = null,
     rootHorizontalPanelWidths = null,
     rootCanvasResizeDelta = 0,
+    availableCanvasWidth,
     onRootReferenceSizeChange,
     nodePath = [],
     zoomedPanelId = null,
@@ -618,6 +621,7 @@
         {panel}
         {workspaceId}
         {layoutId}
+        {availableCanvasWidth}
         isRightmostPanel={panelOrder.at(-1) === node.panelId}
         isFocused={focusedPanelId === node.panelId}
         isZoomed={zoomedPanelId === node.panelId}
@@ -695,6 +699,7 @@
             {focusedPanelId}
             {workspaceId}
             {layoutId}
+            {availableCanvasWidth}
             {contained}
             {suppressLayoutMotion}
             nodePath={[...nodePath, item.index]}

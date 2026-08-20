@@ -49,6 +49,7 @@
     isFocused?: boolean;
     workspaceId: string;
     layoutId: string;
+    availableCanvasWidth?: number;
     isRightmostPanel?: boolean;
     contained?: boolean;
     onFocus?: () => void;
@@ -96,6 +97,7 @@
     isFocused = false,
     workspaceId,
     layoutId,
+    availableCanvasWidth,
     isRightmostPanel = false,
     contained = false,
     onFocus,
@@ -488,6 +490,7 @@
         panelId={panel.id}
         {workspaceId}
         {layoutId}
+        {availableCanvasWidth}
         {isRightmostPanel}
         {isFocused}
         contentActions={headerActions.current}
