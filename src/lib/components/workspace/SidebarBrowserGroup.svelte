@@ -35,7 +35,7 @@
   >
     <Fa icon={expanded ? faChevronDown : faChevronRight} size="xs" class="text-muted-foreground" />
     <span class="truncate text-ui uppercase tracking-wider text-muted-foreground">{groupLabel}</span>
-    <span class="text-ui text-muted-foreground/60">{group.entries.length}</span>
+    <span class="text-ui text-muted-foreground">{group.entries.length}</span>
   </Button>
   {#if expanded}
     <div class="flex min-w-0 flex-col gap-0.5 pl-1">
