@@ -98,6 +98,8 @@
     olderHistoryPageRequested,
     historyGapFillRequested,
     historySeekRequested,
+    pendingQuestionRecoveryRequested,
+    pendingQuestionRecoveryCleared,
   } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
     selectAwaitingSwitchBackSnapshot,
@@ -113,6 +115,7 @@
     selectFetchingOlderHistory,
     selectHistoryExhausted,
     selectHistorySeekUnsupported,
+    selectPendingQuestionRecovery,
     selectTranscriptHydratedOnce,
     selectTranscriptHydration,
     selectTranscriptSnapshotMeta,
@@ -153,7 +156,10 @@
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
-  import { deriveWizardPendingQuestions } from './questions/wizard-gate';
+  import {
+    deriveMarkedQuestionRecoveryState,
+    deriveWizardPendingQuestions,
+  } from './questions/wizard-gate';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
     classifyScrollbackGesture,
@@ -381,6 +387,7 @@
   const fetchingHistorySeek$ = selectFetchingHistorySeek(agentIdStore);
   const historySeekUnsupported$ = selectHistorySeekUnsupported(agentIdStore);
   const historyExhausted$ = selectHistoryExhausted(agentIdStore);
+  const pendingQuestionRecovery$ = selectPendingQuestionRecovery(agentIdStore);
   const agentTasks$ = selectTasksForAgent(workspaceIdStore, agentIdStore);
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
@@ -721,6 +728,29 @@
   // on delegated agents has ended its turn and its questions must surface)
   // lives in deriveWizardPendingQuestions so the regression suite exercises
   // the real production gate.
+  const markedQuestionRecovery = $derived.by(() => {
+    void $agentMessages$;
+    void $agentHistoryMessages$;
+    void $agentSession$?.metadata?.pendingQuestionsMessageId;
+    void $pendingQuestionRecovery$;
+    return deriveMarkedQuestionRecoveryState(appStore.state, agentId);
+  });
+  const pendingQuestionRecoveryLoading = $derived(
+    $transcriptHydration$ === 'settled' && markedQuestionRecovery?.loading === true,
+  );
+  $effect(() => {
+    if ($agentSession$?.id !== agentId) return;
+    const marker = $agentSession$?.metadata?.pendingQuestionsMessageId;
+    const tracked = $pendingQuestionRecovery$;
+    if (typeof marker !== 'string' || marker.length === 0) {
+      if (tracked) appStore.dispatch(pendingQuestionRecoveryCleared(agentId));
+      return;
+    }
+    if ($transcriptHydration$ === 'settled' && markedQuestionRecovery?.shouldRequest) {
+      appStore.dispatch(pendingQuestionRecoveryRequested(agentId, marker));
+    }
+  });
+
   const pendingQuestions = $derived.by(() => {
     const hasUserMessage = $agentMessages$.some((m) => m.role === 'user');
     const showingPendingUserMessage = !!pendingMessage && !hasUserMessage;
@@ -5173,7 +5203,7 @@
             </div>
           {/key}
         {/if}
-        {#if !pendingQuestions || questionWizardCollapsed}
+        {#if (!pendingQuestions && !pendingQuestionRecoveryLoading) || questionWizardCollapsed}
           {#if draftManager.gateVisible}
             <ChatDraftLoadingGate />
           {/if}

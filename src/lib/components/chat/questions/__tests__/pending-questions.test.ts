@@ -11,7 +11,10 @@
 import { describe, expect, it } from 'vitest';
 import { derivePendingQuestions } from '../pending-questions';
 import { buildAnswerMessageMetadata } from '../answer-message';
-import { deriveWizardPendingQuestions } from '../wizard-gate';
+import {
+  deriveMarkedQuestionRecoveryState,
+  deriveWizardPendingQuestions,
+} from '../wizard-gate';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import type { StoreState } from '$store/renderer/types';
@@ -381,6 +384,46 @@ describe('wizard gate honors the authoritative pending marker', () => {
     );
     expect(deriveWizardPendingQuestions(state, AGENT_ID, newerTranscript)).toMatchObject({
       messageId: 'msg-a3',
+    });
+  });
+
+  it('finds an older marked question in the canonical paged history segment', () => {
+    const marked = assistantMessage([questionBlock()], { id: 'msg-old-question' });
+    const state = stateWith(
+      makeStoredSession({
+        messages: transcript,
+        metadata: { pendingQuestionsMessageId: marked.id },
+      }),
+    );
+    state.agentSessions.historySegmentsByAgentId = {
+      [AGENT_ID]: { messages: [marked], gapToTail: true, oldestReached: false },
+    };
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, transcript)).toMatchObject({
+      messageId: marked.id,
+    });
+    expect(deriveMarkedQuestionRecoveryState(state, AGENT_ID)).toBeNull();
+  });
+
+  it('reports one loading recovery until a stale marker is settled as not found', () => {
+    const state = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-stale' } }),
+    );
+    expect(deriveMarkedQuestionRecoveryState(state, AGENT_ID)).toEqual({
+      messageId: 'msg-stale',
+      shouldRequest: true,
+      loading: true,
+    });
+    state.chatState = {
+      byAgentId: {
+        [AGENT_ID]: {
+          pendingQuestionRecovery: { messageId: 'msg-stale', status: 'not-found' },
+        },
+      },
+    } as StoreState['chatState'];
+    expect(deriveMarkedQuestionRecoveryState(state, AGENT_ID)).toEqual({
+      messageId: 'msg-stale',
+      shouldRequest: false,
+      loading: false,
     });
   });
 });

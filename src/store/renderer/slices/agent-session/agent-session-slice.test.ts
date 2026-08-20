@@ -40,6 +40,7 @@ import {
   prependHistoryMessages,
   appendHistoryMessages,
   seedHistoryAround,
+  seedHistoryAtMarkedQuestion,
   setHistoryOldestReached,
   clearHistorySegment,
   MAX_MESSAGES_PER_AGENT,
@@ -5862,6 +5863,30 @@ describe('history segment (scrollback)', () => {
         seedHistoryAround('unknown', [histMsg(0)], 0),
       );
       expect(state).toBe(initialState);
+    });
+  });
+
+  describe('seedHistoryAtMarkedQuestion', () => {
+    it('uses the canonical history segment and leaves an explicit gap to the tail', () => {
+      const tail = makeUniqueMessage('tail-1', 'user', ts(1000));
+      let state = withSession('a1', [tail]);
+      state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(10)]));
+      state = agentSessionReducer(state, seedHistoryAtMarkedQuestion('a1', histMsg(2)));
+      expect(getHistory(state, 'a1')).toEqual({
+        messages: [histMsg(2)],
+        gapToTail: true,
+        oldestReached: false,
+      });
+      expect(state.byAgentId.a1.messages).toEqual([tail]);
+    });
+
+    it('does not duplicate a row that became tail-resident before the seek settled', () => {
+      const tail = histMsg(2);
+      const state = agentSessionReducer(
+        withSession('a1', [tail]),
+        seedHistoryAtMarkedQuestion('a1', { ...tail }),
+      );
+      expect(getHistory(state, 'a1')).toBeUndefined();
     });
   });
 

@@ -57,11 +57,14 @@ import {
   prependHistoryMessages,
   removeSession,
   seedHistoryAround,
+  seedHistoryAtMarkedQuestion,
   setHistoryOldestReached,
 } from '../../agent-session/agent-session-slice';
 import {
   selectAgentHistoryMessages,
+  selectAgentMessageById,
   selectAgentMessages,
+  selectAgentSession,
   selectHistorySegmentMeta,
 } from '../../agent-session/agent-session-selectors';
 import {
@@ -69,6 +72,8 @@ import {
   historyGapFillRequested,
   historySeekRequested,
   olderHistoryPageRequested,
+  pendingQuestionRecoveryRequested,
+  pendingQuestionRecoverySettled,
   scrollbackContinuationReset,
   scrollbackFetchStarted,
   scrollbackGapPageSettled,
@@ -79,6 +84,7 @@ import { selectChatAgentState } from '../chat-state-selectors';
 
 const logger = createLogger('ChatScrollbackSaga');
 const PAGE_LIMIT = 200;
+const MARKED_QUESTION_LIMIT = 1;
 
 type ConversationPage = Awaited<ReturnType<typeof appClient.agents.getConversation>>;
 
@@ -278,6 +284,57 @@ function* historySeekWorker(
   }
 }
 
+function* recoverPendingQuestionWorker(
+  inFlight: Set<string>,
+  action: ReturnType<typeof pendingQuestionRecoveryRequested>,
+): SagaGenerator<void> {
+  const [agentId, messageId] = action.payload;
+  const key = `${agentId}\u0000${messageId}`;
+  const chat = yield* selectChatAgentState.effect(agentId);
+  if (
+    chat.pendingQuestionRecovery?.messageId !== messageId ||
+    chat.pendingQuestionRecovery.status !== 'loading' ||
+    inFlight.has(key)
+  ) {
+    return;
+  }
+  const resident = yield* selectAgentMessageById.effect(agentId, messageId);
+  if (resident) {
+    yield* put(pendingQuestionRecoverySettled(agentId, messageId, 'found'));
+    return;
+  }
+
+  inFlight.add(key);
+  try {
+    const page: ConversationPage = yield* call(
+      [appClient.agents, appClient.agents.getConversation],
+      agentId,
+      MARKED_QUESTION_LIMIT,
+      undefined,
+      messageId,
+    );
+    const session = yield* selectAgentSession.effect(agentId);
+    if (session?.metadata?.pendingQuestionsMessageId !== messageId) {
+      yield* put(pendingQuestionRecoverySettled(agentId, messageId, 'found'));
+      return;
+    }
+    const marked = page.messages.find((message) => message.id === messageId);
+    if (!marked) {
+      yield* put(pendingQuestionRecoverySettled(agentId, messageId, 'not-found'));
+      return;
+    }
+    yield* put(seedHistoryAtMarkedQuestion(agentId, marked));
+    yield* put(scrollbackContinuationReset(agentId));
+    yield* put(pendingQuestionRecoverySettled(agentId, messageId, 'found'));
+  } catch (error) {
+    const outcome = isInvalidParamsError(error) ? 'not-found' : 'error';
+    logger.error('Failed to recover marked pending question', { agentId, messageId, error });
+    yield* put(pendingQuestionRecoverySettled(agentId, messageId, outcome));
+  } finally {
+    inFlight.delete(key);
+  }
+}
+
 /**
  * Post-settle hygiene: when the history segment was cleared out from under
  * an in-flight fetch (session removal / `resumed: false` rehydration), the
@@ -314,12 +371,22 @@ function* snapshotResetWorker(
 }
 
 export function* chatScrollbackSaga(): SagaGenerator<void> {
-  yield* all([
-    takeEvery(olderHistoryPageRequested, fetchOlderPageWorker),
-    takeEvery(historyGapFillRequested, fetchGapFillWorker),
-    takeEvery(historySeekRequested, historySeekWorker),
-    takeEvery(removeSession, continuationResetWorker),
-    takeEvery(clearHistorySegment, continuationResetWorker),
-    takeEvery(chatTranscriptSnapshotApplied, snapshotResetWorker),
-  ]);
+  const pendingQuestionRecoveries = new Set<string>();
+  try {
+    yield* all([
+      takeEvery(olderHistoryPageRequested, fetchOlderPageWorker),
+      takeEvery(historyGapFillRequested, fetchGapFillWorker),
+      takeEvery(historySeekRequested, historySeekWorker),
+      takeEvery(
+        pendingQuestionRecoveryRequested,
+        recoverPendingQuestionWorker,
+        pendingQuestionRecoveries,
+      ),
+      takeEvery(removeSession, continuationResetWorker),
+      takeEvery(clearHistorySegment, continuationResetWorker),
+      takeEvery(chatTranscriptSnapshotApplied, snapshotResetWorker),
+    ]);
+  } finally {
+    pendingQuestionRecoveries.clear();
+  }
 }

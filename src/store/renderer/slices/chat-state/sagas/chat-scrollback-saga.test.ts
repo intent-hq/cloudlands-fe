@@ -13,12 +13,16 @@ vi.mock('$lib/client', () => ({
 
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
+import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import type { StoreState } from '$store/renderer/types';
+import { deriveWizardPendingQuestions } from '$lib/components/chat/questions/wizard-gate';
 import {
   HISTORY_SEGMENT_MAX,
   agentSessionReducer,
   bulkUpsertSessions,
   initialState as agentSessionInitialState,
   prependHistoryMessages,
+  updateSession,
 } from '../../agent-session/agent-session-slice';
 import {
   chatStateReducer,
@@ -27,6 +31,7 @@ import {
   historySeekRequested,
   initialState as chatStateInitialState,
   olderHistoryPageRequested,
+  pendingQuestionRecoveryRequested,
 } from '../chat-state-slice';
 import { chatScrollbackSaga } from './chat-scrollback-saga';
 
@@ -67,6 +72,32 @@ function message(id: string, index: number): AgentMessage {
   };
 }
 
+function questionMessage(id: string, index: number): AgentMessage {
+  return {
+    ...message(id, index),
+    contentBlocks: [
+      {
+        type: 'resource',
+        resource: {
+          uri: 'intent-question://tar-abc123def456',
+          name: 'Marked question',
+          mimeType: QUESTION_RESOURCE_MIME_TYPE,
+          text: JSON.stringify({
+            attachmentId: 'tar-abc123def456',
+            header: 'Marked question',
+            question: 'Which option?',
+            options: [
+              { label: 'First', description: 'Use the first option' },
+              { label: 'Second', description: 'Use the second option' },
+            ],
+            multiSelect: false,
+          }),
+        },
+      },
+    ],
+  } as AgentMessage;
+}
+
 function page(
   messages: AgentMessage[],
   overrides: Partial<{
@@ -105,6 +136,7 @@ function harness() {
     task,
     history: () => agentSessions.historySegmentsByAgentId?.[AGENT],
     chat: () => chatState.byAgentId[AGENT],
+    state: () => ({ agentSessions, chatState }) as StoreState,
   };
 }
 
@@ -190,6 +222,101 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     await settle();
     expect(run.chat()?.fetchingOlderHistory).toBe(false);
     expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-09']);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('recovers one older marked row with one exact aroundMessageId request', async () => {
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([
+        session({
+          status: AgentStatus.Idle,
+          messages: [message('m-tail', 100)],
+          metadata: { pendingQuestionsMessageId: 'm-question' },
+        }),
+      ]),
+    );
+    mocks.getConversation.mockResolvedValueOnce(
+      page([questionMessage('m-question', 10)], {
+        totalMessages: 101,
+        nextToken: 'unused',
+      }),
+    );
+
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    await settle();
+
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+    expect(mocks.getConversation).toHaveBeenCalledWith(
+      AGENT,
+      1,
+      undefined,
+      'm-question',
+    );
+    expect(run.history()?.messages.map((item) => item.id)).toEqual(['m-question']);
+    expect(run.history()?.gapToTail).toBe(true);
+    expect(run.chat()?.pendingQuestionRecovery).toBeUndefined();
+    expect(
+      deriveWizardPendingQuestions(run.state(), AGENT, [message('m-tail', 100)]),
+    ).toMatchObject({ messageId: 'm-question' });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not land a recovered row when the marker clears during the request', async () => {
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([
+        session({
+          messages: [message('m-tail', 100)],
+          metadata: { pendingQuestionsMessageId: 'm-question' },
+        }),
+      ]),
+    );
+    let resolvePage!: (value: ReturnType<typeof page>) => void;
+    mocks.getConversation.mockReturnValueOnce(
+      new Promise((done) => {
+        resolvePage = done;
+      }),
+    );
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    await settle();
+    run.dispatch(updateSession(AGENT, { metadata: { pendingQuestionsMessageId: '' } }));
+    resolvePage(page([message('m-question', 10)]));
+    await settle();
+
+    expect(run.history()).toBeUndefined();
+    expect(run.chat()?.pendingQuestionRecovery).toBeUndefined();
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('latches a stale marker after one failed seek and ignores repeated derivations', async () => {
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([
+        session({
+          messages: [message('m-tail', 100)],
+          metadata: { pendingQuestionsMessageId: 'm-stale' },
+        }),
+      ]),
+    );
+    mocks.getConversation.mockRejectedValueOnce({ code: 'INVALID_PARAMS' });
+
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-stale'));
+    await settle();
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-stale'));
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-stale'));
+    await settle();
+
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+    expect(run.chat()?.pendingQuestionRecovery).toEqual({
+      messageId: 'm-stale',
+      status: 'not-found',
+    });
+    expect(run.history()).toBeUndefined();
     run.task.cancel();
     await run.task.toPromise();
   });

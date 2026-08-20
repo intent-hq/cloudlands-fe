@@ -91,6 +91,12 @@ export type SerializableContextItem = Omit<ChatInputContextItem, 'file'>;
  */
 export type TranscriptHydrationStatus = 'loading' | 'settled' | 'error';
 
+/** One bounded lookup for an authoritative question marker outside the tail page. */
+export interface PendingQuestionRecovery {
+  messageId: string;
+  status: 'loading' | 'not-found' | 'error';
+}
+
 /**
  * Metadata of the LAST seq-0 snapshot the standing `chat.subscribe`
  * subscription applied to the store (single-transfer hydration). Written by
@@ -223,6 +229,8 @@ export interface ChatAgentState {
    * rest of the session (the serial walk covers deep scrolls instead).
    */
   historySeekUnsupported: boolean;
+  /** State of the single targeted `aroundMessageId` lookup for the current marker. */
+  pendingQuestionRecovery?: PendingQuestionRecovery;
   /**
    * Switch-back transcript reveal gate: true while the VIEWED conversation is
    * awaiting a fresh seq-0 snapshot from its (re)opening standing
