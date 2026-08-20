@@ -14,6 +14,7 @@
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
   import { invoke } from '$shared/generated/ipc-client';
+  import type { BrowserEmulatedSize } from '$shared/ipc/workspace-command-payloads';
   import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
 
@@ -32,6 +33,7 @@
   } from './embedded-browser-navigation-sync';
   import { reportTabBounds } from './tab-bounds-action';
   import { isValidBrowserUrl } from './embedded-browser-url-validation';
+  import { navigateToAgent } from '$lib/utils/workspace-navigation';
   import Fa from 'svelte-fa';
   import {
     faArrowLeft,
@@ -42,6 +44,8 @@
     faExclamationTriangle,
     faTimes,
     faCode,
+    faRobot,
+    faExpand,
   } from '@fortawesome/free-solid-svg-icons';
   import Input from '../ui/input/input.svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -68,6 +72,12 @@
     isFocused?: boolean;
     /** Whether this tab is visible; inactive cached tabs remain mounted but muted. */
     isActive?: boolean;
+    /** Agent owning this tab (monorepo#2857); absent for unowned (user) tabs. */
+    ownerAgentId?: string;
+    /** Resolved display name of the owning agent for the toolbar chip. */
+    ownerAgentName?: string;
+    /** Emulated viewport size of an owned tab (docs/protocol §5.9). */
+    emulatedSize?: BrowserEmulatedSize;
   }
 
   let {
@@ -82,6 +92,9 @@
     focusUrlBarOnMount = false,
     isFocused = false,
     isActive = true,
+    ownerAgentId,
+    ownerAgentName,
+    emulatedSize,
   }: Props = $props();
 
   // Reactive readable for per-tab pending zoom requests dispatched by the
@@ -864,6 +877,37 @@
       />
       <button type="submit" class="sr-only">{m.browser_embedded_go_label()}</button>
     </form>
+
+    <!-- Owner agent chip + emulated viewport indicator (monorepo#2857, §5.9) -->
+    {#if ownerAgentId}
+      <Button
+        variant="plain"
+        class="flex h-auto shrink-0 cursor-pointer items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+        onclick={() => void navigateToAgent(ownerAgentId)}
+        tooltip={m.browser_embedded_ownerChip_tooltip({ name: ownerAgentName ?? ownerAgentId })}
+        aria-label={m.browser_embedded_ownerChip_ariaLabel({
+          name: ownerAgentName ?? ownerAgentId,
+        })}
+        data-browser-owner-chip={ownerAgentId}
+      >
+        <Fa icon={faRobot} size="xs" />
+        <span class="max-w-32 truncate">{ownerAgentName ?? ownerAgentId}</span>
+      </Button>
+      {#if emulatedSize}
+        <span
+          class="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+          title={m.browser_embedded_viewport_tooltip({
+            width: emulatedSize.width,
+            height: emulatedSize.height,
+          })}
+          data-browser-viewport-indicator
+        >
+          <Fa icon={faExpand} size="xs" />
+          <!-- i18n-ignore (numeric dimensions, no translatable text) -->
+          <span>{emulatedSize.width}×{emulatedSize.height}</span>
+        </span>
+      {/if}
+    {/if}
 
     <!-- Actions -->
     <div class="flex gap-0.5">

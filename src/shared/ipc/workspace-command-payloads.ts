@@ -81,7 +81,8 @@ export type BrowserTabOwnerChangedPayload = WorkspaceCommandPayload & {
   /**
    * The tab's emulated viewport at the time of the change (claim size /
    * resizeTab); persisted with the tab so the size survives restart
-   * (monorepo#2857).
+   * (monorepo#2857). Also carried by resize notifications — the owner is
+   * unchanged there, only the size — so the renderer's record stays live.
    */
   emulatedSize?: BrowserEmulatedSize;
 };

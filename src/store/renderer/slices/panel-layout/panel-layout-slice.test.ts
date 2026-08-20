@@ -17,6 +17,7 @@ import {
   destroyTabsByOwnerAgent,
   restoreHiddenTab,
   setActiveTab,
+  setTabOwnerAgent,
   selectNextTab,
   selectPreviousTab,
   reorderTabs,
@@ -2598,6 +2599,86 @@ describe('panelLayoutReducer', () => {
       expect(after.byWorkspaceId[WS].recentlyClosed).toHaveLength(0);
       const afterReopen = panelLayoutReducer(after, reopenClosedTab(WS));
       expect(afterReopen.byWorkspaceId[WS].panels.p1.tabs).toHaveLength(0);
+    });
+  });
+
+  // Ownership + emulated size recording (monorepo#2857 §5.9).
+  describe('setTabOwnerAgent', () => {
+    const browserTab = { id: 'b1', type: 'browser', title: 'B', browserUrl: 'http://a/' };
+
+    it('records the owner on a visible browser tab', () => {
+      const state = stateWithPanel('p1', [browserTab]);
+      const result = panelLayoutReducer(state, setTabOwnerAgent(WS, 'b1', 'agent-1'));
+      expect(result.byWorkspaceId[WS].panels.p1.tabs[0]).toMatchObject({
+        ownerAgentId: 'agent-1',
+      });
+      expect(result.byWorkspaceId[WS].panels.p1.tabs[0].emulatedSize).toBeUndefined();
+    });
+
+    it('records the emulated size alongside the owner and updates it on resize', () => {
+      const state = stateWithPanel('p1', [browserTab]);
+      const claimed = panelLayoutReducer(
+        state,
+        setTabOwnerAgent(WS, 'b1', 'agent-1', { width: 1280, height: 800 }),
+      );
+      expect(claimed.byWorkspaceId[WS].panels.p1.tabs[0].emulatedSize).toEqual({
+        width: 1280,
+        height: 800,
+      });
+      const resized = panelLayoutReducer(
+        claimed,
+        setTabOwnerAgent(WS, 'b1', 'agent-1', { width: 390, height: 844 }),
+      );
+      expect(resized.byWorkspaceId[WS].panels.p1.tabs[0].emulatedSize).toEqual({
+        width: 390,
+        height: 844,
+      });
+    });
+
+    it('keeps a previously recorded size when the update omits one', () => {
+      const state = stateWithPanel('p1', [browserTab]);
+      const claimed = panelLayoutReducer(
+        state,
+        setTabOwnerAgent(WS, 'b1', 'agent-1', { width: 1280, height: 800 }),
+      );
+      const again = panelLayoutReducer(claimed, setTabOwnerAgent(WS, 'b1', 'agent-1'));
+      expect(again).toBe(claimed);
+    });
+
+    it('is a no-op when owner and size are unchanged', () => {
+      const state = stateWithPanel('p1', [browserTab]);
+      const claimed = panelLayoutReducer(
+        state,
+        setTabOwnerAgent(WS, 'b1', 'agent-1', { width: 1280, height: 800 }),
+      );
+      const repeat = panelLayoutReducer(
+        claimed,
+        setTabOwnerAgent(WS, 'b1', 'agent-1', { width: 1280, height: 800 }),
+      );
+      expect(repeat).toBe(claimed);
+    });
+
+    it('updates a hidden (user-closed) owned tab — resize while hidden (monorepo#2857)', () => {
+      const state = stateWithPanel('p1', [
+        { ...browserTab, ownerAgentId: 'agent-1' } as any,
+        { id: 't2', type: 'note', title: 'A' },
+      ]);
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'b1', 'p1', 1000));
+      expect(getItems(hidden.byWorkspaceId[WS].hiddenTabs).map((t) => t.id)).toEqual(['b1']);
+
+      const resized = panelLayoutReducer(
+        hidden,
+        setTabOwnerAgent(WS, 'b1', 'agent-1', { width: 640, height: 480 }),
+      );
+      const hiddenTab = getItems(resized.byWorkspaceId[WS].hiddenTabs)[0];
+      expect(hiddenTab.emulatedSize).toEqual({ width: 640, height: 480 });
+      expect(hiddenTab.ownerAgentId).toBe('agent-1');
+    });
+
+    it('ignores unknown tab ids and non-browser tabs', () => {
+      const state = stateWithPanel('p1', [{ id: 't2', type: 'note', title: 'A' }]);
+      expect(panelLayoutReducer(state, setTabOwnerAgent(WS, 'missing', 'agent-1'))).toBe(state);
+      expect(panelLayoutReducer(state, setTabOwnerAgent(WS, 't2', 'agent-1'))).toBe(state);
     });
   });
 });

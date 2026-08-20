@@ -991,7 +991,8 @@ async function executeAction(
           };
         }
         // Persist the new size on the panel-layout tab so it survives
-        // restart alongside the owner (monorepo#2857). The tab is owned
+        // restart alongside the owner, keeping the renderer's record of the
+        // emulated size live for the UI (monorepo#2857). The tab is owned
         // (resizeTab just succeeded), so an owner is always present.
         const sizeOwner = embeddedBrowserCdp.getTabOwner(action.tabId);
         if (sizeOwner) {
