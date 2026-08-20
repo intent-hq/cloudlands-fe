@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.75.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.75.0...v2.75.1) (2026-08-20)
+
+
+### 🐛 Bug Fixes
+
+* keep panel file-drop handler identity stable for unregister ([#1523](https://github.com/intent-hq/cloudlands-fe/issues/1523)) ([dd0edfb](https://github.com/intent-hq/cloudlands-fe/commit/dd0edfb39b09f745745d5a5cbff7c74f8cd99c47))
+
 ## [2.75.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.74.0...v2.75.0) (2026-08-20)
 
 
