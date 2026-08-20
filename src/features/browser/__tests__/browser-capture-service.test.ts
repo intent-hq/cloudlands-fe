@@ -14,6 +14,8 @@ vi.mock('electron', () => ({
 
 vi.mock('../main/embedded-browser-cdp-service', () => ({
   DEFAULT_AGENT_VIEWPORT: { width: 1280, height: 800 },
+  AGENT_VIEWPORT_MIN_PX: 320,
+  AGENT_VIEWPORT_MAX_PX: 3840,
   embeddedBrowserCdp: {
     ensureAttached: vi.fn(),
     evaluate: vi.fn(),

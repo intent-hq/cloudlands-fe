@@ -5,8 +5,10 @@ import { invoke, isElectron } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
+  isBrowserEmulatedSize,
   isWorkspaceCommandPayload,
   type BrowserCloseTabPayload,
+  type BrowserEmulatedSize,
   type BrowserFocusTabPayload,
   type BrowserListTabsRequestPayload,
   type BrowserOpenTabPayload,
@@ -51,6 +53,7 @@ function browserTab(
   url: string,
   requestedUrl?: string,
   ownerAgentId?: string,
+  emulatedSize?: BrowserEmulatedSize,
 ): Omit<PanelTab, 'id'> {
   return {
     type: 'browser',
@@ -63,6 +66,9 @@ function browserTab(
     // Persist the owning agent on agent opens so ownership survives restart
     // (monorepo#2857).
     ...(ownerAgentId === undefined ? {} : { ownerAgentId }),
+    // Persist the emulated viewport alongside the owner so the tab
+    // rehydrates at its actual size after restart (monorepo#2857).
+    ...(emulatedSize === undefined ? {} : { emulatedSize }),
   };
 }
 
@@ -171,6 +177,13 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     typeof data.ownerAgentId === 'string' && data.ownerAgentId.length > 0
       ? data.ownerAgentId
       : undefined;
+  // Emulated viewport on agent opens; persisted with the tab alongside the
+  // owner so the size survives restart (monorepo#2857). Only meaningful for
+  // owned tabs.
+  const emulatedSize =
+    ownerAgentId !== undefined && isBrowserEmulatedSize(data.emulatedSize)
+      ? data.emulatedSize
+      : undefined;
 
   const position = data.position ?? 'adjacent';
   if (position === 'replace') {
@@ -197,7 +210,11 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       const hidden = hiddenTabs.find((tab) => tab.type === 'browser' && tab.id === replaceTabId);
       if (hidden) {
         yield* put(updateTabBrowserUrl(workspaceId, hidden.id, data.url, requestedUrl ?? null));
-        yield* put(setTabOwnerAgent(workspaceId, hidden.id, ownerAgentId));
+        yield* put(
+          emulatedSize === undefined
+            ? setTabOwnerAgent(workspaceId, hidden.id, ownerAgentId)
+            : setTabOwnerAgent(workspaceId, hidden.id, ownerAgentId, emulatedSize),
+        );
         return;
       }
     }
@@ -211,7 +228,11 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       // An agent replace adopts the existing tab — record its new owner
       // (main enforced ownership before sending this open, monorepo#2857).
       if (ownerAgentId) {
-        yield* put(setTabOwnerAgent(workspaceId, existing.id, ownerAgentId));
+        yield* put(
+          emulatedSize === undefined
+            ? setTabOwnerAgent(workspaceId, existing.id, ownerAgentId)
+            : setTabOwnerAgent(workspaceId, existing.id, ownerAgentId, emulatedSize),
+        );
       }
       yield* put(setActiveTab(workspaceId, existing.id));
       if (pin) {
@@ -230,7 +251,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     }
     const openAction = openTab(
       workspaceId,
-      browserTab(data.url, requestedUrl, ownerAgentId),
+      browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
       undefined,
       newTabId,
       undefined,
@@ -245,7 +266,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     const panelOpenMode = yield* selectPanelOpenMode.effect();
     const openAction = openTabInNewRootColumn(
       workspaceId,
-      browserTab(data.url, requestedUrl, ownerAgentId),
+      browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
       {
         newTabId,
         allowDuplicate,
@@ -259,7 +280,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   }
   const openAction = openTab(
     workspaceId,
-    browserTab(data.url, requestedUrl, ownerAgentId),
+    browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
     undefined,
     newTabId,
     undefined,
@@ -401,9 +422,14 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
       title: tab.title || m.layout_panelLayout_browser_fallback(),
       closable: tab.closable !== false,
       // Persisted owner so main's ownership registry can rehydrate after a
-      // restart (monorepo#2857); absent for unowned (user) tabs.
+      // restart (monorepo#2857); absent for unowned (user) tabs. The
+      // persisted emulated size rides along so the tab rehydrates at its
+      // actual viewport instead of the default.
       ...(typeof tab.ownerAgentId === 'string' && tab.ownerAgentId.length > 0
-        ? { ownerAgentId: tab.ownerAgentId }
+        ? {
+            ownerAgentId: tab.ownerAgentId,
+            ...(isBrowserEmulatedSize(tab.emulatedSize) ? { emulatedSize: tab.emulatedSize } : {}),
+          }
         : {}),
     }));
 
@@ -441,7 +467,13 @@ function* tabOwnerChanged(data: BrowserTabOwnerChangedPayload | null): SagaGener
     });
     return;
   }
-  yield* put(setTabOwnerAgent(workspaceId, data.tabId, data.ownerAgentId));
+  // The persisted emulated size rides along with the owner (claim size /
+  // resizeTab) so it survives restart too (monorepo#2857).
+  yield* put(
+    isBrowserEmulatedSize(data.emulatedSize)
+      ? setTabOwnerAgent(workspaceId, data.tabId, data.ownerAgentId, data.emulatedSize)
+      : setTabOwnerAgent(workspaceId, data.tabId, data.ownerAgentId),
+  );
 }
 
 export function* browserIpcSaga(): SagaGenerator<void> {

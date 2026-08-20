@@ -1147,10 +1147,18 @@ export const updateTabFavicon = createAction<[wsId: string, tabId: string, favic
  * Record the agent owning a browser tab (claimTab / agent openTab adopting an
  * existing tab, monorepo#2857). Persisted with the layout so ownership
  * survives restart; main's ownership registry rehydrates from it.
+ * `emulatedSize` records the owned tab's emulated viewport (claim size /
+ * resizeTab) so the size survives restart too; omitting it preserves any
+ * previously recorded size.
  */
-export const setTabOwnerAgent = createAction<[wsId: string, tabId: string, ownerAgentId: string]>(
-  'panelLayout/setTabOwnerAgent',
-);
+export const setTabOwnerAgent = createAction<
+  [
+    wsId: string,
+    tabId: string,
+    ownerAgentId: string,
+    emulatedSize?: { width: number; height: number },
+  ]
+>('panelLayout/setTabOwnerAgent');
 
 /**
  * Destroy ALL browser tabs owned by an agent — visible and hidden alike
@@ -2157,21 +2165,53 @@ panelLayoutReducer.with(
   },
 );
 // --- Set Tab Owner Agent (monorepo#2857) ---
-panelLayoutReducer.with(setTabOwnerAgent, (state, { payload: [wsId, tabId, ownerAgentId] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  for (const [pId, panel] of Object.entries(ws.panels)) {
-    const tabIdx = panel.tabs.findIndex((t) => t.id === tabId && t.type === 'browser');
-    if (tabIdx >= 0) {
-      if (panel.tabs[tabIdx].ownerAgentId === ownerAgentId) return state;
-      const newTabs = panel.tabs.map((t, i) => (i === tabIdx ? { ...t, ownerAgentId } : t));
+panelLayoutReducer.with(
+  setTabOwnerAgent,
+  (state, { payload: [wsId, tabId, ownerAgentId, emulatedSize] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    for (const [pId, panel] of Object.entries(ws.panels)) {
+      const tabIdx = panel.tabs.findIndex((t) => t.id === tabId && t.type === 'browser');
+      if (tabIdx >= 0) {
+        const tab = panel.tabs[tabIdx];
+        const unchanged =
+          tab.ownerAgentId === ownerAgentId &&
+          (emulatedSize === undefined ||
+            (tab.emulatedSize?.width === emulatedSize.width &&
+              tab.emulatedSize?.height === emulatedSize.height));
+        if (unchanged) return state;
+        const newTabs = panel.tabs.map((t, i) =>
+          i === tabIdx
+            ? { ...t, ownerAgentId, ...(emulatedSize === undefined ? {} : { emulatedSize }) }
+            : t,
+        );
+        return setWorkspaceState(state, wsId, {
+          ...ws,
+          panels: { ...ws.panels, [pId]: { ...panel, tabs: newTabs } },
+        });
+      }
+    }
+    // Hidden (user-closed) owned tabs stay alive offscreen and their owner
+    // can still resize them (monorepo#2857) — persist on them too.
+    const hiddenTab = getItem(ws.hiddenTabs, tabId);
+    if (hiddenTab && hiddenTab.type === 'browser') {
+      const unchanged =
+        hiddenTab.ownerAgentId === ownerAgentId &&
+        (emulatedSize === undefined ||
+          (hiddenTab.emulatedSize?.width === emulatedSize.width &&
+            hiddenTab.emulatedSize?.height === emulatedSize.height));
+      if (unchanged) return state;
       return setWorkspaceState(state, wsId, {
         ...ws,
-        panels: { ...ws.panels, [pId]: { ...panel, tabs: newTabs } },
+        hiddenTabs: updateItem(ws.hiddenTabs, {
+          id: tabId,
+          ownerAgentId,
+          ...(emulatedSize === undefined ? {} : { emulatedSize }),
+        }),
       });
     }
-  }
-  return state;
-});
+    return state;
+  },
+);
 // --- Update Tab Favicon ---
 panelLayoutReducer.with(updateTabFavicon, (state, { payload: [wsId, tabId, faviconUrl] }) => {
   const ws = getWorkspaceState(state, wsId);

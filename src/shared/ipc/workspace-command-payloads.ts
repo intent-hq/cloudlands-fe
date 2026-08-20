@@ -2,6 +2,15 @@ export type WorkspaceCommandPayload = {
   workspaceId: string;
 };
 
+/**
+ * Emulated viewport of an agent-owned browser tab (monorepo#2857); owned
+ * tabs are always emulated, unowned (user) tabs are always native.
+ */
+export type BrowserEmulatedSize = {
+  width: number;
+  height: number;
+};
+
 export type BrowserOpenTabPayload = WorkspaceCommandPayload & {
   url: string;
   position?: 'adjacent' | 'replace' | 'same';
@@ -23,6 +32,12 @@ export type BrowserOpenTabPayload = WorkspaceCommandPayload & {
    * user-opened tabs (unowned).
    */
   ownerAgentId?: string;
+  /**
+   * Emulated viewport for agent opens (monorepo#2857); persisted with the
+   * tab so the size survives restart alongside `ownerAgentId`. Absent for
+   * user-opened tabs (unowned, always native).
+   */
+  emulatedSize?: BrowserEmulatedSize;
   /**
    * With position "replace": the exact tab main resolved (and, for agent
    * opens, ownership-checked) as the adoption target. The renderer replaces
@@ -63,6 +78,12 @@ export type BrowserTabOwnerChangedPayload = WorkspaceCommandPayload & {
   tabId: string;
   /** The agent that now owns the tab (claimTab / agent openTab, monorepo#2857). */
   ownerAgentId: string;
+  /**
+   * The tab's emulated viewport at the time of the change (claim size /
+   * resizeTab); persisted with the tab so the size survives restart
+   * (monorepo#2857).
+   */
+  emulatedSize?: BrowserEmulatedSize;
 };
 
 export function workspaceCommandPayload(workspaceId: unknown): WorkspaceCommandPayload | null {
@@ -76,5 +97,20 @@ export function isWorkspaceCommandPayload(value: unknown): value is WorkspaceCom
     'workspaceId' in value &&
     typeof value.workspaceId === 'string' &&
     value.workspaceId.length > 0
+  );
+}
+
+export function isBrowserEmulatedSize(value: unknown): value is BrowserEmulatedSize {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'width' in value &&
+    'height' in value &&
+    typeof value.width === 'number' &&
+    Number.isFinite(value.width) &&
+    value.width > 0 &&
+    typeof value.height === 'number' &&
+    Number.isFinite(value.height) &&
+    value.height > 0
   );
 }
