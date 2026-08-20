@@ -1,4 +1,6 @@
 /** @vitest-environment jsdom */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -228,47 +230,57 @@ describe('mounted panel header actions menu', () => {
     });
   });
 
-  it('renders one equal bar per selected count and reacts to selector updates', async () => {
+  it('keeps one outer square while dividers move through counts in both directions', async () => {
     const { container } = renderHeader('note', { isRightmostPanel: true });
     const trigger = container.querySelector<HTMLButtonElement>(
       '[data-panel-column-count-trigger]',
     )!;
 
-    let previousIcon: Element | null = null;
-    for (const count of [1, 2, 3, 4]) {
+    const icon = trigger.querySelector('[data-panel-column-icon]')!;
+    const outline = icon.querySelector('[data-panel-column-icon-outline]')!;
+    const dividers = Array.from(icon.querySelectorAll('[data-panel-column-divider]'));
+
+    expect(icon.getAttribute('class')).toContain('size-4!');
+    expect(icon.getAttribute('viewBox')).toBe('0 0 24 24');
+    expect(outline.getAttribute('x')).toBe('3');
+    expect(outline.getAttribute('y')).toBe('3');
+    expect(outline.getAttribute('width')).toBe('18');
+    expect(outline.getAttribute('height')).toBe('18');
+    expect(dividers).toHaveLength(3);
+
+    for (const count of [1, 2, 3, 4, 3, 2, 1]) {
       mocks.setPanelColumnCount(count);
       await waitFor(() =>
         expect(trigger.querySelector(`[data-panel-column-icon="${count}"]`)).toBeTruthy(),
       );
       expect(trigger.getAttribute('aria-label')).toBe(`Panel columns: ${count}`);
-      const icon = trigger.querySelector(`[data-panel-column-icon="${count}"]`)!;
-      expect(icon).not.toBe(previousIcon);
-      expect(previousIcon?.isConnected ?? false).toBe(false);
-      expect(icon.getAttribute('class')).toContain('size-4!');
-      expect(icon.getAttribute('viewBox')).toBe('0 0 24 18');
-      expect(icon.getAttribute('stroke-width')).toBe('1');
-      expect(icon.getAttribute('vector-effect')).toBe('non-scaling-stroke');
-      const bars = Array.from(icon.querySelectorAll('[data-panel-column-icon-bar]'));
-      expect(bars).toHaveLength(count);
+      expect(trigger.querySelector('[data-panel-column-icon]')).toBe(icon);
+      expect(icon.querySelector('[data-panel-column-icon-outline]')).toBe(outline);
+      expect(Array.from(icon.querySelectorAll('[data-panel-column-divider]'))).toEqual(dividers);
       expect(
-        bars.map((bar) => [
-          bar.getAttribute('x'),
-          bar.getAttribute('width'),
-          bar.getAttribute('height'),
-          bar.getAttribute('stroke-width'),
-          bar.getAttribute('vector-effect'),
-        ]),
-      ).toEqual(
-        Array.from({ length: count }, (_, index) => [
-          String(12 - (count * 4 + (count - 1) * 2) / 2 + index * 6),
-          '4',
-          '14',
-          '1',
-          'non-scaling-stroke',
-        ]),
-      );
-      previousIcon = icon;
+        dividers.filter((divider) => divider.getAttribute('data-active') === 'true'),
+      ).toHaveLength(count - 1);
+      expect(
+        dividers.map((divider) => {
+          const match = divider.getAttribute('style')?.match(/translateX\(([^p]+)px\)/);
+          return Number(match?.[1]);
+        }),
+      ).toEqual([0, 1, 2].map((index) => 3 + (18 * (index + 1)) / Math.max(count, index + 2)));
     }
+  });
+
+  it('removes divider transitions when reduced motion is preferred', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelTabBar.svelte'),
+      'utf8',
+    );
+
+    expect(source).toMatch(
+      /\.panel-column-divider \{[\s\S]*?transition:[\s\S]*?transform[\s\S]*?opacity/,
+    );
+    expect(source).toMatch(
+      /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.panel-column-divider \{\s*transition: none;/,
+    );
   });
 
   it('orders populated and empty structural panel controls before Close', () => {

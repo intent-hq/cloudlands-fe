@@ -134,6 +134,12 @@
     'button, a, input, textarea, select, [role="button"], [role="tab"], [contenteditable="true"]';
   const IDENTITY_HOVER_OPEN_DELAY = 140;
   const IDENTITY_HOVER_CLOSE_DELAY = 40;
+  const PANEL_COLUMN_DIVIDER_SLOTS = [0, 1, 2] as const;
+
+  function panelColumnDividerX(value: PanelColumnCount, index: number): number {
+    const positionCount = Math.max(value, index + 2);
+    return 3 + (18 * (index + 1)) / positionCount;
+  }
 
   interface Props {
     tabs: PanelTab[];
@@ -1419,33 +1425,37 @@
 {/snippet}
 
 {#snippet panelColumnIcon(value: PanelColumnCount)}
-  {@const width = value * 4 + (value - 1) * 2}
-  {#key value}
-    <svg
-      class="panel-column-icon size-4! shrink-0"
-      viewBox="0 0 24 18"
-      fill="none"
-      stroke="currentColor"
+  <svg
+    class="panel-column-icon size-4! shrink-0"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1"
+    stroke-linejoin="round"
+    aria-hidden="true"
+    data-panel-column-icon={value}
+  >
+    <rect
+      x="3"
+      y="3"
+      width="18"
+      height="18"
+      rx="1.5"
       stroke-width="1"
-      stroke-linejoin="round"
       vector-effect="non-scaling-stroke"
-      aria-hidden="true"
-      data-panel-column-icon={value}
-    >
-      {#each Array.from({ length: value }) as _, index}
-        <rect
-          x={12 - width / 2 + index * 6}
-          y="2"
-          width="4"
-          height="14"
-          rx="1"
-          stroke-width="1"
-          vector-effect="non-scaling-stroke"
-          data-panel-column-icon-bar
-        />
-      {/each}
-    </svg>
-  {/key}
+      data-panel-column-icon-outline
+    />
+    {#each PANEL_COLUMN_DIVIDER_SLOTS as index}
+      <g
+        class="panel-column-divider"
+        style="transform: translateX({panelColumnDividerX(value, index)}px)"
+        data-active={index < value - 1}
+        data-panel-column-divider={index}
+      >
+        <line x1="0" x2="0" y1="3" y2="21" stroke-width="1" vector-effect="non-scaling-stroke" />
+      </g>
+    {/each}
+  </svg>
 {/snippet}
 
 {#snippet panelColumnCountMenu()}
@@ -2531,18 +2541,17 @@
   .panel-column-icon {
     transform-box: fill-box;
     transform-origin: center;
-    animation: panel-column-icon-change var(--motion-fast) var(--ease-standard);
   }
 
-  @keyframes panel-column-icon-change {
-    from {
-      opacity: 0.55;
-      transform: scale(0.88);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
+  .panel-column-divider {
+    opacity: 0;
+    transition:
+      transform var(--motion-fast) var(--ease-standard),
+      opacity var(--motion-fast) var(--ease-standard);
+  }
+
+  .panel-column-divider[data-active='true'] {
+    opacity: 1;
   }
 
   @media (forced-colors: active) {
@@ -2556,8 +2565,8 @@
       transition: none;
     }
 
-    .panel-column-icon {
-      animation: none;
+    .panel-column-divider {
+      transition: none;
     }
   }
 </style>
