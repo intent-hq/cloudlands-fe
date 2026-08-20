@@ -34,6 +34,9 @@
   import { handleLink } from '$features/navigation/link-handler';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
+  import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
+  import { isHydrationPending, mergeHydratedContent } from './block-hydration';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
   import { splitTextByUrls } from './message-link-utils';
   import { findInlineMentions } from './mention-match-utils';
@@ -246,6 +249,14 @@
   // Svelte's `$store` auto-subscription.
   // svelte-ignore state_referenced_locally -- intentional initial snapshot; keyed component identity is fixed.
   const storeMessage$ = selectAgentMessageById(agentId ?? '', messageId ?? '');
+
+  // Lazy full-block hydration (§5.5 slim projection → v7.2
+  // agent.getMessageBlock) for user-message attached images: the slim
+  // projection may serve them as write-time thumbnails (dataTruncated /
+  // dataIsThumbnail), so the lightbox fetches the original on demand.
+  // Init-time subscription per src/store/renderer/AGENTS.md §5.
+  // svelte-ignore state_referenced_locally -- intentional initial snapshot; keyed component identity is fixed.
+  const hydratedBlocks$ = selectHydratedBlocks(agentId ?? '');
 
   // Looked-up message drives ALL downstream $derived values, the optional identity
   // attributes, and the `{#if !message}` guard. When both ids are provided we use
@@ -767,23 +778,50 @@
     return '';
   }
 
-  // Extract image blocks from contentBlocks
+  // Extract image blocks from contentBlocks, substituting cached full blocks
+  // for slim-truncated ones (§5.5) so a hydrated attachment renders/opens at
+  // full resolution.
   const imageBlocks = $derived.by(() => {
     if (!message?.contentBlocks || !Array.isArray(message.contentBlocks)) {
       return [];
     }
-    return message.contentBlocks.filter(
-      (block: any) => block.type === 'image' && block.data && block.mimeType,
-    );
+    return mergeHydratedContent(
+      message.contentBlocks,
+      message?.id ?? messageId,
+      $hydratedBlocks$,
+    ).filter((block: any) => block.type === 'image' && block.data && block.mimeType);
   });
 
-  // Open image in lightbox
+  // Truncated attachment awaiting hydration before its lightbox opens.
+  let pendingLightboxHydration = $state<{
+    blockId: string;
+    openerElement: HTMLButtonElement;
+    index: number;
+  } | null>(null);
+
+  function isAttachmentHydrationLoading(blockId: string | undefined): boolean {
+    return blockId
+      ? isHydrationPending($hydratedBlocks$, message?.id ?? messageId, [blockId])
+      : false;
+  }
+
+  // Open image in lightbox. A slim-truncated attachment (thumbnail-only data,
+  // §5.5) first fetches the original via agent.getMessageBlock; the effect
+  // below opens the lightbox once hydration settles.
   function openImageLightbox(
     imageBlock: ContentBlock & { data: string; mimeType: string },
     openerElement: HTMLButtonElement,
     index: number = 0,
   ) {
     if (readOnly) return;
+    const hydrationMessageId = message?.id ?? messageId;
+    if (imageBlock.dataTruncated === true && agentId && hydrationMessageId && imageBlock.id) {
+      pendingLightboxHydration = { blockId: imageBlock.id, openerElement, index };
+      appStore.dispatch(
+        messageBlockHydrationRequested(agentId, hydrationMessageId, imageBlock.id),
+      );
+      return;
+    }
     lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
     lightboxImageName =
       imageBlock.fileName ||
@@ -791,6 +829,25 @@
     lightboxOpenerElement = openerElement;
     lightboxOpen = true;
   }
+
+  // Once the pending block's fetch settles, open the lightbox with the merged
+  // block: hydrated full data on success, the original thumbnail on failure
+  // (graceful fallback — the merge leaves errored blocks untouched).
+  $effect(() => {
+    const pending = pendingLightboxHydration;
+    if (!pending) return;
+    if (isAttachmentHydrationLoading(pending.blockId)) return;
+    const block =
+      imageBlocks.find((b: any) => b.id === pending.blockId) ?? imageBlocks[pending.index];
+    pendingLightboxHydration = null;
+    if (!block || !isImageBlock(block)) return;
+    lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
+    lightboxImageName =
+      block.fileName ||
+      m.chat_chatMessage_attachedImage_fallback({ number: formatInteger(pending.index + 1) });
+    lightboxOpenerElement = pending.openerElement;
+    lightboxOpen = true;
+  });
 
   // Extract file blocks from contentBlocks — both the legacy inline-data
   // variant (data + mimeType) and attachment-reference blocks (attachmentId,
@@ -1428,6 +1485,7 @@
                     <button
                       type="button"
                       class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary rounded"
+                      class:animate-pulse={isAttachmentHydrationLoading(imageBlock.id)}
                       onclick={(e) => {
                         if (isImageBlock(imageBlock)) {
                           openImageLightbox(imageBlock, e.currentTarget, i);
