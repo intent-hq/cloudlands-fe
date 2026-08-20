@@ -1215,15 +1215,6 @@ export const seedHistoryAround = createAction<
   [agentId: string, messages: AgentMessage[], startOrdinalEstimate: number]
 >('agentSessions/seedHistoryAround');
 
-/**
- * Put one targeted marked-question row in the canonical history segment.
- * The seek has no ordinal, so it replaces any prior segment and leaves a gap
- * to the tail rather than pretending that disconnected rows are contiguous.
- */
-export const seedHistoryAtMarkedQuestion = createAction<[agentId: string, message: AgentMessage]>(
-  'agentSessions/seedHistoryAtMarkedQuestion',
-);
-
 /** Drop an agent's scrollback history segment entirely. */
 export const clearHistorySegment = createAction<[agentId: string]>(
   'agentSessions/clearHistorySegment',
@@ -1607,17 +1598,6 @@ agentSessionReducer.with(
     });
   },
 );
-agentSessionReducer.with(seedHistoryAtMarkedQuestion, (state, { payload: [agentId, message] }) => {
-  const session = getSession(state, agentId);
-  if (!session) return state;
-  const incoming = dropRowsPresentInTail(normalizeSortHistoryMessages([message]), session.messages);
-  if (incoming.length === 0) return state;
-  return setHistorySegment(state, agentId, {
-    messages: incoming,
-    gapToTail: session.messages.length > 0,
-    oldestReached: false,
-  });
-});
 agentSessionReducer.with(clearHistorySegment, (state, { payload: [agentId] }) =>
   removeHistorySegment(state, agentId),
 );

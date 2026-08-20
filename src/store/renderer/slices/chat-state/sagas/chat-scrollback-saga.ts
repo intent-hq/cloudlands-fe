@@ -50,6 +50,8 @@ import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { estimateSeekLandingStartOrdinal } from '$lib/utils/seek-landing-estimate';
 import type { AgentMessage } from '$shared/types';
+import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
+import { getQuestionFromResourceBlock, type Question } from '$shared/types/question-resource';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import {
   appendHistoryMessages,
@@ -57,7 +59,6 @@ import {
   prependHistoryMessages,
   removeSession,
   seedHistoryAround,
-  seedHistoryAtMarkedQuestion,
   setHistoryOldestReached,
 } from '../../agent-session/agent-session-slice';
 import {
@@ -87,6 +88,13 @@ const PAGE_LIMIT = 200;
 const MARKED_QUESTION_LIMIT = 1;
 
 type ConversationPage = Awaited<ReturnType<typeof appClient.agents.getConversation>>;
+
+function markedQuestions(message: AgentMessage): Question[] {
+  if (message.role !== 'assistant' || message.isStreaming) return [];
+  return dedupeResourceBlocks(message.contentBlocks ?? [])
+    .map(getQuestionFromResourceBlock)
+    .filter((question): question is Question => question !== null);
+}
 
 function oldestRowId(messages: AgentMessage[]): string | undefined {
   for (const message of messages) {
@@ -300,7 +308,15 @@ function* recoverPendingQuestionWorker(
   }
   const resident = yield* selectAgentMessageById.effect(agentId, messageId);
   if (resident) {
-    yield* put(pendingQuestionRecoverySettled(agentId, messageId, 'found'));
+    const questions = markedQuestions(resident);
+    yield* put(
+      pendingQuestionRecoverySettled(
+        agentId,
+        messageId,
+        questions.length > 0 ? 'found' : 'not-found',
+        questions,
+      ),
+    );
     return;
   }
 
@@ -315,7 +331,7 @@ function* recoverPendingQuestionWorker(
     );
     const session = yield* selectAgentSession.effect(agentId);
     if (session?.metadata?.pendingQuestionsMessageId !== messageId) {
-      yield* put(pendingQuestionRecoverySettled(agentId, messageId, 'found'));
+      yield* put(pendingQuestionRecoverySettled(agentId, messageId, 'cancelled'));
       return;
     }
     const marked = page.messages.find((message) => message.id === messageId);
@@ -323,9 +339,15 @@ function* recoverPendingQuestionWorker(
       yield* put(pendingQuestionRecoverySettled(agentId, messageId, 'not-found'));
       return;
     }
-    yield* put(seedHistoryAtMarkedQuestion(agentId, marked));
-    yield* put(scrollbackContinuationReset(agentId));
-    yield* put(pendingQuestionRecoverySettled(agentId, messageId, 'found'));
+    const questions = markedQuestions(marked);
+    yield* put(
+      pendingQuestionRecoverySettled(
+        agentId,
+        messageId,
+        questions.length > 0 ? 'found' : 'not-found',
+        questions,
+      ),
+    );
   } catch (error) {
     const outcome = isInvalidParamsError(error) ? 'not-found' : 'error';
     logger.error('Failed to recover marked pending question', { agentId, messageId, error });

@@ -36,18 +36,29 @@ export function deriveWizardPendingQuestions(
       ? (messages.find((message) => message.id === marker) ??
         selectAgentMessageById.select(state, agentId, marker))
       : undefined;
-  const sourceMessages =
-    typeof marker === 'string' && marker.length > 0
-      ? [markedMessage].filter(
-          (message): message is AgentMessage => message !== undefined,
-        )
-      : messages;
-  const pending = derivePendingQuestions(
-    sourceMessages,
-    isTurnActive,
-    showingPendingUserMessage,
-    typeof marker === 'string' ? marker : undefined,
-  );
+  const recovery = state.chatState?.byAgentId[agentId]?.pendingQuestionRecovery;
+  const recoveredPending =
+    typeof marker === 'string' &&
+    marker.length > 0 &&
+    !markedMessage &&
+    recovery?.messageId === marker &&
+    recovery.status === 'found' &&
+    recovery.questions &&
+    recovery.questions.length > 0
+      ? { messageId: marker, questions: recovery.questions }
+      : null;
+  const pending = recoveredPending
+    ? isTurnActive || showingPendingUserMessage
+      ? null
+      : recoveredPending
+    : derivePendingQuestions(
+        typeof marker === 'string' && marker.length > 0 && markedMessage
+          ? [markedMessage]
+          : messages,
+        isTurnActive,
+        showingPendingUserMessage,
+        typeof marker === 'string' ? marker : undefined,
+      );
   if (!pending) return null;
   if (isQuestionMessageDismissed(session?.metadata, pending.messageId)) return null;
   return pending;

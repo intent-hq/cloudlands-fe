@@ -32,6 +32,7 @@ import {
   replaceAgentQueue,
 } from '../agent-queue/agent-queue-slice';
 import type { ContentBlock, QueuedMessage } from '$shared/types';
+import type { Question } from '$shared/types/question-resource';
 import { m } from '$shared/paraglide/messages.js';
 
 // ============================================================================
@@ -814,12 +815,17 @@ export const historySeekRequested = createAction<
 >('chatState/historySeekRequested');
 
 /** Fetch the one authoritative marked question row with a bounded targeted seek. */
-export const pendingQuestionRecoveryRequested = createAction<
-  [agentId: string, messageId: string]
->('chatState/pendingQuestionRecoveryRequested');
+export const pendingQuestionRecoveryRequested = createAction<[agentId: string, messageId: string]>(
+  'chatState/pendingQuestionRecoveryRequested',
+);
 
 export const pendingQuestionRecoverySettled = createAction<
-  [agentId: string, messageId: string, outcome: 'found' | 'not-found' | 'error']
+  [
+    agentId: string,
+    messageId: string,
+    outcome: 'found' | 'not-found' | 'error' | 'cancelled',
+    questions?: Question[],
+  ]
 >('chatState/pendingQuestionRecoverySettled');
 
 export const pendingQuestionRecoveryCleared = createAction<[agentId: string]>(
@@ -1313,12 +1319,18 @@ chatStateReducer.with(
 );
 chatStateReducer.with(
   pendingQuestionRecoverySettled,
-  (state, { payload: [agentId, messageId, outcome] }) => {
+  (state, { payload: [agentId, messageId, outcome, questions] }) => {
     const existing = state.byAgentId[agentId]?.pendingQuestionRecovery;
     if (existing?.messageId !== messageId) return state;
     return updateAgent(state, agentId, {
       pendingQuestionRecovery:
-        outcome === 'found' ? undefined : { messageId, status: outcome },
+        outcome === 'cancelled'
+          ? undefined
+          : {
+              messageId,
+              status: outcome,
+              ...(outcome === 'found' ? { questions: questions ?? [] } : {}),
+            },
     });
   },
 );

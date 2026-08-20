@@ -761,6 +761,7 @@
     void $agentIsResponding$;
     void $agentSession$?.metadata?.dismissedQuestionsMessageId;
     void $agentSession$?.metadata?.pendingQuestionsMessageId;
+    void $pendingQuestionRecovery$;
     return deriveWizardPendingQuestions(
       appStore.state,
       agentId,

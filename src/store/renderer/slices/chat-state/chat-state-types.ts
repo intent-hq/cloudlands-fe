@@ -94,7 +94,9 @@ export type TranscriptHydrationStatus = 'loading' | 'settled' | 'error';
 /** One bounded lookup for an authoritative question marker outside the tail page. */
 export interface PendingQuestionRecovery {
   messageId: string;
-  status: 'loading' | 'not-found' | 'error';
+  status: 'loading' | 'found' | 'not-found' | 'error';
+  /** Wizard projection retained after one successful lookup; never transcript state. */
+  questions?: Question[];
 }
 
 /**
@@ -325,6 +327,7 @@ export interface InitializeChatOptions {
 import type { ContextItem as ChatInputContextItem } from '$lib/components/chat/input/context-api';
 import type { ContextReference } from '$features/agent/agent-context';
 import type { ContentBlock } from '$shared/types';
+import type { Question } from '$shared/types/question-resource';
 
 // ============================================================================
 // Top-level slice state (flat, agent-keyed)

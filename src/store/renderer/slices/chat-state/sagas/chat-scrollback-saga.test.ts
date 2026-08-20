@@ -15,10 +15,12 @@ import type { AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { StoreState } from '$store/renderer/types';
+import { composeTranscript } from '$lib/components/chat/chat-scrollback-composition';
 import { deriveWizardPendingQuestions } from '$lib/components/chat/questions/wizard-gate';
 import {
   HISTORY_SEGMENT_MAX,
   agentSessionReducer,
+  appendHistoryMessages,
   bulkUpsertSessions,
   initialState as agentSessionInitialState,
   prependHistoryMessages,
@@ -226,20 +228,24 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     await run.task.toPromise();
   });
 
-  it('recovers one older marked row with one exact aroundMessageId request', async () => {
+  it('retains one recovered marker across existing history and both cap-pruning directions', async () => {
     const run = harness();
     run.dispatch(
       bulkUpsertSessions([
         session({
           status: AgentStatus.Idle,
-          messages: [message('m-tail', 100)],
+          messages: [message('m-tail', 2000)],
           metadata: { pendingQuestionsMessageId: 'm-question' },
         }),
       ]),
     );
+    run.dispatch(
+      prependHistoryMessages(AGENT, [message('m-existing-1', 1100), message('m-existing-2', 1101)]),
+    );
+    const historyBeforeRecovery = run.history()?.messages;
     mocks.getConversation.mockResolvedValueOnce(
-      page([questionMessage('m-question', 10)], {
-        totalMessages: 101,
+      page([questionMessage('m-question', 1000)], {
+        totalMessages: 2001,
         nextToken: 'unused',
       }),
     );
@@ -248,18 +254,54 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     await settle();
 
     expect(mocks.getConversation).toHaveBeenCalledTimes(1);
-    expect(mocks.getConversation).toHaveBeenCalledWith(
-      AGENT,
-      1,
-      undefined,
-      'm-question',
-    );
-    expect(run.history()?.messages.map((item) => item.id)).toEqual(['m-question']);
-    expect(run.history()?.gapToTail).toBe(true);
-    expect(run.chat()?.pendingQuestionRecovery).toBeUndefined();
+    expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 1, undefined, 'm-question');
+    expect(run.history()?.messages).toBe(historyBeforeRecovery);
+    expect(run.chat()?.pendingQuestionRecovery).toMatchObject({
+      messageId: 'm-question',
+      status: 'found',
+    });
     expect(
-      deriveWizardPendingQuestions(run.state(), AGENT, [message('m-tail', 100)]),
+      deriveWizardPendingQuestions(run.state(), AGENT, [message('m-tail', 2000)]),
     ).toMatchObject({ messageId: 'm-question' });
+
+    run.dispatch(prependHistoryMessages(AGENT, [questionMessage('m-question', 1000)]));
+    const composed = composeTranscript(
+      run.history()?.messages ?? [],
+      [message('m-tail', 2000)],
+      run.history()?.gapToTail === true,
+    );
+    expect(
+      composed.groups.flatMap((group) => group.messages).filter((item) => item.id === 'm-question'),
+    ).toHaveLength(1);
+
+    run.dispatch(
+      prependHistoryMessages(
+        AGENT,
+        Array.from({ length: HISTORY_SEGMENT_MAX }, (_, index) =>
+          message(`m-older-${index}`, index),
+        ),
+      ),
+    );
+    expect(run.history()?.messages.some((item) => item.id === 'm-question')).toBe(false);
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    expect(deriveWizardPendingQuestions(run.state(), AGENT, [])).toMatchObject({
+      messageId: 'm-question',
+    });
+
+    run.dispatch(
+      appendHistoryMessages(
+        AGENT,
+        Array.from({ length: HISTORY_SEGMENT_MAX }, (_, index) =>
+          message(`m-newer-${index}`, 1200 + index),
+        ),
+      ),
+    );
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    await settle();
+    expect(deriveWizardPendingQuestions(run.state(), AGENT, [])).toMatchObject({
+      messageId: 'm-question',
+    });
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
     run.task.cancel();
     await run.task.toPromise();
   });

@@ -1324,6 +1324,32 @@ describe('chatState selectors', () => {
       state = chatStateReducer(state, pendingQuestionRecoveryCleared(AGENT));
       expect(selectPendingQuestionRecovery.select(asStoreState(state), AGENT)).toBeUndefined();
     });
+
+    it('retains a successful wizard projection until the marker clears', () => {
+      const questions = [
+        {
+          attachmentId: 'tar-abc123def456',
+          header: 'Question',
+          question: 'Which option?',
+          options: [{ label: 'A' }, { label: 'B' }],
+        },
+      ];
+      let state = chatStateReducer(
+        initialState,
+        pendingQuestionRecoveryRequested(AGENT, 'question-old'),
+      );
+      state = chatStateReducer(
+        state,
+        pendingQuestionRecoverySettled(AGENT, 'question-old', 'found', questions),
+      );
+      expect(selectPendingQuestionRecovery.select(asStoreState(state), AGENT)).toEqual({
+        messageId: 'question-old',
+        status: 'found',
+        questions,
+      });
+      state = chatStateReducer(state, pendingQuestionRecoveryCleared(AGENT));
+      expect(selectPendingQuestionRecovery.select(asStoreState(state), AGENT)).toBeUndefined();
+    });
   });
 
   // Switch-back transcript reveal gate (awaitingSwitchBackSnapshot)
