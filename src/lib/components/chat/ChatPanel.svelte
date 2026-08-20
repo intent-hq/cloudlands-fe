@@ -42,6 +42,10 @@
   import { shouldHandleChatFocusRequest, type ChatFocusRequest } from './chat-focus-ownership';
   import type { AgentMessage } from '$shared/types';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
+  import {
+    reportStreamLifecycle,
+    streamTurnCorrelation,
+  } from '$lib/utils/stream-lifecycle-telemetry';
   import { saveAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     agentSessionDismissQuestionsRequested,
@@ -436,6 +440,30 @@
       return $agentSession$.stopReason || m.chat_chatPanel_agentSpawnFailed_error();
     }
     return null;
+  });
+
+  const latestAssistantForTelemetry = $derived.by(() => {
+    for (let index = $agentMessages$.length - 1; index >= 0; index -= 1) {
+      const message = $agentMessages$[index];
+      if (message.role === 'assistant') return message;
+    }
+    return undefined;
+  });
+
+  // Svelte effects run after the DOM update. This confirms the primary
+  // transcript render boundary without observing message content.
+  $effect(() => {
+    const message = latestAssistantForTelemetry;
+    if (!message) return;
+    reportStreamLifecycle({
+      stage: 'render',
+      event: 'assistant-message-committed',
+      turnCorrelation: streamTurnCorrelation(message.id),
+      blockCount: message.contentBlocks?.length ?? 0,
+      terminalErrorVisible: Boolean(effectiveError || $chatModelUnavailable$),
+      storeStreamState: $agentSessionIsStreaming$ ? 'streaming' : 'idle',
+      callbackResult: 'delivered',
+    });
   });
 
   // monorepo#940: the daemon flags the parked error session as corrupted —

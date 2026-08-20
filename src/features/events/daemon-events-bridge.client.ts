@@ -265,6 +265,10 @@ import {
 import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { WorkspaceEvent } from '$features/events/types';
 import { createLogger } from '$lib/utils/client-logger';
+import {
+  reportStreamLifecycle,
+  streamTurnCorrelation,
+} from '$lib/utils/stream-lifecycle-telemetry';
 import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -717,6 +721,7 @@ function dispatchStreamUpdate(
   // agent-stream-saga re-checks coverage for dispatches buffered across a
   // registration install.
   const covered = hasStandingChatSubscription(agentId);
+  const contentBlocks = covered ? undefined : buildContentBlocks(state);
 
   appStore.dispatch(
     agentStreamUpdateReceived({
@@ -726,11 +731,18 @@ function dispatchStreamUpdate(
       source: 'sendMessage',
       eventType,
       assistantMessageId: state.messageId,
-      ...(covered ? {} : { contentBlocks: buildContentBlocks(state) }),
+      ...(contentBlocks ? { contentBlocks } : {}),
       ...(stopReason ? { stopReason } : {}),
       ...(finishReason ? { finishReason } : {}),
     }),
   );
+  reportStreamLifecycle({
+    stage: 'bridge',
+    event: `stream-${eventType}-dispatched`,
+    turnCorrelation: streamTurnCorrelation(state.messageId),
+    callbackResult: 'delivered',
+    ...(contentBlocks ? { blockCount: contentBlocks.length } : {}),
+  });
 }
 
 /**
@@ -1196,6 +1208,13 @@ function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): voi
       createInitialPlaceholder: true,
     }),
   );
+  reportStreamLifecycle({
+    stage: 'bridge',
+    event: 'stream-start-dispatched',
+    turnCorrelation: streamTurnCorrelation(messageId),
+    callbackResult: 'delivered',
+    blockCount: 0,
+  });
 }
 
 function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void {
@@ -1258,6 +1277,13 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
     });
   }
   const state = streamsByAgent.get(agentId);
+  reportStreamLifecycle({
+    stage: 'bridge',
+    event: 'agent-stream-end-received',
+    turnCorrelation: streamTurnCorrelation(messageId ?? state?.messageId),
+    callbackResult: 'delivered',
+    blockCount: trailingBlocks.length,
+  });
   if (state && (!messageId || state.messageId === messageId)) {
     if (trailingBlocks.length > 0) {
       const maxIndex = Math.max(-1, ...state.blocksByIndex.keys());
@@ -1324,6 +1350,15 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
   if (typeof agentId !== 'string') return;
 
   const state = streamsByAgent.get(agentId);
+  reportStreamLifecycle({
+    stage: 'bridge',
+    event: 'agent-failed-received',
+    turnCorrelation: streamTurnCorrelation(
+      state?.messageId ?? (typeof data?.turnId === 'string' ? data.turnId : undefined),
+    ),
+    callbackResult: 'delivered',
+    storeStreamState: 'error',
+  });
   if (state) {
     dispatchStreamUpdate(agentId, state, 'error');
     streamsByAgent.delete(agentId);
