@@ -102,6 +102,7 @@ import {
   moveTabToPanel,
   moveTabToSplit,
   moveTabToSplitLevel,
+  openHiddenTab,
   openTab,
   openBlankWorkingPanel,
   openTabInAdjacentOrSplit,
@@ -1049,6 +1050,11 @@ export function* panelLayoutSaga(options?: {
     // reusable-panel invariant has no reason to observe them — a dedicated
     // watcher keeps single ownership per the saga-watcher-ownership gate.
     yield* takeEvery(setTabOwnerAgent, persistPanelLayout);
+    // Hidden opens must persist (hidden tabs rehydrate across relaunch,
+    // monorepo#3045) but never touch panel structure, so like ownership
+    // changes above they bypass the reusable-panel invariant — a hidden
+    // agent open must not collapse the user's panels in pin mode.
+    yield* takeEvery(openHiddenTab, persistPanelLayout);
     yield* takeEvery(PERSIST_ACTIONS, enforceReusablePanelInvariant);
     yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
     yield* takeEvery(openTabWithPanelModeRequested, openTabWithPanelMode);

@@ -45,6 +45,14 @@ export type BrowserOpenTabPayload = WorkspaceCommandPayload & {
    * replacing whichever tab is first now (monorepo#2857 TOCTOU).
    */
   replaceTabId?: string;
+  /**
+   * Agent opens only (monorepo#3045): `false` creates the tab directly in
+   * the workspace's hidden set — no panel mount, no focus or active-tab
+   * change — with its webview mounted offscreen so it stays CDP-addressable.
+   * `true` (or absent, e.g. user opens) mounts into the panel layout per
+   * `position` as before.
+   */
+  visible?: boolean;
 };
 
 export type BrowserCloseTabPayload = WorkspaceCommandPayload & {

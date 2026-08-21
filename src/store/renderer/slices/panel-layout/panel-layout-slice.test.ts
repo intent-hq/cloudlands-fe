@@ -15,6 +15,7 @@ import {
   closePanel,
   destroyOwnedTabsForWorkspace,
   destroyTabsByOwnerAgent,
+  openHiddenTab,
   restoreHiddenTab,
   setActiveTab,
   setTabOwnerAgent,
@@ -2079,6 +2080,118 @@ describe('panelLayoutReducer', () => {
       expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2', 'owned']);
       expect(ws.panels.p1.activeTabId).toBe('owned');
       expect(ws.panels.p1.tabs.at(-1)?.ownerAgentId).toBe('agent-1');
+    });
+
+    // Agent openTab is hidden by default (monorepo#3045): the tab is created
+    // straight into hiddenTabs with no panel/focus/active-tab change.
+    it('openHiddenTab creates the tab in hiddenTabs without touching panels or focus', () => {
+      const state = stateWithPanel('p1', [{ id: 't2', type: 'note', title: 'A' }]);
+      const before = state.byWorkspaceId[WS];
+      const result = panelLayoutReducer(
+        state,
+        openHiddenTab(
+          WS,
+          {
+            type: 'browser',
+            title: 'Browser',
+            browserUrl: 'http://a/',
+            closable: true,
+            ownerAgentId: 'agent-1',
+            emulatedSize: { width: 390, height: 844 },
+          },
+          'tab-hidden-1',
+        ),
+      );
+      const ws = result.byWorkspaceId[WS];
+      expect(getItems(ws.hiddenTabs).map((t) => t.id)).toEqual(['tab-hidden-1']);
+      expect(getItems(ws.hiddenTabs)[0]).toMatchObject({
+        ownerAgentId: 'agent-1',
+        emulatedSize: { width: 390, height: 844 },
+        browserUrl: 'http://a/',
+      });
+      expect(ws.panels).toBe(before.panels);
+      expect(ws.focusedPanelId).toBe(before.focusedPanelId);
+      expect(ws.panels.p1.activeTabId).toBe(before.panels.p1.activeTabId);
+      expect(ws.pendingPanelReveal).toBeNull();
+      expect(ws.layoutHistory).toBe(before.layoutHistory);
+    });
+
+    it('openHiddenTab generates an id when none is provided', () => {
+      const state = stateWithPanel('p1', []);
+      const result = panelLayoutReducer(
+        state,
+        openHiddenTab(WS, {
+          type: 'browser',
+          title: 'Browser',
+          browserUrl: 'http://a/',
+          closable: true,
+          ownerAgentId: 'agent-1',
+        }),
+      );
+      const items = getItems(result.byWorkspaceId[WS].hiddenTabs);
+      expect(items).toHaveLength(1);
+      expect(items[0].id).toMatch(/^tab-/);
+    });
+
+    it('openHiddenTab is a no-op when the id already exists (hidden or visible)', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      const tab = {
+        type: 'browser' as const,
+        title: 'Browser',
+        browserUrl: 'http://other/',
+        closable: true,
+        ownerAgentId: 'agent-1',
+      };
+      // Already hidden under the same id: the live tab must not be replaced.
+      const dupHidden = panelLayoutReducer(hidden, openHiddenTab(WS, tab, 'owned'));
+      expect(dupHidden).toBe(hidden);
+      // Visible in a panel under the same id: also untouched.
+      const dupVisible = panelLayoutReducer(state, openHiddenTab(WS, tab, 't2'));
+      expect(dupVisible).toBe(state);
+    });
+
+    it('a hidden-created tab restores into a panel via restoreHiddenTab', () => {
+      const state = stateWithPanel('p1', [{ id: 't2', type: 'note', title: 'A' }]);
+      const withHidden = panelLayoutReducer(
+        state,
+        openHiddenTab(
+          WS,
+          {
+            type: 'browser',
+            title: 'Browser',
+            browserUrl: 'http://a/',
+            closable: true,
+            ownerAgentId: 'agent-1',
+          },
+          'tab-hidden-1',
+        ),
+      );
+      const result = panelLayoutReducer(withHidden, restoreHiddenTab(WS, 'tab-hidden-1', 1001));
+      const ws = result.byWorkspaceId[WS];
+      expect(getItems(ws.hiddenTabs)).toHaveLength(0);
+      expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2', 'tab-hidden-1']);
+      expect(ws.panels.p1.activeTabId).toBe('tab-hidden-1');
+    });
+
+    it('destroyTabsByOwnerAgent removes hidden-created tabs of that agent', () => {
+      const state = stateWithPanel('p1', [{ id: 't2', type: 'note', title: 'A' }]);
+      const withHidden = panelLayoutReducer(
+        state,
+        openHiddenTab(
+          WS,
+          {
+            type: 'browser',
+            title: 'Browser',
+            browserUrl: 'http://a/',
+            closable: true,
+            ownerAgentId: 'agent-1',
+          },
+          'tab-hidden-1',
+        ),
+      );
+      const result = panelLayoutReducer(withHidden, destroyTabsByOwnerAgent(WS, 'agent-1', 1001));
+      expect(getItems(result.byWorkspaceId[WS].hiddenTabs)).toHaveLength(0);
     });
 
     it('hides owned tabs when their panel is closed (others genuinely close)', () => {

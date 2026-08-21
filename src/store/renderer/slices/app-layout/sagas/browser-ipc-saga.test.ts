@@ -717,6 +717,160 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
+  // Agent opens are hidden by default (monorepo#3045): visible: false creates
+  // the tab straight into hiddenTabs — no panel mount, no focus/active-tab
+  // change — on every position branch.
+  it('creates an agent open with visible: false directly in hiddenTabs', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({
+      url: 'https://hidden.test',
+      workspaceId: 'ws-1',
+      tabId: 'tab-main-1',
+      ownerAgentId: 'agent-1',
+      emulatedSize: { width: 390, height: 844 },
+      visible: false,
+    });
+    await emit({
+      url: 'https://hidden-same.test',
+      position: 'same',
+      workspaceId: 'ws-1',
+      tabId: 'tab-main-2',
+      ownerAgentId: 'agent-1',
+      visible: false,
+    });
+
+    expect(actions).toMatchObject([
+      {
+        type: 'panelLayout/openHiddenTab',
+        payload: {
+          wsId: 'ws-1',
+          tab: {
+            ...TAB('https://hidden.test'),
+            ownerAgentId: 'agent-1',
+            emulatedSize: { width: 390, height: 844 },
+          },
+          newTabId: 'tab-main-1',
+        },
+      },
+      {
+        type: 'panelLayout/openHiddenTab',
+        payload: {
+          wsId: 'ws-1',
+          tab: { ...TAB('https://hidden-same.test'), ownerAgentId: 'agent-1' },
+          newTabId: 'tab-main-2',
+        },
+      },
+    ]);
+    expect(actions).toHaveLength(2);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('visible: true keeps the panel-mounted open for agent tabs', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({
+      url: 'https://visible.test',
+      workspaceId: 'ws-1',
+      ownerAgentId: 'agent-1',
+      visible: true,
+    });
+
+    expect(actions).toMatchObject([
+      {
+        type: 'panelLayout/openTabInNewRootColumn',
+        payload: { wsId: 'ws-1', tab: { ...TAB('https://visible.test'), ownerAgentId: 'agent-1' } },
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  // Only owned tabs can be hidden: hide-on-close and the sidebar restore
+  // affordance are ownership-scoped, so an unowned hidden tab would be
+  // unrestorable. visible: false without an owner opens visibly.
+  it('ignores visible: false on unowned opens', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({ url: 'https://user.test', workspaceId: 'ws-1', visible: false });
+
+    expect(actions).toMatchObject([
+      { type: 'panelLayout/openTabInNewRootColumn', payload: { wsId: 'ws-1' } },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  // A hidden (default) agent replace adopting a visible tab updates it in
+  // place but never activates it or moves focus — and never hides it
+  // (monorepo#3045).
+  it('a hidden agent replace adopting a visible tab skips activation and focus', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: { one: { tabs: [{ id: 'browser-1', type: 'browser' }] } },
+            hiddenTabs: createCollection('id'),
+          },
+        },
+      },
+    };
+
+    await emit({
+      url: 'https://adopt.test',
+      position: 'replace',
+      workspaceId: 'ws-1',
+      replaceTabId: 'browser-1',
+      ownerAgentId: 'agent-1',
+      visible: false,
+    });
+
+    expect(actions).toMatchObject([
+      {
+        type: 'panelLayout/updateTabBrowserUrl',
+        payload: ['ws-1', 'browser-1', 'https://adopt.test', null],
+      },
+      { type: 'panelLayout/setTabOwnerAgent', payload: ['ws-1', 'browser-1', 'agent-1'] },
+    ]);
+    expect(actions).toHaveLength(2);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('a hidden agent replace with no adoption target opens into hiddenTabs', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({
+      url: 'https://replace-new.test',
+      position: 'replace',
+      workspaceId: 'ws-1',
+      tabId: 'tab-main-3',
+      ownerAgentId: 'agent-1',
+      visible: false,
+    });
+
+    expect(actions).toMatchObject([
+      {
+        type: 'panelLayout/openHiddenTab',
+        payload: {
+          wsId: 'ws-1',
+          tab: { ...TAB('https://replace-new.test'), ownerAgentId: 'agent-1' },
+          newTabId: 'tab-main-3',
+        },
+      },
+    ]);
+    expect(actions).toHaveLength(1);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('no-ops for invalid payloads and when neither workspace source is available', async () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));

@@ -138,6 +138,45 @@ describe('browser:resolve-url IPC handler', () => {
     );
   });
 
+  it('forwards the visible flag in the browser open event (monorepo#3045)', async () => {
+    const { executeActions } = await import('../main/browser-action-executor');
+    vi.mocked(executeActions).mockImplementationOnce(async (_input, openTab) => {
+      openTab?.(
+        'https://example.com',
+        'adjacent',
+        true,
+        undefined,
+        undefined,
+        'agent-1',
+        undefined,
+        { width: 1280, height: 800 },
+        false,
+      );
+      return { success: true, results: [] };
+    });
+    const { executeBrowserActions } = await import('../main/browser.ipc');
+    const { sendToWorkspaceWindows } = await import('../../system/main/system.ipc');
+
+    await executeBrowserActions(
+      [{ action: 'openTab', url: 'https://example.com' }],
+      undefined,
+      'agent-1',
+      'ws-1',
+    );
+
+    expect(sendToWorkspaceWindows).toHaveBeenCalledWith(
+      'ws-1',
+      'browser:open-tab',
+      expect.objectContaining({
+        url: 'https://example.com',
+        workspaceId: 'ws-1',
+        ownerAgentId: 'agent-1',
+        emulatedSize: { width: 1280, height: 800 },
+        visible: false,
+      }),
+    );
+  });
+
   it('rewrites daemon.localhost to 127.0.0.1 when the backend is same-host', async () => {
     mocks.isSameHostBackendActive.mockReturnValue(true);
     const handler = await registerAndGetHandler();
