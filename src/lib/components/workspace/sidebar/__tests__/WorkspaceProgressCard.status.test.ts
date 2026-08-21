@@ -36,7 +36,7 @@ const mocks = vi.hoisted(() => {
   const progressActions = [] as WorkspaceProgressAction[];
   const notes = [] as Note[];
   const taskState = {
-    loading: false,
+    initialized: true,
     progress: { total: 0, completed: 0, inProgress: 0 },
   };
   const workspaceEntity = {
@@ -117,7 +117,7 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
 
 vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
   selectWorkspaceTaskProgress: mocks.selector(() => mocks.taskState.progress),
-  selectWorkspaceTasksLoading: mocks.selector(() => mocks.taskState.loading),
+  selectWorkspaceTasksInitialized: mocks.selector(() => mocks.taskState.initialized),
 }));
 
 vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-selectors', () => ({
@@ -229,7 +229,7 @@ vi.mock('$lib/components/tiptap/TaskAgentStatus.svelte', async () => ({
   default: (await import('./mocks/MockSimple.svelte')).default,
 }));
 vi.mock('../FlameGraph.svelte', async () => ({
-  default: (await import('./mocks/MockSimple.svelte')).default,
+  default: (await import('./mocks/MockFlameGraph.svelte')).default,
 }));
 vi.mock('svelte-fa', async () => ({
   default: (await import('./mocks/Fa.svelte')).default,
@@ -268,6 +268,7 @@ function makeNote(overrides: Partial<Note>): Note {
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../../../terminal/__tests__/mocks/MockButton.svelte'));
 warmImport(() => import('./mocks/MockSimple.svelte'));
+warmImport(() => import('./mocks/MockFlameGraph.svelte'));
 warmImport(() => import('./mocks/MockTooltip.svelte'));
 warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('../WorkspaceProgressCard.svelte'));
@@ -277,7 +278,7 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.dispatch.mockClear();
     mocks.update.mockReset();
     mocks.notes.length = 0;
-    mocks.taskState.loading = false;
+    mocks.taskState.initialized = true;
     mocks.taskState.progress = { total: 0, completed: 0, inProgress: 0 };
     mocks.update.mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
     mocks.clipboardWrite.mockReset();
@@ -312,9 +313,7 @@ describe('WorkspaceProgressCard status message', () => {
 
     const repoButton = screen.getByRole('button', { name: 'augment/intent' });
     const titleButton = screen.getByRole('button', { name: 'Active Workspace' });
-    const flameGraph = screen
-      .getAllByTestId('mock-component')
-      .find((node) => repoButton.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const flameGraph = screen.getByTestId('mock-flame-graph');
     const statusButton = screen.getByRole('button', { name: 'Edit workspace status' });
 
     expect(statusButton.textContent).toContain('Implementing the active sidebar fix.');
@@ -322,10 +321,10 @@ describe('WorkspaceProgressCard status message', () => {
       titleButton.compareDocumentPosition(repoButton) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      repoButton.compareDocumentPosition(flameGraph!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      repoButton.compareDocumentPosition(flameGraph) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      flameGraph!.compareDocumentPosition(statusButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+      flameGraph.compareDocumentPosition(statusButton) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
@@ -528,17 +527,36 @@ describe('WorkspaceProgressCard status message', () => {
     }
   });
 
-  it('hides empty task progress after canonical tasks finish loading', async () => {
+  it('hides empty task progress once canonical tasks are initialized', async () => {
     const { container } = await renderProgressCard();
 
     expect(container.querySelector('[data-workspace-task-progress]')).toBeNull();
   });
 
-  it('keeps task progress visible while canonical tasks are loading', async () => {
-    mocks.taskState.loading = true;
+  it('reserves task progress as loading before canonical tasks initialize', async () => {
+    mocks.taskState.initialized = false;
     const { container } = await renderProgressCard();
 
     expect(container.querySelector('[data-workspace-task-progress]')).toBeTruthy();
+    expect(screen.getByTestId('mock-flame-graph').dataset.loading).toBe('true');
+  });
+
+  it('keeps the progress bar mounted across task refetches after initialization', async () => {
+    mocks.taskState.progress = { total: 2, completed: 1, inProgress: 1 };
+    await renderProgressCard();
+
+    const flameGraph = screen.getByTestId('mock-flame-graph');
+    expect(flameGraph.dataset.loading).toBe('false');
+
+    // An event-driven refetch updates the rollup without flipping the bar
+    // back to its loading placeholder (which would replay the entrance wipe).
+    mocks.taskState.progress = { total: 2, completed: 2, inProgress: 0 };
+    mocks.notifySelectors();
+    await waitFor(() => {
+      const refetched = screen.getByTestId('mock-flame-graph');
+      expect(refetched).toBe(flameGraph);
+      expect(refetched.dataset.loading).toBe('false');
+    });
   });
 
   it('saves status edits on Enter and dispatches the updated workspace', async () => {

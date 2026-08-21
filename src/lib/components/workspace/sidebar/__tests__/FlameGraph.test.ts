@@ -142,4 +142,45 @@ describe('FlameGraph task progress', () => {
     expect(switchedProgressbar).not.toBe(progressbar);
     expect(switchedProgressbar.getAttribute('data-flame-animation-key')).toBe('workspace-two');
   });
+
+  it('keeps the progressbar mounted when task data changes within one workspace', async () => {
+    const makeNotes = (buildStatus: string) =>
+      [
+        {
+          id: 'spec',
+          title: 'Spec',
+          content: [
+            '- [x] [Done](intent://local/task/done)',
+            '- [/] [Build](intent://local/task/build)',
+          ].join('\n'),
+          isDefault: true,
+        },
+        {
+          id: 'done',
+          title: 'Done',
+          parentId: 'spec',
+          metadata: { task: { status: 'complete' } },
+        },
+        {
+          id: 'build',
+          title: 'Build',
+          parentId: 'spec',
+          metadata: { task: { status: buildStatus } },
+        },
+      ] as Note[];
+
+    const { rerender } = render(FlameGraph, {
+      props: { notes: makeNotes('in_progress'), progress: 0.5, animationKey: 'workspace-one' },
+    });
+    const progressbar = screen.getByRole('progressbar');
+    expect(progressbar.getAttribute('aria-valuenow')).toBe('50');
+
+    // A refetch that updates task statuses must not replay the entrance
+    // animation: same animationKey keeps the same progressbar element.
+    await rerender({ notes: makeNotes('complete'), progress: 1, animationKey: 'workspace-one' });
+
+    const refetched = screen.getByRole('progressbar');
+    expect(refetched).toBe(progressbar);
+    expect(refetched.getAttribute('aria-valuenow')).toBe('100');
+  });
 });
