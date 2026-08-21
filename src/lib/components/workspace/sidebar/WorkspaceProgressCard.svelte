@@ -1268,15 +1268,16 @@
             <Button
               variant="ghost-light"
               size="xs"
-              class="w-full text-left justify-start px-0!"
+              class="w-full text-left justify-start px-0! h-auto min-h-7 items-start py-[3px] whitespace-normal"
               onclick={() => runProgressAction(action)}
             >
               <Fa
                 icon={prStatus?.icon ?? PROGRESS_ACTION_ICONS[action.iconKey]}
                 size={14}
-                class="ml-1 size-3.5! shrink-0 {prStatus?.className ?? ''}"
+                class="ml-1 mt-1 size-3.5! shrink-0 {prStatus?.className ?? ''}"
               />
-              <span class="underline decoration-dotted underline-offset-2 truncate min-w-0"
+              <span
+                class="underline decoration-dotted underline-offset-2 whitespace-normal break-words min-w-0"
                 >{action.label}</span
               >
             </Button>
