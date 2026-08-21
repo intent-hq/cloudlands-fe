@@ -42,12 +42,6 @@ let fallbackInvokeConfigured = false;
  * bug unless proven otherwise.
  */
 export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<string, unknown>([
-  // Fire-and-forget renderer log persistence sink. The renderer logger catches
-  // flush failures and RE-QUEUES the batch for retry, so rejecting here would
-  // grow the pending-log buffer unboundedly and spam console.error on every
-  // flush. There is no daemon-side log sink yet (P3-1.5 retirement candidate);
-  // resolving undefined keeps the logger's in-memory behavior harmless.
-  ['log:persist-renderer-logs', undefined],
   // Legacy notes-on-disk workspace root (formerly resolved from assumed local
   // roots, used to build `.workspace/notes/<id>.md` paths). The daemon owns notes in
   // SQLite (PROTOCOL §5.2) — this build has no on-disk notes mirror, so there
