@@ -97,6 +97,7 @@
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import {
+    faArrowsRotate,
     faCheck,
     faChevronDown,
     faLock,
@@ -1801,6 +1802,32 @@
             onclick={openProviderSettings}
           >
             <Fa icon={faPlus} class="size-3 text-muted-foreground/50" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            iconOnly={true}
+            title={m.chat_modelPicker_refreshGroup_title({
+              group: providerDisplayName(activeBrowseProviderId),
+            })}
+            aria-label={m.chat_modelPicker_refreshGroup_title({
+              group: providerDisplayName(activeBrowseProviderId),
+            })}
+            class={cn(
+              'text-muted-foreground hover:bg-muted/40',
+              refreshingProviders.has(activeBrowseProviderId) && 'opacity-50! cursor-not-allowed',
+            )}
+            data-testid="model-provider-refresh-button"
+            disabled={refreshingProviders.has(activeBrowseProviderId)}
+            onclick={() => void handleRefreshProvider(activeBrowseProviderId)}
+          >
+            <Fa
+              icon={faArrowsRotate}
+              class={cn(
+                'size-3 text-muted-foreground/50 transition-transform duration-500',
+                refreshingProviders.has(activeBrowseProviderId) && 'animate-spin',
+              )}
+            />
           </Button>
         </div>
       {/if}

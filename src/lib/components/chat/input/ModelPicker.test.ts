@@ -679,6 +679,65 @@ describe('ModelPicker combined reasoning mode', () => {
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
   });
 
+  it('force-refreshes and replaces the active provider list from the tab row', async () => {
+    let resolveRefresh!: (result: {
+      models: { value: string; label: string; description: string }[];
+    }) => void;
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      async (providerId, options) => {
+        if (providerId === 'codex' && options?.forceRefresh) {
+          return new Promise((resolve) => {
+            resolveRefresh = resolve;
+          });
+        }
+        return {
+          models:
+            providerId === 'codex'
+              ? [{ value: 'codex:gpt-5.6-sol', label: 'GPT-5.6-Sol', description: 'Codex model' }]
+              : [{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Auggie model' }],
+        };
+      },
+    );
+    enabledProviderIds$.set(['auggie', 'codex']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByRole('option', { name: /GPT-5\.6-Sol/ })).toBeTruthy();
+
+    const refreshButton = screen.getByTestId('model-provider-refresh-button');
+    expect(refreshButton.getAttribute('title')).toBe('Refresh OpenAI Codex models');
+    vi.mocked(getModelsForProviderForLoadingState).mockClear();
+    await fireEvent.click(refreshButton);
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex', {
+        forceRefresh: true,
+      });
+    });
+    expect(refreshButton.hasAttribute('disabled')).toBe(true);
+    expect(refreshButton.querySelector('.animate-spin')).toBeTruthy();
+
+    resolveRefresh({
+      models: [{ value: 'codex:gpt-6-codex', label: 'GPT-6 Codex', description: 'Smarter' }],
+    });
+
+    expect(await screen.findByRole('option', { name: /GPT-6 Codex/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /GPT-5\.6-Sol/ })).toBeNull();
+    await waitFor(() => expect(refreshButton.hasAttribute('disabled')).toBe(false));
+  });
+
   it('uses session effort levels when the selected catalog model has no levels', async () => {
     agentModelEffortLevels$.set(['low', 'medium', 'high']);
     mockModelState.availableModels = [
