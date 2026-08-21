@@ -9,20 +9,21 @@
 import { render, fireEvent, cleanup, within } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-const { dispatchMock, layoutState } = vi.hoisted(() => ({
+const { dispatchMock, layoutState, prefsState } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
   layoutState: {
     panels: {} as Record<string, unknown>,
     hiddenTabs: [] as unknown[],
     focusedPanelId: null as string | null,
   },
+  prefsState: { panelOpenMode: 'normal' as string },
 }));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ theme: { name: 'dark' } }),
+    state: () => ({ theme: { name: 'dark' }, userPreferences: prefsState }),
     dispatch: dispatchMock,
   });
 });
@@ -82,6 +83,7 @@ afterEach(() => {
   layoutState.panels = {};
   layoutState.hiddenTabs = [];
   layoutState.focusedPanelId = null;
+  prefsState.panelOpenMode = 'normal';
 });
 
 function renderList() {
@@ -114,6 +116,24 @@ describe('SidebarBrowserList hidden-tab restore', () => {
       wsId: 'ws-1',
       tabId: 'hidden-1',
       avoidPanelId: 'chat',
+      panelOpenMode: 'normal',
+    });
+  });
+
+  // Regression (monorepo#3121): the panelOpenMode wiring is what lets the
+  // reducer avoid the split that the pin-mode reusable-panel invariant would
+  // collapse — the dispatched action must carry the current mode.
+  it('passes the pin panel-open mode through to the reveal action', async () => {
+    seedLayout();
+    prefsState.panelOpenMode = 'pin';
+    renderList();
+    await clickRestore();
+
+    expect(findRevealAction()?.payload).toMatchObject({
+      wsId: 'ws-1',
+      tabId: 'hidden-1',
+      avoidPanelId: 'chat',
+      panelOpenMode: 'pin',
     });
   });
 

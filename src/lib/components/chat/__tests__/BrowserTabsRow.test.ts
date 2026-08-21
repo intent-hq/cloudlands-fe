@@ -12,15 +12,18 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
 
-const { dispatchMock, layoutState, setActiveTabMock, focusPanelMock } = vi.hoisted(() => ({
-  dispatchMock: vi.fn(),
-  layoutState: {
-    panels: {} as Record<string, unknown>,
-    hiddenTabs: [] as unknown[],
-  },
-  setActiveTabMock: vi.fn(),
-  focusPanelMock: vi.fn(),
-}));
+const { dispatchMock, layoutState, prefsState, setActiveTabMock, focusPanelMock } = vi.hoisted(
+  () => ({
+    dispatchMock: vi.fn(),
+    layoutState: {
+      panels: {} as Record<string, unknown>,
+      hiddenTabs: [] as unknown[],
+    },
+    prefsState: { panelOpenMode: 'normal' as string },
+    setActiveTabMock: vi.fn(),
+    focusPanelMock: vi.fn(),
+  }),
+);
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => ({
@@ -33,7 +36,7 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ theme: { name: 'dark' } }),
+    state: () => ({ theme: { name: 'dark' }, userPreferences: prefsState }),
     dispatch: dispatchMock,
   });
 });
@@ -86,6 +89,7 @@ afterEach(() => {
   focusPanelMock.mockClear();
   layoutState.panels = {};
   layoutState.hiddenTabs = [];
+  prefsState.panelOpenMode = 'normal';
   resetAgentSubscriptionsViewStateForTests();
 });
 
@@ -159,10 +163,33 @@ describe('BrowserTabsRow', () => {
       wsId: 'ws-1',
       tabId: 'hidden-1',
       avoidPanelId: 'chat',
+      panelOpenMode: 'normal',
     });
     // No panel-focus steal on the hidden-tab path.
     expect(focusPanelMock).not.toHaveBeenCalled();
     expect(setActiveTabMock).not.toHaveBeenCalled();
+  });
+
+  // Regression (monorepo#3121): the panelOpenMode wiring is what lets the
+  // reducer avoid the split that the pin-mode reusable-panel invariant would
+  // collapse — the dispatched action must carry the current mode.
+  it('passes the pin panel-open mode through to the reveal action', async () => {
+    seedLayout();
+    prefsState.panelOpenMode = 'pin';
+    renderRow();
+    await fireEvent.click(screen.getByTestId('browser-tabs-summary'));
+    await fireEvent.click(screen.getAllByTestId('browser-tab-item')[1]);
+
+    const dispatched = dispatchMock.mock.calls.map(([action]) => action);
+    const reveal = dispatched.find(
+      (a) => a.type === revealHiddenTabAvoidingPanel('ws-1', 'x', null).type,
+    );
+    expect(reveal?.payload).toMatchObject({
+      wsId: 'ws-1',
+      tabId: 'hidden-1',
+      avoidPanelId: 'chat',
+      panelOpenMode: 'pin',
+    });
   });
 
   it('passes a null avoided panel when no panel hosts the conversation', async () => {

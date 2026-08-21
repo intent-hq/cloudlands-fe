@@ -9,6 +9,7 @@
     selectPanels,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { revealHiddenTabAvoidingPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { selectPanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import type { PanelState } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { selectWorkspaceScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
@@ -50,8 +51,11 @@
   function restoreTab(tabId: string) {
     // Reveal into a panel other than the one hosting the currently-viewed
     // conversation (the reducer splits when it is the only panel), so the
-    // sidebar reveal never displaces the chat or moves keyboard focus off it
-    // (monorepo#3113). Unlike the conversation-footer path, the sidebar has
+    // sidebar reveal never moves keyboard focus off the chat (monorepo#3113)
+    // and only displaces its active tab in one case: pin mode with the
+    // conversation panel as the sole (reusable) panel, where a split would
+    // be collapsed by the reusable-panel invariant and re-hide the tab
+    // (monorepo#3121). Unlike the conversation-footer path, the sidebar has
     // no agent context, so the conversation panel is derived from the focused
     // panel when it is actively showing a conversation, falling back to any
     // panel whose active tab is one.
@@ -65,7 +69,13 @@
         ? focusedPanel
         : Object.values(panels).find(showsConversation);
     appStore.dispatch(
-      revealHiddenTabAvoidingPanel(panelLayoutId, tabId, conversationPanel?.id ?? null),
+      revealHiddenTabAvoidingPanel(
+        panelLayoutId,
+        tabId,
+        conversationPanel?.id ?? null,
+        undefined,
+        selectPanelOpenMode.select(appStore.state),
+      ),
     );
   }
 

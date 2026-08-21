@@ -1250,14 +1250,25 @@ export const updateFileTabPath = createAction<
  * first other panel in layout order, or — when no other panel exists — the
  * avoided panel is split and the tab opens in the fresh panel. Panel focus
  * never moves, so the conversation keeps keyboard focus either way.
+ * `panelOpenMode: 'pin'` reveals into the avoided panel itself when it is
+ * the sole panel AND the reusable (unpinned) one: a split would create a
+ * second unpinned panel that the reusable-panel invariant collapses on the
+ * next persisted action, re-hiding the tab (monorepo#3121).
  */
 export const revealHiddenTabAvoidingPanel = createAction(
   'panelLayout/revealHiddenTabAvoidingPanel',
-  (wsId: string, tabId: string, avoidPanelId: string | null, timestamp?: number) => ({
+  (
+    wsId: string,
+    tabId: string,
+    avoidPanelId: string | null,
+    timestamp?: number,
+    panelOpenMode?: PanelOpenMode,
+  ) => ({
     wsId,
     tabId,
     avoidPanelId,
     timestamp: timestamp ?? Date.now(),
+    panelOpenMode: panelOpenMode ?? 'normal',
   }),
 );
 
@@ -3672,7 +3683,7 @@ panelLayoutReducer.with(applyPreset, (state, { payload }) => {
 
 // --- Reveal Hidden Tab Avoiding a Panel (conversation footer reveal) ---
 panelLayoutReducer.with(revealHiddenTabAvoidingPanel, (state, { payload }) => {
-  const { wsId, tabId, avoidPanelId, timestamp } = payload;
+  const { wsId, tabId, avoidPanelId, timestamp, panelOpenMode } = payload;
   let ws = getWorkspaceState(state, wsId);
   const hiddenTab = getItem(ws.hiddenTabs, tabId);
   if (!hiddenTab) return state;
@@ -3681,6 +3692,21 @@ panelLayoutReducer.with(revealHiddenTabAvoidingPanel, (state, { payload }) => {
   let targetPanelId = getPanelOrder(ws.root).find(
     (panelId) => panelId !== avoidPanelId && ws.panels[panelId],
   );
+  if (
+    !targetPanelId &&
+    panelOpenMode === 'pin' &&
+    avoidPanelId &&
+    ws.panels[avoidPanelId] &&
+    !panelIsPinned(ws.panels[avoidPanelId])
+  ) {
+    // Pin mode with the avoided panel as the sole panel AND the reusable
+    // (unpinned) one: a split would create a second unpinned panel that the
+    // reusable-panel invariant collapses on the next persisted action,
+    // re-hiding the tab (monorepo#3121). Reveal into the reusable panel
+    // directly instead — displacing the conversation's active tab, mirroring
+    // restoreHiddenTab's pin-mode targeting.
+    targetPanelId = avoidPanelId;
+  }
   if (targetPanelId) {
     ws = saveToHistory(ws, timestamp);
   } else {

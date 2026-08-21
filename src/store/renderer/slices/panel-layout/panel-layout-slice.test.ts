@@ -2992,5 +2992,94 @@ describe('panelLayoutReducer', () => {
         state,
       );
     });
+
+    // Pin mode: splitting the sole (reusable) panel would create a second
+    // unpinned panel that the reusable-panel invariant collapses on the NEXT
+    // persisted action — re-hiding the tab the user just revealed
+    // (monorepo#3121). The reveal targets the reusable panel directly so the
+    // invariant has nothing to collapse.
+    it('pin mode: reveals into the sole unpinned (avoided) panel instead of splitting', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      const before = hidden.byWorkspaceId[WS];
+      const result = panelLayoutReducer(
+        hidden,
+        revealHiddenTabAvoidingPanel(WS, 'owned', 'p1', 1001, 'pin'),
+      );
+      const ws = result.byWorkspaceId[WS];
+      expect(Object.keys(ws.panels)).toEqual(['p1']);
+      expect(getItems(ws.hiddenTabs)).toHaveLength(0);
+      expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2', 'owned']);
+      expect(ws.panels.p1.activeTabId).toBe('owned');
+      expect(ws.focusedPanelId).toBe(before.focusedPanelId);
+      expect(ws.pendingPanelReveal).toMatchObject({ panelId: 'p1', tabId: 'owned' });
+    });
+
+    it('pin mode: the reveal survives the invariant collapse triggered by a subsequent persisted action (monorepo#3121)', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      const revealed = panelLayoutReducer(
+        hidden,
+        revealHiddenTabAvoidingPanel(WS, 'owned', 'p1', 1001, 'pin'),
+      );
+      // What enforceReusablePanelInvariant emits after the next
+      // PERSIST_ACTIONS action when the pin-mode layout is collapsible.
+      const collapsed = panelLayoutReducer(revealed, collapseToReusablePanel(WS, 1002));
+      const ws = collapsed.byWorkspaceId[WS];
+      expect(getItems(ws.hiddenTabs)).toHaveLength(0);
+      const hostingPanel = Object.values(ws.panels).find((panel) =>
+        panel.tabs.some((tab) => tab.id === 'owned'),
+      );
+      expect(hostingPanel).toBeDefined();
+      expect(hostingPanel?.activeTabId).toBe('owned');
+    });
+
+    it('pin mode: still avoids the conversation panel when another panel exists', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      state.byWorkspaceId[WS].root = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'panel', panelId: 'p1' },
+          { type: 'panel', panelId: 'p2' },
+        ],
+        sizes: [50, 50],
+      };
+      state.byWorkspaceId[WS].panels.p2 = {
+        id: 'p2',
+        tabs: [{ id: 'n2', type: 'note', title: 'B', closable: true } as any],
+        activeTabId: 'n2',
+      };
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      const before = hidden.byWorkspaceId[WS];
+      const result = panelLayoutReducer(
+        hidden,
+        revealHiddenTabAvoidingPanel(WS, 'owned', 'p1', 1001, 'pin'),
+      );
+      const ws = result.byWorkspaceId[WS];
+      expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
+      expect(ws.panels.p1.activeTabId).toBe(before.panels.p1.activeTabId);
+      expect(ws.panels.p2.tabs.map((t) => t.id)).toEqual(['n2', 'owned']);
+      expect(ws.panels.p2.activeTabId).toBe('owned');
+    });
+
+    it('pin mode: still splits when the sole (avoided) panel is pinned', () => {
+      // A single unpinned panel among pinned ones satisfies the invariant,
+      // so the split fallback stays safe here.
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      state.byWorkspaceId[WS].panels.p1.pinned = true;
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      const result = panelLayoutReducer(
+        hidden,
+        revealHiddenTabAvoidingPanel(WS, 'owned', 'p1', 1001, 'pin'),
+      );
+      const ws = result.byWorkspaceId[WS];
+      const newPanelId = Object.keys(ws.panels).find((id) => id !== 'p1')!;
+      expect(newPanelId).toBeTruthy();
+      expect(getItems(ws.hiddenTabs)).toHaveLength(0);
+      expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
+      expect(ws.panels[newPanelId].tabs.map((t) => t.id)).toEqual(['owned']);
+      expect(ws.panels[newPanelId].activeTabId).toBe('owned');
+    });
   });
 });
