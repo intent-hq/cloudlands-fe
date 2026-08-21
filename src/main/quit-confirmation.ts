@@ -100,7 +100,7 @@ const RENDERER_ACK_TIMEOUT_MS = 3_000;
 export interface QuitConfirmationDeps {
   getBackendClient(): RunningAgentsRpc;
   getConnectionMode(): ConnectionMode;
-  /** True when the live client is pinned to a remote backend (not the local daemon). */
+  /** True when the focused window uses a remote backend (not the local daemon). */
   isRemoteBackendActive(): boolean;
   listRespondingAgents(client: RunningAgentsRpc): Promise<RespondingAgent[]>;
   /** Best-effort responding agents on the startup/default backend, via a throwaway client. */
@@ -473,7 +473,7 @@ async function confirmQuitInner(overrides: Partial<QuitConfirmationDeps>): Promi
       ? null
       : await import('../features/backend/main/backend.ipc');
   const deps: QuitConfirmationDeps = {
-    getBackendClient: overrides.getBackendClient ?? backendIpc!.getBackendClient,
+    getBackendClient: overrides.getBackendClient ?? backendIpc!.getFocusedBackendClient,
     isRemoteBackendActive: overrides.isRemoteBackendActive ?? backendIpc!.isRemoteBackendActive,
     getConnectionMode,
     listRespondingAgents,
@@ -487,11 +487,11 @@ async function confirmQuitInner(overrides: Partial<QuitConfirmationDeps>): Promi
     ...overrides,
   };
 
-  // The active client is the remote one when a remote backend is pinned; a
-  // spawned local sidecar is then a SECOND source of running agents that quit
-  // still shuts down, so it is queried too (fail-open) before the zero-agent
-  // fast path. The sources are independent, so they run concurrently, and the
-  // browser tab enumeration (also fail-open) rides the same batch.
+  // The focused window's client is the current source for the prompt. When that
+  // window is remote, the local sidecar is a SECOND source that quit still
+  // shuts down, so query it too before the zero-agent fast path. The sources
+  // are independent, and the fail-open browser tab enumeration rides the same
+  // concurrent batch.
   const remoteActive = deps.isRemoteBackendActive();
   const [activeAgents, localAgents, disruptedBrowserTabs] = await Promise.all([
     deps.listRespondingAgents(deps.getBackendClient()),
