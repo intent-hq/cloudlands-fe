@@ -34,10 +34,9 @@ describe('editorial workspace shell presentation contract', () => {
     const container = source('../PanelContainer.svelte');
 
     expect(panel).toContain('overflow-hidden rounded-lg border border-border');
-    expect(panel).toContain("? 'bg-sidebar text-sidebar-foreground'");
-    expect(panel).toContain(": 'bg-card text-card-foreground'");
+    expect(panel).toContain('border border-border bg-background text-foreground');
     expect(panel).toContain('data-empty-panel-surface={');
-    expect(container).not.toContain("isEmptySurface && 'bg-sidebar text-sidebar-foreground'");
+    expect(container).toContain('min-w-0 bg-background text-foreground');
     expect(panel).toContain('width: 100%');
     expect(panel).toContain('min-width: 0');
     expect(panel).not.toContain('min-width: 30em');

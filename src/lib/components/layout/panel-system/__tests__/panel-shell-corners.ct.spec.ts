@@ -5,7 +5,7 @@ import PanelWorkspaceColumnClipHarness from './mocks/PanelWorkspaceColumnClipHar
 async function shellStyles(panel: Locator, page: Page) {
   const expectedBackground = await page.evaluate(() => {
     const probe = document.createElement('div');
-    probe.className = 'bg-sidebar';
+    probe.className = 'bg-background';
     document.body.append(probe);
     const color = getComputedStyle(probe).backgroundColor;
     probe.remove();

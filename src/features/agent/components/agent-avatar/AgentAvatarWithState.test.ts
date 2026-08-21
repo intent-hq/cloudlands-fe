@@ -139,7 +139,10 @@ describe('AgentAvatarWithState', () => {
     expect(source).toContain('--agent-avatar-background-forced: Highlight');
     expect(source).toContain('--agent-avatar-background-forced: Field');
     expect(source).toContain('--agent-avatar-background-forced: Mark');
-    expect(source).toContain('color: #080808');
+    expect(source).toContain('color: hsl(var(--agent-avatar-foreground))');
+    expect(tokenSource).toContain('--theme-light-agent-avatar-foreground:');
+    expect(tokenSource).toContain('--theme-dark-agent-avatar-foreground:');
+    expect(tokenSource).toContain('--agent-avatar-foreground:');
     expect(source.match(/^\s+color:/gm)).toHaveLength(4);
     expect(source).toMatch(/transition: background-color/);
     expect(source).toContain('@media (forced-colors: active)');

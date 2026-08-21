@@ -64,8 +64,8 @@ const PAIRS = [
 
 const DEFAULT_NEUTRAL_RGB = {
   light: {
-    background: 'rgb(236, 236, 234)',
-    'app-background': 'rgb(236, 236, 234)',
+    background: 'rgb(255, 255, 255)',
+    'app-background': 'rgb(255, 255, 255)',
     foreground: 'rgb(0, 0, 0)',
     card: 'rgb(255, 255, 255)',
     'card-foreground': 'rgb(0, 0, 0)',
@@ -76,10 +76,10 @@ const DEFAULT_NEUTRAL_RGB = {
     accent: 'rgb(225, 223, 222)',
     'accent-foreground': 'rgb(0, 0, 0)',
     muted: 'rgb(225, 223, 222)',
-    'muted-foreground': 'rgb(0, 0, 0)',
+    'muted-foreground': 'rgb(61, 61, 60)',
     border: 'rgb(225, 223, 222)',
     input: 'rgb(0, 0, 0)',
-    sidebar: 'rgb(236, 236, 234)',
+    sidebar: 'rgb(245, 245, 245)',
     'sidebar-foreground': 'rgb(0, 0, 0)',
     'sidebar-accent': 'rgb(225, 223, 222)',
     'sidebar-accent-foreground': 'rgb(0, 0, 0)',
@@ -203,6 +203,39 @@ function themeAuthorityFixture(): string {
     </script></body></html>`;
 }
 
+function productionSurfaceFixture(): string {
+  return `<!doctype html><html><head><style>
+    ${TOKEN_CSS}
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; font-family: sans-serif; }
+    body { background: hsl(var(--app-background)); color: hsl(var(--foreground)); padding: 16px; }
+    .workspace { display: grid; grid-template-columns: minmax(112px, 18%) 1fr; gap: 12px; min-height: 620px; }
+    .sidebar { border: 1px solid hsl(var(--sidebar-border)); border-radius: 9px; background: hsl(var(--sidebar)); color: hsl(var(--sidebar-foreground)); padding: 12px; }
+    .canvas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; min-width: 0; }
+    .panel { min-width: 0; overflow: hidden; border: 1px solid hsl(var(--border)); border-radius: 9px; background: hsl(var(--background)); color: hsl(var(--foreground)); padding: 12px; }
+    .muted-copy { color: hsl(var(--muted-foreground)); font-size: 12px; }
+    .card { margin-top: 12px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: hsl(var(--card)); color: hsl(var(--card-foreground)); padding: 12px; }
+    .chief-host, .chief-transcript, .chief-composer { background: transparent; }
+    .chief-transcript { min-height: 56px; padding: 8px 0; }
+    .chief-composer { border: 1px solid hsl(var(--border)); padding: 8px; }
+    .model-picker { margin-top: 12px; width: 100%; border: 1px solid hsl(var(--border)); border-radius: 7px; background: hsl(var(--background)); color: hsl(var(--foreground)); padding: 8px; }
+    .model-picker:focus-visible { border-color: hsl(var(--ring)); outline: none; box-shadow: 0 0 0 2px hsl(var(--ring) / 0.4); }
+    .avatar { display: inline-grid; place-items: center; width: 24px; height: 24px; margin-top: 12px; border-radius: 6px; background: hsl(var(--agent-avatar-surface-neutral)); color: hsl(var(--agent-avatar-foreground)); font-weight: 700; }
+    @media (max-width: 800px) { .workspace { grid-template-columns: 112px 1fr; } .canvas { grid-template-columns: 1fr; } }
+  </style></head><body>
+    <main class="workspace">
+      <aside class="sidebar">Sidebar<div class="card">Raised card</div></aside>
+      <section class="canvas">
+        <article class="panel" data-panel-kind="populated">Populated panel<p class="muted-copy">Metadata</p></article>
+        <article class="panel" data-panel-kind="pristine">Pristine panel<p class="muted-copy">Helper copy</p></article>
+        <article class="panel" data-panel-kind="missing">Missing panel fallback</article>
+        <article class="panel chief-host" data-chief-host>Chief<div class="chief-transcript">Transcript</div><div class="chief-composer">Composer</div></article>
+        <article class="panel"><button class="model-picker">Model picker</button><div class="avatar" aria-label="Neutral avatar">A</div></article>
+      </section>
+    </main>
+  </body></html>`;
+}
+
 async function computedRoles(
   page: Page,
   className: string,
@@ -298,6 +331,118 @@ test('browser computes complete explicit light and dark contracts', async ({ pag
         (first, second) => second - first,
       );
       expect((values[0] + 0.05) / (values[1] + 0.05), `border on ${surface}`).toBeLessThan(2.25);
+    }
+  }
+});
+
+test('production-shaped theme surfaces remain semantic across modes, widths, and scaling', async ({
+  context,
+  page,
+}) => {
+  const cdp = await context.newCDPSession(page);
+  const modes = [
+    { preference: 'light', os: 'dark', resolved: 'light' },
+    { preference: 'dark', os: 'light', resolved: 'dark' },
+    { preference: 'system', os: 'light', resolved: 'light' },
+    { preference: 'system', os: 'dark', resolved: 'dark' },
+  ] as const;
+
+  for (const width of [720, 1440]) {
+    for (const scale of [1, 2]) {
+      for (const mode of modes) {
+        await page.emulateMedia({ colorScheme: mode.os });
+        await cdp.send('Emulation.clearDeviceMetricsOverride');
+        await cdp.send('Emulation.setDeviceMetricsOverride', {
+          width: width / scale,
+          height: 900 / scale,
+          deviceScaleFactor: scale,
+          mobile: false,
+          screenWidth: width,
+          screenHeight: 900,
+        });
+        await page.setContent(productionSurfaceFixture());
+        await page.evaluate((resolved) => {
+          document.documentElement.className = resolved;
+        }, mode.resolved);
+
+        const evidence = await page.evaluate(() => {
+          const style = (selector: string) => getComputedStyle(document.querySelector(selector)!);
+          const roleColor = (role: string) => {
+            const probe = document.createElement('div');
+            probe.style.backgroundColor = `hsl(var(--${role}))`;
+            document.body.append(probe);
+            const color = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            return color;
+          };
+          const panels = [...document.querySelectorAll('[data-panel-kind]')].map(
+            (element) => getComputedStyle(element).backgroundColor,
+          );
+          return {
+            panels,
+            background: roleColor('background'),
+            card: style('.card').backgroundColor,
+            cardToken: roleColor('card'),
+            muted: style('.muted-copy').color,
+            foreground: roleColor('foreground'),
+            chief: [
+              style('[data-chief-host]').backgroundColor,
+              style('.chief-transcript').backgroundColor,
+              style('.chief-composer').backgroundColor,
+            ],
+            pickerRestingBorder: style('.model-picker').borderTopColor,
+            border: roleColor('border'),
+            avatar: {
+              background: style('.avatar').backgroundColor,
+              foreground: style('.avatar').color,
+              expectedBackground: roleColor('agent-avatar-surface-neutral'),
+              expectedForeground: roleColor('agent-avatar-foreground'),
+            },
+            devicePixelRatio: window.devicePixelRatio,
+          };
+        });
+        expect(new Set(evidence.panels)).toEqual(new Set([evidence.background]));
+        expect(evidence.card).toBe(evidence.cardToken);
+        expect(evidence.muted).not.toBe(evidence.foreground);
+        const mutedLuminance = [luminance(evidence.muted), luminance(evidence.background)].sort(
+          (first, second) => second - first,
+        );
+        expect((mutedLuminance[0] + 0.05) / (mutedLuminance[1] + 0.05)).toBeGreaterThanOrEqual(4.5);
+        expect(evidence.chief).toEqual([
+          'rgba(0, 0, 0, 0)',
+          'rgba(0, 0, 0, 0)',
+          'rgba(0, 0, 0, 0)',
+        ]);
+        expect(evidence.pickerRestingBorder).toBe(evidence.border);
+        expect(evidence.avatar).toMatchObject({
+          background: evidence.avatar.expectedBackground,
+          foreground: evidence.avatar.expectedForeground,
+        });
+        expect(evidence.devicePixelRatio).toBe(scale);
+
+        await page.locator('.model-picker').focus();
+        const focused = await page.locator('.model-picker').evaluate((element) => {
+          const style = getComputedStyle(element);
+          const probe = document.createElement('div');
+          probe.style.backgroundColor = 'hsl(var(--ring))';
+          document.body.append(probe);
+          const ring = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          return { border: style.borderTopColor, shadow: style.boxShadow, ring };
+        });
+        expect(focused.border).toBe(focused.ring);
+        expect(focused.shadow).not.toBe('none');
+
+        if (FOUNDATION_ARTIFACT_DIR) {
+          mkdirSync(FOUNDATION_ARTIFACT_DIR, { recursive: true });
+          const name = `${mode.preference}-${mode.os}-${width}-${scale * 100}`;
+          await page.screenshot({ path: path.join(FOUNDATION_ARTIFACT_DIR, `${name}.png`) });
+          writeFileSync(
+            path.join(FOUNDATION_ARTIFACT_DIR, `${name}.json`),
+            `${JSON.stringify({ mode, width, scale, evidence, focused }, null, 2)}\n`,
+          );
+        }
+      }
     }
   }
 });

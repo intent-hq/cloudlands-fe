@@ -57,7 +57,7 @@ const COLOR_ROLE_SET = new Set<string>(COLOR_ROLES);
 
 const DEFAULT_NEUTRAL_SOURCE = {
   light: {
-    background: '60 5% 92.1568627451%',
+    background: '0 0% 100%',
     foreground: '0 0% 0%',
     card: '0 0% 100%',
     'card-foreground': '0 0% 0%',
@@ -68,15 +68,15 @@ const DEFAULT_NEUTRAL_SOURCE = {
     accent: '20 4.7619047619% 87.6470588235%',
     'accent-foreground': '0 0% 0%',
     muted: '20 4.7619047619% 87.6470588235%',
-    'muted-foreground': '0 0% 0%',
+    'muted-foreground': 'var(--theme-dark-accent)',
     border: '20 4.7619047619% 87.6470588235%',
     input: '0 0% 0%',
-    sidebar: '60 5% 92.1568627451%',
+    sidebar: '0 0% 96%',
     'sidebar-foreground': '0 0% 0%',
     'sidebar-accent': '20 4.7619047619% 87.6470588235%',
     'sidebar-accent-foreground': '0 0% 0%',
     'sidebar-border': '20 4.7619047619% 87.6470588235%',
-    'app-background': '60 5% 92.1568627451%',
+    'app-background': '0 0% 100%',
   },
   dark: {
     background: '0 0% 10.1960784314%',
@@ -188,7 +188,10 @@ function contrast(first: string, second: string): number {
 function tokenValues(css: string, mode: 'light' | 'dark'): Record<string, string> {
   return Object.fromEntries(
     [...css.matchAll(new RegExp(`--theme-${mode}-([\\w-]+):\\s*([^;]+);`, 'g'))]
-      .map(([, role, value]) => [role, value.trim().replace(/^hsl\((.*)\)$/, '$1')])
+      .map(([, role, value]) => [
+        role,
+        resolveTokenValue(css, value.trim().replace(/^hsl\((.*)\)$/, '$1')),
+      ])
       .filter(([role]) => COLOR_ROLE_SET.has(role)),
   );
 }
@@ -197,6 +200,13 @@ function tokenValue(css: string, name: string): string {
   const match = css.match(new RegExp(`--${name}:\\s*([^;]+);`));
   if (!match) throw new Error(`Missing token --${name}`);
   return match[1].trim();
+}
+
+function resolveTokenValue(css: string, value: string, seen = new Set<string>()): string {
+  const reference = value.match(/^var\(--([\w-]+)\)$/)?.[1];
+  if (!reference) return value;
+  if (seen.has(reference)) throw new Error(`Circular token reference: --${reference}`);
+  return resolveTokenValue(css, tokenValue(css, reference), new Set(seen).add(reference));
 }
 
 function expectCompleteAndLegible(values: Record<string, string>): void {
@@ -232,6 +242,22 @@ describe('theme color contract', () => {
     (mode) => {
       const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
       expectCompleteAndLegible(tokenValues(css, mode));
+    },
+  );
+
+  it.each(['light', 'dark'] as const)(
+    'keeps %s muted text distinct and readable on normal surfaces',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const values = tokenValues(css, mode);
+
+      expect(values['muted-foreground']).not.toBe(values.foreground);
+      for (const surface of ['background', 'card', 'muted', 'sidebar'] as const) {
+        expect(
+          contrast(values['muted-foreground'], values[surface]),
+          `muted-foreground on ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
     },
   );
 
@@ -301,9 +327,17 @@ describe('theme color contract', () => {
     }
   });
 
-  it('keeps regular chat on card while the Chief chat host stays transparent', () => {
+  it('keeps panel leaves on the primary canvas while the Chief chat host stays transparent', () => {
     const panel = fs.readFileSync(
       path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/Panel.svelte'),
+      'utf8',
+    );
+    const panelContainer = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelContainer.svelte'),
+      'utf8',
+    );
+    const panelEmpty = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelEmptyState.svelte'),
       'utf8',
     );
     const chief = fs.readFileSync(
@@ -311,11 +345,43 @@ describe('theme color contract', () => {
       'utf8',
     );
 
-    expect(panel).toContain(": 'bg-card text-card-foreground'");
+    expect(panel).toContain('border border-border bg-background text-foreground');
+    expect(panelContainer).toContain('bg-background text-foreground');
+    expect(panelEmpty).toContain('bg-background px-6 py-10 text-foreground');
+    for (const source of [panel, panelContainer, panelEmpty]) {
+      expect(source).not.toContain('bg-sidebar text-sidebar-foreground');
+      expect(source).not.toContain('bg-card text-card-foreground');
+    }
     expect(chief).toMatch(
       /<div class="min-h-0 flex-1">\s*<ChatPanel[\s\S]*?agentName=\{m\.layout_chiefCard_title\(\)\}/,
     );
     expect(chief).not.toMatch(/<div class="[^"]*\bbg-card\b[^"]*">\s*<ChatPanel/);
+  });
+
+  it('keeps ModelPicker boundaries and avatar art on dedicated semantic roles', () => {
+    const picker = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/components/chat/input/ModelPicker.svelte'),
+      'utf8',
+    );
+    const avatar = fs.readFileSync(
+      path.resolve(
+        process.cwd(),
+        'src/features/agent/components/agent-avatar/AgentAvatarWithState.svelte',
+      ),
+      'utf8',
+    );
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+
+    expect(picker).toContain('border-border! focus-visible:border-ring!');
+    expect(picker).toContain('focus-visible:ring-2 focus-visible:ring-ring/40');
+    expect(picker).not.toMatch(/(?:border|ring)-\[#/);
+    expect(avatar).toContain('color: hsl(var(--agent-avatar-foreground))');
+    expect(avatar).not.toContain('color: #080808');
+    for (const mode of ['light', 'dark']) {
+      expect(tokenValue(css, `theme-${mode}-agent-avatar-foreground`)).toBe(
+        'var(--theme-light-foreground)',
+      );
+    }
   });
 
   it('lets light, dark, and system modes select the same semantic contract', () => {

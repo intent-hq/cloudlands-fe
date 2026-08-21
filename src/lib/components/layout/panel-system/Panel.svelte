@@ -445,10 +445,7 @@
   <div
     bind:this={panelRef}
     class={cn(
-      'panel group/panel relative flex flex-col h-full overflow-hidden rounded-lg border border-border',
-      panel.pristine === true && panel.tabs.length === 0
-        ? 'bg-sidebar text-sidebar-foreground'
-        : 'bg-card text-card-foreground',
+      'panel group/panel relative flex flex-col h-full overflow-hidden rounded-lg border border-border bg-background text-foreground',
     )}
     class:contained
     data-panel-id={panel.id}

@@ -45,7 +45,7 @@
 :root {
   color-scheme: light dark;
 
-  --theme-light-background: 60 5% 92.1568627451%;
+  --theme-light-background: 0 0% 100%;
   --theme-light-foreground: 0 0% 0%;
   --theme-light-card: 0 0% 100%;
   --theme-light-card-foreground: 0 0% 0%;
@@ -58,7 +58,7 @@
   --theme-light-accent: 20 4.7619047619% 87.6470588235%;
   --theme-light-accent-foreground: 0 0% 0%;
   --theme-light-muted: 20 4.7619047619% 87.6470588235%;
-  --theme-light-muted-foreground: 0 0% 0%;
+  --theme-light-muted-foreground: var(--theme-dark-accent);
   --theme-light-destructive: 0 65% 94%;
   --theme-light-destructive-foreground: 0 63% 31%;
   --theme-light-border: 20 4.7619047619% 87.6470588235%;
@@ -70,13 +70,14 @@
   --theme-light-success-foreground: 0 0% 100%;
   --theme-light-warning: 42 91% 54%;
   --theme-light-warning-foreground: 154 44% 14%;
-  --theme-light-sidebar: 60 5% 92.1568627451%;
+  --theme-light-sidebar: 0 0% 96%;
   --theme-light-sidebar-foreground: 0 0% 0%;
   --theme-light-sidebar-accent: 20 4.7619047619% 87.6470588235%;
   --theme-light-sidebar-accent-foreground: 0 0% 0%;
   --theme-light-sidebar-border: 20 4.7619047619% 87.6470588235%;
-  --theme-light-app-background: 60 5% 92.1568627451%;
+  --theme-light-app-background: 0 0% 100%;
   --theme-light-agent-avatar-surface-neutral: var(--theme-light-muted);
+  --theme-light-agent-avatar-foreground: var(--theme-light-foreground);
   --theme-light-agent-avatar-surface-completed: 145 14% 88%;
   --theme-light-agent-avatar-foreground-completed: 154 32% 24%;
   --theme-light-agent-avatar-surface-attention: 30.785 100% 62.549%;
@@ -117,6 +118,7 @@
   --theme-dark-sidebar-border: 60 0.826446281% 23.7254901961%;
   --theme-dark-app-background: 0 0% 10.1960784314%;
   --theme-dark-agent-avatar-surface-neutral: 145 12% 78%;
+  --theme-dark-agent-avatar-foreground: var(--theme-light-foreground);
   --theme-dark-agent-avatar-surface-completed: 145 14% 24%;
   --theme-dark-agent-avatar-foreground-completed: 135 20% 86%;
   --theme-dark-agent-avatar-surface-attention: 31 100% 70%;
@@ -157,6 +159,7 @@
   --theme-sidebar-border: var(--theme-light-sidebar-border);
   --theme-app-background: var(--theme-light-app-background);
   --theme-agent-avatar-surface-neutral: var(--theme-light-agent-avatar-surface-neutral);
+  --theme-agent-avatar-foreground: var(--theme-light-agent-avatar-foreground);
   --theme-agent-avatar-surface-completed: var(--theme-light-agent-avatar-surface-completed);
   --theme-agent-avatar-foreground-completed: var(--theme-light-agent-avatar-foreground-completed);
   --theme-agent-avatar-surface-attention: var(--theme-light-agent-avatar-surface-attention);
@@ -200,6 +203,7 @@
 
   --app-background: var(--theme-app-background);
   --agent-avatar-surface-neutral: var(--theme-agent-avatar-surface-neutral);
+  --agent-avatar-foreground: var(--theme-agent-avatar-foreground);
   --agent-avatar-surface-completed: var(--theme-agent-avatar-surface-completed);
   --agent-avatar-foreground-completed: var(--theme-agent-avatar-foreground-completed);
   --agent-avatar-surface-attention: var(--theme-agent-avatar-surface-attention);
@@ -405,6 +409,7 @@
   --theme-sidebar-border: var(--theme-dark-sidebar-border);
   --theme-app-background: var(--theme-dark-app-background);
   --theme-agent-avatar-surface-neutral: var(--theme-dark-agent-avatar-surface-neutral);
+  --theme-agent-avatar-foreground: var(--theme-dark-agent-avatar-foreground);
   --theme-agent-avatar-surface-completed: var(--theme-dark-agent-avatar-surface-completed);
   --theme-agent-avatar-foreground-completed: var(--theme-dark-agent-avatar-foreground-completed);
   --theme-agent-avatar-surface-attention: var(--theme-dark-agent-avatar-surface-attention);

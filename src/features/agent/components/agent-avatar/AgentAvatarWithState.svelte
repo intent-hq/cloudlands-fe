@@ -70,7 +70,7 @@
     border-radius: var(--agent-avatar-corner-radius, 6px);
     clip-path: inset(0 round var(--agent-avatar-corner-radius, 6px));
     background-color: var(--agent-avatar-background);
-    color: #080808;
+    color: hsl(var(--agent-avatar-foreground));
     opacity: 1;
     transition: background-color var(--motion-fast) var(--ease-standard);
     forced-color-adjust: auto;
