@@ -118,6 +118,7 @@ import {
   restoreHiddenTab,
   resolveNewWorkspaceInitialAgent,
   revealDeferredSpecTab,
+  revealHiddenTabAvoidingPanel,
   resizePanelLayoutAtHorizontalPanel,
   resizePanelLayoutRightEdge,
   selectNextTab,
@@ -1055,6 +1056,12 @@ export function* panelLayoutSaga(options?: {
     // changes above they bypass the reusable-panel invariant — a hidden
     // agent open must not collapse the user's panels in pin mode.
     yield* takeEvery(openHiddenTab, persistPanelLayout);
+    // Sidebar/footer reveals must persist (a revealed owned tab must not
+    // revert to hidden on restart, monorepo#3112) but bypass the
+    // reusable-panel invariant: the reveal may split the conversation panel,
+    // and letting the invariant observe that split would collapse it straight
+    // back in pin mode — re-hiding the tab the user just revealed.
+    yield* takeEvery(revealHiddenTabAvoidingPanel, persistPanelLayout);
     yield* takeEvery(PERSIST_ACTIONS, enforceReusablePanelInvariant);
     yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
     yield* takeEvery(openTabWithPanelModeRequested, openTabWithPanelMode);
