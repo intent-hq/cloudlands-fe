@@ -679,6 +679,156 @@ describe('ModelPicker combined reasoning mode', () => {
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
   });
 
+  it('force-refreshes and replaces the active provider list from the tab row', async () => {
+    let resolveRefresh!: (result: {
+      models: { value: string; label: string; description: string }[];
+    }) => void;
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      async (providerId, options) => {
+        if (providerId === 'codex' && options?.forceRefresh) {
+          return new Promise((resolve) => {
+            resolveRefresh = resolve;
+          });
+        }
+        return {
+          models:
+            providerId === 'codex'
+              ? [{ value: 'codex:gpt-5.6-sol', label: 'GPT-5.6-Sol', description: 'Codex model' }]
+              : [{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Auggie model' }],
+        };
+      },
+    );
+    enabledProviderIds$.set(['auggie', 'codex']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByRole('option', { name: /GPT-5\.6-Sol/ })).toBeTruthy();
+
+    const refreshButton = screen.getByTestId('model-provider-refresh-button');
+    expect(refreshButton.getAttribute('title')).toBe('Refresh OpenAI Codex models');
+    vi.mocked(getModelsForProviderForLoadingState).mockClear();
+    await fireEvent.click(refreshButton);
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex', {
+        forceRefresh: true,
+      });
+    });
+    expect(refreshButton.hasAttribute('disabled')).toBe(true);
+    expect(refreshButton.querySelector('.animate-spin')).toBeTruthy();
+
+    resolveRefresh({
+      models: [{ value: 'codex:gpt-6-codex', label: 'GPT-6 Codex', description: 'Smarter' }],
+    });
+
+    expect(await screen.findByRole('option', { name: /GPT-6 Codex/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /GPT-5\.6-Sol/ })).toBeNull();
+    await waitFor(() => expect(refreshButton.hasAttribute('disabled')).toBe(false));
+  });
+
+  it('keeps a force-refreshed provider ahead of overlapping catalog fetches', async () => {
+    mockProviderModelsState.byProviderId = {
+      codex: {
+        models: [{ value: 'codex:gpt-5.6-sol', label: 'GPT-5.6-Sol', description: 'Cached model' }],
+        fetchedAt: new Date().toISOString(),
+      },
+    };
+    let resolveCatalog!: (result: {
+      models: { value: string; label: string; description: string }[];
+    }) => void;
+    let resolveRefresh!: (result: {
+      models: { value: string; label: string; description: string }[];
+    }) => void;
+    const catalogResult = new Promise<{
+      models: { value: string; label: string; description: string }[];
+    }>((resolve) => {
+      resolveCatalog = resolve;
+    });
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      async (providerId, options) => {
+        if (providerId === 'codex') {
+          if (options?.forceRefresh) {
+            return new Promise((resolve) => {
+              resolveRefresh = resolve;
+            });
+          }
+          return catalogResult;
+        }
+        return { models: [] };
+      },
+    );
+    enabledProviderIds$.set(['auggie', 'codex']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByRole('option', { name: /GPT-5\.6-Sol/ })).toBeTruthy();
+
+    await fireEvent.click(screen.getByTestId('model-provider-refresh-button'));
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex', {
+        forceRefresh: true,
+      });
+    });
+
+    enabledProviderIds$.set(['auggie', 'codex', 'claude-code']);
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
+    });
+    expect(
+      vi
+        .mocked(getModelsForProviderForLoadingState)
+        .mock.calls.filter(
+          ([providerId, options]) => providerId === 'codex' && !options?.forceRefresh,
+        ),
+    ).toHaveLength(1);
+
+    resolveRefresh({
+      models: [{ value: 'codex:gpt-6-codex', label: 'GPT-6 Codex', description: 'Forced' }],
+    });
+    expect(await screen.findByRole('option', { name: /GPT-6 Codex/ })).toBeTruthy();
+
+    resolveCatalog({
+      models: [{ value: 'codex:catalog-model', label: 'Catalog Refetch', description: 'Stale' }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(screen.getByRole('option', { name: /GPT-6 Codex/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /Catalog Refetch/ })).toBeNull();
+    const codexCacheWrites = mockSvelteDispatch.mock.calls.filter(
+      ([action]) =>
+        action?.type === 'providerModels/providerModelsLoaded' &&
+        (action.payload as [string, unknown])[0] === 'codex',
+    );
+    expect(codexCacheWrites).toHaveLength(1);
+    expect(
+      (codexCacheWrites[0][0].payload as [string, { models: { value: string }[] }])[1].models,
+    ).toEqual([{ value: 'codex:gpt-6-codex', label: 'GPT-6 Codex', description: 'Forced' }]);
+  });
+
   it('uses session effort levels when the selected catalog model has no levels', async () => {
     agentModelEffortLevels$.set(['low', 'medium', 'high']);
     mockModelState.availableModels = [
