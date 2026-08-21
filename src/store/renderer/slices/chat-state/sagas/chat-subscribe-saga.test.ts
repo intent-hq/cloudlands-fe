@@ -1687,15 +1687,18 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
   // ChatPanels inside ONE synchronous flush (the v2.75.1 trace: both
   // init/viewed dispatch pairs inside a single heavy task, no microtask
   // checkpoint between them), the second panel's markAgentAsViewed sweep
-  // runs while the first agent's hydration still reads 'idle' — the spare
-  // cannot match, the first panel's still-acquiring cold-open slot is closed
-  // (desiredToken cleared + cancelPending), its seq-0 snapshot is
-  // token-dropped, and the chat-read saga strands a full SNAPSHOT_WAIT_MS
-  // window (the "No transcript snapshot recorded within wait window" warn).
-  // The monorepo#2917 test above cannot see this: it hand-dispatches
+  // runs while the first agent's hydration still reads 'idle' — the loading
+  // spare alone cannot match, and without the mid-acquisition spare the
+  // first panel's still-acquiring cold-open slot would be closed
+  // (desiredToken cleared + cancelPending), its seq-0 snapshot
+  // token-dropped, and the chat-read saga stranded for a full
+  // SNAPSHOT_WAIT_MS window (the "No transcript snapshot recorded within
+  // wait window" warn). The sweep therefore also spares a hosted slot whose
+  // open is still acquiring (nothing installed yet) while hydration reads
+  // 'idle'. The monorepo#2917 test above cannot see this: it hand-dispatches
   // transcriptHydrationStarted BEFORE the sibling's viewed dispatch — an
   // ordering the real read saga cannot produce for a same-task sweep.
-  it.fails(
+  it(
     'spares a sibling cold open from a same-task viewed-agent swap that runs before the read saga flips its hydration to loading (monorepo#3073)',
     async () => {
       const first = 'agent-3073-same-task-first';
