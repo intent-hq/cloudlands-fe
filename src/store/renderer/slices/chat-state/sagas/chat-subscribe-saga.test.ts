@@ -341,7 +341,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(firstA.unsubscribe).toHaveBeenCalledOnce();
   });
 
-  it('serializes superseding viewed-agent switches across delayed unsubscribe', async () => {
+  it('opens each superseding viewed agent immediately without waiting on a prior delayed unsubscribe', async () => {
     const agentA = 'agent-sub-view-race-a';
     const agentB = 'agent-sub-view-race-b';
     const agentC = 'agent-sub-view-race-c';
@@ -353,21 +353,52 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     const close = deferred<void>();
     subA.unsubscribe.mockReturnValueOnce(close.promise);
 
+    // Each swap's subscribe goes on the wire immediately: A's delayed
+    // unsubscribe never gates B's open, and C's swap sweeps B and opens C
+    // right away (chat.subscribe registrations are agent-independent, §7.1).
     appStore.dispatch(markAgentAsViewed(agentB));
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentB)).toHaveLength(1);
+    expect(subA.unsubscribe).toHaveBeenCalledOnce();
+    const subB = fakeSubscriptions.find((s) => s.agentId === agentB)!;
+
     appStore.dispatch(markAgentAsViewed(agentC));
-    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentB)).toHaveLength(0);
-    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentC)).toHaveLength(0);
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentC)).toHaveLength(1);
+    expect(subB.unsubscribe).toHaveBeenCalledOnce();
 
     close.resolve();
-    await vi.waitFor(() => {
-      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentC)).toHaveLength(1);
-    });
-    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentB)).toHaveLength(0);
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(subA.unsubscribe).toHaveBeenCalledOnce();
 
     const before = selectAgentMessages.select(appStore.state, agentA);
     subA.handler(transcript([makeMessage('late-view-race', 'stale')]));
     expect(selectAgentMessages.select(appStore.state, agentA)).toBe(before);
+  });
+
+  it('queues a same-agent re-view reopen behind its own delayed unsubscribe while the swapped-in agent opened immediately', async () => {
+    const agentA = 'agent-sub-review-order-a';
+    const agentB = 'agent-sub-review-order-b';
+    seedSession(agentA);
+    seedSession(agentB);
+    const subA = openChat(agentA);
+    appStore.dispatch(markAgentAsViewed(agentA));
+    const close = deferred<void>();
+    subA.unsubscribe.mockReturnValueOnce(close.promise);
+
+    // Swap A → B: B's subscribe is immediate, A's close is in flight.
+    appStore.dispatch(markAgentAsViewed(agentB));
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentB)).toHaveLength(1);
+    expect(subA.unsubscribe).toHaveBeenCalledOnce();
+
+    // Swap back B → A: A's reopen MUST queue behind A's own pending close
+    // (same-agent close→open ordering through the slot channel).
+    appStore.dispatch(markAgentAsViewed(agentA));
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentA)).toHaveLength(1);
+
+    close.resolve();
+    await vi.waitFor(() => {
+      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentA)).toHaveLength(2);
+    });
+    expect(subA.unsubscribe).toHaveBeenCalledOnce();
   });
 
   it('hydrates the transcript from the seq-0 snapshot emit and live-updates on delta emits', () => {

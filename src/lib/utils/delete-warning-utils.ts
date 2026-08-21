@@ -40,15 +40,18 @@ const ACTIVE_HOOK_STATES: ReadonlySet<BackgroundHook['state']> = new Set(['sched
 
 /**
  * Get the names of active (scheduled/running) background hooks in a workspace.
- * Reads the background-hooks slice when a live subscription is open for the
- * workspace, otherwise falls back to an on-demand `hook.list`. Fetch failures
- * fail open (no hooks reported) so archive/delete is never blocked by a read.
+ * Reads the background-hooks slice when a live subscription backs the
+ * workspace's entry (present and not `stale` — entries are retained
+ * stale-marked across workspace switches), otherwise falls back to an
+ * on-demand `hook.list`. Fetch failures fail open (no hooks reported) so
+ * archive/delete is never blocked by a read.
  * @param workspaceId - The workspace ID to check
  * @returns Array of active hook names
  */
 export async function getActiveHookNames(workspaceId: string): Promise<string[]> {
   let hooks: BackgroundHook[];
-  if (appStore.state.backgroundHooks.byWorkspaceId[workspaceId]) {
+  const entry = appStore.state.backgroundHooks.byWorkspaceId[workspaceId];
+  if (entry && !entry.stale) {
     hooks = selectBackgroundHooks.select(appStore.state, workspaceId);
   } else {
     try {

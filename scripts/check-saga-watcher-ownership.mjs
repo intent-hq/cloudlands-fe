@@ -70,6 +70,14 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
     pattern: /user-preferences-slice\.ts#(?:setPanelOpenMode|togglePanelOpenMode)$/,
     rationale: 'preference persistence and panel-layout collapse are independent',
   },
+  {
+    pattern: /unread-tracking-slice\.ts#markAgentAsViewed$/,
+    rationale: 'subscription read prefetch and switch-timing observation are independent',
+  },
+  {
+    pattern: /background-hooks-slice\.ts#backgroundHooksSubscribeRequested$/,
+    rationale: 'hooks subscription transport and switch-timing observation are independent',
+  },
 ];
 
 const normalize = (value) => value.split(path.sep).join('/').replace(/^\.\//, '');
