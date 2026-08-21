@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.78.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.77.3...v2.78.0) (2026-08-21)
+
+
+### 🚀 Features
+
+* add privacy-safe stream lifecycle telemetry ([#1528](https://github.com/intent-hq/cloudlands-fe/issues/1528)) ([2661368](https://github.com/intent-hq/cloudlands-fe/commit/26613686adaa61ee68802551fd45707415dddf4b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.34 ([#1570](https://github.com/intent-hq/cloudlands-fe/issues/1570)) ([75be906](https://github.com/intent-hq/cloudlands-fe/commit/75be9063eed593cbb2b94131c1e0d3211e6c7515))
+
 ## [2.77.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.77.2...v2.77.3) (2026-08-21)
 
 
