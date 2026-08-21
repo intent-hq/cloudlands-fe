@@ -41,8 +41,11 @@
     <div class="flex min-w-0 flex-col gap-0.5 pl-1">
       {#each group.entries as entry (entry.tab.id)}
         {#if entry.hidden}
+          <!-- border-transparent (no padding) mirrors the visible-row Button box:
+               the plain variant collapses px/py to 0 and the Button base adds a
+               1px transparent border, so both states share the same x-offsets. -->
           <div
-            class="group/hidden relative flex items-start gap-2 rounded-md px-2 py-2"
+            class="group/hidden relative flex items-start gap-2 rounded-md border border-transparent"
             data-sidebar-browser-hidden-tab={entry.tab.id}
           >
             <span
