@@ -84,8 +84,8 @@ describe('panel canvas width', () => {
 
   it('bypasses intrinsic tiers in automatic viewport mode', () => {
     expect(getPanelCanvasWidths(3440, [720, 700], 'viewport', 1428, 'intrinsic')).toMatchObject({
-      defaultWidth: 3208,
-      panelWidths: [1600, 1600],
+      defaultWidth: 3440,
+      panelWidths: [1716, 1716],
       overflows: false,
     });
     expect(getPanelCanvasWidths(1000, [720, 700], 'viewport', 1428, 'intrinsic')).toMatchObject({

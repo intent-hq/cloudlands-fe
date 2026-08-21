@@ -1,5 +1,6 @@
 import { migratePanelCanvasWidth } from './panel-layout-width-provenance';
 import { panelTabsAreEquivalent } from './panel-tab-identity';
+import { MIN_PANEL_SIZE_PERCENT } from '../../../../shared/panel-layout-sizing';
 import {
   PANEL_LAYOUT_PERSISTENCE_VERSION,
   isPanelColumnCount,
@@ -34,7 +35,9 @@ function hasValidGeometry(node: unknown): boolean {
     candidate.children.length === 0 ||
     !Array.isArray(candidate.sizes) ||
     candidate.sizes.length !== candidate.children.length ||
-    candidate.sizes.some((size) => typeof size !== 'number' || !Number.isFinite(size) || size <= 0)
+    candidate.sizes.some(
+      (size) => typeof size !== 'number' || !Number.isFinite(size) || size < MIN_PANEL_SIZE_PERCENT,
+    )
   ) {
     return false;
   }

@@ -50,8 +50,8 @@ describe('panel type default widths', () => {
 });
 
 describe('capped equal automatic panel allocation', () => {
-  it('uses a 1600px automatic per-panel maximum', () => {
-    expect(MAX_AUTOMATIC_PANEL_WIDTH).toBe(1600);
+  it('uses a 2000px automatic per-panel maximum', () => {
+    expect(MAX_AUTOMATIC_PANEL_WIDTH).toBe(2000);
   });
 
   it.each([1, 2, 3, 4])('fits %s equal column(s) inside a narrow viewport', (count) => {
@@ -64,7 +64,7 @@ describe('capped equal automatic panel allocation', () => {
     expect(allocation.overflows).toBe(false);
   });
 
-  it.each([1, 2, 3, 4])('caps %s column(s) at the exact 1600px threshold', (count) => {
+  it.each([1, 2, 3, 4])('caps %s column(s) at the exact 2000px threshold', (count) => {
     const totalGapWidth = PANEL_SPLIT_GUTTER_WIDTH * (count - 1);
     const threshold = MAX_AUTOMATIC_PANEL_WIDTH * count + totalGapWidth;
     const below = allocateAutomaticPanelWidths(count, threshold - 1);

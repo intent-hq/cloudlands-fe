@@ -154,7 +154,7 @@ describe('migratePanelLayoutForWorkspace', () => {
 
   it('restores the versioned fixed layout idempotently without splitting its history', () => {
     const current: WorkspacePanelLayout = {
-      ...layout(horizontal(['left', 'right']), {
+      ...layout(horizontal(['left', 'right'], [40, 60]), {
         left: panel('left', ['one']),
         right: panel('right', ['two', 'three']),
       }),
@@ -168,7 +168,35 @@ describe('migratePanelLayoutForWorkspace', () => {
 
     expect(twice).toEqual(once);
     expect(order(twice)).toEqual(['left', 'right']);
+    expect(twice.root).toMatchObject({ sizes: [40, 60] });
+    expect(twice.canvasWidth).toBe(900);
     expect(twice.panels.right.tabs.map((tab) => tab.id)).toEqual(['two', 'three']);
+  });
+
+  it('repairs current layouts with a collapsed saved column', () => {
+    const current: WorkspacePanelLayout = {
+      ...layout(horizontal(['left', 'middle', 'right'], [25, 5, 70]), {
+        left: panel('left', ['one']),
+        middle: panel('middle', ['two']),
+        right: panel('right', ['three']),
+      }),
+      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
+      columnCount: 3,
+      canvasWidth: 3000,
+      canvasWidthSource: 'explicit',
+    };
+
+    const result = migratePanelLayoutForWorkspace(WS, current);
+
+    expect(order(result)).toEqual(['left', 'middle', 'right']);
+    expect(result.root).toMatchObject({
+      type: 'split',
+      direction: 'horizontal',
+      sizes: [100 / 3, 100 / 3, 100 / 3],
+    });
+    expect(result.canvasWidth).toBeNull();
+    expect(result.canvasWidthSource).toBeNull();
+    expect(migratePanelLayoutForWorkspace(WS, result)).toEqual(result);
   });
 
   it('preserves a current saved column count when its tree has fewer columns', () => {
