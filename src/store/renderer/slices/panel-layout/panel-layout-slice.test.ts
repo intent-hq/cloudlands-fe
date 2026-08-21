@@ -2082,6 +2082,23 @@ describe('panelLayoutReducer', () => {
       expect(ws.panels.p1.tabs.at(-1)?.ownerAgentId).toBe('agent-1');
     });
 
+    // showTab without focus (monorepo#3045): the tab is mounted into the
+    // panel's tab list but never activated — no active-tab, panel-focus, or
+    // reveal change.
+    it('restoreHiddenTab with focus: false mounts without activation, focus, or reveal', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      const before = hidden.byWorkspaceId[WS];
+      const result = panelLayoutReducer(hidden, restoreHiddenTab(WS, 'owned', 1001, false));
+      const ws = result.byWorkspaceId[WS];
+      expect(getItems(ws.hiddenTabs)).toHaveLength(0);
+      expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2', 'owned']);
+      expect(ws.panels.p1.activeTabId).toBe(before.panels.p1.activeTabId);
+      expect(ws.focusedPanelId).toBe(before.focusedPanelId);
+      expect(ws.pendingPanelReveal).toBe(before.pendingPanelReveal);
+      expect(ws.focusHistory).toBe(before.focusHistory);
+    });
+
     // Agent openTab is hidden by default (monorepo#3045): the tab is created
     // straight into hiddenTabs with no panel/focus/active-tab change.
     it('openHiddenTab creates the tab in hiddenTabs without touching panels or focus', () => {

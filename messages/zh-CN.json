@@ -1749,6 +1749,7 @@
   "chat_agentSubscriptions_deliveryPending_label": "等待送达",
   "chat_agentSubscriptions_eventCount_many": "（{count} 个事件）",
   "chat_eventSubscriptions_heading_one": "已订阅 {count} 个事件",
+  "chat_browserTabs_heading": "浏览器标签页 ({count})",
   "chat_eventSubscriptions_heading_many": "已订阅 {count} 个事件",
   "chat_agentSubscriptions_eventCount_one": "（{count} 个事件）",
   "chat_agentSubscriptions_expandWatches_ariaLabel": "展开部分",

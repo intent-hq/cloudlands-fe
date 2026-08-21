@@ -1209,13 +1209,18 @@ export const openHiddenTab = createAction(
  * Restore a hidden (user-closed) agent-owned browser tab back into a panel
  * (monorepo#2857): removed from `hiddenTabs` and opened in the focused panel,
  * keeping its id so the live webview and main's registrations stay attached.
+ * `focus` (default true) activates the tab and focuses/reveals its panel;
+ * `focus: false` (agent showTab without focus, monorepo#3045) mounts the tab
+ * into the panel's tab list WITHOUT any active-tab, panel-focus, or reveal
+ * change.
  */
 export const restoreHiddenTab = createAction(
   'panelLayout/restoreHiddenTab',
-  (wsId: string, tabId: string, timestamp?: number) => ({
+  (wsId: string, tabId: string, timestamp?: number, focus?: boolean) => ({
     wsId,
     tabId,
     timestamp: timestamp ?? Date.now(),
+    focus: focus ?? true,
   }),
 );
 
@@ -1927,7 +1932,7 @@ panelLayoutReducer.with(openHiddenTab, (state, { payload }) => {
 });
 // --- Restore Hidden Tab (monorepo#2857) ---
 panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
-  const { wsId, tabId, timestamp } = payload;
+  const { wsId, tabId, timestamp, focus } = payload;
   let ws = getWorkspaceState(state, wsId);
   const hiddenTab = getItem(ws.hiddenTabs, tabId);
   if (!hiddenTab) return state;
@@ -1947,14 +1952,21 @@ panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
       [targetPanelId]: {
         ...panel,
         tabs: [...panel.tabs, { ...hiddenTab }],
-        activeTabId: hiddenTab.id,
+        // focus: false (agent showTab without focus, monorepo#3045) mounts
+        // the tab without activating it or moving panel focus — the panel's
+        // current active tab and the user's focus stay untouched.
+        ...(focus ? { activeTabId: hiddenTab.id } : {}),
         pristine: false,
       },
     },
-    focusedPanelId: targetPanelId,
-    pendingPanelReveal: createPanelRevealRequest(targetPanelId, hiddenTab.id, hiddenTab.id),
+    ...(focus
+      ? {
+          focusedPanelId: targetPanelId,
+          pendingPanelReveal: createPanelRevealRequest(targetPanelId, hiddenTab.id, hiddenTab.id),
+        }
+      : {}),
   };
-  ws = addToFocusHistory(ws, targetPanelId, hiddenTab.id, timestamp);
+  if (focus) ws = addToFocusHistory(ws, targetPanelId, hiddenTab.id, timestamp);
   return setWorkspaceState(state, wsId, ws);
 });
 // --- Prune Recently Closed ---
