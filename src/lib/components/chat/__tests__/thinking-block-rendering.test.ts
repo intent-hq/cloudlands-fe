@@ -68,7 +68,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     const toggle = screen.getByRole('button');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(toggle.textContent?.trim()).toBe('Thinking...');
+    expect(toggle.textContent?.trim()).toBe('Reasoning');
     expect(screen.queryByTestId('markdown-viewer')).toBeNull();
     await fireEvent.click(toggle);
     expect(screen.getByTestId('markdown-viewer').textContent).toContain(
@@ -108,6 +108,40 @@ describe('thinking blocks — StreamingMessageContent', () => {
     await view.rerender({ content, isStreaming: false });
     expect(screen.getByRole('button').textContent?.trim()).toBe('Considering task restoration');
     expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+  });
+
+  it('only streams the last visible thinking child in a live response group', async () => {
+    const content = [
+      { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
+      thinking('msg_1:1', 'First headingless thought'),
+      thinking('msg_1:2', 'Second headingless thought'),
+    ];
+    const view = await renderStreaming(content, true);
+    let disclosures = screen.getAllByTestId('reasoning-disclosure');
+
+    expect(disclosures.map((button) => button.getAttribute('aria-expanded'))).toEqual([
+      'false',
+      'true',
+    ]);
+    expect(disclosures.map((button) => button.textContent?.trim())).toEqual([
+      'Reasoning',
+      'Thinking...',
+    ]);
+
+    await view.rerender({
+      content: [...content, { type: 'text', id: 'msg_1:3', text: 'Visible answer' }],
+      isStreaming: true,
+    });
+    disclosures = screen.getAllByTestId('reasoning-disclosure');
+
+    expect(disclosures.map((button) => button.getAttribute('aria-expanded'))).toEqual([
+      'false',
+      'false',
+    ]);
+    expect(disclosures.map((button) => button.textContent?.trim())).toEqual([
+      'Reasoning',
+      'Reasoning',
+    ]);
   });
 
   it('uses the reasoning title in the static message path', async () => {

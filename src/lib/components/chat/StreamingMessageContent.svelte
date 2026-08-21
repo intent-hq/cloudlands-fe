@@ -945,6 +945,7 @@
                   {@render renderContentBlock(
                     childBlock,
                     `${blockIndex}-${childIndex}`,
+                    group.isStreaming &&
                     blockIndex === groupedBlocks.length - 1 &&
                       childIndex === lastRenderableIndex,
                     true,

@@ -165,9 +165,9 @@ describe('ThinkingBlock — live streaming integration', () => {
     // Thinking should now be collapsed (not the last block anymore)
     await waitFor(
       () => {
-        const buttons = screen.getAllByRole('button');
-        const thinkingButton = buttons.find((b) => b.textContent?.includes('Thinking'));
-        expect(thinkingButton?.getAttribute('aria-expanded')).toBe('false');
+        const thinkingButton = screen.getByTestId('reasoning-disclosure');
+        expect(thinkingButton.getAttribute('aria-expanded')).toBe('false');
+        expect(thinkingButton.textContent?.trim()).toBe('Reasoning');
       },
       { timeout: 500 },
     );
