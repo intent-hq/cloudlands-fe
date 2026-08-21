@@ -68,6 +68,9 @@ const mocks = vi.hoisted(() => {
       number: number;
       url: string;
       repo?: string;
+      chipLabel: string;
+      title?: string;
+      status: string;
       actionLabel: string;
       actionTooltip: string;
     },
@@ -390,6 +393,9 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       number: 1373,
       url: 'https://github.com/other/repository-with-a-very-long-name/pull/1373',
       repo: 'other/repository-with-a-very-long-name',
+      chipLabel: 'other/repository-with-a-very-long-name #1373',
+      title: 'A monitored pull request',
+      status: 'open',
       actionLabel: 'View PR (other/repository-with-a-very-long-name)',
       actionTooltip: 'Open the monitored pull request.',
     };
@@ -410,6 +416,9 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(prAction.getAttribute('title')).toBe(mocks.activePrSummary.actionTooltip);
     expect(prAction.dataset.sidebarPrUrl).toBe(mocks.activePrSummary.url);
     expect(prAction.querySelectorAll('.fa-icon')).toHaveLength(1);
+    const prIcon = prAction.querySelector<HTMLElement>('.fa-icon')!;
+    expect(prIcon.dataset.icon).toBe('code-pull-request');
+    expect(prIcon.className).toContain('text-emerald-500');
     expect(launcher.querySelector('[data-sidebar-active-pr]')).toBeNull();
     expect(launcher.textContent).not.toContain('1,373');
     expect(launcher.textContent).not.toContain('Open');

@@ -6,6 +6,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '../..');
 const coverageEnabled = process.env.VITEST_COVERAGE === 'true' || process.env.COVERAGE === 'true';
 
+// CI-only budget headroom mirroring vitest.config.ts: the integration step runs
+// in the same Unit & Integration Tests job on the shared self-hosted runner, so
+// it is exposed to the same load-induced starvation (intent-hq/monorepo#3082).
+// Local runs are unchanged. std-env semantics: CI=false means "not CI".
+const isCI = !!process.env.CI && process.env.CI !== 'false';
+
 export default defineConfig({
   root: rootDir,
   test: {
@@ -15,8 +21,8 @@ export default defineConfig({
     setupFiles: [path.resolve(__dirname, './setup-integration-tests.ts')],
     include: ['tests/integration/**/*.test.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/build/**'],
-    testTimeout: 30000, // 30 seconds for integration tests
-    hookTimeout: 10000,
+    testTimeout: isCI ? 60_000 : 30_000, // 30 seconds for integration tests; 60s on loaded CI runners
+    hookTimeout: isCI ? 30_000 : 10_000,
     teardownTimeout: 10000,
     pool: 'forks', // Use separate processes for isolation
     fileParallelism: false, // Run files sequentially for shared integration fixtures

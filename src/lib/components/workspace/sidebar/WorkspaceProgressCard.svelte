@@ -66,9 +66,11 @@
     setWorkspaceEntity,
   } from '$store/renderer/slices/workspace/workspace-slice';
   import {
+    selectWorkspaceActivePrSummary,
     selectWorkspaceById,
     selectWorkspaceProgressActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { getActivePrStatusPresentation } from '$lib/components/workspace/utils/active-pr-status-presentation';
   import type {
     WorkspaceProgressAction,
     WorkspaceProgressActionIconKey,
@@ -129,6 +131,9 @@
   // ✅ Selector readables captured at component init — the workspace slice owns
   // the workflow-stage, headline, and action logic.
   const progressActions$ = selectWorkspaceProgressActions(workspaceIdStore, progressInput$);
+  // Active-PR summary backing the View PR action's status icon/color; null when
+  // the action falls back to a bare PR URL with no summary.
+  const activePrSummary$ = selectWorkspaceActivePrSummary(workspaceIdStore);
 
   // Git status state for workflow awareness
   let gitStatus = $state<WorkspaceGitStatus | null>(null);
@@ -1250,6 +1255,9 @@
 
     {#if viewPullRequestAction}
       {@const action = viewPullRequestAction}
+      {@const prStatus = $activePrSummary$
+        ? getActivePrStatusPresentation($activePrSummary$.status)
+        : undefined}
       <div class="flex-1 w-full" data-workspace-view-pr>
         {#if action}
           <Tooltip
@@ -1264,8 +1272,14 @@
               class="w-full text-left justify-start px-0!"
               onclick={() => runProgressAction(action)}
             >
-              <Fa icon={PROGRESS_ACTION_ICONS[action.iconKey]} size={14} class="ml-1 size-3.5!" />
-              <span class="underline decoration-dotted underline-offset-2">{action.label}</span>
+              <Fa
+                icon={prStatus?.icon ?? PROGRESS_ACTION_ICONS[action.iconKey]}
+                size={14}
+                class="ml-1 size-3.5! shrink-0 {prStatus?.className ?? ''}"
+              />
+              <span class="underline decoration-dotted underline-offset-2 truncate min-w-0"
+                >{action.label}</span
+              >
             </Button>
           </Tooltip>
         {/if}
