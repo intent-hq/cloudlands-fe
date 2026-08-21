@@ -7,20 +7,23 @@ function codedError(code: string): Error & { code: string } {
 }
 
 describe('main-process error handlers', () => {
-  it('contains stderr EPIPE without logging to the failed stream', () => {
+  it('logs an unrelated EPIPE uncaught exception', () => {
     const logger = { error: vi.fn() };
+    const error = codedError('EPIPE');
 
-    handleUncaughtException(logger, codedError('EPIPE'));
+    handleUncaughtException(logger, error);
 
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith('Uncaught Exception', error);
   });
 
-  it('applies the same containment to a closed stdout rejection', () => {
+  it('logs an unrelated stream-destroyed rejection', () => {
     const logger = { error: vi.fn() };
+    const reason = codedError('ERR_STREAM_DESTROYED');
+    const promise = Promise.resolve();
 
-    handleUnhandledRejection(logger, codedError('ERR_STREAM_DESTROYED'), Promise.resolve());
+    handleUnhandledRejection(logger, reason, promise);
 
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith('Unhandled Rejection', reason, { promise });
   });
 
   it('logs other uncaught exceptions normally', () => {

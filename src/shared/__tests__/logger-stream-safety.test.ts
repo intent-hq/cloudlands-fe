@@ -25,6 +25,18 @@ describe('logger console stream safety', () => {
     },
   );
 
+  it('propagates EIO and disables only the failed stream', () => {
+    const failedStream = new SimulatedConsoleStream();
+    const availableStream = new SimulatedConsoleStream();
+    const error = closedStreamError('EIO');
+    protectConsoleStream(failedStream);
+    protectConsoleStream(availableStream);
+
+    expect(() => failedStream.emit('error', error)).toThrow(error);
+    expect(isConsoleStreamAvailable(failedStream)).toBe(false);
+    expect(isConsoleStreamAvailable(availableStream)).toBe(true);
+  });
+
   it('stops error logging after a synchronous stderr EPIPE', () => {
     const consoleError = vi
       .spyOn(console, 'error')

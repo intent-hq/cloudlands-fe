@@ -1,4 +1,4 @@
-import { containConsoleStreamError, type Logger } from '../../shared/logger';
+import type { Logger } from '../../shared/logger';
 
 type ErrorLogger = Pick<Logger, 'error'>;
 
@@ -8,7 +8,7 @@ function isWebviewNavigationAbort(error: unknown): boolean {
 }
 
 export function handleUncaughtException(logger: ErrorLogger, error: Error): void {
-  if (containConsoleStreamError(error) || isWebviewNavigationAbort(error)) return;
+  if (isWebviewNavigationAbort(error)) return;
   logger.error('Uncaught Exception', error);
 }
 
@@ -17,6 +17,6 @@ export function handleUnhandledRejection(
   reason: unknown,
   promise: Promise<unknown>,
 ): void {
-  if (containConsoleStreamError(reason) || isWebviewNavigationAbort(reason)) return;
+  if (isWebviewNavigationAbort(reason)) return;
   logger.error('Unhandled Rejection', reason as Error, { promise });
 }

@@ -25,16 +25,9 @@ export function isClosedConsoleStreamError(error: unknown): boolean {
   return CLOSED_CONSOLE_STREAM_CODES.has(String((error as { code?: unknown }).code));
 }
 
-export function containConsoleStreamError(error: unknown, stream?: ConsoleStream): boolean {
-  if (!isClosedConsoleStreamError(error)) return false;
-
-  if (stream) {
-    unavailableConsoleStreams.add(stream);
-  } else if (typeof process !== 'undefined') {
-    unavailableConsoleStreams.add(process.stdout);
-    unavailableConsoleStreams.add(process.stderr);
-  }
-  return true;
+export function containConsoleStreamError(error: unknown, stream: ConsoleStream): boolean {
+  unavailableConsoleStreams.add(stream);
+  return isClosedConsoleStreamError(error);
 }
 
 export function isConsoleStreamAvailable(stream: ConsoleStream | undefined): boolean {
@@ -45,7 +38,7 @@ export function protectConsoleStream(stream: ConsoleStream | undefined): void {
   if (!stream || protectedConsoleStreams.has(stream)) return;
   protectedConsoleStreams.add(stream);
   stream.on('error', (error: unknown) => {
-    containConsoleStreamError(error, stream);
+    if (!containConsoleStreamError(error, stream)) throw error;
   });
 }
 
@@ -229,7 +222,7 @@ export class Logger {
           break;
       }
     } catch (error) {
-      if (!containConsoleStreamError(error, stream)) throw error;
+      if (!stream || !containConsoleStreamError(error, stream)) throw error;
     }
   }
 
