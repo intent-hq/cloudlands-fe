@@ -1673,8 +1673,8 @@ describe('browser-action-executor', () => {
         'agent-1',
         'ws-1',
       );
-      // Hidden-by-default: a reuse without visible: true never focuses (a
-      // focus would reveal a hidden reused tab).
+      // A dedupe reuse never focuses — it has no visibility side effect
+      // (a focus would reveal a hidden reused tab; reveal is showTab-only).
       expect(embeddedBrowserCdp.focusTab).not.toHaveBeenCalled();
       expect(mockOpenTabFn).not.toHaveBeenCalled();
       // No navigation needed — the tab is already on the exact URL
@@ -1687,33 +1687,22 @@ describe('browser-action-executor', () => {
       });
     });
 
-    it('visible: true reveals (focuses) an exact-URL reused tab', async () => {
-      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
-      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-dup');
-
-      const result = await executeActions(
-        {
-          actions: [{ action: 'openTab', url: 'http://localhost:3000/board', visible: true }],
-        },
-        mockOpenTabFn,
-        'agent-1',
-        'ws-1',
-      );
-
-      expect(result.success).toBe(true);
-      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-dup', 'ws-1');
-      expect(mockOpenTabFn).not.toHaveBeenCalled();
-      expect(result.results[0]?.result).toMatchObject({ reused: true, tabId: 'tab-dup' });
-    });
-
-    it('forwards pin intent when a visible open reuses an exact-URL model tab', async () => {
+    // Contract (monorepo#3045): a dedupe hit NEVER changes the reused tab's
+    // visibility — a hidden tab stays hidden even when the openTab carried
+    // visible: true. Revealing an existing tab is showTab-only.
+    it('visible: true on an exact-URL dedupe hit does NOT reveal (focus) the reused tab', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-dup');
 
       const result = await executeActions(
         {
           actions: [
-            { action: 'openTab', url: 'http://localhost:3000/board', pin: true, visible: true },
+            {
+              action: 'openTab',
+              url: 'http://localhost:3000/board',
+              visible: true,
+              pin: true,
+            },
           ],
         },
         mockOpenTabFn,
@@ -1722,8 +1711,13 @@ describe('browser-action-executor', () => {
       );
 
       expect(result.success).toBe(true);
-      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-dup', 'ws-1', true);
+      expect(embeddedBrowserCdp.focusTab).not.toHaveBeenCalled();
       expect(mockOpenTabFn).not.toHaveBeenCalled();
+      expect(result.results[0]?.result).toMatchObject({
+        reused: true,
+        focused: false,
+        tabId: 'tab-dup',
+      });
     });
 
     it('allowDuplicate: true bypasses reuse entirely and opens a new tab', async () => {
@@ -2036,8 +2030,7 @@ describe('browser-action-executor', () => {
         'ws-1',
       );
       // The reused tab is re-pointed at the fresh tunnel URL — but never
-      // focused: a reuse without visible: true must not reveal a hidden tab
-      // (monorepo#3045).
+      // focused: a dedupe reuse has no visibility side effect (monorepo#3045).
       expect(embeddedBrowserCdp.evaluate).toHaveBeenCalledWith(
         'tab-old',
         `window.location.href = ${JSON.stringify('http://127.0.0.1:55002/')}`,
@@ -2053,7 +2046,9 @@ describe('browser-action-executor', () => {
       expect(mockOpenTabFn).not.toHaveBeenCalled();
     });
 
-    it('visible: true focuses the requestedUrl-matched reused tab', async () => {
+    // Contract (monorepo#3045): a dedupe hit never changes visibility —
+    // visible: true does not reveal the requestedUrl-matched reused tab.
+    it('visible: true on a requestedUrl-matched reuse does NOT focus the tab', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       const provider = { forwardPort: vi.fn().mockResolvedValue(55002), activeForwards: () => [] };
       vi.mocked(embeddedBrowserCdp.findModelTabByRequestedUrl).mockResolvedValue('tab-old');
@@ -2068,8 +2063,12 @@ describe('browser-action-executor', () => {
       );
 
       expect(result.success).toBe(true);
-      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-old', 'ws-1');
-      expect(result.results[0]?.result).toMatchObject({ reused: true, tabId: 'tab-old' });
+      expect(embeddedBrowserCdp.focusTab).not.toHaveBeenCalled();
+      expect(result.results[0]?.result).toMatchObject({
+        reused: true,
+        focused: false,
+        tabId: 'tab-old',
+      });
     });
 
     it('opens a new tab when re-pointing the requestedUrl-matched tab fails', async () => {

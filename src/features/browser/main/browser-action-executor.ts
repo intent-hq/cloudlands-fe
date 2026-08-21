@@ -163,10 +163,10 @@ const OpenTabActionSchema = z.object({
   // creates the tab in the workspace's hidden set — alive and
   // CDP-addressable offscreen, never mounted into a panel, no focus or
   // active-tab change. `visible: true` opts into today's panel-mounted
-  // open. On a dedupe reuse, `visible: true` reveals a hidden reused tab
-  // while omitted/false leaves the reused tab's visibility unchanged — a
-  // reuse never hides a visible tab. Ignored on user (agentId-less) opens,
-  // which are always visible.
+  // open — on FRESH opens only: a dedupe reuse never changes the reused
+  // tab's visibility (a hidden tab stays hidden even with visible: true;
+  // reveal is showTab-only). Ignored on user (agentId-less) opens, which
+  // are always visible.
   visible: z.boolean().optional(),
 });
 
@@ -682,9 +682,11 @@ async function executeAction(
         // (monorepo#2857): other agents' and user-opened tabs are never
         // considered — across agents a new tab is opened. Hidden tabs are
         // candidates too (both finders match on the live webview, and hidden
-        // owned tabs stay mounted offscreen); a reuse never changes the
-        // tab's visibility unless `visible: true` asks to reveal it
-        // (monorepo#3045) — and never hides a visible tab.
+        // owned tabs stay mounted offscreen). A dedupe hit is a PURE reuse
+        // with no visibility side effect (monorepo#3045): a hidden tab stays
+        // hidden EVEN WHEN the open carried visible: true, and a visible tab
+        // stays visible — revealing an existing tab is showTab-only, so the
+        // reuse paths never focus. `visible` affects fresh opens only.
         if (agentId && !action.allowDuplicate) {
           const duplicateTabId = await embeddedBrowserCdp.findModelTabByExactUrl(
             finalRewrite.url,
@@ -707,23 +709,15 @@ async function executeAction(
               agentId,
               openTabTarget.tunneled ? action.url : null,
             );
-            // Focus (which also reveals a hidden tab) only on an explicit
-            // visible: true — the hidden-by-default contract forbids a
-            // default open from stealing focus or revealing (monorepo#3045).
-            // The reused tab is already mounted (the finder only returns
-            // mounted tabs), so it stays addressable without a focus.
-            const focused =
-              action.visible === true
-                ? action.pin === undefined
-                  ? await embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId)
-                  : await embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId, action.pin)
-                : false;
+            // No focus: the reused tab is already mounted (the finder only
+            // returns mounted tabs — hidden ones offscreen), so it stays
+            // addressable without any focus/reveal.
             return {
               action: 'openTab',
               success: true,
               result: {
                 reused: true,
-                focused,
+                focused: false,
                 tabId: duplicateTabId,
                 url: finalRewrite.url,
                 ...echo,
@@ -763,18 +757,15 @@ async function executeAction(
                 finalRewrite.url,
                 finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
               );
-              // Like the exact-URL reuse above: focus (a reveal) only on an
-              // explicit visible: true (monorepo#3045).
-              const focused =
-                action.visible === true
-                  ? await embeddedBrowserCdp.focusTab(requestedTabId, workspaceId)
-                  : false;
+              // Like the exact-URL reuse above: a pure reuse with no
+              // visibility side effect — never focus, even on visible: true
+              // (reveal is showTab-only, monorepo#3045).
               return {
                 action: 'openTab',
                 success: true,
                 result: {
                   reused: true,
-                  focused,
+                  focused: false,
                   tabId: requestedTabId,
                   url: finalRewrite.url,
                   ...echo,
