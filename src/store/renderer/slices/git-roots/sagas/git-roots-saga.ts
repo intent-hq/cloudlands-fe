@@ -1,7 +1,7 @@
 import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
 import type { Task } from 'redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
-import { call, cancel, delay, fork, put, spawn, take, type SagaGenerator } from 'typed-redux-saga';
+import { call, cancel, delay, put, spawn, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
 import { gitRootsUpdated } from '../git-roots-slice';
@@ -68,24 +68,20 @@ function* reconcileGitRootsSubscriptions(
 
 function* watchActiveWorkspaces(active: Map<string, SubscriptionEntry>): SagaGenerator<void> {
   const initialWorkspaceIds = yield* selectActiveWorkspaceIds.effect();
-  let initialReconciliation: Task | null = null;
-  initialReconciliation = yield* fork(function* () {
-    try {
-      yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
-      yield* reconcileGitRootsSubscriptions(active, initialWorkspaceIds);
-    } finally {
-      initialReconciliation = null;
-    }
-  });
+  let lastChangeAt = Date.now();
+  yield* reconcileGitRootsSubscriptions(active, initialWorkspaceIds);
 
   yield* takeLatestFromSelector(
     selectActiveWorkspaceIds,
     function* ({ payload }: SelectorChannelPayload<string[]>) {
-      if (initialReconciliation) {
-        yield* cancel(initialReconciliation);
-        initialReconciliation = null;
+      // Leading edge is immediate: only a change arriving within the window
+      // of the previous one is trailing-debounced (takeLatest cancels the
+      // superseded run), so rapid tab flapping still coalesces.
+      const sinceLastChange = Date.now() - lastChangeAt;
+      lastChangeAt = Date.now();
+      if (sinceLastChange < SUBSCRIPTION_RECONCILIATION_DELAY_MS) {
+        yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
       }
-      yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
       yield* reconcileGitRootsSubscriptions(active, payload);
     },
   );
