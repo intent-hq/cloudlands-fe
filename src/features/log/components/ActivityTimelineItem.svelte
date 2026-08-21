@@ -113,7 +113,7 @@
       class="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
       onclick={onAgentClick}
     >
-      <AgentAvatar size={20} {agentId} />
+      <AgentAvatar variant="standard" {agentId} />
     </button>
   {/if}
 </div>

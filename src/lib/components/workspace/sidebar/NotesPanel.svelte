@@ -592,7 +592,7 @@
                         onclick={onClick}
                         title={m.workspace_notesPanel_openAgent_tooltip()}
                       >
-                        <AgentAvatarWithState {agentId} size={16} {state} {specialist} />
+                        <AgentAvatarWithState {agentId} variant="compact" {state} {specialist} />
                       </button>
                     {/each}
                     {#if activeAgents.length > 3}
@@ -731,7 +731,7 @@
                         onclick={onClick}
                         title={m.workspace_notesPanel_openAgent_tooltip()}
                       >
-                        <AgentAvatarWithState {agentId} size={16} {state} {specialist} />
+                        <AgentAvatarWithState {agentId} variant="compact" {state} {specialist} />
                       </button>
                     {/each}
                     {#if activeAgents.length > 3}

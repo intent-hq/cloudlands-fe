@@ -188,7 +188,7 @@
               class="rounded-full overflow-hidden"
               title={m.fileTracking_changes_recentlyEdited_tooltip()}
             >
-              <AgentAvatar {agentId} size={16} />
+              <AgentAvatar {agentId} variant="compact" />
             </div>
           {/each}
         </div>
@@ -295,7 +295,7 @@
               class="rounded-full overflow-hidden"
               title={m.fileTracking_changes_recentlyEdited_tooltip()}
             >
-              <AgentAvatar {agentId} size={16} />
+              <AgentAvatar {agentId} variant="compact" />
             </div>
           {/each}
         </div>

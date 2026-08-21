@@ -1737,7 +1737,7 @@
               {#if tab.type === 'agent' && tab.agentId}
                 <AgentAvatarWithState
                   agentId={tab.agentId}
-                  size={16}
+                  variant="compact"
                   state={getAgentAvatarState(tab)}
                   specialist={getAgentSpecialistType(tab) as
                     import('$lib/constants/specialists').BuiltinSpecialistId | null}
@@ -1874,7 +1874,7 @@
                       close();
                     }}
                   >
-                    <AgentAvatar agentId="blank" size={16} />
+                    <AgentAvatar agentId="blank" variant="compact" />
                     <span>{m.layout_panelTabBar_blankAgent_label()}</span>
                   </button>
                   <!-- Specialist options -->
@@ -1886,7 +1886,7 @@
                         close();
                       }}
                     >
-                      <AgentAvatar agentId="blank" size={16} specialist={specialist.id} />
+                      <AgentAvatar agentId="blank" variant="compact" specialist={specialist.id} />
                       <span>{specialist.name}</span>
                     </button>
                   {/each}

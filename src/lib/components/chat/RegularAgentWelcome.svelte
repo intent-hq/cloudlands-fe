@@ -94,7 +94,11 @@
             data-testid="specialist-picker-trigger"
           >
             <div class="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted/50">
-              <AgentAvatar agentId="blank" size={24} specialist={specialistInfo?.id ?? null} />
+              <AgentAvatar
+                agentId="blank"
+                variant="emphasized"
+                specialist={specialistInfo?.id ?? null}
+              />
             </div>
             <div class="min-w-0 flex-1">
               <div class="type-body truncate font-medium text-foreground">{displayLabel}</div>

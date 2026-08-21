@@ -80,7 +80,8 @@
   <div>
     <AgentAvatarWithState
       agentId={node.agentId}
-      size={node.isCoordinator ? 32 : 24}
+      variant="emphasized"
+      size={node.isCoordinator ? 32 : undefined}
       {state}
       specialist={specialist as BuiltinSpecialistId | null}
     />

@@ -221,7 +221,7 @@
             }}
             title={m.notes_referenceBlock_viewAgent_tooltip()}
           >
-            <AgentAvatar agentId={linkedAgentId} size={16} />
+            <AgentAvatar agentId={linkedAgentId} variant="compact" />
           </button>
         {:else}
           <Fa icon={faCode} size="xs" class="shrink-0 text-muted-foreground" />

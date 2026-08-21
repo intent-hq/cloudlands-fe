@@ -59,8 +59,8 @@
     fill="none"
     stroke="currentColor"
     stroke-width="1.33"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+    stroke-linecap="butt"
+    stroke-linejoin="miter"
   >
     <AgentAvatarArt {design} />
   </g>
@@ -84,7 +84,7 @@
   }
 
   .agent-avatar--legacy {
-    padding: 0;
+    padding: 1px;
   }
 
   :global([data-agent-avatar-with-state]) .agent-avatar {

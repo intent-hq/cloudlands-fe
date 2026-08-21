@@ -1290,7 +1290,7 @@
                         onSelectAgent?.(agentId);
                       }}
                     >
-                      <AgentAvatar {agentId} size={16} />
+                      <AgentAvatar {agentId} variant="compact" />
                     </button>
                   {/each}
                 </div>
