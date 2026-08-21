@@ -129,6 +129,8 @@ describe('EventSubscriptionsCard', () => {
     expect(card.parentElement?.classList.contains('hidden')).toBe(false);
     expect(screen.getByTestId('mock-browser-tabs-section')).toBeTruthy();
     expect(screen.queryByTestId('event-subscriptions-outer-header')).toBeNull();
+    // Tabs-only card must not be labelled "Subscribed to events".
+    expect(card.getAttribute('aria-label')).toBe('Browser tabs (2)');
   });
 
   it('renders browser tabs parallel to a collapsed events disclosure', async () => {

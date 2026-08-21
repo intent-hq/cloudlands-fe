@@ -111,6 +111,14 @@
         : m.chat_eventSubscriptions_heading_many({ count: formatInteger(totalCount) });
   });
 
+  // A tabs-only card has no event subscriptions, so labelling it "Subscribed
+  // to events" would be wrong — use the browser-tabs heading instead.
+  const cardAriaLabel = $derived(
+    hasEventSubscriptions || !browserTabsVisible
+      ? heading
+      : m.chat_browserTabs_heading({ count: formatInteger(browserTabCount) }),
+  );
+
   $effect(() => {
     visible = hasSubscriptions;
   });
@@ -155,7 +163,7 @@
     class="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border bg-card/80 shadow-sm font-family-child"
     data-conversation-layer="event-subscriptions"
     data-testid="event-subscriptions-card"
-    aria-label={heading}
+    aria-label={cardAriaLabel}
   >
     {#if !isAgentOnly && hasEventSubscriptions}
       <h2 data-testid="event-subscriptions-outer-header">
