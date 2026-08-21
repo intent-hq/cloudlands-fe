@@ -17,6 +17,13 @@ import { shouldBlurActiveElement, shouldRedirectFocusToPanelContent } from '../p
  * stealing focus the user had just placed inside the revealed panel but
  * outside the prompt — e.g. the header rename input (EditableName), which
  * closed on blur before the user could type.
+ *
+ * And for intent-hq/monorepo#3053: focus with no `[data-panel-id]` ancestor
+ * at all (a dialog portal / modal overlay, e.g. the New Space modal editor)
+ * was treated as "outside the target panel" and blurred/redirected — the
+ * dialog focus trap then re-focused it with the caret at the start, so
+ * typing was interrupted 100 ms after every focusPanel dispatch. Focus that
+ * is not panel-owned is never stale panel focus and must not be touched.
  */
 
 function buildPanels(): { panelA: HTMLElement; panelB: HTMLElement } {
@@ -27,6 +34,9 @@ function buildPanels(): { panelA: HTMLElement; panelB: HTMLElement } {
     </div>
     <div data-panel-id="panel-b" data-layout-id="layout-1">
       <textarea id="chat-input"></textarea>
+    </div>
+    <div id="dialog-portal" role="dialog" aria-modal="true">
+      <div id="modal-editor" contenteditable="true" tabindex="0"></div>
     </div>
     <input id="outside" type="text" />
   `;
@@ -65,17 +75,25 @@ describe('shouldBlurActiveElement', () => {
     expect(shouldBlurActiveElement(document.activeElement, 'panel-a')).toBe(true);
   });
 
-  it('blurs focus that lives outside any panel', () => {
+  it('keeps focus on an element hosted in a dialog portal / overlay (#3053)', () => {
+    buildPanels();
+    const modalEditor = document.getElementById('modal-editor') as HTMLElement;
+    modalEditor.focus();
+
+    expect(shouldBlurActiveElement(document.activeElement, 'panel-a')).toBe(false);
+  });
+
+  it('keeps focus on an element with no panel ancestor (#3053)', () => {
     buildPanels();
     const outside = document.getElementById('outside') as HTMLInputElement;
     outside.focus();
 
-    expect(shouldBlurActiveElement(document.activeElement, 'panel-a')).toBe(true);
+    expect(shouldBlurActiveElement(document.activeElement, 'panel-a')).toBe(false);
   });
 
-  it('treats document.body as outside any panel (harmless no-op blur)', () => {
+  it('does not blur document.body (no panel ancestor)', () => {
     buildPanels();
-    expect(shouldBlurActiveElement(document.body, 'panel-a')).toBe(true);
+    expect(shouldBlurActiveElement(document.body, 'panel-a')).toBe(false);
   });
 
   it('returns false when activeElement is null', () => {
@@ -110,12 +128,20 @@ describe('shouldRedirectFocusToPanelContent', () => {
     expect(shouldRedirectFocusToPanelContent(document.activeElement, 'panel-a')).toBe(true);
   });
 
-  it('redirects when focus lives outside any panel', () => {
+  it('does not redirect focus hosted in a dialog portal / overlay (#3053)', () => {
+    buildPanels();
+    const modalEditor = document.getElementById('modal-editor') as HTMLElement;
+    modalEditor.focus();
+
+    expect(shouldRedirectFocusToPanelContent(document.activeElement, 'panel-a')).toBe(false);
+  });
+
+  it('does not redirect focus on an element with no panel ancestor (#3053)', () => {
     buildPanels();
     const outside = document.getElementById('outside') as HTMLInputElement;
     outside.focus();
 
-    expect(shouldRedirectFocusToPanelContent(document.activeElement, 'panel-a')).toBe(true);
+    expect(shouldRedirectFocusToPanelContent(document.activeElement, 'panel-a')).toBe(false);
   });
 
   it('redirects when focus is on document.body', () => {
