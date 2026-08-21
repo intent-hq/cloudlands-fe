@@ -119,10 +119,10 @@ jobs:
       # first-promotion path here instead of failing mid-promotion.
       #
       # The notes range base (exclusive lower bound of (base, version]) is
-      # resolved here too: explicit notes_base input (manual repair) >
-      # previous beta > on an idempotent re-run (prev == version), the
-      # notes-base marker embedded in the current rolling body — so a re-run
-      # rebuilds the full aggregate instead of collapsing it to one section.
+      # resolved here too: explicit notes_base input (manual repair) > on an
+      # idempotent re-run (prev == version), the notes-base marker embedded in
+      # the current rolling body (so a re-run rebuilds the full aggregate
+      # instead of collapsing it to one section) > previous beta.
       # Without a marker (legacy body) the notes rewrite is skipped entirely,
       # preserving the existing body.
       - name: Validate promotion range
@@ -196,11 +196,19 @@ jobs:
             # previous-beta read cannot recover the range base. Recover it
             # from the notes-base marker in the current rolling body instead.
             echo "Re-promoting same version $VERSION (idempotent)"
-            MARKER=$(gh release view beta --repo intent-hq/cloudlands-releases --json body --jq '.body // ""' 2>/dev/null \
-              | tr -d '\r' \
-              | sed -n -E 's/.*<!-- notes-base: ((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)) -->.*/\1/p' \
-              | head -n1 || true)
-            if [ -z "$MARKER" ]; then
+            BODY_READ_OK=true
+            BETA_BODY=$(gh release view beta --repo intent-hq/cloudlands-releases --json body --jq '.body // ""' 2>/dev/null) || BODY_READ_OK=false
+            MARKER=""
+            if [ "$BODY_READ_OK" = "true" ]; then
+              MARKER=$(printf '%s\n' "$BETA_BODY" \
+                | tr -d '\r' \
+                | sed -n -E 's/.*<!-- notes-base: ((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)) -->.*/\1/p' \
+                | head -n1)
+            fi
+            if [ "$BODY_READ_OK" != "true" ]; then
+              echo "::warning::Could not read the current beta release body - leaving the existing notes untouched"
+              SKIP_NOTES=true
+            elif [ -z "$MARKER" ]; then
               echo "::warning::No notes-base marker in the current beta notes - leaving the existing notes untouched"
               SKIP_NOTES=true
             elif ! grep -qFx "$MARKER" "$RUNNER_TEMP/all-versions.txt" || ! version_is_older "$MARKER" "$VERSION"; then
