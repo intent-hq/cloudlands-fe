@@ -154,7 +154,6 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
               'line-height',
               'font-weight',
               'color',
-              'gap',
               'align-items',
               'justify-content',
               'overflow-x',
@@ -165,7 +164,14 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             const agentRow = element('agent-message-disclosure-header');
             const eventRow = element('event-wakeup-header');
             const agentIcon = element('agent-message-avatar-column');
+            const agentName = element('agent-message-actor-name');
+            const agentActor = element('agent-message-attribution');
+            const agentAction = element('agent-message-disclosure-toggle');
             const eventIcon = eventRow.querySelector('svg')!;
+            const eventBell = element('event-wakeup-bell');
+            const eventSummary = element('event-wakeup-summary');
+            const eventName = element('event-wakeup-agent-name');
+            const eventStatus = element('event-wakeup-status');
             const agentChevron = element('agent-message-chevron-column');
             const eventChevron = element('event-wakeup-chevron-column');
             const preview = element('agent-message-preview');
@@ -177,12 +183,21 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
               eventSurface: style(eventCard, surfaceProperties),
               agentRow: style(agentRow, rowProperties),
               eventRow: style(eventRow, rowProperties),
+              agentRowGap: getComputedStyle(agentRow).gap,
+              eventRowGap: getComputedStyle(eventRow).gap,
               agentCardRect: rect(agentCard),
               eventCardRect: rect(eventCard),
               agentRowRect: rect(agentRow),
               eventRowRect: rect(eventRow),
               agentIconRect: rect(agentIcon),
+              agentNameRect: rect(agentName),
+              agentActorRect: rect(agentActor),
+              agentActionRect: rect(agentAction),
               eventIconRect: rect(eventIcon),
+              eventBellRect: rect(eventBell),
+              eventSummaryRect: rect(eventSummary),
+              eventNameRect: rect(eventName),
+              eventStatusRect: rect(eventStatus),
               agentChevronRect: rect(agentChevron),
               eventChevronRect: rect(eventChevron),
               ellipsisStyles: [preview, senderName].map((node) => {
@@ -199,7 +214,25 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
 
           expect(collapsed.agentSurface).toEqual(collapsed.eventSurface);
           expect(collapsed.agentRow).toEqual(collapsed.eventRow);
+          expect(collapsed.agentRowGap).toBe('4px');
+          expect(collapsed.eventRowGap).toBe('8px');
           expect(collapsed.agentRow['justify-content']).toBe('flex-start');
+          expect(collapsed.agentNameRect.left - collapsed.agentIconRect.right).toBeCloseTo(
+            8 * zoom,
+            1,
+          );
+          expect(collapsed.agentActionRect.left - collapsed.agentActorRect.right).toBeCloseTo(
+            4 * zoom,
+            1,
+          );
+          expect(collapsed.eventSummaryRect.left - collapsed.eventBellRect.right).toBeCloseTo(
+            8 * zoom,
+            1,
+          );
+          expect(collapsed.eventStatusRect.left - collapsed.eventNameRect.right).toBeCloseTo(
+            4 * zoom,
+            1,
+          );
           expect(collapsed.agentIconRect.left - collapsed.agentRowRect.left).toBeCloseTo(
             12 * zoom,
             1,
@@ -261,6 +294,10 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
               await interactionStyle(state, eventToggle),
             );
           }
+          await senderButton.focus();
+          await expect(senderButton).toBeFocused();
+          await agentToggle.focus();
+          await expect(agentToggle).toBeFocused();
 
           await agentToggle.click();
           await eventToggle.click();

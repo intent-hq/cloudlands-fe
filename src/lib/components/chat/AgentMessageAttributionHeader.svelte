@@ -113,7 +113,7 @@
 </script>
 
 <div
-  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} font-normal text-muted-foreground {className}"
+  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} gap-1! font-normal text-muted-foreground {className}"
   data-testid="agent-message-disclosure-header"
 >
   <button
@@ -142,6 +142,7 @@
     <span
       class="min-w-0 truncate font-normal text-muted-foreground"
       title={attribution.displayName}
+      data-testid="agent-message-actor-name"
     >
       {attribution.displayName}
     </span>

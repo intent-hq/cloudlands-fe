@@ -475,7 +475,7 @@
             >
               {#if agentSummaryRoles}
                 <span
-                  class="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden"
+                  class="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden"
                   title={friendlySummary}
                   aria-hidden="true"
                 >

@@ -65,29 +65,37 @@
     size={16}
     class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} shrink-0 {SUBSCRIPTION_ICON_CLASS}"
   />
-  {#if presentation.kind === 'hook'}
-    <span class="min-w-0 flex-1 truncate" title={presentation.attribution.rawName}>
-      {presentation.attribution.displayName}
-    </span>
-  {:else}
-    <Button
-      type="button"
-      variant="plain"
-      class="h-auto min-w-0 flex-1 justify-start whitespace-normal break-words text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      data-testid="pr-monitor-wake-chip"
-      title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
-      onclick={openPr}
-    >
-      {getPrMonitorWakeChipLabel(presentation.attribution, workspaceRepo)}
-    </Button>
-  {/if}
   <span
-    class="type-body shrink truncate font-normal text-muted-foreground"
-    style="max-width: 35%;"
-    data-testid="wake-status"
-    title={statusLabel}
+    class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1 overflow-hidden text-left"
+    data-testid="automated-wake-text-lane"
   >
-    {statusLabel}
+    {#if presentation.kind === 'hook'}
+      <span
+        class="min-w-0 max-w-full shrink-0 truncate"
+        title={presentation.attribution.rawName}
+        data-testid="automated-wake-primary-label"
+      >
+        {presentation.attribution.displayName}
+      </span>
+    {:else}
+      <Button
+        type="button"
+        variant="plain"
+        class="h-auto min-w-0 max-w-full shrink-0 justify-start whitespace-normal break-words text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        data-testid="pr-monitor-wake-chip"
+        title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
+        onclick={openPr}
+      >
+        {getPrMonitorWakeChipLabel(presentation.attribution, workspaceRepo)}
+      </Button>
+    {/if}
+    <span
+      class="type-body min-w-0 shrink truncate font-normal text-muted-foreground"
+      data-testid="wake-status"
+      title={statusLabel}
+    >
+      {statusLabel}
+    </span>
   </span>
   <button
     type="button"
