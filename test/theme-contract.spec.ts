@@ -15,6 +15,7 @@ const THEME_BOOTSTRAP_SCRIPT = APP_HTML.match(
 const FOUNDATION_ARTIFACT_DIR = process.env.FOUNDATION_ARTIFACT_DIR;
 const ROLES = [
   'background',
+  'app-background',
   'foreground',
   'card',
   'card-foreground',
@@ -61,6 +62,100 @@ const PAIRS = [
   ['sidebar-accent-foreground', 'sidebar-accent'],
 ] as const;
 
+const DEFAULT_NEUTRAL_RGB = {
+  light: {
+    background: 'rgb(236, 236, 234)',
+    'app-background': 'rgb(236, 236, 234)',
+    foreground: 'rgb(0, 0, 0)',
+    card: 'rgb(255, 255, 255)',
+    'card-foreground': 'rgb(0, 0, 0)',
+    popover: 'rgb(236, 236, 234)',
+    'popover-foreground': 'rgb(0, 0, 0)',
+    secondary: 'rgb(229, 229, 229)',
+    'secondary-foreground': 'rgb(0, 0, 0)',
+    accent: 'rgb(225, 223, 222)',
+    'accent-foreground': 'rgb(0, 0, 0)',
+    muted: 'rgb(225, 223, 222)',
+    'muted-foreground': 'rgb(0, 0, 0)',
+    border: 'rgb(225, 223, 222)',
+    input: 'rgb(0, 0, 0)',
+    sidebar: 'rgb(236, 236, 234)',
+    'sidebar-foreground': 'rgb(0, 0, 0)',
+    'sidebar-accent': 'rgb(225, 223, 222)',
+    'sidebar-accent-foreground': 'rgb(0, 0, 0)',
+    'sidebar-border': 'rgb(225, 223, 222)',
+  },
+  dark: {
+    background: 'rgb(26, 26, 26)',
+    'app-background': 'rgb(26, 26, 26)',
+    foreground: 'rgb(255, 255, 255)',
+    card: 'rgb(26, 26, 26)',
+    'card-foreground': 'rgb(255, 255, 255)',
+    popover: 'rgb(38, 38, 38)',
+    'popover-foreground': 'rgb(255, 255, 255)',
+    secondary: 'rgb(38, 38, 38)',
+    'secondary-foreground': 'rgb(225, 223, 222)',
+    accent: 'rgb(61, 61, 60)',
+    'accent-foreground': 'rgb(225, 223, 222)',
+    muted: 'rgb(38, 38, 38)',
+    'muted-foreground': 'rgb(225, 223, 222)',
+    border: 'rgb(61, 61, 60)',
+    input: 'rgb(225, 223, 222)',
+    sidebar: 'rgb(38, 38, 38)',
+    'sidebar-foreground': 'rgb(255, 255, 255)',
+    'sidebar-accent': 'rgb(61, 61, 60)',
+    'sidebar-accent-foreground': 'rgb(225, 223, 222)',
+    'sidebar-border': 'rgb(61, 61, 60)',
+  },
+} as const;
+
+function defaultSurfaceContract(colors: Record<string, string>) {
+  return {
+    page: { background: colors.background, foreground: colors.foreground },
+    app: { background: colors['app-background'], foreground: colors.foreground },
+    card: {
+      background: colors.card,
+      foreground: colors['card-foreground'],
+      border: colors.border,
+    },
+    popover: {
+      background: colors.popover,
+      foreground: colors['popover-foreground'],
+      border: colors.border,
+    },
+    secondary: {
+      background: colors.secondary,
+      foreground: colors['secondary-foreground'],
+      border: colors.border,
+    },
+    accent: {
+      background: colors.accent,
+      foreground: colors['accent-foreground'],
+      border: colors.border,
+    },
+    muted: {
+      background: colors.muted,
+      foreground: colors['muted-foreground'],
+      border: colors.border,
+    },
+    sidebar: {
+      background: colors.sidebar,
+      foreground: colors['sidebar-foreground'],
+      border: colors['sidebar-border'],
+    },
+    sidebarAccent: {
+      background: colors['sidebar-accent'],
+      foreground: colors['sidebar-accent-foreground'],
+      border: colors['sidebar-border'],
+    },
+    input: {
+      background: colors.background,
+      foreground: colors.foreground,
+      border: colors.input,
+    },
+  };
+}
+
 function themeAuthorityFixture(): string {
   if (!THEME_BOOTSTRAP_SCRIPT) throw new Error('Missing first-frame theme bootstrap script');
   return `<!doctype html>
@@ -68,9 +163,19 @@ function themeAuthorityFixture(): string {
       ${TOKEN_CSS}
       html, body { margin: 0; width: 100%; height: 100%; }
       #page { min-height: 100%; background: hsl(var(--background)); color: hsl(var(--foreground)); }
-      #sidebar, #empty-panel { background: hsl(var(--sidebar)); color: hsl(var(--sidebar-foreground)); border: 1px solid hsl(var(--sidebar-border)); }
+      #app { background: hsl(var(--app-background)); color: hsl(var(--foreground)); }
+      .surface { border: 1px solid hsl(var(--border)); }
+      #card { background: hsl(var(--card)); color: hsl(var(--card-foreground)); }
+      #popover { background: hsl(var(--popover)); color: hsl(var(--popover-foreground)); }
+      #secondary { background: hsl(var(--secondary)); color: hsl(var(--secondary-foreground)); }
+      #accent { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+      #muted { background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); }
+      #sidebar, #sidebar-accent { border-color: hsl(var(--sidebar-border)); }
+      #sidebar { background: hsl(var(--sidebar)); color: hsl(var(--sidebar-foreground)); }
+      #sidebar-accent { background: hsl(var(--sidebar-accent)); color: hsl(var(--sidebar-accent-foreground)); }
+      #input { background: hsl(var(--background)); color: hsl(var(--foreground)); border: 2px solid hsl(var(--input)); }
     </style><script>${THEME_BOOTSTRAP_SCRIPT}</script></head>
-    <body><main id="page"><aside id="sidebar" class="bg-sidebar">Sidebar</aside><section id="empty-panel" class="bg-sidebar">Empty panel</section></main>
+    <body><main id="page"><div id="app"><section id="card" class="surface">Card</section><section id="popover" class="surface">Popover</section><section id="secondary" class="surface">Secondary</section><section id="accent" class="surface">Accent</section><section id="muted" class="surface">Muted</section><aside id="sidebar" class="surface"><div id="sidebar-accent" class="surface">Sidebar accent</div></aside><input id="input"></div></main>
     <script>
       const media = matchMedia('(prefers-color-scheme: dark)');
       const resolveTheme = (theme) => theme === 'system' ? (media.matches ? 'dark' : 'light') : theme;
@@ -82,12 +187,15 @@ function themeAuthorityFixture(): string {
         document.documentElement.style.colorScheme = resolved;
       };
       window.captureThemeSurfaces = () => {
-        const page = getComputedStyle(document.querySelector('#page'));
-        const sidebar = getComputedStyle(document.querySelector('#sidebar'));
-        const empty = getComputedStyle(document.querySelector('#empty-panel'));
-        return { rootClass: document.documentElement.className, page: page.backgroundColor, sidebar: sidebar.backgroundColor, empty: empty.backgroundColor, border: sidebar.borderTopColor, foreground: sidebar.color };
+        const capture = (id) => {
+          const style = getComputedStyle(document.getElementById(id));
+          return { background: style.backgroundColor, foreground: style.color, border: style.borderTopColor };
+        };
+        const page = capture('page');
+        const app = capture('app');
+        return { rootClass: document.documentElement.className, page: { background: page.background, foreground: page.foreground }, app: { background: app.background, foreground: app.foreground }, card: capture('card'), popover: capture('popover'), secondary: capture('secondary'), accent: capture('accent'), muted: capture('muted'), sidebar: capture('sidebar'), sidebarAccent: capture('sidebar-accent'), input: capture('input') };
       };
-      window.__mountedThemeSurfaces = { page: document.querySelector('#page'), sidebar: document.querySelector('#sidebar'), empty: document.querySelector('#empty-panel') };
+      window.__mountedThemeSurfaces = Object.fromEntries(['page', 'app', 'card', 'popover', 'secondary', 'accent', 'muted', 'sidebar', 'sidebar-accent', 'input'].map((id) => [id, document.getElementById(id)]));
       window.__firstThemeSnapshot = window.captureThemeSurfaces();
       media.addEventListener('change', () => {
         if (localStorage.getItem('theme') === 'system') window.applyIntentTheme('system');
@@ -134,12 +242,6 @@ function luminance(color: string): number {
   return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
 }
 
-function hslChannels(value: string): [number, number, number] {
-  const match = value.match(/^([\d.]+)\s+([\d.]+)%\s+([\d.]+)%$/);
-  if (!match) throw new Error(`Browser did not resolve HSL channels: ${value}`);
-  return match.slice(1).map(Number) as [number, number, number];
-}
-
 function alpha(color: string): number {
   const channels = color.match(/[\d.]+/g)?.map(Number) ?? [];
   return channels.length === 4 ? channels[3] : 1;
@@ -175,6 +277,15 @@ test('browser computes complete explicit light and dark contracts', async ({ pag
   const dark = await computedRoles(page, 'dark');
   expectLegible(light);
   expectLegible(dark);
+  for (const [mode, colors] of [
+    ['light', light],
+    ['dark', dark],
+  ] as const) {
+    const expected: Record<string, string> = DEFAULT_NEUTRAL_RGB[mode];
+    expect(Object.fromEntries(Object.keys(expected).map((role) => [role, colors[role]]))).toEqual(
+      expected,
+    );
+  }
 
   await page.emulateMedia({ colorScheme: 'dark' });
   expect(await computedRoles(page, 'light')).toEqual(light);
@@ -191,7 +302,10 @@ test('browser computes complete explicit light and dark contracts', async ({ pag
   }
 });
 
-test('sidebar stays two HSL points toward contrast at 100% and 200%', async ({ context, page }) => {
+test('approved neutral sidebar surfaces stay stable at 100% and 200%', async ({
+  context,
+  page,
+}) => {
   const fixture = `<style>
     ${TOKEN_CSS}
     * { box-sizing: border-box; }
@@ -260,14 +374,11 @@ test('sidebar stays two HSL points toward contrast at 100% and 200%', async ({ c
           devicePixelRatio: window.devicePixelRatio,
         };
       }, mode);
-      const background = hslChannels(evidence.background);
-      const sidebar = hslChannels(evidence.sidebar);
-      expect(sidebar.slice(0, 2), `${mode} at ${zoom}x`).toEqual(background.slice(0, 2));
-      expect(sidebar[2] - background[2], `${mode} at ${zoom}x`).toBe(mode === 'light' ? -2 : 2);
       expect(evidence.sidebar).toBe(evidence.themeSidebar);
       expect(evidence.shellColor).toBe(evidence.expectedShellColor);
+      expect(evidence.shellColor).toBe(DEFAULT_NEUTRAL_RGB[mode].sidebar);
+      expect(evidence.foreground).toBe(DEFAULT_NEUTRAL_RGB[mode]['sidebar-foreground']);
       expect(alpha(evidence.shellColor)).toBe(1);
-      expect(evidence.foreground).toMatch(/^rgb/);
       expect(evidence.nested).toMatchObject({
         card: evidence.nested.cardToken,
         input: evidence.nested.inputToken,
@@ -333,13 +444,9 @@ test('mounted theme authority matrix hydrates and switches sidebar surfaces with
       };
     });
     const expected = state.resolved === 'dark' ? dark : light;
-    expect(evidence.current, `${state.preference} on macOS ${state.os}`).toMatchObject({
+    expect(evidence.current, `${state.preference} on macOS ${state.os}`).toEqual({
       rootClass: state.resolved,
-      page: expected.background,
-      sidebar: expected.sidebar,
-      empty: expected.sidebar,
-      border: expected['sidebar-border'],
-      foreground: expected['sidebar-foreground'],
+      ...defaultSurfaceContract(expected),
     });
     expect(evidence.first).toEqual(evidence.current);
     expect(evidence.history).not.toContain(state.resolved === 'dark' ? 'light' : 'dark');
@@ -356,15 +463,14 @@ test('mounted theme authority matrix hydrates and switches sidebar surfaces with
     const mounted = fixtureWindow.__mountedThemeSurfaces;
     fixtureWindow.applyIntentTheme('dark');
     return {
-      sameNodes:
-        mounted.page === document.querySelector('#page') &&
-        mounted.sidebar === document.querySelector('#sidebar') &&
-        mounted.empty === document.querySelector('#empty-panel'),
+      sameNodes: Object.entries(mounted).every(
+        ([id, node]) => node === document.getElementById(id),
+      ),
       colors: fixtureWindow.captureThemeSurfaces(),
     };
   });
   expect(switched.sameNodes).toBe(true);
-  expect(switched.colors).toMatchObject({ sidebar: dark.sidebar, empty: dark.sidebar });
+  expect(switched.colors).toEqual({ rootClass: 'dark', ...defaultSurfaceContract(dark) });
 
   await page.evaluate(() => {
     (window as typeof window & { applyIntentTheme: (theme: string) => void }).applyIntentTheme(
@@ -373,6 +479,13 @@ test('mounted theme authority matrix hydrates and switches sidebar surfaces with
   });
   await page.emulateMedia({ colorScheme: 'light' });
   await expect.poll(() => page.evaluate(() => document.documentElement.className)).toBe('light');
+  expect(
+    await page.evaluate(() =>
+      (
+        window as typeof window & { captureThemeSurfaces: () => Record<string, unknown> }
+      ).captureThemeSurfaces(),
+    ),
+  ).toEqual({ rootClass: 'light', ...defaultSurfaceContract(light) });
 });
 
 test('browser computes every preset and sparse imported high-contrast theme', async ({ page }) => {

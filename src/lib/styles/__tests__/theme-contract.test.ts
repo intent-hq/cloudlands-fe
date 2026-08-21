@@ -55,6 +55,92 @@ const CONTRAST_PAIRS = [
 
 const COLOR_ROLE_SET = new Set<string>(COLOR_ROLES);
 
+const DEFAULT_NEUTRAL_SOURCE = {
+  light: {
+    background: '60 5% 92.1568627451%',
+    foreground: '0 0% 0%',
+    card: '0 0% 100%',
+    'card-foreground': '0 0% 0%',
+    popover: '60 5% 92.1568627451%',
+    'popover-foreground': '0 0% 0%',
+    secondary: '0 0% 89.8039215686%',
+    'secondary-foreground': '0 0% 0%',
+    accent: '20 4.7619047619% 87.6470588235%',
+    'accent-foreground': '0 0% 0%',
+    muted: '20 4.7619047619% 87.6470588235%',
+    'muted-foreground': '0 0% 0%',
+    border: '20 4.7619047619% 87.6470588235%',
+    input: '0 0% 0%',
+    sidebar: '60 5% 92.1568627451%',
+    'sidebar-foreground': '0 0% 0%',
+    'sidebar-accent': '20 4.7619047619% 87.6470588235%',
+    'sidebar-accent-foreground': '0 0% 0%',
+    'sidebar-border': '20 4.7619047619% 87.6470588235%',
+    'app-background': '60 5% 92.1568627451%',
+  },
+  dark: {
+    background: '0 0% 10.1960784314%',
+    foreground: '0 0% 100%',
+    card: '0 0% 10.1960784314%',
+    'card-foreground': '0 0% 100%',
+    popover: '0 0% 14.9019607843%',
+    'popover-foreground': '0 0% 100%',
+    secondary: '0 0% 14.9019607843%',
+    'secondary-foreground': '20 4.7619047619% 87.6470588235%',
+    accent: '60 0.826446281% 23.7254901961%',
+    'accent-foreground': '20 4.7619047619% 87.6470588235%',
+    muted: '0 0% 14.9019607843%',
+    'muted-foreground': '20 4.7619047619% 87.6470588235%',
+    border: '60 0.826446281% 23.7254901961%',
+    input: '20 4.7619047619% 87.6470588235%',
+    sidebar: '0 0% 14.9019607843%',
+    'sidebar-foreground': '0 0% 100%',
+    'sidebar-accent': '60 0.826446281% 23.7254901961%',
+    'sidebar-accent-foreground': '20 4.7619047619% 87.6470588235%',
+    'sidebar-border': '60 0.826446281% 23.7254901961%',
+    'app-background': '0 0% 10.1960784314%',
+  },
+} as const;
+
+const PRESERVED_SEMANTIC_SOURCE = {
+  'theme-light-primary': '145 67% 28%',
+  'theme-light-primary-foreground': '0 0% 100%',
+  'theme-light-destructive': '0 65% 94%',
+  'theme-light-destructive-foreground': '0 63% 31%',
+  'theme-light-ring': '260 58% 46%',
+  'theme-light-info': '260 58% 46%',
+  'theme-light-info-foreground': '0 0% 100%',
+  'theme-light-success': '145 67% 28%',
+  'theme-light-success-foreground': '0 0% 100%',
+  'theme-light-warning': '42 91% 54%',
+  'theme-light-warning-foreground': '154 44% 14%',
+  'theme-light-agent-avatar-surface-completed': '145 14% 88%',
+  'theme-light-agent-avatar-foreground-completed': '154 32% 24%',
+  'theme-light-agent-avatar-surface-attention': '30.785 100% 62.549%',
+  'theme-light-agent-avatar-surface-failed': '0 72% 62%',
+  'theme-light-agent-avatar-surface-active': '66.892 71.845% 59.608%',
+  'theme-light-workspace-status-unread': '217.2 91.2% 59.8%',
+  'theme-light-agent-avatar-surface-waiting': '263.2 74.257% 80.196%',
+  'theme-dark-primary': '145 58% 55%',
+  'theme-dark-primary-foreground': '154 25% 9%',
+  'theme-dark-destructive': '0 35% 22%',
+  'theme-dark-destructive-foreground': '0 70% 88%',
+  'theme-dark-ring': '260 80% 72%',
+  'theme-dark-info': '260 80% 72%',
+  'theme-dark-info-foreground': '154 25% 9%',
+  'theme-dark-success': '145 58% 55%',
+  'theme-dark-success-foreground': '154 25% 9%',
+  'theme-dark-warning': '42 91% 63%',
+  'theme-dark-warning-foreground': '154 25% 9%',
+  'theme-dark-agent-avatar-surface-completed': '145 14% 24%',
+  'theme-dark-agent-avatar-foreground-completed': '135 20% 86%',
+  'theme-dark-agent-avatar-surface-attention': '31 100% 70%',
+  'theme-dark-agent-avatar-surface-failed': '0 79% 70%',
+  'theme-dark-agent-avatar-surface-active': '67 78% 68%',
+  'theme-dark-workspace-status-unread': '213.1 93.9% 67.8%',
+  'theme-dark-agent-avatar-surface-waiting': '259.024 64.063% 74.902%',
+} as const;
+
 function hslChannels(value: string): [number, number, number] {
   const match = value.match(/^(?:hsl\()?([\d.]+)\s+([\d.]+)%\s+([\d.]+)%\)?$/);
   if (!match) throw new Error(`Invalid HSL color: ${value}`);
@@ -149,11 +235,19 @@ describe('theme color contract', () => {
     },
   );
 
-  it('keeps the approved global card colors in light and dark modes', () => {
-    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
-    expect(tokenValue(css, 'theme-light-card')).toBe('0 0% 100%');
-    expect(tokenValue(css, 'theme-dark-card')).toBe('154 16% 3%');
-  });
+  it.each(['light', 'dark'] as const)(
+    'uses the exact approved %s neutral source values',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+
+      for (const [role, value] of Object.entries(DEFAULT_NEUTRAL_SOURCE[mode])) {
+        expect(tokenValue(css, ['theme', mode, role].join('-')), role).toBe(value);
+      }
+      expect(tokenValue(css, ['theme', mode, 'agent-avatar-surface-neutral'].join('-'))).toBe(
+        mode === 'light' ? 'var(--theme-light-muted)' : '145 12% 78%',
+      );
+    },
+  );
 
   it.each(['light', 'dark'] as const)(
     'keeps the %s on-surface error foreground readable on normal surfaces',
@@ -175,22 +269,6 @@ describe('theme color contract', () => {
     expect(css).toMatch(
       /@media \(forced-colors: active\)\s*{\s*:where\(\.text-error-foreground\)\s*{\s*color:\s*CanvasText !important;/,
     );
-  });
-
-  it.each([
-    ['light', -2],
-    ['dark', 2],
-  ] as const)('keeps the %s sidebar exactly two HSL points toward contrast', (mode, delta) => {
-    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
-    const values = tokenValues(css, mode);
-    const background = hslChannels(values.background);
-    const sidebar = hslChannels(values.sidebar);
-
-    expect(sidebar.slice(0, 2)).toEqual(background.slice(0, 2));
-    expect(sidebar[2] - background[2]).toBe(delta);
-    expect(values.sidebar).not.toContain('/');
-    expect(tokenValue(css, 'sidebar')).toBe('var(--theme-sidebar)');
-    expect(tokenValue(css, `theme-${mode}-sidebar`)).toBe(values.sidebar);
   });
 
   it('keeps canonical sidebar shells on the shared token without local color overrides', () => {
@@ -223,6 +301,23 @@ describe('theme color contract', () => {
     }
   });
 
+  it('keeps regular chat on card while the Chief chat host stays transparent', () => {
+    const panel = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/Panel.svelte'),
+      'utf8',
+    );
+    const chief = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte'),
+      'utf8',
+    );
+
+    expect(panel).toContain(": 'bg-card text-card-foreground'");
+    expect(chief).toMatch(
+      /<div class="min-h-0 flex-1">\s*<ChatPanel[\s\S]*?agentName=\{m\.layout_chiefCard_title\(\)\}/,
+    );
+    expect(chief).not.toMatch(/<div class="[^"]*\bbg-card\b[^"]*">\s*<ChatPanel/);
+  });
+
   it('lets light, dark, and system modes select the same semantic contract', () => {
     const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
     expect(css).toMatch(/:root\s*{[^}]*color-scheme:\s*light dark/s);
@@ -235,37 +330,12 @@ describe('theme color contract', () => {
     }
   });
 
-  it('uses the Operate forest, sage, green, and violet families with ordered surfaces', () => {
+  it('keeps primary, focus, and semantic status source values unchanged', () => {
     const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
-    const light = tokenValues(css, 'light');
-    const dark = tokenValues(css, 'dark');
-    const [lightForegroundHue, lightForegroundSaturation, lightForegroundLightness] = hslChannels(
-      light.foreground,
-    );
-    expect(lightForegroundHue).toBeGreaterThanOrEqual(140);
-    expect(lightForegroundHue).toBeLessThanOrEqual(165);
-    expect(lightForegroundSaturation).toBeGreaterThanOrEqual(25);
-    expect(lightForegroundLightness).toBeLessThanOrEqual(20);
-    for (const values of [light, dark]) {
-      for (const role of ['primary', 'success'] as const) {
-        const [hue, saturation] = hslChannels(values[role]);
-        expect(hue, role).toBeGreaterThanOrEqual(130);
-        expect(hue, role).toBeLessThanOrEqual(165);
-        expect(saturation, role).toBeGreaterThanOrEqual(45);
-      }
-      for (const role of ['ring', 'info'] as const) {
-        const [hue, saturation] = hslChannels(values[role]);
-        expect(hue, role).toBeGreaterThanOrEqual(250);
-        expect(hue, role).toBeLessThanOrEqual(285);
-        expect(saturation, role).toBeGreaterThanOrEqual(45);
-      }
+
+    for (const [token, value] of Object.entries(PRESERVED_SEMANTIC_SOURCE)) {
+      expect(tokenValue(css, token), token).toBe(value);
     }
-    expect(hslChannels(light.background)[2]).toBe(100);
-    expect(hslChannels(light.card)[2]).toBeGreaterThanOrEqual(hslChannels(light.background)[2]);
-    expect(hslChannels(light.background)[2]).toBeGreaterThan(hslChannels(light.sidebar)[2]);
-    expect(hslChannels(light.accent)[2]).toBeLessThan(hslChannels(light.sidebar)[2]);
-    expect(hslChannels(dark.popover)[2]).toBeGreaterThan(hslChannels(dark.card)[2]);
-    expect(dark.card).toBe(dark.background);
   });
 
   it.each(['light', 'dark'] as const)('keeps %s control boundaries and focus at 3:1', (mode) => {
