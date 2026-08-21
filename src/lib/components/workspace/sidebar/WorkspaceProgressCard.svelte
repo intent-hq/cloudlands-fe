@@ -1268,7 +1268,7 @@
             <Button
               variant="ghost-light"
               size="xs"
-              class="w-full text-left justify-start px-0! h-auto min-h-7 items-start py-[3px] whitespace-normal"
+              class="w-full text-left justify-start px-0! h-auto min-h-7 items-start py-[2px] whitespace-normal"
               onclick={() => runProgressAction(action)}
             >
               <Fa
