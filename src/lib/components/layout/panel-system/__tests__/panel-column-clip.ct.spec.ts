@@ -61,6 +61,15 @@ async function stableCanvasWidths(component: Locator) {
   });
 }
 
+async function resetCanvasToAutomatic(component: Locator) {
+  await component
+    .locator('.panel-canvas-resize-handle')
+    .evaluate((handle) => handle.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+  const column = component.getByTestId('workspace-column');
+  await expect(column).toHaveAttribute('data-persisted-canvas-width', 'null');
+  await expect(column).toHaveAttribute('data-canvas-width-source', 'null');
+}
+
 /**
  * Regression (clipped jump-to-end button): the rightmost panel's right edge
  * must stay inside the visible workspace column. WorkspaceColumnsView sizes
@@ -182,6 +191,52 @@ test('keeps an explicit restored chat width byte-for-byte', async ({ mount }) =>
   });
 
   await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(615);
+});
+
+for (const mode of ['uncontained', 'contained'] as const) {
+  test(`releases local width after an automatic reset in ${mode} mode`, async ({ mount }) => {
+    const component = await mount(PanelWorkspaceColumnClipHarness, {
+      props: {
+        mode,
+        sidebarWidth: 0,
+        canvasWidth: 760,
+        persistedCanvasWidth: 1208,
+        insetChrome: 0,
+      },
+    });
+
+    await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
+    await resetCanvasToAutomatic(component);
+    const resetWidth = (await measureGeometry(component)).canvasOffsetWidth!;
+
+    await component
+      .getByTestId('width-plus-one')
+      .evaluate((button: HTMLButtonElement) => button.click());
+    await expect
+      .poll(async () => (await measureGeometry(component)).canvasOffsetWidth)
+      .toBe(mode === 'uncontained' ? resetWidth + 1 : resetWidth);
+  });
+}
+
+test('keeps an explicit width stable across viewport changes', async ({ mount }) => {
+  const component = await mount(PanelWorkspaceColumnClipHarness, {
+    props: {
+      mode: 'uncontained',
+      sidebarWidth: 0,
+      canvasWidth: 760,
+      persistedCanvasWidth: 1208,
+      insetChrome: 0,
+    },
+  });
+  const column = component.getByTestId('workspace-column');
+
+  await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
+  await expect(column).toHaveAttribute('data-persisted-canvas-width', '1208');
+  await expect(column).toHaveAttribute('data-canvas-width-source', 'explicit');
+  await component
+    .getByTestId('width-plus-one')
+    .evaluate((button: HTMLButtonElement) => button.click());
+  await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
 });
 
 test('reflows the workspace column to the retained panel width after close', async ({

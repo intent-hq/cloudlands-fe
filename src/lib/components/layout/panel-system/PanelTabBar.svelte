@@ -28,7 +28,6 @@
     faExpand,
     faCompress,
     faTableColumns,
-    faGripLines,
     faArrowLeft,
     faArrowRight,
     faCheck,
@@ -182,8 +181,6 @@
     onTabRename?: (tab: PanelTab, newName: string) => void;
     /** Split panel horizontally (side by side) */
     onSplitHorizontal?: () => void;
-    /** Split panel vertically (top and bottom) */
-    onSplitVertical?: () => void;
   }
 
   let {
@@ -218,7 +215,6 @@
     isZoomed = false,
     onTabRename,
     onSplitHorizontal,
-    onSplitVertical,
   }: Props = $props();
 
   const isDragging = selectIsDragging();
@@ -1415,16 +1411,6 @@
             close();
           }}
         />
-        <Menu.CommandItem
-          icon={faGripLines}
-          label={m.layout_panelTabBar_splitDown_label()}
-          shortcut="⇧⌘\"
-          disabled={!onSplitVertical}
-          onclick={() => {
-            onSplitVertical?.();
-            close();
-          }}
-        />
       </div>
     {/snippet}
   </DropdownMenu>
@@ -2430,41 +2416,6 @@
             {m.layout_panelTabBar_splitRight_label()}
           </span>
           <span class="text-subtle text-xs">⌘\</span>
-        </button>
-        <button
-          class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
-          onclick={() => {
-            onSplitVertical?.();
-            closeContextMenu();
-          }}
-        >
-          <span class="flex items-center gap-2">
-            <svg
-              class="text-subtle overflow-visible w-2.5! transform rotate-90"
-              viewBox="0 0 1 1"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="0.8"
-            >
-              <rect
-                width="0.5"
-                height="1"
-                rx="0.03"
-                stroke-width="0.8"
-                vector-effect="non-scaling-stroke"
-              />
-              <rect
-                x="0.5"
-                width="0.5"
-                height="1"
-                rx="0.03"
-                stroke-width="0.8"
-                vector-effect="non-scaling-stroke"
-              />
-            </svg>
-            {m.layout_panelTabBar_splitDown_label()}
-          </span>
-          <span class="text-subtle text-xs">⇧⌘\</span>
         </button>
         <div class="border-t border-border"></div>
         {#if contextMenuTab.source === 'tab'}

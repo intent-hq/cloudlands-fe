@@ -44,7 +44,11 @@ function hasValidGeometry(node: unknown): boolean {
   return candidate.children.every(hasValidGeometry);
 }
 
-function cleanPanel(panel: PanelState, workspaceId: string): PanelState | null {
+function cleanPanel(
+  panel: PanelState,
+  workspaceId: string,
+  dedupeEquivalent: boolean,
+): PanelState | null {
   const validTabs = panel.tabs.filter(
     (tab): tab is PanelTab =>
       !!tab &&
@@ -55,7 +59,12 @@ function cleanPanel(panel: PanelState, workspaceId: string): PanelState | null {
   if (panel.tabs.length > 0 && validTabs.length === 0) return null;
   const tabs: PanelTab[] = [];
   for (const tab of validTabs) {
-    if (tabs.some((existing) => existing.id === tab.id || panelTabsAreEquivalent(existing, tab))) {
+    if (
+      tabs.some(
+        (existing) =>
+          existing.id === tab.id || (dedupeEquivalent && panelTabsAreEquivalent(existing, tab)),
+      )
+    ) {
       continue;
     }
     tabs.push(tab);
@@ -75,6 +84,17 @@ function fixedColumnRoot(panelIds: string[]): PanelLayoutNode {
     children: panelIds.map((panelId) => ({ type: 'panel', panelId })),
     sizes: panelIds.map(() => 100 / panelIds.length),
   };
+}
+
+function createPristinePanelId(usedIds: Set<string>): string {
+  let suffix = 1;
+  let panelId = 'panel-migrated-empty';
+  while (usedIds.has(panelId)) {
+    suffix += 1;
+    panelId = `panel-migrated-empty-${suffix}`;
+  }
+  usedIds.add(panelId);
+  return panelId;
 }
 
 function isCurrentFixedLayout(
@@ -111,26 +131,35 @@ export function migratePanelLayoutForWorkspace(
   workspaceId: string,
   layout: WorkspacePanelLayout,
 ): WorkspacePanelLayout {
+  const dedupeEquivalent = layout.version !== PANEL_LAYOUT_PERSISTENCE_VERSION;
   const persistedColumnCount =
     layout.version === PANEL_LAYOUT_PERSISTENCE_VERSION && isPanelColumnCount(layout.columnCount)
       ? layout.columnCount
       : null;
-  const rootedIds: string[] = [];
-  collectLeafIds(layout.root, rootedIds);
-  const orderedIds = [...new Set([...rootedIds, ...Object.keys(layout.panels)])];
+  const collectedRootIds: string[] = [];
+  collectLeafIds(layout.root, collectedRootIds);
+  const uniqueRootIds = [...new Set(collectedRootIds)];
+  const rootedIdSet = new Set(uniqueRootIds);
+  const orderedIds = [
+    ...uniqueRootIds,
+    ...Object.keys(layout.panels).filter((id) => !rootedIdSet.has(id)),
+  ];
   const cleanedPanels = new Map<string, PanelState>();
   for (const panelId of orderedIds) {
     const panel = layout.panels[panelId];
     if (!panel || panel.id !== panelId || !Array.isArray(panel.tabs)) continue;
-    const cleaned = cleanPanel(panel, workspaceId);
+    const cleaned = cleanPanel(panel, workspaceId, dedupeEquivalent);
     if (cleaned) cleanedPanels.set(panelId, cleaned);
   }
 
-  const availableIds = orderedIds.filter((panelId) => cleanedPanels.has(panelId));
-  if (isCurrentFixedLayout(layout, availableIds)) {
+  const rootedIds = uniqueRootIds.filter((panelId) => cleanedPanels.has(panelId));
+  const orphanIds = Object.keys(layout.panels).filter(
+    (panelId) => !rootedIdSet.has(panelId) && cleanedPanels.has(panelId),
+  );
+  if (orphanIds.length === 0 && isCurrentFixedLayout(layout, rootedIds)) {
     const width = migratePanelCanvasWidth(layout.canvasWidth, layout.canvasWidthSource);
     const panels = Object.fromEntries(
-      availableIds.flatMap((id) => {
+      rootedIds.flatMap((id) => {
         const panel = cleanedPanels.get(id);
         return panel ? [[id, panel]] : [];
       }),
@@ -142,64 +171,54 @@ export function migratePanelLayoutForWorkspace(
       focusedPanelId:
         layout.focusedPanelId && cleanedPanels.has(layout.focusedPanelId)
           ? layout.focusedPanelId
-          : availableIds[0],
+          : rootedIds[0],
       columnCount: layout.columnCount,
       ...width,
       ...sharedFields(layout),
     };
   }
 
-  if (availableIds.length === 0) {
-    const panelId = 'panel-empty';
-    return {
-      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
-      root: { type: 'panel', panelId },
-      panels: { [panelId]: { id: panelId, tabs: [], activeTabId: null } },
-      focusedPanelId: panelId,
-      columnCount: persistedColumnCount ?? 1,
-      canvasWidth: null,
-      canvasWidthSource: null,
-      ...sharedFields(layout),
-    };
+  const targetCount =
+    persistedColumnCount ??
+    (Math.min(
+      LEGACY_VISIBLE_COLUMN_LIMIT,
+      Math.max(1, rootedIds.length || orphanIds.length),
+    ) as PanelColumnCount);
+  const visibleIds = rootedIds.slice(0, targetCount);
+  const visibleOrphanCount = Math.min(targetCount - visibleIds.length, orphanIds.length);
+  visibleIds.push(...orphanIds.slice(0, visibleOrphanCount));
+  const usedIds = new Set(Object.keys(layout.panels));
+  while (visibleIds.length < targetCount) {
+    const panelId = createPristinePanelId(usedIds);
+    visibleIds.push(panelId);
+    cleanedPanels.set(panelId, {
+      id: panelId,
+      tabs: [],
+      activeTabId: null,
+      pristine: true,
+    });
   }
-
-  const visibleColumnCount = Math.min(
-    LEGACY_VISIBLE_COLUMN_LIMIT,
-    availableIds.length,
-  ) as PanelColumnCount;
-  const visibleIds = availableIds.slice(0, visibleColumnCount);
   const visiblePanels = Object.fromEntries(
     visibleIds.flatMap((id) => {
       const panel = cleanedPanels.get(id);
       return panel ? [[id, panel]] : [];
     }),
   );
-  const rightmostId = visibleIds.at(-1);
-  if (!rightmostId) {
-    const panelId = 'panel-empty';
-    return {
-      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
-      root: { type: 'panel', panelId },
-      panels: { [panelId]: { id: panelId, tabs: [], activeTabId: null } },
-      focusedPanelId: panelId,
-      columnCount: persistedColumnCount ?? 1,
-      canvasWidth: null,
-      canvasWidthSource: null,
-      ...sharedFields(layout),
-    };
-  }
+  const rightmostId = visibleIds[visibleIds.length - 1];
   const rightmost = visiblePanels[rightmostId];
   const tabs = [...rightmost.tabs];
-  const hasOverflow = availableIds.length > visibleColumnCount;
+  const overflowIds = [...rootedIds.slice(targetCount), ...orphanIds.slice(visibleOrphanCount)];
+  const hasOverflow = overflowIds.length > 0;
   const visibleTabs = Object.values(visiblePanels).flatMap((panel) => panel.tabs);
   let overflowActiveTabId: string | null = null;
-  for (const panelId of availableIds.slice(visibleColumnCount)) {
+  for (const panelId of overflowIds) {
     const panel = cleanedPanels.get(panelId);
     if (!panel) continue;
     for (const tab of panel.tabs) {
       if (
         visibleTabs.some(
-          (existing) => existing.id === tab.id || panelTabsAreEquivalent(existing, tab),
+          (existing) =>
+            existing.id === tab.id || (dedupeEquivalent && panelTabsAreEquivalent(existing, tab)),
         )
       ) {
         continue;
@@ -228,7 +247,7 @@ export function migratePanelLayoutForWorkspace(
     focusedPanelId: visibleIds.includes(layout.focusedPanelId ?? '')
       ? layout.focusedPanelId
       : rightmostId,
-    columnCount: persistedColumnCount ?? visibleColumnCount,
+    columnCount: visibleIds.length as PanelColumnCount,
     ...width,
     ...sharedFields(layout),
   };

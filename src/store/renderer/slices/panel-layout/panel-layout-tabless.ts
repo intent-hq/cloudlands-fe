@@ -1,4 +1,9 @@
-import type { PanelLayoutNode, PanelState, WorkspacePanelLayout } from './panel-layout-types';
+import type {
+  PanelLayoutNode,
+  PanelState,
+  WorkspacePanelLayout,
+  WorkspacePanelLayoutState,
+} from './panel-layout-types';
 import {
   DEFAULT_PANEL_WIDTH,
   getAutomaticPanelCanvasWidth,
@@ -219,6 +224,81 @@ function createHorizontalRoot(panelIds: string[]): PanelLayoutNode {
     children: panelIds.map((panelId) => ({ type: 'panel' as const, panelId })),
     sizes: panelIds.map(() => size),
   };
+}
+
+function getDirectFixedColumnIds(root: PanelLayoutNode): string[] | null {
+  if (root.type === 'panel') return [root.panelId];
+  if (
+    root.direction !== 'horizontal' ||
+    root.children.length < 2 ||
+    root.children.length > 4 ||
+    root.sizes.length !== root.children.length ||
+    root.sizes.some((size) => !Number.isFinite(size) || size <= 0) ||
+    root.children.some((child) => child.type !== 'panel')
+  ) {
+    return null;
+  }
+  return root.children.map((child) => (child.type === 'panel' ? child.panelId : ''));
+}
+
+export function getFixedColumnPanelIds(
+  layout: Pick<WorkspacePanelLayoutState, 'root' | 'panels' | 'columnCount'>,
+): string[] | null {
+  const panelIds = getDirectFixedColumnIds(layout.root);
+  if (
+    !panelIds ||
+    panelIds.length !== layout.columnCount ||
+    new Set(panelIds).size !== panelIds.length
+  ) {
+    return null;
+  }
+  const panelMapIds = Object.keys(layout.panels);
+  if (
+    panelMapIds.length !== panelIds.length ||
+    panelIds.some((panelId) => layout.panels[panelId]?.id !== panelId)
+  ) {
+    return null;
+  }
+  return panelIds;
+}
+
+export function insertFixedColumnInLayout(
+  root: PanelLayoutNode,
+  panelId: string,
+  targetPanelId: string,
+  position: 'before' | 'after',
+  existingCanvasWidth: number | null | undefined,
+  requestedPanelWidth: number = DEFAULT_PANEL_WIDTH,
+): PanelLayoutNode | null {
+  const panelIds = getDirectFixedColumnIds(root);
+  if (!panelIds || panelIds.length >= 4 || panelIds.includes(panelId)) return null;
+  const targetIndex = panelIds.indexOf(targetPanelId);
+  if (targetIndex < 0) return null;
+
+  const safeCanvasWidth =
+    typeof existingCanvasWidth === 'number' &&
+    Number.isFinite(existingCanvasWidth) &&
+    existingCanvasWidth > 0
+      ? existingCanvasWidth
+      : getAutomaticPanelCanvasWidth(panelIds.length, 'content');
+  const panelWidth =
+    Number.isFinite(requestedPanelWidth) && requestedPanelWidth > 0
+      ? requestedPanelWidth
+      : DEFAULT_PANEL_WIDTH;
+  const existingGapWidth = PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, panelIds.length - 1);
+  const existingPanelWidth = Math.max(1, safeCanvasWidth - existingGapWidth);
+  const newColumnSize = (panelWidth / (existingPanelWidth + panelWidth)) * 100;
+  const insertIndex = targetIndex + (position === 'after' ? 1 : 0);
+  const children = panelIds.map((existingPanelId) => ({
+    type: 'panel' as const,
+    panelId: existingPanelId,
+  }));
+  children.splice(insertIndex, 0, { type: 'panel', panelId });
+  const previousSizes =
+    root.type === 'split' ? normalizeSizes(root.sizes, root.children.length) : [100];
+  const sizes = previousSizes.map((size) => size * (1 - newColumnSize / 100));
+  sizes.splice(insertIndex, 0, newColumnSize);
+  return { type: 'split', direction: 'horizontal', children, sizes };
 }
 
 export function insertHorizontalPanelInLayout(

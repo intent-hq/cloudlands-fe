@@ -763,6 +763,21 @@ describe('global workspace tab navigation', () => {
       ).toHaveLength(1);
     });
 
+    it('reports the unchanged focused panel when the rightmost panel is protected', () => {
+      const protectedPanel = makePanel('p2', ['protected']);
+      protectedPanel.tabs[0].closable = false;
+      const store = makeStore(
+        'ws-2',
+        layoutWith([makePanel('p1', ['focused']), protectedPanel], 'p1'),
+      );
+
+      expect(openNewPanel(store, '/workspace/ws-2')).toBe('p1');
+      const workspace = store.state.panelLayout.byWorkspaceId['ws-2'];
+      expect(workspace.focusedPanelId).toBe('p1');
+      expect(workspace.panels.p2.tabs.map((tab) => tab.id)).toEqual(['protected']);
+      expect(workspace.layoutHistory).toEqual([]);
+    });
+
     it('returns null outside workspace routes', () => {
       const store = makeStore('ws-2', layoutWith([makePanel('p1', ['t1'])], 'p1'));
 

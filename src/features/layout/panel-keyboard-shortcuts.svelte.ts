@@ -13,7 +13,6 @@
  * - h/j/k/l: Navigate panels (vim-style)
  * - H/J/K/L: Resize panels
  * - %: Split right (tmux)
- * - ": Split down (tmux)
  * - z: Toggle zoom/maximize
  * - x: Close panel
  * - o: Cycle to next panel
@@ -48,7 +47,6 @@ export type LeaderAction =
   | 'navigate-next'
   | 'navigate-prev'
   | 'split-right'
-  | 'split-down'
   | 'resize-left'
   | 'resize-right'
   | 'resize-up'
@@ -147,14 +145,6 @@ export function createPanelKeyboardShortcuts(
         const focusedId = selectFocusedPanelId.select(appStore.state, layoutManager.workspaceId);
         if (focusedId) {
           layoutManager.splitPanel(focusedId, 'horizontal');
-        }
-        break;
-      }
-
-      case 'split-down': {
-        const focusedId = selectFocusedPanelId.select(appStore.state, layoutManager.workspaceId);
-        if (focusedId) {
-          layoutManager.splitPanel(focusedId, 'vertical');
         }
         break;
       }
@@ -400,11 +390,6 @@ export function createPanelKeyboardShortcuts(
       case '5': // Shift+5 = % on US keyboard
         if (isShift) return 'split-right';
         break;
-      case '"':
-      case "'":
-        if (isShift) return 'split-down';
-        break;
-
       // Zoom
       case 'z':
         return 'zoom-toggle';

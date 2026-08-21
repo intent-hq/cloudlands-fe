@@ -86,10 +86,7 @@ for (const [index, panelType] of panelTypes.entries()) {
     await expect(component).toHaveAttribute('data-move-right-count', '1');
 
     await trigger.click();
-    await expect(page.getByRole('menuitem', { name: /Split down/i })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
+    await expect(page.getByRole('menuitem', { name: /Split down/i })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(menu).toBeHidden();
     await expect(trigger).toBeFocused();

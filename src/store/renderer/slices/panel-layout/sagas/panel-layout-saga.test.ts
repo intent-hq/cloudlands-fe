@@ -680,24 +680,22 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
-  it('heals and persists a restored two-column count with a one-panel tree', async () => {
+  it('restores a migrated two-column layout without a second reconciliation', async () => {
     const mismatched: WorkspacePanelLayout = { ...layout, columnCount: 2 };
     const run = startRestoreSaga(mismatched, []);
     await settle();
 
     const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
     const panelIds = workspace.root.type === 'split' ? workspace.root.children : [];
-    const repair = run.dispatch.mock.calls
-      .map(([action]) => action)
-      .find((action) => action.type === reconcilePanelColumnCount.type);
     const initialized = run.dispatch.mock.calls
       .map(([action]) => action)
       .find((action) => action.type === initializeLayout.type);
 
     expect(initialized?.payload.layout.columnCount).toBe(2);
-    expect(repair).toMatchObject({
-      payload: { wsId: WS_1, count: 2, recordHistory: false },
-    });
+    expect(initialized?.payload.layout.root).toEqual(workspace.root);
+    expect(
+      run.dispatch.mock.calls.some(([action]) => action.type === reconcilePanelColumnCount.type),
+    ).toBe(false);
     expect(panelIds).toHaveLength(2);
     expect(panelIds[0]).toEqual({ type: 'panel', panelId: 'panel-1' });
     expect(workspace.panels['panel-1']).toMatchObject({
@@ -714,17 +712,9 @@ describe('panelLayoutSaga', () => {
     });
     expect(workspace.layoutHistory).toEqual([]);
     expect(mocks.saveHistory).not.toHaveBeenCalled();
-    expect(mocks.setJSON.mock.calls.at(-1)).toEqual([
-      STORAGE_KEY_1,
-      expect.objectContaining({
-        root: workspace.root,
-        panels: workspace.panels,
-        focusedPanelId: 'panel-1',
-        columnCount: 2,
-      }),
-    ]);
+    expect(mocks.setJSON).not.toHaveBeenCalled();
 
-    const healed = mocks.setJSON.mock.calls.at(-1)?.[1] as WorkspacePanelLayout;
+    const healed = initialized?.payload.layout as WorkspacePanelLayout;
     run.send(panelLayoutScopeUnmounted(WS_1));
     await settle();
     mocks.getJSON.mockReturnValue(healed);
@@ -738,11 +728,7 @@ describe('panelLayoutSaga', () => {
     expect(
       run.dispatch.mock.calls.some(([action]) => action.type === reconcilePanelColumnCount.type),
     ).toBe(false);
-    expect(mocks.setJSON.mock.calls.at(-1)?.[1]).toMatchObject({
-      root: repeated.root,
-      panels: repeated.panels,
-      columnCount: 2,
-    });
+    expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, healed]]);
     await cancelSaga(run.task);
   });
 
@@ -1918,10 +1904,8 @@ describe('panelLayoutSaga', () => {
           .payload.layout.columnCount,
       ).toBe(2);
       expect(
-        run.dispatch.mock.calls.find(
-          ([action]) => action.type === reconcilePanelColumnCount.type,
-        )?.[0],
-      ).toMatchObject({ payload: { wsId: WS_1, count: 2, recordHistory: false } });
+        run.dispatch.mock.calls.some(([action]) => action.type === reconcilePanelColumnCount.type),
+      ).toBe(false);
       expect(children).toHaveLength(2);
       expect(children[0]).toEqual({ type: 'panel', panelId: 'panel-1' });
       const rightPanelId = children[1]?.type === 'panel' ? children[1].panelId : '';
@@ -1935,15 +1919,7 @@ describe('panelLayoutSaga', () => {
       expect(workspace.focusedPanelId).toBe('panel-1');
       expect(workspace.layoutHistory).toEqual([]);
       expect(mocks.saveHistory).not.toHaveBeenCalled();
-      expect(mocks.setJSON.mock.calls.at(-1)).toEqual([
-        REMOTE_STORAGE_KEY_1,
-        expect.objectContaining({
-          root: workspace.root,
-          panels: workspace.panels,
-          focusedPanelId: 'panel-1',
-          columnCount: 2,
-        }),
-      ]);
+      expect(mocks.setJSON).not.toHaveBeenCalled();
       await cancelSaga(run.task);
     });
 

@@ -657,7 +657,6 @@
         {onOpenBrowser}
         {contained}
         onSplitHorizontal={() => onSplitPanel?.(node.panelId, 'horizontal')}
-        onSplitVertical={() => onSplitPanel?.(node.panelId, 'vertical')}
       />
     {/if}
   </div>

@@ -42,7 +42,7 @@
   import { endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { markPanelTouched } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
-  export type DropZone = 'top' | 'bottom' | 'left' | 'right' | 'center';
+  export type DropZone = 'left' | 'right' | 'center';
 
   interface Props {
     panel: PanelState;
@@ -88,8 +88,6 @@
     emptyState?: Snippet;
     /** Split panel horizontally (side by side) */
     onSplitHorizontal?: () => void;
-    /** Split panel vertically (top and bottom) */
-    onSplitVertical?: () => void;
   }
 
   let {
@@ -125,7 +123,6 @@
     onOpenBrowser,
     emptyState,
     onSplitHorizontal,
-    onSplitVertical,
   }: Props = $props();
 
   // Create header context for content components to register their actions
@@ -514,7 +511,6 @@
         {onCreateTerminal}
         {onOpenBrowser}
         {onSplitHorizontal}
-        {onSplitVertical}
       />
     </div>
 

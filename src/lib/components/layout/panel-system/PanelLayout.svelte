@@ -249,6 +249,9 @@
   $effect(() => {
     panelDefaultWidthViewport.set(canvasSizing === 'viewport' ? panelViewportWidth : 0);
   });
+  const automaticPanelCanvasWidth = $derived(
+    getAutomaticPanelCanvasWidth($panelColumnDefaultWidths$, canvasSizing, panelViewportWidth),
+  );
   let panelRootReferenceSize = $state(0);
   let panelOuterResizeDelta = $state(0);
   let panelOuterResizeCommittedDelta = $state(0);
@@ -316,8 +319,7 @@
         $panelCanvasWidth$ === panelOuterResizeCommittedWidth) ||
         ($panelCanvasWidthSource$ === null &&
           $panelCanvasWidth$ === null &&
-          panelOuterResizeCommittedWidth ===
-            getAutomaticPanelCanvasWidth($panelColumnDefaultWidths$, 'content')))
+          panelOuterResizeCommittedWidth === automaticPanelCanvasWidth))
     ) {
       panelOuterResizeCommittedWidth = null;
       panelOuterResizeCommittedDelta = 0;
@@ -362,11 +364,6 @@
     if (previousWidth === nextWidth) return;
     const gutterWidth =
       startReferenceSize !== null ? Math.max(0, previousWidth - startReferenceSize) : 0;
-    const automaticWidth = getAutomaticPanelCanvasWidth(
-      $panelColumnDefaultWidths$,
-      canvasSizing,
-      panelViewportWidth,
-    );
     panelOuterResizeCommittedWidth = nextWidth;
     panelOuterResizeCommittedDelta = nextWidth - previousWidth;
     appStore.dispatch(
@@ -375,7 +372,7 @@
         Math.max(1, previousWidth - gutterWidth),
         Math.max(1, nextWidth - gutterWidth),
         nextWidth,
-        nextWidth === automaticWidth,
+        nextWidth === automaticPanelCanvasWidth,
       ),
     );
     panelOuterResizeDelta = 0;
@@ -832,7 +829,7 @@
     targetPanelId: string,
     tabId: string,
     fromPanelId: string,
-    zone: 'top' | 'bottom' | 'left' | 'right' | 'center',
+    zone: 'left' | 'right' | 'center',
   ) {
     if (zone === 'center') {
       // Move to panel, not split
@@ -858,6 +855,7 @@
     position: 'before' | 'after',
     direction: 'horizontal' | 'vertical',
   ) {
+    if (direction !== 'horizontal') return;
     layoutManager.moveTabToSplitLevel(tabId, fromPanelId, nodePath, position, direction);
   }
 

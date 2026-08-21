@@ -28,6 +28,11 @@ afterEach(() => {
 });
 
 describe('editorial panel resize handles', () => {
+  const tabDataTransfer = {
+    types: ['application/x-panel-tab'],
+    getData: () => JSON.stringify({ tabId: 'tab', panelId: 'source' }),
+  };
+
   it('affirms conditional resize-handle visibility in every required visual state', async () => {
     const observed = await exerciseVisualStates(() => {
       const view = render(PanelSplitHandle, { props: { direction: 'horizontal' } });
@@ -116,6 +121,37 @@ describe('editorial panel resize handles', () => {
     expect(onResize).toHaveBeenCalledWith(29);
     await fireEvent.mouseUp(window);
     expect(onResize).toHaveBeenCalledOnce();
+  });
+
+  it('routes handle drops only to fixed horizontal column insertion', async () => {
+    const onTabDropToHandle = vi.fn();
+    render(PanelSplitHandle, {
+      props: { direction: 'horizontal', nodePath: [], onTabDropToHandle },
+    });
+    const handle = screen.getByRole('button', { name: 'Resize panel' });
+    handle.getBoundingClientRect = () => ({ left: 0, top: 0, width: 16, height: 400 }) as DOMRect;
+
+    await fireEvent.dragOver(handle, { clientX: 1, clientY: 1, dataTransfer: tabDataTransfer });
+    await fireEvent.drop(handle, { clientX: 1, clientY: 1, dataTransfer: tabDataTransfer });
+
+    expect(onTabDropToHandle).toHaveBeenCalledWith('tab', 'source', [], 'after', 'horizontal');
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        value: expect.objectContaining({ zoneType: 'column-right' }),
+      }),
+    );
+  });
+
+  it('does not offer tab drops on a stale vertical split handle', async () => {
+    const onTabDropToHandle = vi.fn();
+    render(PanelSplitHandle, { props: { direction: 'vertical', onTabDropToHandle } });
+    const handle = screen.getByRole('button', { name: 'Resize panel' });
+    handle.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 16 }) as DOMRect;
+
+    await fireEvent.dragOver(handle, { clientX: 1, clientY: 1, dataTransfer: tabDataTransfer });
+    await fireEvent.drop(handle, { clientX: 1, clientY: 1, dataTransfer: tabDataTransfer });
+
+    expect(onTabDropToHandle).not.toHaveBeenCalled();
   });
 
   it('reports vertical drag deltas from a horizontal resize target', async () => {

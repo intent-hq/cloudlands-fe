@@ -412,6 +412,41 @@ describe('panel and tab drag MIME routing', () => {
     expect(onTabMoveToPanel).toHaveBeenCalledWith('source-tab', 'source-panel', 0);
   });
 
+  it('offers only left, center, and right tab drop zones at every vertical position', async () => {
+    const onTabDrop = vi.fn();
+    const onTabMoveToPanel = vi.fn();
+    const { container } = render(Panel, {
+      props: {
+        panel: panel(),
+        workspaceId: 'workspace-1',
+        onTabDrop,
+        onTabMoveToPanel,
+      },
+    });
+    const targetPanel = container.querySelector<HTMLElement>('[data-panel-id="target-panel"]')!;
+    targetPanel.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 400, height: 400 }) as DOMRect;
+    const dataTransfer = new TestDataTransfer();
+    dataTransfer.setData(
+      TAB_DRAG_MIME,
+      JSON.stringify({ tabId: 'source-tab', panelId: 'source-panel' }),
+    );
+
+    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 10, 50));
+    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 10, 50));
+    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 200, 380));
+    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 200, 380));
+    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 390, 50));
+    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 390, 50));
+
+    expect(onTabDrop.mock.calls).toEqual([
+      ['source-tab', 'source-panel', 'left'],
+      ['source-tab', 'source-panel', 'right'],
+    ]);
+    expect(onTabMoveToPanel).toHaveBeenCalledOnce();
+    expect(onTabMoveToPanel).toHaveBeenCalledWith('source-tab', 'source-panel');
+  });
+
   it('does not consume drops with unrelated MIME', async () => {
     const onTabReorder = vi.fn();
     const onTabMoveToPanel = vi.fn();
@@ -456,7 +491,7 @@ describe('panel context menu routing', () => {
     const actions = document.querySelector<HTMLElement>('[data-panel-actions-section="actions"]');
     expect(display?.textContent).toContain('Zoom Panel');
     expect(actions?.textContent).toContain('Split right');
-    expect(actions?.textContent).toContain('Split down');
+    expect(actions?.textContent).not.toContain('Split down');
     expect(document.querySelector('[role="menu"]')?.textContent).not.toContain('Close panel');
   });
 

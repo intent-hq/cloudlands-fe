@@ -173,6 +173,183 @@ describe('migratePanelLayoutForWorkspace', () => {
     expect(twice.panels.right.tabs.map((tab) => tab.id)).toEqual(['two', 'three']);
   });
 
+  it('preserves equivalent current-version tabs with distinct IDs and keeps the active duplicate', () => {
+    const duplicatePanel = panel('only', ['original', 'duplicate']);
+    duplicatePanel.tabs[1] = {
+      ...duplicatePanel.tabs[0],
+      id: 'duplicate',
+      title: 'Duplicate note',
+    };
+    duplicatePanel.activeTabId = 'duplicate';
+    const current: WorkspacePanelLayout = {
+      ...layout(horizontal(['only']), { only: duplicatePanel }),
+      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
+      columnCount: 1,
+    };
+
+    const result = migratePanelLayoutForWorkspace(WS, current);
+
+    expect(result.panels.only.tabs.map((tab) => tab.id)).toEqual(['original', 'duplicate']);
+    expect(result.panels.only.activeTabId).toBe('duplicate');
+  });
+
+  it('preserves equivalent current-version tabs while repairing malformed geometry', () => {
+    const duplicatePanel = panel('right', ['original', 'duplicate']);
+    duplicatePanel.tabs[1] = { ...duplicatePanel.tabs[0], id: 'duplicate' };
+    const current: WorkspacePanelLayout = {
+      ...layout(horizontal(['left', 'right'], [95, 5]), {
+        left: panel('left'),
+        right: duplicatePanel,
+      }),
+      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
+      columnCount: 2,
+    };
+
+    const result = migratePanelLayoutForWorkspace(WS, current);
+
+    expect(result.panels.right.tabs.map((tab) => tab.id)).toEqual(['original', 'duplicate']);
+    expect(result.root).toMatchObject({ sizes: [50, 50] });
+  });
+
+  it('always removes duplicate tab IDs', () => {
+    for (const version of [undefined, PANEL_LAYOUT_PERSISTENCE_VERSION]) {
+      const duplicatePanel = panel('only', ['same', 'same']);
+      const stored: WorkspacePanelLayout = {
+        ...layout(horizontal(['only']), { only: duplicatePanel }),
+        ...(version === undefined ? {} : { version, columnCount: 1 as const }),
+      };
+
+      const result = migratePanelLayoutForWorkspace(WS, stored);
+
+      expect(result.panels.only.tabs.map((tab) => tab.id)).toEqual(['same']);
+    }
+  });
+
+  it('continues to remove equivalent legacy tabs with distinct IDs', () => {
+    const duplicatePanel = panel('only', ['original', 'duplicate']);
+    duplicatePanel.tabs[1] = { ...duplicatePanel.tabs[0], id: 'duplicate' };
+
+    const result = migratePanelLayoutForWorkspace(
+      WS,
+      layout(horizontal(['only']), { only: duplicatePanel }),
+    );
+
+    expect(result.panels.only.tabs.map((tab) => tab.id)).toEqual(['original']);
+  });
+
+  it('preserves equivalent current-version tabs when repairing overflow', () => {
+    const current: WorkspacePanelLayout = {
+      ...layout(horizontal(['p1', 'p2', 'p3', 'p4']), {
+        p1: panel('p1', ['one']),
+        p2: panel('p2', ['two']),
+        p3: panel('p3', ['three']),
+        p4: panel('p4', ['two-copy']),
+      }),
+      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
+      columnCount: 3,
+      focusedPanelId: 'p4',
+    };
+    current.panels.p4.tabs[0] = { ...current.panels.p2.tabs[0], id: 'two-copy' };
+
+    const result = migratePanelLayoutForWorkspace(WS, current);
+
+    expect(result.panels.p3.tabs.map((tab) => tab.id)).toEqual(['three', 'two-copy']);
+    expect(result.panels.p3.activeTabId).toBe('two-copy');
+  });
+
+  it('merges an orphan into the rightmost current column without increasing the saved count', () => {
+    const current: WorkspacePanelLayout = {
+      ...layout(horizontal(['left', 'right']), {
+        left: panel('left', ['one']),
+        right: panel('right', ['two']),
+        orphan: panel('orphan', ['recovered']),
+      }),
+      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
+      columnCount: 2,
+      focusedPanelId: 'left',
+    };
+
+    const result = migratePanelLayoutForWorkspace(WS, current);
+
+    expect(order(result)).toEqual(['left', 'right']);
+    expect(result.columnCount).toBe(2);
+    expect(result.panels.right.tabs.map((tab) => tab.id)).toEqual(['two', 'recovered']);
+    expect(Object.keys(result.panels)).toEqual(['left', 'right']);
+    expect(result.focusedPanelId).toBe('left');
+  });
+
+  it('remaps focused orphan content and its active tab to the rightmost current column', () => {
+    const orphan = panel('orphan', ['recovered-one', 'recovered-two']);
+    orphan.activeTabId = 'recovered-two';
+    const current: WorkspacePanelLayout = {
+      ...layout(horizontal(['left', 'right']), {
+        left: panel('left', ['one']),
+        right: panel('right', ['two']),
+        orphan,
+      }),
+      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
+      columnCount: 2,
+      focusedPanelId: 'orphan',
+    };
+
+    const result = migratePanelLayoutForWorkspace(WS, current);
+
+    expect(result.focusedPanelId).toBe('right');
+    expect(result.panels.right.activeTabId).toBe('recovered-two');
+    expect(result.panels.right.tabs.map((tab) => tab.id)).toEqual([
+      'two',
+      'recovered-one',
+      'recovered-two',
+    ]);
+  });
+
+  it('fills missing current columns with pristine structural panels', () => {
+    const current: WorkspacePanelLayout = {
+      ...layout(horizontal(['left', 'right']), {
+        left: panel('left', ['one']),
+        right: panel('right', ['two']),
+      }),
+      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
+      columnCount: 3,
+      focusedPanelId: 'left',
+    };
+
+    const result = migratePanelLayoutForWorkspace(WS, current);
+    const panelIds = order(result);
+
+    expect(panelIds).toHaveLength(3);
+    expect(result.columnCount).toBe(3);
+    expect(panelIds.slice(0, 2)).toEqual(['left', 'right']);
+    expect(result.panels[panelIds[2]]).toEqual({
+      id: panelIds[2],
+      tabs: [],
+      activeTabId: null,
+      pristine: true,
+    });
+    expect(Object.keys(result.panels)).toEqual(panelIds);
+  });
+
+  it('preserves four current columns while repairing invalid geometry', () => {
+    const ids = ['p1', 'p2', 'p3', 'p4'];
+    const current: WorkspacePanelLayout = {
+      ...layout(
+        horizontal(ids, [25, 25, 5, 45]),
+        Object.fromEntries(ids.map((id) => [id, panel(id)])),
+      ),
+      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
+      columnCount: 4,
+      focusedPanelId: 'p4',
+    };
+
+    const result = migratePanelLayoutForWorkspace(WS, current);
+
+    expect(order(result)).toEqual(ids);
+    expect(result.columnCount).toBe(4);
+    expect(result.focusedPanelId).toBe('p4');
+    expect(result.root).toMatchObject({ sizes: [25, 25, 25, 25] });
+    expect(Object.keys(result.panels)).toEqual(ids);
+  });
+
   it('repairs current layouts with a collapsed saved column', () => {
     const current: WorkspacePanelLayout = {
       ...layout(horizontal(['left', 'middle', 'right'], [25, 5, 70]), {
@@ -199,7 +376,7 @@ describe('migratePanelLayoutForWorkspace', () => {
     expect(migratePanelLayoutForWorkspace(WS, result)).toEqual(result);
   });
 
-  it('preserves a current saved column count when its tree has fewer columns', () => {
+  it('aligns a current saved column count when its tree has fewer columns', () => {
     const current: WorkspacePanelLayout = {
       ...layout(horizontal(['left']), { left: panel('left', ['one']) }),
       version: PANEL_LAYOUT_PERSISTENCE_VERSION,
@@ -210,9 +387,11 @@ describe('migratePanelLayoutForWorkspace', () => {
     const result = migratePanelLayoutForWorkspace(WS, current);
 
     expect(result.columnCount).toBe(2);
-    expect(order(result)).toEqual(['left']);
+    expect(order(result)).toHaveLength(2);
+    expect(order(result)[0]).toBe('left');
     expect(result.panels.left.tabs.map((tab) => tab.id)).toEqual(['one']);
     expect(result.focusedPanelId).toBe('left');
+    expect(Object.keys(result.panels)).toEqual(order(result));
   });
 
   it('continues to derive legacy column counts from the migrated structure', () => {

@@ -426,9 +426,8 @@ describe('mounted panel header actions menu', () => {
     expect(onSplitHorizontal).toHaveBeenCalledOnce();
 
     await fireEvent.click(trigger);
-    const disabled = await screen.findByRole('menuitem', { name: /Split down/i });
-    expect(disabled.getAttribute('aria-disabled')).toBe('true');
-    await fireEvent.click(disabled);
+    expect(screen.queryByRole('menuitem', { name: /Split down/i })).toBeNull();
+    await fireEvent.keyDown(document, { key: 'Escape' });
     expect(onSplitHorizontal).toHaveBeenCalledOnce();
     expect(onZoomToggle).toHaveBeenCalledOnce();
     await fireEvent.click(

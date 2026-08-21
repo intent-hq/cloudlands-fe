@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   appendHorizontalColumn,
   countHorizontalPanelColumns,
+  getFixedColumnPanelIds,
   getPanelOrder,
+  insertFixedColumnInLayout,
   insertHorizontalPanelInLayout,
   insertHorizontalPanel,
   normalizeTablessPanelLayout,
@@ -16,6 +18,64 @@ import {
 } from './panel-layout-tabless';
 
 describe('tabless panel layout', () => {
+  it('validates synchronized direct fixed-column layouts', () => {
+    const layout = {
+      root: {
+        type: 'split' as const,
+        direction: 'horizontal' as const,
+        children: [
+          { type: 'panel' as const, panelId: 'p1' },
+          { type: 'panel' as const, panelId: 'p2' },
+        ],
+        sizes: [50, 50],
+      },
+      panels: {
+        p1: { id: 'p1', tabs: [], activeTabId: null },
+        p2: { id: 'p2', tabs: [], activeTabId: null },
+      },
+      columnCount: 2 as const,
+    };
+
+    expect(getFixedColumnPanelIds(layout)).toEqual(['p1', 'p2']);
+    expect(getFixedColumnPanelIds({ ...layout, columnCount: 1 })).toBeNull();
+    expect(
+      getFixedColumnPanelIds({
+        ...layout,
+        panels: { ...layout.panels, orphan: { id: 'orphan', tabs: [], activeTabId: null } },
+      }),
+    ).toBeNull();
+    expect(
+      getFixedColumnPanelIds({
+        ...layout,
+        root: { ...layout.root, direction: 'vertical' },
+      }),
+    ).toBeNull();
+  });
+
+  it('inserts only direct fixed columns before or after a live target', () => {
+    const root = {
+      type: 'split' as const,
+      direction: 'horizontal' as const,
+      children: [
+        { type: 'panel' as const, panelId: 'p1' },
+        { type: 'panel' as const, panelId: 'p2' },
+      ],
+      sizes: [60, 40],
+    };
+
+    expect(getPanelOrder(insertFixedColumnInLayout(root, 'left', 'p2', 'before', 1008)!)).toEqual([
+      'p1',
+      'left',
+      'p2',
+    ]);
+    expect(getPanelOrder(insertFixedColumnInLayout(root, 'right', 'p2', 'after', 1008)!)).toEqual([
+      'p1',
+      'p2',
+      'right',
+    ]);
+    expect(insertFixedColumnInLayout(root, 'new', 'stale', 'after', 1008)).toBeNull();
+  });
+
   it('removes foreign workspace tabs and collapses panels they exclusively occupied', () => {
     const result = removeForeignWorkspaceTabs(
       {

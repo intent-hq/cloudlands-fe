@@ -12,6 +12,9 @@ import {
   openTabInNewRootColumn,
   openBlankWorkingPanel,
   splitPanel,
+  moveTabToSplit,
+  moveTabToSplitLevel,
+  createGridLayout,
   closeTab,
   closeActiveTab,
   closeFocusedPanelTab,
@@ -61,7 +64,11 @@ import {
   workspaceDeleted,
   workspaceUnmounted,
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
-import type { PanelLayoutSliceState, RecentlyClosedPanelColumn } from './panel-layout-types';
+import type {
+  PanelLayoutSliceState,
+  RecentlyClosedPanelColumn,
+  WorkspacePanelLayoutState,
+} from './panel-layout-types';
 import { getPanelOrder } from './panel-layout-tabless';
 import {
   DEFAULT_CHAT_PANEL_WIDTH,
@@ -95,6 +102,21 @@ function stateWithPanel(
     focusedPanelId: panelId,
   };
   return state;
+}
+
+function expectFixedColumns(workspace: WorkspacePanelLayoutState, count: number) {
+  const panelIds = getPanelOrder(workspace.root);
+  expect(panelIds).toHaveLength(count);
+  expect(workspace.columnCount).toBe(count);
+  expect(Object.keys(workspace.panels).sort()).toEqual([...panelIds].sort());
+  if (count === 1) {
+    expect(workspace.root.type).toBe('panel');
+  } else {
+    expect(workspace.root).toMatchObject({ type: 'split', direction: 'horizontal' });
+    if (workspace.root.type === 'split') {
+      expect(workspace.root.children.every((child) => child.type === 'panel')).toBe(true);
+    }
+  }
 }
 
 describe('panelLayoutReducer', () => {
@@ -1495,6 +1517,82 @@ describe('panelLayoutReducer', () => {
     });
   });
 
+  describe('openBlankWorkingPanel', () => {
+    it.each([
+      [
+        'a non-closable tab',
+        [{ id: 'protected', type: 'note', title: 'Protected', closable: false }],
+      ],
+      [
+        'mixed protected and normal tabs',
+        [
+          { id: 'protected', type: 'note', title: 'Protected', closable: false },
+          { id: 'normal', type: 'file', title: 'Normal', closable: true },
+        ],
+      ],
+    ])('is a no-op for %s', (_case, tabs) => {
+      const state = stateWithPanel('working');
+      state.byWorkspaceId[WS].panels.working = {
+        id: 'working',
+        tabs: tabs as any,
+        activeTabId: 'protected',
+      };
+
+      const result = panelLayoutReducer(state, openBlankWorkingPanel(WS, 10));
+
+      expect(result).toBe(state);
+      expect(result.byWorkspaceId[WS].panels.working.tabs.map((tab) => tab.id)).toEqual(
+        tabs.map((tab) => tab.id),
+      );
+      expect(result.byWorkspaceId[WS].layoutHistory).toEqual([]);
+      expect(result.byWorkspaceId[WS].recentlyClosed).toEqual([]);
+    });
+
+    it('hides owned browsers and records normal tabs in stable order', () => {
+      const state = stateWithPanel('working');
+      state.byWorkspaceId[WS].panels.working = {
+        id: 'working',
+        tabs: [
+          { id: 'first', type: 'note', title: 'First', closable: true } as any,
+          {
+            id: 'owned',
+            type: 'browser',
+            title: 'Owned',
+            browserUrl: 'https://example.com',
+            ownerAgentId: 'agent-1',
+            closable: true,
+          } as any,
+          { id: 'second', type: 'file', title: 'Second', closable: true } as any,
+        ],
+        activeTabId: 'owned',
+      };
+
+      const result = panelLayoutReducer(state, openBlankWorkingPanel(WS, 10)).byWorkspaceId[WS];
+
+      expect(result.panels.working).toMatchObject({ tabs: [], activeTabId: null, pristine: true });
+      expect(getItems(result.hiddenTabs).map((tab) => tab.id)).toEqual(['owned']);
+      expect(result.recentlyClosed.map((entry) => entry.tab.id)).toEqual(['first', 'second']);
+      expect(result.layoutHistory).toHaveLength(1);
+    });
+
+    it('keeps the pristine-panel fast path as a focus-only operation', () => {
+      const state = stateWithPanel('working');
+      state.byWorkspaceId[WS].panels.working.pristine = true;
+      state.byWorkspaceId[WS].focusedPanelId = null;
+
+      const action = openBlankWorkingPanel(WS, 10);
+      const result = panelLayoutReducer(state, action).byWorkspaceId[WS];
+
+      expect(result.focusedPanelId).toBe('working');
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'working',
+        tabId: null,
+        requestId: action.payload.newPanelId,
+      });
+      expect(result.layoutHistory).toEqual([]);
+    });
+  });
+
   describe.skip('legacy reusable panel state', () => {
     it('clears and reuses the working panel as one undoable layout change', () => {
       const state = stateWithPanel('working', [
@@ -1948,8 +2046,24 @@ describe('panelLayoutReducer', () => {
     });
 
     it('flattens legacy split layouts to the selected fixed count', () => {
-      let state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
-      state = panelLayoutReducer(state, splitPanel(WS, 'p1', 'vertical', undefined, 1));
+      const state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
+      state.byWorkspaceId[WS] = {
+        ...state.byWorkspaceId[WS],
+        root: {
+          type: 'split',
+          direction: 'vertical',
+          children: [
+            { type: 'panel', panelId: 'p1' },
+            { type: 'panel', panelId: 'p2' },
+          ],
+          sizes: [50, 50],
+        },
+        panels: {
+          ...state.byWorkspaceId[WS].panels,
+          p2: { id: 'p2', tabs: [], activeTabId: null },
+        },
+        columnCount: 2,
+      };
 
       const result = panelLayoutReducer(state, reconcilePanelColumnCount(WS, 2, 10)).byWorkspaceId[
         WS
@@ -1964,6 +2078,46 @@ describe('panelLayoutReducer', () => {
   });
 
   describe('splitPanel', () => {
+    it('adds direct horizontal columns from one through four and keeps history synchronized', () => {
+      let state = stateWithPanel('p1');
+      for (const expectedCount of [2, 3, 4]) {
+        const workspace = state.byWorkspaceId[WS];
+        const targetPanelId = getPanelOrder(workspace.root).at(-1)!;
+        state = panelLayoutReducer(
+          state,
+          splitPanel(WS, targetPanelId, 'horizontal', undefined, expectedCount),
+        );
+        expectFixedColumns(state.byWorkspaceId[WS], expectedCount);
+        expect(state.byWorkspaceId[WS].layoutHistory.at(-1)?.columnCount).toBe(expectedCount - 1);
+      }
+
+      const beforeLimit = state;
+      state = panelLayoutReducer(
+        state,
+        splitPanel(WS, getPanelOrder(state.byWorkspaceId[WS].root).at(-1)!, 'horizontal'),
+      );
+      expect(state).toBe(beforeLimit);
+
+      state = panelLayoutReducer(state, goBack(WS, 10));
+      expectFixedColumns(state.byWorkspaceId[WS], 3);
+      state = panelLayoutReducer(state, goForward(WS));
+      expectFixedColumns(state.byWorkspaceId[WS], 4);
+    });
+
+    it('rejects stale targets and vertical splits without recording history', () => {
+      const state = stateWithPanel('p1');
+      expect(panelLayoutReducer(state, splitPanel(WS, 'stale', 'horizontal'))).toBe(state);
+      expect(panelLayoutReducer(state, splitPanel(WS, 'p1', 'vertical'))).toBe(state);
+    });
+
+    it('clamps grid creation to four direct horizontal columns', () => {
+      const action = createGridLayout(WS, 8, 1);
+      const result = panelLayoutReducer(stateWithPanel('p1'), action).byWorkspaceId[WS];
+
+      expect(action.payload.panelCount).toBe(4);
+      expectFixedColumns(result, 4);
+    });
+
     it('preserves an explicit caller-provided panel width', () => {
       const result = panelLayoutReducer(
         stateWithPanel('p1'),
@@ -1996,6 +2150,7 @@ describe('panelLayoutReducer', () => {
           p2: { id: 'p2', tabs: [], activeTabId: null },
         },
         focusedPanelId: 'p1',
+        columnCount: 2,
       };
 
       const result = panelLayoutReducer(state, splitPanel(WS, 'p1', 'horizontal', undefined, 1234));
@@ -2031,6 +2186,7 @@ describe('panelLayoutReducer', () => {
           p2: { id: 'p2', tabs: [], activeTabId: null },
         },
         focusedPanelId: 'p1',
+        columnCount: 2,
       };
 
       const resized = panelLayoutReducer(state, resizePanelLayoutRightEdge(WS, 960, 1000, 1000));
@@ -2046,6 +2202,61 @@ describe('panelLayoutReducer', () => {
       expect(workspace.root.sizes[0]).toBeCloseTo((571.392 / 1492) * 100);
       expect(workspace.root.sizes[1]).toBeCloseTo((500 / 1492) * 100);
       expect(workspace.root.sizes[2]).toBeCloseTo((420.608 / 1492) * 100);
+    });
+  });
+
+  describe('fixed-column tab split moves', () => {
+    function twoColumnState() {
+      let state = stateWithPanel('p1', [
+        { id: 'move', type: 'note', title: 'Move' },
+        { id: 'stay', type: 'note', title: 'Stay' },
+      ]);
+      state = panelLayoutReducer(state, splitPanel(WS, 'p1', 'horizontal', undefined, 1));
+      return state;
+    }
+
+    it.each([
+      ['left', ['p1', 'new', 'target']],
+      ['right', ['p1', 'target', 'new']],
+    ] as const)('inserts a %s drop in direct column order', (zone, expectedOrder) => {
+      const state = twoColumnState();
+      const targetPanelId = getPanelOrder(state.byWorkspaceId[WS].root)[1];
+      const action = moveTabToSplit(WS, 'move', 'p1', targetPanelId, zone, 2);
+      const result = panelLayoutReducer(state, action).byWorkspaceId[WS];
+
+      expectFixedColumns(result, 3);
+      expect(getPanelOrder(result.root)).toEqual(
+        expectedOrder.map((id) =>
+          id === 'new' ? action.payload.newPanelId : id === 'target' ? targetPanelId : id,
+        ),
+      );
+      expect(result.panels[action.payload.newPanelId].tabs.map((tab) => tab.id)).toEqual(['move']);
+      expect(result.panels.p1.tabs.map((tab) => tab.id)).toEqual(['stay']);
+    });
+
+    it('keeps the source tab and history untouched for stale and vertical targets', () => {
+      const state = twoColumnState();
+      const targetPanelId = getPanelOrder(state.byWorkspaceId[WS].root)[1];
+
+      expect(panelLayoutReducer(state, moveTabToSplit(WS, 'move', 'p1', 'stale', 'left'))).toBe(
+        state,
+      );
+      expect(
+        panelLayoutReducer(state, moveTabToSplit(WS, 'move', 'p1', targetPanelId, 'top')),
+      ).toBe(state);
+      expect(
+        panelLayoutReducer(state, moveTabToSplitLevel(WS, 'move', 'p1', [], 'after', 'vertical')),
+      ).toBe(state);
+      expect(state.byWorkspaceId[WS].panels.p1.tabs.map((tab) => tab.id)).toEqual(['move', 'stay']);
+    });
+
+    it('routes horizontal split-level drops through fixed root insertion', () => {
+      const state = twoColumnState();
+      const action = moveTabToSplitLevel(WS, 'move', 'p1', [], 'after', 'horizontal', 2);
+      const result = panelLayoutReducer(state, action).byWorkspaceId[WS];
+
+      expectFixedColumns(result, 3);
+      expect(getPanelOrder(result.root).at(-1)).toBe(action.payload.newPanelId);
     });
   });
 
@@ -3595,7 +3806,10 @@ describe('panelLayoutReducer', () => {
         columnCount: 2,
       };
       const closed = panelLayoutReducer(state, closePanel(WS, 'p2', 5000));
-      const changed = panelLayoutReducer(closed, splitPanel(WS, 'p1', 'vertical', undefined, 5001));
+      const changed = panelLayoutReducer(
+        closed,
+        splitPanel(WS, 'p1', 'horizontal', undefined, 5001),
+      );
 
       expect(
         panelLayoutReducer(changed, reopenClosedPanelColumn(WS, 5002, 'invalid-restore')),
@@ -3849,6 +4063,7 @@ describe('panelLayoutReducer', () => {
           p2: { id: 'p2', tabs: [], activeTabId: null },
           p3: { id: 'p3', tabs: [], activeTabId: null },
         },
+        columnCount: 3,
         canvasWidth: 1016,
       };
 
@@ -3862,7 +4077,7 @@ describe('panelLayoutReducer', () => {
       expect(resized.byWorkspaceId[WS].root).toMatchObject({ sizes: [30, 60, 10] });
       const snapshotted = panelLayoutReducer(
         resized,
-        splitPanel(WS, 'p1', 'vertical', undefined, 1234),
+        splitPanel(WS, 'p1', 'horizontal', undefined, 1234),
       );
       expect(snapshotted.byWorkspaceId[WS].layoutHistory[0].canvasWidth).toBe(1016);
     });

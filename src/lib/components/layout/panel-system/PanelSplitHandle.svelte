@@ -5,16 +5,7 @@
    * Allows users to resize panels by dragging the handle.
    * Also serves as a drop zone for creating splits at the container level.
    *
-   * Drop zone behavior:
-   * For horizontal split handle (vertical bar between left/right panels):
-   *   - Top ~50px: "Add row above" (new row spanning full width at top)
-   *   - Bottom ~50px: "Add row below" (new row spanning full width at bottom)
-   *   - Middle area: "Add column left/right" based on X position
-   *
-   * For vertical split handle (horizontal bar between top/bottom panels):
-   *   - Left ~50px: "Add column left"
-   *   - Right ~50px: "Add column right"
-   *   - Middle area: "Add row above/below" based on Y position
+   * In fixed-column workspaces, horizontal handles accept only left/right column drops.
    */
 
   import { m } from '$shared/paraglide/messages.js';
@@ -142,9 +133,6 @@
     window.removeEventListener('mouseup', handleMouseUp);
   }
 
-  // Edge threshold in pixels for row/column edge zones
-  const EDGE_THRESHOLD = 50;
-
   // Detailed drop zone info including direction and position
   interface DropZoneInfo {
     zoneType: HandleDropZoneType;
@@ -153,95 +141,25 @@
     label: string;
   }
 
-  // Determine drop zone based on cursor position
-  // For horizontal split handle (vertical bar between left/right panels):
-  //   - Top ~50px: row-above
-  //   - Bottom ~50px: row-below
-  //   - Middle: column-left or column-right based on X
-  // For vertical split handle (horizontal bar between top/bottom panels):
-  //   - Left ~50px: column-left
-  //   - Right ~50px: column-right
-  //   - Middle: row-above or row-below based on Y
   function getDropZoneInfo(e: DragEvent): DropZoneInfo | null {
-    if (!handleRef) return null;
+    if (!handleRef || direction !== 'horizontal') return null;
 
     const rect = handleRef.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    if (direction === 'horizontal') {
-      // Vertical bar between left/right panels
-      // Check if near top or bottom edges first
-      if (y < EDGE_THRESHOLD) {
-        return {
-          zoneType: 'row-above',
-          position: 'before',
-          insertDirection: 'vertical',
-          label: m.layout_panelSplitHandle_addRowAbove_label(),
-        };
-      }
-      if (y > rect.height - EDGE_THRESHOLD) {
-        return {
-          zoneType: 'row-below',
-          position: 'after',
-          insertDirection: 'vertical',
-          label: m.layout_panelSplitHandle_addRowBelow_label(),
-        };
-      }
-      // Middle area - add column left or right
-      const midX = rect.width / 2;
-      if (x < midX) {
-        return {
-          zoneType: 'column-left',
-          position: 'before',
-          insertDirection: 'horizontal',
-          label: m.layout_panelSplitHandle_addColumnLeft_label(),
-        };
-      } else {
-        return {
-          zoneType: 'column-right',
-          position: 'after',
-          insertDirection: 'horizontal',
-          label: m.layout_panelSplitHandle_addColumnRight_label(),
-        };
-      }
-    } else {
-      // Horizontal bar between top/bottom panels
-      // Check if near left or right edges first
-      if (x < EDGE_THRESHOLD) {
-        return {
-          zoneType: 'column-left',
-          position: 'before',
-          insertDirection: 'horizontal',
-          label: m.layout_panelSplitHandle_addColumnLeft_label(),
-        };
-      }
-      if (x > rect.width - EDGE_THRESHOLD) {
-        return {
-          zoneType: 'column-right',
-          position: 'after',
-          insertDirection: 'horizontal',
-          label: m.layout_panelSplitHandle_addColumnRight_label(),
-        };
-      }
-      // Middle area - add row above or below
-      const midY = rect.height / 2;
-      if (y < midY) {
-        return {
-          zoneType: 'row-above',
-          position: 'before',
-          insertDirection: 'vertical',
-          label: m.layout_panelSplitHandle_addRowAbove_label(),
-        };
-      } else {
-        return {
-          zoneType: 'row-below',
-          position: 'after',
-          insertDirection: 'vertical',
-          label: m.layout_panelSplitHandle_addRowBelow_label(),
-        };
-      }
+    if (x < rect.width / 2) {
+      return {
+        zoneType: 'column-left',
+        position: 'before',
+        insertDirection: 'horizontal',
+        label: m.layout_panelSplitHandle_addColumnLeft_label(),
+      };
     }
+    return {
+      zoneType: 'column-right',
+      position: 'after',
+      insertDirection: 'horizontal',
+      label: m.layout_panelSplitHandle_addColumnRight_label(),
+    };
   }
 
   // Current drop zone info

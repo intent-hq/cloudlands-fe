@@ -12,6 +12,7 @@ import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 import {
   openTab,
+  openTabInAdjacentOrSplit as openTabInAdjacentOrSplitAction,
   openTabInRightmostColumnRequested,
   closeTab,
   closeActiveTab,
@@ -134,26 +135,7 @@ export class PanelLayoutAdapter {
     sourcePanelId?: string,
     options?: { animated?: boolean; force?: boolean; allowDuplicate?: boolean },
   ) {
-    if (sourcePanelId) {
-      this.dispatch(
-        openTab(
-          this.workspaceId,
-          tab,
-          sourcePanelId,
-          undefined,
-          options?.force,
-          undefined,
-          options?.allowDuplicate,
-        ),
-      );
-      return;
-    }
-    this.dispatch(
-      openTabInRightmostColumnRequested(this.workspaceId, tab, {
-        force: options?.force,
-        allowDuplicate: options?.allowDuplicate,
-      }),
-    );
+    this.dispatch(openTabInAdjacentOrSplitAction(this.workspaceId, tab, sourcePanelId, options));
   }
   openBrowserPanel(
     url?: string,
