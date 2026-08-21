@@ -134,6 +134,36 @@ describe("backgroundHooksReducer", () => {
     expect(state.byWorkspaceId["ws-1"].hooks.map["hook-1"].state).toBe("running");
   });
 
+  it("provisional backgroundHooksUpdated updates the rows but preserves the stale flag", () => {
+    let state = backgroundHooksReducer(initialState, backgroundHooksUpdated("ws-1", [makeHook()]));
+    state = backgroundHooksReducer(state, backgroundHooksMarkedStale("ws-1"));
+
+    state = backgroundHooksReducer(
+      state,
+      backgroundHooksUpdated("ws-1", [makeHook({ state: "running" })], true),
+    );
+    expect(state.byWorkspaceId["ws-1"].stale).toBe(true);
+    expect(state.byWorkspaceId["ws-1"].hooks.map["hook-1"].state).toBe("running");
+  });
+
+  it("provisional backgroundHooksUpdated on a fresh entry keeps it fresh", () => {
+    let state = backgroundHooksReducer(initialState, backgroundHooksUpdated("ws-1", [makeHook()]));
+    state = backgroundHooksReducer(
+      state,
+      backgroundHooksUpdated("ws-1", [makeHook({ state: "running" })], true),
+    );
+    expect(state.byWorkspaceId["ws-1"].stale).toBe(false);
+  });
+
+  it("provisional backgroundHooksUpdated on an unknown workspace creates a non-stale entry", () => {
+    const state = backgroundHooksReducer(
+      initialState,
+      backgroundHooksUpdated("ws-1", [], true),
+    );
+    expect(state.byWorkspaceId["ws-1"]).toBeDefined();
+    expect(state.byWorkspaceId["ws-1"].stale).toBe(false);
+  });
+
   it("removeWorkspaceEntity clears the workspace's hooks", () => {
     let state = backgroundHooksReducer(initialState, backgroundHooksUpdated("ws-1", [makeHook()]));
     state = backgroundHooksReducer(state, removeWorkspaceEntity("ws-1"));
