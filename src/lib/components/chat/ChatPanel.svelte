@@ -4841,6 +4841,7 @@
                   seed={agentId}
                   statusEvents={$chatStatusEvents$}
                   streamingStartTime={$chatStreamingStartTime$}
+                  class={effectiveError ? 'mt-0' : undefined}
                 />
               </div>
             </div>

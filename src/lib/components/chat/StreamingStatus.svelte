@@ -153,6 +153,7 @@
       data-stream-terminal-error="true"
       class={cn(
         'type-caption flex flex-col gap-0 py-2 pr-1',
+        status === 'error' && 'mt-2',
         status === 'model-unavailable' &&
           'rounded-md border border-warning/20 bg-warning/5 pl-2 pr-3',
         className,
@@ -183,19 +184,21 @@
                   </span>
                 {/if}</span
               >
-              <div class="relative flex min-h-5 w-full min-w-0 items-start gap-1.5 py-0">
+              <div
+                class="relative grid min-h-5 w-full min-w-0 grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-x-1.5 py-0"
+              >
                 <Button
-                  variant="plain"
-                  size="icon-xs"
+                  variant="ghost-light"
+                  size="icon-sm"
                   onclick={handleCopyError}
                   iconOnly
                   tooltip={m.error_boundary_copyDetails_tooltip()}
                   aria-label={m.error_boundary_copyDetails_tooltip()}
-                  class="size-4! shrink-0 p-0! text-muted-foreground opacity-30 hover:opacity-100"
+                  class="absolute top-3 left-0 -translate-y-1/2 text-muted-foreground"
                 >
-                  <Fa icon={errorCopied ? faCheck : faCopy} size="xs" class="w-4 shrink-0" />
+                  <Fa icon={errorCopied ? faCheck : faCopy} class="shrink-0" />
                 </Button>
-                <div class="flex min-w-0 flex-1 flex-col">
+                <div class="col-start-2 flex min-w-0 flex-col">
                   <Button
                     variant="plain"
                     class="type-caption h-auto! min-w-0 max-w-full justify-start text-left leading-4 text-muted-foreground"

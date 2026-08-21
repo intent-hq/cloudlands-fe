@@ -11,12 +11,14 @@ vi.mock('$lib/components/ui/button', async () => ({
 }));
 
 vi.mock('svelte-fa', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/FaIcon.svelte')).default,
 }));
 
 vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faExclamationTriangle: { iconName: 'exclamation-triangle' },
   faRotateRight: { iconName: 'rotate-right' },
+  faCopy: { iconName: 'copy' },
+  faCheck: { iconName: 'check' },
 }));
 
 import StreamingStatus from '../StreamingStatus.svelte';
@@ -145,13 +147,21 @@ describe('StreamingStatus rendered UI', () => {
     expect(container.firstElementChild?.className).not.toContain('pl-2');
     expect(container.firstElementChild?.className).not.toContain('bg-destructive');
     expect(container.firstElementChild?.className).not.toContain('border-destructive');
+    expect(container.firstElementChild?.className).toContain('mt-2');
 
     const copyButton = screen.getByRole('button', { name: /copy error details/i });
     expect(copyButton).toBeTruthy();
     expect(copyButton.className).toContain('text-muted-foreground');
-    expect(copyButton.className).toContain('opacity-30');
-    expect(copyButton.parentElement?.className).toContain('gap-1.5');
+    expect(copyButton.className).toContain('absolute');
+    expect(copyButton.className).toContain('top-3');
+    expect(copyButton.className).toContain('-translate-y-1/2');
+    expect(copyButton.getAttribute('data-variant')).toBe('ghost-light');
+    expect(copyButton.getAttribute('data-size')).toBe('icon-sm');
+    expect(copyButton.querySelector('[data-icon="copy"]')).toBeTruthy();
+    expect(copyButton.parentElement?.className).toContain('gap-x-1.5');
     expect(copyButton.parentElement?.className).toContain('min-h-5');
+    expect(copyButton.parentElement?.className).toContain('grid-cols-[1.75rem_minmax(0,1fr)]');
+    expect(copyButton.nextElementSibling?.className).toContain('col-start-2');
     const retry = screen.getByRole('button', { name: 'Try again' });
     expect(retry.textContent?.trim()).toBe('');
     expect(retry.className).toContain('shrink-0');
@@ -175,11 +185,27 @@ describe('StreamingStatus rendered UI', () => {
     });
 
     const copyButton = screen.getByRole('button', { name: /copy error details/i });
+    const stableClassName = copyButton.className;
+    copyButton.focus();
+    expect(document.activeElement).toBe(copyButton);
+    expect(copyButton.tabIndex).toBe(0);
     await fireEvent.click(copyButton);
     expect(writeTextMock).toHaveBeenCalledOnce();
     expect(writeTextMock).toHaveBeenCalledWith(
       'Response failed\n\nStream timeout after 10 minutes',
     );
+    await waitFor(() => expect(copyButton.querySelector('[data-icon="check"]')).toBeTruthy());
+    expect(copyButton.className).toBe(stableClassName);
+    expect(copyButton.getAttribute('aria-label')).toBe('Copy error details to clipboard');
+  });
+
+  it('removes the failure top step only when its caller marks it as the first row', () => {
+    const { container } = render(StreamingStatus, {
+      props: { error: 'Stream timeout', class: 'mt-0' },
+    });
+
+    expect(container.firstElementChild?.className).toContain('mt-0');
+    expect(container.firstElementChild?.className).not.toContain('mt-2');
   });
 
   it('renders recreate-aware corrupted-session copy with the raw error as secondary detail (monorepo#940)', async () => {
@@ -261,6 +287,7 @@ describe('StreamingStatus rendered UI', () => {
     expect(screen.queryByTestId('error-title')).toBeNull();
     expect(container.textContent).toContain('gpt5.5');
     expect(container.textContent).toContain('is not available');
+    expect(container.firstElementChild?.className).not.toContain('mt-2');
 
     await fireEvent.click(screen.getByRole('button', { name: /retry with gpt5\.5-fast/i }));
     expect(onRetryWithModel).toHaveBeenCalledWith('gpt5.5-fast');
