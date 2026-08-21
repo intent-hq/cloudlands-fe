@@ -615,7 +615,7 @@
 {#if node.type === 'panel'}
   {@const panel = panels[node.panelId]}
   {@const panelIndex = panelOrder.indexOf(node.panelId)}
-  <div class="h-full w-full min-h-0 min-w-0 bg-background text-foreground">
+  <div class="h-full w-full min-h-0 min-w-0">
     {#if panel}
       <Panel
         {panel}
@@ -658,6 +658,8 @@
         {contained}
         onSplitHorizontal={() => onSplitPanel?.(node.panelId, 'horizontal')}
       />
+    {:else}
+      <div class="h-full w-full bg-background text-foreground" data-missing-panel-surface></div>
     {/if}
   </div>
 {:else if node.type === 'split'}

@@ -36,7 +36,10 @@ describe('editorial workspace shell presentation contract', () => {
     expect(panel).toContain('overflow-hidden rounded-lg border border-border');
     expect(panel).toContain('border border-border bg-background text-foreground');
     expect(panel).toContain('data-empty-panel-surface={');
-    expect(container).toContain('min-w-0 bg-background text-foreground');
+    expect(container).toContain('class="h-full w-full min-h-0 min-w-0"');
+    expect(container).toContain(
+      'class="h-full w-full bg-background text-foreground" data-missing-panel-surface',
+    );
     expect(panel).toContain('width: 100%');
     expect(panel).toContain('min-width: 0');
     expect(panel).not.toContain('min-width: 30em');
