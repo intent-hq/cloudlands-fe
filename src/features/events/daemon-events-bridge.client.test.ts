@@ -576,9 +576,13 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     expect(session?.isProcessing).toBe(false);
     expect(session?.isResponding).toBe(false);
     expect((session as { liveTurnOpen?: boolean })?.liveTurnOpen).toBe(false);
-    // Eviction parks the process; it is NOT an "agent ended" transition —
-    // the backend-canonical status stays untouched (next send auto-restores).
-    expect(session?.status).toBe(AgentStatus.Active);
+    // §6.5 guarantees the evicted process was idle, so the stale RUNNING
+    // status is demoted to 'idle' — otherwise isAgentRunningState (and the
+    // Thinking indicator) would stay true on the status alone. Eviction is
+    // still NOT an "agent ended" transition (next send auto-restores).
+    expect(session?.status).toBe(AgentStatus.RuntimeIdle);
+    // The canonical Thinking driver is genuinely resolved.
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
   it('ignores non-events.event methods, and forwards non-lifecycle events.event notifications into workspaceEvents without changing agent-session flags', async () => {

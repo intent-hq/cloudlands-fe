@@ -452,6 +452,11 @@ describe('chatSendSaga', () => {
     expect(run.dispatch).toHaveBeenCalledWith(
       chatLastAttemptedMessageSet(AGENT, { text: 'hello after reap' }),
     );
+    // The positive assertion above is satisfied by the pre-wire dispatch, so
+    // also pin the invariant: the direct-send catch must never null the retry
+    // record (the way the sendQueuedNow failure paths do) — that would break
+    // the failure banner's "Try again".
+    expect(run.dispatch).not.toHaveBeenCalledWith(chatLastAttemptedMessageSet(AGENT, null));
     expect(run.dispatch).toHaveBeenCalledWith(
       chatSendFailed(AGENT, 'Agent not found: agent-send'),
     );

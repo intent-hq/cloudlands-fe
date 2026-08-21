@@ -3614,8 +3614,8 @@ export function routeDaemonEventsNotification(
     // sweep (reason "idle-ttl", intent-hq/intentd#1356) — the session row
     // survives and the next send transparently respawns it. The daemon only
     // evicts idle processes, so clear the queue hint AND any stale optimistic
-    // busy flags that would otherwise render a phantom "Thinking" indicator
-    // (monorepo#3040).
+    // busy flags that would otherwise render a phantom "Thinking" indicator,
+    // and demote a stale RUNNING status to idle (monorepo#3040).
     const data = (event as { data?: Record<string, unknown> }).data;
     if (data && typeof data.agentId === 'string') {
       appStore.dispatch(processEvicted(data.agentId));

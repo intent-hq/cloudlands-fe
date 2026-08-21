@@ -2059,7 +2059,7 @@ describe('agent-session-slice reducer', () => {
   });
 
   describe('processEvicted', () => {
-    it('clears the queue hint and stale busy flags but leaves status untouched (monorepo#3040)', () => {
+    it('clears the queue hint and stale busy flags and demotes a stale running status (monorepo#3040)', () => {
       let state = agentSessionReducer(
         initialState,
         upsertSession(
@@ -2080,9 +2080,28 @@ describe('agent-session-slice reducer', () => {
       expect(session.isResponding).toBe(false);
       expect(session.liveTurnOpen).toBe(false);
       expect(session.liveTurnOpenedAt).toBeUndefined();
-      // Eviction parks the process (idle-ttl reap / queue drop) — it is NOT
-      // an "agent ended" transition; backend-canonical status is untouched.
-      expect(session.status).toBe('active');
+      // §6.5 guarantees an evicted process is idle, so a stale RUNNING status
+      // ('active' here — e.g. a missed agent:idle) would keep
+      // isAgentRunningState/Thinking true on its own; demote it to 'idle'.
+      expect(session.status).toBe('idle');
+    });
+
+    it('leaves a non-running status untouched (eviction is not an agent-ended transition)', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            status: 'Waiting' as any,
+            isStreaming: true,
+          }),
+        ),
+      );
+      state = agentSessionReducer(state, processEvicted('a1'));
+      const session = state.byAgentId['a1'];
+      expect(session.isStreaming).toBe(false);
+      // Waiting/error/terminal are BE-owned signals the eviction says nothing
+      // about — only stale RUNNING statuses are demoted.
+      expect(session.status).toBe('Waiting');
     });
 
     it('is a no-op for an unknown agent', () => {
