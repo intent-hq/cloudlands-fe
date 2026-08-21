@@ -73,6 +73,7 @@ import {
   moveTabToSplitLevel,
   openTab,
   openBlankWorkingPanel,
+  openHiddenTab,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
   panelLayoutScopeMounted,
@@ -1188,6 +1189,58 @@ describe('panelLayoutSaga', () => {
       await cancelSaga(task);
     },
   );
+
+  // Hidden opens persist (hidden tabs rehydrate, monorepo#3045) but bypass
+  // the reusable-panel invariant: a hidden agent open never touches panel
+  // structure, so it must not collapse the user's panels in pin mode.
+  it('openHiddenTab persists without triggering the pin-mode reusable-panel collapse', async () => {
+    mocks.getJSON.mockReturnValue(undefined);
+    const state = {
+      ...storeState(),
+      userPreferences: { panelOpenMode: 'pin' },
+    };
+    state.panelLayout.byWorkspaceId[WS_1] = {
+      ...workspaceState(),
+      root: {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'panel', panelId: 'panel-1' },
+          { type: 'panel', panelId: 'panel-2' },
+        ],
+        sizes: [50, 50],
+      },
+      panels: {
+        ...layout.panels,
+        'panel-2': {
+          id: 'panel-2',
+          tabs: [{ ...tab, id: 'tab-2' }],
+          activeTabId: 'tab-2',
+        },
+      },
+    };
+    const { channel, dispatch, task } = startSaga(state);
+    await settle();
+
+    // Control: a panel-mounting PERSIST_ACTIONS open in this layout does
+    // trigger the collapse (two unpinned panels in pin mode).
+    channel.put({ type: openTab.type, payload: { wsId: WS_1 } });
+    await settle();
+    expect(
+      dispatch.mock.calls.some(([action]) => action.type === collapseToReusablePanel.type),
+    ).toBe(true);
+    dispatch.mockClear();
+    mocks.setJSON.mockClear();
+
+    channel.put(openHiddenTab(WS_1, { type: 'browser', title: 'Hidden', closable: true }));
+    await settle();
+
+    expect(
+      dispatch.mock.calls.some(([action]) => action.type === collapseToReusablePanel.type),
+    ).toBe(false);
+    expect(mocks.setJSON).toHaveBeenCalledTimes(1);
+    await cancelSaga(task);
+  });
 
   it('persists saved widths instead of the session-only expanded geometry', async () => {
     const state = storeState();
