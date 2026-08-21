@@ -1,6 +1,19 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
+import os from 'os';
 import { readFileSync } from 'fs';
+
+// CI-only tuning for shared self-hosted runners (intent-hq/monorepo#3082; the
+// recurrence class #3032/#2586/#1406/#1171/#545). The CI unit job runs on the
+// 64-core tinybox, which hosts up to 8 concurrent jobs across repos (including
+// intentd cargo builds): 50% of cores there means 32 jsdom forks on an
+// already-loaded box, and under external load rotating test files blow the 30s
+// budget (observed ~34s for tests that take ~8s locally) while passing in
+// isolation. CI caps workers at min(50%, 16) — halving the fork count on the
+// big shared box while leaving the 8-core GH-hosted burst runner (4 workers)
+// unchanged. Local runs keep the plain 50% cap.
+const isCI = !!process.env.CI;
+const ciMaxWorkers = Math.max(1, Math.min(16, Math.floor(os.availableParallelism() / 2)));
 
 export default defineConfig(async () => {
   const { svelte } = await import('@sveltejs/vite-plugin-svelte');
@@ -28,13 +41,16 @@ export default defineConfig(async () => {
       // core; ~20 jsdom workers oversubscribe the CPU and, when the machine is
       // under external load (builds, other agents), heavy component suites blow
       // past their timeouts in full-suite runs while passing in isolation.
-      // See intent-hq/monorepo#545.
-      maxWorkers: '50%',
+      // See intent-hq/monorepo#545. On CI the cap is further bounded at 16
+      // workers for shared self-hosted runners (see ciMaxWorkers above).
+      maxWorkers: isCI ? ciMaxWorkers : '50%',
       // 30s (up from 10s) gives slow-machine/loaded-machine headroom for the
       // heavy sidebar/component suites (intent-hq/monorepo#545). Genuine hangs
-      // still fail, just a bit later.
-      testTimeout: 30000,
-      hookTimeout: 30000,
+      // still fail, just a bit later. CI doubles the budget to 60s: external
+      // runner load can starve a worker ~4x (intent-hq/monorepo#3082), and the
+      // concurrency cap alone cannot absorb every load spike.
+      testTimeout: isCI ? 60_000 : 30_000,
+      hookTimeout: isCI ? 60_000 : 30_000,
       teardownTimeout: 10000,
       exclude: [
         '**/node_modules/**',
