@@ -52,14 +52,33 @@
   const candidates = $derived.by(() => {
     const out: OffscreenWebviewCandidate[] = [];
     for (const [workspaceId, layout] of Object.entries($layouts$)) {
-      if (excludedWorkspaceIds.has(workspaceId)) continue;
-      for (const panel of Object.values(layout.panels)) {
-        for (const tab of panel.tabs) {
-          if (tab.type !== 'browser' || !tab.browserUrl || !isKeepAliveUrl(tab.browserUrl)) {
-            continue;
+      if (!excludedWorkspaceIds.has(workspaceId)) {
+        for (const panel of Object.values(layout.panels)) {
+          for (const tab of panel.tabs) {
+            if (tab.type !== 'browser' || !tab.browserUrl || !isKeepAliveUrl(tab.browserUrl)) {
+              continue;
+            }
+            // Agent-owned tabs stay mounted for the agent's lifetime:
+            // pinned entries are exempt from the cap (monorepo#2857).
+            const pinned =
+              typeof tab.ownerAgentId === 'string' && tab.ownerAgentId.length > 0
+                ? { pinned: true }
+                : {};
+            out.push({ tabId: tab.id, workspaceId, url: tab.browserUrl, ...pinned });
           }
-          out.push({ tabId: tab.id, workspaceId, url: tab.browserUrl });
         }
+      }
+      // Hidden (user-closed) owned tabs have no visible EmbeddedBrowser even
+      // in the displayed workspace, so they always mount here — pinned, kept
+      // alive until agent deletion or workspace archive/delete
+      // (monorepo#2857). hiddenTabs is a Collection; read its ids/map here
+      // since components must not import collection-utils.
+      for (const id of layout.hiddenTabs?.ids ?? []) {
+        const tab = layout.hiddenTabs.map[id];
+        if (!tab || tab.type !== 'browser' || !tab.browserUrl || !isKeepAliveUrl(tab.browserUrl)) {
+          continue;
+        }
+        out.push({ tabId: tab.id, workspaceId, url: tab.browserUrl, pinned: true });
       }
     }
     return out;
@@ -94,12 +113,16 @@
     }
   });
 
-  const entries = $derived.by(() =>
-    [...cache.keys()].flatMap((tabId) => {
+  const entries = $derived.by(() => {
+    // Live persisted URL per tab: the frozen mount URL never changes, but an
+    // external browserUrl update (agent openTab replacing a hidden tab,
+    // monorepo#2857) must reach the live guest via the action's update hook.
+    const liveUrlByTabId = new Map(candidates.map((c) => [c.tabId, c.url]));
+    return [...cache.keys()].flatMap((tabId) => {
       const frozen = frozenByTabId.get(tabId);
-      return frozen ? [{ tabId, ...frozen }] : [];
-    }),
-  );
+      return frozen ? [{ tabId, ...frozen, desiredUrl: liveUrlByTabId.get(tabId) }] : [];
+    });
+  });
 </script>
 
 <!--

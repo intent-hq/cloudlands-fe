@@ -22,7 +22,17 @@ import {
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
-import { chatSendStarted, chatSendFailed, chatStopCompleted, streamCompleted, streamTimedOut } from '../chat-state/chat-state-slice';
+import {
+  chatSendStarted,
+  chatSendFailed,
+  chatInterrupted,
+  chatStopCompleted,
+  chatReset,
+  chatStreamingReconciled,
+  chatInitialized,
+  streamCompleted,
+  streamTimedOut,
+} from '../chat-state/chat-state-slice';
 
 export {
   computeMessageContentHash,
@@ -1080,6 +1090,19 @@ export const clearProcessQueueHint = createAction<[agentId: string]>(
   'agentSessions/clearProcessQueueHint',
 );
 
+/**
+ * Agent process evicted (agent:process:evicted, §6.5). The daemon parked the
+ * agent's OS process — dropped from the spawn queue, or reaped by the idle
+ * TTL sweep (reason "idle-ttl", intent-hq/intentd#1356). The session row
+ * survives and the next send transparently respawns the process, so this is
+ * NOT an "agent ended" transition. The daemon only evicts idle processes,
+ * so any FE busy indicator at that moment is provably stale (monorepo#3040):
+ * clear the queue hint and the optimistic busy flags, and demote a stale
+ * RUNNING status to 'idle' (waiting/error/terminal statuses stay untouched).
+ * Payload: [agentId]
+ */
+export const processEvicted = createAction<[agentId: string]>('agentSessions/processEvicted');
+
 /** Rename agent session */
 export const renameSession = createAction<[agentId: string, name: string]>(
   'agentSessions/renameSession',
@@ -1320,6 +1343,13 @@ agentSessionReducer.with(chatSendFailed, (state, { payload: [agentId] }) =>
     isResponding: false,
   }),
 );
+agentSessionReducer.with(chatInterrupted, (state, { payload: [agentId] }) =>
+  updateSessionFields(state, agentId, {
+    isStreaming: false,
+    isProcessing: false,
+    isResponding: false,
+  }),
+);
 agentSessionReducer.with(chatStopCompleted, (state, { payload: [agentId] }) =>
   updateSessionFields(state, agentId, {
     isStreaming: false,
@@ -1327,6 +1357,28 @@ agentSessionReducer.with(chatStopCompleted, (state, { payload: [agentId] }) =>
     isResponding: false,
   }),
 );
+agentSessionReducer.with(chatReset, (state, { payload: [agentId] }) =>
+  removeHistorySegment(
+    updateSessionFields(state, agentId, {
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    }),
+    agentId,
+  ),
+);
+agentSessionReducer.with(chatStreamingReconciled, (state, { payload: { agentId } }) =>
+  updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true }),
+);
+agentSessionReducer.with(chatInitialized, (state, { payload: [agentId, data] }) => {
+  const session = getSession(state, agentId);
+  if (!session) return state;
+  if (!data.isStreaming) {
+    if (!session.isStreaming && !session.isProcessing) return state;
+    return updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false });
+  }
+  return state;
+});
 agentSessionReducer.with(streamCompleted, (state, { payload: [agentId] }) =>
   updateSessionFields(state, agentId, {
     isStreaming: false,
@@ -1351,6 +1403,32 @@ agentSessionReducer.with(clearProcessQueueHint, (state, { payload: [agentId] }) 
     processQueueHint: undefined,
   }),
 );
+// Process parked (queue drop or idle-TTL reap): the daemon only evicts idle
+// processes, so besides the queue hint, clear any stale optimistic busy flags
+// (and the sticky liveTurnOpen) that would otherwise render a phantom
+// "Thinking" indicator until the next canonical event (monorepo#3040). A
+// stale RUNNING status ('active'/'processing'/'responding', e.g. a missed
+// agent:idle) would keep isAgentRunningState — and thus the Thinking
+// indicator — true on its own, and §6.5 guarantees an evicted process is
+// idle, so demote it to 'idle' (the same status the agent:idle branch
+// defaults to). Non-running statuses (waiting/error/terminal) are BE-owned
+// signals the eviction says nothing about and stay untouched.
+agentSessionReducer.with(processEvicted, (state, { payload: [agentId] }) => {
+  const existing = getSession(state, agentId);
+  if (!existing) return state;
+  const updates: Partial<Omit<StoredAgentSession, 'messages'>> = {
+    processQueueHint: undefined,
+    isStreaming: false,
+    isProcessing: false,
+    isResponding: false,
+    liveTurnOpen: false,
+    liveTurnOpenedAt: undefined,
+  };
+  if (RUNNING_STATUSES.has(existing.status as string)) {
+    updates.status = AgentStatus.RuntimeIdle;
+  }
+  return updateSessionFields(state, agentId, updates);
+});
 // -----------------------------------------------------------------------
 // Scrollback history segment (bounded, on-demand; tail semantics untouched)
 // -----------------------------------------------------------------------

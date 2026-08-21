@@ -46,11 +46,25 @@
     return null;
   }
 
+  // Test-settable stand-in for the real step's effective default-model
+  // snapshot (the daemon resolvedModel preview + its provider context).
+  let effectiveDefaultModel = $state<{ model: string | undefined; provider: string }>({
+    model: undefined,
+    provider: '',
+  });
+
+  export function getEffectiveDefaultModel() {
+    return effectiveDefaultModel;
+  }
+
   $effect(() => {
     (window as unknown as Record<string, unknown>).__mockOnboardingPromptStep = {
       onProjectChange,
       onSubmit,
       onModelChange,
+      setEffectiveDefaultModel: (value: { model: string | undefined; provider: string }) => {
+        effectiveDefaultModel = value;
+      },
       setInputValue: (value: string) => {
         onboardingInputValue = value;
       },

@@ -2275,7 +2275,6 @@ describe('SidebarChangesPanel', () => {
         const text = container.textContent || '';
         expect(text).toContain('src/a.ts');
         expect(text).toContain('feat: sub work');
-        expect(text).toContain('Read-only');
       });
       const viewText = container.textContent || '';
       expect(viewText).not.toContain('Stage all');

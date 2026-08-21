@@ -22,6 +22,12 @@ export type OffscreenWebviewCandidate = {
   tabId: string;
   workspaceId: string;
   url: string;
+  /**
+   * Agent-owned tabs keep their webview mounted for the agent's lifetime
+   * (monorepo#2857): pinned in the keep-alive set — never evicted by the cap
+   * and not counted against it (the cap keeps bounding unowned tabs).
+   */
+  pinned?: boolean;
 };
 
 export function areOffscreenWebviewCachesEqual(
@@ -44,8 +50,11 @@ export function areOffscreenWebviewCachesEqual(
  * - Surviving entries keep their original timestamp (recency is when the tab
  *   entered the offscreen set — newly backgrounded tabs are freshest).
  * - New candidates are stamped with `now`.
- * - When over `maxWebviews`, the oldest entries are evicted; ties break by
- *   candidate order (earlier candidates win) so the result is deterministic.
+ * - Pinned (agent-owned) candidates are always kept and never count against
+ *   `maxWebviews` (monorepo#2857); the cap bounds unpinned candidates only.
+ * - When over `maxWebviews`, the oldest unpinned entries are evicted; ties
+ *   break by candidate order (earlier candidates win) so the result is
+ *   deterministic.
  */
 export function updateOffscreenWebviewCache(
   currentCache: Map<string, number>,
@@ -53,7 +62,7 @@ export function updateOffscreenWebviewCache(
   now: number,
   maxWebviews: number = MAX_OFFSCREEN_WEBVIEWS,
 ): Map<string, number> {
-  const entries: Array<{ tabId: string; timestamp: number; order: number }> = [];
+  const entries: Array<{ tabId: string; timestamp: number; order: number; pinned: boolean }> = [];
   const seen = new Set<string>();
 
   candidates.forEach((candidate, order) => {
@@ -63,20 +72,23 @@ export function updateOffscreenWebviewCache(
       tabId: candidate.tabId,
       timestamp: currentCache.get(candidate.tabId) ?? now,
       order,
+      pinned: candidate.pinned === true,
     });
   });
 
-  if (entries.length > maxWebviews) {
+  const pinnedEntries = entries.filter((entry) => entry.pinned);
+  let unpinnedEntries = entries.filter((entry) => !entry.pinned);
+  if (unpinnedEntries.length > maxWebviews) {
     // Evict oldest first; on equal timestamps the later candidate loses.
-    entries.sort((a, b) => b.timestamp - a.timestamp || a.order - b.order);
-    entries.length = Math.max(0, maxWebviews);
+    unpinnedEntries.sort((a, b) => b.timestamp - a.timestamp || a.order - b.order);
+    unpinnedEntries = unpinnedEntries.slice(0, Math.max(0, maxWebviews));
   }
 
   // Preserve candidate order for a stable, deterministic result.
-  entries.sort((a, b) => a.order - b.order);
+  const kept = [...pinnedEntries, ...unpinnedEntries].sort((a, b) => a.order - b.order);
 
   const nextCache = new Map<string, number>();
-  for (const entry of entries) {
+  for (const entry of kept) {
     nextCache.set(entry.tabId, entry.timestamp);
   }
   return nextCache;

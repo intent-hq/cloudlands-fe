@@ -348,6 +348,7 @@ import {
   createWindowForDeepLink,
   createWindowForSession,
   getWindowSessionsPath,
+  isBackendSwitchWindowTeardownInProgress,
   loadWindowSessions,
   saveWindowSessions,
 } from './window.js';
@@ -1610,7 +1611,6 @@ app.whenReady().then(async () => {
     // import is a cache hit.)
     const { initializeAutoUpdater, markAutoUpdaterNotInitialized } =
       await import('../features/auto-update/main/auto-update.ipc');
-    const mainWindow = getMainWindow();
     if (process.env.NODE_ENV !== 'development' && process.env.TESTING !== 'true') {
       // Initialize regardless of whether a window exists yet
       // (intent-hq/monorepo#1848): this setImmediate task can run before
@@ -1632,10 +1632,16 @@ app.whenReady().then(async () => {
 
     // Show this version's release notes on the first launch after an update.
     // Packaged builds only — a dev build's version is never a published tag.
-    if (app.isPackaged && mainWindow) {
+    // Run regardless of whether a window exists yet (intent-hq/monorepo#3054,
+    // same race as #1848 above): this setImmediate task can run before window
+    // creation, and gating on the window skipped the check — and the pref
+    // advance — for the whole session. The window is resolved at send time
+    // inside the check; with no window the notes park as pending for the
+    // renderer's get-pending claim.
+    if (app.isPackaged) {
       const { initializeReleaseNotesOnStartup } =
         await import('../features/release-notes/main/release-notes.ipc');
-      void initializeReleaseNotesOnStartup(mainWindow);
+      void initializeReleaseNotesOnStartup(getMainWindow);
     }
 
     // Setup development-only IPC handlers
@@ -1829,6 +1835,16 @@ app.on('before-quit', async (event: Electron.Event) => {
 });
 
 app.on('window-all-closed', async () => {
+  // A backend switch destroys every window between its capture and restore
+  // halves, which fires this event mid-switch. Treating that as a manual
+  // last-window close would delete the sessions file the switch just wrote
+  // (macOS) or start the quit flow (Windows/Linux) — so ignore it entirely;
+  // restoreWindowsForBackend() reopens windows right after.
+  if (isBackendSwitchWindowTeardownInProgress()) {
+    logger.info('window-all-closed ignored: backend-switch window teardown in progress');
+    return;
+  }
+
   // On macOS the app stays alive after all windows are closed.
   // Clear the saved sessions file so that clicking the dock icon opens a single
   // fresh window instead of restoring every window the user just closed.

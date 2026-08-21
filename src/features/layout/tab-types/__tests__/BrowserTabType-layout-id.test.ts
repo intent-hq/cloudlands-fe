@@ -64,4 +64,35 @@ describe('BrowserTabType panel layout routing', () => {
       updateContextItem('workspace-1', 'context-1', { title: 'Next title' }),
     );
   });
+
+  // URL-bar autofocus only when the tab is active AND its panel is focused —
+  // a focus-less reveal (restoreHiddenTab focus:false + setActiveTab) must not
+  // steal keyboard focus from the conversation input.
+  it.each([
+    [true, true, 'true'],
+    [true, false, 'false'],
+    [false, true, 'false'],
+  ])(
+    'gates focusUrlBarOnMount on panel focus (isActive=%s, isPanelFocused=%s)',
+    (isActive, isPanelFocused, expected) => {
+      render(BrowserTabType, {
+        props: {
+          tab: {
+            id: 'browser-tab',
+            type: 'browser',
+            title: 'Browser',
+            closable: true,
+            browserUrl: 'https://initial.example/',
+          },
+          workspaceId: 'workspace-1',
+          layoutId: 'workspace-1',
+          isActive,
+          isPanelFocused,
+        },
+      });
+      expect(
+        screen.getByTestId('embedded-browser').getAttribute('data-focus-url-bar-on-mount'),
+      ).toBe(expected);
+    },
+  );
 });

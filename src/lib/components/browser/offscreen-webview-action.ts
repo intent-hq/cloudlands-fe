@@ -17,17 +17,48 @@ export type OffscreenWebviewEntry = {
   tabId: string;
   workspaceId: string;
   url: string;
+  /**
+   * Live persisted browserUrl for the tab. The mount `url` is frozen so our
+   * own did-navigate sync never reloads the guest, but an external update
+   * (e.g. an agent openTab replacing a hidden tab, monorepo#2857) must still
+   * navigate the live guest — the action loadURLs when this diverges from
+   * the guest's actual URL.
+   */
+  desiredUrl?: string;
 };
 
 type OffscreenWebviewElement = HTMLElement & {
   getWebContentsId: () => number;
   setAudioMuted?: (muted: boolean) => void;
+  getURL?: () => string;
+  loadURL?: (url: string) => Promise<void>;
 };
 
 export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry) {
   const webview = node as OffscreenWebviewElement;
+  let current = entry;
+  let domReady = false;
+
+  const syncDesiredUrl = () => {
+    const desired = current.desiredUrl;
+    if (!domReady || !desired) return;
+    try {
+      // Equal URLs mean the change came from our own did-navigate sync (or
+      // the guest is already there) — never reload in that case.
+      if (webview.getURL?.() === desired) return;
+      webview.loadURL?.(desired)?.catch((err) => {
+        logger.warn('Failed to navigate offscreen tab to updated browserUrl', {
+          tabId: current.tabId,
+          error: err,
+        });
+      });
+    } catch {
+      // WebView may have been detached; the next update retries.
+    }
+  };
 
   const handleDomReady = () => {
+    domReady = true;
     try {
       webview.setAudioMuted?.(true);
     } catch {
@@ -53,11 +84,13 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
         tabId: entry.tabId,
       });
     }
+    // A desiredUrl update may have arrived before the guest was ready.
+    syncDesiredUrl();
   };
 
   const handleDidNavigate = (event: Event) => {
     const url = (event as Event & { url?: string }).url;
-    if (url) appStore.dispatch(updateTabBrowserUrl(entry.workspaceId, entry.tabId, url));
+    if (url) appStore.dispatch(updateTabBrowserUrl(current.workspaceId, current.tabId, url));
   };
 
   // dom-ready fires on every top-level navigation; register once per guest
@@ -71,6 +104,10 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
   webview.addEventListener('did-navigate-in-page', handleDidNavigate);
 
   return {
+    update(next: OffscreenWebviewEntry) {
+      current = next;
+      syncDesiredUrl();
+    },
     destroy() {
       webview.removeEventListener('dom-ready', handleDomReady);
       webview.removeEventListener('did-navigate', handleDidNavigate);

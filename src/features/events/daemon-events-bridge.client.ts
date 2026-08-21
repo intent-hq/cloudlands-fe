@@ -169,6 +169,7 @@ import {
   renameSession,
   setProcessQueueHint,
   clearProcessQueueHint,
+  processEvicted,
   updateSession,
   updateAgentDigest,
   upsertSession,
@@ -179,7 +180,12 @@ import {
   removeAgent,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { removeWatchedAgent } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
-import { pruneRecentlyClosed } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import {
+  destroyOwnedTabsForWorkspace,
+  destroyTabsByOwnerAgent,
+  pruneRecentlyClosed,
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { selectHiddenTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import {
   applyTaskStatusChanged,
   loadWorkspaceTasksRequested,
@@ -260,6 +266,10 @@ import {
 import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { WorkspaceEvent } from '$features/events/types';
 import { createLogger } from '$lib/utils/client-logger';
+import {
+  reportStreamLifecycle,
+  streamTurnCorrelation,
+} from '$lib/utils/stream-lifecycle-telemetry';
 import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -712,6 +722,7 @@ function dispatchStreamUpdate(
   // agent-stream-saga re-checks coverage for dispatches buffered across a
   // registration install.
   const covered = hasStandingChatSubscription(agentId);
+  const contentBlocks = covered ? undefined : buildContentBlocks(state);
 
   appStore.dispatch(
     agentStreamUpdateReceived({
@@ -721,11 +732,18 @@ function dispatchStreamUpdate(
       source: 'sendMessage',
       eventType,
       assistantMessageId: state.messageId,
-      ...(covered ? {} : { contentBlocks: buildContentBlocks(state) }),
+      ...(contentBlocks ? { contentBlocks } : {}),
       ...(stopReason ? { stopReason } : {}),
       ...(finishReason ? { finishReason } : {}),
     }),
   );
+  reportStreamLifecycle({
+    stage: 'bridge',
+    event: `stream-${eventType}-dispatched`,
+    turnCorrelation: streamTurnCorrelation(state.messageId),
+    callbackResult: 'dispatched',
+    ...(contentBlocks ? { blockCount: contentBlocks.length } : {}),
+  });
 }
 
 /**
@@ -1191,6 +1209,13 @@ function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): voi
       createInitialPlaceholder: true,
     }),
   );
+  reportStreamLifecycle({
+    stage: 'bridge',
+    event: 'stream-start-dispatched',
+    turnCorrelation: streamTurnCorrelation(messageId),
+    callbackResult: 'dispatched',
+    blockCount: 0,
+  });
 }
 
 function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void {
@@ -1253,6 +1278,13 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
     });
   }
   const state = streamsByAgent.get(agentId);
+  reportStreamLifecycle({
+    stage: 'bridge',
+    event: 'agent-stream-end-received',
+    turnCorrelation: streamTurnCorrelation(messageId ?? state?.messageId),
+    callbackResult: 'received',
+    blockCount: trailingBlocks.length,
+  });
   if (state && (!messageId || state.messageId === messageId)) {
     if (trailingBlocks.length > 0) {
       const maxIndex = Math.max(-1, ...state.blocksByIndex.keys());
@@ -1300,6 +1332,13 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         ...(finishReason ? { finishReason } : {}),
       }),
     );
+    reportStreamLifecycle({
+      stage: 'bridge',
+      event: 'stream-complete-dispatched',
+      turnCorrelation: streamTurnCorrelation(messageId),
+      callbackResult: 'dispatched',
+      blockCount: trailingBlocks.length,
+    });
     return;
   }
   if (trailingBlocks.length > 0) {
@@ -1310,6 +1349,13 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
       trailingBlockCount: trailingBlocks.length,
     });
   }
+  reportStreamLifecycle({
+    stage: 'bridge',
+    event: 'agent-stream-end-ignored',
+    turnCorrelation: streamTurnCorrelation(messageId),
+    callbackResult: 'ignored',
+    blockCount: trailingBlocks.length,
+  });
 }
 
 function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): void {
@@ -1319,6 +1365,27 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
   if (typeof agentId !== 'string') return;
 
   const state = streamsByAgent.get(agentId);
+  const turnId = typeof data?.turnId === 'string' ? data.turnId : undefined;
+  const turnCorrelation = streamTurnCorrelation(state?.messageId);
+  const turnIdCorrelation = streamTurnCorrelation(turnId);
+  const failureCorrelation =
+    turnCorrelation || turnIdCorrelation
+      ? {
+          ...(turnCorrelation ? { turnCorrelation } : {}),
+          ...(turnIdCorrelation ? { turnIdCorrelation } : {}),
+        }
+      : undefined;
+  reportStreamLifecycle({
+    stage: 'bridge',
+    event: 'agent-failed-received',
+    ...failureCorrelation,
+    correlationBasis: turnCorrelation
+      ? 'assistant-message'
+      : turnIdCorrelation
+        ? 'turn'
+        : 'unjoinable',
+    callbackResult: 'received',
+  });
   if (state) {
     dispatchStreamUpdate(agentId, state, 'error');
     streamsByAgent.delete(agentId);
@@ -1336,13 +1403,35 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
   // turn-correlation id (PROTOCOL §6.6) rides along when present so the
   // failure can be attributed to the exact turn (monorepo#1057).
   if (typeof error === 'string' && error.length > 0) {
-    const turnId = typeof data?.turnId === 'string' ? data.turnId : undefined;
     const parentAgentId = data?.parentAgentId;
     const hasParent = typeof parentAgentId === 'string' && parentAgentId.length > 0;
     if (!hasParent) {
       recordAgentFailure({ agentId, workspaceId, error });
     }
-    appStore.dispatch(chatSendFailed(agentId, error, turnId));
+    appStore.dispatch(chatSendFailed(agentId, error, turnId, failureCorrelation));
+    reportStreamLifecycle({
+      stage: 'bridge',
+      event: 'agent-failed-dispatched',
+      ...failureCorrelation,
+      correlationBasis: turnCorrelation
+        ? 'assistant-message'
+        : turnIdCorrelation
+          ? 'turn'
+          : 'unjoinable',
+      callbackResult: 'dispatched',
+    });
+  } else if (!state) {
+    reportStreamLifecycle({
+      stage: 'bridge',
+      event: 'agent-failed-ignored',
+      ...failureCorrelation,
+      correlationBasis: turnCorrelation
+        ? 'assistant-message'
+        : turnIdCorrelation
+          ? 'turn'
+          : 'unjoinable',
+      callbackResult: 'ignored',
+    });
   }
 }
 
@@ -1965,8 +2054,11 @@ function handleCommentEvent(
  * converge into a single `updateWorkspaceEntity` dispatch so the sidebar PR
  * pill / PR list / progress card refresh live without waiting for the
  * workspace list to refetch. `pullRequests` is the daemon-owned per-branch PR
- * list (§6.5) folded verbatim; `pr:unlinked` does not touch it — the daemon
- * owns the array and retains merged/closed history across unlinks. This
+ * list (§6.5); the event payload carries the *stored* (unmerged) list, so the
+ * slice URL-unions it with the entity's current pool instead of replacing —
+ * background cards keep git-root / monitor PRs the daemon only folds into
+ * `workspace.list` (§6.9; monorepo#2951). `pr:unlinked` does not touch it —
+ * the daemon owns the array and retains merged/closed history across unlinks. This
  * replaces the legacy `relayLegacyIpcEvent` `workspace:updated` re-emit for
  * PR events — Redux is now the single source of truth for PR pill state.
  */
@@ -2358,6 +2450,21 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
     closeWorkspaceTabAndNavigateAway(workspaceId).catch((error) => {
       logger.warn('closeWorkspaceTabAndNavigateAway failed after workspace:updated archive', error);
     });
+    // Workspace archive discards all tabs (protocol §5.9, monorepo#2857):
+    // destroy the agent-owned browser tabs — visible and hidden — whose
+    // pinned webviews would otherwise stay mounted offscreen indefinitely,
+    // and drop main's CDP/ownership registrations for their owners.
+    const ownerAgentIds = collectOwnedTabAgentIds(workspaceId);
+    appStore.dispatch(destroyOwnedTabsForWorkspace(workspaceId));
+    for (const agentId of ownerAgentIds) {
+      void invoke(IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId }).catch((error: unknown) => {
+        logger.warn('Failed to clear main-process registrations for archived workspace tabs', {
+          workspaceId,
+          agentId,
+          error,
+        });
+      });
+    }
   } else if (changes.status === WorkspaceStatus.Active || changes.archived === false) {
     appStore.dispatch(restoreWorkspaceTab(workspaceId));
   }
@@ -2400,10 +2507,59 @@ function handleWorkspaceDeletedEvent(workspaceId: string): void {
     agentSessions?: { agentIdsByWorkspace: Record<string, string[]> };
   };
   const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
+  // Resolve owned-tab agents BEFORE the purge: `workspaceDeleted` drops the
+  // whole panel-layout entry (destroying the pinned webviews), so main's
+  // CDP/ownership registrations must be collected first (monorepo#2857).
+  const ownerAgentIds = collectOwnedTabAgentIds(workspaceId);
   appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
+  for (const agentId of ownerAgentIds) {
+    void invoke(IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId }).catch((error: unknown) => {
+      logger.warn('Failed to clear main-process registrations for deleted workspace tabs', {
+        workspaceId,
+        agentId,
+        error,
+      });
+    });
+  }
   navigateAwayIfViewing(workspaceId).catch((error) => {
     logger.warn('navigateAwayIfViewing failed after workspace:deleted', error);
   });
+}
+
+/**
+ * Owner agent IDs of the agent-owned browser tabs (visible and hidden) in a
+ * workspace's panel layout — the set whose main-process CDP/ownership
+ * registrations need clearing when the workspace's tabs are discarded on
+ * archive/delete (monorepo#2857).
+ */
+function collectOwnedTabAgentIds(workspaceId: string): Set<string> {
+  const layout = (
+    appStore.state as {
+      panelLayout?: {
+        byWorkspaceId: Record<
+          string,
+          {
+            panels: Record<string, { tabs: Array<{ type: string; ownerAgentId?: string }> }>;
+          }
+        >;
+      };
+    }
+  ).panelLayout?.byWorkspaceId[workspaceId];
+  const ownerAgentIds = new Set<string>();
+  if (!layout) return ownerAgentIds;
+  for (const panel of Object.values(layout.panels)) {
+    for (const tab of panel.tabs) {
+      if (tab.type === 'browser' && typeof tab.ownerAgentId === 'string') {
+        ownerAgentIds.add(tab.ownerAgentId);
+      }
+    }
+  }
+  for (const tab of selectHiddenTabs.select(appStore.state, workspaceId)) {
+    if (tab.type === 'browser' && typeof tab.ownerAgentId === 'string') {
+      ownerAgentIds.add(tab.ownerAgentId);
+    }
+  }
+  return ownerAgentIds;
 }
 
 /**
@@ -3241,6 +3397,19 @@ export function routeDaemonEventsNotification(
       appStore.dispatch(removeSession(data.agentId));
       appStore.dispatch(removeWatchedAgent(workspaceId, data.agentId));
       appStore.dispatch(pruneRecentlyClosed(workspaceId, { agentId: data.agentId }));
+      // Owned browser tabs die with their agent (monorepo#2857): the
+      // deletion COMMIT (not the schedule — agent.cancelDelete during the
+      // grace window restores tabs intact) destroys visible and hidden owned
+      // tabs, then clears main's CDP/ownership registrations.
+      appStore.dispatch(destroyTabsByOwnerAgent(workspaceId, data.agentId));
+      void invoke(IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId: data.agentId }).catch(
+        (error: unknown) => {
+          logger.warn('Failed to clear main-process registrations for deleted agent tabs', {
+            agentId: data.agentId,
+            error,
+          });
+        },
+      );
       // Tombstone the id so an `agent.get`/`agent.list` begun before this
       // event (returning the pre-delete row) cannot resurrect it after the
       // removals above. An immediate delete has no schedule event, so no
@@ -3523,11 +3692,16 @@ export function routeDaemonEventsNotification(
     return;
   }
   if (type === 'agent:process:evicted') {
-    // Evicted means the agent was removed from the queue (e.g., cancelled/failed
-    // before resuming). Clear the hint so the UI doesn't show a stale waiting state.
+    // Evicted means the process was parked, NOT that the agent ended (§6.5):
+    // dropped from the spawn queue before resuming, or reaped by the idle TTL
+    // sweep (reason "idle-ttl", intent-hq/intentd#1356) — the session row
+    // survives and the next send transparently respawns it. The daemon only
+    // evicts idle processes, so clear the queue hint AND any stale optimistic
+    // busy flags that would otherwise render a phantom "Thinking" indicator,
+    // and demote a stale RUNNING status to idle (monorepo#3040).
     const data = (event as { data?: Record<string, unknown> }).data;
     if (data && typeof data.agentId === 'string') {
-      appStore.dispatch(clearProcessQueueHint(data.agentId));
+      appStore.dispatch(processEvicted(data.agentId));
     }
     return;
   }

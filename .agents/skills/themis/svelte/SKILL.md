@@ -4,10 +4,8 @@ description: >-
   Svelte-readable routing index for frontend-facing themis work
   only when the touched code path has concrete Svelte/SvelteKit evidence. Use for
   Store component wiring, Svelte readable selector lifecycle, and
-  migration touchpoints. Route React UI paths to ../react/SKILL.md,
-  Node/server/no-UI paths to ../streaming/SKILL.md by default, and shared
-  Redux/redux-saga concepts to ../core/SKILL.md. Never mix this concrete Svelte
-  Store family with ReactStore/signals or StreamingStore/Kefir patterns in one app.
+  migration touchpoints. Use the Svelte subtree for Svelte/SvelteKit behavior and
+  route shared Redux/redux-saga concepts to ../core/SKILL.md.
 triggers:
   - Svelte
   - SvelteKit
@@ -31,21 +29,15 @@ leaf skills below for implementation details; do not copy large API examples int
 this Svelte index.
 
 Core Redux and redux-saga guidance lives under `../core/`. Svelte-readable
-Store selector/component guidance lives under `./`. ReactStore and Preact signal
-selector guidance lives under `../react/`. StreamingStore and Kefir/observable
-selector guidance lives under `../streaming/`.
+Store selector/component guidance lives under `./`.
 
-## Exclusive Svelte Store family rule
+## Svelte Store family rule
 
 - A frontend Svelte/SvelteKit app using this skill has chosen the concrete
   Svelte Store family: `Store`, Svelte readables, component-init
   selector calls, and Svelte lifecycle/setup patterns.
-- Do **not** apply `ReactStore`, Preact signal selector, React `.useValue(...)`,
-  `StreamingStore`, Kefir/observable selector, streaming selector lifecycle,
-  streaming setup, or streaming teardown patterns inside that same app/package/code path.
-- In a mixed repository, a separate React app may use `../react/`, and a separate
-  Node/server/CLI/worker/test-harness app may use `../streaming/`, but keep those
-  choices isolated from this Svelte app.
+- Keep selector creation, readable observation, component setup, and teardown
+  within the Svelte Store APIs documented by this subtree.
 
 Do not route generic web, Node, server, CLI, worker, test-harness, or no-Svelte
 paths here merely because the repository contains a Svelte dependency. In mixed
@@ -66,9 +58,9 @@ repositories, route by the files and behavior being changed.
   choosing silently.
 
 Detailed docs to consult when a task needs conceptual background:
-`docs/ARCHITECTURE.md`, `docs/SELECTORS.md`, `docs/SAGAS.md`,
-`docs/WAITFOR.md`, `docs/REDUCERS.md`, `docs/COLLECTIONS.md`,
-`docs/TESTING.md`, and `docs/INSTALLATION.md`.
+`@augmentcode/themis/docs/ARCHITECTURE.md`, `@augmentcode/themis/docs/SELECTORS.md`, `@augmentcode/themis/docs/SAGAS.md`,
+`@augmentcode/themis/docs/WAITFOR.md`, `@augmentcode/themis/docs/REDUCERS.md`, `@augmentcode/themis/docs/COLLECTIONS.md`,
+`@augmentcode/themis/docs/TESTING.md`, and `@augmentcode/themis/docs/INSTALLATION.md`.
 
 ## Agent Preflight Compliance Contract
 
@@ -76,23 +68,19 @@ Before editing code or docs under this skill:
 
 - **MUST** read this skill plus every linked skill/doc that applies to the touched files.
 - **MUST** record the Svelte/SvelteKit evidence that made this route applicable.
-- **MUST** confirm the target app/package/code path is not also applying
-  StreamingStore, Kefir/observable selector, streaming setup, or streaming
-  lifecycle patterns.
+- **MUST** confirm the target app/package/code path has concrete Svelte or
+  SvelteKit evidence before using this route.
 - **MUST** cite the applicable skills and docs in the implementation plan or completion handoff, including the rules used.
 - **MUST** include verifier-ready evidence: searches, tests, or diff checks proving the cited rules were followed.
 - **SHOULD** stop and ask when rules conflict or scope is unclear.
 - **NEVER** claim completion when a required skill/doc was skipped or the handoff lacks compliance evidence.
-- **NEVER** use this Svelte route for no-Svelte Node/server code paths; use
-  `../streaming/` by default instead.
-- **NEVER** mix Svelte readable/component lifecycle patterns with StreamingStore
-  or Kefir selector patterns in the same app.
+- **NEVER** use this Svelte route without concrete Svelte or SvelteKit evidence.
 
 ## Always-on policy
 
 - Redux owns shared/domain state; Svelte stores (`*.store.svelte.ts`) are deprecated.
-- A Svelte app uses `Store` and Svelte-readable selectors only; it
-  must not also use `ReactStore`, `StreamingStore`, or their selector lifecycle/setup rules.
+- A Svelte app uses `Store` and Svelte-readable selectors for its Store-backed
+  component reads.
 - Redux state is canonical only: no derived fields, duplicated entity copies,
   parallel arrays/maps for the same records, or reducer-maintained selector outputs.
 - Components render and dispatch; reducers update state; sagas own side effects.
@@ -194,7 +182,7 @@ dispose();
 selectedTodo?.id satisfies string | undefined;
 ```
 
-`Store` is the canonical Svelte-readable class from `@augmentcode/themis/svelte-store`. Use `ReactStore` from `@augmentcode/themis/react-store` in a separate React app when selector calls should return Preact React signals and `.useValue(...args)` values. Use `StreamingStore` from `@augmentcode/themis/streaming-store` when selector calls should return Kefir streams.
+`Store` is the canonical Svelte-readable class from `@augmentcode/themis/svelte-store`.
 
 ### Verification handoff evidence payload
 
@@ -240,14 +228,12 @@ const incompleteRouting = {
 | `../core/actions/SKILL.md` | Creating custom `createAction` or `createAsyncAction` actions. | `../core/actions/SKILL.md` |
 | `../core/reducers/SKILL.md` | Building immutable chained reducers and no-op reference equality behavior. | `../core/reducers/SKILL.md` |
 | `./selectors/SKILL.md` | Creating Store-bound selectors, cached Svelte readable direct outputs, collection utility reads, `.select`, or `.effect` usage. | `./selectors/SKILL.md` |
-| `../streaming/selectors/SKILL.md` | Creating StreamingStore selectors whose direct calls return Kefir observables. | `../streaming/selectors/SKILL.md` |
 
 ### Selector system
 
 | Route | Use when | Path |
 | --- | --- | --- |
 | `./selector-lifecycle/SKILL.md` | Choosing component-init, handler, or saga selector call modes; using Store-first dispatch. | `./selector-lifecycle/SKILL.md` |
-| `../streaming/selector-lifecycle/SKILL.md` | Choosing StreamingStore selector invocation/observation timing and non-readable call modes. | `../streaming/selector-lifecycle/SKILL.md` |
 | `../core/selector-channels/SKILL.md` | Reacting to selector value changes from sagas or creating selector-backed channels. | `../core/selector-channels/SKILL.md` |
 | `./selector-scheduling/SKILL.md` | Recognizing cached readable output reuse and selector emission scheduling as internal details; do not import removed throttled-readable helpers. | `./selector-scheduling/SKILL.md` |
 | `../core/wait-for/SKILL.md` | Suspending sagas until selector predicates pass or time out. | `../core/wait-for/SKILL.md` |
@@ -273,9 +259,8 @@ const incompleteRouting = {
 
 | Route | Use when | Path |
 | --- | --- | --- |
-| `./store/SKILL.md` | Choosing/importing `Store`, initialization/disposal, `useInitStore`/`useRunSaga` helpers, shared Store runtime behavior, or Store-family contrast. | `./store/SKILL.md` |
+| `./store/SKILL.md` | Choosing/importing `Store`, initialization/disposal, `useInitStore`/`useRunSaga` helpers, and shared Store runtime behavior. | `./store/SKILL.md` |
 | `./component-integration/SKILL.md` | Wiring Store initialization, component reads, Store dispatch, and template reactivity. | `./component-integration/SKILL.md` |
-| `../streaming/store/SKILL.md` | Importing, initializing, and disposing the Kefir/observable StreamingStore variant. | `../streaming/store/SKILL.md` |
 
 ### Testing, debugging, and verification
 
@@ -289,5 +274,5 @@ const incompleteRouting = {
 
 - First-time app setup: `../setup/SKILL.md`.
 - Migration playbook: `./migration/SKILL.md`.
-- Install/uninstall side effects and maintainer validation: `docs/INSTALLATION.md`.
+- Install/uninstall side effects and maintainer validation: `@augmentcode/themis/docs/INSTALLATION.md`.
 - Generic plain redux-saga API reference, outside this package's typed-redux-saga conventions: `../core/redux-saga/SKILL.md`.

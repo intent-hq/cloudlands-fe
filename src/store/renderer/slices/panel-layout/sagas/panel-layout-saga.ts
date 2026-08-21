@@ -12,6 +12,7 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 import { buffers, channel, type Channel } from 'redux-saga';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 
 import { clearPanelLayoutAdapter } from '$features/layout/panel-layout-adapter';
 import { m } from '$shared/paraglide/messages.js';
@@ -32,6 +33,7 @@ import {
 } from '../../../utils/safe-local-storage-saga';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import {
+  workspaceDeleted,
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
@@ -84,6 +86,8 @@ import {
   closeTabsByType,
   closeTabsToRight,
   consumePendingFocus,
+  destroyOwnedTabsForWorkspace,
+  destroyTabsByOwnerAgent,
   emptyWorkspaceState,
   focusPanel,
   goBack,
@@ -98,6 +102,7 @@ import {
   moveTabToPanel,
   moveTabToSplit,
   moveTabToSplitLevel,
+  openHiddenTab,
   openTab,
   openBlankWorkingPanel,
   openTabInAdjacentOrSplit,
@@ -110,8 +115,10 @@ import {
   reorderTabs,
   reopenClosedTab,
   resetLayout,
+  restoreHiddenTab,
   resolveNewWorkspaceInitialAgent,
   revealDeferredSpecTab,
+  revealHiddenTabAvoidingPanel,
   resizePanelLayoutAtHorizontalPanel,
   resizePanelLayoutRightEdge,
   selectNextTab,
@@ -148,6 +155,9 @@ const PERSIST_ACTIONS = [
   closeActiveTab,
   closeTabsByType,
   closeTabsByAgentId,
+  destroyTabsByOwnerAgent,
+  destroyOwnedTabsForWorkspace,
+  restoreHiddenTab,
   reopenClosedTab,
   setActiveTab,
   selectNextTab,
@@ -361,6 +371,16 @@ export function isStoredLayoutValid(value: unknown): value is WorkspacePanelLayo
       return false;
     }
     if (layout.deferSpecTab !== undefined && typeof layout.deferSpecTab !== 'boolean') return false;
+    if (layout.hiddenTabs !== undefined) {
+      if (
+        !Array.isArray(layout.hiddenTabs) ||
+        !layout.hiddenTabs.every(
+          (tab) => tab && typeof tab === 'object' && typeof tab.id === 'string',
+        )
+      ) {
+        return false;
+      }
+    }
     if (layout.newWorkspaceLifecycle !== undefined && layout.newWorkspaceLifecycle !== null) {
       const lifecycle = layout.newWorkspaceLifecycle;
       if (
@@ -399,8 +419,10 @@ export function isStoredLayoutValid(value: unknown): value is WorkspacePanelLayo
   }
 }
 
-function hasAnyTab(layout: WorkspacePanelLayout): boolean {
-  return Object.values(layout.panels).some((panel) => panel.tabs.length > 0);
+function hasAnyTab(layout: WorkspacePanelLayout | WorkspacePanelLayoutState): boolean {
+  const hidden = layout.hiddenTabs;
+  const hiddenCount = Array.isArray(hidden) ? hidden.length : (hidden?.ids.length ?? 0);
+  return Object.values(layout.panels).some((panel) => panel.tabs.length > 0) || hiddenCount > 0;
 }
 
 function getPersistableRoot(workspace: WorkspacePanelLayoutState): PanelLayoutNode {
@@ -428,6 +450,7 @@ function normalizeLayoutForWorkspace(
     removeForeignWorkspaceTabs(layout, workspaceId),
   );
   Object.assign(normalized, migratePanelCanvasWidth(layout.canvasWidth, layout.canvasWidthSource));
+  if (layout.hiddenTabs !== undefined) normalized.hiddenTabs = layout.hiddenTabs;
   if (layout.deferSpecTab !== undefined) normalized.deferSpecTab = layout.deferSpecTab;
   if (layout.newWorkspaceLifecycle !== undefined) {
     normalized.newWorkspaceLifecycle = layout.newWorkspaceLifecycle;
@@ -651,6 +674,8 @@ function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void>
           ? workspace.savedCanvasWidthSourceBeforeExpand
           : workspace.canvasWidthSource,
     };
+    const hiddenTabs = getItems(workspace.hiddenTabs);
+    if (hiddenTabs.length > 0) layout.hiddenTabs = hiddenTabs;
     if (workspace.deferSpecTab) layout.deferSpecTab = true;
     if (workspace.newWorkspaceLifecycle) {
       layout.newWorkspaceLifecycle = workspace.newWorkspaceLifecycle;
@@ -798,7 +823,9 @@ function* handleWorkspaceUnmounted(
   }
 }
 
-function* clearPersistedLayout(action: ReturnType<typeof clearPanelLayout>): SagaGenerator<void> {
+function* clearPersistedLayout(
+  action: ReturnType<typeof clearPanelLayout> | ReturnType<typeof workspaceDeleted>,
+): SagaGenerator<void> {
   const [wsId] = action.payload;
   if (!wsId) return;
   restoredUnderBackendIds.delete(wsId);
@@ -1024,11 +1051,25 @@ export function* panelLayoutSaga(options?: {
     // reusable-panel invariant has no reason to observe them — a dedicated
     // watcher keeps single ownership per the saga-watcher-ownership gate.
     yield* takeEvery(setTabOwnerAgent, persistPanelLayout);
+    // Hidden opens must persist (hidden tabs rehydrate across relaunch,
+    // monorepo#3045) but never touch panel structure, so like ownership
+    // changes above they bypass the reusable-panel invariant — a hidden
+    // agent open must not collapse the user's panels in pin mode.
+    yield* takeEvery(openHiddenTab, persistPanelLayout);
+    // Sidebar/footer reveals must persist (a revealed owned tab must not
+    // revert to hidden on restart, monorepo#3112) but bypass the
+    // reusable-panel invariant: the reveal may split the conversation panel,
+    // and letting the invariant observe that split would collapse it straight
+    // back in pin mode — re-hiding the tab the user just revealed.
+    yield* takeEvery(revealHiddenTabAvoidingPanel, persistPanelLayout);
     yield* takeEvery(PERSIST_ACTIONS, enforceReusablePanelInvariant);
     yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
     yield* takeEvery(openTabWithPanelModeRequested, openTabWithPanelMode);
     yield* takeEvery([setPanelOpenMode, togglePanelOpenMode], collapseAllWorkspacesForPanelMode);
-    yield* takeEvery(clearPanelLayout, clearPersistedLayout);
+    // workspaceDeleted also clears the persisted layout: the reducer drops the
+    // Redux entry (destroying pinned owned webviews, monorepo#2857), and a
+    // recycled workspace ID must not rehydrate the deleted workspace's tabs.
+    yield* takeEvery([clearPanelLayout, workspaceDeleted], clearPersistedLayout);
     const historyWatcher = yield* takeEvery(HISTORY_ACTIONS, queueHistorySaveForAction);
     yield* takeLatest(initializeLayout, loadHistoryForWorkspace);
     yield* takeLeading(connectionsListReceived, handleBackendSwitch, {

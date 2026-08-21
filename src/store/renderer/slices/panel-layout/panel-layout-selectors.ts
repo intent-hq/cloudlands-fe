@@ -4,6 +4,7 @@
  * Derived state selectors for the panel layout slice.
  */
 
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 import { emptyWorkspaceState } from './panel-layout-slice';
 import {
@@ -213,6 +214,13 @@ export const selectAgentHasOpenPanelTab = store.createSelector<[agentId: string]
     return false;
   },
 );
+
+/** Hidden (user-closed) agent-owned browser tabs, kept alive offscreen (monorepo#2857). */
+export const selectHiddenTabs = store.createSelector<[wsId: string], PanelTab[]>((state, wsId) => {
+  const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
+  // Pre-#2857 persisted/test states may lack the field.
+  return getItems(ws.hiddenTabs ?? emptyWorkspaceState.hiddenTabs);
+});
 
 /** Select visible horizontal panel-column counts for workspace width reservation. */
 export const selectPanelColumnCountsByWorkspaceId = store.createSelector((state) => {

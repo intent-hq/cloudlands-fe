@@ -17,7 +17,7 @@ jobs:
     name: Test Windows Build
     # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
     # group as gh-linux-16x), fixed at the runner level to the Windows Server
-    # 2022 image (see release-beta.yml build-windows for why Server 2022).
+    # 2022 image (see release-alpha.yml build-windows for why Server 2022).
     runs-on: gh-windows-16x
     timeout-minutes: 60
 
@@ -41,7 +41,7 @@ jobs:
           # Space-free per-run dest: hosted Windows runner names can contain
           # spaces and pnpm/action-setup@v6 breaks on space-containing paths
           # on Windows (pnpm/action-setup#261), so runner.name cannot be
-          # used here (same as release-beta.yml build-windows). run_id +
+          # used here (same as release-alpha.yml build-windows). run_id +
           # run_attempt keeps the dest unique per run.
           dest: ~/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
 
@@ -65,7 +65,7 @@ jobs:
       # which can't read the .zip release asset ("This does not look like a
       # tar archive", run 31310028897; the old self-hosted runner resolved
       # bsdtar and didn't need this). Prefer the System32 bsdtar, which
-      # handles .zip natively — same workaround as release-beta.yml
+      # handles .zip natively — same workaround as release-alpha.yml
       # build-windows (intent-hq/monorepo#1282). Scoped to this step so bash
       # keeps resolving to Git Bash (see PATH workaround above).
       - name: Fetch pinned intentd sidecar
@@ -132,12 +132,12 @@ jobs:
         env:
           # 12288: the bundle's peak heap outgrew the old 8192 cap even with
           # sourcemaps disabled (monorepo#1340) — run 31310837286 JS-heap-OOM'd
-          # at ~7.9 GB under 8192 on gh-windows-16x. Mirrors the release-beta
+          # at ~7.9 GB under 8192 on gh-windows-16x. Mirrors the release-alpha
           # build-windows leg; the 16x runner's 64 GB RAM gives ample headroom.
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
           # (monorepo#1074/#1282/#1340). Nothing consumes the 'hidden'
-          # production maps in these builds, so skip them like release-beta.
+          # production maps in these builds, so skip them like release-alpha.
           INTENT_DISABLE_SOURCEMAPS: '1'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs

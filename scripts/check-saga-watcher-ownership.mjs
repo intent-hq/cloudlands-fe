@@ -62,13 +62,21 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
   },
   {
     pattern:
-      /panel-layout-slice\.ts#(?:openTabInNewRootColumn|collapseToReusablePanel|closeTabsByType|closeTabsByAgentId|selectNextTab|selectPreviousTab|reorderTabs|focusPanel|markPanelTouched|updateSizes|updateSplitSizes|resizePanelLayoutRightEdge|resizePanelLayoutAtHorizontalPanel|toggleExpandPanel|goBackInFocusHistory|goForwardInFocusHistory|setDeferSpecTab|observeDeferredSpecGeneration|revealDeferredSpecTab|resolveNewWorkspaceInitialAgent|reconcileStaleAgentTabs|updateTabTitle|updateTabBrowserUrl|updateTabFavicon|updateFileTabPath|consumePendingFocus|setPanelPinned)$/,
+      /panel-layout-slice\.ts#(?:openTabInNewRootColumn|collapseToReusablePanel|closeTabsByType|closeTabsByAgentId|destroyTabsByOwnerAgent|destroyOwnedTabsForWorkspace|restoreHiddenTab|selectNextTab|selectPreviousTab|reorderTabs|focusPanel|markPanelTouched|updateSizes|updateSplitSizes|resizePanelLayoutRightEdge|resizePanelLayoutAtHorizontalPanel|toggleExpandPanel|goBackInFocusHistory|goForwardInFocusHistory|setDeferSpecTab|observeDeferredSpecGeneration|revealDeferredSpecTab|resolveNewWorkspaceInitialAgent|reconcileStaleAgentTabs|updateTabTitle|updateTabBrowserUrl|updateTabFavicon|updateFileTabPath|consumePendingFocus|setPanelPinned)$/,
     rationale:
       'layout persistence and reusable-panel invariant enforcement are independent',
   },
   {
     pattern: /user-preferences-slice\.ts#(?:setPanelOpenMode|togglePanelOpenMode)$/,
     rationale: 'preference persistence and panel-layout collapse are independent',
+  },
+  {
+    pattern: /unread-tracking-slice\.ts#markAgentAsViewed$/,
+    rationale: 'subscription read prefetch and switch-timing observation are independent',
+  },
+  {
+    pattern: /background-hooks-slice\.ts#backgroundHooksSubscribeRequested$/,
+    rationale: 'hooks subscription transport and switch-timing observation are independent',
   },
 ];
 

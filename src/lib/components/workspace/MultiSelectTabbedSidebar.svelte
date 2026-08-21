@@ -52,12 +52,12 @@
   import { selectPendingLocateInSidebar } from '$store/renderer/slices/app-layout/app-layout-selectors';
   import {
     faArrowUpRightFromSquare,
-    faCodePullRequest,
     faCompressAlt,
     faExpandAlt,
     faPencil,
     faPlus,
   } from '@fortawesome/free-solid-svg-icons';
+  import { getActivePrStatusPresentation } from '$lib/components/workspace/utils/active-pr-status-presentation';
 
   import { onMount, tick } from 'svelte';
   import { cubicIn, cubicOut } from 'svelte/easing';
@@ -1282,6 +1282,7 @@
                     >
                     {#if tab.id === 'changes' && $activePrSummary$}
                       {@const pr = $activePrSummary$}
+                      {@const prStatus = getActivePrStatusPresentation(pr.status)}
                       <Button
                         variant="plain"
                         size="icon"
@@ -1296,7 +1297,7 @@
                           handleLink(pr.url, { workspaceId: WorkspaceId(workspaceId) });
                         }}
                       >
-                        <Fa icon={faCodePullRequest} class="size-4!" />
+                        <Fa icon={prStatus.icon} class="size-4! {prStatus.className}" />
                       </Button>
                     {/if}
                     {#if tab.id === 'agents'}

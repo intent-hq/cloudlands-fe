@@ -28,6 +28,7 @@ import {
   renameAgent,
   setProcessQueueHint,
   clearProcessQueueHint,
+  processEvicted,
   bulkUpsertSessions,
   computeMessageContentHash,
   hasCanonicalId,
@@ -2048,6 +2049,59 @@ describe('agent-session-slice reducer', () => {
       state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
       state = agentSessionReducer(state, clearProcessQueueHint('a1'));
       expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+    });
+  });
+
+  describe('processEvicted', () => {
+    it('clears the queue hint and stale busy flags and demotes a stale running status (monorepo#3040)', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            status: 'active' as any,
+            isStreaming: true,
+            isProcessing: true,
+            isResponding: true,
+          }),
+        ),
+      );
+      state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+      state = agentSessionReducer(state, processEvicted('a1'));
+      const session = state.byAgentId['a1'];
+      expect(session.processQueueHint).toBeUndefined();
+      expect(session.isStreaming).toBe(false);
+      expect(session.isProcessing).toBe(false);
+      expect(session.isResponding).toBe(false);
+      expect(session.liveTurnOpen).toBe(false);
+      expect(session.liveTurnOpenedAt).toBeUndefined();
+      // §6.5 guarantees an evicted process is idle, so a stale RUNNING status
+      // ('active' here — e.g. a missed agent:idle) would keep
+      // isAgentRunningState/Thinking true on its own; demote it to 'idle'.
+      expect(session.status).toBe('idle');
+    });
+
+    it('leaves a non-running status untouched (eviction is not an agent-ended transition)', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            status: 'Waiting' as any,
+            isStreaming: true,
+          }),
+        ),
+      );
+      state = agentSessionReducer(state, processEvicted('a1'));
+      const session = state.byAgentId['a1'];
+      expect(session.isStreaming).toBe(false);
+      // Waiting/error/terminal are BE-owned signals the eviction says nothing
+      // about — only stale RUNNING statuses are demoted.
+      expect(session.status).toBe('Waiting');
+    });
+
+    it('is a no-op for an unknown agent', () => {
+      const state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      const next = agentSessionReducer(state, processEvicted('missing'));
+      expect(next).toBe(state);
     });
   });
 

@@ -55,6 +55,15 @@ import type { LinkOptions } from '@tiptap/extension-link';
  * - Add console.logs in parseHTML, addAttributes, and renderHTML to trace the flow
  */
 const IntentLink = Link.extend({
+  // The stock Link mark is inclusive whenever autolink is enabled (its
+  // `inclusive()` returns `options.autolink`), so typing at the end of a link
+  // extends the mark — e.g. a space after an autolinked URL keeps the
+  // highlight growing and can swallow the rest of the paragraph. Making the
+  // mark non-inclusive stops it at the URL boundary; autolink still applies
+  // the mark once a typed URL is followed by whitespace, and parsed/pasted
+  // links are unaffected.
+  inclusive: false,
+
   parseHTML() {
     return [
       {

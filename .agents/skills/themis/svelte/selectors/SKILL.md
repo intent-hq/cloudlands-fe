@@ -21,7 +21,7 @@ triggers:
 ---
 # Selectors — `store.createSelector` / collection utility reads
 
-> Operational guidance for selector work. Full API reference and examples: `docs/SELECTORS.md`. Public facade: `store.createSelector(...)` from `@augmentcode/themis/svelte-store`; selector/cache internals are package-private implementation context; related guidance: `../SKILL.md` §3.
+> Operational guidance for selector work. Full API reference and examples: `@augmentcode/themis/docs/SELECTORS.md`. Public facade: `store.createSelector(...)` from `@augmentcode/themis/svelte-store`; selector/cache internals are package-private implementation context; related guidance: `../SKILL.md` §3.
 
 ## Use when
 
@@ -37,8 +37,6 @@ triggers:
 - Generic/shared selector helpers should accept a configured Store and create selectors through `store.createSelector(...)`; do not import standalone selector creation utilities from the package.
 - Use public collection utilities such as `getItem(collection, id)` and `getItems(collection)` inside `store.createSelector(...)` callbacks for O(1) item lookup and ordered materialization.
 - Do not import standalone selector creation utilities from package subpaths or inject selector behavior through Store constructors; selector creation is Store-bound public API.
-- Do not use `ReactStore`, React `.useValue(...)`, Preact signal arguments,
-  `StreamingStore`, Kefir observable arguments, or streaming selector lifecycle/setup patterns inside the same Svelte app.
 
 ## Call mode cues
 
@@ -50,17 +48,13 @@ triggers:
 | Selector composition | `otherSelector.select(state, args)` | Calling `otherSelector(args)` |
 | SSR/non-context readable | `selectFoo.withStore(store)(args)` | Global/context assumptions |
 
-For React consumers in a separate React app/package/code path, route to
-`react/selectors`. For streaming consumers in a separate Node/server/non-Svelte
-app/package/code path, route to `streaming/selectors`. Do not mix those concrete
-Store families into the Svelte app using this skill.
+All selector call modes for this Svelte Store family are documented in this
+subtree; keep shared helpers Store-bound through `store.createSelector(...)`.
 
-Selector-channel helpers can consume Svelte `Store` selectors through the same
-`.select`/`.effect`-compatible read shape used by `ReactStore` and
-`StreamingStore` selectors. Pass plain stable selector arguments as the helper
-args tuple in sagas; selector-channel effects read the Redux store from saga context
-and do not call or subscribe to direct Svelte readable, React signal, or Kefir
-observable selector outputs.
+Selector-channel helpers can consume Svelte `Store` selectors through their
+`.select`/`.effect`-compatible read shape. Pass plain stable selector arguments
+as the helper args tuple in sagas; selector-channel effects read the Redux store
+from saga context and do not call or subscribe to direct readable selector outputs.
 
 ## Selector caching
 
@@ -101,7 +95,6 @@ observable selector outputs.
 - Do not store selector outputs in reducer state.
 - Do not use inline saga selectors for values that should be named, cached, and testable.
 - Do not add manual memoization/cache/debounce/throttle wrappers inside selector callbacks or around selector calls just to improve selector performance.
-- Do not import or apply ReactStore/signal or StreamingStore/Kefir selector patterns in this Svelte app.
 - Do not hide fresh selector object/array/function args behind helper functions;
   pass stable scalar args or a stable intentional reference instead.
 
@@ -200,9 +193,7 @@ export const selectVisibleTodosOnce = store.createSelector((state) => {
 
 ## See also
 
-- `docs/SELECTORS.md` — human reference and examples for all call forms.
-- `react/selectors/SKILL.md` — React signal and `.useValue(...args)` selector call model.
-- `streaming/selectors/SKILL.md` — Kefir/observable selector call model.
+- `@augmentcode/themis/docs/SELECTORS.md` — human reference and examples for all call forms.
 - `svelte/selector-lifecycle/SKILL.md` — lifecycle crash prevention.
 - `core/selector-channels/SKILL.md` — reacting to selector changes from sagas.
 - `core/collections/SKILL.md` — normalized state shape and collection utilities used by selectors.

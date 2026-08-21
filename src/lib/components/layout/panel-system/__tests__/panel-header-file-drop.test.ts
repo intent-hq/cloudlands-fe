@@ -242,4 +242,69 @@ describe('panel header file drop', () => {
     expect(dragChanges).toEqual([]);
     expect(droppedFiles).toHaveLength(0);
   });
+
+  describe('handler registration identity (monorepo#3026)', () => {
+    function makeHandler() {
+      const changes: boolean[] = [];
+      const drops: File[][] = [];
+      return {
+        changes,
+        drops,
+        handler: {
+          onDragChange: (dragging: boolean) => changes.push(dragging),
+          onDrop: (files: File[]) => drops.push(files),
+        },
+      };
+    }
+
+    it('clears the handler on register → unregister, without a proxy equality warning', async () => {
+      const warn = vi.spyOn(console, 'warn');
+      try {
+        const header = renderHeader('file');
+        const dataTransfer = fileDragData();
+        const first = makeHandler();
+
+        flushSync(() => contextRef.current!.register(first.handler));
+        const activeEnter = dragEvent('dragenter', dataTransfer);
+        await fireEvent(header, activeEnter);
+        expect(activeEnter.defaultPrevented).toBe(true);
+        expect(first.changes).toEqual([true]);
+        await fireEvent(header, dragEvent('dragleave', dataTransfer));
+
+        flushSync(() => contextRef.current!.unregister(first.handler));
+
+        const staleEnter = dragEvent('dragenter', dataTransfer);
+        await fireEvent(header, staleEnter);
+        expect(staleEnter.defaultPrevented).toBe(false);
+        expect(first.changes).toEqual([true, false]);
+        expect(
+          warn.mock.calls.filter((call) =>
+            call.some((arg) => String(arg).includes('state_proxy_equality_mismatch'))
+          )
+        ).toEqual([]);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('keeps the replacement handler when a stale unregister arrives (register → replace → stale-unregister)', async () => {
+      const header = renderHeader('file');
+      const dataTransfer = fileDragData();
+      const first = makeHandler();
+      const replacement = makeHandler();
+
+      flushSync(() => contextRef.current!.register(first.handler));
+      flushSync(() => contextRef.current!.register(replacement.handler));
+      // The deactivated tab's late cleanup must not clobber the newer handler.
+      flushSync(() => contextRef.current!.unregister(first.handler));
+
+      await fireEvent(header, dragEvent('dragenter', dataTransfer));
+      await fireEvent(header, dragEvent('drop', dataTransfer));
+
+      expect(replacement.changes).toEqual([true, false]);
+      expect(replacement.drops).toHaveLength(1);
+      expect(first.changes).toEqual([]);
+      expect(first.drops).toHaveLength(0);
+    });
+  });
 });

@@ -17,7 +17,7 @@ triggers:
 ---
 # State Serialization
 
-> Operational checklist for reducer state shape. Full rationale and examples: `docs/REDUCERS.md` → State Serialization Rules. Reducer API: `@augmentcode/themis/utils/store/create-reducer`; related guidance: `../SKILL.md` §12.
+> Operational checklist for reducer state shape. Full rationale and examples: `@augmentcode/themis/docs/REDUCERS.md` → State Serialization Rules. Reducer API: `@augmentcode/themis/utils/store/create-reducer`; related guidance: `../SKILL.md` §12.
 
 ## Use when
 
@@ -60,8 +60,7 @@ import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 
 const markSynced = createAction("todos/markSynced", (syncedAtMs: number, syncedAtIso: string) => ({ syncedAtMs, syncedAtIso }));
 
-export const reducer = createReducer({ syncedAtMs: 0, syncedAtIso: "" });
-reducer.with(markSynced, (state, { payload }) => ({
+export const reducer = createReducer({ syncedAtMs: 0, syncedAtIso: "" }).with(markSynced, (state, { payload }) => ({
   ...state,
   syncedAtMs: payload.syncedAtMs,
   syncedAtIso: payload.syncedAtIso,
@@ -124,8 +123,7 @@ type TodosState = { updatedAt: Date; byId: Map<string, Todo>; selectedIds: Set<s
 const initialState: TodosState = { updatedAt: new Date(0), byId: new Map(), selectedIds: new Set() };
 const markTouched = createAction("todos/markTouched");
 
-export const reducer = createReducer<TodosState>(initialState);
-reducer.with(markTouched, (state) => ({
+export const reducer = createReducer<TodosState>(initialState).with(markTouched, (state) => ({
   ...state,
   updatedAt: new Date(),
   error: new Error("changed"),
@@ -146,7 +144,7 @@ reducer.with(markTouched, (state) => ({
 
 ## See also
 
-- `docs/REDUCERS.md` — human reference for serialization rules and examples.
+- `@augmentcode/themis/docs/REDUCERS.md` — human reference for serialization rules and examples.
 - `core/reducers/SKILL.md` — reducer purity and same-reference no-op behavior.
 - `core/collections/SKILL.md` — serializable normalized entity storage.
 - `core/state-integrity/SKILL.md` — derived values and canonical ownership.

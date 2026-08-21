@@ -36,9 +36,11 @@ vi.mock('$store/renderer/store', async () => {
   });
 });
 
-// Pre-warm the component module graph so the cold dynamic import is not
-// billed to the first test's timeout (intent-hq/monorepo#1464).
+// Pre-warm the component module graphs so the cold dynamic imports are not
+// billed to the first test's timeout (intent-hq/monorepo#1464, #3032).
 warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../MessageContent.svelte'));
+warmImport(() => import('../StreamingMessageContent.svelte'));
 
 describe('ResponseGroup - collapse state model', () => {
   const children = createRawSnippet(() => ({

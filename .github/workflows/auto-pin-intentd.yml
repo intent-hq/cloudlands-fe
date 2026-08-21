@@ -142,7 +142,7 @@ jobs:
           # gh pr list --head also matches FORK PRs with the same branch name,
           # so restrict to same-repo heads authored by the PAT identity —
           # otherwise a fork PR named auto/intentd-pin could be picked up
-          # (same hardening as the auto-cut-beta Release PR lookup).
+          # (same hardening as the auto-cut-alpha Release PR lookup).
           VIEWER=$(gh api user --jq .login)
           export VIEWER
           held=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open \
@@ -248,7 +248,7 @@ jobs:
           # gh pr list --head also matches FORK PRs with the same branch name;
           # editing/auto-merging .[0] blindly could target attacker code. Only
           # accept a same-repo PR authored by the PAT identity (same hardening
-          # as the auto-cut-beta Release PR lookup).
+          # as the auto-cut-alpha Release PR lookup).
           VIEWER=$(gh api user --jq .login)
           export VIEWER
           find_pr() {

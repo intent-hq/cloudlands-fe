@@ -66,6 +66,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
           branch: 'release',
           repositoryName: 'intent',
           displayStatus: 'blocked',
+          status: 'Archived',
         },
       ].filter((workspace) => mocks.loadedWorkspaceIds.has(workspace.id)),
     ),
@@ -297,6 +298,26 @@ describe('WorkspaceTabStrip', () => {
     expect(title.className).toContain('flex-1');
     expect(title.nextElementSibling).toBe(controls);
     expect(cluster.parentElement).toBe(controls);
+  });
+
+  it('dims archived workspace tab titles in current and non-current states', () => {
+    const { unmount } = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-1' } });
+    const archivedTitle = screen
+      .getByRole('tab', { name: /Gamma/ })
+      .querySelector('[data-workspace-tab-title]')!;
+    const activeTitle = screen
+      .getByRole('tab', { name: /Alpha/ })
+      .querySelector('[data-workspace-tab-title]')!;
+    expect(archivedTitle.className).toContain('opacity-60');
+    expect(activeTitle.className).not.toContain('opacity-60');
+    unmount();
+
+    render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-3' } });
+    const currentArchived = screen.getByRole('tab', { name: /Gamma/ });
+    expect(currentArchived.getAttribute('aria-selected')).toBe('true');
+    expect(
+      currentArchived.querySelector('[data-workspace-tab-title]')?.className,
+    ).toContain('opacity-60');
   });
 
   it('keeps one shared status icon and the trailing close reservation without agent detail', () => {

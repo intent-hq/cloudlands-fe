@@ -17,9 +17,10 @@ import {
 import { getActiveHookNames } from '../delete-warning-utils';
 import { store as appStore } from '$store/renderer/store';
 import {
-  backgroundHooksCleared,
+  backgroundHooksMarkedStale,
   backgroundHooksUpdated,
 } from '$store/renderer/slices/background-hooks/background-hooks-slice';
+import { removeWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 
 const WS = 'ws-hooks-test';
 
@@ -50,7 +51,7 @@ describe('getActiveHookNames', () => {
   });
 
   afterEach(() => {
-    appStore.dispatch(backgroundHooksCleared(WS));
+    appStore.dispatch(removeWorkspaceEntity(WS));
     resetMockBackend();
   });
 
@@ -89,6 +90,19 @@ describe('getActiveHookNames', () => {
     const names = await getActiveHookNames(WS);
 
     expect(names).toEqual(['ci watch']);
+    expect(hookListRequests()).toEqual([{ method: 'hook.list', params: { workspaceId: WS } }]);
+  });
+
+  it('falls back to hook.list when the entry is retained but stale (no live subscription)', async () => {
+    appStore.dispatch(backgroundHooksUpdated(WS, [makeHook('hook-1', 'scheduled', 'old name')]));
+    appStore.dispatch(backgroundHooksMarkedStale(WS));
+    backend.onRequest('hook.list', () => ({
+      hooks: [makeHook('hook-1', 'running', 'fresh name')],
+    }));
+
+    const names = await getActiveHookNames(WS);
+
+    expect(names).toEqual(['fresh name']);
     expect(hookListRequests()).toEqual([{ method: 'hook.list', params: { workspaceId: WS } }]);
   });
 

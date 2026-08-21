@@ -63,7 +63,7 @@ describe('release-notes IPC', () => {
   it('parks the startup notes and pushes them to the window', async () => {
     const window = fakeWindow();
 
-    await initializeReleaseNotesOnStartup(window);
+    await initializeReleaseNotesOnStartup(() => window);
 
     expect(window.webContents.send).toHaveBeenCalledWith(RELEASE_NOTES_CHANNELS.SHOW, {
       notes: NOTES,
@@ -74,8 +74,39 @@ describe('release-notes IPC', () => {
     });
   });
 
+  it('parks the notes as pending when no window exists at init time', async () => {
+    // Regression (intent-hq/monorepo#3054): the startup check must run and
+    // park the notes even when the window has not been created yet — the
+    // renderer claims them over get-pending once it initializes.
+    await initializeReleaseNotesOnStartup(() => null);
+
+    expect(await invoke(RELEASE_NOTES_CHANNELS.GET_PENDING)).toEqual({
+      success: true,
+      data: NOTES,
+    });
+  });
+
+  it('resolves the push target at send time, not at init time', async () => {
+    // A window created between check start and fetch completion still
+    // receives the push.
+    const window = fakeWindow();
+    let liveWindow: ReturnType<typeof fakeWindow> | null = null;
+    const { checkForReleaseNotesOnStartup } = await import('../release-notes.service');
+    vi.mocked(checkForReleaseNotesOnStartup).mockImplementationOnce(async (show) => {
+      liveWindow = window; // window appears while the check is in flight
+      show(NOTES);
+      return NOTES;
+    });
+
+    await initializeReleaseNotesOnStartup(() => liveWindow);
+
+    expect(window.webContents.send).toHaveBeenCalledWith(RELEASE_NOTES_CHANNELS.SHOW, {
+      notes: NOTES,
+    });
+  });
+
   it('clears the pending slot on claim so the modal opens once', async () => {
-    await initializeReleaseNotesOnStartup(fakeWindow());
+    await initializeReleaseNotesOnStartup(() => fakeWindow());
 
     await invoke(RELEASE_NOTES_CHANNELS.GET_PENDING);
 

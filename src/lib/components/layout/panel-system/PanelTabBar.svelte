@@ -1642,6 +1642,8 @@
               {/if}
 
               {#if tab.closable}
+                <!-- User close of an agent-owned browser tab hides it (webview
+                     kept alive for the agent, monorepo#2857) — say so. -->
                 <button
                   class={cn(
                     'tab-close ml-1 p-0.5 rounded transition-opacity cursor-pointer',
@@ -1650,7 +1652,12 @@
                       : 'opacity-0 group-hover:opacity-60 group-focus-within:opacity-60',
                   )}
                   onclick={(e) => handleTabClose(e, tab.id)}
-                  aria-label={m.layout_panelTabBar_closeTab_ariaLabel()}
+                  title={tab.type === 'browser' && tab.ownerAgentId
+                    ? m.layout_panelTabBar_hideOwnedTab_tooltip()
+                    : undefined}
+                  aria-label={tab.type === 'browser' && tab.ownerAgentId
+                    ? m.layout_panelTabBar_hideOwnedTab_ariaLabel()
+                    : m.layout_panelTabBar_closeTab_ariaLabel()}
                 >
                   <Fa icon={faXmark} size="xs" />
                 </button>

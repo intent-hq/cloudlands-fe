@@ -1,17 +1,15 @@
-# Auto-merge of the release-please Release PR — "auto-cut beta".
+# Auto-merge of the release-please Release PR — "auto-cut alpha".
 #
 # Merging the Release PR is what cuts a release: the squash-merge push to
 # main triggers release-please.yml, which creates the vX.Y.Z tag + GitHub
-# Release, and the tag triggers release-beta.yml (historically named "beta";
-# it builds and publishes to the rolling ALPHA channel on
-# intent-hq/cloudlands-releases — beta and stable are manual promotions of
-# an existing release). That merge used to be a manual click; this workflow
-# performs it automatically whenever the Release PR is already green — the
-# release-PR CI fast path makes that ~1 min after each refresh — so alpha
-# releases ship hands-free. Beta/stable promotion stays manual
-# (promote-beta.yml / release-stable.yml); this workflow only automates the
-# cut. "Beta"/"cut a beta" below follows the historical workflow naming and
-# means this auto-published alpha release.
+# Release, and the tag triggers release-alpha.yml (it builds and publishes
+# to the rolling ALPHA channel on intent-hq/cloudlands-releases — beta and
+# stable are manual promotions of an existing release). That merge used to
+# be a manual click; this workflow performs it automatically whenever the
+# Release PR is already green — the release-PR CI fast path makes that
+# ~1 min after each refresh — so alpha releases ship hands-free. Beta/stable
+# promotion stays manual (promote-beta.yml / release-stable.yml); this
+# workflow only automates the alpha cut.
 #
 # Triggers — event-chained cut plus an hourly cron backstop:
 # - push to main (ANY push, not just the sidecar pin bump): a merged fe
@@ -23,7 +21,7 @@
 #   refresh nuances:
 #   - a push touching `intentd.version` additionally waits for the Release
 #     PR head to carry the pushed pin (chained-cut freshness gate), so the
-#     beta actually ships the new sidecar;
+#     alpha actually ships the new sidecar;
 #   - release-please does NOT refresh the Release PR for non-releasable
 #     commits (chore/docs/ci/...), so such a push may find the PR unchanged
 #     but already green — merging is still correct (the tag is cut on main's
@@ -57,14 +55,36 @@
 #   has a semver tag newer than the published alpha channel manifest and the
 #   tag is younger than 90 minutes, a release build is running and a pin bump
 #   is imminent — cutting now would ship a stale sidecar. The age bound stops
-#   a failed intentd build from deferring fe betas forever, and the check
+#   a failed intentd build from deferring fe alphas forever, and the check
 #   fails OPEN on any lookup error (missing INTENTD_READ_PAT, unreachable
 #   manifest, unreadable tags) so an unreadable intentd never blocks fe
 #   releases.
 # - An open pin-bump PR (branch `auto/intentd-pin`) defers the cut: an
-#   in-flight intentd pin must land first so the fe beta carries the new
+#   in-flight intentd pin must land first so the fe alpha carries the new
 #   sidecar; its merge push then chains straight into a cut via the push
 #   trigger above.
+# - A BE-dependency freshness guard (cron and push runs; workflow_dispatch
+#   bypasses it — manual means urgent, same convention as the throttle)
+#   defers the cut when it could ship fe commits whose intentd dependency
+#   is in no published sidecar: the pinned intentd version is resolved to
+#   its tag on intent-hq/intentd, and when intentd main has no commits
+#   after that tag (the expected common case) everything on fe main is
+#   safe — the cut proceeds unrestricted. When intentd main IS ahead of
+#   the pinned tag and this cut would ship fe commits merged after the tag
+#   was cut, those commits may depend on BE work that is in no published
+#   build (the intentd-first rule orders merges, not releases) — defer
+#   with a notice; the next intentd alpha advances the pin and its
+#   pin-bump push chains into a cut that re-evaluates. While intentd
+#   cannot publish (failed build, or main ahead only by commits release-plz
+#   will never release) the deferral persists — deliberately: unlike the
+#   in-flight guard's 90-minute bound (which wards off a merely POSSIBLE
+#   imminent pin), this guard defers on confirmed unpublished dependencies,
+#   and the workflow_dispatch bypass is the operator override. Automation
+#   commits (the sidecar pin bump itself, chore(release) squash merges)
+#   are exempt from the freshness test, and the check fails OPEN on any
+#   lookup error (missing INTENTD_READ_PAT, unreadable
+#   pin/tags/comparison) so an unreadable intentd never blocks fe
+#   releases.
 # - Merge happens ONLY when GitHub already reports the PR clean: not a
 #   draft, mergeable, required check "CI Gate" green on the current head,
 #   and no unresolved review threads. Anything else logs and exits 0 (push
@@ -78,15 +98,16 @@
 # mergeability, CI Gate via statusCheckRollup, review threads) authenticate
 # with the implicit GITHUB_TOKEN under least-privilege job permissions —
 # fine-grained PATs cannot read statusCheckRollup without Checks/
-# Commit-statuses read access. The in-flight intentd check reads a different
-# repo, so it authenticates with INTENTD_READ_PAT. The merge itself
+# Commit-statuses read access. The in-flight intentd check and the
+# BE-dependency freshness guard read a different repo, so they authenticate
+# with INTENTD_READ_PAT. The merge itself
 # authenticates with the RELEASE_PAT PAT, NOT the implicit GITHUB_TOKEN:
 # pushes made with GITHUB_TOKEN do not trigger other workflows, and the
 # merge push to main must trigger release-please.yml to cut the tag.
 # Fail-soft when the secret is absent (same convention as the other release
 # workflows).
 
-name: Auto-cut beta
+name: Auto-cut alpha
 
 permissions: {}
 
@@ -114,7 +135,7 @@ on:
 # because a run that has already decided to merge must not be cancelled
 # mid-merge.
 concurrency:
-  group: auto-cut-beta
+  group: auto-cut-alpha
   cancel-in-progress: false
 
 jobs:
@@ -227,11 +248,11 @@ jobs:
       # In-flight intentd release guardrail (all run types): when
       # intent-hq/intentd carries a release tag whose build has not published
       # to the alpha channel yet (latest semver tag newer than the alpha.json
-      # version), cutting an fe beta now would ship a stale sidecar that the
+      # version), cutting an fe alpha now would ship a stale sidecar that the
       # imminent pin bump immediately obsoletes — defer with a notice instead;
-      # the pin merge's push-triggered run (or the next cron) cuts the beta
+      # the pin merge's push-triggered run (or the next cron) cuts the alpha
       # with the new sidecar. The 90-minute age bound stops a FAILED intentd
-      # build from deferring fe betas forever (cargo-dist builds take 20-45
+      # build from deferring fe alphas forever (cargo-dist builds take 20-45
       # min). Strictly fail-open: any lookup problem (missing
       # INTENTD_READ_PAT, unreachable manifest, unreadable tags) proceeds with
       # the cut — this guardrail must never block fe releases when intentd is
@@ -311,7 +332,7 @@ jobs:
           fi
           age_min=$(( ($(date +%s) - tag_epoch) / 60 ))
           if (( age_min < 90 )); then
-            echo "::notice::intentd $tag was cut ${age_min} min ago and its alpha has not published yet (channel has $published); deferring the beta cut so the next beta ships the new sidecar"
+            echo "::notice::intentd $tag was cut ${age_min} min ago and its alpha has not published yet (channel has $published); deferring the alpha cut so the next alpha ships the new sidecar"
             echo "defer=true" >> "$GITHUB_OUTPUT"
           else
             echo "intentd $tag is ${age_min} min old with no published alpha (its build likely failed); proceeding with the cut."
@@ -327,6 +348,9 @@ jobs:
           # applied per-command, only where it is required.
           GH_TOKEN: ${{ github.token }}
           RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+          # Cross-repo reads for the BE-dependency freshness guard (the same
+          # PAT the in-flight intentd step uses), applied per-command.
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
           # Boolean input; on schedule events the inputs context is empty and
           # this renders "false".
           DRY_RUN: ${{ inputs.dry_run == true }}
@@ -369,9 +393,116 @@ jobs:
             exit 0
           }
 
+          # BE-dependency freshness guard (cron and push runs; the call
+          # site below skips it on workflow_dispatch — manual means urgent
+          # — and push runs re-evaluate it on every polling attempt): the
+          # cut ships fe main against the sidecar pinned in
+          # intentd.version. An fe commit merged BEFORE the pinned tag was
+          # cut cannot depend on BE work missing from it (the intentd-first
+          # merge rule; fe lands squash/rebase merges only, both of which
+          # stamp committer dates at merge time, so committer dates order
+          # main chronologically). Commits merged AFTER it may depend on
+          # intentd commits that are in no published sidecar yet — but only
+          # when intentd main actually moved past the tag, so one
+          # comparison decides the expected common case (relaxation):
+          # intentd main not ahead of the pinned tag means nothing on fe
+          # main can depend on unpublished BE work — cut unrestricted.
+          # Automation commits are exempt from the freshness test: the
+          # pin-bump squash commit always postdates its own tag (it lands
+          # after the alpha publishes) and chore(release) merges carry no
+          # fe changes — counting either would defer forever. Returns 0
+          # (defer, $be_skew_msg set) only on confirmed skew; every lookup
+          # problem returns 1 — fail OPEN, an unreadable intentd never
+          # blocks fe releases (same convention as the in-flight guard step
+          # above).
+          be_skew_msg=""
+          be_dependency_skew() {
+            local pin cmp ahead tag_date tag_epoch fe_tag fresh
+
+            if [[ -z "${INTENTD_READ_PAT:-}" ]]; then
+              echo "INTENTD_READ_PAT is not set; skipping the BE-dependency freshness check (failing open)."
+              return 1
+            fi
+
+            # The pin this cut would ship: intentd.version at main HEAD
+            # (the squash merge cuts the tag on main's tree).
+            pin=$(gh api "repos/$GITHUB_REPOSITORY/contents/intentd.version?ref=heads/main" \
+              --jq '.content' 2>/dev/null | base64 -d \
+              | grep -Ev '^[[:space:]]*(#|$)' | tr -d '[:space:]') || pin=""
+            if ! grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' <<<"$pin"; then
+              echo "Could not read a semver pin from intentd.version on main (got '${pin:-<empty>}'; failing open)."
+              return 1
+            fi
+
+            # One comparison answers both questions: whether intentd main
+            # moved past the pinned tag (ahead_by) and when that tag was
+            # cut (its commit's committer date). Only top-level metadata is
+            # read, so per_page=1 truncating the commits array is fine.
+            cmp=$(GH_TOKEN="$INTENTD_READ_PAT" gh api \
+              "repos/intent-hq/intentd/compare/v$pin...main?per_page=1" 2>/dev/null) || cmp=""
+            ahead=$(jq -er '.ahead_by' <<<"$cmp" 2>/dev/null) || ahead=""
+            if ! grep -Eq '^[0-9]+$' <<<"$ahead"; then
+              echo "Could not compare intentd v$pin...main (failing open)."
+              return 1
+            fi
+            if (( ahead == 0 )); then
+              echo "intentd main has no commits after the pinned tag v$pin; no BE-dependency skew possible."
+              return 1
+            fi
+
+            tag_date=$(jq -er '.base_commit.commit.committer.date' <<<"$cmp" 2>/dev/null) || tag_date=""
+            tag_epoch=""
+            if [[ -n "$tag_date" ]]; then
+              tag_epoch=$(date -d "$tag_date" +%s 2>/dev/null) || tag_epoch=""
+            fi
+            if [[ -z "$tag_epoch" ]]; then
+              echo "Could not resolve when intentd v$pin was cut (failing open)."
+              return 1
+            fi
+
+            # Commits this cut would ship = latest fe release tag..main
+            # (same tag discovery as the throttle step).
+            fe_tag=$(gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" \
+              --jq '.[].ref | sub("^refs/tags/"; "")' 2>/dev/null \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1) || fe_tag=""
+            if [[ -z "$fe_tag" ]]; then
+              echo "Could not determine the latest fe release tag (failing open)."
+              return 1
+            fi
+
+            # The compare commits list is oldest→newest and paginated
+            # (250/page), so a single page would silently drop the NEWEST
+            # commits — the only ones that can postdate the cutoff — once a
+            # long-held backlog (e.g. weeks of hold-release) exceeds 250.
+            # --paginate walks every page; jq emits one per-page fresh
+            # count, summed by awk (same pattern as the reviewThreads
+            # count below).
+            fresh=$(gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/compare/$fe_tag...main?per_page=250" 2>/dev/null \
+              | jq -r --argjson cutoff "$tag_epoch" '[.commits[]?
+                  | select((.commit.committer.date | fromdateiso8601) > $cutoff)
+                  | (.commit.message | split("\n")[0])
+                  | select((test("^fix: bump intentd sidecar to v")
+                            or test("^chore\\(release\\): ")) | not)
+                ] | length' 2>/dev/null \
+              | awk '{ sum += $1 } END { print sum + 0 }') || fresh=""
+            if ! grep -Eq '^[0-9]+$' <<<"$fresh"; then
+              echo "Could not inspect the fe commits since $fe_tag (failing open)."
+              return 1
+            fi
+            if (( fresh == 0 )); then
+              echo "intentd main is ahead of the pinned v$pin but no fe commit this cut ships postdates that tag (automation commits exempt); no BE-dependency skew."
+              return 1
+            fi
+
+            be_skew_msg="intentd main is $ahead commit(s) ahead of the pinned v$pin and this cut would ship $fresh fe commit(s) merged after that tag was cut ($tag_date) — they may depend on intentd work in no published sidecar"
+            return 0
+          }
+
           # The pin the triggering push landed on main: the Release PR head
           # must carry the same pin before the cut (i.e. release-please has
-          # refreshed the PR after a pin-bump push) so the beta actually
+          # refreshed the PR after a pin-bump push) so the alpha actually
           # ships the new sidecar. For pushes that leave the pin untouched
           # (fe-only changes) the PR head already carries the same pin and
           # the gate passes trivially. Read failures fall back to
@@ -478,7 +609,7 @@ jobs:
             # Chained-cut freshness gate (push runs only): the Release PR
             # head must already contain the pin the push landed on main —
             # otherwise release-please has not refreshed the PR yet and
-            # merging now would cut a beta with the OLD sidecar.
+            # merging now would cut an alpha with the OLD sidecar.
             if [[ -n "$push_pin" ]]; then
               head_ref=$(jq -r '.[0].headRefName' <<<"$prs")
               head_pin=$(gh api "repos/$GITHUB_REPOSITORY/contents/intentd.version?ref=$head_ref" \
@@ -517,7 +648,7 @@ jobs:
 
             # Pause guardrail: a human puts `hold-release` on the Release PR
             # to stop auto-cutting (e.g. to batch more changes or hold a bad
-            # commit out of a beta); remove the label to resume.
+            # commit out of an alpha); remove the label to resume.
             if jq -e '.[0].labels | any(.name == "hold-release")' <<<"$prs" >/dev/null; then
               echo "::notice::Release PR #$number carries the hold-release label; auto-merge paused until it is removed"
               exit 0
@@ -526,17 +657,36 @@ jobs:
             # Pipeline ordering guardrail: an open pin-bump PR (the rolling
             # `auto/intentd-pin` PR from auto-pin-intentd.yml) means a newer
             # intentd sidecar is in flight. Let it land first — its fix-typed
-            # commit refreshes the Release PR — so the fe beta carries the
+            # commit refreshes the Release PR — so the fe alpha carries the
             # new sidecar; its merge push chains straight into a fresh cut
             # run (and the next hourly run backstops it).
             # `--head` also matches fork PRs whose branch merely shares the
             # name, so restrict to same-repo heads — otherwise a fork PR
-            # named auto/intentd-pin could defer beta cuts indefinitely.
+            # named auto/intentd-pin could defer alpha cuts indefinitely.
             pin_pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
               --head auto/intentd-pin --json number,isCrossRepository \
               --jq '[.[] | select(.isCrossRepository == false)][0].number // empty')
             if [[ -n "$pin_pr" ]]; then
-              echo "::notice::Pin-bump PR #$pin_pr (auto/intentd-pin) is open; deferring the beta cut until the new sidecar pin lands"
+              echo "::notice::Pin-bump PR #$pin_pr (auto/intentd-pin) is open; deferring the alpha cut until the new sidecar pin lands"
+              exit 0
+            fi
+
+            # BE-dependency freshness guardrail (see be_dependency_skew
+            # above): normally the deferral is bounded by the intentd alpha
+            # cadence — the next alpha advances the pin, and the pin-bump
+            # merge push chains straight into a fresh cut run. When intentd
+            # cannot publish (failed build, or ahead only by never-released
+            # commits) the deferral persists; workflow_dispatch bypasses
+            # this guard (manual means urgent — same convention as the
+            # throttle) so an operator can always force the cut. Push runs
+            # with poll budget left retry first, so a pin that advances
+            # mid-poll clears the skew within this very run.
+            if [[ "$EVENT_NAME" != "workflow_dispatch" ]] && be_dependency_skew; then
+              if [[ "$EVENT_NAME" == "push" ]] && (( $(date +%s) < deadline )); then
+                echo "$be_skew_msg — retrying in 30s."
+                sleep 30; continue
+              fi
+              echo "::notice::$be_skew_msg; deferring the alpha cut until the next intentd alpha advances the pin"
               exit 0
             fi
 
@@ -637,7 +787,7 @@ jobs:
             fi
 
             # Squash-merge with the PAT so the push to main triggers
-            # release-please.yml (tag + GitHub Release → release-beta.yml
+            # release-please.yml (tag + GitHub Release → release-alpha.yml
             # builds and publishes to intent-hq/cloudlands-releases). The
             # squash commit title defaults to the single release commit's
             # message, which release-please writes in the same conventional
@@ -645,7 +795,7 @@ jobs:
             # state may have changed under us, and the next scheduled run
             # retries.
             if GH_TOKEN="$RELEASE_PAT" gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --squash; then
-              echo "Squash-merged Release PR #$number ($title); release-please.yml now cuts the tag and release-beta.yml publishes the beta automatically."
+              echo "Squash-merged Release PR #$number ($title); release-please.yml now cuts the tag and release-alpha.yml publishes the alpha automatically."
             else
               echo "::warning::gh pr merge failed for Release PR #$number (state changed under us?); the next scheduled run retries"
             fi

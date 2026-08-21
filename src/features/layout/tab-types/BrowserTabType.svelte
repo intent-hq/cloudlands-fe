@@ -6,13 +6,16 @@
    */
 
   import type { TabTypeComponentProps } from './registry';
+  import { writable } from 'svelte/store';
   import EmbeddedBrowser from '$lib/components/browser/EmbeddedBrowser.svelte';
+  import { resolveOwnerName } from '$lib/components/workspace/sidebar-browser-groups';
   import {
     updateTabBrowserUrl,
     updateTabTitle,
     updateTabFavicon,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { updateContextItem } from '$store/renderer/slices/context/context-slice';
+  import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { store as appStore } from '$store/renderer/store';
 
   let { tab, workspaceId, layoutId, isActive, isPanelFocused, onFocus }: TabTypeComponentProps =
@@ -21,6 +24,14 @@
   // Browser URL from tab data
   const browserUrl = $derived(tab.browserUrl ?? 'about:blank');
   const panelLayoutId = $derived(layoutId ?? workspaceId);
+
+  // Owner agent display name for the toolbar chip (monorepo#2857).
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => workspaceIdStore.set(workspaceId));
+  const agents$ = selectAllWorkspaceAgents(workspaceIdStore);
+  const ownerAgentName = $derived(
+    tab.ownerAgentId ? resolveOwnerName(tab.ownerAgentId, $agents$) : undefined,
+  );
 </script>
 
 {#if browserUrl}
@@ -29,8 +40,11 @@
     {workspaceId}
     tabId={tab.id}
     {isActive}
-    focusUrlBarOnMount={isActive}
+    focusUrlBarOnMount={isActive && isPanelFocused}
     isFocused={isPanelFocused}
+    ownerAgentId={tab.ownerAgentId}
+    {ownerAgentName}
+    emulatedSize={tab.emulatedSize}
     onNavigate={(newUrl: string) => {
       // Update the tab's browserUrl so it stays in sync with actual location
       appStore.dispatch(updateTabBrowserUrl(panelLayoutId, tab.id, newUrl));

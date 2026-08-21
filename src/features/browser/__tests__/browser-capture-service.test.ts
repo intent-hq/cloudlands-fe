@@ -12,8 +12,17 @@ vi.mock('electron', () => ({
   webContents: { fromId: vi.fn(() => undefined) },
 }));
 
+// The action executor imports the workspace-visibility probe from system.ipc
+// (workspace-inactive warning, monorepo#3045), which pulls in Electron app
+// lifecycle hooks this suite's minimal electron mock does not provide.
+vi.mock('../../system/main/system.ipc', () => ({
+  getWindowIdForWorkspace: vi.fn(() => 1),
+}));
+
 vi.mock('../main/embedded-browser-cdp-service', () => ({
   DEFAULT_AGENT_VIEWPORT: { width: 1280, height: 800 },
+  AGENT_VIEWPORT_MIN_PX: 320,
+  AGENT_VIEWPORT_MAX_PX: 3840,
   embeddedBrowserCdp: {
     ensureAttached: vi.fn(),
     evaluate: vi.fn(),

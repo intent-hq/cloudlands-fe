@@ -4,11 +4,12 @@ const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
   sendToWorkspaceWindows: vi.fn(),
   fromId: vi.fn(),
+  getAllWebContents: vi.fn(() => []),
 }));
 
 vi.mock('electron', () => ({
   ipcMain: { handle: mocks.handle },
-  webContents: { fromId: mocks.fromId },
+  webContents: { fromId: mocks.fromId, getAllWebContents: mocks.getAllWebContents },
 }));
 
 vi.mock('../../../system/main/system.ipc', () => ({
@@ -402,6 +403,95 @@ describe('embedded browser CDP workspace routing', () => {
     });
   });
 
+  // showTab (monorepo#3045): reveal delivery + confirm-by-list discipline.
+  describe('showTab', () => {
+    it.each([undefined, null, ''])(
+      'rejects show without workspace context instead of broadcasting: %j',
+      async (workspaceId) => {
+        await expect(
+          embeddedBrowserCdp.showTab('tab-1', workspaceId as unknown as string),
+        ).rejects.toThrow('workspaceId is required');
+        expect(mocks.sendToWorkspaceWindows).not.toHaveBeenCalled();
+      },
+    );
+
+    it('fails with a clear error when the workspace is not open in any window', async () => {
+      mocks.sendToWorkspaceWindows.mockReturnValue(DROPPED);
+      await expect(embeddedBrowserCdp.showTab('tab-1', 'ws-closed', true)).rejects.toThrow(
+        'workspace ws-closed is not open in any window',
+      );
+    });
+
+    it('sends the reveal scoped to the workspace and confirms via a fresh non-hidden listing', async () => {
+      mocks.sendToWorkspaceWindows.mockImplementation(
+        (_ws: string, channel: string, payload: { requestId?: string }) => {
+          if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+          responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+            {},
+            {
+              tabs: [{ tabId: 'tab-1', url: 'https://a.test', title: 'A' }],
+              requestId: payload.requestId,
+            },
+          );
+          return DELIVERED;
+        },
+      );
+
+      await expect(embeddedBrowserCdp.showTab('tab-1', 'ws-2', false)).resolves.toBeUndefined();
+      expect(mocks.sendToWorkspaceWindows.mock.calls[0]).toEqual([
+        'ws-2',
+        IPC_CHANNELS.BROWSER.SHOW_TAB,
+        { tabId: 'tab-1', workspaceId: 'ws-2', focus: false },
+      ]);
+    });
+
+    it('fails when the tab stays hidden in every confirmation listing', async () => {
+      mocks.sendToWorkspaceWindows.mockImplementation(
+        (_ws: string, channel: string, payload: { requestId?: string }) => {
+          if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+          responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+            {},
+            {
+              tabs: [{ tabId: 'tab-1', url: 'https://a.test', title: 'A', hidden: true }],
+              requestId: payload.requestId,
+            },
+          );
+          return DELIVERED;
+        },
+      );
+
+      await expect(embeddedBrowserCdp.showTab('tab-1', 'ws-2')).rejects.toThrow(
+        'could not be shown',
+      );
+    });
+  });
+
+  // Hidden marker projection (monorepo#3045): listAllTabs carries the
+  // renderer's hidden flag through for the executor's visibility field.
+  it('listAllTabs carries the hidden marker for hidden tabs only', async () => {
+    mocks.fromId.mockReturnValue(undefined);
+    mocks.sendToWorkspaceWindows.mockImplementation(
+      (_ws: string, channel: string, payload: { requestId?: string }) => {
+        if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+        responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+          {},
+          {
+            tabs: [
+              { tabId: 'tab-hidden', url: 'https://h.test', title: 'H', hidden: true },
+              { tabId: 'tab-visible', url: 'https://v.test', title: 'V' },
+            ],
+            requestId: payload.requestId,
+          },
+        );
+        return DELIVERED;
+      },
+    );
+
+    const { tabs } = await embeddedBrowserCdp.listAllTabs('ws-2');
+    expect(tabs.find((t) => t.tabId === 'tab-hidden')?.hidden).toBe(true);
+    expect(tabs.find((t) => t.tabId === 'tab-visible')).not.toHaveProperty('hidden');
+  });
+
   it('fails a close with a clear error when the workspace is not open in any window', async () => {
     mocks.sendToWorkspaceWindows.mockImplementation(
       (workspaceId: string, channel: string, payload: { requestId?: string }) => {
@@ -619,5 +709,44 @@ describe('embedded browser CDP workspace routing', () => {
       expect(channel).toBe(IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST);
       expect(payload).toEqual({ requestId: expect.any(String), workspaceId: 'ws-2' });
     }
+  });
+
+  // Regression (monorepo#2857): a LIST_TABS_RESPONSE produced before the
+  // renderer purged a deleted agent's tabs must not re-hydrate ownership or
+  // re-enter the cache after clearAgentTabs tombstoned the agent.
+  it('ignores stale list-tabs replies for agents whose tabs were cleared', async () => {
+    const ownedTab = {
+      tabId: 'tab-tomb',
+      url: 'https://owned.test',
+      title: 'Owned',
+      ownerAgentId: 'agent-tomb',
+    };
+    // Seed ownership via a normal reply round-trip.
+    mocks.sendToWorkspaceWindows.mockImplementation(
+      (_ws: string, channel: string, payload: { requestId?: string }) => {
+        if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+        responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+          {},
+          { tabs: [ownedTab], requestId: payload.requestId },
+        );
+        return DELIVERED;
+      },
+    );
+    await embeddedBrowserCdp.requestPanelBrowserTabs('ws-tomb');
+    expect(embeddedBrowserCdp.getTabOwner('tab-tomb')).toBe('agent-tomb');
+
+    expect(embeddedBrowserCdp.clearAgentTabs('agent-tomb')).toEqual(['tab-tomb']);
+    expect(embeddedBrowserCdp.getTabOwner('tab-tomb')).toBeUndefined();
+
+    // A stale reply (same pre-purge tab list) arrives afterwards.
+    await embeddedBrowserCdp.requestPanelBrowserTabs('ws-tomb');
+    expect(embeddedBrowserCdp.getTabOwner('tab-tomb')).toBeUndefined();
+
+    // The stale tab is filtered out of the resolved list and cache too.
+    mocks.sendToWorkspaceWindows.mockReturnValue(DROPPED);
+    await expect(embeddedBrowserCdp.requestPanelBrowserTabs('ws-tomb')).resolves.toEqual({
+      tabs: [],
+      stale: true,
+    });
   });
 });

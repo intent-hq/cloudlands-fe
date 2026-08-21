@@ -253,6 +253,42 @@ describe('appLayoutNavigationSaga', () => {
     await task.toPromise();
   });
 
+  // Workspace-inactive semantics (monorepo#3045): an agent-driven focus on a
+  // workspace this window is not displaying (jsdom's route is `/`) keeps its
+  // layout-state effects (setActiveTab, focusPanel) but consumes the queued
+  // UI reveal so nothing scrolls/focuses when the workspace is next shown.
+  it('drops the UI reveal for an agent-driven focus on a non-displayed workspace', async () => {
+    const channel = stdChannel();
+    const state: any = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: {
+              'panel-browser': { tabs: [{ id: 'browser-1', type: 'browser' }] },
+            },
+            pendingPanelReveal: null,
+          },
+        },
+      },
+    };
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => state }, appLayoutNavigationSaga);
+
+    channel.put(focusBrowserTabRequested('ws-1', 'browser-1', undefined, true));
+    await settle();
+
+    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
+      'panelLayout/setActiveTab',
+      'panelLayout/focusPanel',
+      'panelLayout/consumePanelReveal',
+      'panelLayout/consumePendingFocus',
+    ]);
+    const focusAction = dispatch.mock.calls[1][0];
+    expect(dispatch.mock.calls[2][0].payload).toEqual(['ws-1', focusAction.payload.requestId]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('ignores non-browser and unknown tab focus requests', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();

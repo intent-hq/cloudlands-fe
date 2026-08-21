@@ -30,26 +30,36 @@ export interface PanelFileDropContext {
 /** Create and set the panel file-drop context (called by Panel.svelte). */
 export function createPanelFileDropContext(): {
   context: PanelFileDropContext;
-  handler: { current: PanelFileDropHandler | null };
+  handler: { readonly current: PanelFileDropHandler | null };
 } {
-  const handler = $state<{ current: PanelFileDropHandler | null }>({ current: null });
+  // $state.raw keeps the stored handler's raw identity (a deep $state would
+  // proxy it, so unregister's `===` against the caller's original handler
+  // could never match) while reassignment stays reactive for Panel's effects.
+  let current = $state.raw<PanelFileDropHandler | null>(null);
 
   const context: PanelFileDropContext = {
     register(newHandler: PanelFileDropHandler) {
-      handler.current = newHandler;
+      current = newHandler;
     },
     unregister(oldHandler: PanelFileDropHandler) {
       // Identity-checked so a late cleanup from a deactivated tab cannot
       // clobber the handler the newly active tab just registered.
-      if (handler.current === oldHandler) {
-        handler.current = null;
+      if (current === oldHandler) {
+        current = null;
       }
     },
   };
 
   setContext(PANEL_FILE_DROP_CONTEXT_KEY, context);
 
-  return { context, handler };
+  return {
+    context,
+    handler: {
+      get current() {
+        return current;
+      },
+    },
+  };
 }
 
 /** Get the panel file-drop context (null outside a panel). */

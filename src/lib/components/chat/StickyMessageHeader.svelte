@@ -21,6 +21,10 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import { handleLink } from '$features/navigation/link-handler';
+  import { WorkspaceId } from '$shared/types/branded-ids';
+  import { findInlineMentions } from './mention-match-utils';
+  import { splitTextByUrls } from './message-link-utils';
 
   interface Props {
     message: AgentMessage;
@@ -123,16 +127,13 @@
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function parseSegments(text: string, refsByIdentifier: Map<string, any>): Segment[] {
     const segments: Segment[] = [];
-    const mentionRegex =
-      /@(context\[[^\]]+\]|note\/[^\s]+|[^\s@]+\.[a-zA-Z]+(?::[L\d-]+)?|[^\s@]*\/[^\s]+)/g;
     let lastIndex = 0;
-    let match;
 
-    while ((match = mentionRegex.exec(text)) !== null) {
+    for (const match of findInlineMentions(text)) {
       if (match.index > lastIndex) {
         segments.push({ type: 'text', content: text.slice(lastIndex, match.index) });
       }
-      const captured = match[1];
+      const captured = match.captured;
       if (captured.startsWith('context[')) {
         const inner = captured.slice(8, -1);
         let provider = 'browser',
@@ -177,7 +178,7 @@
         const fileName = captured.split('/').pop() || captured;
         segments.push({ type: 'mention', mentionType: 'file', label: fileName, icon: faFile });
       }
-      lastIndex = match.index + match[0].length;
+      lastIndex = match.index + match.fullMatch.length;
     }
     if (lastIndex < text.length) segments.push({ type: 'text', content: text.slice(lastIndex) });
     if (segments.length === 0 && text) segments.push({ type: 'text', content: text });
@@ -240,7 +241,21 @@
   {/each}
   {#each parsed.segments as segment, i (i)}
     {#if segment.type === 'text'}
-      <span>{segment.content}</span>
+      <span
+        >{#each splitTextByUrls(segment.content) as part, j (j)}{#if part.type === 'link'}<a
+              href={part.url}
+              class="cursor-pointer underline underline-offset-2 hover:opacity-80"
+              title={part.url}
+              onclick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleLink(part.url, {
+                  workspaceId: workspaceId ? WorkspaceId(workspaceId) : undefined,
+                  event: e,
+                });
+              }}>{part.url}</a
+            >{:else}{part.content}{/if}{/each}</span
+      >
     {:else if segment.type === 'mention'}
       {@const isContextProvider = ['linear', 'github', 'sentry', 'browser'].includes(
         segment.mentionType,

@@ -1,4 +1,4 @@
-import type { Workspace } from '$shared/types';
+import type { PullRequestInfo, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { shallowEqual } from 'fast-equals';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -178,7 +178,53 @@ function normalizeWorkspacePaths(workspace: Workspace): Workspace {
   };
 }
 
-function mergeWorkspaceEnrichment(existing: Workspace | undefined, incoming: Workspace): Workspace {
+/**
+ * Union key for a `pullRequests` entry: the case-insensitive URL when present
+ * (the protocol's canonical dedup key for the daemon-merged pool), else the PR
+ * number (URL-less entries belong to the workspace repo by construction).
+ */
+function prUnionKey(pr: PullRequestInfo): string {
+  return pr.url ? pr.url.toLowerCase() : `#${pr.number}`;
+}
+
+/**
+ * URL-union of the existing (possibly daemon-merged) `pullRequests` pool with
+ * an incoming list. Non-authoritative emit paths — `workspace.get` projections,
+ * `workspace.subscribe` delta upserts, and `pr:*` event payloads — carry the
+ * *unmerged* stored list (PROTOCOL 06-events §6.9), so replacing would drop
+ * git-root / PR-monitor entries the daemon only folds into `workspace.list`.
+ * Incoming entries win for matching keys (fresher status); existing-only
+ * entries are preserved by appending. Stale-entry removal is deferred to the
+ * authoritative `workspace.list` replace (see `buildVisibleWorkspaceState`).
+ */
+function unionPullRequests(
+  existing: PullRequestInfo[] | undefined,
+  incoming: PullRequestInfo[] | undefined,
+): PullRequestInfo[] | undefined {
+  if (!incoming || incoming.length === 0) {
+    return existing;
+  }
+  if (!existing || existing.length === 0) {
+    return incoming;
+  }
+  const incomingKeys = new Set(incoming.map(prUnionKey));
+  const preserved = existing.filter((pr) => !incomingKeys.has(prUnionKey(pr)));
+  return preserved.length === 0 ? incoming : [...incoming, ...preserved];
+}
+
+/**
+ * `pullRequestsMode` picks the merge semantics for the BE-owned `pullRequests`
+ * pool: `"replace"` for the authoritative `workspace.list` emit path (the
+ * daemon serves the merged pool there, so a non-empty incoming list also
+ * reconciles stale entries away), `"union"` for non-authoritative upserts
+ * (`workspace.get` projections / delta upserts carry the unmerged stored
+ * list — see {@link unionPullRequests}).
+ */
+function mergeWorkspaceEnrichment(
+  existing: Workspace | undefined,
+  incoming: Workspace,
+  pullRequestsMode: 'replace' | 'union' = 'replace',
+): Workspace {
   const normalized = normalizeWorkspacePaths(incoming);
   if (!existing) {
     return normalized;
@@ -191,7 +237,12 @@ function mergeWorkspaceEnrichment(existing: Workspace | undefined, incoming: Wor
     ...normalized,
     agentSummary: normalized.agentSummary ?? existing.agentSummary,
     activePullRequest: normalized.activePullRequest ?? existing.activePullRequest,
-    pullRequests: hasIncomingPullRequests ? normalized.pullRequests : existing.pullRequests,
+    pullRequests:
+      pullRequestsMode === 'union'
+        ? unionPullRequests(existing.pullRequests, normalized.pullRequests)
+        : hasIncomingPullRequests
+          ? normalized.pullRequests
+          : existing.pullRequests,
     prNumber: normalized.prNumber ?? existing.prNumber,
     prStatus: normalized.prStatus ?? existing.prStatus,
     prUrl: normalized.prUrl ?? existing.prUrl,
@@ -199,13 +250,20 @@ function mergeWorkspaceEnrichment(existing: Workspace | undefined, incoming: Wor
 }
 
 function mergeLocalWorkspaceUpdate(existing: Workspace, changes: Partial<Workspace>): Workspace {
-  return normalizeWorkspacePaths({
+  const merged: Workspace = {
     ...existing,
     ...changes,
     id: existing.id,
     updatedAt: existing.updatedAt,
     createdAt: existing.createdAt,
-  });
+  };
+  // `pr:linked` / `pr:updated` payloads carry the unmerged stored list —
+  // union it with the current (possibly daemon-merged) pool instead of
+  // replacing, so background cards keep git-root / monitor PRs (§6.9).
+  if (changes.pullRequests !== undefined) {
+    merged.pullRequests = unionPullRequests(existing.pullRequests, changes.pullRequests);
+  }
+  return normalizeWorkspacePaths(merged);
 }
 
 function applyPendingWorkspaceTitle(state: WorkspaceState, workspace: Workspace): Workspace {
@@ -377,7 +435,13 @@ workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace] }) => {
     return { ...state, workspaces: removeItem(state.workspaces, workspace.id) };
   }
   const existing = getWorkspaceById(state.workspaces, workspace.id);
-  const merged = applyPendingWorkspaceTitle(state, mergeWorkspaceEnrichment(existing, workspace));
+  // Entity upserts carry per-workspace `workspace.get`/`workspace.update`
+  // projections whose `pullRequests` is the unmerged stored list (§6.9) —
+  // union it with the current pool instead of replacing.
+  const merged = applyPendingWorkspaceTitle(
+    state,
+    mergeWorkspaceEnrichment(existing, workspace, 'union'),
+  );
   return {
     ...state,
     workspaces: existing ? upsertItem(state.workspaces, merged) : addItem(state.workspaces, merged),
@@ -442,7 +506,7 @@ workspaceReducer.with(
     const pendingTitleMutations = clearPendingTitleMutation(state.pendingTitleMutations, wsId);
     if (state.pendingDeletions[wsId]) return { ...state, pendingTitleMutations };
     const existing = getWorkspaceById(state.workspaces, wsId);
-    const merged = mergeWorkspaceEnrichment(existing, workspace);
+    const merged = mergeWorkspaceEnrichment(existing, workspace, 'union');
     return {
       ...state,
       workspaces: existing

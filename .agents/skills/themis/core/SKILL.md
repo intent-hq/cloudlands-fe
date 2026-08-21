@@ -4,8 +4,8 @@ description: >-
   Root routing index for framework-independent Redux and redux-saga guidance in
   themis. Use for canonical Redux state policy, action/reducer
   primitives, normalized state helpers, typed-redux-saga patterns, saga manager
-  behavior, saga channel/effect helpers, explicit store pruning, serialization,
-  testing, debugging, and verifier handoff. Use the selected Store family skill
+  behavior, saga channel/effect helpers, Redux action logging, explicit store
+  pruning, serialization, testing, debugging, and verifier handoff. Use the selected Store family skill
   for framework-specific Store selector/component behavior, choosing only one
   concrete Store family per app.
 type: core
@@ -20,6 +20,8 @@ triggers:
   - saga manager
   - saga channels
   - store pruning
+  - redux action logging
+  - logReduxActions
   - state serialization
   - redux testing
   - verifier
@@ -75,6 +77,7 @@ by Store-family-specific taxonomy waves.
 | `./selector-channels/SKILL.md` | Saga reactions to selector value changes. |
 | `./wait-for/SKILL.md` | One-shot saga waits for selector predicates. |
 | `./local-storage/SKILL.md` | Safe app-local localStorage persistence from sagas. |
+| `./redux-action-logging/SKILL.md` | Construction-time `logReduxActions` diagnostics and grouped action/state diffs across Store families. |
 | `./collections/SKILL.md` | Normalized `Collection<T, K>` entity state. |
 | `./domain-scoped-state/SKILL.md` | State keyed by workspace, project, tenant, or domain id. |
 | `./boolean-preference/SKILL.md` | Boolean set/toggle preference helper registration. |

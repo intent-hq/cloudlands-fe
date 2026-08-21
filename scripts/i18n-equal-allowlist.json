@@ -1257,6 +1257,15 @@
     "fr",
     "es"
   ],
+  "workspace_card_prBadge_repoLine_tooltip": [
+    "zh-CN",
+    "zh-TW",
+    "ja",
+    "ko",
+    "de",
+    "fr",
+    "es"
+  ],
   "workspace_commitsTimeline_commits_label": [
     "de",
     "fr",

@@ -3,17 +3,15 @@ name: streaming/store
 description: >-
   StreamingStore import, initialization, disposal, and Store-runtime guidance for
   the Kefir/observable Store variant. Use for @augmentcode/themis/streaming-store,
-  inherited runSaga/dispatch/state behavior, and contrast with
-  Svelte-readable Store without teaching readable selector call modes.
+  inherited runSaga/dispatch/state behavior, and observable selector lifecycle.
 type: sub-skill
 requires:
   - streaming
   - core/import-boundaries
 sources:
   - "@augmentcode/themis/streaming-store"
-  - "@augmentcode/themis/svelte-store"
-  - augmentcode/themis:docs/ARCHITECTURE.md
-  - augmentcode/themis:README.md
+  - "@augmentcode/themis/docs/ARCHITECTURE.md"
+  - "@augmentcode/themis/README.md"
 triggers:
   - StreamingStore
   - streaming-store import
@@ -23,16 +21,14 @@ triggers:
 ---
 # StreamingStore import and lifecycle
 
-Use this skill when a task needs the Kefir/observable Store variant. For sharedstate policy, reducers, actions, sagas, and package import boundaries, also followthe matching `core/*` skills.
+Use this skill when a task needs the Kefir/observable Store variant. For shared state policy, reducers, actions, sagas, and package import boundaries, also follow the matching `core/*` skills.
 
-This is Streaming Store family guidance. For the same app/package/code path, donot apply `Store`, Svelte `Readable`, `$selector` template, `ReactStore`, React`.useValue(...)`, Svelte component setup, React component setup, or Svelte/Reactlifecycle patterns. Separate Svelte or React frontend apps in a mixed repositorymust route to `../../svelte/SKILL.md` or `../../react/SKILL.md` independently.
+This is Streaming Store family guidance. For the same app/package/code path, do not apply alternate Store-family or lifecycle patterns.
 
 ## Correct import and class choice
 
 - Use `StreamingStore` from `@augmentcode/themis/streaming-store`.
-- Use `ReactStore` from `@augmentcode/themis/react-store` only when direct selectorcalls should return Preact React signals in a separate React app/code path.
-- Use `Store` from `@augmentcode/themis/svelte-store` only when directselector calls should return Svelte readables in a separate Svelte app/code path.
-- Do not import `StreamingStore` from `@augmentcode/themis/svelte-store`, thepackage root, `src/*`, or`utils/streaming-selectors/*`.
+- Do not import `StreamingStore` from the package root, `src/*`, or `utils/streaming-selectors/*`.
 
 ```ts
 import { StreamingStore } from "@augmentcode/themis/streaming-store";
@@ -45,22 +41,39 @@ const dispose = streamStore.init();
 
 - Construct `StreamingStore` with app-owned reducers and optional middleware, then call `streamStore.init(initialState?)` before invoking streaming selector calls.
 - Streaming selector calls return Kefir `Observable` outputs backed by the Store-owned Kefir state stream after initialization and throw before `init()` or after `dispose()`.
-- `streamStore.dispatch`, `streamStore.state`, `streamStore.runSaga(sagaFn)`, and`streamStore.dispose()` follow the shared Store runtime behavior documented incore Store guidance.
+- `streamStore.dispatch`, `streamStore.state`, `streamStore.runSaga(sagaFn)`, and `streamStore.dispose()` follow the shared Store runtime behavior documented in core Store guidance.
 - Do not manually register package-owned `@internal_` reducers or internal sagas.
 
-## Contrast with Svelte-readable stores
+## Logging and tracing streams
 
-- `Store` is the canonical Svelte-readable class.
-- `ReactStore` is the Preact React signal class for React UI code.
-- `StreamingStore` is the only Store class whose selector direct calls returnKefir observables.
-- If a UI task expects `$selector` template reads or Svelte `Readable` values,route that separate Svelte app/code path to `../../svelte/SKILL.md` instead of this skill.
-- Do not make one app use multiple concrete Store selector/component patterns.
+`StreamingStore.traceStreams` is a frozen, read-only collection of Kefir
+observables shared symmetrically with `Store` and `ReactStore`: `selectorDetail`,
+`selectorSummary`, `selectorCadence`, `sagaMonitor`, `runtimeError`, and
+`reduxAction`. Import
+`StoreTraceStreams` and `StoreLoggerFactory` from
+`@augmentcode/themis/types` when annotating a custom logger. The default logger
+subscribes to these streams and writes the established console prefixes. Redux
+action middleware is a pure event producer; StoreRuntime owns the default
+legend/group rendering. A custom `loggerFactory` replaces it and may return a
+disposer.
+
+Use `summaryEnabled: true` in the flat `traceSelectors` options object to opt
+into selector summary allocation. `summaryIntervalMs` controls publication
+cadence; detailed trace flags do not allocate summaries. Dispose direct Kefir
+subscriptions before `streamStore.dispose()`. Store disposal stops the logger,
+summary interval, selector cadence resources, and other Store-owned tracing
+resources; a later successful `init()` reattaches the configured logger.
+
+## Streaming family boundary
+
+- `StreamingStore` selector direct calls return Kefir observables.
+- Keep one concrete Store selector and lifecycle pattern per app/code path.
 
 ## Verification cues
 
 - Imports use `@augmentcode/themis/streaming-store` for `StreamingStore`.
 - Examples and docs do not describe `Store` as a streaming API.
-- Streaming selector usage is initialized before observation, or tests explicitlyassert the pre-init error path.
+- Streaming selector usage is initialized before observation, or tests explicitly assert the pre-init error path.
 
 ## See also
 

@@ -12,6 +12,7 @@ import type {
   SendMessagePayload,
   InitializeChatOptions,
   StreamStatusContext,
+  StreamFailureCorrelation,
   TranscriptSnapshotMeta,
 } from './chat-state-types';
 import {
@@ -489,6 +490,22 @@ function reduceAgentStreamUpdate(
 // Actions
 // ============================================================================
 
+/** Initialize chat session with loaded data (session/messages now live in agent-session slice) */
+export const chatInitialized = createAction<
+  [
+    agentId: string,
+    payload: {
+      isStreaming: boolean;
+      lastAttemptedMessage: LastAttemptedMessage | null;
+    },
+  ]
+>('chatState/initialized');
+
+/** Set error on chat init failure */
+export const chatInitFailed = createAction<[agentId: string, error: string]>(
+  'chatState/initFailed',
+);
+
 /** Begin sending a message — sets processing/streaming flags */
 export const chatSendStarted = createAction(
   'chatState/sendStarted',
@@ -580,7 +597,12 @@ export const chatQueuedRetryRecordsCleared = createAction<[agentId: string]>(
  * so no drain-start event under this client's key ever promoted it).
  */
 export const chatSendFailed =
-  createAction<[agentId: string, error: string, turnId?: string]>('chatState/sendFailed');
+  createAction<[
+    agentId: string,
+    error: string,
+    turnId?: string,
+    failureCorrelation?: StreamFailureCorrelation,
+  ]>('chatState/sendFailed');
 
 /**
  * `agent:queue:processing` drain-start signal (PROTOCOL §6.5): the daemon
@@ -599,6 +621,9 @@ export const chatQueueProcessingReceived = createAction<[agentId: string, turnId
   'chatState/queueProcessingReceived',
 );
 
+/** Agent was interrupted — clear streaming without error */
+export const chatInterrupted = createAction<[agentId: string]>('chatState/interrupted');
+
 /** Clear model unavailable info */
 export const chatModelUnavailableCleared = createAction<[agentId: string]>(
   'chatState/modelUnavailableCleared',
@@ -606,6 +631,15 @@ export const chatModelUnavailableCleared = createAction<[agentId: string]>(
 
 /** Stop completed — clear all streaming/interrupt flags */
 export const chatStopCompleted = createAction<[agentId: string]>('chatState/stopCompleted');
+
+/** Reset chat to initial empty state (destroy) */
+export const chatReset = createAction<[agentId: string]>('chatState/reset');
+
+/** Reconcile streaming state when panel remounts */
+export const chatStreamingReconciled = createAction(
+  'chatState/streamingReconciled',
+  (agentId: string) => ({ agentId, timestamp: Date.now() }),
+);
 
 // --- Streaming event actions ---
 
@@ -644,6 +678,11 @@ export const streamStatusReceived = createAction(
     resetFirstChunk,
     context,
   ],
+);
+
+/** Restore status events persisted by chat-state sagas during initialization */
+const chatStatusEventsHydrated = createAction<[agentId: string, statusEvents: StatusEvent[]]>(
+  'chatState/statusEventsHydrated',
 );
 
 /** Stream timed out */
@@ -871,9 +910,21 @@ export const sendMessage = createAction(
 // ============================================================================
 
 export const chatStateReducer = createReducer<ChatStateSlice>(initialState);
+chatStateReducer.with(chatInitialized, (state, { payload: [agentId, data] }) =>
+  updateAgent(state, agentId, {
+    agentId,
+    error: null,
+    failureCorrelation: undefined,
+    lastAttemptedMessage: data.lastAttemptedMessage,
+  }),
+);
+chatStateReducer.with(chatInitFailed, (state, { payload: [agentId, error] }) =>
+  updateAgent(state, agentId, { error, failureCorrelation: undefined, modelUnavailable: null }),
+);
 chatStateReducer.with(chatSendStarted, (state, { payload: { agentId, timestamp } }) =>
   updateAgent(state, agentId, {
     error: null,
+    failureCorrelation: undefined,
     modelUnavailable: null,
     streamingStartTime: timestamp,
     lastMessageTime: timestamp,
@@ -943,7 +994,7 @@ chatStateReducer.with(
 chatStateReducer.with(chatQueueProcessingReceived, (state, { payload: [agentId, turnId] }) =>
   reduceQueueProcessing(state, agentId, turnId),
 );
-chatStateReducer.with(chatSendFailed, (state, { payload: [agentId, error, turnId] }) => {
+chatStateReducer.with(chatSendFailed, (state, { payload: [agentId, error, turnId, failureCorrelation] }) => {
   // monorepo#1057: when the failure names a turn whose record is still
   // PARKED (e.g. an agent.retry redrive that failed again — its requeued
   // entry has a new id, so no processing event promoted it under this
@@ -958,6 +1009,7 @@ chatStateReducer.with(chatSendFailed, (state, { payload: [agentId, error, turnId
     return updateAgent(state, agentId, {
       streamingStartTime: null,
       error,
+      failureCorrelation,
       modelUnavailable: null,
       lastAttemptedMessage: agent.queuedRetryRecords[key].record,
       queuedRetryRecords: remaining,
@@ -966,6 +1018,7 @@ chatStateReducer.with(chatSendFailed, (state, { payload: [agentId, error, turnId
   return updateAgent(state, agentId, {
     streamingStartTime: null,
     error,
+    failureCorrelation,
     modelUnavailable: null,
   });
 });
@@ -973,7 +1026,7 @@ chatStateReducer.with(chatModelUnavailableCleared, (state, { payload: [agentId] 
   updateAgent(state, agentId, { modelUnavailable: null }),
 );
 chatStateReducer.with(chatErrorCleared, (state, { payload: [agentId] }) =>
-  updateAgent(state, agentId, { error: null }),
+  updateAgent(state, agentId, { error: null, failureCorrelation: undefined }),
 );
 chatStateReducer.with(chatStopInitiated, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { isInterrupting: true }),
@@ -1016,6 +1069,7 @@ chatStateReducer.with(streamTimedOut, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, {
     streamingStartTime: null,
     error: m.chat_state_timeout_error(),
+    failureCorrelation: undefined,
   }),
 );
 chatStateReducer.with(chatRebindStarted, (state, { payload: [agentId] }) =>
