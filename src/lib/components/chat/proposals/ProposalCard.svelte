@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines -- sibling mode remains in the single shared proposal renderer */
   import { tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { faCircleCheck, faPencil } from '@fortawesome/free-solid-svg-icons';
@@ -75,6 +76,7 @@
   let draftFieldValue = $state('');
   let activeEditor = $state<EditorHandle | undefined>();
   let syncedWorkspaceProposal: Proposal | undefined;
+  let workspaceTitle = $state('');
   let workspaceInitialPrompt = $state('');
   let workspaceRepoPath = $state('');
   let workspaceRepoType = $state<WorkspaceCreateRepoType>('local');
@@ -105,6 +107,9 @@
   const lifecycleErrorCode = selectProposalErrorCode(untrack(() => proposalId));
   const lifecycleResult = selectProposalResult(untrack(() => proposalId));
   const isWorkspaceCreate = $derived(proposal.kind === 'workspace-create');
+  const isSiblingWorkspaceCreate = $derived(
+    isWorkspaceCreate && proposal.preview.workspaceCreate?.mode === 'sibling',
+  );
   const settingsProposal = $derived(isSettingsChangeProposal(proposal) ? proposal : undefined);
   const specialistProposal = $derived(isSpecialistEditProposal(proposal) ? proposal : undefined);
   const shortcutModifier = $derived(
@@ -116,6 +121,9 @@
   const isApplied = $derived($lifecycleStatus === 'applied');
   const createdWorkspaceId = $derived($lifecycleResult?.workspaceId);
   const isWorkspaceCreated = $derived(isWorkspaceCreate && isApplied);
+  const workspaceHeading = $derived(
+    isSiblingWorkspaceCreate ? workspaceTitle : proposal.preview.title,
+  );
   const createdRepoLabel = $derived.by(() => {
     if (workspaceRepoType === 'github' && workspaceGithubUrl) {
       const ownerRepo = parseGithubOwnerRepo(workspaceGithubUrl);
@@ -193,6 +201,7 @@
     if (!isWorkspaceCreate || syncedWorkspaceProposal === proposal) return;
     syncedWorkspaceProposal = proposal;
     const workspaceCreate = getWorkspaceCreateFields();
+    workspaceTitle = workspaceCreate.title ?? '';
     workspaceInitialPrompt = workspaceCreate.initialPrompt ?? '';
     workspaceRepoPath = workspaceCreate.repoPath ?? '';
     workspaceRepoType = workspaceCreate.repoType ?? 'local';
@@ -381,6 +390,8 @@
       getFieldString('repositoryPath') ??
       (repoInput ? repositoryFallbackPath(repoInput, githubUrl) : undefined);
     return {
+      mode: preview.mode,
+      title: preview.title ?? stringParam('title'),
       initialPrompt:
         preview.initialPrompt ??
         (typeof getInitialAgentValue('prompt') === 'string'
@@ -564,15 +575,18 @@
 
   function buildWorkspaceEditedFields(): Record<string, unknown> {
     const editedFields: Record<string, unknown> = {};
+    if (isSiblingWorkspaceCreate) editedFields.title = workspaceTitle.trim();
     addPopulatedField(editedFields, 'initialPrompt', workspaceInitialPrompt);
-    addPopulatedField(editedFields, 'repoPath', workspaceRepoPath);
-    addPopulatedField(editedFields, 'repoType', workspaceRepoType);
-    addPopulatedField(editedFields, 'githubUrl', workspaceGithubUrl);
-    addPopulatedField(editedFields, 'clonePath', workspaceClonePath);
+    if (!isSiblingWorkspaceCreate) {
+      addPopulatedField(editedFields, 'repoPath', workspaceRepoPath);
+      addPopulatedField(editedFields, 'repoType', workspaceRepoType);
+      addPopulatedField(editedFields, 'githubUrl', workspaceGithubUrl);
+      addPopulatedField(editedFields, 'clonePath', workspaceClonePath);
+      addPopulatedField(editedFields, 'isNewRepo', workspaceIsNewRepo);
+      addPopulatedField(editedFields, 'isValidPath', workspaceIsValidPath);
+      addPopulatedField(editedFields, 'scope', workspaceScope);
+    }
     addPopulatedField(editedFields, 'branch', workspaceBranch);
-    addPopulatedField(editedFields, 'isNewRepo', workspaceIsNewRepo);
-    addPopulatedField(editedFields, 'isValidPath', workspaceIsValidPath);
-    addPopulatedField(editedFields, 'scope', workspaceScope);
     addPopulatedField(editedFields, 'specialist', workspaceSpecialist);
     return editedFields;
   }
@@ -681,7 +695,7 @@
               <Fa icon={faCircleCheck} class="h-4 w-4 text-success" />
             </span>
             <h3 class="type-body min-w-0 font-medium leading-snug text-foreground">
-              {proposal.preview.title}
+              {workspaceHeading}
             </h3>
           </div>
 
@@ -733,9 +747,21 @@
         </div>
       {:else}
         <div class="space-y-4">
-          <h3 class="type-body font-medium leading-snug text-foreground">
-            {proposal.preview.title}
-          </h3>
+          {#if isSiblingWorkspaceCreate}
+            <Input
+              bind:value={workspaceTitle}
+              aria-label={m.workspace_page_space_title()}
+              placeholder={m.ui_editableName_placeholder()}
+              maxlength={100}
+              disabled={actionDisabled}
+              data-testid="proposal-workspace-title"
+              class="font-medium"
+            />
+          {:else}
+            <h3 class="type-body font-medium leading-snug text-foreground">
+              {proposal.preview.title}
+            </h3>
+          {/if}
 
           <Textarea
             bind:value={workspaceInitialPrompt}
@@ -744,6 +770,7 @@
             maxHeight={240}
             doesExpandToFit
             noFocusStyle
+            disabled={actionDisabled}
             class="resize-y"
           />
 
@@ -761,17 +788,27 @@
               >
                 {m.chat_proposalCard_repo_label()}
               </span>
-              <div class="min-w-0" data-testid="proposal-repo-picker">
-                <RepoAndBranchPicker
-                  repoPath={workspaceRepoPath}
-                  repoType={workspaceRepoType}
-                  githubUrl={workspaceGithubUrl}
-                  isNewRepo={workspaceIsNewRepo}
-                  presentation="metadata"
-                  field="repo"
-                  onRepoChange={handleRepoChange}
-                />
-              </div>
+              {#if isSiblingWorkspaceCreate}
+                <div
+                  class="type-body min-w-0 truncate rounded-(--radius-small) border border-border bg-muted/30 px-2 py-1.5 text-muted-foreground"
+                  data-testid="proposal-repo-locked"
+                  title={createdRepoLabel}
+                >
+                  {createdRepoLabel}
+                </div>
+              {:else}
+                <div class="min-w-0" data-testid="proposal-repo-picker">
+                  <RepoAndBranchPicker
+                    repoPath={workspaceRepoPath}
+                    repoType={workspaceRepoType}
+                    githubUrl={workspaceGithubUrl}
+                    isNewRepo={workspaceIsNewRepo}
+                    presentation="metadata"
+                    field="repo"
+                    onRepoChange={handleRepoChange}
+                  />
+                </div>
+              {/if}
             </div>
 
             <div

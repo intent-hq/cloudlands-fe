@@ -1486,6 +1486,7 @@ export interface WorkspaceUIContext {
 // ============================================================================
 
 export interface CreateWorkspaceRequest {
+  idempotencyKey?: string;
   title?: string;
   statusMessage?: string;
   repositoryPath?: string;

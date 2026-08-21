@@ -896,6 +896,73 @@ describe('ProposalCard', () => {
     expect(event?.detail.editedFields.specialist).toBe('ui-designer');
   });
 
+  it('renders sibling mode with editable allowed fields and locked repository metadata', async () => {
+    const { container } = render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            mode: 'sibling',
+            title: 'Investigate follow-up',
+            initialPrompt: 'Inspect the separate issue.',
+            repoPath: '/repo/current',
+            repoType: 'local',
+            branch: 'feature/dependency',
+            specialist: 'planner',
+          },
+        }),
+      },
+    });
+    const applyListener = vi.fn();
+    container
+      .querySelector('[data-proposal-kind]')
+      ?.addEventListener('proposalapply', applyListener as EventListener);
+
+    const title = screen.getByTestId('proposal-workspace-title') as HTMLInputElement;
+    const prompt = screen.getByPlaceholderText('What would you like to work on?');
+    expect(title.value).toBe('Investigate follow-up');
+    expect(screen.getByTestId('proposal-repo-locked').textContent).toContain('/repo/current');
+    expect(screen.queryByTestId('proposal-repo-picker')).toBeNull();
+    expect(screen.getByTestId('proposal-branch-picker')).toBeTruthy();
+
+    await fireEvent.input(title, { target: { value: 'Edited follow-up' } });
+    await fireEvent.input(prompt, { target: { value: 'Use the findings from this workspace.' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Mock branch change' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Mock specialist change' }));
+    await fireEvent.click(screen.getByRole('button', { name: /Create workspace/ }));
+
+    const event = applyListener.mock.calls[0]?.[0] as CustomEvent | undefined;
+    expect(event?.detail.editedFields).toEqual({
+      title: 'Edited follow-up',
+      initialPrompt: 'Use the findings from this workspace.',
+      branch: 'mock-branch',
+      specialist: 'ui-designer',
+    });
+  });
+
+  it('discards sibling mode without applying workspace creation', async () => {
+    const onApply = vi.fn();
+    const onDiscard = vi.fn();
+    render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            mode: 'sibling',
+            title: 'Separate follow-up',
+            repoPath: '/repo/current',
+          },
+        }),
+        onApply,
+        onDiscard,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+
+    expect(onApply).not.toHaveBeenCalled();
+    expect(onDiscard).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/Discarded:/)).toBeTruthy();
+  });
+
   it('uses workspace-specific wording for workspace-create while applying', () => {
     lifecycleSelectorState.status = 'applying';
     const { container } = render(ProposalCard, {
@@ -924,7 +991,15 @@ describe('ProposalCard', () => {
     lifecycleSelectorState.status = 'applied';
     lifecycleSelectorState.result = { workspaceId: 'ws-new' };
     render(ProposalCard, {
-      props: { proposal: makeWorkspaceProposal() },
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            mode: 'sibling',
+            title: 'Sibling follow-up',
+            repoPath: '/repo/current',
+          },
+        }),
+      },
     });
 
     const link = screen.getByTestId('proposal-open-created-workspace');

@@ -6,11 +6,7 @@
  */
 
 import { z } from 'zod';
-import {
-  AgentStatus,
-  WORKSPACE_STATUS_MESSAGE_MAX_LENGTH,
-  WorkspaceStatus,
-} from './types';
+import { AgentStatus, WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, WorkspaceStatus } from './types';
 import { CHIEF_WORKSPACE_ID } from './types/branded-ids';
 
 /**
@@ -186,6 +182,7 @@ const EnvironmentConfigSchema = z.object({
 });
 
 export const CreateWorkspaceRequestSchema = z.object({
+  idempotencyKey: z.string().optional(),
   title: z.string().max(100).optional(),
   statusMessage: WorkspaceStatusMessageSchema.optional(),
   repositoryPath: z.string().optional(),
