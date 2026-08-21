@@ -1677,6 +1677,119 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     },
   );
 
+  // Remaining hole behind the monorepo#2917 fix (v2.75.1 recurrence,
+  // monorepo#3073): the swap sweep's spare keys on
+  // selectTranscriptHydration === 'loading', but the chat-read saga never
+  // flips that flag synchronously with initializeChatRequested — its worker
+  // first awaits the hydrationTails chain (hydrateAfterPrevious's
+  // `yield* call(() => previous)`), deferring transcriptHydrationStarted by
+  // at least one microtask. When a workspace layout restore mounts two
+  // ChatPanels inside ONE synchronous flush (the v2.75.1 trace: both
+  // init/viewed dispatch pairs inside a single heavy task, no microtask
+  // checkpoint between them), the second panel's markAgentAsViewed sweep
+  // runs while the first agent's hydration is still unset (`undefined` —
+  // never started) — the loading spare alone cannot match, and without the
+  // mid-acquisition spare the first panel's still-acquiring cold-open slot
+  // would be closed (desiredToken cleared + cancelPending), its seq-0
+  // snapshot token-dropped, and the chat-read saga stranded for a full
+  // SNAPSHOT_WAIT_MS window (the "No transcript snapshot recorded within
+  // wait window" warn). The sweep therefore also spares a hosted slot whose
+  // open is still acquiring (nothing installed yet) before its hydration
+  // flag exists. The monorepo#2917 test above cannot see this: it hand-dispatches
+  // transcriptHydrationStarted BEFORE the sibling's viewed dispatch — an
+  // ordering the real read saga cannot produce for a same-task sweep.
+  it(
+    'spares a sibling cold open from a same-task viewed-agent swap that runs before the read saga flips its hydration to loading (monorepo#3073)',
+    async () => {
+      const first = 'agent-3073-same-task-first';
+      const second = 'agent-3073-same-task-second';
+      seedSession(first);
+      seedSession(second);
+      // Both agent tabs are in the restored layout before the panels mount.
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'First', closable: true, agentId: first }),
+      );
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'Second', closable: true, agentId: second }),
+      );
+
+      // One synchronous task, no microtask checkpoints: both panels' init +
+      // viewed dispatches land back-to-back, exactly as a single effect
+      // flush delivers them. Over WSS both acquisitions resolve later.
+      const c1 = delayNextSubscription(first);
+      appStore.dispatch(markAgentAsViewed(first));
+      const c2 = delayNextSubscription(second);
+      appStore.dispatch(markAgentAsViewed(second));
+
+      // The read saga's hydration flags land only after the current task —
+      // after the second panel's swap sweep already ran.
+      appStore.dispatch(transcriptHydrationStarted(first));
+      appStore.dispatch(transcriptHydrationStarted(second));
+
+      c1.acquisition.resolve(c1.subscription.unsubscribe);
+      c2.acquisition.resolve(c2.subscription.unsubscribe);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // The daemon emits both seq-0 snapshots.
+      c2.subscription.handler({
+        ...transcript([makeMessage('m-3073-second', 'second snapshot')]),
+        fromSnapshot: true,
+      });
+      c1.subscription.handler({
+        ...transcript([makeMessage('m-3073-first', 'first snapshot')]),
+        fromSnapshot: true,
+      });
+
+      // The viewed panel hydrates fine…
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, second)).toBeDefined();
+
+      // …and the sibling cold open must survive the same-task sweep (a
+      // mounted panel is actively waiting on its snapshot): the snapshot
+      // applies instead of stranding the read saga for a full wait window.
+      expect(c1.subscription.unsubscribe).not.toHaveBeenCalled();
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, first)).toBeDefined();
+      expect(selectAgentMessages.select(appStore.state, first).map((m) => m.id)).toContain(
+        'm-3073-first',
+      );
+    },
+  );
+
+  it(
+    'runs the deferred close once hydration settles when a swap-spared still-acquiring sibling panel closed mid-acquisition (no leaked subscription, monorepo#3073)',
+    async () => {
+      // Leak guard for the mid-acquisition spare: a sibling spared before its
+      // hydration flag ever existed enters the same spare-then-revisit
+      // contract as the loading spare — its preserved slot's read saga is in
+      // flight, so hydration eventually starts and settles/fails. If the
+      // panel genuinely closed in the meantime, the settle-time revisit must
+      // tear the subscription down instead of leaking it.
+      const sibling = 'agent-3073-acquiring-leak-sibling';
+      const viewed = 'agent-3073-acquiring-leak-viewed';
+      seedSession(sibling);
+      seedSession(viewed);
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'Sibling', closable: true, agentId: sibling }),
+      );
+      const c = delayNextSubscription(sibling);
+      appStore.dispatch(markAgentAsViewed(sibling));
+
+      // Same-task sweep while the sibling is still acquiring (hydration
+      // unset, desiredToken held, nothing installed): the spare holds.
+      openChat(viewed);
+      appStore.dispatch(markAgentAsViewed(viewed));
+      c.acquisition.resolve(c.subscription.unsubscribe);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(c.subscription.unsubscribe).not.toHaveBeenCalled();
+
+      // The sibling's panel closes mid-load; its hydration then starts and
+      // settles with no open tab and no re-view — the deferred close runs.
+      appStore.dispatch(clearPanelLayout(WS));
+      appStore.dispatch(transcriptHydrationStarted(sibling));
+      appStore.dispatch(transcriptHydrationSettled(sibling));
+      await vi.waitFor(() => expect(c.subscription.unsubscribe).toHaveBeenCalledOnce());
+    },
+  );
+
   it(
     'runs the deferred close once hydration settles when the swap-spared sibling panel closed mid-load (no leaked subscription, monorepo#2917)',
     async () => {

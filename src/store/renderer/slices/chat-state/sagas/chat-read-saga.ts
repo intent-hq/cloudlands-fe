@@ -191,7 +191,7 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
           // a re-request in flight.
           if (!meta && attempt < SNAPSHOT_WAIT_ATTEMPTS) {
             logger.warn(
-              `No transcript snapshot recorded within wait window (attempt ${attempt}/${SNAPSHOT_WAIT_ATTEMPTS}); re-requesting`,
+              `No transcript snapshot recorded within wait window (attempt ${attempt}/${SNAPSHOT_WAIT_ATTEMPTS}) for agent ${agentId} in workspace ${wsId}; re-requesting`,
             );
             yield* put(chatTranscriptSnapshotRerequested(wsId, agentId));
           }
@@ -204,7 +204,10 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
       snapshotChannel.close();
     }
   } catch (error) {
-    logger.error('Failed to hydrate chat transcript', error);
+    logger.error(
+      `Failed to hydrate chat transcript for agent ${agentId} in workspace ${wsId}`,
+      error,
+    );
   }
   return { started, succeeded };
 }
