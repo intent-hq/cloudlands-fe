@@ -68,6 +68,9 @@ function* reconcileGitRootsSubscriptions(
 
 function* watchActiveWorkspaces(active: Map<string, SubscriptionEntry>): SagaGenerator<void> {
   const initialWorkspaceIds = yield* selectActiveWorkspaceIds.effect();
+  // Init to now (not 0, unlike the pr-monitor/background-hooks watchers):
+  // the inline reconcile below already covers the leading edge, so a change
+  // arriving within the window of saga start is trailing-debounced.
   let lastChangeAt = Date.now();
   yield* reconcileGitRootsSubscriptions(active, initialWorkspaceIds);
 
