@@ -56,10 +56,6 @@ export const selectPanelRevealRequestsByWorkspaceId = store.createSelector((stat
   ),
 );
 
-export const selectPanelLayoutWorkspaceIds = store.createSelector((state) =>
-  Object.keys(state.panelLayout.byWorkspaceId),
-);
-
 export type PanelTabIdentityRequest = Pick<PanelTab, 'type'> &
   Partial<Omit<PanelTab, 'id' | 'type'>>;
 

@@ -493,7 +493,7 @@ function* reconcileRestoredPanelColumns(wsId: string): SagaGenerator<boolean> {
   return true;
 }
 
-export function* handleWorkspaceMountedRestore(
+function* handleWorkspaceMountedRestore(
   action: ReturnType<typeof workspaceMounted> | ReturnType<typeof panelLayoutScopeMounted>,
 ): SagaGenerator<void> {
   const [wsId] = action.payload;

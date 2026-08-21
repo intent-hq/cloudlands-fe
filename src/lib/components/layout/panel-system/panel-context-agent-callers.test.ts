@@ -74,6 +74,7 @@ function callsNamed(sourceFile: ts.SourceFile, name: string): ts.CallExpression[
 
 function callCount(path: string, name: string) {
   const source = readFileSync(path, 'utf8');
+  if (!source.includes(name)) return 0;
   if (path.endsWith('.svelte')) return svelteCallsNamed(source, name).length;
   const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
   return callsNamed(sourceFile, name).length;

@@ -190,8 +190,12 @@ export function resizeRootHorizontalDivider(
     return { node, panelWidths: [...previousPanelWidths], acceptedDelta: 0 };
   }
   const resized = resizePanelWidthsAtDivider(previousPanelWidths, panelIndex, requestedDelta);
-  if (resized.acceptedDelta === 0) return { node, ...resized };
+  const panelWidthsChanged = resized.panelWidths.some(
+    (width, index) => width !== previousPanelWidths[index],
+  );
+  if (resized.acceptedDelta === 0 && !panelWidthsChanged) return { node, ...resized };
   const totalWidth = resized.panelWidths.reduce((sum, width) => sum + width, 0);
+  if (totalWidth <= 0) return { node, ...resized };
   return {
     node: {
       ...node,

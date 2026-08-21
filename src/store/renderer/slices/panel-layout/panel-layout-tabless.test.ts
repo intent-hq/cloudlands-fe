@@ -509,6 +509,31 @@ describe('tabless panel layout', () => {
     expect(resized.panelWidths).toEqual([800, 100, 100]);
   });
 
+  it('persists repaired minimum widths when no drag delta is accepted', () => {
+    const widths = [50, 450, 500];
+    const root = {
+      type: 'split' as const,
+      direction: 'horizontal' as const,
+      sizes: widths.map((width) => width / 10),
+      children: ['p1', 'p2', 'p3'].map((panelId) => ({
+        type: 'panel' as const,
+        panelId,
+      })),
+    };
+
+    const resized = resizeRootHorizontalDivider(root, 0, 0, widths);
+
+    expect(resized.acceptedDelta).toBe(0);
+    expect(resized.panelWidths).toEqual([
+      100,
+      expect.closeTo(426.31578947, 8),
+      expect.closeTo(473.68421053, 8),
+    ]);
+    expect(resized.node).toMatchObject({
+      sizes: resized.panelWidths.map((width) => expect.closeTo(width / 10, 8)),
+    });
+  });
+
   it('does not route root-only resizing through a vertical layout', () => {
     const root = {
       type: 'split' as const,
