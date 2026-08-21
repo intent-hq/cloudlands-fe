@@ -17,6 +17,7 @@ import {
   type BrowserTabOwnerChangedPayload,
 } from '$shared/ipc/workspace-command-payloads';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
+import { routedWorkspaceId } from '../../../utils/routed-workspace-id';
 import {
   selectAllTabs,
   selectHiddenTabs,
@@ -28,6 +29,7 @@ import {
   hydrateWorkspaceLayout,
   waitForWorkspaceLayoutRestore,
 } from '../../panel-layout/sagas/panel-layout-saga';
+import { dropRevealIfWorkspaceNotDisplayed } from '../../panel-layout/sagas/reveal-suppression';
 import {
   closeTab,
   focusPanel,
@@ -98,23 +100,6 @@ type LayoutReadiness =
  * hydration failure is reported as a result so one poisoned persisted layout
  * cannot abort the whole browser IPC saga for the window.
  */
-
-/**
- * The workspace this window's route currently displays, or null outside
- * `/workspace/{id}` (and on `/workspace/new`). Main targets workspace-scoped
- * IPC at windows by this same signal (`windowWorkspaceIds`, fed from the
- * route in `afterNavigate`), so hostedness here must accept it too: a window
- * routed to a workspace can receive a request while that workspace has no
- * layout entry and is missing from the tab strip (e.g. columns-mode
- * route/stack divergence), and judging it not-hosted would leave the request
- * to time out as "renderer did not respond" (monorepo#2789).
- */
-function routedWorkspaceId(): string | null {
-  if (typeof window === 'undefined') return null;
-  const match = window.location.pathname.match(/^\/workspace\/([^/?]+)/);
-  const id = match?.[1];
-  return id && id !== 'new' ? id : null;
-}
 
 function* ensureWorkspaceLayoutForRequest(workspaceId: string): SagaGenerator<LayoutReadiness> {
   const held = workspaceId in (yield* selectPanelLayoutWorkspaces.effect());
@@ -258,6 +243,9 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
           const focusAction = focusPanel(workspaceId, target[0]);
           yield* put(focusAction);
           yield* pinRevealedPanel(workspaceId, focusAction.payload.requestId);
+          if (ownerAgentId !== undefined) {
+            yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, focusAction.payload.requestId);
+          }
         }
       }
       return;
@@ -283,6 +271,9 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     );
     yield* put(openAction);
     if (pin) yield* pinRevealedPanel(workspaceId, openAction.payload.newTabId);
+    if (ownerAgentId !== undefined) {
+      yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, openAction.payload.newTabId);
+    }
     return;
   }
   // A hidden (default) agent open creates the tab straight into hiddenTabs:
@@ -314,6 +305,9 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     );
     yield* put(openAction);
     if (pin) yield* pinRevealedPanel(workspaceId, openAction.payload.newTabId);
+    if (ownerAgentId !== undefined) {
+      yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, openAction.payload.newTabId);
+    }
     return;
   }
   const openAction = openTab(
@@ -327,6 +321,9 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   );
   yield* put(openAction);
   if (pin) yield* pinRevealedPanel(workspaceId, openAction.payload.newTabId);
+  if (ownerAgentId !== undefined) {
+    yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, openAction.payload.newTabId);
+  }
 }
 
 function* closeBrowser(data: BrowserCloseTabPayload | null): SagaGenerator<void> {
@@ -379,7 +376,10 @@ function* focusBrowser(data: BrowserFocusTabPayload | null): SagaGenerator<void>
       error: readiness.message,
     });
   }
-  yield* put(focusBrowserTabRequested(data.workspaceId, data.tabId, data.pin));
+  // agentDriven: a main-driven focus on a workspace this window is not
+  // displaying applies its layout-state effects but skips the actual UI
+  // reveal (monorepo#3045).
+  yield* put(focusBrowserTabRequested(data.workspaceId, data.tabId, data.pin, true));
 }
 
 function* showBrowser(data: BrowserShowTabPayload | null): SagaGenerator<void> {
@@ -408,12 +408,16 @@ function* showBrowser(data: BrowserShowTabPayload | null): SagaGenerator<void> {
     // Reveal: mount into a panel. focus: false mounts without activating
     // the tab or moving panel focus (monorepo#3045).
     yield* put(restoreHiddenTab(workspaceId, data.tabId, undefined, focus));
+    // A focusing reveal on a workspace this window is not displaying keeps
+    // its layout-state effects but skips the actual UI reveal (its
+    // requestId is the restored tab's id).
+    if (focus) yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, data.tabId);
     return;
   }
   // Already visible: idempotent — focus: true still activates the tab and
   // focuses its panel (reusing the focusTab path); focus: false is a no-op.
   if (focus) {
-    yield* put(focusBrowserTabRequested(workspaceId, data.tabId));
+    yield* put(focusBrowserTabRequested(workspaceId, data.tabId, undefined, true));
   }
 }
 

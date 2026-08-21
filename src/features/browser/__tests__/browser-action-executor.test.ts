@@ -62,6 +62,14 @@ vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mockBackendRequest }),
 }));
 
+// Workspace-visibility probe for the workspace-inactive warning
+// (monorepo#3045). Defaults to "visible" so focus-bearing actions carry no
+// warning unless a test opts into an inactive workspace.
+const mockGetWindowIdForWorkspace = vi.fn<(workspaceId: string) => number | undefined>(() => 1);
+vi.mock('../../system/main/system.ipc', () => ({
+  getWindowIdForWorkspace: (workspaceId: string) => mockGetWindowIdForWorkspace(workspaceId),
+}));
+
 import { executeActions } from '../main/browser-action-executor';
 import { browserCapture } from '../main/browser-capture-service';
 
@@ -838,6 +846,149 @@ describe('browser-action-executor', () => {
 
       expect(result.success).toBe(true);
       expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-1', 'ws-1');
+    });
+  });
+
+  // ===========================================================================
+  // Workspace-inactive semantics (monorepo#3045): focus-bearing actions on a
+  // not-visible workspace still succeed and apply their layout-state effects,
+  // but the result carries a warning that no UI focus was attempted.
+  // ===========================================================================
+  describe('workspace-inactive warning on focus-bearing actions', () => {
+    const hiddenOwnedTab = {
+      tabId: 'tab-hidden',
+      webContentsId: 1,
+      url: 'http://hidden/',
+      title: 'Hidden',
+      mounted: true,
+      ownerAgentId: 'agent-1',
+      emulatedSize: { width: 1280, height: 800 },
+      hidden: true,
+    };
+
+    async function mockTabs(tabs: unknown[]) {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+        tabs: structuredClone(tabs) as never,
+        stale: false,
+      });
+    }
+
+    beforeEach(() => {
+      mockGetWindowIdForWorkspace.mockReturnValue(undefined);
+    });
+
+    afterEach(() => {
+      mockGetWindowIdForWorkspace.mockReturnValue(1);
+    });
+
+    it('showTab focus: true succeeds with the no-UI-focus warning', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      await mockTabs([hiddenOwnedTab]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'showTab', tabId: 'tab-hidden', focus: true }] },
+        undefined,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.showTab).toHaveBeenCalledWith('tab-hidden', 'ws-1', true);
+      expect(result.results[0]?.result).toEqual({
+        tabId: 'tab-hidden',
+        visibility: 'visible',
+        focused: true,
+      });
+      expect(result.results[0]?.warning).toContain('not currently visible');
+      expect(result.results[0]?.warning).toContain('no UI focus was attempted');
+      expect(mockGetWindowIdForWorkspace).toHaveBeenCalledWith('ws-1');
+    });
+
+    it('showTab without focus reveals with no warning (no focus was requested)', async () => {
+      await mockTabs([hiddenOwnedTab]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'showTab', tabId: 'tab-hidden' }] },
+        undefined,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.warning).toBeUndefined();
+    });
+
+    it('focusTab succeeds with the no-UI-focus warning', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+        tabs: [],
+        stale: false,
+      });
+      vi.mocked(embeddedBrowserCdp.focusTab).mockResolvedValueOnce(true);
+
+      const result = await executeActions(
+        { actions: [{ action: 'focusTab', tabId: 'tab-1' }] },
+        undefined,
+        undefined,
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-1', 'ws-1');
+      expect(result.results[0]?.warning).toContain('no UI focus was attempted');
+    });
+
+    it('agent openTab visible: true succeeds with the no-UI-focus warning', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'https://example.com', visible: true }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'https://example.com',
+        undefined,
+        true,
+        undefined,
+        undefined,
+        'agent-1',
+        undefined,
+        { width: 1280, height: 800 },
+        true,
+      );
+      expect(result.results[0]?.warning).toContain('no UI focus was attempted');
+    });
+
+    it('agent openTab hidden (default) carries no warning', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'https://example.com' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.warning).toBeUndefined();
+    });
+
+    it('carries no warning when a window displays the workspace', async () => {
+      mockGetWindowIdForWorkspace.mockReturnValue(7);
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      await mockTabs([hiddenOwnedTab]);
+      vi.mocked(embeddedBrowserCdp.focusTab).mockResolvedValueOnce(true);
+
+      const result = await executeActions(
+        { actions: [{ action: 'showTab', tabId: 'tab-hidden', focus: true }] },
+        undefined,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.warning).toBeUndefined();
     });
   });
 

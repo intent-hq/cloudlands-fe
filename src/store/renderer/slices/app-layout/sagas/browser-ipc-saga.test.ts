@@ -375,16 +375,22 @@ describe('browserIpcSaga', () => {
       ownerAgentId: 'agent-1',
     });
 
+    // Each visible agent open is followed by the workspace-not-displayed
+    // reveal drop (monorepo#3045): jsdom's route is `/`, not this workspace.
     expect(actions.map((a: any) => a.type)).toEqual([
       'panelLayout/openTab',
+      'panelLayout/consumePanelReveal',
+      'panelLayout/consumePendingFocus',
       'panelLayout/openTab',
+      'panelLayout/consumePanelReveal',
+      'panelLayout/consumePendingFocus',
     ]);
-    expect(actions).toMatchObject([
-      { payload: { wsId: 'ws-1', tab: { ...TAB('https://gone.test'), ownerAgentId: 'agent-1' } } },
-      {
-        payload: { wsId: 'ws-1', tab: { ...TAB('https://legacy.test'), ownerAgentId: 'agent-1' } },
-      },
-    ]);
+    expect(actions[0]).toMatchObject({
+      payload: { wsId: 'ws-1', tab: { ...TAB('https://gone.test'), ownerAgentId: 'agent-1' } },
+    });
+    expect(actions[3]).toMatchObject({
+      payload: { wsId: 'ws-1', tab: { ...TAB('https://legacy.test'), ownerAgentId: 'agent-1' } },
+    });
     task.cancel();
     await task.toPromise();
   });
@@ -692,6 +698,8 @@ describe('browserIpcSaga', () => {
           },
         },
       },
+      { type: 'panelLayout/consumePanelReveal' },
+      { type: 'panelLayout/consumePendingFocus' },
     ]);
     task.cancel();
     await task.toPromise();
@@ -781,11 +789,16 @@ describe('browserIpcSaga', () => {
       visible: true,
     });
 
+    // The visible open is followed by the workspace-not-displayed reveal
+    // drop (monorepo#3045): jsdom's route is `/`, not this workspace, so the
+    // layout state stands but the queued UI reveal is consumed.
     expect(actions).toMatchObject([
       {
         type: 'panelLayout/openTabInNewRootColumn',
         payload: { wsId: 'ws-1', tab: { ...TAB('https://visible.test'), ownerAgentId: 'agent-1' } },
       },
+      { type: 'panelLayout/consumePanelReveal', payload: ['ws-1', expect.any(String)] },
+      { type: 'panelLayout/consumePendingFocus', payload: ['ws-1', expect.any(String)] },
     ]);
     task.cancel();
     await task.toPromise();
@@ -986,7 +999,7 @@ describe('browserIpcSaga', () => {
     expect(actions).toEqual([
       {
         type: 'appLayout/focusBrowserTabRequested',
-        payload: ['ws-background', 'browser-1', true],
+        payload: ['ws-background', 'browser-1', true, true],
       },
     ]);
     task.cancel();
@@ -1056,11 +1069,16 @@ describe('browserIpcSaga', () => {
 
     await emit({ tabId: 'browser-hidden', workspaceId: 'ws-1', focus: true }, 'browser:show-tab');
 
+    // The focusing reveal is followed by the workspace-not-displayed drop
+    // (monorepo#3045): jsdom's route is `/`, not this workspace, so the
+    // mount/activation state stands but the queued UI reveal is consumed.
     expect(actions).toEqual([
       {
         type: 'panelLayout/restoreHiddenTab',
         payload: { wsId: 'ws-1', tabId: 'browser-hidden', timestamp: NOW, focus: true },
       },
+      { type: 'panelLayout/consumePanelReveal', payload: ['ws-1', 'browser-hidden'] },
+      { type: 'panelLayout/consumePendingFocus', payload: ['ws-1', 'browser-hidden'] },
     ]);
     task.cancel();
     await task.toPromise();
@@ -1087,7 +1105,7 @@ describe('browserIpcSaga', () => {
     expect(actions).toEqual([
       {
         type: 'appLayout/focusBrowserTabRequested',
-        payload: ['ws-1', 'browser-1'],
+        payload: ['ws-1', 'browser-1', undefined, true],
       },
     ]);
     task.cancel();
@@ -1434,6 +1452,8 @@ describe('browserIpcSaga', () => {
           },
         },
       },
+      { type: 'panelLayout/consumePanelReveal' },
+      { type: 'panelLayout/consumePendingFocus' },
     ]);
     task.cancel();
     await task.toPromise();
@@ -1699,7 +1719,7 @@ describe('browserIpcSaga', () => {
       await emit({ tabId: 'browser-1', workspaceId: 'ws-hyd-err-3' }, 'browser:focus-tab');
       expect(actions).toContainEqual({
         type: 'appLayout/focusBrowserTabRequested',
-        payload: ['ws-hyd-err-3', 'browser-1', undefined],
+        payload: ['ws-hyd-err-3', 'browser-1', undefined, true],
       });
 
       // The saga is still alive: a later healthy request is answered.

@@ -26,6 +26,7 @@ import {
   type LoopbackRewriteResult,
 } from './loopback-rewrite';
 import { resolveRewrittenRemoteTarget, type TunnelProvider } from './loopback-url-resolver';
+import { getWindowIdForWorkspace } from '../../system/main/system.ipc';
 
 const logger = new Logger('BrowserActionExecutor');
 
@@ -301,6 +302,23 @@ function requireWorkspaceId(workspaceId: string | undefined, action: string): st
     throw new Error(`Action '${action}' requires workspace context`);
   }
   return workspaceId;
+}
+
+/**
+ * Workspace-inactive semantics (monorepo#3045): focus-bearing actions
+ * (showTab with focus: true, focusTab, openTab with visible: true) still
+ * succeed when no window is currently displaying the workspace — their
+ * persisted-layout state effects apply (windows hosting the workspace in a
+ * background tab receive the IPC) — but the renderer skips the actual UI
+ * focus attempt, and the action result carries this warning so the caller
+ * knows nothing was brought to the front.
+ */
+function workspaceNotVisibleWarning(workspaceId: string | undefined): { warning?: string } {
+  if (!workspaceId || getWindowIdForWorkspace(workspaceId) !== undefined) return {};
+  return {
+    // i18n-ignore (agent-facing protocol warning, not user-facing)
+    warning: `Workspace ${workspaceId} is not currently visible in the app, so no UI focus was attempted; the tab and layout state were still updated.`,
+  };
 }
 
 /**
@@ -580,7 +598,12 @@ async function executeAction(
             : 'focusTab requires a tabId.'; // i18n-ignore (agent-facing protocol error, not user-facing)
           return { action: 'focusTab', success: false, error };
         }
-        return { action: 'focusTab', success: true, result };
+        return {
+          action: 'focusTab',
+          success: true,
+          result,
+          ...workspaceNotVisibleWarning(workspaceId),
+        };
       }
 
       case 'showTab': {
@@ -617,6 +640,9 @@ async function executeAction(
           action: 'showTab',
           success: true,
           result: { tabId: action.tabId, visibility: 'visible', focused: focus },
+          // A focus-bearing reveal on a not-visible workspace applies its
+          // layout-state effects but attempts no UI focus (monorepo#3045).
+          ...(focus ? workspaceNotVisibleWarning(workspaceId) : {}),
         };
       }
 
@@ -919,8 +945,11 @@ async function executeAction(
         // focus). User (agentId-less) opens are always visible and never
         // carry the flag.
         const visible = agentId ? action.visible === true : undefined;
+        // The short call form is for user (agentId-less) opens only — agent
+        // opens always compute a defined emulatedSize above, so they always
+        // take the long form, which carries `visible` through.
         const result =
-          replaceTargetTabId === undefined && emulatedSize === undefined
+          agentId === undefined && replaceTargetTabId === undefined && emulatedSize === undefined
             ? openTabFn(
                 finalRewrite.url,
                 action.position,
@@ -998,6 +1027,10 @@ async function executeAction(
           // window", intent-hq/monorepo#2602) as the action error so the
           // sequence-level error is descriptive instead of "undefined".
           ...(result.success ? {} : { error: result.message }),
+          // A visible (panel-mounted) agent open on a not-visible workspace
+          // applies its layout-state effects but attempts no UI focus
+          // (monorepo#3045).
+          ...(result.success && visible === true ? workspaceNotVisibleWarning(workspaceId) : {}),
         };
       }
 
