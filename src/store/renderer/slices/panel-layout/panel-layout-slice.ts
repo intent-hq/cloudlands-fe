@@ -1534,6 +1534,22 @@ export const destroyOwnedTabsForWorkspace = createAction(
 );
 
 /**
+ * Create an agent-owned browser tab directly in `hiddenTabs` (monorepo#3045):
+ * agent openTab is hidden by default — the tab is alive (webview mounted
+ * offscreen, CDP-addressable) but never enters a panel and never moves focus
+ * or the active tab. Reveal happens via restoreHiddenTab (or a later
+ * showTab-driven path).
+ */
+export const openHiddenTab = createAction(
+  'panelLayout/openHiddenTab',
+  (wsId: string, tab: Omit<PanelTab, 'id'>, newTabId?: string) => ({
+    wsId,
+    tab,
+    newTabId: newTabId ?? generateTabId(),
+  }),
+);
+
+/**
  * Restore a hidden (user-closed) agent-owned browser tab back into a panel
  * (monorepo#2857): removed from `hiddenTabs` and opened in the focused panel,
  * keeping its id so the live webview and main's registrations stay attached.
@@ -2185,6 +2201,25 @@ panelLayoutReducer.with(destroyOwnedTabsForWorkspace, (state, { payload }) => {
     result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp, true));
   }
   return result;
+});
+// --- Open Hidden Tab (monorepo#3045) ---
+panelLayoutReducer.with(openHiddenTab, (state, { payload }) => {
+  const { wsId, tab, newTabId } = payload;
+  const ws = getWorkspaceState(state, wsId);
+  // The id may already exist (a redelivered open): hiddenTabs is keyed by
+  // id so addItem would replace, but treat it as a no-op instead — the
+  // existing live tab (hidden or visible) must not be disturbed.
+  if (getItem(ws.hiddenTabs, newTabId)) return state;
+  for (const panel of Object.values(ws.panels)) {
+    if (panel.tabs.some((t) => t.id === newTabId)) return state;
+  }
+  // No history save, no focus/active-tab change, no panel reveal: a hidden
+  // open must be invisible to the user's layout (undo must not resurface
+  // it, and it is not part of any snapshot until revealed).
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    hiddenTabs: addItem(ws.hiddenTabs, { ...tab, id: newTabId }),
+  });
 });
 // --- Restore Hidden Tab (monorepo#2857) ---
 panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {

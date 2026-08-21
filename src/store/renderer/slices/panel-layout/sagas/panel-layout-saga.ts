@@ -85,6 +85,7 @@ import {
   moveTabToPanel,
   moveTabToSplit,
   moveTabToSplitLevel,
+  openHiddenTab,
   openTab,
   openBlankWorkingPanel,
   openTabInAdjacentOrSplit,
@@ -1005,6 +1006,8 @@ export function* panelLayoutSaga(options?: {
     );
     yield* takeEvery(PERSIST_ACTIONS, persistPanelLayout);
     yield* takeEvery(setTabOwnerAgent, persistPanelLayout);
+    // Hidden opens must persist across relaunch without changing panel history.
+    yield* takeEvery(openHiddenTab, persistPanelLayout);
     yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
     yield* takeEvery(reopenClosedPanelColumn, handleReopenedPanelColumn);
     yield* fork(watchRightmostColumnRequests);

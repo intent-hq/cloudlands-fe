@@ -72,6 +72,7 @@ import {
   moveTabToSplitLevel,
   openTab,
   openBlankWorkingPanel,
+  openHiddenTab,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
   openTabInRightmostColumn,
@@ -1411,6 +1412,22 @@ describe('panelLayoutSaga', () => {
         .map(([action]) => action)
         .filter((action) => action.type === reconcilePanelColumnCount.type),
     ).toEqual([]);
+
+    await cancelSaga(task);
+  });
+
+  it('persists hidden tabs without adding panel history', async () => {
+    mocks.getJSON.mockReturnValue(undefined);
+    const { channel, task } = startSaga();
+    await settle();
+
+    channel.put(openHiddenTab(WS_1, { type: 'browser', title: 'Hidden', closable: true }));
+    await settle();
+
+    expect(mocks.setJSON).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
+    await settle();
+    expect(mocks.saveHistory).not.toHaveBeenCalled();
     await cancelSaga(task);
   });
 

@@ -49,6 +49,8 @@ const logger = new Logger('BrowserIPC');
  * genuinely new tab. `ownerAgentId` (agent opens) is persisted with the tab
  * so ownership survives restart (monorepo#2857), and `emulatedSize` (agent
  * opens) rides along so the emulated viewport survives restart too.
+ * `visible: false` (agent opens, monorepo#3045) creates the tab hidden —
+ * no panel mount, webview kept alive offscreen.
  */
 function openBrowserTab(
   url: string,
@@ -60,6 +62,7 @@ function openBrowserTab(
   ownerAgentId?: string,
   replaceTabId?: string,
   emulatedSize?: { width: number; height: number },
+  visible?: boolean,
 ): { success: boolean; message: string; tabId?: string } {
   const workspacePayload = workspaceCommandPayload(workspaceId);
   if (!workspacePayload) {
@@ -107,6 +110,7 @@ function openBrowserTab(
       ...(ownerAgentId === undefined ? {} : { ownerAgentId }),
       ...(replaceTabId === undefined ? {} : { replaceTabId }),
       ...(emulatedSize === undefined ? {} : { emulatedSize }),
+      ...(visible === undefined ? {} : { visible }),
     },
   );
   if (!delivery.delivered) {
@@ -286,7 +290,17 @@ export async function executeBrowserActions(
 ): Promise<ExecutionResult> {
   return executeActions(
     { actions, tabId },
-    (url, position, allowDuplicate, requestedUrl, pin, ownerAgentId, replaceTabId, emulatedSize) =>
+    (
+      url,
+      position,
+      allowDuplicate,
+      requestedUrl,
+      pin,
+      ownerAgentId,
+      replaceTabId,
+      emulatedSize,
+      visible,
+    ) =>
       openBrowserTab(
         url,
         position,
@@ -297,6 +311,7 @@ export async function executeBrowserActions(
         ownerAgentId,
         replaceTabId,
         emulatedSize,
+        visible,
       ),
     agentId,
     workspaceId,
