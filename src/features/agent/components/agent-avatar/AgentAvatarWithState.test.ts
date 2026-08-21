@@ -131,6 +131,7 @@ describe('AgentAvatarWithState', () => {
     expect(source).toContain('hsl(var(--agent-avatar-surface-waiting))');
     expect(avatarSource).toContain('hsl(var(--agent-avatar-surface-neutral))');
     expect(avatarSource).toContain('background-color: var(');
+    expect(avatarSource).toContain('color: #080808');
     expect(avatarSource).toContain('--agent-avatar-background-forced, Canvas');
     expect(avatarSource).toContain('opacity: 1');
     expect(source).toContain('--agent-avatar-background-forced: Highlight');
