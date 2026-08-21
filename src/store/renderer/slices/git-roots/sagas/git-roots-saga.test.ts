@@ -67,14 +67,11 @@ describe('gitRootsSaga', () => {
 
   afterEach(() => vi.useRealTimers());
 
-  it('subscribes to every initially open workspace after 100 ms', async () => {
+  it('subscribes to every initially open workspace immediately', async () => {
     const harness = createHarness(['ws-A', 'ws-B']);
     await settle();
 
-    await vi.advanceTimersByTimeAsync(99);
-    expect(mocks.subscribeGitRoots).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1);
-    await settle();
+    // Leading edge: the initial reconciliation runs without any delay.
     expect(mocks.subscribeGitRoots.mock.calls.map(([workspaceId]) => workspaceId)).toEqual([
       'ws-A',
       'ws-B',
@@ -94,11 +91,8 @@ describe('gitRootsSaga', () => {
       typeof vi.fn
     >;
 
+    // A change landing outside the debounce window reconciles immediately.
     harness.dispatch(openWorkspaceTab('ws-C'));
-    await settle();
-    await vi.advanceTimersByTimeAsync(99);
-    expect(mocks.subscribeGitRoots).toHaveBeenCalledTimes(2);
-    await vi.advanceTimersByTimeAsync(1);
     await settle();
 
     expect(mocks.subscribeGitRoots.mock.calls.map(([workspaceId]) => workspaceId)).toEqual([
@@ -112,6 +106,7 @@ describe('gitRootsSaga', () => {
     expect(disposeA).not.toHaveBeenCalled();
     expect(disposeB).not.toHaveBeenCalled();
 
+    await advanceReconciliation();
     harness.dispatch(closeWorkspaceTab('ws-B', 1));
     await settle();
     await advanceReconciliation();
@@ -127,11 +122,13 @@ describe('gitRootsSaga', () => {
   it('trails a burst of tab changes and reconciles only the final open set', async () => {
     const harness = createHarness(['ws-A']);
     await settle();
-    await advanceReconciliation();
     const disposeA = mocks.subscribeGitRoots.mock.results[0].value.dispose as ReturnType<
       typeof vi.fn
     >;
 
+    // ws-B lands inside the initial reconcile's window: debounced. ws-C lands
+    // inside ws-B's window: supersedes it and restarts the trailing delay.
+    await vi.advanceTimersByTimeAsync(50);
     harness.dispatch(openWorkspaceTab('ws-B'));
     await settle();
     await vi.advanceTimersByTimeAsync(50);
