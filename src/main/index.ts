@@ -128,6 +128,7 @@ import { compareWorkspaceActivityDisplayTimeDesc } from '../shared/utils/workspa
 import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapper';
 import { initializeWarningSuppression } from './utils/suppress-warnings';
 import { runWithHardExitTimeout } from './utils/hard-exit-timeout';
+import { handleUncaughtException, handleUnhandledRejection } from './utils/process-error-handlers';
 import { setupWebviewSecurity } from './webview-security';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { attachSwipeHistoryNavigation } from './swipe-navigation';
@@ -367,21 +368,11 @@ const deepLinkHandler = new DeepLinkHandler();
 
 // Global error handlers to prevent silent crashes
 process.on('uncaughtException', (error) => {
-  // Suppress webview navigation errors (ERR_ABORTED happens when switching URLs)
-  const errMsg = error?.message || String(error);
-  if (errMsg.includes('GUEST_VIEW_MANAGER_CALL') && errMsg.includes('ERR_ABORTED')) {
-    return; // Silently ignore webview navigation abort errors
-  }
-  logger.error('Uncaught Exception', error);
+  handleUncaughtException(logger, error);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  // Suppress webview navigation errors (ERR_ABORTED happens when switching URLs)
-  const errMsg = reason instanceof Error ? reason.message : String(reason);
-  if (errMsg.includes('GUEST_VIEW_MANAGER_CALL') && errMsg.includes('ERR_ABORTED')) {
-    return; // Silently ignore webview navigation abort errors
-  }
-  logger.error('Unhandled Rejection', reason as Error, { promise });
+  handleUnhandledRejection(logger, reason, promise);
 });
 
 // Graceful shutdown handlers
