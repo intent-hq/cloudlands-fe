@@ -909,6 +909,7 @@
   "workspace_card_pin_ariaLabel": "고정",
   "workspace_card_pin_tooltip": "활성 목록에 고정",
   "workspace_card_prBadge_label": "PR{number}",
+  "workspace_card_prBadge_repoLine_tooltip": "{repo} #{number}",
   "workspace_card_prMerged_label": "PR #{number} 병합됨",
   "workspace_card_prOpen_label": "PR {number} 열림",
   "workspace_card_showChanges_label": "변경 사항 표시",
