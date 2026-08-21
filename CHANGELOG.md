@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.77.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.77.1...v2.77.2) (2026-08-21)
+
+
+### 🐛 Bug Fixes
+
+* anchor trigger-less provider path panel on-screen ([#1557](https://github.com/intent-hq/cloudlands-fe/issues/1557)) ([46211a3](https://github.com/intent-hq/cloudlands-fe/commit/46211a34ecf2841372d33e81df550153317b2a84))
+* make showTab reveal user-visible and stop revealed tabs reverting to hidden ([#1560](https://github.com/intent-hq/cloudlands-fe/issues/1560)) ([2b7c857](https://github.com/intent-hq/cloudlands-fe/commit/2b7c85741c0bdb898bcc506973b7d91986474a8f))
+
 ## [2.77.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.77.0...v2.77.1) (2026-08-21)
 
 
