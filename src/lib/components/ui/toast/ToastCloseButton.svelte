@@ -55,4 +55,9 @@
   .toast-close-btn:hover {
     opacity: 0.8;
   }
+
+  .toast-close-btn:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
 </style>
