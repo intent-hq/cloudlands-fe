@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.77.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.77.0...v2.77.1) (2026-08-21)
+
+
+### 🐛 Bug Fixes
+
+* align hidden sidebar tab rows with visible ones ([#1554](https://github.com/intent-hq/cloudlands-fe/issues/1554)) ([b2252f9](https://github.com/intent-hq/cloudlands-fe/commit/b2252f9782027875e2d6ab54e2e5722a873f9596))
+* bump intentd sidecar to v0.7.31 ([#1559](https://github.com/intent-hq/cloudlands-fe/issues/1559)) ([13370ee](https://github.com/intent-hq/cloudlands-fe/commit/13370ee1ae68610efe7da9e42025d11d6c31ea82))
+* sidebar hidden-tab reveal avoids the conversation's panel ([#1555](https://github.com/intent-hq/cloudlands-fe/issues/1555)) ([635c68b](https://github.com/intent-hq/cloudlands-fe/commit/635c68bfc85ff7688c7a40c90386dd0f4e5ad1c3))
+
 ## [2.77.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.76.0...v2.77.0) (2026-08-21)
 
 
