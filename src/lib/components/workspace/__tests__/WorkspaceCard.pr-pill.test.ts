@@ -164,7 +164,9 @@ describe('WorkspaceCard PR pill', () => {
 
     await fireEvent.click(pill!);
 
-    expect(mocks.handleLink).toHaveBeenCalledOnce();
+    // handleLink is lazy-imported by the click handler, so the call lands
+    // after the (mocked) dynamic import's microtask resolves.
+    await vi.waitFor(() => expect(mocks.handleLink).toHaveBeenCalledOnce());
     const [url, options] = mocks.handleLink.mock.calls[0];
     expect(url).toBe('https://github.com/acme/widgets/pull/42');
     expect(options.workspaceId).toBe(workspace.id);
@@ -185,9 +187,11 @@ describe('WorkspaceCard PR pill', () => {
     const pill = container.querySelector('[data-workspace-card-pr-pill]');
     expect(pill?.tagName).toBe('BUTTON');
     await fireEvent.click(pill!);
-    expect(mocks.handleLink).toHaveBeenCalledWith(
-      'https://github.com/acme/widgets/pull/9',
-      expect.objectContaining({ workspaceId: workspace.id }),
+    await vi.waitFor(() =>
+      expect(mocks.handleLink).toHaveBeenCalledWith(
+        'https://github.com/acme/widgets/pull/9',
+        expect.objectContaining({ workspaceId: workspace.id }),
+      ),
     );
   });
 

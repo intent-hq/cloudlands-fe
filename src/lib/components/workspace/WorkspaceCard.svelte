@@ -68,7 +68,6 @@
     selectPrimaryPr,
     toPullRequestStatus,
   } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
-  import { handleLink } from '$features/navigation/link-handler';
   import { cn } from '$lib/utils';
   import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
@@ -609,18 +608,28 @@
         >
           {#if prPillUrl}
             <!-- Clicks route through the unified link handler (GitHub default
-                 action / choices menu) and must not bubble to the card row. -->
-            <button
-              type="button"
-              class="wc-secondary type-caption shrink-0 cursor-pointer rounded-sm px-1.5 font-normal tabular-nums {statusColor}"
-              data-workspace-card-pr-pill
-              onclick={(event) => {
-                event.stopPropagation();
-                void handleLink(prPillUrl, { workspaceId: workspace.id, event });
-              }}
-            >
-              {m.workspace_card_prBadge_label({ number: prNumber ? ` #${prNumber}` : '' })}
-            </button>
+                 action / choices menu) and must not bubble to the card row.
+                 The handler is imported lazily so this component doesn't pull
+                 in the link-handler's module-scope store selectors. The
+                 wrapper span carries wc-secondary because that scoped rule
+                 can't match the Button primitive's inner element. -->
+            <span class="wc-pr-pill-wrap wc-secondary inline-flex shrink-0">
+              <Button
+                variant="plain"
+                class="type-caption h-auto rounded-sm !px-1.5 font-normal tabular-nums {statusColor}"
+                data-workspace-card-pr-pill
+                onclick={(event) => {
+                  event.stopPropagation();
+                  const url = prPillUrl;
+                  const workspaceId = workspace.id;
+                  void import('$features/navigation/link-handler').then(({ handleLink }) =>
+                    handleLink(url, { workspaceId, event }),
+                  );
+                }}
+              >
+                {m.workspace_card_prBadge_label({ number: prNumber ? ` #${prNumber}` : '' })}
+              </Button>
+            </span>
           {:else}
             <span
               class="wc-secondary type-caption shrink-0 rounded-sm px-1.5 font-normal tabular-nums {statusColor}"
@@ -915,6 +924,18 @@
 {/if}
 
 <style>
+  /* The interactive PR pill is a Button primitive whose base carries
+     `type-body`; that unlayered role class is declared after `.type-caption`
+     in app.css and would win the cascade, so the caption role is re-applied
+     here with scoped (higher-specificity) selectors to keep the pill's
+     typography identical to its non-interactive sibling. */
+  .wc-pr-pill-wrap :global([data-slot='button']) {
+    font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+    font-weight: var(--text-caption-weight);
+    letter-spacing: var(--text-caption-tracking);
+  }
+
   @container (max-width: 220px) {
     .wc-secondary {
       display: none;
