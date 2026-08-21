@@ -65,18 +65,20 @@ export function sendShowReleaseNotes(
 }
 
 /**
- * Run the startup version-change check and push the notes to `window` when a
- * showing is due. The notes are parked as pending first so a renderer that has
- * not yet registered its listener can claim them over `get-pending`. Never
+ * Run the startup version-change check and push the notes to the window
+ * `resolveWindow` returns when a showing is due. The window is resolved at
+ * send time — not captured before the async check/fetch — so a window created
+ * meanwhile still receives the push (intent-hq/monorepo#3054); when none
+ * exists the notes stay parked as pending for the renderer claim path. Never
  * throws — a failure here must not affect startup.
  */
 export async function initializeReleaseNotesOnStartup(
-  window: BrowserWindow | null,
+  resolveWindow: () => BrowserWindow | null,
 ): Promise<void> {
   try {
     await checkForReleaseNotesOnStartup((notes) => {
       pendingReleaseNotes = notes;
-      sendShowReleaseNotes(window, { notes });
+      sendShowReleaseNotes(resolveWindow(), { notes });
     });
   } catch (error) {
     logger.warn('Release-notes startup check failed', {
