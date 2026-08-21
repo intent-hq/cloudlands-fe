@@ -66,7 +66,7 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
 }));
 
 vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
-  selectWorkspaceTasksLoading: mocks.selector(() => false),
+  selectWorkspaceTasksInitialized: mocks.selector(() => true),
   selectWorkspaceTaskProgress: mocks.selector(() => ({
     total: 0,
     completed: 0,
