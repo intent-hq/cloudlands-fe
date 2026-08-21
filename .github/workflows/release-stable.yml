@@ -7,6 +7,10 @@ on:
         description: 'Version to promote to stable (e.g., 2.0.7)'
         required: true
         type: string
+      notes_base:
+        description: 'Optional override of the aggregated-notes range base (e.g., 2.0.5) - rebuilds the stable notes from (notes_base, version] for manual repair'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -99,6 +103,73 @@ jobs:
           else
             echo "is_first_promotion=false" >> "$GITHUB_OUTPUT"
           fi
+
+      # Resolves the notes range base — the exclusive lower bound of the
+      # aggregated-notes range (base, version] — before any asset is touched,
+      # so a bad notes_base dispatch aborts while the live stable channel is
+      # still untouched. Priority: explicit notes_base input (manual repair) >
+      # previous stable > on an idempotent re-run (prev == version), the
+      # notes-base marker embedded in the current rolling body — so a re-run
+      # rebuilds the full aggregate instead of collapsing it to one section.
+      # Without a marker (legacy body) the notes rewrite is skipped entirely,
+      # preserving the existing body.
+      - name: Resolve notes range base
+        id: notes_base
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          VERSION: ${{ inputs.version }}
+          NOTES_BASE_INPUT: ${{ inputs.notes_base }}
+          PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
+          IS_FIRST: ${{ steps.stable_version.outputs.is_first_promotion }}
+        run: |
+          set -o pipefail
+          # $1 strictly older than $2 (semver)
+          version_is_older() {
+            [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$1" ]
+          }
+
+          NOTES_BASE=""
+          SKIP_NOTES=false
+          if [ -n "$NOTES_BASE_INPUT" ]; then
+            if [[ ! "$NOTES_BASE_INPUT" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              echo "::error::Invalid notes_base '$NOTES_BASE_INPUT'. Expected version X.Y.Z (e.g., 2.0.5)"
+              exit 1
+            fi
+            if ! gh release view "v${NOTES_BASE_INPUT}" --repo intent-hq/cloudlands-releases >/dev/null 2>&1; then
+              echo "::error::notes_base release v${NOTES_BASE_INPUT} does not exist on intent-hq/cloudlands-releases"
+              exit 1
+            fi
+            if ! version_is_older "$NOTES_BASE_INPUT" "$VERSION"; then
+              echo "::error::notes_base $NOTES_BASE_INPUT must be older than promoted version $VERSION"
+              exit 1
+            fi
+            NOTES_BASE="$NOTES_BASE_INPUT"
+            echo "Using notes_base override: $NOTES_BASE"
+          elif [ "$IS_FIRST" != "true" ] && [ "$PREV_STABLE" = "$VERSION" ]; then
+            # Idempotent re-run: the stable feed already reads $VERSION, so
+            # the previous-stable read cannot recover the range base. Recover
+            # it from the notes-base marker in the current rolling body.
+            echo "Re-promoting same version $VERSION (idempotent)"
+            MARKER=$(gh release view stable --repo intent-hq/cloudlands-releases --json body --jq '.body // ""' 2>/dev/null \
+              | tr -d '\r' \
+              | sed -n -E 's/.*<!-- notes-base: ((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)) -->.*/\1/p' \
+              | head -n1 || true)
+            if [ -z "$MARKER" ]; then
+              echo "::warning::No notes-base marker in the current stable notes - leaving the existing notes untouched"
+              SKIP_NOTES=true
+            elif ! gh release view "v${MARKER}" --repo intent-hq/cloudlands-releases >/dev/null 2>&1 || ! version_is_older "$MARKER" "$VERSION"; then
+              echo "::warning::notes-base marker '$MARKER' is not an existing release older than $VERSION - leaving the existing notes untouched"
+              SKIP_NOTES=true
+            else
+              NOTES_BASE="$MARKER"
+              echo "Rebuilding aggregated notes from marker base: $NOTES_BASE"
+            fi
+          elif [ "$IS_FIRST" != "true" ]; then
+            NOTES_BASE="$PREV_STABLE"
+          fi
+
+          echo "base=$NOTES_BASE" >> "$GITHUB_OUTPUT"
+          echo "skip_notes=$SKIP_NOTES" >> "$GITHUB_OUTPUT"
 
       - name: Download versioned release assets
         env:
@@ -284,6 +355,7 @@ jobs:
       # only skips the summary section (promotion never fails because of notes).
       - name: Checkout repo at promoted tag
         id: checkout_tag
+        if: steps.notes_base.outputs.skip_notes != 'true'
         uses: actions/checkout@v7
         continue-on-error: true
         with:
@@ -293,23 +365,25 @@ jobs:
       # below needs one. Fail-soft like the rest of the notes pipeline — a
       # setup failure only skips the summary section.
       - name: Setup Node.js
+        if: steps.notes_base.outputs.skip_notes != 'true'
         uses: actions/setup-node@v7
         continue-on-error: true
         with:
           node-version: '22'
 
       # Recover the intentd pins for the consolidated delta: the promoted
-      # version's manifest was downloaded with the release assets; the previous
-      # stable's manifest comes from its versioned release. All fail-soft —
+      # version's manifest was downloaded with the release assets; the range
+      # base's manifest comes from its versioned release. All fail-soft —
       # missing manifests just degrade the summary to pin line(s) or nothing.
       # continue-on-error makes the "notes never fail the promotion" guarantee
       # structural rather than relying on the shell guards staying exhaustive.
       - name: Resolve intentd pin range
         id: intentd_pins
+        if: steps.notes_base.outputs.skip_notes != 'true'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-          PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
+          PREV_STABLE: ${{ steps.notes_base.outputs.base }}
         run: |
           HEAD_PIN=""
           BASE_PIN=""
@@ -342,11 +416,12 @@ jobs:
       # failure just drops the summary from the aggregated notes; continue-on-error
       # makes that guarantee structural rather than relying on the shell guards.
       - name: Generate stable summary section
+        if: steps.notes_base.outputs.skip_notes != 'true'
         continue-on-error: true
         env:
           INTENTD_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
           VERSION: ${{ inputs.version }}
-          PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
+          PREV_STABLE: ${{ steps.notes_base.outputs.base }}
           INTENTD_HEAD: ${{ steps.intentd_pins.outputs.head }}
           INTENTD_BASE: ${{ steps.intentd_pins.outputs.base }}
           CHECKOUT_OUTCOME: ${{ steps.checkout_tag.outcome }}
@@ -378,12 +453,15 @@ jobs:
             rm -f "$RUNNER_TEMP/stable-summary.md"
           fi
 
+      # Skipped on an idempotent re-run with no recoverable range base (legacy
+      # body without a notes-base marker): the existing aggregate must not be
+      # clobbered.
       - name: Build aggregated release notes
+        if: steps.notes_base.outputs.skip_notes != 'true'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           VERSION: ${{ inputs.version }}
-          PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
-          IS_FIRST: ${{ steps.stable_version.outputs.is_first_promotion }}
+          NOTES_BASE: ${{ steps.notes_base.outputs.base }}
         run: |
           set -o pipefail
           # List all stable versioned releases (vX.Y.Z only, filtered by tag pattern)
@@ -392,19 +470,15 @@ jobs:
             | sed 's/^v//' \
             | sort -V -r > "$RUNNER_TEMP/all-versions.txt"
 
-          # Determine range: (prevStable, version]
-          if [ "$IS_FIRST" = "true" ]; then
+          # Determine range: (notesBase, version]
+          if [ -z "$NOTES_BASE" ]; then
             # First promotion: only include the target version
             echo "$VERSION" > "$RUNNER_TEMP/range-versions.txt"
-          elif [ "$PREV_STABLE" = "$VERSION" ]; then
-            # Idempotent re-run: same version promoted again, use just this version
-            echo "Re-promoting same version $VERSION (idempotent)"
-            echo "$VERSION" > "$RUNNER_TEMP/range-versions.txt"
           else
-            # Steady-state: include all versions > prevStable and <= version
-            # First validate prevStable exists in the list
-            if ! grep -qFx "$PREV_STABLE" "$RUNNER_TEMP/all-versions.txt"; then
-              echo "::error::Previous stable version $PREV_STABLE not found in release list"
+            # Include all versions > notesBase and <= version
+            # First validate notesBase exists in the list
+            if ! grep -qFx "$NOTES_BASE" "$RUNNER_TEMP/all-versions.txt"; then
+              echo "::error::Notes range base $NOTES_BASE not found in release list"
               exit 1
             fi
 
@@ -414,15 +488,15 @@ jobs:
               exit 1
             fi
 
-            # Validate VERSION > PREV_STABLE using semver sort
-            SORTED_PAIR=$(printf "%s\n%s" "$PREV_STABLE" "$VERSION" | sort -V)
+            # Validate VERSION > NOTES_BASE using semver sort
+            SORTED_PAIR=$(printf "%s\n%s" "$NOTES_BASE" "$VERSION" | sort -V)
             OLDER=$(echo "$SORTED_PAIR" | head -n1)
-            if [ "$OLDER" != "$PREV_STABLE" ]; then
-              echo "::error::Target version $VERSION is not greater than previous stable $PREV_STABLE - cannot promote an older version to stable"
+            if [ "$OLDER" != "$NOTES_BASE" ]; then
+              echo "::error::Target version $VERSION is not greater than notes range base $NOTES_BASE - cannot promote an older version to stable"
               exit 1
             fi
 
-            awk -v prev="$PREV_STABLE" -v target="$VERSION" '
+            awk -v prev="$NOTES_BASE" -v target="$VERSION" '
               BEGIN { found_target=0; found_prev=0; }
               {
                 if ($1 == target) found_target=1;
@@ -434,15 +508,20 @@ jobs:
 
           # Validate we have at least one version in the range
           if [ ! -s "$RUNNER_TEMP/range-versions.txt" ]; then
-            echo "::error::No versions found in range (prevStable, version] - check that both versions exist in releases"
+            echo "::error::No versions found in range (notesBase, version] - check that both versions exist in releases"
             exit 1
           fi
 
           echo "Versions to include in aggregated notes:"
           cat "$RUNNER_TEMP/range-versions.txt"
 
-          # Prepend the summary section (if generated), then the per-version bodies
+          # Lead with the notes-base marker (renders invisibly) so an
+          # idempotent re-run can recover the range base, then the summary
+          # section (if generated), then the per-version bodies
           {
+            if [ -n "$NOTES_BASE" ]; then
+              echo "<!-- notes-base: ${NOTES_BASE} -->"
+            fi
             if [ -f "$RUNNER_TEMP/stable-summary.md" ]; then
               cat "$RUNNER_TEMP/stable-summary.md"
               echo ""
@@ -461,6 +540,7 @@ jobs:
           head -n 20 "$RUNNER_TEMP/aggregated-notes.md"
 
       - name: Update stable release notes
+        if: steps.notes_base.outputs.skip_notes != 'true'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
@@ -585,6 +665,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
           IS_FIRST: ${{ steps.stable_version.outputs.is_first_promotion }}
+          SKIP_NOTES: ${{ steps.notes_base.outputs.skip_notes }}
           PROMOTED_FEEDS: ${{ steps.upload_assets.outputs.promoted_feeds }}
           LATEST_FE: ${{ steps.latest_fe.outputs.marked }}
           LATEST_RELEASES: ${{ steps.latest_releases.outputs.marked }}
@@ -627,7 +708,11 @@ jobs:
             echo "### Verification"
             echo "- ✓ Assets copied from versioned release v$VERSION"
             echo "- ✓ sha512 verification passed for: ${FEEDS[*]}"
-            echo "- ✓ Aggregated release notes updated"
+            if [ "$SKIP_NOTES" = "true" ]; then
+              echo "- ⚠ Release notes left untouched (idempotent re-run, no notes-base marker)"
+            else
+              echo "- ✓ Aggregated release notes updated"
+            fi
             echo "- $(latest_mark "$LATEST_FE") v$VERSION marked Latest (Pre-release cleared) on intent-hq/cloudlands-fe$(latest_suffix "$LATEST_FE")"
             echo "- $(latest_mark "$LATEST_RELEASES") v$VERSION marked Latest (Pre-release cleared) on intent-hq/cloudlands-releases$(latest_suffix "$LATEST_RELEASES")"
           } >> "$GITHUB_STEP_SUMMARY"
