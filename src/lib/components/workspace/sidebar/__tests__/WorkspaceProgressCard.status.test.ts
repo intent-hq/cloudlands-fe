@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import type { WorkspaceProgressAction } from '$store/renderer/slices/workspace/workspace-types';
@@ -37,6 +38,7 @@ const mocks = vi.hoisted(() => {
   const notes = [] as Note[];
   const taskState = {
     initialized: true,
+    loading: false,
     progress: { total: 0, completed: 0, inProgress: 0 },
   };
   const workspaceEntity = {
@@ -118,6 +120,9 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
 vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
   selectWorkspaceTaskProgress: mocks.selector(() => mocks.taskState.progress),
   selectWorkspaceTasksInitialized: mocks.selector(() => mocks.taskState.initialized),
+  // Kept so the refetch regression test also fails under a loading-gated
+  // implementation: flipping this must not affect the mounted progress bar.
+  selectWorkspaceTasksLoading: mocks.selector(() => mocks.taskState.loading),
 }));
 
 vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-selectors', () => ({
@@ -279,6 +284,7 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.update.mockReset();
     mocks.notes.length = 0;
     mocks.taskState.initialized = true;
+    mocks.taskState.loading = false;
     mocks.taskState.progress = { total: 0, completed: 0, inProgress: 0 };
     mocks.update.mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
     mocks.clipboardWrite.mockReset();
@@ -543,20 +549,32 @@ describe('WorkspaceProgressCard status message', () => {
 
   it('keeps the progress bar mounted across task refetches after initialization', async () => {
     mocks.taskState.progress = { total: 2, completed: 1, inProgress: 1 };
-    await renderProgressCard();
+    const { container } = await renderProgressCard();
 
     const flameGraph = screen.getByTestId('mock-flame-graph');
+    const progressBar = screen.getByTestId('mock-flame-progress');
     expect(flameGraph.dataset.loading).toBe('false');
 
-    // An event-driven refetch updates the rollup without flipping the bar
-    // back to its loading placeholder (which would replay the entrance wipe).
+    // Simulate an event-driven refetch after initialization: the slice's
+    // loading flag flips false -> true (fetch in flight) -> false (settled).
+    // The bar must never swap to its loading placeholder mid-refetch — that
+    // remount is what replayed the entrance wipe.
+    mocks.taskState.loading = true;
+    mocks.notifySelectors();
+    await tick();
+    expect(screen.getByTestId('mock-flame-graph').dataset.loading).toBe('false');
+    expect(container.querySelector('[data-testid="mock-flame-placeholder"]')).toBeNull();
+    expect(screen.getByTestId('mock-flame-progress')).toBe(progressBar);
+
+    // The refetch settles with an updated rollup; same elements, new data.
+    mocks.taskState.loading = false;
     mocks.taskState.progress = { total: 2, completed: 2, inProgress: 0 };
     mocks.notifySelectors();
     await waitFor(() => {
-      const refetched = screen.getByTestId('mock-flame-graph');
-      expect(refetched).toBe(flameGraph);
-      expect(refetched.dataset.loading).toBe('false');
+      expect(screen.getByTestId('mock-flame-progress').dataset.progress).toBe('1');
     });
+    expect(screen.getByTestId('mock-flame-graph')).toBe(flameGraph);
+    expect(screen.getByTestId('mock-flame-progress')).toBe(progressBar);
   });
 
   it('saves status edits on Enter and dispatches the updated workspace', async () => {
