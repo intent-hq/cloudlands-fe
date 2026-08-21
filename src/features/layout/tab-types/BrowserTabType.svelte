@@ -40,7 +40,7 @@
     {workspaceId}
     tabId={tab.id}
     {isActive}
-    focusUrlBarOnMount={isActive}
+    focusUrlBarOnMount={isActive && isPanelFocused}
     isFocused={isPanelFocused}
     ownerAgentId={tab.ownerAgentId}
     {ownerAgentName}

@@ -1751,6 +1751,7 @@
   "chat_agentSubscriptions_deliveryPending_label": "Delivery pending",
   "chat_agentSubscriptions_eventCount_many": "({count} events)",
   "chat_eventSubscriptions_heading_one": "Subscribed to {count} event",
+  "chat_browserTabs_heading": "Browser tabs ({count})",
   "chat_eventSubscriptions_heading_many": "Subscribed to {count} events",
   "chat_agentSubscriptions_eventCount_one": "({count} event)",
   "chat_agentSubscriptions_expandWatches_ariaLabel": "Expand section",

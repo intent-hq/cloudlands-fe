@@ -146,6 +146,8 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', ()
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectAllTabs: mocks.selector([]),
+  selectPanels: mocks.selector({}),
+  selectHiddenTabs: mocks.selector([]),
 }));
 vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
   selectCheckedPanels: mocks.selector([]),
@@ -1663,18 +1665,14 @@ describe('ChatPanel mounted lifecycle', () => {
     });
     await tick();
 
-    expect(
-      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).toBeNull();
 
     // The fresh snapshot applies but the footer sources are still settling:
     // still one deferred surface — no partial reveal.
     mocks.awaitingSwitchBackSnapshot.set(false);
     await tick();
-    expect(
-      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).toBeNull();
 
     // Footer ready: transcript and utility card mount in the SAME flip.
@@ -1682,9 +1680,7 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
     expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
-    expect(
-      view.container.querySelector('[data-testid="event-subscriptions-card"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).not.toBeNull();
   });
 
   it('reveals transcript and utility footer in the same flip on first open', async () => {
@@ -1701,9 +1697,7 @@ describe('ChatPanel mounted lifecycle', () => {
     });
     await tick();
 
-    expect(
-      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
     expect(view.container.querySelector('[data-conversation-turn]')).toBeNull();
     expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).toBeNull();
 
@@ -1711,9 +1705,7 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
     expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
-    expect(
-      view.container.querySelector('[data-testid="event-subscriptions-card"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).not.toBeNull();
   });
 
   it('reveals without the footer when the bounded fallback clears the gates', async () => {
@@ -1730,9 +1722,7 @@ describe('ChatPanel mounted lifecycle', () => {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });
     await tick();
-    expect(
-      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
 
     // chatSwitchBackRevealTimedOut clears BOTH gates in the reducer.
     mocks.awaitingSwitchBackSnapshot.set(false);

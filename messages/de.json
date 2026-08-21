@@ -1750,6 +1750,7 @@
   "chat_agentSubscriptions_deliveryPending_label": "Zustellung ausstehend",
   "chat_agentSubscriptions_eventCount_many": "({count} Ereignisse)",
   "chat_eventSubscriptions_heading_one": "{count} Ereignis abonniert",
+  "chat_browserTabs_heading": "Browser-Tabs ({count})",
   "chat_eventSubscriptions_heading_many": "{count} Ereignisse abonniert",
   "chat_agentSubscriptions_eventCount_one": "({count} Ereignis)",
   "chat_agentSubscriptions_expandWatches_ariaLabel": "Bereich ausklappen",
