@@ -56,9 +56,9 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
   },
   {
     pattern:
-      /panel-layout-slice\.ts#(?:initializeLayout|openTab|openTabInAdjacentOrSplit|openTabInRightmostColumn|closeTab|closeActiveTab|reopenClosedTab|setActiveTab|moveTabToPanel|moveTabToSplit|moveTabToSplitLevel|closeOtherTabs|closeTabsToRight|closeAllTabs|closeAllOthersEverywhere|splitPanel|closePanel|resetLayout|goBack|goForward)$/,
+      /panel-layout-slice\.ts#(?:initializeLayout|openTab|openTabInAdjacentOrSplit|openTabInRightmostColumn|closeTab|closeActiveTab|reopenClosedPanelColumn|reopenClosedTab|setActiveTab|moveTabToPanel|moveTabToSplit|moveTabToSplitLevel|closeOtherTabs|closeTabsToRight|closeAllTabs|closeAllOthersEverywhere|splitPanel|closePanel|resetLayout|goBack|goForward)$/,
     rationale:
-      'layout persistence and delayed history snapshots intentionally observe the same actions',
+      'layout persistence, delayed history, and unread boundaries intentionally observe the same actions',
   },
   {
     pattern:

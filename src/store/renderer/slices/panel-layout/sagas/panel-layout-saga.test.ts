@@ -82,6 +82,7 @@ import {
   reconcilePanelColumnCount,
   reconcileStaleAgentTabs,
   reorderTabs,
+  reopenClosedPanelColumn,
   reopenClosedTab,
   revealDeferredSpecTab,
   resetLayout,
@@ -1378,6 +1379,23 @@ describe('panelLayoutSaga', () => {
       await cancelSaga(task);
     },
   );
+
+  it('persists and snapshots a reopened panel column through one watcher', async () => {
+    const { channel, task } = startSaga();
+    await settle();
+    channel.put({ type: reopenClosedPanelColumn.type, payload: { wsId: WS_1 } });
+    await settle();
+
+    expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, layout]]);
+    await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
+    await settle();
+    expect(mocks.saveHistory).toHaveBeenCalledWith(
+      WS_1,
+      expect.objectContaining({ workspaceId: WS_1, history: [snapshot] }),
+      LOCAL_CONNECTION_ID,
+    );
+    await cancelSaga(task);
+  });
 
   it('does not reconcile other workspaces when one workspace changes its column count', async () => {
     const state = storeState();

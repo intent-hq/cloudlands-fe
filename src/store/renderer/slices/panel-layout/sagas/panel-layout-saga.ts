@@ -146,7 +146,6 @@ const PERSIST_ACTIONS = [
   destroyTabsByOwnerAgent,
   destroyOwnedTabsForWorkspace,
   restoreHiddenTab,
-  reopenClosedPanelColumn,
   reopenClosedTab,
   setActiveTab,
   selectNextTab,
@@ -205,7 +204,6 @@ const HISTORY_ACTIONS = [
   moveTabToSplit,
   moveTabToSplitLevel,
   setActiveTab,
-  reopenClosedPanelColumn,
   goBack,
   goForward,
   resetLayout,
@@ -980,6 +978,12 @@ export function* panelLayoutSaga(options?: {
     yield* fork(persistPanelLayout, action);
     yield* queueHistorySaveForAction(action);
   }
+  function* handleReopenedPanelColumn(
+    action: ReturnType<typeof reopenClosedPanelColumn>,
+  ): SagaGenerator<void> {
+    yield* fork(persistPanelLayout, action);
+    yield* queueHistorySaveForAction(action);
+  }
   function* handleWorkspaceUnmountedAction(
     action: ReturnType<typeof workspaceUnmounted> | ReturnType<typeof panelLayoutScopeUnmounted>,
   ): SagaGenerator<void> {
@@ -1002,6 +1006,7 @@ export function* panelLayoutSaga(options?: {
     yield* takeEvery(PERSIST_ACTIONS, persistPanelLayout);
     yield* takeEvery(setTabOwnerAgent, persistPanelLayout);
     yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
+    yield* takeEvery(reopenClosedPanelColumn, handleReopenedPanelColumn);
     yield* fork(watchRightmostColumnRequests);
     yield* takeEvery([clearPanelLayout, workspaceDeleted], clearPersistedLayout);
     const historyWatcher = yield* takeEvery(HISTORY_ACTIONS, queueHistorySaveForAction);
