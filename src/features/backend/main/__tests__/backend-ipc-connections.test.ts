@@ -866,3 +866,53 @@ describe('forget/add active-id decisions inside the switch queue (monorepo#2228)
     await expect(mod.switchBackend('remote-1')).resolves.toEqual({ activeId: 'remote-1' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Additive backend client pool
+// ---------------------------------------------------------------------------
+
+describe('backend client pool', () => {
+  it('keeps the local primary client unchanged when a remote connects', async () => {
+    const { mod } = await loadModule();
+    const local = mod.getBackendClient();
+
+    const remote = await mod.connectBackendClient('remote-1');
+
+    expect(remote).not.toBe(local);
+    expect(mod.getBackendClient()).toBe(local);
+    expect(mod.getBackendClientForConnection('local')).toBe(local);
+    expect(mod.getBackendClientForConnection('remote-1')).toBe(remote);
+    expect(lifecycle.events.map((event) => event.type)).toEqual([
+      'construct',
+      'start',
+      'construct',
+      'start',
+    ]);
+  });
+
+  it('deduplicates concurrent connects for the same connection id', async () => {
+    const { mod } = await loadModule();
+
+    const [first, second] = await Promise.all([
+      mod.connectBackendClient('remote-1'),
+      mod.connectBackendClient('remote-1'),
+    ]);
+
+    expect(second).toBe(first);
+    expect(lifecycle.events.map((event) => event.type)).toEqual(['construct', 'start']);
+  });
+
+  it('disconnects one remote without disposing the local primary client', async () => {
+    const { mod } = await loadModule();
+    const local = mod.getBackendClient();
+    await mod.connectBackendClient('remote-1');
+    lifecycle.events = [];
+
+    mod.disconnectBackendClient('remote-1');
+
+    expect(lifecycle.events.map((event) => event.type)).toEqual(['dispose']);
+    expect(mod.getBackendClient()).toBe(local);
+    expect(mod.getBackendClientForConnection('local')).toBe(local);
+    expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
+  });
+});

@@ -93,6 +93,8 @@ const BACKEND = IPC_CHANNELS.BACKEND;
 const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 
 let client: JsonRpcClient | null = null;
+const backendClients = new Map<string, JsonRpcClient>();
+const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
 let handlersRegistered = false;
 
 /**
@@ -431,6 +433,15 @@ export function getBackendClient(): JsonRpcClient {
   // backend, `currentConfig` pins the `wss` target selected by `switchBackend`;
   // it is `null` for the local sidecar (startup + switch-back-to-local).
   const isDev = !app.isPackaged;
+  const connectionId = activeConnectionMeta?.id ?? LOCAL_CONNECTION_ID;
+  // An explicit whole-app switch keeps its historical full-rebuild semantics.
+  // If the target was already connected as a secondary pool member, dispose it
+  // before replacing it with the newly wired primary client.
+  const pooledTarget = backendClients.get(connectionId);
+  if (pooledTarget) {
+    backendClients.delete(connectionId);
+    pooledTarget.dispose();
+  }
   const instance = new JsonRpcClient({
     config: currentConfig ?? resolveBackendConfig(process.env, { isDev }),
     // Enable a liveness heartbeat: reconnect-on-close alone misses a silently
@@ -591,6 +602,81 @@ export function getBackendClient(): JsonRpcClient {
     saveAsset: (params) => instance.request<{ url?: string } | undefined>('note.saveAsset', params),
   });
   client = instance;
+  backendClients.set(connectionId, instance);
+  instance.start();
+  return instance;
+}
+
+/** Return a live pooled client by connection id, without creating one. */
+export function getBackendClientForConnection(id: string): JsonRpcClient | undefined {
+  return backendClients.get(id);
+}
+
+/**
+ * Connect an additional backend without changing or disposing the compatibility
+ * client returned by {@link getBackendClient}. Concurrent connects for the same
+ * id share one construction, and the connection store remains the only place
+ * where a remote bearer token is decrypted.
+ */
+export function connectBackendClient(id: string): Promise<JsonRpcClient> {
+  const existing = backendClients.get(id);
+  if (existing) return Promise.resolve(existing);
+  const pending = backendClientConnects.get(id);
+  if (pending) return pending;
+
+  const connecting = buildConfigForConnection(id)
+    .then(({ config }) => {
+      const raced = backendClients.get(id);
+      if (raced) return raced;
+      const instance = createAdditionalBackendClient(id, config);
+      backendClients.set(id, instance);
+      return instance;
+    })
+    .finally(() => {
+      backendClientConnects.delete(id);
+    });
+  backendClientConnects.set(id, connecting);
+  return connecting;
+}
+
+/** Dispose one pooled backend without disturbing clients for other ids. */
+export function disconnectBackendClient(id: string): void {
+  const instance = backendClients.get(id);
+  if (!instance) return;
+  if (instance === client) {
+    disposeBackendClient();
+    return;
+  }
+  backendClients.delete(id);
+  instance.dispose();
+}
+
+/** Build a secondary pool member; primary broadcasts remain on the compat client. */
+function createAdditionalBackendClient(id: string, config: BackendConnectionConfig): JsonRpcClient {
+  const instance = new JsonRpcClient({
+    config,
+    heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
+    healthCheckFailureThreshold: 2,
+    healthCheck: async () => {
+      await instance.request('host.status');
+    },
+    helloParams: async () => ({ clientId: await getOrCreateClientId() }),
+    onHelloResult: (result) => {
+      const clientId =
+        result && typeof result === 'object'
+          ? (result as { clientId?: unknown }).clientId
+          : undefined;
+      if (typeof clientId === 'string' && clientId.length > 0) {
+        void persistClientId(clientId);
+      }
+    },
+  });
+  instance.on('error', (error: Error) => {
+    logger.warn('Backend pool transport error', { id, error: error.message });
+  });
+  registerBrowserExecReverseHandler(instance, {
+    saveAsset: (params) => instance.request<{ url?: string } | undefined>('note.saveAsset', params),
+  });
   instance.start();
   return instance;
 }
@@ -1665,6 +1751,11 @@ export function disposeBackendClient(): void {
   // The next client is switch-origin unless the boot-restore path re-tags it
   // (see {@link protocolMismatchOrigin}).
   protocolMismatchOrigin = 'switch';
-  client?.dispose();
+  if (client) {
+    for (const [id, instance] of backendClients) {
+      if (instance === client) backendClients.delete(id);
+    }
+    client.dispose();
+  }
   client = null;
 }
