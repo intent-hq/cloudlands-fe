@@ -18,6 +18,7 @@ const ANSI_REGEX = /\x1b\[[0-9;]*[a-zA-Z]/g;
 
 let logFd: number | null = null;
 let logFilePath: string | null = null;
+let logSize = 0;
 
 function stripAnsi(text: string): string {
   return text.replace(ANSI_REGEX, '');
@@ -29,29 +30,88 @@ function ensureLogDir(dirPath: string): void {
   }
 }
 
-function rotateIfNeeded(filePath: string): void {
+function openLogFile(): boolean {
+  if (logFilePath === null) return false;
+  let fd: number | null = null;
   try {
-    const stats = fs.statSync(filePath);
-    if (stats.size >= MAX_LOG_SIZE) {
-      const rotatedPath = filePath + '.1';
-      // Remove old rotated file if it exists
-      if (fs.existsSync(rotatedPath)) {
-        fs.unlinkSync(rotatedPath);
-      }
-      fs.renameSync(filePath, rotatedPath);
-    }
+    fd = fs.openSync(logFilePath, 'a');
+    logSize = fs.fstatSync(fd).size;
+    logFd = fd;
+    return true;
   } catch {
-    // File doesn't exist yet — nothing to rotate
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // The descriptor cannot be recovered.
+      }
+    }
+    logFd = null;
+    logSize = 0;
+    return false;
   }
+}
+
+function rotateLogFile(): boolean {
+  if (logFd === null || logFilePath === null) return false;
+
+  try {
+    if (logSize > MAX_LOG_SIZE) {
+      fs.ftruncateSync(logFd, MAX_LOG_SIZE);
+      logSize = MAX_LOG_SIZE;
+    }
+    fs.closeSync(logFd);
+  } catch {
+    logFd = null;
+    logSize = 0;
+    return false;
+  }
+  logFd = null;
+  logSize = 0;
+
+  try {
+    const rotatedPath = logFilePath + '.1';
+    if (fs.existsSync(rotatedPath)) fs.unlinkSync(rotatedPath);
+    fs.renameSync(logFilePath, rotatedPath);
+  } catch {
+    // Keep capture usable after a failed rotation, but skip the pending write.
+    openLogFile();
+    return false;
+  }
+
+  return openLogFile();
+}
+
+function boundedLogBytes(text: string): Buffer {
+  const bytes = Buffer.from(stripAnsi(text));
+  if (bytes.length <= MAX_LOG_SIZE) return bytes;
+
+  // Each retained file is at most MAX_LOG_SIZE. For one oversized chunk, keep
+  // its newest bytes and move past a partial UTF-8 character at the boundary.
+  let start = bytes.length - MAX_LOG_SIZE;
+  while (start < bytes.length && (bytes[start] & 0xc0) === 0x80) start += 1;
+  return bytes.subarray(start);
 }
 
 function writeToLog(text: string): void {
   if (logFd === null) return;
+  const bytes = boundedLogBytes(text);
+  if (bytes.length === 0) return;
+
+  if (logSize + bytes.length > MAX_LOG_SIZE && !rotateLogFile()) return;
+  if (logFd === null) return;
+
   try {
-    const cleaned = stripAnsi(text);
-    fs.writeSync(logFd, cleaned);
+    logSize += fs.writeSync(logFd, bytes);
   } catch {
-    // Ignore write errors to avoid infinite loops
+    // Never report capture failures through the console streams being captured.
+    try {
+      fs.closeSync(logFd);
+    } catch {
+      // The descriptor is no longer safe to use.
+    }
+    logFd = null;
+    logSize = 0;
   }
 }
 
@@ -68,14 +128,11 @@ export function setupConsoleLogCapture(): void {
   ensureLogDir(logsDir);
 
   logFilePath = path.join(logsDir, 'console-output.log');
-  rotateIfNeeded(logFilePath);
-
-  // Open the log file for appending (create if it doesn't exist)
-  logFd = fs.openSync(logFilePath, 'a');
+  if (openLogFile() && logSize >= MAX_LOG_SIZE) rotateLogFile();
 
   // Write a session separator
   const timestamp = new Date().toISOString();
-  fs.writeSync(logFd, `\n--- Session started at ${timestamp} ---\n`);
+  writeToLog(`\n--- Session started at ${timestamp} ---\n`);
 
   // Monkey-patch stdout.write
   const originalStdoutWrite = process.stdout.write.bind(process.stdout);
@@ -105,8 +162,8 @@ export function setupConsoleLogCapture(): void {
       try {
         const quitTimestamp = new Date().toISOString();
         // i18n-ignore (log file marker)
-        fs.writeSync(logFd, `--- Session ended at ${quitTimestamp} ---\n`);
-        fs.closeSync(logFd);
+        writeToLog(`--- Session ended at ${quitTimestamp} ---\n`);
+        if (logFd !== null) fs.closeSync(logFd);
       } catch {
         // Ignore close errors during shutdown
       }
