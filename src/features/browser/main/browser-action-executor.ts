@@ -159,6 +159,15 @@ const OpenTabActionSchema = z.object({
   // to change it).
   width: ViewportDimensionSchema.optional(),
   height: ViewportDimensionSchema.optional(),
+  // Agent opens are hidden by default (monorepo#3045): omitted or false
+  // creates the tab in the workspace's hidden set — alive and
+  // CDP-addressable offscreen, never mounted into a panel, no focus or
+  // active-tab change. `visible: true` opts into today's panel-mounted
+  // open. On a dedupe reuse, `visible: true` reveals a hidden reused tab
+  // while omitted/false leaves the reused tab's visibility unchanged — a
+  // reuse never hides a visible tab. Ignored on user (agentId-less) opens,
+  // which are always visible.
+  visible: z.boolean().optional(),
 });
 
 // Atomically claim an unowned tab for the calling agent (monorepo#2857).
@@ -443,6 +452,7 @@ async function executeAction(
     ownerAgentId?: string,
     replaceTabId?: string,
     emulatedSize?: { width: number; height: number },
+    visible?: boolean,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,
@@ -670,7 +680,11 @@ async function executeAction(
         // current URL exactly matches instead of opening a duplicate
         // (intent-hq/monorepo#2541). Dedupe is strictly per-agent
         // (monorepo#2857): other agents' and user-opened tabs are never
-        // considered — across agents a new tab is opened.
+        // considered — across agents a new tab is opened. Hidden tabs are
+        // candidates too (both finders match on the live webview, and hidden
+        // owned tabs stay mounted offscreen); a reuse never changes the
+        // tab's visibility unless `visible: true` asks to reveal it
+        // (monorepo#3045) — and never hides a visible tab.
         if (agentId && !action.allowDuplicate) {
           const duplicateTabId = await embeddedBrowserCdp.findModelTabByExactUrl(
             finalRewrite.url,
@@ -693,10 +707,17 @@ async function executeAction(
               agentId,
               openTabTarget.tunneled ? action.url : null,
             );
+            // Focus (which also reveals a hidden tab) only on an explicit
+            // visible: true — the hidden-by-default contract forbids a
+            // default open from stealing focus or revealing (monorepo#3045).
+            // The reused tab is already mounted (the finder only returns
+            // mounted tabs), so it stays addressable without a focus.
             const focused =
-              action.pin === undefined
-                ? await embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId)
-                : await embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId, action.pin);
+              action.visible === true
+                ? action.pin === undefined
+                  ? await embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId)
+                  : await embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId, action.pin)
+                : false;
             return {
               action: 'openTab',
               success: true,
@@ -742,7 +763,12 @@ async function executeAction(
                 finalRewrite.url,
                 finalRewrite.rewritten ? finalRewrite.requestedUrl : undefined,
               );
-              const focused = await embeddedBrowserCdp.focusTab(requestedTabId, workspaceId);
+              // Like the exact-URL reuse above: focus (a reveal) only on an
+              // explicit visible: true (monorepo#3045).
+              const focused =
+                action.visible === true
+                  ? await embeddedBrowserCdp.focusTab(requestedTabId, workspaceId)
+                  : false;
               return {
                 action: 'openTab',
                 success: true,
@@ -821,6 +847,12 @@ async function executeAction(
               height: action.height ?? DEFAULT_AGENT_VIEWPORT.height,
             }
           : undefined;
+        // Agent opens are hidden by default (monorepo#3045): without an
+        // explicit visible: true the tab is created straight into the
+        // workspace's hidden set (offscreen webview, no panel mount, no
+        // focus). User (agentId-less) opens are always visible and never
+        // carry the flag.
+        const visible = agentId ? action.visible === true : undefined;
         const result =
           replaceTargetTabId === undefined && emulatedSize === undefined
             ? openTabFn(
@@ -840,6 +872,7 @@ async function executeAction(
                 agentId,
                 replaceTargetTabId,
                 emulatedSize,
+                visible,
               );
         // The id the caller can address: the adopted existing tab on a
         // replace, otherwise the pre-generated id of the new tab.
@@ -1193,6 +1226,7 @@ export async function executeActions(
     ownerAgentId?: string,
     replaceTabId?: string,
     emulatedSize?: { width: number; height: number },
+    visible?: boolean,
   ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,

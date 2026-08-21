@@ -102,6 +102,7 @@ import {
   moveTabToPanel,
   moveTabToSplit,
   moveTabToSplitLevel,
+  openHiddenTab,
   openTab,
   openBlankWorkingPanel,
   openTabInAdjacentOrSplit,
@@ -145,6 +146,7 @@ import {
 
 const PERSIST_ACTIONS = [
   initializeLayout,
+  openHiddenTab,
   openTab,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,

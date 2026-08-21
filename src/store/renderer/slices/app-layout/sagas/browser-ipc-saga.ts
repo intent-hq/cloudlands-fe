@@ -30,6 +30,7 @@ import {
 import {
   closeTab,
   focusPanel,
+  openHiddenTab,
   openTab,
   openTabInNewRootColumn,
   setActiveTab,
@@ -184,6 +185,12 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     ownerAgentId !== undefined && isBrowserEmulatedSize(data.emulatedSize)
       ? data.emulatedSize
       : undefined;
+  // Agent opens are hidden by default (monorepo#3045): visible: false
+  // creates the tab straight into hiddenTabs — no panel mount, no focus or
+  // active-tab change. Only owned tabs can be hidden (unowned tabs would be
+  // invisible AND unrestorable — hide-on-close and the sidebar owner groups
+  // are ownership-scoped).
+  const hiddenOpen = ownerAgentId !== undefined && data.visible === false;
 
   const position = data.position ?? 'adjacent';
   if (position === 'replace') {
@@ -234,6 +241,10 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
             : setTabOwnerAgent(workspaceId, existing.id, ownerAgentId, emulatedSize),
         );
       }
+      // A hidden (default) agent open never changes the active tab or panel
+      // focus — the adopted tab keeps its place, only its URL changed
+      // (monorepo#3045). Adoption never hides a visible tab.
+      if (hiddenOpen) return;
       yield* put(setActiveTab(workspaceId, existing.id));
       if (pin) {
         const panels = yield* selectPanels.effect(workspaceId);
@@ -249,6 +260,16 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       }
       return;
     }
+    if (hiddenOpen) {
+      yield* put(
+        openHiddenTab(
+          workspaceId,
+          browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
+          newTabId,
+        ),
+      );
+      return;
+    }
     const openAction = openTab(
       workspaceId,
       browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
@@ -260,6 +281,21 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     );
     yield* put(openAction);
     if (pin) yield* pinRevealedPanel(workspaceId, openAction.payload.newTabId);
+    return;
+  }
+  // A hidden (default) agent open creates the tab straight into hiddenTabs:
+  // no panel mount, no focus or active-tab change (monorepo#3045). The
+  // webview mounts offscreen (OffscreenWebviewHost pins owned hidden tabs)
+  // and registers, so the tab is CDP-addressable immediately. `position`
+  // and `pin` only apply to visible opens.
+  if (hiddenOpen) {
+    yield* put(
+      openHiddenTab(
+        workspaceId,
+        browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
+        newTabId,
+      ),
+    );
     return;
   }
   if (position === 'adjacent') {
