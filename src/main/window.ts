@@ -567,6 +567,22 @@ export function restoreWindowsForBackend(toBackendId: string): void {
   }
 }
 
+/** Focus a live window for a backend, or add that backend's saved/fresh windows. */
+export function openOrFocusWindowsForBackend(backendId: string): void {
+  const existing = BrowserWindow.getAllWindows().find(
+    (window) =>
+      !window.isDestroyed() && getBackendIdForWebContents(window.webContents) === backendId,
+  );
+  if (existing) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    setMainWindow(existing);
+    return;
+  }
+  restoreWindowsForBackend(backendId);
+}
+
 export function createWindow(backendId: string = LOCAL_CONNECTION_ID) {
   const iconPath = resolveIcon(true);
   const { workArea } = screen.getPrimaryDisplay();

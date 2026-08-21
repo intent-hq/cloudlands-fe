@@ -77,6 +77,9 @@ const { FakeBrowserWindow } = vi.hoisted(() => {
     isFullScreen() {
       return false;
     }
+    restore = vi.fn();
+    show = vi.fn();
+    focus = vi.fn();
     emit(event: string, ...args: unknown[]) {
       this.handlers.get(event)?.(...args);
     }
@@ -120,6 +123,7 @@ import {
   getBackendIdForWebContents,
   isBackendSwitchWindowTeardownInProgress,
   loadWindowSessions,
+  openOrFocusWindowsForBackend,
   restoreWindowsForBackend,
   saveWindowSessions,
   type WindowSession,
@@ -331,6 +335,35 @@ describe('multi-backend window sessions', () => {
       const live = FakeBrowserWindow.getAllWindows();
       expect(live).toHaveLength(1);
       expect(live[0].isDestroyed()).toBe(false);
+    });
+
+    it('adds saved remote sessions without destroying an existing local window', () => {
+      const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+      const local = seedLiveWindow('app://workspaces/work/local', bounds);
+      (local as unknown as { backendId: string }).backendId = 'local';
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({ 'remote-1': [{ route: '/work/remote', bounds }] }),
+        'utf-8',
+      );
+
+      openOrFocusWindowsForBackend('remote-1');
+
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(local.isDestroyed()).toBe(false);
+      expect(live).toHaveLength(2);
+      expect(getBackendIdForWebContents(live[1].webContents as never)).toBe('remote-1');
+    });
+
+    it('focuses an existing backend window instead of restoring duplicates', () => {
+      const remote = seedLiveWindow('app://workspaces/work/remote');
+      (remote as unknown as { backendId: string }).backendId = 'remote-1';
+
+      openOrFocusWindowsForBackend('remote-1');
+
+      expect(FakeBrowserWindow.getAllWindows()).toHaveLength(1);
+      expect(remote.show).toHaveBeenCalledOnce();
+      expect(remote.focus).toHaveBeenCalledOnce();
     });
   });
 

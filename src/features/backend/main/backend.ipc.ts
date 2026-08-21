@@ -76,6 +76,7 @@ import type {
   ConnectionsChangedEvent,
   ConnectionsListResult,
   ForgetConnectionResult,
+  OpenConnectionResult,
   SwitchConnectionResult,
 } from '../../../shared/types/connections';
 import { compareProtocolMajor } from './protocol-compat';
@@ -84,6 +85,7 @@ import {
   ConnectionsCaptureFingerprintSchema,
   ConnectionsForgetSchema,
   ConnectionsListSchema,
+  ConnectionsOpenSchema,
   ConnectionsSwitchSchema,
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
@@ -294,6 +296,7 @@ let bootReconnectTimeoutMs = 4_000;
 interface BackendWindowHooks {
   captureAndClose(fromBackendId: string): Promise<void>;
   restore(toBackendId: string): void | Promise<void>;
+  openOrFocus?(backendId: string): void | Promise<void>;
   /**
    * Idempotent failure-path clear of the window-all-closed teardown guard set
    * by `captureAndClose`. `restore` already clears it at its top; the switch
@@ -315,6 +318,12 @@ const defaultWindowHooks: BackendWindowHooks = {
       restoreWindowsForBackend: (id: string) => void;
     };
     mod.restoreWindowsForBackend(toBackendId);
+  },
+  async openOrFocus(backendId) {
+    const mod = (await import('../../../main/window')) as unknown as {
+      openOrFocusWindowsForBackend: (id: string) => void;
+    };
+    mod.openOrFocusWindowsForBackend(backendId);
   },
   async clearTeardownGuard() {
     const mod = (await import('../../../main/window')) as unknown as {
@@ -1294,6 +1303,25 @@ export function switchBackend(id: string): Promise<SwitchConnectionResult> {
   return enqueueSwitchOperation(() => performSwitchBackend(id));
 }
 
+/** Connect one pooled backend and open/focus its windows without switching the app. */
+export function openBackendWindow(id: string): Promise<OpenConnectionResult> {
+  return enqueueSwitchOperation(() => performOpenBackendWindow(id));
+}
+
+async function performOpenBackendWindow(id: string): Promise<OpenConnectionResult> {
+  const target = await connectBackendClient(id);
+  try {
+    // Do not create a renderer until the pinned transport has completed an
+    // authenticated request. A cert/token failure rejects this remote only.
+    await target.request('host.status');
+    await windowHooks.openOrFocus?.(id);
+    return { id };
+  } catch (error) {
+    if (target !== client) disconnectBackendClient(id);
+    throw error;
+  }
+}
+
 /**
  * The actual switch orchestration; only ever entered from within a serialized
  * {@link enqueueSwitchOperation} critical section (via {@link switchBackend}
@@ -1734,9 +1762,9 @@ function registerConnectionsHandlers(): void {
   // upserts by host:port, so re-adding an existing target refreshes its
   // token/fingerprint/label in place. If the upserted record is the ACTIVE
   // backend, rebuild the live client via a switch to itself so the refreshed
-  // token takes effect immediately (the switch broadcasts the changed list)
-  // and report `switched: true` so the caller skips its own follow-up switch;
-  // otherwise just broadcast so every window reflects the entry. The whole
+  // token takes effect immediately without closing any windows, and report
+  // `switched: true` for compatibility; otherwise invalidate only that remote's
+  // secondary pool entry. The whole
   // add + active-id read + conditional switch is ONE enqueued critical
   // section (monorepo#2228): a stale pre-queue read could re-switch back to
   // this record after the user had already selected another backend.
@@ -1749,13 +1777,35 @@ function registerConnectionsHandlers(): void {
           const connection = await connectionsStore.add(params);
           const activeId = await connectionsStore.getActiveId();
           if (connection.id === activeId) {
-            await performSwitchBackend(connection.id);
+            // Refresh an active target's credentials without destroying any
+            // windows. The caller opens/focuses it through connections:open.
+            const { config, meta } = await buildConfigForConnection(connection.id);
+            disposeBackendClient();
+            currentConfig = meta ? config : null;
+            activeConnectionMeta = meta;
+            getBackendClient();
+            await broadcastConnectionsChanged();
             return { connection, switched: true } satisfies AddConnectionResult;
           }
+          // Re-pairing a secondary remote invalidates only that pool entry; the
+          // local primary and every other backend remain connected.
+          disconnectBackendClient(connection.id);
           await broadcastConnectionsChanged();
           return { connection, switched: false } satisfies AddConnectionResult;
         }),
       CONNECTIONS.ADD,
+    ),
+  );
+
+  // Open or focus one backend without changing activeId or tearing down any
+  // other backend's windows/client. The authenticated probe rejects before a
+  // window is created when the saved token or certificate is invalid.
+  ipcMain.handle(
+    CONNECTIONS.OPEN,
+    createValidatedHandler(
+      ConnectionsOpenSchema,
+      async (_event, { id }) => openBackendWindow(id),
+      CONNECTIONS.OPEN,
     ),
   );
 

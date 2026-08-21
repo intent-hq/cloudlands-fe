@@ -16,6 +16,7 @@ import {
   connectionsReducer,
   forgetConnectionRequested,
   initialState,
+  openConnectionRequested,
   switchConnectionRequested,
 } from '../connections-slice';
 import { connectionsSaga } from './connections-saga';
@@ -71,6 +72,7 @@ describe('connectionsSaga', () => {
       if (channel === CONNECTION_CHANNELS.CAPTURE_FINGERPRINT)
         return { fingerprint: 'AB:CD', tokenValid: true };
       if (channel === CONNECTION_CHANNELS.ADD) return { connection: REMOTE, switched: false };
+      if (channel === CONNECTION_CHANNELS.OPEN) return { id: (params as { id: string }).id };
       if (channel === CONNECTION_CHANNELS.FORGET) return { id: (params as { id: string }).id };
       if (channel === CONNECTION_CHANNELS.SWITCH)
         return { activeId: (params as { id: string }).id };
@@ -189,6 +191,11 @@ describe('connectionsSaga', () => {
       fingerprint: REMOTE.fingerprint,
       token: 'secret',
     });
+
+    const open = openConnectionRequested(REMOTE.id);
+    run.channel.put(open);
+    await expect(open.promise).resolves.toEqual({ id: REMOTE.id });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: REMOTE.id });
 
     const forget = forgetConnectionRequested(REMOTE.id);
     run.channel.put(forget);

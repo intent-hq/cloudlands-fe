@@ -160,8 +160,9 @@ async function loadModule() {
   const restore = vi.fn(() => {
     lifecycle.events.push({ type: 'restore', seq: 0 });
   });
-  mod.__setBackendWindowHooksForTesting({ captureAndClose, restore });
-  return { mod, captureAndClose, restore };
+  const openOrFocus = vi.fn();
+  mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, openOrFocus });
+  return { mod, captureAndClose, restore, openOrFocus };
 }
 
 /** Install a single fake renderer window and return its `send` spy. */
@@ -572,7 +573,7 @@ describe('connections:* IPC handlers', () => {
     expect(restore).not.toHaveBeenCalled();
   });
 
-  it('connections:add upserting the ACTIVE connection reconnects via switchBackend', async () => {
+  it('connections:add refreshes an active client without tearing down windows', async () => {
     store.add.mockResolvedValue(REMOTE);
     store.getActiveId.mockResolvedValue('remote-1');
     const send = installWindow();
@@ -591,23 +592,54 @@ describe('connections:* IPC handlers', () => {
     };
     await expect(handler!({}, params)).resolves.toEqual({ connection: REMOTE, switched: true });
 
-    // Full dispose + rebuild so the refreshed token takes effect immediately.
-    // (The fake client's seq counter is file-global, so assert relative order
-    // plus that the disposed client predates the newly constructed one.)
-    expect(lifecycle.events.map((e) => e.type)).toEqual([
-      'capture',
-      'dispose',
-      'construct',
-      'start',
-      'restore',
-    ]);
+    // Client-only dispose + rebuild so the refreshed token takes effect without
+    // destroying local or other-backend windows.
+    expect(lifecycle.events.map((e) => e.type)).toEqual(['dispose', 'construct', 'start']);
     const disposed = lifecycle.events.find((e) => e.type === 'dispose')!;
     const constructed = lifecycle.events.find((e) => e.type === 'construct')!;
     expect(disposed.seq).toBeLessThan(constructed.seq);
-    expect(captureAndClose).toHaveBeenCalledWith('remote-1');
-    expect(restore).toHaveBeenCalledWith('remote-1');
-    expect(store.setActiveId).toHaveBeenCalledWith('remote-1');
+    expect(captureAndClose).not.toHaveBeenCalled();
+    expect(restore).not.toHaveBeenCalled();
+    expect(store.setActiveId).not.toHaveBeenCalled();
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
+  });
+
+  it('connections:open keeps the local client and windows while opening the remote', async () => {
+    const { mod, captureAndClose, openOrFocus } = await loadModule();
+    const local = mod.getBackendClient();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:open');
+
+    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({ id: 'remote-1' });
+
+    const remote = mod.getBackendClientForConnection('remote-1');
+    expect(remote).toBeDefined();
+    expect(remote).not.toBe(local);
+    expect(remote?.request).toHaveBeenCalledWith('host.status');
+    expect(mod.getBackendClient()).toBe(local);
+    expect(mod.getBackendClientForConnection('local')).toBe(local);
+    expect(captureAndClose).not.toHaveBeenCalled();
+    expect(openOrFocus).toHaveBeenCalledWith('remote-1');
+    expect(store.setActiveId).not.toHaveBeenCalled();
+  });
+
+  it('connections:open drops only a failed remote and leaves local usable', async () => {
+    rpc.handler = async (method) => {
+      if (method === 'host.status') throw new Error('remote rejected');
+      return {};
+    };
+    const { mod, captureAndClose, openOrFocus } = await loadModule();
+    const local = mod.getBackendClient();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:open');
+
+    await expect(handler!({}, { id: 'remote-1' })).rejects.toThrow('remote rejected');
+
+    expect(mod.getBackendClient()).toBe(local);
+    expect(mod.getBackendClientForConnection('local')).toBe(local);
+    expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
+    expect(captureAndClose).not.toHaveBeenCalled();
+    expect(openOrFocus).not.toHaveBeenCalled();
   });
 
   it('connections:forget of a non-active connection just broadcasts', async () => {
@@ -667,6 +699,14 @@ describe('connections:* IPC handlers', () => {
     const { mod } = await loadModule();
     mod.registerBackendHandlers();
     const handler = findHandler('connections:switch');
+
+    await expect(handler!({}, {})).rejects.toThrow();
+  });
+
+  it('rejects invalid params (missing id on open) via the Zod schema', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:open');
 
     await expect(handler!({}, {})).rejects.toThrow();
   });

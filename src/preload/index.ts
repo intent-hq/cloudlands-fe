@@ -534,6 +534,7 @@ const ALLOWED_CHANNELS = [
   "connections:list",
   "connections:capture-fingerprint",
   "connections:add",
+  "connections:open",
   "connections:forget",
   "connections:switch",
   "connections:changed",

@@ -7,10 +7,10 @@
    *      fingerprint the daemon presents (`captureFingerprintRequested`).
    *   2. `confirm` — show the captured fingerprint; on confirm, store the
    *      connection (`addConnectionRequested`, which encrypts the token in main)
-   *      and switch to it (`switchConnectionRequested`).
+   *      and open a window for it (`openConnectionRequested`).
    *
    * The list/active refresh arrives via the `connections:changed` push handled
-   * by the connections service — this modal only drives the add/switch thunks
+   * by the connections service — this modal only drives the add/open actions
    * and surfaces inline errors.
    */
 
@@ -23,7 +23,7 @@
   import {
     captureFingerprintRequested,
     addConnectionRequested,
-    switchConnectionRequested,
+    openConnectionRequested,
   } from '$store/renderer/slices/connections/connections-slice';
 
   interface Props {
@@ -140,15 +140,10 @@
         detectHosts,
       });
       appStore.dispatch(addAction);
-      const { connection, switched } = await addAction.promise;
-      // An active re-pair already rebuilt the live client inside the add
-      // (switched: true) — dispatching another switch would tear it down and
-      // reconnect a second time for nothing.
-      if (!switched) {
-        const switchAction = switchConnectionRequested(connection.id);
-        appStore.dispatch(switchAction);
-        await switchAction.promise;
-      }
+      const { connection } = await addAction.promise;
+      const openAction = openConnectionRequested(connection.id);
+      appStore.dispatch(openAction);
+      await openAction.promise;
       close();
     } catch (e) {
       error = toMessage(e);

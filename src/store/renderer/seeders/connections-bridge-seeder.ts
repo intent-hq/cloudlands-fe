@@ -26,6 +26,8 @@ import type {
   AddConnectionResult,
   ForgetConnectionParams,
   ForgetConnectionResult,
+  OpenConnectionParams,
+  OpenConnectionResult,
   SwitchConnectionParams,
   SwitchConnectionResult,
   ConnectionBootFallbackEvent,
@@ -85,6 +87,11 @@ registerMockIpcHandler(CONNECTION_CHANNELS.FORGET, async (arg): Promise<ForgetCo
   const { id } = arg as ForgetConnectionParams;
   connections = connections.filter((c) => c.id !== id || c.isLocal);
   if (activeId === id) activeId = LOCAL_CONNECTION_ID;
+  return { id };
+});
+
+registerMockIpcHandler(CONNECTION_CHANNELS.OPEN, async (arg): Promise<OpenConnectionResult> => {
+  const { id } = arg as OpenConnectionParams;
   return { id };
 });
 
