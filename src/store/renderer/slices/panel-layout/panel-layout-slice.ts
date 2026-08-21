@@ -1231,6 +1231,24 @@ export const updateFileTabPath = createAction<
   [wsId: string, oldPath: string, newPath: string, tabId?: string]
 >('panelLayout/updateFileTabPath');
 
+/**
+ * Reveal a hidden (user-closed) agent-owned browser tab WITHOUT displacing or
+ * refocusing `avoidPanelId` (the panel hosting the agent conversation whose
+ * footer initiated the reveal): the tab is restored and activated in the
+ * first other panel in layout order, or — when no other panel exists — the
+ * avoided panel is split and the tab opens in the fresh panel. Panel focus
+ * never moves, so the conversation keeps keyboard focus either way.
+ */
+export const revealHiddenTabAvoidingPanel = createAction(
+  'panelLayout/revealHiddenTabAvoidingPanel',
+  (wsId: string, tabId: string, avoidPanelId: string | null, timestamp?: number) => ({
+    wsId,
+    tabId,
+    avoidPanelId,
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
 // ============================================================================
 // Initial State
 // ============================================================================
@@ -1711,10 +1729,7 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
       return setWorkspaceState(
         state,
         wsId,
-        purgeTabFromLayoutHistory(
-          { ...ws, hiddenTabs: removeItem(ws.hiddenTabs, tabId) },
-          tabId,
-        ),
+        purgeTabFromLayoutHistory({ ...ws, hiddenTabs: removeItem(ws.hiddenTabs, tabId) }, tabId),
       );
     }
     return state;
@@ -1727,10 +1742,7 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
       return setWorkspaceState(
         state,
         wsId,
-        purgeTabFromLayoutHistory(
-          { ...ws, hiddenTabs: removeItem(ws.hiddenTabs, tabId) },
-          tabId,
-        ),
+        purgeTabFromLayoutHistory({ ...ws, hiddenTabs: removeItem(ws.hiddenTabs, tabId) }, tabId),
       );
     }
     return state;
@@ -3568,6 +3580,61 @@ panelLayoutReducer.with(applyPreset, (state, { payload }) => {
   }
 
   ws = { ...ws, root, panels: newPanels, focusedPanelId: panelIds[0] };
+  return setWorkspaceState(state, wsId, ws);
+});
+
+// --- Reveal Hidden Tab Avoiding a Panel (conversation footer reveal) ---
+panelLayoutReducer.with(revealHiddenTabAvoidingPanel, (state, { payload }) => {
+  const { wsId, tabId, avoidPanelId, timestamp } = payload;
+  let ws = getWorkspaceState(state, wsId);
+  const hiddenTab = getItem(ws.hiddenTabs, tabId);
+  if (!hiddenTab) return state;
+
+  const previousFocusedPanelId = ws.focusedPanelId;
+  let targetPanelId = getPanelOrder(ws.root).find(
+    (panelId) => panelId !== avoidPanelId && ws.panels[panelId],
+  );
+  if (targetPanelId) {
+    ws = saveToHistory(ws, timestamp);
+  } else {
+    if (!avoidPanelId || !ws.panels[avoidPanelId]) return state;
+    // The avoided (conversation) panel is the only one: split it and mount
+    // the tab into the fresh panel instead of displacing the conversation.
+    const split = selfDispatch(
+      state,
+      splitPanel(
+        wsId,
+        avoidPanelId,
+        'horizontal',
+        { panelWidth: getPanelCreationWidthForType('browser') },
+        timestamp,
+      ),
+    );
+    const splitWs = getWorkspaceState(split, wsId);
+    targetPanelId = Object.keys(splitWs.panels).find((panelId) => !ws.panels[panelId]);
+    if (!targetPanelId) return state;
+    ws = splitWs;
+  }
+
+  const panel = ws.panels[targetPanelId];
+  ws = {
+    ...ws,
+    hiddenTabs: removeItem(ws.hiddenTabs, tabId),
+    panels: {
+      ...ws.panels,
+      [targetPanelId]: {
+        ...panel,
+        tabs: [...panel.tabs, { ...hiddenTab }],
+        activeTabId: hiddenTab.id,
+        pristine: false,
+      },
+    },
+    // The conversation keeps panel focus: the reveal request scrolls the
+    // hosting panel into view, but content focus is gated on focusedPanelId
+    // (Panel.svelte), so keyboard focus never leaves the conversation.
+    focusedPanelId: previousFocusedPanelId,
+    pendingPanelReveal: createPanelRevealRequest(targetPanelId, hiddenTab.id, hiddenTab.id),
+  };
   return setWorkspaceState(state, wsId, ws);
 });
 

@@ -6,8 +6,9 @@
    * listing the active agent's owned browser tabs — visible panel tabs plus
    * hidden (user-closed, monorepo#2857) ones. Clicking a visible tab
    * activates it and focuses its panel (same path as the sidebar browser
-   * list); clicking a hidden tab restores it into a panel and activates it
-   * there WITHOUT stealing focus from the conversation.
+   * list); clicking a hidden tab restores it into a panel OTHER than the one
+   * hosting this conversation (splitting when it is the only panel) and
+   * activates it there WITHOUT stealing focus from the conversation.
    * Hidden entirely when the agent owns no browser tabs.
    */
 
@@ -23,10 +24,7 @@
     selectHiddenTabs,
     selectPanels,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import {
-    restoreHiddenTab,
-    setActiveTab,
-  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { revealHiddenTabAvoidingPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { store as appStore } from '$store/renderer/store';
   import {
     safeSubscriptionRowTransition,
@@ -123,14 +121,18 @@
 
   function handleTabClick(entry: BrowserTabEntry) {
     if (entry.hidden) {
-      // Restore without focus, then activate in the hosting panel: the tab
-      // becomes visible in its panel while conversation focus stays put.
-      appStore.dispatch(restoreHiddenTab(workspaceId, entry.tab.id, undefined, false));
+      // Restore into a panel other than the one hosting this conversation
+      // (the reducer splits when it is the only panel), so the reveal never
+      // displaces the chat or moves keyboard focus off it. The footer click
+      // has already focused the conversation panel by pointerdown, so the
+      // conversation panel is the one hosting this agent's tab.
       const panels = selectPanels.select(appStore.state, workspaceId);
-      const hostPanel = Object.values(panels).find((panel) =>
-        panel.tabs.some((tab) => tab.id === entry.tab.id),
+      const conversationPanel = Object.values(panels).find((panel) =>
+        panel.tabs.some((tab) => tab.type === 'agent' && tab.agentId === agentId),
       );
-      if (hostPanel) appStore.dispatch(setActiveTab(workspaceId, entry.tab.id, hostPanel.id));
+      appStore.dispatch(
+        revealHiddenTabAvoidingPanel(workspaceId, entry.tab.id, conversationPanel?.id ?? null),
+      );
     } else if (entry.panelId) {
       // Already-visible tab: activate and focus, same as the sidebar list.
       const manager = getPanelLayoutManager(workspaceId);

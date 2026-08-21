@@ -5,7 +5,8 @@
  * counting the agent's owned browser tabs (visible + hidden, monorepo#2857),
  * expanded tab rows, and the click-to-reveal wiring — visible tabs
  * activate + focus via the panel layout manager (sidebar path), hidden tabs
- * restore without focus and then activate in the hosting panel.
+ * reveal into a panel other than the one hosting the conversation, never
+ * displacing the conversation tab or moving panel focus.
  */
 import { render, screen, fireEvent, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -52,10 +53,7 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => {
 });
 
 import BrowserTabsRow from '../BrowserTabsRow.svelte';
-import {
-  restoreHiddenTab,
-  setActiveTab,
-} from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { revealHiddenTabAvoidingPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
 const ownedTab = (id: string, title: string) => ({
   id,
@@ -67,6 +65,11 @@ const ownedTab = (id: string, title: string) => ({
 
 function seedLayout() {
   layoutState.panels = {
+    chat: {
+      id: 'chat',
+      activeTabId: 'agent-tab',
+      tabs: [{ id: 'agent-tab', type: 'agent', title: 'Chat', agentId: 'agent-1' }],
+    },
     p1: {
       id: 'p1',
       activeTabId: 'visible-1',
@@ -140,28 +143,39 @@ describe('BrowserTabsRow', () => {
     expect(dispatchMock).not.toHaveBeenCalled();
   });
 
-  it('reveals a hidden tab: restore without focus, then activate in the hosting panel', async () => {
+  it('reveals a hidden tab avoiding the panel hosting the conversation', async () => {
     seedLayout();
-    // Simulate the reducer: the focus-less restore mounts the tab into p1's
-    // tab list, so the follow-up host-panel lookup finds it there.
-    dispatchMock.mockImplementation((action: { type?: string }) => {
-      if (action?.type === restoreHiddenTab('ws-1', 'hidden-1').type) {
-        const p1 = layoutState.panels.p1 as { tabs: unknown[] };
-        p1.tabs = [...p1.tabs, ownedTab('hidden-1', 'Preview')];
-        layoutState.hiddenTabs = [];
-      }
-    });
     renderRow();
     await fireEvent.click(screen.getByTestId('browser-tabs-summary'));
     await fireEvent.click(screen.getAllByTestId('browser-tab-item')[1]);
 
     const dispatched = dispatchMock.mock.calls.map(([action]) => action);
-    const restore = dispatched.find((a) => a.type === restoreHiddenTab('ws-1', 'x').type);
-    expect(restore?.payload).toMatchObject({ wsId: 'ws-1', tabId: 'hidden-1', focus: false });
-    const activate = dispatched.find((a) => a.type === setActiveTab('ws-1', 'x').type);
-    expect(activate?.payload).toMatchObject({ wsId: 'ws-1', tabId: 'hidden-1', panelId: 'p1' });
+    const reveal = dispatched.find(
+      (a) => a.type === revealHiddenTabAvoidingPanel('ws-1', 'x', null).type,
+    );
+    // The conversation panel ('chat' hosts this agent's tab) is avoided, so
+    // the reveal can never displace the conversation tab.
+    expect(reveal?.payload).toMatchObject({
+      wsId: 'ws-1',
+      tabId: 'hidden-1',
+      avoidPanelId: 'chat',
+    });
     // No panel-focus steal on the hidden-tab path.
     expect(focusPanelMock).not.toHaveBeenCalled();
     expect(setActiveTabMock).not.toHaveBeenCalled();
+  });
+
+  it('passes a null avoided panel when no panel hosts the conversation', async () => {
+    seedLayout();
+    delete (layoutState.panels as Record<string, unknown>).chat;
+    renderRow();
+    await fireEvent.click(screen.getByTestId('browser-tabs-summary'));
+    await fireEvent.click(screen.getAllByTestId('browser-tab-item')[1]);
+
+    const dispatched = dispatchMock.mock.calls.map(([action]) => action);
+    const reveal = dispatched.find(
+      (a) => a.type === revealHiddenTabAvoidingPanel('ws-1', 'x', null).type,
+    );
+    expect(reveal?.payload).toMatchObject({ wsId: 'ws-1', tabId: 'hidden-1', avoidPanelId: null });
   });
 });
