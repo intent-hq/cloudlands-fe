@@ -20,7 +20,7 @@ import {
   prMonitorReducer,
   prMonitorsUpdated,
 } from '../pr-monitor/pr-monitor-slice';
-import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import type { PrMonitorRow, PrMonitorSnapshot } from '$features/pr-monitor/pr-monitor-service';
 
 const WS_ID = 'ws-1';
 
@@ -619,9 +619,9 @@ describe('selectWorkspaceProgressActions', () => {
     expect(selectWorkspaceProgressActions.select(state, WS_ID, input)).toEqual([
       {
         id: 'view-pr',
-        label: 'View PR',
+        label: '#42: Example PR',
         iconKey: 'code-branch',
-        tooltip: 'Opens the pull request on GitHub in your browser.',
+        tooltip: 'Opens pull request #42 on GitHub in your browser.',
         url: 'https://gh/pr/100',
       },
     ]);
@@ -720,7 +720,7 @@ describe('selectWorkspaceProgressActions', () => {
     const [action] = selectWorkspaceProgressActions.select(state, WS_ID, input);
     expect(action).toMatchObject({
       id: 'view-pr',
-      label: 'View PR',
+      label: 'widgets #77',
       iconKey: 'code-branch',
       url: 'https://github.com/acme/widgets/pull/77',
     });
@@ -737,7 +737,7 @@ describe('selectWorkspaceProgressActions', () => {
     const input = makeInput({ taskStats: makeTaskStats({ total: 3 }) });
     const [action] = selectWorkspaceProgressActions.select(state, WS_ID, input);
     const summary = selectWorkspaceActivePrSummary.select(state, WS_ID);
-    expect(action.label).toBe('View PR (other/lib)');
+    expect(action.label).toBe('other/lib #1373');
     expect(action.tooltip).toContain('other/lib#1,373');
     expect(action.url).toBe('https://github.com/other/lib/pull/1373');
     expect(summary).toMatchObject({
@@ -769,5 +769,145 @@ describe('selectWorkspaceProgressActions', () => {
     });
     const [action] = selectWorkspaceProgressActions.select(state, WS_ID, makeInput({ gitStatus }));
     expect(action.url).toBe('https://gh/pr/42');
+  });
+});
+
+
+describe('selectWorkspaceActivePrSummary (rich chip fields)', () => {
+  function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
+    return {
+      monitorId: 'mon-1',
+      workspaceId: WS_ID,
+      agentId: 'agent-1',
+      repo: 'acme/widgets',
+      prNumber: 77,
+      state: 'active',
+      pendingChanges: [],
+      hasPendingChanges: false,
+      createdAt: '2026-08-07T10:00:00Z',
+      updatedAt: '2026-08-07T10:05:00Z',
+      url: 'https://github.com/acme/widgets/pull/77',
+      ...overrides,
+    };
+  }
+
+  function makeSnapshot(overrides: Partial<PrMonitorSnapshot> = {}): PrMonitorSnapshot {
+    return {
+      state: 'open',
+      isDraft: false,
+      hasConflicts: false,
+      isBehind: false,
+      checks: {
+        total: 0,
+        passed: 0,
+        failed: 0,
+        pending: 0,
+        failingRequired: 0,
+        pendingRequired: 0,
+        requiredKnown: false,
+      },
+      approvals: { decision: '', have: 0, changesRequested: 0 },
+      threads: { unresolved: 0 },
+      rulesKnown: false,
+      ...overrides,
+    };
+  }
+
+  /** State with a workspace (repo acme/widgets), optional PR, and monitor rows. */
+  function mockRichState(workspace: Partial<Workspace>, monitors: PrMonitorRow[] = []): StoreState {
+    const ws = makeWorkspace(workspace);
+    return {
+      workspace: workspaceReducer(initialState, setWorkspaceEntity(ws)),
+      prMonitor: prMonitorReducer(prMonitorInitialState, prMonitorsUpdated(WS_ID, monitors)),
+    } as StoreState;
+  }
+
+  it('enriches a workspace-repo branch-linked PR with chip label, title, and status', () => {
+    const state = mockRichState({
+      activePullRequest: makePR({ number: 1365, url: 'https://gh/pr/1365', title: 'Fix widgets' }),
+      repositoryOwner: 'acme',
+      repositoryName: 'widgets',
+    } as Partial<Workspace>);
+    expect(selectWorkspaceActivePrSummary.select(state, WS_ID)).toEqual({
+      number: 1365,
+      url: 'https://gh/pr/1365',
+      repo: 'acme/widgets',
+      chipLabel: 'widgets #1365',
+      title: 'Fix widgets',
+      status: 'open',
+      actionLabel: 'widgets #1365: Fix widgets',
+      actionTooltip: 'Opens pull request acme/widgets#1,365 on GitHub in your browser.',
+    });
+  });
+
+  it('honors isDraft over an Open status for the branch-linked PR', () => {
+    const state = mockRichState({
+      activePullRequest: makePR({ isDraft: true }),
+    } as Partial<Workspace>);
+    expect(selectWorkspaceActivePrSummary.select(state, WS_ID)?.status).toBe('draft');
+  });
+
+  it('degrades the legacy prNumber/prUrl path gracefully (no title, unknown status)', () => {
+    const state = mockRichState({ prNumber: 7, prUrl: 'https://gh/pr/7' } as Partial<Workspace>);
+    expect(selectWorkspaceActivePrSummary.select(state, WS_ID)).toEqual({
+      number: 7,
+      url: 'https://gh/pr/7',
+      repo: undefined,
+      chipLabel: '#7',
+      title: undefined,
+      status: 'unknown',
+      actionLabel: '#7',
+      actionTooltip: 'Opens pull request #7 on GitHub in your browser.',
+    });
+  });
+
+  it('enriches a cross-repo monitor with its repo, title, and snapshot status', () => {
+    const state = mockRichState(
+      { repositoryOwner: 'acme', repositoryName: 'widgets' } as Partial<Workspace>,
+      [
+        makeMonitor({
+          repo: 'other/lib',
+          prNumber: 1373,
+          url: 'https://github.com/other/lib/pull/1373',
+          title: 'Fix lib',
+          lastSnapshot: makeSnapshot({ state: 'merged' }),
+        }),
+      ],
+    );
+    expect(selectWorkspaceActivePrSummary.select(state, WS_ID)).toEqual({
+      number: 1373,
+      url: 'https://github.com/other/lib/pull/1373',
+      repo: 'other/lib',
+      chipLabel: 'other/lib #1373',
+      title: 'Fix lib',
+      status: 'merged',
+      actionLabel: 'other/lib #1373: Fix lib',
+      actionTooltip: 'Opens pull request other/lib#1,373 on GitHub in your browser.',
+    });
+  });
+
+  it('marks a draft monitored PR from the snapshot draft flag', () => {
+    const state = mockRichState(
+      { repositoryOwner: 'acme', repositoryName: 'widgets' } as Partial<Workspace>,
+      [makeMonitor({ lastSnapshot: makeSnapshot({ isDraft: true }) })],
+    );
+    expect(selectWorkspaceActivePrSummary.select(state, WS_ID)?.status).toBe('draft');
+  });
+
+  it('omits title and reports unknown status for a monitor never polled', () => {
+    const state = mockRichState(
+      { repositoryOwner: 'acme', repositoryName: 'widgets' } as Partial<Workspace>,
+      [makeMonitor({ url: undefined })],
+    );
+    expect(selectWorkspaceActivePrSummary.select(state, WS_ID)).toEqual({
+      number: 77,
+      url: 'https://github.com/acme/widgets/pull/77',
+      repo: 'acme/widgets',
+      chipLabel: 'widgets #77',
+      title: undefined,
+      status: 'unknown',
+      actionLabel: 'widgets #77',
+      actionTooltip: 'Opens pull request acme/widgets#77 on GitHub in your browser.',
+    });
   });
 });
