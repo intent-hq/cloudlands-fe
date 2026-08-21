@@ -59,6 +59,7 @@ import {
   chatQueueProcessingReceived,
   chatQueuedRetryRecordSet,
   chatLastAttemptedMessageSet,
+  chatSendFailed,
   initialState as chatInitialState,
   chatStateReducer,
   refreshChatTranscriptRequested,
@@ -433,6 +434,32 @@ describe('chatSendSaga', () => {
     expect(
       run.dispatch.mock.calls.some(([action]) => action.type === 'agentQueue/removeQueuedMessage'),
     ).toBe(true);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('surfaces a direct-send RPC failure via chatSendFailed with the retry payload preserved (monorepo#3040)', async () => {
+    // Reaped-agent contract (intent-hq/intentd#1356): sends to an evicted
+    // process auto-restore, so a THROW from sendMessage is a genuine failure
+    // (agent deleted / RPC error) — it must surface in the chat, never render
+    // as silently accepted. `chatLastAttemptedMessageSet` was dispatched
+    // before the wire call, so the failure banner's "Try again" can resend.
+    mocks.send.mockRejectedValue(new Error('Agent not found: agent-send'));
+    const run = harness();
+    run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'hello after reap' }));
+    await settle();
+
+    expect(run.dispatch).toHaveBeenCalledWith(
+      chatLastAttemptedMessageSet(AGENT, { text: 'hello after reap' }),
+    );
+    // The positive assertion above is satisfied by the pre-wire dispatch, so
+    // also pin the invariant: the direct-send catch must never null the retry
+    // record (the way the sendQueuedNow failure paths do) — that would break
+    // the failure banner's "Try again".
+    expect(run.dispatch).not.toHaveBeenCalledWith(chatLastAttemptedMessageSet(AGENT, null));
+    expect(run.dispatch).toHaveBeenCalledWith(
+      chatSendFailed(AGENT, 'Agent not found: agent-send'),
+    );
     run.task.cancel();
     await run.task.toPromise();
   });
