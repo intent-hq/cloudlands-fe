@@ -38,6 +38,7 @@
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectWorkspaceTabStatuses } from '$store/renderer/slices/hud/hud-selectors';
   import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
+  import { WorkspaceStatus } from '$shared/types';
   import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -472,6 +473,7 @@
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
           {@const tabStatus = $workspaceTabStatuses$[workspaceId]}
           {@const workspaceStatusState = resolveWorkspaceStatusState(workspace)}
+          {@const isArchived = workspace.status === WorkspaceStatus.Archived}
           {@const workspaceTitle =
             workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label()}
           {#if isDragged}
@@ -573,8 +575,9 @@
                 tabindex={isCurrent ? 0 : -1}
                 data-workspace-tab-hover-trigger
               >
-                <span class="min-w-0 flex-1 truncate" data-workspace-tab-title
-                  >{workspaceTitle}</span
+                <span
+                  class={cn('min-w-0 flex-1 truncate', isArchived && 'opacity-60')}
+                  data-workspace-tab-title>{workspaceTitle}</span
                 >
                 <span
                   class="pointer-events-none ml-auto flex shrink-0 items-center gap-1"
