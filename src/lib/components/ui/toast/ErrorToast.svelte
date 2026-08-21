@@ -8,6 +8,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
   import type { AppError } from '$lib/utils/error-handler.svelte';
+  import ToastCloseButton from './ToastCloseButton.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -54,7 +55,7 @@
 
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
      the severity border tint is passed as a wrapper class by error-toast.ts. -->
-<div class="flex w-full min-w-0 items-start gap-3">
+<div class="relative flex w-full min-w-0 items-start gap-3">
   <!-- Icon -->
   <div class="flex-shrink-0 mt-0.5 {getIconColor(error.type)}">
     <Fa icon={getIcon(error.type)} class="w-5 h-5" />
@@ -77,17 +78,7 @@
   </div>
 
   <!-- Close button -->
-  <button
-    type="button"
-    class="-mr-1 -mt-1 flex-shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
-    onclick={handleDismiss}
-    aria-label={m.ui_errorToast_close_ariaLabel()}
-  >
-    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"
-      ></path>
-    </svg>
-  </button>
+  <ToastCloseButton onclick={handleDismiss} ariaLabel={m.ui_errorToast_close_ariaLabel()} />
 </div>
 
 <style>
