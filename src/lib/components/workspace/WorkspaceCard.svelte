@@ -247,10 +247,12 @@
   );
   // Pill link target: the primary PR's own URL (authoritative for cross-repo
   // and monitor-only rows), falling back to a constructed URL for the legacy
-  // `workspace.prNumber`-only case. Undefined keeps the pill non-interactive.
+  // `workspace.prNumber`-only case — gated on no primary PR at all, so the
+  // link target is always built from the same PR the pill displays.
+  // Undefined keeps the pill non-interactive.
   const prPillUrl = $derived.by(() => {
     if (!workspace) return undefined;
-    if (primaryPr?.url) return primaryPr.url;
+    if (primaryPr) return primaryPr.url || undefined;
     if (workspace.prNumber != null) {
       return (
         constructPrUrl(workspace.prNumber, workspace.repositoryOwner, workspace.repositoryName) ||

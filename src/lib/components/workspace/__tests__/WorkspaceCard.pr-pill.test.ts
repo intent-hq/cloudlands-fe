@@ -233,4 +233,31 @@ describe('WorkspaceCard PR pill', () => {
     expect(content).toBeTruthy();
     expect(content!.split('\n')[0]).toBe('other-org/lib #7');
   });
+
+  it('degrades to status-only tooltip content when no repo line is resolvable', () => {
+    // A workspace PR without a URL on a workspace without repositoryOwner/
+    // repositoryName: no repo source resolves, so the tooltip must be the
+    // status content alone — no leading blank line.
+    const workspace = makeWorkspace({
+      pullRequests: [
+        {
+          id: 'pr-9',
+          number: 9,
+          url: '',
+          title: 'Legacy PR',
+          status: PullRequestStatus.Open,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+
+    render(WorkspaceCard, { props: { workspace } });
+
+    const content = tooltipContents().find((c) => c.includes('Open'));
+    expect(content).toBeTruthy();
+    expect(content!.startsWith('\n')).toBe(false);
+    expect(content!.split('\n')[0]).toBe('Open');
+    expect(content).not.toContain('#9');
+  });
 });
