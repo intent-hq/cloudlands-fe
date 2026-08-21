@@ -364,13 +364,13 @@ function* showBrowser(data: BrowserShowTabPayload | null): SagaGenerator<void> {
 
   const hiddenTabs = yield* selectHiddenTabs.effect(workspaceId);
   if (hiddenTabs.some((tab) => tab.id === data.tabId && tab.type === 'browser')) {
-    // Reveal: mount into a panel. focus: false mounts without activating
-    // the tab or moving panel focus (monorepo#3045).
+    // Reveal: activate into a visible fixed column. focus: false keeps panel
+    // focus stable (monorepo#3045, #3112).
     yield* put(restoreHiddenTab(workspaceId, data.tabId, undefined, focus));
-    // A focusing reveal on a workspace this window is not displaying keeps
-    // its layout-state effects but skips the actual UI reveal (its
+    // A reveal on a workspace this window is not displaying keeps its
+    // layout-state effects but skips the actual UI reveal/scroll (its
     // requestId is the restored tab's id).
-    if (focus) yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, data.tabId);
+    yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, data.tabId);
     return;
   }
   // Already visible: idempotent — focus: true still activates the tab and

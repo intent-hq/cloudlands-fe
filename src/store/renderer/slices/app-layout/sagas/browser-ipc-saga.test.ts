@@ -1040,11 +1040,21 @@ describe('browserIpcSaga', () => {
 
     await emit({ tabId: 'browser-hidden', workspaceId: 'ws-1' }, 'browser:show-tab');
 
+    // The no-focus reveal still activates the tab in a visible panel
+    // (monorepo#3112), so its queued reveal/scroll markers are dropped when
+    // this window is not displaying the workspace (jsdom's route is `/`).
     expect(actions).toEqual([
       {
         type: 'panelLayout/restoreHiddenTab',
-        payload: { wsId: 'ws-1', tabId: 'browser-hidden', timestamp: NOW, focus: false },
+        payload: {
+          wsId: 'ws-1',
+          tabId: 'browser-hidden',
+          timestamp: NOW,
+          focus: false,
+        },
       },
+      { type: 'panelLayout/consumePanelReveal', payload: ['ws-1', 'browser-hidden'] },
+      { type: 'panelLayout/consumePendingFocus', payload: ['ws-1', 'browser-hidden'] },
     ]);
     task.cancel();
     await task.toPromise();
@@ -1074,7 +1084,12 @@ describe('browserIpcSaga', () => {
     expect(actions).toEqual([
       {
         type: 'panelLayout/restoreHiddenTab',
-        payload: { wsId: 'ws-1', tabId: 'browser-hidden', timestamp: NOW, focus: true },
+        payload: {
+          wsId: 'ws-1',
+          tabId: 'browser-hidden',
+          timestamp: NOW,
+          focus: true,
+        },
       },
       { type: 'panelLayout/consumePanelReveal', payload: ['ws-1', 'browser-hidden'] },
       { type: 'panelLayout/consumePendingFocus', payload: ['ws-1', 'browser-hidden'] },

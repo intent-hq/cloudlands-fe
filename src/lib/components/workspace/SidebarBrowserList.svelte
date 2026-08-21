@@ -4,10 +4,12 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { getRunningScriptBrowserTarget } from '$features/scripts/utils/running-script-browser-target';
   import {
+    selectFocusedPanelId,
     selectHiddenTabs,
     selectPanels,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import { restoreHiddenTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { revealHiddenTabAvoidingPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import type { PanelState } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { selectWorkspaceScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { store as appStore } from '$store/renderer/store';
@@ -46,7 +48,25 @@
   }
 
   function restoreTab(tabId: string) {
-    appStore.dispatch(restoreHiddenTab(panelLayoutId, tabId));
+    // Reveal into a panel other than the one hosting the currently-viewed
+    // conversation (the reducer splits when it is the only panel), so the
+    // sidebar reveal never displaces the chat or moves keyboard focus off it
+    // (monorepo#3113). Unlike the conversation-footer path, the sidebar has
+    // no agent context, so the conversation panel is derived from the focused
+    // panel when it is actively showing a conversation, falling back to any
+    // panel whose active tab is one.
+    const panels = selectPanels.select(appStore.state, panelLayoutId);
+    const focusedPanelId = selectFocusedPanelId.select(appStore.state, panelLayoutId);
+    const showsConversation = (panel: PanelState) =>
+      panel.tabs.some((tab) => tab.id === panel.activeTabId && tab.type === 'agent');
+    const focusedPanel = focusedPanelId ? panels[focusedPanelId] : undefined;
+    const conversationPanel =
+      focusedPanel && showsConversation(focusedPanel)
+        ? focusedPanel
+        : Object.values(panels).find(showsConversation);
+    appStore.dispatch(
+      revealHiddenTabAvoidingPanel(panelLayoutId, tabId, conversationPanel?.id ?? null),
+    );
   }
 
   function openRunningTarget() {

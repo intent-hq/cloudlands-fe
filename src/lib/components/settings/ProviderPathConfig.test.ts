@@ -90,6 +90,48 @@ describe('ProviderPathConfig', () => {
     expect(screen.getByText('Claude Code CLI Path')).toBeTruthy();
   });
 
+  it('anchors the trigger-less controlled panel on-screen instead of off-page', async () => {
+    // Regression: with showTrigger=false there is no Menu.Trigger, so without
+    // a customAnchor bits-ui's floating layer never gets a reference element,
+    // isPositioned stays false, and the content wrapper keeps the off-page
+    // measuring transform translate(0, -200%) forever (rendering the panel
+    // off-screen in a real browser). With the anchor wired, positioning
+    // resolves and the measuring transform is replaced.
+    //
+    // jsdom returns an empty list from getClientRects() for every element,
+    // which trips bits-ui's isReferenceHidden guard before positioning runs;
+    // stub it so the anchor counts as visible (layout coordinates stay zero,
+    // which is fine — only "positioned vs never positioned" is asserted).
+    const getClientRectsSpy = vi
+      .spyOn(Element.prototype, 'getClientRects')
+      .mockImplementation(function (this: Element) {
+        const rect = this.getBoundingClientRect();
+        return [rect] as unknown as DOMRectList;
+      });
+    try {
+      render(ProviderPathConfig, {
+        props: {
+          providerId: 'claude-code',
+          providerName: 'Claude Code',
+          cliCommand: 'claude-agent-acp',
+          open: true,
+          showTrigger: false,
+        },
+      });
+
+      const wrapper = () =>
+        document.querySelector('[data-bits-floating-content-wrapper]') as HTMLElement | null;
+      await waitFor(() => expect(wrapper()).toBeTruthy());
+      await waitFor(() =>
+        expect(wrapper()!.style.transform, 'floating content should be positioned').not.toBe(
+          'translate(0, -200%)',
+        ),
+      );
+    } finally {
+      getClientRectsSpy.mockRestore();
+    }
+  });
+
   it('renders the full auto-detected path wrapped, not truncated', async () => {
     render(ProviderPathConfig, {
       props: {

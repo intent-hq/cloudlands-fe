@@ -86,6 +86,7 @@ import {
   reopenClosedPanelColumn,
   reopenClosedTab,
   revealDeferredSpecTab,
+  revealHiddenTabAvoidingPanel,
   resetLayout,
   resizePanelLayoutRightEdge,
   selectNextTab,
@@ -352,6 +353,10 @@ const persistActionCreators = [
   updateFileTabPath,
   consumePendingFocus,
   reconcilePanelColumnCount,
+  // Sidebar/footer reveals persist through a dedicated watcher (not
+  // PERSIST_ACTIONS) so a revealed owned tab does not revert to hidden on
+  // restart (monorepo#3112).
+  revealHiddenTabAvoidingPanel,
 ];
 
 describe('panelLayoutSaga', () => {
@@ -1454,6 +1459,23 @@ describe('panelLayoutSaga', () => {
     await settle();
 
     channel.put(openHiddenTab(WS_1, { type: 'browser', title: 'Hidden', closable: true }));
+    await settle();
+
+    expect(mocks.setJSON).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
+    await settle();
+    expect(mocks.saveHistory).not.toHaveBeenCalled();
+    await cancelSaga(task);
+  });
+
+  // Sidebar/footer reveals persist without adding panel history
+  // (monorepo#3112).
+  it('persists revealHiddenTabAvoidingPanel without adding panel history', async () => {
+    mocks.getJSON.mockReturnValue(undefined);
+    const { channel, task } = startSaga();
+    await settle();
+
+    channel.put(revealHiddenTabAvoidingPanel(WS_1, 'tab-hidden', 'panel-1'));
     await settle();
 
     expect(mocks.setJSON).toHaveBeenCalledTimes(1);

@@ -4,6 +4,49 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.77.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.77.1...v2.77.2) (2026-08-21)
+
+
+### 🐛 Bug Fixes
+
+* anchor trigger-less provider path panel on-screen ([#1557](https://github.com/intent-hq/cloudlands-fe/issues/1557)) ([46211a3](https://github.com/intent-hq/cloudlands-fe/commit/46211a34ecf2841372d33e81df550153317b2a84))
+* make showTab reveal user-visible and stop revealed tabs reverting to hidden ([#1560](https://github.com/intent-hq/cloudlands-fe/issues/1560)) ([2b7c857](https://github.com/intent-hq/cloudlands-fe/commit/2b7c85741c0bdb898bcc506973b7d91986474a8f))
+
+## [2.77.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.77.0...v2.77.1) (2026-08-21)
+
+
+### 🐛 Bug Fixes
+
+* align hidden sidebar tab rows with visible ones ([#1554](https://github.com/intent-hq/cloudlands-fe/issues/1554)) ([b2252f9](https://github.com/intent-hq/cloudlands-fe/commit/b2252f9782027875e2d6ab54e2e5722a873f9596))
+* bump intentd sidecar to v0.7.31 ([#1559](https://github.com/intent-hq/cloudlands-fe/issues/1559)) ([13370ee](https://github.com/intent-hq/cloudlands-fe/commit/13370ee1ae68610efe7da9e42025d11d6c31ea82))
+* sidebar hidden-tab reveal avoids the conversation's panel ([#1555](https://github.com/intent-hq/cloudlands-fe/issues/1555)) ([635c68b](https://github.com/intent-hq/cloudlands-fe/commit/635c68bfc85ff7688c7a40c90386dd0f4e5ad1c3))
+
+## [2.77.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.76.0...v2.77.0) (2026-08-21)
+
+
+### 🚀 Features
+
+* add collapsible Browser tabs section to the agent conversation footer ([#1545](https://github.com/intent-hq/cloudlands-fe/issues/1545)) ([56fbed9](https://github.com/intent-hq/cloudlands-fe/commit/56fbed98632ff66c9f6f3bbc1e7eb31ce912c38a))
+* compact icon-only agent owner chip in browser toolbar ([#1544](https://github.com/intent-hq/cloudlands-fe/issues/1544)) ([5916ebf](https://github.com/intent-hq/cloudlands-fe/commit/5916ebf78268b1a5a47cf24f60c6c493dcc48585))
+* onboarding prompt-step picker commits provider + default model at create-submit ([#1536](https://github.com/intent-hq/cloudlands-fe/issues/1536)) ([ccc4348](https://github.com/intent-hq/cloudlands-fe/commit/ccc43484ce69559684038fc69ed2d564befbe46a))
+* show PR status icon and repo/number/title chip on the sidebar View PR action ([#1547](https://github.com/intent-hq/cloudlands-fe/issues/1547)) ([af51013](https://github.com/intent-hq/cloudlands-fe/commit/af51013ca2f02d5b33a465dbdded6137dfe932a8))
+* showTab action, listTabs visibility field, focusTab hidden guard ([#1534](https://github.com/intent-hq/cloudlands-fe/issues/1534)) ([d2900b3](https://github.com/intent-hq/cloudlands-fe/commit/d2900b3d93c68938d1b86542e0a62eeb8a3ce9bf))
+* **store:** configure Themis Redux action logging ([#1524](https://github.com/intent-hq/cloudlands-fe/issues/1524)) ([6c882a7](https://github.com/intent-hq/cloudlands-fe/commit/6c882a7e5a8fbef996b900b513a3ca8c5af88ffe))
+* **ui:** dim archived workspace tab titles in the tab strip ([#1543](https://github.com/intent-hq/cloudlands-fe/issues/1543)) ([8037586](https://github.com/intent-hq/cloudlands-fe/commit/8037586517089b7fb8dc30c92d1d9070bad297ef))
+* **ui:** route workspace-list PR pill clicks through the GitHub link menu ([#1546](https://github.com/intent-hq/cloudlands-fe/issues/1546)) ([dbb9c76](https://github.com/intent-hq/cloudlands-fe/commit/dbb9c768615101534f01cc1912a35a34913027b3))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.28 ([#1548](https://github.com/intent-hq/cloudlands-fe/issues/1548)) ([17dbc91](https://github.com/intent-hq/cloudlands-fe/commit/17dbc9185a5b801250d25bd6783a1ec1a2e47312))
+* bump intentd sidecar to v0.7.29 ([#1553](https://github.com/intent-hq/cloudlands-fe/issues/1553)) ([63fea0d](https://github.com/intent-hq/cloudlands-fe/commit/63fea0d52c063bff6d735a05c9e5f772ad70323f))
+* **chat:** spare still-acquiring cold opens from the viewed-agent swap sweep ([#1542](https://github.com/intent-hq/cloudlands-fe/issues/1542)) ([732366a](https://github.com/intent-hq/cloudlands-fe/commit/732366afed57a046be9d5fe4fc136fcff5f56b2c))
+* clear stale busy indicators when an agent process is evicted ([#1531](https://github.com/intent-hq/cloudlands-fe/issues/1531)) ([189f9ee](https://github.com/intent-hq/cloudlands-fe/commit/189f9eebe9e0842325d7ae33c618b567415df2ac))
+* keep workspace-card task progress bar mounted across refetches ([#1539](https://github.com/intent-hq/cloudlands-fe/issues/1539)) ([5a9c38f](https://github.com/intent-hq/cloudlands-fe/commit/5a9c38f63f93f1fdc5f9dd7c568e541cf9df918e))
+* restore tabbed model picker refresh ([#1551](https://github.com/intent-hq/cloudlands-fe/issues/1551)) ([9837df6](https://github.com/intent-hq/cloudlands-fe/commit/9837df65dc3e795f016f060b6bcdbda264d3e9eb))
+* run startup release-notes check regardless of window existence ([#1533](https://github.com/intent-hq/cloudlands-fe/issues/1533)) ([892b996](https://github.com/intent-hq/cloudlands-fe/commit/892b996e2aec362770cb9c9f8dc061e7e4922635))
+* **ui:** unify custom toast close buttons and remove dead NotificationNavigateToast ([#1538](https://github.com/intent-hq/cloudlands-fe/issues/1538)) ([fc48488](https://github.com/intent-hq/cloudlands-fe/commit/fc48488de1b97054eb72bb0cce6b897f1fa198f8))
+
 ## [2.76.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.75.1...v2.76.0) (2026-08-21)
 
 

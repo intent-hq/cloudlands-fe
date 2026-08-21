@@ -1557,12 +1557,13 @@ export const openHiddenTab = createAction(
 
 /**
  * Restore a hidden (user-closed) agent-owned browser tab back into a panel
- * (monorepo#2857): removed from `hiddenTabs` and opened in the focused panel,
- * keeping its id so the live webview and main's registrations stay attached.
- * `focus` (default true) activates the tab and focuses/reveals its panel;
- * `focus: false` (agent showTab without focus, monorepo#3045) mounts the tab
- * into the panel's tab list WITHOUT any active-tab, panel-focus, or reveal
- * change.
+ * (monorepo#2857), keeping its id so the live webview and main's
+ * registrations stay attached. `focus` (default true) opens the tab in the
+ * focused panel, activates it, and focuses/reveals its panel.
+ * `focus: false` (agent showTab without focus, monorepo#3045) reveals
+ * WITHOUT moving panel focus. The UI renders only a panel's active tab, so
+ * the tab activates in another fixed column when available, or in the sole
+ * fixed column otherwise (monorepo#3112).
  */
 export const restoreHiddenTab = createAction(
   'panelLayout/restoreHiddenTab',
@@ -1585,9 +1586,8 @@ export const updateFileTabPath = createAction<
  * Reveal a hidden (user-closed) agent-owned browser tab WITHOUT displacing or
  * refocusing `avoidPanelId` (the panel hosting the agent conversation whose
  * footer initiated the reveal): the tab is restored and activated in the
- * first other panel in layout order, or — when no other panel exists — the
- * avoided panel is split and the tab opens in the fresh panel. Panel focus
- * never moves, so the conversation keeps keyboard focus either way.
+ * first other fixed column in layout order. When no other column exists, it
+ * activates in the sole column. Panel focus never moves.
  */
 export const revealHiddenTabAvoidingPanel = createAction(
   'panelLayout/revealHiddenTabAvoidingPanel',
@@ -2256,13 +2256,48 @@ panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
   let ws = getWorkspaceState(state, wsId);
   const hiddenTab = getItem(ws.hiddenTabs, tabId);
   if (!hiddenTab) return state;
-  const targetPanelId =
-    ws.focusedPanelId && ws.panels[ws.focusedPanelId]
-      ? ws.focusedPanelId
-      : Object.keys(ws.panels)[0];
-  if (!targetPanelId) return state;
 
+  if (focus) {
+    const targetPanelId =
+      ws.focusedPanelId && ws.panels[ws.focusedPanelId]
+        ? ws.focusedPanelId
+        : Object.keys(ws.panels)[0];
+    if (!targetPanelId) return state;
+
+    ws = saveToHistory(ws, timestamp);
+    const panel = ws.panels[targetPanelId];
+    ws = {
+      ...ws,
+      hiddenTabs: removeItem(ws.hiddenTabs, tabId),
+      panels: {
+        ...ws.panels,
+        [targetPanelId]: {
+          ...panel,
+          tabs: [...panel.tabs, { ...hiddenTab }],
+          activeTabId: hiddenTab.id,
+          pristine: false,
+        },
+      },
+      focusedPanelId: targetPanelId,
+      pendingPanelReveal: createPanelRevealRequest(targetPanelId, hiddenTab.id, hiddenTab.id),
+    };
+    ws = addToFocusHistory(ws, targetPanelId, hiddenTab.id, timestamp);
+    return setWorkspaceState(state, wsId, ws);
+  }
+
+  // focus: false (agent showTab without focus, monorepo#3112): activate the
+  // tab in another fixed column when available, or in the sole column. This
+  // keeps the configured column count stable and does not move panel focus.
+  const previousFocusedPanelId = ws.focusedPanelId;
+  const order = getPanelOrder(ws.root);
+  const targetPanelId =
+    order.find((panelId) => panelId !== previousFocusedPanelId && ws.panels[panelId]) ??
+    (previousFocusedPanelId && ws.panels[previousFocusedPanelId]
+      ? previousFocusedPanelId
+      : order.find((panelId) => ws.panels[panelId]));
+  if (!targetPanelId) return state;
   ws = saveToHistory(ws, timestamp);
+
   const panel = ws.panels[targetPanelId];
   ws = {
     ...ws,
@@ -2272,21 +2307,16 @@ panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
       [targetPanelId]: {
         ...panel,
         tabs: [...panel.tabs, { ...hiddenTab }],
-        // focus: false (agent showTab without focus, monorepo#3045) mounts
-        // the tab without activating it or moving panel focus — the panel's
-        // current active tab and the user's focus stay untouched.
-        ...(focus ? { activeTabId: hiddenTab.id } : {}),
+        activeTabId: hiddenTab.id,
         pristine: false,
       },
     },
-    ...(focus
-      ? {
-          focusedPanelId: targetPanelId,
-          pendingPanelReveal: createPanelRevealRequest(targetPanelId, hiddenTab.id, hiddenTab.id),
-        }
-      : {}),
+    // Panel focus never moves: the reveal request scrolls the hosting panel
+    // into view, but content focus is gated on focusedPanelId
+    // (Panel.svelte), so keyboard focus stays where the user had it.
+    focusedPanelId: previousFocusedPanelId,
+    pendingPanelReveal: createPanelRevealRequest(targetPanelId, hiddenTab.id, hiddenTab.id),
   };
-  if (focus) ws = addToFocusHistory(ws, targetPanelId, hiddenTab.id, timestamp);
   return setWorkspaceState(state, wsId, ws);
 });
 // --- Prune Recently Closed ---
@@ -3886,30 +3916,14 @@ panelLayoutReducer.with(revealHiddenTabAvoidingPanel, (state, { payload }) => {
   if (!hiddenTab) return state;
 
   const previousFocusedPanelId = ws.focusedPanelId;
-  let targetPanelId = getPanelOrder(ws.root).find(
-    (panelId) => panelId !== avoidPanelId && ws.panels[panelId],
-  );
-  if (targetPanelId) {
-    ws = saveToHistory(ws, timestamp);
-  } else {
-    if (!avoidPanelId || !ws.panels[avoidPanelId]) return state;
-    // The avoided (conversation) panel is the only one: split it and mount
-    // the tab into the fresh panel instead of displacing the conversation.
-    const split = selfDispatch(
-      state,
-      splitPanel(
-        wsId,
-        avoidPanelId,
-        'horizontal',
-        { panelWidth: getPanelCreationWidthForType('browser') },
-        timestamp,
-      ),
-    );
-    const splitWs = getWorkspaceState(split, wsId);
-    targetPanelId = Object.keys(splitWs.panels).find((panelId) => !ws.panels[panelId]);
-    if (!targetPanelId) return state;
-    ws = splitWs;
-  }
+  const order = getPanelOrder(ws.root);
+  const targetPanelId =
+    order.find((panelId) => panelId !== avoidPanelId && ws.panels[panelId]) ??
+    (avoidPanelId && ws.panels[avoidPanelId]
+      ? avoidPanelId
+      : order.find((panelId) => ws.panels[panelId]));
+  if (!targetPanelId) return state;
+  ws = saveToHistory(ws, timestamp);
 
   const panel = ws.panels[targetPanelId];
   ws = {
@@ -3924,9 +3938,7 @@ panelLayoutReducer.with(revealHiddenTabAvoidingPanel, (state, { payload }) => {
         pristine: false,
       },
     },
-    // The conversation keeps panel focus: the reveal request scrolls the
-    // hosting panel into view, but content focus is gated on focusedPanelId
-    // (Panel.svelte), so keyboard focus never leaves the conversation.
+    // Keep the existing panel focus while revealing the restored tab.
     focusedPanelId: previousFocusedPanelId,
     pendingPanelReveal: createPanelRevealRequest(targetPanelId, hiddenTab.id, hiddenTab.id),
   };

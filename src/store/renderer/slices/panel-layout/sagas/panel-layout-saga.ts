@@ -106,6 +106,7 @@ import {
   restoreHiddenTab,
   resolveNewWorkspaceInitialAgent,
   revealDeferredSpecTab,
+  revealHiddenTabAvoidingPanel,
   resizePanelLayoutAtRootDivider,
   resizePanelLayoutRightEdge,
   selectNextTab,
@@ -1012,6 +1013,9 @@ export function* panelLayoutSaga(options?: {
     yield* takeEvery(setTabOwnerAgent, persistPanelLayout);
     // Hidden opens must persist across relaunch without changing panel history.
     yield* takeEvery(openHiddenTab, persistPanelLayout);
+    // Sidebar/footer reveals must persist so a restored owned tab does not
+    // revert to hidden on restart (monorepo#3112).
+    yield* takeEvery(revealHiddenTabAvoidingPanel, persistPanelLayout);
     yield* takeEvery(openBlankWorkingPanel, handleBlankWorkingPanel);
     yield* takeEvery(reopenClosedPanelColumn, handleReopenedPanelColumn);
     yield* fork(watchRightmostColumnRequests);
