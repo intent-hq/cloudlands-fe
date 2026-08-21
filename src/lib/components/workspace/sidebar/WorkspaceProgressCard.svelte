@@ -7,7 +7,7 @@
   import { extractOrderedSpecTaskIds, extractSpecTaskIds } from '$shared/utils/task-stats';
   import {
     selectWorkspaceTaskProgress,
-    selectWorkspaceTasksLoading,
+    selectWorkspaceTasksInitialized,
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import Fa from 'svelte-fa';
   import {
@@ -109,7 +109,10 @@
   // BE-owned task progress rollup served verbatim from the workspace-tasks slice
   // (PROTOCOL §5.4 `task.list`.stats). The renderer never re-derives counts.
   const taskStats$ = selectWorkspaceTaskProgress(workspaceIdStore);
-  const tasksLoading$ = selectWorkspaceTasksLoading(workspaceIdStore);
+  // Gate the progress placeholder on "not yet initialized" rather than "any
+  // fetch in flight" so event-driven refetches never remount the bar and
+  // replay its entrance animation (the flex-grow transition animates the diff).
+  const tasksInitialized$ = selectWorkspaceTasksInitialized(workspaceIdStore);
 
   // Aggregated presentational inputs for the workspace progress selectors. Kept
   // in sync via an $effect below once the derived state is available. PR identity
@@ -638,7 +641,7 @@
   // BE-owned task progress rollup (PROTOCOL §5.4): rendered verbatim from the
   // workspace-tasks slice — no client classification of task status.
   const taskStats = $derived($taskStats$);
-  const showFlameGraph = $derived($tasksLoading$ || taskStats.total > 0);
+  const showFlameGraph = $derived(!$tasksInitialized$ || taskStats.total > 0);
 
   // Tree node with computed weight (leaf count)
   interface TaskTreeNode {
@@ -1115,13 +1118,13 @@
 
   <div class="flex w-full flex-col gap-3.5 pb-2 text-left">
     {#if showFlameGraph}
-      <!-- Keep the task progress placeholder visible while canonical tasks load. -->
+      <!-- Keep the task progress placeholder visible until canonical tasks first load. -->
       <div class="flex h-5 flex-1 shrink-0" data-workspace-task-progress>
         <FlameGraph
           notes={$notes}
           onTaskClick={_onOpenNote}
           progress={completionRatio}
-          loading={$tasksLoading$}
+          loading={!$tasksInitialized$}
           animationKey={workspaceId}
         />
       </div>

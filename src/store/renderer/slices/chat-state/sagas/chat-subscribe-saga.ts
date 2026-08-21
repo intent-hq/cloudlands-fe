@@ -21,7 +21,11 @@
  *    otherwise close the first panel's still-acquiring cold-open slot —
  *    cancelPending resolves its `chat.subscribe` straight into an
  *    unsubscribe, its seq-0 snapshot is token-dropped, and hydration
- *    strands a full wait window. The hosting check spans every workspace's
+ *    strands a full wait window. A cold open whose slot is still acquiring
+ *    before its hydration flag exists spares the same way (monorepo#3073):
+ *    the chat-read saga defers the loading flag by at least one microtask,
+ *    so a same-flush double mount sweeps before the flag is visible. The
+ *    hosting check spans every workspace's
  *    layout (the same predicate the settle-time revisit uses), so a panel
  *    in a visible sibling workspace column spares too — and so does a tab
  *    persisted in a backgrounded workspace's layout, a bounded keep (until
@@ -246,10 +250,11 @@ interface SubscriptionCoordinator {
   /**
    * Agents spared from a close-all sweep — an applied clear's
    * (monorepo#2864) or the viewed-agent swap's (monorepo#2917) — because
-   * their transcript hydration sat in `loading`. Revisited when that
-   * hydration settles/fails: an agent with no open panel tab and not
-   * re-viewed had its panel genuinely closed mid-load, so the deferred close
-   * runs then instead of leaking the subscription.
+   * their transcript hydration sat in `loading` (or their cold open was
+   * still acquiring before the read saga flipped the flag, monorepo#3073).
+   * Revisited when that hydration settles/fails: an agent with no open
+   * panel tab and not re-viewed had its panel genuinely closed mid-load, so
+   * the deferred close runs then instead of leaking the subscription.
    */
   pendingClearWhileLoading: Set<string>;
 }
@@ -1072,7 +1077,23 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
   for (const [slotAgentId, slot] of [...coordinator.slots.entries()]) {
     if (slotAgentId === agentId) continue;
     if ((slot.wsId === CHIEF_WORKSPACE_ID) !== viewedIsChief) continue;
-    if ((yield* selectTranscriptHydration.effect(slotAgentId)) !== 'loading') continue;
+    const hydration = yield* selectTranscriptHydration.effect(slotAgentId);
+    // Same-task hole behind the loading spare (monorepo#3073): the chat-read
+    // saga defers transcriptHydrationStarted by at least one microtask (its
+    // worker first awaits the hydration-tail chain), so when two ChatPanels
+    // mount inside ONE synchronous flush the sibling's cold-open hydration
+    // still reads undefined (never started) at sweep time. That sibling is
+    // recognizable without the flag: its slot's open is still acquiring
+    // (desiredToken set, no subscription installed yet) — treat it exactly
+    // like the loading case. Warm reopens (hydration already settled/error)
+    // keep closing as before: no read-saga settle/fail is guaranteed to
+    // drive their deferred-clear revisit, and their resume anchor makes the
+    // eventual re-view cheap.
+    const acquiringColdOpen =
+      hydration === undefined &&
+      slot.desiredToken !== undefined &&
+      !coordinator.subscriptions.has(slotAgentId);
+    if (hydration !== 'loading' && !acquiringColdOpen) continue;
     if (yield* selectAgentHasOpenPanelTab.effect(slotAgentId)) spared.add(slotAgentId);
   }
   for (const slotAgentId of spared) coordinator.pendingClearWhileLoading.add(slotAgentId);

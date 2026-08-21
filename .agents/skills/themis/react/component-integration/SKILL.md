@@ -5,7 +5,7 @@ description: >-
   where to create/configure ReactStore, init/dispose ownership, app saga startup
   with reactStore.runSaga(sagaFn), direct selector signal reads in JSX/TSX,
   Babel transform/useSignals tracking, selector .useValue(...args) fallbacks for hook/plain-value boundaries, and
-  Store-first dispatch without Svelte or StreamingStore lifecycle rules.
+  Store-first dispatch and React lifecycle ownership.
 type: sub-skill
 requires:
   - react
@@ -30,10 +30,8 @@ one configured `ReactStore`, initialize it before React renders selector-using
 components, start app sagas after initialization, and dispatch through that same
 configured store instance from components and handlers.
 
-This is React Store family guidance. For the same app/package/code path, do not
-apply Svelte readable/template/context lifecycle rules or `StreamingStore`/Kefir
-observable patterns. If a mixed repository has a separate Svelte or Node/server
-app, route that app to its own Store-family skill independently.
+This is React Store family guidance for JSX/TSX components, custom hooks, and
+the app bootstrap boundary.
 
 ## 1. Create and configure the app `ReactStore`
 
@@ -237,12 +235,6 @@ function TodoScreen() {
 
 Create/configure the store once in an app module or explicit mount adapter.
 
-### Mixing Store families in one React app path
-
-Do not use Svelte `$selector` syntax, Svelte readables, `+layout.svelte`, Svelte
-context/`onDestroy`, `Store` from `@augmentcode/themis/svelte-store`,
-`StreamingStore`, or Kefir observables in this React app path.
-
 ### Treating direct selector signals as plain values
 
 ```tsx
@@ -264,4 +256,4 @@ fallback boundary.
   rendering, and component-local signal hooks.
 - `react/selector-lifecycle/SKILL.md` — selector call modes across components,handlers, tests, composition, explicit binding, and sagas.
 - `react/selectors/SKILL.md` — selector authoring for Preact React signals.
-- `../setup/SKILL.md` — first-time Store-family selection and setup.
+- `../../setup/SKILL.md` — first-time Store-family selection and setup.

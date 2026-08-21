@@ -6,7 +6,6 @@ import ts from 'typescript';
 const APPROVED_MIDDLEWARE = new Map([
   ['src/store/utils/store-guard-middleware.ts', 'createStoreGuardMiddleware'],
   ['src/store/renderer/middlewares/batch.ts', 'createBatchingMiddleware'],
-  ['src/store/renderer/middlewares/logger.ts', 'createLoggerMiddleware'],
   [
     'src/store/renderer/middlewares/state-reference-checks.ts',
     'createReferenceChangeDetectorMiddleware',
@@ -471,7 +470,7 @@ export function findRendererSideEffectBoundaryViolations(files) {
         if (directStore && (node.arguments?.length ?? 0) > 1) {
           const consumesConfiguredRegistry =
             filePath === CONFIGURED_STORE_PATH &&
-            node.arguments?.length === 2 &&
+            (node.arguments?.length ?? 0) >= 2 &&
             expressionOrigin(filePath, node.arguments[1]) === MIDDLEWARE_REGISTRY_ORIGIN;
           if (consumesConfiguredRegistry) configuredRegistryConsumptions += 1;
           else violations.push(`${filePath}: direct Store middleware registration is not allowed`);
@@ -507,7 +506,7 @@ export function findRendererSideEffectBoundaryViolations(files) {
           .some((name, i) => name !== expected[i])
       ) {
         violations.push(
-          `${filePath}: registry must contain exactly the five approved middleware factories`,
+          `${filePath}: registry must contain exactly the four approved middleware factories`,
         );
       }
     }

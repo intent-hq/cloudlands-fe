@@ -5,7 +5,7 @@ description: >-
   takeLatestFromSelector, takeEveryFromSelector, or takeLeadingFromSelector for
   continuous watchers; use createChannelFromSelector only for custom race,
   conditional, or timeout flows and close it in finally. For conceptual examples,
-  link to docs/SAGAS.md.
+  link to @augmentcode/themis/docs/SAGAS.md.
 type: sub-skill
 requires:
   - core
@@ -18,11 +18,11 @@ triggers:
 ---
 # Selector Channels — agent implementation rules
 
-Use this skill when a saga should react to selector value changes instead of action dispatches. Keep detailed examples in `docs/SAGAS.md`; this skill is for quick implementation decisions and guardrails.
+Use this skill when a saga should react to selector value changes instead of action dispatches. Keep detailed examples in `@augmentcode/themis/docs/SAGAS.md`; this skill is for quick implementation decisions and guardrails.
 
 ## Canonical references
 
-- Human guide: `docs/SAGAS.md#selector-channel-effects`
+- Human guide: `@augmentcode/themis/docs/SAGAS.md#selector-channel-effects`
 - Public API: `@augmentcode/themis/utils/sagas/selector-channel-effects` or aggregate `@augmentcode/themis/saga`.
 - Related skills: `core/sagas`, `core/wait-for`, `core/channel-effects`, plus the selected Store family selector lifecycle skill when direct selector call modes matter.
 
@@ -177,7 +177,7 @@ function* watchTodoGood(todoId: string) {
 
 ## See also
 
-- `docs/SAGAS.md` — full selector-channel examples and saga context.
+- `@augmentcode/themis/docs/SAGAS.md` — full selector-channel examples and saga context.
 - `core/wait-for` — one-shot selector waits.
 - `core/channel-effects` — generic `EventChannel` consumers.
 - Selected Store family selector lifecycle skill — selector initialization and call modes.

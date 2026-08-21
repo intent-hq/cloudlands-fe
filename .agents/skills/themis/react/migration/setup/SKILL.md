@@ -3,8 +3,7 @@ name: react/migration/setup
 description: >-
   Pre-migration ReactStore setup. Use the canonical setup skill plus ReactStore
   routing to create the configured store, initialize/dispose it at the React app
-  owner, register app reducers, and start app sagas. Svelte +layout.svelte and
-  onDestroy setup are non-applicable contrasts only.
+  owner, register app reducers, and start app sagas.
 type: sub-skill
 requires:
   - react
@@ -27,8 +26,6 @@ Use the npm package directly. Do not copy package source files into the app.
 import { ReactStore } from "@augmentcode/themis/react-store";
 import type { StoreState } from "@augmentcode/themis/types";
 ```
-
-React migration does not use `@augmentcode/themis/svelte-store`, `+layout.svelte`,`onDestroy`, Svelte context, or Svelte readables.
 
 ## 2. Create an app-owned ReactStore module
 
@@ -109,4 +106,4 @@ Then add the reducer to the `ReactStore` constructor map and start the saga from
 - `ReactStore` comes from `@augmentcode/themis/react-store`.
 - Store initialization happens before React renders selector users.
 - App sagas start with `reactStore.runSaga(sagaFn)` after `init()`.
-- No active Svelte setup concepts appear in React setup instructions.
+- Setup instructions keep initialization and saga ownership at the React app boundary.

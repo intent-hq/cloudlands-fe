@@ -31,9 +31,8 @@ Before editing code or docs under this skill:
 - **MUST** read this skill plus every linked skill/doc that applies to the touched files.
 - **MUST** cite the applicable skills/docs in the implementation plan or completion handoff, including the rules used.
 - **MUST** include verifier-ready evidence: searches, tests, or diff checks proving the cited rules were followed.
-- **MUST** keep the migrated Svelte app on the Svelte Store family; do not solve a
-  Svelte migration by introducing StreamingStore, Kefir/observable selectors, or
-  streaming lifecycle/setup patterns into the same app.
+- **MUST** keep the migrated app on the Svelte Store family described by this
+  subtree.
 - **SHOULD** stop and ask when rules conflict or scope is unclear.
 - **NEVER** claim completion when a required skill/doc was skipped or the handoff lacks compliance evidence.
 
@@ -50,9 +49,7 @@ Migrate one store at a time, simplest and most isolated first. Each slicelands i
 
 Reducers must stay pure (no `fetch`, no `localStorage`, no `Date.now()`, nomutation) and state must stay structured-cloneable (no `Date` / `Map` /`Set` / `RegExp` / class instances / functions / `Promise`). Side effects —subscriptions, `$effect`, timers, IPC, fetches — go into sagas. Every `selectFoo()` readable call is a component-init API: capture it at the top ofthe `<script>` block, never inside callbacks, or Svelte will throw`lifecycle_outside_component`. Dispatch through the configured app `Store` instance.
 
-Migration chooses the Svelte Store family for that app. A separate Node/server or
-worker package in the same repository may choose StreamingStore, but this Svelte
-app must not mix in StreamingStore/Kefir selector patterns.
+Migration uses the Svelte Store family for the app being migrated.
 
 ## Recommended Order
 
@@ -129,9 +126,9 @@ const initialState: CounterState = { count: 0 };
 export const setCount = createAction<[value: number]>("counter/setCount");
 export const increment = createAction("counter/increment");
 
-export const counterReducer = createReducer<CounterState>(initialState);
-counterReducer.with(setCount, (state, { payload: [value] }) => ({ ...state, count: value }));
-counterReducer.with(increment, (state) => ({ ...state, count: state.count + 1 }));
+export const counterReducer = createReducer<CounterState>(initialState)
+  .with(setCount, (state, { payload: [value] }) => ({ ...state, count: value }))
+  .with(increment, (state) => ({ ...state, count: state.count + 1 }));
 ```
 
 ### 3. Convert derived state to Store-bound selectors
