@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BackendNotification } from './backend-transport';
 
+const { reportStreamLifecycleSpy } = vi.hoisted(() => ({ reportStreamLifecycleSpy: vi.fn() }));
+
+vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/stream-lifecycle-telemetry')>()),
+  reportStreamLifecycle: reportStreamLifecycleSpy,
+}));
+
 // FAKE transport only: no request/notification reaches the real daemon. Tests
 // assert the JSON-RPC method + params `chat.subscribe`/`chat.unsubscribe` emit
 // and that PROTOCOL §7.1-shaped pushes (seq-0 snapshot + block deltas) are
@@ -305,6 +312,16 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
 
     expect(mockedRequest).toHaveBeenCalledWith('chat.unsubscribe', { subscriptionId: 'sub-1' });
     expect(mockedRequest.mock.calls.filter(([m]) => m === 'chat.subscribe')).toHaveLength(2);
+    expect(reportStreamLifecycleSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'subscription',
+        event: 'push',
+        pushKind: 'delta',
+        pushSeq: 3,
+        reconcilerResult: 'gap',
+        callbackResult: 'not-invoked',
+      }),
+    );
 
     // Recovery seq-0 snapshot on the fresh registration rebuilds the transcript.
     snapshotPush('sub-2', 0, { ...SEEDED_SNAPSHOT, totalMessages: 3 });
@@ -341,6 +358,16 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     expect(seen.length).toBe(emitsBefore);
     expect(mockedRequest.mock.calls.filter(([m]) => m === 'chat.subscribe')).toHaveLength(1);
     expect(mockedRequest).not.toHaveBeenCalledWith('chat.unsubscribe', expect.anything());
+    expect(reportStreamLifecycleSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'subscription',
+        event: 'push',
+        pushKind: 'delta',
+        pushSeq: 1,
+        reconcilerResult: 'stale',
+        callbackResult: 'not-invoked',
+      }),
+    );
     off();
   });
 
@@ -950,6 +977,17 @@ describe('LiveChatClient.subscribe (ported delta-path regressions)', () => {
     const ids = last.messages.map((m) => (m as { id: string }).id);
     expect(ids).toEqual(['0190a1b2-user', '0190a300-asst']);
     expect(ids).not.toContain('ghost-asst');
+    expect(reportStreamLifecycleSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'push',
+        pushKind: 'snapshot',
+        pushSeq: 0,
+        subscriptionGeneration: 3,
+        transportGeneration: 1,
+        reconcilerResult: 'reset',
+        callbackResult: 'delivered',
+      }),
+    );
     off();
   });
 
@@ -1242,6 +1280,14 @@ describe('LiveChatClient.subscribe phase reporting (onPhase)', () => {
 
     emitReconnect();
     expect(phases).toEqual(['connecting']);
+    expect(reportStreamLifecycleSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'transport-reconnected',
+        subscriptionGeneration: 2,
+        transportGeneration: 1,
+        callbackResult: 'not-invoked',
+      }),
+    );
     await vi.advanceTimersByTimeAsync(0);
     expect(phases).toEqual(['connecting', 'awaiting-snapshot']);
 

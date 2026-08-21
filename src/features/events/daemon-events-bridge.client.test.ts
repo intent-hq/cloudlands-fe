@@ -2,6 +2,13 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentMessage, AgentSession } from '$shared/types';
 
+const { reportStreamLifecycleSpy } = vi.hoisted(() => ({ reportStreamLifecycleSpy: vi.fn() }));
+
+vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/stream-lifecycle-telemetry')>()),
+  reportStreamLifecycle: reportStreamLifecycleSpy,
+}));
+
 vi.mock('svelte', async (importOriginal) => ({
   ...(await importOriginal<typeof import('svelte')>()),
   getContext: () => undefined,
@@ -764,6 +771,22 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
 
     handler(notification('agent:stream:end', { agentId: AGENT, streamId: STREAM_ID }));
+    const terminalTelemetry = reportStreamLifecycleSpy.mock.calls
+      .map(([diagnostic]) => diagnostic)
+      .filter((diagnostic) =>
+        ['agent-stream-end-received', 'stream-complete-dispatched'].includes(diagnostic.event),
+      );
+    expect(terminalTelemetry).toEqual([
+      expect.objectContaining({
+        event: 'agent-stream-end-received',
+        callbackResult: 'received',
+      }),
+      expect.objectContaining({
+        event: 'stream-complete-dispatched',
+        callbackResult: 'dispatched',
+      }),
+    ]);
+    expect(terminalTelemetry[0]).not.toHaveProperty('storeStreamState');
 
     assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
@@ -2423,6 +2446,19 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     );
 
     expect(readAssistantMessages()).toHaveLength(0);
+    const terminalTelemetry = reportStreamLifecycleSpy.mock.calls
+      .map(([diagnostic]) => diagnostic)
+      .filter((diagnostic) => diagnostic.event.startsWith('agent-stream-end'));
+    expect(terminalTelemetry).toEqual([
+      expect.objectContaining({
+        event: 'agent-stream-end-received',
+        callbackResult: 'received',
+      }),
+      expect.objectContaining({
+        event: 'agent-stream-end-ignored',
+        callbackResult: 'ignored',
+      }),
+    ]);
   });
 
   it('persisted interrupted row reconciles in: blocks stay intact and the Stopped indicator shows', async () => {
@@ -3252,7 +3288,9 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
 
     const failedCalls = dispatchCalls.filter((a) => a.type === 'chatState/sendFailed');
     expect(failedCalls).toEqual([
-      expect.objectContaining({ payload: [AGENT, 'boom', 'turn-failed-1'] }),
+      expect.objectContaining({
+        payload: [AGENT, 'boom', 'turn-failed-1', { turnIdCorrelation: '12c09885d6571b4e' }],
+      }),
     ]);
   });
 
@@ -3264,7 +3302,9 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
     handler(notification('agent:failed', { agentId: AGENT, error: 'boom', status: 'error' }));
 
     const failedCalls = dispatchCalls.filter((a) => a.type === 'chatState/sendFailed');
-    expect(failedCalls).toEqual([expect.objectContaining({ payload: [AGENT, 'boom', undefined] })]);
+    expect(failedCalls).toEqual([
+      expect.objectContaining({ payload: [AGENT, 'boom', undefined, undefined] }),
+    ]);
   });
 });
 
@@ -8502,6 +8542,7 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       const agentId = 'agent-failed-1';
       const messageId = 'msg-failed-1';
       const streamId = 'stream-failed-1';
+      const turnId = 'turn-failed-1';
       const errorMsg = 'Agent spawn failed after 3 retries';
 
       appStore.dispatch(upsertSession({ id: agentId, name: 'Test Agent', workspaceId: WS }));
@@ -8524,14 +8565,77 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       handler!(
         notification('agent:failed', {
           agentId,
+          turnId,
           error: errorMsg,
           status: 'error',
         }),
       );
 
+      const failureTelemetry = reportStreamLifecycleSpy.mock.calls
+        .map(([diagnostic]) => diagnostic)
+        .filter((diagnostic) => diagnostic.event.startsWith('agent-failed'));
+      expect(failureTelemetry).toEqual([
+        expect.objectContaining({
+          event: 'agent-failed-received',
+          turnCorrelation: '66637f77eb5cec86',
+          turnIdCorrelation: '12c09885d6571b4e',
+          callbackResult: 'received',
+        }),
+        expect.objectContaining({
+          event: 'agent-failed-dispatched',
+          turnCorrelation: '66637f77eb5cec86',
+          turnIdCorrelation: '12c09885d6571b4e',
+          callbackResult: 'dispatched',
+        }),
+      ]);
+      expect(failureTelemetry[0]).not.toHaveProperty('storeStreamState');
+
       const chatState = appStore.state.chatState.byAgentId[agentId];
       expect(chatState).toBeDefined();
       expect(chatState.error).toBe(errorMsg);
+      expect(chatState.failureCorrelation).toEqual({
+        turnCorrelation: '66637f77eb5cec86',
+        turnIdCorrelation: '12c09885d6571b4e',
+      });
+    });
+
+    it('keeps turn-only correlation across receipt, dispatch, and store before output', async () => {
+      const agentId = 'agent-failed-preoutput';
+      const turnId = 'turn-failed-preoutput';
+      appStore.dispatch(upsertSession({ id: agentId, name: 'Test Agent', workspaceId: WS }));
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        notification('agent:failed', {
+          agentId,
+          turnId,
+          error: 'failed before output',
+          status: 'error',
+        }),
+      );
+
+      const failureTelemetry = reportStreamLifecycleSpy.mock.calls
+        .map(([diagnostic]) => diagnostic)
+        .filter((diagnostic) => diagnostic.event.startsWith('agent-failed'));
+      expect(failureTelemetry).toEqual([
+        expect.objectContaining({
+          event: 'agent-failed-received',
+          turnIdCorrelation: '1b48e6bf735176c9',
+          correlationBasis: 'turn',
+          callbackResult: 'received',
+        }),
+        expect.objectContaining({
+          event: 'agent-failed-dispatched',
+          turnIdCorrelation: '1b48e6bf735176c9',
+          correlationBasis: 'turn',
+          callbackResult: 'dispatched',
+        }),
+      ]);
+      expect(failureTelemetry[0]).not.toHaveProperty('turnCorrelation');
+      expect(appStore.state.chatState.byAgentId[agentId]?.failureCorrelation).toEqual({
+        turnIdCorrelation: '1b48e6bf735176c9',
+      });
     });
 
     it('sets default error message when agent:failed has no explicit error', async () => {

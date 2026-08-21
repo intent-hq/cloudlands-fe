@@ -38,6 +38,11 @@ import type {
   Unsubscribe,
 } from '../app-client';
 import { backendRequest, onBackendNotification, onBackendReconnected } from './backend-transport';
+import {
+  reportStreamLifecycle,
+  streamTurnCorrelation,
+  type StreamLifecycleDiagnostic,
+} from '$lib/utils/stream-lifecycle-telemetry';
 
 /** Shape of a `chat.subscribe` seq-0 snapshot per PROTOCOL §7.1. */
 interface ChatSnapshotPayload {
@@ -168,6 +173,26 @@ function parseChatPush(method: string, params: unknown): ChatPush | null {
     };
   }
   return null;
+}
+
+/** Assistant message id carried by this content push, never returned raw to diagnostics. */
+function pushTurnCorrelation(push: ChatPush): string | undefined {
+  if (push.kind === 'snapshot') {
+    const messages = extractSnapshot(push.snapshot).messages;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role === 'assistant') return streamTurnCorrelation(message.id);
+    }
+    return undefined;
+  }
+  const entities = [...(push.delta?.updated ?? []), ...(push.delta?.added ?? [])];
+  for (let index = entities.length - 1; index >= 0; index -= 1) {
+    const entity = parseDeltaEntity(entities[index]);
+    if (entity && (entity.role === undefined || entity.role === 'assistant')) {
+      return streamTurnCorrelation(entity.messageId);
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -563,38 +588,70 @@ export class LiveChatClient implements ChatClient {
     // `chat.subscribe` requests, so an out-of-order subscribe reply is
     // discarded and best-effort unsubscribed (the delta-subscription pattern).
     let generation = 0;
+    // Connection generation is separate from registration churn: only an
+    // observed transport reconnect advances it.
+    let transportGeneration = 0;
+    let sawSnapshot = false;
     // Gap seen: deltas are ignored until the recovery snapshot lands.
     let awaitingResnapshot = false;
     // Pre-ack buffer: pushes that raced the subscribe reply are held and
     // replayed once the registration resolves to their id.
     let buffered: ChatPush[] = [];
 
-    const emit = (): void => {
+    const emit = (diagnostic: StreamLifecycleDiagnostic): void => {
       if (disposed) return;
-      handler(reconciler.transcript());
+      try {
+        handler(reconciler.transcript());
+        reportStreamLifecycle({ ...diagnostic, callbackResult: 'delivered' });
+      } catch (error) {
+        reportStreamLifecycle({ ...diagnostic, callbackResult: 'threw' });
+        throw error;
+      }
     };
 
     // Snapshot-apply emits carry `fromSnapshot: true` (plus the §7.1 resume
     // disposition when the registration requested one) so consumers can seed
     // hydration from the authoritative newest page.
-    const emitSnapshot = (resumed?: boolean): void => {
+    const emitSnapshot = (
+      resumed: boolean | undefined,
+      diagnostic: StreamLifecycleDiagnostic,
+    ): void => {
       if (disposed) return;
       const transcript = reconciler.transcript();
-      handler({
-        ...transcript,
-        fromSnapshot: true,
-        ...(resumed === undefined ? {} : { resumed }),
-      });
+      try {
+        handler({
+          ...transcript,
+          fromSnapshot: true,
+          ...(resumed === undefined ? {} : { resumed }),
+        });
+        reportStreamLifecycle({ ...diagnostic, callbackResult: 'delivered' });
+      } catch (error) {
+        reportStreamLifecycle({ ...diagnostic, callbackResult: 'threw' });
+        throw error;
+      }
     };
 
     const processPush = (push: ChatPush): void => {
       if (disposed) return;
+      const diagnostic = {
+        stage: 'subscription' as const,
+        event: 'push',
+        turnCorrelation: pushTurnCorrelation(push),
+        subscriptionGeneration: generation,
+        transportGeneration,
+        pushKind: push.kind,
+        pushSeq: push.seq,
+      };
       if (subscriptionId === undefined) {
         buffered.push(push);
         if (buffered.length > MAX_BUFFERED_PUSHES) buffered.shift();
+        reportStreamLifecycle({ ...diagnostic, callbackResult: 'buffered' });
         return;
       }
-      if (push.subscriptionId !== subscriptionId) return;
+      if (push.subscriptionId !== subscriptionId) {
+        reportStreamLifecycle({ ...diagnostic, callbackResult: 'ignored' });
+        return;
+      }
       if (push.kind === 'snapshot') {
         awaitingResnapshot = false;
         clearSnapshotTimer();
@@ -609,17 +666,42 @@ export class LiveChatClient implements ChatClient {
         // internal re-registration must take the full newest page.
         const resumed = resumeAnchor === undefined ? undefined : extractResumedFlag(push.snapshot);
         resumeAnchor = undefined;
-        if (reconciler.applySnapshot(push.seq, push.snapshot)) emitSnapshot(resumed);
+        if (reconciler.applySnapshot(push.seq, push.snapshot)) {
+          const reconcilerResult = sawSnapshot ? 'reset' : 'applied';
+          sawSnapshot = true;
+          emitSnapshot(resumed, { ...diagnostic, reconcilerResult });
+        } else {
+          reportStreamLifecycle({
+            ...diagnostic,
+            reconcilerResult: 'duplicate',
+            callbackResult: 'not-invoked',
+          });
+        }
       } else if (!awaitingResnapshot) {
         const outcome = reconciler.applyDelta(
           push.seq,
           push.delta ?? { added: [], updated: [], removedIds: [] },
         );
-        if (outcome === 'applied') emit();
+        if (outcome === 'applied') emit({ ...diagnostic, reconcilerResult: 'applied' });
         // Sequence gap (or a delta before any snapshot): self-heal via a
         // fresh registration whose seq-0 snapshot rebuilds the transcript.
         // Stale duplicates are ignored silently.
-        else if (outcome === 'gap') resnapshot();
+        else if (outcome === 'gap') {
+          reportStreamLifecycle({
+            ...diagnostic,
+            reconcilerResult: 'gap',
+            callbackResult: 'not-invoked',
+          });
+          resnapshot();
+        } else {
+          reportStreamLifecycle({
+            ...diagnostic,
+            reconcilerResult: 'stale',
+            callbackResult: 'not-invoked',
+          });
+        }
+      } else {
+        reportStreamLifecycle({ ...diagnostic, callbackResult: 'ignored' });
       }
     };
 
@@ -627,6 +709,13 @@ export class LiveChatClient implements ChatClient {
       clearRetryTimer();
       generation += 1;
       const thisGeneration = generation;
+      reportStreamLifecycle({
+        stage: 'subscription',
+        event: 'registration-start',
+        subscriptionGeneration: thisGeneration,
+        transportGeneration,
+        callbackResult: 'not-invoked',
+      });
       // A recovery registration (gap) reports `resyncing`; a first/reconnect
       // registration reports `connecting`; a backoff retry keeps reporting
       // `delayed` until a snapshot hydrates.
@@ -649,6 +738,13 @@ export class LiveChatClient implements ChatClient {
         .then((result) => {
           const id = result?.subscriptionId;
           if (generation !== thisGeneration || disposed) {
+            reportStreamLifecycle({
+              stage: 'subscription',
+              event: 'registration-stale',
+              subscriptionGeneration: thisGeneration,
+              transportGeneration,
+              callbackResult: 'ignored',
+            });
             // Stale resolve: a newer registration or a teardown superseded
             // this attempt while it was in flight. Never store the id and
             // best-effort release the daemon-side subscription it created.
@@ -660,6 +756,13 @@ export class LiveChatClient implements ChatClient {
             return;
           }
           subscriptionId = id;
+          reportStreamLifecycle({
+            stage: 'subscription',
+            event: 'registration-ack',
+            subscriptionGeneration: thisGeneration,
+            transportGeneration,
+            callbackResult: 'not-invoked',
+          });
           // Ack received: awaiting the seq-0 snapshot (a recovery snapshot
           // keeps reporting `resyncing`; a backoff retry keeps `delayed`).
           if (!awaitingResnapshot && !retrying) setPhase('awaiting-snapshot');
@@ -679,7 +782,16 @@ export class LiveChatClient implements ChatClient {
           // Registration failure: report `delayed` and schedule a backoff
           // retry so the stream recovers without a transport reconnect
           // (intent-hq/monorepo#1394); the transcript keeps its last state.
-          if (generation === thisGeneration) scheduleRetry();
+          if (generation === thisGeneration) {
+            reportStreamLifecycle({
+              stage: 'subscription',
+              event: 'registration-failed',
+              subscriptionGeneration: thisGeneration,
+              transportGeneration,
+              callbackResult: 'not-invoked',
+            });
+            scheduleRetry();
+          }
         });
     };
 
@@ -724,7 +836,15 @@ export class LiveChatClient implements ChatClient {
     // re-register for a fresh seq-0 snapshot.
     const offReconnect = onBackendReconnected(() => {
       if (disposed) return;
+      transportGeneration += 1;
       generation += 1;
+      reportStreamLifecycle({
+        stage: 'subscription',
+        event: 'transport-reconnected',
+        subscriptionGeneration: generation,
+        transportGeneration,
+        callbackResult: 'not-invoked',
+      });
       subscriptionId = undefined;
       awaitingResnapshot = false;
       buffered = [];

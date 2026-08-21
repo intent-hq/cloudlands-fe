@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { channel as createChannel, runSaga, stdChannel } from 'redux-saga';
 
+const { reportStreamLifecycleSpy } = vi.hoisted(() => ({ reportStreamLifecycleSpy: vi.fn() }));
+
+vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/stream-lifecycle-telemetry')>()),
+  reportStreamLifecycle: reportStreamLifecycleSpy,
+}));
+
 import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import {
@@ -55,6 +62,7 @@ function harness() {
 
 describe('agentStreamSaga', () => {
   it('updates rich tool blocks in place, preserves order, and finalizes interrupted streams', async () => {
+    reportStreamLifecycleSpy.mockClear();
     const run = harness();
     run.channel.put(agentStreamUpdateReceived({
       agentId: AGENT, workspaceId: WS, handlerSessionId: AGENT, source: 'sendMessage',
@@ -110,6 +118,15 @@ describe('agentStreamSaga', () => {
       [AGENT, 'msg-1'],
       [AGENT, 'msg-1'],
     ]);
+    expect(reportStreamLifecycleSpy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        stage: 'store',
+        event: 'update-applied',
+        callbackResult: 'observed',
+        storeStreamState: 'idle',
+        blockCount: 3,
+      }),
+    );
     run.task.cancel();
     await run.task.toPromise();
   });

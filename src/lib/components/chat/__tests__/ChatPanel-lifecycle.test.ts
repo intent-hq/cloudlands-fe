@@ -41,6 +41,11 @@ const mocks = vi.hoisted(() => {
     resizeDisconnect: vi.fn(),
     resizeConstructor: vi.fn(),
     agentMessages: mutableReadable<unknown[]>([]),
+    chatError: mutableReadable<string | null>(null),
+    failureCorrelation: mutableReadable<
+      { turnCorrelation?: string; turnIdCorrelation?: string } | undefined
+    >(undefined),
+    reportStreamLifecycle: vi.fn(),
     animateScrollTo: vi.fn(),
     awaitingSwitchBackSnapshot: mutableReadable(false),
     awaitingUtilityFooter: mutableReadable(false),
@@ -65,6 +70,11 @@ const mocks = vi.hoisted(() => {
     selector,
   };
 });
+
+vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/stream-lifecycle-telemetry')>()),
+  reportStreamLifecycle: mocks.reportStreamLifecycle,
+}));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -106,7 +116,10 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectAwaitingUtilityFooter: Object.assign(() => mocks.awaitingUtilityFooter, {
     select: () => false,
   }),
-  selectChatError: mocks.selector(null),
+  selectChatError: Object.assign(() => mocks.chatError, { select: () => null }),
+  selectChatFailureCorrelation: Object.assign(() => mocks.failureCorrelation, {
+    select: () => undefined,
+  }),
   selectChatIsStalled: mocks.selector(false),
   selectChatLastChunkTime: mocks.selector(null),
   selectChatLiveStreamPhase: mocks.selector(null),
@@ -390,6 +403,8 @@ beforeEach(() => {
     return action;
   });
   mocks.agentMessages.set([]);
+  mocks.chatError.set(null);
+  mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
   mocks.awaitingUtilityFooter.set(false);
   mocks.transcriptHydration.set('settled');
@@ -415,6 +430,137 @@ afterEach(() => {
 });
 
 describe('ChatPanel mounted lifecycle', () => {
+  it('does not attach a new pre-output terminal error to the previous assistant row', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      {
+        id: 'assistant-dom-1',
+        role: 'assistant',
+        content: 'visible answer',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+
+    expect(mocks.reportStreamLifecycle).not.toHaveBeenCalled();
+    await tick();
+    await tick();
+
+    const assistantRow = view.container.querySelector(
+      '[data-message-role="assistant"][data-message-id="assistant-dom-1"]',
+    );
+    expect(assistantRow).not.toBeNull();
+    expect(mocks.reportStreamLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'render',
+        event: 'assistant-message-committed',
+        correlationBasis: 'assistant-message',
+        blockCount: assistantRow!.querySelectorAll('[data-message-content-block]').length,
+        storeStreamState: 'idle',
+        callbackResult: 'delivered',
+      }),
+    );
+
+    mocks.reportStreamLifecycle.mockClear();
+    mocks.failureCorrelation.set({ turnIdCorrelation: '12c09885d6571b4e' });
+    mocks.chatError.set('terminal failure');
+    await tick();
+    await tick();
+
+    expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
+    const errorDiagnostic = mocks.reportStreamLifecycle.mock.calls
+      .map(([diagnostic]) => diagnostic)
+      .find((diagnostic) => diagnostic.event === 'terminal-error-committed');
+    expect(errorDiagnostic).toEqual(
+      expect.objectContaining({
+        stage: 'render',
+        turnIdCorrelation: '12c09885d6571b4e',
+        correlationBasis: 'turn',
+        terminalErrorVisible: true,
+        storeStreamState: 'error',
+        callbackResult: 'delivered',
+      }),
+    );
+    expect(errorDiagnostic).not.toHaveProperty('turnCorrelation');
+    expect(mocks.reportStreamLifecycle).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'assistant-message-committed' }),
+    );
+  });
+
+  it('labels a DOM-observed terminal error unjoinable when no safe correlation exists', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      {
+        id: 'assistant-old-unjoinable',
+        role: 'assistant',
+        content: 'old answer',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+
+    await tick();
+    await tick();
+    mocks.reportStreamLifecycle.mockClear();
+    mocks.chatError.set('terminal failure');
+    await tick();
+    await tick();
+
+    expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
+    expect(mocks.reportStreamLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'terminal-error-committed',
+        correlationBasis: 'unjoinable',
+        terminalErrorVisible: true,
+      }),
+    );
+    expect(mocks.reportStreamLifecycle).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'terminal-error-committed',
+        turnCorrelation: expect.any(String),
+      }),
+    );
+  });
+
+  it('does not claim an assistant row is committed while first hydration hides it', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.transcriptHydratedOnce.set(false);
+    mocks.transcriptHydration.set('loading');
+    mocks.agentMessages.set([
+      {
+        id: 'assistant-hidden-1',
+        role: 'assistant',
+        content: 'not yet visible',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+
+    await tick();
+    await tick();
+
+    expect(
+      view.container.querySelector(
+        '[data-message-role="assistant"][data-message-id="assistant-hidden-1"]',
+      ),
+    ).toBeNull();
+    expect(mocks.reportStreamLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'render',
+        event: 'assistant-message-not-committed',
+        correlationBasis: 'assistant-message',
+        blockCount: 0,
+        callbackResult: 'ignored',
+      }),
+    );
+  });
+
   it('restores active typing synchronously when the whole chat panel is recreated', async () => {
     // Stateful mock daemon: the flush-at-unmount save is issued before the
     // remount's get on the same ordered connection, so the daemon answers
