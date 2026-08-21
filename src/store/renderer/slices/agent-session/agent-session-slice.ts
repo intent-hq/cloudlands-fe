@@ -1128,6 +1128,18 @@ export const clearProcessQueueHint = createAction<[agentId: string]>(
   'agentSessions/clearProcessQueueHint',
 );
 
+/**
+ * Agent process evicted (agent:process:evicted, §6.5). The daemon parked the
+ * agent's OS process — dropped from the spawn queue, or reaped by the idle
+ * TTL sweep (reason "idle-ttl", intent-hq/intentd#1356). The session row
+ * survives and the next send transparently respawns the process, so this is
+ * NOT an "agent ended" transition. The daemon only evicts idle processes,
+ * so any FE busy indicator at that moment is provably stale (monorepo#3040):
+ * clear the queue hint and the optimistic busy flags.
+ * Payload: [agentId]
+ */
+export const processEvicted = createAction<[agentId: string]>('agentSessions/processEvicted');
+
 /** Rename agent session */
 export const renameSession = createAction<[agentId: string, name: string]>(
   'agentSessions/renameSession',
@@ -1465,6 +1477,22 @@ agentSessionReducer.with(setProcessQueueHint, (state, { payload: [agentId, used,
 agentSessionReducer.with(clearProcessQueueHint, (state, { payload: [agentId] }) =>
   updateSessionFields(state, agentId, {
     processQueueHint: undefined,
+  }),
+);
+// Process parked (queue drop or idle-TTL reap): the daemon only evicts idle
+// processes, so besides the queue hint, clear any stale optimistic busy flags
+// (and the sticky liveTurnOpen) that would otherwise render a phantom
+// "Thinking" indicator until the next canonical event (monorepo#3040). The
+// backend-canonical `status` is left untouched — the next canonical event or
+// hydration snapshot owns it.
+agentSessionReducer.with(processEvicted, (state, { payload: [agentId] }) =>
+  updateSessionFields(state, agentId, {
+    processQueueHint: undefined,
+    isStreaming: false,
+    isProcessing: false,
+    isResponding: false,
+    liveTurnOpen: false,
+    liveTurnOpenedAt: undefined,
   }),
 );
 // -----------------------------------------------------------------------

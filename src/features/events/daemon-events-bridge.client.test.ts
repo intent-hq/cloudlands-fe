@@ -541,6 +541,46 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     });
   });
 
+  it('clears the queue hint and stale busy flags on agent:process:evicted (idle-ttl reap, monorepo#3040)', async () => {
+    // A stale optimistic "Thinking" state: the daemon only evicts idle
+    // processes (intent-hq/intentd#1356), so any busy indicator at eviction
+    // time is provably stale — the bridge must clear it, not leave a phantom
+    // spinner until the next canonical event.
+    seedSession({
+      status: AgentStatus.Active,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+      liveTurnOpen: true,
+      liveTurnOpenedAt: '2026-01-01T12:00:00.000Z',
+      processQueueHint: { waiting: true, used: 3, cap: 3, reason: 'slots' },
+    } as Partial<AgentSession>);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §6.5: AgentProcessEvictedEvent carries { agentId, used, cap,
+    // reason }; reason "idle-ttl" is the TTL sweep (intent-hq/intentd#1356).
+    handler(
+      notification('agent:process:evicted', {
+        agentId: AGENT,
+        used: 2,
+        cap: 3,
+        reason: 'idle-ttl',
+      }),
+    );
+
+    const session = readSession();
+    expect(session?.processQueueHint).toBeUndefined();
+    expect(session?.isStreaming).toBe(false);
+    expect(session?.isProcessing).toBe(false);
+    expect(session?.isResponding).toBe(false);
+    expect((session as { liveTurnOpen?: boolean })?.liveTurnOpen).toBe(false);
+    // Eviction parks the process; it is NOT an "agent ended" transition —
+    // the backend-canonical status stays untouched (next send auto-restores).
+    expect(session?.status).toBe(AgentStatus.Active);
+  });
+
   it('ignores non-events.event methods, and forwards non-lifecycle events.event notifications into workspaceEvents without changing agent-session flags', async () => {
     seedSession({ isStreaming: true, status: AgentStatus.Active });
     await primeBridge();

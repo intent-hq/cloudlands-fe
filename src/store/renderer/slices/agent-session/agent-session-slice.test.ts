@@ -29,6 +29,7 @@ import {
   renameAgent,
   setProcessQueueHint,
   clearProcessQueueHint,
+  processEvicted,
   bulkUpsertSessions,
   removeWorkspaceSessions,
   clearAllSessions,
@@ -2054,6 +2055,40 @@ describe('agent-session-slice reducer', () => {
       state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
       state = agentSessionReducer(state, clearProcessQueueHint('a1'));
       expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+    });
+  });
+
+  describe('processEvicted', () => {
+    it('clears the queue hint and stale busy flags but leaves status untouched (monorepo#3040)', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            status: 'active' as any,
+            isStreaming: true,
+            isProcessing: true,
+            isResponding: true,
+          }),
+        ),
+      );
+      state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+      state = agentSessionReducer(state, processEvicted('a1'));
+      const session = state.byAgentId['a1'];
+      expect(session.processQueueHint).toBeUndefined();
+      expect(session.isStreaming).toBe(false);
+      expect(session.isProcessing).toBe(false);
+      expect(session.isResponding).toBe(false);
+      expect(session.liveTurnOpen).toBe(false);
+      expect(session.liveTurnOpenedAt).toBeUndefined();
+      // Eviction parks the process (idle-ttl reap / queue drop) — it is NOT
+      // an "agent ended" transition; backend-canonical status is untouched.
+      expect(session.status).toBe('active');
+    });
+
+    it('is a no-op for an unknown agent', () => {
+      const state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      const next = agentSessionReducer(state, processEvicted('missing'));
+      expect(next).toBe(state);
     });
   });
 
