@@ -680,11 +680,6 @@ export const streamStatusReceived = createAction(
   ],
 );
 
-/** Restore status events persisted by chat-state sagas during initialization */
-const chatStatusEventsHydrated = createAction<[agentId: string, statusEvents: StatusEvent[]]>(
-  'chatState/statusEventsHydrated',
-);
-
 /** Stream timed out */
 export const streamTimedOut = createAction<[agentId: string]>('chatState/streamTimedOut');
 
