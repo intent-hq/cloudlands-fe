@@ -63,10 +63,13 @@ for (const theme of ['light', 'dark'] as const) {
           await setSliderValue(page, count);
           await page.keyboard.press('Escape');
           const columnIcon = controls.locator(`[data-panel-column-icon="${count}"]`);
-          const bars = columnIcon.locator('[data-panel-column-icon-bar]');
+          const dividers = columnIcon.locator(
+            '[data-panel-column-divider][data-active="true"] line',
+          );
           await expect(columnTrigger).toHaveAccessibleName(`Panel columns: ${count}`);
           await expect(columnIcon).toHaveCount(1);
-          await expect(bars).toHaveCount(count);
+          await expect(columnIcon.locator('[data-panel-column-icon-outline]')).toHaveCount(1);
+          await expect(dividers).toHaveCount(count - 1);
           const [iconBox, triggerBox] = await Promise.all([
             columnIcon.boundingBox(),
             columnTrigger.boundingBox(),
@@ -81,15 +84,25 @@ for (const theme of ['light', 'dark'] as const) {
           expect(iconBox!.y + iconBox!.height).toBeLessThanOrEqual(
             triggerBox!.y + triggerBox!.height + 0.5,
           );
-          const barGeometry = await bars.evaluateAll((elements) =>
+          const dividerGeometry = await dividers.evaluateAll((elements) =>
             elements.map((element) => {
               const box = element.getBoundingClientRect();
-              return { width: box.width, height: box.height };
+              return {
+                height: box.height,
+                strokeWidth: element.getAttribute('stroke-width'),
+                vectorEffect: element.getAttribute('vector-effect'),
+              };
             }),
           );
-          expect(new Set(barGeometry.map(({ width }) => width.toFixed(3))).size).toBe(1);
-          expect(new Set(barGeometry.map(({ height }) => height.toFixed(3))).size).toBe(1);
-          expect(barGeometry.every(({ width, height }) => width > 0 && height > 0)).toBe(true);
+          expect(
+            dividerGeometry.every(
+              ({ height, strokeWidth, vectorEffect }) =>
+                height > 0 && strokeWidth === '1' && vectorEffect === 'non-scaling-stroke',
+            ),
+          ).toBe(true);
+          if (dividerGeometry.length > 0) {
+            expect(new Set(dividerGeometry.map(({ height }) => height.toFixed(3))).size).toBe(1);
+          }
         }
       });
     }
@@ -198,7 +211,9 @@ test('updates the workspace-scoped count and keeps keyboard focus order', async 
     await page.keyboard.press('Escape');
     await expect(component).toHaveAttribute('data-current-count', String(count));
     await expect(trigger).toHaveAccessibleName(`Panel columns: ${count}`);
-    await expect(trigger.locator('[data-panel-column-icon-bar]')).toHaveCount(count);
+    await expect(
+      trigger.locator('[data-panel-column-divider][data-active="true"] line'),
+    ).toHaveCount(count - 1);
   }
 
   await component
@@ -220,7 +235,7 @@ test('updates the workspace-scoped count and keeps keyboard focus order', async 
   await expect(page.locator(':focus')).toHaveAttribute('aria-label', 'Close panel');
 });
 
-test('keeps the four-bar glyph visible and equal in forced colors at 200% zoom', async ({
+test('keeps the divider glyph visible and equal in forced colors at 200% zoom', async ({
   mount,
   page,
 }) => {
@@ -230,9 +245,11 @@ test('keeps the four-bar glyph visible and equal in forced colors at 200% zoom',
   });
   const trigger = component.locator('[data-panel-column-count-trigger]');
   const icon = trigger.locator('[data-panel-column-icon="4"]');
-  const bars = icon.locator('[data-panel-column-icon-bar]');
+  const outline = icon.locator('[data-panel-column-icon-outline]');
+  const dividers = icon.locator('[data-panel-column-divider][data-active="true"] line');
 
-  await expect(bars).toHaveCount(4);
+  await expect(outline).toHaveCount(1);
+  await expect(dividers).toHaveCount(3);
   const [iconBox, triggerBox] = await Promise.all([icon.boundingBox(), trigger.boundingBox()]);
   expect(iconBox!.width / 2).toBeCloseTo(16, 1);
   expect(iconBox!.height / 2).toBeCloseTo(16, 1);
@@ -240,67 +257,90 @@ test('keeps the four-bar glyph visible and equal in forced colors at 200% zoom',
   expect(triggerBox!.height / 2).toBeCloseTo(28, 0);
   await expect(icon).toHaveAttribute('stroke', 'currentColor');
   await expect(icon).toHaveAttribute('stroke-width', '1');
-  await expect(icon).toHaveAttribute('vector-effect', 'non-scaling-stroke');
+  await expect(outline).toHaveAttribute('vector-effect', 'non-scaling-stroke');
   expect(
-    await bars.evaluateAll((elements) =>
+    await dividers.evaluateAll((elements) =>
       elements.map((element) => [
         element.getAttribute('stroke-width'),
         element.getAttribute('vector-effect'),
       ]),
     ),
-  ).toEqual(Array.from({ length: 4 }, () => ['1', 'non-scaling-stroke']));
-  const geometry = await bars.evaluateAll((elements) =>
+  ).toEqual(Array.from({ length: 3 }, () => ['1', 'non-scaling-stroke']));
+  const geometry = await dividers.evaluateAll((elements) =>
     elements.map((element) => {
       const box = element.getBoundingClientRect();
-      return { width: box.width, height: box.height };
+      return { height: box.height, stroke: getComputedStyle(element).stroke };
     }),
   );
-  expect(new Set(geometry.map(({ width }) => width.toFixed(3))).size).toBe(1);
   expect(new Set(geometry.map(({ height }) => height.toFixed(3))).size).toBe(1);
-  expect(geometry.every(({ width, height }) => width > 0 && height > 0)).toBe(true);
+  expect(geometry.every(({ height, stroke }) => height > 0 && stroke !== 'none')).toBe(true);
   expect(await icon.evaluate((element) => getComputedStyle(element).color)).not.toBe(
     'rgba(0, 0, 0, 0)',
   );
 });
 
-test('animates count changes without scaling the one-pixel strokes', async ({ mount, page }) => {
+test('moves stable dividers horizontally and updates immediately with reduced motion', async ({
+  mount,
+  page,
+}) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(PanelHeaderActionsHost, {
     props: { initialCount: 1, zoom: 2 },
   });
   const trigger = component.locator('[data-panel-column-count-trigger]');
   const initialIcon = await trigger.locator('[data-panel-column-icon="1"]').elementHandle();
+  const initialOutline = await trigger.locator('[data-panel-column-icon-outline]').elementHandle();
+  const dividerSlots = trigger.locator('[data-panel-column-divider]');
+  await expect(dividerSlots).toHaveCount(3);
+  const initialTransforms = await dividerSlots.evaluateAll((elements) =>
+    elements.map((element) => (element as SVGElement).style.transform),
+  );
 
   await trigger.click();
   await setSliderValue(page, 4);
   await page.keyboard.press('Escape');
   const animatedIcon = trigger.locator('[data-panel-column-icon="4"]');
   await expect(animatedIcon).toHaveCount(1);
-  expect(await initialIcon?.evaluate((element) => element.isConnected)).toBe(false);
-  const motion = await animatedIcon.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return { name: style.animationName, duration: Number.parseFloat(style.animationDuration) };
-  });
-  expect(motion.name).toContain('panel-column-icon-change');
-  expect(motion.duration).toBeGreaterThan(0);
+  expect(await initialIcon?.evaluate((element) => element.isConnected)).toBe(true);
+  expect(await animatedIcon.evaluate((element, initial) => element === initial, initialIcon)).toBe(
+    true,
+  );
   expect(
     await animatedIcon
-      .locator('[data-panel-column-icon-bar]')
-      .evaluateAll((elements) =>
-        elements.map((element) => [
-          element.getAttribute('stroke-width'),
-          element.getAttribute('vector-effect'),
-        ]),
-      ),
-  ).toEqual(Array.from({ length: 4 }, () => ['1', 'non-scaling-stroke']));
+      .locator('[data-panel-column-icon-outline]')
+      .evaluate((element, initial) => element === initial, initialOutline),
+  ).toBe(true);
+  await expect(
+    animatedIcon.locator('[data-panel-column-divider][data-active="true"] line'),
+  ).toHaveCount(3);
+  const movedTransforms = await dividerSlots.evaluateAll((elements) =>
+    elements.map((element) => (element as SVGElement).style.transform),
+  );
+  expect(movedTransforms.slice(0, 2)).not.toEqual(initialTransforms.slice(0, 2));
+  expect(movedTransforms.every((transform) => transform.startsWith('translateX('))).toBe(true);
+  const motion = await dividerSlots.first().evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { property: style.transitionProperty, duration: style.transitionDuration };
+  });
+  expect(motion.property).toContain('transform');
+  expect(motion.duration).not.toBe('0s');
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  const beforeReducedTransforms = movedTransforms;
   await trigger.click();
   await setSliderValue(page, 3);
   await page.keyboard.press('Escape');
   const reducedIcon = trigger.locator('[data-panel-column-icon="3"]');
   await expect(reducedIcon).toHaveCount(1);
-  expect(await reducedIcon.evaluate((element) => getComputedStyle(element).animationName)).toBe(
-    'none',
+  await expect(
+    reducedIcon.locator('[data-panel-column-divider][data-active="true"] line'),
+  ).toHaveCount(2);
+  const reducedTransforms = await dividerSlots.evaluateAll((elements) =>
+    elements.map((element) => (element as SVGElement).style.transform),
   );
+  expect(reducedTransforms).not.toEqual(beforeReducedTransforms);
+  const reducedDurations = await dividerSlots.evaluateAll((elements) =>
+    elements.map((element) => Number.parseFloat(getComputedStyle(element).transitionDuration)),
+  );
+  expect(reducedDurations.every((duration) => duration <= 0.00001)).toBe(true);
 });
