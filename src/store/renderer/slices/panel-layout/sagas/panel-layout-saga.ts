@@ -123,6 +123,7 @@ import {
   updateTabFavicon,
   updateTabTitle,
 } from '../panel-layout-slice';
+import { dropRevealIfWorkspaceNotDisplayed } from './reveal-suppression';
 import {
   HISTORY_PERSIST_DEBOUNCE_MS,
   PANEL_LAYOUT_STORAGE_KEY_PREFIX,
@@ -277,11 +278,14 @@ function getWsId(action: { payload?: unknown }): string | undefined {
 function* routeTabToRightmostColumn(
   action: ReturnType<typeof openTabInRightmostColumnRequested>,
 ): SagaGenerator<void> {
-  const { wsId, tab, force, allowDuplicate, newTabId, timestamp } = action.payload;
+  const { wsId, tab, force, allowDuplicate, newTabId, timestamp, agentDriven } = action.payload;
   yield* put(
     reconcilePanelColumnCount(wsId, yield* selectPanelColumnCount.effect(wsId), timestamp),
   );
   yield* put(openTabInRightmostColumn(wsId, tab, { force, allowDuplicate, newTabId }, timestamp));
+  if (agentDriven === true) {
+    yield* dropRevealIfWorkspaceNotDisplayed(wsId, newTabId);
+  }
 }
 
 export function* watchRightmostColumnRequests(): SagaGenerator<void> {

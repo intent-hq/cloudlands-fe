@@ -878,39 +878,40 @@
       <button type="submit" class="sr-only">{m.browser_embedded_go_label()}</button>
     </form>
 
-    <!-- Owner agent chip + emulated viewport indicator (monorepo#2857, §5.9) -->
-    {#if ownerAgentId}
-      <Button
-        variant="plain"
-        class="flex h-auto shrink-0 cursor-pointer items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
-        onclick={() => void navigateToAgent(ownerAgentId)}
-        tooltip={m.browser_embedded_ownerChip_tooltip({ name: ownerAgentName ?? ownerAgentId })}
-        aria-label={m.browser_embedded_ownerChip_ariaLabel({
-          name: ownerAgentName ?? ownerAgentId,
+    <!-- Emulated viewport indicator (monorepo#2857, §5.9) -->
+    {#if ownerAgentId && emulatedSize}
+      <span
+        class="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+        title={m.browser_embedded_viewport_tooltip({
+          width: emulatedSize.width,
+          height: emulatedSize.height,
         })}
-        data-browser-owner-chip={ownerAgentId}
+        data-browser-viewport-indicator
       >
-        <Fa icon={faRobot} size="xs" />
-        <span class="max-w-32 truncate">{ownerAgentName ?? ownerAgentId}</span>
-      </Button>
-      {#if emulatedSize}
-        <span
-          class="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-          title={m.browser_embedded_viewport_tooltip({
-            width: emulatedSize.width,
-            height: emulatedSize.height,
-          })}
-          data-browser-viewport-indicator
-        >
-          <Fa icon={faExpand} size="xs" />
-          <!-- i18n-ignore (numeric dimensions, no translatable text) -->
-          <span>{emulatedSize.width}×{emulatedSize.height}</span>
-        </span>
-      {/if}
+        <Fa icon={faExpand} size="xs" />
+        <!-- i18n-ignore (numeric dimensions, no translatable text) -->
+        <span>{emulatedSize.width}×{emulatedSize.height}</span>
+      </span>
     {/if}
 
     <!-- Actions -->
     <div class="flex gap-0.5">
+      <!-- Owner agent chip (monorepo#2857): icon-only; tooltip carries the agent name -->
+      {#if ownerAgentId}
+        <Button
+          variant="ghost-light"
+          size="icon-xs"
+          onclick={() => void navigateToAgent(ownerAgentId)}
+          tooltip={m.browser_embedded_ownerChip_tooltip({ name: ownerAgentName ?? ownerAgentId })}
+          tooltipSide="bottom"
+          aria-label={m.browser_embedded_ownerChip_ariaLabel({
+            name: ownerAgentName ?? ownerAgentId,
+          })}
+          data-browser-owner-chip={ownerAgentId}
+        >
+          <Fa icon={faRobot} size="xs" />
+        </Button>
+      {/if}
       <Button
         variant="ghost-light"
         size="icon-xs"

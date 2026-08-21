@@ -7,6 +7,7 @@
     onTitleChange,
     onFaviconChange,
     isActive = true,
+    focusUrlBarOnMount = false,
   }: {
     url: string;
     workspaceId: string;
@@ -27,6 +28,7 @@
   data-workspace-id={workspaceId}
   data-tab-id={tabId}
   data-is-active={isActive}
+  data-focus-url-bar-on-mount={focusUrlBarOnMount}
 >
   <button type="button" onclick={() => onNavigate?.('https://next.example/')}>Navigate</button>
   <button type="button" onclick={() => onTitleChange?.('Next title')}>Change title</button>

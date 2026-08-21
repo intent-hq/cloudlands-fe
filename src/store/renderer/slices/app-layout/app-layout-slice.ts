@@ -34,9 +34,14 @@ export const openNewSpaceModalRequested = createAction<[detail: OpenNewSpaceModa
   'appLayout/openNewSpaceModalRequested',
 );
 
-export const focusBrowserTabRequested = createAction<[wsId: string, tabId: string, pin?: boolean]>(
-  'appLayout/focusBrowserTabRequested',
-);
+// `agentDriven` marks focuses originating from agent browser ops
+// (browser:focus-tab / browser:show-tab IPC): when the workspace is not the
+// one this window displays, they apply their layout-state effects but skip
+// the actual UI reveal (monorepo#3045). User-initiated focuses omit it and
+// always reveal.
+export const focusBrowserTabRequested = createAction<
+  [wsId: string, tabId: string, pin?: boolean, agentDriven?: boolean]
+>('appLayout/focusBrowserTabRequested');
 
 export const commandPaletteNewFileRequested = createAction<[wsId: string]>(
   'appLayout/commandPaletteNewFileRequested',

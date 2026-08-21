@@ -67,6 +67,12 @@ interface PanelBrowserTab {
    * recorded (those rehydrate at the default viewport).
    */
   emulatedSize?: { width: number; height: number };
+  /**
+   * The tab is in the workspace's hidden set (monorepo#3045): alive and
+   * CDP-addressable offscreen, but not mounted into any panel. Only
+   * agent-owned tabs can be hidden; absent = visible.
+   */
+  hidden?: boolean;
 }
 
 /**
@@ -486,6 +492,7 @@ class EmbeddedBrowserCdpService {
       mounted: boolean;
       ownerAgentId?: string;
       emulatedSize?: { width: number; height: number };
+      hidden?: boolean;
     })[];
     stale: boolean;
   }> {
@@ -506,15 +513,17 @@ class EmbeddedBrowserCdpService {
     // Panel tabs only, marking whether each is backed by a live webview.
     // Each tab is annotated with its owner from the ownership registry
     // (rehydrated from the panel reply above) so agents can see which tabs
-    // they may manipulate (monorepo#2857).
+    // they may manipulate (monorepo#2857), and with `hidden` when the tab
+    // sits in the workspace's hidden set (monorepo#3045).
     const tabs = panelTabs.map((panelTab) => {
       const ownership = this.tabOwnership.get(panelTab.tabId);
       const owner = ownership
         ? { ownerAgentId: ownership.ownerAgentId, emulatedSize: ownership.emulatedSize }
         : {};
+      const hidden = panelTab.hidden === true ? { hidden: true } : {};
       const mounted = mountedTabs.find((t) => t.tabId === panelTab.tabId);
       if (mounted) {
-        return { ...mounted, mounted: true, ...owner };
+        return { ...mounted, mounted: true, ...owner, ...hidden };
       }
       return {
         tabId: panelTab.tabId,
@@ -523,6 +532,7 @@ class EmbeddedBrowserCdpService {
         title: panelTab.title,
         mounted: false,
         ...owner,
+        ...hidden,
       };
     });
     return { tabs, stale };
@@ -586,6 +596,58 @@ class EmbeddedBrowserCdpService {
     // resolve immediately, unmounted-but-listed tabs resolve when the
     // remounted webview registers, and nonexistent tabs time out to false.
     return this.waitForTabRegistration(tabId);
+  }
+
+  /**
+   * Reveal a hidden agent-owned tab into a panel (monorepo#3045). With
+   * `focus: false` (the default) the tab is mounted into a panel's tab list
+   * WITHOUT becoming active and without moving panel focus; `focus: true`
+   * reveals and activates. The renderer treats an already-visible tab as
+   * idempotent: a no-op for `focus: false`, activate-and-focus for
+   * `focus: true`.
+   *
+   * The reveal is confirmed against a fresh renderer tab list (the same
+   * confirm-by-list discipline closeTab uses): only a fresh reply that lists
+   * the tab as not hidden counts. Existence/ownership validation lives in
+   * the action executor — this method only delivers and confirms.
+   *
+   * @returns void on success; throws when no window received the request or
+   *          the reveal could not be confirmed
+   */
+  async showTab(tabId: string, workspaceId?: string, focus?: boolean): Promise<void> {
+    if (!tabId) {
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      throw new Error('showTab requires a tabId.');
+    }
+    if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      throw new Error('workspaceId is required to show a browser tab');
+    }
+
+    const delivery = sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.SHOW_TAB, {
+      tabId,
+      workspaceId,
+      ...(focus === undefined ? {} : { focus }),
+    });
+    if (!delivery.delivered) {
+      throw new Error(
+        `Cannot show tab ${tabId}: workspace ${workspaceId} is not open in any window.`, // i18n-ignore (agent-facing protocol error, not user-facing)
+      );
+    }
+    logger.info('Sent show request for browser tab', { tabId, workspaceId, focus });
+
+    // Confirm the renderer revealed the tab: only a fresh (non-stale) reply
+    // listing the tab without the hidden marker counts.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const after = await this.requestPanelBrowserTabs(workspaceId);
+      if (!after.stale) {
+        const tab = after.tabs.find((t) => t.tabId === tabId);
+        if (tab && tab.hidden !== true) return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    // i18n-ignore (agent-facing protocol error, not user-facing)
+    throw new Error(`Tab ${tabId} could not be shown (the UI did not confirm the reveal).`);
   }
 
   /**

@@ -127,6 +127,7 @@ import {
   isStoredLayoutValid,
   panelLayoutSaga,
   waitForWorkspaceLayoutRestore,
+  watchRightmostColumnRequests,
 } from './panel-layout-saga';
 
 const WS_1 = 'ws-1';
@@ -518,6 +519,37 @@ describe('panelLayoutSaga', () => {
         timestamp: 123,
       },
     });
+    await cancelSaga(task);
+  });
+
+  it('drops background reveal state after routing a rightmost-column request', async () => {
+    let state: any = storeState();
+    state.panelLayout.byWorkspaceId[WS_1].columnCount = 2;
+    const channel = stdChannel();
+    const dispatch = vi.fn((action) => {
+      state = { ...state, panelLayout: panelLayoutReducer(state.panelLayout, action) };
+    });
+    const task = runSaga(
+      { channel, dispatch, getState: () => state },
+      watchRightmostColumnRequests,
+    );
+
+    channel.put(
+      openTabInRightmostColumnRequested(
+        WS_1,
+        { type: 'browser', title: 'Browser', browserUrl: 'https://example.test' },
+        { newTabId: 'browser-1', agentDriven: true },
+        123,
+      ),
+    );
+    await settle();
+
+    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
+      'panelLayout/reconcilePanelColumnCount',
+      'panelLayout/openTabInRightmostColumn',
+      'panelLayout/consumePanelReveal',
+      'panelLayout/consumePendingFocus',
+    ]);
     await cancelSaga(task);
   });
 

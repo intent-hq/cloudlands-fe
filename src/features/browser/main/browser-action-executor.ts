@@ -26,6 +26,7 @@ import {
   type LoopbackRewriteResult,
 } from './loopback-rewrite';
 import { resolveRewrittenRemoteTarget, type TunnelProvider } from './loopback-url-resolver';
+import { getWindowIdForWorkspace } from '../../system/main/system.ipc';
 
 const logger = new Logger('BrowserActionExecutor');
 
@@ -41,6 +42,18 @@ const ListTabsActionSchema = z.object({
 const FocusTabActionSchema = z.object({
   action: z.literal('focusTab'),
   tabId: z.string().optional(),
+});
+
+// Reveal a hidden agent-owned tab into a panel (monorepo#3045). Owner-only;
+// idempotent on an already-visible tab. `focus` defaults to false: the tab is
+// mounted WITHOUT being activated and without moving panel focus;
+// `focus: true` reveals AND activates (and still activates when already
+// visible). tabId is explicit (no sequence-level default), like claimTab: a
+// reveal is a significant state change and must name its target.
+const ShowTabActionSchema = z.object({
+  action: z.literal('showTab'),
+  tabId: z.string(),
+  focus: z.boolean().optional(),
 });
 
 const GetAccessibilityTreeActionSchema = z.object({
@@ -239,6 +252,7 @@ const CloseTunnelActionSchema = z
 const BrowserActionSchema = z.discriminatedUnion('action', [
   ListTabsActionSchema,
   FocusTabActionSchema,
+  ShowTabActionSchema,
   GetAccessibilityTreeActionSchema,
   ScreenshotActionSchema,
   EvaluateActionSchema,
@@ -288,6 +302,23 @@ function requireWorkspaceId(workspaceId: string | undefined, action: string): st
     throw new Error(`Action '${action}' requires workspace context`);
   }
   return workspaceId;
+}
+
+/**
+ * Workspace-inactive semantics (monorepo#3045): focus-bearing actions
+ * (showTab with focus: true, focusTab, openTab with visible: true) still
+ * succeed when no window is currently displaying the workspace — their
+ * persisted-layout state effects apply (windows hosting the workspace in a
+ * background tab receive the IPC) — but the renderer skips the actual UI
+ * focus attempt, and the action result carries this warning so the caller
+ * knows nothing was brought to the front.
+ */
+function workspaceNotVisibleWarning(workspaceId: string | undefined): { warning?: string } {
+  if (!workspaceId || getWindowIdForWorkspace(workspaceId) !== undefined) return {};
+  return {
+    // i18n-ignore (agent-facing protocol warning, not user-facing)
+    warning: `Workspace ${workspaceId} is not currently visible in the app, so no UI focus was attempted; the tab and layout state were still updated.`,
+  };
 }
 
 /**
@@ -350,6 +381,8 @@ export interface ExecutionResult {
  * for agent callers (monorepo#2857). `openTab` (creates/reuses own tabs),
  * `claimTab` (the claiming op itself), `listTabs`, and the session/tunnel
  * actions (scoped at session start / tab-free) are deliberately absent.
+ * `showTab` (monorepo#3045) enforces ownership in its own handler so an
+ * unknown tabId reports "not found" instead of a misleading not-owner error.
  */
 const OWNERSHIP_ENFORCED_ACTIONS = new Set([
   'focusTab',
@@ -506,7 +539,7 @@ async function executeAction(
         const ownerNames = scoped.some((t) => t.ownerAgentId)
           ? await resolveAgentDisplayNames(workspaceId)
           : new Map<string, string>();
-        const result = scoped.map(({ emulatedSize, ...tab }) => {
+        const result = scoped.map(({ emulatedSize, hidden, ...tab }) => {
           const ownerAgentId = tab.ownerAgentId ?? null;
           const ownerAgentName = ownerAgentId ? ownerNames.get(ownerAgentId) : undefined;
           const size = emulatedSize ?? DEFAULT_AGENT_VIEWPORT;
@@ -517,6 +550,10 @@ async function executeAction(
             ...(ownerAgentId
               ? { mode: 'emulated' as const, width: size.width, height: size.height }
               : { mode: 'native' as const }),
+            // Hidden is an agent-owned-tab state only (monorepo#3045):
+            // unowned (user) tabs are always visible.
+            visibility:
+              ownerAgentId && hidden === true ? ('hidden' as const) : ('visible' as const),
           };
         });
         if (stale) {
@@ -532,6 +569,25 @@ async function executeAction(
       }
 
       case 'focusTab': {
+        // focusTab never reveals a hidden tab (monorepo#3045): reveal is
+        // showTab-only, so a hidden target fails with a directive error.
+        // Best-effort guard — an unavailable/stale tab list cannot prove
+        // hiddenness, so the focus proceeds as before.
+        if (tabId) {
+          try {
+            const { tabs, stale } = await embeddedBrowserCdp.listAllTabs(workspaceId);
+            if (!stale && tabs.some((t) => t.tabId === tabId && t.hidden === true)) {
+              return {
+                action: 'focusTab',
+                success: false,
+                // i18n-ignore (agent-facing protocol error, not user-facing)
+                error: `Tab ${tabId} is hidden — focusTab does not reveal hidden tabs. Use { action: "showTab", tabId: "${tabId}", focus: true } to reveal and activate it.`,
+              };
+            }
+          } catch {
+            // Tab list unavailable — fall through to the focus attempt.
+          }
+        }
         // Resolves true only once the tab's webview is mounted and
         // registered (bounded wait) — not merely when the focus message was
         // delivered (intent-hq/monorepo#2756).
@@ -542,7 +598,52 @@ async function executeAction(
             : 'focusTab requires a tabId.'; // i18n-ignore (agent-facing protocol error, not user-facing)
           return { action: 'focusTab', success: false, error };
         }
-        return { action: 'focusTab', success: true, result };
+        return {
+          action: 'focusTab',
+          success: true,
+          result,
+          ...workspaceNotVisibleWarning(workspaceId),
+        };
+      }
+
+      case 'showTab': {
+        // Reveal a hidden agent-owned tab (monorepo#3045). Checks run
+        // existence-first against a fresh tab list so an unknown tabId
+        // reports "not found" (never a misleading not-owner error), then
+        // owner-only enforcement for agent callers.
+        const { tabs, stale } = await embeddedBrowserCdp.listAllTabs(workspaceId);
+        const target = tabs.find((t) => t.tabId === action.tabId);
+        if (!target || stale) {
+          return {
+            action: 'showTab',
+            success: false,
+            error: stale
+              ? `Cannot show tab ${action.tabId}: the tab list for workspace ${workspaceId} could not be refreshed (renderer unavailable), so the tab's existence cannot be verified. Retry shortly.` // i18n-ignore (agent-facing protocol error, not user-facing)
+              : `Tab ${action.tabId} not found in workspace ${workspaceId} — check { action: "listTabs" }.`, // i18n-ignore (agent-facing protocol error, not user-facing)
+          };
+        }
+        if (agentId && target.ownerAgentId !== agentId) {
+          return notOwnerResult('showTab', action.tabId, target.ownerAgentId, workspaceId);
+        }
+        const focus = action.focus === true;
+        if (target.hidden !== true && !focus) {
+          // Idempotent no-op: the tab is already visible and no activation
+          // was requested.
+          return {
+            action: 'showTab',
+            success: true,
+            result: { tabId: action.tabId, visibility: 'visible', focused: false },
+          };
+        }
+        await embeddedBrowserCdp.showTab(action.tabId, workspaceId, focus);
+        return {
+          action: 'showTab',
+          success: true,
+          result: { tabId: action.tabId, visibility: 'visible', focused: focus },
+          // A focus-bearing reveal on a not-visible workspace applies its
+          // layout-state effects but attempts no UI focus (monorepo#3045).
+          ...(focus ? workspaceNotVisibleWarning(workspaceId) : {}),
+        };
       }
 
       case 'getAccessibilityTree': {
@@ -844,8 +945,11 @@ async function executeAction(
         // focus). User (agentId-less) opens are always visible and never
         // carry the flag.
         const visible = agentId ? action.visible === true : undefined;
+        // The short call form is for user (agentId-less) opens only — agent
+        // opens always compute a defined emulatedSize above, so they always
+        // take the long form, which carries `visible` through.
         const result =
-          replaceTargetTabId === undefined && emulatedSize === undefined
+          agentId === undefined && replaceTargetTabId === undefined && emulatedSize === undefined
             ? openTabFn(
                 finalRewrite.url,
                 action.position,
@@ -923,6 +1027,10 @@ async function executeAction(
           // window", intent-hq/monorepo#2602) as the action error so the
           // sequence-level error is descriptive instead of "undefined".
           ...(result.success ? {} : { error: result.message }),
+          // A visible (panel-mounted) agent open on a not-visible workspace
+          // applies its layout-state effects but attempts no UI focus
+          // (monorepo#3045).
+          ...(result.success && visible === true ? workspaceNotVisibleWarning(workspaceId) : {}),
         };
       }
 

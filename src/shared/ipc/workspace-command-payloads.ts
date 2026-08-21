@@ -77,6 +77,17 @@ export type BrowserFocusTabPayload = WorkspaceCommandPayload & {
   pin?: boolean;
 };
 
+export type BrowserShowTabPayload = WorkspaceCommandPayload & {
+  tabId: string;
+  /**
+   * Reveal-and-activate (monorepo#3045): `true` makes the revealed tab its
+   * panel's active tab and focuses the panel (and still activates when the
+   * tab is already visible). `false`/absent mounts the tab without any
+   * focus or active-tab change (a no-op when already visible).
+   */
+  focus?: boolean;
+};
+
 export type BrowserListTabsRequestPayload = WorkspaceCommandPayload & {
   /** Echoed back so main resolves the matching pending request (monorepo#2602). */
   requestId?: string;

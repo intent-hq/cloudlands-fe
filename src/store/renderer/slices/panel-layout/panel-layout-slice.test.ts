@@ -20,6 +20,7 @@ import {
   destroyTabsByOwnerAgent,
   openHiddenTab,
   restoreHiddenTab,
+  revealHiddenTabAvoidingPanel,
   setActiveTab,
   setTabOwnerAgent,
   selectNextTab,
@@ -2958,6 +2959,23 @@ describe('panelLayoutReducer', () => {
       expect(ws.panels.p1.tabs.at(-1)?.ownerAgentId).toBe('agent-1');
     });
 
+    // showTab without focus (monorepo#3045): the tab is mounted into the
+    // panel's tab list but never activated — no active-tab, panel-focus, or
+    // reveal change.
+    it('restoreHiddenTab with focus: false mounts without activation, focus, or reveal', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      const before = hidden.byWorkspaceId[WS];
+      const result = panelLayoutReducer(hidden, restoreHiddenTab(WS, 'owned', 1001, false));
+      const ws = result.byWorkspaceId[WS];
+      expect(getItems(ws.hiddenTabs)).toHaveLength(0);
+      expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2', 'owned']);
+      expect(ws.panels.p1.activeTabId).toBe(before.panels.p1.activeTabId);
+      expect(ws.focusedPanelId).toBe(before.focusedPanelId);
+      expect(ws.pendingPanelReveal).toBe(before.pendingPanelReveal);
+      expect(ws.focusHistory).toBe(before.focusHistory);
+    });
+
     // Agent openTab is hidden by default (monorepo#3045): the tab is created
     // straight into hiddenTabs with no panel/focus/active-tab change.
     it('openHiddenTab creates the tab in hiddenTabs without touching panels or focus', () => {
@@ -3942,6 +3960,79 @@ describe('panelLayoutReducer', () => {
       const state = stateWithPanel('p1', [{ id: 't2', type: 'note', title: 'A' }]);
       expect(panelLayoutReducer(state, setTabOwnerAgent(WS, 'missing', 'agent-1'))).toBe(state);
       expect(panelLayoutReducer(state, setTabOwnerAgent(WS, 't2', 'agent-1'))).toBe(state);
+    });
+  });
+
+  // Conversation-footer reveal: the restored tab must never displace the
+  // conversation — it mounts into another panel (splitting when the avoided
+  // panel is the only one), and the avoided panel keeps its activeTabId and
+  // panel focus.
+  describe('revealHiddenTabAvoidingPanel', () => {
+    const ownedTab = {
+      id: 'owned',
+      type: 'browser',
+      title: 'Owned',
+      browserUrl: 'http://a/',
+      ownerAgentId: 'agent-1',
+    };
+
+    it('mounts into another panel without displacing or refocusing the avoided one', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      state.byWorkspaceId[WS].root = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'panel', panelId: 'p1' },
+          { type: 'panel', panelId: 'p2' },
+        ],
+        sizes: [50, 50],
+      };
+      state.byWorkspaceId[WS].panels.p2 = {
+        id: 'p2',
+        tabs: [{ id: 'n2', type: 'note', title: 'B', closable: true } as any],
+        activeTabId: 'n2',
+      };
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      const before = hidden.byWorkspaceId[WS];
+      const result = panelLayoutReducer(
+        hidden,
+        revealHiddenTabAvoidingPanel(WS, 'owned', 'p1', 1001),
+      );
+      const ws = result.byWorkspaceId[WS];
+      expect(getItems(ws.hiddenTabs)).toHaveLength(0);
+      expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
+      expect(ws.panels.p1.activeTabId).toBe(before.panels.p1.activeTabId);
+      expect(ws.panels.p2.tabs.map((t) => t.id)).toEqual(['n2', 'owned']);
+      expect(ws.panels.p2.activeTabId).toBe('owned');
+      expect(ws.focusedPanelId).toBe(before.focusedPanelId);
+      expect(ws.pendingPanelReveal).toMatchObject({ panelId: 'p2', tabId: 'owned' });
+    });
+
+    it('splits when the avoided panel is the only one', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      const before = hidden.byWorkspaceId[WS];
+      const result = panelLayoutReducer(
+        hidden,
+        revealHiddenTabAvoidingPanel(WS, 'owned', 'p1', 1001),
+      );
+      const ws = result.byWorkspaceId[WS];
+      const newPanelId = Object.keys(ws.panels).find((id) => id !== 'p1')!;
+      expect(newPanelId).toBeTruthy();
+      expect(getItems(ws.hiddenTabs)).toHaveLength(0);
+      expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
+      expect(ws.panels.p1.activeTabId).toBe(before.panels.p1.activeTabId);
+      expect(ws.panels[newPanelId].tabs.map((t) => t.id)).toEqual(['owned']);
+      expect(ws.panels[newPanelId].activeTabId).toBe('owned');
+      expect(ws.focusedPanelId).toBe(before.focusedPanelId);
+      expect(ws.pendingPanelReveal).toMatchObject({ panelId: newPanelId, tabId: 'owned' });
+    });
+
+    it('ignores unknown hidden tab ids', () => {
+      const state = stateWithPanel('p1', [{ id: 't2', type: 'note', title: 'A' }]);
+      expect(panelLayoutReducer(state, revealHiddenTabAvoidingPanel(WS, 'missing', 'p1'))).toBe(
+        state,
+      );
     });
   });
 });
