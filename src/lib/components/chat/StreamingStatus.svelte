@@ -150,6 +150,7 @@
     <div
       role={status === 'error' ? 'alert' : undefined}
       aria-live={status === 'error' ? 'assertive' : undefined}
+      data-stream-terminal-error="true"
       class={cn(
         'type-caption flex flex-col gap-0 py-2 pr-1',
         status === 'model-unavailable' &&

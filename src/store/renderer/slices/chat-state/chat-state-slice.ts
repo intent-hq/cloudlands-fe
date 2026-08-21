@@ -12,6 +12,7 @@ import type {
   SendMessagePayload,
   InitializeChatOptions,
   StreamStatusContext,
+  StreamFailureCorrelation,
   TranscriptSnapshotMeta,
 } from './chat-state-types';
 import {
@@ -595,7 +596,12 @@ export const chatQueuedRetryRecordsCleared = createAction<[agentId: string]>(
  * so no drain-start event under this client's key ever promoted it).
  */
 export const chatSendFailed =
-  createAction<[agentId: string, error: string, turnId?: string]>('chatState/sendFailed');
+  createAction<[
+    agentId: string,
+    error: string,
+    turnId?: string,
+    failureCorrelation?: StreamFailureCorrelation,
+  ]>('chatState/sendFailed');
 
 /**
  * `agent:queue:processing` drain-start signal (PROTOCOL §6.5): the daemon
@@ -907,15 +913,17 @@ chatStateReducer.with(chatInitialized, (state, { payload: [agentId, data] }) =>
   updateAgent(state, agentId, {
     agentId,
     error: null,
+    failureCorrelation: undefined,
     lastAttemptedMessage: data.lastAttemptedMessage,
   }),
 );
 chatStateReducer.with(chatInitFailed, (state, { payload: [agentId, error] }) =>
-  updateAgent(state, agentId, { error, modelUnavailable: null }),
+  updateAgent(state, agentId, { error, failureCorrelation: undefined, modelUnavailable: null }),
 );
 chatStateReducer.with(chatSendStarted, (state, { payload: { agentId, timestamp } }) =>
   updateAgent(state, agentId, {
     error: null,
+    failureCorrelation: undefined,
     modelUnavailable: null,
     streamingStartTime: timestamp,
     lastMessageTime: timestamp,
@@ -985,7 +993,7 @@ chatStateReducer.with(
 chatStateReducer.with(chatQueueProcessingReceived, (state, { payload: [agentId, turnId] }) =>
   reduceQueueProcessing(state, agentId, turnId),
 );
-chatStateReducer.with(chatSendFailed, (state, { payload: [agentId, error, turnId] }) => {
+chatStateReducer.with(chatSendFailed, (state, { payload: [agentId, error, turnId, failureCorrelation] }) => {
   // monorepo#1057: when the failure names a turn whose record is still
   // PARKED (e.g. an agent.retry redrive that failed again — its requeued
   // entry has a new id, so no processing event promoted it under this
@@ -1000,6 +1008,7 @@ chatStateReducer.with(chatSendFailed, (state, { payload: [agentId, error, turnId
     return updateAgent(state, agentId, {
       streamingStartTime: null,
       error,
+      failureCorrelation,
       modelUnavailable: null,
       lastAttemptedMessage: agent.queuedRetryRecords[key].record,
       queuedRetryRecords: remaining,
@@ -1008,6 +1017,7 @@ chatStateReducer.with(chatSendFailed, (state, { payload: [agentId, error, turnId
   return updateAgent(state, agentId, {
     streamingStartTime: null,
     error,
+    failureCorrelation,
     modelUnavailable: null,
   });
 });
@@ -1020,7 +1030,7 @@ chatStateReducer.with(chatModelUnavailableCleared, (state, { payload: [agentId] 
   updateAgent(state, agentId, { modelUnavailable: null }),
 );
 chatStateReducer.with(chatErrorCleared, (state, { payload: [agentId] }) =>
-  updateAgent(state, agentId, { error: null }),
+  updateAgent(state, agentId, { error: null, failureCorrelation: undefined }),
 );
 chatStateReducer.with(chatStopInitiated, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { isInterrupting: true }),
@@ -1082,6 +1092,7 @@ chatStateReducer.with(streamTimedOut, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, {
     streamingStartTime: null,
     error: m.chat_state_timeout_error(),
+    failureCorrelation: undefined,
   }),
 );
 chatStateReducer.with(chatRebindStarted, (state, { payload: [agentId] }) =>

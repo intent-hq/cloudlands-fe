@@ -42,6 +42,10 @@
   import { shouldHandleChatFocusRequest, type ChatFocusRequest } from './chat-focus-ownership';
   import type { AgentMessage } from '$shared/types';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
+  import {
+    reportStreamLifecycle,
+    streamTurnCorrelation,
+  } from '$lib/utils/stream-lifecycle-telemetry';
   import { saveAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     agentSessionDismissQuestionsRequested,
@@ -103,6 +107,7 @@
     selectAwaitingSwitchBackSnapshot,
     selectAwaitingUtilityFooter,
     selectChatError,
+    selectChatFailureCorrelation,
     selectChatLastChunkTime,
     selectChatModelUnavailable,
     selectChatReceivedFirstChunk,
@@ -387,6 +392,7 @@
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
   const chatError$ = selectChatError(agentIdStore);
+  const chatFailureCorrelation$ = selectChatFailureCorrelation(agentIdStore);
   const chatStreamingStartTime$ = selectChatStreamingStartTime(agentIdStore);
   const chatLastChunkTime$ = selectChatLastChunkTime(agentIdStore);
   const chatModelUnavailable$ = selectChatModelUnavailable(agentIdStore);
@@ -436,6 +442,73 @@
       return $agentSession$.stopReason || m.chat_chatPanel_agentSpawnFailed_error();
     }
     return null;
+  });
+
+  const latestAssistantForTelemetry = $derived.by(() => {
+    for (let index = $agentMessages$.length - 1; index >= 0; index -= 1) {
+      const message = $agentMessages$[index];
+      if (message.role === 'assistant') return message;
+    }
+    return undefined;
+  });
+
+  // Confirm the primary transcript boundary from DOM that exists after the
+  // update. Redux values identify the expected row only; they never stand in
+  // for a rendered row or error surface.
+  $effect(() => {
+    const message = latestAssistantForTelemetry;
+    if (!message) return;
+    const storeStreamState = $agentSessionIsStreaming$ ? 'streaming' : 'idle';
+    let cancelled = false;
+    void (async () => {
+      await tick();
+      if (cancelled) return;
+      const assistantRow = Array.from(
+        panelElement?.querySelectorAll<HTMLElement>('[data-message-role="assistant"]') ?? [],
+      ).find((row) => row.dataset.messageId === message.id);
+      reportStreamLifecycle({
+        stage: 'render',
+        event: assistantRow ? 'assistant-message-committed' : 'assistant-message-not-committed',
+        turnCorrelation: streamTurnCorrelation(message.id),
+        correlationBasis: 'assistant-message',
+        blockCount: assistantRow?.querySelectorAll('[data-message-content-block]').length ?? 0,
+        storeStreamState,
+        callbackResult: assistantRow ? 'delivered' : 'ignored',
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  $effect(() => {
+    const shouldObserveError = Boolean(effectiveError || $chatModelUnavailable$);
+    const failureCorrelation = $chatFailureCorrelation$;
+    if (!shouldObserveError) return;
+    let cancelled = false;
+    void (async () => {
+      await tick();
+      if (cancelled) return;
+      const terminalErrorVisible = Boolean(
+        panelElement?.querySelector('[data-stream-terminal-error="true"]'),
+      );
+      reportStreamLifecycle({
+        stage: 'render',
+        event: terminalErrorVisible ? 'terminal-error-committed' : 'terminal-error-not-committed',
+        ...failureCorrelation,
+        correlationBasis: failureCorrelation?.turnCorrelation
+          ? 'assistant-message'
+          : failureCorrelation?.turnIdCorrelation
+            ? 'turn'
+            : 'unjoinable',
+        terminalErrorVisible,
+        storeStreamState: 'error',
+        callbackResult: terminalErrorVisible ? 'delivered' : 'ignored',
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
   });
 
   // monorepo#940: the daemon flags the parked error session as corrupted —

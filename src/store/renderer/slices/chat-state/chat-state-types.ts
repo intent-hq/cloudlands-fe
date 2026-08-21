@@ -132,6 +132,11 @@ export type HydratedBlockEntry =
   | { status: 'loaded'; seq: number; block: ContentBlock }
   | { status: 'error'; seq: number; error: string };
 
+export interface StreamFailureCorrelation {
+  turnCorrelation?: string;
+  turnIdCorrelation?: string;
+}
+
 /**
  * Serializable per-agent chat state stored in Redux.
  * Serializable per-agent chat state without non-serializable fields
@@ -143,6 +148,7 @@ export interface ChatAgentState {
   // Read them from AgentSession via canonical agent-session selectors.
   isInterrupting: boolean;
   error: string | null;
+  failureCorrelation?: StreamFailureCorrelation;
   lastChunkTime: number | null;
   receivedFirstChunk: boolean;
   streamingStartTime: number | null;

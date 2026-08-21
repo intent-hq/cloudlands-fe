@@ -10,6 +10,7 @@ import type {
   ModelUnavailableInfo,
   TranscriptHydrationStatus,
   TranscriptSnapshotMeta,
+  StreamFailureCorrelation,
 } from './chat-state-types';
 import { hydratedBlockKey } from './chat-state-types';
 
@@ -33,6 +34,11 @@ export const selectChatAgentState = store.createSelector((state, agentId: string
 /** Select error */
 export const selectChatError = store.createSelector(
   (state, agentId: string): string | null => getAgentChatState(state, agentId).error,
+);
+
+export const selectChatFailureCorrelation = store.createSelector(
+  (state, agentId: string): StreamFailureCorrelation | undefined =>
+    getAgentChatState(state, agentId).failureCorrelation,
 );
 
 /** Select streaming start time */

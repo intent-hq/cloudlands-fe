@@ -266,6 +266,10 @@ import {
 import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { WorkspaceEvent } from '$features/events/types';
 import { createLogger } from '$lib/utils/client-logger';
+import {
+  reportStreamLifecycle,
+  streamTurnCorrelation,
+} from '$lib/utils/stream-lifecycle-telemetry';
 import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -718,6 +722,7 @@ function dispatchStreamUpdate(
   // agent-stream-saga re-checks coverage for dispatches buffered across a
   // registration install.
   const covered = hasStandingChatSubscription(agentId);
+  const contentBlocks = covered ? undefined : buildContentBlocks(state);
 
   appStore.dispatch(
     agentStreamUpdateReceived({
@@ -727,11 +732,18 @@ function dispatchStreamUpdate(
       source: 'sendMessage',
       eventType,
       assistantMessageId: state.messageId,
-      ...(covered ? {} : { contentBlocks: buildContentBlocks(state) }),
+      ...(contentBlocks ? { contentBlocks } : {}),
       ...(stopReason ? { stopReason } : {}),
       ...(finishReason ? { finishReason } : {}),
     }),
   );
+  reportStreamLifecycle({
+    stage: 'bridge',
+    event: `stream-${eventType}-dispatched`,
+    turnCorrelation: streamTurnCorrelation(state.messageId),
+    callbackResult: 'dispatched',
+    ...(contentBlocks ? { blockCount: contentBlocks.length } : {}),
+  });
 }
 
 /**
@@ -1197,6 +1209,13 @@ function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): voi
       createInitialPlaceholder: true,
     }),
   );
+  reportStreamLifecycle({
+    stage: 'bridge',
+    event: 'stream-start-dispatched',
+    turnCorrelation: streamTurnCorrelation(messageId),
+    callbackResult: 'dispatched',
+    blockCount: 0,
+  });
 }
 
 function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void {
@@ -1259,6 +1278,13 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
     });
   }
   const state = streamsByAgent.get(agentId);
+  reportStreamLifecycle({
+    stage: 'bridge',
+    event: 'agent-stream-end-received',
+    turnCorrelation: streamTurnCorrelation(messageId ?? state?.messageId),
+    callbackResult: 'received',
+    blockCount: trailingBlocks.length,
+  });
   if (state && (!messageId || state.messageId === messageId)) {
     if (trailingBlocks.length > 0) {
       const maxIndex = Math.max(-1, ...state.blocksByIndex.keys());
@@ -1306,6 +1332,13 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         ...(finishReason ? { finishReason } : {}),
       }),
     );
+    reportStreamLifecycle({
+      stage: 'bridge',
+      event: 'stream-complete-dispatched',
+      turnCorrelation: streamTurnCorrelation(messageId),
+      callbackResult: 'dispatched',
+      blockCount: trailingBlocks.length,
+    });
     return;
   }
   if (trailingBlocks.length > 0) {
@@ -1316,6 +1349,13 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
       trailingBlockCount: trailingBlocks.length,
     });
   }
+  reportStreamLifecycle({
+    stage: 'bridge',
+    event: 'agent-stream-end-ignored',
+    turnCorrelation: streamTurnCorrelation(messageId),
+    callbackResult: 'ignored',
+    blockCount: trailingBlocks.length,
+  });
 }
 
 function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): void {
@@ -1325,6 +1365,27 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
   if (typeof agentId !== 'string') return;
 
   const state = streamsByAgent.get(agentId);
+  const turnId = typeof data?.turnId === 'string' ? data.turnId : undefined;
+  const turnCorrelation = streamTurnCorrelation(state?.messageId);
+  const turnIdCorrelation = streamTurnCorrelation(turnId);
+  const failureCorrelation =
+    turnCorrelation || turnIdCorrelation
+      ? {
+          ...(turnCorrelation ? { turnCorrelation } : {}),
+          ...(turnIdCorrelation ? { turnIdCorrelation } : {}),
+        }
+      : undefined;
+  reportStreamLifecycle({
+    stage: 'bridge',
+    event: 'agent-failed-received',
+    ...failureCorrelation,
+    correlationBasis: turnCorrelation
+      ? 'assistant-message'
+      : turnIdCorrelation
+        ? 'turn'
+        : 'unjoinable',
+    callbackResult: 'received',
+  });
   if (state) {
     dispatchStreamUpdate(agentId, state, 'error');
     streamsByAgent.delete(agentId);
@@ -1342,13 +1403,35 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
   // turn-correlation id (PROTOCOL §6.6) rides along when present so the
   // failure can be attributed to the exact turn (monorepo#1057).
   if (typeof error === 'string' && error.length > 0) {
-    const turnId = typeof data?.turnId === 'string' ? data.turnId : undefined;
     const parentAgentId = data?.parentAgentId;
     const hasParent = typeof parentAgentId === 'string' && parentAgentId.length > 0;
     if (!hasParent) {
       recordAgentFailure({ agentId, workspaceId, error });
     }
-    appStore.dispatch(chatSendFailed(agentId, error, turnId));
+    appStore.dispatch(chatSendFailed(agentId, error, turnId, failureCorrelation));
+    reportStreamLifecycle({
+      stage: 'bridge',
+      event: 'agent-failed-dispatched',
+      ...failureCorrelation,
+      correlationBasis: turnCorrelation
+        ? 'assistant-message'
+        : turnIdCorrelation
+          ? 'turn'
+          : 'unjoinable',
+      callbackResult: 'dispatched',
+    });
+  } else if (!state) {
+    reportStreamLifecycle({
+      stage: 'bridge',
+      event: 'agent-failed-ignored',
+      ...failureCorrelation,
+      correlationBasis: turnCorrelation
+        ? 'assistant-message'
+        : turnIdCorrelation
+          ? 'turn'
+          : 'unjoinable',
+      callbackResult: 'ignored',
+    });
   }
 }
 

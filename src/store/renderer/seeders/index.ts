@@ -31,3 +31,4 @@ import './native-dialog-bridge-seeder';
 import './voice-local-bridge-seeder';
 import './notification-bridge-seeder';
 import './language-preference-bridge-seeder';
+import './renderer-log-bridge-seeder';
