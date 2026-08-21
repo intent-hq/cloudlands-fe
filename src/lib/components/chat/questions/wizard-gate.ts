@@ -80,7 +80,15 @@ export function deriveMarkedQuestionRecoveryState(
   if (selectAgentMessageById.select(state, agentId, marker)) return null;
   const recovery = state.chatState?.byAgentId[agentId]?.pendingQuestionRecovery;
   if (recovery?.messageId === marker) {
-    return { messageId: marker, shouldRequest: false, loading: recovery.status === 'loading' };
+    // Exhaustion ends network retries, not marker authority: keep the ordinary
+    // composer fail-closed until the daemon clears or replaces the marker.
+    const hasRecoveredWizard =
+      recovery.status === 'found' && !!recovery.questions && recovery.questions.length > 0;
+    return {
+      messageId: marker,
+      shouldRequest: false,
+      loading: !hasRecoveredWizard,
+    };
   }
   return { messageId: marker, shouldRequest: true, loading: true };
 }

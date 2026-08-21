@@ -16,7 +16,10 @@ import { AgentStatus } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { StoreState } from '$store/renderer/types';
 import { composeTranscript } from '$lib/components/chat/chat-scrollback-composition';
-import { deriveWizardPendingQuestions } from '$lib/components/chat/questions/wizard-gate';
+import {
+  deriveMarkedQuestionRecoveryState,
+  deriveWizardPendingQuestions,
+} from '$lib/components/chat/questions/wizard-gate';
 import {
   HISTORY_SEGMENT_MAX,
   agentSessionReducer,
@@ -391,6 +394,11 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     expect(run.chat()?.pendingQuestionRecovery).toEqual({
       messageId: 'm-question',
       status: 'error',
+    });
+    expect(deriveMarkedQuestionRecoveryState(run.state(), AGENT)).toEqual({
+      messageId: 'm-question',
+      shouldRequest: false,
+      loading: true,
     });
     run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
     await vi.advanceTimersByTimeAsync(10_000);

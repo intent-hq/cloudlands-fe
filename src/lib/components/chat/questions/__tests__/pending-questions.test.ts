@@ -444,7 +444,7 @@ describe('wizard gate honors the authoritative pending marker', () => {
     expect(deriveMarkedQuestionRecoveryState(state, AGENT_ID)).toBeNull();
   });
 
-  it('reports one loading recovery until a stale marker is settled as not found', () => {
+  it('keeps an authoritative marker fail-closed when recovery settles as not found', () => {
     const state = stateWith(
       makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-stale' } }),
     );
@@ -463,7 +463,43 @@ describe('wizard gate honors the authoritative pending marker', () => {
     expect(deriveMarkedQuestionRecoveryState(state, AGENT_ID)).toEqual({
       messageId: 'msg-stale',
       shouldRequest: false,
-      loading: false,
+      loading: true,
     });
+  });
+
+  it('keeps an exhausted current marker fail-closed until authoritative state changes', () => {
+    const state = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-unavailable' } }),
+    );
+    state.chatState = {
+      byAgentId: {
+        [AGENT_ID]: {
+          pendingQuestionRecovery: { messageId: 'msg-unavailable', status: 'error' },
+        },
+      },
+    } as StoreState['chatState'];
+
+    expect(deriveMarkedQuestionRecoveryState(state, AGENT_ID)).toEqual({
+      messageId: 'msg-unavailable',
+      shouldRequest: false,
+      loading: true,
+    });
+
+    state.agentSessions.byAgentId[AGENT_ID] = makeStoredSession({
+      metadata: { pendingQuestionsMessageId: '' },
+    });
+    expect(deriveMarkedQuestionRecoveryState(state, AGENT_ID)).toBeNull();
+
+    state.agentSessions.byAgentId[AGENT_ID] = makeStoredSession({
+      metadata: { pendingQuestionsMessageId: 'msg-replacement' },
+    });
+    expect(deriveMarkedQuestionRecoveryState(state, AGENT_ID)).toEqual({
+      messageId: 'msg-replacement',
+      shouldRequest: true,
+      loading: true,
+    });
+
+    delete state.agentSessions.byAgentId[AGENT_ID];
+    expect(deriveMarkedQuestionRecoveryState(state, AGENT_ID)).toBeNull();
   });
 });
