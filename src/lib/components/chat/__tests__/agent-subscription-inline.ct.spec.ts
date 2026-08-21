@@ -1099,14 +1099,9 @@ test('keeps 27 live participant surfaces on one rounded-square overlap geometry'
       if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
       await expect(summary).toContainText('Waiting for 27 agents');
       const stack = summary.locator('[data-agent-avatar-stack]');
-      await expect
-        .poll(() => stack.locator('[data-agent-avatar-stack-item]').count())
-        .toBeGreaterThanOrEqual(6);
+      await expect.poll(() => stack.locator('[data-agent-avatar-stack-item]').count()).toBe(3);
       const visibleCount = await stack.locator('[data-agent-avatar-stack-item]').count();
-      expect(visibleCount).toBeLessThanOrEqual(8);
-      await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveText(
-        `+${27 - visibleCount}`,
-      );
+      await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveText('+24');
       await expect(stack.locator('[data-avatar-state="running"]')).toHaveCount(1);
       await expect
         .poll(() =>
