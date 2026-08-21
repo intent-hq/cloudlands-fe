@@ -112,7 +112,15 @@ test('refits a structural 1→2 increase after the available viewport shrinks', 
   await expect(component.locator('[data-panel-id]')).toHaveCount(2);
   const before = await measureFit(component);
 
-  await component.update({ props: { viewportWidth: 1060, persistedCanvasWidth: 1800 } });
+  await component.evaluate(() => {
+    const viewport = document.querySelector<HTMLElement>(
+      '[data-testid="structural-column-viewport"]',
+    )!;
+    viewport.style.width = '1060px';
+  });
+  await expect
+    .poll(async () => (await measureFit(component)).insetClientWidth)
+    .toBeLessThan(before.insetClientWidth);
   await expect
     .poll(async () => (await measureFit(component)).insetScrollWidth)
     .toBeLessThanOrEqual((await measureFit(component)).insetClientWidth);

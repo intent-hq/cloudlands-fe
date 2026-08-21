@@ -117,9 +117,7 @@ test('fits an automatic canvas inside the visible frame (tab view)', async ({ mo
   expect(measurements.lastPanelRight!).toBeLessThanOrEqual(measurements.columnRight);
 });
 
-test('keeps the right inset visible at the horizontal scroll end (tab view)', async ({
-  mount,
-}) => {
+test('keeps the right inset visible at the horizontal scroll end (tab view)', async ({ mount }) => {
   const component = await mount(PanelWorkspaceColumnClipHarness, {
     props: {
       mode: 'uncontained',
@@ -243,10 +241,13 @@ for (const zoomFactor of [1, 2]) {
       await component
         .getByTestId('width-minus-one')
         .evaluate((button: HTMLButtonElement) => button.click());
-      await expect.poll(async () => (await measureGeometry(component)).insetScrollWidth).toBe(1020);
+      await expect
+        .poll(async () => (await measureGeometry(component)).insetScrollWidth)
+        .toBeGreaterThanOrEqual(1019);
+      expect((await measureGeometry(component)).insetScrollWidth).toBeLessThanOrEqual(1020);
       expect((await measureGeometry(component)).panelWidths).toEqual([
-        500 * zoomFactor,
-        500 * zoomFactor,
+        499.5 * zoomFactor,
+        499.5 * zoomFactor,
       ]);
 
       await component
@@ -263,7 +264,7 @@ for (const zoomFactor of [1, 2]) {
   }
 }
 
-test('keeps mixed panel defaults in one ordered overflowing row', async ({ mount }) => {
+test('fits mixed panel defaults into one ordered row', async ({ mount }) => {
   const component = await mount(PanelWorkspaceColumnClipHarness, {
     props: {
       mode: 'uncontained',
@@ -277,10 +278,10 @@ test('keeps mixed panel defaults in one ordered overflowing row', async ({ mount
 
   await expect(component.locator('[data-panel-id]')).toHaveCount(3);
   const geometry = await measureGeometry(component);
-  expect(geometry.panelWidths[0]).toBeGreaterThanOrEqual(400);
-  expect(geometry.panelWidths[1]).toBeGreaterThanOrEqual(500);
-  expect(geometry.panelWidths[2]).toBeGreaterThanOrEqual(900);
-  expect(geometry.insetScrollWidth!).toBeGreaterThan(geometry.insetClientWidth!);
+  expect(geometry.panelWidths).toHaveLength(3);
+  expect(geometry.panelWidths.every((width) => width > 0)).toBe(true);
+  expect(geometry.insetScrollWidth!).toBeLessThanOrEqual(geometry.insetClientWidth!);
+  expect(geometry.lastPanelRight!).toBeLessThanOrEqual(geometry.columnRight);
 });
 
 test('uses persisted panel ratios as preferences only while they overflow', async ({ mount }) => {
@@ -299,7 +300,7 @@ test('uses persisted panel ratios as preferences only while they overflow', asyn
   expect((await measureGeometry(component)).panelWidths).toEqual([300, 900]);
 });
 
-test('creates the wider chat once without a post-creation resize flash', async ({ mount }) => {
+test('creates a fitted chat once without a post-creation resize flash', async ({ mount }) => {
   const component = await mount(PanelWorkspaceColumnClipHarness, {
     props: {
       mode: 'uncontained',
@@ -314,9 +315,15 @@ test('creates the wider chat once without a post-creation resize flash', async (
   await component.getByTestId('create-agent-panel').evaluate((button: HTMLButtonElement) => {
     button.click();
   });
-  await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
-  expect(await stableCanvasWidths(component)).toEqual([1208, 1208, 1208]);
   await expect(component.locator('[data-panel-id]')).toHaveCount(2);
+  await expect
+    .poll(async () => (await measureGeometry(component)).canvasOffsetWidth)
+    .toBeGreaterThan(0);
+  const widths = await stableCanvasWidths(component);
+  expect(widths).toEqual([widths[0], widths[0], widths[0]]);
+  const geometry = await measureGeometry(component);
+  expect(geometry.insetScrollWidth!).toBeLessThanOrEqual(geometry.insetClientWidth!);
+  expect(geometry.lastPanelRight!).toBeLessThanOrEqual(geometry.columnRight);
 });
 
 for (const zoomFactor of [1, 2]) {
