@@ -909,6 +909,7 @@
   "workspace_card_pin_ariaLabel": "ピン留め",
   "workspace_card_pin_tooltip": "アクティブリストにピン留め",
   "workspace_card_prBadge_label": "PR{number}",
+  "workspace_card_prBadge_repoLine_tooltip": "{repo} #{number}",
   "workspace_card_prMerged_label": "PR #{number} がマージされました",
   "workspace_card_prOpen_label": "PR {number} がオープン",
   "workspace_card_showChanges_label": "変更を表示",

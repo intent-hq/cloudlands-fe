@@ -64,9 +64,11 @@
     getPRStatusTooltip,
     mapWorkspacePRs,
     mergeMonitoredPRs,
+    prRepoFromUrl,
     selectPrimaryPr,
     toPullRequestStatus,
   } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
+  import { handleLink } from '$features/navigation/link-handler';
   import { cn } from '$lib/utils';
   import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
@@ -243,11 +245,42 @@
   const isPRMergeable = $derived(
     primaryIsActivePr && checkPRMergeable(activePullRequest ?? undefined),
   );
+  // Pill link target: the primary PR's own URL (authoritative for cross-repo
+  // and monitor-only rows), falling back to a constructed URL for the legacy
+  // `workspace.prNumber`-only case. Undefined keeps the pill non-interactive.
+  const prPillUrl = $derived.by(() => {
+    if (!workspace) return undefined;
+    if (primaryPr?.url) return primaryPr.url;
+    if (workspace.prNumber != null) {
+      return (
+        constructPrUrl(workspace.prNumber, workspace.repositoryOwner, workspace.repositoryName) ||
+        undefined
+      );
+    }
+    return undefined;
+  });
+  // `owner/repo` for the tooltip's first line: the PR URL is authoritative,
+  // then monitor-provided crossRepo, then the workspace's own repository.
+  const prPillRepo = $derived.by(() => {
+    if (!workspace) return undefined;
+    const fromUrl = prRepoFromUrl(primaryPr?.url);
+    if (fromUrl) return fromUrl;
+    if (primaryPr?.crossRepo) return primaryPr.crossRepo;
+    return workspace.repositoryOwner && workspace.repositoryName
+      ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
+      : undefined;
+  });
   const prTooltipContent = $derived.by(() => {
-    if (!primaryPr) return '';
-    return primaryIsActivePr
-      ? getPRTooltipContent(activePullRequest ?? undefined)
-      : getPRStatusTooltip(primaryPr);
+    const statusContent = !primaryPr
+      ? ''
+      : primaryIsActivePr
+        ? getPRTooltipContent(activePullRequest ?? undefined)
+        : getPRStatusTooltip(primaryPr);
+    const repoLine =
+      prPillRepo !== undefined && prNumber !== undefined
+        ? m.workspace_card_prBadge_repoLine_tooltip({ repo: prPillRepo, number: prNumber })
+        : '';
+    return [repoLine, statusContent].filter(Boolean).join('\n');
   });
 
   // "+N" indicator: other PRs in the deduped pool beyond the primary badge.
@@ -572,11 +605,28 @@
           sideOffset={4}
           disabled={!prTooltipContent}
         >
-          <span
-            class="wc-secondary type-caption shrink-0 rounded-sm px-1.5 font-normal tabular-nums {statusColor}"
-          >
-            {m.workspace_card_prBadge_label({ number: prNumber ? ` #${prNumber}` : '' })}
-          </span>
+          {#if prPillUrl}
+            <!-- Clicks route through the unified link handler (GitHub default
+                 action / choices menu) and must not bubble to the card row. -->
+            <button
+              type="button"
+              class="wc-secondary type-caption shrink-0 cursor-pointer rounded-sm px-1.5 font-normal tabular-nums {statusColor}"
+              data-workspace-card-pr-pill
+              onclick={(event) => {
+                event.stopPropagation();
+                void handleLink(prPillUrl, { workspaceId: workspace.id, event });
+              }}
+            >
+              {m.workspace_card_prBadge_label({ number: prNumber ? ` #${prNumber}` : '' })}
+            </button>
+          {:else}
+            <span
+              class="wc-secondary type-caption shrink-0 rounded-sm px-1.5 font-normal tabular-nums {statusColor}"
+              data-workspace-card-pr-pill
+            >
+              {m.workspace_card_prBadge_label({ number: prNumber ? ` #${prNumber}` : '' })}
+            </span>
+          {/if}
         </Tooltip>
       {/if}
 

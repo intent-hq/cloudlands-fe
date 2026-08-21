@@ -909,6 +909,7 @@
   "workspace_card_pin_ariaLabel": "Fijar",
   "workspace_card_pin_tooltip": "Fijar a la lista de activos",
   "workspace_card_prBadge_label": "PR{number}",
+  "workspace_card_prBadge_repoLine_tooltip": "{repo} #{number}",
   "workspace_card_prMerged_label": "PR #{number} fusionada",
   "workspace_card_prOpen_label": "PR {number} abierta",
   "workspace_card_showChanges_label": "Mostrar cambios",

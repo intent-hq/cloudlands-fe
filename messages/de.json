@@ -909,6 +909,7 @@
   "workspace_card_pin_ariaLabel": "Anheften",
   "workspace_card_pin_tooltip": "An „Aktiv“-Liste anheften",
   "workspace_card_prBadge_label": "PR{number}",
+  "workspace_card_prBadge_repoLine_tooltip": "{repo} #{number}",
   "workspace_card_prMerged_label": "PR #{number} gemergt",
   "workspace_card_prOpen_label": "PR {number} offen",
   "workspace_card_showChanges_label": "Änderungen anzeigen",

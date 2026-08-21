@@ -910,6 +910,7 @@
   "workspace_card_pin_ariaLabel": "Pin",
   "workspace_card_pin_tooltip": "Pin to Active list",
   "workspace_card_prBadge_label": "PR{number}",
+  "workspace_card_prBadge_repoLine_tooltip": "{repo} #{number}",
   "workspace_card_prMerged_label": "PR #{number} merged",
   "workspace_card_prOpen_label": "PR {number} open",
   "workspace_card_showChanges_label": "Show changes",
