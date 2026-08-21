@@ -8,6 +8,7 @@
   let {
     onboardingInputValue = $bindable(''),
     onboardingSkipWorktree = $bindable(false),
+    onboardingSkipIsolation = $bindable(false),
     setupScript = $bindable(''),
     showSetupScript = $bindable(false),
     setupScriptName = $bindable('Custom'),
@@ -22,9 +23,12 @@
     onModelChange,
     onProjectChange,
     onSubmit,
+    onSkipIsolationChange,
+    onBranchBehindChange,
   }: {
     onboardingInputValue?: string;
     onboardingSkipWorktree?: boolean;
+    onboardingSkipIsolation?: boolean;
     setupScript?: string;
     showSetupScript?: boolean;
     setupScriptName?: string;
@@ -39,6 +43,8 @@
     onModelChange?: (model: string) => void;
     onProjectChange?: (selection: unknown) => void;
     onSubmit?: () => void;
+    onSkipIsolationChange?: (value: boolean) => void;
+    onBranchBehindChange?: (behind: number) => void;
     [key: string]: unknown;
   } = $props();
 
@@ -62,6 +68,11 @@
       onProjectChange,
       onSubmit,
       onModelChange,
+      setSkipIsolation: (value: boolean) => {
+        onboardingSkipIsolation = value;
+        onSkipIsolationChange?.(value);
+      },
+      setBranchBehind: (behind: number) => onBranchBehindChange?.(behind),
       setEffectiveDefaultModel: (value: { model: string | undefined; provider: string }) => {
         effectiveDefaultModel = value;
       },
@@ -94,4 +105,6 @@
 </div>
 <div data-testid="selected-model">{selectedModel ?? ''}</div>
 <div data-testid="model-was-overridden">{String(modelWasOverridden)}</div>
-<div hidden>{onboardingInputValue}{onboardingSkipWorktree}{showSetupScript}{focusedSuggestionIndex}</div>
+<div hidden>
+  {onboardingInputValue}{onboardingSkipWorktree}{onboardingSkipIsolation}{showSetupScript}{focusedSuggestionIndex}
+</div>

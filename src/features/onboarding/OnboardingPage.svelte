@@ -81,6 +81,7 @@
   import { Button } from '$lib/components/ui/button';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
+  import { shouldPullSourceRepositoryBeforeCreate } from '$lib/components/workspace/initializer/workspace-create-pull-policy';
 
   import { createAgentTypeId } from '$shared/types/agent.types';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -1042,11 +1043,15 @@
       const linearIssue = extractLinearIssue(contextReferences);
       const sentryIssue = extractSentryIssue(contextReferences);
 
-      // Auto-pull latest changes if branch is behind remote
+      // Pull only for direct mode. Isolated creation must not mutate the source checkout.
       if (
-        onboardingBranchBehind > 0 &&
-        projectSelection.type === 'local' &&
-        onboardingShouldPullBeforeCreate
+        shouldPullSourceRepositoryBeforeCreate({
+          branchBehind: onboardingBranchBehind,
+          isLocalRepository: projectSelection.type === 'local',
+          isNewRepository: projectSelection.type === 'new',
+          skipIsolation: onboardingSkipIsolation,
+          pullEnabled: onboardingShouldPullBeforeCreate,
+        })
       ) {
         logger.info('Auto-pulling latest changes before workspace creation (onboarding)', {
           branch: projectSelection.branch,
