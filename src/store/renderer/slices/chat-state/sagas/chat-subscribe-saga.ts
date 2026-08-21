@@ -1047,9 +1047,17 @@ function* startRevealGateWatcher(
 }
 
 /**
- * The viewed-agent swap is global within its realm: all related closes settle
- * before the newly viewed agent opens. Chief and ordinary workspace realms
- * remain independent because their standing surfaces intentionally coexist.
+ * The viewed-agent swap is realm-scoped: it sweeps every other same-realm
+ * agent's subscription and opens the newly viewed agent's IMMEDIATELY — the
+ * open never waits on the swept agents' closes. `chat.subscribe` is
+ * agent-scoped (PROTOCOL §7.1): registrations for different agents are
+ * independent on the wire, so gating the new subscribe behind another
+ * agent's unsubscribe only added its round-trip to the swap's critical
+ * path. Same-agent close→open ordering is unaffected: each agent's
+ * transitions run serially through its own slot channel, so a re-viewed
+ * agent's reopen still queues behind its own pending close. Chief and
+ * ordinary workspace realms remain independent because their standing
+ * surfaces intentionally coexist.
  */
 function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): SagaGenerator<void> {
   const viewedIsChief = yield* isChiefChatAgent(coordinator, agentId);
@@ -1097,7 +1105,7 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
     if (yield* selectAgentHasOpenPanelTab.effect(slotAgentId)) spared.add(slotAgentId);
   }
   for (const slotAgentId of spared) coordinator.pendingClearWhileLoading.add(slotAgentId);
-  const closes = closeMatchingSlots(
+  closeMatchingSlots(
     coordinator,
     (otherId, slot) =>
       otherId !== agentId &&
@@ -1106,12 +1114,7 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
   );
   const session = yield* selectAgentSession.effect(agentId);
   if (session) {
-    yield* enqueueOpen(
-      coordinator,
-      agentId,
-      session.workspaceId,
-      closes.length > 0 ? closes : undefined,
-    );
+    yield* enqueueOpen(coordinator, agentId, session.workspaceId);
   }
 }
 
