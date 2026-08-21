@@ -140,7 +140,10 @@ describe('backgroundHooksSaga', () => {
 
     dispatch(backgroundHooksUnsubscribeRequested('ws-1'));
     await vi.waitFor(() => expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-1'));
-    expect(getState().byWorkspaceId['ws-1']).toBeUndefined();
+    // The entry is RETAINED (stale-marked, not cleared) so a warm re-subscribe
+    // keeps the delivered latch set.
+    expect(getState().byWorkspaceId['ws-1'].stale).toBe(true);
+    expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']).toEqual(makeHook());
     expect(mocks.notificationHandlers).toHaveLength(0);
     expect(mocks.reconnectHandlers).toHaveLength(0);
     await stop(task);
@@ -370,7 +373,7 @@ describe('backgroundHooksSaga', () => {
     expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-new');
     expect(mocks.notificationHandlers).toHaveLength(0);
     expect(mocks.reconnectHandlers).toHaveLength(0);
-    expect(getState().byWorkspaceId['ws-1']).toBeUndefined();
+    expect(getState().byWorkspaceId['ws-1'].stale).toBe(true);
   });
 
   it('drops a pending hook.list completion after root cancellation', async () => {
@@ -558,7 +561,7 @@ describe('backgroundHooksSaga', () => {
         });
         await vi.waitFor(() => expect(getState().byWorkspaceId['ws-3']).toBeDefined());
         expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-ws-1');
-        expect(getState().byWorkspaceId['ws-1']).toBeUndefined();
+        expect(getState().byWorkspaceId['ws-1']?.stale).toBe(true);
         await stop(task);
       } finally {
         vi.useRealTimers();
@@ -591,7 +594,65 @@ describe('backgroundHooksSaga', () => {
       dispatch(openWorkspaceTab('ws-2'));
       await vi.waitFor(() => expect(getState().byWorkspaceId['ws-2']).toBeDefined());
       await vi.waitFor(() => expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-ws-1'));
-      expect(getState().byWorkspaceId['ws-1']).toBeUndefined();
+      // Retained stale-marked: the delivered latch survives the swap.
+      expect(getState().byWorkspaceId['ws-1'].stale).toBe(true);
+      await stop(task);
+    });
+
+    it('retains the outgoing entry stale-marked and re-seeds on warm switch-back', async () => {
+      const seed = deferred<{ hooks: BackgroundHook[] }>();
+      const reseed = deferred<{ hooks: BackgroundHook[] }>();
+      const listCalls = new Map<string, number>();
+      mocks.subscribe.mockImplementation(({ workspaceId }: { workspaceId: string }) =>
+        Promise.resolve({ subscriptionId: `sub-${workspaceId}` }),
+      );
+      mocks.request.mockImplementation((method: string, params: { workspaceId?: string }) => {
+        if (method !== 'hook.list' || !params.workspaceId) return Promise.resolve({ ok: true });
+        const call = listCalls.get(params.workspaceId) ?? 0;
+        listCalls.set(params.workspaceId, call + 1);
+        if (params.workspaceId === 'ws-2') return Promise.resolve({ hooks: [] });
+        return call === 0 ? seed.promise : reseed.promise;
+      });
+      const { dispatch, task, getState } = createHarness();
+
+      // Seed ws-1; settle the seed only after the subscribe ack so no
+      // gap-closing re-list competes for the mocked responses.
+      dispatch(openWorkspaceTab('ws-1'));
+      await vi.waitFor(() => expect(mocks.subscribe).toHaveBeenCalledTimes(1));
+      seed.resolve({ hooks: [makeHook()] });
+      await vi.waitFor(() => expect(getState().byWorkspaceId['ws-1']).toBeDefined());
+      expect(getState().byWorkspaceId['ws-1'].stale).toBe(false);
+
+      // Switch away: the entry is retained stale-marked, rows intact.
+      dispatch(openWorkspaceTab('ws-2'));
+      await vi.waitFor(() => expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-ws-1'));
+      expect(getState().byWorkspaceId['ws-1'].stale).toBe(true);
+      expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']).toEqual(makeHook());
+
+      // Warm switch-back: the retained rows stay visible immediately while
+      // the background re-seed is still in flight.
+      dispatch(openWorkspaceTab('ws-1'));
+      await vi.waitFor(() => expect(listCalls.get('ws-1')).toBe(2));
+      expect(getState().byWorkspaceId['ws-1'].stale).toBe(true);
+      expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']).toEqual(makeHook());
+
+      // A pre-seed event folds against the retained rows, not from empty.
+      emitNotification({
+        subscriptionId: 'sub-ws-1',
+        event: { type: 'hook:run-started', workspaceId: 'ws-1', data: { hookId: 'hook-1' } },
+      });
+      await vi.waitFor(() =>
+        expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1'].state).toBe('running'),
+      );
+
+      // The re-seed lands: rows refresh and the entry is fresh again.
+      const fresh = makeHook({ runCount: 7, lastLogs: 'fresh' });
+      reseed.resolve({ hooks: [fresh] });
+      await vi.waitFor(() =>
+        expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']).toEqual(fresh),
+      );
+      expect(getState().byWorkspaceId['ws-1'].stale).toBe(false);
+      expect(listCalls.get('ws-1')).toBe(2);
       await stop(task);
     });
   });

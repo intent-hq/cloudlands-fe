@@ -24,6 +24,14 @@ import type { BackgroundHook } from '$features/hooks/background-hooks-service';
 /** Per-workspace live hook state (all wire states; selectors filter). */
 interface BackgroundHooksWorkspaceState {
   hooks: Collection<BackgroundHook, 'hookId'>;
+  /**
+   * No live `hook:*` subscription backs this entry (last subscriber
+   * released) — the retained list may be outdated. Consumers that treat an
+   * entry as authoritative (`getActiveHookNames`) must fall back to an
+   * on-demand `hook.list` while set; `backgroundHooksUpdated` clears it
+   * with the next delivered list.
+   */
+  stale: boolean;
 }
 
 /** Root background-hooks state, keyed by workspace ID. */
@@ -33,6 +41,7 @@ export interface BackgroundHooksState {
 
 const emptyBackgroundHooksWorkspaceState: BackgroundHooksWorkspaceState = {
   hooks: createCollection<BackgroundHook, 'hookId'>('hookId'),
+  stale: false,
 };
 
 export const initialState: BackgroundHooksState = {
@@ -69,9 +78,16 @@ export const backgroundHooksRefetchRequested = createAction<[workspaceId: string
 export const backgroundHooksUpdated =
   createAction<[workspaceId: string, hooks: BackgroundHook[]]>('backgroundHooks/updated');
 
-/** Service → reducer: last subscriber released — drop the cached list. */
-export const backgroundHooksCleared =
-  createAction<[workspaceId: string]>('backgroundHooks/cleared');
+/**
+ * Service → reducer: last subscriber released — RETAIN the cached list but
+ * mark it stale so no consumer serves it as authoritative while
+ * unsubscribed. Retention keeps the utility-footer delivered latch
+ * (`selectBackgroundHooksSnapshotDelivered`) set across workspace switches;
+ * the re-activation seed refreshes the rows in the background.
+ */
+export const backgroundHooksMarkedStale = createAction<[workspaceId: string]>(
+  'backgroundHooks/markedStale',
+);
 
 /** Trigger: `hook.runNow` (§5.40) — outcome arrives via `hook:*` events. */
 export const runBackgroundHookRequested = createAction<[workspaceId: string, hookId: string]>(
@@ -89,11 +105,14 @@ export const backgroundHooksReducer = createReducer<BackgroundHooksState>(initia
 backgroundHooksReducer.with(backgroundHooksUpdated, (state, { payload: [workspaceId, hooks] }) =>
   setWorkspaceState(state, workspaceId, {
     hooks: createCollection<BackgroundHook, 'hookId'>('hookId', hooks),
+    stale: false,
   }),
 );
-backgroundHooksReducer.with(backgroundHooksCleared, (state, { payload: [workspaceId] }) =>
-  clearWorkspaceState(state, workspaceId),
-);
+backgroundHooksReducer.with(backgroundHooksMarkedStale, (state, { payload: [workspaceId] }) => {
+  const entry = state.byWorkspaceId[workspaceId];
+  if (!entry) return state;
+  return setWorkspaceState(state, workspaceId, { ...entry, stale: true });
+});
 backgroundHooksReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) =>
   clearWorkspaceState(state, wsId),
 );

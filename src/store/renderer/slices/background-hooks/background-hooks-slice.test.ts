@@ -6,7 +6,7 @@ import { getItems } from "@augmentcode/themis/utils/collections/collection-utils
 import { removeWorkspaceEntity } from "../workspace/workspace-slice";
 import type { BackgroundHook } from "$features/hooks/background-hooks-service";
 import {
-  backgroundHooksCleared,
+  backgroundHooksMarkedStale,
   backgroundHooksReducer,
   backgroundHooksRefetchRequested,
   backgroundHooksUpdated,
@@ -103,21 +103,35 @@ describe("backgroundHooksReducer", () => {
     expect(getItems(state.byWorkspaceId["ws-2"].hooks)[0].hookId).toBe("hook-9");
   });
 
-  it("backgroundHooksCleared drops only the addressed workspace", () => {
+  it("backgroundHooksMarkedStale retains the hooks and flags only the addressed workspace", () => {
     let state = backgroundHooksReducer(initialState, backgroundHooksUpdated("ws-1", [makeHook()]));
     state = backgroundHooksReducer(
       state,
       backgroundHooksUpdated("ws-2", [makeHook({ hookId: "hook-9", workspaceId: "ws-2" })]),
     );
-    state = backgroundHooksReducer(state, backgroundHooksCleared("ws-1"));
+    state = backgroundHooksReducer(state, backgroundHooksMarkedStale("ws-1"));
 
-    expect(state.byWorkspaceId["ws-1"]).toBeUndefined();
-    expect(state.byWorkspaceId["ws-2"]).toBeDefined();
+    expect(state.byWorkspaceId["ws-1"].stale).toBe(true);
+    expect(getItems(state.byWorkspaceId["ws-1"].hooks)).toEqual([makeHook()]);
+    expect(state.byWorkspaceId["ws-2"].stale).toBe(false);
   });
 
-  it("backgroundHooksCleared on an unknown workspace is a no-op", () => {
-    const state = backgroundHooksReducer(initialState, backgroundHooksCleared("ws-x"));
+  it("backgroundHooksMarkedStale on an unknown workspace is a no-op", () => {
+    const state = backgroundHooksReducer(initialState, backgroundHooksMarkedStale("ws-x"));
     expect(state).toBe(initialState);
+  });
+
+  it("backgroundHooksUpdated clears the stale flag with the next delivered list", () => {
+    let state = backgroundHooksReducer(initialState, backgroundHooksUpdated("ws-1", [makeHook()]));
+    state = backgroundHooksReducer(state, backgroundHooksMarkedStale("ws-1"));
+    expect(state.byWorkspaceId["ws-1"].stale).toBe(true);
+
+    state = backgroundHooksReducer(
+      state,
+      backgroundHooksUpdated("ws-1", [makeHook({ state: "running" })]),
+    );
+    expect(state.byWorkspaceId["ws-1"].stale).toBe(false);
+    expect(state.byWorkspaceId["ws-1"].hooks.map["hook-1"].state).toBe("running");
   });
 
   it("removeWorkspaceEntity clears the workspace's hooks", () => {
@@ -131,6 +145,14 @@ describe("backgroundHooksReducer", () => {
       selectBackgroundHooksSnapshotDelivered.select({ backgroundHooks: initialState }, "ws-1"),
     ).toBe(false);
     const state = backgroundHooksReducer(initialState, backgroundHooksUpdated("ws-1", []));
+    expect(
+      selectBackgroundHooksSnapshotDelivered.select({ backgroundHooks: state }, "ws-1"),
+    ).toBe(true);
+  });
+
+  it("selectBackgroundHooksSnapshotDelivered stays latched after the entry is marked stale", () => {
+    let state = backgroundHooksReducer(initialState, backgroundHooksUpdated("ws-1", [makeHook()]));
+    state = backgroundHooksReducer(state, backgroundHooksMarkedStale("ws-1"));
     expect(
       selectBackgroundHooksSnapshotDelivered.select({ backgroundHooks: state }, "ws-1"),
     ).toBe(true);

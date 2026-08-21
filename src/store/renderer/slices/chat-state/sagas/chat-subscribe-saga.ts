@@ -141,10 +141,7 @@ import {
   subscriptionSnapshotFetchFailed,
 } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import { selectSubscriptionSnapshotFetched } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
-import {
-  backgroundHooksCleared,
-  backgroundHooksUpdated,
-} from '$store/renderer/slices/background-hooks/background-hooks-slice';
+import { backgroundHooksUpdated } from '$store/renderer/slices/background-hooks/background-hooks-slice';
 import { selectBackgroundHooksSnapshotDelivered } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
 import { prMonitorsUpdated } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
 import { selectPrMonitorsSnapshotDelivered } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
@@ -927,8 +924,9 @@ export const SWITCH_BACK_REVEAL_WAIT_MS =
  * with the footer populating from the card's own mount-time fetches. The
  * same short-circuit is deliberately NOT applied to ordinary non-active-tab
  * workspaces (multi-panel layouts): their entries seed on tab activation and
- * are retained (pr-monitors) or re-seeded by the card mount (hooks), so the
- * gate still converges without the fallback in the common case.
+ * are retained across the swap (pr-monitors on reconcile, hooks stale-marked
+ * on lease release), so the gate still converges without the fallback in the
+ * common case.
  */
 function* isFooterReadyForReveal(wsId: string, agentId: string): SagaGenerator<boolean> {
   if (wsId === CHIEF_WORKSPACE_ID) return true;
@@ -979,7 +977,6 @@ function* revealGateWatcher(agentId: string, wsId: string): SagaGenerator<void> 
           action.payload[1] === agentId
         );
       case backgroundHooksUpdated.type:
-      case backgroundHooksCleared.type:
       case prMonitorsUpdated.type:
         return Array.isArray(action.payload) && action.payload[0] === wsId;
       default:
