@@ -62,6 +62,7 @@ import {
   workspaceUnmounted,
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type { PanelLayoutSliceState, RecentlyClosedPanelColumn } from './panel-layout-types';
+import { getPanelOrder } from './panel-layout-tabless';
 import {
   DEFAULT_CHAT_PANEL_WIDTH,
   DEFAULT_MEDIUM_PANEL_WIDTH,
@@ -1043,7 +1044,7 @@ describe('panelLayoutReducer', () => {
       expect(result).toBe(state);
     });
 
-    it('splits a populated focused panel and preserves its active tab', () => {
+    it('reuses a populated sole fixed column without changing the count', () => {
       const state = stateWithPanel('p1', [{ id: 'existing', type: 'file', title: 'Existing' }]);
       const result = panelLayoutReducer(
         state,
@@ -1057,21 +1058,20 @@ describe('panelLayoutReducer', () => {
       );
       const panels = Object.values(result.byWorkspaceId[WS].panels);
 
-      expect(panels).toHaveLength(2);
-      expect(result.byWorkspaceId[WS].panels.p1.activeTabId).toBe('existing');
-      expect(panels.find((panel) => panel.id !== 'p1')?.tabs[0]).toMatchObject({
+      expect(panels).toHaveLength(1);
+      expect(result.byWorkspaceId[WS].root).toEqual({ type: 'panel', panelId: 'p1' });
+      expect(result.byWorkspaceId[WS].columnCount).toBe(1);
+      expect(result.byWorkspaceId[WS].panels.p1.tabs.at(-1)).toMatchObject({
         type: 'note',
         noteId: 'spec',
       });
-      expect(result.byWorkspaceId[WS].canvasWidth).toBe(1008);
-      const focusedPanelId = result.byWorkspaceId[WS].focusedPanelId!;
       expect(result.byWorkspaceId[WS].pendingPanelReveal).toMatchObject({
-        panelId: focusedPanelId,
-        tabId: result.byWorkspaceId[WS].panels[focusedPanelId].activeTabId,
+        panelId: 'p1',
+        tabId: result.byWorkspaceId[WS].panels.p1.activeTabId,
       });
     });
 
-    it('creates every adjacent chat at old default plus exactly 200px', () => {
+    it('keeps sole-column geometry when opening an adjacent chat', () => {
       const state = stateWithPanel('p1', [{ id: 'existing', type: 'note', title: 'Existing' }]);
       const result = panelLayoutReducer(
         state,
@@ -1084,15 +1084,12 @@ describe('panelLayoutReducer', () => {
         ),
       ).byWorkspaceId[WS];
 
-      expect(result.canvasWidth).toBe(1208);
-      if (result.root.type !== 'split') throw new Error('Expected horizontal split');
-      expect(result.root.sizes).toEqual([
-        expect.closeTo((500 / 1200) * 100, 6),
-        expect.closeTo((700 / 1200) * 100, 6),
-      ]);
+      expect(result.canvasWidth).toBeNull();
+      expect(result.root).toEqual({ type: 'panel', panelId: 'p1' });
+      expect(result.panels.p1.tabs.at(-1)).toMatchObject({ type: 'agent', agentId: 'agent-1' });
     });
 
-    it('preserves existing explicit column pixels when adding the wider chat', () => {
+    it('preserves existing explicit column pixels when reusing the fixed column', () => {
       const state = stateWithPanel('p1', [{ id: 'existing', type: 'note', title: 'Existing' }]);
       state.byWorkspaceId[WS].canvasWidth = 860;
       state.byWorkspaceId[WS].canvasWidthSource = 'explicit';
@@ -1106,13 +1103,9 @@ describe('panelLayoutReducer', () => {
         }),
       ).byWorkspaceId[WS];
 
-      expect(result.canvasWidth).toBe(1568);
+      expect(result.canvasWidth).toBe(860);
       expect(result.canvasWidthSource).toBe('explicit');
-      if (result.root.type !== 'split') throw new Error('Expected horizontal split');
-      expect(result.root.sizes).toEqual([
-        expect.closeTo((860 / 1560) * 100, 6),
-        expect.closeTo((700 / 1560) * 100, 6),
-      ]);
+      expect(result.root).toEqual({ type: 'panel', panelId: 'p1' });
     });
 
     it('fills an empty focused panel instead of creating another empty shell', () => {
@@ -1190,7 +1183,7 @@ describe('panelLayoutReducer', () => {
       expect(result.panels[emptyPanelId].tabs[0]).toMatchObject({ noteId: 'spec' });
     });
 
-    it('creates a third adjacent panel instead of reusing an existing neighbor', () => {
+    it('reuses the next fixed column instead of creating a third column', () => {
       const state = emptyState();
       state.byWorkspaceId[WS] = {
         ...emptyWorkspaceState,
@@ -1216,6 +1209,8 @@ describe('panelLayoutReducer', () => {
           },
         },
         focusedPanelId: 'p1',
+        columnCount: 2,
+        columnCountInitialized: true,
       };
 
       const result = panelLayoutReducer(
@@ -1231,13 +1226,34 @@ describe('panelLayoutReducer', () => {
       const panels = Object.values(result.byWorkspaceId[WS].panels);
       const root = result.byWorkspaceId[WS].root;
 
-      expect(panels).toHaveLength(3);
+      expect(panels).toHaveLength(2);
       expect(root).toMatchObject({ type: 'split', direction: 'horizontal' });
-      expect(root.type === 'split' ? root.children : []).toHaveLength(3);
-      expect(result.byWorkspaceId[WS].panels.p2.tabs).toHaveLength(1);
-      expect(
-        panels.find((panel) => panel.tabs.some((tab) => tab.noteId === 'linked')),
-      ).toBeDefined();
+      expect(root.type === 'split' ? root.children : []).toHaveLength(2);
+      expect(result.byWorkspaceId[WS].columnCount).toBe(2);
+      expect(result.byWorkspaceId[WS].panels.p2.tabs).toHaveLength(2);
+      expect(result.byWorkspaceId[WS].panels.p2.tabs.at(-1)).toMatchObject({ noteId: 'linked' });
+    });
+
+    it('reuses the rightmost fixed column when the source is already rightmost', () => {
+      let state = stateWithPanel('p1', [{ id: 'source', type: 'note', title: 'Source' }]);
+      state = panelLayoutReducer(state, setPanelColumnCount(WS, 2, 10));
+      const workspace = state.byWorkspaceId[WS];
+      const rightmostPanelId = getPanelOrder(workspace.root).at(-1)!;
+
+      const result = panelLayoutReducer(
+        state,
+        openTabInAdjacentOrSplit(
+          WS,
+          { type: 'note', title: 'Linked', noteId: 'linked', closable: true },
+          rightmostPanelId,
+          undefined,
+          20,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(getPanelOrder(result.root)).toHaveLength(2);
+      expect(result.columnCount).toBe(2);
+      expect(result.panels[rightmostPanelId].tabs.at(-1)).toMatchObject({ noteId: 'linked' });
     });
   });
 

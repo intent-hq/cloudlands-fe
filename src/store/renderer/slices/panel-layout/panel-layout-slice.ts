@@ -3590,8 +3590,7 @@ panelLayoutReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
 });
 // --- Open Tab In Adjacent Or Split ---
 panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
-  const { wsId, tab, sourcePanelId, animated, force, allowDuplicate, newTabId, timestamp } =
-    payload;
+  const { wsId, tab, sourcePanelId, force, allowDuplicate, newTabId, timestamp } = payload;
   if (tab.workspaceId && tab.workspaceId !== wsId) return state;
   const ws = getWorkspaceState(state, wsId);
 
@@ -3621,32 +3620,17 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
     return setWorkspaceState(result, wsId, { ...updatedWs, pendingFocusTabId: newTabId });
   }
 
-  // Adjacent tabs always receive a fresh column. Reusing an arbitrary neighbor
-  // makes the result depend on object insertion order and replaces its content.
-  if (!effectiveSourcePanelId) {
-    const result = selfDispatch(
-      state,
-      openTab(wsId, tab, undefined, newTabId, force, timestamp, allowDuplicate),
-    );
-    const updatedWs = getWorkspaceState(result, wsId);
-    return setWorkspaceState(result, wsId, { ...updatedWs, pendingFocusTabId: newTabId });
-  }
+  const panelOrder = getPanelOrder(ws.root).filter((panelId) => ws.panels[panelId]);
+  const sourceIndex = effectiveSourcePanelId ? panelOrder.indexOf(effectiveSourcePanelId) : -1;
+  const targetPanelId =
+    sourceIndex >= 0 ? (panelOrder[sourceIndex + 1] ?? panelOrder.at(-1)) : panelOrder.at(-1);
+  if (!targetPanelId) return state;
 
-  // Split then open in new panel
-  let result = selfDispatch(
+  // Fixed columns are structural. An adjacent open reuses the next visible
+  // column, falling back to the rightmost one instead of changing the count.
+  const result = selfDispatch(
     state,
-    splitPanel(
-      wsId,
-      effectiveSourcePanelId,
-      'horizontal',
-      { animated, panelWidth: getPanelCreationWidthForType(tab.type) },
-      timestamp,
-    ),
-  );
-  // The new panel is now focused; open tab there
-  result = selfDispatch(
-    result,
-    openTab(wsId, tab, undefined, newTabId, force, timestamp, allowDuplicate),
+    openTab(wsId, tab, targetPanelId, newTabId, force, timestamp, allowDuplicate),
   );
   const updatedWs = getWorkspaceState(result, wsId);
   return setWorkspaceState(result, wsId, { ...updatedWs, pendingFocusTabId: newTabId });

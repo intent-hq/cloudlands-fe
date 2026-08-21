@@ -140,7 +140,7 @@ describe('workspaceNavigationTabSaga', () => {
     await task.toPromise();
   });
 
-  it('requests a fresh adjacent split for note links', async () => {
+  it('requests fixed-column-safe adjacent routing for note links', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
     const state = {
