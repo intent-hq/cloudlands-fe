@@ -361,7 +361,7 @@ import {
   getWindowSessionsPath,
   isBackendSwitchWindowTeardownInProgress,
   loadWindowSessions,
-  saveWindowSessions,
+  saveAllWindowSessions,
   stampWindowWithBackend,
 } from './window.js';
 import {
@@ -536,18 +536,11 @@ if (process.env.NODE_ENV === 'development' && process.env.ENABLE_CDP_DEBUG) {
 }
 
 /**
- * Persist window sessions under the CURRENTLY-active backend id (T21). Window
- * sessions are keyed per-backend; saving under the wrong id (previously the
- * hard-coded `local` default) leaked a remote's windows into local's slot. All
- * save triggers — the debounced autosave, before-quit, and the non-macOS
- * last-window-close flush — route through here so they always key off the live
- * active backend. `getActiveId()` is fail-soft (falls back to `local` only when
- * the connections store itself is unreadable), so this never defaults silently
- * on the happy path.
+ * Persist every open backend's window sessions. Persisted activeId chooses the
+ * first backend restored at boot; it is not the identity of every live window.
  */
-async function saveActiveWindowSessions(): Promise<void> {
-  const backendId = await getActiveId();
-  await saveWindowSessions(backendId);
+async function saveOpenWindowSessions(): Promise<void> {
+  await saveAllWindowSessions();
 }
 
 app.whenReady().then(async () => {
@@ -573,7 +566,7 @@ app.whenReady().then(async () => {
   let sessionSaveTimeout: NodeJS.Timeout | null = null;
   const debouncedSaveWindowSessions = () => {
     if (sessionSaveTimeout) clearTimeout(sessionSaveTimeout);
-    sessionSaveTimeout = setTimeout(() => void saveActiveWindowSessions(), 1000);
+    sessionSaveTimeout = setTimeout(() => void saveOpenWindowSessions(), 1000);
   };
 
   app.on('browser-window-created', (_event: Electron.Event, window: BrowserWindowType) => {
@@ -1830,7 +1823,7 @@ app.on('before-quit', async (event: Electron.Event) => {
     // Save window sessions now that quit is prevented.
     // Must be called AFTER event.preventDefault() because saveWindowSessions is async
     // and preventDefault must be called synchronously within the event handler.
-    await saveActiveWindowSessions();
+    await saveOpenWindowSessions();
 
     // Skip the prompt when quitting to install an update: installUpdate()
     // already ran the confirmation while the windows were still open, so
@@ -1909,7 +1902,7 @@ app.on('window-all-closed', async () => {
     // on next launch. The debounced background saver (1s) is best-effort and
     // may not have captured the final state; always flush synchronously here.
     try {
-      await saveActiveWindowSessions();
+      await saveOpenWindowSessions();
     } catch (err) {
       logger.error(
         // i18n-ignore (developer log message)

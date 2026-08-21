@@ -33,10 +33,23 @@ export function stampWindowWithBackend(
   (window as BackendBoundWindow).backendId = backendId;
 }
 
+/** Resolve a BrowserWindow's backend, defaulting legacy/unbound windows to local. */
+export function getBackendIdForWindow(window: BrowserWindowType): string {
+  return (window as BackendBoundWindow).backendId ?? LOCAL_CONNECTION_ID;
+}
+
 /** Resolve an IPC sender's backend, defaulting unbound windows to local. */
 export function getBackendIdForWebContents(webContents: Electron.WebContents): string {
   const window = BrowserWindow.fromWebContents(webContents) as BackendBoundWindow | null;
-  return window?.backendId ?? LOCAL_CONNECTION_ID;
+  return window ? getBackendIdForWindow(window) : LOCAL_CONNECTION_ID;
+}
+
+/** The focused window's backend; falls back to the main window, then local. */
+export function getFocusedWindowBackendId(): string {
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && !focused.isDestroyed()) return getBackendIdForWindow(focused);
+  const main = getMainWindow();
+  return main && !main.isDestroyed() ? getBackendIdForWindow(main) : LOCAL_CONNECTION_ID;
 }
 
 /**
@@ -266,12 +279,13 @@ function readSessionsMap(): WindowSessionsMap {
 // fallback when saveWindowSessions() is invoked after all windows are already
 // gone (e.g., non-macOS window-all-closed, where BrowserWindow.getAllWindows()
 // returns empty and there is nothing live left to serialize).
-let lastKnownSessions: WindowSession[] | null = null;
+let lastKnownSessions: WindowSessionsMap = {};
 
-function buildSessionsFromOpenWindows(): WindowSession[] {
+function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
   return BrowserWindow.getAllWindows()
     .filter((w: BrowserWindowType) => {
       if (w.isDestroyed()) return false;
+      if (getBackendIdForWindow(w) !== backendId) return false;
       const url = w.webContents.getURL();
       // Skip windows that haven't loaded yet (about:blank) or have empty URLs
       if (!url || url === 'about:blank') return false;
@@ -308,9 +322,14 @@ function buildSessionsFromOpenWindows(): WindowSession[] {
  */
 export function captureWindowSessionsSnapshot(): void {
   try {
-    const sessions = buildSessionsFromOpenWindows();
-    if (sessions.length > 0) {
-      lastKnownSessions = sessions;
+    const backendIds = new Set(
+      BrowserWindow.getAllWindows()
+        .filter((window) => !window.isDestroyed())
+        .map(getBackendIdForWindow),
+    );
+    for (const backendId of backendIds) {
+      const sessions = buildSessionsFromOpenWindows(backendId);
+      if (sessions.length > 0) lastKnownSessions[backendId] = sessions;
     }
   } catch (err) {
     logger.warn('Failed to capture window sessions snapshot:', err);
@@ -319,15 +338,15 @@ export function captureWindowSessionsSnapshot(): void {
 
 export async function saveWindowSessions(backendId: string): Promise<void> {
   try {
-    let sessions = buildSessionsFromOpenWindows();
+    let sessions = buildSessionsFromOpenWindows(backendId);
 
     if (sessions.length > 0) {
       // Refresh the cache whenever we have a live non-empty list.
-      lastKnownSessions = sessions;
-    } else if (lastKnownSessions && lastKnownSessions.length > 0) {
+      lastKnownSessions[backendId] = sessions;
+    } else if (lastKnownSessions[backendId]?.length > 0) {
       // No live windows (e.g., non-macOS window-all-closed). Fall back to the
       // last pre-close snapshot so the latest layout still persists.
-      sessions = lastKnownSessions;
+      sessions = lastKnownSessions[backendId];
       logger.info('saveWindowSessions: using last-known snapshot (no live windows)', {
         count: sessions.length,
       });
@@ -350,6 +369,31 @@ export async function saveWindowSessions(backendId: string): Promise<void> {
   }
 }
 
+/** Persist every live/cached backend bucket without treating activeId as process-global. */
+export async function saveAllWindowSessions(): Promise<void> {
+  try {
+    const backendIds = new Set([
+      ...Object.keys(lastKnownSessions),
+      ...BrowserWindow.getAllWindows()
+        .filter((window) => !window.isDestroyed())
+        .map(getBackendIdForWindow),
+    ]);
+    const map = readSessionsMap();
+    for (const backendId of backendIds) {
+      const live = buildSessionsFromOpenWindows(backendId);
+      const sessions = live.length > 0 ? live : lastKnownSessions[backendId];
+      if (!sessions?.length) continue;
+      lastKnownSessions[backendId] = sessions;
+      map[backendId] = sessions;
+    }
+    if (backendIds.size > 0) {
+      await fsAsync.writeFile(getWindowSessionsPath(), JSON.stringify(map), 'utf-8');
+    }
+  } catch (err) {
+    logger.warn('Failed to save all window sessions:', err);
+  }
+}
+
 /**
  * Clear the in-memory last-known sessions snapshot.
  *
@@ -361,7 +405,7 @@ export async function saveWindowSessions(backendId: string): Promise<void> {
  * cached snapshot, and resurrect the file the user deliberately cleared.
  */
 export function clearWindowSessionsSnapshot(): void {
-  lastKnownSessions = null;
+  lastKnownSessions = {};
 }
 
 /**
@@ -581,6 +625,18 @@ export function openOrFocusWindowsForBackend(backendId: string): void {
     return;
   }
   restoreWindowsForBackend(backendId);
+}
+
+/** Destroy only windows bound to one backend, preserving every other backend. */
+export function closeWindowsForBackend(backendId: string): void {
+  const windows = BrowserWindow.getAllWindows();
+  for (const window of windows) {
+    if (!window.isDestroyed() && getBackendIdForWindow(window) === backendId) window.destroy();
+  }
+  const main = getMainWindow();
+  if (main?.isDestroyed()) {
+    setMainWindow(windows.find((window) => !window.isDestroyed()) ?? null);
+  }
 }
 
 export function createWindow(backendId: string = LOCAL_CONNECTION_ID) {
