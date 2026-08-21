@@ -266,14 +266,19 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     dispose();
   });
 
-  it('skips the trailing re-list when the ack lands before the seed settles (no gap)', async () => {
+  it('re-lists once (coalesced) even when the ack lands before the seed settles', async () => {
+    // Response ordering proves nothing about snapshot ordering — the seed
+    // can snapshot before the subscription window opens yet respond after
+    // the ack — so the post-ack re-list is unconditional, coalesced into
+    // exactly one trailing prMonitor.list.
     mockedRequest.mockResolvedValue({ monitors: [makeMonitor()] });
     const seen: PrMonitorRow[][] = [];
     const { dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
     await flush();
     await flush();
 
-    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'prMonitor.list', { workspaceId: 'ws-1' });
     expect(seen.at(-1)).toEqual([makeMonitor()]);
     dispose();
   });
@@ -471,19 +476,23 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
       lastSnapshot: { ...makeMonitor().lastSnapshot!, state: 'merged' },
       state: 'completed',
     });
+    // Seed + unconditional post-ack re-list, then the explicit refetch.
     mockedRequest
+      .mockResolvedValueOnce({ monitors: [makeMonitor()] })
       .mockResolvedValueOnce({ monitors: [makeMonitor()] })
       .mockResolvedValueOnce({ monitors: [refreshed] });
     const seen: PrMonitorRow[][] = [];
     const { refetch, dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
     await flush();
+    await flush();
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
     expect(seen.at(-1)?.[0].state).toBe('active');
 
     refetch();
     await flush();
 
-    expect(mockedRequest).toHaveBeenCalledTimes(2);
-    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'prMonitor.list', { workspaceId: 'ws-1' });
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+    expect(mockedRequest).toHaveBeenNthCalledWith(3, 'prMonitor.list', { workspaceId: 'ws-1' });
     expect(seen.at(-1)).toEqual([refreshed]);
     dispose();
   });

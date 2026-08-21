@@ -48,14 +48,6 @@ interface HookEventNotification {
 interface SubscriptionLease {
   subscriptionId?: string;
   cancelled: boolean;
-  /** The `events.subscribe` ack landed (subscription window open). */
-  acked?: boolean;
-  /** The concurrent `hook.list` seed settled before the ack — its snapshot
-   * may predate the subscription window (event-gap race). */
-  listSettledBeforeAck?: boolean;
-  /** A hook event folded before the ack landed — the in-flight seed response
-   * can clobber that fold with an older snapshot. */
-  eventBeforeAck?: boolean;
 }
 
 interface ActiveWorkspace {
@@ -130,7 +122,6 @@ async function subscribeWorkspace(workspaceId: string, lease: SubscriptionLease)
     return false;
   }
   lease.subscriptionId = subscriptionId;
-  lease.acked = true;
   return true;
 }
 
@@ -160,13 +151,14 @@ function* subscribeActiveWorkspace(
       entry.generation === generation &&
       entry.lease === lease
     ) {
-      // Event-gap race: a seed that settled before the ack snapshotted
-      // before the subscription window opened, and a pre-ack fold can be
-      // clobbered by the in-flight seed response — re-list (single-flight,
-      // coalesced) to converge.
-      if (lease.acked && (lease.listSettledBeforeAck || lease.eventBeforeAck)) {
-        yield* put(backgroundHooksRefetchRequested(workspaceId));
-      }
+      // Event-gap race: response ordering proves nothing about SNAPSHOT
+      // ordering — a seed can snapshot before the subscription window opens
+      // yet respond after the ack, and a pre-ack fold can be clobbered by
+      // the in-flight seed response. Always re-list after the ack: the
+      // single-flight watcher coalesces it into (at most) one trailing
+      // `hook.list` that starts after the seed settles, converging every
+      // ordering.
+      yield* put(backgroundHooksRefetchRequested(workspaceId));
     }
   }
 }
@@ -192,20 +184,11 @@ function* refetchWorkspace(
     // Still deliver the cached list (empty on a failed initial seed) so the
     // workspace entry exists: the utility-footer readiness gate treats a
     // failed seed as ready-with-empty and never wedges the reveal.
+    // PROVISIONAL: the cached rows are not a fresh snapshot, so a retained
+    // stale flag must survive this delivery.
     if (active.get(workspaceId) === entry && entry.generation === generation) {
-      yield* put(backgroundHooksUpdated(workspaceId, entry.hooks));
+      yield* put(backgroundHooksUpdated(workspaceId, entry.hooks, true));
     }
-  }
-  // A list settling before the subscribe ack snapshotted before the
-  // subscription window opened — mark the lease so the ack triggers a
-  // gap-closing re-list (subscribeActiveWorkspace).
-  if (
-    active.get(workspaceId) === entry &&
-    entry.generation === generation &&
-    entry.lease &&
-    !entry.lease.acked
-  ) {
-    entry.lease.listSettledBeforeAck = true;
   }
 }
 
@@ -288,12 +271,13 @@ function* handleNotification(
   if (!entry) return;
   const subscriptionId = entry.lease?.subscriptionId;
   if (subscriptionId && params?.subscriptionId && params.subscriptionId !== subscriptionId) return;
-  // Pre-ack fold: the in-flight seed response can clobber it — mark the
-  // lease so the ack triggers a gap-closing re-list.
-  if (entry.lease && !entry.lease.acked) entry.lease.eventBeforeAck = true;
   const folded = foldHookEvent(entry.hooks, event.type, event.data ?? {});
   entry.hooks = folded.hooks;
-  yield* put(backgroundHooksUpdated(event.workspaceId, entry.hooks));
+  // PROVISIONAL: a fold on retained (possibly stale) rows is not a fresh
+  // snapshot — a retained stale flag survives until a full `hook.list`
+  // lands. (A pre-ack fold clobbered by the in-flight seed response is
+  // converged by the unconditional post-ack re-list.)
+  yield* put(backgroundHooksUpdated(event.workspaceId, entry.hooks, true));
   if (folded.needsRefetch) yield* put(backgroundHooksRefetchRequested(event.workspaceId));
 }
 

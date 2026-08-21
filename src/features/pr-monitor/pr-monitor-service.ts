@@ -210,9 +210,9 @@ export interface PrMonitorsSubscription {
 /**
  * Live monitor list for one workspace: registers a `prMonitor:*`
  * `events.subscribe` with the `prMonitor.list` seed issued concurrently
- * (single RTT; a post-ack re-list closes the event-gap race when the seed
- * settles first), folds subsequent events, and re-seeds after a backend
- * reconnect (RESUB-1). The handler receives the full list on every change
+ * (single RTT; an unconditional post-ack re-list — coalesced into the
+ * in-flight seed's trailing run — closes the event-gap race), folds
+ * subsequent events, and re-seeds after a backend reconnect (RESUB-1). The handler receives the full list on every change
  * (active + completed — callers filter). Returns a handle exposing an
  * on-demand `refetch` plus the disposer.
  */
@@ -275,18 +275,15 @@ export function subscribePrMonitors(
   const register = () => {
     const epoch = ++registerEpoch;
     // Seed CONCURRENTLY with the subscribe (~1 RTT instead of 2 serial RTTs).
-    // Event-gap race: a seed that settles BEFORE the subscribe ack lands
-    // snapshotted before the subscription window opened, so events in
-    // between were never delivered — the seed marks the gap and the ack
-    // handler re-lists (single-flight, coalesced) to converge. A seed that
-    // settles after the ack saw a post-subscription snapshot (no gap), and
-    // folds landing while a list is in flight are covered by the
-    // notification handler's trailing-refetch clause.
-    let ackLanded = false;
-    let gapPossible = false;
-    void refetch().then(() => {
-      if (!ackLanded) gapPossible = true;
-    });
+    // Event-gap race: response ordering proves nothing about SNAPSHOT
+    // ordering — the list handler can snapshot before the subscription
+    // window opens yet respond after the ack — so the ack handler always
+    // re-lists. `refetch` is single-flight with a trailing coalesce: a seed
+    // still in flight absorbs the re-list into one trailing `prMonitor.list`
+    // that starts after the seed settles, converging every ordering. Folds
+    // landing while a list is in flight are covered by the notification
+    // handler's trailing-refetch clause.
+    void refetch();
     backendSubscribe<{ subscriptionId?: string }>({ eventTypes: ['prMonitor:*'], workspaceId })
       .then((result) => {
         const acked = result?.subscriptionId;
@@ -297,8 +294,7 @@ export function subscribePrMonitors(
           return;
         }
         subscriptionId = acked;
-        ackLanded = true;
-        if (gapPossible) void refetch();
+        void refetch();
       })
       .catch((error) => {
         logger.warn('events.subscribe (prMonitor:*) failed', { workspaceId, error });
