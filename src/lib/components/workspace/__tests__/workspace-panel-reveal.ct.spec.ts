@@ -255,7 +255,7 @@ test('updates geometry for fit, overflow, scroll, resize, open, close, and reord
   expect(Math.abs(mixedWidths[0] - mixedWidths[1])).toBeGreaterThan(20);
   await expectNavigatorGeometryWithinHalfDevicePixel(component, page);
 
-  await component.locator('[data-open-file]').click();
+  await component.locator('[data-open-agent]').click();
   await expect(segments).toHaveCount(3);
   await expectNavigatorGeometryWithinHalfDevicePixel(component, page);
   await component.locator('[data-close-extra-panel]').click();
@@ -306,8 +306,8 @@ test('updates geometry for fit, overflow, scroll, resize, open, close, and reord
 });
 
 for (const route of [
-  { name: 'file', trigger: '[data-open-file]', expectedPanelCount: '3' },
-  { name: 'note', trigger: '[data-open-note]', expectedPanelCount: '3' },
+  { name: 'file', trigger: '[data-open-file]', expectedPanelCount: '2' },
+  { name: 'note', trigger: '[data-open-note]', expectedPanelCount: '2' },
   { name: 'agent', trigger: '[data-open-agent]', expectedPanelCount: '3' },
   { name: 'changes', trigger: '[data-open-changes]', expectedPanelCount: '2' },
 ]) {

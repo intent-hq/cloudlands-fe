@@ -27,8 +27,8 @@ async function expectRightmost(state: Locator, type: 'file' | 'note', value: str
   );
 }
 
-async function expectAdjacent(state: Locator, type: 'file' | 'note', value: string) {
-  await expect(state).toHaveAttribute('data-panel-count', '3');
+async function expectAdjacentFixedColumn(state: Locator, type: 'file' | 'note', value: string) {
+  await expect(state).toHaveAttribute('data-panel-count', '2');
   await expect(state).toHaveAttribute('data-source-active-type', 'agent');
   await expect(state).toHaveAttribute('data-focused-active-type', type);
   await expect(state).toHaveAttribute(
@@ -67,10 +67,10 @@ test('tool-call file keyboard activation opens in the rightmost column', async (
   await expectRightmost(state, 'file', 'src/tool.ts');
 });
 
-test('tool-call file Command click creates an adjacent column', async ({ mount }) => {
+test('tool-call file Command click opens in the adjacent fixed column', async ({ mount }) => {
   const { component, state } = await mountHarness(mount, 'file-command', 'tool-file');
   await component.getByTestId('tool-call-file-link').click({ modifiers: ['Meta'] });
-  await expectAdjacent(state, 'file', 'src/tool.ts');
+  await expectAdjacentFixedColumn(state, 'file', 'src/tool.ts');
 });
 
 test('tool-call note mouse click opens in the rightmost column', async ({ mount }) => {
@@ -85,10 +85,10 @@ test('tool-call note keyboard activation opens in the rightmost column', async (
   await expectRightmost(state, 'note', 'note-1');
 });
 
-test('tool-call note Control click creates an adjacent column', async ({ mount }) => {
+test('tool-call note Control click opens in the adjacent fixed column', async ({ mount }) => {
   const { component, state } = await mountHarness(mount, 'note-control', 'tool-note');
   await component.getByTestId('tool-call-note-link').dispatchEvent('click', { ctrlKey: true });
-  await expectAdjacent(state, 'note', 'note-1');
+  await expectAdjacentFixedColumn(state, 'note', 'note-1');
 });
 
 test('ordinary file open activates its existing identity without moving or duplicating it', async ({
