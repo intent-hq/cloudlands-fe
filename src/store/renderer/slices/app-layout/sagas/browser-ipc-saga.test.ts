@@ -104,6 +104,7 @@ describe('browserIpcSaga', () => {
       ['browser:open-tab', handlers['browser:open-tab']],
       ['browser:close-tab', handlers['browser:close-tab']],
       ['browser:focus-tab', handlers['browser:focus-tab']],
+      ['browser:show-tab', handlers['browser:show-tab']],
       ['browser:list-tabs-request', handlers['browser:list-tabs-request']],
       ['browser:tab-navigated', handlers['browser:tab-navigated']],
       ['browser:tab-owner-changed', handlers['browser:tab-owner-changed']],
@@ -115,13 +116,14 @@ describe('browserIpcSaga', () => {
       ['browser:open-tab', 'browser:open-tab-listener'],
       ['browser:close-tab', 'browser:close-tab-listener'],
       ['browser:focus-tab', 'browser:focus-tab-listener'],
+      ['browser:show-tab', 'browser:show-tab-listener'],
       ['browser:list-tabs-request', 'browser:list-tabs-request-listener'],
       ['browser:tab-navigated', 'browser:tab-navigated-listener'],
       ['browser:tab-owner-changed', 'browser:tab-owner-changed-listener'],
     ]);
 
     const restarted = start();
-    expect(on).toHaveBeenCalledTimes(12);
+    expect(on).toHaveBeenCalledTimes(14);
     restarted.cancel();
     await restarted.toPromise();
   });
@@ -1001,6 +1003,166 @@ describe('browserIpcSaga', () => {
     await emit({ workspaceId: 'ws-1' }, 'browser:focus-tab');
 
     expect(actions).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  // showTab (monorepo#3045): reveal a hidden owned tab into a panel.
+  // focus: false (default) mounts without activation; focus: true reveals
+  // and activates; already-visible tabs are idempotent.
+  it('browser:show-tab restores a hidden tab without focus by default', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: { one: { tabs: [] } },
+            hiddenTabs: createCollection('id', [
+              { id: 'browser-hidden', type: 'browser', ownerAgentId: 'agent-1' },
+            ]),
+          },
+        },
+      },
+    };
+
+    await emit({ tabId: 'browser-hidden', workspaceId: 'ws-1' }, 'browser:show-tab');
+
+    expect(actions).toEqual([
+      {
+        type: 'panelLayout/restoreHiddenTab',
+        payload: { wsId: 'ws-1', tabId: 'browser-hidden', timestamp: NOW, focus: false },
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('browser:show-tab with focus: true restores and activates the hidden tab', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: { one: { tabs: [] } },
+            hiddenTabs: createCollection('id', [
+              { id: 'browser-hidden', type: 'browser', ownerAgentId: 'agent-1' },
+            ]),
+          },
+        },
+      },
+    };
+
+    await emit({ tabId: 'browser-hidden', workspaceId: 'ws-1', focus: true }, 'browser:show-tab');
+
+    expect(actions).toEqual([
+      {
+        type: 'panelLayout/restoreHiddenTab',
+        payload: { wsId: 'ws-1', tabId: 'browser-hidden', timestamp: NOW, focus: true },
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('browser:show-tab on an already-visible tab: no-op without focus, focus path with focus: true', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: { one: { tabs: [{ id: 'browser-1', type: 'browser' }] } },
+            hiddenTabs: createCollection('id'),
+          },
+        },
+      },
+    };
+
+    await emit({ tabId: 'browser-1', workspaceId: 'ws-1' }, 'browser:show-tab');
+    expect(actions).toEqual([]);
+
+    await emit({ tabId: 'browser-1', workspaceId: 'ws-1', focus: true }, 'browser:show-tab');
+    expect(actions).toEqual([
+      {
+        type: 'appLayout/focusBrowserTabRequested',
+        payload: ['ws-1', 'browser-1'],
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('ignores browser:show-tab without workspaceId or tabId', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({}, 'browser:show-tab');
+    await emit({ tabId: 'browser-1' }, 'browser:show-tab');
+    await emit({ tabId: 7, workspaceId: 'ws-1' }, 'browser:show-tab');
+    await emit({ workspaceId: 'ws-1' }, 'browser:show-tab');
+
+    expect(actions).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('marks hidden owned tabs with hidden: true in list replies (monorepo#3045)', async () => {
+    const task = start();
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: {
+              one: {
+                tabs: [
+                  {
+                    id: 'browser-visible',
+                    type: 'browser',
+                    browserUrl: 'http://a/',
+                    title: 'A',
+                    ownerAgentId: 'agent-1',
+                  },
+                ],
+              },
+            },
+            hiddenTabs: createCollection('id', [
+              {
+                id: 'browser-hidden',
+                type: 'browser',
+                browserUrl: 'http://b/',
+                title: 'B',
+                ownerAgentId: 'agent-1',
+              },
+            ]),
+          },
+        },
+      },
+    };
+
+    await emit({ workspaceId: 'ws-1', requestId: 'req-hidden' }, 'browser:list-tabs-request');
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
+      requestId: 'req-hidden',
+      tabs: [
+        {
+          tabId: 'browser-visible',
+          url: 'http://a/',
+          title: 'A',
+          closable: true,
+          ownerAgentId: 'agent-1',
+        },
+        {
+          tabId: 'browser-hidden',
+          url: 'http://b/',
+          title: 'B',
+          closable: true,
+          ownerAgentId: 'agent-1',
+          hidden: true,
+        },
+      ],
+    });
     task.cancel();
     await task.toPromise();
   });

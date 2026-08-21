@@ -12,6 +12,7 @@ import {
   type BrowserFocusTabPayload,
   type BrowserListTabsRequestPayload,
   type BrowserOpenTabPayload,
+  type BrowserShowTabPayload,
   type BrowserTabNavigatedPayload,
   type BrowserTabOwnerChangedPayload,
 } from '$shared/ipc/workspace-command-payloads';
@@ -33,6 +34,7 @@ import {
   openHiddenTab,
   openTab,
   openTabInNewRootColumn,
+  restoreHiddenTab,
   setActiveTab,
   setPanelPinned,
   setTabOwnerAgent,
@@ -380,6 +382,41 @@ function* focusBrowser(data: BrowserFocusTabPayload | null): SagaGenerator<void>
   yield* put(focusBrowserTabRequested(data.workspaceId, data.tabId, data.pin));
 }
 
+function* showBrowser(data: BrowserShowTabPayload | null): SagaGenerator<void> {
+  if (!isWorkspaceCommandPayload(data) || typeof data.tabId !== 'string' || data.tabId.length === 0)
+    return;
+  const workspaceId = data.workspaceId;
+  const focus = data.focus === true;
+
+  // Same hostedness/hydration discipline as focus-tab: hydrate a
+  // hosted-but-unvisited workspace so the hidden tab can be found in its
+  // restored layout (monorepo#2789). Main confirms the reveal against a
+  // fresh tab list, so on hydration failure we stop and let it report
+  // truthfully.
+  const readiness = yield* call(ensureWorkspaceLayoutForRequest, workspaceId);
+  if (readiness.status === 'hydration-failed') {
+    logger.warn('Layout hydration failed before browser:show-tab; ignoring show', {
+      workspaceId,
+      tabId: data.tabId,
+      error: readiness.message,
+    });
+    return;
+  }
+
+  const hiddenTabs = yield* selectHiddenTabs.effect(workspaceId);
+  if (hiddenTabs.some((tab) => tab.id === data.tabId && tab.type === 'browser')) {
+    // Reveal: mount into a panel. focus: false mounts without activating
+    // the tab or moving panel focus (monorepo#3045).
+    yield* put(restoreHiddenTab(workspaceId, data.tabId, undefined, focus));
+    return;
+  }
+  // Already visible: idempotent — focus: true still activates the tab and
+  // focuses its panel (reusing the focusTab path); focus: false is a no-op.
+  if (focus) {
+    yield* put(focusBrowserTabRequested(workspaceId, data.tabId));
+  }
+}
+
 function* tabNavigated(data: BrowserTabNavigatedPayload | null): SagaGenerator<void> {
   if (
     !isWorkspaceCommandPayload(data) ||
@@ -445,29 +482,35 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
     return;
   }
 
-  // Hidden (user-closed) owned tabs stay in the list: they are alive
-  // offscreen and their owner must keep seeing them (monorepo#2857).
+  // Hidden (user-closed or hidden-opened) owned tabs stay in the list: they
+  // are alive offscreen and their owner must keep seeing them
+  // (monorepo#2857). They carry `hidden: true` so main can project the
+  // listTabs `visibility` field and guard focusTab (monorepo#3045).
+  const toReplyTab = (tab: PanelTab, hidden: boolean) => ({
+    tabId: tab.id,
+    url: tab.browserUrl || '',
+    title: tab.title || m.layout_panelLayout_browser_fallback(),
+    closable: tab.closable !== false,
+    // Persisted owner so main's ownership registry can rehydrate after a
+    // restart (monorepo#2857); absent for unowned (user) tabs. The
+    // persisted emulated size rides along so the tab rehydrates at its
+    // actual viewport instead of the default.
+    ...(typeof tab.ownerAgentId === 'string' && tab.ownerAgentId.length > 0
+      ? {
+          ownerAgentId: tab.ownerAgentId,
+          ...(isBrowserEmulatedSize(tab.emulatedSize) ? { emulatedSize: tab.emulatedSize } : {}),
+        }
+      : {}),
+    ...(hidden ? { hidden: true } : {}),
+  });
   const browserTabs = [
-    ...(yield* selectAllTabs.effect(workspaceId)),
-    ...(yield* selectHiddenTabs.effect(workspaceId)),
-  ]
-    .filter((tab) => tab.type === 'browser')
-    .map((tab) => ({
-      tabId: tab.id,
-      url: tab.browserUrl || '',
-      title: tab.title || m.layout_panelLayout_browser_fallback(),
-      closable: tab.closable !== false,
-      // Persisted owner so main's ownership registry can rehydrate after a
-      // restart (monorepo#2857); absent for unowned (user) tabs. The
-      // persisted emulated size rides along so the tab rehydrates at its
-      // actual viewport instead of the default.
-      ...(typeof tab.ownerAgentId === 'string' && tab.ownerAgentId.length > 0
-        ? {
-            ownerAgentId: tab.ownerAgentId,
-            ...(isBrowserEmulatedSize(tab.emulatedSize) ? { emulatedSize: tab.emulatedSize } : {}),
-          }
-        : {}),
-    }));
+    ...(yield* selectAllTabs.effect(workspaceId))
+      .filter((tab) => tab.type === 'browser')
+      .map((tab) => toReplyTab(tab, false)),
+    ...(yield* selectHiddenTabs.effect(workspaceId))
+      .filter((tab) => tab.type === 'browser')
+      .map((tab) => toReplyTab(tab, true)),
+  ];
 
   // Echo the requestId back so main resolves the matching pending request
   // (concurrent requests must not consume each other's replies).
@@ -544,6 +587,16 @@ export function* browserIpcSaga(): SagaGenerator<void> {
           bufferPolicy: {
             kind: 'lossless',
             rationale: 'Every requested browser tab focus must be applied in arrival order.',
+          },
+        },
+      ),
+      yield* takeEveryFromElectronChannel<BrowserShowTabPayload | null>(
+        'browser:show-tab',
+        showBrowser,
+        {
+          bufferPolicy: {
+            kind: 'lossless',
+            rationale: 'Every requested browser tab reveal must be applied in arrival order.',
           },
         },
       ),
