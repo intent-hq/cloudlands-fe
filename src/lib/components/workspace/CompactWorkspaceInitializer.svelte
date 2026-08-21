@@ -110,6 +110,7 @@
   import Button from '../ui/button/button.svelte';
   import CreateButtonProgress from './initializer/CreateButtonProgress.svelte';
   import InitialAgentPicker from './initializer/InitialAgentPicker.svelte';
+  import { shouldPullSourceRepositoryBeforeCreate } from './initializer/workspace-create-pull-policy';
   import IssueSuggestions, {
     preloadIssues,
     type IssueSelectionData,
@@ -1649,10 +1650,18 @@
         if (!repoValidation.valid) throw new Error(repoValidation.error);
       }
 
-      // Auto-pull latest changes if branch is behind remote
-      // We always pull automatically to ensure workspace starts with latest code
-      // Skip pull if user explicitly chose to create without pulling (via PullConflictDialog)
-      if (branchBehind > 0 && repoType === 'local' && !isNewRepo && shouldPullBeforeCreate) {
+      // Direct mode uses the selected checkout, so update it before create.
+      // Isolated mode resolves baseRef from the remote-tracking ref and must not
+      // rebase or stash the user's source checkout.
+      if (
+        shouldPullSourceRepositoryBeforeCreate({
+          branchBehind,
+          isLocalRepository: repoType === 'local',
+          isNewRepository: isNewRepo,
+          skipIsolation,
+          pullEnabled: shouldPullBeforeCreate,
+        })
+      ) {
         isPulling = true;
         logger.info('Auto-pulling latest changes before workspace creation', {
           branch,

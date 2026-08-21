@@ -10,6 +10,8 @@
   let {
     onRepoChange,
     onBranchChange,
+    onSkipIsolationChange,
+    onBranchStatusChange,
     detectedGitHubOwner = null,
     detectedGitHubRepo = null,
     repoPath = '',
@@ -18,6 +20,14 @@
   }: {
     onRepoChange?: (event: { detail: Record<string, unknown> }) => void;
     onBranchChange?: (event: { detail: { branch: string } }) => void;
+    onSkipIsolationChange?: (value: boolean) => void;
+    onBranchStatusChange?: (status: {
+      behind: number;
+      hasUncommittedChanges: boolean;
+      currentBranch: string;
+      isCurrentBranch: boolean;
+      isLoading: boolean;
+    }) => void;
     detectedGitHubOwner?: string | null;
     detectedGitHubRepo?: string | null;
     repoPath?: string;
@@ -28,7 +38,7 @@
 
   $effect(() => {
     const registry = window as unknown as Record<string, unknown>;
-    const callbacks = { onRepoChange, onBranchChange };
+    const callbacks = { onRepoChange, onBranchChange, onSkipIsolationChange, onBranchStatusChange };
     registry.__mockRepoAndBranchPicker = callbacks;
     return () => {
       if (registry.__mockRepoAndBranchPicker === callbacks) {

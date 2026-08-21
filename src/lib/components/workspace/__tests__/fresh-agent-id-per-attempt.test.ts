@@ -38,12 +38,14 @@ const mocks = vi.hoisted(() => {
     goto: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
+    pull: vi.fn(async () => ({ success: true })),
     setReasoningEffort: vi.fn(),
     hydrated$: writable(false),
     compactFormState$: writable<{
       selectedModel?: string;
       modelWasOverridden?: boolean;
       selectedReasoningEffort?: string;
+      skipIsolation?: boolean;
     } | null>(null),
   };
 });
@@ -53,7 +55,10 @@ vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
+  return createAppStoreMockModule({
+    state: () => ({ workspaceCreateProgress: { byProgressId: {} } }),
+    dispatch: mocks.dispatch,
+  });
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
@@ -73,6 +78,15 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable(() => 'auggie'),
+}));
+
+vi.mock('$store/renderer/slices/hardware-console/hardware-console-selectors', () => ({
+  selectPttRecording: () => mocks.readable(() => false),
+  selectVoiceTranscribing: () => mocks.readable(() => false),
+}));
+
+vi.mock('$store/renderer/slices/voice-settings/voice-settings-selectors', () => ({
+  selectEffectiveVoiceEngine: () => mocks.readable(() => 'os'),
 }));
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
@@ -110,7 +124,7 @@ vi.mock('$lib/config/debug', () => ({
 vi.mock('$lib/client', () => ({
   appClient: {
     agents: { setReasoningEffort: mocks.setReasoningEffort },
-    git: { pull: vi.fn(async () => ({ success: true })) },
+    git: { pull: mocks.pull },
     drafts: {
       get: vi.fn(async () => null),
       set: vi.fn(async () => undefined),
@@ -174,7 +188,7 @@ vi.mock('$lib/components/workspace/initializer/IssueSuggestions.svelte', async (
 }));
 
 vi.mock('$lib/components/workspace/initializer/RepoAndBranchPicker.svelte', async () => ({
-  default: (await import('../initializer/__tests__/mocks/MockComponent.svelte')).default,
+  default: (await import('./mocks/MockRepoAndBranchPicker.svelte')).default,
 }));
 
 vi.mock('$lib/components/chat/AttachmentPreview.svelte', async () => ({
@@ -258,6 +272,65 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
 
     expect(sessionStorage.getItem('compact-workspace-initializer-agent-id')).toBeNull();
+  });
+
+  it('does not pull a behind source checkout for isolated creation', async () => {
+    mocks.create.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    seedAutoCreatePrefill();
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    const picker = await waitFor(
+      () =>
+        (
+          window as unknown as {
+            __mockRepoAndBranchPicker?: {
+              onBranchStatusChange?: (status: Record<string, unknown>) => void;
+            };
+          }
+        ).__mockRepoAndBranchPicker,
+    );
+    picker?.onBranchStatusChange?.({
+      behind: 2,
+      hasUncommittedChanges: true,
+      currentBranch: 'main',
+      isCurrentBranch: true,
+      isLoading: false,
+    });
+
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.pull).not.toHaveBeenCalled();
+  });
+
+  it('pulls a behind source checkout before direct creation', async () => {
+    mocks.create.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    seedAutoCreatePrefill();
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    const picker = await waitFor(
+      () =>
+        (
+          window as unknown as {
+            __mockRepoAndBranchPicker?: {
+              onBranchStatusChange?: (status: Record<string, unknown>) => void;
+              onSkipIsolationChange?: (value: boolean) => void;
+            };
+          }
+        ).__mockRepoAndBranchPicker,
+    );
+    picker?.onSkipIsolationChange?.(true);
+    picker?.onBranchStatusChange?.({
+      behind: 2,
+      hasUncommittedChanges: false,
+      currentBranch: 'main',
+      isCurrentBranch: true,
+      isLoading: false,
+    });
+
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.pull).toHaveBeenCalledWith('/tmp/test-repo', 'main');
+    expect(mocks.pull.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.create.mock.invocationCallOrder[0],
+    );
   });
 
   it('hydrates the daemon-created agent before opening and navigating to the workspace', async () => {

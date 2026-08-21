@@ -40,6 +40,7 @@ const mocks = vi.hoisted(() => {
     lastUsedSelect: vi.fn(),
     getRemoteUrl: vi.fn<(repoPath: string) => Promise<unknown>>(),
     workspaceCreate: vi.fn<(params: Record<string, unknown>) => Promise<unknown>>(),
+    gitPull: vi.fn(async () => ({ success: true })),
     // Default implementation survives vi.clearAllMocks(); model-pick tests
     // override per-call behavior with mockImplementation.
     resolveModel: vi.fn(async (_state: unknown, _userSelectedModel?: string) => ({
@@ -114,7 +115,7 @@ vi.mock('$shared/generated/ipc-client', () => ({
 }));
 
 vi.mock('$lib/client', () => ({
-  appClient: { git: { pull: vi.fn(async () => ({ success: true })) } },
+  appClient: { git: { pull: mocks.gitPull } },
 }));
 
 vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
@@ -278,6 +279,53 @@ describe('onboarding repo-config setup script detection', () => {
     expect(textOf(result, 'repo-config-script')).toBe('echo repo-config');
     // Unedited repo-config default applies silently — no disclosure row.
     expect(textOf(result, 'hide-setup-script-control')).toBe('true');
+  });
+
+  it('does not pull a behind source checkout for isolated creation', async () => {
+    mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    renderPage();
+    selectLocalRepo('/repo/a');
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          setBranchBehind: (behind: number) => void;
+          setInputValue: (value: string) => void;
+          onSubmit: () => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.setBranchBehind(2);
+    captured.setInputValue('build the thing');
+    captured.onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    expect(mocks.gitPull).not.toHaveBeenCalled();
+  });
+
+  it('pulls a behind source checkout before direct creation', async () => {
+    mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    renderPage();
+    selectLocalRepo('/repo/a');
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          setSkipIsolation: (value: boolean) => void;
+          setBranchBehind: (behind: number) => void;
+          setInputValue: (value: string) => void;
+          onSubmit: () => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.setSkipIsolation(true);
+    captured.setBranchBehind(2);
+    captured.setInputValue('build the thing');
+    captured.onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    expect(mocks.gitPull).toHaveBeenCalledWith('/repo/a', 'main');
+    expect(mocks.gitPull.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.workspaceCreate.mock.invocationCallOrder[0],
+    );
   });
 
   it('falls back to the last-used script when the repo has no config', async () => {
