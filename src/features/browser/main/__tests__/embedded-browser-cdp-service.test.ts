@@ -4,11 +4,12 @@ const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
   sendToWorkspaceWindows: vi.fn(),
   fromId: vi.fn(),
+  getAllWebContents: vi.fn(() => []),
 }));
 
 vi.mock('electron', () => ({
   ipcMain: { handle: mocks.handle },
-  webContents: { fromId: mocks.fromId },
+  webContents: { fromId: mocks.fromId, getAllWebContents: mocks.getAllWebContents },
 }));
 
 vi.mock('../../../system/main/system.ipc', () => ({
@@ -400,6 +401,95 @@ describe('embedded browser CDP workspace routing', () => {
         expect.objectContaining({ width: 390, height: 800, scale: 1 }),
       );
     });
+  });
+
+  // showTab (monorepo#3045): reveal delivery + confirm-by-list discipline.
+  describe('showTab', () => {
+    it.each([undefined, null, ''])(
+      'rejects show without workspace context instead of broadcasting: %j',
+      async (workspaceId) => {
+        await expect(
+          embeddedBrowserCdp.showTab('tab-1', workspaceId as unknown as string),
+        ).rejects.toThrow('workspaceId is required');
+        expect(mocks.sendToWorkspaceWindows).not.toHaveBeenCalled();
+      },
+    );
+
+    it('fails with a clear error when the workspace is not open in any window', async () => {
+      mocks.sendToWorkspaceWindows.mockReturnValue(DROPPED);
+      await expect(embeddedBrowserCdp.showTab('tab-1', 'ws-closed', true)).rejects.toThrow(
+        'workspace ws-closed is not open in any window',
+      );
+    });
+
+    it('sends the reveal scoped to the workspace and confirms via a fresh non-hidden listing', async () => {
+      mocks.sendToWorkspaceWindows.mockImplementation(
+        (_ws: string, channel: string, payload: { requestId?: string }) => {
+          if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+          responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+            {},
+            {
+              tabs: [{ tabId: 'tab-1', url: 'https://a.test', title: 'A' }],
+              requestId: payload.requestId,
+            },
+          );
+          return DELIVERED;
+        },
+      );
+
+      await expect(embeddedBrowserCdp.showTab('tab-1', 'ws-2', false)).resolves.toBeUndefined();
+      expect(mocks.sendToWorkspaceWindows.mock.calls[0]).toEqual([
+        'ws-2',
+        IPC_CHANNELS.BROWSER.SHOW_TAB,
+        { tabId: 'tab-1', workspaceId: 'ws-2', focus: false },
+      ]);
+    });
+
+    it('fails when the tab stays hidden in every confirmation listing', async () => {
+      mocks.sendToWorkspaceWindows.mockImplementation(
+        (_ws: string, channel: string, payload: { requestId?: string }) => {
+          if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+          responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+            {},
+            {
+              tabs: [{ tabId: 'tab-1', url: 'https://a.test', title: 'A', hidden: true }],
+              requestId: payload.requestId,
+            },
+          );
+          return DELIVERED;
+        },
+      );
+
+      await expect(embeddedBrowserCdp.showTab('tab-1', 'ws-2')).rejects.toThrow(
+        'could not be shown',
+      );
+    });
+  });
+
+  // Hidden marker projection (monorepo#3045): listAllTabs carries the
+  // renderer's hidden flag through for the executor's visibility field.
+  it('listAllTabs carries the hidden marker for hidden tabs only', async () => {
+    mocks.fromId.mockReturnValue(undefined);
+    mocks.sendToWorkspaceWindows.mockImplementation(
+      (_ws: string, channel: string, payload: { requestId?: string }) => {
+        if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+        responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+          {},
+          {
+            tabs: [
+              { tabId: 'tab-hidden', url: 'https://h.test', title: 'H', hidden: true },
+              { tabId: 'tab-visible', url: 'https://v.test', title: 'V' },
+            ],
+            requestId: payload.requestId,
+          },
+        );
+        return DELIVERED;
+      },
+    );
+
+    const { tabs } = await embeddedBrowserCdp.listAllTabs('ws-2');
+    expect(tabs.find((t) => t.tabId === 'tab-hidden')?.hidden).toBe(true);
+    expect(tabs.find((t) => t.tabId === 'tab-visible')).not.toHaveProperty('hidden');
   });
 
   it('fails a close with a clear error when the workspace is not open in any window', async () => {

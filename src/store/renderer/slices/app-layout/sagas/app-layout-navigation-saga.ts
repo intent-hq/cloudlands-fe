@@ -20,6 +20,7 @@ import {
 } from '../../user-preferences/user-preferences-selectors';
 import { ensureAgentSessionLoaded } from '../../workspace-agents/workspace-agents-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
+import { dropRevealIfWorkspaceNotDisplayed } from '../../panel-layout/sagas/reveal-suppression';
 import { focusBrowserTabRequested, openAgentTabRequested } from '../app-layout-slice';
 
 function* pinRevealedPanel(workspaceId: string, requestId: string): SagaGenerator<void> {
@@ -64,7 +65,7 @@ function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGe
 function* focusBrowserTab(
   action: ReturnType<typeof focusBrowserTabRequested>,
 ): SagaGenerator<void> {
-  const [workspaceId, tabId, pin] = action.payload;
+  const [workspaceId, tabId, pin, agentDriven] = action.payload;
   if (!workspaceId || !tabId) return;
   let panels = yield* selectPanels.effect(workspaceId);
   let target = Object.entries(panels).find(([, panel]) =>
@@ -89,6 +90,13 @@ function* focusBrowserTab(
   yield* put(focusAction);
   if (pin === true) {
     yield* pinRevealedPanel(workspaceId, focusAction.payload.requestId);
+  }
+  // An agent-driven focus for a workspace this window is not displaying
+  // (focusTab / showTab on a background workspace) keeps its layout-state
+  // effects — active tab, focused panel — but skips the actual UI reveal
+  // (monorepo#3045). User-initiated focuses always reveal.
+  if (agentDriven === true) {
+    yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, focusAction.payload.requestId);
   }
 }
 
