@@ -86,15 +86,22 @@ function phaseChangedWorker(action: ReturnType<typeof chatLiveStreamPhaseChanged
   if (phase === null) discardAgentView(agentId);
 }
 
-function subscriptionSnapshotWorker(action: ReturnType<typeof setSubscriptionSnapshot>): void {
+function* subscriptionSnapshotWorker(
+  action: ReturnType<typeof setSubscriptionSnapshot>,
+): SagaGenerator<void> {
+  // The snapshot can be the action that clears the final reveal gate
+  // (footer readiness) — re-check so the consolidated log is not deferred
+  // to an unrelated later gate action.
   markAgentGate(action.payload.agentId, 'subscriptionsFetched');
+  yield* call(checkReveal, action.payload.agentId);
 }
 
-function subscriptionFetchFailedWorker(
+function* subscriptionFetchFailedWorker(
   action: ReturnType<typeof subscriptionSnapshotFetchFailed>,
-): void {
+): SagaGenerator<void> {
   const [, agentId] = action.payload;
   markAgentGate(agentId, 'subscriptionsFetched');
+  yield* call(checkReveal, agentId);
 }
 
 function hydrationStartedWorker(action: ReturnType<typeof transcriptHydrationStarted>): void {

@@ -14,6 +14,10 @@ import {
   transcriptHydrationStarted,
 } from '../chat-state-slice';
 import { markAgentAsViewed } from '../../unread-tracking/unread-tracking-slice';
+import {
+  setSubscriptionSnapshot,
+  subscriptionSnapshotFetchFailed,
+} from '../../agent-subscription-ui/agent-subscription-ui-slice';
 import { backgroundHooksUpdated } from '../../background-hooks/background-hooks-slice';
 import {
   finalizeAgentView,
@@ -107,6 +111,57 @@ describe('switchTimingSaga', () => {
     await settle();
     expect(hasOpenAgentView(AGENT)).toBe(false);
     expect(finalizeAgentView(AGENT)).toBeNull();
+
+    run.task.cancel();
+  });
+
+  it('finalizes when the subscription snapshot is the action clearing the final gate', async () => {
+    const state: ChatAgentTestState = {
+      transcriptHydration: 'settled',
+      awaitingUtilityFooter: true,
+    };
+    const run = harness(() => state);
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    await settle();
+    expect(hasOpenAgentView(AGENT)).toBe(true);
+
+    state.awaitingUtilityFooter = false;
+    run.channel.put(
+      setSubscriptionSnapshot(WS, AGENT, {
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'idle',
+      }),
+    );
+    await settle();
+    expect(hasOpenAgentView(AGENT)).toBe(false);
+    expect(debugSpy).toHaveBeenCalledTimes(1);
+    const data = debugSpy.mock.calls[0][1] as { gates: Record<string, number> };
+    expect(data.gates).toHaveProperty('subscriptionsFetched');
+
+    run.task.cancel();
+  });
+
+  it('finalizes when the subscription fetch failure is the action clearing the final gate', async () => {
+    const state: ChatAgentTestState = {
+      transcriptHydration: 'settled',
+      awaitingUtilityFooter: true,
+    };
+    const run = harness(() => state);
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    await settle();
+    expect(hasOpenAgentView(AGENT)).toBe(true);
+
+    state.awaitingUtilityFooter = false;
+    run.channel.put(subscriptionSnapshotFetchFailed(WS, AGENT));
+    await settle();
+    expect(hasOpenAgentView(AGENT)).toBe(false);
+    expect(debugSpy).toHaveBeenCalledTimes(1);
 
     run.task.cancel();
   });
