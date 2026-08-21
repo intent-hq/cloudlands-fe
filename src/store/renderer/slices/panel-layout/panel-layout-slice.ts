@@ -1207,20 +1207,32 @@ export const openHiddenTab = createAction(
 
 /**
  * Restore a hidden (user-closed) agent-owned browser tab back into a panel
- * (monorepo#2857): removed from `hiddenTabs` and opened in the focused panel,
- * keeping its id so the live webview and main's registrations stay attached.
- * `focus` (default true) activates the tab and focuses/reveals its panel;
- * `focus: false` (agent showTab without focus, monorepo#3045) mounts the tab
- * into the panel's tab list WITHOUT any active-tab, panel-focus, or reveal
- * change.
+ * (monorepo#2857), keeping its id so the live webview and main's
+ * registrations stay attached. `focus` (default true) opens the tab in the
+ * focused panel, activates it, and focuses/reveals its panel.
+ * `focus: false` (agent showTab without focus, monorepo#3045) reveals
+ * WITHOUT moving panel focus or displacing the focused panel's active tab:
+ * the UI renders only a panel's active tab, so the tab activates in another
+ * panel — or a fresh split when none qualifies — mirroring the sidebar
+ * reveal (monorepo#3112). `panelOpenMode: 'pin'` targets the reusable
+ * (unpinned) panel instead, since a split would create a second unpinned
+ * panel that the reusable-panel invariant immediately collapses, re-hiding
+ * the tab.
  */
 export const restoreHiddenTab = createAction(
   'panelLayout/restoreHiddenTab',
-  (wsId: string, tabId: string, timestamp?: number, focus?: boolean) => ({
+  (
+    wsId: string,
+    tabId: string,
+    timestamp?: number,
+    focus?: boolean,
+    panelOpenMode?: PanelOpenMode,
+  ) => ({
     wsId,
     tabId,
     timestamp: timestamp ?? Date.now(),
     focus: focus ?? true,
+    panelOpenMode: panelOpenMode ?? 'normal',
   }),
 );
 
@@ -1556,9 +1568,17 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
 
     if (reusablePanelId) {
       const panel = ws.panels[reusablePanelId];
-      const closed = panel.tabs
-        .filter((oldTab) => oldTab.closable !== false)
-        .map((oldTab) => ({ tab: { ...oldTab }, panelId: reusablePanelId, closedAt: timestamp }));
+      // Owned browser tabs displaced from the reusable panel are re-hidden,
+      // not closed (monorepo#2857, #3112): they stay alive in hiddenTabs and
+      // never enter recentlyClosed.
+      const { hidden: hiddenDisplaced, closed: closedDisplaced } = partitionRemovedTabs(
+        panel.tabs.filter((oldTab) => oldTab.closable !== false),
+      );
+      const closed = closedDisplaced.map((oldTab) => ({
+        tab: { ...oldTab },
+        panelId: reusablePanelId,
+        closedAt: timestamp,
+      }));
       const root = movePanelToRootEdgeInLayout(
         ws.root,
         reusablePanelId,
@@ -1580,6 +1600,10 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
         pendingFocusTabId: newTabId,
         pendingPanelReveal: createPanelRevealRequest(reusablePanelId, newTabId, newTabId),
         recentlyClosed: [...closed, ...ws.recentlyClosed].slice(0, MAX_RECENTLY_CLOSED),
+        hiddenTabs: addItems(
+          ws.hiddenTabs,
+          hiddenDisplaced.map((tab) => ({ ...tab })),
+        ),
       };
       ws = addToFocusHistory(ws, reusablePanelId, newTabId, timestamp);
       return setWorkspaceState(state, wsId, ws);
@@ -1944,17 +1968,85 @@ panelLayoutReducer.with(openHiddenTab, (state, { payload }) => {
 });
 // --- Restore Hidden Tab (monorepo#2857) ---
 panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
-  const { wsId, tabId, timestamp, focus } = payload;
+  const { wsId, tabId, timestamp, focus, panelOpenMode } = payload;
   let ws = getWorkspaceState(state, wsId);
   const hiddenTab = getItem(ws.hiddenTabs, tabId);
   if (!hiddenTab) return state;
-  const targetPanelId =
-    ws.focusedPanelId && ws.panels[ws.focusedPanelId]
-      ? ws.focusedPanelId
-      : Object.keys(ws.panels)[0];
-  if (!targetPanelId) return state;
 
-  ws = saveToHistory(ws, timestamp);
+  if (focus) {
+    const targetPanelId =
+      ws.focusedPanelId && ws.panels[ws.focusedPanelId]
+        ? ws.focusedPanelId
+        : Object.keys(ws.panels)[0];
+    if (!targetPanelId) return state;
+
+    ws = saveToHistory(ws, timestamp);
+    const panel = ws.panels[targetPanelId];
+    ws = {
+      ...ws,
+      hiddenTabs: removeItem(ws.hiddenTabs, tabId),
+      panels: {
+        ...ws.panels,
+        [targetPanelId]: {
+          ...panel,
+          tabs: [...panel.tabs, { ...hiddenTab }],
+          activeTabId: hiddenTab.id,
+          pristine: false,
+        },
+      },
+      focusedPanelId: targetPanelId,
+      pendingPanelReveal: createPanelRevealRequest(targetPanelId, hiddenTab.id, hiddenTab.id),
+    };
+    ws = addToFocusHistory(ws, targetPanelId, hiddenTab.id, timestamp);
+    return setWorkspaceState(state, wsId, ws);
+  }
+
+  // focus: false (agent showTab without focus, monorepo#3112): the UI
+  // renders only a panel's active tab, so the tab must become active
+  // SOMEWHERE the user can see it — without moving panel focus or
+  // displacing the focused panel's active tab. In pin mode the reusable
+  // (unpinned) panel is the target even when focused: a split would create
+  // a second unpinned panel that the reusable-panel invariant immediately
+  // collapses, re-hiding the tab. Otherwise the tab activates in the first
+  // unpinned panel other than the focused one, or a fresh split of the
+  // focused panel when none qualifies (mirroring
+  // revealHiddenTabAvoidingPanel's conversation-preserving reveal).
+  const previousFocusedPanelId = ws.focusedPanelId;
+  const order = getPanelOrder(ws.root);
+  let targetPanelId =
+    panelOpenMode === 'pin'
+      ? order.find((panelId) => {
+          const panel = ws.panels[panelId];
+          return panel && !panelIsPinned(panel);
+        })
+      : order.find((panelId) => {
+          const panel = ws.panels[panelId];
+          return panel && panelId !== previousFocusedPanelId && !panelIsPinned(panel);
+        });
+  if (targetPanelId) {
+    ws = saveToHistory(ws, timestamp);
+  } else {
+    const splitSourceId =
+      previousFocusedPanelId && ws.panels[previousFocusedPanelId]
+        ? previousFocusedPanelId
+        : Object.keys(ws.panels)[0];
+    if (!splitSourceId) return state;
+    const split = selfDispatch(
+      state,
+      splitPanel(
+        wsId,
+        splitSourceId,
+        'horizontal',
+        { panelWidth: getPanelCreationWidthForType('browser') },
+        timestamp,
+      ),
+    );
+    const splitWs = getWorkspaceState(split, wsId);
+    targetPanelId = Object.keys(splitWs.panels).find((panelId) => !ws.panels[panelId]);
+    if (!targetPanelId) return state;
+    ws = splitWs;
+  }
+
   const panel = ws.panels[targetPanelId];
   ws = {
     ...ws,
@@ -1964,21 +2056,16 @@ panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
       [targetPanelId]: {
         ...panel,
         tabs: [...panel.tabs, { ...hiddenTab }],
-        // focus: false (agent showTab without focus, monorepo#3045) mounts
-        // the tab without activating it or moving panel focus — the panel's
-        // current active tab and the user's focus stay untouched.
-        ...(focus ? { activeTabId: hiddenTab.id } : {}),
+        activeTabId: hiddenTab.id,
         pristine: false,
       },
     },
-    ...(focus
-      ? {
-          focusedPanelId: targetPanelId,
-          pendingPanelReveal: createPanelRevealRequest(targetPanelId, hiddenTab.id, hiddenTab.id),
-        }
-      : {}),
+    // Panel focus never moves: the reveal request scrolls the hosting panel
+    // into view, but content focus is gated on focusedPanelId
+    // (Panel.svelte), so keyboard focus stays where the user had it.
+    focusedPanelId: previousFocusedPanelId,
+    pendingPanelReveal: createPanelRevealRequest(targetPanelId, hiddenTab.id, hiddenTab.id),
   };
-  if (focus) ws = addToFocusHistory(ws, targetPanelId, hiddenTab.id, timestamp);
   return setWorkspaceState(state, wsId, ws);
 });
 // --- Prune Recently Closed ---

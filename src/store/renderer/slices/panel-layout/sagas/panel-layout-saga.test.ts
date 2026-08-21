@@ -82,6 +82,7 @@ import {
   reorderTabs,
   reopenClosedTab,
   revealDeferredSpecTab,
+  revealHiddenTabAvoidingPanel,
   resetLayout,
   resizePanelLayoutRightEdge,
   selectNextTab,
@@ -337,6 +338,9 @@ const persistActionCreators = [
   updateFileTabPath,
   consumePendingFocus,
   setPanelPinned,
+  // Sidebar/footer reveals must persist so a revealed owned tab does not
+  // revert to hidden on restart (monorepo#3112).
+  revealHiddenTabAvoidingPanel,
 ];
 
 describe('panelLayoutSaga', () => {
