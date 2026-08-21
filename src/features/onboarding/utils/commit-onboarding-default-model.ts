@@ -24,7 +24,7 @@ import {
   type CommitOnboardingProviderSelectionAction,
 } from './commit-onboarding-provider-selection';
 
-export type CommitOnboardingDefaultModelAction =
+type CommitOnboardingDefaultModelAction =
   | CommitOnboardingProviderSelectionAction
   | ReturnType<typeof selectModel>;
 
