@@ -301,17 +301,25 @@ const SUBSCRIPTION_RECONCILIATION_DELAY_MS = 100;
  * exists), so a retained entry would silently serve stale hooks while
  * unsubscribed; pr-monitor consumers have no such existence-keyed fallback
  * and re-seed on activation regardless. Cost: a cross-workspace switch-back
- * re-arms the footer reveal gate for the ~100ms reconciliation delay + one
- * `hook.list` RTT (overlapping the agent's own view-time
- * `agent.getSubscriptions` re-read, and bounded by the reveal fallback).
+ * re-arms the footer reveal gate for one `hook.list` RTT (overlapping the
+ * agent's own view-time `agent.getSubscriptions` re-read, and bounded by the
+ * reveal fallback).
  */
 function* watchActiveWorkspaceLease(): SagaGenerator<void> {
   let leasedWorkspaceId: string | null = null;
+  let lastChangeAt = 0;
   yield* takeLatestFromSelector(
     selectCurrentWorkspaceTabId,
     function* ({ payload }: SelectorChannelPayload<string | null>): SagaGenerator<void> {
-      yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
       if (payload === leasedWorkspaceId) return;
+      // Leading edge is immediate: only a change arriving within the window
+      // of the previous one is trailing-debounced (takeLatest cancels the
+      // superseded run), so rapid tab flapping still coalesces into one swap.
+      const sinceLastChange = Date.now() - lastChangeAt;
+      lastChangeAt = Date.now();
+      if (sinceLastChange < SUBSCRIPTION_RECONCILIATION_DELAY_MS) {
+        yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
+      }
       const previous = leasedWorkspaceId;
       leasedWorkspaceId = payload;
       if (payload) yield* put(backgroundHooksSubscribeRequested(payload));

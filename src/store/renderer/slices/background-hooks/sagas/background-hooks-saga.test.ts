@@ -405,18 +405,53 @@ describe('backgroundHooksSaga', () => {
   });
 
   describe('active-workspace lease (view-time seed)', () => {
-    it('seeds the active workspace subscription at tab activation, before any card mounts', async () => {
+    it('seeds the active workspace subscription immediately at tab activation, before any card mounts', async () => {
       const { dispatch, task, getState } = createHarness();
       dispatch(openWorkspaceTab('ws-1'));
 
-      // The lease opens after the reconciliation delay: the hook.list seed
-      // lands (delivered latch flips) without any component subscriber.
-      await vi.waitFor(() => expect(getState().byWorkspaceId['ws-1']).toBeDefined());
+      // The lease opens on the leading edge — no reconciliation delay: the
+      // subscribe is issued synchronously with the tab activation and the
+      // hook.list seed lands (delivered latch flips) without any component
+      // subscriber.
       expect(mocks.subscribe).toHaveBeenCalledWith({
         eventTypes: ['hook:*'],
         workspaceId: 'ws-1',
       });
+      await vi.waitFor(() => expect(getState().byWorkspaceId['ws-1']).toBeDefined());
       await stop(task);
+    });
+
+    it('debounces a rapid tab flap into one trailing swap', async () => {
+      vi.useFakeTimers();
+      try {
+        mocks.subscribe.mockImplementation(({ workspaceId }: { workspaceId: string }) =>
+          Promise.resolve({ subscriptionId: `sub-${workspaceId}` }),
+        );
+        const { dispatch, task, getState } = createHarness();
+        dispatch(openWorkspaceTab('ws-1'));
+        expect(mocks.subscribe).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(10);
+
+        // Flap within the window: ws-2 is debounced, ws-3 restarts the delay.
+        dispatch(openWorkspaceTab('ws-2'));
+        await vi.advanceTimersByTimeAsync(50);
+        dispatch(openWorkspaceTab('ws-3'));
+        await vi.advanceTimersByTimeAsync(99);
+        expect(mocks.subscribe).toHaveBeenCalledTimes(1);
+
+        await vi.advanceTimersByTimeAsync(1);
+        expect(mocks.subscribe).toHaveBeenCalledTimes(2);
+        expect(mocks.subscribe).toHaveBeenLastCalledWith({
+          eventTypes: ['hook:*'],
+          workspaceId: 'ws-3',
+        });
+        await vi.waitFor(() => expect(getState().byWorkspaceId['ws-3']).toBeDefined());
+        expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-ws-1');
+        expect(getState().byWorkspaceId['ws-1']).toBeUndefined();
+        await stop(task);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('keeps the workspace entry alive across a card remount (unsubscribe/subscribe churn)', async () => {
