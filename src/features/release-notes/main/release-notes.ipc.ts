@@ -27,7 +27,12 @@ const logger = new Logger('ReleaseNotesIPC');
 
 const EmptySchema = z.object({}).optional();
 
-/** Startup notes not yet claimed by a renderer. */
+/**
+ * Startup notes not yet claimed by a renderer. In-memory only: the pref
+ * advances right after these are parked, so a process exit before a renderer
+ * claims (or a window receives) them skips that version's notes — an
+ * accepted trade-off to keep the modal opening at most once per version.
+ */
 let pendingReleaseNotes: ReleaseNotesContent | null = null;
 
 /** Register the release-notes ipcMain handlers. */
