@@ -29,7 +29,7 @@
  * seq-0 snapshot reduced with every delta — honoring `removedIds` — equals a
  * fresh `agent.getConversation` snapshot.
  */
-import type { AgentMessage, ContentBlock } from '$shared/types';
+import { isPlanContentBlock, type AgentMessage, type ContentBlock } from '$shared/types';
 import type {
   ChatClient,
   ChatLiveStreamPhase,
@@ -230,6 +230,7 @@ function parseDeltaEntity(raw: unknown): ChatDeltaEntity | null {
   const block =
     e.block && typeof e.block === 'object' ? (e.block as ChatDeltaEntity['block']) : null;
   if (!messageId || !block || typeof block.id !== 'string') return null;
+  if (block.type === 'plan' && !isPlanContentBlock(block)) return null;
   return {
     messageId,
     ...(typeof e.role === 'string' ? { role: e.role } : {}),

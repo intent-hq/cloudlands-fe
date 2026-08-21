@@ -236,6 +236,91 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     off();
   });
 
+  it('replaces a live plan snapshot by stable block id and does not duplicate it at terminal reconciliation', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: unknown[]; isStreaming: boolean }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+
+    const initialEntries = [
+      { content: 'Inspect the code', priority: 'high', status: 'in_progress' },
+      { content: 'Run tests', priority: 'medium', status: 'pending' },
+    ];
+    deltaPush('sub-1', 1, {
+      added: [
+        {
+          messageId: '0190a200-asst',
+          role: 'assistant',
+          block: { type: 'text', id: '0190a200-asst:0', text: 'Working' },
+        },
+        {
+          messageId: '0190a200-asst',
+          role: 'assistant',
+          block: { type: 'thinking', id: '0190a200-asst:1', text: 'Checking' },
+        },
+        {
+          messageId: '0190a200-asst',
+          role: 'assistant',
+          block: { type: 'plan', id: '0190a200-asst:2', entries: initialEntries },
+        },
+        {
+          messageId: '0190a200-asst',
+          role: 'assistant',
+          block: { type: 'tool_use', id: '0190a200-asst:3', name: 'test', input: {} },
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    });
+
+    const finalEntries = [
+      { content: 'Inspect the code', priority: 'high', status: 'completed' },
+      { content: 'Run tests', priority: 'medium', status: 'completed' },
+    ];
+    deltaPush('sub-1', 2, {
+      added: [],
+      updated: [
+        {
+          messageId: '0190a200-asst',
+          role: 'assistant',
+          block: { type: 'plan', id: '0190a200-asst:2', entries: finalEntries },
+        },
+      ],
+      removedIds: [],
+    });
+    deltaPush('sub-1', 3, {
+      added: [],
+      updated: [
+        {
+          messageId: '0190a200-asst',
+          role: 'assistant',
+          messageSeq: 1,
+          timestamp: '2026-06-27T01:00:05.000Z',
+          streamingComplete: true,
+          block: { type: 'plan', id: '0190a200-asst:2', entries: finalEntries },
+        },
+      ],
+      removedIds: [],
+    });
+
+    const assistant = seen.at(-1)!.messages[1] as {
+      contentBlocks: Array<{ id: string; type: string; entries?: unknown[] }>;
+    };
+    expect(assistant.contentBlocks.map((block) => block.type)).toEqual([
+      'text',
+      'thinking',
+      'plan',
+      'tool_use',
+    ]);
+    expect(assistant.contentBlocks.filter((block) => block.type === 'plan')).toEqual([
+      { type: 'plan', id: '0190a200-asst:2', entries: finalEntries },
+    ]);
+    expect(seen.at(-1)!.isStreaming).toBe(false);
+    off();
+  });
+
   it('applies the terminal reconcile: authoritative fields, orphan removedIds, streaming off', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();

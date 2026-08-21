@@ -72,6 +72,24 @@ describe('Zod Schemas', () => {
       expect(() => ContentBlockSchema.parse(block)).not.toThrow();
     });
 
+    it('should validate bounded plan snapshots', () => {
+      const block = {
+        type: 'plan',
+        id: 'msg-1:0',
+        entries: [
+          { content: 'Inspect the code', priority: 'high', status: 'completed' },
+          { content: 'Run tests', priority: 'medium', status: 'in_progress' },
+        ],
+      };
+      expect(ContentBlockSchema.parse(block)).toEqual(block);
+      expect(() =>
+        ContentBlockSchema.parse({
+          type: 'plan',
+          entries: [{ content: 'Run tests', priority: 'high', status: 'cancelled' }],
+        }),
+      ).toThrow();
+    });
+
     it('should reject invalid types', () => {
       expect(() => ContentBlockSchema.parse({ type: 'invalid' })).toThrow();
     });

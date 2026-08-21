@@ -19,7 +19,7 @@
  */
 
 import type { ContentBlock } from './content-block';
-import { normalizeContentBlock } from './content-block';
+import { isPlanContentBlock, normalizeContentBlock } from './content-block';
 import { isProposalKind } from './proposal';
 import { getProposalFromResourceBlock } from './proposal-resource';
 
@@ -34,6 +34,7 @@ const CANONICAL_BLOCK_TYPES = new Set<ContentBlock['type']>([
   'file',
   'nav-link',
   'proposal',
+  'plan',
 ]);
 
 /**
@@ -314,6 +315,13 @@ function validateCanonicalBlock(block: Record<string, any>): ContentBlock {
     case 'nav-link':
     case 'proposal':
       // Handled by dedicated branches above or carries no required text/tool fields.
+      break;
+    case 'plan':
+      if (!isPlanContentBlock(block)) {
+        throw new Error(
+          `Invalid plan block: required bounded 'entries' snapshot missing (PROTOCOL §7). Received: ${JSON.stringify(block)}`,
+        );
+      }
       break;
   }
   return { ...block } as ContentBlock;

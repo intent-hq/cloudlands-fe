@@ -8,6 +8,7 @@
 import { z } from 'zod';
 import { AgentStatus, WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, WorkspaceStatus } from './types';
 import { CHIEF_WORKSPACE_ID } from './types/branded-ids';
+import { PLAN_ENTRY_PRIORITIES, PLAN_ENTRY_STATUSES } from './types/content-block';
 
 /**
  * Custom Validators
@@ -289,6 +290,13 @@ export const MessageIdSchema = z.string().startsWith('msg_').or(z.string().uuid(
 // runs this schema before saveAgent writes to disk, so any block type the
 // streaming pipeline produces must be listed here — otherwise saves fail and
 // blocks like the proposal cards emitted by ws.app.workspaces.* are dropped.
+const PlanEntrySchema = z.object({
+  content: z.string(),
+  priority: z.enum(PLAN_ENTRY_PRIORITIES),
+  status: z.enum(PLAN_ENTRY_STATUSES),
+  _meta: z.record(z.unknown()).optional(),
+});
+
 export const ContentBlockSchema = z.object({
   type: z.enum([
     'text',
@@ -301,6 +309,7 @@ export const ContentBlockSchema = z.object({
     'file',
     'nav-link',
     'proposal',
+    'plan',
   ]),
   text: z.string().optional(),
   content: z.string().optional(),
@@ -329,6 +338,8 @@ export const ContentBlockSchema = z.object({
   payload: z.any().optional(), // Proposal payload when block IS a Proposal
   preview: z.any().optional(), // Proposal preview when block IS a Proposal
   applyToolCallId: z.string().optional(), // Tool call ID to invoke on apply
+  // Complete bounded execution-plan snapshot
+  entries: z.array(PlanEntrySchema).optional(),
 });
 
 // Tool Call Schema

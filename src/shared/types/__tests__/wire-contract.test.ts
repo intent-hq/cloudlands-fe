@@ -43,6 +43,31 @@ describe('PROTOCOL.md §7 ContentBlock wire contract', () => {
     expect(out).toEqual(wire);
   });
 
+  it('passes a canonical bounded plan snapshot through unchanged', () => {
+    const wire = {
+      type: 'plan',
+      id: 'blk_plan',
+      entries: [
+        {
+          content: 'Inspect the code',
+          priority: 'high',
+          status: 'completed',
+          _meta: { provider: 'codex' },
+        },
+      ],
+    };
+    expect(migrateFromLegacy(wire)).toEqual(wire);
+  });
+
+  it('rejects a plan snapshot with an unsupported entry value', () => {
+    expect(() =>
+      migrateFromLegacy({
+        type: 'plan',
+        entries: [{ content: 'Inspect the code', priority: 'high', status: 'cancelled' }],
+      }),
+    ).toThrow(/plan block/);
+  });
+
   it('rejects a block that aliases `text` as `content` (§7 divergence)', () => {
     expect(() => migrateFromLegacy({ type: 'text', content: 'hello' })).toThrow(/content/);
   });

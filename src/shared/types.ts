@@ -47,7 +47,15 @@ import { isPendingAgentSession as isNewPendingAgentSession } from './types/agent
 import { isAgentSession as isNewAgentSession } from './types/agent-session.guards';
 
 // Import consolidated ContentBlock type
-import type { ContentBlock, VideoContentBlock, VideoSource } from './types/content-block';
+import type {
+  ContentBlock,
+  PlanContentBlock,
+  PlanEntry,
+  PlanEntryPriority,
+  PlanEntryStatus,
+  VideoContentBlock,
+  VideoSource,
+} from './types/content-block';
 import type {
   BulkProposalItem,
   Proposal,
@@ -60,6 +68,7 @@ import type {
 import { isProposal, isProposalKind, PROPOSAL_KINDS } from './types/proposal';
 import {
   isContentBlock,
+  isPlanContentBlock,
   dedupeAgentVideoContentBlocks,
   normalizeAgentVideoContentBlocks,
   normalizeContentBlock,
@@ -140,6 +149,7 @@ export {
   isAudioBlock,
   isCodeBlock,
   isContentBlock,
+  isPlanContentBlock,
   dedupeAgentVideoContentBlocks,
   isErrorBlock,
   isFileBlock,
@@ -157,7 +167,15 @@ export {
   normalizeContentBlocks,
   normalizeAgentVideoContentBlocks,
 };
-export type { ContentBlock, VideoContentBlock, VideoSource };
+export type {
+  ContentBlock,
+  PlanContentBlock,
+  PlanEntry,
+  PlanEntryPriority,
+  PlanEntryStatus,
+  VideoContentBlock,
+  VideoSource,
+};
 export { isProposal, isProposalKind, PROPOSAL_KINDS };
 export type {
   BulkProposalItem,

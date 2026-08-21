@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isContentBlock,
+  isPlanContentBlock,
   normalizeContentBlock,
   normalizeContentBlocks,
   type ContentBlock,
@@ -44,6 +45,36 @@ describe('ContentBlock Type', () => {
         input: {},
       };
       expect(isContentBlock(block)).toBe(true);
+    });
+
+    it('should identify only bounded plan snapshots', () => {
+      const block: ContentBlock = {
+        type: 'plan',
+        entries: [
+          {
+            content: 'Run focused tests',
+            priority: 'high',
+            status: 'in_progress',
+            _meta: { source: 'provider' },
+          },
+        ],
+      };
+      expect(isContentBlock(block)).toBe(true);
+      expect(isPlanContentBlock(block)).toBe(true);
+      expect(isContentBlock({ type: 'plan', entries: [] })).toBe(true);
+      expect(
+        isContentBlock({
+          type: 'plan',
+          entries: [{ content: 'Run tests', priority: 'urgent', status: 'pending' }],
+        }),
+      ).toBe(false);
+      expect(
+        isContentBlock({
+          type: 'plan',
+          entries: [{ content: 'Run tests', priority: 'high', status: 'cancelled' }],
+        }),
+      ).toBe(false);
+      expect(isContentBlock({ type: 'plan' })).toBe(false);
     });
 
     it('should reject invalid blocks', () => {
