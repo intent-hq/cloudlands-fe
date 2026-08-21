@@ -48,7 +48,7 @@ import { createSafeValidatedHandler } from '../../../main/ipc-validation-middlew
 import { broadcastToBrowserIpcClients } from '../../../main/browser-ipc-broadcast-adapter';
 import { execFileAsync } from '../../../shared/git/git-env';
 import { findBinary } from '../../../shared/main/find-binary';
-import { getBackendClient } from '../../backend/main/backend.ipc';
+import { getBackendClient, getBackendIdForIpcSender } from '../../backend/main/backend.ipc';
 import { hostExec } from '../../../shared/main/host-exec';
 import { hostExecStream } from '../../../shared/main/host-exec-stream';
 import {
@@ -2292,7 +2292,7 @@ export function setupSystemIPC() {
     SYSTEM_CHANNELS.EXECUTE_COMMAND,
     createSafeValidatedHandler(
       SystemExecuteCommandSchema,
-      async (_event, validated) => {
+      async (event, validated) => {
         try {
           const { command, cwd, workspaceId } = validated;
 
@@ -2310,6 +2310,7 @@ export function setupSystemIPC() {
             cwd,
             workspaceId,
             timeoutMs: 30_000,
+            backendId: getBackendIdForIpcSender(event.sender),
           });
 
           if (result.exitCode === 0) {
@@ -2368,6 +2369,7 @@ export function setupSystemIPC() {
             process.platform === 'win32' ? ['cmd.exe', '/c'] : ['/bin/sh', '-c'];
 
           const handle = await hostExecStream(shellCmd, {
+            backendId: getBackendIdForIpcSender(event.sender),
             args: [shellFlag, command],
             cwd,
             workspaceId,

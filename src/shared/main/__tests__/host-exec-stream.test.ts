@@ -18,28 +18,32 @@ import {
 
 type Listener = (n: { method: string; params?: unknown }) => void;
 
-const { mockRequest, mockOn, mockOff, loggerSpies, captureListener } = vi.hoisted(() => {
-  const state: { listener: Listener | null } = { listener: null };
-  return {
-    mockRequest: vi.fn(),
-    mockOn: vi.fn((event: string, cb: Listener) => {
-      if (event === 'notification') state.listener = cb;
-    }),
-    mockOff: vi.fn((event: string, _cb: Listener) => {
-      if (event === 'notification') state.listener = null;
-    }),
-    loggerSpies: {
-      debug: vi.fn(),
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-    },
-    captureListener: () => state.listener,
-  };
-});
+const { mockRequest, mockOn, mockOff, loggerSpies, captureListener, backendClients } = vi.hoisted(
+  () => {
+    const state: { listener: Listener | null } = { listener: null };
+    return {
+      mockRequest: vi.fn(),
+      mockOn: vi.fn((event: string, cb: Listener) => {
+        if (event === 'notification') state.listener = cb;
+      }),
+      mockOff: vi.fn((event: string, _cb: Listener) => {
+        if (event === 'notification') state.listener = null;
+      }),
+      loggerSpies: {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      },
+      captureListener: () => state.listener,
+      backendClients: new Map<string, unknown>(),
+    };
+  },
+);
 
 vi.mock('../../../features/backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mockRequest, on: mockOn, off: mockOff }),
+  getBackendClientForConnection: (id: string) => backendClients.get(id),
 }));
 
 vi.mock('../../logger', () => ({
@@ -73,6 +77,7 @@ describe('hostExecStream', () => {
     mockRequest.mockReset();
     mockOn.mockReset();
     mockOff.mockReset();
+    backendClients.clear();
     loggerSpies.debug.mockReset();
     loggerSpies.error.mockReset();
   });
@@ -247,6 +252,58 @@ describe('hostExecStream', () => {
     expect(mockRequest).not.toHaveBeenCalled();
   });
 
+  it('disposing backend A cancels only A and leaves backend B streaming', async () => {
+    const listeners = new Map<string, Listener>();
+    const makeClient = (id: string) => {
+      const request = vi.fn(async (method: string) => {
+        if (method === 'events.subscribe') return { subscriptionId: `sub-${id}` };
+        if (method === 'host.execStream') return { requestId: `req-${id}` };
+        return { ok: true, cancelled: true };
+      });
+      return {
+        request,
+        on: vi.fn((event: string, listener: Listener) => {
+          if (event === 'notification') listeners.set(id, listener);
+        }),
+        off: vi.fn((event: string) => {
+          if (event === 'notification') listeners.delete(id);
+        }),
+      };
+    };
+    const clientA = makeClient('A');
+    const clientB = makeClient('B');
+    backendClients.set('A', clientA);
+    backendClients.set('B', clientB);
+
+    const streamA = await hostExecStream('cmd-a', { backendId: 'A' });
+    const streamB = await hostExecStream('cmd-b', { backendId: 'B' });
+    let bSettled = false;
+    void streamB.done.then(() => {
+      bSettled = true;
+    });
+
+    await cancelInflightHostExecStreamsForBackendSwitch('A');
+    expect(await streamA.done).toEqual({
+      ok: false,
+      cancelled: true,
+      cancelledByBackendSwitch: true,
+    });
+    await Promise.resolve();
+    expect(bSettled).toBe(false);
+    expect(clientA.request).toHaveBeenCalledWith('host.execStream.cancel', {
+      requestId: 'req-A',
+    });
+    expect(clientB.request).not.toHaveBeenCalledWith('host.execStream.cancel', expect.anything());
+
+    listeners.get('B')?.({
+      method: 'events.event',
+      params: {
+        event: { type: 'host:exec:exit', data: { requestId: 'req-B', ok: true, exitCode: 0 } },
+      },
+    });
+    await expect(streamB.done).resolves.toEqual({ ok: true, exitCode: 0 });
+  });
+
   it('is a no-op when nothing is streaming at switch time', async () => {
     await expect(cancelInflightHostExecStreamsForBackendSwitch()).resolves.toBeUndefined();
     expect(mockRequest).not.toHaveBeenCalled();
@@ -266,7 +323,10 @@ describe('hostExecStream', () => {
       .mockResolvedValueOnce({ subscriptionId: 'sub-B' }) // B: events.subscribe
       // B: host.execStream — deferred so B sits mid-flight, unregistered.
       .mockImplementationOnce(
-        () => new Promise<{ requestId: string }>((r) => { resolveExecB = r; }),
+        () =>
+          new Promise<{ requestId: string }>((r) => {
+            resolveExecB = r;
+          }),
       );
 
     const handleA = await hostExecStream('cmd-a'); // A live + registered

@@ -161,8 +161,14 @@ async function loadModule() {
     lifecycle.events.push({ type: 'restore', seq: 0 });
   });
   const openOrFocus = vi.fn();
-  mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, openOrFocus });
-  return { mod, captureAndClose, restore, openOrFocus };
+  const closeForBackend = vi.fn();
+  mod.__setBackendWindowHooksForTesting({
+    captureAndClose,
+    restore,
+    openOrFocus,
+    closeForBackend,
+  });
+  return { mod, captureAndClose, restore, openOrFocus, closeForBackend };
 }
 
 /** Install a single fake renderer window and return its `send` spy. */
@@ -199,7 +205,7 @@ function installBackendWindows() {
     if (sender === remoteWindow.webContents) return remoteWindow as never;
     return null;
   });
-  return { localSender, remoteSender, localSend, remoteSend };
+  return { localSender, remoteSender, localSend, remoteSend, localWindow, remoteWindow };
 }
 
 function findHandler(channel: string) {
@@ -222,6 +228,10 @@ beforeEach(() => {
   store.setHosts.mockResolvedValue(undefined);
   store.getDetectHosts.mockResolvedValue(true);
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+  Object.defineProperty(BrowserWindow, 'getFocusedWindow', {
+    value: vi.fn(() => null),
+    configurable: true,
+  });
 });
 
 afterEach(() => {
@@ -642,11 +652,13 @@ describe('connections:* IPC handlers', () => {
     expect(openOrFocus).not.toHaveBeenCalled();
   });
 
-  it('connections:forget of a non-active connection just broadcasts', async () => {
+  it('connections:forget closes and disconnects only that secondary backend', async () => {
     store.getActiveId.mockResolvedValue('local');
     store.forget.mockResolvedValue(undefined);
     const send = installWindow();
-    const { mod, captureAndClose, restore } = await loadModule();
+    const { mod, captureAndClose, restore, closeForBackend } = await loadModule();
+    const local = mod.getBackendClient();
+    const remote = await mod.connectBackendClient('remote-1');
     mod.registerBackendHandlers();
     const handler = findHandler('connections:forget');
 
@@ -655,24 +667,36 @@ describe('connections:* IPC handlers', () => {
     // Was not the live backend → no full switch/window teardown.
     expect(captureAndClose).not.toHaveBeenCalled();
     expect(restore).not.toHaveBeenCalled();
+    expect(closeForBackend).toHaveBeenCalledWith('remote-1');
+    expect(mod.getBackendClient()).toBe(local);
+    expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
+    expect(lifecycle.events.filter((event) => event.type === 'dispose')).toEqual([
+      expect.objectContaining({ seq: expect.any(Number) }),
+    ]);
+    expect(remote).not.toBe(local);
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
   });
 
-  it('connections:forget of the ACTIVE connection falls back to a switch to local', async () => {
+  it('connections:forget of the active connection retargets primary without global teardown', async () => {
     store.getActiveId.mockResolvedValue('remote-1');
     store.forget.mockResolvedValue(undefined);
     installWindow();
-    const { mod, captureAndClose, restore } = await loadModule();
-    mod.getBackendClient();
+    const { mod, captureAndClose, restore, closeForBackend } = await loadModule();
+    await mod.switchBackend('remote-1');
+    lifecycle.events = [];
+    captureAndClose.mockClear();
+    restore.mockClear();
     mod.registerBackendHandlers();
     const handler = findHandler('connections:forget');
 
     await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({ id: 'remote-1' });
     expect(store.forget).toHaveBeenCalledWith('remote-1');
-    // Fell back to local: active id flipped + windows switched from remote → local.
-    expect(store.setActiveId).toHaveBeenCalledWith('local');
-    expect(captureAndClose).toHaveBeenCalledWith('remote-1');
-    expect(restore).toHaveBeenCalledWith('local');
+    expect(closeForBackend).toHaveBeenCalledWith('remote-1');
+    expect(captureAndClose).not.toHaveBeenCalled();
+    expect(restore).not.toHaveBeenCalled();
+    expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
+    expect(mod.getBackendClientForConnection('local')).toBe(mod.getBackendClient());
+    expect(lifecycle.events.map((event) => event.type)).toEqual(['dispose', 'construct', 'start']);
   });
 
   it('connections:switch routes through switchBackend', async () => {
@@ -958,6 +982,22 @@ describe('backend client pool', () => {
     ]);
   });
 
+  it('treats the focused remote window as current for menu and quit gates', async () => {
+    const { localWindow, remoteWindow } = installBackendWindows();
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    await mod.connectBackendClient('remote-1');
+
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(remoteWindow as never);
+    expect(mod.isRemoteBackendActive()).toBe(true);
+    expect(mod.isSameHostBackendActive()).toBe(false);
+    expect(mod.getFocusedBackendClient()).toBe(mod.getBackendClientForConnection('remote-1'));
+
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(localWindow as never);
+    expect(mod.isRemoteBackendActive()).toBe(false);
+    expect(mod.getFocusedBackendClient()).toBe(mod.getBackendClientForConnection('local'));
+  });
+
   it('deduplicates concurrent connects for the same connection id', async () => {
     const { mod } = await loadModule();
 
@@ -982,6 +1022,26 @@ describe('backend client pool', () => {
     expect(mod.getBackendClient()).toBe(local);
     expect(mod.getBackendClientForConnection('local')).toBe(local);
     expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
+  });
+
+  it('scopes main-process reconnect listeners to their backend', async () => {
+    const { mod } = await loadModule();
+    const local = mod.getBackendClient() as unknown as { emit(event: string): void };
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as {
+      emit(event: string): void;
+    };
+    const onLocalReconnect = vi.fn();
+    const onRemoteReconnect = vi.fn();
+    mod.onBackendReconnected(onLocalReconnect, 'local');
+    mod.onBackendReconnected(onRemoteReconnect, 'remote-1');
+
+    local.emit('reconnected');
+    expect(onLocalReconnect).toHaveBeenCalledTimes(1);
+    expect(onRemoteReconnect).not.toHaveBeenCalled();
+
+    remote.emit('reconnected');
+    expect(onLocalReconnect).toHaveBeenCalledTimes(1);
+    expect(onRemoteReconnect).toHaveBeenCalledTimes(1);
   });
 });
 

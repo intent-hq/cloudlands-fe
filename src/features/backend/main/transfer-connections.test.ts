@@ -16,6 +16,7 @@ import {
   __setTransferClientFactoryForTesting,
   acquireTransferConnection,
   disposeAllTransferConnections,
+  disposeTransferConnectionsForBackend,
   isTransferMethod,
   MAX_TRANSFER_CONNECTIONS,
   requestOverTransferConnection,
@@ -424,6 +425,20 @@ describe('chunked upload session routing', () => {
 });
 
 describe('disposeAllTransferConnections', () => {
+  it('disposes only the selected backend transfer connections', async () => {
+    const { clients } = installFakeFactory();
+    const leaseA = await acquireTransferConnection(wssConfig, 'A');
+    const leaseB = await acquireTransferConnection(wssConfig, 'B');
+
+    disposeTransferConnectionsForBackend('A');
+
+    expect(clients[0].getStatus()).toBe('disconnected');
+    expect(clients[1].getStatus()).not.toBe('disconnected');
+    expect(__getActiveTransferCountForTesting()).toBe(1);
+    leaseA.release();
+    leaseB.release();
+  });
+
   it('disposes open connections, clears sessions, and fails queued waiters (backend switch)', async () => {
     const { clients } = installFakeFactory();
 

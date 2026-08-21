@@ -37,7 +37,7 @@ import {
 } from './backend-connection';
 import { JsonRpcClient, type ConnectionStatus, type JsonRpcNotification } from './json-rpc-client';
 import {
-  disposeAllTransferConnections,
+  disposeTransferConnectionsForBackend,
   requestOverTransferConnection,
   shouldUseTransferConnection,
 } from './transfer-connections';
@@ -89,7 +89,7 @@ import {
   ConnectionsSwitchSchema,
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
-import { getBackendIdForWebContents } from '../../../main/window';
+import { getBackendIdForWebContents, getFocusedWindowBackendId } from '../../../main/window';
 
 const logger = new Logger('Backend-IPC');
 const BACKEND = IPC_CHANNELS.BACKEND;
@@ -297,6 +297,7 @@ interface BackendWindowHooks {
   captureAndClose(fromBackendId: string): Promise<void>;
   restore(toBackendId: string): void | Promise<void>;
   openOrFocus?(backendId: string): void | Promise<void>;
+  closeForBackend?(backendId: string): void | Promise<void>;
   /**
    * Idempotent failure-path clear of the window-all-closed teardown guard set
    * by `captureAndClose`. `restore` already clears it at its top; the switch
@@ -324,6 +325,12 @@ const defaultWindowHooks: BackendWindowHooks = {
       openOrFocusWindowsForBackend: (id: string) => void;
     };
     mod.openOrFocusWindowsForBackend(backendId);
+  },
+  async closeForBackend(backendId) {
+    const mod = (await import('../../../main/window')) as unknown as {
+      closeWindowsForBackend: (id: string) => void;
+    };
+    mod.closeWindowsForBackend(backendId);
   },
   async clearTeardownGuard() {
     const mod = (await import('../../../main/window')) as unknown as {
@@ -397,16 +404,14 @@ export function __getBootFallbackNoticeForTesting(): ConnectionBootFallbackEvent
 }
 
 /**
- * Whether the live client is pinned to a REMOTE backend (a `wss` target
- * selected by {@link switchBackend}) rather than the local sidecar/env default.
- *
- * `activeConnectionMeta` is the discriminator: `null` for local (UDS has no
- * remote identity), set to the remote's identity after a switch. Read-only and
- * dependency-light so the quit flow can ask "does a second, local daemon still
- * need checking?" without pulling in connection state it does not own.
+ * Whether the focused window is bound to a remote backend. With no live window,
+ * fall back to the compatibility client's explicit whole-app switch state.
  */
 export function isRemoteBackendActive(): boolean {
-  return activeConnectionMeta !== null;
+  const hasLiveWindow = BrowserWindow.getAllWindows().some((window) => !window.isDestroyed());
+  return hasLiveWindow
+    ? getFocusedWindowBackendId() !== LOCAL_CONNECTION_ID
+    : activeConnectionMeta !== null;
 }
 
 /**
@@ -419,8 +424,13 @@ export function isRemoteBackendActive(): boolean {
  * not assume those share the FE's platform.
  */
 export function isSameHostBackendActive(): boolean {
-  if (activeConnectionMeta !== null) return false;
-  const config = currentConfig ?? resolveBackendConfig(process.env, { isDev: !app.isPackaged });
+  const hasLiveWindow = BrowserWindow.getAllWindows().some((window) => !window.isDestroyed());
+  if (!hasLiveWindow && activeConnectionMeta !== null) return false;
+  const backendId = getFocusedWindowBackendId();
+  if (backendId !== LOCAL_CONNECTION_ID) return false;
+  const config =
+    backendClients.get(LOCAL_CONNECTION_ID)?.getConfig() ??
+    resolveBackendConfig(process.env, { isDev: !app.isPackaged });
   return config.transport === 'uds';
 }
 
@@ -518,7 +528,7 @@ export function getBackendClient(): JsonRpcClient {
     // main-process services (attached once via onBackendNotification) keep
     // receiving daemon events regardless of how many client swaps have
     // happened since they registered. See `backendNotificationForwarder`.
-    backendNotificationForwarder.emit('notification', notification);
+    backendNotificationForwarder.emit('notification', connectionId, notification);
   });
   instance.on('status', (status: ConnectionStatus) => {
     const transport = formatTransportInfo(instance.getConfig(), getPinnedVersion());
@@ -534,7 +544,7 @@ export function getBackendClient(): JsonRpcClient {
       connectionId,
     );
     // Same stable-forwarder pipe for `status`; see `backendStatusForwarder`.
-    backendStatusForwarder.emit('status', status);
+    backendStatusForwarder.emit('status', connectionId, status);
   });
   // On reconnect the daemon has already dropped every in-memory subscription
   // (see intentd's event-bus lifecycle); broadcast a distinct `{ status:
@@ -558,7 +568,7 @@ export function getBackendClient(): JsonRpcClient {
     // main-process services (attached once via onBackendReconnected) replay
     // their subscriptions — regardless of how many client swaps have happened
     // since they registered. See `backendReconnectForwarder`.
-    backendReconnectForwarder.emit('reconnected');
+    backendReconnectForwarder.emit('reconnected', connectionId);
   });
   instance.on('error', (error: Error) => {
     // A pinned-cert mismatch (PROTOCOL §1.2) is NOT a transient transport blip:
@@ -630,6 +640,25 @@ export function getBackendClientForConnection(id: string): JsonRpcClient | undef
   return backendClients.get(id);
 }
 
+/** Resolve a renderer sender to its backend id, with the local fallback. */
+export function getBackendIdForIpcSender(sender: Electron.WebContents): string {
+  return getBackendIdForWebContents(sender);
+}
+
+/** Return the client bound to the focused window (local fallback for no window). */
+export function getFocusedBackendClient(): JsonRpcClient {
+  const backendId = getFocusedWindowBackendId();
+  return backendClients.get(backendId) ?? getBackendClient();
+}
+
+/** Return the connection id currently represented by the compatibility client. */
+export function getPrimaryBackendId(): string {
+  for (const [id, instance] of backendClients) {
+    if (instance === client) return id;
+  }
+  return activeConnectionMeta?.id ?? LOCAL_CONNECTION_ID;
+}
+
 /**
  * Connect an additional backend without changing or disposing the compatibility
  * client returned by {@link getBackendClient}. Concurrent connects for the same
@@ -666,6 +695,8 @@ export function disconnectBackendClient(id: string): void {
     return;
   }
   backendClients.delete(id);
+  disposeTransferConnectionsForBackend(id);
+  void cancelInflightHostExecStreamsForBackendSwitch(instance);
   instance.dispose();
 }
 
@@ -691,6 +722,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
   });
   instance.on('notification', (notification: JsonRpcNotification) => {
     broadcast(BACKEND.NOTIFICATION, notification, id);
+    backendNotificationForwarder.emit('notification', id, notification);
   });
   instance.on('status', (status: ConnectionStatus) => {
     broadcast(
@@ -702,6 +734,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       },
       id,
     );
+    backendStatusForwarder.emit('status', id, status);
   });
   instance.on('reconnected', () => {
     broadcast(
@@ -714,6 +747,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       },
       id,
     );
+    backendReconnectForwarder.emit('reconnected', id);
   });
   instance.on('error', (error: Error) => {
     logger.warn('Backend pool transport error', { id, error: error.message });
@@ -738,12 +772,15 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
  * once and keeps replaying subscriptions against whatever client is current,
  * even across an arbitrary number of backend switches.
  */
-export function onBackendReconnected(handler: () => void): () => void {
+export function onBackendReconnected(handler: () => void, backendId?: string): () => void {
   // Ensure the shared client exists (and is wired into the forwarder) so a
   // reconnect against the current transport actually reaches this handler.
   getBackendClient();
-  backendReconnectForwarder.on('reconnected', handler);
-  return () => backendReconnectForwarder.off('reconnected', handler);
+  const listener = (emittingBackendId: string): void => {
+    if (emittingBackendId === (backendId ?? getPrimaryBackendId())) handler();
+  };
+  backendReconnectForwarder.on('reconnected', listener);
+  return () => backendReconnectForwarder.off('reconnected', listener);
 }
 
 /**
@@ -759,12 +796,16 @@ export function onBackendReconnected(handler: () => void): () => void {
  */
 export function onBackendNotification(
   handler: (notification: JsonRpcNotification) => void,
+  backendId?: string,
 ): () => void {
   // Ensure the shared client exists (and is wired into the forwarder) so
   // notifications on the current transport actually reach this handler.
   getBackendClient();
-  backendNotificationForwarder.on('notification', handler);
-  return () => backendNotificationForwarder.off('notification', handler);
+  const listener = (emittingBackendId: string, notification: JsonRpcNotification): void => {
+    if (emittingBackendId === (backendId ?? getPrimaryBackendId())) handler(notification);
+  };
+  backendNotificationForwarder.on('notification', listener);
+  return () => backendNotificationForwarder.off('notification', listener);
 }
 
 /**
@@ -776,10 +817,16 @@ export function onBackendNotification(
  * `status` listener (app-settings / notification.service `armStatusRetry`)
  * survives client swaps instead of stranding on the disposed client.
  */
-export function onBackendStatus(handler: (status: ConnectionStatus) => void): () => void {
+export function onBackendStatus(
+  handler: (status: ConnectionStatus) => void,
+  backendId?: string,
+): () => void {
   getBackendClient();
-  backendStatusForwarder.on('status', handler);
-  return () => backendStatusForwarder.off('status', handler);
+  const listener = (emittingBackendId: string, status: ConnectionStatus): void => {
+    if (emittingBackendId === (backendId ?? getPrimaryBackendId())) handler(status);
+  };
+  backendStatusForwarder.on('status', listener);
+  return () => backendStatusForwarder.off('status', listener);
 }
 
 /** Broadcast a payload to live renderer windows, optionally scoped to one backend. */
@@ -1349,7 +1396,7 @@ async function performSwitchBackend(id: string): Promise<SwitchConnectionResult>
     // hang on remaining output and an exit frame that can never arrive. This
     // best-effort cancels on the old daemon, then hands each consumer a terminal
     // cancelled-by-backend-switch frame — issue #1616. Runs BEFORE dispose.
-    await cancelInflightHostExecStreamsForBackendSwitch();
+    await cancelInflightHostExecStreamsForBackendSwitch(client ?? undefined);
 
     // (3) Dispose the previous client + subscriptions before connecting the new one.
     disposeBackendClient();
@@ -1365,7 +1412,7 @@ async function performSwitchBackend(id: string): Promise<SwitchConnectionResult>
     // the stable forwarder once here so main-process services (attached via
     // onBackendReconnected) replay their `events.subscribe` calls against the new
     // client — their requests queue until the fresh socket connects (T8).
-    backendReconnectForwarder.emit('reconnected');
+    backendReconnectForwarder.emit('reconnected', id);
 
     // (4.5) Label the remote by its hostname once it connects (T14). Reuses the
     // live client's `host.status`; fire-and-forget so a slow/unreachable remote
@@ -1586,7 +1633,7 @@ export function registerBackendHandlers(): void {
       // structured `{ok:false}` result wins over a transport timeout.
       const timeoutMs = typeof payload?.timeoutMs === 'number' ? payload.timeoutMs : undefined;
       try {
-        const { client } = getBackendClientForIpcEvent(event);
+        const { backendId, client } = getBackendClientForIpcEvent(event);
         // Bulk attachment transfers on a remote backend ride their own
         // short-lived connection so a slow-draining 20+ MiB frame never
         // head-of-line-blocks the main channel (its heartbeat and unrelated
@@ -1598,6 +1645,7 @@ export function registerBackendHandlers(): void {
             method,
             payload?.params,
             { timeoutMs },
+            backendId,
           );
           return { ok: true, result };
         }
@@ -1809,9 +1857,9 @@ function registerConnectionsHandlers(): void {
     ),
   );
 
-  // Forget a remote connection. If it was the live backend, fall back to a full
-  // switch to local (teardown + reload) rather than stranding the FE on a
-  // connection that no longer exists; otherwise just broadcast the new list.
+  // Forget a remote connection. Close and disconnect only that backend. If it
+  // also owns the compatibility client, retarget that client to local without
+  // disturbing windows belonging to any other backend.
   // The active-id read + forget + conditional fallback is ONE enqueued
   // critical section (monorepo#2228): a stale pre-queue read could take the
   // fall-back-to-local after a concurrent switch had already landed on another
@@ -1824,11 +1872,19 @@ function registerConnectionsHandlers(): void {
         enqueueSwitchOperation(async () => {
           const wasActive = (await connectionsStore.getActiveId()) === id;
           await connectionsStore.forget(id); // rejects the reserved local id
-          if (wasActive) {
-            await performSwitchBackend(LOCAL_CONNECTION_ID);
+          await windowHooks.closeForBackend?.(id);
+          const targetClient = backendClients.get(id);
+          if (wasActive && (targetClient === client || activeConnectionMeta?.id === id)) {
+            disposeBackendClient();
+            currentConfig = null;
+            activeConnectionMeta = null;
+            getBackendClient();
+            backendReconnectForwarder.emit('reconnected', LOCAL_CONNECTION_ID);
+            app.emit('backend-connection-changed');
           } else {
-            await broadcastConnectionsChanged();
+            disconnectBackendClient(id);
           }
+          await broadcastConnectionsChanged();
           return { id } satisfies ForgetConnectionResult;
         }),
       CONNECTIONS.FORGET,
@@ -1858,13 +1914,13 @@ function registerConnectionsHandlers(): void {
 
 /** Dispose the shared client (used on shutdown and backend switch). */
 export function disposeBackendClient(): void {
-  // In-flight per-transfer connections target the same (outgoing) backend as
-  // the shared client, so they can no longer complete — tear them down too.
-  disposeAllTransferConnections();
   // The next client is switch-origin unless the boot-restore path re-tags it
   // (see {@link protocolMismatchOrigin}).
   protocolMismatchOrigin = 'switch';
   if (client) {
+    const primaryBackendId = getPrimaryBackendId();
+    disposeTransferConnectionsForBackend(primaryBackendId);
+    void cancelInflightHostExecStreamsForBackendSwitch(client);
     for (const [id, instance] of backendClients) {
       if (instance === client) backendClients.delete(id);
     }

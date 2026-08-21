@@ -25,11 +25,13 @@ import { Logger } from '../../../shared/logger';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import {
   getBackendClient,
-  isRemoteBackendActive,
+  getBackendClientForConnection,
+  getPrimaryBackendId,
   onBackendNotification,
   onBackendReconnected,
 } from '../../backend/main/backend.ipc';
 import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
+import { LOCAL_CONNECTION_ID } from '../../backend/main/connections-store';
 
 const logger = new Logger('WorkspacePathService');
 
@@ -85,7 +87,9 @@ async function subscribeToWorkspaceEvents(): Promise<void> {
   subscribeInFlight = true;
   const epoch = subscribeEpoch;
   try {
-    const result = (await getBackendClient().request('events.subscribe', {
+    const client = getBackendClientForConnection(LOCAL_CONNECTION_ID);
+    if (!client) return;
+    const result = (await client.request('events.subscribe', {
       eventTypes: ['workspace:updated', 'workspace:deleted'],
     })) as { subscriptionId?: string } | undefined;
     // A reconnect happened while this request was in flight: the result
@@ -109,7 +113,7 @@ async function subscribeToWorkspaceEvents(): Promise<void> {
 function attachListeners(): void {
   if (listenersAttached) return;
   listenersAttached = true;
-  onBackendNotification(handleBackendNotification);
+  onBackendNotification(handleBackendNotification, LOCAL_CONNECTION_ID);
   onBackendReconnected(() => {
     // The daemon dropped in-memory subscriptions and the backend may have
     // been switched — drop every cached path and re-subscribe. cacheEpoch
@@ -122,7 +126,7 @@ function attachListeners(): void {
     subscriptionId = undefined;
     subscribeInFlight = false;
     void subscribeToWorkspaceEvents();
-  });
+  }, LOCAL_CONNECTION_ID);
   void subscribeToWorkspaceEvents();
 }
 
@@ -131,11 +135,21 @@ function attachListeners(): void {
  * daemon-reported data. `null` when no local checkout is known — callers
  * must handle that explicitly instead of fabricating a path.
  */
-export async function getWorkspacePathInfo(workspaceId: string): Promise<WorkspacePathInfo | null> {
+export async function getWorkspacePathInfo(
+  workspaceId: string,
+  backendId: string = LOCAL_CONNECTION_ID,
+): Promise<WorkspacePathInfo | null> {
   if (!workspaceId || VIRTUAL_WORKSPACE_IDS.has(workspaceId)) return null;
   // Remote backend: workspace.get would answer with the REMOTE host's paths,
   // which do not exist on this machine.
-  if (isRemoteBackendActive()) return null;
+  if (backendId !== LOCAL_CONNECTION_ID) return null;
+
+  if (
+    !getBackendClientForConnection(LOCAL_CONNECTION_ID) &&
+    getPrimaryBackendId() === LOCAL_CONNECTION_ID
+  ) {
+    getBackendClient();
+  }
 
   attachListeners();
   // Retry a failed/absent subscription (no-op when live or in flight) so a
@@ -162,8 +176,7 @@ async function fetchWorkspacePathInfo(workspaceId: string): Promise<WorkspacePat
   const generationAtStart = invalidationGenerations.get(workspaceId) ?? 0;
   try {
     const response = (await getBackendClient().request('workspace.get', { workspaceId })) as
-      | { workspace?: unknown }
-      | unknown;
+      { workspace?: unknown } | unknown;
     const raw =
       response && typeof response === 'object' && 'workspace' in response
         ? (response as { workspace?: unknown }).workspace
@@ -182,9 +195,7 @@ async function fetchWorkspacePathInfo(workspaceId: string): Promise<WorkspacePat
     // Same precedence the FE already applies to daemon rows (terminal cwd,
     // workspace file search): worktree first, then repository, then `path`.
     const candidates = [ws.worktreePath, ws.repositoryPath, ws.path];
-    const path = candidates.find(
-      (p): p is string => typeof p === 'string' && p.trim().length > 0,
-    );
+    const path = candidates.find((p): p is string => typeof p === 'string' && p.trim().length > 0);
     if (!path) return null;
     const info: WorkspacePathInfo = {
       path,
@@ -218,8 +229,11 @@ async function fetchWorkspacePathInfo(workspaceId: string): Promise<WorkspacePat
  * Resolve a workspace's checkout directory from daemon-reported data.
  * `null` for virtual/unknown workspaces and remote backends.
  */
-export async function getWorkspacePath(workspaceId: string): Promise<string | null> {
-  const info = await getWorkspacePathInfo(workspaceId);
+export async function getWorkspacePath(
+  workspaceId: string,
+  backendId: string = LOCAL_CONNECTION_ID,
+): Promise<string | null> {
+  const info = await getWorkspacePathInfo(workspaceId, backendId);
   return info?.path ?? null;
 }
 
@@ -228,8 +242,13 @@ export async function getWorkspacePath(workspaceId: string): Promise<string | nu
  * (virtual workspace or remote backend) — callers with retry loops for the
  * workspace-creation race can skip retrying these.
  */
-export function isWorkspacePathDeterministicallyNull(workspaceId: string): boolean {
-  return !workspaceId || VIRTUAL_WORKSPACE_IDS.has(workspaceId) || isRemoteBackendActive();
+export function isWorkspacePathDeterministicallyNull(
+  workspaceId: string,
+  backendId: string = LOCAL_CONNECTION_ID,
+): boolean {
+  return (
+    !workspaceId || VIRTUAL_WORKSPACE_IDS.has(workspaceId) || backendId !== LOCAL_CONNECTION_ID
+  );
 }
 
 /** Test-only: reset module state (cache, listeners, subscription). */
