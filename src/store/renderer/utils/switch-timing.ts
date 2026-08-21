@@ -32,7 +32,7 @@ export type GateName =
   | 'subscriptionsFetched';
 export type SeedName =
   'hooksSeedStarted' | 'hooksSeedDelivered' | 'prSeedStarted' | 'prSeedDelivered';
-export type SwitchOutcome = 'revealed' | 'revealed-after-timeout' | 'hydration-failed';
+type SwitchOutcome = 'revealed' | 'revealed-after-timeout' | 'hydration-failed';
 
 export interface SwitchTimingSummary {
   agentId: string;
