@@ -1805,7 +1805,7 @@
           </Button>
           <Button
             variant="ghost"
-            size="icon"
+            size="xs"
             iconOnly={true}
             title={m.chat_modelPicker_refreshGroup_title({
               group: providerDisplayName(activeBrowseProviderId),
@@ -1814,7 +1814,7 @@
               group: providerDisplayName(activeBrowseProviderId),
             })}
             class={cn(
-              'text-muted-foreground hover:bg-muted/40',
+              'ml-auto text-subtle hover:bg-muted/40',
               refreshingProviders.has(activeBrowseProviderId) && 'opacity-50! cursor-not-allowed',
             )}
             data-testid="model-provider-refresh-button"
@@ -1823,8 +1823,9 @@
           >
             <Fa
               icon={faArrowsRotate}
+              size={10}
               class={cn(
-                'size-3 text-muted-foreground/50 transition-transform duration-500',
+                'text-subtle transition-transform duration-500',
                 refreshingProviders.has(activeBrowseProviderId) && 'animate-spin',
               )}
             />
