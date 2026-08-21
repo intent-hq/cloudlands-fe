@@ -41,7 +41,6 @@ const consumerFiles = [
   'src/lib/components/tiptap/LineAttributionGutter.svelte',
   'src/lib/components/tiptap/TaskAgentStatus.svelte',
   'src/lib/components/tiptap/comments/AgentPeekCard.svelte',
-  'src/lib/components/ui/toast/NotificationNavigateToast.svelte',
   'src/lib/components/workspace/MultiSelectTabbedSidebar.svelte',
   'src/lib/components/workspace/NoteMetadataBar.svelte',
   'src/lib/components/workspace/TaskProgressBar.svelte',
@@ -87,7 +86,7 @@ function productionSvelteFiles(directory = 'src'): string[] {
 
 describe('agent avatar overlay inventory', () => {
   it('keeps every audited consumer on the icon-free canonical avatar surface', () => {
-    expect(consumerFiles).toHaveLength(51);
+    expect(consumerFiles).toHaveLength(50);
     for (const path of consumerFiles) {
       const contents = source(path);
       expect(contents, path).not.toContain('/auggie-avatar/');

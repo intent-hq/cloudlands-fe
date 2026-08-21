@@ -16,7 +16,6 @@
     faDownload,
     faRotateRight,
     faTriangleExclamation,
-    faXmark,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
@@ -34,6 +33,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber, formatInteger } from '$lib/i18n/format';
+  import ToastCloseButton from './ToastCloseButton.svelte';
 
   interface Props {
     /** Callback when toast should be dismissed */
@@ -96,9 +96,7 @@
 
 <div class="update-toast">
   {#if $status$ === 'downloaded' || $status$ === 'downloading' || $status$ === 'error'}
-    <button class="close-btn" onclick={handleClose} aria-label={m.ui_updateToast_close_ariaLabel()}>
-      <Fa icon={faXmark} size="xs" />
-    </button>
+    <ToastCloseButton onclick={handleClose} ariaLabel={m.ui_updateToast_close_ariaLabel()} />
   {/if}
   {#if $status$ === 'checking'}
     <div class="flex items-center gap-3">
@@ -193,30 +191,6 @@
     min-width: 0;
     position: relative;
     overflow: visible;
-  }
-
-  .close-btn {
-    position: absolute;
-    top: -1rem;
-    left: -1.25rem;
-    transform: translate(-35%, -35%);
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    border: 1px solid hsl(var(--border));
-    background: hsl(var(--card));
-    color: hsl(var(--muted-foreground));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    padding: 0;
-    transition: opacity 0.15s ease;
-    z-index: 1;
-  }
-
-  .close-btn:hover {
-    opacity: 0.8;
   }
 
   .icon {

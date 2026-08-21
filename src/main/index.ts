@@ -1612,7 +1612,6 @@ app.whenReady().then(async () => {
     // import is a cache hit.)
     const { initializeAutoUpdater, markAutoUpdaterNotInitialized } =
       await import('../features/auto-update/main/auto-update.ipc');
-    const mainWindow = getMainWindow();
     if (process.env.NODE_ENV !== 'development' && process.env.TESTING !== 'true') {
       // Initialize regardless of whether a window exists yet
       // (intent-hq/monorepo#1848): this setImmediate task can run before
@@ -1634,10 +1633,16 @@ app.whenReady().then(async () => {
 
     // Show this version's release notes on the first launch after an update.
     // Packaged builds only — a dev build's version is never a published tag.
-    if (app.isPackaged && mainWindow) {
+    // Run regardless of whether a window exists yet (intent-hq/monorepo#3054,
+    // same race as #1848 above): this setImmediate task can run before window
+    // creation, and gating on the window skipped the check — and the pref
+    // advance — for the whole session. The window is resolved at send time
+    // inside the check; with no window the notes park as pending for the
+    // renderer's get-pending claim.
+    if (app.isPackaged) {
       const { initializeReleaseNotesOnStartup } =
         await import('../features/release-notes/main/release-notes.ipc');
-      void initializeReleaseNotesOnStartup(mainWindow);
+      void initializeReleaseNotesOnStartup(getMainWindow);
     }
 
     // Setup development-only IPC handlers

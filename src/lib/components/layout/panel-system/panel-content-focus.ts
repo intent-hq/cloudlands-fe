@@ -9,7 +9,12 @@
  * dispatched focusPanel and then blurred the very element the user clicked,
  * making it impossible to keep focus or type.
  *
- * The blur must only clear focus that lives OUTSIDE the target panel.
+ * The blur must only clear STALE PANEL focus — focus that lives inside some
+ * OTHER panel. Focus with no `[data-panel-id]` ancestor is not panel-owned at
+ * all (a dialog portal / modal overlay, e.g. the New Space modal editor) and
+ * must never be blurred: doing so fought the dialog focus trap, which
+ * re-focused the editor with the caret at the start 100 ms after every
+ * focusPanel dispatch (intent-hq/monorepo#3053).
  *
  * Panel ids are session-scoped (`panel-${Date.now()}-${counter}`), so two
  * persisted layouts can in principle carry colliding ids. When
@@ -24,17 +29,19 @@ export function shouldBlurActiveElement(
 ): activeElement is HTMLElement {
   if (!(activeElement instanceof HTMLElement)) return false;
   const owningPanel = activeElement.closest<HTMLElement>('[data-panel-id]');
-  if (owningPanel?.dataset.panelId !== targetPanelId) return true;
+  if (!owningPanel) return false;
+  if (owningPanel.dataset.panelId !== targetPanelId) return true;
   return targetLayoutId !== undefined && owningPanel.dataset.layoutId !== targetLayoutId;
 }
 
 /**
  * Same ownership rule for the focusable-type branch (intent-hq/monorepo#2947):
  * only redirect focus into the panel's content (`panel:focus-content`) when the
- * current focus lives OUTSIDE the target panel. Focus the user just placed
+ * current focus is stale focus in another panel. Focus the user just placed
  * inside the panel but outside the prompt (e.g. the header rename input) must
- * not be stolen. Unlike the blur predicate, null/body focus counts as outside
- * so normal reveal/cycle flows still focus the content.
+ * not be stolen, and neither must overlay-hosted focus with no panel ancestor
+ * (intent-hq/monorepo#3053). Unlike the blur predicate, null/body focus counts
+ * as redirectable so normal reveal/cycle flows still focus the content.
  *
  * Non-HTMLElement focus (e.g. an SVG given tabindex) counts as INSIDE
  * regardless of where it lives — a deliberate conservative bias inherited from
@@ -47,5 +54,6 @@ export function shouldRedirectFocusToPanelContent(
   targetLayoutId?: string,
 ): boolean {
   if (activeElement === null) return true;
+  if (activeElement === activeElement.ownerDocument.body) return true;
   return shouldBlurActiveElement(activeElement, targetPanelId, targetLayoutId);
 }
