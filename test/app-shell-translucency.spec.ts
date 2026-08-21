@@ -106,7 +106,6 @@ test('app shell wash stays isolated across themes, viewports, zoom, and forced c
       const rect = shell.getBoundingClientRect();
       return {
         shell: style('[data-app-shell]').backgroundColor,
-        token: style(':root').getPropertyValue('--app-shell-translucency').trim(),
         forcedColors: matchMedia('(forced-colors: active)').matches,
         surfaces: {
           workspace: style('[data-workspace]').backgroundColor,

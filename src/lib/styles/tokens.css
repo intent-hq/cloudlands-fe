@@ -202,7 +202,6 @@
   --sidebar-border: var(--theme-sidebar-border);
 
   --app-background: var(--theme-app-background);
-  --app-shell-translucency: hsl(var(--app-background) / 0.3);
   --agent-avatar-surface-neutral: var(--theme-agent-avatar-surface-neutral);
   --agent-avatar-foreground: var(--theme-agent-avatar-foreground);
   --agent-avatar-surface-completed: var(--theme-agent-avatar-surface-completed);
@@ -376,7 +375,6 @@
 
 .dark {
   color-scheme: dark;
-  --app-shell-translucency: transparent;
   --elevation-raised: var(--theme-dark-elevation-raised);
   --elevation-overlay: var(--theme-dark-elevation-overlay);
   --theme-background: var(--theme-dark-background);

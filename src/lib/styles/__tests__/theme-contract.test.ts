@@ -275,14 +275,6 @@ describe('theme color contract', () => {
     },
   );
 
-  it('derives the light app-shell wash from the app background and removes it in dark mode', () => {
-    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
-    const appBackground = ['app', 'background'].join('-');
-
-    expect(tokenValue(css, 'app-shell-translucency')).toBe(`hsl(var(--${appBackground}) / 0.3)`);
-    expect(css).toMatch(/\.dark\s*{[^}]*--app-shell-translucency:\s*transparent;/s);
-  });
-
   it.each(['light', 'dark'] as const)(
     'keeps the %s on-surface error foreground readable on normal surfaces',
     (mode) => {

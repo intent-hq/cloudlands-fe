@@ -16,6 +16,27 @@
    variants must key off the class, not the OS `prefers-color-scheme` query. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+:root {
+  /* Canonical navigation-row geometry. Product rows select compact or regular density. */
+  --row-height-compact: 1.75rem;
+  --row-height-regular: 2rem;
+  --row-padding-inline-compact: 0.5rem;
+  --row-padding-inline-regular: 0.75rem;
+  --row-gap-compact: 0.5rem;
+  --row-gap-regular: 0.5rem;
+  --row-icon-box-compact: 1rem;
+  --row-icon-box-regular: 1.25rem;
+  --row-icon-size-compact: 0.75rem;
+  --row-icon-size-regular: 0.875rem;
+  --row-action-target-compact: var(--control-height-compact);
+  --row-action-target-regular: var(--control-height-small);
+  --row-open-indicator-size: 0.875rem;
+  --row-radius: var(--radius-small);
+  /* Named product row: emphasized agent avatars require the 40px virtualization contract. */
+  --workspace-agent-row-height: 2.5rem;
+  --workspace-agent-delegation-indent: 1.625rem;
+}
+
 /* Source Serif 4: bundle only the Latin normal and italic variable faces used by notes. */
 @font-face {
   font-family: 'Source Serif 4 Variable';
