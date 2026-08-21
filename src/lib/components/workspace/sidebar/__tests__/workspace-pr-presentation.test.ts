@@ -1,0 +1,180 @@
+import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import type { PullRequestInfo } from '$shared/types';
+import { PullRequestStatus } from '$shared/types';
+import { describe, expect, it } from 'vitest';
+import { buildWorkspacePRPresentationModel } from '../workspace-pr-presentation';
+
+const workspaceRepo = 'acme/widgets';
+const buildPrUrl = (number: number, fallback?: string) =>
+  fallback ?? `https://github.com/${workspaceRepo}/pull/${number}`;
+const getDisplayTitle = (pr: PullRequestInfo) => pr.title;
+
+function makePR(overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
+  return {
+    id: 'pr-1',
+    number: 1,
+    url: 'https://github.com/acme/widgets/pull/1',
+    title: 'Workspace PR',
+    status: PullRequestStatus.Open,
+    createdAt: '2026-08-01T00:00:00Z',
+    updatedAt: '2026-08-02T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
+  return {
+    monitorId: 'mon-1',
+    workspaceId: 'ws-1',
+    agentId: 'agent-1',
+    repo: workspaceRepo,
+    prNumber: 1,
+    state: 'active',
+    pendingChanges: [],
+    hasPendingChanges: false,
+    createdAt: '2026-08-01T00:00:00Z',
+    updatedAt: '2026-08-02T00:00:00Z',
+    title: 'Monitored PR',
+    url: 'https://github.com/acme/widgets/pull/1',
+    ...overrides,
+  };
+}
+
+function build(
+  workspacePRs: PullRequestInfo[] | undefined,
+  activePR: PullRequestInfo | null,
+  monitors: PrMonitorRow[],
+) {
+  return buildWorkspacePRPresentationModel({
+    workspacePRs,
+    activePR,
+    monitors,
+    workspaceRepo,
+    buildPrUrl,
+    getDisplayTitle,
+  });
+}
+
+describe('buildWorkspacePRPresentationModel', () => {
+  it('returns every branch-linked PR in deterministic status order', () => {
+    const rows = build(
+      [
+        makePR({ id: 'closed', number: 4, status: PullRequestStatus.Closed }),
+        makePR({ id: 'merged', number: 3, status: PullRequestStatus.Merged }),
+        makePR({ id: 'draft', number: 2, isDraft: true }),
+        makePR({ id: 'open', number: 1 }),
+      ],
+      null,
+      [],
+    );
+
+    expect(rows.map(({ status }) => status)).toEqual(['open', 'draft', 'merged', 'closed']);
+    expect(rows.map(({ number }) => number)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('uses the active PR only as the legacy fallback', () => {
+    const active = makePR({ number: 9, title: 'Active fallback' });
+    expect(build([], active, [])).toMatchObject([{ number: 9, title: 'Active fallback' }]);
+    expect(build([makePR({ number: 7 })], active, []).map(({ number }) => number)).toEqual([7]);
+  });
+
+  it('deduplicates duplicate same-repo monitors onto the branch row', () => {
+    const rows = build([makePR()], null, [
+      makeMonitor({ monitorId: 'mon-1', agentId: 'agent-1' }),
+      makeMonitor({ monitorId: 'mon-2', agentId: 'agent-2' }),
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      identity: 'acme/widgets#1',
+      title: 'Workspace PR',
+      monitorAgentId: 'agent-2',
+      monitorOnly: false,
+    });
+  });
+
+  it('preserves repo-qualified identity when PR numbers collide across repos', () => {
+    const rows = build([makePR({ number: 42 })], null, [
+      makeMonitor({
+        repo: 'other/tools',
+        prNumber: 42,
+        title: 'Cross-repo PR',
+        url: 'https://github.com/other/tools/pull/42',
+      }),
+    ]);
+
+    expect(rows.map(({ identity }) => identity)).toEqual(['acme/widgets#42', 'other/tools#42']);
+    expect(rows[1]).toMatchObject({ repo: 'other/tools', repoContext: 'other/tools' });
+  });
+
+  it('presents a snapshotless monitor without inventing merge state', () => {
+    const [row] = build([], null, [makeMonitor({ prNumber: 8, lastSnapshot: undefined })]);
+    expect(row).toMatchObject({ status: 'open', accessibleStateLabel: 'Open', details: 'Open' });
+  });
+
+  it('returns one semantic icon and color treatment for each state', () => {
+    const rows = build(
+      [
+        makePR({ id: 'open', number: 1 }),
+        makePR({ id: 'draft', number: 2, status: PullRequestStatus.Draft }),
+        makePR({ id: 'merged', number: 3, status: PullRequestStatus.Merged }),
+        makePR({ id: 'closed', number: 4, status: PullRequestStatus.Closed }),
+      ],
+      null,
+      [],
+    );
+
+    expect(
+      rows.map(({ status, foregroundClass, backgroundClass, accessibleStateLabel }) => ({
+        status,
+        foregroundClass,
+        backgroundClass,
+        accessibleStateLabel,
+      })),
+    ).toEqual([
+      {
+        status: 'open',
+        foregroundClass: 'text-success',
+        backgroundClass: 'bg-success/10',
+        accessibleStateLabel: 'Open',
+      },
+      {
+        status: 'draft',
+        foregroundClass: 'text-muted-foreground',
+        backgroundClass: 'bg-muted',
+        accessibleStateLabel: 'Draft',
+      },
+      {
+        status: 'merged',
+        foregroundClass: 'text-primary',
+        backgroundClass: 'bg-primary/10',
+        accessibleStateLabel: 'Merged',
+      },
+      {
+        status: 'closed',
+        foregroundClass: 'text-error-foreground',
+        backgroundClass: 'bg-destructive/10',
+        accessibleStateLabel: 'Closed',
+      },
+    ]);
+    expect(rows.every((row) => row.statusIcon !== undefined)).toBe(true);
+  });
+
+  it('includes conflict, CI, and review details from the existing PR utility', () => {
+    const [row] = build(
+      [
+        makePR({
+          mergeConflicts: true,
+          ciStatus: { total: 3, passed: 1, failed: 1, pending: 1 },
+          reviewDecision: 'CHANGES_REQUESTED',
+        }),
+      ],
+      null,
+      [],
+    );
+
+    expect(row.details).toContain('Merge conflicts');
+    expect(row.details).toContain('1/3 checks failing (1 running)');
+    expect(row.details).toContain('Changes requested');
+  });
+});
