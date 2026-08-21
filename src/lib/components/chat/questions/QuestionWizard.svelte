@@ -173,16 +173,22 @@
       {/if}
     </div>
   {:else}
-    <div class="flex min-h-7 items-center px-3 pt-3 sm:px-4">
+    <div
+      class="flex min-h-7 min-w-0 items-center gap-2 px-3 pt-3 sm:px-4"
+      data-question-wizard-header
+    >
       {#if multiStep}
-        <span class="type-caption text-subtle"
+        <span class="shrink-0 type-caption text-subtle" data-question-step-counter
           >{m.chat_questionWizard_stepCounter_label({
             current: idx + 1,
             total: questions.length,
           })}</span
         >
       {/if}
-      <span class="ml-auto flex items-center gap-1">
+      <p class="min-w-0 flex-1 truncate type-caption text-subtle" data-question-header-title>
+        {current.header}
+      </p>
+      <span class="flex shrink-0 items-center gap-1" data-question-header-actions>
         <button
           type="button"
           class="border-none bg-transparent type-caption text-subtle cursor-pointer font-[inherit] px-1.5 py-1 rounded-(--radius-small) hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -207,10 +213,7 @@
     {#key idx}
       <div in:fade={{ duration: stepDuration }}>
         <div class="flex flex-col gap-4 px-3 pt-3 pb-3 sm:px-4">
-          <div class="flex flex-col gap-1">
-            <p class="type-caption text-subtle">{current.header}</p>
-            <h2 class="type-title font-medium text-foreground">{current.question}</h2>
-          </div>
+          <h2 class="type-title font-medium text-foreground">{current.question}</h2>
 
           <div class="flex flex-col divide-y divide-border">
             {#each current.options as option, oi (oi)}
@@ -228,21 +231,21 @@
                     : 'cursor-pointer hover:bg-accent/50 active:bg-accent'}"
                 onclick={() => selectOption(oi)}
               >
-                <span
-                  aria-hidden="true"
-                  data-option-indicator
-                  class="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center border box-border {isMulti
-                    ? 'rounded-(--radius-small)'
-                    : 'rounded-full'} {selected ? 'border-primary' : 'border-input'}"
-                >
-                  {#if isMulti && selected}
-                    <span class="inline-flex size-full items-center justify-center bg-primary">
-                      <Fa icon={faCheck} class="text-[9px] text-primary-foreground a11y-ignore" />
-                    </span>
-                  {:else if selected}
-                    <span class="size-2 rounded-full bg-primary"></span>
-                  {/if}
-                </span>
+                {#if isMulti}
+                  <span
+                    aria-hidden="true"
+                    data-option-indicator
+                    class="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-(--radius-small) border box-border {selected
+                      ? 'border-primary'
+                      : 'border-input'}"
+                  >
+                    {#if selected}
+                      <span class="inline-flex size-full items-center justify-center bg-primary">
+                        <Fa icon={faCheck} class="text-[9px] text-primary-foreground a11y-ignore" />
+                      </span>
+                    {/if}
+                  </span>
+                {/if}
                 <span class="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span
                     class="type-body font-medium {selected
@@ -296,7 +299,7 @@
           <span class="ml-auto flex items-center gap-1.5">
             <button
               type="button"
-              class="border-none bg-transparent type-caption text-subtle cursor-pointer font-[inherit] px-2 py-1.5 rounded-(--radius-small) hover:text-foreground"
+              class="border-none bg-transparent type-body text-subtle cursor-pointer font-[inherit] px-2 py-1.5 rounded-(--radius-small) hover:text-foreground"
               onclick={handleSkip}
             >
               {m.chat_questionWizard_skip_label()}

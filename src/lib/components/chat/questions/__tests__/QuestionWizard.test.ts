@@ -67,6 +67,27 @@ describe('QuestionWizard', () => {
     expect(screen.queryByText('Selecting an option moves to the next question')).toBeNull();
   });
 
+  it('keeps the counter, question header, Hide, and Dismiss in one ordered header row', () => {
+    const { container } = render(QuestionWizard, {
+      props: { questions: [SINGLE, LAST], onDismiss: vi.fn() },
+    });
+    const header = container.querySelector('[data-question-wizard-header]')!;
+    const counter = header.querySelector('[data-question-step-counter]')!;
+    const title = header.querySelector('[data-question-header-title]')!;
+    const actions = header.querySelector('[data-question-header-actions]')!;
+
+    expect(header.className).toContain('min-w-0');
+    expect(header.className).not.toContain('flex-wrap');
+    expect(title.className).toContain('truncate');
+    expect(title.className).toContain('flex-1');
+    expect(actions.className).toContain('shrink-0');
+    expect(counter.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(title.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(header.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      '1 of 2 Token storage Hide Dismiss',
+    );
+  });
+
   it('uses one borderless card with lightweight unboxed choices and an outlined input', () => {
     const { container } = setup([LAST]);
     const wizard = container.querySelector('[data-question-wizard]');
@@ -83,7 +104,7 @@ describe('QuestionWizard', () => {
       true,
     );
     expect(options.every((option) => !option.className.includes('shadow'))).toBe(true);
-    expect(container.querySelectorAll('[data-option-indicator]')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-option-indicator]')).toHaveLength(0);
     expect(input.parentElement?.className).toContain('focus-within:border-ring');
     expect(screen.getByRole('heading', { name: LAST.question })).toBeTruthy();
   });
@@ -106,6 +127,9 @@ describe('QuestionWizard', () => {
     expect(screen.getByRole('button', { name: /hide/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /skip/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /send/i })).toBeTruthy();
+    expect(
+      container.querySelector('[data-question-header-title]')?.previousElementSibling,
+    ).toBeNull();
   });
 
   it('single-select single-question wizard shows Send and no advance hint', () => {
@@ -126,17 +150,25 @@ describe('QuestionWizard', () => {
 
   it('single-select re-click deselects on the last question', async () => {
     setup([LAST]);
-    await fireEvent.click(screen.getByText('Migrate silently'));
+    const option = screen.getByText('Migrate silently').closest('button') as HTMLButtonElement;
+    await fireEvent.click(option);
+    expect(option.getAttribute('aria-pressed')).toBe('true');
+    expect(option.dataset.selected).toBe('true');
+    expect(option.className).toContain('bg-accent');
     const send = screen.getByRole('button', { name: /send/i });
     expect((send as HTMLButtonElement).disabled).toBe(false);
-    await fireEvent.click(screen.getByText('Migrate silently'));
+    await fireEvent.click(option);
+    expect(option.getAttribute('aria-pressed')).toBe('false');
     expect((send as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('multi-select toggles checkboxes and requires Next; Next disabled with no selection/text', async () => {
-    setup();
+    const { container } = setup();
     await fireEvent.click(screen.getByText('OS keychain'));
     expect(screen.queryByText('select all that apply')).toBeNull();
+    expect(container.querySelectorAll('[data-option-indicator]')).toHaveLength(
+      MULTI.options.length,
+    );
     const next = screen.getByRole('button', { name: /next/i });
     expect((next as HTMLButtonElement).disabled).toBe(true);
     await fireEvent.click(screen.getByText('Desktop app'));

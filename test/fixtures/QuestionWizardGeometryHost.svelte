@@ -8,12 +8,16 @@
     questionCount = 3,
     safeArea = 0,
     longChat = false,
+    longHeader = false,
+    multiSelect,
   }: {
     collapsed?: boolean;
     optionCount?: number;
     questionCount?: number;
     safeArea?: number;
     longChat?: boolean;
+    longHeader?: boolean;
+    multiSelect?: boolean;
   } = $props();
 
   const options = $derived(
@@ -25,10 +29,12 @@
   const questions: Question[] = $derived(
     Array.from({ length: questionCount }, (_, index) => ({
       attachmentId: `geometry-question-${index + 1}`,
-      header: `Question ${index + 1}`,
+      header: longHeader
+        ? `Question ${index + 1} with a deliberately long header that must truncate safely`
+        : `Question ${index + 1}`,
       question: 'Where should this bounded question surface sit?',
       options,
-      multiSelect: optionCount > 1,
+      multiSelect: multiSelect ?? optionCount > 1,
     })),
   );
 </script>
@@ -45,7 +51,7 @@
     data-testid="conversation-composer-boundary"
   >
     <div class="w-full" data-testid="question-wizard-slot">
-      <QuestionWizard {questions} {collapsed} />
+      <QuestionWizard {questions} {collapsed} onDismiss={() => {}} />
     </div>
   </div>
   <div style:height={`${safeArea}px`} class="shrink-0" data-testid="platform-safe-area"></div>
