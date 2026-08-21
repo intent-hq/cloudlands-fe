@@ -11,11 +11,21 @@ import * as fs from 'fs/promises';
 let testUserDataPath: string;
 let appVersion = '2.1.0';
 
+const ipcHandlers = vi.hoisted(
+  () => new Map<string, (event: unknown, data: unknown) => Promise<unknown>>(),
+);
+
 vi.mock('electron', () => ({
   app: {
     getPath: () => testUserDataPath,
     getVersion: () => appVersion,
   },
+  ipcMain: {
+    handle: (channel: string, handler: (event: unknown, data: unknown) => Promise<unknown>) => {
+      ipcHandlers.set(channel, handler);
+    },
+  },
+  BrowserWindow: class {},
 }));
 
 const PREF_KEY = 'lastSeenReleaseNotesVersion';
@@ -160,6 +170,36 @@ describe('release-notes service', () => {
 
       expect(show).not.toHaveBeenCalled();
       expect(await readPref()).toBe('2.0.0');
+    });
+  });
+
+  describe('initializeReleaseNotesOnStartup (no window at init time)', () => {
+    it('parks the notes as pending and advances the pref', async () => {
+      // Regression (intent-hq/monorepo#3054): the startup check used to be
+      // gated on the main window existing, which usually lost the startup
+      // race — no notes were fetched and the pref never advanced. With no
+      // window the notes must park for the renderer's get-pending claim and
+      // the pref must still advance.
+      ipcHandlers.clear();
+      await writePref('2.0.0');
+      vi.stubGlobal('fetch', mockFetchOk('## 2.1.0'));
+      const { initializeReleaseNotesOnStartup, setupReleaseNotesIPC } =
+        await import('../release-notes.ipc');
+      setupReleaseNotesIPC();
+
+      await initializeReleaseNotesOnStartup(() => null);
+
+      const getPending = ipcHandlers.get('release-notes:get-pending');
+      expect(getPending).toBeDefined();
+      expect(await getPending!({}, undefined)).toEqual({
+        success: true,
+        data: {
+          version: '2.1.0',
+          notes: '## 2.1.0',
+          url: 'https://github.com/example/releases/tag/v2.1.0',
+        },
+      });
+      expect(await readPref()).toBe('2.1.0');
     });
   });
 });
