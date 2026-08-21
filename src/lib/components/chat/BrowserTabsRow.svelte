@@ -25,6 +25,7 @@
     selectPanels,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { revealHiddenTabAvoidingPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { selectPanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { store as appStore } from '$store/renderer/store';
   import {
     safeSubscriptionRowTransition,
@@ -122,16 +123,24 @@
   function handleTabClick(entry: BrowserTabEntry) {
     if (entry.hidden) {
       // Restore into a panel other than the one hosting this conversation
-      // (the reducer splits when it is the only panel), so the reveal never
-      // displaces the chat or moves keyboard focus off it. The footer click
-      // has already focused the conversation panel by pointerdown, so the
-      // conversation panel is the one hosting this agent's tab.
+      // (the reducer splits when it is the only panel — except in pin mode,
+      // where a split would be collapsed by the reusable-panel invariant and
+      // re-hide the tab, monorepo#3121), so the reveal never displaces the
+      // chat or moves keyboard focus off it. The footer click has already
+      // focused the conversation panel by pointerdown, so the conversation
+      // panel is the one hosting this agent's tab.
       const panels = selectPanels.select(appStore.state, workspaceId);
       const conversationPanel = Object.values(panels).find((panel) =>
         panel.tabs.some((tab) => tab.type === 'agent' && tab.agentId === agentId),
       );
       appStore.dispatch(
-        revealHiddenTabAvoidingPanel(workspaceId, entry.tab.id, conversationPanel?.id ?? null),
+        revealHiddenTabAvoidingPanel(
+          workspaceId,
+          entry.tab.id,
+          conversationPanel?.id ?? null,
+          undefined,
+          selectPanelOpenMode.select(appStore.state),
+        ),
       );
     } else if (entry.panelId) {
       // Already-visible tab: activate and focus, same as the sidebar list.
