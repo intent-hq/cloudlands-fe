@@ -87,6 +87,10 @@
     padding: 0;
   }
 
+  :global([data-agent-avatar-with-state]) .agent-avatar {
+    color: inherit;
+  }
+
   @media (forced-colors: active) {
     .agent-avatar {
       background-color: var(--agent-avatar-background-forced, Canvas);
