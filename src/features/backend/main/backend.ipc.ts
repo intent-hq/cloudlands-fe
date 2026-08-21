@@ -15,8 +15,8 @@
  *     at most once. Once mode flips to `sidecar` there is no mid-session
  *     auto-switching back — the JsonRpcClient target (socket path) is
  *     unchanged, so we simply stay connected to whatever serves the socket.
- * Daemon JSON-RPC notifications are broadcast to every window on
- * `backend:notification`; connection-status changes on `backend:status`. The
+ * Daemon JSON-RPC notifications are sent to windows bound to that daemon on
+ * `backend:notification`; connection-status changes use `backend:status`. The
  * status payload carries a `reconnected: true` marker on the successful
  * `connected` transition following an earlier drop, so renderer consumers can
  * replay `events.subscribe` calls and refresh coarse state without a relaunch
@@ -87,6 +87,7 @@ import {
   ConnectionsSwitchSchema,
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
+import { getBackendIdForWebContents } from '../../../main/window';
 
 const logger = new Logger('Backend-IPC');
 const BACKEND = IPC_CHANNELS.BACKEND;
@@ -503,7 +504,7 @@ export function getBackendClient(): JsonRpcClient {
     },
   });
   instance.on('notification', (notification: JsonRpcNotification) => {
-    broadcast(BACKEND.NOTIFICATION, notification);
+    broadcast(BACKEND.NOTIFICATION, notification, connectionId);
     // Pipe the live client's notifications through the stable forwarder so
     // main-process services (attached once via onBackendNotification) keep
     // receiving daemon events regardless of how many client swaps have
@@ -514,11 +515,15 @@ export function getBackendClient(): JsonRpcClient {
     const transport = formatTransportInfo(instance.getConfig(), getPinnedVersion());
     // `reconnectAttempts` counts retries since the last successful connect so
     // the daemon-loss overlay can show live retry progress (#1750).
-    broadcast(BACKEND.STATUS, {
-      status,
-      transport,
-      reconnectAttempts: instance.getReconnectAttempts(),
-    });
+    broadcast(
+      BACKEND.STATUS,
+      {
+        status,
+        transport,
+        reconnectAttempts: instance.getReconnectAttempts(),
+      },
+      connectionId,
+    );
     // Same stable-forwarder pipe for `status`; see `backendStatusForwarder`.
     backendStatusForwarder.emit('status', status);
   });
@@ -530,12 +535,16 @@ export function getBackendClient(): JsonRpcClient {
   // avoid growing the preload allow-list surface. See RESUB-1.
   instance.on('reconnected', () => {
     const transport = formatTransportInfo(instance.getConfig(), getPinnedVersion());
-    broadcast(BACKEND.STATUS, {
-      status: 'connected',
-      reconnected: true,
-      transport,
-      reconnectAttempts: instance.getReconnectAttempts(),
-    });
+    broadcast(
+      BACKEND.STATUS,
+      {
+        status: 'connected',
+        reconnected: true,
+        transport,
+        reconnectAttempts: instance.getReconnectAttempts(),
+      },
+      connectionId,
+    );
     // Pipe the live client's reconnect through the stable forwarder so
     // main-process services (attached once via onBackendReconnected) replay
     // their subscriptions — regardless of how many client swaps have happened
@@ -651,7 +660,7 @@ export function disconnectBackendClient(id: string): void {
   instance.dispose();
 }
 
-/** Build a secondary pool member; primary broadcasts remain on the compat client. */
+/** Build a secondary pool member and route its renderer events by connection id. */
 function createAdditionalBackendClient(id: string, config: BackendConnectionConfig): JsonRpcClient {
   const instance = new JsonRpcClient({
     config,
@@ -670,6 +679,32 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
         void persistClientId(clientId);
       }
     },
+  });
+  instance.on('notification', (notification: JsonRpcNotification) => {
+    broadcast(BACKEND.NOTIFICATION, notification, id);
+  });
+  instance.on('status', (status: ConnectionStatus) => {
+    broadcast(
+      BACKEND.STATUS,
+      {
+        status,
+        transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
+        reconnectAttempts: instance.getReconnectAttempts(),
+      },
+      id,
+    );
+  });
+  instance.on('reconnected', () => {
+    broadcast(
+      BACKEND.STATUS,
+      {
+        status: 'connected',
+        reconnected: true,
+        transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
+        reconnectAttempts: instance.getReconnectAttempts(),
+      },
+      id,
+    );
   });
   instance.on('error', (error: Error) => {
     logger.warn('Backend pool transport error', { id, error: error.message });
@@ -738,10 +773,11 @@ export function onBackendStatus(handler: (status: ConnectionStatus) => void): ()
   return () => backendStatusForwarder.off('status', handler);
 }
 
-/** Broadcast a payload to every live renderer window. */
-function broadcast(channel: string, payload: unknown): void {
+/** Broadcast a payload to live renderer windows, optionally scoped to one backend. */
+function broadcast(channel: string, payload: unknown, backendId?: string): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
+    if (backendId && getBackendIdForWebContents(win.webContents) !== backendId) continue;
     try {
       win.webContents.send(channel, payload);
     } catch (error) {
@@ -752,6 +788,19 @@ function broadcast(channel: string, payload: unknown): void {
       });
     }
   }
+}
+
+function getBackendClientForIpcEvent(event?: Electron.IpcMainInvokeEvent): {
+  backendId: string;
+  client: JsonRpcClient;
+} {
+  const backendId = event?.sender ? getBackendIdForWebContents(event.sender) : LOCAL_CONNECTION_ID;
+  const pooledClient = getBackendClientForConnection(backendId);
+  if (pooledClient) return { backendId, client: pooledClient };
+  if (backendId === LOCAL_CONNECTION_ID && activeConnectionMeta === null) {
+    return { backendId, client: getBackendClient() };
+  }
+  throw new Error(`Backend client is not connected: ${backendId}`);
 }
 
 /**
@@ -1498,7 +1547,7 @@ export function registerBackendHandlers(): void {
 
   ipcMain.handle(
     BACKEND.REQUEST,
-    async (_event, payload: { method?: string; params?: unknown; timeoutMs?: number }) => {
+    async (event, payload: { method?: string; params?: unknown; timeoutMs?: number }) => {
       const method = payload?.method;
       if (typeof method !== 'string' || method.length === 0) {
         return { ok: false, error: { code: 'INVALID_PARAMS', message: 'method is required' } };
@@ -1509,7 +1558,7 @@ export function registerBackendHandlers(): void {
       // structured `{ok:false}` result wins over a transport timeout.
       const timeoutMs = typeof payload?.timeoutMs === 'number' ? payload.timeoutMs : undefined;
       try {
-        const client = getBackendClient();
+        const { client } = getBackendClientForIpcEvent(event);
         // Bulk attachment transfers on a remote backend ride their own
         // short-lived connection so a slow-draining 20+ MiB frame never
         // head-of-line-blocks the main channel (its heartbeat and unrelated
@@ -1532,33 +1581,39 @@ export function registerBackendHandlers(): void {
     },
   );
 
-  ipcMain.handle(BACKEND.SUBSCRIBE, async (_event, params: unknown) => {
+  ipcMain.handle(BACKEND.SUBSCRIBE, async (event, params: unknown) => {
     try {
-      const result = await getBackendClient().request('events.subscribe', params);
+      const result = await getBackendClientForIpcEvent(event).client.request(
+        'events.subscribe',
+        params,
+      );
       return { ok: true, result };
     } catch (error) {
       return { ok: false, error: toErrorPayload(error) };
     }
   });
 
-  ipcMain.handle(BACKEND.UNSUBSCRIBE, async (_event, params: { subscriptionId?: string }) => {
+  ipcMain.handle(BACKEND.UNSUBSCRIBE, async (event, params: { subscriptionId?: string }) => {
     try {
-      const result = await getBackendClient().request('events.unsubscribe', params);
+      const result = await getBackendClientForIpcEvent(event).client.request(
+        'events.unsubscribe',
+        params,
+      );
       return { ok: true, result };
     } catch (error) {
       return { ok: false, error: toErrorPayload(error) };
     }
   });
 
-  ipcMain.handle(BACKEND.GET_STATUS, async () => {
-    const client = getBackendClient();
+  ipcMain.handle(BACKEND.GET_STATUS, async (event) => {
+    const { backendId, client } = getBackendClientForIpcEvent(event);
     const transport = formatTransportInfo(client.getConfig(), getPinnedVersion());
     // Boot-time startup failures fire before this module registers its
     // `onSidecarStartupFailed` listener and before any window exists, so the
     // broadcast alone is lossy. Expose the latched failure here so the
     // renderer's boot-time get-status fetch learns about it regardless of
     // ordering (PR #402 review; spec addendum under "Pinned IPC contract").
-    const startupFailure = getSidecarStartupFailure();
+    const startupFailure = backendId === LOCAL_CONNECTION_ID ? getSidecarStartupFailure() : null;
     if (startupFailure) {
       return {
         status: client.getStatus(),
@@ -1595,13 +1650,17 @@ export function registerBackendHandlers(): void {
   // app-managed intentd failed to start instead of "connection was lost".
   onSidecarStartupFailed((reason) => {
     const instance = getBackendClient();
-    broadcast(BACKEND.STATUS, {
-      status: instance.getStatus(),
-      sidecarStartupFailed: true,
-      reason,
-      transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
-      reconnectAttempts: instance.getReconnectAttempts(),
-    });
+    broadcast(
+      BACKEND.STATUS,
+      {
+        status: instance.getStatus(),
+        sidecarStartupFailed: true,
+        reason,
+        transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
+        reconnectAttempts: instance.getReconnectAttempts(),
+      },
+      LOCAL_CONNECTION_ID,
+    );
   });
 
   // Crash-looping sidecar: the restart policy exhausted its attempts. Reuse
@@ -1614,13 +1673,17 @@ export function registerBackendHandlers(): void {
     // crash-looping child lost the socket to an external daemon the client
     // has meanwhile connected to — hardcoding 'disconnected' would flip a
     // healthy renderer to 'down' until the next poll corrected it.
-    broadcast(BACKEND.STATUS, {
-      status: instance.getStatus(),
-      sidecarGaveUp: true,
-      reason,
-      transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
-      reconnectAttempts: instance.getReconnectAttempts(),
-    });
+    broadcast(
+      BACKEND.STATUS,
+      {
+        status: instance.getStatus(),
+        sidecarGaveUp: true,
+        reason,
+        transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
+        reconnectAttempts: instance.getReconnectAttempts(),
+      },
+      LOCAL_CONNECTION_ID,
+    );
   });
 
   registerConnectionsHandlers();

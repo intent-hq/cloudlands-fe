@@ -173,6 +173,34 @@ function installWindow() {
   return send;
 }
 
+function installBackendWindows() {
+  const localSender = { id: 'local-sender' };
+  const remoteSender = { id: 'remote-sender' };
+  const localSend = vi.fn();
+  const remoteSend = vi.fn();
+  const localWindow = {
+    id: 1,
+    backendId: 'local',
+    isDestroyed: () => false,
+    webContents: { ...localSender, send: localSend },
+  };
+  const remoteWindow = {
+    id: 2,
+    backendId: 'remote-1',
+    isDestroyed: () => false,
+    webContents: { ...remoteSender, send: remoteSend },
+  };
+  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([localWindow, remoteWindow] as never);
+  vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender) => {
+    if (sender === localSender) return localWindow as never;
+    if (sender === remoteSender) return remoteWindow as never;
+    if (sender === localWindow.webContents) return localWindow as never;
+    if (sender === remoteWindow.webContents) return remoteWindow as never;
+    return null;
+  });
+  return { localSender, remoteSender, localSend, remoteSend };
+}
+
 function findHandler(channel: string) {
   const call = vi.mocked(ipcMain.handle).mock.calls.find(([c]) => c === channel);
   return call?.[1] as ((event: unknown, data: unknown) => Promise<unknown>) | undefined;
@@ -914,5 +942,133 @@ describe('backend client pool', () => {
     expect(mod.getBackendClient()).toBe(local);
     expect(mod.getBackendClientForConnection('local')).toBe(local);
     expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
+  });
+});
+
+describe('per-window backend IPC routing', () => {
+  it('routes requests, subscriptions, unsubscriptions, and status to the sender client', async () => {
+    const { mod } = await loadModule();
+    const localClient = mod.getBackendClient();
+    const remoteClient = await mod.connectBackendClient('remote-1');
+    const { localSender, remoteSender } = installBackendWindows();
+    mod.registerBackendHandlers();
+
+    const request = findHandler('backend:request')!;
+    const subscribe = findHandler('backend:subscribe')!;
+    const unsubscribe = findHandler('backend:unsubscribe')!;
+    const getStatus = findHandler('backend:get-status')!;
+
+    await request(
+      { sender: localSender },
+      { method: 'workspace.list', params: { archived: false }, timeoutMs: 1_000 },
+    );
+    await request(
+      { sender: remoteSender },
+      { method: 'workspace.get', params: { id: 'remote-workspace' } },
+    );
+    expect(localClient.request).toHaveBeenCalledWith(
+      'workspace.list',
+      { archived: false },
+      { timeoutMs: 1_000 },
+    );
+    expect(remoteClient.request).toHaveBeenCalledWith(
+      'workspace.get',
+      { id: 'remote-workspace' },
+      { timeoutMs: undefined },
+    );
+
+    await subscribe({ sender: localSender }, { eventTypes: ['workspace:*'] });
+    await subscribe({ sender: remoteSender }, { eventTypes: ['agent:*'] });
+    await unsubscribe({ sender: localSender }, { subscriptionId: 'local-sub' });
+    await unsubscribe({ sender: remoteSender }, { subscriptionId: 'remote-sub' });
+    expect(localClient.request).toHaveBeenCalledWith('events.subscribe', {
+      eventTypes: ['workspace:*'],
+    });
+    expect(remoteClient.request).toHaveBeenCalledWith('events.subscribe', {
+      eventTypes: ['agent:*'],
+    });
+    expect(localClient.request).toHaveBeenCalledWith('events.unsubscribe', {
+      subscriptionId: 'local-sub',
+    });
+    expect(remoteClient.request).toHaveBeenCalledWith('events.unsubscribe', {
+      subscriptionId: 'remote-sub',
+    });
+
+    await expect(getStatus({ sender: localSender }, undefined)).resolves.toMatchObject({
+      transport: { mode: 'sidecar-uds' },
+    });
+    await expect(getStatus({ sender: remoteSender }, undefined)).resolves.toMatchObject({
+      transport: { mode: 'external-ws', target: 'wss:10.0.0.5:8443' },
+    });
+  });
+
+  it('keeps a remote request failure isolated from local requests', async () => {
+    const { mod } = await loadModule();
+    const localClient = mod.getBackendClient();
+    const remoteClient = await mod.connectBackendClient('remote-1');
+    const { localSender, remoteSender } = installBackendWindows();
+    mod.registerBackendHandlers();
+    const request = findHandler('backend:request')!;
+    vi.mocked(remoteClient.request).mockRejectedValueOnce(new Error('remote unavailable'));
+
+    await expect(
+      request({ sender: remoteSender }, { method: 'workspace.list' }),
+    ).resolves.toMatchObject({ ok: false, error: { message: 'remote unavailable' } });
+    await expect(
+      request({ sender: localSender }, { method: 'workspace.list' }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(localClient.request).toHaveBeenCalledWith('workspace.list', undefined, {
+      timeoutMs: undefined,
+    });
+  });
+
+  it('delivers notifications and status only to windows bound to the emitting client', async () => {
+    const { mod } = await loadModule();
+    const localClient = mod.getBackendClient() as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    const remoteClient = (await mod.connectBackendClient('remote-1')) as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    const { localSend, remoteSend } = installBackendWindows();
+
+    localClient.emit('notification', { method: 'events.event', params: { backend: 'local' } });
+    remoteClient.emit('notification', { method: 'events.event', params: { backend: 'remote' } });
+    localClient.emit('status', 'connected');
+    remoteClient.emit('status', 'disconnected');
+
+    expect(localSend).toHaveBeenCalledWith('backend:notification', {
+      method: 'events.event',
+      params: { backend: 'local' },
+    });
+    expect(localSend).not.toHaveBeenCalledWith(
+      'backend:notification',
+      expect.objectContaining({ params: { backend: 'remote' } }),
+    );
+    expect(remoteSend).toHaveBeenCalledWith('backend:notification', {
+      method: 'events.event',
+      params: { backend: 'remote' },
+    });
+    expect(remoteSend).not.toHaveBeenCalledWith(
+      'backend:notification',
+      expect.objectContaining({ params: { backend: 'local' } }),
+    );
+    expect(localSend).toHaveBeenCalledWith(
+      'backend:status',
+      expect.objectContaining({
+        status: 'connected',
+        transport: expect.objectContaining({ mode: 'sidecar-uds' }),
+      }),
+    );
+    expect(remoteSend).toHaveBeenCalledWith(
+      'backend:status',
+      expect.objectContaining({
+        status: 'disconnected',
+        transport: expect.objectContaining({
+          mode: 'external-ws',
+          target: 'wss:10.0.0.5:8443',
+        }),
+      }),
+    );
   });
 });

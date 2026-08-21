@@ -70,6 +70,8 @@ vi.mock('electron', () => ({
   },
   BrowserWindow: {
     getAllWindows: () => (electronState.windows as FakeWindow[]).filter((w) => !w.isDestroyed()),
+    fromWebContents: (webContents: FakeWindow['webContents']) =>
+      (electronState.windows as FakeWindow[]).find((w) => w.webContents === webContents) ?? null,
   },
   safeStorage: {
     isEncryptionAvailable: () => true,
