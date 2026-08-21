@@ -103,6 +103,21 @@ describe('WorkspaceShellList development script controls', () => {
     expect(runningRow.className).toContain('px-0');
     expect(runningRow.parentElement?.className).toContain('gap-0');
     expect(runningRow.querySelector('[data-script-status-indicator]')).toBeTruthy();
+    const actionStrip = runningRow.querySelector('[data-script-actions]') as HTMLElement;
+    expect(actionStrip.className).toContain('rounded-md');
+    expect(actionStrip.className).toContain('bg-secondary/80');
+    expect(actionStrip.className).toContain('px-1');
+    const actionButtons = Array.from(actionStrip.querySelectorAll('[data-slot="button"]'));
+    expect(actionButtons).toHaveLength(2);
+    for (const button of actionButtons) {
+      expect(button.className).toContain('size-7');
+      expect(button.className).toContain('bg-transparent');
+      expect(button.className).toContain('focus-visible:ring-2');
+      expect(button.className).toContain('active:bg-accent/80');
+    }
+    expect(within(runningRow).getByRole('button', { name: 'Stop' }).className).toContain(
+      'text-destructive',
+    );
     expect(
       within(runningRow).getByRole('button', { name: 'Dev server Running' }).className,
     ).toContain('items-center');
@@ -138,5 +153,28 @@ describe('WorkspaceShellList development script controls', () => {
       false,
     );
     expect(screen.queryByText('offline')).toBeNull();
+  });
+
+  it('keeps pending controls disabled, busy, and geometrically stable', () => {
+    mocks.scripts[WS] = [script('idle', 'Build', 'idle'), script('running', 'Dev', 'running')];
+    mocks.operations[WS] = {
+      idle: { action: 'start', pending: true },
+      running: { action: 'restart', pending: true },
+    };
+    render(WorkspaceShellList, { props: { workspaceId: WS } });
+
+    const start = screen.getByRole('button', { name: 'Start Build' }) as HTMLButtonElement;
+    const stop = screen.getByRole('button', { name: 'Stop' }) as HTMLButtonElement;
+    const restart = screen.getByRole('button', { name: 'Restart Dev' }) as HTMLButtonElement;
+    expect(start.disabled).toBe(true);
+    expect(start.getAttribute('aria-busy')).toBe('true');
+    expect(stop.disabled).toBe(true);
+    expect(stop.getAttribute('aria-busy')).toBeNull();
+    expect(restart.disabled).toBe(true);
+    expect(restart.getAttribute('aria-busy')).toBe('true');
+    expect(start.className).toContain('size-7');
+    expect(restart.className).toContain('size-7');
+    expect(start.querySelector('.fa-icon')?.getAttribute('data-icon')).toBe('spinner');
+    expect(restart.querySelector('.fa-icon')?.getAttribute('data-icon')).toBe('spinner');
   });
 });
