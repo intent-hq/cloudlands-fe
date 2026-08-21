@@ -47,8 +47,8 @@
   import Portal from '$lib/components/ui/Portal.svelte';
   import { onDestroy, tick } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import { ButtonGroup } from '$lib/components/ui/button-group';
   import { Input } from '$lib/components/ui/input';
-  import { Slider } from '$lib/components/ui/slider';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { startDrag, endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
@@ -134,6 +134,7 @@
     'button, a, input, textarea, select, [role="button"], [role="tab"], [contenteditable="true"]';
   const IDENTITY_HOVER_OPEN_DELAY = 140;
   const IDENTITY_HOVER_CLOSE_DELAY = 40;
+  const PANEL_COLUMN_COUNTS = [1, 2, 3, 4] as const satisfies readonly PanelColumnCount[];
   const PANEL_COLUMN_DIVIDER_SLOTS = [0, 1, 2] as const;
 
   function panelColumnDividerX(value: PanelColumnCount, index: number): number {
@@ -274,7 +275,12 @@
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const recentlyClosed$ = selectRecentlyClosed(panelLayoutIdStore);
   const panelColumnCount$ = selectPanelColumnCount(panelLayoutIdStore);
-  let panelColumnSliderRef = $state<HTMLInputElement | null>(null);
+  let panelColumnButtonRefs = $state<Record<PanelColumnCount, HTMLButtonElement | null>>({
+    1: null,
+    2: null,
+    3: null,
+    4: null,
+  });
   let preserveStructuralColumnFocus = false;
 
   // Reactive store subscription for specialist names - ensures re-render when specialists change
@@ -410,7 +416,7 @@
 
   function handlePanelColumnPopoverOpenAutoFocus(event: Event) {
     event.preventDefault();
-    panelColumnSliderRef?.focus();
+    panelColumnButtonRefs[$panelColumnCount$]?.focus();
   }
 
   function handlePanelColumnPopoverCloseAutoFocus(event: Event) {
@@ -1503,22 +1509,25 @@
             <span class="type-caption font-medium">
               {m.workspace_sidebarHeader_panelColumns_label()}
             </span>
-            <output class="type-caption tabular-nums" aria-live="polite">
-              {$panelColumnCount$}
-            </output>
+            <ButtonGroup
+              aria-label={m.workspace_sidebarHeader_panelColumns_ariaLabel()}
+              data-panel-column-count-group
+            >
+              {#each PANEL_COLUMN_COUNTS as count}
+                <Button
+                  bind:ref={panelColumnButtonRefs[count]}
+                  variant={count === $panelColumnCount$ ? 'secondary' : 'outline'}
+                  size="sm"
+                  aria-label={panelColumnCountLabel(count)}
+                  aria-pressed={count === $panelColumnCount$}
+                  data-state={count === $panelColumnCount$ ? 'active' : undefined}
+                  onclick={() => handlePanelColumnCountChange(count)}
+                >
+                  {count}
+                </Button>
+              {/each}
+            </ButtonGroup>
           </div>
-          <Slider
-            bind:ref={panelColumnSliderRef}
-            value={$panelColumnCount$}
-            min={1}
-            max={4}
-            step={1}
-            aria-label={m.workspace_sidebarHeader_panelColumns_ariaLabel()}
-            aria-valuetext={panelColumnCountLabel($panelColumnCount$)}
-            onValueChange={handlePanelColumnCountChange}
-            class="mt-2 w-full"
-            data-panel-column-count-slider
-          />
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

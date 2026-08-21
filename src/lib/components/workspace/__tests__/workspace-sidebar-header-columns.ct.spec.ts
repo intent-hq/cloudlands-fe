@@ -4,12 +4,10 @@ import PanelHeaderActionsHost from '../../layout/panel-system/__tests__/mocks/Pa
 
 test.setTimeout(60_000);
 
-async function setSliderValue(page: Page, count: number) {
-  const slider = page.getByRole('slider', { name: 'Panel columns' });
-  await slider.evaluate((element: HTMLInputElement, value: number) => {
-    element.value = String(value);
-    element.dispatchEvent(new Event('input', { bubbles: true }));
-  }, count);
+async function selectColumnCount(page: Page, count: number) {
+  await page
+    .getByRole('button', { name: count === 1 ? '1 column' : `${count} columns`, exact: true })
+    .click();
 }
 
 for (const theme of ['light', 'dark'] as const) {
@@ -60,7 +58,7 @@ for (const theme of ['light', 'dark'] as const) {
 
         for (const count of [1, 2, 3, 4]) {
           await columnTrigger.click();
-          await setSliderValue(page, count);
+          await selectColumnCount(page, count);
           await page.keyboard.press('Escape');
           const columnIcon = controls.locator(`[data-panel-column-icon="${count}"]`);
           const dividers = columnIcon.locator(
@@ -159,55 +157,44 @@ test('updates the workspace-scoped count and keeps keyboard focus order', async 
   await expect(page.getByRole('tooltip')).toContainText('Change panel column count. Current: 2');
   await page.keyboard.press('Enter');
   const dialog = page.getByRole('dialog', { name: 'Panel columns' });
-  const slider = page.getByRole('slider', { name: 'Panel columns' });
+  const group = page.getByRole('group', { name: 'Panel columns' });
+  const oneButton = page.getByRole('button', { name: '1 column', exact: true });
+  const twoButton = page.getByRole('button', { name: '2 columns', exact: true });
+  const fourButton = page.getByRole('button', { name: '4 columns', exact: true });
   await expect(dialog).toBeVisible();
   await expect(dialog.locator(':scope > p')).toHaveText(
     'Change the number of columns for panes in this workspace. Newly opened panes open in the rightmost column.',
   );
   expect(
     await dialog.evaluate((node) => Array.from(node.children).map((child) => child.tagName)),
-  ).toEqual(['P', 'DIV', 'INPUT']);
+  ).toEqual(['P', 'DIV']);
   await expect(dialog.getByText('Columns', { exact: true })).toBeVisible();
-  await expect(dialog.locator('output')).toHaveText('2');
-  await expect(slider).toBeFocused();
-  await expect(slider).toHaveAttribute('min', '1');
-  await expect(slider).toHaveAttribute('max', '4');
-  await expect(slider).toHaveAttribute('step', '1');
-  await expect(slider).toHaveAttribute('aria-valuetext', '2 columns');
+  await expect(group).toBeVisible();
+  await expect(group.getByRole('button')).toHaveCount(4);
+  await expect(dialog.locator('output')).toHaveCount(0);
+  await expect(dialog.getByRole('slider')).toHaveCount(0);
+  await expect(twoButton).toBeFocused();
+  await expect(twoButton).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
 
   await trigger.click();
-  await expect(slider).toBeFocused();
-
-  await page.keyboard.press('Home');
+  await expect(twoButton).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(oneButton).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(component).toHaveAttribute('data-current-count', '1');
-  await expect(dialog.locator('output')).toHaveText('1');
-  await page.keyboard.press('ArrowLeft');
-  await expect(component).toHaveAttribute('data-current-count', '1');
-  await page.keyboard.press('ArrowRight');
-  await expect(component).toHaveAttribute('data-current-count', '2');
-  await page.keyboard.press('End');
+  await expect(oneButton).toHaveAttribute('aria-pressed', 'true');
+  await fourButton.click();
   await expect(component).toHaveAttribute('data-current-count', '4');
-  await expect(dialog.locator('output')).toHaveText('4');
-  await expect(slider).toHaveAttribute('aria-valuetext', '4 columns');
-  await page.keyboard.press('ArrowRight');
-  await expect(component).toHaveAttribute('data-current-count', '4');
+  await expect(fourButton).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 
-  await trigger.click();
-  const sliderBox = await slider.boundingBox();
-  await slider.click({ position: { x: 1, y: sliderBox!.height / 2 } });
-  await expect(component).toHaveAttribute('data-current-count', '1');
-  await slider.click({ position: { x: sliderBox!.width - 1, y: sliderBox!.height / 2 } });
-  await expect(component).toHaveAttribute('data-current-count', '4');
-  await page.keyboard.press('Escape');
-
   for (const count of [1, 2, 3, 4]) {
     await trigger.click();
-    await setSliderValue(page, count);
+    await selectColumnCount(page, count);
     await page.keyboard.press('Escape');
     await expect(component).toHaveAttribute('data-current-count', String(count));
     await expect(trigger).toHaveAccessibleName(`Panel columns: ${count}`);
@@ -297,7 +284,7 @@ test('moves stable dividers horizontally and updates immediately with reduced mo
   );
 
   await trigger.click();
-  await setSliderValue(page, 4);
+  await selectColumnCount(page, 4);
   await page.keyboard.press('Escape');
   const animatedIcon = trigger.locator('[data-panel-column-icon="4"]');
   await expect(animatedIcon).toHaveCount(1);
@@ -328,7 +315,7 @@ test('moves stable dividers horizontally and updates immediately with reduced mo
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const beforeReducedTransforms = movedTransforms;
   await trigger.click();
-  await setSliderValue(page, 3);
+  await selectColumnCount(page, 3);
   await page.keyboard.press('Escape');
   const reducedIcon = trigger.locator('[data-panel-column-icon="3"]');
   await expect(reducedIcon).toHaveCount(1);

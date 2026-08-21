@@ -900,6 +900,8 @@ function closePanelHelper(
       : ws.recentlyClosed;
   const previousColumnCount = countHorizontalPanelColumns(ws.root);
   const remainingColumnCount = countHorizontalPanelColumns(removal.node);
+  const shouldSyncColumnCount =
+    ws.columnCount === previousColumnCount && isPanelColumnCount(remainingColumnCount);
   const canvasWidth = (() => {
     if (ws.canvasWidth === null || ws.canvasWidthSource === 'intrinsic') return null;
     const previousGutterWidth = PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, previousColumnCount - 1);
@@ -913,6 +915,8 @@ function closePanelHelper(
     root: removal.node,
     panels: remainingPanels,
     focusedPanelId,
+    columnCount: shouldSyncColumnCount ? remainingColumnCount : ws.columnCount,
+    columnCountInitialized: shouldSyncColumnCount ? true : ws.columnCountInitialized,
     canvasWidth,
     canvasWidthSource: ws.canvasWidthSource === 'intrinsic' ? null : ws.canvasWidthSource,
     expandedPanelId: null,

@@ -3277,6 +3277,8 @@ describe('panelLayoutReducer', () => {
           p3: { id: 'p3', tabs: [], activeTabId: null },
         },
         focusedPanelId: 'p3',
+        columnCount: 3,
+        columnCountInitialized: true,
         canvasWidth: 1200,
         canvasWidthSource: 'explicit',
       };
@@ -3295,9 +3297,12 @@ describe('panelLayoutReducer', () => {
       expect(workspace.canvasWidth).toBeCloseTo(836.8, 6);
       expect(workspace.canvasWidthSource).toBe('explicit');
       expect(workspace.focusedPanelId).toBe('p3');
+      expect(workspace.columnCount).toBe(2);
+      expect(workspace.columnCountInitialized).toBe(true);
       expect(workspace.layoutHistory[0]).toMatchObject({
         canvasWidth: 1200,
         canvasWidthSource: 'explicit',
+        columnCount: 3,
         timestamp: 2000,
         root: { sizes: [20, 30, 50] },
       });

@@ -7,11 +7,9 @@ async function selectColumnCount(component: Locator, page: Page, count: number) 
     inset.scrollLeft = inset.scrollWidth;
   });
   await component.locator('[data-panel-column-count-trigger]').click();
-  await page.getByRole('slider', { name: 'Panel columns' }).evaluate((element, value) => {
-    const slider = element as HTMLInputElement;
-    slider.value = String(value);
-    slider.dispatchEvent(new Event('input', { bubbles: true }));
-  }, count);
+  await page
+    .getByRole('button', { name: count === 1 ? '1 column' : `${count} columns`, exact: true })
+    .click();
 }
 
 function measureFit(component: Locator) {
