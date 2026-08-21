@@ -148,11 +148,16 @@ describe('backgroundHooksSaga', () => {
 
   it('folds matching hook events, ignores foreign subscriptions, and refetches unseen hooks', async () => {
     const unseen = makeHook({ hookId: 'hook-9', name: 'new-hook' });
+    const seed = deferred<{ hooks: BackgroundHook[] }>();
     mocks.request
-      .mockResolvedValueOnce({ hooks: [makeHook()] })
+      .mockReturnValueOnce(seed.promise)
       .mockResolvedValueOnce({ hooks: [unseen] });
     const { dispatch, task, getState } = createHarness();
     dispatch(backgroundHooksSubscribeRequested('ws-1'));
+    // Settle the seed only after the subscribe ack so no gap-closing re-list
+    // competes for the mocked responses.
+    await vi.waitFor(() => expect(mocks.subscribe).toHaveBeenCalledOnce());
+    seed.resolve({ hooks: [makeHook()] });
     await vi.waitFor(() => expect(getState().byWorkspaceId['ws-1']).toBeDefined());
 
     emitNotification({
@@ -282,7 +287,10 @@ describe('backgroundHooksSaga', () => {
   });
 
   it('writes an empty workspace entry when the initial hook.list seed fails (ready-with-empty)', async () => {
-    mocks.request.mockRejectedValueOnce(new Error('list failed'));
+    // Persistent failure: the pre-ack seed failure marks the lease, so the
+    // ack issues a gap-closing re-list — both fail, and the entry still
+    // latches as ready-with-empty.
+    mocks.request.mockRejectedValue(new Error('list failed'));
     const { dispatch, task, getState } = createHarness();
     dispatch(backgroundHooksSubscribeRequested('ws-1'));
 
@@ -402,6 +410,109 @@ describe('backgroundHooksSaga', () => {
       hookId: 'hook-1',
     });
     await stop(task);
+  });
+
+  describe('parallel seed and event-gap closing', () => {
+    it('issues the hook.list seed concurrently with events.subscribe', async () => {
+      const seed = deferred<{ hooks: BackgroundHook[] }>();
+      const ack = deferred<{ subscriptionId: string }>();
+      mocks.request.mockReturnValueOnce(seed.promise);
+      mocks.subscribe.mockReturnValueOnce(ack.promise);
+      const { dispatch, task, getState } = createHarness();
+      dispatch(backgroundHooksSubscribeRequested('ws-1'));
+
+      // Both RPCs are in flight before either settles (~1 RTT, not 2 serial).
+      expect(mocks.request).toHaveBeenCalledWith('hook.list', { workspaceId: 'ws-1' });
+      expect(mocks.subscribe).toHaveBeenCalledWith({
+        eventTypes: ['hook:*'],
+        workspaceId: 'ws-1',
+      });
+
+      ack.resolve({ subscriptionId: 'sub-1' });
+      seed.resolve({ hooks: [makeHook()] });
+      await vi.waitFor(() =>
+        expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']).toEqual(makeHook()),
+      );
+      await stop(task);
+    });
+
+    it('re-lists once when the seed settles before the subscribe ack', async () => {
+      const ack = deferred<{ subscriptionId: string }>();
+      const stale = makeHook({ runCount: 1, lastLogs: 'stale' });
+      const fresh = makeHook({ runCount: 2, lastLogs: 'fresh' });
+      mocks.subscribe.mockReturnValueOnce(ack.promise);
+      mocks.request
+        .mockResolvedValueOnce({ hooks: [stale] })
+        .mockResolvedValueOnce({ hooks: [fresh] });
+      const { dispatch, task, getState } = createHarness();
+      dispatch(backgroundHooksSubscribeRequested('ws-1'));
+
+      // The seed settled while the handshake was still in flight: its
+      // snapshot may predate the subscription window.
+      await vi.waitFor(() =>
+        expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']?.lastLogs).toBe('stale'),
+      );
+      expect(mocks.request).toHaveBeenCalledTimes(1);
+
+      // The ack triggers exactly one gap-closing re-list.
+      ack.resolve({ subscriptionId: 'sub-1' });
+      await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2));
+      expect(mocks.request).toHaveBeenNthCalledWith(2, 'hook.list', { workspaceId: 'ws-1' });
+      await vi.waitFor(() =>
+        expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']?.lastLogs).toBe('fresh'),
+      );
+      await Promise.resolve();
+      expect(mocks.request).toHaveBeenCalledTimes(2);
+      await stop(task);
+    });
+
+    it('skips the gap-closing re-list when the ack lands before the seed settles', async () => {
+      const seed = deferred<{ hooks: BackgroundHook[] }>();
+      mocks.request.mockReturnValueOnce(seed.promise);
+      const { dispatch, task, getState } = createHarness();
+      dispatch(backgroundHooksSubscribeRequested('ws-1'));
+      await vi.waitFor(() => expect(mocks.subscribe).toHaveBeenCalledOnce());
+
+      // Ack already landed: the seed snapshot postdates the subscription
+      // window, so no second hook.list is needed.
+      seed.resolve({ hooks: [makeHook()] });
+      await vi.waitFor(() =>
+        expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']).toEqual(makeHook()),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(mocks.request).toHaveBeenCalledTimes(1);
+      await stop(task);
+    });
+
+    it('re-lists after the ack when a hook event folded during the handshake', async () => {
+      const ack = deferred<{ subscriptionId: string }>();
+      const seed = deferred<{ hooks: BackgroundHook[] }>();
+      mocks.subscribe.mockReturnValueOnce(ack.promise);
+      mocks.request.mockReturnValueOnce(seed.promise).mockResolvedValueOnce({ hooks: [] });
+      const { dispatch, task, getState } = createHarness();
+      dispatch(backgroundHooksSubscribeRequested('ws-1'));
+
+      // A pre-ack fold (terminal event for a hook the empty list has not
+      // seen — a no-op that does not itself request a refetch) can be
+      // clobbered by the in-flight seed's older snapshot.
+      emitNotification({
+        subscriptionId: 'sub-1',
+        event: { type: 'hook:cancelled', workspaceId: 'ws-1', data: { hookId: 'hook-1' } },
+      });
+      ack.resolve({ subscriptionId: 'sub-1' });
+      // The stale seed still carries the cancelled hook; the gap-closing
+      // re-list (coalesced as the trailing run) converges to the fresh list.
+      seed.resolve({ hooks: [makeHook()] });
+      await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2));
+      expect(mocks.request).toHaveBeenNthCalledWith(2, 'hook.list', { workspaceId: 'ws-1' });
+      await vi.waitFor(() =>
+        expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']).toBeUndefined(),
+      );
+      await Promise.resolve();
+      expect(mocks.request).toHaveBeenCalledTimes(2);
+      await stop(task);
+    });
   });
 
   describe('active-workspace lease (view-time seed)', () => {

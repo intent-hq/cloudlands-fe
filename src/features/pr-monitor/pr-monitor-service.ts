@@ -209,10 +209,12 @@ export interface PrMonitorsSubscription {
 
 /**
  * Live monitor list for one workspace: registers a `prMonitor:*`
- * `events.subscribe`, seeds via `prMonitor.list`, folds subsequent events,
- * and re-seeds after a backend reconnect (RESUB-1). The handler receives the
- * full list on every change (active + completed — callers filter). Returns a
- * handle exposing an on-demand `refetch` plus the disposer.
+ * `events.subscribe` with the `prMonitor.list` seed issued concurrently
+ * (single RTT; a post-ack re-list closes the event-gap race when the seed
+ * settles first), folds subsequent events, and re-seeds after a backend
+ * reconnect (RESUB-1). The handler receives the full list on every change
+ * (active + completed — callers filter). Returns a handle exposing an
+ * on-demand `refetch` plus the disposer.
  */
 export function subscribePrMonitors(
   workspaceId: string,
@@ -235,14 +237,14 @@ export function subscribePrMonitors(
     if (!disposed) handler(monitors);
   };
 
-  const refetch = () => {
-    if (disposed) return;
+  const refetch = (): Promise<void> => {
+    if (disposed) return Promise.resolve();
     if (refetchInFlight) {
       refetchQueued = true;
-      return;
+      return Promise.resolve();
     }
     refetchInFlight = true;
-    listPrMonitors(workspaceId)
+    return listPrMonitors(workspaceId)
       .then((fetched) => {
         if (disposed) return;
         // Prune ids the server no longer returns (converged), then drop rows
@@ -272,6 +274,19 @@ export function subscribePrMonitors(
 
   const register = () => {
     const epoch = ++registerEpoch;
+    // Seed CONCURRENTLY with the subscribe (~1 RTT instead of 2 serial RTTs).
+    // Event-gap race: a seed that settles BEFORE the subscribe ack lands
+    // snapshotted before the subscription window opened, so events in
+    // between were never delivered — the seed marks the gap and the ack
+    // handler re-lists (single-flight, coalesced) to converge. A seed that
+    // settles after the ack saw a post-subscription snapshot (no gap), and
+    // folds landing while a list is in flight are covered by the
+    // notification handler's trailing-refetch clause.
+    let ackLanded = false;
+    let gapPossible = false;
+    void refetch().then(() => {
+      if (!ackLanded) gapPossible = true;
+    });
     backendSubscribe<{ subscriptionId?: string }>({ eventTypes: ['prMonitor:*'], workspaceId })
       .then((result) => {
         const acked = result?.subscriptionId;
@@ -282,14 +297,12 @@ export function subscribePrMonitors(
           return;
         }
         subscriptionId = acked;
-        // Seed AFTER the subscribe ack so no event falls between the
-        // snapshot and the subscription window.
-        refetch();
+        ackLanded = true;
+        if (gapPossible) void refetch();
       })
       .catch((error) => {
         logger.warn('events.subscribe (prMonitor:*) failed', { workspaceId, error });
-        // Without a subscription still serve the one-shot snapshot.
-        if (!disposed && epoch === registerEpoch) refetch();
+        // The concurrent seed already serves the one-shot snapshot.
       });
   };
 
