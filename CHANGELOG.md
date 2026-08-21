@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.76.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.75.1...v2.76.0) (2026-08-21)
+
+
+### 🚀 Features
+
+* agent openTab creates hidden tabs by default ([#1530](https://github.com/intent-hq/cloudlands-fe/issues/1530)) ([51d9dcd](https://github.com/intent-hq/cloudlands-fe/commit/51d9dcde4588769ec713ba7e4660bfe10bfafca1))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.27 ([#1540](https://github.com/intent-hq/cloudlands-fe/issues/1540)) ([282ac20](https://github.com/intent-hq/cloudlands-fe/commit/282ac20778aeb241553ddd0f85dc15a98dad863d))
+* never blur/redirect overlay-hosted focus on panel reveal ([#1532](https://github.com/intent-hq/cloudlands-fe/issues/1532)) ([7b02d05](https://github.com/intent-hq/cloudlands-fe/commit/7b02d05125ca959e410aace4c2298ada46e9d407))
+
 ## [2.75.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.75.0...v2.75.1) (2026-08-20)
 
 
