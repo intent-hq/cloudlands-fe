@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.77.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.77.2...v2.77.3) (2026-08-21)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.32 ([#1566](https://github.com/intent-hq/cloudlands-fe/issues/1566)) ([a2c5ec1](https://github.com/intent-hq/cloudlands-fe/commit/a2c5ec1533de07c39d2237e1ae665ebef38567f0))
+* bump intentd sidecar to v0.7.33 ([#1567](https://github.com/intent-hq/cloudlands-fe/issues/1567)) ([12e2ec9](https://github.com/intent-hq/cloudlands-fe/commit/12e2ec9f39a1482e396907aea632f6a654ad4acb))
+* protect revealed agent tabs from pin-mode reusable-panel invariant re-hide ([#1564](https://github.com/intent-hq/cloudlands-fe/issues/1564)) ([45e8c91](https://github.com/intent-hq/cloudlands-fe/commit/45e8c917e69f5af32d7c56718fa488fe266b5b1d))
+* **release:** stop idempotent re-promotion from clobbering aggregated channel notes ([#1565](https://github.com/intent-hq/cloudlands-fe/issues/1565)) ([be08276](https://github.com/intent-hq/cloudlands-fe/commit/be082768aed723ec38d2478c792025321165212e))
+* wrap sidebar View PR chip label instead of truncating ([#1562](https://github.com/intent-hq/cloudlands-fe/issues/1562)) ([341aa72](https://github.com/intent-hq/cloudlands-fe/commit/341aa725da67ea20eea671f40ad115d51c0c484e))
+
+
+### ⚡ Performance
+
+* cut workspace-switch reveal latency to ~wire latency ([#1558](https://github.com/intent-hq/cloudlands-fe/issues/1558)) ([3b2ce1d](https://github.com/intent-hq/cloudlands-fe/commit/3b2ce1d4e67a243d984ace43c5c37c1192bf9ae3))
+
 ## [2.77.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.77.1...v2.77.2) (2026-08-21)
 
 
