@@ -28,6 +28,7 @@ import { chatReadSaga } from './slices/chat-state/sagas/chat-read-saga';
 import { chatScrollbackSaga } from './slices/chat-state/sagas/chat-scrollback-saga';
 import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
 import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga';
+import { switchTimingSaga } from './slices/chat-state/sagas/switch-timing-saga';
 import { bootFallbackToastSaga } from './slices/connections/sagas/boot-fallback-toast-saga';
 import { connectionsSaga } from './slices/connections/sagas/connections-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
@@ -127,6 +128,7 @@ export const sagas = [
   chatSubscribeSaga,
   chatSendSaga,
   chatScrollbackSaga,
+  switchTimingSaga,
   permissionResponseSaga,
   agentStreamSaga,
   agentCreationSaga,

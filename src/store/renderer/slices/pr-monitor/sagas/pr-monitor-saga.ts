@@ -14,6 +14,7 @@ import {
 } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
+import { markWorkspaceSeed } from '../../../utils/switch-timing';
 import {
   cancelPrMonitorRequested,
   flushPrMonitorRequested,
@@ -70,6 +71,7 @@ function* reconcilePrMonitorSubscriptions(
 
   if (!activeWorkspaceId || active.has(activeWorkspaceId)) return;
   try {
+    markWorkspaceSeed(activeWorkspaceId, 'prSeedStarted');
     const channel = createMonitorChannel(activeWorkspaceId);
     const task = yield* spawn(forwardMonitorUpdates, activeWorkspaceId, channel);
     active.set(activeWorkspaceId, { channel, task });
