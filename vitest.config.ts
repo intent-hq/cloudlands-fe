@@ -12,8 +12,12 @@ import { readFileSync } from 'fs';
 // isolation. CI caps workers at min(50%, 16) — halving the fork count on the
 // big shared box while leaving the 8-core GH-hosted burst runner (4 workers)
 // unchanged. Local runs keep the plain 50% cap.
-const isCI = !!process.env.CI;
-const ciMaxWorkers = Math.max(1, Math.min(16, Math.floor(os.availableParallelism() / 2)));
+// std-env semantics (what vitest itself uses): CI=false in a dev shell means
+// "not CI", so the local path keeps the plain 50% cap there too.
+const isCI = !!process.env.CI && process.env.CI !== 'false';
+// Math.round matches how vitest resolves '50%' (getWorkersCountByPercentage),
+// so on any core count the CI path differs from '50%' only via the 16 cap.
+const ciMaxWorkers = Math.max(1, Math.min(16, Math.round(os.availableParallelism() / 2)));
 
 export default defineConfig(async () => {
   const { svelte } = await import('@sveltejs/vite-plugin-svelte');
