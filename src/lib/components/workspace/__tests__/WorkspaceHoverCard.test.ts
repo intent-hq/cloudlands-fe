@@ -6,6 +6,7 @@ import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession, Workspace } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
+import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => {
   const tasksByWorkspace: Record<string, { id: string; title: string; status: string }[]> = {};
   const diffSummaryByWorkspace: Record<string, unknown> = {};
   const gitSummaryByWorkspace: Record<string, unknown> = {};
+  const monitors: PrMonitorRow[] = [];
   const readable = <T>(value: T) => ({
     subscribe(run: (value: T) => void) {
       run(value);
@@ -43,11 +45,22 @@ const mocks = vi.hoisted(() => {
     tasksByWorkspace,
     diffSummaryByWorkspace,
     gitSummaryByWorkspace,
+    monitors,
     readable,
     createWorkspaceValueReadable,
     createWorkspaceSessionReadable,
   };
 });
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceActivePullRequest: Object.assign(() => mocks.readable(null), {
+    select: () => null,
+  }),
+}));
+
+vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
+  selectPrMonitors: vi.fn(() => mocks.readable(mocks.monitors)),
+}));
 
 vi.mock('$features/agent/services/active-streams-tracker', () => ({
   activeStreamsTracker: {
@@ -191,6 +204,7 @@ describe('WorkspaceHoverCard', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mocks.streamingAgentIds.length = 0;
+    mocks.monitors.length = 0;
     for (const record of [
       mocks.agentSessionsByWorkspace,
       mocks.tasksByWorkspace,
@@ -501,19 +515,87 @@ describe('WorkspaceHoverCard', () => {
     expect(screen.queryByText('feature/hover-card')).toBeNull();
     expect(screen.queryByText('Active')).toBeNull();
     expect(screen.getByLabelText('Workspace task progress')).toBeTruthy();
-    expect(screen.getByRole('list', { name: 'Running agents' })).toBeTruthy();
-    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    const runningAgentList = screen.getByRole('list', { name: 'Running agents' });
+    expect(runningAgentList.querySelectorAll('[role="listitem"]')).toHaveLength(2);
     expect(screen.getByText('Planner')).toBeTruthy();
     expect(screen.getByText('Implementor')).toBeTruthy();
     expect(screen.queryByText('3 agents · 2 active · 1 running · 1 unread')).toBeNull();
-    const prRow = screen.getByLabelText('Pull request');
-    expect(prRow.className).toContain('gap-2');
-    expect(prRow.className).toContain('py-0.5');
+    const prList = screen.getByRole('list', { name: 'Pull request' });
+    expect(prList.className).toContain('gap-1');
+    expect(prList.className).toContain('py-0.5');
     expect(screen.getByText('Add hover card')).toBeTruthy();
     expect(screen.getByText('#12')).toBeTruthy();
-    expect(screen.getByText('CI pending').className).toContain('text-amber-500');
+    expect(screen.getByText(/checks running/).className).toContain('text-success');
     expect(screen.queryByText('Git')).toBeNull();
     expectVisibleChangesRow('3 files +42 -7, +2 -1');
+  });
+
+  it('lists every unique PR with shared state colors and cross-repo context', async () => {
+    mocks.monitors.push(
+      {
+        monitorId: 'duplicate',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        repo: 'augment/intent',
+        prNumber: 12,
+        state: 'active',
+        title: 'Duplicate monitor',
+        url: 'https://github.com/augment/intent/pull/12',
+        pendingChanges: [],
+        hasPendingChanges: false,
+        createdAt: '2026-05-05T00:00:00.000Z',
+        updatedAt: '2026-05-05T00:00:00.000Z',
+      },
+      {
+        monitorId: 'cross-repo',
+        workspaceId: 'ws-1',
+        agentId: 'agent-2',
+        repo: 'other-org/tooling',
+        prNumber: 12,
+        state: 'active',
+        title: 'Cross-repo monitor',
+        url: 'https://github.com/other-org/tooling/pull/12',
+        pendingChanges: [],
+        hasPendingChanges: false,
+        createdAt: '2026-05-06T00:00:00.000Z',
+        updatedAt: '2026-05-06T00:00:00.000Z',
+      },
+    );
+
+    const { container } = await renderHoverCard({
+      pullRequests: [
+        {
+          id: 'pr-12',
+          number: 12,
+          url: 'https://github.com/augment/intent/pull/12',
+          title: 'Open workspace PR',
+          status: PullRequestStatus.Open,
+          createdAt: '2026-05-05T00:00:00.000Z',
+          updatedAt: '2026-05-05T00:00:00.000Z',
+        },
+        {
+          id: 'pr-13',
+          number: 13,
+          url: 'https://github.com/augment/intent/pull/13',
+          title: 'Merged workspace PR',
+          status: PullRequestStatus.Merged,
+          createdAt: '2026-05-04T00:00:00.000Z',
+          updatedAt: '2026-05-07T00:00:00.000Z',
+        },
+      ],
+    });
+
+    const rows = [...container.querySelectorAll('[data-workspace-hover-card-pr-row]')];
+    expect(rows.map((row) => row.getAttribute('data-pr-identity'))).toEqual([
+      'other-org/tooling#12',
+      'augment/intent#12',
+      'augment/intent#13',
+    ]);
+    expect(rows[0].querySelector('[aria-hidden="true"]')?.className).toContain('text-success');
+    expect(rows[2].querySelector('[aria-hidden="true"]')?.className).toContain('text-primary');
+    expect(screen.getByText('other-org/tooling')).toBeTruthy();
+    expect(screen.getByText('Cross-repo monitor')).toBeTruthy();
+    expect(rows.every((row) => row.getAttribute('aria-label')?.includes('#'))).toBe(true);
   });
 
   it.each([

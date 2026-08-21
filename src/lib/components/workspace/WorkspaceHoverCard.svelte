@@ -6,7 +6,7 @@
     WorkspaceAgentInfo,
     WorkspaceGitSummary,
   } from '$shared/types';
-  import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
+  import { WorkspaceStatusEnum } from '$shared/types';
   import { formatDistanceToNow } from '$lib/i18n/format';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
@@ -19,7 +19,6 @@
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import { faCodeMerge, faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
@@ -33,6 +32,8 @@
     selectWorkspaceGitSummary,
   } from '$store/renderer/slices/workspace-summaries/workspace-summaries-selectors';
   import { loadWorkspaceSummariesRequested } from '$store/renderer/slices/workspace-summaries/workspace-summaries-slice';
+  import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
 
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
@@ -40,6 +41,11 @@
   import { formatInteger } from '$lib/i18n/format';
   import TaskStatusProgress from './TaskStatusProgress.svelte';
   import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
+  import { constructPrUrl } from './sidebar/sidebar-changes-utils';
+  import {
+    buildWorkspacePRPresentationModel,
+    type WorkspacePRPresentationRow,
+  } from './sidebar/workspace-pr-presentation';
   import {
     getWorkspaceStatusPresentation,
     resolveWorkspaceStatusState,
@@ -96,11 +102,6 @@
     }
   }
 
-  function titleCase(value: string | undefined) {
-    if (!value) return null;
-    return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase().replaceAll('_', ' ');
-  }
-
   function pluralize(count: number, singular: string, plural = `${singular}s`) {
     return `${count} ${count === 1 ? singular : plural}`;
   }
@@ -120,55 +121,6 @@
       createdAt: workspace.updatedAt,
       updatedAt: workspace.updatedAt,
     };
-  }
-
-  function getPullRequestDisplayStatus(
-    pr: PullRequestInfo | null,
-    legacyStatus?: PullRequestStatus,
-  ) {
-    return pr?.isDraft ? PullRequestStatus.Draft : (pr?.status ?? legacyStatus ?? null);
-  }
-
-  function formatPullRequestDetails(pr: PullRequestInfo | null, legacyStatus?: PullRequestStatus) {
-    const status = pr?.isDraft ? PullRequestStatus.Draft : (pr?.status ?? legacyStatus);
-    if (!status) return null;
-
-    const parts: string[] = [];
-    if (!pr?.number || status !== PullRequestStatus.Open) parts.push(titleCase(status) ?? status);
-    if (pr?.mergeConflicts) parts.push('conflicts');
-    if (pr?.ciStatus?.failed) parts.push('CI failing');
-    else if (pr?.ciStatus?.pending) parts.push('CI pending');
-    if (pr?.reviewDecision === 'APPROVED') parts.push('approved');
-    if (pr?.reviewDecision === 'CHANGES_REQUESTED') parts.push('changes requested');
-    return parts.length > 0 ? parts.join(' · ') : null;
-  }
-
-  function getPullRequestStatusColor(status: PullRequestStatus | null) {
-    switch (status) {
-      case PullRequestStatus.Open:
-        return 'text-emerald-500';
-      case PullRequestStatus.Merged:
-        return 'text-purple-500';
-      case PullRequestStatus.Closed:
-        return 'text-red-500';
-      default:
-        return 'text-subtle';
-    }
-  }
-
-  function getPullRequestStatusIcon(status: PullRequestStatus | null) {
-    return status === PullRequestStatus.Merged ? faCodeMerge : faCodePullRequest;
-  }
-
-  function getPullRequestDetailsColor(
-    pr: PullRequestInfo | null,
-    status: PullRequestStatus | null,
-  ) {
-    if (pr?.mergeConflicts || pr?.ciStatus?.failed || pr?.reviewDecision === 'CHANGES_REQUESTED') {
-      return 'text-red-500';
-    }
-    if (pr?.ciStatus?.pending) return 'text-amber-500';
-    return getPullRequestStatusColor(status);
   }
 
   function formatGitSummary(summary: WorkspaceGitSummary | null) {
@@ -266,6 +218,7 @@
   const workspaceTasksInitialized$ = selectWorkspaceTasksInitialized(workspaceIdStore);
   const workspaceDiffSummary$ = selectWorkspaceDiffSummary(workspaceIdStore);
   const workspaceGitSummary$ = selectWorkspaceGitSummary(workspaceIdStore);
+  const prMonitors$ = selectPrMonitors(workspaceIdStore);
 
   // Fetch on-demand task/summary data when the hovered workspace changes.
   $effect(() => {
@@ -423,13 +376,37 @@
     return $workspaceTaskProgress$.completed / $workspaceTaskProgress$.total;
   });
 
-  let activePullRequest = $derived(getWorkspacePullRequest(workspace));
-  let pullRequestDisplayStatus = $derived(
-    getPullRequestDisplayStatus(activePullRequest, workspace?.prStatus),
-  );
-  let pullRequestDetailsText = $derived(
-    formatPullRequestDetails(activePullRequest, workspace?.prStatus),
-  );
+  let activePullRequest = $derived.by(() => {
+    if (!workspace) return null;
+    return (
+      selectWorkspaceActivePullRequest.select(appStore.state, workspace.id) ??
+      getWorkspacePullRequest(workspace)
+    );
+  });
+  let workspacePrRows = $derived.by(() => {
+    if (!workspace) return [];
+    const ws = workspace;
+    const workspaceRepo =
+      ws.repositoryOwner && ws.repositoryName
+        ? `${ws.repositoryOwner}/${ws.repositoryName}`
+        : undefined;
+    return buildWorkspacePRPresentationModel({
+      workspacePRs: ws.pullRequests,
+      activePR: activePullRequest,
+      monitors: $prMonitors$,
+      workspaceRepo,
+      buildPrUrl: (prNum, fallbackUrl) =>
+        constructPrUrl(prNum, ws.repositoryOwner, ws.repositoryName, fallbackUrl),
+      getDisplayTitle: (pr) => pr.title,
+    });
+  });
+
+  function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
+    const identity = pr.repo
+      ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
+      : m.workspace_card_prBadge_label({ number: ` #${pr.number}` });
+    return [identity, pr.title, pr.details].filter(Boolean).join('\n');
+  }
 
   let gitSummaryText = $derived(workspace ? formatGitSummary($workspaceGitSummary$) : null);
 
@@ -561,34 +538,44 @@
         </div>
       {/if}
 
-      {#if activePullRequest}
+      {#if workspacePrRows.length > 0}
         <div
-          class="relative min-w-0 -mx-1 flex w-full items-center gap-2 px-1 py-0.5"
+          class="-mx-1 grid min-w-0 w-full gap-1 px-1 py-0.5"
           aria-label={m.workspace_hoverCard_pullRequest_label()}
+          role="list"
+          data-workspace-hover-card-pr-list
         >
-          <Fa
-            icon={getPullRequestStatusIcon(pullRequestDisplayStatus)}
-            size="xs"
-            class="{getPullRequestStatusColor(pullRequestDisplayStatus)} shrink-0"
-          />
-          <span class="flex min-w-0 flex-1 items-center gap-2 text-left">
-            <span class="min-w-0 flex-1 truncate text-sm text-foreground">
-              {activePullRequest.title || m.workspace_hoverCard_pullRequest_label()}
-            </span>
-            {#if activePullRequest.number}
-              <span class="shrink-0 text-ui text-subtle">#{activePullRequest.number}</span>
-            {/if}
-            {#if pullRequestDetailsText}
+          {#each workspacePrRows as pr (pr.identity)}
+            <div
+              class="grid min-w-0 grid-cols-[1.25rem_minmax(0,1fr)] gap-x-1.5 rounded-sm px-0.5 py-0.5"
+              aria-label={getWorkspacePrLabel(pr)}
+              role="listitem"
+              data-workspace-hover-card-pr-row
+              data-pr-identity={pr.identity}
+              data-pr-status={pr.status}
+            >
               <span
-                class="max-w-28 shrink-0 truncate text-right text-ui font-medium {getPullRequestDetailsColor(
-                  activePullRequest,
-                  pullRequestDisplayStatus,
-                )}"
+                class="row-span-2 inline-flex size-5 items-center justify-center rounded-sm {pr.backgroundClass} {pr.foregroundClass}"
+                aria-hidden="true"
               >
-                {pullRequestDetailsText}
+                <Fa icon={pr.statusIcon} size="xs" />
               </span>
-            {/if}
-          </span>
+              <span class="flex min-w-0 items-center gap-2 text-left">
+                <span class="min-w-0 flex-1 truncate text-sm text-foreground">
+                  {pr.title || m.workspace_hoverCard_pullRequest_label()}
+                </span>
+                <span class="shrink-0 text-ui text-subtle">#{pr.number}</span>
+              </span>
+              <span class="flex min-w-0 items-center gap-1.5 text-ui">
+                {#if pr.repoContext}
+                  <span class="max-w-24 shrink-0 truncate text-subtle">{pr.repoContext}</span>
+                {/if}
+                <span class="min-w-0 truncate font-medium {pr.foregroundClass}">
+                  {pr.details.replaceAll('\n', ' · ')}
+                </span>
+              </span>
+            </div>
+          {/each}
         </div>
       {/if}
 

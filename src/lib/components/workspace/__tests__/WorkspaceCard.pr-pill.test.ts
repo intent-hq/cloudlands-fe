@@ -1,12 +1,12 @@
 /**
  * @vitest-environment jsdom
  *
- * WorkspaceCard PR pill interactivity tests.
+ * WorkspaceCard PR item presentation and interactivity tests.
  *
- * The compact-row PR pill routes clicks through the unified link handler
+ * Compact-row PR items route clicks through the unified link handler
  * (`handleLink` with the original event, so GitHub PR URLs get the configured
  * default action / choices menu) without bubbling to the card row, and its
- * hover tooltip's first line is the PR's `owner/repo #N`. Pills with no
+ * hover tooltip's first line is the PR's `owner/repo #N`. Items with no
  * resolvable URL stay non-interactive.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -83,6 +83,7 @@ vi.mock('$lib/components/ui/tooltip/Tooltip.svelte', async () => ({
 }));
 
 import WorkspaceCard from '../WorkspaceCard.svelte';
+import workspaceCardSource from '../WorkspaceCard.svelte?raw';
 
 type TooltipProps = { content: unknown; disabled: unknown };
 const tooltipProps = (): TooltipProps[] =>
@@ -150,19 +151,19 @@ function makeWorkspaceWithPr(overrides: Partial<Workspace> = {}): Workspace {
   });
 }
 
-describe('WorkspaceCard PR pill', () => {
-  it('routes pill clicks through handleLink without bubbling to the card', async () => {
+describe('WorkspaceCard PR items', () => {
+  it('routes item clicks through handleLink without bubbling to the card', async () => {
     const onClick = vi.fn();
     const workspace = makeWorkspaceWithPr();
 
     const { container } = render(WorkspaceCard, { props: { workspace, onClick } });
 
-    const pill = container.querySelector('[data-workspace-card-pr-pill]');
-    expect(pill).toBeTruthy();
-    expect(pill?.tagName).toBe('BUTTON');
-    expect(pill?.getAttribute('type')).toBe('button');
+    const item = container.querySelector('[data-workspace-card-pr-item]');
+    expect(item).toBeTruthy();
+    expect(item?.tagName).toBe('BUTTON');
+    expect(item?.getAttribute('type')).toBe('button');
 
-    await fireEvent.click(pill!);
+    await fireEvent.click(item!);
 
     // handleLink is lazy-imported by the click handler, so the call lands
     // after the (mocked) dynamic import's microtask resolves.
@@ -184,9 +185,9 @@ describe('WorkspaceCard PR pill', () => {
 
     const { container } = render(WorkspaceCard, { props: { workspace } });
 
-    const pill = container.querySelector('[data-workspace-card-pr-pill]');
-    expect(pill?.tagName).toBe('BUTTON');
-    await fireEvent.click(pill!);
+    const item = container.querySelector('[data-workspace-card-pr-item]');
+    expect(item?.tagName).toBe('BUTTON');
+    await fireEvent.click(item!);
     await vi.waitFor(() =>
       expect(mocks.handleLink).toHaveBeenCalledWith(
         'https://github.com/acme/widgets/pull/9',
@@ -195,7 +196,7 @@ describe('WorkspaceCard PR pill', () => {
     );
   });
 
-  it('keeps the pill non-interactive when no URL can be resolved', () => {
+  it('keeps an item non-interactive when no URL can be resolved', () => {
     const workspace = makeWorkspace({
       prNumber: 9,
       prStatus: PullRequestStatus.Open,
@@ -203,9 +204,9 @@ describe('WorkspaceCard PR pill', () => {
 
     const { container } = render(WorkspaceCard, { props: { workspace } });
 
-    const pill = container.querySelector('[data-workspace-card-pr-pill]');
-    expect(pill).toBeTruthy();
-    expect(pill?.tagName).toBe('SPAN');
+    const item = container.querySelector('[data-workspace-card-pr-item]');
+    expect(item).toBeTruthy();
+    expect(item?.tagName).toBe('SPAN');
     expect(mocks.handleLink).not.toHaveBeenCalled();
   });
 
@@ -238,7 +239,7 @@ describe('WorkspaceCard PR pill', () => {
     expect(content!.split('\n')[0]).toBe('other-org/lib #7');
   });
 
-  it('degrades to status-only tooltip content when no repo line is resolvable', () => {
+  it('uses the localized PR identity when no repository is resolvable', () => {
     // A workspace PR without a URL on a workspace without repositoryOwner/
     // repositoryName: no repo source resolves, so the tooltip must be the
     // status content alone — no leading blank line.
@@ -261,7 +262,77 @@ describe('WorkspaceCard PR pill', () => {
     const content = tooltipContents().find((c) => c.includes('Open'));
     expect(content).toBeTruthy();
     expect(content!.startsWith('\n')).toBe(false);
-    expect(content!.split('\n')[0]).toBe('Open');
-    expect(content).not.toContain('#9');
+    expect(content!.split('\n')[0]).toBe('PR #9');
+    expect(content).toContain('Legacy PR');
+    expect(content).toContain('Open');
+  });
+
+  it('renders every unique same-repo and cross-repo PR without a +N summary', () => {
+    const workspace = makeWorkspaceWithPr({
+      pullRequests: [
+        makeWorkspaceWithPr().pullRequests![0],
+        {
+          id: 'pr-2',
+          number: 43,
+          url: 'https://github.com/acme/widgets/pull/43',
+          title: 'Merged follow-up',
+          status: PullRequestStatus.Merged,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+    mocks.monitors.push(
+      makeMonitor({
+        workspaceId: workspace.id,
+        repo: 'acme/widgets',
+        prNumber: 42,
+        url: 'https://github.com/acme/widgets/pull/42',
+      }),
+      makeMonitor({
+        workspaceId: workspace.id,
+        repo: 'other-org/lib',
+        prNumber: 42,
+        title: 'Cross-repo review',
+        url: 'https://github.com/other-org/lib/pull/42',
+      }),
+    );
+
+    const { container } = render(WorkspaceCard, { props: { workspace } });
+    const items = [...container.querySelectorAll('[data-workspace-card-pr-item]')];
+
+    expect(new Set(items.map((item) => item.getAttribute('data-pr-identity')))).toEqual(
+      new Set(['acme/widgets#42', 'other-org/lib#42', 'acme/widgets#43']),
+    );
+    expect(
+      Object.fromEntries(
+        items.map((item) => [
+          item.getAttribute('data-pr-identity'),
+          item.getAttribute('data-pr-status'),
+        ]),
+      ),
+    ).toEqual({
+      'acme/widgets#42': 'open',
+      'other-org/lib#42': 'open',
+      'acme/widgets#43': 'merged',
+    });
+    expect(container.querySelector('[data-testid="workspace-card-more-prs"]')).toBeNull();
+    expect(container.querySelectorAll('[data-workspace-card-pr-number]')).toHaveLength(3);
+    expect(items.every((item) => item.querySelector('svg'))).toBe(true);
+  });
+
+  it('keeps numbers in accessible names while exposing a dedicated skinny-width number hook', () => {
+    const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspaceWithPr() } });
+    const item = container.querySelector('[data-workspace-card-pr-item]')!;
+    const number = item.querySelector('[data-workspace-card-pr-number]')!;
+
+    expect(number.textContent).toBe('#42');
+    expect(number.className).toContain('wc-pr-number');
+    expect(item.getAttribute('aria-label')).toContain('acme/widgets #42');
+    expect(item.getAttribute('aria-label')).toContain('Add feature');
+    expect(item.getAttribute('aria-label')).toContain('Open');
+    expect(workspaceCardSource).toContain('@container (max-width: 220px)');
+    expect(workspaceCardSource).toContain('.wc-pr-number {\n      display: none;');
+    expect(workspaceCardSource).not.toContain('wc-pr-list wc-secondary');
   });
 });
