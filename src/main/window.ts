@@ -23,6 +23,22 @@ const logger = new Logger('Main');
 
 // ---- Shared Window Helpers ----
 
+type BackendBoundWindow = BrowserWindowType & { backendId?: string };
+
+/** Stamp a BrowserWindow with the backend used by its renderer. */
+export function stampWindowWithBackend(
+  window: BrowserWindowType,
+  backendId: string = LOCAL_CONNECTION_ID,
+): void {
+  (window as BackendBoundWindow).backendId = backendId;
+}
+
+/** Resolve an IPC sender's backend, defaulting unbound windows to local. */
+export function getBackendIdForWebContents(webContents: Electron.WebContents): string {
+  const window = BrowserWindow.fromWebContents(webContents) as BackendBoundWindow | null;
+  return window?.backendId ?? LOCAL_CONNECTION_ID;
+}
+
 /**
  * Resolve the app icon path for dev mode. In production, the icon is baked into the binary.
  * Optionally sets the macOS dock icon.
@@ -421,13 +437,21 @@ export function loadWindowSessions(backendId: string): WindowSession[] | null {
  * Create a window to restore a saved session.
  * Similar to createWindow() but accepts a specific route and bounds.
  */
-export function createWindowForSession(session: WindowSession, setAsMain: boolean): void {
+export function createWindowForSession(
+  session: WindowSession,
+  setAsMain: boolean,
+  backendId: string = LOCAL_CONNECTION_ID,
+): void {
   const iconPath = resolveIcon(setAsMain);
   const { workArea } = screen.getPrimaryDisplay();
   const bounds = validateBounds(session.bounds, workArea);
 
   const window = new BrowserWindow(
     buildWindowOptions({ bounds, title: resolveAppTitle(), iconPath }),
+  );
+  stampWindowWithBackend(
+    window,
+    session.route.startsWith('/hud') ? LOCAL_CONNECTION_ID : backendId,
   );
   forwardRendererConsoleToMainLog(window);
 
@@ -533,17 +557,17 @@ export function restoreWindowsForBackend(toBackendId: string): void {
       count: savedSessions.length,
     });
     for (let i = 0; i < savedSessions.length; i++) {
-      createWindowForSession(savedSessions[i], i === 0);
+      createWindowForSession(savedSessions[i], i === 0, toBackendId);
     }
   } else {
     logger.info('No saved sessions for backend; opening a fresh window', {
       backendId: toBackendId,
     });
-    createWindow();
+    createWindow(toBackendId);
   }
 }
 
-export function createWindow() {
+export function createWindow(backendId: string = LOCAL_CONNECTION_ID) {
   const iconPath = resolveIcon(true);
   const { workArea } = screen.getPrimaryDisplay();
 
@@ -592,6 +616,7 @@ export function createWindow() {
   const window = new BrowserWindow(
     buildWindowOptions({ bounds: windowBounds, title: resolveAppTitle(), iconPath }),
   );
+  stampWindowWithBackend(window, backendId);
   forwardRendererConsoleToMainLog(window);
 
   setMainWindow(window);
@@ -700,6 +725,7 @@ export async function createWindowForDeepLink(
   const newWindow = new BrowserWindow(
     buildWindowOptions({ bounds, title: resolveAppTitle(), iconPath }),
   );
+  stampWindowWithBackend(newWindow);
   forwardRendererConsoleToMainLog(newWindow);
 
   const encodedAction = encodeURIComponent(JSON.stringify(action));

@@ -43,6 +43,12 @@ const { FakeBrowserWindow } = vi.hoisted(() => {
       return FakeBrowserWindow.instances.filter((w) => !w.destroyed);
     }
 
+    static fromWebContents(
+      webContents: FakeBrowserWindow['webContents'],
+    ): FakeBrowserWindow | null {
+      return FakeBrowserWindow.instances.find((w) => w.webContents === webContents) ?? null;
+    }
+
     isDestroyed() {
       return this.destroyed;
     }
@@ -109,7 +115,9 @@ import {
   captureAndCloseWindowsForBackendSwitch,
   clearBackendSwitchWindowTeardownGuard,
   clearWindowSessionsSnapshot,
+  createWindow,
   getWindowSessionsPath,
+  getBackendIdForWebContents,
   isBackendSwitchWindowTeardownInProgress,
   loadWindowSessions,
   restoreWindowsForBackend,
@@ -257,6 +265,50 @@ describe('multi-backend window sessions', () => {
   });
 
   describe('restoreWindowsForBackend', () => {
+    it('stamps restored windows with their saved backend bucket', () => {
+      const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({
+          'remote-a': [{ route: '/work/a', bounds }],
+          'remote-b': [{ route: '/work/b', bounds }],
+        }),
+        'utf-8',
+      );
+
+      restoreWindowsForBackend('remote-a');
+      restoreWindowsForBackend('remote-b');
+
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(getBackendIdForWebContents(live[0].webContents as never)).toBe('remote-a');
+      expect(getBackendIdForWebContents(live[1].webContents as never)).toBe('remote-b');
+    });
+
+    it('stamps a fresh window without a backend id as local', () => {
+      createWindow();
+
+      const [window] = FakeBrowserWindow.getAllWindows();
+      expect(getBackendIdForWebContents(window.webContents as never)).toBe('local');
+    });
+
+    it('defaults an unbound IPC sender to local', () => {
+      expect(getBackendIdForWebContents({} as never)).toBe('local');
+    });
+
+    it('always stamps a restored HUD window as local', () => {
+      const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({ 'remote-a': [{ route: '/hud', bounds }] }),
+        'utf-8',
+      );
+
+      restoreWindowsForBackend('remote-a');
+
+      const [window] = FakeBrowserWindow.getAllWindows();
+      expect(getBackendIdForWebContents(window.webContents as never)).toBe('local');
+    });
+
     it('restores the incoming backend layout', () => {
       const remoteBounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(

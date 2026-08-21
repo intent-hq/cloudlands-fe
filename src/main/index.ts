@@ -362,6 +362,7 @@ import {
   isBackendSwitchWindowTeardownInProgress,
   loadWindowSessions,
   saveWindowSessions,
+  stampWindowWithBackend,
 } from './window.js';
 import {
   setupAppProtocolHandler,
@@ -576,6 +577,7 @@ app.whenReady().then(async () => {
   };
 
   app.on('browser-window-created', (_event: Electron.Event, window: BrowserWindowType) => {
+    stampWindowWithBackend(window);
     window.on('resize', debouncedSaveWindowSessions);
     window.on('move', debouncedSaveWindowSessions);
     window.webContents.on('did-navigate', debouncedSaveWindowSessions);
@@ -1712,11 +1714,11 @@ app.whenReady().then(async () => {
     if (savedSessions && savedSessions.length > 0) {
       logger.info('Restoring window sessions from previous run', { count: savedSessions.length });
       for (let i = 0; i < savedSessions.length; i++) {
-        createWindowForSession(savedSessions[i], i === 0);
+        createWindowForSession(savedSessions[i], i === 0, bootBackendId);
       }
     } else {
       // No saved sessions (or has deep link) — create a single default window
-      createWindow();
+      createWindow(bootBackendId);
     }
 
     startupMetrics.end('createWindow');
@@ -2048,10 +2050,10 @@ app.on('activate', async () => {
     if (savedSessions && savedSessions.length > 0) {
       logger.info('Restoring window sessions on activate', { count: savedSessions.length });
       for (let i = 0; i < savedSessions.length; i++) {
-        createWindowForSession(savedSessions[i], i === 0);
+        createWindowForSession(savedSessions[i], i === 0, backendId);
       }
     } else {
-      createWindow();
+      createWindow(backendId);
     }
   }
 });
