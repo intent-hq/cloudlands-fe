@@ -5,7 +5,7 @@ description: >-
   Preact React signals as the preferred React consumer path, .useValue(...args) for
   necessary hook/plain-value fallback paths, Babel transform/useSignals tracking,
   .select(state, ...args) for handlers/tests/composition, .effect(...args) for
-  sagas, and .withStore(...) for explicit binding without Svelte lifecycle rules.
+  sagas, and .withStore(...) for explicit ReactStore binding.
 type: sub-skill
 requires:
   - react
@@ -30,9 +30,7 @@ consumer integration path when callers can pass, read, or render signals. Use
 `.useValue(...args)` only when a hook/plain value is necessary and adapting the
 consumer to accept signals is impractical.
 
-Use this lifecycle only for apps that chose the React Store family. Do not apply
-Svelte `$selector`/readable/context lifecycle rules or `StreamingStore`/Kefir
-selector observation rules in the same app/package/code path.
+Use this lifecycle for apps that chose the React Store family.
 
 ## Call-mode map
 
@@ -73,8 +71,7 @@ selector observation rules in the same app/package/code path.
 - `.select(state, ...args)` and `.effect(...args)` take plain selector arguments,
   not signal wrappers.
 - Selector-channel helpers use the Redux store from saga context; they do not
-  subscribe to direct `ReadonlySignal`, Svelte readable, or Kefir observable
-  selector outputs.
+  subscribe to direct `ReadonlySignal` selector outputs.
 
 ## Don't
 
@@ -82,11 +79,7 @@ selector observation rules in the same app/package/code path.
 - Do not call direct signal form inside pure selector composition; use
   `.select(state, ...args)` instead.
 - Do not create direct signals just to perform one-shot handler/test reads.
-- Do not use Svelte `selectFoo()` readable timing, `$selector` templates,
-  `getContext()`, `onDestroy`, or `lifecycle_outside_component` guidance for a
-  React app.
-- Do not use `StreamingStore`, Kefir observables, or observable selector lifecycle
-  rules in the same React app path.
+- Do not apply non-React selector lifecycle rules to a React app.
 
 ## Examples
 
@@ -196,8 +189,8 @@ for `ReactStore`, that result is a Preact React `ReadonlySignal<R>`.
 - `.select(state, ...args)` is pure and synchronous but not reactive. Components
   that need updates should prefer direct selector signals, falling back to
   `.useValue(...args)` only for necessary plain-value boundaries.
-- Svelte readable lifecycle rules are contrast-only here; React does not use
-  `$selector` template syntax, Svelte context, or readable subscription cleanup.
+- React selector lifecycle is driven by component/custom-hook boundaries and the
+  explicit `.select`, `.effect`, and `.withStore` call modes above.
 
 ## Verification cues
 
@@ -217,4 +210,4 @@ for `ReactStore`, that result is a Preact React `ReadonlySignal<R>`.
   startup, component dispatch, and handler examples.
 - `react/selectors/SKILL.md` — authoring ReactStore selectors.
 - `react/store/SKILL.md` — `ReactStore` import and initialization rules.
-- `docs/SELECTORS.md` — human reference for selector call forms.
+- `@augmentcode/themis/docs/SELECTORS.md` — human reference for selector call forms.

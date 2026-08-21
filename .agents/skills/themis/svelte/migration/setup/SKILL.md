@@ -24,15 +24,18 @@ triggers:
 
 Install the `@augmentcode/themis` package and its peer dependencies with your package manager: `@augmentcode/themis`, `redux`, `redux-saga`, `typed-redux-saga`, and `fast-equals`. Add `redux-saga-test-plan` as a dev dependency when saga tests follow this repository's examples.
 
-`svelte@^5` is also required as a peer dependency and is usually already present in the app being migrated. Package installation does not copy AI skills automatically. In consumer apps, use the installed package CLI for explicit skill refresh, cleanup, and help; Svelte migrations should use `install-skills:svelte` to copy the root router plus `setup`, `core`, and `svelte` only. That domain-specific install refreshes stale package-owned files in the Svelte bundle scope, preserves unrelated project or third-party skills, preserves non-selected package skill families, and excludes generated artifacts such as `skills/_artifacts`:
+`svelte@^5` is also required as a peer dependency and is usually already present in the app being migrated. Package installation does not copy AI skills automatically. Explicitly install the Svelte bundle from the consumer project:
 
-Consumer CLI commands are `npx themis install-skills:svelte`, `npx themis cleanup-skills`, and `npx themis help`. Use `npx themis install-skills` or `npx themis install-skills:all` only when the app intentionally needs every package skill family refreshed. For architecture checking in the migrated app, import the `svelte` domain root config from `@augmentcode/themis/eslint-plugins` and run ESLint.
+```bash
+npx themis install-skills:svelte
+npx themis help
+```
 
-The equivalent npm exec form is `npm exec -- themis <command>`. Use this repository's maintainer `npm run validate:*` scripts only when working inside the package repository. npm 7+ does not run dependency uninstall lifecycle scripts; if the migration is rolled back and copied skills should be removed, run `npx themis cleanup-skills` before uninstalling:
+The equivalent npm exec form is `npm exec -- themis install-skills:svelte`. Repeating the command refreshes package-owned files in `.agents/skills/themis/`; cleanup preserves unrelated skills and the owned Claude compatibility link is removed only by `npx themis cleanup-skills`. For the canonical installation, collision, verification, cleanup, and maintainer workflow, read [@augmentcode/themis/docs/INSTALLATION.md](@augmentcode/themis/docs/INSTALLATION.md).
 
 On rollback, run `npx themis cleanup-skills` before uninstalling `@augmentcode/themis`; remove peer dependencies only if the app no longer uses them.
 
-See `docs/INSTALLATION.md` for the complete consumer install/uninstall flow and the separate maintainer `npm ci` validation flow.
+See `@augmentcode/themis/docs/INSTALLATION.md` for the complete consumer install/uninstall flow and the separate maintainer `pnpm install --frozen-lockfile` validation flow.
 
 ## Step 2 — Import the Package Runtime
 

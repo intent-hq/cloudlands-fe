@@ -9,19 +9,16 @@ const mocks = vi.hoisted(() => {
   const batchingMiddleware = passthrough();
   const refCheckMiddleware = passthrough();
   const structuredCloneMiddleware = passthrough();
-  const loggerMiddleware = passthrough();
 
   return {
     createStoreGuardMiddleware: vi.fn(() => storeGuardMiddleware),
     createBatchingMiddleware: vi.fn(() => batchingMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
     createStructuredCloneCheckerMiddleware: vi.fn(() => structuredCloneMiddleware),
-    createLoggerMiddleware: vi.fn(() => loggerMiddleware),
     storeGuardMiddleware,
     batchingMiddleware,
     refCheckMiddleware,
     structuredCloneMiddleware,
-    loggerMiddleware,
   };
 });
 
@@ -36,9 +33,6 @@ vi.mock('./middlewares/state-reference-checks', () => ({
 }));
 vi.mock('./middlewares/structured-clone-checker', () => ({
   createStructuredCloneCheckerMiddleware: mocks.createStructuredCloneCheckerMiddleware,
-}));
-vi.mock('./middlewares/logger', () => ({
-  createLoggerMiddleware: mocks.createLoggerMiddleware,
 }));
 
 const localStorageGetItem = window.localStorage.getItem as unknown as Mock;
@@ -65,7 +59,6 @@ describe('renderer middleware ownership', () => {
     vi.unstubAllEnvs();
     vi.clearAllMocks();
     setLocalStorageEntries({ [REDUX_DEBUG_LS_KEY]: 'false' });
-    delete (window as Window & { intentFlags?: unknown }).intentFlags;
   });
 
   it('contains the guard, batching, and enabled diagnostics', async () => {
@@ -76,7 +69,6 @@ describe('renderer middleware ownership', () => {
     expect(mocks.createBatchingMiddleware).toHaveBeenCalledOnce();
     expect(mocks.createBatchingMiddleware).toHaveBeenCalledWith([]);
     expect(mocks.createReferenceChangeDetectorMiddleware).not.toHaveBeenCalled();
-    expect(mocks.createLoggerMiddleware).not.toHaveBeenCalled();
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
@@ -100,40 +92,11 @@ describe('renderer middleware ownership', () => {
     ]);
   });
 
-  it('adds the logger after diagnostics when enabled', async () => {
+  it('leaves action logging out of middleware when its Store preference is enabled', async () => {
     setLocalStorageEntries({ [REDUX_DEBUG_LS_KEY]: 'true' });
 
     const { middleware } = await import('./middleware');
 
-    expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith('');
-    expect(middleware).toEqual([
-      mocks.storeGuardMiddleware,
-      mocks.batchingMiddleware,
-      mocks.structuredCloneMiddleware,
-      mocks.loggerMiddleware,
-    ]);
-  });
-
-  it('passes the globally enabled webview name to the logger', async () => {
-    (
-      window as Window & { intentFlags?: { enableReduxLogger: boolean; webviewName: string } }
-    ).intentFlags = { enableReduxLogger: true, webviewName: 'composer' };
-
-    const { middleware } = await import('./middleware');
-
-    expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith('composer');
-    expect(middleware.at(-1)).toBe(mocks.loggerMiddleware);
-  });
-
-  it('fails closed when reading the logger preference throws', async () => {
-    localStorageGetItem.mockImplementation((key: string) => {
-      if (key === REDUX_DEBUG_LS_KEY) throw new Error('Storage unavailable');
-      return null;
-    });
-
-    const { middleware } = await import('./middleware');
-
-    expect(mocks.createLoggerMiddleware).not.toHaveBeenCalled();
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,

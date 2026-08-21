@@ -3,7 +3,7 @@ name: react/migration/writable-stores
 description: >-
   Convert shared mutable React state to actions and reducers. React sources
   include useState/useReducer, context providers, custom hooks, or external
-  mutable stores; Svelte writable/$state primitives are non-applicable contrasts.
+  mutable stores.
 type: sub-skill
 requires:
   - core/actions
@@ -18,7 +18,8 @@ triggers:
 
 Shared mutable React state maps to serializable slice state, action creators, andpure reducers. Keep component-local ephemeral UI state in React.
 
-Svelte `writable`, `readable`, and `$state` examples are not React sourcepatterns. The React equivalents are `useState`, `useReducer`, context providerstate, custom hook state, and external mutable stores.
+React source patterns include `useState`, `useReducer`, context provider state,
+custom hook state, and external mutable stores.
 
 ## Before: shared React context state
 
@@ -49,12 +50,10 @@ export const setCount = createAction<[value: number]>("counter/setCount");
 export const increment = createAction("counter/increment");
 export const setUsername = createAction<[value: string]>("counter/setUsername");
 
-export const counterReducer = createReducer<CounterState>(initialState);
-counterReducer.with(setCount, (state, { payload: [count] }) =>
-  count === state.count ? state : { ...state, count }
-);
-counterReducer.with(increment, (state) => ({ ...state, count: state.count + 1 }));
-counterReducer.with(setUsername, (state, { payload: [username] }) => ({ ...state, username }));
+export const counterReducer = createReducer<CounterState>(initialState)
+  .with(setCount, (state, { payload: [count] }) => count === state.count ? state : { ...state, count })
+  .with(increment, (state) => ({ ...state, count: state.count + 1 }))
+  .with(setUsername, (state, { payload: [username] }) => ({ ...state, username }));
 ```
 
 ## Rules

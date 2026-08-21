@@ -3,8 +3,7 @@ name: react/migration/cleanup
 description: >-
   React migration cleanup and rollback. Remove old React state owner paths,
   providers, hooks, wrappers, and external-store adapters; verify no stale imports
-  or pass-through wrappers remain; document shims. Svelte .store.svelte.ts cleanup
-  details are non-applicable contrasts only.
+  or pass-through wrappers remain; document shims.
 type: sub-skill
 requires:
   - react/migration
@@ -17,9 +16,8 @@ triggers:
 
 Run cleanup once each migrated React state owner/slice passes tests and affectedUI flows have been verified. Remove old providers, custom hooks, context modules,external-store adapters, and pass-through wrappers unless they are explicitlydocumented compatibility shims.
 
-Svelte `.store.svelte.ts` deletion is Svelte-only. React cleanup targets React
-state owner modules such as providers, hooks, context files, and old external
-store adapters.
+React cleanup targets React state owner modules such as providers, hooks, context
+files, and old external store adapters.
 
 ## Remove old owners and imports
 

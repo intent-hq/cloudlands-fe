@@ -37,7 +37,7 @@ Before verifying implementation or documentation diffs under this skill:
 Source rules:
 
 - `core/core-policy/SKILL.md` — agent preflight compliance, refactor cleanup, and utility reuse rules.
-- `docs/ARCHITECTURE.md` — Utility Reuse Discovery Protocol and Refactor Cleanup Guard.
+- `@augmentcode/themis/docs/ARCHITECTURE.md` — Utility Reuse Discovery Protocol and Refactor Cleanup Guard.
 - `core/state-integrity/SKILL.md` — canonical state, duplicate-owner rejection, preflight searches, and handoff evidence.
 - `core/reducers/SKILL.md` — canonical reducer state and reducer/helper reuse before extracting new helpers.
 - `core/testing/SKILL.md` — verifier evidence requirements for refactor cleanup.
@@ -70,7 +70,7 @@ type VerifierEvidence = {
 };
 
 export const evidence: VerifierEvidence = {
-  instructionsRead: ["task note", "./SKILL.md", "docs/ARCHITECTURE.md"],
+  instructionsRead: ["task note", "./SKILL.md", "@augmentcode/themis/docs/ARCHITECTURE.md"],
   scopeFiles: ["skills/core/state-integrity/SKILL.md"],
   gateResults: [{ command: "git diff --check", exitCode: 0, keyOutput: "no whitespace errors" }],
   blockers: [],
@@ -84,7 +84,7 @@ type Citation = { source: string; rule: string; evidence: string };
 
 export const instructionCitations: Citation[] = [
   { source: "task note", rule: "scope limited to three SKILL.md files", evidence: "git diff --name-only" },
-  { source: "docs/ARCHITECTURE.md", rule: "utility reuse discovery", evidence: "rg search terms listed" },
+  { source: "@augmentcode/themis/docs/ARCHITECTURE.md", rule: "utility reuse discovery", evidence: "rg search terms listed" },
   { source: "state-integrity/SKILL.md", rule: "canonical owners", evidence: "action/selector/saga owner search" },
 ];
 

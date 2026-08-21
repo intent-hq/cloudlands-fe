@@ -4,8 +4,7 @@ description: >-
   Store import, initialization, disposal, and Store-runtime guidance for the
   canonical Svelte-readable Store variant. Use for @augmentcode/themis/svelte-store,
   useInitStore/useRunSaga lifecycle helpers, inherited
-  runSaga/dispatch/state behavior, and contrast with ReactStore or
-  StreamingStore without teaching those call modes.
+  runSaga/dispatch/state behavior for Svelte-readable Store consumers.
 type: sub-skill
 requires:
   - svelte
@@ -14,8 +13,8 @@ sources:
   - "@augmentcode/themis/svelte-store"
   - "@augmentcode/themis/components-svelte/use-init-store"
   - "@augmentcode/themis/components-svelte/use-run-saga"
-  - augmentcode/themis:docs/ARCHITECTURE.md
-  - augmentcode/themis:README.md
+  - "@augmentcode/themis/docs/ARCHITECTURE.md"
+  - "@augmentcode/themis/README.md"
 triggers:
   - Store class
   - svelte-store import
@@ -28,13 +27,11 @@ triggers:
 
 Use this skill when a task needs the canonical Svelte-readable Store variant. For shared state policy, reducers, actions, sagas, and package import boundaries, also follow the matching `core/*` skills.
 
-This is Svelte Store family guidance. For the same app/package/code path, do not apply `StreamingStore`, Kefir/observable selector, `ReactStore`, Preact signal selector, React `.useValue(...)`, React component setup, or streaming lifecycle patterns. Separate React or Node/server apps in a mixed repository must route to `../../react/SKILL.md` or `../../streaming/SKILL.md` independently.
+This is Svelte Store family guidance for Svelte component and application code.
 
 ## Correct import and class choice
 
 - Use `Store` from `@augmentcode/themis/svelte-store`.
-- Use `ReactStore` from `@augmentcode/themis/react-store` only when direct selector calls should return Preact React signals in a separate React app/code path.
-- Use `StreamingStore` from `@augmentcode/themis/streaming-store` only when direct selector calls should return Kefir observables in a separate stream/Node path.
 - Do not import `Store` from the package root, `src/*`, or selector internals such as `utils/svelte-selectors/*`.
 
 ```ts
@@ -58,19 +55,17 @@ const dispose = store.init();
 - `useRunSaga(saga)` from `@augmentcode/themis/components-svelte/use-run-saga` starts a saga on mount and stops it on destroy. Call it at component init time after the Store is initialized.
 - Import these helpers from their leaf subpaths only, not from old `components/*` paths or a `components-svelte` directory barrel.
 
-## Contrast with the other Store variants
+## Svelte Store guarantees
 
 - `Store` is the only Store class whose selector direct calls return Svelte readables for `$selector$` template reads.
-- `ReactStore` is the Preact React signal class for React UI code.
-- `StreamingStore` is the Kefir/observable class for stream/Node paths.
-- If a task expects signal reads or Kefir observation, route that separate app/code path to `../../react/SKILL.md` or `../../streaming/SKILL.md` instead of this skill.
-- Do not make one app use multiple concrete Store selector/component patterns.
+- Keep selector direct calls, component initialization, and readable template
+  bindings within the Svelte Store lifecycle described above.
 
 ## Verification cues
 
 - Imports use `@augmentcode/themis/svelte-store` for `Store` and `@augmentcode/themis/components-svelte/*` leaf subpaths for lifecycle helpers.
 - Svelte examples initialize the Store before readable selector reads, or tests explicitly assert the pre-init error path.
-- The app path does not mix Preact signal or Kefir observable Store setup.
+- The app path initializes the Store before direct readable selector calls.
 
 ## See also
 

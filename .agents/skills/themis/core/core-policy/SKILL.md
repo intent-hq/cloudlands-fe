@@ -30,7 +30,7 @@ Before editing code or docs under this skill:
 - **SHOULD** stop and ask when rules conflict or scope is unclear.
 - **NEVER** claim completion when a required skill/doc was skipped or the handoff lacks compliance evidence.
 
-> These rules are the load-bearing contract for every slice, saga, and component in the package. Quoted verbatim from `../SKILL.md` §1 and docs/ARCHITECTURE.md → Core Principles.
+> These rules are the load-bearing contract for every slice, saga, and component in the package. Quoted verbatim from `../SKILL.md` §1 and `@augmentcode/themis/docs/ARCHITECTURE.md` → Core Principles.
 
 ## Setup — core rules
 
@@ -48,7 +48,7 @@ Before editing code or docs under this skill:
 
 > This package uses a CUSTOM Redux setup — NOT Redux Toolkit (RTK). Do not use createSlice, configureStore, createAsyncThunk, or any RTK APIs. Use only the custom utilities documented in the leaves.
 
-## Core Principles (from `docs/ARCHITECTURE.md`)
+## Core Principles (from `@augmentcode/themis/docs/ARCHITECTURE.md`)
 
 - **Single source of truth** — All shared application state lives in a single Redux store.
 - **State is read-only** — State is never mutated directly; changes happen only through dispatching actions.
@@ -160,13 +160,13 @@ export const itemsStore = {
 ```typescript
 // feature-slice.ts (CORRECT)
 export const addItem = createAction<[Item]>('feature/addItem');
-export const featureReducer = createReducer<FeatureState>(initialState);
-featureReducer.with(addItem, (state, { payload: [item] }) => ({
+export const featureReducer = createReducer<FeatureState>(initialState)
+  .with(addItem, (state, { payload: [item] }) => ({
     ...state, items: collectionAddItem(state.items, item)
-}));
+  }));
 ```
 
-Source: `../SKILL.md` §1, README.md · **Priority: CRITICAL**
+Source: `../SKILL.md` §1, `@augmentcode/themis/README.md` · **Priority: CRITICAL**
 
 ### ❌ Using `$effect` for cross-component side effects
 
@@ -220,7 +220,7 @@ export { featureReducer, loadFeature } from './features/feature-slice';
 
 If a shim is required for external compatibility, add an adjacent comment that names the consumer or compatibility window and the planned removal condition. Verifiers must inspect old paths in the diff and report either “no pass-through wrappers” or the justified shim list.
 
-Source: `docs/ARCHITECTURE.md` → Refactor Cleanup Guard · **Priority: HIGH**
+Source: `@augmentcode/themis/docs/ARCHITECTURE.md` → Refactor Cleanup Guard · **Priority: HIGH**
 
 ## See also
 

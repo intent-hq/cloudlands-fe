@@ -3,8 +3,7 @@ name: react/migration
 description: >-
   React migration/adoption playbook for moving shared React state, context/hooks,
   external store subscriptions, useMemo derivations, and useEffect side effects
-  to ReactStore, selectors, actions, reducers, and sagas. Documents which Svelte
-  store/rune migration concepts are non-applicable to React.
+  to ReactStore, selectors, actions, reducers, and sagas.
 type: lifecycle
 requires:
   - react
@@ -48,21 +47,17 @@ path, `.useValue(...args)` only for necessary hook/plain-value fallback paths, a
 `.select(state, ...args)` for composition and tests, and `.effect(...args)` for
 sagas.
 
-Svelte migration primitives are contrast-only here. Do not copy `writable`,
-`derived`, `$state`, `$derived`, `$effect`, `$selector` template, `+layout.svelte`,
-`onDestroy`, or Svelte context examples into a React migration.
-
 ## React migration leaf routes
 
-| Route | Svelte parity leaf | React applicability |
-| --- | --- | --- |
-| `./assessment/SKILL.md` | `../../svelte/migration/assessment/SKILL.md` | Applicable: inventory shared React local state, context/hooks, external stores, derivations, effects, and consumers. |
-| `./setup/SKILL.md` | `../../svelte/migration/setup/SKILL.md` | Applicable via `../../setup/SKILL.md` and `ReactStore`; Svelte `+layout.svelte` bootstrap is not applicable. |
-| `./writable-stores/SKILL.md` | `../../svelte/migration/writable-stores/SKILL.md` | Applicable by concept: mutable shared React state maps to actions/reducers; Svelte `writable`/`$state` are not React primitives. |
-| `./derived-stores/SKILL.md` | `../../svelte/migration/derived-stores/SKILL.md` | Applicable by concept: shared derivations map to `ReactStore.createSelector`; Svelte `derived`/`$derived` are not React primitives. |
-| `./side-effects/SKILL.md` | `../../svelte/migration/side-effects/SKILL.md` | Applicable by concept: shared/persistent/async effects move to sagas; Svelte `$effect` is not a React primitive. |
-| `./component-migration/SKILL.md` | `../../svelte/migration/component-migration/SKILL.md` | Applicable as JSX/TSX consumption swap using direct selector signals first, `.useValue(...args)` only for necessary plain-value fallback reads, and Store dispatch; Svelte templates/readables are not applicable. |
-| `./cleanup/SKILL.md` | `../../svelte/migration/cleanup/SKILL.md` | Applicable: remove old state owners/import paths and document shims/rollback; `.store.svelte.ts` cleanup is Svelte-only. |
+| Route | Use when |
+| --- | --- |
+| `./assessment/SKILL.md` | Inventory shared React local state, context/hooks, external stores, derivations, effects, and consumers. |
+| `./setup/SKILL.md` | Create and initialize the app-owned `ReactStore`, register reducers, and start app sagas. |
+| `./writable-stores/SKILL.md` | Move shared mutable React state into actions, reducers, and serializable slice state. |
+| `./derived-stores/SKILL.md` | Move shared derivations to `ReactStore` selectors and test them with `.select`. |
+| `./side-effects/SKILL.md` | Move shared, persistent, or async effects to sagas. |
+| `./component-migration/SKILL.md` | Migrate JSX/TSX consumption to direct selector signals and Store dispatch. |
+| `./cleanup/SKILL.md` | Remove old state owners/import paths and document shims or rollback steps. |
 
 ## Recommended order
 
@@ -133,5 +128,5 @@ const nextSteps: ReactMigrationStep[] = cartAssessment.verdict === "reactstore"
 - Selectors compose and tests assert with `.select(state, ...args)`.
 - Sagas read migrated state with `.effect(...args)` and start via
   `reactStore.runSaga(sagaFn)` after `init()`.
-- Svelte store/rune/template/lifecycle concepts appear only as non-applicable
-  contrasts, not active React instructions.
+- React migration instructions keep state ownership, selector consumption, and
+  side-effect ownership explicit at each step.

@@ -23,7 +23,7 @@ triggers:
 ---
 # Actions — `createAction` / `createAsyncAction`
 
-> Operational guidance for action creator work. API details and longer examples live in `docs/REDUCERS.md` → Actions and Async Actions. Public API: `@augmentcode/themis/utils/store/create-action`; related family guidance: `../SKILL.md` §3.
+> Operational guidance for action creator work. API details and longer examples live in `@augmentcode/themis/docs/REDUCERS.md` → Actions and Async Actions. Public API: `@augmentcode/themis/utils/store/create-action`; related family guidance: `../SKILL.md` §3.
 
 ## Use when
 
@@ -66,8 +66,7 @@ import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 
 const renameTodo = createAction<[id: string, title: string]>("todos/rename");
-export const reducer = createReducer({ titles: {} as Record<string, string> });
-reducer.with(
+const reducer = createReducer({ titles: {} as Record<string, string> }).with(
   renameTodo,
   (state, { payload: [id, title] }) => ({ ...state, titles: { ...state.titles, [id]: title } })
 );
@@ -152,7 +151,7 @@ const [{ id, title }] = renameTodoFromList({ id: "todo-1", title: "Ship docs" })
 
 ## See also
 
-- `docs/REDUCERS.md` — human reference for action and async-action examples.
+- `@augmentcode/themis/docs/REDUCERS.md` — human reference for action and async-action examples.
 - `core/reducers/SKILL.md` — consuming actions in `.with()` handlers.
 - `core/sagas/SKILL.md` — watcher patterns and typed-redux-saga usage.
 - `core/state-integrity/SKILL.md` — duplicate-owner search protocol.
