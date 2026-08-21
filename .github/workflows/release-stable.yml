@@ -128,6 +128,16 @@ jobs:
             [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$1" ]
           }
 
+          # Guard: never move the stable channel backwards. Checked here, on
+          # every path (including the notes_base override, whose own validation
+          # only relates notes_base to VERSION), before any asset is touched.
+          if [ "$IS_FIRST" != "true" ] && [ "$PREV_STABLE" != "$VERSION" ]; then
+            if ! version_is_older "$PREV_STABLE" "$VERSION"; then
+              echo "::error::Target version $VERSION is not greater than previous stable $PREV_STABLE - cannot promote an older version to stable"
+              exit 1
+            fi
+          fi
+
           NOTES_BASE=""
           SKIP_NOTES=false
           if [ -n "$NOTES_BASE_INPUT" ]; then
