@@ -55,6 +55,9 @@ export async function refreshAgentSessionAfterEvent(agentId: string): Promise<vo
   const scheduledRerun = pendingEventRerun.get(agentId);
   if (scheduledRerun) return scheduledRerun;
 
+  // ensureAgentSession swallows read failures, so `pending` always fulfills.
+  // Delete before the trailing read so events during that read can coalesce
+  // into one further trailing refresh instead of getting lost.
   const rerun = pending.then(() => {
     pendingEventRerun.delete(agentId);
     return ensureAgentSession(agentId);

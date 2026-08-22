@@ -5,7 +5,7 @@
  * and only a question-bearing assistant row at the non-system tail pends.
  */
 import { describe, expect, it } from 'vitest';
-import { derivePendingQuestions } from '../pending-questions';
+import { classifyPendingQuestionMarker, derivePendingQuestions } from '../pending-questions';
 import { buildAnswerMessageMetadata } from '../answer-message';
 import { deriveMarkedQuestionRecoveryState, deriveWizardPendingQuestions } from '../wizard-gate';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
@@ -78,6 +78,17 @@ function answerMessage(answeredQuestionsMessageId: string, id = 'msg-answer-1'):
     metadata: buildAnswerMessageMetadata(answeredQuestionsMessageId),
   } as unknown as AgentMessage;
 }
+
+describe('classifyPendingQuestionMarker', () => {
+  it('keeps absent, written-empty, and set markers distinct', () => {
+    expect(classifyPendingQuestionMarker(undefined)).toEqual({ kind: 'absent' });
+    expect(classifyPendingQuestionMarker('')).toEqual({ kind: 'cleared' });
+    expect(classifyPendingQuestionMarker('msg-question')).toEqual({
+      kind: 'set',
+      messageId: 'msg-question',
+    });
+  });
+});
 
 describe('derivePendingQuestions', () => {
   it('derives questions from the last assistant message', () => {

@@ -17,6 +17,18 @@ export interface PendingQuestionSet {
   questions: Question[];
 }
 
+export type PendingQuestionMarkerState =
+  { kind: 'absent' } | { kind: 'cleared' } | { kind: 'set'; messageId: string };
+
+/** Classify the daemon marker without conflating absent and written-empty. */
+export function classifyPendingQuestionMarker(
+  pendingQuestionsMessageId: string | undefined,
+): PendingQuestionMarkerState {
+  if (pendingQuestionsMessageId === undefined) return { kind: 'absent' };
+  if (pendingQuestionsMessageId === '') return { kind: 'cleared' };
+  return { kind: 'set', messageId: pendingQuestionsMessageId };
+}
+
 function questionsOf(message: AgentMessage): Question[] {
   return dedupeResourceBlocks(message.contentBlocks ?? [])
     .map(getQuestionFromResourceBlock)
@@ -43,10 +55,11 @@ export function derivePendingQuestions(
   if (isTurnActive || showingPendingUserMessage || messages.length === 0) {
     return null;
   }
-  if (pendingQuestionsMessageId === '') return null;
+  const marker = classifyPendingQuestionMarker(pendingQuestionsMessageId);
+  if (marker.kind === 'cleared') return null;
 
-  if (pendingQuestionsMessageId !== undefined) {
-    const marked = messages.find((message) => message.id === pendingQuestionsMessageId);
+  if (marker.kind === 'set') {
+    const marked = messages.find((message) => message.id === marker.messageId);
     if (!marked || marked.role !== 'assistant' || marked.isStreaming) return null;
     const questions = questionsOf(marked);
     return questions.length > 0 ? { messageId: marked.id, questions } : null;

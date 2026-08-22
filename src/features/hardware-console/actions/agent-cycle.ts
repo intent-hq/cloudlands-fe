@@ -115,6 +115,9 @@ function isAgentTurnActive(session: StoredAgentSession): boolean {
 
 /** Whether a session has a pending Q&A wizard question (dismissal-gated). */
 function hasPendingQuestion(session: StoredAgentSession): boolean {
+  // This hardware path sees only the session tail, not panel history or its
+  // recovery projection. An off-page marker can return false here while the
+  // panel stays fail-closed; workspace hardware state still uses displayStatus.
   const pending = derivePendingQuestions(
     session.messages ?? [],
     isAgentTurnActive(session),

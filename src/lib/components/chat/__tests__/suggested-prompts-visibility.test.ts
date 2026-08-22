@@ -13,11 +13,7 @@
  * 3. The derived computation correctly extracts prompts from the last assistant message
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
 import { derivePendingQuestions } from '../questions/pending-questions';
 import { buildAnswerMessageMetadata } from '../questions/answer-message';
@@ -38,9 +34,10 @@ function computeSuggestedPrompts(
   messages: AgentMessage[],
   showingPendingUserMessage = false,
   pendingQuestionsMessageId?: string,
+  pendingQuestionRecoveryLoading = false,
 ): SuggestedPrompt[] {
   // Mirrors ChatPanel.svelte suggestedPrompts derived gate.
-  if (isRunning || messages.length === 0) {
+  if (isRunning || pendingQuestionRecoveryLoading || messages.length === 0) {
     return [];
   }
   // Hide as soon as the user submits a new prompt: either a trailing user
@@ -272,6 +269,17 @@ Review the result
       );
       expect(prompts).toEqual([]);
     });
+
+    it('keeps prompts hidden while an off-page marked question is recovering', () => {
+      const prompts = computeSuggestedPrompts(
+        false,
+        [messageWithPrompts],
+        false,
+        'msg-question-outside-window',
+        true,
+      );
+      expect(prompts).toEqual([]);
+    });
   });
 
   describe('running state transition', () => {
@@ -336,4 +344,3 @@ Review the result
     });
   });
 });
-

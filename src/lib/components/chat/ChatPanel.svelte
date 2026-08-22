@@ -166,6 +166,7 @@
     deriveMarkedQuestionRecoveryState,
     deriveWizardPendingQuestions,
   } from './questions/wizard-gate';
+  import { classifyPendingQuestionMarker } from './questions/pending-questions';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
     classifyScrollbackGesture,
@@ -763,7 +764,7 @@
 
   // Hoist suggested prompts so keyboard handlers can reference them
   const suggestedPrompts = $derived.by((): SuggestedPrompt[] => {
-    if ($agentIsRunning$ || $agentMessages$.length === 0) {
+    if ($agentIsRunning$ || pendingQuestionRecoveryLoading || $agentMessages$.length === 0) {
       return [];
     }
     // Hide the moment the user submits a new prompt — before `agentIsRunning$`
@@ -809,14 +810,16 @@
   );
   $effect(() => {
     if ($agentSession$?.id !== agentId) return;
-    const marker = $agentSession$?.metadata?.pendingQuestionsMessageId;
+    const marker = classifyPendingQuestionMarker(
+      $agentSession$?.metadata?.pendingQuestionsMessageId,
+    );
     const tracked = $pendingQuestionRecovery$;
-    if (typeof marker !== 'string' || marker.length === 0) {
+    if (marker.kind !== 'set') {
       if (tracked) appStore.dispatch(pendingQuestionRecoveryCleared(agentId));
       return;
     }
     if ($transcriptHydration$ === 'settled' && markedQuestionRecovery?.shouldRequest) {
-      appStore.dispatch(pendingQuestionRecoveryRequested(agentId, marker));
+      appStore.dispatch(pendingQuestionRecoveryRequested(agentId, marker.messageId));
     }
   });
 

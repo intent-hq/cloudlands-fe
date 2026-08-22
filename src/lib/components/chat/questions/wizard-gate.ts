@@ -5,7 +5,11 @@ import {
   selectAgentMessageById,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
-import { derivePendingQuestions, type PendingQuestionSet } from './pending-questions';
+import {
+  classifyPendingQuestionMarker,
+  derivePendingQuestions,
+  type PendingQuestionSet,
+} from './pending-questions';
 
 /**
  * Production wizard gate: pending questions derive against the agent's OWN
@@ -30,34 +34,31 @@ export function deriveWizardPendingQuestions(
 ): PendingQuestionSet | null {
   const isTurnActive = selectAgentIsResponding.select(state, agentId);
   const session = state.agentSessions?.byAgentId[agentId];
-  const marker = session?.metadata?.pendingQuestionsMessageId;
+  const marker = classifyPendingQuestionMarker(session?.metadata?.pendingQuestionsMessageId);
   const markedMessage =
-    typeof marker === 'string' && marker.length > 0
-      ? (messages.find((message) => message.id === marker) ??
-        selectAgentMessageById.select(state, agentId, marker))
+    marker.kind === 'set'
+      ? (messages.find((message) => message.id === marker.messageId) ??
+        selectAgentMessageById.select(state, agentId, marker.messageId))
       : undefined;
   const recovery = state.chatState?.byAgentId[agentId]?.pendingQuestionRecovery;
   const recoveredPending =
-    typeof marker === 'string' &&
-    marker.length > 0 &&
+    marker.kind === 'set' &&
     !markedMessage &&
-    recovery?.messageId === marker &&
+    recovery?.messageId === marker.messageId &&
     recovery.status === 'found' &&
     recovery.questions &&
     recovery.questions.length > 0
-      ? { messageId: marker, questions: recovery.questions }
+      ? { messageId: marker.messageId, questions: recovery.questions }
       : null;
   const pending = recoveredPending
     ? isTurnActive || showingPendingUserMessage
       ? null
       : recoveredPending
     : derivePendingQuestions(
-        typeof marker === 'string' && marker.length > 0 && markedMessage
-          ? [markedMessage]
-          : messages,
+        marker.kind === 'set' && markedMessage ? [markedMessage] : messages,
         isTurnActive,
         showingPendingUserMessage,
-        typeof marker === 'string' ? marker : undefined,
+        marker.kind === 'set' ? marker.messageId : marker.kind === 'cleared' ? '' : undefined,
       );
   if (!pending) return null;
   if (isQuestionMessageDismissed(session?.metadata, pending.messageId)) return null;
@@ -75,20 +76,22 @@ export function deriveMarkedQuestionRecoveryState(
   state: StoreState,
   agentId: string,
 ): MarkedQuestionRecoveryState | null {
-  const marker = state.agentSessions?.byAgentId[agentId]?.metadata?.pendingQuestionsMessageId;
-  if (typeof marker !== 'string' || marker.length === 0) return null;
-  if (selectAgentMessageById.select(state, agentId, marker)) return null;
+  const marker = classifyPendingQuestionMarker(
+    state.agentSessions?.byAgentId[agentId]?.metadata?.pendingQuestionsMessageId,
+  );
+  if (marker.kind !== 'set') return null;
+  if (selectAgentMessageById.select(state, agentId, marker.messageId)) return null;
   const recovery = state.chatState?.byAgentId[agentId]?.pendingQuestionRecovery;
-  if (recovery?.messageId === marker) {
+  if (recovery?.messageId === marker.messageId) {
     // Exhaustion ends network retries, not marker authority: keep the ordinary
     // composer fail-closed until the daemon clears or replaces the marker.
     const hasRecoveredWizard =
       recovery.status === 'found' && !!recovery.questions && recovery.questions.length > 0;
     return {
-      messageId: marker,
+      messageId: marker.messageId,
       shouldRequest: false,
       loading: !hasRecoveredWizard,
     };
   }
-  return { messageId: marker, shouldRequest: true, loading: true };
+  return { messageId: marker.messageId, shouldRequest: true, loading: true };
 }
