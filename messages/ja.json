@@ -2006,6 +2006,8 @@
   "chat_modelPicker_installAuggieHint_label": "「npm install -g @augmentcode/auggie」でインストールするか、Auggie のセットアップフローを使用してください。",
   "chat_modelPicker_installCliHint_label": "{provider} CLI をインストールし、「{command}」が PATH にあることを確認してください。",
   "chat_modelPicker_installCodex_description": "Codex CLI をインストールすると、利用可能なすべてのモデルが表示されます。",
+  "chat_modelPicker_legacyModels_ariaLabel": "旧モデルの表示を切り替える",
+  "chat_modelPicker_legacyModels_label": "旧モデル",
   "chat_modelPicker_loadFailed_label": "モデルを読み込めませんでした",
   "chat_modelPicker_loadingMore_label": "さらにモデルを読み込み中…",
   "chat_modelPicker_loadingProviderModels_label": "{provider} のモデルを読み込み中…",

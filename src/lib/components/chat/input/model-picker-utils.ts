@@ -15,6 +15,7 @@ export interface ModelPickerOptionInput {
   costTier?: number;
   effortLevels?: string[];
   isDefault?: boolean;
+  isLegacyModel?: boolean;
 }
 
 const CODEX_EFFORT_LADDER = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'none'];
@@ -142,6 +143,7 @@ export function toDropdownOptions(models: ModelPickerOptionInput[]): DropdownOpt
       costTierLabel: formatCostTier(m.costTier),
       effortLevels: m.effortLevels,
       isDefault: m.isDefault,
+      isLegacyModel: m.isLegacyModel,
     },
   }));
 }

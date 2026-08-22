@@ -24,6 +24,7 @@ import {
   findModelFallbackOption,
   isUserProviderSettled,
   normalizeModelIdForMatch,
+  toDropdownOptions,
 } from './model-picker-utils';
 
 const sampleModel: AuggieModel = { value: 'auggie:sonnet4.6', label: 'Sonnet 4.6' };
@@ -41,6 +42,19 @@ describe('normalizeModelIdForMatch', () => {
 
   it('preserves an explicit different provider', () => {
     expect(normalizeModelIdForMatch('codex:gpt5.6-sol', 'auggie')).toBe('codex:gpt5.6-sol');
+  });
+});
+
+describe('toDropdownOptions', () => {
+  it('preserves legacy metadata in option data', () => {
+    expect(
+      toDropdownOptions([{ value: 'opus4.1', label: 'Opus 4.1', isLegacyModel: true }]),
+    ).toEqual([
+      expect.objectContaining({
+        value: 'opus4.1',
+        data: expect.objectContaining({ isLegacyModel: true }),
+      }),
+    ]);
   });
 });
 

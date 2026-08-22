@@ -42,6 +42,10 @@ export interface DropdownGroup {
   key: string;
   /** Display label for the group header */
   label: string;
+  /** Parent group key for nested groups. */
+  parentKey?: string;
+  /** Additional group text included in search with the rendered label. */
+  searchLabel?: string;
   /** Optional icon for the group */
   icon?: IconDefinition;
   /** Options within this group */

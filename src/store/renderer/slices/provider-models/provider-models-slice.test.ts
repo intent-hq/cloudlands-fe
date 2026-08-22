@@ -26,7 +26,7 @@ import type { ProviderModelsFetchResult, ProviderModelsState } from './provider-
 const AUGGIE_RESULT: ProviderModelsFetchResult = {
   models: [
     { value: 'sonnet4.5', label: 'Claude Sonnet 4.5' },
-    { value: 'haiku4.5', label: 'Claude Haiku 4.5' },
+    { value: 'haiku4.5', label: 'Claude Haiku 4.5', isLegacyModel: true },
   ],
 };
 
@@ -57,6 +57,7 @@ describe('providerModelsReducer', () => {
     // The creator stamps fetchedAt (ISO string) — the reducer stores it verbatim.
     expect(entry?.fetchedAt).toBe(action.payload[1].fetchedAt);
     expect(Number.isNaN(Date.parse(entry?.fetchedAt ?? ''))).toBe(false);
+    expect(entry?.models[1]?.isLegacyModel).toBe(true);
   });
 
   it('providerModelsLoaded carries warning/stale verbatim and keeps other entries', () => {
@@ -155,8 +156,6 @@ describe('provider-models selectors', () => {
     expect(selectProviderModelsClearEpoch.select(storeWith(initialState))).toBe(0);
     const cleared = providerModelsReducer(populated, providerModelsCacheCleared());
     expect(selectProviderModelsClearEpoch.select(storeWith(cleared))).toBe(1);
-    expect(
-      selectProviderModelsClearEpoch.select({} as unknown as StoreState),
-    ).toBe(0);
+    expect(selectProviderModelsClearEpoch.select({} as unknown as StoreState)).toBe(0);
   });
 });

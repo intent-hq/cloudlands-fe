@@ -27,6 +27,7 @@ interface WireModelInfo {
   badges?: WireModelBadge[];
   effortLevels?: string[];
   isDefault?: boolean;
+  isLegacyModel?: boolean;
   priority?: number;
 }
 
@@ -40,6 +41,7 @@ export interface ProviderModelInfo {
   badges?: WireModelBadge[];
   effortLevels?: string[];
   isDefault?: boolean;
+  isLegacyModel?: boolean;
   priority?: number;
 }
 
@@ -68,6 +70,7 @@ function wireModelToProviderModel(wire: WireModelInfo): ProviderModelInfo | null
   if (Array.isArray(wire.badges)) model.badges = wire.badges;
   if (Array.isArray(wire.effortLevels)) model.effortLevels = wire.effortLevels;
   if (wire.isDefault === true) model.isDefault = true;
+  if (wire.isLegacyModel === true) model.isLegacyModel = true;
   if (typeof wire.priority === 'number') model.priority = wire.priority;
   return model;
 }

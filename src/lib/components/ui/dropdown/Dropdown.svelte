@@ -33,6 +33,8 @@
     collisionPadding?: number;
     /** Whether search is enabled */
     searchable?: boolean;
+    /** Current search text */
+    searchValue?: string;
     /** Selection mode */
     multiple?: boolean;
     /** Whether the dropdown is disabled */
@@ -84,6 +86,7 @@
     collisionBoundary = null,
     collisionPadding = 8,
     searchable = true,
+    searchValue = $bindable(''),
     multiple = false,
     disabled = false,
     open = $bindable(false),
@@ -113,7 +116,6 @@
   let inlineContentRef = $state.raw<HTMLDivElement | null>(null);
   let inlineStyle = $state('');
   let inlineSide = $state<'top' | 'bottom'>('bottom');
-  let searchValue = $state('');
   let containerRef = $state.raw<HTMLDivElement | null>(null);
   let inputRef = $state.raw<HTMLInputElement | null>(null);
 
@@ -168,7 +170,7 @@
         options: deduplicateOptions(
           group.options.filter((opt) => {
             const haystack =
-              `${group.label ?? ''} ${opt.label} ${opt.description ?? ''}`.toLowerCase();
+              `${group.label ?? ''} ${group.searchLabel ?? ''} ${opt.label} ${opt.description ?? ''}`.toLowerCase();
             return terms.every((term) => haystack.includes(term));
           }),
         ),
