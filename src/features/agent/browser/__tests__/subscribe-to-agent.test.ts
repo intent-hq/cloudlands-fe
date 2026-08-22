@@ -25,10 +25,11 @@ import {
   renameSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 
-const { storeRef, stateListeners, selectorSubscribeSpy } = vi.hoisted(() => ({
+const { storeRef, stateListeners, selectorSubscribeSpy, capturedSelectorFuncs } = vi.hoisted(() => ({
   storeRef: { current: null as any },
   stateListeners: new Set<() => void>(),
   selectorSubscribeSpy: vi.fn(),
+  capturedSelectorFuncs: [] as Array<(state: any, ...args: any[]) => any>,
 }));
 
 const synchronousStateMiddleware = (() => (next: any) => (action: any) => {
@@ -54,7 +55,10 @@ vi.mock('$store/renderer/store', async () => {
       return storeRef.current?.state;
     },
     createSelector: (selectorFunc: (state: any, ...args: any[]) => any) => Object.assign(
-      (...args: any[]) => readable(() => selectorFunc(mockStore.state, ...args)),
+      (...args: any[]) => {
+        capturedSelectorFuncs.push(selectorFunc);
+        return readable(() => selectorFunc(mockStore.state, ...args));
+      },
       {
         select: selectorFunc,
         effect: (...args: any[]) => selectorFunc(mockStore.state, ...args),
@@ -114,9 +118,45 @@ describe('subscribeToAgent (Redux-reactive)', () => {
   afterEach(() => {
     stateListeners.clear();
     selectorSubscribeSpy.mockClear();
+    capturedSelectorFuncs.length = 0;
     store.dispose();
     storeRef.current = null;
     vi.restoreAllMocks();
+  });
+
+  it('backs the shared subscription with a path-accessing selector, not an identity selector', () => {
+    // Regression: Themis cached selectors invalidate by tracked accessed
+    // paths. An identity selector ((state) => state) records no accessed
+    // paths, so the readable never re-emitted after its initial value and
+    // subscribers (e.g. the tab menu's Copy conversation gate) stayed stale.
+    const cb = vi.fn();
+    const unsubscribe = subscribeToAgent('agent-1', cb);
+
+    expect(capturedSelectorFuncs.length).toBeGreaterThan(0);
+    // Find the shared-subscription selector by its result rather than by
+    // capture index, so unrelated readable creations added later cannot make
+    // this test silently assert against the wrong selector.
+    const storeState = store.state;
+    const sharedSelector = capturedSelectorFuncs.find(
+      (fn) => fn(storeState) === storeState.agentSessions,
+    );
+    expect(sharedSelector).toBeDefined();
+    if (!sharedSelector) return;
+    const accessedPaths: string[] = [];
+    const trackingState = new Proxy(
+      { agentSessions: { byAgentId: {} } } as Record<string, unknown>,
+      {
+        get(target, prop) {
+          if (typeof prop === 'string') accessedPaths.push(prop);
+          return Reflect.get(target, prop);
+        },
+      },
+    );
+    const result = sharedSelector(trackingState);
+
+    expect(result).not.toBe(trackingState);
+    expect(accessedPaths).toContain('agentSessions');
+    unsubscribe();
   });
 
   it('invokes the callback synchronously with the current value on subscribe', () => {
@@ -137,6 +177,23 @@ describe('subscribeToAgent (Redux-reactive)', () => {
 
     expect(cb).toHaveBeenCalledTimes(1);
     expect(cb.mock.calls[0][0]).toBeUndefined();
+    unsubscribe();
+  });
+
+  it('re-emits the session when it becomes available after an initial undefined', () => {
+    // Regression: the tab menu's Copy conversation gate subscribes before the
+    // session lands in the store (initial undefined) and must re-enable once a
+    // later bulkUpsertSessions makes the agent available.
+    const cb = vi.fn();
+    const unsubscribe = subscribeToAgent('agent-1', cb);
+
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb.mock.calls[0][0]).toBeUndefined();
+
+    store.dispatch(bulkUpsertSessions([makeAgent()], { preserveExplicitRuntimeFlags: false }));
+
+    expect(cb).toHaveBeenCalledTimes(2);
+    expect(cb.mock.calls[1][0]?.name).toBe('Initial Name');
     unsubscribe();
   });
 

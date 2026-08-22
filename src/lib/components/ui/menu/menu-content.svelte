@@ -11,7 +11,10 @@
     portal = true,
     portalProps,
     sideOffset = 4,
-    maxHeight = 'min(24rem, calc(100dvh - 1rem))',
+    // bits-ui 2.18.1: DropdownMenu.Content sizes via the 'dropdown-menu'-prefixed
+    // floating CSS vars, while SubContent (menu-sub-content.svelte) uses the shared
+    // 'menu' prefix — the differing var names between the two files are intentional.
+    maxHeight = 'var(--bits-dropdown-menu-content-available-height, calc(100dvh - 1rem))',
     ...restProps
   }: MenuPrimitive.ContentProps & {
     portal?: boolean;

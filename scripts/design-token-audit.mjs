@@ -100,8 +100,9 @@ const runtimePatterns = [
   /^--color-[a-z]+-[0-9]{2,3}$/,
   /^--radix-/,
   /^--bits-popover-content-available-(height|width)$/,
-  // Set by bits-ui at runtime on dropdown-menu content; externally owned, not a design token.
-  /^--bits-dropdown-menu-content-available-height$/,
+  // Set by bits-ui at runtime on menu content (dropdown-menu content and the shared
+  // menu primitive used by SubContent); externally owned, not design tokens.
+  /^--bits-(?:dropdown-)?menu-content-available-height$/,
 ];
 const exceptionFiles = new Map(
   allowlist.undefined.map((entry) => [entry.token, new Set(entry.allowedFiles ?? [])]),

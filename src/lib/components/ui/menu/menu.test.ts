@@ -253,22 +253,39 @@ describe('Menu metadata and compatibility', () => {
     expect(menu.className).not.toMatch(/bg-(?:white|black|gray|slate|zinc|neutral)-?/);
   });
 
-  it('caps content height at the 24rem default when no maxHeight override is provided', async () => {
+  it('bounds content height by the viewport-derived bits-ui var when no maxHeight override is provided', async () => {
     render(MenuTestHarness);
     await openMenu();
     const menu = screen.getByRole('menu');
-    // jsdom's CSSOM drops the nested calc() keyword when serializing min().
     expect(menu.getAttribute('style')).toMatch(
-      /max-height: min\(24rem, (calc\()?100dvh - 1rem\)?\)/,
+      /max-height: var\(--bits-dropdown-menu-content-available-height, ?calc\(100dvh - 1rem\)\)/,
     );
+    expect(menu.getAttribute('style')).not.toContain('24rem');
   });
 
-  it('keeps the 24rem default cap through the DropdownMenu wrapper when contentMaxHeight is not passed', async () => {
+  it('keeps the viewport-bounded default through the DropdownMenu wrapper when contentMaxHeight is not passed', async () => {
     render(DropdownMenu, { props: { open: true } });
     await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
     const menu = screen.getByRole('menu');
     expect(menu.getAttribute('style')).toMatch(
-      /max-height: min\(24rem, (calc\()?100dvh - 1rem\)?\)/,
+      /max-height: var\(--bits-dropdown-menu-content-available-height, ?calc\(100dvh - 1rem\)\)/,
+    );
+    expect(menu.getAttribute('style')).not.toContain('24rem');
+  });
+
+  it('bounds submenu content height by the menu-prefixed bits-ui var', async () => {
+    // SubContent uses --bits-menu-content-available-height (the shared 'menu'
+    // prefix), not the 'dropdown-menu' prefix the root content uses.
+    render(MenuTestHarness);
+    await openMenu();
+    const more = screen.getByRole('menuitem', { name: 'More' });
+    more.focus();
+    await fireEvent.keyDown(more, { key: 'ArrowRight' });
+    await screen.findByRole('menuitem', { name: 'Archive' });
+    const subContent = document.querySelector('[data-slot="menu-sub-content"]');
+    expect(subContent).toBeTruthy();
+    expect(subContent?.getAttribute('style')).toMatch(
+      /max-height: var\(--bits-menu-content-available-height, ?calc\(100dvh - 1rem\)\)/,
     );
   });
 });
