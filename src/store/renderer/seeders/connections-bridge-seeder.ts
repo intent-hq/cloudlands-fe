@@ -2,7 +2,7 @@
  * Connections IPC bridge — mock fallback for the multi-backend connect channels.
  *
  * Bridges the `connections:*` request/response channels (`list`,
- * `capture-fingerprint`, `add`, `forget`, `switch`) so the connections service
+ * `capture-fingerprint`, `add`, `forget`, `open`, `switch`) so the connections service
  * thunks resolve in bridge-less builds (browser mock) and tests instead of
  * rejecting with UnbridgedMockIpcChannelError.
  *
