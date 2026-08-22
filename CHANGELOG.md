@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.79.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.79.0...v2.79.1) (2026-08-22)
+
+
+### 🐛 Bug Fixes
+
+* bound screenshot Page-domain CDP calls and fall back to capturePage ([#1578](https://github.com/intent-hq/cloudlands-fe/issues/1578)) ([0f9d130](https://github.com/intent-hq/cloudlands-fe/commit/0f9d1303d6a5025b5911fa96ad9a71cd806d7c6d))
+* prevent broken-pipe logging loops ([#1573](https://github.com/intent-hq/cloudlands-fe/issues/1573)) ([e3cb8dd](https://github.com/intent-hq/cloudlands-fe/commit/e3cb8ddc557aa9d95255fc5fa82f4167a7aeca56))
+
 ## [2.79.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.78.2...v2.79.0) (2026-08-22)
 
 
