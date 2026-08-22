@@ -111,6 +111,15 @@ jobs:
               echo "::error::Fetched beta latest-mac.yml but could not parse version - version $VERSION was never promoted to beta? Promote it to beta first (Promote Beta workflow), or re-run with skip_beta_check to bypass."
               exit 1
             fi
+            # Guard against pre-channel-model beta feeds: a prerelease-suffixed
+            # version (e.g. 2.0.7-beta.1, written directly by an old tag build)
+            # was never promoted by the Promote Beta workflow, and sort -V
+            # orders it AFTER its base version (the opposite of semver), so it
+            # must be rejected before the comparison below.
+            if [[ ! "$BETA_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              echo "::error::Beta feed version '$BETA_VERSION' is not a promoted X.Y.Z version (pre-channel-model beta feed?) - version $VERSION was never promoted to beta. Promote it to beta first (Promote Beta workflow), or re-run with skip_beta_check to bypass."
+              exit 1
+            fi
           elif [ "$HTTP_CODE" = "404" ]; then
             echo "::error::No beta channel feed found - version $VERSION was never promoted to beta. Promote it to beta first (Promote Beta workflow), or re-run with skip_beta_check to bypass."
             exit 1
