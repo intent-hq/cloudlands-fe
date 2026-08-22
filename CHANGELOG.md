@@ -4,6 +4,27 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.80.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.79.2...v2.80.0) (2026-08-22)
+
+
+### 🚀 Features
+
+* **ci:** add beta-first guard to release-stable workflow ([#1584](https://github.com/intent-hq/cloudlands-fe/issues/1584)) ([ff634e7](https://github.com/intent-hq/cloudlands-fe/commit/ff634e79f54b1a3c11196f48dcb47695f8d8056a))
+* group legacy Auggie models ([#1489](https://github.com/intent-hq/cloudlands-fe/issues/1489)) ([8c6dd52](https://github.com/intent-hq/cloudlands-fe/commit/8c6dd526dd1eb0659d9d3574d6d7d57cfab21131))
+* replace native quit dialog with in-app quit confirmation modal ([#1588](https://github.com/intent-hq/cloudlands-fe/issues/1588)) ([f4f8ca9](https://github.com/intent-hq/cloudlands-fe/commit/f4f8ca9b32148bc763a7d0eb5cc9ae29c5be94fc))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.36 ([#1589](https://github.com/intent-hq/cloudlands-fe/issues/1589)) ([de7d9b0](https://github.com/intent-hq/cloudlands-fe/commit/de7d9b0ae7e5320d7b892fb481899547e107fe4f))
+* color merged PR workspace status purple ([#1587](https://github.com/intent-hq/cloudlands-fe/issues/1587)) ([83bdac8](https://github.com/intent-hq/cloudlands-fe/commit/83bdac8b96f0b705a9d1b85995a8202663839cf8))
+* hide irrelevant reasoning footer ([#1490](https://github.com/intent-hq/cloudlands-fe/issues/1490)) ([fa03cfe](https://github.com/intent-hq/cloudlands-fe/commit/fa03cfe2a3d056b03bcd7ee8805b94446893aaec))
+* open attachment lightbox with full-res image despite throttled selector lag ([#1585](https://github.com/intent-hq/cloudlands-fe/issues/1585)) ([7c7e9b4](https://github.com/intent-hq/cloudlands-fe/commit/7c7e9b4cefe84ccf26bf38cf2cbdbcca74a61ebd))
+* prevent answered questions from reappearing ([#1526](https://github.com/intent-hq/cloudlands-fe/issues/1526)) ([c2de1a2](https://github.com/intent-hq/cloudlands-fe/commit/c2de1a28ee8f5fc316f3c8429d4c6107cb7ffb55))
+* re-register webview for CDP after a panel drag recreates the guest ([#1581](https://github.com/intent-hq/cloudlands-fe/issues/1581)) ([afdc69d](https://github.com/intent-hq/cloudlands-fe/commit/afdc69d7efe72fa9f2bd90333a4c9f3e438944e1))
+* reconcile status after failed staging ([#1491](https://github.com/intent-hq/cloudlands-fe/issues/1491)) ([46e212a](https://github.com/intent-hq/cloudlands-fe/commit/46e212a9d0d8397e641ced4d4fcf170f710ffa98))
+* spare hosted still-acquiring warm reopens from subscription sweeps ([#1586](https://github.com/intent-hq/cloudlands-fe/issues/1586)) ([db0a552](https://github.com/intent-hq/cloudlands-fe/commit/db0a5522e4da906e4d7bbaf893d165ff5863c6d3))
+
 ## [2.79.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.79.1...v2.79.2) (2026-08-22)
 
 
