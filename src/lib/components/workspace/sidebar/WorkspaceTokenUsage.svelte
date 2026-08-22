@@ -157,7 +157,7 @@
   >
     <button
       type="button"
-      class="group flex w-full min-w-0 flex-col gap-1 bg-muted/10 px-2 py-1.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
+      class="group flex w-full min-w-0 flex-col gap-1 bg-muted/10 px-2 py-1.5 text-left outline-none transition-colors hover:bg-transparent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none dark:hover:bg-muted/30"
       data-testid="token-usage-disclosure"
       aria-label={expanded
         ? m.workspace_tokenUsage_collapse_ariaLabel()

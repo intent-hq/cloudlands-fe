@@ -16,9 +16,9 @@ function contrastRatio(first: Rgba, second: Rgba): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-test('exposes compact values and keeps cache text readable in both themes', async ({ mount }) => {
+test('exposes compact values and keeps summary text readable on hover', async ({ mount }) => {
   const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
-    props: { theme: 'light' },
+    props: { theme: 'light', width: 248 },
   });
   const disclosure = component.locator('button[aria-controls^="workspace-token-usage-details-"]');
 
@@ -28,11 +28,18 @@ test('exposes compact values and keeps cache text readable in both themes', asyn
   await expect(disclosure).toHaveAccessibleDescription('1K processed 70% Cached');
 
   for (const theme of ['light', 'dark'] as const) {
-    await component.update({ props: { theme } });
+    await component.update({ props: { theme, width: 248 } });
     await expect(component).toHaveAttribute('data-theme', theme);
-    const colors = await component
-      .locator('#workspace-token-usage-cache-token-usage-accessibility-ct > span:first-child')
-      .evaluate((element) => {
+    await disclosure.hover();
+    const textColors = await disclosure
+      .locator(
+        [
+          '#workspace-token-usage-title-token-usage-accessibility-ct',
+          '#workspace-token-usage-processed-token-usage-accessibility-ct > span',
+          '#workspace-token-usage-cache-token-usage-accessibility-ct > span',
+        ].join(', '),
+      )
+      .evaluateAll((elements) => {
         const paint = (values: string[]): [number, number, number, number] => {
           const canvas = document.createElement('canvas');
           canvas.width = 1;
@@ -44,17 +51,25 @@ test('exposes compact values and keeps cache text readable in both themes', asyn
           }
           return [...context.getImageData(0, 0, 1, 1).data];
         };
-        const backgrounds: string[] = [];
-        for (let node: Element | null = element; node; node = node.parentElement) {
-          backgrounds.push(getComputedStyle(node).backgroundColor);
-        }
-        return {
-          foreground: paint([getComputedStyle(element).color]),
-          background: paint(backgrounds.reverse()),
-        };
+        return elements.map((element) => {
+          const backgrounds: string[] = [];
+          for (let node: Element | null = element; node; node = node.parentElement) {
+            backgrounds.push(getComputedStyle(node).backgroundColor);
+          }
+          return {
+            label: element.textContent?.trim() ?? '',
+            foreground: paint([getComputedStyle(element).color]),
+            background: paint(backgrounds.reverse()),
+          };
+        });
       });
 
-    expect(contrastRatio(colors.foreground, colors.background), theme).toBeGreaterThanOrEqual(4.5);
+    for (const colors of textColors) {
+      expect(
+        contrastRatio(colors.foreground, colors.background),
+        `${theme} hover: ${colors.label}`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
   }
 });
 
