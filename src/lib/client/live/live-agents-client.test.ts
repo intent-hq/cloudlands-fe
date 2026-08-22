@@ -1545,6 +1545,101 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     );
   });
 
+  describe('listUserMessages', () => {
+    // PROTOCOL §5.5 (v7.3): `agent.listUserMessages` returns every user-role
+    // message as lightweight index items, oldest→newest, unpaged —
+    // `{ agentId, items: [{ id, preview, createdAt, metadata? }], total }`.
+    it('forwards agent.listUserMessages with agentId only and returns the typed index', async () => {
+      backend.onRequest('agent.listUserMessages', () => ({
+        agentId: 'agent-1',
+        items: [
+          { id: 'msg-1', preview: 'first question', createdAt: '2026-08-01T00:00:00Z' },
+          {
+            id: 'msg-2',
+            preview: '[WORKSPACE EVENTS] automated wake',
+            createdAt: '2026-08-02T00:00:00Z',
+            metadata: { source: 'system' },
+          },
+        ],
+        total: 2,
+      }));
+      const client = new LiveAgentsClient();
+
+      const result = await client.listUserMessages('agent-1');
+      // `previewChars` must be absent when the caller omitted it so the
+      // daemon default (300) applies.
+      expect(backend.requests[0]).toEqual({
+        method: 'agent.listUserMessages',
+        params: { agentId: 'agent-1' },
+      });
+      expect(result).toEqual({
+        ok: true,
+        items: [
+          { id: 'msg-1', preview: 'first question', createdAt: '2026-08-01T00:00:00Z' },
+          {
+            id: 'msg-2',
+            preview: '[WORKSPACE EVENTS] automated wake',
+            createdAt: '2026-08-02T00:00:00Z',
+            // metadata passes through verbatim (automated-row filtering
+            // stays client-side).
+            metadata: { source: 'system' },
+          },
+        ],
+        total: 2,
+      });
+      // metadata must be ABSENT (not defaulted) on items that omit it.
+      if (!result.ok) throw new Error('expected ok result');
+      expect('metadata' in result.items[0]).toBe(false);
+    });
+
+    it('forwards previewChars when supplied', async () => {
+      backend.onRequest('agent.listUserMessages', () => ({ agentId: 'agent-1', items: [], total: 0 }));
+      const client = new LiveAgentsClient();
+
+      const result = await client.listUserMessages('agent-1', 120);
+      expect(backend.requests[0]).toEqual({
+        method: 'agent.listUserMessages',
+        params: { agentId: 'agent-1', previewChars: 120 },
+      });
+      expect(result).toEqual({ ok: true, items: [], total: 0 });
+    });
+
+    it('marks an old daemon lacking the method as unsupported (no throw)', async () => {
+      // -32601 = Method not found: the daemon predates protocol v7.3. The
+      // typed failure lets the navigator degrade to tail-only items.
+      backend.onRequest('agent.listUserMessages', () => {
+        throw new BackendError(
+          buildErrorPayload('BACKEND_ERROR', 'Method not found', { rpcCode: -32601 }),
+        );
+      });
+      const client = new LiveAgentsClient();
+
+      const result = await client.listUserMessages('agent-old');
+      expect(result).toEqual({ ok: false, unsupported: true, error: 'Method not found' });
+    });
+
+    it('folds other daemon failures into ok:false without the unsupported flag', async () => {
+      // e.g. the §5.5 not-found scope guard (-32602, unknown agentId) or a
+      // transport failure — typed, ignorable, but NOT an old-daemon marker.
+      backend.onRequest('agent.listUserMessages', () => {
+        throw new BackendError(
+          buildErrorPayload('INVALID_PARAMS', 'not found: agent session agent-ghost', {
+            rpcCode: -32602,
+            data: { code: 'not-found' },
+          }),
+        );
+      });
+      const client = new LiveAgentsClient();
+
+      const result = await client.listUserMessages('agent-ghost');
+      expect(result).toEqual({
+        ok: false,
+        unsupported: false,
+        error: 'not found: agent session agent-ghost',
+      });
+    });
+  });
+
   describe('retry', () => {
     it('calls agent.retry with correct params and returns ok:true on success', async () => {
       backend.onRequest('agent.retry', (params) => {

@@ -25,6 +25,8 @@ import type {
   RespondPermissionResult,
   SubscriptionHandler,
   Unsubscribe,
+  UserMessageIndexItem,
+  UserMessageIndexResult,
 } from '../app-client';
 import { backendRequest } from './backend-transport';
 import { createDeltaSubscription } from './delta-subscription';
@@ -203,6 +205,54 @@ export class LiveAgentsClient implements AgentsClient {
       );
     }
     return block;
+  }
+
+  // Full user-message index (`agent.listUserMessages`, §5.5, v7.3): every
+  // user-role row as a lightweight `{ id, preview, createdAt, metadata? }`
+  // item, oldest→newest, deliberately unpaged. `previewChars` only rides
+  // along when supplied so the daemon default (300) applies otherwise.
+  // Failures fold into a typed result instead of throwing so the navigator
+  // can silently degrade to its tail-derived items: -32601 (older daemon
+  // lacking the method) is marked `unsupported: true`; any other failure
+  // keeps `unsupported: false`.
+  async listUserMessages(agentId: string, previewChars?: number): Promise<UserMessageIndexResult> {
+    const params: Record<string, unknown> = { agentId };
+    if (previewChars !== undefined) params.previewChars = previewChars;
+    try {
+      const result = await backendRequest<{ items?: unknown[]; total?: unknown } | undefined>(
+        'agent.listUserMessages',
+        params,
+      );
+      const rawItems = Array.isArray(result?.items) ? result.items : [];
+      const items = rawItems
+        .filter((raw): raw is Record<string, unknown> => !!raw && typeof raw === 'object')
+        .map((raw) => {
+          const item: UserMessageIndexItem = {
+            id: String(raw.id ?? ''),
+            preview: String(raw.preview ?? ''),
+            createdAt: String(raw.createdAt ?? ''),
+          };
+          // `metadata` is the persisted messageMetadata passed through
+          // verbatim when present (§5.5) — never defaulted when absent.
+          if (raw.metadata && typeof raw.metadata === 'object') {
+            item.metadata = raw.metadata as Record<string, unknown>;
+          }
+          return item;
+        });
+      const total = typeof result?.total === 'number' ? result.total : items.length;
+      return { ok: true, items, total };
+    } catch (error) {
+      const unsupported =
+        !!error &&
+        typeof error === 'object' &&
+        'rpcCode' in error &&
+        (error as { rpcCode?: unknown }).rpcCode === -32601;
+      return {
+        ok: false,
+        unsupported,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   // Mutations forward to the daemon (§7.2); daemon agent-lifecycle events
