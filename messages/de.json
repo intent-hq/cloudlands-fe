@@ -5900,7 +5900,7 @@
   "settings_agentFeatures_prMonitorDebounce_saving": "Wird gespeichert…",
   "settings_agentFeatures_prMonitorDebounce_invalid": "Geben Sie eine ganze Zahl zwischen 10 und 86.400 Sekunden ein.",
   "settings_agentFeatures_taskGraph_label": "Aufgabengraph-Koordination",
-  "settings_agentFeatures_taskGraph_description": "Bringt neuen Agentensitzungen den Koordinationsworkflow des Aufgabengraphen bei (Stapeldelegation, Aufgabenbeziehungen, Wecksignale bei Entsperrung); standardmäßig deaktiviert",
+  "settings_agentFeatures_taskGraph_description": "Aktiviert den Koordinationsworkflow des Aufgabengraphen (Stapeldelegation, Aufgabenbeziehungen, Wecksignale bei Entsperrung)",
   "chat_monitoredPrs_row_ariaLabel": "Überwachte Pull Requests",
   "chat_monitoredPrs_monitoring_label": "PR {repo} #{number} wird überwacht: {title}",
   "chat_monitoredPrs_status_ready": "Offen und bereit zum Zusammenführen.",

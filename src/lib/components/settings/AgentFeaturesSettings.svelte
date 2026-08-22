@@ -5,12 +5,10 @@
    *
    * Reads/writes the daemon-owned `agentFeatures.*` settings via
    * settings.list / settings.update (PROTOCOL §5.12), following the
-   * WorkspaceApiSettings pattern. Ten booleans default true:
+   * WorkspaceApiSettings pattern. All eleven booleans default true:
    * backgroundHooks, hostExec, scripts, terminalAccess, browserAutomation,
    * richChatBlocks, structuredQuestions, attentionRequests, stateSnapshot,
-   * prMonitor. `taskGraph` is the one default-off (opt-in) boolean
-   * (intent-hq/monorepo#2445): it gates task-graph teaching for new agent
-   * sessions, so an absent entry renders off, not on.
+   * prMonitor, taskGraph.
    *
    * Toggles are captured at agent-session creation, so changes apply to
    * newly created sessions only — existing sessions keep the surface they
@@ -35,27 +33,20 @@
   } from '$lib/components/settings/agent-feature-definitions';
 
   // i18n-ignore (wire setting path, not user-facing text)
-  const TASK_GRAPH_PATH = 'agentFeatures.taskGraph';
-
-  // i18n-ignore (wire setting path, not user-facing text)
   const DEBOUNCE_PATH = 'prMonitor.debounceSeconds';
   // Daemon-side registered bounds for prMonitor.debounceSeconds (§6.9).
   const MIN_DEBOUNCE_SECONDS = 10;
   const MAX_DEBOUNCE_SECONDS = 86400;
 
-  // taskGraph is the one opt-in feature (default off); all others default on,
-  // so an absent settings.list entry coerces to the feature's own default.
-  function coerceValue(path: FeaturePath, value: unknown): boolean {
-    return path === TASK_GRAPH_PATH ? value === true : value !== false;
+  // All features default on, so an absent settings.list entry coerces to on.
+  function coerceValue(value: unknown): boolean {
+    return value !== false;
   }
 
   let loading = $state(true);
-  // Seed from daemon defaults (PROTOCOL §5.12: all on except taskGraph)
+  // Seed from daemon defaults (PROTOCOL §5.12: all on)
   let values = $state<Record<FeaturePath, boolean>>(
-    Object.fromEntries(FEATURE_PATHS.map((path) => [path, path !== TASK_GRAPH_PATH])) as Record<
-      FeaturePath,
-      boolean
-    >,
+    Object.fromEntries(FEATURE_PATHS.map((path) => [path, true])) as Record<FeaturePath, boolean>,
   );
 
   // Debounce window (§6.9): persisted seconds + input mirror, min 10.
@@ -73,7 +64,7 @@
       const settings = await appClient.settings.list();
       for (const path of FEATURE_PATHS) {
         const entry = settings.find((s: { path: string; value: unknown }) => s.path === path);
-        values[path] = coerceValue(path, entry?.value);
+        values[path] = coerceValue(entry?.value);
       }
       const debounce = settings.find(
         (s: { path: string; value: unknown }) => s.path === DEBOUNCE_PATH,
@@ -101,7 +92,7 @@
       const applied = result.find((r: { path: string; value: unknown }) => r.path === path);
       if (applied && applied.value !== checked) {
         toast.error(m.settings_agentFeatures_rollbackError());
-        values[path] = coerceValue(path, applied.value);
+        values[path] = coerceValue(applied.value);
         return;
       }
 
