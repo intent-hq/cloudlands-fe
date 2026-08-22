@@ -58,7 +58,7 @@
   --theme-light-accent: 20 4.7619047619% 87.6470588235%;
   --theme-light-accent-foreground: 0 0% 0%;
   --theme-light-muted: 20 4.7619047619% 87.6470588235%;
-  --theme-light-muted-foreground: var(--theme-dark-accent);
+  --theme-light-muted-foreground: 60 0.826446281% 27.7254901961%;
   --theme-light-destructive: 0 65% 94%;
   --theme-light-destructive-foreground: 0 63% 31%;
   --theme-light-border: 20 4.7619047619% 87.6470588235%;
@@ -99,7 +99,7 @@
   --theme-dark-accent: 60 0.826446281% 23.7254901961%;
   --theme-dark-accent-foreground: 20 4.7619047619% 87.6470588235%;
   --theme-dark-muted: 0 0% 14.9019607843%;
-  --theme-dark-muted-foreground: 20 4.7619047619% 87.6470588235%;
+  --theme-dark-muted-foreground: 20 4.7619047619% 83.6470588235%;
   --theme-dark-destructive: 0 35% 22%;
   --theme-dark-destructive-foreground: 0 70% 88%;
   --theme-dark-border: 60 0.826446281% 23.7254901961%;

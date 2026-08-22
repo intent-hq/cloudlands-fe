@@ -76,7 +76,7 @@ const DEFAULT_NEUTRAL_RGB = {
     accent: 'rgb(225, 223, 222)',
     'accent-foreground': 'rgb(0, 0, 0)',
     muted: 'rgb(225, 223, 222)',
-    'muted-foreground': 'rgb(61, 61, 60)',
+    'muted-foreground': 'rgb(71, 71, 70)',
     border: 'rgb(225, 223, 222)',
     input: 'rgb(0, 0, 0)',
     sidebar: 'rgb(245, 245, 245)',
@@ -98,7 +98,7 @@ const DEFAULT_NEUTRAL_RGB = {
     accent: 'rgb(61, 61, 60)',
     'accent-foreground': 'rgb(225, 223, 222)',
     muted: 'rgb(38, 38, 38)',
-    'muted-foreground': 'rgb(225, 223, 222)',
+    'muted-foreground': 'rgb(215, 213, 211)',
     border: 'rgb(61, 61, 60)',
     input: 'rgb(225, 223, 222)',
     sidebar: 'rgb(38, 38, 38)',
@@ -224,11 +224,11 @@ function productionSurfaceFixture(): string {
     @media (max-width: 800px) { .workspace { grid-template-columns: 112px 1fr; } .canvas { grid-template-columns: 1fr; } }
   </style></head><body>
     <main class="workspace">
-      <aside class="sidebar">Sidebar<div class="card">Raised card</div></aside>
+      <aside class="sidebar">Sidebar<p class="muted-copy" data-secondary-surface="sidebar">Workspace activity</p><div class="card">Raised card</div></aside>
       <section class="canvas">
-        <article class="panel" data-panel-kind="populated">Populated panel<p class="muted-copy">Metadata</p></article>
-        <article class="panel" data-panel-kind="pristine">Pristine panel<p class="muted-copy">Helper copy</p></article>
-        <article class="panel" data-panel-kind="missing">Missing panel fallback</article>
+        <article class="panel" data-panel-kind="populated">Chat panel<p class="muted-copy" data-secondary-surface="chat">Message metadata</p></article>
+        <article class="panel" data-panel-kind="pristine">Workspace panel<p class="muted-copy" data-secondary-surface="workspace">Workspace metadata</p></article>
+        <article class="panel" data-panel-kind="missing">Settings panel<p class="muted-copy" data-secondary-surface="settings">Setting description</p></article>
         <article class="panel chief-host" data-chief-host>Chief<div class="chief-transcript">Transcript</div><div class="chief-composer">Composer</div></article>
         <article class="panel"><button class="model-picker">Model picker</button><div class="avatar" aria-label="Neutral avatar">A</div></article>
       </section>
@@ -385,6 +385,16 @@ test('production-shaped theme surfaces remain semantic across modes, widths, and
             cardToken: roleColor('card'),
             muted: style('.muted-copy').color,
             foreground: roleColor('foreground'),
+            secondarySurfaces: Object.fromEntries(
+              [...document.querySelectorAll('[data-secondary-surface]')].map((element) => {
+                const foreground = getComputedStyle(element).color;
+                const background = getComputedStyle(element.parentElement!).backgroundColor;
+                return [
+                  element.getAttribute('data-secondary-surface')!,
+                  { foreground, background },
+                ];
+              }),
+            ),
             chief: [
               style('[data-chief-host]').backgroundColor,
               style('.chief-transcript').backgroundColor,
@@ -404,6 +414,22 @@ test('production-shaped theme surfaces remain semantic across modes, widths, and
         expect(new Set(evidence.panels)).toEqual(new Set([evidence.background]));
         expect(evidence.card).toBe(evidence.cardToken);
         expect(evidence.muted).not.toBe(evidence.foreground);
+        expect(Object.keys(evidence.secondarySurfaces).sort()).toEqual([
+          'chat',
+          'settings',
+          'sidebar',
+          'workspace',
+        ]);
+        for (const [surface, colors] of Object.entries(evidence.secondarySurfaces)) {
+          expect(colors.foreground, surface).toBe(evidence.muted);
+          const values = [luminance(colors.foreground), luminance(colors.background)].sort(
+            (first, second) => second - first,
+          );
+          expect(
+            (values[0] + 0.05) / (values[1] + 0.05),
+            `${surface} secondary text`,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
         const mutedLuminance = [luminance(evidence.muted), luminance(evidence.background)].sort(
           (first, second) => second - first,
         );
