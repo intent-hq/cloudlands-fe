@@ -222,7 +222,8 @@ export class Logger {
           break;
       }
     } catch (error) {
-      if (!stream || !containConsoleStreamError(error, stream)) throw error;
+      if (!stream || !isClosedConsoleStreamError(error)) throw error;
+      containConsoleStreamError(error, stream);
     }
   }
 

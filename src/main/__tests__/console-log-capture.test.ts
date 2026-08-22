@@ -25,8 +25,10 @@ vi.mock('fs', () => {
   const fsMock = {
     existsSync: vi.fn((filePath: string) => mocks.files.has(filePath)),
     mkdirSync: vi.fn(),
-    openSync: vi.fn((filePath: string) => {
-      if (!mocks.files.has(filePath)) mocks.files.set(filePath, Buffer.alloc(0));
+    openSync: vi.fn((filePath: string, flags: string) => {
+      if (flags === 'w' || !mocks.files.has(filePath)) {
+        mocks.files.set(filePath, Buffer.alloc(0));
+      }
       const fd = mocks.nextFd++;
       mocks.descriptors.set(fd, filePath);
       return fd;
@@ -37,6 +39,16 @@ vi.mock('fs', () => {
     closeSync: vi.fn((fd: number) => {
       mocks.descriptors.delete(fd);
     }),
+    readSync: vi.fn(
+      (fd: number, target: Uint8Array, offset: number, length: number, position: number) => {
+        const filePath = mocks.descriptors.get(fd);
+        if (!filePath) throw new Error('bad descriptor');
+        const source = mocks.files.get(filePath)!;
+        const bytesRead = Math.min(length, source.length - position);
+        source.copy(target, offset, position, position + bytesRead);
+        return bytesRead;
+      },
+    ),
     writeSync: vi.fn((fd: number, bytes: Uint8Array) => {
       if (mocks.failWrite) throw new Error('write failed');
       const filePath = mocks.descriptors.get(fd);
@@ -91,13 +103,20 @@ afterEach(() => {
 });
 
 describe('console log capture limits', () => {
-  it('caps an oversized existing log before rotating it at startup', async () => {
-    mocks.files.set(LOG_PATH, Buffer.alloc(MAX_LOG_SIZE + 20, 'a'));
+  it('keeps the newest UTF-8-safe tail of an oversized existing log at startup', async () => {
+    const newestTail = Buffer.concat([
+      Buffer.alloc(MAX_LOG_SIZE - Buffer.byteLength('newest crash tail') - 1, 'n'),
+      Buffer.from('newest crash tail'),
+    ]);
+    mocks.files.set(LOG_PATH, Buffer.concat([Buffer.from('old€'), newestTail]));
 
     await setupCapture();
 
-    expect(mocks.files.get(LOG_PATH + '.1')!.length).toBe(MAX_LOG_SIZE);
+    const rotated = mocks.files.get(LOG_PATH + '.1')!;
+    expect(rotated.equals(newestTail)).toBe(true);
+    expect(rotated.length).toBeLessThanOrEqual(MAX_LOG_SIZE);
     expect(mocks.files.get(LOG_PATH)!.toString()).toContain('Session started');
+    expect(mocks.files.get(LOG_PATH)!.length).toBeLessThanOrEqual(MAX_LOG_SIZE);
   });
 
   it('rotates before crossing the limit and continues on the new descriptor', async () => {

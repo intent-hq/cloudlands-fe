@@ -52,14 +52,69 @@ function openLogFile(): boolean {
   }
 }
 
+function retainNewestLogBytes(): boolean {
+  if (logFd === null || logFilePath === null || logSize <= MAX_LOG_SIZE) return true;
+
+  const tail = Buffer.allocUnsafe(MAX_LOG_SIZE);
+  let readFd: number | null = null;
+  let replacementFd: number | null = null;
+  try {
+    readFd = fs.openSync(logFilePath, 'r');
+    let bytesRead = 0;
+    const tailPosition = logSize - MAX_LOG_SIZE;
+    while (bytesRead < tail.length) {
+      const count = fs.readSync(
+        readFd,
+        tail,
+        bytesRead,
+        tail.length - bytesRead,
+        tailPosition + bytesRead,
+      );
+      if (count === 0) break;
+      bytesRead += count;
+    }
+    fs.closeSync(readFd);
+    readFd = null;
+
+    // Retain at most the newest MAX_LOG_SIZE bytes. If the byte boundary splits
+    // a UTF-8 character, drop its leading continuation bytes from the retained tail.
+    let start = 0;
+    while (start < bytesRead && (tail[start] & 0xc0) === 0x80) start += 1;
+    const retained = tail.subarray(start, bytesRead);
+
+    fs.closeSync(logFd);
+    logFd = null;
+    logSize = 0;
+
+    replacementFd = fs.openSync(logFilePath, 'w');
+    let bytesWritten = 0;
+    while (bytesWritten < retained.length) {
+      bytesWritten += fs.writeSync(replacementFd, retained.subarray(bytesWritten));
+    }
+    fs.closeSync(replacementFd);
+    replacementFd = null;
+    return openLogFile();
+  } catch {
+    for (const fd of [readFd, replacementFd, logFd]) {
+      if (fd === null) continue;
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // The descriptor cannot be recovered.
+      }
+    }
+    logFd = null;
+    logSize = 0;
+    return false;
+  }
+}
+
 function rotateLogFile(): boolean {
   if (logFd === null || logFilePath === null) return false;
 
+  if (!retainNewestLogBytes()) return false;
+
   try {
-    if (logSize > MAX_LOG_SIZE) {
-      fs.ftruncateSync(logFd, MAX_LOG_SIZE);
-      logSize = MAX_LOG_SIZE;
-    }
     fs.closeSync(logFd);
   } catch {
     logFd = null;

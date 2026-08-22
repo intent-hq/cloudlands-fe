@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { inspect } from 'node:util';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -35,6 +36,29 @@ describe('logger console stream safety', () => {
     expect(() => failedStream.emit('error', error)).toThrow(error);
     expect(isConsoleStreamAvailable(failedStream)).toBe(false);
     expect(isConsoleStreamAvailable(availableStream)).toBe(true);
+  });
+
+  it('keeps a healthy stream available when console inspection throws', () => {
+    const inspectionError = new Error('custom inspection failed');
+    const inspectedError = new Error('inspect me') as Error & {
+      [inspect.custom]?: () => never;
+    };
+    inspectedError[inspect.custom] = () => {
+      throw inspectionError;
+    };
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementationOnce((...args) => {
+        inspect(args.at(-1));
+      })
+      .mockImplementation(() => undefined);
+    const logger = new Logger('App');
+
+    expect(() => logger.error('formatting failure', inspectedError)).toThrow(inspectionError);
+    expect(isConsoleStreamAvailable(process.stderr)).toBe(true);
+    expect(() => logger.error('next failure')).not.toThrow();
+    expect(consoleError).toHaveBeenCalledTimes(2);
+    consoleError.mockRestore();
   });
 
   it('stops error logging after a synchronous stderr EPIPE', () => {
