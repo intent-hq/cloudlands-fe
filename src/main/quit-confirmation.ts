@@ -13,12 +13,16 @@
  * The prompt renders in the RENDERER (a modal driven over the
  * `quit-confirmation:*` channels, contract in
  * `src/shared/ipc/quit-confirmation.ts`), enriched with the agent-owned
- * embedded browser tabs quitting would destroy. The renderer round-trip is
+ * embedded browser tabs quitting would destroy — and shown whenever quitting
+ * disrupts anything: responding agents OR agent-owned tabs (tabs alone
+ * trigger the prompt too). The renderer round-trip is
  * fail-open: when no window is available, the renderer never acknowledges the
  * show request within {@link RENDERER_ACK_TIMEOUT_MS}, or sending fails, the
  * flow falls back to the native message box (quit-dialog.ts) so quit is never
  * blocked by a broken renderer. Once acknowledged, main waits indefinitely for
- * the user's decision — there is no timeout on a human.
+ * the user's decision — there is no timeout on a human. The tabs-only case
+ * falls back to a dedicated native dialog (buildTabsOnlyQuitDialogOptions);
+ * agent cases keep the existing agent copy.
  *
  * Re-entrancy: `before-quit` and the auto-updater can race into this at once;
  * concurrent calls share one in-flight confirmation instead of stacking
@@ -58,7 +62,11 @@ import type {
 import { Logger } from '../shared/logger';
 import { QuitConfirmationAckSchema, QuitConfirmationResponseSchema } from './ipc-schemas';
 import { createValidatedHandler } from './ipc-validation-middleware';
-import { buildQuitDialogOptions, type QuitAgentGroups } from './quit-dialog';
+import {
+  buildQuitDialogOptions,
+  buildTabsOnlyQuitDialogOptions,
+  type QuitAgentGroups,
+} from './quit-dialog';
 import {
   listRespondingAgents,
   type RespondingAgent,
@@ -107,6 +115,8 @@ export interface QuitConfirmationDeps {
     payload: QuitConfirmationShowPayload,
   ): Promise<boolean | null>;
   buildQuitDialogOptions(groups: QuitAgentGroups): MessageBoxOptions;
+  /** Native fallback copy when only browser tabs are disrupted (no agents). */
+  buildTabsOnlyQuitDialogOptions(tabCount: number): MessageBoxOptions;
   /** Window to parent the dialog to (focused window, else main window). */
   getParentWindow(): BrowserWindow | null;
   showMessageBox(
@@ -381,10 +391,11 @@ function withOwnerNames(
 let inFlightConfirmation: Promise<boolean> | null = null;
 
 /**
- * Show the running-agent confirmation prompt if any agents are active.
+ * Show the quit confirmation prompt if quitting disrupts anything — active
+ * agents or agent-owned embedded browser tabs.
  *
- * Returns true if the caller should proceed with quit/teardown (no agents
- * running, or user confirmed), false if the user cancelled.
+ * Returns true if the caller should proceed with quit/teardown (nothing
+ * disrupted, or user confirmed), false if the user cancelled.
  */
 export async function confirmQuitWithRunningAgents(
   overrides: Partial<QuitConfirmationDeps> = {},
@@ -414,6 +425,7 @@ async function confirmQuitInner(overrides: Partial<QuitConfirmationDeps>): Promi
     listDisruptedBrowserTabs: defaultListDisruptedBrowserTabs,
     confirmViaRenderer: defaultConfirmViaRenderer,
     buildQuitDialogOptions,
+    buildTabsOnlyQuitDialogOptions,
     getParentWindow: defaultGetParentWindow,
     showMessageBox: defaultShowMessageBox,
     ...overrides,
@@ -450,13 +462,16 @@ async function confirmQuitInner(overrides: Partial<QuitConfirmationDeps>): Promi
   ).filter((agent) => !keepRunningIds.has(agent.agentId));
   const groups: QuitAgentGroups = { keepRunning, interrupted };
 
-  // The prompt exists to protect running agent work; tab data only enriches
-  // it. No responding agents → quit silently, exactly as before.
-  if (groups.keepRunning.length + groups.interrupted.length === 0) {
+  // Prompt when quitting disrupts anything: running agent work OR agent-owned
+  // browser tabs (tabs alone trigger the prompt too — destroying them mid-use
+  // is disruptive even with zero responding agents). Both empty → quit
+  // silently.
+  const agentCount = groups.keepRunning.length + groups.interrupted.length;
+  if (agentCount === 0 && disruptedBrowserTabs.length === 0) {
     return true;
   }
 
-  logger.info('Active agents detected during quit attempt', {
+  logger.info('Disruptive quit attempt detected', {
     keepRunning: groups.keepRunning.length,
     interrupted: groups.interrupted.length,
     agentIds: [...groups.keepRunning, ...groups.interrupted].map((s) => s.agentId),
@@ -483,14 +498,19 @@ async function confirmQuitInner(overrides: Partial<QuitConfirmationDeps>): Promi
   }
 
   // Renderer path unavailable — fall back to the native message box so quit
-  // is never blocked by a broken/missing renderer.
-  const result = await deps.showMessageBox(parent, deps.buildQuitDialogOptions(groups));
+  // is never blocked by a broken/missing renderer. Tabs-only (no agents) gets
+  // dedicated native copy; agent cases keep the existing agent copy.
+  const options =
+    agentCount === 0
+      ? deps.buildTabsOnlyQuitDialogOptions(disruptedBrowserTabs.length)
+      : deps.buildQuitDialogOptions(groups);
+  const result = await deps.showMessageBox(parent, options);
 
   if (result.response === 1) {
-    logger.info('User cancelled quit due to running agents');
+    logger.info('User cancelled quit from the native fallback dialog');
     return false;
   }
 
-  logger.info('User confirmed quit despite running agents');
+  logger.info('User confirmed quit from the native fallback dialog');
   return true;
 }

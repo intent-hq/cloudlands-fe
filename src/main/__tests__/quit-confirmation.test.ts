@@ -115,6 +115,7 @@ function makeDeps(options: {
   const client = { getStatus: () => 'connected', request: vi.fn() } as unknown as RunningAgentsRpc;
   const parentWindow = { id: 42 } as unknown as BrowserWindow;
   const dialogOptions = { message: 'agents working' } as MessageBoxOptions;
+  const tabsOnlyDialogOptions = { message: 'tabs connected' } as MessageBoxOptions;
   const deps = {
     getBackendClient: vi.fn(() => client),
     getConnectionMode: vi.fn(() => options.mode ?? ('sidecar' as ConnectionMode)),
@@ -124,12 +125,13 @@ function makeDeps(options: {
     listDisruptedBrowserTabs: vi.fn(async () => options.browserTabs ?? []),
     confirmViaRenderer: vi.fn(async () => options.rendererDecision ?? null),
     buildQuitDialogOptions: vi.fn(() => dialogOptions),
+    buildTabsOnlyQuitDialogOptions: vi.fn(() => tabsOnlyDialogOptions),
     getParentWindow: vi.fn(() => parentWindow),
     showMessageBox: vi.fn(
       async () => ({ response: options.response ?? 0 }) as MessageBoxReturnValue,
     ),
   };
-  return { deps, client, parentWindow, dialogOptions };
+  return { deps, client, parentWindow, dialogOptions, tabsOnlyDialogOptions };
 }
 
 beforeEach(() => {
@@ -513,13 +515,49 @@ describe('confirmQuitWithRunningAgents — renderer round-trip', () => {
     expect(payload.disruptedBrowserTabs).toEqual([]);
   });
 
-  it('quits silently when no agents respond, even with disrupted tabs present', async () => {
-    const { deps } = makeDeps({ agents: [], browserTabs: BROWSER_TABS });
+  it('prompts when no agents respond but disrupted tabs exist (tabs alone trigger it)', async () => {
+    const { deps } = makeDeps({ agents: [], browserTabs: BROWSER_TABS, rendererDecision: false });
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(false);
+
+    expect(deps.confirmViaRenderer).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        keepRunning: [],
+        interrupted: [],
+        disruptedBrowserTabs: BROWSER_TABS,
+      }),
+    );
+    expect(deps.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('shows the native tabs-only dialog when the renderer is unavailable, honoring quit', async () => {
+    const { deps, parentWindow, tabsOnlyDialogOptions } = makeDeps({
+      agents: [],
+      browserTabs: BROWSER_TABS,
+      rendererDecision: null,
+      response: 0,
+    });
 
     await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
 
-    expect(deps.confirmViaRenderer).not.toHaveBeenCalled();
-    expect(deps.showMessageBox).not.toHaveBeenCalled();
+    expect(deps.confirmViaRenderer).toHaveBeenCalledTimes(1);
+    expect(deps.buildTabsOnlyQuitDialogOptions).toHaveBeenCalledWith(BROWSER_TABS.length);
+    expect(deps.buildQuitDialogOptions).not.toHaveBeenCalled();
+    expect(deps.showMessageBox).toHaveBeenCalledWith(parentWindow, tabsOnlyDialogOptions);
+  });
+
+  it('honors cancel from the native tabs-only dialog', async () => {
+    const { deps } = makeDeps({
+      agents: [],
+      browserTabs: BROWSER_TABS,
+      rendererDecision: null,
+      response: 1,
+    });
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(false);
+
+    expect(deps.buildTabsOnlyQuitDialogOptions).toHaveBeenCalledWith(BROWSER_TABS.length);
   });
 
   it('shares one in-flight confirmation between concurrent callers', async () => {

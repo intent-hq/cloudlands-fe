@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildQuitDialogOptions,
+  buildTabsOnlyQuitDialogOptions,
   formatAgentNameList,
   MAX_LISTED_AGENT_NAMES,
 } from '../quit-dialog';
@@ -145,5 +146,27 @@ describe('formatAgentNameList', () => {
     expect(formatAgentNameList(agents('A1', 'A2', 'A3', 'A4', 'A5', 'A6'))).toBe(
       'A1, A2, A3, A4, A5, and 1 more',
     );
+  });
+});
+
+describe('buildTabsOnlyQuitDialogOptions — tabs disrupted, zero agents', () => {
+  it('uses singular copy for one tab with Quit as the default and Cancel as cancel', () => {
+    const opts = buildTabsOnlyQuitDialogOptions(1);
+    expect(opts).toEqual({
+      type: 'info',
+      title: 'Browser Tabs Still Connected',
+      message: '1 connected browser tab will be disconnected.',
+      detail:
+        'Agents and models lose access to these browser tabs while the app is closed. Quit now?',
+      buttons: ['Quit', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+  });
+
+  it('pluralizes the message with the tab count', () => {
+    const opts = buildTabsOnlyQuitDialogOptions(3);
+    expect(opts.message).toBe('3 connected browser tabs will be disconnected.');
+    expect(opts.buttons).toEqual(['Quit', 'Cancel']);
   });
 });
