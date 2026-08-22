@@ -4418,7 +4418,7 @@
   "browser_panel_unclaimedGroup_label": "未所有",
   "browser_panel_toggleGroup_ariaLabel": "{name} タブグループを切り替え",
   "browser_panel_restoreTab_tooltip": "タブを復元",
-  "browser_panel_restoreTab_ariaLabel": "非表示のタブを復元",
+  "browser_panel_restoreTab_ariaLabel": "非表示のタブ {title} を復元",
   "browser_embedded_goBack_tooltip": "戻る",
   "browser_embedded_goBack_ariaLabel": "戻る",
   "browser_embedded_goForward_tooltip": "進む",

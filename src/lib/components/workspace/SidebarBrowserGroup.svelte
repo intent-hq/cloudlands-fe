@@ -41,11 +41,16 @@
     <div class="flex min-w-0 flex-col gap-0.5 pl-1">
       {#each group.entries as entry (entry.tab.id)}
         {#if entry.hidden}
-          <!-- border-transparent (no padding) mirrors the visible-row Button box:
-               the plain variant collapses px/py to 0 and the Button base adds a
-               1px transparent border, so both states share the same x-offsets. -->
-          <div
-            class="group/hidden relative flex items-start gap-2 rounded-md border border-transparent"
+          <!-- Whole-row clickable like the visible rows (monorepo#3169); the same
+               plain-variant Button box as the visible row keeps identical
+               dot/text x-offsets (fe#1554). The restore icon is a decorative
+               hover hint — the row itself is the button. -->
+          <Button
+            variant="plain"
+            class="group/hidden flex h-auto w-full cursor-pointer items-start justify-start gap-2 rounded-md px-2 py-2 text-left hover:bg-muted focus-visible:bg-muted"
+            onclick={() => onRestoreTab(entry.tab.id)}
+            tooltip={m.browser_panel_restoreTab_tooltip()}
+            aria-label={m.browser_panel_restoreTab_ariaLabel({ title: entry.tab.title })}
             data-sidebar-browser-hidden-tab={entry.tab.id}
           >
             <span
@@ -60,17 +65,13 @@
                 {entry.tab.browserUrl || m.browser_embedded_noUrl_label()}
               </span>
             </span>
-            <Button
-              variant="ghost-light"
-              size="icon-xs"
-              class="mt-0.5 shrink-0 opacity-0 group-hover/hidden:opacity-100 focus-visible:opacity-100"
-              onclick={() => onRestoreTab(entry.tab.id)}
-              tooltip={m.browser_panel_restoreTab_tooltip()}
-              aria-label={m.browser_panel_restoreTab_ariaLabel()}
+            <span
+              class="mt-0.5 shrink-0 text-muted-foreground opacity-0 group-hover/hidden:opacity-100 group-focus-visible/hidden:opacity-100"
+              aria-hidden="true"
             >
               <Fa icon={faWindowRestore} size="xs" />
-            </Button>
-          </div>
+            </span>
+          </Button>
         {:else}
           <Button
             variant="plain"

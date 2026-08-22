@@ -6,7 +6,7 @@
  * currently-viewed conversation avoided — never the focused-panel-targeting
  * restoreHiddenTab, which mounted the tab over the chat.
  */
-import { render, fireEvent, cleanup, within } from '@testing-library/svelte';
+import { render, fireEvent, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 const { dispatchMock, layoutState } = vi.hoisted(() => ({
@@ -91,7 +91,9 @@ function renderList() {
 async function clickRestore() {
   const hiddenRow = document.querySelector('[data-sidebar-browser-hidden-tab="hidden-1"]');
   expect(hiddenRow).not.toBeNull();
-  await fireEvent.click(within(hiddenRow as HTMLElement).getByRole('button'));
+  // Whole-row clickable (monorepo#3169): the hidden row itself is the button.
+  expect((hiddenRow as HTMLElement).tagName).toBe('BUTTON');
+  await fireEvent.click(hiddenRow as HTMLElement);
 }
 
 function findRevealAction() {

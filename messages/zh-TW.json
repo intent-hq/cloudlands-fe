@@ -4418,7 +4418,7 @@
   "browser_panel_unclaimedGroup_label": "未認領",
   "browser_panel_toggleGroup_ariaLabel": "切換 {name} 分頁群組",
   "browser_panel_restoreTab_tooltip": "還原分頁",
-  "browser_panel_restoreTab_ariaLabel": "還原隱藏的分頁",
+  "browser_panel_restoreTab_ariaLabel": "還原隱藏的分頁 {title}",
   "browser_embedded_goBack_tooltip": "後退",
   "browser_embedded_goBack_ariaLabel": "後退",
   "browser_embedded_goForward_tooltip": "前進",

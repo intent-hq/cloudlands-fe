@@ -4418,7 +4418,7 @@
   "browser_panel_unclaimedGroup_label": "Nicht beansprucht",
   "browser_panel_toggleGroup_ariaLabel": "Tab-Gruppe {name} umschalten",
   "browser_panel_restoreTab_tooltip": "Tab wiederherstellen",
-  "browser_panel_restoreTab_ariaLabel": "Ausgeblendeten Tab wiederherstellen",
+  "browser_panel_restoreTab_ariaLabel": "Ausgeblendeten Tab {title} wiederherstellen",
   "browser_embedded_goBack_tooltip": "Zurück",
   "browser_embedded_goBack_ariaLabel": "Zurück",
   "browser_embedded_goForward_tooltip": "Vorwärts",

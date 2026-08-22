@@ -4419,7 +4419,7 @@
   "browser_panel_unclaimedGroup_label": "Unclaimed",
   "browser_panel_toggleGroup_ariaLabel": "Toggle {name} tab group",
   "browser_panel_restoreTab_tooltip": "Restore tab",
-  "browser_panel_restoreTab_ariaLabel": "Restore hidden tab",
+  "browser_panel_restoreTab_ariaLabel": "Restore hidden tab {title}",
   "browser_embedded_goBack_tooltip": "Go Back",
   "browser_embedded_goBack_ariaLabel": "Go back",
   "browser_embedded_goForward_tooltip": "Go Forward",

@@ -4418,7 +4418,7 @@
   "browser_panel_unclaimedGroup_label": "Sin reclamar",
   "browser_panel_toggleGroup_ariaLabel": "Alternar el grupo de pestañas {name}",
   "browser_panel_restoreTab_tooltip": "Restaurar pestaña",
-  "browser_panel_restoreTab_ariaLabel": "Restaurar pestaña oculta",
+  "browser_panel_restoreTab_ariaLabel": "Restaurar pestaña oculta {title}",
   "browser_embedded_goBack_tooltip": "Ir atrás",
   "browser_embedded_goBack_ariaLabel": "Ir atrás",
   "browser_embedded_goForward_tooltip": "Ir adelante",
