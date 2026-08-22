@@ -352,9 +352,9 @@
         // every dom-ready so a recreated guest re-registers, but skips
         // same-guest navigations to avoid stacking redundant registerTab
         // calls and destroyed-hooks in the main process.
-        if (tabId && webviewRef) {
+        if (tabId) {
           try {
-            const webContentsId = webviewRef.getWebContentsId();
+            const webContentsId = currentWebview.getWebContentsId();
             if (webContentsId !== lastRegisteredWebContentsId) {
               lastRegisteredWebContentsId = webContentsId;
               logger.info('Registering browser tab for CDP', { tabId, webContentsId });
@@ -366,6 +366,12 @@
                     webContentsId,
                     error: err,
                   });
+                  // Allow a later dom-ready from this guest to retry the
+                  // registration instead of leaving the tab unregistered
+                  // until the guest is recreated.
+                  if (lastRegisteredWebContentsId === webContentsId) {
+                    lastRegisteredWebContentsId = undefined;
+                  }
                 });
             }
           } catch {

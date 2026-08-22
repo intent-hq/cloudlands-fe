@@ -99,6 +99,24 @@ describe('EmbeddedBrowser', () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(registerCalls()).toHaveLength(1);
     });
+
+    it('retries registration on a later dom-ready after the IPC rejects', async () => {
+      const webview = renderWithTab();
+      invokeMock.mockRejectedValueOnce(new Error('main process not ready'));
+      webview.getWebContentsId = () => 10;
+      webview.dispatchEvent(new Event('dom-ready'));
+      await waitFor(() => expect(registerCalls()).toHaveLength(1));
+
+      // The failed registration reset the gate: the same guest's next
+      // dom-ready retries instead of staying unregistered.
+      webview.dispatchEvent(new Event('dom-ready'));
+      await waitFor(() =>
+        expect(registerCalls()).toEqual([
+          ['browser:register-tab', { tabId: 'tab-1', webContentsId: 10 }],
+          ['browser:register-tab', { tabId: 'tab-1', webContentsId: 10 }],
+        ]),
+      );
+    });
   });
 
   describe('owner chip', () => {

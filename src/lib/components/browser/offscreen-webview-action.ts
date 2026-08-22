@@ -87,6 +87,12 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
               tabId: entry.tabId,
               error: err,
             });
+            // Allow a later dom-ready from this guest to retry the
+            // registration instead of leaving the tab unregistered until
+            // the guest is recreated.
+            if (lastRegisteredWebContentsId === webContentsId) {
+              lastRegisteredWebContentsId = undefined;
+            }
           });
       }
     } catch {
