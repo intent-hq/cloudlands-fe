@@ -650,5 +650,19 @@ describe('screenshot Page-domain hang fallback (#3154)', () => {
     expect(wc.capturePage).toHaveBeenCalledTimes(1);
     service.unregisterTab('tab-reject');
   });
+
+  it('propagates the error when the capturePage() fallback itself fails', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(65, {
+      'Page.getLayoutMetrics': new Error('Page domain unavailable'),
+    });
+    wc.capturePage.mockRejectedValue(new Error('capture failed'));
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-fallback-fail', 65);
+
+    await expect(service.screenshot('tab-fallback-fail')).rejects.toThrow('capture failed');
+    expect(wc.capturePage).toHaveBeenCalledTimes(1);
+    service.unregisterTab('tab-fallback-fail');
+  });
 });
 

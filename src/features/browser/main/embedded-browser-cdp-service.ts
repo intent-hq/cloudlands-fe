@@ -1464,6 +1464,8 @@ class EmbeddedBrowserCdpService {
    * Race a Page-domain screenshot command against a bounded timeout. The
    * command promise is returned as-is when it settles first; on timeout the
    * caller falls back to webContents.capturePage() (monorepo#3154).
+   * Rejections are prefixed with the command label so the fallback's warn
+   * log always identifies which CDP command failed.
    */
   private async withScreenshotCdpTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1477,6 +1479,9 @@ class EmbeddedBrowserCdpService {
           );
         }),
       ]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw message.startsWith(label) ? error : new Error(`${label} failed: ${message}`);
     } finally {
       clearTimeout(timer);
     }
@@ -1487,6 +1492,14 @@ class EmbeddedBrowserCdpService {
    * debugger's Page domain (which on some guests never answers even while
    * Runtime/Accessibility commands work, monorepo#3154) and honors
    * offscreen painting. Captures the full visible view (no scroll clip).
+   *
+   * Fidelity caveats versus the CDP path: on viewport-emulated tabs whose
+   * displayed image is scaled to fit the hosting view (scale < 1), this
+   * captures the scaled-down composited view, so width/height can differ
+   * from the tab's emulated size; and getSize() reports DIP dimensions
+   * while toJPEG() encodes the physical-pixel bitmap, so on HiDPI displays
+   * the encoded image can exceed the reported width/height by the display
+   * scale factor. Acceptable degradation versus hanging the action.
    */
   private async capturePageFallback(
     webContentsId: number,
