@@ -31,6 +31,20 @@
   const dialogTitleId = 'interrupted-agents-dialog-title';
   const dialogDescriptionId = 'interrupted-agents-dialog-description';
 
+  let dialogEl = $state<HTMLDivElement | null>(null);
+
+  // Move focus into the dialog on open (ARIA alertdialog pattern) so Escape
+  // reaches the keydown handler immediately — without this, focus stays on
+  // the previously focused page element outside the portal. `agents` is read
+  // untracked: the dialog mounting (bind:this assigning dialogEl) already
+  // re-runs the effect, and tracking `agents` would re-steal focus from a
+  // checkbox/button when a cross-window prune replaces the array mid-open.
+  $effect(() => {
+    if (open && dialogEl && untrack(() => agents.length > 0)) {
+      dialogEl.focus();
+    }
+  });
+
   // Group agents by workspace
   const agentsByWorkspace = $derived(() => {
     const groups = new Map<string, InterruptedAgent[]>();
@@ -115,7 +129,8 @@
       onclick={close}
     >
       <div
-        class="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl shadow-black/20 max-h-[85vh]"
+        bind:this={dialogEl}
+        class="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl shadow-black/20 max-h-[85vh] outline-none"
         onclick={(e) => e.stopPropagation()}
         role="alertdialog"
         aria-modal="true"
