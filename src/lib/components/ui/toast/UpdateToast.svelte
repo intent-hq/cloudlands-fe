@@ -38,11 +38,13 @@
   interface Props {
     /** Callback when toast should be dismissed */
     onDismiss?: () => void;
+    /** Programmatic auto-dismiss (not-available/error delay) — falls back to onDismiss */
+    onAutoDismiss?: () => void;
     /** Provided automatically by Sonner for custom toast components */
     closeToast?: () => void;
   }
 
-  let { onDismiss, closeToast }: Props = $props();
+  let { onDismiss, onAutoDismiss, closeToast }: Props = $props();
 
   function handleClose() {
     onDismiss?.();
@@ -84,10 +86,11 @@
 
   // Auto-dismiss when up-to-date or error after a delay
   $effect(() => {
-    if (($status$ === 'not-available' || $status$ === 'error') && onDismiss) {
+    const autoDismiss = onAutoDismiss ?? onDismiss;
+    if (($status$ === 'not-available' || $status$ === 'error') && autoDismiss) {
       const delay = $status$ === 'error' ? 5000 : 3000; // Longer for errors so user can read
       const timeout = setTimeout(() => {
-        onDismiss();
+        autoDismiss();
       }, delay);
       return () => clearTimeout(timeout);
     }

@@ -100,6 +100,9 @@ autoUpdateReducer.with(showToastChecking, (state) => ({
   ...state,
   toastVisible: true,
   status: 'checking' as const,
+  // A manual check is an explicit request to see the result — clear the 24h
+  // dismiss cooldown so a re-landed 'downloaded' status shows persistently.
+  downloadedToastDismissedAt: null,
 }));
 autoUpdateReducer.with(setUpToDate, (state, { payload: [version] }) => ({
   ...state,
