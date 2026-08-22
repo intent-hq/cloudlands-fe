@@ -180,7 +180,7 @@ function expectVisibleChangesRow(expected: string) {
 
   const summary = screen.getByText(expected);
   expect(summary.className).toContain('text-foreground');
-  expect(summary.className).toContain('font-medium');
+  expect(summary.className).toContain('type-body');
   expect(summary.className).not.toContain('text-subtle');
 }
 
@@ -360,10 +360,10 @@ describe('WorkspaceHoverCard', () => {
     const status = screen.getByText(
       'Reviewing the richer workspace hover card before wiring it into lists.',
     );
+    expect(status.className).toContain('type-body');
     expect(status.className).toContain('whitespace-pre-wrap');
-    expect(status.className).toContain('leading-snug');
     expect(status.className).toContain('bg-transparent');
-    expect(status.className).toContain('text-subtle');
+    expect(status.className).toContain('text-muted-foreground');
     expect(status.className).not.toMatch(/line-clamp|truncate|text-ellipsis/);
   });
 
@@ -467,8 +467,43 @@ describe('WorkspaceHoverCard', () => {
     expect(root.className.split(/\s+/)).not.toContain('border');
     expect(root.className.split(/\s+/)).not.toContain('border-border');
     expect(root.className).not.toMatch(/rounded/);
+    expect(root.className.split(/\s+/)).toContain('bg-card');
+    expect(root.className.split(/\s+/)).toContain('dark:bg-popover');
     expect(root.className).toContain('shadow-(--elevation-overlay)');
     expect(root.className).toContain('ring-1');
+  });
+
+  it('uses shared type roles for a clear content hierarchy', async () => {
+    const { container } = await renderHoverCard({
+      displayStatus: 'in_progress',
+      statusMessage: 'Implementing the hover-card refinement.',
+      activePullRequest: {
+        id: 'pr-12',
+        number: 12,
+        url: 'https://github.com/augment/intent/pull/12',
+        title: 'Refine hover-card hierarchy',
+        status: PullRequestStatus.Open,
+        createdAt: '2026-05-05T00:00:00.000Z',
+        updatedAt: '2026-05-05T00:00:00.000Z',
+      },
+    });
+
+    expect(screen.getByText('Hover Card Workspace').className).toContain('type-title');
+    expect(screen.getByText('augment/intent').className).toContain('type-body');
+    expect(container.querySelector('[data-workspace-hover-card-status-row]')?.className).toContain(
+      'type-caption',
+    );
+    expect(
+      container.querySelector('[data-workspace-hover-card-status-message]')?.className,
+    ).toContain('type-body');
+    expect(screen.getByText('Refine hover-card hierarchy').className).toContain('type-body');
+    expect(screen.getByText('#12').className).toContain('type-caption');
+    expect(container.querySelector('[data-workspace-hover-card-pr-status]')?.className).toContain(
+      'type-caption',
+    );
+    expect(container.querySelector('[data-workspace-hover-card-timestamp]')?.className).toContain(
+      'type-caption',
+    );
   });
 
   it('summarizes available repo, task, PR, and combined change metadata without branch', async () => {
@@ -591,8 +626,14 @@ describe('WorkspaceHoverCard', () => {
       'augment/intent#12',
       'augment/intent#13',
     ]);
-    expect(rows[0].querySelector('[aria-hidden="true"]')?.className).toContain('text-success');
-    expect(rows[2].querySelector('[aria-hidden="true"]')?.className).toContain('text-primary');
+    expect(rows.every((row) => row.querySelector('svg') === null)).toBe(true);
+    expect(rows.every((row) => row.querySelector('[aria-hidden="true"]') === null)).toBe(true);
+    expect(rows[0].querySelector('[data-workspace-hover-card-pr-status]')?.className).toContain(
+      'text-success',
+    );
+    expect(rows[2].querySelector('[data-workspace-hover-card-pr-status]')?.className).toContain(
+      'text-primary',
+    );
     expect(screen.getByText('other-org/tooling')).toBeTruthy();
     expect(screen.getByText('Cross-repo monitor')).toBeTruthy();
     expect(rows.every((row) => row.getAttribute('aria-label')?.includes('#'))).toBe(true);

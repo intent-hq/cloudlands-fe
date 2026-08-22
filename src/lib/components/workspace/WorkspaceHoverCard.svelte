@@ -18,7 +18,6 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
-  import Fa from 'svelte-fa';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
@@ -432,7 +431,7 @@
 </script>
 
 <div
-  class="bg-popover shadow-(--elevation-overlay) ring-1 ring-border/70 py-3 px-4 w-[320px] shrink-0 max-w-[calc(100vw-1rem)] flex flex-col gap-1.5 text-left"
+  class="bg-card dark:bg-popover shadow-(--elevation-overlay) ring-1 ring-border/70 py-3 px-4 w-[320px] shrink-0 max-w-[calc(100vw-1rem)] flex flex-col gap-1.5 text-left"
 >
   <!-- Header: Title and repo -->
   <div class="w-full" data-workspace-hover-card-header>
@@ -441,27 +440,25 @@
     {:else}
       <div class="flex items-start gap-2" data-workspace-hover-card-title-row>
         <div class="min-w-0 flex-1">
-          <div class="text-sm font-semibold text-foreground truncate">
+          <div class="type-title truncate text-foreground" data-workspace-hover-card-title>
             {workspace?.title || m.workspace_links_untitled_label()}
           </div>
         </div>
         {#if lifecycleText}
-          <div
-            class="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-medium text-subtle"
-          >
+          <div class="type-caption shrink-0 rounded-full bg-muted px-2 py-0.5 text-subtle">
             {lifecycleText}
           </div>
         {/if}
       </div>
       <div class="w-full flex items-center -mt-0.5 gap-1" data-workspace-hover-card-repo-row>
         <div
-          class="flex-1 text-muted-foreground text-sm truncate text-left bg-transparent border-none p-0 font-inherit"
+          class="type-body flex-1 truncate border-none bg-transparent p-0 text-left text-muted-foreground"
         >
           {repoDisplayName}
         </div>
       </div>
       <div
-        class="mt-1 flex w-full min-w-0 items-center gap-2 text-sm text-muted-foreground"
+        class="type-caption mt-1 flex w-full min-w-0 items-center gap-2 text-muted-foreground"
         data-workspace-hover-card-status-row
       >
         <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
@@ -480,7 +477,8 @@
       </div>
       {#if statusMessage}
         <div
-          class="mt-2 w-full text-sm text-subtle bg-transparent border-none px-0.5 pt-1 text-left break-words whitespace-pre-wrap transition-all duration-150 leading-snug"
+          class="type-body mt-2 w-full break-words border-none bg-transparent px-0.5 pt-1 text-left whitespace-pre-wrap text-muted-foreground transition-all duration-150"
+          data-workspace-hover-card-status-message
         >
           {statusMessage}
         </div>
@@ -489,7 +487,7 @@
   </div>
 
   {#if !isLoading && workspace}
-    <div class="grid gap-1.5 text-xs text-subtle">
+    <div class="grid gap-1.5 text-subtle">
       {#if runningAgents.length > 0}
         <div class="mt-1 flex w-full min-w-0 flex-col pb-2">
           <div
@@ -512,14 +510,14 @@
                       specialist={agent.specialist as BuiltinSpecialistId | null}
                     />
                   </span>
-                  <span class="min-w-0 truncate text-sm font-medium leading-5 text-foreground">
+                  <span class="type-body min-w-0 truncate text-foreground">
                     {agent.name}
                   </span>
                 </div>
               </div>
             {/each}
             {#if runningAgents.length > 3}
-              <div class="px-1.75 pt-0.75 text-ui text-subtle font-medium">
+              <div class="type-caption px-1.75 pt-0.75 text-subtle">
                 {m.workspace_hoverCard_moreAgents_label({
                   count: formatInteger(runningAgents.length - 3),
                 })}
@@ -547,30 +545,29 @@
         >
           {#each workspacePrRows as pr (pr.identity)}
             <div
-              class="grid min-w-0 grid-cols-[1.25rem_minmax(0,1fr)] gap-x-1.5 rounded-sm px-0.5 py-0.5"
+              class="grid min-w-0 gap-y-0.5 rounded-sm px-0.5 py-0.5"
               aria-label={getWorkspacePrLabel(pr)}
               role="listitem"
               data-workspace-hover-card-pr-row
               data-pr-identity={pr.identity}
               data-pr-status={pr.status}
             >
-              <span
-                class="row-span-2 inline-flex size-5 items-center justify-center rounded-sm {pr.backgroundClass} {pr.foregroundClass}"
-                aria-hidden="true"
-              >
-                <Fa icon={pr.statusIcon} size="xs" />
-              </span>
               <span class="flex min-w-0 items-center gap-2 text-left">
-                <span class="min-w-0 flex-1 truncate text-sm text-foreground">
+                <span class="type-body min-w-0 flex-1 truncate text-foreground">
                   {pr.title || m.workspace_hoverCard_pullRequest_label()}
                 </span>
-                <span class="shrink-0 text-ui text-subtle">#{pr.number}</span>
+                <span class="type-caption shrink-0 text-subtle">#{pr.number}</span>
               </span>
-              <span class="flex min-w-0 items-center gap-1.5 text-ui">
+              <span class="flex min-w-0 items-center gap-1.5">
                 {#if pr.repoContext}
-                  <span class="max-w-24 shrink-0 truncate text-subtle">{pr.repoContext}</span>
+                  <span class="type-caption max-w-24 shrink-0 truncate text-subtle"
+                    >{pr.repoContext}</span
+                  >
                 {/if}
-                <span class="min-w-0 truncate font-medium {pr.foregroundClass}">
+                <span
+                  class="type-caption min-w-0 truncate {pr.foregroundClass}"
+                  data-workspace-hover-card-pr-status
+                >
                   {pr.details.replaceAll('\n', ' · ')}
                 </span>
               </span>
@@ -584,13 +581,16 @@
           class="-mx-1 flex w-full min-w-0 items-center px-1 py-0.5"
           aria-label={m.workspace_hoverCard_changes_ariaLabel()}
         >
-          <span class="min-w-0 truncate text-sm font-medium leading-5 text-foreground">
+          <span class="type-body min-w-0 truncate text-foreground">
             {changeSummaryLineText}
           </span>
         </div>
       {/if}
 
-      <div class="flex items-center justify-between gap-3">
+      <div
+        class="type-caption flex items-center justify-between gap-3 text-muted-foreground"
+        data-workspace-hover-card-timestamp
+      >
         <span class="min-w-0 truncate text-right"
           >{m.workspace_hoverCard_lastUpdated_label({ time: lastActivityText })}</span
         >
