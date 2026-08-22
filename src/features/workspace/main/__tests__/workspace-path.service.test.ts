@@ -8,17 +8,25 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { requestSpy, notificationHandlers, reconnectHandlers } = vi.hoisted(() => ({
+const {
+  requestSpy,
+  compatibilityRequestSpy,
+  backendState,
+  notificationHandlers,
+  reconnectHandlers,
+} = vi.hoisted(() => ({
   requestSpy: vi.fn(),
+  compatibilityRequestSpy: vi.fn(),
+  backendState: { primaryId: 'local' },
   notificationHandlers: [] as Array<(n: unknown) => void>,
   reconnectHandlers: [] as Array<() => void>,
 }));
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
-  getBackendClient: () => ({ request: requestSpy }),
+  getBackendClient: () => ({ request: compatibilityRequestSpy }),
   getBackendClientForConnection: (id: string) =>
     id === 'local' ? { request: requestSpy } : undefined,
-  getPrimaryBackendId: () => 'local',
+  getPrimaryBackendId: () => backendState.primaryId,
   onBackendNotification: (handler: (n: unknown) => void) => {
     notificationHandlers.push(handler);
     return () => {};
@@ -70,6 +78,7 @@ function flush(): Promise<void> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  backendState.primaryId = 'local';
   notificationHandlers.length = 0;
   reconnectHandlers.length = 0;
   __resetWorkspacePathServiceForTesting();
@@ -106,6 +115,16 @@ describe('workspace-path.service', () => {
   it('returns null for unknown workspaces (daemon not-found error)', async () => {
     mockDaemon({});
     expect(await getWorkspacePath('nope')).toBeNull();
+  });
+
+  it('uses the local pooled client when the compatibility client is remote', async () => {
+    backendState.primaryId = 'remote-1';
+    compatibilityRequestSpy.mockRejectedValue(new Error('remote compatibility client used'));
+    mockDaemon({ 'ws-local': { worktreePath: '/local/checkouts/ws-local' } });
+
+    expect(await getWorkspacePath('ws-local', 'local')).toBe('/local/checkouts/ws-local');
+    expect(requestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: 'ws-local' });
+    expect(compatibilityRequestSpy).not.toHaveBeenCalled();
   });
 
   it('does not start a local path subscription for a remote-bound window', async () => {

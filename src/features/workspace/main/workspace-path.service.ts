@@ -164,18 +164,23 @@ export async function getWorkspacePathInfo(
   const pending = inFlight.get(workspaceId);
   if (pending) return pending;
 
-  const lookup = fetchWorkspacePathInfo(workspaceId).finally(() => {
+  const lookup = fetchWorkspacePathInfo(workspaceId, backendId).finally(() => {
     inFlight.delete(workspaceId);
   });
   inFlight.set(workspaceId, lookup);
   return lookup;
 }
 
-async function fetchWorkspacePathInfo(workspaceId: string): Promise<WorkspacePathInfo | null> {
+async function fetchWorkspacePathInfo(
+  workspaceId: string,
+  backendId: string,
+): Promise<WorkspacePathInfo | null> {
   const epochAtStart = cacheEpoch;
   const generationAtStart = invalidationGenerations.get(workspaceId) ?? 0;
   try {
-    const response = (await getBackendClient().request('workspace.get', { workspaceId })) as
+    const backendClient = getBackendClientForConnection(backendId);
+    if (!backendClient) return null;
+    const response = (await backendClient.request('workspace.get', { workspaceId })) as
       { workspace?: unknown } | unknown;
     const raw =
       response && typeof response === 'object' && 'workspace' in response
