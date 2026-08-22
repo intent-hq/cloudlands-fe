@@ -1,4 +1,3 @@
-import { getModelsForProvider } from '$store/renderer/slices/model/model-utils';
 import { resolveDefaultModel } from '$store/renderer/slices/model/model-selection-utils';
 import {
   selectIsModelValidForProvider,
@@ -62,21 +61,6 @@ export function shouldShowChatProviderControl({
   return selectableProviderIds.length > 1;
 }
 
-export async function resolveUsableProviderIds(providerIds: string[]): Promise<string[]> {
-  const usableProviders = await Promise.all(
-    providerIds.map(async (providerId) => {
-      try {
-        const models = await getModelsForProvider(providerId);
-        return models.length > 0 ? providerId : null;
-      } catch {
-        return null;
-      }
-    }),
-  );
-
-  return usableProviders.filter((providerId): providerId is string => providerId !== null);
-}
-
 export function pickCompatibleModelForProvider({
   providerId,
   availableModels,
@@ -98,29 +82,4 @@ export function pickCompatibleModelForProvider({
   }
 
   return null;
-}
-
-export async function resolveCompatibleModelForProvider(
-  providerId: string,
-  {
-    currentModel,
-    fallbackModel,
-  }: {
-    currentModel?: string;
-    fallbackModel?: string;
-  } = {},
-): Promise<string | null> {
-  let availableModels: Awaited<ReturnType<typeof getModelsForProvider>>;
-  try {
-    availableModels = await getModelsForProvider(providerId);
-  } catch {
-    return null;
-  }
-
-  return pickCompatibleModelForProvider({
-    providerId,
-    availableModels,
-    currentModel,
-    fallbackModel,
-  });
 }

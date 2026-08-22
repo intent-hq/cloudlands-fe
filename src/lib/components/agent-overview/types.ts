@@ -9,9 +9,9 @@
 // Node Types
 // ============================================================================
 
-export type NodeType = 'agent' | 'file' | 'note' | 'task';
+type NodeType = 'agent' | 'file' | 'note' | 'task';
 
-export interface BaseNode {
+interface BaseNode {
   id: string;
   type: NodeType;
   x: number;
@@ -78,9 +78,16 @@ export type GraphNode = AgentNode | FileNode | NoteNode | TaskNode;
 // Edge Types
 // ============================================================================
 
-export type EdgeType = 'delegation' | 'file-read' | 'file-write' | 'note-read' | 'note-write' | 'task-create' | 'task-update';
+type EdgeType =
+  | 'delegation'
+  | 'file-read'
+  | 'file-write'
+  | 'note-read'
+  | 'note-write'
+  | 'task-create'
+  | 'task-update';
 
-export interface BaseEdge {
+interface BaseEdge {
   id: string;
   type: EdgeType;
   sourceId: string;
@@ -93,31 +100,32 @@ export interface BaseEdge {
   deletions?: number;
 }
 
-export interface DelegationEdge extends BaseEdge {
+interface DelegationEdge extends BaseEdge {
   type: 'delegation';
   parentAgentId: string;
   childAgentId: string;
 }
 
-export interface FileInteractionEdge extends BaseEdge {
+interface FileInteractionEdge extends BaseEdge {
   type: 'file-read' | 'file-write';
   agentId: string;
   filePath: string;
 }
 
-export interface NoteInteractionEdge extends BaseEdge {
+interface NoteInteractionEdge extends BaseEdge {
   type: 'note-read' | 'note-write';
   agentId: string;
   noteId: string;
 }
 
-export interface TaskInteractionEdge extends BaseEdge {
+interface TaskInteractionEdge extends BaseEdge {
   type: 'task-create' | 'task-update';
   agentId: string;
   taskId: string;
 }
 
-export type GraphEdge = DelegationEdge | FileInteractionEdge | NoteInteractionEdge | TaskInteractionEdge;
+export type GraphEdge =
+  DelegationEdge | FileInteractionEdge | NoteInteractionEdge | TaskInteractionEdge;
 
 // ============================================================================
 // Graph State
@@ -165,32 +173,4 @@ export interface InteractionEvent {
 
 export function isAgentNode(node: GraphNode): node is AgentNode {
   return node.type === 'agent';
-}
-
-export function isFileNode(node: GraphNode): node is FileNode {
-  return node.type === 'file';
-}
-
-export function isNoteNode(node: GraphNode): node is NoteNode {
-  return node.type === 'note';
-}
-
-export function isTaskNode(node: GraphNode): node is TaskNode {
-  return node.type === 'task';
-}
-
-export function isDelegationEdge(edge: GraphEdge): edge is DelegationEdge {
-  return edge.type === 'delegation';
-}
-
-export function isFileInteractionEdge(edge: GraphEdge): edge is FileInteractionEdge {
-  return edge.type === 'file-read' || edge.type === 'file-write';
-}
-
-export function isNoteInteractionEdge(edge: GraphEdge): edge is NoteInteractionEdge {
-  return edge.type === 'note-read' || edge.type === 'note-write';
-}
-
-export function isTaskInteractionEdge(edge: GraphEdge): edge is TaskInteractionEdge {
-  return edge.type === 'task-create' || edge.type === 'task-update';
 }

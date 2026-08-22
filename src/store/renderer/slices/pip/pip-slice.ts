@@ -1,4 +1,4 @@
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 
 // ============================================================================
 // Types
@@ -7,7 +7,7 @@ import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 /**
  * State of a single PiP window
  */
-export interface PipWindowState {
+interface PipWindowState {
   workspaceId: string;
   tabId: string;
   tabType: string;
@@ -29,16 +29,7 @@ export const initialState: PipState = {
 };
 
 // ============================================================================
-// Helpers
-// ============================================================================
-
-export function getPipKey(workspaceId: string, tabId: string): string {
-  return `${workspaceId}:${tabId}`;
-}
-
-// ============================================================================
 // Reducer
 // ============================================================================
 
 export const pipReducer = createReducer<PipState>(initialState);
-

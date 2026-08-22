@@ -5,32 +5,19 @@
  * Provides category-based logging for better organization.
  */
 
-import {
-  Logger as BaseLogger,
-  type LogEntry as BaseLogEntry,
-} from '$shared/logger';
+import { Logger as BaseLogger, type LogEntry as BaseLogEntry } from '$shared/logger';
 import { invoke } from '$shared/generated/ipc-client';
-import { LOG_CHANNELS } from '$shared/ipc';
+import { LOG_CHANNELS } from '$shared/ipc/channels';
 
 // Configure log levels
-export type AppLogLevel = 'error' | 'warn' | 'info' | 'debug' | 'verbose';
+type AppLogLevel = 'error' | 'warn' | 'info' | 'debug' | 'verbose';
 
 // Log categories for better organization
 export enum LogCategory {
-  TERMINAL = 'terminal',
   AGENT = 'agent',
-  SESSION = 'session',
-  WORKSPACE = 'workspace',
-  FILE = 'file',
-  GIT = 'git',
-  SSH = 'ssh',
-  SYSTEM = 'system',
-  UI = 'ui',
-  PERFORMANCE = 'performance',
-  AUGGIE = 'auggie',
 }
 
-export interface LogEntry extends BaseLogEntry {
+interface LogEntry extends BaseLogEntry {
   category: LogCategory;
 }
 
@@ -110,10 +97,10 @@ class RendererLogger {
       error:
         error instanceof Error
           ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack,
-          }
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+            }
           : undefined,
     };
 

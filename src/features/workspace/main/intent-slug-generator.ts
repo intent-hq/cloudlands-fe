@@ -32,7 +32,7 @@ const SLUG_GENERATION_TIMEOUT_MS = 5_000;
  * @param intent - The user's initial prompt/intent for the workspace
  * @returns A slug like "auth-refactor" (without suffix) or null if failed
  */
-export async function generateIntentBasedSlug(intent: string): Promise<string | null> {
+async function generateIntentBasedSlug(intent: string): Promise<string | null> {
   if (!intent || intent.trim().length < 5) {
     logger.debug('Intent too short for slug generation', { length: intent?.length });
     return null;

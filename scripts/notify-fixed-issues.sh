@@ -40,7 +40,7 @@
 # without posting (ISSUES_GH_TOKEN is then optional and the marker check is
 # best-effort).
 #
-# This script is best-effort by design: its caller (release-beta.yml) runs it
+# This script is best-effort by design: its caller (release-alpha.yml) runs it
 # fail-soft so a notification failure never blocks a release.
 # Requires: git (a checkout with full history for the fe range) and gh
 # (authenticated via GH_TOKEN for the SOURCE_REPO reads).

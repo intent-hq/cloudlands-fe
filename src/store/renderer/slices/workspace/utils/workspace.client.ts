@@ -29,7 +29,7 @@ const WORKSPACE_CLIENT_CACHE_MAX_ENTRIES = 100;
  * This ensures consistent path separators regardless of OS,
  * since the main process may return Windows-style backslashes.
  */
-export function normalizeWorkspacePaths(ws: Workspace): Workspace {
+function normalizeWorkspacePaths(ws: Workspace): Workspace {
   return {
     ...ws,
     path: ws.path?.replaceAll('\\', '/'),

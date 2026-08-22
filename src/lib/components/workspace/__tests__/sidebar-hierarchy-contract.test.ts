@@ -173,6 +173,9 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).not.toContain('m.ui_openCombo_open_label()');
     expect(sidebar).not.toContain('faChevronDown');
     expect(sidebar).toContain('handleOpenAgentInPanel(agent.id);');
+    expect(sidebar).toContain('onSelect={({ agentId }) => handleOpenAgentInPanel(agentId)}');
+    expect(sidebar).toContain('onOpenAgent={handleOpenAgentInPanel}');
+    expect(sidebar).toContain('onSelectAgent={handleOpenAgentInPanel}');
     expect(sidebar).toContain('onclick={() => handleOpenNoteInPanel(note.id as string)}');
     expect(sidebar).toContain('rounded-sm outline-none transition-colors');
     expect(sidebar).toContain('rounded-lg border border-border bg-sidebar');

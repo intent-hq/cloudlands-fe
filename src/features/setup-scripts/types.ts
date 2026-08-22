@@ -49,13 +49,6 @@ export const SETUP_SCRIPT_VARIABLES: SetupScriptVariable[] = [
 ];
 
 /**
- * Get the variable description for display in tooltips
- */
-export function getVariableDescription(varName: string): SetupScriptVariable | undefined {
-  return SETUP_SCRIPT_VARIABLES.find((v) => v.name === varName);
-}
-
-/**
  * Detect if running on Windows.
  * Works in both main process (process.platform) and renderer (navigator.platform).
  */
@@ -63,29 +56,6 @@ const isWindows =
   typeof process !== 'undefined'
     ? process.platform === 'win32'
     : typeof navigator !== 'undefined' && navigator.platform.startsWith('Win');
-
-/**
- * Generate a help comment block for scripts
- */
-export function generateVariablesHelpComment(isWindowsOverride?: boolean): string {
-  const win = isWindowsOverride ?? isWindows;
-  if (win) {
-    // i18n-ignore (shell script comment block)
-    return `# Available variables:
-#   $env:MAIN_CHECKOUT  - Path to main repository checkout
-#   $env:WORKTREE_PATH  - Path to this worktree (current directory)
-#   $env:BRANCH_NAME    - Name of this worktree's branch
-#   $env:SOURCE_BRANCH  - Name of the branch this worktree was created from
-`;
-  }
-  // i18n-ignore (shell script comment block)
-  return `# Available variables:
-#   $MAIN_CHECKOUT  - Path to main repository checkout
-#   $WORKTREE_PATH  - Path to this worktree (current directory)
-#   $BRANCH_NAME    - Name of this worktree's branch
-#   $SOURCE_BRANCH  - Name of the branch this worktree was created from
-`;
-}
 
 /**
  * Get the appropriate template content for the current platform.
@@ -96,17 +66,6 @@ export function getTemplateContent(template: SetupScriptTemplate): string {
     return template.contentWindows;
   }
   return template.content;
-}
-
-export interface SetupScript {
-  id: string;
-  name: string;
-  content: string;
-  repoPath?: string; // Associated repository path (for filtering)
-  projectType?: ProjectType;
-  lastUsedAt: string;
-  usageCount: number;
-  createdAt: string;
 }
 
 export type ProjectType =

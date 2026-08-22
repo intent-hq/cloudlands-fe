@@ -21,7 +21,7 @@ import {
 const logger = new Logger('LoopbackUrlResolver');
 
 /** Timeout for the remote-rewrite reachability probe. */
-export const REMOTE_REWRITE_PROBE_TIMEOUT_MS = 1500;
+const REMOTE_REWRITE_PROBE_TIMEOUT_MS = 1500;
 
 /**
  * Minimal tunnel surface the resolver and the `browser.exec` tunnel actions

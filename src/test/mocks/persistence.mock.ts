@@ -141,6 +141,6 @@ export class MockPersistenceService {
   }
 }
 
-export function createMockPersistenceService(): MockPersistenceService {
+function createMockPersistenceService(): MockPersistenceService {
   return new MockPersistenceService();
 }

@@ -329,7 +329,6 @@ export const BROWSER_PROTOCOLS = {
   INTERNAL: ['app:', 'workspace-asset:'] as readonly string[],
 } as const;
 
-
 /**
  * Browser panel session partition name.
  * Uses 'persist:' prefix for persistent storage across app restarts.
@@ -413,20 +412,6 @@ export const RETRY = {
 } as const;
 
 // ============================================================================
-// TYPE EXPORTS
-// ============================================================================
-
-export type TimeoutKey = keyof typeof TIMEOUTS;
-export type LimitKey = keyof typeof LIMITS;
-export type DefaultKey = keyof typeof DEFAULTS;
-export type ThresholdKey = keyof typeof THRESHOLDS;
-export type PathKey = keyof typeof PATHS;
-export type FileExtensionKey = keyof typeof FILE_EXTENSIONS;
-export type PatternKey = keyof typeof PATTERNS;
-export type CacheTTLKey = keyof typeof CACHE_TTL;
-export type RetryKey = keyof typeof RETRY;
-
-// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
@@ -457,54 +442,3 @@ export function isAtWarningThreshold(activeCount: number): boolean {
 export function isSessionTooLarge(sizeInBytes: number): boolean {
   return sizeInBytes > LIMITS.MAX_SESSION_SIZE;
 }
-
-// ============================================================================
-// RECOVERY CONFIGURATION
-// ============================================================================
-
-export const RECOVERY = {
-  /** Recovery state save debounce (milliseconds) */
-  DEBOUNCE: 1000, // 1 second
-
-  /** Recovery file retention (milliseconds) */
-  RETENTION: 24 * 60 * 60 * 1000, // 24 hours
-
-  /** Maximum recovery attempts */
-  MAX_ATTEMPTS: 3,
-
-  /** Recovery check interval (milliseconds) */
-  CHECK_INTERVAL: 5 * 1000, // 5 seconds
-} as const;
-
-// ============================================================================
-// DEFAULT MESSAGES
-// ============================================================================
-
-export const DEFAULT_MESSAGES = {
-  /** Recovery message */
-  RECOVERY_MESSAGE:
-    'Session was restored after an interruption. The previous response may be incomplete.',
-
-  /** Connection error message */
-  CONNECTION_ERROR: 'Unable to connect to the agent service. Please try again.',
-
-  /** Timeout error message */
-  TIMEOUT_ERROR: 'The operation timed out. Please try again.',
-
-  /** Generic error message */
-  GENERIC_ERROR: 'An unexpected error occurred. Please try again.',
-} as const;
-
-export default {
-  TIMEOUTS,
-  LIMITS,
-  DEFAULTS,
-  THRESHOLDS,
-  PATHS,
-  FILE_EXTENSIONS,
-  PATTERNS,
-  CACHE_TTL,
-  RETRY,
-  RECOVERY,
-  DEFAULT_MESSAGES,
-};

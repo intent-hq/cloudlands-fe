@@ -4,8 +4,7 @@ description: >-
   Preact Signals guidance for ReactStore React apps. Use for ReadonlySignal<T>,
   .value reads/writes, computed(), Babel transform or useSignals() tracking,
   direct signal JSX rendering, component-local useSignal/useComputed/useSignalEffect,
-  and separating React signal consumption from Svelte readable or Streaming/Kefir
-  patterns.
+  and keeping signal consumption scoped to React components and custom hooks.
 type: sub-skill
 requires:
   - react
@@ -34,9 +33,8 @@ Use this skill for React apps that chose `ReactStore` and Preact Signals. It
 owns general signal consumption guidance; `../selectors/SKILL.md` owns
 ReactStore selector call modes that produce or consume those signals.
 
-This is **not** Svelte readable or `StreamingStore`/Kefir guidance. Do not use
-`$store` template syntax, Svelte context/lifecycle cleanup, Kefir observables,
-or readable subscription rules in the same React app path.
+This skill covers React signal consumption only. Keep selector outputs and
+component-local signals within the React tracking mechanisms described below.
 
 ## Signal model
 
@@ -172,12 +170,8 @@ Don't:
   fallback boundary.
 - Do not destructure, map, compare, or serialize a signal object as if it were
   the selected value.
-- Do not use Svelte `$todo`, `get(todoReadable)`, `subscribe`, `onDestroy`, or
-  `getContext` patterns for ReactStore selector signals.
 - Do not replace ReactStore selectors with module-level shared signals for app
   domain data.
-- Do not mix `StreamingStore`/Kefir observable selector assumptions into React
-  component code.
 
 ## Verification cues
 
@@ -186,5 +180,5 @@ Don't:
 - Direct selector calls are documented as returning `ReadonlySignal<R>` and are
   preferred for signal-aware React consumers.
 - `.useValue(...args)` examples are clearly fallback boundaries.
-- React signal guidance remains separate from Svelte readable and
-  `StreamingStore`/Kefir guidance.
+- React signal guidance remains scoped to ReactStore selector outputs and
+  component-local signal state.

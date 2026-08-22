@@ -4,6 +4,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import MicroKeySlotSquare from '$features/hardware-console/components/MicroKeySlotSquare.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+  import ToastCloseButton from './ToastCloseButton.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -26,7 +27,7 @@
 
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
      the kind-flavored border tint is passed as a wrapper class by the service. -->
-<div class="flex w-full min-w-0 items-start gap-3">
+<div class="relative flex w-full min-w-0 items-start gap-3">
   <!-- Icon -->
   <div class="flex-shrink-0 mt-0.5 {kind === 'blocker' ? 'text-destructive' : 'text-primary'}">
     <Fa icon={kind === 'blocker' ? faTriangleExclamation : faComments} class="w-5 h-5" />
@@ -56,17 +57,7 @@
   </div>
 
   <!-- Close button -->
-  <button
-    type="button"
-    class="-mr-1 -mt-1 flex-shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
-    onclick={onClose}
-    aria-label={m.agent_attentionToast_close_ariaLabel()}
-  >
-    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"
-      ></path>
-    </svg>
-  </button>
+  <ToastCloseButton onclick={onClose} ariaLabel={m.agent_attentionToast_close_ariaLabel()} />
 </div>
 
 <style>

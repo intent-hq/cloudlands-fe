@@ -11,11 +11,9 @@ export const MAX_WIDTH = 800;
 export const COLUMN_SIDEBAR_MAX_WIDTH = 400;
 
 // Bottom dock constants
-export type DockViewMode = 'agents' | 'terminal';
+type DockViewMode = 'agents' | 'terminal';
 
-export const DEFAULT_DOCK_HEIGHT = 400;
-export const MIN_DOCK_HEIGHT = 200;
-export const MAX_DOCK_HEIGHT = 800;
+const DEFAULT_DOCK_HEIGHT = 400;
 
 export interface PanelVisibilityState {
   showNavigationRail: boolean;
@@ -106,9 +104,9 @@ export type UiLayoutState = {
   workspaceSidebarPanelLayout: WorkspaceSidebarPanelLayoutState;
 };
 
-export const SPACES_SIDEBAR_DEFAULT_WIDTH = 200;
+const SPACES_SIDEBAR_DEFAULT_WIDTH = 200;
 
-export const initialState: UiLayoutState = {
+const initialState: UiLayoutState = {
   lineWrapping: true,
   foldUnchanged: true,
   diffSideBySide: true,

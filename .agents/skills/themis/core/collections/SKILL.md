@@ -7,14 +7,14 @@ description: >-
   counting (increaseRefsCount, decreaseRefsCount, getRefsCount,
   addItemAndCountRef). All operations are immutable and return a new Collection
   (or the same reference on a no-op). Public API:
-  @augmentcode/themis/utils/collections/collection-utils; docs: docs/COLLECTIONS.md.
+  @augmentcode/themis/utils/collections/collection-utils; docs: @augmentcode/themis/docs/COLLECTIONS.md.
 type: sub-skill
 library: themis
 requires:
   - core
   - core/reducers
 sources:
-  - augmentcode/themis:docs/COLLECTIONS.md
+  - "@augmentcode/themis/docs/COLLECTIONS.md"
   - "@augmentcode/themis/utils/collections/collection-utils"
 triggers:
   - create collection
@@ -24,7 +24,7 @@ triggers:
 ---
 # Collections — `Collection<T, K>`
 
-> Operational guidance for normalized entity state. Full API reference and examples: `docs/COLLECTIONS.md`. Public API: `@augmentcode/themis/utils/collections/collection-utils`.
+> Operational guidance for normalized entity state. Full API reference and examples: `@augmentcode/themis/docs/COLLECTIONS.md`. Public API: `@augmentcode/themis/utils/collections/collection-utils`.
 
 ## Use when
 
@@ -118,7 +118,7 @@ import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 type Todo = { id: string; title: string; completed: boolean };
 type TodosState = { todos: Collection<Todo, "id"> };
 const initialState: TodosState = { todos: createCollection<Todo, "id">("id") };
-export const todosReducer = createReducer(initialState);
+const todosReducer = createReducer(initialState);
 const store = new Store({ todos: todosReducer });
 
 export const selectTodo = store.createSelector((state, id: string) => getItem(state.todos.todos, id));
@@ -150,8 +150,7 @@ const initialState: TodosState = { todos: createCollection<Todo, "id">("id") };
 const renameTodo = createAction("todos/rename", (id: string, title: string) => ({ id, title }));
 
 // BAD: direct ids/map writes can create duplicates or dangling ids and bypass helper no-op behavior.
-export const todosReducer = createReducer(initialState);
-todosReducer.with(renameTodo, (state, { payload }) => {
+export const todosReducer = createReducer(initialState).with(renameTodo, (state, { payload }) => {
   state.todos.map[payload.id] = { ...state.todos.map[payload.id], title: payload.title };
   state.todos.ids.push(payload.id);
   return state;
@@ -162,11 +161,11 @@ todosReducer.with(renameTodo, (state, { payload }) => {
 
 - Reducer tests cover add/update/remove/upsert branches and no-op same-reference behavior.
 - Selector tests cover item lookup and list materialization using `.select(mockState, ...)`.
-- Manual review checks that detailed helper examples remain in `docs/COLLECTIONS.md`; this skill keeps only implementation cues.
+- Manual review checks that detailed helper examples remain in `@augmentcode/themis/docs/COLLECTIONS.md`; this skill keeps only implementation cues.
 
 ## See also
 
-- `docs/COLLECTIONS.md` — human reference for helper signatures and examples.
+- `@augmentcode/themis/docs/COLLECTIONS.md` — human reference for helper signatures and examples.
 - `core/reducers/SKILL.md` — pure immutable reducer updates.
 - Selected Store family selector skill — collection selector helpers.
 - `core/state-serialization/SKILL.md` — collections as serializable alternatives to `Map`/`Set`.

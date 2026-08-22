@@ -160,7 +160,7 @@ export function persistNewWorkspaceDraft(
 }
 
 /** Debounce window for the modal draft save (`drafts.set`, PROTOCOL §5.16). */
-export const NEW_WORKSPACE_DRAFT_DEBOUNCE_MS = 300;
+const NEW_WORKSPACE_DRAFT_DEBOUNCE_MS = 300;
 
 /** Debounced draft saver with an explicit flush for unload/destroy. */
 export interface NewWorkspaceDraftSaver {

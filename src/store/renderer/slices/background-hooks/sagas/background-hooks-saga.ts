@@ -19,7 +19,7 @@ import {
   type HookEventData,
 } from '$features/hooks/background-hooks-service';
 import {
-  backgroundHooksCleared,
+  backgroundHooksMarkedStale,
   backgroundHooksRefetchRequested,
   backgroundHooksSubscribeRequested,
   backgroundHooksUnsubscribeRequested,
@@ -29,6 +29,7 @@ import {
 } from '../background-hooks-slice';
 import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
+import { selectBackgroundHooks } from '../background-hooks-selectors';
 
 const logger = createLogger('BackgroundHooksSaga');
 
@@ -139,12 +140,24 @@ function* subscribeActiveWorkspace(
   const generation = ++entry.generation;
   const lease: SubscriptionLease = { cancelled: false };
   entry.lease = lease;
+  // Seed `hook.list` CONCURRENTLY with the `events.subscribe` (~1 RTT
+  // instead of 2 serial RTTs); the ack handler below closes the event-gap
+  // race. A failed seed still latches the entry as empty (refetchWorkspace's
+  // catch), so the footer gate never wedges.
+  yield* put(backgroundHooksRefetchRequested(workspaceId));
   if (yield* call(subscribeWorkspace, workspaceId, lease)) {
     if (
       active.get(workspaceId) === entry &&
       entry.generation === generation &&
       entry.lease === lease
     ) {
+      // Event-gap race: response ordering proves nothing about SNAPSHOT
+      // ordering — a seed can snapshot before the subscription window opens
+      // yet respond after the ack, and a pre-ack fold can be clobbered by
+      // the in-flight seed response. Always re-list after the ack: the
+      // single-flight watcher coalesces it into (at most) one trailing
+      // `hook.list` that starts after the seed settles, converging every
+      // ordering.
       yield* put(backgroundHooksRefetchRequested(workspaceId));
     }
   }
@@ -171,8 +184,10 @@ function* refetchWorkspace(
     // Still deliver the cached list (empty on a failed initial seed) so the
     // workspace entry exists: the utility-footer readiness gate treats a
     // failed seed as ready-with-empty and never wedges the reveal.
+    // PROVISIONAL: the cached rows are not a fresh snapshot, so a retained
+    // stale flag must survive this delivery.
     if (active.get(workspaceId) === entry && entry.generation === generation) {
-      yield* put(backgroundHooksUpdated(workspaceId, entry.hooks));
+      yield* put(backgroundHooksUpdated(workspaceId, entry.hooks, true));
     }
   }
 }
@@ -202,7 +217,9 @@ function* closeWorkspace(
   entry.generation += 1;
   if (entry.lease) entry.lease.cancelled = true;
   yield* put(refetchEvents, { kind: 'cancel', workspaceId });
-  yield* put(backgroundHooksCleared(workspaceId));
+  // Retain the Redux entry (marked stale) so a warm switch-back keeps the
+  // footer delivered latch set; the re-activation seed refreshes the rows.
+  yield* put(backgroundHooksMarkedStale(workspaceId));
   if (active.size === 0) yield* call(closeTransport, transport);
   if (entry.lease) yield* call(unsubscribeWorkspace, workspaceId, entry.lease);
 }
@@ -220,7 +237,11 @@ function* handleSubscribe(
     return;
   }
   yield* call(openTransport, transport, events, active);
-  const entry: ActiveWorkspace = { count: 1, generation: 0, hooks: [] };
+  // Warm re-activation: start from the retained (stale-marked) Redux entry
+  // so a pre-seed event fold converges the retained rows instead of
+  // clobbering them with a fold-from-empty; the concurrent seed refreshes.
+  const retained = yield* selectBackgroundHooks.effect(workspaceId);
+  const entry: ActiveWorkspace = { count: 1, generation: 0, hooks: retained };
   active.set(workspaceId, entry);
   yield* call(subscribeActiveWorkspace, active, workspaceId, entry);
 }
@@ -252,7 +273,11 @@ function* handleNotification(
   if (subscriptionId && params?.subscriptionId && params.subscriptionId !== subscriptionId) return;
   const folded = foldHookEvent(entry.hooks, event.type, event.data ?? {});
   entry.hooks = folded.hooks;
-  yield* put(backgroundHooksUpdated(event.workspaceId, entry.hooks));
+  // PROVISIONAL: a fold on retained (possibly stale) rows is not a fresh
+  // snapshot — a retained stale flag survives until a full `hook.list`
+  // lands. (A pre-ack fold clobbered by the in-flight seed response is
+  // converged by the unconditional post-ack re-list.)
+  yield* put(backgroundHooksUpdated(event.workspaceId, entry.hooks, true));
   if (folded.needsRefetch) yield* put(backgroundHooksRefetchRequested(event.workspaceId));
 }
 
@@ -293,25 +318,31 @@ const SUBSCRIPTION_RECONCILIATION_DELAY_MS = 100;
  * Auto-forks (selector-channel helper); on root cancellation the root saga's
  * own finally closes every active workspace, lease included.
  *
- * Asymmetry with pr-monitors — intentional: the swap CLEARS the outgoing
- * workspace's entry (`backgroundHooksCleared` drops the delivered latch),
- * while the pr-monitor saga retains its entry on reconcile. Hooks favor
- * freshness because consumers read the entry as authoritative-when-present
- * (`getActiveHookNames` skips its `hook.list` fallback whenever an entry
- * exists), so a retained entry would silently serve stale hooks while
- * unsubscribed; pr-monitor consumers have no such existence-keyed fallback
- * and re-seed on activation regardless. Cost: a cross-workspace switch-back
- * re-arms the footer reveal gate for the ~100ms reconciliation delay + one
- * `hook.list` RTT (overlapping the agent's own view-time
- * `agent.getSubscriptions` re-read, and bounded by the reveal fallback).
+ * Like pr-monitors, the swap RETAINS the outgoing workspace's entry — it is
+ * marked stale (`backgroundHooksMarkedStale`) rather than cleared — so a
+ * warm switch-back never re-arms the footer reveal gate on a `hook.list`
+ * RTT: the delivered latch (`selectBackgroundHooksSnapshotDelivered`) stays
+ * set and the re-activation seed refreshes the rows in the background,
+ * after the reveal. Staleness is handled at the consumer: readers that
+ * treat an entry as authoritative (`getActiveHookNames`) consult the
+ * `stale` flag and fall back to an on-demand `hook.list` while the entry is
+ * unsubscribed, so retention never serves stale hooks as fresh.
  */
 function* watchActiveWorkspaceLease(): SagaGenerator<void> {
   let leasedWorkspaceId: string | null = null;
+  let lastChangeAt = 0;
   yield* takeLatestFromSelector(
     selectCurrentWorkspaceTabId,
     function* ({ payload }: SelectorChannelPayload<string | null>): SagaGenerator<void> {
-      yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
       if (payload === leasedWorkspaceId) return;
+      // Leading edge is immediate: only a change arriving within the window
+      // of the previous one is trailing-debounced (takeLatest cancels the
+      // superseded run), so rapid tab flapping still coalesces into one swap.
+      const sinceLastChange = Date.now() - lastChangeAt;
+      lastChangeAt = Date.now();
+      if (sinceLastChange < SUBSCRIPTION_RECONCILIATION_DELAY_MS) {
+        yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
+      }
       const previous = leasedWorkspaceId;
       leasedWorkspaceId = payload;
       if (payload) yield* put(backgroundHooksSubscribeRequested(payload));

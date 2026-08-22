@@ -5,41 +5,41 @@ import { invoke, isElectron } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
+  isBrowserEmulatedSize,
   isWorkspaceCommandPayload,
   type BrowserCloseTabPayload,
+  type BrowserEmulatedSize,
   type BrowserFocusTabPayload,
   type BrowserListTabsRequestPayload,
   type BrowserOpenTabPayload,
+  type BrowserShowTabPayload,
   type BrowserTabNavigatedPayload,
   type BrowserTabOwnerChangedPayload,
 } from '$shared/ipc/workspace-command-payloads';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
+import { routedWorkspaceId } from '../../../utils/routed-workspace-id';
 import {
   selectAllTabs,
+  selectHiddenTabs,
   selectPanelLayoutWorkspaces,
-  selectPanels,
-  selectPendingPanelReveal,
 } from '../../panel-layout/panel-layout-selectors';
 import {
   hydrateWorkspaceLayout,
   waitForWorkspaceLayoutRestore,
 } from '../../panel-layout/sagas/panel-layout-saga';
+import { dropRevealIfWorkspaceNotDisplayed } from '../../panel-layout/sagas/reveal-suppression';
 import {
   closeTab,
-  focusPanel,
+  openHiddenTab,
   openTab,
-  openTabInNewRootColumn,
+  openTabInRightmostColumnRequested,
+  restoreHiddenTab,
   setActiveTab,
-  setPanelPinned,
   setTabOwnerAgent,
   updateTabBrowserUrl,
 } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectWorkspaceTabOrder } from '../../tab-state/tab-state-selectors';
-import {
-  selectPanelOpenMode,
-  selectPanelStackDirection,
-} from '../../user-preferences/user-preferences-selectors';
 import { focusBrowserTabRequested } from '../app-layout-slice';
 
 let running = false;
@@ -50,6 +50,7 @@ function browserTab(
   url: string,
   requestedUrl?: string,
   ownerAgentId?: string,
+  emulatedSize?: BrowserEmulatedSize,
 ): Omit<PanelTab, 'id'> {
   return {
     type: 'browser',
@@ -62,13 +63,10 @@ function browserTab(
     // Persist the owning agent on agent opens so ownership survives restart
     // (monorepo#2857).
     ...(ownerAgentId === undefined ? {} : { ownerAgentId }),
+    // Persist the emulated viewport alongside the owner so the tab
+    // rehydrates at its actual size after restart (monorepo#2857).
+    ...(emulatedSize === undefined ? {} : { emulatedSize }),
   };
-}
-
-function* pinRevealedPanel(workspaceId: string, requestId: string): SagaGenerator<void> {
-  const reveal = yield* selectPendingPanelReveal.effect(workspaceId);
-  if (reveal?.requestId !== requestId) return;
-  yield* put(setPanelPinned(workspaceId, reveal.panelId, true));
 }
 
 type LayoutReadiness =
@@ -88,23 +86,6 @@ type LayoutReadiness =
  * hydration failure is reported as a result so one poisoned persisted layout
  * cannot abort the whole browser IPC saga for the window.
  */
-
-/**
- * The workspace this window's route currently displays, or null outside
- * `/workspace/{id}` (and on `/workspace/new`). Main targets workspace-scoped
- * IPC at windows by this same signal (`windowWorkspaceIds`, fed from the
- * route in `afterNavigate`), so hostedness here must accept it too: a window
- * routed to a workspace can receive a request while that workspace has no
- * layout entry and is missing from the tab strip (e.g. columns-mode
- * route/stack divergence), and judging it not-hosted would leave the request
- * to time out as "renderer did not respond" (monorepo#2789).
- */
-function routedWorkspaceId(): string | null {
-  if (typeof window === 'undefined') return null;
-  const match = window.location.pathname.match(/^\/workspace\/([^/?]+)/);
-  const id = match?.[1];
-  return id && id !== 'new' ? id : null;
-}
 
 function* ensureWorkspaceLayoutForRequest(workspaceId: string): SagaGenerator<LayoutReadiness> {
   const held = workspaceId in (yield* selectPanelLayoutWorkspaces.effect());
@@ -161,7 +142,6 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   // of dedupe so the panel layout's equivalent-tab reuse doesn't override it.
   const newTabId = typeof data.tabId === 'string' && data.tabId.length > 0 ? data.tabId : undefined;
   const allowDuplicate = data.allowDuplicate === true ? true : undefined;
-  const pin = data.pin === true;
   // Pre-rewrite URL for rewritten opens; persisted with the tab so a restart
   // can re-run the rewrite (monorepo#2789).
   const requestedUrl = typeof data.requestedUrl === 'string' ? data.requestedUrl : undefined;
@@ -170,6 +150,19 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     typeof data.ownerAgentId === 'string' && data.ownerAgentId.length > 0
       ? data.ownerAgentId
       : undefined;
+  // Emulated viewport on agent opens; persisted with the tab alongside the
+  // owner so the size survives restart and the UI can surface it
+  // (monorepo#2857, §5.9). Only meaningful for owned tabs.
+  const emulatedSize =
+    ownerAgentId !== undefined && isBrowserEmulatedSize(data.emulatedSize)
+      ? data.emulatedSize
+      : undefined;
+  // Agent opens are hidden by default (monorepo#3045): visible: false
+  // creates the tab straight into hiddenTabs — no panel mount, no focus or
+  // active-tab change. Only owned tabs can be hidden (unowned tabs would be
+  // invisible AND unrestorable — hide-on-close and the sidebar owner groups
+  // are ownership-scoped).
+  const hiddenOpen = ownerAgentId !== undefined && data.visible === false;
 
   const position = data.position ?? 'adjacent';
   if (position === 'replace') {
@@ -183,6 +176,27 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     // an agent open must NOT (main never ownership-checked that tab): it
     // opens a new tab instead.
     const replaceTabId = typeof data.replaceTabId === 'string' ? data.replaceTabId : undefined;
+    // An AGENT replace may target a hidden (user-closed) owned tab — the
+    // per-agent dedupe still reuses it (monorepo#2857). Navigate it in place
+    // and leave it hidden: the user's close is respected, the agent keeps
+    // operating on the live offscreen webview. Unowned (user) opens never
+    // take this branch: main resolves the target from a list that includes
+    // hidden tabs, and navigating one in place would look like a no-op to
+    // the user while retargeting an agent-owned tab — fall through and open
+    // a visible tab instead.
+    if (replaceTabId && ownerAgentId) {
+      const hiddenTabs = yield* selectHiddenTabs.effect(workspaceId);
+      const hidden = hiddenTabs.find((tab) => tab.type === 'browser' && tab.id === replaceTabId);
+      if (hidden) {
+        yield* put(updateTabBrowserUrl(workspaceId, hidden.id, data.url, requestedUrl ?? null));
+        yield* put(
+          emulatedSize === undefined
+            ? setTabOwnerAgent(workspaceId, hidden.id, ownerAgentId)
+            : setTabOwnerAgent(workspaceId, hidden.id, ownerAgentId, emulatedSize),
+        );
+        return;
+      }
+    }
     const existing = replaceTabId
       ? tabs.find((tab) => tab.type === 'browser' && tab.id === replaceTabId)
       : ownerAgentId
@@ -193,55 +207,72 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       // An agent replace adopts the existing tab — record its new owner
       // (main enforced ownership before sending this open, monorepo#2857).
       if (ownerAgentId) {
-        yield* put(setTabOwnerAgent(workspaceId, existing.id, ownerAgentId));
-      }
-      yield* put(setActiveTab(workspaceId, existing.id));
-      if (pin) {
-        const panels = yield* selectPanels.effect(workspaceId);
-        const target = Object.entries(panels).find(([, panel]) =>
-          panel.tabs.some((tab) => tab.id === existing.id),
+        yield* put(
+          emulatedSize === undefined
+            ? setTabOwnerAgent(workspaceId, existing.id, ownerAgentId)
+            : setTabOwnerAgent(workspaceId, existing.id, ownerAgentId, emulatedSize),
         );
-        if (target) {
-          yield* put(setActiveTab(workspaceId, existing.id, target[0]));
-          const focusAction = focusPanel(workspaceId, target[0]);
-          yield* put(focusAction);
-          yield* pinRevealedPanel(workspaceId, focusAction.payload.requestId);
-        }
       }
+      // A hidden (default) agent open never changes the active tab or panel
+      // focus — the adopted tab keeps its place, only its URL changed
+      // (monorepo#3045). Adoption never hides a visible tab.
+      if (hiddenOpen) return;
+      yield* put(setActiveTab(workspaceId, existing.id));
       return;
     }
-    const openAction = openTab(
+    if (hiddenOpen) {
+      yield* put(
+        openHiddenTab(
+          workspaceId,
+          browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
+          newTabId,
+        ),
+      );
+      return;
+    }
+    const openAction = openTabInRightmostColumnRequested(
       workspaceId,
-      browserTab(data.url, requestedUrl, ownerAgentId),
-      undefined,
-      newTabId,
-      undefined,
-      undefined,
-      allowDuplicate,
-    );
-    yield* put(openAction);
-    if (pin) yield* pinRevealedPanel(workspaceId, openAction.payload.newTabId);
-    return;
-  }
-  if (position === 'adjacent') {
-    const panelOpenMode = yield* selectPanelOpenMode.effect();
-    const openAction = openTabInNewRootColumn(
-      workspaceId,
-      browserTab(data.url, requestedUrl, ownerAgentId),
+      browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
       {
         newTabId,
         allowDuplicate,
-        panelOpenMode,
-        panelStackDirection: yield* selectPanelStackDirection.effect(),
+        agentDriven: ownerAgentId !== undefined ? true : undefined,
       },
     );
     yield* put(openAction);
-    if (pin) yield* pinRevealedPanel(workspaceId, openAction.payload.newTabId);
+    return;
+  }
+  // A hidden (default) agent open creates the tab straight into hiddenTabs:
+  // no panel mount, no focus or active-tab change (monorepo#3045). The
+  // webview mounts offscreen (OffscreenWebviewHost pins owned hidden tabs)
+  // and registers, so the tab is CDP-addressable immediately. `position`
+  // and `pin` only apply to visible opens.
+  if (hiddenOpen) {
+    yield* put(
+      openHiddenTab(
+        workspaceId,
+        browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
+        newTabId,
+      ),
+    );
+    return;
+  }
+  if (position === 'adjacent') {
+    const openAction = openTabInRightmostColumnRequested(
+      workspaceId,
+      browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
+      {
+        newTabId,
+        allowDuplicate,
+        agentDriven: ownerAgentId !== undefined ? true : undefined,
+      },
+    );
+    yield* put(openAction);
     return;
   }
   const openAction = openTab(
     workspaceId,
-    browserTab(data.url, requestedUrl, ownerAgentId),
+    browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
     undefined,
     newTabId,
     undefined,
@@ -249,7 +280,9 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     allowDuplicate,
   );
   yield* put(openAction);
-  if (pin) yield* pinRevealedPanel(workspaceId, openAction.payload.newTabId);
+  if (ownerAgentId !== undefined) {
+    yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, openAction.payload.newTabId);
+  }
 }
 
 function* closeBrowser(data: BrowserCloseTabPayload | null): SagaGenerator<void> {
@@ -271,10 +304,16 @@ function* closeBrowser(data: BrowserCloseTabPayload | null): SagaGenerator<void>
     return;
   }
   const tabs = yield* selectAllTabs.effect(workspaceId);
-  const existing = tabs.find((tab) => tab.id === data.tabId && tab.type === 'browser');
+  const hiddenTabs = yield* selectHiddenTabs.effect(workspaceId);
+  const existing =
+    tabs.find((tab) => tab.id === data.tabId && tab.type === 'browser') ??
+    hiddenTabs.find((tab) => tab.id === data.tabId && tab.type === 'browser');
   if (!existing || existing.closable === false) return;
 
-  yield* put(closeTab(workspaceId, data.tabId));
+  // Main-driven closes (the agent closeTab op) genuinely destroy the tab —
+  // visible or hidden — never hide it (monorepo#2857): the hide-on-close
+  // rule applies to user closes only.
+  yield* put(closeTab(workspaceId, data.tabId, undefined, undefined, true));
 }
 
 function* focusBrowser(data: BrowserFocusTabPayload | null): SagaGenerator<void> {
@@ -296,7 +335,49 @@ function* focusBrowser(data: BrowserFocusTabPayload | null): SagaGenerator<void>
       error: readiness.message,
     });
   }
-  yield* put(focusBrowserTabRequested(data.workspaceId, data.tabId, data.pin));
+  // agentDriven: a main-driven focus on a workspace this window is not
+  // displaying applies its layout-state effects but skips the actual UI
+  // reveal (monorepo#3045).
+  yield* put(focusBrowserTabRequested(data.workspaceId, data.tabId, data.pin, true));
+}
+
+function* showBrowser(data: BrowserShowTabPayload | null): SagaGenerator<void> {
+  if (!isWorkspaceCommandPayload(data) || typeof data.tabId !== 'string' || data.tabId.length === 0)
+    return;
+  const workspaceId = data.workspaceId;
+  const focus = data.focus === true;
+
+  // Same hostedness/hydration discipline as focus-tab: hydrate a
+  // hosted-but-unvisited workspace so the hidden tab can be found in its
+  // restored layout (monorepo#2789). Main confirms the reveal against a
+  // fresh tab list, so on hydration failure we stop and let it report
+  // truthfully.
+  const readiness = yield* call(ensureWorkspaceLayoutForRequest, workspaceId);
+  if (readiness.status === 'hydration-failed') {
+    logger.warn('Layout hydration failed before browser:show-tab; ignoring show', {
+      workspaceId,
+      tabId: data.tabId,
+      error: readiness.message,
+    });
+    return;
+  }
+
+  const hiddenTabs = yield* selectHiddenTabs.effect(workspaceId);
+  if (hiddenTabs.some((tab) => tab.id === data.tabId && tab.type === 'browser')) {
+    // Reveal: activate into a visible fixed column. focus: false keeps panel
+    // focus stable (monorepo#3045, #3112).
+    yield* put(restoreHiddenTab(workspaceId, data.tabId, undefined, focus));
+    // A reveal on a workspace this window is not displaying keeps its
+    // layout-state effects but skips the actual UI reveal/scroll (its
+    // requestId is the restored tab's id).
+    yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, data.tabId);
+    return;
+  }
+  // Already visible: idempotent — focus: true still activates the tab and
+  // focuses its panel (reusing the focusTab path); focus: false is a no-op.
+  if (focus) {
+    yield* put(focusBrowserTabRequested(workspaceId, data.tabId, undefined, true));
+  }
 }
 
 function* tabNavigated(data: BrowserTabNavigatedPayload | null): SagaGenerator<void> {
@@ -348,31 +429,65 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
   if (readiness.status === 'hydration-failed') {
     // Truthful error: distinguish "hydration failed" from "renderer did not
     // respond" so main can reject instead of timing out (monorepo#2789).
-    yield* call(invoke, 'browser:list-tabs-response', {
-      requestId,
-      // i18n-ignore (agent-facing protocol error, not user-facing)
-      error: `layout hydration failed: ${readiness.message}`,
-    });
+    // Guarded: the reply invoke reaches the real ipcMain handler (bridged by
+    // browser-ipc-bridge-seeder, monorepo#2926), so a main-side throw would
+    // otherwise cancel the whole browserIpcSaga — main times the request out
+    // on a lost reply, which is the correct degraded outcome.
+    try {
+      yield* call(invoke, 'browser:list-tabs-response', {
+        requestId,
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        error: `layout hydration failed: ${readiness.message}`,
+      });
+    } catch (error) {
+      logger.warn('browser:list-tabs-response error reply failed', {
+        workspaceId,
+        requestId,
+        error,
+      });
+    }
     return;
   }
 
-  const browserTabs = (yield* selectAllTabs.effect(workspaceId))
-    .filter((tab) => tab.type === 'browser')
-    .map((tab) => ({
-      tabId: tab.id,
-      url: tab.browserUrl || '',
-      title: tab.title || m.layout_panelLayout_browser_fallback(),
-      closable: tab.closable !== false,
-      // Persisted owner so main's ownership registry can rehydrate after a
-      // restart (monorepo#2857); absent for unowned (user) tabs.
-      ...(typeof tab.ownerAgentId === 'string' && tab.ownerAgentId.length > 0
-        ? { ownerAgentId: tab.ownerAgentId }
-        : {}),
-    }));
+  // Hidden (user-closed or hidden-opened) owned tabs stay in the list: they
+  // are alive offscreen and their owner must keep seeing them
+  // (monorepo#2857). They carry `hidden: true` so main can project the
+  // listTabs `visibility` field and guard focusTab (monorepo#3045).
+  const toReplyTab = (tab: PanelTab, hidden: boolean) => ({
+    tabId: tab.id,
+    url: tab.browserUrl || '',
+    title: tab.title || m.layout_panelLayout_browser_fallback(),
+    closable: tab.closable !== false,
+    // Persisted owner so main's ownership registry can rehydrate after a
+    // restart (monorepo#2857); absent for unowned (user) tabs. The
+    // persisted emulated size rides along so the tab rehydrates at its
+    // actual viewport instead of the default.
+    ...(typeof tab.ownerAgentId === 'string' && tab.ownerAgentId.length > 0
+      ? {
+          ownerAgentId: tab.ownerAgentId,
+          ...(isBrowserEmulatedSize(tab.emulatedSize) ? { emulatedSize: tab.emulatedSize } : {}),
+        }
+      : {}),
+    ...(hidden ? { hidden: true } : {}),
+  });
+  const browserTabs = [
+    ...(yield* selectAllTabs.effect(workspaceId))
+      .filter((tab) => tab.type === 'browser')
+      .map((tab) => toReplyTab(tab, false)),
+    ...(yield* selectHiddenTabs.effect(workspaceId))
+      .filter((tab) => tab.type === 'browser')
+      .map((tab) => toReplyTab(tab, true)),
+  ];
 
   // Echo the requestId back so main resolves the matching pending request
   // (concurrent requests must not consume each other's replies).
-  yield* call(invoke, 'browser:list-tabs-response', { tabs: browserTabs, requestId });
+  // Guarded for the same reason as the error reply above: an unhandled
+  // rejection here would cancel the whole saga and kill all six watchers.
+  try {
+    yield* call(invoke, 'browser:list-tabs-response', { tabs: browserTabs, requestId });
+  } catch (error) {
+    logger.warn('browser:list-tabs-response reply failed', { workspaceId, requestId, error });
+  }
 }
 
 function* tabOwnerChanged(data: BrowserTabOwnerChangedPayload | null): SagaGenerator<void> {
@@ -398,7 +513,13 @@ function* tabOwnerChanged(data: BrowserTabOwnerChangedPayload | null): SagaGener
     });
     return;
   }
-  yield* put(setTabOwnerAgent(workspaceId, data.tabId, data.ownerAgentId));
+  // The persisted emulated size rides along with the owner (claim size /
+  // resizeTab) so it survives restart too (monorepo#2857).
+  yield* put(
+    isBrowserEmulatedSize(data.emulatedSize)
+      ? setTabOwnerAgent(workspaceId, data.tabId, data.ownerAgentId, data.emulatedSize)
+      : setTabOwnerAgent(workspaceId, data.tabId, data.ownerAgentId),
+  );
 }
 
 export function* browserIpcSaga(): SagaGenerator<void> {
@@ -436,6 +557,16 @@ export function* browserIpcSaga(): SagaGenerator<void> {
           },
         },
       ),
+      yield* takeEveryFromElectronChannel<BrowserShowTabPayload | null>(
+        'browser:show-tab',
+        showBrowser,
+        {
+          bufferPolicy: {
+            kind: 'lossless',
+            rationale: 'Every requested browser tab reveal must be applied in arrival order.',
+          },
+        },
+      ),
       yield* takeEveryFromElectronChannel<BrowserListTabsRequestPayload | null>(
         'browser:list-tabs-request',
         listBrowserTabs,
@@ -463,8 +594,7 @@ export function* browserIpcSaga(): SagaGenerator<void> {
         {
           bufferPolicy: {
             kind: 'lossless',
-            rationale:
-              'Every ownership change must be persisted with the tab in arrival order.',
+            rationale: 'Every ownership change must be persisted with the tab in arrival order.',
           },
         },
       ),

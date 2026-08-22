@@ -75,7 +75,7 @@ export const DEVPOD_PROFILE: RemoteEnvProfile = {
 };
 
 /** Minimal environment - tests graceful degradation */
-export const MINIMAL_PROFILE: RemoteEnvProfile = {
+const MINIMAL_PROFILE: RemoteEnvProfile = {
   name: 'minimal',
   description: 'Minimal environment without common dev tools',
   host: 'localhost',
@@ -95,20 +95,18 @@ export const MINIMAL_PROFILE: RemoteEnvProfile = {
   testRepoPath: '/home/minuser/repos/test-repo',
 };
 
-export const ALL_PROFILES: RemoteEnvProfile[] = [
-  STANDARD_PROFILE,
-  DEVPOD_PROFILE,
-  MINIMAL_PROFILE,
-];
+const ALL_PROFILES: RemoteEnvProfile[] = [STANDARD_PROFILE, DEVPOD_PROFILE, MINIMAL_PROFILE];
 
-export function getProfile(name: string): RemoteEnvProfile | undefined {
+function getProfile(name: string): RemoteEnvProfile | undefined {
   return ALL_PROFILES.find((p) => p.name === name);
 }
 
 export function getProfileOrThrow(name: string): RemoteEnvProfile {
   const profile = getProfile(name);
   if (!profile) {
-    throw new Error(`Unknown profile: ${name}. Available: ${ALL_PROFILES.map((p) => p.name).join(', ')}`);
+    throw new Error(
+      `Unknown profile: ${name}. Available: ${ALL_PROFILES.map((p) => p.name).join(', ')}`,
+    );
   }
   return profile;
 }

@@ -1,8 +1,12 @@
 import { store } from '../../store';
-import { type EnvironmentConfig, type PullRequestInfo, type Workspace } from '$shared/types';
+import {
+  PullRequestStatus,
+  type EnvironmentConfig,
+  type PullRequestInfo,
+  type Workspace,
+} from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
-import { type WorkspaceRecencyState } from './workspace-slice';
 import { selectIsNewlyCreatedWorkspace } from '../workspace-agents/workspace-agents-selectors';
 import {
   selectCurrentStagedWorkingChanges,
@@ -14,6 +18,7 @@ import { selectIsDaemonLocal } from '../daemon-health/daemon-health-selectors';
 import { selectActivePrMonitors } from '../pr-monitor/pr-monitor-selectors';
 import type {
   WorkflowStage,
+  WorkspaceActivePrStatus,
   WorkspaceActivePrSummary,
   WorkspaceProgressAction,
   WorkspaceProgressHeadline,
@@ -21,6 +26,7 @@ import type {
 } from './workspace-types';
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger, formatNumber } from '$lib/i18n/format';
+import { getPrChipLabel } from '$lib/utils/pr-chip-label';
 
 export const selectWorkspaceLoading = store.createSelector((state) => {
   return state.workspace.loading;
@@ -42,10 +48,6 @@ export const selectWorkspacePendingDeletions = store.createSelector<[], Record<s
 
 export const selectWorkspacePendingCreations = store.createSelector((state) => {
   return state.workspace.pendingCreations;
-});
-
-export const selectWorkspaceRecency = store.createSelector((state): WorkspaceRecencyState => {
-  return state.workspace.recency;
 });
 
 export const selectWorkspacesSortedByRecency = store.createSelector<
@@ -128,17 +130,6 @@ export const selectWorkspaceItems = store.createSelector<[], Workspace[]>((state
   );
 });
 
-const NO_EAGER_WORKSPACE_HYDRATION: Workspace[] = [];
-
-/**
- * Legacy bootstrap seeders must not eagerly hydrate workspace domains.
- * Workspace surfaces dispatch `workspaceMounted`, whose coalesced read services
- * own files, git, notes, tasks, terminals, scripts, skills, and events hydration.
- */
-export const selectHydratableWorkspaceItems = store.createSelector<[], Workspace[]>(
-  () => NO_EAGER_WORKSPACE_HYDRATION,
-);
-
 export const selectWorkspaceIsEmpty = store.createSelector((state) => {
   return state.workspace.workspaces.ids.length === 0;
 });
@@ -210,6 +201,52 @@ function resolvePrIdentity(
   };
 }
 
+/** Normalize a branch-linked PR's status, honoring the draft flag. */
+function activePrStatus(pr: PullRequestInfo): WorkspaceActivePrStatus {
+  if (pr.isDraft || pr.status === PullRequestStatus.Draft) return 'draft';
+  if (pr.status === PullRequestStatus.Open) return 'open';
+  if (pr.status === PullRequestStatus.Merged) return 'merged';
+  if (pr.status === PullRequestStatus.Closed) return 'closed';
+  return 'unknown';
+}
+
+/** Normalize a monitor snapshot's raw `state` string. */
+function monitorPrStatus(state: string, isDraft: boolean): WorkspaceActivePrStatus {
+  if (isDraft) return 'draft';
+  const normalized = state.toLowerCase();
+  if (normalized === 'open' || normalized === 'merged' || normalized === 'closed') {
+    return normalized;
+  }
+  if (normalized === 'draft') return 'draft';
+  return 'unknown';
+}
+
+/** Assemble the summary's derived action label/tooltip from the PR identity. */
+function buildActivePrSummary(args: {
+  number: number;
+  url: string;
+  repo: string | undefined;
+  chipLabel: string;
+  title: string | undefined;
+  status: WorkspaceActivePrStatus;
+}): WorkspaceActivePrSummary {
+  const { number, url, repo, chipLabel, title, status } = args;
+  const formattedNumber = formatInteger(number);
+  // i18n-ignore (org/repo#number identifier and PR title, not user-facing prose)
+  const identity = repo ? `${repo}#${formattedNumber}` : `#${formattedNumber}`;
+  return {
+    number,
+    url,
+    repo,
+    chipLabel,
+    title,
+    status,
+    // i18n-ignore (chip identifier + PR title, both i18n-exempt)
+    actionLabel: title ? `${chipLabel}: ${title}` : chipLabel,
+    actionTooltip: m.workspace_progress_viewPrIdentity_tooltip({ identity }),
+  };
+}
+
 /**
  * One sidebar source for the View PR link and Changes-card PR action. The
  * workspace-linked PR wins; active monitors are the fallback used by View PR.
@@ -219,42 +256,38 @@ export const selectWorkspaceActivePrSummary = store.createSelector<
   WorkspaceActivePrSummary | null
 >((state, wsId) => {
   const workspace = getItem(state.workspace.workspaces, wsId as Workspace['id']);
-  const activePR = workspace?.activePullRequest;
-  const legacyNumber = workspace?.prNumber;
-  const legacyUrl = workspace?.prUrl;
-  const number = activePR?.number ?? legacyNumber;
-  const url = activePR?.url ?? legacyUrl;
-  if (number !== undefined && number !== null && url) {
-    return {
-      number,
-      url,
-      actionLabel: m.workspace_progress_viewPr_label(),
-      actionTooltip: m.workspace_progress_viewPr_tooltip(),
-    };
-  }
-
-  const monitor = selectActivePrMonitors.select(state, wsId)[0];
-  if (!monitor) return null;
   const workspaceRepo =
     workspace?.repositoryOwner && workspace?.repositoryName
       ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
       : undefined;
-  const crossRepo = workspaceRepo !== undefined && monitor.repo !== workspaceRepo;
-  const formattedNumber = formatInteger(monitor.prNumber);
-  return {
+
+  const activePR = workspace?.activePullRequest;
+  const number = activePR?.number ?? workspace?.prNumber;
+  const url = activePR?.url ?? workspace?.prUrl;
+  if (number !== undefined && number !== null && url) {
+    return buildActivePrSummary({
+      number,
+      url,
+      repo: workspaceRepo,
+      chipLabel: workspaceRepo
+        ? getPrChipLabel(workspaceRepo, number, workspaceRepo)
+        : `#${number}`, // i18n-ignore (PR number identifier)
+      title: activePR?.title || undefined,
+      status: activePR ? activePrStatus(activePR) : 'unknown',
+    });
+  }
+
+  const monitor = selectActivePrMonitors.select(state, wsId)[0];
+  if (!monitor) return null;
+  const snapshot = monitor.lastSnapshot;
+  return buildActivePrSummary({
     number: monitor.prNumber,
     url: monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`,
-    repo: crossRepo ? monitor.repo : undefined,
-    actionLabel: crossRepo
-      ? m.workspace_progress_viewMonitoredPrCrossRepo_label({ repo: monitor.repo })
-      : m.workspace_progress_viewPr_label(),
-    actionTooltip: crossRepo
-      ? m.workspace_progress_viewMonitoredPrCrossRepo_tooltip({
-          repo: monitor.repo,
-          number: formattedNumber,
-        })
-      : m.workspace_progress_viewMonitoredPr_tooltip({ number: formattedNumber }),
-  };
+    repo: monitor.repo,
+    chipLabel: getPrChipLabel(monitor.repo, monitor.prNumber, workspaceRepo),
+    title: monitor.title || undefined,
+    status: snapshot ? monitorPrStatus(snapshot.state, snapshot.isDraft) : 'unknown',
+  });
 });
 
 export const selectWorkflowStage = store.createSelector<

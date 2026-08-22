@@ -28,10 +28,10 @@ export interface RendererSubscription {
 export const rendererSubscriptions = new Map<string, RendererSubscription>();
 
 /** Workspace-scoped renderer subscription ids keyed by workspaceId. */
-export const rendererSubscriptionsByWorkspace = new Map<string, Set<string>>();
+const rendererSubscriptionsByWorkspace = new Map<string, Set<string>>();
 
 /** Subscriptions without a simple workspaceId filter must remain globally eligible. */
-export const globalRendererSubscriptionIds = new Set<string>();
+const globalRendererSubscriptionIds = new Set<string>();
 
 const rendererSubscriptionIndexEntries = new Map<string, { workspaceIds?: Set<string> }>();
 
@@ -49,7 +49,11 @@ function getSimpleWorkspaceFilterIds(filters: EventFilter[]): Set<string> | unde
     if (filter.field !== 'workspaceId') continue;
     sawWorkspaceFilter = true;
 
-    if (filter.operator === 'equals' && typeof filter.value === 'string' && filter.value.length > 0) {
+    if (
+      filter.operator === 'equals' &&
+      typeof filter.value === 'string' &&
+      filter.value.length > 0
+    ) {
       workspaceIds.add(filter.value);
       continue;
     }
@@ -195,4 +199,3 @@ export function deliverEventToSubscriptions(event: WorkspaceEvent): void {
     }
   }
 }
-

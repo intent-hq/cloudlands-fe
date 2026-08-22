@@ -1,4 +1,4 @@
-export type ProviderOverlayReason = 'hidden' | 'disabled' | 'unavailable' | null;
+type ProviderOverlayReason = 'hidden' | 'disabled' | 'unavailable' | null;
 
 export interface ProviderOverlayStateInput {
   agentProviderId?: string;

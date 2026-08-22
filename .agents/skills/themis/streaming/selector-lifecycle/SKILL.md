@@ -4,7 +4,7 @@ description: >-
   Lifecycle guidance for StreamingStore selectors: selectors may be defined from
   the configured StreamingStore, but direct observable calls require init();
   dispose() tears down the Store-owned stream state. Use this for
-  stream observation timing, withStore(streamStore), and Svelte-readable contrast notes.
+  stream observation timing and withStore(streamStore) bindings.
 type: sub-skill
 requires:
   - streaming
@@ -12,7 +12,7 @@ requires:
 sources:
   - "@augmentcode/themis/streaming-store"
   - package-internal streaming selector implementation
-  - augmentcode/themis:docs/SELECTORS.md
+  - "@augmentcode/themis/docs/SELECTORS.md"
 triggers:
   - stream selector lifecycle
   - observe selector stream
@@ -24,7 +24,7 @@ triggers:
 
 Use this skill to decide when a Streaming selector can be invoked, observed, or bound to an alternate StreamingStore.
 
-Use it only for apps that chose the Streaming Store family. Do not combine theseStreaming lifecycle/setup rules with Svelte-readable Store, Svelte readable, Sveltecomponent, or Svelte selector lifecycle/setup patterns in the same app.
+Use it only for apps that chose the Streaming Store family. Do not combine these Streaming lifecycle/setup rules with alternate Store or selector lifecycle/setup patterns in the same app.
 
 ## Lifecycle map
 
@@ -41,24 +41,17 @@ Use it only for apps that chose the Streaming Store family. Do not combine these
 ## Operational guardrails
 
 - Direct selector calls intentionally throw before `init()` and after `dispose()`; do not hide that error with fallback empty streams.
-- A direct selector call returns a Kefir observable. Manage observation/teardownusing the consuming app's Kefir subscription pattern.
+- A direct selector call returns a Kefir observable. Manage observation/teardown using the consuming app's Kefir subscription pattern.
 - Same StreamingStore + selector + args direct calls reuse the cached Kefir Observable, but only call direct observable mode after `init()` or through a valid `.withStore(...)` binding.
 - `.withStore(...)` accepts another initialized StreamingStore; use it for tests/integration adapters that own their own initialized Store state.
-- `.select(...)` and `.effect(...)` are not streaming subscriptions. They are thepure read and saga read escape hatches shared with the Svelte selector API.
+- `.select(...)` and `.effect(...)` are not streaming subscriptions. They are the pure read and saga read escape hatches for selector composition and saga reads.
 - Selector-channel helpers can consume StreamingStore selectors in sagas through
   the shared `.select`/`.effect` read shape. Pass plain args to the helper args
   tuple; do not treat direct Kefir Observable selector outputs as saga
   subscriptions.
 
-## Svelte-readable contrast
-
-- Streaming selectors do not call Svelte `getContext()` and do not return Svelte`Readable` values.
-- Do not apply Svelte component-init readable rules to streaming consumers.
-- If a task is about `$selector` template values, `derived(...)` readables, or`lifecycle_outside_component`, route that separate Svelte app/code path to`../../svelte/selector-lifecycle/SKILL.md`.
-- Do not make one app use both Streaming selector lifecycle and Svelte selectorlifecycle/setup rules.
-
 ## Verification cues
 
 - Examples initialize the `StreamingStore` before direct selector invocation.
 - Pre-init or post-dispose behavior is either avoided or explicitly tested as the documented selector state error.
-- Streaming guidance does not instruct agents to call `selectFoo()` as a Sveltereadable or to use Svelte `$` template auto-subscription.
+- Streaming guidance instructs agents to initialize the `StreamingStore` before direct observable observation.

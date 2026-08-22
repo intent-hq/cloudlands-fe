@@ -8,6 +8,7 @@
   let {
     onboardingInputValue = $bindable(''),
     onboardingSkipWorktree = $bindable(false),
+    onboardingSkipIsolation = $bindable(false),
     setupScript = $bindable(''),
     showSetupScript = $bindable(false),
     setupScriptName = $bindable('Custom'),
@@ -22,9 +23,12 @@
     onModelChange,
     onProjectChange,
     onSubmit,
+    onSkipIsolationChange,
+    onBranchBehindChange,
   }: {
     onboardingInputValue?: string;
     onboardingSkipWorktree?: boolean;
+    onboardingSkipIsolation?: boolean;
     setupScript?: string;
     showSetupScript?: boolean;
     setupScriptName?: string;
@@ -39,6 +43,8 @@
     onModelChange?: (model: string) => void;
     onProjectChange?: (selection: unknown) => void;
     onSubmit?: () => void;
+    onSkipIsolationChange?: (value: boolean) => void;
+    onBranchBehindChange?: (behind: number) => void;
     [key: string]: unknown;
   } = $props();
 
@@ -46,11 +52,30 @@
     return null;
   }
 
+  // Test-settable stand-in for the real step's effective default-model
+  // snapshot (the daemon resolvedModel preview + its provider context).
+  let effectiveDefaultModel = $state<{ model: string | undefined; provider: string }>({
+    model: undefined,
+    provider: '',
+  });
+
+  export function getEffectiveDefaultModel() {
+    return effectiveDefaultModel;
+  }
+
   $effect(() => {
     (window as unknown as Record<string, unknown>).__mockOnboardingPromptStep = {
       onProjectChange,
       onSubmit,
       onModelChange,
+      setSkipIsolation: (value: boolean) => {
+        onboardingSkipIsolation = value;
+        onSkipIsolationChange?.(value);
+      },
+      setBranchBehind: (behind: number) => onBranchBehindChange?.(behind),
+      setEffectiveDefaultModel: (value: { model: string | undefined; provider: string }) => {
+        effectiveDefaultModel = value;
+      },
       setInputValue: (value: string) => {
         onboardingInputValue = value;
       },
@@ -80,4 +105,6 @@
 </div>
 <div data-testid="selected-model">{selectedModel ?? ''}</div>
 <div data-testid="model-was-overridden">{String(modelWasOverridden)}</div>
-<div hidden>{onboardingInputValue}{onboardingSkipWorktree}{showSetupScript}{focusedSuggestionIndex}</div>
+<div hidden>
+  {onboardingInputValue}{onboardingSkipWorktree}{onboardingSkipIsolation}{showSetupScript}{focusedSuggestionIndex}
+</div>

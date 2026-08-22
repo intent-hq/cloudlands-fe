@@ -7,15 +7,11 @@
 
 import * as os from 'os';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
-import { Logger } from '../../../shared/logger';
 import {
   findBinary,
   findBinaryStrict,
   getCommonNpmPaths,
 } from '../../../shared/main/find-binary';
-
-const logger = new Logger('CortexResolver');
 
 // Common paths to look for cortex binary
 const CORTEX_PATHS = [
@@ -84,43 +80,5 @@ export async function isCortexInstalled(): Promise<boolean> {
  */
 export async function getCortexPath(): Promise<string | null> {
   return findCortexPath();
-}
-
-/**
- * Resolve the path to the cortex-acp adapter script.
- * The adapter lives alongside this file in the source tree at
- * `src/features/cortex/cortex-acp/cortex-acp.ts` and is compiled to
- * the corresponding `.js` path in the dist output.
- */
-function resolveCortexAcpScript(): string {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
-  return path.join(__dirname, '..', 'cortex-acp', 'cortex-acp.js');
-}
-
-export type CortexResolvedCommand = {
-  command: string;
-  argsPrefix: string[];
-};
-
-/**
- * Resolve the command to run Cortex ACP.
- * Returns the node command with the path to the cortex-acp adapter script.
- * The cortex CLI must be installed as a prerequisite (the adapter spawns it).
- */
-export async function resolveCortexCommand(): Promise<CortexResolvedCommand | null> {
-  const cortexCliPath = await findCortexPath();
-  if (!cortexCliPath) {
-    logger.warn('Cortex CLI not found — cortex-acp adapter requires the cortex CLI');
-    return null;
-  }
-
-  const acpScript = resolveCortexAcpScript();
-  logger.debug('Resolved cortex-acp script', { acpScript });
-
-  return {
-    command: process.execPath, // node
-    argsPrefix: [acpScript],
-  };
 }
 

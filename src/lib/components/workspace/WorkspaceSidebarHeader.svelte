@@ -582,42 +582,45 @@
     </div>
   </div>
 
-  <DropdownMenu bind:open={dropdownOpen} align="end">
-    {#snippet trigger({ props })}
-      <Button
-        {...props}
-        variant="ghost-light"
-        size="icon-sm"
-        aria-label={m.workspace_sidebarHeader_actions_ariaLabel()}
-        class="opacity-50 group-hover:opacity-70 hover:!opacity-100 transition-opacity duration-150"
-        disabled={isDeleting}
-      >
-        {#if isDeleting}
-          <div
-            class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
-          ></div>
-        {:else}
-          <Fa icon={faEllipsisV} size="sm" />
-        {/if}
-      </Button>
-    {/snippet}
+  <div class="flex shrink-0 items-start gap-1" data-sidebar-header-controls>
+    <DropdownMenu bind:open={dropdownOpen} align="end">
+      {#snippet trigger({ props })}
+        <Button
+          {...props}
+          variant="ghost-light"
+          size="icon-sm"
+          aria-label={m.workspace_sidebarHeader_actions_ariaLabel()}
+          class="opacity-50 group-hover:opacity-70 hover:!opacity-100 transition-opacity duration-150"
+          disabled={isDeleting}
+          data-workspace-actions-trigger
+        >
+          {#if isDeleting}
+            <div
+              class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
+            ></div>
+          {:else}
+            <Fa icon={faEllipsisV} size="sm" />
+          {/if}
+        </Button>
+      {/snippet}
 
-    {#snippet content()}
-      <div class="w-48">
-        <WorkspaceActionsMenu
-          filePath={workspace?.worktreePath || workspace?.repositoryPath || workspace?.path || ''}
-          workspaceId={workspace?.id || workspaceId}
-          isDirectory={true}
-          isWorkspaceRoot={true}
-          onDelete={handleDelete}
-          onClose={handleClose}
-          showDeleteOption={true}
-          showFileNameCopy={false}
-          additionalActions={microKeyAction
-            ? [sidebarToggleAction, microKeyAction, sidebarSideAction]
-            : [sidebarToggleAction, sidebarSideAction]}
-        />
-      </div>
-    {/snippet}
-  </DropdownMenu>
+      {#snippet content()}
+        <div class="w-48">
+          <WorkspaceActionsMenu
+            filePath={workspace?.worktreePath || workspace?.repositoryPath || workspace?.path || ''}
+            workspaceId={workspace?.id || workspaceId}
+            isDirectory={true}
+            isWorkspaceRoot={true}
+            onDelete={handleDelete}
+            onClose={handleClose}
+            showDeleteOption={true}
+            showFileNameCopy={false}
+            additionalActions={microKeyAction
+              ? [sidebarToggleAction, microKeyAction, sidebarSideAction]
+              : [sidebarToggleAction, sidebarSideAction]}
+          />
+        </div>
+      {/snippet}
+    </DropdownMenu>
+  </div>
 </div>

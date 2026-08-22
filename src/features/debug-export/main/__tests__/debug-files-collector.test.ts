@@ -6,6 +6,7 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { app } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sidecarMock = vi.hoisted(() => ({
@@ -136,6 +137,29 @@ describe('intentd daemon log collection', () => {
     expect(omissions).toContainEqual(
       `intentd/: skipped — intentd data dir not accessible at "${missing}"`,
     );
+  });
+});
+
+describe('renderer lifecycle telemetry export', () => {
+  it('includes persisted late-session lifecycle records from renderer.log', async () => {
+    const logsDir = path.join(app.getPath('userData'), 'logs');
+    const rendererLog = path.join(logsDir, 'renderer.log');
+    await fs.mkdir(logsDir, { recursive: true });
+    await fs.writeFile(
+      rendererLog,
+      '{"message":"stream-lifecycle","event":"agent-failed-received"}\n',
+      'utf8',
+    );
+
+    try {
+      const result = await collectDebugFiles();
+      expect(result.files).toContainEqual({
+        sourcePath: rendererLog,
+        relativePath: path.join('logs', 'renderer.log'),
+      });
+    } finally {
+      await fs.unlink(rendererLog).catch(() => {});
+    }
   });
 });
 

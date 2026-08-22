@@ -5,7 +5,6 @@
  */
 import {
   formatDaySeparator,
-  formatDateTime,
   formatFullDateTime,
   formatRelativeTime as formatRelative,
   formatTime,
@@ -133,19 +132,4 @@ export function shouldShowTimeSeparator(
  */
 export function formatFullTimestamp(date: Date | string): string {
   return formatFullDateTime(date);
-}
-
-/**
- * Get a smart timestamp that shows relative time for recent messages
- * (< 24 hours) and an absolute localized date + time for older ones.
- */
-export function getSmartTimestamp(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  const diffHours = (Date.now() - d.getTime()) / (1000 * 60 * 60);
-
-  if (diffHours < 24) {
-    return formatRelativeTime(d);
-  }
-
-  return formatDateTime(d);
 }

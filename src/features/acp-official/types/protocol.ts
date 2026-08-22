@@ -74,7 +74,7 @@ export interface InitializeRequest extends JsonRpcRequest {
   params: InitializeParams;
 }
 
-export interface InitializeParams {
+interface InitializeParams {
   _meta?: Meta;
   protocolVersion: ProtocolVersion;
   clientInfo: ClientInfo;
@@ -91,14 +91,14 @@ export interface InitializeResult {
   agentCapabilities?: AgentCapabilities;
 }
 
-export interface PromptCapabilities {
+interface PromptCapabilities {
   _meta?: Meta;
   audio?: boolean;
   embeddedContext?: boolean;
   image?: boolean;
 }
 
-export interface SessionCapabilities {
+interface SessionCapabilities {
   _meta?: Meta;
   modes?: boolean;
   models?: boolean;
@@ -113,7 +113,7 @@ export interface AuthenticateRequest extends JsonRpcRequest {
   params: AuthenticateParams;
 }
 
-export interface AuthenticateParams {
+interface AuthenticateParams {
   _meta?: Meta;
   methodId: string;
   [key: string]: unknown; // Method-specific parameters
@@ -131,7 +131,7 @@ export interface NewSessionRequest extends JsonRpcRequest {
   params: NewSessionParams;
 }
 
-export interface NewSessionParams {
+interface NewSessionParams {
   _meta?: Meta;
   metadata?: Record<string, unknown>;
 }
@@ -151,7 +151,7 @@ export interface PromptRequest extends JsonRpcRequest {
   params: PromptParams;
 }
 
-export interface PromptParams {
+interface PromptParams {
   _meta?: Meta;
   sessionId: AgentId;
   prompt: Message[];
@@ -173,7 +173,7 @@ export interface LoadSessionRequest extends JsonRpcRequest {
   params: LoadSessionParams;
 }
 
-export interface LoadSessionParams {
+interface LoadSessionParams {
   _meta?: Meta;
   sessionId: AgentId;
   cwd?: string;
@@ -195,34 +195,10 @@ export interface SetModeRequest extends JsonRpcRequest {
   params: SetModeParams;
 }
 
-export interface SetModeParams {
+interface SetModeParams {
   _meta?: Meta;
   sessionId: AgentId;
   modeId: SessionModeId;
-}
-
-export interface SetModeResult {
-  _meta?: Meta;
-  modeState: SessionModeState;
-}
-
-/**
- * Session/set_model request - Changes the session model
- */
-export interface SetModelRequest extends JsonRpcRequest {
-  method: 'session/set_model';
-  params: SetModelParams;
-}
-
-export interface SetModelParams {
-  _meta?: Meta;
-  sessionId: AgentId;
-  modelId: ModelId;
-}
-
-export interface SetModelResult {
-  _meta?: Meta;
-  modelState: SessionModelState;
 }
 
 // ============================================================================
@@ -237,7 +213,7 @@ export interface CancelNotification extends JsonRpcNotification {
   params: CancelParams;
 }
 
-export interface CancelParams {
+interface CancelParams {
   _meta?: Meta;
   sessionId: AgentId;
 }
@@ -254,7 +230,7 @@ export interface RequestPermissionRequest extends JsonRpcRequest {
   params: RequestPermissionParams;
 }
 
-export interface RequestPermissionParams {
+interface RequestPermissionParams {
   _meta?: Meta;
   sessionId: AgentId;
   title: string;
@@ -275,7 +251,7 @@ export interface ReadTextFileRequest extends JsonRpcRequest {
   params: ReadTextFileParams;
 }
 
-export interface ReadTextFileParams {
+interface ReadTextFileParams {
   _meta?: Meta;
   path: string;
 }
@@ -290,7 +266,7 @@ export interface WriteTextFileRequest extends JsonRpcRequest {
   params: WriteTextFileParams;
 }
 
-export interface WriteTextFileParams {
+interface WriteTextFileParams {
   _meta?: Meta;
   path: string;
   content: string;
@@ -308,7 +284,7 @@ export interface TerminalCreateRequest extends JsonRpcRequest {
   params: TerminalCreateParams;
 }
 
-export interface TerminalCreateParams {
+interface TerminalCreateParams {
   _meta?: Meta;
   command: string;
   args?: string[];
@@ -326,7 +302,7 @@ export interface TerminalOutputRequest extends JsonRpcRequest {
   params: TerminalOutputParams;
 }
 
-export interface TerminalOutputParams {
+interface TerminalOutputParams {
   _meta?: Meta;
   terminalId: string;
   data: string;
@@ -341,7 +317,7 @@ export interface TerminalWaitForExitRequest extends JsonRpcRequest {
   params: TerminalWaitForExitParams;
 }
 
-export interface TerminalWaitForExitParams {
+interface TerminalWaitForExitParams {
   _meta?: Meta;
   terminalId: string;
 }
@@ -373,7 +349,7 @@ export interface SessionUpdateParams {
  * Different types of updates that can be sent during session processing.
  * These updates provide real-time feedback about the agent's progress.
  */
-export type SessionUpdate =
+type SessionUpdate =
   | UserMessageChunkUpdate
   | AgentMessageChunkUpdate
   | AgentThoughtChunkUpdate
@@ -384,25 +360,25 @@ export type SessionUpdate =
   | CurrentModeUpdate
   | CurrentModelUpdate;
 
-export interface UserMessageChunkUpdate {
+interface UserMessageChunkUpdate {
   sessionUpdate: 'user_message_chunk';
   _meta?: Meta;
   content: ContentBlock;
 }
 
-export interface AgentMessageChunkUpdate {
+interface AgentMessageChunkUpdate {
   sessionUpdate: 'agent_message_chunk';
   _meta?: Meta;
   content: ContentBlock;
 }
 
-export interface AgentThoughtChunkUpdate {
+interface AgentThoughtChunkUpdate {
   sessionUpdate: 'agent_thought_chunk';
   _meta?: Meta;
   content: ContentBlock;
 }
 
-export interface ToolCallUpdate {
+interface ToolCallUpdate {
   sessionUpdate: 'tool_call';
   _meta?: Meta;
   toolCallId: ToolCallId;
@@ -416,7 +392,7 @@ export interface ToolCallUpdate {
   rawOutput?: unknown;
 }
 
-export interface ToolCallUpdateUpdate {
+interface ToolCallUpdateUpdate {
   sessionUpdate: 'tool_call_update';
   _meta?: Meta;
   toolCallId: ToolCallId;
@@ -430,25 +406,25 @@ export interface ToolCallUpdateUpdate {
   rawOutput?: unknown;
 }
 
-export interface PlanUpdate {
+interface PlanUpdate {
   sessionUpdate: 'plan';
   _meta?: Meta;
   entries: PlanEntry[];
 }
 
-export interface AvailableCommandsUpdate {
+interface AvailableCommandsUpdate {
   sessionUpdate: 'available_commands_update';
   _meta?: Meta;
   availableCommands: AvailableCommand[];
 }
 
-export interface CurrentModeUpdate {
+interface CurrentModeUpdate {
   sessionUpdate: 'current_mode_update';
   _meta?: Meta;
   currentModeId: SessionModeId;
 }
 
-export interface CurrentModelUpdate {
+interface CurrentModelUpdate {
   sessionUpdate: 'current_model_update';
   _meta?: Meta;
   currentModelId: ModelId;

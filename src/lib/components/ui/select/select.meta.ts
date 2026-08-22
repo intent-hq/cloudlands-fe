@@ -6,15 +6,7 @@ export const selectMetadata = parseUiComponentMetadata({
   source: 'src/lib/components/ui/select/select.svelte',
   publicImport: '$lib/components/ui/select',
   legacyImports: [],
-  exports: [
-    'Select',
-    'SelectContent',
-    'SelectItem',
-    'SelectRoot',
-    'SelectTrigger',
-    'SelectValue',
-    'selectMetadata',
-  ],
+  exports: ['Select'],
   category: 'primitive',
   owner: '007-B6',
   callers: [

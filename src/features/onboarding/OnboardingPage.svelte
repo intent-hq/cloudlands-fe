@@ -81,10 +81,13 @@
   import { Button } from '$lib/components/ui/button';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
+  import { shouldPullSourceRepositoryBeforeCreate } from '$lib/components/workspace/initializer/workspace-create-pull-policy';
 
   import { createAgentTypeId } from '$shared/types/agent.types';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { resolveOnboardingModel } from '$features/onboarding/utils/resolve-onboarding-model';
+  import { commitOnboardingDefaultModel } from '$features/onboarding/utils/commit-onboarding-default-model';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
     parseContextMentions,
     parseFileMentions,
@@ -973,6 +976,14 @@
       return;
     }
 
+    // Snapshot the picker's effective default selection BEFORE flipping
+    // isOnboardingCreating: the flag swaps the form for the setup card,
+    // destroying the prompt step (and nulling promptStepRef) by the time the
+    // awaited resolution below settles.
+    const defaultModelPreview = onboardingModelWasOverridden
+      ? undefined
+      : promptStepRef?.getEffectiveDefaultModel();
+
     isOnboardingCreating = true;
     onboardingCreationError = null;
     onboardingCreationErrorCode = null;
@@ -1001,6 +1012,23 @@
         reduxState,
         onboardingModelWasOverridden ? onboardingSelectedModel : undefined,
       );
+
+      // The prompt-step picker is the authoritative source of the initial
+      // default provider + default model (monorepo#3044): commit the resolved
+      // provider and the picker's displayed default at create-submit time.
+      // An explicit pick already persisted at pick time via selectModel;
+      // resolution failures throw above, so an aborted create commits nothing.
+      if (!onboardingModelWasOverridden) {
+        commitOnboardingDefaultModel({
+          provider,
+          // The preview was resolved under the picker's provider context —
+          // only trust it when that matches the create's resolved provider.
+          effectiveDefaultModel:
+            defaultModelPreview?.provider === provider ? defaultModelPreview.model : undefined,
+          activeProviderId: selectActiveProviderId.select(reduxState) ?? '',
+          dispatch: appStore.dispatch,
+        });
+      }
       const agentType = createAgentTypeId('workspace');
 
       // Parse context from the rich textarea
@@ -1015,11 +1043,15 @@
       const linearIssue = extractLinearIssue(contextReferences);
       const sentryIssue = extractSentryIssue(contextReferences);
 
-      // Auto-pull latest changes if branch is behind remote
+      // Pull only for direct mode. Isolated creation must not mutate the source checkout.
       if (
-        onboardingBranchBehind > 0 &&
-        projectSelection.type === 'local' &&
-        onboardingShouldPullBeforeCreate
+        shouldPullSourceRepositoryBeforeCreate({
+          branchBehind: onboardingBranchBehind,
+          isLocalRepository: projectSelection.type === 'local',
+          isNewRepository: projectSelection.type === 'new',
+          skipIsolation: onboardingSkipIsolation,
+          pullEnabled: onboardingShouldPullBeforeCreate,
+        })
       ) {
         logger.info('Auto-pulling latest changes before workspace creation (onboarding)', {
           branch: projectSelection.branch,

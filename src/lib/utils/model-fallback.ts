@@ -91,29 +91,3 @@ export function getModelLabel(model: string, availableModels: AuggieModel[]): st
   const found = availableModels.find((m) => m.value === model);
   return found?.label || model;
 }
-
-/**
- * Generate a fallback chain from available models.
- *
- * Simply returns all available models in the order they were provided.
- * The API already returns models in a sensible order, so we don't need
- * to apply any hardcoded prioritization.
- *
- * @param availableModels - List of available models from auggie
- * @returns Array of model IDs in the order provided by the API
- */
-export function generateFallbackChain(availableModels: AuggieModel[]): string[] {
-  if (!availableModels || availableModels.length === 0) {
-    logger.warn('No available models to generate fallback chain');
-    return [];
-  }
-
-  const chain = availableModels.map((m) => m.value);
-
-  logger.debug('Generated fallback chain', {
-    totalModels: chain.length,
-    chain,
-  });
-
-  return chain;
-}

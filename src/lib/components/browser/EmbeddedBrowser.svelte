@@ -14,6 +14,7 @@
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
   import { invoke } from '$shared/generated/ipc-client';
+  import type { BrowserEmulatedSize } from '$shared/ipc/workspace-command-payloads';
   import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
 
@@ -32,6 +33,7 @@
   } from './embedded-browser-navigation-sync';
   import { reportTabBounds } from './tab-bounds-action';
   import { isValidBrowserUrl } from './embedded-browser-url-validation';
+  import { navigateToAgent } from '$lib/utils/workspace-navigation';
   import Fa from 'svelte-fa';
   import {
     faArrowLeft,
@@ -42,6 +44,8 @@
     faExclamationTriangle,
     faTimes,
     faCode,
+    faRobot,
+    faExpand,
   } from '@fortawesome/free-solid-svg-icons';
   import Input from '../ui/input/input.svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -68,6 +72,12 @@
     isFocused?: boolean;
     /** Whether this tab is visible; inactive cached tabs remain mounted but muted. */
     isActive?: boolean;
+    /** Agent owning this tab (monorepo#2857); absent for unowned (user) tabs. */
+    ownerAgentId?: string;
+    /** Resolved display name of the owning agent for the toolbar chip. */
+    ownerAgentName?: string;
+    /** Emulated viewport size of an owned tab (docs/protocol §5.9). */
+    emulatedSize?: BrowserEmulatedSize;
   }
 
   let {
@@ -82,6 +92,9 @@
     focusUrlBarOnMount = false,
     isFocused = false,
     isActive = true,
+    ownerAgentId,
+    ownerAgentName,
+    emulatedSize,
   }: Props = $props();
 
   // Reactive readable for per-tab pending zoom requests dispatched by the
@@ -236,6 +249,13 @@
   // Store listener references for cleanup
   let webviewListeners: Array<{ event: string; handler: (e: any) => void }> = [];
 
+  // The guest webContentsId last registered for CDP. dom-ready fires on
+  // every top-level navigation AND when a reparented <webview> recreates
+  // its guest (a panel drag does this, monorepo#3170); gating on the id
+  // keeps registration once-per-guest — same-guest navigations skip, a new
+  // guest re-registers (registerTab re-applies viewport emulation).
+  let lastRegisteredWebContentsId: number | undefined;
+
   // Keyboard interceptor script to inject into webview
   // Since webview runs in a separate process, keyboard events don't bubble up.
   // We inject a script that captures keyboard shortcuts and logs special messages
@@ -328,27 +348,44 @@
         // Inject keyboard interceptor on initial load
         injectKeyboardInterceptor();
 
-        // Register this webview for CDP access (browser:exec)
-        if (tabId && webviewRef) {
+        // Register this webview for CDP access (browser:exec). Runs on
+        // every dom-ready so a recreated guest re-registers, but skips
+        // same-guest navigations to avoid stacking redundant registerTab
+        // calls and destroyed-hooks in the main process.
+        if (tabId) {
           try {
-            const webContentsId = webviewRef.getWebContentsId();
-            logger.info('Registering browser tab for CDP', { tabId, webContentsId });
-            window.electronAPI
-              ?.invoke('browser:register-tab', { tabId, webContentsId })
-              .catch((err) => {
-                logger.error('Failed to register browser tab for CDP', {
-                  tabId,
-                  webContentsId,
-                  error: err,
+            const webContentsId = currentWebview.getWebContentsId();
+            if (webContentsId !== lastRegisteredWebContentsId) {
+              lastRegisteredWebContentsId = webContentsId;
+              logger.info('Registering browser tab for CDP', { tabId, webContentsId });
+              window.electronAPI
+                ?.invoke('browser:register-tab', { tabId, webContentsId })
+                .catch((err) => {
+                  logger.error('Failed to register browser tab for CDP', {
+                    tabId,
+                    webContentsId,
+                    error: err,
+                  });
+                  // Allow a later dom-ready from this guest to retry the
+                  // registration instead of leaving the tab unregistered
+                  // until the guest is recreated.
+                  if (lastRegisteredWebContentsId === webContentsId) {
+                    lastRegisteredWebContentsId = undefined;
+                  }
                 });
-              });
+            }
           } catch {
             // WebView may have been destroyed between dom-ready and callback execution
             logger.debug('Failed to get webContentsId for CDP registration', { tabId });
           }
         }
       };
-      currentWebview.addEventListener('dom-ready', handleDomReady, { once: true });
+      // NOT { once: true }: reparenting the <webview> (panel drag) makes
+      // Electron destroy and re-create the guest webContents, and the new
+      // guest fires dom-ready again — registration must follow the live
+      // guest or the tab loses CDP access and viewport emulation
+      // (monorepo#3170).
+      currentWebview.addEventListener('dom-ready', handleDomReady);
       webviewListeners.push({ event: 'dom-ready', handler: handleDomReady });
 
       // Re-inject keyboard interceptor after every navigation (page changes clear the injected script)
@@ -865,8 +902,40 @@
       <button type="submit" class="sr-only">{m.browser_embedded_go_label()}</button>
     </form>
 
+    <!-- Emulated viewport indicator (monorepo#2857, §5.9) -->
+    {#if ownerAgentId && emulatedSize}
+      <span
+        class="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+        title={m.browser_embedded_viewport_tooltip({
+          width: emulatedSize.width,
+          height: emulatedSize.height,
+        })}
+        data-browser-viewport-indicator
+      >
+        <Fa icon={faExpand} size="xs" />
+        <!-- i18n-ignore (numeric dimensions, no translatable text) -->
+        <span>{emulatedSize.width}×{emulatedSize.height}</span>
+      </span>
+    {/if}
+
     <!-- Actions -->
     <div class="flex gap-0.5">
+      <!-- Owner agent chip (monorepo#2857): icon-only; tooltip carries the agent name -->
+      {#if ownerAgentId}
+        <Button
+          variant="ghost-light"
+          size="icon-xs"
+          onclick={() => void navigateToAgent(ownerAgentId)}
+          tooltip={m.browser_embedded_ownerChip_tooltip({ name: ownerAgentName ?? ownerAgentId })}
+          tooltipSide="bottom"
+          aria-label={m.browser_embedded_ownerChip_ariaLabel({
+            name: ownerAgentName ?? ownerAgentId,
+          })}
+          data-browser-owner-chip={ownerAgentId}
+        >
+          <Fa icon={faRobot} size="xs" />
+        </Button>
+      {/if}
       <Button
         variant="ghost-light"
         size="icon-xs"

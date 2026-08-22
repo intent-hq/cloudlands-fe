@@ -54,6 +54,7 @@ import {
   selectAwaitingUtilityFooter,
   selectChatAgentState,
   selectChatError,
+  selectChatFailureCorrelation,
   selectChatLastMessageTime,
   selectChatLiveStreamPhase,
   selectHydratedBlock,
@@ -174,9 +175,17 @@ describe('chatStateReducer', () => {
 
   it('chatSendFailed sets error', () => {
     const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, chatSendFailed(AGENT, 'network error'));
+    const correlation = { turnIdCorrelation: '12c09885d6571b4e' };
+    const s2 = chatStateReducer(
+      s1,
+      chatSendFailed(AGENT, 'network error', 'turn-failed-1', correlation),
+    );
     const agent = s2.byAgentId[AGENT];
     expect(agent.error).toBe('network error');
+    expect(selectChatFailureCorrelation.select(asStoreState(s2), AGENT)).toEqual(correlation);
+
+    const s3 = chatStateReducer(s2, chatSendStarted(AGENT));
+    expect(selectChatFailureCorrelation.select(asStoreState(s3), AGENT)).toBeUndefined();
   });
 
   it('chatSendFailed clears stale model-unavailable state so send errors are visible', () => {

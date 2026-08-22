@@ -13,16 +13,12 @@ export interface Tool {
 
 export enum ToolCategory {
   FILE = 'file',
-  GIT = 'git',
   TERMINAL = 'terminal',
-  BROWSER = 'browser',
-  API = 'api',
-  CUSTOM = 'custom',
   NOTE = 'note',
   WORKSPACE = 'workspace',
 }
 
-export interface ToolConfig {
+interface ToolConfig {
   [key: string]: any;
 }
 
@@ -93,13 +89,6 @@ export interface ToolDefinition {
   permissions?: {
     requiresWrite?: boolean;
   };
-}
-
-export interface ToolAction {
-  type: 'read' | 'write' | 'execute' | 'query';
-  target: string;
-  data?: any;
-  context?: ToolContext;
 }
 
 export interface FileInfo {

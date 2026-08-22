@@ -1,10 +1,29 @@
 /** @vitest-environment jsdom */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
+const mocks = vi.hoisted(() => {
+  let columnCount = 2;
+  const subscribers = new Set<(value: number) => void>();
+  return {
+    dispatch: vi.fn(),
+    panelColumnCount: {
+      subscribe(run: (value: number) => void) {
+        subscribers.add(run);
+        run(columnCount);
+        return () => subscribers.delete(run);
+      },
+    },
+    setPanelColumnCount(value: number) {
+      columnCount = value;
+      subscribers.forEach((run) => run(value));
+    },
+  };
+});
 const readable = <T>(value: T) => ({
   subscribe(run: (current: T) => void) {
     run(value);
@@ -38,6 +57,7 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
   endDrag: () => ({ type: 'tabState/endDrag' }),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectPanelColumnCount: () => mocks.panelColumnCount,
   selectRecentlyClosed: () => readable([]),
   selectPanelLayoutWorkspace: {
     select: (state: any) => state.panelLayout.byWorkspaceId['workspace-1'],
@@ -69,10 +89,6 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: () => readable([]),
-}));
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
-  selectPanelOpenMode: () => readable('pin'),
-  selectPanelStackDirection: () => readable('right'),
 }));
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -149,8 +165,17 @@ function dragEvent(target: Element) {
 
 beforeEach(() => {
   mocks.dispatch.mockClear();
+  mocks.setPanelColumnCount(2);
   setDraggedPanelId(null);
   Element.prototype.scrollIntoView = vi.fn();
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     callback(0);
     return 0;
@@ -164,6 +189,141 @@ afterEach(() => {
 });
 
 describe('mounted panel header actions menu', () => {
+  it('renders workspace column buttons only for the rightmost panel and dispatches their count', async () => {
+    const left = renderHeader('note', { panelId: 'panel-left', isRightmostPanel: false });
+    expect(left.container.querySelector('[data-panel-column-count-trigger]')).toBeNull();
+    left.unmount();
+
+    const { container } = renderHeader('note', { isRightmostPanel: true });
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-panel-column-count-trigger]',
+    )!;
+    expect(trigger.getAttribute('aria-label')).toBe('Panel columns: 2');
+    expect(trigger.querySelector('[data-icon="table-columns"]')).toBeNull();
+    expect(trigger.querySelector('[data-panel-column-icon="2"]')).toBeTruthy();
+
+    await fireEvent.click(trigger);
+    const dialog = await screen.findByRole('dialog', { name: 'Panel columns' });
+    expect(dialog.firstElementChild?.textContent).toBe(
+      'Change the number of columns for panes in this workspace. Newly opened panes open in the rightmost column.',
+    );
+    expect(dialog.querySelector('output')).toBeNull();
+    expect(screen.queryByRole('slider')).toBeNull();
+    expect(screen.getByRole('group', { name: 'Panel columns' })).toBeTruthy();
+    const selectedButton = screen.getByRole('button', { name: '2 columns' });
+    expect(document.activeElement).toBe(selectedButton);
+    expect(selectedButton.getAttribute('aria-pressed')).toBe('true');
+    await fireEvent.click(screen.getByRole('button', { name: '4 columns' }));
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'panelLayout/setPanelColumnCount',
+      payload: expect.objectContaining({
+        wsId: 'workspace-1',
+        count: 4,
+        newPanelIds: expect.arrayContaining([
+          expect.any(String),
+          expect.any(String),
+          expect.any(String),
+        ]),
+      }),
+    });
+  });
+
+  it('keeps one outer square while dividers move through counts in both directions', async () => {
+    const { container } = renderHeader('note', { isRightmostPanel: true });
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-panel-column-count-trigger]',
+    )!;
+
+    const icon = trigger.querySelector('[data-panel-column-icon]')!;
+    const outline = icon.querySelector('[data-panel-column-icon-outline]')!;
+    const dividers = Array.from(icon.querySelectorAll('[data-panel-column-divider]'));
+
+    expect(icon.getAttribute('class')).toContain('size-4!');
+    expect(icon.getAttribute('viewBox')).toBe('0 0 24 24');
+    expect(outline.getAttribute('x')).toBe('3');
+    expect(outline.getAttribute('y')).toBe('3');
+    expect(outline.getAttribute('width')).toBe('18');
+    expect(outline.getAttribute('height')).toBe('18');
+    expect(dividers).toHaveLength(3);
+
+    for (const count of [1, 2, 3, 4, 3, 2, 1]) {
+      mocks.setPanelColumnCount(count);
+      await waitFor(() =>
+        expect(trigger.querySelector(`[data-panel-column-icon="${count}"]`)).toBeTruthy(),
+      );
+      expect(trigger.getAttribute('aria-label')).toBe(`Panel columns: ${count}`);
+      expect(trigger.querySelector('[data-panel-column-icon]')).toBe(icon);
+      expect(icon.querySelector('[data-panel-column-icon-outline]')).toBe(outline);
+      expect(Array.from(icon.querySelectorAll('[data-panel-column-divider]'))).toEqual(dividers);
+      expect(
+        dividers.filter((divider) => divider.getAttribute('data-active') === 'true'),
+      ).toHaveLength(count - 1);
+      expect(
+        dividers.map((divider) => {
+          const match = divider.getAttribute('style')?.match(/translateX\(([^p]+)px\)/);
+          return Number(match?.[1]);
+        }),
+      ).toEqual([0, 1, 2].map((index) => 3 + (18 * (index + 1)) / Math.max(count, index + 2)));
+    }
+  });
+
+  it('removes divider transitions when reduced motion is preferred', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelTabBar.svelte'),
+      'utf8',
+    );
+
+    expect(source).toMatch(
+      /\.panel-column-divider \{[\s\S]*?transition:[\s\S]*?transform[\s\S]*?opacity/,
+    );
+    expect(source).toMatch(
+      /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.panel-column-divider \{\s*transition: none;/,
+    );
+  });
+
+  it('orders populated and empty structural panel controls before Close', () => {
+    const onClosePanel = vi.fn();
+    const populated = renderHeader('note', {
+      tabs: [tab('note'), tab('browser')],
+      isRightmostPanel: true,
+      onClosePanel,
+      onTabClick: vi.fn(),
+    });
+    const populatedActions = populated.container.querySelector(
+      '[data-panel-tabless-header] [data-panel-header-actions]',
+    )!;
+    expect(
+      Array.from(populatedActions.querySelectorAll('button')).map((button) =>
+        button.getAttribute('aria-label'),
+      ),
+    ).toEqual([
+      'More',
+      'Panel history',
+      'Go back',
+      'Go forward',
+      'Panel columns: 2',
+      'Close panel',
+    ]);
+    populated.unmount();
+
+    const empty = render(PanelTabBar, {
+      props: {
+        tabs: [],
+        activeTabId: null,
+        panelId: 'panel-empty',
+        workspaceId: 'workspace-1',
+        isRightmostPanel: true,
+        onClosePanel,
+      },
+    });
+    const emptyHeader = empty.container.querySelector('[data-empty-panel-header]')!;
+    expect(
+      Array.from(emptyHeader.querySelectorAll('button')).map((button) =>
+        button.getAttribute('aria-label'),
+      ),
+    ).toEqual(['Panel columns: 2', 'Close panel']);
+  });
+
   it.each(panelTypes)('opens one portalled menu from one click for the %s panel', async (type) => {
     const { container } = renderHeader(type);
     const header = container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
@@ -236,10 +396,14 @@ describe('mounted panel header actions menu', () => {
   it('runs enabled actions once, keeps disabled items inert, and preserves close behavior', async () => {
     const onZoomToggle = vi.fn();
     const onSplitHorizontal = vi.fn();
+    const onMoveLeft = vi.fn();
+    const onMoveRight = vi.fn();
     const onClosePanel = vi.fn();
     const { container } = renderHeader('browser', {
       onZoomToggle,
       onSplitHorizontal,
+      onMoveLeft,
+      onMoveRight,
       onClosePanel,
     });
     const trigger = panelTrigger(container);
@@ -247,6 +411,14 @@ describe('mounted panel header actions menu', () => {
     await fireEvent.click(trigger);
     await fireEvent.click(await screen.findByRole('menuitem', { name: /Zoom Panel/i }));
     expect(onZoomToggle).toHaveBeenCalledOnce();
+
+    await fireEvent.click(trigger);
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move left' }));
+    expect(onMoveLeft).toHaveBeenCalledOnce();
+
+    await fireEvent.click(trigger);
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move right' }));
+    expect(onMoveRight).toHaveBeenCalledOnce();
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
 
     await fireEvent.click(trigger);
@@ -254,9 +426,8 @@ describe('mounted panel header actions menu', () => {
     expect(onSplitHorizontal).toHaveBeenCalledOnce();
 
     await fireEvent.click(trigger);
-    const disabled = await screen.findByRole('menuitem', { name: /Split down/i });
-    expect(disabled.getAttribute('aria-disabled')).toBe('true');
-    await fireEvent.click(disabled);
+    expect(screen.queryByRole('menuitem', { name: /Split down/i })).toBeNull();
+    await fireEvent.keyDown(document, { key: 'Escape' });
     expect(onSplitHorizontal).toHaveBeenCalledOnce();
     expect(onZoomToggle).toHaveBeenCalledOnce();
     await fireEvent.click(

@@ -1,5 +1,6 @@
 <script lang="ts">
   import QueuedMessageList from '../QueuedMessageList.svelte';
+  import { CHAT_TRANSCRIPT_OVERFLOW_CLASS } from '../chat-queue-edge-layout';
 
   interface Props {
     width?: number;
@@ -7,6 +8,7 @@
     zoom?: number;
     messageCount?: number;
     heldForQuestions?: boolean;
+    scrollViewport?: boolean;
   }
 
   let {
@@ -15,6 +17,7 @@
     zoom = 1,
     messageCount = 1,
     heldForQuestions = false,
+    scrollViewport = false,
   }: Props = $props();
   let lastAction = $state('none');
   const messages = $derived(
@@ -30,10 +33,7 @@
   );
 </script>
 
-<div
-  data-testid="queued-message-geometry-host"
-  style="width: {width}px; zoom: {zoom}; container-type: inline-size;"
->
+{#snippet contentColumn()}
   <div class="mx-auto" style:width="{contentWidth}px" data-testid="queued-message-content-column">
     <QueuedMessageList
       {messages}
@@ -46,5 +46,23 @@
       }}
     />
   </div>
+{/snippet}
+
+<div
+  data-testid="queued-message-geometry-host"
+  style="width: {width}px; zoom: {zoom}; container-type: inline-size;"
+>
+  {#if scrollViewport}
+    <!-- Mirrors the ChatPanel transcript scroll viewport contract. -->
+    <div
+      class="max-h-80 {CHAT_TRANSCRIPT_OVERFLOW_CLASS}"
+      style="scrollbar-gutter: stable;"
+      data-testid="queued-message-scroll-viewport"
+    >
+      {@render contentColumn()}
+    </div>
+  {:else}
+    {@render contentColumn()}
+  {/if}
   <output hidden data-testid="queued-message-last-action">{lastAction}</output>
 </div>

@@ -7,7 +7,6 @@
  * for the AppClient seam to be exercised.
  */
 import { createAgentId, createNoteId, createWorkspaceId } from '$shared/types';
-import type { AgentMessage, ContentBlock } from '$shared/types';
 import { WorkspaceEventType } from '$features/events/types';
 import type { WorkspaceEvent } from '$features/events/types';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
@@ -41,7 +40,7 @@ export const MOCK_WORKSPACE_ID = createWorkspaceId('ws-mock-1');
 // ============================================================================
 
 /** Task note ID still referenced by the workspace-event fixtures below. */
-export const MOCK_TASK_NOTE_ID_1 = createNoteId('00000000-0000-4000-8000-000000000010');
+const MOCK_TASK_NOTE_ID_1 = createNoteId('00000000-0000-4000-8000-000000000010');
 
 // ============================================================================
 // Terminals & scripts
@@ -237,8 +236,6 @@ export const mockWorkspaceSettings: SingleWorkspaceSettings = {
 
 /** User-facing preferences surfaced by the settings panel. */
 export const mockUserPreferences: UserPreferencesState = {
-  panelOpenMode: 'normal',
-  panelStackDirection: 'right',
   updateChannel: 'stable',
   spellcheckEnabled: true,
   zoomFactor: 1.0,
@@ -373,91 +370,14 @@ export const mockSentryIssues: SentryIssueResult[] = [
 // Agents & chat
 // ============================================================================
 
-export const MOCK_AGENT_ID = createAgentId('agent-mock-1');
-export const MOCK_AGENT_ID_2 = createAgentId('agent-mock-2');
-
-function text(value: string): ContentBlock {
-  return { type: 'text', text: value };
-}
-
-const coordinatorMessages: AgentMessage[] = [
-  {
-    id: 'msg-mock-1',
-    role: 'user',
-    contentBlocks: [
-      text('Add a dark mode toggle to the settings page and persist the choice across reloads.'),
-    ],
-    timestamp: '2026-01-01T09:00:00.000Z',
-    turnNumber: 1,
-  },
-  {
-    id: 'msg-mock-2',
-    role: 'assistant',
-    contentBlocks: [
-      text(
-        "I'll add a theme toggle to the settings page, wire it to a `theme` store, and persist the selection. Starting with the toggle component now.",
-      ),
-    ],
-    timestamp: '2026-01-01T09:01:00.000Z',
-    turnNumber: 1,
-  },
-  {
-    id: 'msg-mock-3',
-    role: 'user',
-    contentBlocks: [text('Looks good. Can you also default to the system preference?')],
-    timestamp: '2026-01-01T09:05:00.000Z',
-    turnNumber: 2,
-  },
-  {
-    id: 'msg-mock-4',
-    role: 'assistant',
-    contentBlocks: [
-      text(
-        "Done — the toggle now falls back to `prefers-color-scheme` when no saved preference exists, and persists the user's choice to localStorage.",
-      ),
-    ],
-    timestamp: '2026-01-01T09:06:00.000Z',
-    turnNumber: 2,
-  },
-];
-
-const backgroundMessages: AgentMessage[] = [
-  {
-    id: 'msg-mock-b1',
-    role: 'user',
-    contentBlocks: [text('Persist the theme choice in localStorage under the `theme` key.')],
-    timestamp: '2026-01-01T10:00:00.000Z',
-    turnNumber: 1,
-  },
-  {
-    id: 'msg-mock-b2',
-    role: 'assistant',
-    contentBlocks: [
-      text('Stored the selection under `theme` and hydrate it on startup before first paint.'),
-    ],
-    timestamp: '2026-01-01T10:01:00.000Z',
-    turnNumber: 1,
-  },
-];
-
-/** Chat transcript blocks keyed by agent ID for the chat seam. */
-export const mockChatHistory: Record<string, ContentBlock[]> = {
-  [MOCK_AGENT_ID]: coordinatorMessages.flatMap((message) => message.contentBlocks ?? []),
-  [MOCK_AGENT_ID_2]: backgroundMessages.flatMap((message) => message.contentBlocks ?? []),
-};
-
-/** Token usage keyed by agent ID for the chat seam. */
-export const mockTokenUsage: Record<string, { input: number; output: number }> = {
-  [MOCK_AGENT_ID]: { input: 1280, output: 640 },
-  [MOCK_AGENT_ID_2]: { input: 420, output: 210 },
-};
+const MOCK_AGENT_ID = createAgentId('agent-mock-1');
 
 // ============================================================================
 // Workspace event stream
 // ============================================================================
 
 /** Absolute root path still referenced by the workspace-event fixtures below. */
-export const MOCK_WORKSPACE_PATH = '/mock/web-app/ws-mock-1';
+const MOCK_WORKSPACE_PATH = '/mock/web-app/ws-mock-1';
 
 /** Recent workspace activity events for the dark-mode workspace (ws-mock-1). */
 export const mockWorkspaceEvents: WorkspaceEvent[] = [

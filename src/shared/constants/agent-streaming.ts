@@ -38,7 +38,7 @@ export const AGENT_STREAMING_CONFIG = {
 /**
  * Retry configuration for agent operations
  */
-export const AGENT_RETRY_CONFIG = {
+const AGENT_RETRY_CONFIG = {
   /**
    * Maximum number of retry attempts
    */
@@ -127,6 +127,3 @@ export function isFatalError(errorMessage: string): boolean {
  */
 export const IN_FLIGHT_PROMPT_DROPPED_ERROR =
   'Agent already has an in-flight prompt. Message was not delivered.';
-
-export type AgentStreamingConfig = typeof AGENT_STREAMING_CONFIG;
-export type AgentRetryConfig = typeof AGENT_RETRY_CONFIG;

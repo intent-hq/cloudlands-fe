@@ -24,7 +24,6 @@ export const TERMINAL_CHANNELS = IPC_CHANNELS.TERMINAL;
 export const WINDOW_CHANNELS = IPC_CHANNELS.WINDOW;
 export const APP_CHANNELS = IPC_CHANNELS.APP;
 export const CONFIG_CHANNELS = IPC_CHANNELS.CONFIG;
-export const GIT_CHANNELS = IPC_CHANNELS.GIT;
 export const EVENTS_CHANNELS = IPC_CHANNELS.EVENTS;
 export const AUGGIE_CHANNELS = IPC_CHANNELS.AUGGIE;
 export const OPENCODE_CHANNELS = IPC_CHANNELS.OPENCODE;
@@ -48,29 +47,17 @@ export const VSCODE_CHANNELS = IPC_CHANNELS.VSCODE;
 export const JETBRAINS_CHANNELS = IPC_CHANNELS.JETBRAINS;
 export const XCODE_CHANNELS = IPC_CHANNELS.XCODE;
 export const LEGACY_CHANNELS = IPC_CHANNELS.LEGACY;
-export const RECOVERY_CHANNELS = IPC_CHANNELS.RECOVERY;
-export const STREAMING_CHANNELS = IPC_CHANNELS.STREAMING;
-export const STORAGE_CHANNELS = IPC_CHANNELS.STORAGE;
 export const FIRST_VISIT_CHANNELS = IPC_CHANNELS.FIRST_VISIT;
 export const PANEL_LAYOUT_CHANNELS = IPC_CHANNELS.PANEL_LAYOUT;
-export const FILE_TRACKING_CHANNELS = IPC_CHANNELS.FILE_TRACKING;
 export const LOG_CHANNELS = IPC_CHANNELS.LOG;
-export const AGENT_TESTING_CHANNELS = IPC_CHANNELS.AGENT_TESTING;
 export const RULES_CHANNELS = IPC_CHANNELS.RULES;
 export const SPECIALISTS_CHANNELS = IPC_CHANNELS.SPECIALISTS;
 export const USER_RULES_CHANNELS = IPC_CHANNELS.USER_RULES;
 export const USER_ACTIVITY_CHANNELS = IPC_CHANNELS.USER_ACTIVITY;
-export const GIT_TRACKING_CHANNELS = IPC_CHANNELS.GIT_TRACKING;
-export const GIT_EXT_CHANNELS = IPC_CHANNELS.GIT_EXT;
 export const EDITOR_CHANNELS = IPC_CHANNELS.EDITOR;
-export const DEBUG_CHANNELS = IPC_CHANNELS.DEBUG;
-export const CHAT_EXPORT_CHANNELS = IPC_CHANNELS.CHAT_EXPORT;
-export const PIP_CHANNELS = IPC_CHANNELS.PIP;
-export const TOKEN_USAGE_CHANNELS = IPC_CHANNELS.TOKEN_USAGE;
-export const WEBSOCKET_API_CHANNELS = IPC_CHANNELS.WEBSOCKET_API;
 
 // All channels combined
-export const ALL_CHANNELS = IPC_CHANNELS;
+const ALL_CHANNELS = IPC_CHANNELS;
 
 // Type for all channel names
 export type ChannelName = string & { readonly __brand: 'ChannelName' };
@@ -78,27 +65,6 @@ export type ChannelName = string & { readonly __brand: 'ChannelName' };
 // Helper to create branded channel names
 export function createChannelName(channel: string): ChannelName {
   return channel as ChannelName;
-}
-
-// Generate arrays for whitelisting
-export function getAgentChannels(): string[] {
-  return Object.values(AGENT_CHANNELS).filter((v) => typeof v === 'string');
-}
-
-export function getWorkspaceChannels(): string[] {
-  return Object.values(WORKSPACE_CHANNELS).filter((v) => typeof v === 'string');
-}
-
-export function getFileChannels(): string[] {
-  return Object.values(FILE_CHANNELS).filter((v) => typeof v === 'string');
-}
-
-export function getSystemChannels(): string[] {
-  return Object.values(SYSTEM_CHANNELS).filter((v) => typeof v === 'string');
-}
-
-export function getTerminalChannels(): string[] {
-  return Object.values(TERMINAL_CHANNELS).filter((v) => typeof v === 'string');
 }
 
 // Get all static channels
@@ -119,61 +85,3 @@ export function getAllStaticChannels(): string[] {
   extractChannels(ALL_CHANNELS);
   return channels;
 }
-
-// Channel metadata for documentation and validation
-export const CHANNEL_METADATA: Record<
-  string,
-  {
-    description: string;
-    requiresAuth?: boolean;
-    rateLimit?: number;
-    category: string;
-  }
-> = {
-  // Agent channels
-  [AGENT_CHANNELS.CREATE]: {
-    description: 'Create a new agent',
-    requiresAuth: true,
-    category: 'agent',
-  },
-  [AGENT_CHANNELS.SEND_MESSAGE]: {
-    description: 'Send message to agent',
-    requiresAuth: true,
-    rateLimit: 10,
-    category: 'agent',
-  },
-
-  // Workspace channels
-  [WORKSPACE_CHANNELS.CREATE]: {
-    description: 'Create a new space',
-    requiresAuth: true,
-    category: 'workspace',
-  },
-  [WORKSPACE_CHANNELS.LIST]: {
-    description: 'List all spaces',
-    category: 'workspace',
-  },
-  [WORKSPACE_CHANNELS.GET_DIFF_SUMMARY]: {
-    description: 'Get on-demand diff summary for a workspace (not embedded in metadata payloads)',
-    category: 'workspace',
-  },
-  [WORKSPACE_CHANNELS.GET_GIT_SUMMARY]: {
-    description: 'Get on-demand git summary for a workspace (not embedded in metadata payloads)',
-    category: 'workspace',
-  },
-  [WORKSPACE_CHANNELS.GET_TASKS]: {
-    description: 'Get on-demand task list for a workspace (not embedded in metadata payloads)',
-    category: 'workspace',
-  },
-
-  // File channels
-  [FILE_CHANNELS.READ]: {
-    description: 'Read file contents',
-    category: 'file',
-  },
-  [FILE_CHANNELS.WRITE]: {
-    description: 'Write file contents',
-    requiresAuth: true,
-    category: 'file',
-  },
-};

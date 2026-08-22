@@ -53,22 +53,15 @@ export {
   common,
   workspace,
   debug,
-  setupScriptGenerator,
   taskBreakdown,
-  taskDebug,
-  taskFocused,
-  taskLoop,
-  ralphLoop,
   workspaceAgent,
-  notesSystemGuide,
   codeReview,
-  codeWalkthrough,
   commitMessage,
   prDescription,
 };
 
 // Utility agents that don't need workspace instructions (notes, diagrams, delegation)
-export const UTILITY_AGENTS = new Set([
+const UTILITY_AGENTS = new Set([
   'code-review',
   'code-walkthrough',
   'commit-message',
@@ -175,13 +168,6 @@ export function getAgentTypesWithMetadata(): AgentTypeInfo[] {
       isUtility: true,
     },
   ];
-}
-
-/**
- * Check if an agent type is a utility agent (doesn't get workspace instructions)
- */
-export function isUtilityAgent(agentType: string): boolean {
-  return UTILITY_AGENTS.has(agentType);
 }
 
 /**

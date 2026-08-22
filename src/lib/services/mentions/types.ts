@@ -16,7 +16,7 @@ export interface MentionCandidate {
   meta?: MentionMeta;
 }
 
-export interface MentionMeta {
+interface MentionMeta {
   path?: string;
   fullPath?: string;
   fullUrl?: string;
@@ -39,7 +39,7 @@ export interface MentionMeta {
   promptToken?: string;
 }
 
-export interface MentionRange {
+interface MentionRange {
   start: number;
   end: number;
   startCol?: number;
@@ -112,7 +112,7 @@ export interface PreviewContent {
   workspaceTitle?: string;
 }
 
-export interface PreviewAction {
+interface PreviewAction {
   id: string;
   label: string;
   icon?: string;
@@ -129,13 +129,13 @@ export interface ResolveResult {
   error?: string;
 }
 
-export interface EnhancedResolveResult extends ResolveResult {
+interface EnhancedResolveResult extends ResolveResult {
   relatedItems?: MentionCandidate[];
   diff?: string;
   blame?: BlameInfo[];
 }
 
-export interface BlameInfo {
+interface BlameInfo {
   line: number;
   author: string;
   date: Date;
@@ -172,7 +172,7 @@ export interface Resolver {
   getDiff?(uri: string, since: Date): Promise<string>;
 }
 
-export interface ResolutionContext {
+interface ResolutionContext {
   workspaceId: string;
   includeRelated?: boolean;
   includeDiff?: boolean;
@@ -244,14 +244,6 @@ export function hasRange(type: MentionType): boolean {
 }
 
 export function isSpecialCommand(type: MentionType): boolean {
-  return type === 'command';
-}
-
-export function isFileRangeType(type: MentionType): boolean {
-  return type === 'file-range';
-}
-
-export function isCommandType(type: MentionType): boolean {
   return type === 'command';
 }
 
@@ -341,6 +333,6 @@ export function validateMentionData(data: unknown): ValidationResult {
 }
 
 // Observable type for live updates
-export interface Observable<T> {
+interface Observable<T> {
   subscribe(observer: (value: T) => void): () => void;
 }

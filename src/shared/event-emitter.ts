@@ -203,6 +203,3 @@ export class EventEmitter {
     return this.listeners(event);
   }
 }
-
-// Export a default instance for convenience
-export default EventEmitter;

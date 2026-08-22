@@ -5,7 +5,7 @@ import * as path from 'path';
 import { MINIMUM_NODE_VERSION } from '../../../shared/constants/auggie';
 import { AUGGIE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
-import { findAuggiePathAsync, getEnhancedPath } from './auggie-path';
+import { findAuggiePathAsync } from './auggie-path';
 import { hostExec } from '../../../shared/main/host-exec';
 import { getProviderAuthVerdict } from '../../../shared/main/provider-auth-status';
 import { getProviderModelsEnvelope } from '../../../main/utils/daemon-model-catalog';
@@ -14,7 +14,6 @@ import { JsonRpcError } from '../../backend/main/json-rpc-errors';
 import { m } from '../../../shared/paraglide/messages.js';
 
 // Re-export path helpers for backwards compatibility with existing consumers.
-export { findAuggiePathAsync, getEnhancedPath };
 
 const logger = new Logger('AuggieIPC');
 
@@ -448,9 +447,7 @@ export function setupAuggieIPC() {
     try {
       logger.info('Uninstalling MCP from Claude Code');
 
-      const { findBinary, getCommonNpmPaths } = await import(
-        '../../../shared/main/find-binary'
-      );
+      const { findBinary, getCommonNpmPaths } = await import('../../../shared/main/find-binary');
       const claudePath = await findBinary('claude', {
         commonPaths: getCommonNpmPaths('claude'),
       });

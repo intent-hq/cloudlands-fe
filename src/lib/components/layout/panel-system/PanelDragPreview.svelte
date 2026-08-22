@@ -77,12 +77,6 @@
       class="h-full min-h-0 w-full min-w-0 overflow-hidden"
       use:renderPanelLayoutPreview={node.panelId}
     ></div>
-    {#if node.panelId === draggedPanelId}
-      <div
-        class="pointer-events-none absolute inset-1 z-20 rounded-md border-2 border-foreground/70 bg-foreground/5 shadow-(--elevation-raised)"
-        data-panel-layout-preview-drag-emphasis
-      ></div>
-    {/if}
   </div>
 {:else}
   <div

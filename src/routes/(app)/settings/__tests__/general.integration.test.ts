@@ -18,14 +18,11 @@ import {
   selectUpdateChannel,
   selectNoteFontStyle,
   selectAgentFontStyle,
-  selectPanelOpenMode,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
   setAgentFontStyle,
   setNoteFontStyle,
-  setPanelOpenMode,
   setUpdateChannel,
-  togglePanelOpenMode,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
   GENERAL_ACCESSIBILITY_FIXTURE,
@@ -137,7 +134,6 @@ beforeEach(() => {
   appStore.dispatch(setUpdateChannel('stable'));
   appStore.dispatch(setNoteFontStyle('monospace'));
   appStore.dispatch(setAgentFontStyle('monospace'));
-  appStore.dispatch(setPanelOpenMode('normal'));
   appStore.dispatch(simulateSetState({ status: 'idle' }));
   vi.clearAllMocks();
   (globalThis as typeof globalThis & { __APP_VERSION__: string }).__APP_VERSION__ = '2.0.10';
@@ -161,23 +157,24 @@ afterAll(() => {
 });
 
 describe('Settings migration', () => {
-  it('moves the panel-open preference into Appearance settings', async () => {
+  it('keeps the fixed-column preference in the workspace header instead of settings', async () => {
     const recorder = installDispatchRecorder();
     const general = renderGeneral();
-    expect(screen.queryByRole('switch', { name: 'Open new panels pinned' })).toBeNull();
+    expect(document.querySelector('[data-panel-column-count]')).toBeNull();
     general.unmount();
 
     renderAppearance();
-    const toggle = screen.getByRole('switch', { name: 'Open new panels pinned' });
-
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
-    await fireEvent.click(toggle);
-
-    await waitFor(() => expect(selectPanelOpenMode.select(appStore.state)).toBe('pin'));
-    expect(recorder.calls).toContainEqual(togglePanelOpenMode());
+    expect(document.querySelector('[data-panel-column-count]')).toBeNull();
+    expect(appStore.state.userPreferences).not.toHaveProperty('panelColumnCount');
     expect(readFileSync('src/lib/components/layout/WindowTitleBar.svelte', 'utf8')).not.toContain(
       'data-titlebar-panel-open-mode',
     );
+    expect(
+      readFileSync('src/lib/components/workspace/WorkspaceSidebarHeader.svelte', 'utf8'),
+    ).not.toContain('data-panel-column-count-trigger');
+    expect(
+      readFileSync('src/lib/components/layout/panel-system/PanelTabBar.svelte', 'utf8'),
+    ).toContain('data-panel-column-count-trigger');
     recorder.restore();
   });
 

@@ -86,6 +86,15 @@ describe('connectionsReducer', () => {
       expect(next.activeId).toBe('remote-1');
     });
 
+    it('latches hasReceivedList once the first list lands', () => {
+      expect(initialState.hasReceivedList).toBe(false);
+      const next = connectionsReducer(
+        initialState,
+        connectionsListReceived({ connections: [LOCAL], activeId: LOCAL_CONNECTION_ID }),
+      );
+      expect(next.hasReceivedList).toBe(true);
+    });
+
     it('leaves op-status and cert-mismatch untouched (they are separate concerns)', () => {
       const state = { ...initialState, status: 'connecting' as const, certMismatch: CERT_MISMATCH };
       const next = connectionsReducer(

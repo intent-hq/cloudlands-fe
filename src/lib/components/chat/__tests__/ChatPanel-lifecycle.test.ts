@@ -41,6 +41,11 @@ const mocks = vi.hoisted(() => {
     resizeDisconnect: vi.fn(),
     resizeConstructor: vi.fn(),
     agentMessages: mutableReadable<unknown[]>([]),
+    chatError: mutableReadable<string | null>(null),
+    failureCorrelation: mutableReadable<
+      { turnCorrelation?: string; turnIdCorrelation?: string } | undefined
+    >(undefined),
+    reportStreamLifecycle: vi.fn(),
     animateScrollTo: vi.fn(),
     awaitingSwitchBackSnapshot: mutableReadable(false),
     awaitingUtilityFooter: mutableReadable(false),
@@ -49,6 +54,10 @@ const mocks = vi.hoisted(() => {
     animateMessageSend: vi.fn(),
     createMessageSendLaunchBubble: vi.fn(),
     pendingQuestions: null as { messageId: string; questions: unknown[] } | null,
+    // Latched divider viewing session (Redux, mutated by tests): non-null
+    // while the session is live; null after a stop-looking boundary's
+    // endDividerSession.
+    dividerSessionValue: { anchorId: null } as { anchorId: string | null } | null,
     prefersReducedMotion: false,
     followBottomOptions: null as {
       follow: boolean;
@@ -61,6 +70,11 @@ const mocks = vi.hoisted(() => {
     selector,
   };
 });
+
+vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/stream-lifecycle-telemetry')>()),
+  reportStreamLifecycle: mocks.reportStreamLifecycle,
+}));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -102,7 +116,10 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectAwaitingUtilityFooter: Object.assign(() => mocks.awaitingUtilityFooter, {
     select: () => false,
   }),
-  selectChatError: mocks.selector(null),
+  selectChatError: Object.assign(() => mocks.chatError, { select: () => null }),
+  selectChatFailureCorrelation: Object.assign(() => mocks.failureCorrelation, {
+    select: () => undefined,
+  }),
   selectChatIsStalled: mocks.selector(false),
   selectChatLastChunkTime: mocks.selector(null),
   selectChatLiveStreamPhase: mocks.selector(null),
@@ -127,13 +144,23 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: mocks.selector([]),
 }));
 vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () => ({
-  selectDividerSession: mocks.selector(null),
+  selectDividerSession: Object.assign(
+    () => ({
+      subscribe(run: (value: unknown) => void) {
+        run(mocks.dividerSessionValue);
+        return () => {};
+      },
+    }),
+    { select: () => mocks.dividerSessionValue },
+  ),
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectIsAgentMonospace: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectAllTabs: mocks.selector([]),
+  selectPanels: mocks.selector({}),
+  selectHiddenTabs: mocks.selector([]),
 }));
 vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
   selectCheckedPanels: mocks.selector([]),
@@ -266,6 +293,7 @@ vi.mock('svelte-fa', async () => ({
 import ChatPanel from '../ChatPanel.svelte';
 import { clearDraftCacheForTests } from '../chat-draft-cache';
 import {
+  clearCachedChatScroll,
   clearChatScrollCacheForTests,
   getCachedChatScroll,
   setCachedChatScroll,
@@ -375,10 +403,13 @@ beforeEach(() => {
     return action;
   });
   mocks.agentMessages.set([]);
+  mocks.chatError.set(null);
+  mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
   mocks.awaitingUtilityFooter.set(false);
   mocks.transcriptHydration.set('settled');
   mocks.transcriptHydratedOnce.set(true);
+  mocks.dividerSessionValue = { anchorId: null };
   mocks.animateMessageSend.mockResolvedValue(undefined);
   mocks.createMessageSendLaunchBubble.mockImplementation(() => {
     const bubble = document.createElement('div');
@@ -399,6 +430,137 @@ afterEach(() => {
 });
 
 describe('ChatPanel mounted lifecycle', () => {
+  it('does not attach a new pre-output terminal error to the previous assistant row', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      {
+        id: 'assistant-dom-1',
+        role: 'assistant',
+        content: 'visible answer',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+
+    expect(mocks.reportStreamLifecycle).not.toHaveBeenCalled();
+    await tick();
+    await tick();
+
+    const assistantRow = view.container.querySelector(
+      '[data-message-role="assistant"][data-message-id="assistant-dom-1"]',
+    );
+    expect(assistantRow).not.toBeNull();
+    expect(mocks.reportStreamLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'render',
+        event: 'assistant-message-committed',
+        correlationBasis: 'assistant-message',
+        blockCount: assistantRow!.querySelectorAll('[data-message-content-block]').length,
+        storeStreamState: 'idle',
+        callbackResult: 'delivered',
+      }),
+    );
+
+    mocks.reportStreamLifecycle.mockClear();
+    mocks.failureCorrelation.set({ turnIdCorrelation: '12c09885d6571b4e' });
+    mocks.chatError.set('terminal failure');
+    await tick();
+    await tick();
+
+    expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
+    const errorDiagnostic = mocks.reportStreamLifecycle.mock.calls
+      .map(([diagnostic]) => diagnostic)
+      .find((diagnostic) => diagnostic.event === 'terminal-error-committed');
+    expect(errorDiagnostic).toEqual(
+      expect.objectContaining({
+        stage: 'render',
+        turnIdCorrelation: '12c09885d6571b4e',
+        correlationBasis: 'turn',
+        terminalErrorVisible: true,
+        storeStreamState: 'error',
+        callbackResult: 'delivered',
+      }),
+    );
+    expect(errorDiagnostic).not.toHaveProperty('turnCorrelation');
+    expect(mocks.reportStreamLifecycle).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'assistant-message-committed' }),
+    );
+  });
+
+  it('labels a DOM-observed terminal error unjoinable when no safe correlation exists', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      {
+        id: 'assistant-old-unjoinable',
+        role: 'assistant',
+        content: 'old answer',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+
+    await tick();
+    await tick();
+    mocks.reportStreamLifecycle.mockClear();
+    mocks.chatError.set('terminal failure');
+    await tick();
+    await tick();
+
+    expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
+    expect(mocks.reportStreamLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'terminal-error-committed',
+        correlationBasis: 'unjoinable',
+        terminalErrorVisible: true,
+      }),
+    );
+    expect(mocks.reportStreamLifecycle).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'terminal-error-committed',
+        turnCorrelation: expect.any(String),
+      }),
+    );
+  });
+
+  it('does not claim an assistant row is committed while first hydration hides it', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.transcriptHydratedOnce.set(false);
+    mocks.transcriptHydration.set('loading');
+    mocks.agentMessages.set([
+      {
+        id: 'assistant-hidden-1',
+        role: 'assistant',
+        content: 'not yet visible',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+
+    await tick();
+    await tick();
+
+    expect(
+      view.container.querySelector(
+        '[data-message-role="assistant"][data-message-id="assistant-hidden-1"]',
+      ),
+    ).toBeNull();
+    expect(mocks.reportStreamLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'render',
+        event: 'assistant-message-not-committed',
+        correlationBasis: 'assistant-message',
+        blockCount: 0,
+        callbackResult: 'ignored',
+      }),
+    );
+  });
+
   it('restores active typing synchronously when the whole chat panel is recreated', async () => {
     // Stateful mock daemon: the flush-at-unmount save is issued before the
     // remount's get on the same ordered connection, so the daemon answers
@@ -1203,6 +1365,10 @@ describe('ChatPanel mounted lifecycle', () => {
     });
     await tick();
     const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
 
     // Simulate the user scrolling up: followBottom reports follow=false and
     // the container sits at a mid-transcript offset.
@@ -1247,13 +1413,17 @@ describe('ChatPanel mounted lifecycle', () => {
     const replacement = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });
+    const replacementScroll = replacement.container.querySelector(
+      '.overflow-y-auto',
+    ) as HTMLDivElement;
+    Object.defineProperties(replacementScroll, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
     await tick();
     await Promise.resolve();
     await tick();
     flushFrame();
-    const replacementScroll = replacement.container.querySelector(
-      '.overflow-y-auto',
-    ) as HTMLDivElement;
     expect(replacementScroll.scrollTop).toBe(432);
   });
 
@@ -1281,6 +1451,11 @@ describe('ChatPanel mounted lifecycle', () => {
     const view = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
     await tick();
     // Let the first-hydration restore (tick continuation) and the mount-time
     // rAF entry scroll both run.
@@ -1288,9 +1463,206 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
     flushFrame();
 
-    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
     expect(scrollContainer.scrollTop).toBe(987);
     expect(scrollToBottomUtil).not.toHaveBeenCalled();
+  });
+
+  it('defers the cached restore until the transcript can hold it instead of clamping to the top', async () => {
+    // Regression (top-landing on workspace re-entry): the cached position
+    // used to be applied and consumed against the still-short (skeleton)
+    // container, where the browser clamps the write to ~0 — the panel then
+    // stayed at the top once the real transcript rendered.
+    mocks.draftGet.mockResolvedValue(null);
+    setCachedChatScroll('workspace-a', 'agent-a', {
+      scrollTop: 987,
+      shouldFollowBottom: false,
+    });
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    // Real browsers clamp scrollTop writes to the scrollable range; jsdom
+    // stores them verbatim, so emulate the clamp.
+    let scrollTopValue = 0;
+    Object.defineProperty(scrollContainer, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTopValue,
+      set(value: number) {
+        const max = Math.max(0, this.scrollHeight - this.clientHeight);
+        scrollTopValue = Math.max(0, Math.min(value, max));
+      },
+    });
+
+    // First paint: the container is still collapsed (scrollHeight 0), so any
+    // restore attempt here would clamp to the top.
+    await tick();
+    await Promise.resolve();
+    await tick();
+    flushFrame();
+    expect(scrollContainer.scrollTop).toBe(0);
+
+    // The transcript finishes rendering: the container becomes tall enough
+    // to hold the cached position, and the deferred restore applies it.
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
+    flushFrame();
+    expect(scrollContainer.scrollTop).toBe(987);
+  });
+
+  it('does not overwrite a useful cached position when unmounted while collapsed', async () => {
+    // Regression (top-landing on workspace re-entry): a panel unmounted
+    // before its container ever rendered (collapsed, scrollTop 0) used to
+    // record { scrollTop: 0 } over the previous instance's real reading
+    // position, so the next mount landed at the top.
+    mocks.draftGet.mockResolvedValue(null);
+    setCachedChatScroll('workspace-a', 'agent-a', {
+      scrollTop: 987,
+      shouldFollowBottom: false,
+    });
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    // The container never rendered any scrollable content before destroy.
+    view.unmount();
+
+    expect(getCachedChatScroll('workspace-a', 'agent-a')).toEqual({
+      scrollTop: 987,
+      shouldFollowBottom: false,
+    });
+  });
+
+  it('applies the clamped position once the rendered container exhausts the retry budget', async () => {
+    // Exhausted-budget branch: the container has rendered (non-zero client
+    // height) but the transcript is genuinely shorter than the cached
+    // position (e.g. pruned scrollback rows). After the bounded retry
+    // budget, the restore applies clamped — the nearest valid position.
+    mocks.draftGet.mockResolvedValue(null);
+    setCachedChatScroll('workspace-a', 'agent-a', {
+      scrollTop: 987,
+      shouldFollowBottom: false,
+    });
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    let scrollTopValue = 0;
+    Object.defineProperty(scrollContainer, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTopValue,
+      set(value: number) {
+        const max = Math.max(0, this.scrollHeight - this.clientHeight);
+        scrollTopValue = Math.max(0, Math.min(value, max));
+      },
+    });
+    // Rendered but held too short for the cached position for the whole run.
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 800 },
+      clientHeight: { configurable: true, value: 500 },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+    expect(scrollContainer.scrollTop).toBe(0);
+
+    // Drain the bounded retry budget (60 rendered-frame attempts, plus the
+    // mount-time entry-scroll frame): the loop must terminate on its own —
+    // never an unbounded rAF retry — and the final attempt applies clamped
+    // to the nearest valid position (max scrollTop 300).
+    for (let frame = 0; frame < 100 && frames.length > 0; frame++) flushFrame();
+    expect(frames).toHaveLength(0);
+    expect(scrollContainer.scrollTop).toBe(300);
+  });
+
+  it('cancels the pending deferred restore on the first user-initiated scroll', async () => {
+    // A late deferred apply must never yank the viewport after the user has
+    // started scrolling: the first wheel/touch input while the restore is
+    // still pending cancels it for good.
+    mocks.draftGet.mockResolvedValue(null);
+    setCachedChatScroll('workspace-a', 'agent-a', {
+      scrollTop: 987,
+      shouldFollowBottom: false,
+    });
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    let scrollTopValue = 0;
+    Object.defineProperty(scrollContainer, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTopValue,
+      set(value: number) {
+        const max = Math.max(0, this.scrollHeight - this.clientHeight);
+        scrollTopValue = Math.max(0, Math.min(value, max));
+      },
+    });
+    // Container still collapsed: the restore stays pending on the rAF loop.
+    await tick();
+    await Promise.resolve();
+    await tick();
+    flushFrame();
+    expect(scrollContainer.scrollTop).toBe(0);
+
+    // The user starts scrolling before the transcript grows tall enough.
+    scrollContainer.dispatchEvent(new Event('wheel'));
+
+    // The container then becomes tall enough — the cancelled restore must
+    // NOT fire, even across further frames.
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
+    flushFrame();
+    flushFrame();
+    expect(scrollContainer.scrollTop).toBe(0);
+  });
+
+  it('does not record a destroy-time cache write after the divider session ended (boundary)', async () => {
+    // Stop-looking boundary ordering: the boundary saga clears the cache and
+    // dispatches endDividerSession in the same tick, BEFORE Svelte's
+    // teardown flush runs this panel's onDestroy. The destroy-time write
+    // must observe the ended session and refuse to repopulate the cleared
+    // entry, or re-entry would restore the stale position instead of
+    // following the entry policy (bottom / divider).
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+    });
+    mocks.followBottomOptions?.onFollowChange?.(false);
+    await tick();
+    scrollContainer.scrollTop = 1234;
+
+    // The boundary: cache cleared, divider session ended — both before the
+    // teardown flush destroys this panel.
+    clearCachedChatScroll(['agent-a']);
+    mocks.dividerSessionValue = null;
+    view.unmount();
+
+    expect(getCachedChatScroll('workspace-a', 'agent-a')).toBeUndefined();
   });
 
   it('re-enters at the bottom on remount when the previous instance was following the bottom', async () => {
@@ -1439,18 +1811,14 @@ describe('ChatPanel mounted lifecycle', () => {
     });
     await tick();
 
-    expect(
-      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).toBeNull();
 
     // The fresh snapshot applies but the footer sources are still settling:
     // still one deferred surface — no partial reveal.
     mocks.awaitingSwitchBackSnapshot.set(false);
     await tick();
-    expect(
-      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).toBeNull();
 
     // Footer ready: transcript and utility card mount in the SAME flip.
@@ -1458,9 +1826,7 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
     expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
-    expect(
-      view.container.querySelector('[data-testid="event-subscriptions-card"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).not.toBeNull();
   });
 
   it('reveals transcript and utility footer in the same flip on first open', async () => {
@@ -1477,9 +1843,7 @@ describe('ChatPanel mounted lifecycle', () => {
     });
     await tick();
 
-    expect(
-      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
     expect(view.container.querySelector('[data-conversation-turn]')).toBeNull();
     expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).toBeNull();
 
@@ -1487,9 +1851,7 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
     expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
-    expect(
-      view.container.querySelector('[data-testid="event-subscriptions-card"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).not.toBeNull();
   });
 
   it('reveals without the footer when the bounded fallback clears the gates', async () => {
@@ -1506,9 +1868,7 @@ describe('ChatPanel mounted lifecycle', () => {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });
     await tick();
-    expect(
-      view.container.querySelector('[data-testid="chat-transcript-skeleton"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
 
     // chatSwitchBackRevealTimedOut clears BOTH gates in the reducer.
     mocks.awaitingSwitchBackSnapshot.set(false);

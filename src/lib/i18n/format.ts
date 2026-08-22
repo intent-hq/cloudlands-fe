@@ -25,10 +25,10 @@ export const {
   formatShortDate,
   formatDateTime,
   formatFullDateTime,
-  formatWeekday,
+
   formatDaySeparator,
   formatDistanceToNow,
   formatDatePattern,
 } = createFormatters(getActiveLocale);
 
-export type { DateInput, RelativeTimeOptions } from '$shared/i18n/formatters';
+export type { DateInput } from '$shared/i18n/formatters';

@@ -1,25 +1,25 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   createCollection,
   getItem,
   removeItem,
   upsertItem,
-} from "@augmentcode/themis/utils/collections/collection-utils";
-import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
-import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
+} from '@augmentcode/themis/utils/collections/collection-utils';
+import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
+import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type {
   FileContentEntry,
   FileContentReadOptions,
   FileContentSaveOptions,
   FilesState,
   FilesWorkspaceState,
-} from "./files-types";
+} from './files-types';
 
-export type { FileContentEntry, FileContentReadOptions, FileContentSaveOptions, FilesState, FilesWorkspaceState };
+export type { FileContentReadOptions, FileContentSaveOptions, FilesState, FilesWorkspaceState };
 
 export const emptyFilesWorkspaceState: FilesWorkspaceState = {
-  files: createCollection<FileContentEntry, "path">("path"),
+  files: createCollection<FileContentEntry, 'path'>('path'),
 };
 
 export const initialState: FilesState = {
@@ -79,35 +79,47 @@ function bumpLastUpdated(entry: FileContentEntry): number {
 }
 
 export const removeFileContentEntry = createAction<[wsId: string, path: string]>(
-  "files/removeFileContentEntry",
+  'files/removeFileContentEntry',
 );
 
 export const loadFileContentRequested = createAction<
   [wsId: string, path: string, absolutePath: string, options?: FileContentReadOptions]
->("files/loadFileContentRequested");
+>('files/loadFileContentRequested');
 
 export const loadFileContentSucceeded = createAction<
-  [wsId: string, path: string, absolutePath: string, content: string, isBinary?: boolean, truncated?: boolean]
->("files/loadFileContentSucceeded");
+  [
+    wsId: string,
+    path: string,
+    absolutePath: string,
+    content: string,
+    isBinary?: boolean,
+    truncated?: boolean,
+  ]
+>('files/loadFileContentSucceeded');
 
 export const loadFileContentFailed = createAction<
   [wsId: string, path: string, absolutePath: string, error: string, notFoundCandidates?: string[]]
->("files/loadFileContentFailed");
+>('files/loadFileContentFailed');
 
-export const updateFileContent = createAction<[wsId: string, path: string, content: string]>(
-  "files/updateFileContent",
-);
+export const updateFileContent =
+  createAction<[wsId: string, path: string, content: string]>('files/updateFileContent');
 
 export const saveFileContentRequested = createAction<
-  [wsId: string, path: string, absolutePath: string, content: string, options?: FileContentSaveOptions]
->("files/saveFileContentRequested");
+  [
+    wsId: string,
+    path: string,
+    absolutePath: string,
+    content: string,
+    options?: FileContentSaveOptions,
+  ]
+>('files/saveFileContentRequested');
 
 export const saveFileContentSucceeded = createAction<[wsId: string, path: string, content: string]>(
-  "files/saveFileContentSucceeded",
+  'files/saveFileContentSucceeded',
 );
 
 export const saveFileContentFailed = createAction<[wsId: string, path: string, error: string]>(
-  "files/saveFileContentFailed",
+  'files/saveFileContentFailed',
 );
 
 export const filesReducer = createReducer<FilesState>(initialState);

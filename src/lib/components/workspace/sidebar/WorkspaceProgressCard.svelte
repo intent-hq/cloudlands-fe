@@ -7,7 +7,7 @@
   import { extractOrderedSpecTaskIds, extractSpecTaskIds } from '$shared/utils/task-stats';
   import {
     selectWorkspaceTaskProgress,
-    selectWorkspaceTasksLoading,
+    selectWorkspaceTasksInitialized,
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import Fa from 'svelte-fa';
   import {
@@ -66,9 +66,11 @@
     setWorkspaceEntity,
   } from '$store/renderer/slices/workspace/workspace-slice';
   import {
+    selectWorkspaceActivePrSummary,
     selectWorkspaceById,
     selectWorkspaceProgressActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { getActivePrStatusPresentation } from '$lib/components/workspace/utils/active-pr-status-presentation';
   import type {
     WorkspaceProgressAction,
     WorkspaceProgressActionIconKey,
@@ -109,7 +111,10 @@
   // BE-owned task progress rollup served verbatim from the workspace-tasks slice
   // (PROTOCOL §5.4 `task.list`.stats). The renderer never re-derives counts.
   const taskStats$ = selectWorkspaceTaskProgress(workspaceIdStore);
-  const tasksLoading$ = selectWorkspaceTasksLoading(workspaceIdStore);
+  // Gate the progress placeholder on "not yet initialized" rather than "any
+  // fetch in flight" so event-driven refetches never remount the bar and
+  // replay its entrance animation (the flex-grow transition animates the diff).
+  const tasksInitialized$ = selectWorkspaceTasksInitialized(workspaceIdStore);
 
   // Aggregated presentational inputs for the workspace progress selectors. Kept
   // in sync via an $effect below once the derived state is available. PR identity
@@ -126,6 +131,9 @@
   // ✅ Selector readables captured at component init — the workspace slice owns
   // the workflow-stage, headline, and action logic.
   const progressActions$ = selectWorkspaceProgressActions(workspaceIdStore, progressInput$);
+  // Active-PR summary backing the View PR action's status icon/color; null when
+  // the action falls back to a bare PR URL with no summary.
+  const activePrSummary$ = selectWorkspaceActivePrSummary(workspaceIdStore);
 
   // Git status state for workflow awareness
   let gitStatus = $state<WorkspaceGitStatus | null>(null);
@@ -638,7 +646,7 @@
   // BE-owned task progress rollup (PROTOCOL §5.4): rendered verbatim from the
   // workspace-tasks slice — no client classification of task status.
   const taskStats = $derived($taskStats$);
-  const showFlameGraph = $derived($tasksLoading$ || taskStats.total > 0);
+  const showFlameGraph = $derived(!$tasksInitialized$ || taskStats.total > 0);
 
   // Tree node with computed weight (leaf count)
   interface TaskTreeNode {
@@ -933,6 +941,7 @@
                 variant="ghost-light"
                 size="icon-sm"
                 data-workspace-actions-kebab
+                data-workspace-actions-trigger
                 aria-label={m.workspace_progressCard_actions_ariaLabel()}
                 class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
                 disabled={isDeleting}
@@ -1114,13 +1123,13 @@
 
   <div class="flex w-full flex-col gap-3.5 pb-2 text-left">
     {#if showFlameGraph}
-      <!-- Keep the task progress placeholder visible while canonical tasks load. -->
+      <!-- Keep the task progress placeholder visible until canonical tasks first load. -->
       <div class="flex h-5 flex-1 shrink-0" data-workspace-task-progress>
         <FlameGraph
           notes={$notes}
           onTaskClick={_onOpenNote}
           progress={completionRatio}
-          loading={$tasksLoading$}
+          loading={!$tasksInitialized$}
           animationKey={workspaceId}
         />
       </div>
@@ -1246,6 +1255,9 @@
 
     {#if viewPullRequestAction}
       {@const action = viewPullRequestAction}
+      {@const prStatus = $activePrSummary$
+        ? getActivePrStatusPresentation($activePrSummary$.status)
+        : undefined}
       <div class="flex-1 w-full" data-workspace-view-pr>
         {#if action}
           <Tooltip
@@ -1257,11 +1269,18 @@
             <Button
               variant="ghost-light"
               size="xs"
-              class="w-full text-left justify-start px-0!"
+              class="w-full text-left justify-start px-0! h-auto min-h-7 items-start py-[2px] whitespace-normal"
               onclick={() => runProgressAction(action)}
             >
-              <Fa icon={PROGRESS_ACTION_ICONS[action.iconKey]} size={14} class="ml-1 size-3.5!" />
-              <span class="underline decoration-dotted underline-offset-2">{action.label}</span>
+              <Fa
+                icon={prStatus?.icon ?? PROGRESS_ACTION_ICONS[action.iconKey]}
+                size={14}
+                class="ml-1 mt-1 size-3.5! shrink-0 {prStatus?.className ?? ''}"
+              />
+              <span
+                class="underline decoration-dotted underline-offset-2 whitespace-normal break-words min-w-0"
+                >{action.label}</span
+              >
             </Button>
           </Tooltip>
         {/if}

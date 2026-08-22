@@ -48,20 +48,3 @@ export interface DiffChunk {
   commitSha?: string;
   description?: string;
 }
-
-export interface ChangeDetectorOptions {
-  workspaceId: string;
-  worktreePath?: string;
-  workspacePath?: string;
-  repositoryPath?: string;
-  ignorePatterns?: string[];
-  isRemote?: boolean;
-}
-
-export interface ChangeDetectorStats {
-  isRunning: boolean;
-  lastGitPoll: string | null;
-  totalChangesDetected: number;
-  totalEventsEmitted: number;
-  currentActor?: any;
-}

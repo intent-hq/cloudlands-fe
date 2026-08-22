@@ -44,7 +44,7 @@ function summarizeImageBlocks(value: unknown) {
 /**
  * Validation error with detailed information
  */
-export class ValidationError extends Error {
+class ValidationError extends Error {
   constructor(
     public channel: string,
     public errors: z.ZodError['errors'],
@@ -176,29 +176,11 @@ export function createSafeValidatedHandler<T>(
  * Validation registry for all IPC channels
  * Maps channel names to their validation schemas
  */
-export const validationRegistry = new Map<string, z.ZodSchema<any>>();
+const validationRegistry = new Map<string, z.ZodSchema<any>>();
 
 /**
  * Register a validation schema for a channel
  */
 export function registerValidationSchema(channel: string, schema: z.ZodSchema<any>) {
   validationRegistry.set(channel, schema);
-}
-
-/**
- * Get validation schema for a channel
- */
-export function getValidationSchema(channel: string): z.ZodSchema<any> | undefined {
-  return validationRegistry.get(channel);
-}
-
-/**
- * Validate data against a channel's schema
- */
-export function validateForChannel(channel: string, data: unknown): any {
-  const schema = getValidationSchema(channel);
-  if (!schema) {
-    throw new Error(`No validation schema registered for channel: ${channel}`);
-  }
-  return schema.parse(data);
 }

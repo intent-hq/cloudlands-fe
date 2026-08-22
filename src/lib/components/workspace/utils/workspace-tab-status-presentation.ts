@@ -37,7 +37,7 @@ export function formatWorkspaceTabStatusDetail(item: WorkspaceTabStatusItem): st
     : m.layout_workspaceTabStrip_statusDetail_description(values);
 }
 
-export function formatWorkspaceTabStatusItems(items: WorkspaceTabStatusItem[]): string {
+function formatWorkspaceTabStatusItems(items: WorkspaceTabStatusItem[]): string {
   return items.map(formatWorkspaceTabStatusDetail).join(' · ');
 }
 

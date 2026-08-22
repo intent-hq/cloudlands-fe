@@ -4,15 +4,15 @@
  * Plain selectors invoked with an explicit main-process state snapshot.
  */
 
-import { createMainSelector } from "../../create-main-selector";
+import { createMainSelector } from '../../create-main-selector';
 import type {
   WorkspaceSubscriptionState,
   AgentSubscriptionRecord,
   DelegationGroupTrackerRecord,
   QueuedEventRecord,
   AgentStatus,
-} from "./types";
-import { emptyWorkspaceSubscriptionState } from "./types";
+} from './types';
+import { emptyWorkspaceSubscriptionState } from './types';
 
 // ---------------------------------------------------------------------------
 // Workspace-level
@@ -57,7 +57,7 @@ export const selectAllSubscriptions = createMainSelector(
 export const selectAgentStatus = createMainSelector(
   (state, wsId: string, agentId: string): AgentStatus => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
-    return ws.agentStatuses[agentId] ?? "idle";
+    return ws.agentStatuses[agentId] ?? 'idle';
   },
 );
 
@@ -84,22 +84,14 @@ export const selectAgentQueueLength = createMainSelector(
 // ---------------------------------------------------------------------------
 
 export const selectDelegationGroup = createMainSelector(
-  (
-    state,
-    wsId: string,
-    groupId: string,
-  ): DelegationGroupTrackerRecord | undefined => {
+  (state, wsId: string, groupId: string): DelegationGroupTrackerRecord | undefined => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return ws.delegationGroups[groupId];
   },
 );
 
 export const selectDelegationGroupsForParent = createMainSelector(
-  (
-    state,
-    wsId: string,
-    parentAgentId: string,
-  ): DelegationGroupTrackerRecord[] => {
+  (state, wsId: string, parentAgentId: string): DelegationGroupTrackerRecord[] => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return Object.values(ws.delegationGroups).filter(
       (group) => group.parentAgentId === parentAgentId,
@@ -107,9 +99,11 @@ export const selectDelegationGroupsForParent = createMainSelector(
   },
 );
 
-export function getDelegationGroupCompletionSummary(
-  group: DelegationGroupTrackerRecord,
-): { doneCount: number; expectedCount: number; isComplete: boolean } {
+function getDelegationGroupCompletionSummary(group: DelegationGroupTrackerRecord): {
+  doneCount: number;
+  expectedCount: number;
+  isComplete: boolean;
+} {
   const expectedIds = new Set(group.expectedAgentIds);
   const doneIds = new Set<string>();
   for (const agentId of group.completedAgentIds) {
@@ -121,11 +115,8 @@ export function getDelegationGroupCompletionSummary(
 
   const expectedCount = expectedIds.size;
   const doneCount = doneIds.size;
-  const isComplete = expectedCount > 0 && (
-    group.awaitMode === "any"
-      ? doneCount >= 1
-      : doneCount >= expectedCount
-  );
+  const isComplete =
+    expectedCount > 0 && (group.awaitMode === 'any' ? doneCount >= 1 : doneCount >= expectedCount);
   return { doneCount, expectedCount, isComplete };
 }
 
@@ -147,16 +138,3 @@ export const selectIsAgentDeleted = createMainSelector(
     return agentId in ws.deletedAgents;
   },
 );
-
-// ---------------------------------------------------------------------------
-// All workspace IDs (for periodic sweeps)
-// ---------------------------------------------------------------------------
-
-export const selectAllWorkspaceIds = createMainSelector(
-  (state): string[] => {
-    const slice = state?.agentSubscriptions;
-    if (!slice) return [];
-    return Object.keys(slice.byWorkspaceId);
-  },
-);
-

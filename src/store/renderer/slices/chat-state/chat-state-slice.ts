@@ -12,6 +12,7 @@ import type {
   SendMessagePayload,
   InitializeChatOptions,
   StreamStatusContext,
+  StreamFailureCorrelation,
   TranscriptSnapshotMeta,
 } from './chat-state-types';
 import {
@@ -595,7 +596,12 @@ export const chatQueuedRetryRecordsCleared = createAction<[agentId: string]>(
  * so no drain-start event under this client's key ever promoted it).
  */
 export const chatSendFailed =
-  createAction<[agentId: string, error: string, turnId?: string]>('chatState/sendFailed');
+  createAction<[
+    agentId: string,
+    error: string,
+    turnId?: string,
+    failureCorrelation?: StreamFailureCorrelation,
+  ]>('chatState/sendFailed');
 
 /**
  * `agent:queue:processing` drain-start signal (PROTOCOL §6.5): the daemon
@@ -674,9 +680,9 @@ export const streamStatusReceived = createAction(
 );
 
 /** Restore status events persisted by chat-state sagas during initialization */
-export const chatStatusEventsHydrated = createAction<
-  [agentId: string, statusEvents: StatusEvent[]]
->('chatState/statusEventsHydrated');
+const chatStatusEventsHydrated = createAction<[agentId: string, statusEvents: StatusEvent[]]>(
+  'chatState/statusEventsHydrated',
+);
 
 /** Stream timed out */
 export const streamTimedOut = createAction<[agentId: string]>('chatState/streamTimedOut');
@@ -907,15 +913,17 @@ chatStateReducer.with(chatInitialized, (state, { payload: [agentId, data] }) =>
   updateAgent(state, agentId, {
     agentId,
     error: null,
+    failureCorrelation: undefined,
     lastAttemptedMessage: data.lastAttemptedMessage,
   }),
 );
 chatStateReducer.with(chatInitFailed, (state, { payload: [agentId, error] }) =>
-  updateAgent(state, agentId, { error, modelUnavailable: null }),
+  updateAgent(state, agentId, { error, failureCorrelation: undefined, modelUnavailable: null }),
 );
 chatStateReducer.with(chatSendStarted, (state, { payload: { agentId, timestamp } }) =>
   updateAgent(state, agentId, {
     error: null,
+    failureCorrelation: undefined,
     modelUnavailable: null,
     streamingStartTime: timestamp,
     lastMessageTime: timestamp,
@@ -985,7 +993,7 @@ chatStateReducer.with(
 chatStateReducer.with(chatQueueProcessingReceived, (state, { payload: [agentId, turnId] }) =>
   reduceQueueProcessing(state, agentId, turnId),
 );
-chatStateReducer.with(chatSendFailed, (state, { payload: [agentId, error, turnId] }) => {
+chatStateReducer.with(chatSendFailed, (state, { payload: [agentId, error, turnId, failureCorrelation] }) => {
   // monorepo#1057: when the failure names a turn whose record is still
   // PARKED (e.g. an agent.retry redrive that failed again — its requeued
   // entry has a new id, so no processing event promoted it under this
@@ -1000,6 +1008,7 @@ chatStateReducer.with(chatSendFailed, (state, { payload: [agentId, error, turnId
     return updateAgent(state, agentId, {
       streamingStartTime: null,
       error,
+      failureCorrelation,
       modelUnavailable: null,
       lastAttemptedMessage: agent.queuedRetryRecords[key].record,
       queuedRetryRecords: remaining,
@@ -1008,6 +1017,7 @@ chatStateReducer.with(chatSendFailed, (state, { payload: [agentId, error, turnId
   return updateAgent(state, agentId, {
     streamingStartTime: null,
     error,
+    failureCorrelation,
     modelUnavailable: null,
   });
 });
@@ -1020,7 +1030,7 @@ chatStateReducer.with(chatModelUnavailableCleared, (state, { payload: [agentId] 
   updateAgent(state, agentId, { modelUnavailable: null }),
 );
 chatStateReducer.with(chatErrorCleared, (state, { payload: [agentId] }) =>
-  updateAgent(state, agentId, { error: null }),
+  updateAgent(state, agentId, { error: null, failureCorrelation: undefined }),
 );
 chatStateReducer.with(chatStopInitiated, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { isInterrupting: true }),
@@ -1082,6 +1092,7 @@ chatStateReducer.with(streamTimedOut, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, {
     streamingStartTime: null,
     error: m.chat_state_timeout_error(),
+    failureCorrelation: undefined,
   }),
 );
 chatStateReducer.with(chatRebindStarted, (state, { payload: [agentId] }) =>
@@ -1107,7 +1118,8 @@ chatStateReducer.with(transcriptHydrationSettled, (state, { payload: [agentId] }
     // in the same paint. The subscribe saga clears it (footer ready) or its
     // bounded fallback does — never wedges. Refresh re-hydrations keep the
     // transcript visible and must not re-arm.
-    awaitingUtilityFooter: agent.transcriptHydratedOnce === true ? agent.awaitingUtilityFooter : true,
+    awaitingUtilityFooter:
+      agent.transcriptHydratedOnce === true ? agent.awaitingUtilityFooter : true,
   });
 });
 chatStateReducer.with(transcriptHydrationFailed, (state, { payload: [agentId] }) =>
@@ -1256,16 +1268,14 @@ chatStateReducer.with(scrollbackGapPageSettled, (state, { payload: [agentId, pre
     scrollbackOlderToken: null,
   }),
 );
-chatStateReducer.with(
-  scrollbackSeekSettled,
-  (state, { payload: [agentId, tokens, unsupported] }) =>
-    updateAgent(state, agentId, {
-      agentId,
-      fetchingHistorySeek: false,
-      scrollbackOlderToken: tokens.nextToken,
-      scrollbackGapToken: tokens.prevToken,
-      ...(unsupported ? { historySeekUnsupported: true } : {}),
-    }),
+chatStateReducer.with(scrollbackSeekSettled, (state, { payload: [agentId, tokens, unsupported] }) =>
+  updateAgent(state, agentId, {
+    agentId,
+    fetchingHistorySeek: false,
+    scrollbackOlderToken: tokens.nextToken,
+    scrollbackGapToken: tokens.prevToken,
+    ...(unsupported ? { historySeekUnsupported: true } : {}),
+  }),
 );
 chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] }) => {
   const agent = state.byAgentId[agentId];

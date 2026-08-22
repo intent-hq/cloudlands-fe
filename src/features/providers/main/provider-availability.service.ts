@@ -34,7 +34,7 @@ import type {
 } from '$shared/types/provider-availability';
 import { m } from '../../../shared/paraglide/messages.js';
 
-export type { NpxStatus, ProviderAvailabilityResult, ProviderStatus };
+export type { ProviderAvailabilityResult };
 
 const logger = new Logger('ProviderAvailability');
 

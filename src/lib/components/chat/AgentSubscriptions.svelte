@@ -71,7 +71,6 @@
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
-  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { navigateToRoute } from '$lib/utils/navigation.client';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
@@ -534,23 +533,16 @@
     clearWatchedAgentFocusTimers();
   });
 
-  function openWatchedAgent(event: MouseEvent | KeyboardEvent, watchedAgentId: string) {
+  function openWatchedAgent(_event: MouseEvent | KeyboardEvent, watchedAgentId: string) {
     if (isolatedPreview) return;
     if (!workspaceId) return;
-    const sourcePanelId = findSourcePanelId(event.target);
     if (selectCurrentWorkspaceTabId.select(appStore.state) !== workspaceId) {
       appStore.dispatch(openWorkspaceTab(workspaceId));
       void navigateToRoute(`/workspace/${workspaceId}`).catch((error) => {
         logger.warn('Failed to switch workspace for watched agent', { watchedAgentId, error });
       });
     }
-    appStore.dispatch(
-      openAgentTabRequested(workspaceId, {
-        agentId: watchedAgentId,
-        sourcePanelId,
-        openInAdjacentPanel: true,
-      }),
-    );
+    appStore.dispatch(openAgentTabRequested(workspaceId, { agentId: watchedAgentId }));
     focusWatchedAgentPanel(watchedAgentId);
   }
 </script>

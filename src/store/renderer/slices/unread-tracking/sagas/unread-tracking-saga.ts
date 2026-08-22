@@ -7,6 +7,7 @@ import {
   markAgentSeenOnUserSend,
   newestPersistedMessageId,
 } from '$features/agent/mark-agent-seen';
+import { clearCachedChatScroll } from '$lib/components/chat/chat-scroll-cache';
 import {
   selectAgentMessages,
   selectAgentSessionHasStreamingTailMessage,
@@ -19,10 +20,20 @@ import {
 import {
   openTab,
   openTabInAdjacentOrSplit,
+  reopenClosedPanelColumn,
   reopenClosedTab,
 } from '../../panel-layout/panel-layout-slice';
 import { TAB_REMOVAL_ACTIONS } from '../../panel-layout/panel-layout-action-utils';
-import { closeAll as closeAllSidebar, closeHoverCards, closePanel as closeSidebarPanel, hydrateSidebarNav, openPanel as openSidebarPanel, setExpandedItem, setHoveredItem, togglePanel as toggleSidebarPanel } from '../../sidebar-nav/sidebar-nav-slice';
+import {
+  closeAll as closeAllSidebar,
+  closeHoverCards,
+  closePanel as closeSidebarPanel,
+  hydrateSidebarNav,
+  openPanel as openSidebarPanel,
+  setExpandedItem,
+  setHoveredItem,
+  togglePanel as toggleSidebarPanel,
+} from '../../sidebar-nav/sidebar-nav-slice';
 import {
   selectDividerBoundaryStateSnapshot,
   type DividerBoundarySnapshot,
@@ -44,6 +55,7 @@ const TAB_BOUNDARY_ACTIONS = [
   ...TAB_REMOVAL_ACTIONS,
   openTab,
   openTabInAdjacentOrSplit,
+  reopenClosedPanelColumn,
   reopenClosedTab,
 ];
 const CHIEF_BOUNDARY_ACTIONS = [
@@ -127,6 +139,21 @@ function* readDividerBoundarySnapshot(
 
 function* finishBoundary(boundary: DividerSessionBoundary): SagaGenerator<void> {
   yield* call(markAgentSeenAtBoundary, boundary.agentIds);
+  // Leaving the agent (workspace switch / tab close) ends the reading
+  // session: drop the cached transcript scroll so the next entry lands at
+  // the bottom or the unread divider, never a stale clamped position.
+  // Chief-card close keeps its cache — the hover card is not a workspace
+  // surface remount. Ordering contract: markAgentSeenAtBoundary is
+  // synchronous fire-and-forget, so this clear runs in the boundary
+  // dispatch tick, BEFORE Svelte's microtask teardown flush destroys the
+  // departing ChatPanel. That panel cannot repopulate the entries cleared
+  // here because its destroy-time cache write is suppressed state-side:
+  // endDividerSession (dispatched below, in this same tick) ends the
+  // agent's divider session, and canRecordChatScroll refuses to record
+  // once the session has ended.
+  if (boundary.kind !== 'chief-card-close') {
+    yield* call(clearCachedChatScroll, boundary.agentIds);
+  }
   for (const agentId of boundary.agentIds) {
     const hasStreamingTailMessage =
       yield* selectAgentSessionHasStreamingTailMessage.effect(agentId);

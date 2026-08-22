@@ -1,6 +1,6 @@
 <script lang="ts" module>
   // Re-export types from types.ts for backwards compatibility
-  export type { LayoutPreset, LayoutPresetId } from './types';
+  export type { LayoutPresetId } from './types';
 </script>
 
 <script lang="ts">

@@ -6,7 +6,6 @@ import ts from 'typescript';
 const APPROVED_MIDDLEWARE = new Map([
   ['src/store/utils/store-guard-middleware.ts', 'createStoreGuardMiddleware'],
   ['src/store/renderer/middlewares/batch.ts', 'createBatchingMiddleware'],
-  ['src/store/renderer/middlewares/logger.ts', 'createLoggerMiddleware'],
   [
     'src/store/renderer/middlewares/state-reference-checks.ts',
     'createReferenceChangeDetectorMiddleware',
@@ -23,6 +22,7 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/agent-ipc-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/auto-update-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/backend-status-bridge-seeder.ts', { registerMockIpcHandler: 5 }],
+  ['src/store/renderer/seeders/browser-ipc-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/connections-bridge-seeder.ts', { registerMockIpcHandler: 6 }],
   ['src/store/renderer/seeders/file-bridge-seeder.ts', { registerMockIpcHandler: 12 }],
   ['src/store/renderer/seeders/git-bridge-seeder.ts', { registerMockIpcHandler: 9 }],
@@ -40,12 +40,13 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/pi-mcp-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/provider-status-bridge-seeder.ts', { registerMockIpcHandler: 6 }],
   ['src/store/renderer/seeders/release-notes-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
+  ['src/store/renderer/seeders/renderer-log-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/repo-config-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/settings-legacy-bridge-seeder.ts', { registerMockIpcHandler: 5 }],
   ['src/store/renderer/seeders/shell-reveal-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/terminals-scripts-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/voice-local-bridge-seeder.ts', { registerMockIpcHandler: 3 }],
-  ['src/store/renderer/seeders/window-state-bridge-seeder.ts', { registerMockIpcHandler: 4 }],
+  ['src/store/renderer/seeders/window-state-bridge-seeder.ts', { registerMockIpcHandler: 5 }],
   ['src/store/renderer/seeders/workspaces-seeder.ts', { registerMockIpcHandler: 7 }],
   [
     'src/store/renderer/slices/notifications/sagas/notifications-saga.ts',
@@ -470,7 +471,7 @@ export function findRendererSideEffectBoundaryViolations(files) {
         if (directStore && (node.arguments?.length ?? 0) > 1) {
           const consumesConfiguredRegistry =
             filePath === CONFIGURED_STORE_PATH &&
-            node.arguments?.length === 2 &&
+            (node.arguments?.length ?? 0) >= 2 &&
             expressionOrigin(filePath, node.arguments[1]) === MIDDLEWARE_REGISTRY_ORIGIN;
           if (consumesConfiguredRegistry) configuredRegistryConsumptions += 1;
           else violations.push(`${filePath}: direct Store middleware registration is not allowed`);
@@ -506,7 +507,7 @@ export function findRendererSideEffectBoundaryViolations(files) {
           .some((name, i) => name !== expected[i])
       ) {
         violations.push(
-          `${filePath}: registry must contain exactly the five approved middleware factories`,
+          `${filePath}: registry must contain exactly the four approved middleware factories`,
         );
       }
     }

@@ -113,8 +113,7 @@ export function probeRepoConfigSetupScript(options: RepoConfigProbeOptions): Pro
 
   options.setLoading(false);
   const isLocalProbe = !!path && type === 'local' && path.startsWith('/');
-  const github =
-    !!path && type === 'github' ? parseGitHubUrl(identity.githubUrl || path) : null;
+  const github = !!path && type === 'github' ? parseGitHubUrl(identity.githubUrl || path) : null;
   if (!isLocalProbe && !github) return Promise.resolve();
   const scriptAtFetchStart = untrack(options.getSetupScript);
   options.setLoading(true);
@@ -151,17 +150,19 @@ export function probeRepoConfigSetupScript(options: RepoConfigProbeOptions): Pro
  * arrowing through the branch picker coalesces into a single
  * `github.repoConfig.get` request for the final ref.
  */
-export const BRANCH_REPROBE_DEBOUNCE_MS = 300;
+const BRANCH_REPROBE_DEBOUNCE_MS = 300;
 
 /**
  * Upper bound for awaiting probe activity at submit time (monorepo#1862):
  * the probe is a sub-second read, so a bounded wait keeps a wedged transport
  * from blocking workspace creation indefinitely.
  */
-export const PROBE_SETTLE_TIMEOUT_MS = 2000;
+const PROBE_SETTLE_TIMEOUT_MS = 2000;
 
-export interface RepoConfigProbeSelectionOptions
-  extends Omit<RepoConfigProbeOptions, 'preservedRestoredState'> {
+export interface RepoConfigProbeSelectionOptions extends Omit<
+  RepoConfigProbeOptions,
+  'preservedRestoredState'
+> {
   /**
    * Called synchronously when the selected repo itself changed (not just the
    * branch), before the probe starts: invalidate cached repo-config state
@@ -229,8 +230,7 @@ export function createRepoConfigProbeScheduler(debounceMs = BRANCH_REPROBE_DEBOU
         previousRepoKey = repoKey;
         // Compute before onRepoChange runs the last-used restore, which
         // overwrites the setup script.
-        preservedRestoredState =
-          isInitialMount && !!untrack(probeOptions.getSetupScript).trim();
+        preservedRestoredState = isInitialMount && !!untrack(probeOptions.getSetupScript).trim();
         onRepoChange({ isInitialMount, preservedRestoredState });
         // `.catch` keeps the "never rejects" contract of `settled()`
         // structural: a throwing probe callback must not fail

@@ -7,15 +7,6 @@ import { taskNoteUrl } from '$shared/constants/intent-links';
 
 const logger = createLogger('CustomTaskItem');
 
-export interface TaskMenuClickDetail {
-  node: any; // JSON representation of the node
-  position: number;
-  checked: boolean;
-  text: string;
-  event: MouseEvent;
-  anchorName?: string; // CSS anchor name for positioning
-}
-
 export interface CustomTaskItemOptions {
   nested: boolean;
   HTMLAttributes: Record<string, any>;

@@ -1,5 +1,6 @@
 <script lang="ts">
   import AgentAvatarCatalog from '../AgentAvatarCatalog.svelte';
+  import AgentAvatar from '../AgentAvatar.svelte';
   import AgentAvatarWithState from '../AgentAvatarWithState.svelte';
   import type { AvatarState } from '../avatar-state';
 
@@ -25,6 +26,9 @@
       {state}
       variant="standard"
     />
+  </div>
+  <div data-testid="plain-idle-avatar">
+    <AgentAvatar agentId="plain-idle-agent" variant="standard" />
   </div>
   <AgentAvatarCatalog />
 </section>

@@ -17,8 +17,6 @@ import {
   selectHasCompletedProviderSetup,
   selectLanguagePreference,
   selectNoteFontStyle,
-  selectPanelOpenMode,
-  selectPanelStackDirection,
   selectShowArchived,
   selectShowReasoningBlocks,
   selectSpellcheckEnabled,
@@ -36,8 +34,6 @@ import {
   setHasCompletedProviderSetup,
   setLanguagePreference,
   setNoteFontStyle,
-  setPanelOpenMode,
-  setPanelStackDirection,
   setShowArchived,
   setShowReasoningBlocks,
   setSpellcheckEnabled,
@@ -47,8 +43,6 @@ import {
   toggleShowArchived,
   toggleShowReasoningBlocks,
   toggleSpellcheck,
-  togglePanelOpenMode,
-  togglePanelStackDirection,
   type ActivityLogPresetPreference,
   type FontStyle,
 } from '../user-preferences-slice';
@@ -64,8 +58,6 @@ const CODE_STORAGE_KEY = 'code-font-settings';
 const ACTIVITY_LOG_PRESETS_STORAGE_KEY = 'activityLogPresets';
 const LANGUAGE_PREFERENCE_STORAGE_KEY = 'language-preference';
 const GITHUB_LINK_DEFAULT_ACTION_STORAGE_KEY = 'github-links:defaultAction';
-const PANEL_OPEN_MODE_STORAGE_KEY = 'panel-layout:openMode';
-const PANEL_STACK_DIRECTION_STORAGE_KEY = 'panel-layout:stackDirection';
 
 type ListSystemFontsResponse = {
   success?: boolean;
@@ -164,66 +156,54 @@ export function* hydrateUserPreferencesWorker() {
   if (isGithubLinkDefaultAction(githubLinkDefaultAction)) {
     yield* put(setGithubLinkDefaultAction(githubLinkDefaultAction));
   }
-
-  const panelOpenMode = yield* getLocalStorageJSON<unknown>(PANEL_OPEN_MODE_STORAGE_KEY);
-  if (panelOpenMode === 'normal' || panelOpenMode === 'pin') {
-    yield* put(setPanelOpenMode(panelOpenMode));
-  }
-
-  const panelStackDirection = yield* getLocalStorageJSON<unknown>(
-    PANEL_STACK_DIRECTION_STORAGE_KEY,
-  );
-  if (panelStackDirection === 'left' || panelStackDirection === 'right') {
-    yield* put(setPanelStackDirection(panelStackDirection));
-  }
 }
 
-export function* persistSpellcheckWorker() {
+function* persistSpellcheckWorker() {
   const enabled = yield* selectSpellcheckEnabled.effect();
   yield* setLocalStorageJSON(SPELLCHECK_STORAGE_KEY, { enabled });
 }
 
-export function* persistShowArchivedWorker() {
+function* persistShowArchivedWorker() {
   yield* setLocalStorageJSON(SHOW_ARCHIVED_STORAGE_KEY, yield* selectShowArchived.effect());
 }
 
-export function* persistGroupByRepoWorker() {
+function* persistGroupByRepoWorker() {
   yield* setLocalStorageJSON(GROUP_BY_REPO_STORAGE_KEY, yield* selectGroupByRepo.effect());
 }
 
-export function* persistProviderSetupWorker() {
+function* persistProviderSetupWorker() {
   yield* setLocalStorageJSON(
     COMPLETED_PROVIDER_SETUP_STORAGE_KEY,
     yield* selectHasCompletedProviderSetup.effect(),
   );
 }
 
-export function* persistShowReasoningBlocksWorker() {
+function* persistShowReasoningBlocksWorker() {
   yield* setLocalStorageJSON(
     SHOW_REASONING_BLOCKS_STORAGE_KEY,
     yield* selectShowReasoningBlocks.effect(),
   );
 }
 
-export function* persistAgentFontWorker() {
+function* persistAgentFontWorker() {
   yield* setLocalStorageJSON(AGENT_STORAGE_KEY, {
     fontStyle: yield* selectAgentFontStyle.effect(),
   });
 }
 
-export function* persistNoteFontWorker() {
+function* persistNoteFontWorker() {
   yield* setLocalStorageJSON(NOTE_STORAGE_KEY, {
     fontStyle: yield* selectNoteFontStyle.effect(),
   });
 }
 
-export function* persistCodeFontWorker() {
+function* persistCodeFontWorker() {
   yield* setLocalStorageJSON(CODE_STORAGE_KEY, {
     fontFamily: yield* selectCodeFontFamily.effect(),
   });
 }
 
-export function* persistActivityLogPresetsWorker() {
+function* persistActivityLogPresetsWorker() {
   yield* setLocalStorageJSON(
     ACTIVITY_LOG_PRESETS_STORAGE_KEY,
     yield* selectActivityLogPresets.effect(),
@@ -247,21 +227,10 @@ export function* persistLanguagePreferenceWorker(action: ReturnType<typeof setLa
   yield* call(syncLanguagePreference, storedPreference);
 }
 
-export function* persistGithubLinkDefaultActionWorker() {
+function* persistGithubLinkDefaultActionWorker() {
   yield* setLocalStorageJSON(
     GITHUB_LINK_DEFAULT_ACTION_STORAGE_KEY,
     yield* selectGithubLinkDefaultAction.effect(),
-  );
-}
-
-export function* persistPanelOpenModeWorker() {
-  yield* setLocalStorageJSON(PANEL_OPEN_MODE_STORAGE_KEY, yield* selectPanelOpenMode.effect());
-}
-
-export function* persistPanelStackDirectionWorker() {
-  yield* setLocalStorageJSON(
-    PANEL_STACK_DIRECTION_STORAGE_KEY,
-    yield* selectPanelStackDirection.effect(),
   );
 }
 
@@ -286,11 +255,6 @@ function* watchUserPreferenceWrites() {
   );
   yield* takeEvery(setLanguagePreference, persistLanguagePreferenceWorker);
   yield* takeEvery(setGithubLinkDefaultAction, persistGithubLinkDefaultActionWorker);
-  yield* takeEvery([setPanelOpenMode, togglePanelOpenMode], persistPanelOpenModeWorker);
-  yield* takeEvery(
-    [setPanelStackDirection, togglePanelStackDirection],
-    persistPanelStackDirectionWorker,
-  );
 }
 
 /** Unregistered until the S20 middleware cutover. */

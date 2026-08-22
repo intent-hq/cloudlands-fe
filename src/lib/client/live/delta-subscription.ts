@@ -34,8 +34,8 @@
  * pushes are buffered until the subscribe reply resolves (the chat-client
  * precedent) instead of dropped.
  */
-import type { SubscriptionHandler, Unsubscribe } from "../app-client";
-import { backendRequest, onBackendNotification, onBackendReconnected } from "./backend-transport";
+import type { SubscriptionHandler, Unsubscribe } from '../app-client';
+import { backendRequest, onBackendNotification, onBackendReconnected } from './backend-transport';
 
 /** Incremental change set carried by a `kind:"delta"` push. */
 export interface DeltaPayload {
@@ -47,7 +47,7 @@ export interface DeltaPayload {
 /** Parsed `subscription.push` envelope. */
 export interface SubscriptionPush {
   subscriptionId: string;
-  kind: "snapshot" | "delta";
+  kind: 'snapshot' | 'delta';
   seq: number;
   snapshot?: unknown[];
   delta?: DeltaPayload;
@@ -55,24 +55,24 @@ export interface SubscriptionPush {
 
 /** Parse a daemon notification into a `SubscriptionPush`, or `null` if it isn't one. */
 export function parseSubscriptionPush(method: string, params: unknown): SubscriptionPush | null {
-  if (method !== "subscription.push" || !params || typeof params !== "object") return null;
+  if (method !== 'subscription.push' || !params || typeof params !== 'object') return null;
   const p = params as Record<string, unknown>;
-  const subscriptionId = typeof p.subscriptionId === "string" ? p.subscriptionId : undefined;
-  const seq = typeof p.seq === "number" ? p.seq : undefined;
+  const subscriptionId = typeof p.subscriptionId === 'string' ? p.subscriptionId : undefined;
+  const seq = typeof p.seq === 'number' ? p.seq : undefined;
   if (!subscriptionId || seq === undefined) return null;
-  if (p.kind === "snapshot") {
+  if (p.kind === 'snapshot') {
     return {
       subscriptionId,
-      kind: "snapshot",
+      kind: 'snapshot',
       seq,
       snapshot: Array.isArray(p.snapshot) ? p.snapshot : [],
     };
   }
-  if (p.kind === "delta") {
-    const raw = (p.delta && typeof p.delta === "object" ? p.delta : {}) as Record<string, unknown>;
+  if (p.kind === 'delta') {
+    const raw = (p.delta && typeof p.delta === 'object' ? p.delta : {}) as Record<string, unknown>;
     return {
       subscriptionId,
-      kind: "delta",
+      kind: 'delta',
       seq,
       delta: {
         added: Array.isArray(raw.added) ? raw.added : [],
@@ -131,7 +131,7 @@ export class DeltaReconciler<T> {
   }
 
   private upsert(raw: unknown): void {
-    if (!raw || typeof raw !== "object") return;
+    if (!raw || typeof raw !== 'object') return;
     const rec = raw as Record<string, unknown>;
     const id = this.getId(rec);
     if (!id) return;
@@ -147,7 +147,7 @@ export class DeltaReconciler<T> {
  * set is known, and again on every change; ids absent from a later call are
  * unsubscribed and their entities evicted.
  */
-export interface DynamicChannelScope {
+interface DynamicChannelScope {
   /** Subscribe to the desired id set; returns the disposer. */
   subscribeIds: (listener: (ids: readonly string[]) => void) => Unsubscribe;
   /** Registration params for one id, e.g. `(id) => ({ workspaceId: id })`. */
@@ -511,7 +511,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     if (dynamic) {
       for (const [id, state] of dynamicChannels) {
         if (state.subscriptionId !== push.subscriptionId) continue;
-        if (push.kind === "snapshot") {
+        if (push.kind === 'snapshot') {
           state.awaitingResnapshot = false;
           state.seeded = true;
           state.reconciler.applySnapshot(push.seq, push.snapshot ?? []);
@@ -534,7 +534,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
       if (hasPendingRegistration()) bufferPush(push);
       return;
     }
-    if (push.kind === "snapshot") {
+    if (push.kind === 'snapshot') {
       reconciler.applySnapshot(push.seq, push.snapshot ?? []);
       emit();
     } else if (reconciler.applyDelta(push.seq, push.delta ?? {})) {

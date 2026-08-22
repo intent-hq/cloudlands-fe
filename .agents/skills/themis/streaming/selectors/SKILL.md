@@ -12,7 +12,7 @@ requires:
 sources:
   - "@augmentcode/themis/streaming-store"
   - package-internal streaming selector implementation
-  - augmentcode/themis:docs/SELECTORS.md
+  - "@augmentcode/themis/docs/SELECTORS.md"
 triggers:
   - streaming selector
   - Kefir selector
@@ -25,16 +25,15 @@ triggers:
 Use this skill when `store.createSelector(...)` belongs to a `StreamingStore` and
 direct selector calls should produce Kefir `Observable<R, any>` results.
 
-This Streaming selector model is mutually exclusive with Svelte readable and
-React signal selector patterns for the same app/package/code path. Do not apply
-Svelte-readable Store, `selectFoo()`-as-readable component capture, `$selector`
-template syntax, `ReactStore`, `.useValue(...args)`, or Svelte/React lifecycle/setup guidance here.
+This Streaming selector model is exclusive to the StreamingStore family for the
+same app/package/code path. Do not apply alternate Store capture, template, or
+lifecycle/setup guidance here.
 
 ## Authoring rules
 
 - Create selectors through the configured `StreamingStore` instance.
-- Keep this app on the Streaming Store family; use Svelte Store/readable or
-  ReactStore/signal selector guidance only for separate frontend app/code paths.
+- Keep this app on the Streaming Store family and keep alternate frontend patterns
+  isolated to separate app/code paths.
 - Keep selector callbacks pure and derived-only; reducers must not store selector
   outputs.
 - Compose selectors with `.select(state, ...args)` inside another selector.
@@ -78,11 +77,10 @@ default; pass `{ traceSelectors: true }` in the final Store options object only
 for temporary diagnostics.
 
 Selector-channel helpers that consume `.select`/`.effect`-compatible selectors
-run in sagas and support `StreamingStore` selectors through the same shared
-selector read shape used by Svelte `Store` and `ReactStore` selectors. Pass
-plain stable selector arguments as the helper args tuple; selector-channel
-effects read Redux state from saga context and do not subscribe to direct Kefir
-`Observable`, Svelte readable, or React signal selector outputs.
+run in sagas and support `StreamingStore` selectors through the shared selector
+read shape. Pass plain stable selector arguments as the helper args tuple;
+selector-channel effects read Redux state from saga context and do not subscribe
+to direct Kefir `Observable` selector outputs.
 
 ## Selector caching
 
@@ -122,11 +120,8 @@ export const selectTodo = streamStore.createSelector((state, id: string) => {
 
 ## Don't
 
-- Do not teach Svelte readable syntax (`$selector`, `get(selectFoo())`, or
-  component-init readable capture) or React `.useValue(...args)` component reads for
-  `StreamingStore` selectors.
-- Do not introduce `Store`, `ReactStore`, Svelte component lifecycle setup, or
-  React component signal setup into the same Streaming app.
+- Do not teach alternate Store syntax or lifecycle setup for `StreamingStore`
+  selectors.
 - Do not call another selector's direct streaming form inside a selector callback;
   use `.select(state)` to keep composition pure and synchronous.
 - Do not props-drill derived values solely to avoid selector calls when the consumer can call the same Store-bound selector with the same args in a valid streaming context.

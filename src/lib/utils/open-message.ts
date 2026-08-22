@@ -46,7 +46,7 @@ export interface OpenMessageOptions {
 }
 
 /** Detail payload of the 'chat:open-message' window event ChatPanel consumes. */
-export interface OpenMessageEventDetail {
+interface OpenMessageEventDetail {
   agentId: string;
   messageId: string;
   query?: string;

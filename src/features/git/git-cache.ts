@@ -14,7 +14,7 @@ const MAX_CACHE_ENTRIES = 100;
  * Simple in-memory cache for git operations
  * Reduces redundant git operations during startup
  */
-export class GitCache {
+class GitCache {
   private cache = new Map<string, CacheEntry<any>>();
   private readonly DEFAULT_TTL = 5000; // 5 seconds default TTL
 

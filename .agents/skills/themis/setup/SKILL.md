@@ -30,7 +30,7 @@ Before editing code or docs under this skill:
 - **MUST** decide and record exactly one concrete Store family for the app/package/code path before creating or editing setup files.
 - **MUST** collect concrete routing evidence first: Svelte/SvelteKit evidence chooses `Store`; React evidence chooses `ReactStore`; Node/server/worker/CLI/test/no-UI or observable evidence chooses `StreamingStore` by default.
 - **MUST** keep `Store`, `ReactStore`, and `StreamingStore` mutually exclusive inside one app/package/code path. Separate apps in a mixed repository may choose different families only when their files and runtime lifecycles are isolated.
-- **MUST** keep active greenfield setup routing on this root setup path, not under `../svelte/setup/SKILL.md`.
+- **MUST** keep active greenfield setup routing on this root setup skill, not under a family-specific setup path.
 - **SHOULD** stop and ask when rules conflict or scope is unclear.
 - **NEVER** claim completion when a required skill/doc was skipped or the handoff lacks compliance evidence.
 
@@ -156,18 +156,21 @@ For testing sagas (optional, recommended):
 npm add -D redux-saga-test-plan
 ```
 
-Package installation does not copy AI skills automatically. In consumer apps, use the installed package CLI if skills need to be refreshed, cleaned up, or if you need help text. Choose the smallest skill install bundle from the Store-family decision gate above: React apps use `install-skills:react` for root router + `setup` + `core` + `react`; Svelte apps use `install-skills:svelte` for root router + `setup` + `core` + `svelte`; Streaming/Node/no-UI apps use `install-skills:streaming` for root router + `setup` + `core` + `streaming`; shared Redux/saga-only guidance can use `install-skills:core`; use `install-skills` or `install-skills:all` only when every package skill family is intentionally needed. Every install command writes the selected bundle into `.agents/skills/themis/` and records an `installed-skills.yml` manifest there; if a previous install's manifest exists, the install first removes every manifest-listed file (fully refreshing the previous package install while preserving user-authored files not listed in the manifest), preserves unrelated project or third-party skills outside that directory, and excludes generated artifacts such as `skills/_artifacts`:
+Package installation does not copy AI skills automatically. In a consumer app, choose the smallest explicit bundle from the decision gate above and use the installed CLI:
 
 ```bash
 npx themis install-skills:react
 npx themis install-skills:svelte
 npx themis install-skills:streaming
+npx themis install-skills:core
+npx themis install-skills
 npx themis help
 ```
 
-The equivalent npm exec form is `npm exec -- themis <command>`. Use this repository's maintainer `npm run validate:*` scripts only when working inside the package repository. npm 7+ does not run dependency uninstall lifecycle scripts, so run the package cleanup command before uninstalling when installed `.agents/skills/themis/` files should be removed. Cleanup is manifest-driven: it removes only the files listed in `installed-skills.yml` plus the manifest itself, prints a clear no-op message when no manifest exists, and removes legacy flat `.agents/skills/` package copies as a one-time migration:
+The selected files are copied to canonical `.agents/skills/themis/`; a `.claude/skills/themis` compatibility link is created or reused. Repeating the command refreshes package-owned files; collisions and user-authored files are preserved. For the canonical destination, verification, cleanup-before-uninstall, and separate source-checkout maintainer workflow, read [@augmentcode/themis/docs/INSTALLATION.md](@augmentcode/themis/docs/INSTALLATION.md):
 
 ```bash
+npm exec -- themis install-skills:svelte
 npx themis cleanup-skills
 ```
 
@@ -178,7 +181,7 @@ npm uninstall @augmentcode/themis
 npm uninstall redux redux-saga typed-redux-saga fast-equals # only if your app no longer uses them
 ```
 
-See `docs/INSTALLATION.md` for full install, cleanup, and maintainer validation guidance.
+Do not replace consumer commands with the repository's maintainer validation scripts; those are documented separately in `@augmentcode/themis/docs/INSTALLATION.md`.
 
 ## Step 2 — Create the Store and Register App Sagas
 
@@ -263,14 +266,14 @@ export const reset = createAction('counter/reset');
 export const incrementBy = createAction<[amount: number]>('counter/incrementBy');
 
 // --- Reducer ---
-export const counterReducer = createReducer<CounterState>(initialState);
-counterReducer.with(increment, (state) => ({ ...state, count: state.count + 1 }));
-counterReducer.with(decrement, (state) => ({ ...state, count: state.count - 1 }));
-counterReducer.with(reset, () => initialState);
-counterReducer.with(incrementBy, (state, action) => ({
-  ...state,
-  count: state.count + action.payload[0],
-}));
+export const counterReducer = createReducer<CounterState>(initialState)
+  .with(increment, (state) => ({ ...state, count: state.count + 1 }))
+  .with(decrement, (state) => ({ ...state, count: state.count - 1 }))
+  .with(reset, () => initialState)
+  .with(incrementBy, (state, action) => ({
+    ...state,
+    count: state.count + action.payload[0],
+  }));
 ```
 
 ### 4b. Define selectors
@@ -411,7 +414,7 @@ window.svelteRedux.reduxContext.state
 | --- | --- | --- |
 | Create action (no payload) | @augmentcode/themis/utils/store/create-action | createAction('slice/name') |
 | Create action (with payload) | @augmentcode/themis/utils/store/create-action | createAction<[string, number]>('slice/name') |
-| Create reducer | @augmentcode/themis/utils/store/create-reducer | `const reducer = createReducer<State>(init); reducer.with(action, handler);` |
+| Create reducer | @augmentcode/themis/utils/store/create-reducer | createReducer<State>(init).with(action, handler) |
 | Create app selector | configured chosen Store instance | store.createSelector((state) => state.slice.field) |
 | Selector in Svelte component | Svelte Store branch only | const val = selectFoo() → {$val} |
 | Selector in React component/custom hook | React Store branch only | const val = selectFoo() → ReadonlySignal<R>; use selectFoo.useValue() only when a plain value is necessary |

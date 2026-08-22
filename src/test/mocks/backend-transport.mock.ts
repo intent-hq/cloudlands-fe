@@ -40,7 +40,7 @@ export class BackendError extends Error {
   readonly rpcCode?: number;
   constructor(payload: BackendErrorPayload) {
     super(payload.message);
-    this.name = "BackendError";
+    this.name = 'BackendError';
     this.code = payload.code;
     this.data = payload.data;
     this.rpcCode = payload.rpcCode;
@@ -48,15 +48,15 @@ export class BackendError extends Error {
 }
 
 /** Scripted handler for a single JSON-RPC method. May be sync or async. */
-export type RequestHandler = (params: unknown) => unknown | Promise<unknown>;
+type RequestHandler = (params: unknown) => unknown | Promise<unknown>;
 
 /** Scripted handler for `backendSubscribe`. May be sync or async. */
-export type SubscribeHandler = (
+type SubscribeHandler = (
   params: unknown,
 ) => { subscriptionId?: string } | Promise<{ subscriptionId?: string }>;
 
 /** Recorded request / subscribe / unsubscribe call. */
-export interface RecordedRequest {
+interface RecordedRequest {
   method: string;
   params: unknown;
 }
@@ -103,7 +103,7 @@ async function mockBackendRequest<T = unknown>(method: string, params?: unknown)
   const handler = state.requestHandlers.get(method);
   if (!handler) {
     throw new BackendError({
-      code: "MOCK_UNHANDLED_METHOD",
+      code: 'MOCK_UNHANDLED_METHOD',
       message: `MockBackendTransport: no onRequest() handler registered for method "${method}"`,
     });
   }
@@ -113,15 +113,13 @@ async function mockBackendRequest<T = unknown>(method: string, params?: unknown)
   } catch (err) {
     if (err instanceof BackendError) throw err;
     if (err instanceof Error) {
-      throw new BackendError({ code: "MOCK_HANDLER_ERROR", message: err.message });
+      throw new BackendError({ code: 'MOCK_HANDLER_ERROR', message: err.message });
     }
-    throw new BackendError({ code: "MOCK_HANDLER_ERROR", message: String(err) });
+    throw new BackendError({ code: 'MOCK_HANDLER_ERROR', message: String(err) });
   }
 }
 
-async function mockBackendSubscribe<T = { subscriptionId?: string }>(
-  params: unknown,
-): Promise<T> {
+async function mockBackendSubscribe<T = { subscriptionId?: string }>(params: unknown): Promise<T> {
   state.subscribes.push(params);
   if (state.subscribeHandler) {
     return (await state.subscribeHandler(params)) as T;
@@ -177,9 +175,9 @@ export const mockBackendTransportModule = {
 };
 
 /** Parameters for `pushSubscriptionPush()` — matches PROTOCOL §6 frame shape. */
-export interface SubscriptionPushFrame {
+interface SubscriptionPushFrame {
   subscriptionId: string;
-  kind: "snapshot" | "delta";
+  kind: 'snapshot' | 'delta';
   seq: number;
   snapshot?: unknown;
   delta?: { added?: unknown[]; updated?: unknown[]; removedIds?: string[] };
@@ -205,15 +203,15 @@ export function buildEventNotification(
 ): BackendNotification {
   const event = {
     id: overrides.id ?? `evt-${eventType}-${Math.random().toString(36).slice(2, 10)}`,
-    workspaceId: overrides.workspaceId ?? "ws-mock",
-    timestamp: overrides.timestamp ?? "2026-01-01T00:00:00.000Z",
+    workspaceId: overrides.workspaceId ?? 'ws-mock',
+    timestamp: overrides.timestamp ?? '2026-01-01T00:00:00.000Z',
     type: eventType,
-    actor: overrides.actor ?? { type: "system" },
+    actor: overrides.actor ?? { type: 'system' },
     data,
   };
   const params: Record<string, unknown> = { event };
   if (overrides.subscriptionId) params.subscriptionId = overrides.subscriptionId;
-  return { method: "events.event", params };
+  return { method: 'events.event', params };
 }
 
 /** Build a PROTOCOL §6 `subscription.push` seq-N snapshot envelope. */
@@ -223,10 +221,10 @@ export function buildSubscriptionPushSnapshot(args: {
   snapshot: unknown;
 }): BackendNotification {
   return {
-    method: "subscription.push",
+    method: 'subscription.push',
     params: {
       subscriptionId: args.subscriptionId,
-      kind: "snapshot",
+      kind: 'snapshot',
       seq: args.seq ?? 0,
       snapshot: args.snapshot,
     },
@@ -240,10 +238,10 @@ export function buildSubscriptionPushDelta(args: {
   delta: { added?: unknown[]; updated?: unknown[]; removedIds?: string[] };
 }): BackendNotification {
   return {
-    method: "subscription.push",
+    method: 'subscription.push',
     params: {
       subscriptionId: args.subscriptionId,
-      kind: "delta",
+      kind: 'delta',
       seq: args.seq,
       delta: args.delta,
     },
@@ -273,7 +271,7 @@ export interface MockBackendHandle {
   pushEvent(
     eventOrNotification:
       | BackendNotification
-      | { type: string; data?: Record<string, unknown> } & EventEnvelopeOverrides,
+      | ({ type: string; data?: Record<string, unknown> } & EventEnvelopeOverrides),
   ): void;
   pushSubscriptionPush(frame: SubscriptionPushFrame): void;
   /**
@@ -304,10 +302,10 @@ function deliver(notification: BackendNotification): void {
 
 function isNotificationEnvelope(value: unknown): value is BackendNotification {
   return (
-    typeof value === "object" &&
+    typeof value === 'object' &&
     value !== null &&
-    "method" in value &&
-    typeof (value as { method: unknown }).method === "string"
+    'method' in value &&
+    typeof (value as { method: unknown }).method === 'string'
   );
 }
 
@@ -342,7 +340,7 @@ export function installMockBackend(): MockBackendHandle {
     },
     pushSubscriptionPush(frame) {
       deliver(
-        frame.kind === "snapshot"
+        frame.kind === 'snapshot'
           ? buildSubscriptionPushSnapshot({
               subscriptionId: frame.subscriptionId,
               seq: frame.seq,

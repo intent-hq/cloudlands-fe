@@ -10,14 +10,14 @@
  * historical names elsewhere.
  */
 
-export interface WireModelBadge {
+interface WireModelBadge {
   color: string;
   label: string;
   variant?: string;
 }
 
 /** Wire `ModelInfo` row as returned by `models.list`. */
-export interface WireModelInfo {
+interface WireModelInfo {
   id?: string;
   name?: string;
   provider?: string;
@@ -58,7 +58,7 @@ export interface WireModelsListResult {
 }
 
 /** Map a wire row to the FE model shape; `null` when key fields are missing. */
-export function wireModelToProviderModel(wire: WireModelInfo): ProviderModelInfo | null {
+function wireModelToProviderModel(wire: WireModelInfo): ProviderModelInfo | null {
   if (typeof wire?.id !== 'string' || !wire.id) return null;
   if (typeof wire?.name !== 'string' || !wire.name) return null;
   const model: ProviderModelInfo = { value: wire.id, label: wire.name };

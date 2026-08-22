@@ -13,9 +13,9 @@
  * awaiting e.g. Stage All holds its in-progress UI until the rendered file
  * lists have actually moved sections.
  *
- * Exposed operations: `stageFiles`, `unstageFiles` (optimistic + rollback —
- * on failure the optimistic git-status flip is rolled back to the pre-mutation
- * snapshot and neither slice is reconciled), `discardFiles` and `commit`
+ * Exposed operations: `stageFiles`, `unstageFiles` (optimistic + rollback;
+ * stage reconciles after either outcome, while unstage reconciles on success),
+ * `discardFiles` and `commit`
  * (DESTRUCTIVE — no optimistic mutation; the post-mutation status is
  * reconciled from the daemon regardless of outcome, so both slices converge
  * even when the mutation failed).
@@ -46,9 +46,14 @@ const logger = createLogger("GitWriteService");
  * dispatches happen before this resolves, so seam callers only settle once the
  * rendered change lists reflect the post-mutation state.
  */
-async function reconcileGitStatus(workspaceId: string): Promise<void> {
+async function reconcileGitStatus(
+  workspaceId: string,
+  options?: { forceRefresh?: boolean },
+): Promise<void> {
   try {
-    const status = await appClient.git.status(workspaceId);
+    const status = options
+      ? await appClient.git.status(workspaceId, options)
+      : await appClient.git.status(workspaceId);
     if (!status) return;
     appStore.dispatch(setGitStatus(workspaceId, status));
     const tracked = selectFileTrackingChanges.select(appStore.state, workspaceId);
@@ -61,7 +66,8 @@ async function reconcileGitStatus(workspaceId: string): Promise<void> {
 
 /**
  * Stage explicit paths with an optimistic staged-state flip; rolls back to the
- * pre-stage snapshot on failure and reconciles from the daemon on success.
+ * pre-stage snapshot on failure, then reconciles from the daemon after either
+ * outcome.
  */
 export async function stageFiles(
   workspaceId: string,
@@ -83,6 +89,7 @@ export async function stageFiles(
   if (!result.success) {
     if (snapshot) appStore.dispatch(setGitStatus(workspaceId, snapshot));
     logger.error("Failed to stage files", result.error);
+    await reconcileGitStatus(workspaceId, { forceRefresh: true });
     return result;
   }
   await reconcileGitStatus(workspaceId);

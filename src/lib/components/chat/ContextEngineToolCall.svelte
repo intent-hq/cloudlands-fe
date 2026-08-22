@@ -341,7 +341,7 @@
 <ChatOperationalRow
   {leading}
   {summary}
-  {trailing}
+  trailing={toolState === 'running' ? undefined : trailing}
   showChevron={false}
   details={expanded ? details : undefined}
   interactive={isExpandable}

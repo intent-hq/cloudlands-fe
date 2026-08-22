@@ -188,22 +188,6 @@ function setupMonacoErrorFilter(): void {
 }
 
 /**
- * Configures Monaco Editor language services (TypeScript, JavaScript).
- *
- * This sets up compiler options and diagnostics for TypeScript/JavaScript
- * language features in Monaco Editor.
- *
- * @example
- * ```typescript
- * // After configuring workers
- * configureMonacoLanguages();
- * ```
- */
-export function configureMonacoLanguages(): void {
-  // Implementation would go here
-}
-
-/**
  * Ensure Monaco is fully initialized before use
  */
 export async function ensureMonacoInitialized(): Promise<void> {

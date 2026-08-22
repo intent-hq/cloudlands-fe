@@ -6,7 +6,6 @@
  */
 
 import path from 'path';
-import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import { ipcDebugTracker } from '../shared/main/ipc-debug-tracker';
 import { Logger } from '../shared/logger';
 import { writeJsonAsync } from '../shared/main/async-utils';
@@ -18,51 +17,9 @@ const registeredHandlers: Set<string> =
   (global as any).__ipcRegisteredHandlers || new Set<string>();
 
 /**
- * Enhanced IPC handler registration that tracks handlers
- */
-export function registerHandler(
-  channel: string,
-  handler: (event: IpcMainInvokeEvent, ...args: any[]) => Promise<any> | any,
-): void {
-  // Track registration
-  registeredHandlers.add(channel);
-  logger.debug(`Registering handler for channel: ${channel}`);
-
-  // Wrap the handler to add tracking
-  const wrappedHandler = async (event: IpcMainInvokeEvent, ...args: any[]) => {
-    try {
-      // Track the call
-      ipcDebugTracker.trackCall(channel, args[0], 'main');
-
-      // Call the original handler
-      const result = await handler(event, ...args);
-
-      // Track success
-      ipcDebugTracker.trackSuccess(channel, result);
-
-      return result;
-    } catch (error) {
-      // Track error
-      logger.error(`Handler error on channel ${channel}:`, error as Error);
-      throw error;
-    }
-  };
-
-  // Register with Electron
-  ipcMain.handle(channel, wrappedHandler);
-}
-
-/**
- * Check if a handler is registered
- */
-export function isHandlerRegistered(channel: string): boolean {
-  return registeredHandlers.has(channel);
-}
-
-/**
  * Get all registered handlers
  */
-export function getRegisteredHandlers(): string[] {
+function getRegisteredHandlers(): string[] {
   return Array.from(registeredHandlers).sort();
 }
 
@@ -83,38 +40,6 @@ export function setupIPCInterceptor(): void {
         ipcDebugTracker.trackMissingHandler(channel);
       }
     }
-  });
-}
-
-/**
- * Log handler registration status
- */
-export function logHandlerStatus(): void {
-  const handlers = getRegisteredHandlers();
-
-  console.log('\n📡 Registered IPC Handlers\n');
-  console.log(`Total: ${handlers.length}\n`);
-
-  // Group by prefix
-  const grouped = new Map<string, string[]>();
-
-  handlers.forEach((handler) => {
-    const prefix = handler.split(':')[0];
-    const existing = grouped.get(prefix);
-    if (existing) {
-      existing.push(handler);
-    } else {
-      grouped.set(prefix, [handler]);
-    }
-  });
-
-  // Log grouped
-  grouped.forEach((channels, prefix) => {
-    console.log(`${prefix}: (${channels.length})`);
-    channels.forEach((channel) => {
-      console.log(`  • ${channel}`);
-    });
-    console.log('');
   });
 }
 

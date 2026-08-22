@@ -481,7 +481,7 @@ export function beforeFollowBottomMutation(element: HTMLElement): FollowBottomMu
 /**
  * Distance from scroll bottom in pixels
  */
-export function distanceFromBottom(element: HTMLElement): number {
+function distanceFromBottom(element: HTMLElement): number {
   const { scrollTop, scrollHeight, clientHeight } = element;
   return scrollHeight - scrollTop - clientHeight;
 }
@@ -489,7 +489,7 @@ export function distanceFromBottom(element: HTMLElement): number {
 /**
  * Check if scroll position is near the bottom
  */
-export function isScrollNearBottom(element: HTMLElement, threshold = 100): boolean {
+function isScrollNearBottom(element: HTMLElement, threshold = 100): boolean {
   return distanceFromBottom(element) <= threshold;
 }
 

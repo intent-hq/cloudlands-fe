@@ -20,11 +20,7 @@ import {
   upsertSession,
 } from '../../agent-session/agent-session-slice';
 import { selectSelectedModel } from '../../model/model-selectors';
-import { openTab, openTabInNewRootColumn } from '../../panel-layout/panel-layout-slice';
-import {
-  selectPanelOpenMode,
-  selectPanelStackDirection,
-} from '../../user-preferences/user-preferences-selectors';
+import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/panel-layout-slice';
 import { selectEffectiveDefaultProviderId } from '../../provider-catalog/provider-catalog-selectors';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
 import {
@@ -93,12 +89,7 @@ function* openCreatedAgent(
     closable: true,
   };
   if (options.openInAdjacentPanel) {
-    yield* put(
-      openTabInNewRootColumn(wsId, tab, {
-        panelOpenMode: yield* selectPanelOpenMode.effect(),
-        panelStackDirection: yield* selectPanelStackDirection.effect(),
-      }),
-    );
+    yield* put(openTabInRightmostColumnRequested(wsId, tab));
   } else if (options.panelId) {
     yield* put(openTab(wsId, tab, options.panelId));
   } else {
@@ -140,7 +131,7 @@ function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): Sag
       openAgentTabRequested(wsId, {
         agentId: result.agent.id,
         panelLayoutId: options?.panelLayoutId,
-        sourcePanelId: options?.panelId,
+        targetPanelId: options?.panelId,
       }),
     );
   } catch (error) {
@@ -195,7 +186,7 @@ function* createSpecialistAgent(
       openAgentTabRequested(wsId, {
         agentId: result.agent.id,
         panelLayoutId: options?.panelLayoutId,
-        sourcePanelId: options?.panelId,
+        targetPanelId: options?.panelId,
       }),
     );
   } catch (error) {

@@ -3,7 +3,7 @@
  */
 
 /** Annotation type determines visual styling and icon */
-export type WalkthroughAnnotationType = 'explanation' | 'context' | 'highlight';
+type WalkthroughAnnotationType = 'explanation' | 'context' | 'highlight';
 
 /** Status of the walkthrough generation */
 export type WalkthroughStatus = 'idle' | 'running' | 'complete' | 'error';
@@ -23,7 +23,7 @@ export interface WalkthroughAnnotation {
 }
 
 /** A file in a walkthrough category */
-export interface WalkthroughFile {
+interface WalkthroughFile {
   /** File path relative to repository root */
   path: string;
   /** Brief summary of what changed in this file */

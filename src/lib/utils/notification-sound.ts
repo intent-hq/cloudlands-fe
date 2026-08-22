@@ -119,14 +119,5 @@ export async function playNotificationSound(volume: number = 0.5): Promise<void>
 }
 
 /**
- * Dispose of notification sound resources
- * Call this when cleaning up to release audio resources
- */
-export function disposeNotificationSound(): void {
-  notificationSoundManager.dispose();
-}
-
-/**
  * Export the singleton instance for advanced use cases
  */
-export { notificationSoundManager };

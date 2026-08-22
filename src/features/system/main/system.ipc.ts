@@ -181,12 +181,6 @@ export function getFocusedWindowWorkspaceId(): string | undefined {
   return windowWorkspaceIds.get(focusedWindow.id);
 }
 
-export function getOpenWorkspaceTabsForFocusedWindow(): string[] {
-  const focusedWindow = BrowserWindow.getFocusedWindow();
-  if (!focusedWindow) return [];
-  return windowOpenWorkspaceTabs.get(focusedWindow.id) ?? [];
-}
-
 /**
  * Get all workspace IDs that have an open Electron window.
  * Includes both the currently viewed workspace per window AND all workspace

@@ -1,20 +1,19 @@
 <script lang="ts">
   import {
     selectAgentIsResponding,
+    selectAgentPreview,
     selectAgentSession,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import { selectChatReceivedFirstChunk } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { restoreAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { createLogger } from '$lib/utils/client-logger';
-  import { AgentStatus, type ToolUseBlock } from '$shared/types';
+  import { AgentStatus } from '$shared/types';
   import { onMount, onDestroy } from 'svelte';
-  import { getLastMeaningfulLine, stripUserMessagePrefixes } from '$lib/utils/text-utils';
   import { taskAgentPollingManager } from './task-agent-polling-manager';
+  import { mapAgentPreviewToLatestContent } from './task-agent-status-preview';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
-  import { classifyTool } from '$lib/components/chat/tool-classifier';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -40,21 +39,24 @@
     agentId,
     onViewAgent,
     compact = false,
+    workspaceId: owningWorkspaceId,
   }: {
     agentId: string;
     onViewAgent?: () => void;
     compact?: boolean;
+    workspaceId?: string;
   } = $props();
 
-  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+  const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+  let workspaceId = $derived(owningWorkspaceId ?? routeWorkspaceId);
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
   const serviceAgent$ = selectAgentSession(agentId);
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
   const agentIsResponding$ = selectAgentIsResponding(agentId);
-  // Per-turn "response text landed this turn" flag (chat-state): reset by
-  // `agent:stream:end`, flipped by the first text-bearing activity ping.
+  // Canonical single-line preview (attention → live text → live tool → user
+  // line → digest/report → persisted fallbacks), derived store-side.
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
-  const receivedFirstChunk$ = selectChatReceivedFirstChunk(agentId);
+  const agentPreview$ = selectAgentPreview(agentId);
 
   // Force reactivity with a version counter that updates when we detect changes
   let version = $state(0);
@@ -348,77 +350,11 @@
     return 'idle';
   });
 
-  // Latest content preview, from the wire AgentLite preview fields
-  // (PROTOCOL §5.5) — already server-cleaned by `clean_response_text`; the
-  // transcript is never re-derived (monorepo#2852). Precedence mirrors
-  // AgentCard:
-  //   1. while a turn is live, the push-applied `lastAgentResponse`
-  //      (refreshed ~1s by `agent:stream:activity`) — gated on the per-turn
-  //      `receivedFirstChunk` flag so a leftover previous-turn response
-  //      doesn't masquerade as this turn's text;
-  //   2. the live `lastToolUse` overlay while streaming (tool-only stretches);
-  //   3. freshness-wins: the user's newest message when `lastMessageRole`
-  //      is 'user' (lastAgentResponse is then the PREVIOUS turn's text);
-  //   4. the persisted `lastAgentResponse`, then the persisted `lastToolUse`.
-  const latestContent = $derived.by(() => {
-    if (!storeAgent && !serviceAgent) return null;
-    const session = storeAgent || serviceAgent;
-    if (!session) return null;
-
-    const isLive = agentStatus === 'streaming' || agentStatus === 'active';
-
-    if (isLive && $receivedFirstChunk$ && session.lastAgentResponse) {
-      const lastLine = getLastMeaningfulLine(session.lastAgentResponse);
-      if (lastLine) {
-        return { text: lastLine, isStreaming: true };
-      }
-    }
-
-    // Hidden tool labels (classifyTool) fall through to the user line /
-    // persisted text instead of rendering a blank row — the live wire
-    // `lastToolUse` carries no input, so e.g. in-flight workspace_api calls
-    // classify hidden. Mirrors AgentCard's `hasRenderableLiveTool` gate.
-    const toolInput = (session.lastToolUse?.input as Record<string, unknown>) || {};
-    const toolBlock: ToolUseBlock | undefined =
-      session.lastToolUse?.name && !classifyTool(session.lastToolUse.name, toolInput).hidden
-        ? {
-            type: 'tool_use',
-            id: `preview-tool:${agentId}`,
-            name: session.lastToolUse.name,
-            input: toolInput,
-          }
-        : undefined;
-
-    // Live tool overlay: while streaming, `lastToolUse` is the in-flight tool
-    // signal (cleared at turn boundaries); prefer it over stale text.
-    if (isLive && session.isStreaming && toolBlock) {
-      return { toolBlock, isStreaming: true };
-    }
-
-    // Freshness-wins: the newest transcript message is the user's, so the
-    // persisted lastAgentResponse is the previous turn's text.
-    if (session.lastMessageRole === 'user' && session.lastUserMessage) {
-      const firstLine = stripUserMessagePrefixes(session.lastUserMessage)
-        .split('\n')[0]
-        ?.trim();
-      if (firstLine) {
-        return { text: firstLine, isStreaming: false };
-      }
-    }
-
-    if (session.lastAgentResponse) {
-      const lastLine = getLastMeaningfulLine(session.lastAgentResponse);
-      if (lastLine) {
-        return { text: lastLine, isStreaming: false };
-      }
-    }
-
-    if (toolBlock) {
-      return { toolBlock, isStreaming: isLive };
-    }
-
-    return null;
-  });
+  // Latest content preview: the canonical `selectAgentPreview` chain mapped
+  // onto this component's `{ text | toolBlock, isStreaming }` shape. The
+  // `attention`/`report` kinds are filtered out component-side (this surface
+  // does not render them; the digest has its own template branch above).
+  const latestContent = $derived(mapAgentPreviewToLatestContent($agentPreview$));
 
   const handleClick = (e: MouseEvent) => {
     e.preventDefault();

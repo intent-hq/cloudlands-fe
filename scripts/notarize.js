@@ -21,7 +21,7 @@
 import { notarize } from '@electron/notarize';
 import path from 'path';
 
-export async function notarizing(context) {
+async function notarizing(context) {
   const { electronPlatformName, appOutDir } = context;
 
   // Only notarize macOS builds
@@ -38,7 +38,8 @@ export async function notarizing(context) {
   // Get credentials from environment variables
   // Prefer CLOUDLANDS_* naming; fall back to legacy APPLE_* for backward compatibility
   const appleId = process.env.CLOUDLANDS_APPLE_ID || process.env.APPLE_ID;
-  const appleIdPassword = process.env.CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD || process.env.APPLE_APP_SPECIFIC_PASSWORD;
+  const appleIdPassword =
+    process.env.CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD || process.env.APPLE_APP_SPECIFIC_PASSWORD;
   const teamId = process.env.CLOUDLANDS_APPLE_TEAM_ID || process.env.APPLE_TEAM_ID;
 
   // Validate we have what we need

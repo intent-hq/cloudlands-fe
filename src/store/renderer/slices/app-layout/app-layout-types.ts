@@ -19,16 +19,13 @@ export type AppLayoutState = {
   pendingLocateInSidebar: PendingSidebarLocate | null;
 };
 
-export type ShowAgentDetail = {
-  agentId: string;
-};
-
 export type OpenAgentTabDetail = {
   agentId: string;
   pin?: boolean;
   openInAdjacentPanel?: boolean;
   openInNewColumn?: boolean;
   sourcePanelId?: string;
+  targetPanelId?: string;
   panelLayoutId?: string;
   availablePanelCanvasWidth?: number;
   adaptiveFirstChat?: boolean;

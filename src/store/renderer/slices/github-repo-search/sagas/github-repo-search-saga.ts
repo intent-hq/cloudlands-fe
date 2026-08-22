@@ -12,7 +12,7 @@ import {
 import type { GithubRepoItem } from '../../github-repos/github-repos-slice';
 
 export const SEARCH_DEBOUNCE_MS = 300;
-export const MIN_QUERY_LENGTH = 2;
+const MIN_QUERY_LENGTH = 2;
 const UNKNOWN_SEARCH_ERROR = 'Unknown error'; // i18n-ignore (wire-error normalization)
 
 function normalizeRepo(repo: GithubRepo): GithubRepoItem {
@@ -24,7 +24,7 @@ function normalizeRepo(repo: GithubRepo): GithubRepoItem {
   };
 }
 
-export function* searchGithubReposWorker(
+function* searchGithubReposWorker(
   action: ReturnType<typeof searchGithubRepos>,
 ): SagaGenerator<void> {
   const query = action.payload[0].trim();

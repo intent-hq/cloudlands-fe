@@ -9,7 +9,7 @@ import { decode as decodeToon } from '@toon-format/toon';
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger } from '$lib/i18n/format';
 
-export type ToolResultType =
+type ToolResultType =
   | 'file-view'
   | 'file-edit'
   | 'file-save'
@@ -38,7 +38,7 @@ export type ToolResultType =
   | 'unknown';
 
 /** A started row from a batch delegate result (agentId/agentName per row). */
-export interface DelegateBatchStartedRow {
+interface DelegateBatchStartedRow {
   agentId: string;
   agentName?: string;
   taskNoteId?: string;
@@ -46,7 +46,7 @@ export interface DelegateBatchStartedRow {
 }
 
 /** Disposition summary of a batch delegate result (`ws.agent.delegate({ tasks })`). */
-export interface DelegateBatchSummary {
+interface DelegateBatchSummary {
   started: number;
   held: number;
   skipped: number;
@@ -257,12 +257,12 @@ const LANGUAGE_MAP: Record<string, string> = {
   toml: 'toml',
 };
 
-export function detectLanguage(filePath: string): string {
+function detectLanguage(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() || '';
   return LANGUAGE_MAP[ext] || 'plaintext';
 }
 
-export function getFileName(filePath: string): string {
+function getFileName(filePath: string): string {
   return filePath.split('/').pop() || filePath;
 }
 

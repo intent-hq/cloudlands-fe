@@ -5,7 +5,7 @@ description: >-
   watchers/workers, canonical saga ownership, Store saga registration/startup,
   Store-first saga startup, cancellation-friendly debounce, retryWithTimeout,
   wrapStreamingGenerator, and routing to saga-manager crash/restart guidance. For conceptual API
-  explanations and examples, link to docs/SAGAS.md instead of duplicating them.
+  explanations and examples, link to @augmentcode/themis/docs/SAGAS.md instead of duplicating them.
 type: sub-skill
 requires:
   - core
@@ -23,11 +23,11 @@ triggers:
 ---
 # Sagas — agent implementation rules
 
-Use this skill when editing saga code or writing instructions for saga changes. Keep this file short and operational; `docs/SAGAS.md` is the canonical human-facing guide for concepts, API shape, tradeoffs, and examples.
+Use this skill when editing saga code or writing instructions for saga changes. Keep this file short and operational; `@augmentcode/themis/docs/SAGAS.md` is the canonical human-facing guide for concepts, API shape, tradeoffs, and examples.
 
 ## Canonical references
 
-- Human guide: `docs/SAGAS.md`
+- Human guide: `@augmentcode/themis/docs/SAGAS.md`
 - Public API: `@augmentcode/themis/saga`; utility leaf exports include `@augmentcode/themis/utils/sagas/debounce-saga`, `@augmentcode/themis/utils/sagas/retry-with-timeout`, and `@augmentcode/themis/utils/sagas/wrap-async-generator`. Store-utility saga internals are implementation context only.
 - Related skills: `core/actions`, `core/state-integrity`, `core/saga-manager`, `core/selector-channels`, `core/wait-for`, `core/testing`
 
@@ -241,7 +241,7 @@ function* watchReady() {
 
 ## See also
 
-- `docs/SAGAS.md` — full saga concepts, APIs, and examples.
+- `@augmentcode/themis/docs/SAGAS.md` — full saga concepts, APIs, and examples.
 - `core/saga-manager` — package-owned crash tracking, cleanup, serialized crash storage, `store.runSaga` lifecycle, restart, and backoff mechanics.
 - `core/selector-channels` — selector change watchers and selector-backed channels.
 - `core/wait-for` — one-shot selector predicate waits.

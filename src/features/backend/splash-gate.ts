@@ -24,7 +24,7 @@ const BACKEND = IPC_CHANNELS.BACKEND;
 /** Bounded fallback so a dead/never-connecting daemon can't strand the splash. */
 export const SPLASH_FALLBACK_TIMEOUT_MS = 10_000;
 
-export interface SplashGateStatusPayload {
+interface SplashGateStatusPayload {
   status: string;
   sidecarStartupFailed?: boolean;
 }

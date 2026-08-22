@@ -98,6 +98,7 @@
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import {
+    faArrowsRotate,
     faCheck,
     faChevronDown,
     faLock,
@@ -345,8 +346,16 @@
   let allProviderErrors = $state<Record<string, ProviderLoadError>>({});
   let allProviderLoading = $state<Record<string, boolean>>(seededProviderLoading);
   let fetchGeneration = 0;
+  const providerFetchGenerations = new Map<string, number>();
+  const refreshingProviderEpochs = new Map<string, number>();
   let allProvidersLoaded = $state(seededAllProvidersLoaded);
   let lastFetchedProviderIds = '';
+
+  function advanceProviderFetchGeneration(providerId: string): number {
+    const generation = (providerFetchGenerations.get(providerId) ?? 0) + 1;
+    providerFetchGenerations.set(providerId, generation);
+    return generation;
+  }
 
   function hasProviderResult(providerId: string): boolean {
     return (
@@ -385,7 +394,6 @@
       Object.entries(allProviderModels).filter(([providerId]) => providerIds.includes(providerId)),
     );
     allProviderErrors = {};
-    allProviderLoading = Object.fromEntries(providerIds.map((providerId) => [providerId, true]));
 
     // Epoch at fetch start: a reconnect clear that lands while these
     // responses are in flight makes them stale — the settle-time isStale()
@@ -393,12 +401,24 @@
     // bump can run after a pending response settles) and the reducer drops
     // any pre-clear write-through stamped below as a second line of defense.
     const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
-    const isStale = () =>
-      fetchGeneration !== currentGen ||
-      selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
+    const providerIdsToFetch = providerIds.filter(
+      (providerId) =>
+        !refreshingProviders.has(providerId) ||
+        refreshingProviderEpochs.get(providerId) !== cacheEpoch,
+    );
+    const fetchingProviderIds = new Set(providerIdsToFetch);
+    allProviderLoading = Object.fromEntries(
+      providerIds.map((providerId) => [providerId, fetchingProviderIds.has(providerId)]),
+    );
+    allProvidersLoaded = providerIdsToFetch.length === 0;
 
     await Promise.allSettled(
-      providerIds.map(async (providerId) => {
+      providerIdsToFetch.map(async (providerId) => {
+        const providerGeneration = advanceProviderFetchGeneration(providerId);
+        const isStale = () =>
+          fetchGeneration !== currentGen ||
+          providerFetchGenerations.get(providerId) !== providerGeneration ||
+          selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
         try {
           const result = await getModelsForProviderForLoadingState(providerId);
           if (isStale()) return;
@@ -564,13 +584,14 @@
 
   async function handleRefreshProvider(providerId: string) {
     if (refreshingProviders.has(providerId)) return;
-    refreshingProviders = new Set([...refreshingProviders, providerId]);
-    const gen = fetchGeneration;
     // Epoch at fetch start: a reconnect clear mid-flight makes this response
     // stale for local state as well as for the reducer write-through.
     const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
+    const providerGeneration = advanceProviderFetchGeneration(providerId);
+    refreshingProviderEpochs.set(providerId, cacheEpoch);
+    refreshingProviders = new Set([...refreshingProviders, providerId]);
     const isStale = () =>
-      fetchGeneration !== gen ||
+      providerFetchGenerations.get(providerId) !== providerGeneration ||
       selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
     try {
       // True force refresh: the daemon skips its cache and awaits a fresh
@@ -600,6 +621,7 @@
       setProviderErrorState(providerId, providerError.displayText);
       logger.warn('Failed to refresh models for provider', { providerId, error: err });
     } finally {
+      refreshingProviderEpochs.delete(providerId);
       const next = new Set(refreshingProviders);
       next.delete(providerId);
       refreshingProviders = next;
@@ -1911,6 +1933,33 @@
             onclick={openProviderSettings}
           >
             <Fa icon={faPlus} class="size-3 text-muted-foreground/50" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="xs"
+            iconOnly={true}
+            title={m.chat_modelPicker_refreshGroup_title({
+              group: providerDisplayName(activeBrowseProviderId),
+            })}
+            aria-label={m.chat_modelPicker_refreshGroup_title({
+              group: providerDisplayName(activeBrowseProviderId),
+            })}
+            class={cn(
+              'ml-auto text-subtle hover:bg-muted/40',
+              refreshingProviders.has(activeBrowseProviderId) && 'opacity-50! cursor-not-allowed',
+            )}
+            data-testid="model-provider-refresh-button"
+            disabled={refreshingProviders.has(activeBrowseProviderId)}
+            onclick={() => void handleRefreshProvider(activeBrowseProviderId)}
+          >
+            <Fa
+              icon={faArrowsRotate}
+              size={10}
+              class={cn(
+                'text-subtle transition-transform duration-500',
+                refreshingProviders.has(activeBrowseProviderId) && 'animate-spin',
+              )}
+            />
           </Button>
         </div>
       {/if}

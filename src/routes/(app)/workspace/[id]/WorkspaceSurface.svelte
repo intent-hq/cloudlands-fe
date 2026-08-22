@@ -136,7 +136,6 @@
   const panelColumnCountsByWorkspaceId$ = selectPanelColumnCountsByWorkspaceId();
   const columnPanelCount = $derived($panelColumnCountsByWorkspaceId$[panelLayoutId] ?? 0);
   let sidebarFillsAvailableWidth = $state(false);
-  let availablePanelCanvasWidth = $state(0);
   let previousColumnPanelCount: number | null = null;
   let sidebarFillTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -915,7 +914,6 @@
       <MultiSelectTabbedSidebar
         workspaceId={$workspace?.id || workspaceId}
         {panelLayoutId}
-        {availablePanelCanvasWidth}
         {onCloseWorkspace}
         draggableTitleRegion={columnMode}
         onCreateNote={handleCreateNote}
@@ -979,7 +977,6 @@
             onCreateNote={handleCreateNote}
             {onPanelMovePreviewWidthRatioChange}
             {onPanelCanvasWidthChange}
-            onAvailableCanvasWidthChange={(width) => (availablePanelCanvasWidth = width)}
             {onCyclePanelBoundary}
           />
         </div>

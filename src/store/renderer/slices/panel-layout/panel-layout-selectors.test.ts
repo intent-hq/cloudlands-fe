@@ -22,6 +22,7 @@ describe('panel layout selectors', () => {
           },
           populated: {
             ...emptyWorkspaceState,
+            columnCount: 2 as const,
             restoreStatus: 'restored' as const,
             focusedPanelId: 'p1',
             canvasWidth: 1000,
@@ -53,6 +54,7 @@ describe('panel layout selectors', () => {
           },
           vertical: {
             ...emptyWorkspaceState,
+            columnCount: 1 as const,
             restoreStatus: 'pending' as const,
             root: {
               type: 'split' as const,

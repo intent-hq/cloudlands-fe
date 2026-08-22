@@ -11,7 +11,6 @@ import {
   ToolResult,
   ContentItem,
   ToolInputSchema,
-  PropertySchema,
 } from './protocol';
 
 /**
@@ -105,76 +104,3 @@ export abstract class BaseMCPTool implements IMCPTool {
 
 // Export alias for backward compatibility
 export { BaseMCPTool as Tool };
-
-/**
- * Helper to create a simple string property schema
- */
-export function stringProperty(
-  description: string,
-  options?: { default?: string; enum?: string[] },
-): PropertySchema {
-  return {
-    type: 'string',
-    description,
-    ...options,
-  };
-}
-
-/**
- * Helper to create a number property schema
- */
-export function numberProperty(
-  description: string,
-  options?: { default?: number; minimum?: number; maximum?: number },
-): PropertySchema {
-  return {
-    type: 'number',
-    description,
-    ...options,
-  };
-}
-
-/**
- * Helper to create a boolean property schema
- */
-export function booleanProperty(
-  description: string,
-  options?: { default?: boolean },
-): PropertySchema {
-  return {
-    type: 'boolean',
-    description,
-    ...options,
-  };
-}
-
-/**
- * Helper to create an array property schema
- */
-export function arrayProperty(
-  description: string,
-  itemType: string,
-  options?: { default?: any[] },
-): PropertySchema {
-  return {
-    type: 'array',
-    description,
-    items: { type: itemType },
-    ...options,
-  };
-}
-
-/**
- * Helper to create an input schema
- */
-export function createInputSchema(
-  properties: Record<string, PropertySchema>,
-  required: string[] = [],
-): ToolInputSchema {
-  return {
-    type: 'object',
-    properties,
-    required,
-    additionalProperties: false,
-  };
-}

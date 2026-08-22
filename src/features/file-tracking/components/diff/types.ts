@@ -8,7 +8,7 @@
 /**
  * Stage type for per-line stage indicators in TrackedChangeDiffViewer
  */
-export type LineStage = 'staged' | 'unstaged' | 'committed';
+type LineStage = 'staged' | 'unstaged' | 'committed';
 
 /**
  * Per-line stage indicator - maps new line number to stage
@@ -21,52 +21,42 @@ export interface LineStageIndicator {
 /**
  * View mode for the diff display
  */
-export type DiffViewMode = 'unified' | 'split';
+type DiffViewMode = 'unified' | 'split';
 
 /**
  * Style of diff indicators (bars on the left, classic +/-, or none)
  */
-export type DiffIndicatorStyle = 'bars' | 'classic' | 'none';
+type DiffIndicatorStyle = 'bars' | 'classic' | 'none';
 
 /**
  * Overflow behavior for long lines
  */
-export type DiffOverflow = 'scroll' | 'wrap';
+type DiffOverflow = 'scroll' | 'wrap';
 
 /**
  * Hunk separator style
  */
-export type DiffHunkSeparators = 'simple' | 'metadata' | 'line-info' | 'custom';
+type DiffHunkSeparators = 'simple' | 'metadata' | 'line-info' | 'custom';
 
 /**
  * Inline diff highlighting type
  */
-export type DiffLineDiffType = 'word-alt' | 'word' | 'char' | 'none';
-
-/**
- * Theme type for the diff viewer
- */
-export type DiffThemeType = 'system' | 'light' | 'dark';
+type DiffLineDiffType = 'word-alt' | 'word' | 'char' | 'none';
 
 /**
  * Annotation side (which column the annotation appears in)
  */
-export type AnnotationSide = 'deletions' | 'additions';
-
-/**
- * Expansion directions for hunk expansion
- */
-export type ExpansionDirections = 'up' | 'down' | 'both';
+type AnnotationSide = 'deletions' | 'additions';
 
 /**
  * Line types in a diff
  */
-export type LineTypes = 'change-deletion' | 'change-addition' | 'context' | 'context-expanded';
+type LineTypes = 'change-deletion' | 'change-addition' | 'context' | 'context-expanded';
 
 /**
  * Selected line range for line selection feature
  */
-export interface SelectedLineRange {
+interface SelectedLineRange {
   start: number;
   side?: AnnotationSide;
   end: number;
@@ -76,7 +66,7 @@ export interface SelectedLineRange {
 /**
  * Hunk data for custom hunk separator rendering
  */
-export interface HunkData {
+interface HunkData {
   slotName: string;
   hunkIndex: number;
   lines: number;
@@ -91,7 +81,7 @@ export interface HunkData {
 /**
  * Props passed to line click callbacks
  */
-export interface OnDiffLineClickProps {
+interface OnDiffLineClickProps {
   type: 'diff-line';
   lineNumber: number;
   lineElement: HTMLElement;
@@ -105,7 +95,7 @@ export interface OnDiffLineClickProps {
 /**
  * Props passed to line enter/leave callbacks
  */
-export interface OnDiffLineEnterLeaveProps {
+interface OnDiffLineEnterLeaveProps {
   type: 'diff-line';
   lineNumber: number;
   lineElement: HTMLElement;

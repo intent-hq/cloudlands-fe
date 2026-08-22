@@ -1,0 +1,803 @@
+# Auto-merge of the release-please Release PR — "auto-cut alpha".
+#
+# Merging the Release PR is what cuts a release: the squash-merge push to
+# main triggers release-please.yml, which creates the vX.Y.Z tag + GitHub
+# Release, and the tag triggers release-alpha.yml (it builds and publishes
+# to the rolling ALPHA channel on intent-hq/cloudlands-releases — beta and
+# stable are manual promotions of an existing release). That merge used to
+# be a manual click; this workflow performs it automatically whenever the
+# Release PR is already green — the release-PR CI fast path makes that
+# ~1 min after each refresh — so alpha releases ship hands-free. Beta/stable
+# promotion stays manual (promote-beta.yml / release-stable.yml); this
+# workflow only automates the alpha cut.
+#
+# Triggers — event-chained cut plus an hourly cron backstop:
+# - push to main (ANY push, not just the sidecar pin bump): a merged fe
+#   change or the pin-bump squash merge (both pushed with PATs, so they
+#   trigger workflows) chains straight into a cut. Push-triggered runs poll
+#   (30s interval, up to 15 min total) for release-please to refresh the
+#   Release PR and for CI Gate to go green, then merge — the change ships in
+#   the same fe alpha cycle instead of waiting for the next cron tick. Two
+#   refresh nuances:
+#   - a push touching `intentd.version` additionally waits for the Release
+#     PR head to carry the pushed pin (chained-cut freshness gate), so the
+#     alpha actually ships the new sidecar;
+#   - release-please does NOT refresh the Release PR for non-releasable
+#     commits (chore/docs/ci/...), so such a push may find the PR unchanged
+#     but already green — merging is still correct (the tag is cut on main's
+#     tree, which carries the push). Pushes that DO carry a releasable
+#     commit (feat/fix/perf subjects, incl. breaking `!` variants, or a
+#     `BREAKING CHANGE:` / `Release-As:` footer on any type) wait for a
+#     post-push refresh of the PR head, so the cut's version + changelog
+#     account for the pushed commits.
+#   Self-retrigger stays quiet: the cut's own squash-merge push
+#   (`chore(release): X.Y.Z`) is skipped at the job level, and the 60-min
+#   throttle below quiets anything else that fires right after a cut.
+# - Hourly cron at :30 (offset from intentd's auto-cut at :00 and the
+#   sidecar pin bump at :15): the backstop when a push-chained run misses
+#   (throttled, release-please slow, CI green only later). Cron and
+#   manual-dispatch runs keep the check-once-and-exit behavior (no polling).
+#
+# Guardrails:
+# - 60-minute throttle (cron and push runs): when the latest release
+#   (newest vX.Y.Z tag) was cut less than 60 minutes ago, the run logs and
+#   exits — the next cron tick (:30) retries. Keeps the broadened push
+#   trigger from cutting one release per merge during a busy hour. The
+#   merge step re-checks the newest tag right before merging, so a run
+#   that waited on the concurrency group behind another run's cut (whose
+#   tag lands ~1 min after its merge) still defers. Fails OPEN on any
+#   tag/date lookup error (an unreadable tag list must never block
+#   releases). workflow_dispatch BYPASSES the throttle: manual means
+#   urgent.
+# - The `hold-release` label on the Release PR pauses auto-merge (skip with
+#   a notice) until the label is removed.
+# - An in-flight intentd release build defers the cut: when intent-hq/intentd
+#   has a semver tag newer than the published alpha channel manifest and the
+#   tag is younger than 90 minutes, a release build is running and a pin bump
+#   is imminent — cutting now would ship a stale sidecar. The age bound stops
+#   a failed intentd build from deferring fe alphas forever, and the check
+#   fails OPEN on any lookup error (missing INTENTD_READ_PAT, unreachable
+#   manifest, unreadable tags) so an unreadable intentd never blocks fe
+#   releases.
+# - An open pin-bump PR (branch `auto/intentd-pin`) defers the cut: an
+#   in-flight intentd pin must land first so the fe alpha carries the new
+#   sidecar; its merge push then chains straight into a cut via the push
+#   trigger above.
+# - A BE-dependency freshness guard (cron and push runs; workflow_dispatch
+#   bypasses it — manual means urgent, same convention as the throttle)
+#   defers the cut when it could ship fe commits whose intentd dependency
+#   is in no published sidecar: the pinned intentd version is resolved to
+#   its tag on intent-hq/intentd, and when intentd main has no commits
+#   after that tag (the expected common case) everything on fe main is
+#   safe — the cut proceeds unrestricted. When intentd main IS ahead of
+#   the pinned tag and this cut would ship fe commits merged after the tag
+#   was cut, those commits may depend on BE work that is in no published
+#   build (the intentd-first rule orders merges, not releases) — defer
+#   with a notice; the next intentd alpha advances the pin and its
+#   pin-bump push chains into a cut that re-evaluates. While intentd
+#   cannot publish (failed build, or main ahead only by commits release-plz
+#   will never release) the deferral persists — deliberately: unlike the
+#   in-flight guard's 90-minute bound (which wards off a merely POSSIBLE
+#   imminent pin), this guard defers on confirmed unpublished dependencies,
+#   and the workflow_dispatch bypass is the operator override. Automation
+#   commits (the sidecar pin bump itself, chore(release) squash merges)
+#   are exempt from the freshness test, and the check fails OPEN on any
+#   lookup error (missing INTENTD_READ_PAT, unreadable
+#   pin/tags/comparison) so an unreadable intentd never blocks fe
+#   releases.
+# - Merge happens ONLY when GitHub already reports the PR clean: not a
+#   draft, mergeable, required check "CI Gate" green on the current head,
+#   and no unresolved review threads. Anything else logs and exits 0 (push
+#   runs first retry transient states within their bounded wait) — the next
+#   scheduled run retries. Never force-merges.
+# - The PR branch is never updated from here: release-please owns the
+#   Release PR branch content and force-refreshes it on every release-worthy
+#   push to main.
+#
+# Token split: all read-only queries (PR discovery, labels, pin-bump PR,
+# mergeability, CI Gate via statusCheckRollup, review threads) authenticate
+# with the implicit GITHUB_TOKEN under least-privilege job permissions —
+# fine-grained PATs cannot read statusCheckRollup without Checks/
+# Commit-statuses read access. The in-flight intentd check and the
+# BE-dependency freshness guard read a different repo, so they authenticate
+# with INTENTD_READ_PAT. The merge itself
+# authenticates with the RELEASE_PAT PAT, NOT the implicit GITHUB_TOKEN:
+# pushes made with GITHUB_TOKEN do not trigger other workflows, and the
+# merge push to main must trigger release-please.yml to cut the tag.
+# Fail-soft when the secret is absent (same convention as the other release
+# workflows).
+
+name: Auto-cut alpha
+
+permissions: {}
+
+on:
+  schedule:
+    # Hourly at :30 (backstop); each run is a seconds-long API check that
+    # either squash-merges a green Release PR or exits quietly.
+    - cron: "30 * * * *"
+  push:
+    # Any push to main is potentially release-worthy (fe change or sidecar
+    # pin bump) and chains straight into a (polling) cut so it ships this
+    # cycle. The cut's own chore(release) merge push is skipped at the job
+    # level, and the 60-min throttle quiets other post-cut retriggers.
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Log what would be merged without merging"
+        required: false
+        default: false
+        type: boolean
+
+# Serialize runs so scheduled, push-triggered, and manually dispatched runs
+# can never race a merge of the same Release PR. `cancel-in-progress: false`
+# because a run that has already decided to merge must not be cancelled
+# mid-merge.
+concurrency:
+  group: auto-cut-alpha
+  cancel-in-progress: false
+
+jobs:
+  # Read-only queries authenticate with the implicit GITHUB_TOKEN, so the
+  # job grants it exactly the read scopes those queries need (top-level
+  # permissions stay `{}`); the RELEASE_PAT PAT is used only for the final
+  # merge.
+  auto-merge-release-pr:
+    name: Auto-merge green Release PR
+    # API-only job (seconds on cron/dispatch runs; up to ~15 min of polling
+    # on push-triggered runs): ubuntu-latest so a self-hosted slot is not
+    # wasted on it.
+    runs-on: ubuntu-latest
+    # Self-retrigger guard: the cut's own squash-merge push to main
+    # (release-please writes the `chore(release): X.Y.Z` commit title) fires
+    # the broadened push trigger — skip it at the job level so the run never
+    # even starts. Everything else that lands right after a cut is quieted
+    # by the 60-min throttle step below.
+    if: >-
+      ${{ github.repository_owner == 'intent-hq' &&
+          (github.event_name != 'push' ||
+           !startsWith(github.event.head_commit.message, 'chore(release):')) }}
+    # Covers the 15-min push-run polling budget plus setup headroom; cron
+    # and dispatch runs still finish in seconds.
+    timeout-minutes: 20
+    permissions:
+      pull-requests: read
+      checks: read
+      statuses: read
+      # gh pr view --json statusCheckRollup reads the rollup off the PR's
+      # last commit object (contents) and resolves each check run's
+      # workflowRun (actions).
+      contents: read
+      actions: read
+    steps:
+      - name: Check release token
+        id: token
+        shell: bash
+        env:
+          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+        run: |
+          if [[ -n "$RELEASE_PAT" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::RELEASE_PAT secret is not configured; skipping Release PR auto-merge"
+          fi
+      # 60-minute release throttle (cron and push runs; workflow_dispatch
+      # bypasses it — manual means urgent): the broadened push trigger fires
+      # on every push to main, so without a floor a busy merge hour could
+      # cut one release per merge. When the latest release (newest vX.Y.Z
+      # tag) was cut less than 60 minutes ago, defer — the next cron tick
+      # (:30) retries. Also quiets residual self-retriggers (e.g. the
+      # release-please refresh chain) that survive the job-level
+      # chore(release) skip. The merge step re-checks the tag right before
+      # merging (see the pre-merge re-check there) to close the gap between
+      # this early check and the actual merge. Strictly fail-open: any
+      # tag/date lookup problem proceeds with the cut — an unreadable tag
+      # list must never block releases. Worst-case quiet-period latency:
+      # a throttled run does not reschedule itself and cron is check-once,
+      # so with no further pushes a cut can trail the previous one by up to
+      # ~2h (throttle floor + up to one full cron interval).
+      - name: Throttle to one cut per hour
+        id: throttle
+        if: steps.token.outputs.enabled == 'true' && github.event_name != 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Deliberately no `set -e`: every lookup failure must fail OPEN
+          # (defer=false), never fail the run.
+          set -uo pipefail
+          echo "defer=false" >> "$GITHUB_OUTPUT"
+
+          # Latest release tag (release-please cuts plain vX.Y.Z tags),
+          # SemVer-ordered with sort -V across all matching refs.
+          tag=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" \
+            --jq '.[].ref | sub("^refs/tags/"; "")' 2>/dev/null \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1) || tag=""
+          if [[ -z "$tag" ]]; then
+            echo "Could not determine the latest release tag (failing open)."
+            exit 0
+          fi
+          # Exported for the merge step's pre-merge re-check: a different
+          # newest tag at merge time means another run cut a release while
+          # this one was waiting.
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+          # The tag points at the Release PR squash-merge commit, so its
+          # committer date is when the release was cut.
+          tag_date=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" \
+            --jq '.commit.committer.date' 2>/dev/null) || tag_date=""
+          if [[ -z "$tag_date" ]]; then
+            echo "Could not resolve when $tag was cut (failing open)."
+            exit 0
+          fi
+          tag_epoch=$(date -d "$tag_date" +%s 2>/dev/null) || tag_epoch=""
+          if [[ -z "$tag_epoch" ]]; then
+            echo "Could not parse the date of $tag (failing open)."
+            exit 0
+          fi
+          age_min=$(( ($(date +%s) - tag_epoch) / 60 ))
+          if (( age_min < 60 )); then
+            echo "::notice::last release $tag was cut ${age_min} min ago (<60 min); throttling this cut — the next cron tick retries"
+            echo "defer=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Last release $tag was cut ${age_min} min ago; proceeding."
+          fi
+      # In-flight intentd release guardrail (all run types): when
+      # intent-hq/intentd carries a release tag whose build has not published
+      # to the alpha channel yet (latest semver tag newer than the alpha.json
+      # version), cutting an fe alpha now would ship a stale sidecar that the
+      # imminent pin bump immediately obsoletes — defer with a notice instead;
+      # the pin merge's push-triggered run (or the next cron) cuts the alpha
+      # with the new sidecar. The 90-minute age bound stops a FAILED intentd
+      # build from deferring fe alphas forever (cargo-dist builds take 20-45
+      # min). Strictly fail-open: any lookup problem (missing
+      # INTENTD_READ_PAT, unreachable manifest, unreadable tags) proceeds with
+      # the cut — this guardrail must never block fe releases when intentd is
+      # unreadable.
+      - name: Check for an in-flight intentd release build
+        id: inflight
+        if: steps.token.outputs.enabled == 'true' && steps.throttle.outputs.defer != 'true'
+        shell: bash
+        env:
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+          MANIFEST_MIRROR_URL: https://github.com/intent-hq/intentd-releases/releases/download/channel-alpha/alpha.json
+        run: |
+          # Deliberately no `set -e`: every lookup failure must fail OPEN
+          # (defer=false), never fail the run.
+          set -uo pipefail
+          echo "defer=false" >> "$GITHUB_OUTPUT"
+
+          if [[ -z "${INTENTD_READ_PAT:-}" ]]; then
+            echo "INTENTD_READ_PAT is not set; cannot check for an in-flight intentd release (failing open)."
+            exit 0
+          fi
+
+          # Latest intentd release tag (release-plz cuts plain vX.Y.Z tags),
+          # SemVer-ordered with sort -V across all matching refs.
+          tag=$(GH_TOKEN="$INTENTD_READ_PAT" gh api --paginate \
+            repos/intent-hq/intentd/git/matching-refs/tags/v \
+            --jq '.[].ref | sub("^refs/tags/"; "")' 2>/dev/null \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1) || tag=""
+          if [[ -z "$tag" ]]; then
+            echo "Could not list intentd release tags (failing open)."
+            exit 0
+          fi
+
+          # Published alpha version: mirror manifest first, coded fallback to
+          # the intentd repo copy (same pattern as auto-pin-intentd.yml).
+          manifest=$(curl -fsSL "$MANIFEST_MIRROR_URL" || true)
+          if [[ -z "$manifest" ]]; then
+            echo "Mirror manifest unavailable; falling back to intent-hq/intentd."
+            tmp=$(mktemp -d)
+            if GH_TOKEN="$INTENTD_READ_PAT" gh release download channel-alpha \
+                --repo intent-hq/intentd --pattern alpha.json --dir "$tmp" 2>/dev/null; then
+              manifest=$(cat "$tmp/alpha.json")
+            fi
+            rm -rf "$tmp"
+          fi
+          published=$(jq -er '.version' <<<"$manifest" 2>/dev/null) || published=""
+          # Same semver shape auto-pin-intentd.yml accepts; a malformed
+          # manifest version must fail OPEN, not defer cuts for 90 minutes.
+          if ! grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' <<<"$published"; then
+            echo "Could not read a semver version from the intentd alpha channel manifest (got '${published:-<empty>}'; failing open)."
+            exit 0
+          fi
+
+          # Mapping '-' to '~' before sort -V gives SemVer prerelease
+          # precedence (same trick as auto-pin-intentd.yml). Tag equal to or
+          # older than the published alpha means nothing is in flight.
+          tagged="${tag#v}"
+          if [[ "$tagged" == "$published" ]] \
+            || [[ "$(printf '%s\n%s\n' "${tagged//-/\~}" "${published//-/\~}" | sort -V | tail -1)" == "${published//-/\~}" ]]; then
+            echo "No intentd release in flight (latest tag $tag, alpha channel $published)."
+            exit 0
+          fi
+
+          # The tag is newer than the published alpha: a build is (or was) in
+          # flight. The tag commit's date approximates when the build started.
+          tag_date=$(GH_TOKEN="$INTENTD_READ_PAT" gh api \
+            "repos/intent-hq/intentd/commits/$tag" \
+            --jq '.commit.committer.date' 2>/dev/null) || tag_date=""
+          if [[ -z "$tag_date" ]]; then
+            echo "Could not resolve the age of intentd tag $tag (failing open)."
+            exit 0
+          fi
+          tag_epoch=$(date -d "$tag_date" +%s 2>/dev/null) || tag_epoch=""
+          if [[ -z "$tag_epoch" ]]; then
+            echo "Could not parse the date of intentd tag $tag (failing open)."
+            exit 0
+          fi
+          age_min=$(( ($(date +%s) - tag_epoch) / 60 ))
+          if (( age_min < 90 )); then
+            echo "::notice::intentd $tag was cut ${age_min} min ago and its alpha has not published yet (channel has $published); deferring the alpha cut so the next alpha ships the new sidecar"
+            echo "defer=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "intentd $tag is ${age_min} min old with no published alpha (its build likely failed); proceeding with the cut."
+          fi
+      - name: Merge the Release PR when green
+        if: >-
+          steps.token.outputs.enabled == 'true' &&
+          steps.throttle.outputs.defer != 'true' &&
+          steps.inflight.outputs.defer != 'true'
+        shell: bash
+        env:
+          # Reads use the implicit token (job permissions above); the PAT is
+          # applied per-command, only where it is required.
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+          # Cross-repo reads for the BE-dependency freshness guard (the same
+          # PAT the in-flight intentd step uses), applied per-command.
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+          # Boolean input; on schedule events the inputs context is empty and
+          # this renders "false".
+          DRY_RUN: ${{ inputs.dry_run == true }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_SHA: ${{ github.sha }}
+          # The newest release tag the throttle step observed (empty when
+          # the throttle was skipped, i.e. workflow_dispatch); used by the
+          # pre-merge re-check below.
+          THROTTLE_TAG: ${{ steps.throttle.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          # Push-triggered runs (any push to main: a merged fe change or the
+          # pin-bump squash merge) poll instead of checking once:
+          # release-please needs ~1 min after the push to refresh the
+          # Release PR and the release-PR CI fast path another ~1 min to
+          # turn CI Gate green, so the run waits (30s interval, up to 15 min
+          # total) for the PR to exist, be fresh (pin + refresh gates
+          # below), and go green — then merges through the same guardrail
+          # chain. Cron and manual-dispatch runs keep the
+          # check-once-and-exit behavior (deadline stays 0, so transient()
+          # never retries).
+          deadline=0
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            deadline=$(( $(date +%s) + 15 * 60 ))
+            echo "Push-triggered chained cut: polling up to 15 min for a refreshed, green Release PR."
+          fi
+
+          # Transient-condition helper: a push run with budget left returns
+          # so the caller can sleep 30s and retry; every other case logs and
+          # exits 0 — the next scheduled run retries. Hard guardrails below
+          # (fork/identity, hold-release, pin PR, conflicts, failed gate,
+          # unresolved threads) exit directly and are never retried.
+          transient() {
+            if [[ "$EVENT_NAME" == "push" ]] && (( $(date +%s) < deadline )); then
+              echo "$1 — retrying in 30s."
+              return 0
+            fi
+            echo "$1; skipping."
+            exit 0
+          }
+
+          # BE-dependency freshness guard (cron and push runs; the call
+          # site below skips it on workflow_dispatch — manual means urgent
+          # — and push runs re-evaluate it on every polling attempt): the
+          # cut ships fe main against the sidecar pinned in
+          # intentd.version. An fe commit merged BEFORE the pinned tag was
+          # cut cannot depend on BE work missing from it (the intentd-first
+          # merge rule; fe lands squash/rebase merges only, both of which
+          # stamp committer dates at merge time, so committer dates order
+          # main chronologically). Commits merged AFTER it may depend on
+          # intentd commits that are in no published sidecar yet — but only
+          # when intentd main actually moved past the tag, so one
+          # comparison decides the expected common case (relaxation):
+          # intentd main not ahead of the pinned tag means nothing on fe
+          # main can depend on unpublished BE work — cut unrestricted.
+          # Automation commits are exempt from the freshness test: the
+          # pin-bump squash commit always postdates its own tag (it lands
+          # after the alpha publishes) and chore(release) merges carry no
+          # fe changes — counting either would defer forever. Returns 0
+          # (defer, $be_skew_msg set) only on confirmed skew; every lookup
+          # problem returns 1 — fail OPEN, an unreadable intentd never
+          # blocks fe releases (same convention as the in-flight guard step
+          # above).
+          be_skew_msg=""
+          be_dependency_skew() {
+            local pin cmp ahead tag_date tag_epoch fe_tag fresh
+
+            if [[ -z "${INTENTD_READ_PAT:-}" ]]; then
+              echo "INTENTD_READ_PAT is not set; skipping the BE-dependency freshness check (failing open)."
+              return 1
+            fi
+
+            # The pin this cut would ship: intentd.version at main HEAD
+            # (the squash merge cuts the tag on main's tree).
+            pin=$(gh api "repos/$GITHUB_REPOSITORY/contents/intentd.version?ref=heads/main" \
+              --jq '.content' 2>/dev/null | base64 -d \
+              | grep -Ev '^[[:space:]]*(#|$)' | tr -d '[:space:]') || pin=""
+            if ! grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' <<<"$pin"; then
+              echo "Could not read a semver pin from intentd.version on main (got '${pin:-<empty>}'; failing open)."
+              return 1
+            fi
+
+            # One comparison answers both questions: whether intentd main
+            # moved past the pinned tag (ahead_by) and when that tag was
+            # cut (its commit's committer date). Only top-level metadata is
+            # read, so per_page=1 truncating the commits array is fine.
+            cmp=$(GH_TOKEN="$INTENTD_READ_PAT" gh api \
+              "repos/intent-hq/intentd/compare/v$pin...main?per_page=1" 2>/dev/null) || cmp=""
+            ahead=$(jq -er '.ahead_by' <<<"$cmp" 2>/dev/null) || ahead=""
+            if ! grep -Eq '^[0-9]+$' <<<"$ahead"; then
+              echo "Could not compare intentd v$pin...main (failing open)."
+              return 1
+            fi
+            if (( ahead == 0 )); then
+              echo "intentd main has no commits after the pinned tag v$pin; no BE-dependency skew possible."
+              return 1
+            fi
+
+            tag_date=$(jq -er '.base_commit.commit.committer.date' <<<"$cmp" 2>/dev/null) || tag_date=""
+            tag_epoch=""
+            if [[ -n "$tag_date" ]]; then
+              tag_epoch=$(date -d "$tag_date" +%s 2>/dev/null) || tag_epoch=""
+            fi
+            if [[ -z "$tag_epoch" ]]; then
+              echo "Could not resolve when intentd v$pin was cut (failing open)."
+              return 1
+            fi
+
+            # Commits this cut would ship = latest fe release tag..main
+            # (same tag discovery as the throttle step).
+            fe_tag=$(gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" \
+              --jq '.[].ref | sub("^refs/tags/"; "")' 2>/dev/null \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1) || fe_tag=""
+            if [[ -z "$fe_tag" ]]; then
+              echo "Could not determine the latest fe release tag (failing open)."
+              return 1
+            fi
+
+            # The compare commits list is oldest→newest and paginated
+            # (250/page), so a single page would silently drop the NEWEST
+            # commits — the only ones that can postdate the cutoff — once a
+            # long-held backlog (e.g. weeks of hold-release) exceeds 250.
+            # --paginate walks every page; jq emits one per-page fresh
+            # count, summed by awk (same pattern as the reviewThreads
+            # count below).
+            fresh=$(gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/compare/$fe_tag...main?per_page=250" 2>/dev/null \
+              | jq -r --argjson cutoff "$tag_epoch" '[.commits[]?
+                  | select((.commit.committer.date | fromdateiso8601) > $cutoff)
+                  | (.commit.message | split("\n")[0])
+                  | select((test("^fix: bump intentd sidecar to v")
+                            or test("^chore\\(release\\): ")) | not)
+                ] | length' 2>/dev/null \
+              | awk '{ sum += $1 } END { print sum + 0 }') || fresh=""
+            if ! grep -Eq '^[0-9]+$' <<<"$fresh"; then
+              echo "Could not inspect the fe commits since $fe_tag (failing open)."
+              return 1
+            fi
+            if (( fresh == 0 )); then
+              echo "intentd main is ahead of the pinned v$pin but no fe commit this cut ships postdates that tag (automation commits exempt); no BE-dependency skew."
+              return 1
+            fi
+
+            be_skew_msg="intentd main is $ahead commit(s) ahead of the pinned v$pin and this cut would ship $fresh fe commit(s) merged after that tag was cut ($tag_date) — they may depend on intentd work in no published sidecar"
+            return 0
+          }
+
+          # The pin the triggering push landed on main: the Release PR head
+          # must carry the same pin before the cut (i.e. release-please has
+          # refreshed the PR after a pin-bump push) so the alpha actually
+          # ships the new sidecar. For pushes that leave the pin untouched
+          # (fe-only changes) the PR head already carries the same pin and
+          # the gate passes trivially. Read failures fall back to
+          # check-once behavior.
+          push_pin=""
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            push_pin=$(gh api "repos/$GITHUB_REPOSITORY/contents/intentd.version?ref=$PUSH_SHA" \
+              --jq '.content' | base64 -d | grep -Ev '^[[:space:]]*(#|$)' | tr -d '[:space:]') || push_pin=""
+            if [[ -z "$push_pin" ]]; then
+              echo "::warning::could not read intentd.version at $PUSH_SHA; falling back to a single check"
+              deadline=0
+            fi
+          fi
+
+          # Release-worthiness of the triggering push: release-please only
+          # refreshes the Release PR when the pushed commits include a
+          # releasable type (feat/fix/perf subjects with the conventional
+          # `: ` separator, incl. breaking `!` variants) or a version-
+          # forcing footer (`BREAKING CHANGE:` / `BREAKING-CHANGE:` /
+          # `Release-As:` — releasable regardless of the subject type).
+          # For such pushes the refresh gate in the loop waits for a
+          # post-push rebuild of the PR head so the cut's version and
+          # changelog account for the pushed commits. Non-releasable pushes
+          # (chore/docs/ci/...) leave the PR unchanged by design, and an
+          # already-green PR merges as-is — still correct, the tag is cut
+          # on main's tree, which carries the push. The push payload caps
+          # `commits` at 20 entries, so a larger push is conservatively
+          # treated as releasable (worst case: a 15-min poll that falls
+          # back to cron).
+          releasable=false
+          push_epoch=""
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            if jq -e '(.commits // []) as $c
+                | ($c | length) >= 20
+                  or ([$c[].message // empty]
+                      | (map(split("\n")[0])
+                         | any(test("^(feat|fix|perf)(\\([^)]*\\))?!?: ")))
+                        or any(test("(^|\\n)(BREAKING[- ]CHANGE|Release-As):"; "i")))' \
+                "$GITHUB_EVENT_PATH" >/dev/null; then
+              releasable=true
+            fi
+            push_ts=$(jq -r '.head_commit.timestamp // empty' "$GITHUB_EVENT_PATH") || push_ts=""
+            if [[ -n "$push_ts" ]]; then
+              push_epoch=$(date -d "$push_ts" +%s 2>/dev/null) || push_epoch=""
+            fi
+            # head_commit.timestamp is the committer date, not the push
+            # time — clamp a future-skewed value to now so a bad clock
+            # cannot make the refresh gate unsatisfiable for the whole
+            # poll budget.
+            now=$(date +%s)
+            if [[ -n "$push_epoch" ]] && (( push_epoch > now )); then
+              push_epoch=$now
+            fi
+            if [[ "$releasable" == "true" && -z "$push_epoch" ]]; then
+              echo "::warning::could not read the push timestamp; proceeding without the refresh gate"
+            fi
+          fi
+
+          while :; do
+            # Identify the open release-please Release PR: head branch
+            # `release-please--*` and the `chore(release): X.Y.Z` title this
+            # repo's config produces. Branch name and title alone are
+            # attacker-controlled (a fork PR can use both), so the candidate
+            # is also required to come from a branch in THIS repository (no
+            # fork heads), and its author is verified below against the
+            # RELEASE_PAT identity.
+            prs=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+              --json number,title,headRefName,isDraft,labels,isCrossRepository,author \
+              --jq '[.[] | select((.isCrossRepository == false)
+                    and (.headRefName | startswith("release-please--"))
+                    and (.title | test("^chore\\(release\\): [0-9]+\\.[0-9]+\\.[0-9]+")))]')
+            count=$(jq 'length' <<<"$prs")
+            if [[ "$count" -eq 0 ]]; then
+              transient "No open release-please Release PR — no changes, no release (on push runs: the refresh may still be in flight)"
+              sleep 30; continue
+            fi
+            if [[ "$count" -gt 1 ]]; then
+              # Should never happen (release-please maintains a single
+              # Release PR); refuse to guess rather than merge the wrong one.
+              echo "::warning::Found $count open PRs that look like the Release PR ($(jq -r '[.[].number | tostring] | join(", #")' <<<"$prs" | sed 's/^/#/')); refusing to guess"
+              exit 0
+            fi
+            number=$(jq -r '.[0].number' <<<"$prs")
+            title=$(jq -r '.[0].title' <<<"$prs")
+            echo "Release PR: #$number ($title)"
+
+            # Bind the candidate to the release-please identity: the Release
+            # PR is opened with the same RELEASE_PAT the merge below
+            # authenticates with, so its author must be the token's own
+            # login. This viewer lookup must run with the PAT (it resolves
+            # the PAT's identity, not the workflow's). Together with the
+            # same-repo check above, this pins the merge target to the
+            # repository-managed release-please PR — a PR that merely
+            # imitates the branch-name/title shape never qualifies.
+            viewer=$(GH_TOKEN="$RELEASE_PAT" gh api graphql \
+              -f query='query { viewer { login } }' \
+              --jq '.data.viewer.login')
+            author=$(jq -r '.[0].author.login' <<<"$prs")
+            if [[ -z "$viewer" || "$author" != "$viewer" ]]; then
+              echo "::warning::Release PR #$number author ($author) is not the RELEASE_PAT identity ($viewer); refusing to auto-merge"
+              exit 0
+            fi
+
+            # Chained-cut freshness gate (push runs only): the Release PR
+            # head must already contain the pin the push landed on main —
+            # otherwise release-please has not refreshed the PR yet and
+            # merging now would cut an alpha with the OLD sidecar.
+            if [[ -n "$push_pin" ]]; then
+              head_ref=$(jq -r '.[0].headRefName' <<<"$prs")
+              head_pin=$(gh api "repos/$GITHUB_REPOSITORY/contents/intentd.version?ref=$head_ref" \
+                --jq '.content' | base64 -d | grep -Ev '^[[:space:]]*(#|$)' | tr -d '[:space:]') || head_pin=""
+              if [[ "$head_pin" != "$push_pin" ]]; then
+                transient "Release PR #$number head does not carry the pushed intentd pin yet (head: ${head_pin:-unreadable}, pushed: $push_pin)"
+                sleep 30; continue
+              fi
+            fi
+
+            # Refresh gate (releasable push runs only): the Release PR head
+            # must have been rebuilt by release-please AFTER the push,
+            # otherwise merging now would cut a version/changelog computed
+            # without the pushed feat/fix commits (the tree would still
+            # carry them, but the version bump and changelog entry would be
+            # lost). release-please force-refreshes the PR branch for
+            # releasable commits, so a post-push head commit date is the
+            # refresh signal. Fail-open on read errors — this gate is an
+            # ordering aid, not a hard guardrail, and the pushed change
+            # ships either way.
+            if [[ "$releasable" == "true" && -n "$push_epoch" ]]; then
+              head_ref=$(jq -r '.[0].headRefName' <<<"$prs")
+              head_date=$(gh api "repos/$GITHUB_REPOSITORY/commits/$head_ref" \
+                --jq '.commit.committer.date' 2>/dev/null) || head_date=""
+              head_epoch=""
+              if [[ -n "$head_date" ]]; then
+                head_epoch=$(date -d "$head_date" +%s 2>/dev/null) || head_epoch=""
+              fi
+              if [[ -z "$head_epoch" ]]; then
+                echo "::warning::could not resolve the Release PR head commit date; proceeding without the refresh gate"
+              elif (( head_epoch < push_epoch )); then
+                transient "Release PR #$number head predates the triggering push (release-please has not refreshed it yet)"
+                sleep 30; continue
+              fi
+            fi
+
+            # Pause guardrail: a human puts `hold-release` on the Release PR
+            # to stop auto-cutting (e.g. to batch more changes or hold a bad
+            # commit out of an alpha); remove the label to resume.
+            if jq -e '.[0].labels | any(.name == "hold-release")' <<<"$prs" >/dev/null; then
+              echo "::notice::Release PR #$number carries the hold-release label; auto-merge paused until it is removed"
+              exit 0
+            fi
+
+            # Pipeline ordering guardrail: an open pin-bump PR (the rolling
+            # `auto/intentd-pin` PR from auto-pin-intentd.yml) means a newer
+            # intentd sidecar is in flight. Let it land first — its fix-typed
+            # commit refreshes the Release PR — so the fe alpha carries the
+            # new sidecar; its merge push chains straight into a fresh cut
+            # run (and the next hourly run backstops it).
+            # `--head` also matches fork PRs whose branch merely shares the
+            # name, so restrict to same-repo heads — otherwise a fork PR
+            # named auto/intentd-pin could defer alpha cuts indefinitely.
+            pin_pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+              --head auto/intentd-pin --json number,isCrossRepository \
+              --jq '[.[] | select(.isCrossRepository == false)][0].number // empty')
+            if [[ -n "$pin_pr" ]]; then
+              echo "::notice::Pin-bump PR #$pin_pr (auto/intentd-pin) is open; deferring the alpha cut until the new sidecar pin lands"
+              exit 0
+            fi
+
+            # BE-dependency freshness guardrail (see be_dependency_skew
+            # above): normally the deferral is bounded by the intentd alpha
+            # cadence — the next alpha advances the pin, and the pin-bump
+            # merge push chains straight into a fresh cut run. When intentd
+            # cannot publish (failed build, or ahead only by never-released
+            # commits) the deferral persists; workflow_dispatch bypasses
+            # this guard (manual means urgent — same convention as the
+            # throttle) so an operator can always force the cut. Push runs
+            # with poll budget left retry first, so a pin that advances
+            # mid-poll clears the skew within this very run.
+            if [[ "$EVENT_NAME" != "workflow_dispatch" ]] && be_dependency_skew; then
+              if [[ "$EVENT_NAME" == "push" ]] && (( $(date +%s) < deadline )); then
+                echo "$be_skew_msg — retrying in 30s."
+                sleep 30; continue
+              fi
+              echo "::notice::$be_skew_msg; deferring the alpha cut until the next intentd alpha advances the pin"
+              exit 0
+            fi
+
+            detail=$(gh pr view "$number" --repo "$GITHUB_REPOSITORY" \
+              --json isDraft,mergeable,mergeStateStatus,statusCheckRollup)
+
+            if [[ $(jq -r '.isDraft' <<<"$detail") != "false" ]]; then
+              echo "Release PR #$number is a draft; skipping."
+              exit 0
+            fi
+
+            # This repo's ruleset does not require branches to be up to date,
+            # so a behind-main head does not block the merge — and release-
+            # please force-refreshes the Release PR branch on every push to
+            # main anyway. Only a real conflict makes the PR unmergeable;
+            # UNKNOWN just means GitHub is still computing mergeability.
+            mergeable=$(jq -r '.mergeable' <<<"$detail")
+            if [[ "$mergeable" == "UNKNOWN" ]]; then
+              transient "Release PR #$number mergeability is still being computed (mergeable=UNKNOWN)"
+              sleep 30; continue
+            fi
+            if [[ "$mergeable" != "MERGEABLE" ]]; then
+              echo "Release PR #$number is not mergeable (mergeable=$mergeable, mergeStateStatus=$(jq -r '.mergeStateStatus' <<<"$detail")); skipping."
+              exit 0
+            fi
+
+            # Required check "CI Gate" must be green on the current head
+            # (statusCheckRollup reflects the head commit). "missing" covers
+            # a head whose checks have not started yet — the release-PR CI
+            # fast path normally turns the gate green ~1 min after each
+            # release-please refresh. A terminal non-success conclusion is a
+            # hard skip (retrying cannot rerun a failed check); anything else
+            # (missing/pending) is transient.
+            gate=$(jq -r '[.statusCheckRollup[]? | select(.name == "CI Gate")]
+              | if length == 0 then "missing"
+                elif all(.conclusion == "SUCCESS") then "success"
+                else (map(.conclusion // .status // "PENDING") | join(","))
+                end' <<<"$detail")
+            if [[ "$gate" != "success" ]]; then
+              if grep -Eq 'FAILURE|ERROR|CANCELLED|TIMED_OUT|ACTION_REQUIRED' <<<"$gate"; then
+                echo "CI Gate concluded unsuccessfully on the current head (state: $gate); skipping."
+                exit 0
+              fi
+              transient "CI Gate is not green on the current head (state: $gate)"
+              sleep 30; continue
+            fi
+
+            # --paginate walks every reviewThreads page (an unresolved
+            # thread past the first page must still block the merge); --jq
+            # emits one per-page count, summed by awk.
+            unresolved=$(gh api graphql --paginate \
+              -f query='query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $pr) {
+                    reviewThreads(first: 100, after: $endCursor) {
+                      nodes { isResolved }
+                      pageInfo { hasNextPage endCursor }
+                    }
+                  }
+                }
+              }' \
+              -f owner="${GITHUB_REPOSITORY%/*}" \
+              -f repo="${GITHUB_REPOSITORY#*/}" \
+              -F pr="$number" \
+              --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not)] | length' \
+              | awk '{ sum += $1 } END { print sum + 0 }')
+            if [[ "$unresolved" -ne 0 ]]; then
+              echo "Release PR #$number has $unresolved unresolved review thread(s); skipping."
+              exit 0
+            fi
+
+            # Pre-merge throttle re-check (closes the TOCTOU gap between
+            # the throttle step and this merge): a run queued on the
+            # concurrency group starts right after the previous run's merge
+            # — typically BEFORE release-please cuts that merge's tag — so
+            # its early throttle read saw the old tag and passed. If the
+            # newest vX.Y.Z tag differs from the one the throttle step
+            # observed, another cut landed while this run was waiting:
+            # defer to the next cron tick instead of cutting a second
+            # release inside the 60-min floor. Fail-open like the throttle
+            # (an unreadable tag list never blocks the merge); skipped on
+            # workflow_dispatch (THROTTLE_TAG empty — the throttle was
+            # bypassed).
+            if [[ -n "$THROTTLE_TAG" ]]; then
+              current_tag=$(gh api --paginate \
+                "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" \
+                --jq '.[].ref | sub("^refs/tags/"; "")' 2>/dev/null \
+                | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1) || current_tag=""
+              if [[ -n "$current_tag" && "$current_tag" != "$THROTTLE_TAG" ]]; then
+                echo "::notice::newest release tag moved from $THROTTLE_TAG to $current_tag while this run was waiting (another cut landed); deferring — the next cron tick retries"
+                exit 0
+              fi
+            fi
+
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "DRY RUN: would squash-merge Release PR #$number ($title)."
+              exit 0
+            fi
+
+            # Squash-merge with the PAT so the push to main triggers
+            # release-please.yml (tag + GitHub Release → release-alpha.yml
+            # builds and publishes to intent-hq/cloudlands-releases). The
+            # squash commit title defaults to the single release commit's
+            # message, which release-please writes in the same conventional
+            # form as the PR title. A failure here is not fatal: the PR
+            # state may have changed under us, and the next scheduled run
+            # retries.
+            if GH_TOKEN="$RELEASE_PAT" gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --squash; then
+              echo "Squash-merged Release PR #$number ($title); release-please.yml now cuts the tag and release-alpha.yml publishes the alpha automatically."
+            else
+              echo "::warning::gh pr merge failed for Release PR #$number (state changed under us?); the next scheduled run retries"
+            fi
+            exit 0
+          done

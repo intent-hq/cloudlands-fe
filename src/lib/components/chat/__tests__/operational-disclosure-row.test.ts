@@ -14,7 +14,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: { select: () => undefined },
 }));
 
-vi.mock('../tool-classifier', async () => {
+vi.mock('$lib/utils/tool-classifier', async () => {
   const { faWrench } = await import('@fortawesome/free-solid-svg-icons');
   return {
     classifyTool: (name: string) => {
@@ -306,7 +306,7 @@ describe('shared operational disclosure-row contract', () => {
     );
   });
 
-  it('keeps running icons readable and stateful without reintroducing decorative group icons', () => {
+  it('keeps leading running icons as the only active tool cue', () => {
     const { container } = render(ToolCall, {
       props: { toolUse: genericTool, toolState: 'running' },
     });
@@ -321,10 +321,8 @@ describe('shared operational disclosure-row contract', () => {
       .querySelector('[data-tool-icon]')!;
     expectClasses(searchIcon, CHAT_OPERATIONAL_LEADING_CLASS);
     expect(searchIcon.className).toContain('animate-pulse');
-    const runningStatus = screen.getByTestId('tool-call-status');
-    expect(runningStatus.getAttribute('data-tool-status')).toBe('running');
-    expect(runningStatus.getAttribute('aria-label')).toBe('Running');
-    expect(runningStatus.querySelector('[data-icon="spinner"]')).toBeTruthy();
+    expect(screen.queryByTestId('tool-call-status')).toBeNull();
+    expect(document.querySelector('[data-operational-trailing]')).toBeNull();
     cleanup();
 
     render(ThinkingBlock, { props: { content: 'Thinking', isStreaming: true } });

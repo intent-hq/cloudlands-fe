@@ -26,6 +26,7 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectRecentlyClosed: () => readable([]),
+  selectPanelColumnCount: () => readable(1),
   selectPanelLayoutWorkspace: { select: () => null },
 }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -58,10 +59,6 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: () => readable([]),
-}));
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
-  selectPanelOpenMode: () => readable('normal'),
-  selectPanelStackDirection: () => readable('right'),
 }));
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -144,10 +141,19 @@ function renderHeader(tabType: PanelTab['type']) {
 }
 
 beforeEach(() => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   resetFileDropSpies();
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   cleanup();
 });
 
@@ -241,5 +247,70 @@ describe('panel header file drop', () => {
     expect(enter.defaultPrevented).toBe(false);
     expect(dragChanges).toEqual([]);
     expect(droppedFiles).toHaveLength(0);
+  });
+
+  describe('handler registration identity (monorepo#3026)', () => {
+    function makeHandler() {
+      const changes: boolean[] = [];
+      const drops: File[][] = [];
+      return {
+        changes,
+        drops,
+        handler: {
+          onDragChange: (dragging: boolean) => changes.push(dragging),
+          onDrop: (files: File[]) => drops.push(files),
+        },
+      };
+    }
+
+    it('clears the handler on register → unregister, without a proxy equality warning', async () => {
+      const warn = vi.spyOn(console, 'warn');
+      try {
+        const header = renderHeader('file');
+        const dataTransfer = fileDragData();
+        const first = makeHandler();
+
+        flushSync(() => contextRef.current!.register(first.handler));
+        const activeEnter = dragEvent('dragenter', dataTransfer);
+        await fireEvent(header, activeEnter);
+        expect(activeEnter.defaultPrevented).toBe(true);
+        expect(first.changes).toEqual([true]);
+        await fireEvent(header, dragEvent('dragleave', dataTransfer));
+
+        flushSync(() => contextRef.current!.unregister(first.handler));
+
+        const staleEnter = dragEvent('dragenter', dataTransfer);
+        await fireEvent(header, staleEnter);
+        expect(staleEnter.defaultPrevented).toBe(false);
+        expect(first.changes).toEqual([true, false]);
+        expect(
+          warn.mock.calls.filter((call) =>
+            call.some((arg) => String(arg).includes('state_proxy_equality_mismatch'))
+          )
+        ).toEqual([]);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('keeps the replacement handler when a stale unregister arrives (register → replace → stale-unregister)', async () => {
+      const header = renderHeader('file');
+      const dataTransfer = fileDragData();
+      const first = makeHandler();
+      const replacement = makeHandler();
+
+      flushSync(() => contextRef.current!.register(first.handler));
+      flushSync(() => contextRef.current!.register(replacement.handler));
+      // The deactivated tab's late cleanup must not clobber the newer handler.
+      flushSync(() => contextRef.current!.unregister(first.handler));
+
+      await fireEvent(header, dragEvent('dragenter', dataTransfer));
+      await fireEvent(header, dragEvent('drop', dataTransfer));
+
+      expect(replacement.changes).toEqual([true, false]);
+      expect(replacement.drops).toHaveLength(1);
+      expect(first.changes).toEqual([]);
+      expect(first.drops).toHaveLength(0);
+    });
   });
 });

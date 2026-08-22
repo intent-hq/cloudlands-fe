@@ -16,7 +16,6 @@ import { Logger } from '../../../shared/logger';
 import {
   executeActions,
   type ExecutionResult,
-  type ActionSequence,
 } from './browser-action-executor';
 import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
 import { loopbackContextFromTransport, type LoopbackRewriteContext } from './loopback-rewrite';
@@ -48,7 +47,10 @@ const logger = new Logger('BrowserIPC');
  * (intent-hq/monorepo#2541). `allowDuplicate` is forwarded so the renderer's
  * own equivalent-tab dedupe doesn't override an explicit request for a
  * genuinely new tab. `ownerAgentId` (agent opens) is persisted with the tab
- * so ownership survives restart (monorepo#2857).
+ * so ownership survives restart (monorepo#2857), and `emulatedSize` (agent
+ * opens) rides along so the emulated viewport survives restart too.
+ * `visible: false` (agent opens, monorepo#3045) creates the tab hidden —
+ * no panel mount, webview kept alive offscreen.
  */
 function openBrowserTab(
   url: string,
@@ -59,6 +61,8 @@ function openBrowserTab(
   pin?: boolean,
   ownerAgentId?: string,
   replaceTabId?: string,
+  emulatedSize?: { width: number; height: number },
+  visible?: boolean,
 ): { success: boolean; message: string; tabId?: string } {
   const workspacePayload = workspaceCommandPayload(workspaceId);
   if (!workspacePayload) {
@@ -105,6 +109,8 @@ function openBrowserTab(
       ...(pin === undefined ? {} : { pin }),
       ...(ownerAgentId === undefined ? {} : { ownerAgentId }),
       ...(replaceTabId === undefined ? {} : { replaceTabId }),
+      ...(emulatedSize === undefined ? {} : { emulatedSize }),
+      ...(visible === undefined ? {} : { visible }),
     },
   );
   if (!delivery.delivered) {
@@ -139,6 +145,10 @@ const ReportTabBoundsSchema = z.object({
   tabId: z.string(),
   width: z.number().positive().optional(),
   height: z.number().positive().optional(),
+});
+
+const ClearAgentTabsSchema = z.object({
+  agentId: z.string(),
 });
 
 const ExecSchema = z.object({
@@ -280,7 +290,17 @@ export async function executeBrowserActions(
 ): Promise<ExecutionResult> {
   return executeActions(
     { actions, tabId },
-    (url, position, allowDuplicate, requestedUrl, pin, ownerAgentId, replaceTabId) =>
+    (
+      url,
+      position,
+      allowDuplicate,
+      requestedUrl,
+      pin,
+      ownerAgentId,
+      replaceTabId,
+      emulatedSize,
+      visible,
+    ) =>
       openBrowserTab(
         url,
         position,
@@ -290,6 +310,8 @@ export async function executeBrowserActions(
         pin,
         ownerAgentId,
         replaceTabId,
+        emulatedSize,
+        visible,
       ),
     agentId,
     workspaceId,
@@ -299,7 +321,7 @@ export async function executeBrowserActions(
 }
 
 // Re-export types for MCP tools
-export type { ExecutionResult, ActionSequence };
+export type { ExecutionResult };
 
 /**
  * Register browser IPC handlers
@@ -365,6 +387,21 @@ export function registerBrowserHandlers(): void {
         return { success: true };
       },
       IPC_CHANNELS.BROWSER.REPORT_TAB_BOUNDS,
+    ),
+  );
+
+  // Clear main's registrations (CDP registry + ownership + tab cache) for a
+  // deleted agent's owned tabs — the renderer already removed them from the
+  // layout on the agent:deleted commit (monorepo#2857).
+  ipcMain.handle(
+    IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS,
+    createSafeValidatedHandler(
+      ClearAgentTabsSchema,
+      async (_event, validated) => {
+        const tabIds = embeddedBrowserCdp.clearAgentTabs(validated.agentId);
+        return { success: true, tabIds };
+      },
+      IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS,
     ),
   );
 

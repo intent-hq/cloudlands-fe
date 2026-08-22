@@ -12,7 +12,7 @@
 export const PTT_MAX_RECORDING_MS = 120_000;
 
 /** Preferred container/codec, most-specific first. */
-export const PTT_PREFERRED_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm'] as const;
+const PTT_PREFERRED_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm'] as const;
 
 export interface VoiceRecordingResult {
   blob: Blob;
@@ -69,10 +69,7 @@ export function buildRecorderConstraints(deviceId?: string | null): MediaStreamC
 
 /** The most specific supported mime type, or undefined for the browser default. */
 export function pickRecorderMimeType(): string | undefined {
-  if (
-    typeof MediaRecorder === 'undefined' ||
-    typeof MediaRecorder.isTypeSupported !== 'function'
-  ) {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
     return undefined;
   }
   return PTT_PREFERRED_MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type));
@@ -125,9 +122,7 @@ export class VoiceRecorder {
     }
     this.stream = stream;
     const mimeType = pickRecorderMimeType();
-    const recorder = mimeType
-      ? new MediaRecorder(stream, { mimeType })
-      : new MediaRecorder(stream);
+    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
     this.recorder = recorder;
     recorder.ondataavailable = (event: BlobEvent) => {
       if (event.data && event.data.size > 0) this.chunks.push(event.data);

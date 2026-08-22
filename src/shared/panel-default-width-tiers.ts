@@ -5,7 +5,7 @@ import {
 } from './panel-layout-sizing';
 
 /** Authoritative default tier for every built-in panel tab type on the frozen base. */
-export const PANEL_DEFAULT_WIDTH_TIERS = {
+const PANEL_DEFAULT_WIDTH_TIERS = {
   agent: 'chat',
   'agent-overview': 'narrow',
   'activity-changes': 'wide',

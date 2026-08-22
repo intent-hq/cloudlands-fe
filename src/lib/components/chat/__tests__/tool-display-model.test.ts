@@ -1,6 +1,6 @@
 import { faWrench } from '@fortawesome/free-solid-svg-icons';
 import { describe, expect, it } from 'vitest';
-import type { ToolCategory, ToolDisplay } from '../tool-classifier';
+import type { ToolCategory, ToolDisplay } from '$lib/utils/tool-classifier';
 import {
   buildToolDisplayModel,
   isOkOnlyResult,

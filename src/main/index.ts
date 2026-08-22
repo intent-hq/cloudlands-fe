@@ -128,6 +128,7 @@ import { compareWorkspaceActivityDisplayTimeDesc } from '../shared/utils/workspa
 import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapper';
 import { initializeWarningSuppression } from './utils/suppress-warnings';
 import { runWithHardExitTimeout } from './utils/hard-exit-timeout';
+import { handleUncaughtException, handleUnhandledRejection } from './utils/process-error-handlers';
 import { setupWebviewSecurity } from './webview-security';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { attachSwipeHistoryNavigation } from './swipe-navigation';
@@ -348,6 +349,7 @@ import {
   createWindowForDeepLink,
   createWindowForSession,
   getWindowSessionsPath,
+  isBackendSwitchWindowTeardownInProgress,
   loadWindowSessions,
   saveWindowSessions,
 } from './window.js';
@@ -366,21 +368,11 @@ const deepLinkHandler = new DeepLinkHandler();
 
 // Global error handlers to prevent silent crashes
 process.on('uncaughtException', (error) => {
-  // Suppress webview navigation errors (ERR_ABORTED happens when switching URLs)
-  const errMsg = error?.message || String(error);
-  if (errMsg.includes('GUEST_VIEW_MANAGER_CALL') && errMsg.includes('ERR_ABORTED')) {
-    return; // Silently ignore webview navigation abort errors
-  }
-  logger.error('Uncaught Exception', error);
+  handleUncaughtException(logger, error);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  // Suppress webview navigation errors (ERR_ABORTED happens when switching URLs)
-  const errMsg = reason instanceof Error ? reason.message : String(reason);
-  if (errMsg.includes('GUEST_VIEW_MANAGER_CALL') && errMsg.includes('ERR_ABORTED')) {
-    return; // Silently ignore webview navigation abort errors
-  }
-  logger.error('Unhandled Rejection', reason as Error, { promise });
+  handleUnhandledRejection(logger, reason, promise);
 });
 
 // Graceful shutdown handlers
@@ -828,7 +820,6 @@ app.whenReady().then(async () => {
       },
       {
         label: m.menu_close_window(),
-        accelerator: 'CmdOrCtrl+Shift+W',
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {
@@ -841,6 +832,8 @@ app.whenReady().then(async () => {
         label: m.menu_reopen_closed_tab(),
         accelerator: 'CmdOrCtrl+Shift+T',
         enabled: inWorkspace,
+        // Let the renderer compare workspace-tab, panel-tab, and column history.
+        registerAccelerator: false,
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {
@@ -881,7 +874,7 @@ app.whenReady().then(async () => {
 
     // Build the Window menu items
     const windowMenuItems: Electron.MenuItemConstructorOptions[] = [
-      { role: 'minimize', accelerator: 'CmdOrCtrl+M' },
+      { role: 'minimize', label: m.menu_minimize(), accelerator: 'CmdOrCtrl+M' },
       { role: 'zoom', label: m.menu_window_fill() },
       { type: 'separator' },
       {
@@ -1258,11 +1251,11 @@ app.whenReady().then(async () => {
             },
           },
           { type: 'separator' },
-          { role: 'services' },
+          { role: 'services', label: m.menu_services() },
           { type: 'separator' },
           { role: 'hide', label: m.menu_hide_app({ appName }) },
-          { role: 'hideOthers' },
-          { role: 'unhide' },
+          { role: 'hideOthers', label: m.menu_hide_others() },
+          { role: 'unhide', label: m.menu_show_all() },
           { type: 'separator' },
           { role: 'quit', label: m.menu_quit_app({ appName }) },
         ],
@@ -1270,9 +1263,52 @@ app.whenReady().then(async () => {
     }
 
     // Add standard menus (File, Edit, View, Window, Help)
+    // Electron never localizes built-in role labels, so every role item gets
+    // an explicit label from the message catalog. The Edit menu mirrors the
+    // default `editMenu` role expansion for this Electron version
+    // (per-platform structure included) with the roles kept for behavior.
     template.push(
       fileMenu,
-      { role: 'editMenu' },
+      {
+        label: m.menu_edit(),
+        submenu: [
+          { role: 'undo', label: m.menu_undo() },
+          { role: 'redo', label: m.menu_redo() },
+          { type: 'separator' },
+          { role: 'cut', label: m.menu_cut() },
+          { role: 'copy', label: m.menu_copy() },
+          { role: 'paste', label: m.menu_paste() },
+          ...(isMacOS
+            ? ([
+                { role: 'pasteAndMatchStyle', label: m.menu_paste_and_match_style() },
+                { role: 'delete', label: m.menu_delete() },
+                { role: 'selectAll', label: m.menu_select_all() },
+                { type: 'separator' },
+                {
+                  label: m.menu_substitutions(),
+                  submenu: [
+                    { role: 'showSubstitutions', label: m.menu_show_substitutions() },
+                    { type: 'separator' },
+                    { role: 'toggleSmartQuotes', label: m.menu_smart_quotes() },
+                    { role: 'toggleSmartDashes', label: m.menu_smart_dashes() },
+                    { role: 'toggleTextReplacement', label: m.menu_text_replacement() },
+                  ],
+                },
+                {
+                  label: m.menu_speech(),
+                  submenu: [
+                    { role: 'startSpeaking', label: m.menu_start_speaking() },
+                    { role: 'stopSpeaking', label: m.menu_stop_speaking() },
+                  ],
+                },
+              ] as Electron.MenuItemConstructorOptions[])
+            : ([
+                { role: 'delete', label: m.menu_delete() },
+                { type: 'separator' },
+                { role: 'selectAll', label: m.menu_select_all() },
+              ] as Electron.MenuItemConstructorOptions[])),
+        ],
+      },
       {
         label: m.menu_view(),
         submenu: [
@@ -1289,7 +1325,7 @@ app.whenReady().then(async () => {
               }
             },
           },
-          { role: 'forceReload' },
+          { role: 'forceReload', label: m.menu_force_reload() },
           { type: 'separator' },
           {
             label: m.menu_toggle_devtools(),
@@ -1348,7 +1384,7 @@ app.whenReady().then(async () => {
             },
           },
           { type: 'separator' },
-          { role: 'togglefullscreen' },
+          { role: 'togglefullscreen', label: m.menu_toggle_fullscreen() },
         ],
       },
       {
@@ -1567,7 +1603,6 @@ app.whenReady().then(async () => {
     // import is a cache hit.)
     const { initializeAutoUpdater, markAutoUpdaterNotInitialized } =
       await import('../features/auto-update/main/auto-update.ipc');
-    const mainWindow = getMainWindow();
     if (process.env.NODE_ENV !== 'development' && process.env.TESTING !== 'true') {
       // Initialize regardless of whether a window exists yet
       // (intent-hq/monorepo#1848): this setImmediate task can run before
@@ -1589,10 +1624,16 @@ app.whenReady().then(async () => {
 
     // Show this version's release notes on the first launch after an update.
     // Packaged builds only — a dev build's version is never a published tag.
-    if (app.isPackaged && mainWindow) {
+    // Run regardless of whether a window exists yet (intent-hq/monorepo#3054,
+    // same race as #1848 above): this setImmediate task can run before window
+    // creation, and gating on the window skipped the check — and the pref
+    // advance — for the whole session. The window is resolved at send time
+    // inside the check; with no window the notes park as pending for the
+    // renderer's get-pending claim.
+    if (app.isPackaged) {
       const { initializeReleaseNotesOnStartup } =
         await import('../features/release-notes/main/release-notes.ipc');
-      void initializeReleaseNotesOnStartup(mainWindow);
+      void initializeReleaseNotesOnStartup(getMainWindow);
     }
 
     // Setup development-only IPC handlers
@@ -1786,6 +1827,16 @@ app.on('before-quit', async (event: Electron.Event) => {
 });
 
 app.on('window-all-closed', async () => {
+  // A backend switch destroys every window between its capture and restore
+  // halves, which fires this event mid-switch. Treating that as a manual
+  // last-window close would delete the sessions file the switch just wrote
+  // (macOS) or start the quit flow (Windows/Linux) — so ignore it entirely;
+  // restoreWindowsForBackend() reopens windows right after.
+  if (isBackendSwitchWindowTeardownInProgress()) {
+    logger.info('window-all-closed ignored: backend-switch window teardown in progress');
+    return;
+  }
+
   // On macOS the app stays alive after all windows are closed.
   // Clear the saved sessions file so that clicking the dock icon opens a single
   // fresh window instead of restoring every window the user just closed.

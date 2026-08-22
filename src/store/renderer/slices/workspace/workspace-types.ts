@@ -39,17 +39,29 @@ export interface WorkspaceProgressHeadline {
   subtext: string;
 }
 
+/** Normalized PR status for the active-PR summary chip. */
+export type WorkspaceActivePrStatus = 'open' | 'merged' | 'closed' | 'draft' | 'unknown';
+
 /** Shared PR action presentation for sidebar surfaces. */
 export interface WorkspaceActivePrSummary {
   number: number;
   url: string;
+  /** `owner/name` of the PR's repo when known (workspace repo or monitor repo). */
   repo?: string;
+  /**
+   * `repo #N` / `owner/repo #N` identifier per the `getPrChipLabel` convention;
+   * `#N` when the repo cannot be determined at all.
+   */
+  chipLabel: string;
+  /** PR title; absent when the source carries none (legacy path, unpolled monitor). */
+  title?: string;
+  status: WorkspaceActivePrStatus;
   actionLabel: string;
   actionTooltip: string;
 }
 
 /** Semantic identifier mapping a progress action to a component onClick handler. */
-export type WorkspaceProgressActionId =
+type WorkspaceProgressActionId =
   'review-changes' | 'commit' | 'push-or-create-pr' | 'view-pr' | 'merge-pr';
 
 /** Semantic icon key the component maps to a concrete fa-icon. */

@@ -5,8 +5,10 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+
 /** Serializable icon descriptor understood by the renderer's icon adapter. */
-export interface PanelTabIcon {
+interface PanelTabIcon {
   iconName: string;
   prefix?: string;
   icon?: readonly [number, number, readonly string[], string, string | readonly string[]];
@@ -67,6 +69,14 @@ export interface PanelTab {
    * main's ownership registry rehydrates from it.
    */
   ownerAgentId?: string;
+  /**
+   * Emulated viewport of an agent-owned browser tab (monorepo#2857); absent
+   * for unowned (native-sized) tabs. Persisted with the layout alongside
+   * `ownerAgentId` so the tab rehydrates at its actual size after restart,
+   * and kept live by owner-changed/resize notifications from main so the UI
+   * can surface the emulated size.
+   */
+  emulatedSize?: { width: number; height: number };
   faviconUrl?: string;
   contextItemId?: string;
 
@@ -81,8 +91,12 @@ export interface PanelState {
   activeTabId: string | null;
   /** True for an untouched reusable blank panel that the next user item can consume. */
   pristine?: boolean;
-  /** Pinned panels are preserved when reusable-panel mode collapses the layout. */
-  pinned?: boolean;
+}
+
+export type PanelColumnCount = 1 | 2 | 3 | 4;
+
+export function isPanelColumnCount(value: unknown): value is PanelColumnCount {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 4;
 }
 
 /** Node in the panel layout tree - either a panel or a split container */
@@ -98,9 +112,21 @@ export type PanelLayoutNode =
 
 /** Complete layout state for a workspace */
 export interface WorkspacePanelLayout {
+  /** Version of the persisted fixed-column representation. */
+  version?: number;
   root: PanelLayoutNode;
   panels: Record<string, PanelState>;
   focusedPanelId: string | null;
+  /**
+   * Agent-owned browser tabs the user "closed" (monorepo#2857): a user close
+   * of an owned tab is a UI-level hide, not a destroy — the tab leaves its
+   * panel but stays here with its webview alive (offscreen) and keeps
+   * appearing in listTabs for its owner. Persisted so hidden tabs survive
+   * restart; destroyed only on agent deletion or workspace archive/delete.
+   */
+  hiddenTabs?: PanelTab[];
+  /** Workspace-scoped selected column count. */
+  columnCount?: PanelColumnCount;
   /** User-resized intrinsic horizontal canvas width; null/absent uses automatic sizing. */
   canvasWidth?: number | null;
   /** Identifies a width that must survive restore; absent is a legacy automatic width. */
@@ -124,7 +150,7 @@ export interface WorkspacePanelLayout {
   >;
 }
 
-export interface NewWorkspacePanelLifecycle {
+interface NewWorkspacePanelLifecycle {
   /** Coordinator creation fills the seeded reusable panel when Spec is first written. */
   coordinator?: boolean;
   initialAgentId: string | null;
@@ -155,6 +181,27 @@ export interface RecentlyClosedTab {
   closedAt: number;
 }
 
+/** Exact serializable state needed to restore one explicit panel-column close. */
+export interface RecentlyClosedPanelColumn {
+  historyId: string;
+  panelId: string;
+  panel: PanelState;
+  root: PanelLayoutNode;
+  postCloseRoot: PanelLayoutNode;
+  focusedPanelId: string | null;
+  columnCount: PanelColumnCount;
+  canvasWidth: number | null;
+  canvasWidthSource: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
+  expandedPanelId: string | null;
+  savedSizesBeforeExpand: SavedExpandSizes[];
+  savedCanvasWidthBeforeExpand?: number | null;
+  savedCanvasWidthSourceBeforeExpand?:
+    import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
+  pendingFocusTabId: string | null;
+  closedTabIds: string[];
+  closedAt: number;
+}
+
 /** Layout snapshot for undo/redo navigation */
 export interface LayoutSnapshot {
   root: PanelLayoutNode;
@@ -163,11 +210,12 @@ export interface LayoutSnapshot {
   /** Optional for backward compatibility with existing persisted history. */
   canvasWidth?: number | null;
   canvasWidthSource?: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
+  columnCount?: PanelColumnCount;
   timestamp: number;
 }
 
 /** Focus history entry for navigating between previously focused tabs */
-export interface FocusHistoryEntry {
+interface FocusHistoryEntry {
   panelId: string;
   tabId: string;
   timestamp: number;
@@ -188,13 +236,24 @@ export interface WorkspacePanelLayoutState {
   root: PanelLayoutNode;
   panels: Record<string, PanelState>;
   focusedPanelId: string | null;
+  /**
+   * Hidden (user-closed) agent-owned browser tabs — see
+   * WorkspacePanelLayout.hiddenTabs. Persisted as a plain array; stored here
+   * as a Collection keyed by tab id.
+   */
+  hiddenTabs: Collection<PanelTab, 'id'>;
   /** Current horizontal panel canvas width in pixels; null uses the default column width. */
   canvasWidth: number | null;
   canvasWidthSource: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
+  columnCount: PanelColumnCount;
+  /** Preserves an established count during same-backend restore and hydration. */
+  columnCountInitialized?: boolean;
   restoreStatus: PanelLayoutRestoreStatus;
   pendingFocusTabId: string | null;
   pendingPanelReveal?: PanelRevealRequest | null;
   recentlyClosed: RecentlyClosedTab[];
+  /** Optional for compatibility with transient states created before column-close history. */
+  recentlyClosedColumns?: Collection<RecentlyClosedPanelColumn, 'historyId'>;
   layoutHistory: LayoutSnapshot[];
   historyIndex: number;
   historyLoaded: boolean;
@@ -226,6 +285,7 @@ export type PanelLayoutSliceState = {
 // ============================================================================
 
 export const PANEL_LAYOUT_STORAGE_KEY_PREFIX = 'panel-layout-';
+export const PANEL_LAYOUT_PERSISTENCE_VERSION = 2;
 export const MAX_RECENTLY_CLOSED = 20;
 export const MAX_LAYOUT_HISTORY = 50;
 export const MAX_FOCUS_HISTORY = 100;

@@ -17,8 +17,8 @@
  * wiring supplies `{ daemonIsRemote, daemonHost }` from transport state.
  */
 
-export const DAEMON_LOCALHOST = 'daemon.localhost';
-export const CLIENT_LOCALHOST = 'client.localhost';
+const DAEMON_LOCALHOST = 'daemon.localhost';
+const CLIENT_LOCALHOST = 'client.localhost';
 
 /** Classification of a URL hostname for loopback rewriting. */
 export type LoopbackHostKind = 'daemon-alias' | 'client-alias' | 'bare-loopback' | 'other';

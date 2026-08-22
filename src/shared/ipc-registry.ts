@@ -484,6 +484,8 @@ export const IPC_CHANNELS = {
     RESOLVE_URL: 'browser:resolve-url',
     /** Focus a browser tab (bring to front) - main->renderer event */
     FOCUS_TAB: 'browser:focus-tab',
+    /** Reveal a hidden agent-owned tab into a panel (monorepo#3045) - main->renderer event */
+    SHOW_TAB: 'browser:show-tab',
     /** Request browser tab list from renderer (main->renderer event) */
     LIST_TABS_REQUEST: 'browser:list-tabs-request',
     /** Response with browser tab list (renderer->main) */
@@ -496,6 +498,8 @@ export const IPC_CHANNELS = {
     TAB_NAVIGATED: 'browser:tab-navigated',
     /** A tab's owner agent changed (claim/agent open) - main->renderer event */
     TAB_OWNER_CHANGED: 'browser:tab-owner-changed',
+    /** Clear main's registrations for a deleted agent's owned tabs (renderer->main) */
+    CLEAR_AGENT_TABS: 'browser:clear-agent-tabs',
   },
 
   // File Tracking
@@ -1043,6 +1047,8 @@ export const EVENT_CHANNELS = [
   'menu:reset-zoom',
   // Browser tab focus request from main process (CDP agent wants to focus a tab)
   'browser:focus-tab',
+  // Reveal a hidden agent-owned browser tab into a panel (monorepo#3045)
+  'browser:show-tab',
   // Browser tab list request from main process (CDP agent wants to list all browser tabs)
   'browser:list-tabs-request',
   // Browser tab open request from main process (agent wants to open a browser tab)
@@ -1109,7 +1115,7 @@ export type ElectronEventName = (typeof EVENT_CHANNELS)[number];
 export type DynamicElectronEventName = `${(typeof DYNAMIC_CHANNEL_PATTERNS)[number]}${string}`;
 
 // Helper function to get all static channels
-export function getAllChannels(): string[] {
+function getAllChannels(): string[] {
   const channels: string[] = [];
 
   function extractChannels(obj: any) {

@@ -24,7 +24,7 @@ import {
 const logger = new Logger('HardwareConsoleClearLighting');
 
 /** Renderer-side send budget; well under main's 750 ms overall ack timeout. */
-export const DEFAULT_CLEAR_LIGHTING_TIMEOUT_MS = 500;
+const DEFAULT_CLEAR_LIGHTING_TIMEOUT_MS = 500;
 
 const OFF_KEYS: readonly AgentKeyLedState[] = Array.from(
   { length: AGENT_KEY_LED_COUNT },

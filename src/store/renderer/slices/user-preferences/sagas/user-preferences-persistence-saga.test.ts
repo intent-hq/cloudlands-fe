@@ -37,8 +37,6 @@ import {
   setHasCompletedProviderSetup,
   setLanguagePreference,
   setNoteFontStyle,
-  setPanelOpenMode,
-  setPanelStackDirection,
   setShowArchived,
   setShowReasoningBlocks,
   setSpellcheckEnabled,
@@ -48,8 +46,6 @@ import {
   toggleShowArchived,
   toggleShowReasoningBlocks,
   toggleSpellcheck,
-  togglePanelOpenMode,
-  togglePanelStackDirection,
 } from '../user-preferences-slice';
 import {
   hydrateUserPreferencesWorker,
@@ -149,8 +145,6 @@ describe('userPreferencesPersistenceSaga', () => {
       activityLogPresets: [preset],
       'language-preference': 'de',
       'github-links:defaultAction': 'copy-link',
-      'panel-layout:openMode': 'pin',
-      'panel-layout:stackDirection': 'left',
     };
     mocks.getJSON.mockImplementation((key: string) => stored[key]);
     const dispatch = vi.fn();
@@ -169,8 +163,6 @@ describe('userPreferencesPersistenceSaga', () => {
       [hydrateActivityLogPresets([preset])],
       [setLanguagePreference('de')],
       [setGithubLinkDefaultAction('copy-link')],
-      [setPanelOpenMode('pin')],
-      [setPanelStackDirection('left')],
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([]);
   });
@@ -204,8 +196,6 @@ describe('userPreferencesPersistenceSaga', () => {
         activityLogPresets: [preset],
         languagePreference: 'de',
         githubLinkDefaultAction: 'start-workspace',
-        panelOpenMode: 'pin',
-        panelStackDirection: 'left',
       },
     };
     const channel = stdChannel();
@@ -236,10 +226,6 @@ describe('userPreferencesPersistenceSaga', () => {
       deleteActivityLogPreset(0),
       setLanguagePreference('de'),
       setGithubLinkDefaultAction('start-workspace'),
-      setPanelOpenMode('pin'),
-      togglePanelOpenMode(),
-      setPanelStackDirection('left'),
-      togglePanelStackDirection(),
     ];
     for (const action of actions) {
       channel.put(action);
@@ -265,10 +251,6 @@ describe('userPreferencesPersistenceSaga', () => {
       ['activityLogPresets', [preset]],
       ['language-preference', 'de'],
       ['github-links:defaultAction', 'start-workspace'],
-      ['panel-layout:openMode', 'pin'],
-      ['panel-layout:openMode', 'pin'],
-      ['panel-layout:stackDirection', 'left'],
-      ['panel-layout:stackDirection', 'left'],
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([['de']]);
     expect(vi.mocked(window.electronAPI.invoke).mock.calls).toEqual([

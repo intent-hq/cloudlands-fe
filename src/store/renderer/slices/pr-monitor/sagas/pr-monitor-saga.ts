@@ -14,6 +14,7 @@ import {
 } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
+import { markWorkspaceSeed } from '../../../utils/switch-timing';
 import {
   cancelPrMonitorRequested,
   flushPrMonitorRequested,
@@ -70,6 +71,7 @@ function* reconcilePrMonitorSubscriptions(
 
   if (!activeWorkspaceId || active.has(activeWorkspaceId)) return;
   try {
+    markWorkspaceSeed(activeWorkspaceId, 'prSeedStarted');
     const channel = createMonitorChannel(activeWorkspaceId);
     const task = yield* spawn(forwardMonitorUpdates, activeWorkspaceId, channel);
     active.set(activeWorkspaceId, { channel, task });
@@ -82,10 +84,18 @@ function* reconcilePrMonitorSubscriptions(
 }
 
 function* watchActiveWorkspace(active: Map<string, SubscriptionEntry>): SagaGenerator<void> {
+  let lastChangeAt = 0;
   yield* takeLatestFromSelector(
     selectCurrentWorkspaceTabId,
     function* ({ payload }: SelectorChannelPayload<string | null>): SagaGenerator<void> {
-      yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
+      // Leading edge is immediate: only a change arriving within the window
+      // of the previous one is trailing-debounced (takeLatest cancels the
+      // superseded run), so rapid tab flapping still coalesces.
+      const sinceLastChange = Date.now() - lastChangeAt;
+      lastChangeAt = Date.now();
+      if (sinceLastChange < SUBSCRIPTION_RECONCILIATION_DELAY_MS) {
+        yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
+      }
       yield* call(reconcilePrMonitorSubscriptions, active, payload);
     },
   );

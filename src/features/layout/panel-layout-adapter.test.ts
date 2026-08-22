@@ -33,12 +33,12 @@ describe('PanelLayoutAdapter', () => {
     mocks.panels = {};
   });
 
-  it('routes untargeted content through the global panel mode', () => {
+  it('routes untargeted content to the rightmost configured column', () => {
     new PanelLayoutAdapter('ws-1').openTab(tab);
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'panelLayout/openTabWithPanelModeRequested',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: expect.objectContaining({ wsId: 'ws-1', tab }),
       }),
     );
@@ -55,21 +55,22 @@ describe('PanelLayoutAdapter', () => {
     );
   });
 
-  it('routes browser content through the global panel mode', () => {
+  it('routes browser content through canonical adjacent placement', () => {
     new PanelLayoutAdapter('ws-1').openBrowserPanel('https://example.com');
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'panelLayout/openTabWithPanelModeRequested',
+        type: 'panelLayout/openTabInAdjacentOrSplit',
         payload: expect.objectContaining({
           wsId: 'ws-1',
+          sourcePanelId: undefined,
           tab: expect.objectContaining({ type: 'browser', browserUrl: 'https://example.com' }),
         }),
       }),
     );
   });
 
-  it('opens untargeted content in the focused empty panel', () => {
+  it('routes untargeted content right even when the focused panel is empty', () => {
     mocks.focusedPanelId = 'working';
     mocks.panels = { working: { id: 'working', tabs: [], activeTabId: null } };
 
@@ -77,21 +78,87 @@ describe('PanelLayoutAdapter', () => {
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'panelLayout/openTab',
-        payload: expect.objectContaining({ panelId: 'working', tab }),
+        type: 'panelLayout/openTabInRightmostColumnRequested',
+        payload: expect.objectContaining({ wsId: 'ws-1', tab }),
       }),
     );
   });
 
-  it('opens adjacent content in its empty source panel', () => {
+  it('routes an empty source through canonical adjacent placement', () => {
     mocks.panels = { working: { id: 'working', tabs: [], activeTabId: null } };
 
     new PanelLayoutAdapter('ws-1').openTabInAdjacentOrSplit(tab, 'working');
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'panelLayout/openTab',
-        payload: expect.objectContaining({ panelId: 'working', tab }),
+        type: 'panelLayout/openTabInAdjacentOrSplit',
+        payload: expect.objectContaining({ wsId: 'ws-1', sourcePanelId: 'working', tab }),
+      }),
+    );
+  });
+
+  it('routes a populated source through canonical adjacent placement', () => {
+    mocks.panels = {
+      working: { id: 'working', tabs: [{ id: 'existing' }], activeTabId: 'existing' },
+    };
+
+    new PanelLayoutAdapter('ws-1').openTabInAdjacentOrSplit(tab, 'working');
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panelLayout/openTabInAdjacentOrSplit',
+        payload: expect.objectContaining({ wsId: 'ws-1', sourcePanelId: 'working', tab }),
+      }),
+    );
+  });
+
+  it('preserves all adjacent placement options', () => {
+    new PanelLayoutAdapter('ws-1').openTabInAdjacentOrSplit(tab, 'working', {
+      animated: true,
+      force: true,
+      allowDuplicate: true,
+    });
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panelLayout/openTabInAdjacentOrSplit',
+        payload: expect.objectContaining({
+          wsId: 'ws-1',
+          sourcePanelId: 'working',
+          tab,
+          animated: true,
+          force: true,
+          allowDuplicate: true,
+        }),
+      }),
+    );
+  });
+
+  it('routes a browser caller from a populated source through canonical adjacent placement', () => {
+    mocks.panels = {
+      working: { id: 'working', tabs: [{ id: 'existing' }], activeTabId: 'existing' },
+    };
+
+    new PanelLayoutAdapter('ws-1').openBrowserPanel(
+      'https://example.com',
+      'context-1',
+      'working',
+      'http://daemon.localhost:5173',
+    );
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panelLayout/openTabInAdjacentOrSplit',
+        payload: expect.objectContaining({
+          wsId: 'ws-1',
+          sourcePanelId: 'working',
+          tab: expect.objectContaining({
+            type: 'browser',
+            browserUrl: 'https://example.com',
+            browserRequestedUrl: 'http://daemon.localhost:5173',
+            contextItemId: 'context-1',
+          }),
+        }),
       }),
     );
   });

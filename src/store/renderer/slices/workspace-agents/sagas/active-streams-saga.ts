@@ -4,7 +4,7 @@ import { call, put, take } from 'typed-redux-saga';
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
 import { bumpActiveStreamsVersion } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
-export function createActiveStreamsChannel(): EventChannel<boolean> {
+function createActiveStreamsChannel(): EventChannel<boolean> {
   return eventChannel<boolean>(
     (emit) => activeStreamsTracker.subscribe(() => emit(true)),
     buffers.sliding<boolean>(1),

@@ -2,6 +2,8 @@ import { Store } from '@augmentcode/themis/svelte-store';
 import type { StoreMiddleware, StoreStateFromReducers } from '@augmentcode/themis/types';
 import { readable, type Readable } from 'svelte/store';
 
+import { safeLocalStorage } from '$lib/utils/safe-storage';
+import { REDUX_DEBUG_LS_KEY } from './constants';
 import { middleware } from './middleware';
 import { reducers } from './reducer';
 
@@ -11,6 +13,11 @@ type RendererBoundState = ReturnType<RendererBaseStore['getStoreStateSnapshot']>
 
 function isTestEnvironment(): boolean {
   return typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
+}
+
+function isReduxActionLoggingEnabled(): boolean {
+  const { value, hadError } = safeLocalStorage.getItemWithStatus(REDUX_DEBUG_LS_KEY);
+  return !hadError && value === 'true';
 }
 
 class RendererStore extends Store<RendererStateMap, typeof reducers> {
@@ -55,4 +62,6 @@ class RendererStore extends Store<RendererStateMap, typeof reducers> {
   }
 }
 
-export const store = new RendererStore(reducers, middleware as unknown as StoreMiddleware[]);
+export const store = new RendererStore(reducers, middleware as unknown as StoreMiddleware[], {
+  logReduxActions: isReduxActionLoggingEnabled(),
+});

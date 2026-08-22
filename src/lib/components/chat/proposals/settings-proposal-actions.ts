@@ -584,7 +584,7 @@ export async function applySettingsProposalWork(
   };
 }
 
-export async function undoSettingsProposalChanges(
+async function undoSettingsProposalChanges(
   reverseChanges: SettingsProposalReverseChange[],
 ): Promise<void> {
   await applySettingsTransaction(reverseChanges, m.chat_settingsProposalActions_undoFailed_label());

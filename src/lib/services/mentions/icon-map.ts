@@ -3,7 +3,7 @@
  * These names are used to map to Font Awesome icons in the UI components
  */
 
-export const mentionIconMap = {
+const mentionIconMap = {
   // File types
   file: 'file',
   'file-ts': 'file-code',
@@ -197,20 +197,4 @@ export function getIconForType(type: string, subtype?: string): IconName {
   }
 
   return mentionIconMap.default;
-}
-
-export function getIconForFileExtension(extension: string): IconName {
-  const key = `file-${extension.toLowerCase()}` as keyof typeof mentionIconMap;
-  if (key in mentionIconMap) {
-    return mentionIconMap[key];
-  }
-  return mentionIconMap['file-default'];
-}
-
-export function getIconForFolderName(name: string): IconName {
-  const key = `folder-${name.toLowerCase()}` as keyof typeof mentionIconMap;
-  if (key in mentionIconMap) {
-    return mentionIconMap[key];
-  }
-  return mentionIconMap.folder;
 }

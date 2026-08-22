@@ -40,8 +40,8 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
     const { container } = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
-    const label = container.querySelector('[data-testid="streaming-status-thinking"]')!;
-    expect(label.className).toContain(CHAT_OPERATIONAL_SUMMARY_CLASS);
+    const summary = container.querySelector('[data-operational-summary]')!;
+    expect(summary.className).toContain(CHAT_OPERATIONAL_SUMMARY_CLASS);
   });
 
   it('uses body typography on the label (type-body)', () => {
@@ -52,14 +52,14 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
     expectClasses(row, 'type-body');
   });
 
-  it('uses muted-foreground color on row and label', () => {
+  it('uses muted row text with a foreground thinking label', () => {
     const { container } = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
     const row = container.firstElementChild!;
     const label = container.querySelector('[data-testid="streaming-status-thinking"]')!;
     expectClasses(row, 'text-muted-foreground');
-    expectClasses(label, 'text-muted-foreground');
+    expectClasses(label, 'text-foreground');
   });
 
   it('shows 3.5px spinner squares in the icon slot', () => {

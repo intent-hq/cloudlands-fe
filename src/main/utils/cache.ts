@@ -17,7 +17,7 @@ export interface CacheOptions {
   maxSize?: number;
 }
 
-export interface CacheSetOptions {
+interface CacheSetOptions {
   /** Per-entry TTL override, in ms. Overrides the cache-level `ttlMs`. */
   ttlMs?: number;
 }
@@ -164,4 +164,3 @@ export function clearAllCaches(): void {
     cache.clear();
   }
 }
-

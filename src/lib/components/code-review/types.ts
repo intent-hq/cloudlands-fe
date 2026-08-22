@@ -10,9 +10,9 @@ export type ReviewStatus = 'idle' | 'running' | 'complete' | 'error' | 'stale';
 
 export type ReviewSeverity = 'critical' | 'important' | 'minor';
 
-export type ReviewCategory = 'bug' | 'security' | 'api' | 'documentation' | 'other';
+type ReviewCategory = 'bug' | 'security' | 'api' | 'documentation' | 'other';
 
-export interface ReviewLocation {
+interface ReviewLocation {
   file: string;
   startLine: number;
   endLine?: number;
@@ -32,7 +32,7 @@ export interface ReviewComment {
   pinned?: boolean;
 }
 
-export interface ReviewSnapshot {
+interface ReviewSnapshot {
   stagedFiles: string[];
   commitHashes?: string[];
   baseRef?: string;
@@ -55,80 +55,6 @@ export interface CodeReview {
   duration?: number;
   agentId?: string;
 }
-
-/**
- * Severity display configuration
- */
-export const SEVERITY_CONFIG: Record<
-  ReviewSeverity,
-  {
-    label: string;
-    color: string;
-    bgColor: string;
-    borderColor: string;
-    icon: string;
-  }
-> = {
-  critical: {
-    get label() {
-      return m.codeReview_types_severityCritical_label();
-    },
-    color: 'text-red-600 dark:text-red-400',
-    bgColor: 'bg-red-50 dark:bg-red-950/30',
-    borderColor: 'border-red-200 dark:border-red-800',
-    icon: '🔴',
-  },
-  important: {
-    get label() {
-      return m.codeReview_types_severityImportant_label();
-    },
-    color: 'text-amber-600 dark:text-amber-400',
-    bgColor: 'bg-amber-50 dark:bg-amber-950/30',
-    borderColor: 'border-amber-200 dark:border-amber-800',
-    icon: '🟡',
-  },
-  minor: {
-    get label() {
-      return m.codeReview_types_severityMinor_label();
-    },
-    color: 'text-blue-600 dark:text-blue-400',
-    bgColor: 'bg-blue-50 dark:bg-blue-950/30',
-    borderColor: 'border-blue-200 dark:border-blue-800',
-    icon: '🔵',
-  },
-};
-
-/**
- * Category display labels
- */
-export const CATEGORY_LABELS: Record<ReviewCategory, string> = {
-  get bug() {
-    return m.codeReview_types_categoryBug_label();
-  },
-  get security() {
-    return m.codeReview_types_categorySecurity_label();
-  },
-  get api() {
-    return m.codeReview_types_categoryApi_label();
-  },
-  get documentation() {
-    return m.codeReview_types_categoryDocumentation_label();
-  },
-  get other() {
-    return m.codeReview_types_categoryOther_label();
-  },
-};
-
-/**
- * Category icons (FontAwesome icon names)
- */
-export const CATEGORY_ICONS: Record<ReviewCategory, string> = {
-  bug: 'faBug',
-  security: 'faShield',
-  api: 'faPlug',
-  documentation: 'faFileLines',
-  other: 'faCircle',
-};
 
 /**
  * JSON format from the new prompt output
@@ -195,7 +121,7 @@ function tryParseJsonReview(text: string): JsonReviewOutput | null {
  * 2. Pipe-delimited: **Critical** | Security | src/file.ts:42
  * 3. Inline (legacy): - **[Severity]** File:line - Brief description
  */
-export function parseReviewComment(text: string): ReviewComment | null {
+function parseReviewComment(text: string): ReviewComment | null {
   // Try Format 1: Pipe-delimited format
   // **Critical** | Security | src/file.ts:42
   // Title of the issue
@@ -285,10 +211,10 @@ export function parseAllReviewComments(reviewText: string): ReviewComment[] {
       description: issue.description || '',
       location: issue.file
         ? {
-          file: issue.file,
-          startLine: issue.line,
-          endLine: issue.endLine,
-        }
+            file: issue.file,
+            startLine: issue.line,
+            endLine: issue.endLine,
+          }
         : undefined,
       confidence: 0.9, // Higher confidence for structured JSON output
     }));

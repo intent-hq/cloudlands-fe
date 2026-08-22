@@ -4,7 +4,6 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  deriveAgentPreviewLine,
   getLastMeaningfulLine,
   getLastSentence,
   extractTextFromBlocks,
@@ -144,105 +143,4 @@ describe('text-utils', () => {
     });
   });
 
-  describe('deriveAgentPreviewLine', () => {
-    it('returns null when no source has text', () => {
-      expect(deriveAgentPreviewLine({})).toBeNull();
-      expect(deriveAgentPreviewLine({ lastAgentResponse: '', lastUserMessage: '' })).toBeNull();
-    });
-
-    it('shows the live response line while responding', () => {
-      expect(
-        deriveAgentPreviewLine({
-          isResponding: true,
-          lastAgentResponse: 'Running tests\nvitest: 12 passed',
-          lastUserMessage: 'Please run the tests',
-          lastMessageRole: 'assistant',
-        }),
-      ).toBe('vitest: 12 passed');
-    });
-
-    it('newest user message wins when lastMessageRole is user and no live line', () => {
-      expect(
-        deriveAgentPreviewLine({
-          isResponding: false,
-          lastAgentResponse: 'Old summary',
-          lastUserMessage: '[Currently viewing: a.ts] Fix the panel\nsecond line',
-          lastMessageRole: 'user',
-        }),
-      ).toBe('Fix the panel');
-    });
-
-    it('user role wins pre-first-token; assistant role hands back to the live line', () => {
-      // While lastMessageRole is still "user" the in-flight turn has no
-      // derivable streamed text yet (the daemon overlays "assistant" once it
-      // does) — lastAgentResponse is the PREVIOUS turn's text, so the user
-      // message previews even mid-turn.
-      expect(
-        deriveAgentPreviewLine({
-          isResponding: true,
-          lastAgentResponse: 'Previous turn summary',
-          lastUserMessage: 'Fix the panel',
-          lastMessageRole: 'user',
-        }),
-      ).toBe('Fix the panel');
-      expect(
-        deriveAgentPreviewLine({
-          isResponding: true,
-          lastAgentResponse: 'Editing hud-selectors.ts',
-          lastUserMessage: 'Fix the panel',
-          lastMessageRole: 'assistant',
-        }),
-      ).toBe('Editing hud-selectors.ts');
-    });
-
-    it('digest and completion report outrank the persisted response', () => {
-      expect(
-        deriveAgentPreviewLine({
-          digest: 'Wrapping up the selector fix',
-          lastAgentResponse: 'A long old response',
-        }),
-      ).toBe('Wrapping up the selector fix');
-      expect(
-        deriveAgentPreviewLine({
-          completionReport: 'Fixed the bucket overshoot; 65 tests pass.',
-          lastAgentResponse: 'A long old response',
-        }),
-      ).toBe('Fixed the bucket overshoot; 65 tests pass.');
-    });
-
-    it('falls back to the persisted response line, then the user message', () => {
-      expect(
-        deriveAgentPreviewLine({
-          lastAgentResponse: 'First line\nLast meaningful line\n```\n',
-          lastMessageRole: 'assistant',
-        }),
-      ).toBe('Last meaningful line');
-      expect(deriveAgentPreviewLine({ lastUserMessage: 'only user text' })).toBe('only user text');
-    });
-
-    it('surfaces the persisted lastToolUse name when no response text exists (tool-only stretch)', () => {
-      expect(
-        deriveAgentPreviewLine({
-          lastMessageRole: 'assistant',
-          lastToolUse: { name: 'str-replace-editor' },
-        }),
-      ).toBe('str-replace-editor');
-      // Response text keeps precedence over the tool preview.
-      expect(
-        deriveAgentPreviewLine({
-          lastMessageRole: 'assistant',
-          lastAgentResponse: 'Some response',
-          lastToolUse: { name: 'str-replace-editor' },
-        }),
-      ).toBe('Some response');
-      // The tool preview outranks only the final user-message fallback.
-      expect(
-        deriveAgentPreviewLine({
-          lastMessageRole: 'assistant',
-          lastUserMessage: 'user text',
-          lastToolUse: { name: 'view' },
-        }),
-      ).toBe('view');
-    });
-  });
 });

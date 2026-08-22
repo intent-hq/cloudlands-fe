@@ -40,6 +40,7 @@ const mocks = vi.hoisted(() => {
     lastUsedSelect: vi.fn(),
     getRemoteUrl: vi.fn<(repoPath: string) => Promise<unknown>>(),
     workspaceCreate: vi.fn<(params: Record<string, unknown>) => Promise<unknown>>(),
+    gitPull: vi.fn(async () => ({ success: true })),
     // Default implementation survives vi.clearAllMocks(); model-pick tests
     // override per-call behavior with mockImplementation.
     resolveModel: vi.fn(async (_state: unknown, _userSelectedModel?: string) => ({
@@ -51,6 +52,9 @@ const mocks = vi.hoisted(() => {
     // Mutable workspace-initializer state for the model-pick tests
     initializerHydrated: false,
     persistedOnboardingFormState: null as Record<string, unknown> | null,
+    // Store-visible active provider for the submit-time default commit
+    // (selectActiveProviderId reads state.providerSettings.activeProviderId).
+    activeProviderId: '',
   };
 });
 
@@ -60,7 +64,10 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } = await import(
     '$store/renderer/utils/test-helpers/store-mock'
   );
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
+  return createAppStoreMockModule({
+    state: () => ({ providerSettings: { activeProviderId: mocks.activeProviderId } }),
+    dispatch: mocks.dispatch,
+  });
 });
 
 vi.mock('$store/renderer/slices/onboarding/onboarding-selectors', () => ({
@@ -108,7 +115,7 @@ vi.mock('$shared/generated/ipc-client', () => ({
 }));
 
 vi.mock('$lib/client', () => ({
-  appClient: { git: { pull: vi.fn(async () => ({ success: true })) } },
+  appClient: { git: { pull: mocks.gitPull } },
 }));
 
 vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
@@ -272,6 +279,53 @@ describe('onboarding repo-config setup script detection', () => {
     expect(textOf(result, 'repo-config-script')).toBe('echo repo-config');
     // Unedited repo-config default applies silently — no disclosure row.
     expect(textOf(result, 'hide-setup-script-control')).toBe('true');
+  });
+
+  it('does not pull a behind source checkout for isolated creation', async () => {
+    mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    renderPage();
+    selectLocalRepo('/repo/a');
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          setBranchBehind: (behind: number) => void;
+          setInputValue: (value: string) => void;
+          onSubmit: () => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.setBranchBehind(2);
+    captured.setInputValue('build the thing');
+    captured.onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    expect(mocks.gitPull).not.toHaveBeenCalled();
+  });
+
+  it('pulls a behind source checkout before direct creation', async () => {
+    mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    renderPage();
+    selectLocalRepo('/repo/a');
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          setSkipIsolation: (value: boolean) => void;
+          setBranchBehind: (behind: number) => void;
+          setInputValue: (value: string) => void;
+          onSubmit: () => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.setSkipIsolation(true);
+    captured.setBranchBehind(2);
+    captured.setInputValue('build the thing');
+    captured.onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    expect(mocks.gitPull).toHaveBeenCalledWith('/repo/a', 'main');
+    expect(mocks.gitPull.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.workspaceCreate.mock.invocationCallOrder[0],
+    );
   });
 
   it('falls back to the last-used script when the repo has no config', async () => {
@@ -900,6 +954,7 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
     }));
     mocks.initializerHydrated = false;
     mocks.persistedOnboardingFormState = null;
+    mocks.activeProviderId = '';
   });
 
   afterEach(() => {
@@ -907,6 +962,7 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
     sessionStorage.clear();
     mocks.initializerHydrated = false;
     mocks.persistedOnboardingFormState = null;
+    mocks.activeProviderId = '';
   });
 
   const captured = () =>
@@ -916,6 +972,10 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
           onModelChange: (model: string) => void;
           onSubmit: () => void;
           setInputValue: (value: string) => void;
+          setEffectiveDefaultModel: (value: {
+            model: string | undefined;
+            provider: string;
+          }) => void;
         };
       }
     ).__mockOnboardingPromptStep;
@@ -1036,5 +1096,136 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
     };
     expect(createRequest.initialAgent.model).toBe('model');
     expect(createRequest.initialAgent.provider).toBe('auggie');
+  });
+
+  const okCreateResult = {
+    ok: true,
+    data: {
+      workspace: {
+        id: 'ws-1',
+        path: '/repo/a',
+        repositoryPath: '/repo/a',
+        worktreePath: '/wt/a',
+      },
+      initialAgent: { id: 'agent-1' },
+    },
+  };
+
+  it('commits the default (never-touched) selection at submit: provider + compound model (monorepo#3044)', async () => {
+    mocks.resolveModel.mockImplementation(async () => ({
+      provider: 'auggie',
+      model: undefined,
+      behaviorPrompt: undefined,
+      specialistId: 'spec-writer',
+    }));
+    mocks.workspaceCreate.mockResolvedValue(okCreateResult);
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().setEffectiveDefaultModel({ model: 'opus4.7', provider: 'auggie' });
+    captured().setInputValue('Build the thing');
+    captured().onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    const actions = dispatchedActions();
+    expect(actions.find((a) => a.type === 'providerSettings/setProviderEnabled')?.payload).toEqual(
+      [{ providerId: 'auggie', enabled: true }],
+    );
+    expect(actions.find((a) => a.type === 'providerSettings/setActiveProvider')?.payload).toEqual([
+      'auggie',
+    ]);
+    // Bare preview id gets the resolved provider's compound prefix.
+    expect(actions.find((a) => a.type === 'model/selectModel')?.payload).toEqual([
+      'auggie:opus4.7',
+    ]);
+  });
+
+  it('commits only the provider when no default-model preview resolved ("Provider default")', async () => {
+    mocks.resolveModel.mockImplementation(async () => ({
+      provider: 'auggie',
+      model: undefined,
+      behaviorPrompt: undefined,
+      specialistId: 'spec-writer',
+    }));
+    mocks.workspaceCreate.mockResolvedValue(okCreateResult);
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().setEffectiveDefaultModel({ model: undefined, provider: 'auggie' });
+    captured().setInputValue('Build the thing');
+    captured().onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    const actions = dispatchedActions();
+    expect(actions.find((a) => a.type === 'providerSettings/setActiveProvider')?.payload).toEqual([
+      'auggie',
+    ]);
+    expect(actions.find((a) => a.type === 'model/selectModel')).toBeUndefined();
+  });
+
+  it('does not trust a preview resolved under a different provider context', async () => {
+    mocks.resolveModel.mockImplementation(async () => ({
+      provider: 'auggie',
+      model: undefined,
+      behaviorPrompt: undefined,
+      specialistId: 'spec-writer',
+    }));
+    mocks.workspaceCreate.mockResolvedValue(okCreateResult);
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().setEffectiveDefaultModel({ model: 'gpt-5.3-codex', provider: 'codex' });
+    captured().setInputValue('Build the thing');
+    captured().onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    const actions = dispatchedActions();
+    expect(actions.find((a) => a.type === 'providerSettings/setActiveProvider')?.payload).toEqual([
+      'auggie',
+    ]);
+    expect(actions.find((a) => a.type === 'model/selectModel')).toBeUndefined();
+  });
+
+  it('does not re-commit the provider at submit after an explicit pick (no double-dispatch)', async () => {
+    const PICKED = 'pi:anthropic/claude-opus-4.7';
+    mocks.resolveModel.mockImplementation(async (_state, userSelectedModel) => ({
+      provider: userSelectedModel ? 'pi' : 'auggie',
+      model: userSelectedModel,
+      behaviorPrompt: undefined,
+      specialistId: 'spec-writer',
+    }));
+    mocks.workspaceCreate.mockResolvedValue(okCreateResult);
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().onModelChange(PICKED);
+    // The pick-time dispatch already persisted — the submit path must not
+    // dispatch a second commit for the explicit pick.
+    mocks.dispatch.mockClear();
+    captured().setInputValue('Build the thing');
+    captured().onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    const actions = dispatchedActions();
+    expect(actions.find((a) => a.type === 'model/selectModel')).toBeUndefined();
+    expect(actions.find((a) => a.type === 'providerSettings/setActiveProvider')).toBeUndefined();
+  });
+
+  it('commits nothing when create is aborted by a resolution failure', async () => {
+    mocks.resolveModel.mockImplementation(async () => {
+      throw new Error('provider unavailable');
+    });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().setEffectiveDefaultModel({ model: 'opus4.7', provider: 'auggie' });
+    captured().setInputValue('Build the thing');
+    captured().onSubmit();
+
+    await waitFor(() => expect(mocks.resolveModel).toHaveBeenCalledTimes(1));
+    expect(mocks.workspaceCreate).not.toHaveBeenCalled();
+    const actions = dispatchedActions();
+    expect(actions.find((a) => a.type === 'model/selectModel')).toBeUndefined();
+    expect(actions.find((a) => a.type === 'providerSettings/setActiveProvider')).toBeUndefined();
   });
 });

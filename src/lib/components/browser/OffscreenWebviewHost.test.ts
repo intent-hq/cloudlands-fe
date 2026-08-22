@@ -123,6 +123,69 @@ describe('OffscreenWebviewHost', () => {
     );
   });
 
+  // Regression (monorepo#3170): reparenting the <webview> recreates the
+  // guest webContents and fires dom-ready again — the new guest must
+  // re-register, while same-guest navigations must not stack registrations.
+  it('re-registers a new guest webContents but not the same guest', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
+    const webview = container.querySelector('[data-offscreen-webview-tab="tab-bg"]') as HTMLElement & {
+      getWebContentsId?: () => number;
+    };
+    const registerCalls = () =>
+      invokeMock.mock.calls.filter(([channel]) => channel === 'browser:register-tab');
+
+    webview.getWebContentsId = () => 77;
+    webview.dispatchEvent(new Event('dom-ready'));
+    await waitFor(() => expect(registerCalls()).toHaveLength(1));
+
+    // Same guest navigates: dom-ready fires again, no redundant registration.
+    webview.dispatchEvent(new Event('dom-ready'));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(registerCalls()).toHaveLength(1);
+
+    // Guest recreated (webview reparented): new id must re-register.
+    webview.getWebContentsId = () => 78;
+    webview.dispatchEvent(new Event('dom-ready'));
+    await waitFor(() =>
+      expect(registerCalls()).toEqual([
+        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77 }],
+        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 78 }],
+      ]),
+    );
+  });
+
+  it('retries registration on a later dom-ready after the IPC rejects', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
+    const webview = container.querySelector('[data-offscreen-webview-tab="tab-bg"]') as HTMLElement & {
+      getWebContentsId?: () => number;
+    };
+    const registerCalls = () =>
+      invokeMock.mock.calls.filter(([channel]) => channel === 'browser:register-tab');
+
+    invokeMock.mockRejectedValueOnce(new Error('main process not ready'));
+    webview.getWebContentsId = () => 77;
+    webview.dispatchEvent(new Event('dom-ready'));
+    await waitFor(() => expect(registerCalls()).toHaveLength(1));
+
+    // The failed registration reset the gate: the same guest's next
+    // dom-ready retries instead of staying unregistered.
+    webview.dispatchEvent(new Event('dom-ready'));
+    await waitFor(() =>
+      expect(registerCalls()).toEqual([
+        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77 }],
+        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77 }],
+      ]),
+    );
+  });
+
   it('syncs full and in-page navigation back into the persisted tab URL', async () => {
     layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
     const { container } = render(OffscreenWebviewHost, {
@@ -200,5 +263,58 @@ describe('OffscreenWebviewHost', () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(mountedTabIds(container)).toEqual([]);
+  });
+
+  // Regression (monorepo#2857 review): the mount URL is frozen, so an
+  // external browserUrl update to a hidden owned tab (e.g. an agent openTab
+  // replacing it) silently diverged — the live guest must navigate.
+  it('navigates a mounted hidden tab when its persisted browserUrl changes externally', async () => {
+    const hiddenLayout = (url: string) => ({
+      panels: {},
+      hiddenTabs: {
+        idField: 'id',
+        ids: ['tab-hidden'],
+        map: {
+          'tab-hidden': {
+            id: 'tab-hidden',
+            type: 'browser',
+            title: 'Hidden',
+            closable: true,
+            browserUrl: url,
+            ownerAgentId: 'agent-1',
+          },
+        },
+        refsCount: { 'tab-hidden': 1 },
+      },
+    });
+    layoutsStore.set({ 'ws-shown': hiddenLayout('https://example.test/start') });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set(['ws-shown']) },
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-hidden']));
+
+    const webview = container.querySelector(
+      '[data-offscreen-webview-tab="tab-hidden"]',
+    ) as HTMLElement & {
+      getWebContentsId?: () => number;
+      getURL?: () => string;
+      loadURL?: (url: string) => Promise<void>;
+    };
+    webview.getWebContentsId = () => 88;
+    webview.getURL = () => 'https://example.test/start';
+    const loadURL = vi.fn().mockResolvedValue(undefined);
+    webview.loadURL = loadURL;
+    webview.dispatchEvent(new Event('dom-ready'));
+
+    // Our own did-navigate echo (equal URL) must NOT reload the guest.
+    layoutsStore.set({ 'ws-shown': hiddenLayout('https://example.test/start') });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(loadURL).not.toHaveBeenCalled();
+
+    // An external replacement URL navigates the live guest without remount.
+    layoutsStore.set({ 'ws-shown': hiddenLayout('https://example.test/replaced') });
+    await waitFor(() => expect(loadURL).toHaveBeenCalledWith('https://example.test/replaced'));
+    // Still the same mounted element — frozen src, no remount.
+    expect(webview.getAttribute('src')).toBe('https://example.test/start');
   });
 });

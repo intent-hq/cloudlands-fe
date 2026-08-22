@@ -1,4 +1,4 @@
-export type DropdownReplacement = 'Menu' | 'Select' | 'Combobox';
+type DropdownReplacement = 'Menu' | 'Select' | 'Combobox';
 
 export interface DropdownCallerLedgerEntry {
   caller: string;

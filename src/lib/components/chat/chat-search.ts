@@ -1,6 +1,10 @@
 import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
-import { groupContentBlocks, parseSuggestedPrompts } from '$lib/utils/messageParser';
+import {
+  groupContentBlocks,
+  parseSuggestedPrompts,
+  parseSuggestedPromptsFromContentBlocks,
+} from '$lib/utils/messageParser';
 import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
 
 export interface ChatSearchMatch {
@@ -18,7 +22,10 @@ export function extractSearchableContent(message: AgentMessage): string {
     return parseSuggestedPrompts(getPresentedUserMessageText(message)).cleanedContent;
   }
 
-  const grouped = groupContentBlocks(blocks, !!message.isStreaming);
+  const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(blocks, {
+    isStreaming: !!message.isStreaming,
+  });
+  const grouped = groupContentBlocks(parsedPromptBlocks.contentBlocks, !!message.isStreaming);
   const lastIndex = grouped.length - 1;
   const parts: string[] = [];
   const pushText = (text: string) => parts.push(parseSuggestedPrompts(text).cleanedContent);

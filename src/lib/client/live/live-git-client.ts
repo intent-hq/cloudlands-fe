@@ -103,14 +103,22 @@ function normalizeGitStatus(raw: Record<string, unknown>): GitStatus {
   };
 }
 
-/** Concurrent readers for one workspace share one fresh wire snapshot. */
+/** Concurrent ordinary readers for one workspace share one fresh wire snapshot. */
 const statusReadsInFlight = new Map<string, Promise<GitStatus | null>>();
 
-function fetchStatus(workspaceId: string): Promise<GitStatus | null> {
-  const existing = statusReadsInFlight.get(workspaceId);
-  if (existing) return existing;
+function fetchStatus(
+  workspaceId: string,
+  options?: { forceRefresh?: boolean },
+): Promise<GitStatus | null> {
+  if (!options?.forceRefresh) {
+    const existing = statusReadsInFlight.get(workspaceId);
+    if (existing) return existing;
+  }
 
-  const request = backendRequest<unknown>("git.status", { workspaceId })
+  const request = backendRequest<unknown>("git.status", {
+    workspaceId,
+    ...(options?.forceRefresh ? { forceRefresh: true } : {}),
+  })
     .then((result) => {
       if (!result || typeof result !== "object") return null;
       return normalizeGitStatus(result as Record<string, unknown>);
@@ -471,8 +479,11 @@ function cleanExplicitPaths(
 }
 
 export class LiveGitClient implements GitClient {
-  async status(workspaceId: string): Promise<GitStatus | null> {
-    return fetchStatus(workspaceId);
+  async status(
+    workspaceId: string,
+    options?: { forceRefresh?: boolean },
+  ): Promise<GitStatus | null> {
+    return fetchStatus(workspaceId, options);
   }
 
   // `git.changes` mirrors the working-tree file list from `git.status`; the

@@ -37,7 +37,7 @@ describe('ChatMessageNavigator', () => {
     expect(buttons[0]).toBe(screen.getByTestId('chat-message-navigator-trigger'));
     expect(buttons[1]).toBe(screen.getByTestId('chat-scroll-to-bottom-button'));
     expect((buttons[1] as HTMLButtonElement).disabled).toBe(true);
-    expect(buttons[0].querySelector('[data-icon]')?.classList.contains('size-3!')).toBe(true);
+    expect(buttons[0].querySelector('[data-icon]')?.classList.contains('size-3.5!')).toBe(true);
     expect(buttons[1].querySelector('[data-icon]')?.classList.contains('size-4!')).toBe(true);
   });
 

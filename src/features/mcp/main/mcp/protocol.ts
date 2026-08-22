@@ -10,7 +10,7 @@ export type RequestId = string | number;
 /**
  * Core MCP message types
  */
-export interface MCPMessage {
+interface MCPMessage {
   jsonrpc: '2.0';
   id?: RequestId;
   method?: string;
@@ -36,7 +36,7 @@ export interface MCPNotification extends MCPMessage {
   params?: Record<string, any>;
 }
 
-export interface MCPError {
+interface MCPError {
   code: number;
   message: string;
   data?: any;
@@ -60,7 +60,7 @@ export interface ToolInputSchema {
   additionalProperties?: boolean;
 }
 
-export interface PropertySchema {
+interface PropertySchema {
   type: string;
   description?: string;
   default?: any;
@@ -111,109 +111,6 @@ export type ContentItem =
         _meta?: Record<string, any>;
       };
     };
-
-/**
- * Server capabilities
- */
-export interface ServerCapabilities {
-  tools?: ToolsCapability;
-  resources?: ResourcesCapability;
-  prompts?: PromptsCapability;
-  logging?: LoggingCapability;
-}
-
-export interface ToolsCapability {
-  listChanged?: boolean;
-}
-
-export interface ResourcesCapability {
-  listChanged?: boolean;
-}
-
-export interface PromptsCapability {
-  listChanged?: boolean;
-}
-
-export interface LoggingCapability {
-  level?: 'debug' | 'info' | 'warning' | 'error';
-}
-
-/**
- * Initialize request/response
- */
-export interface InitializeRequest extends MCPRequest {
-  method: 'initialize';
-  params: {
-    protocolVersion: string;
-    capabilities: Record<string, any>;
-    clientInfo: {
-      name: string;
-      version: string;
-    };
-  };
-}
-
-export interface InitializeResponse extends MCPResponse {
-  result: {
-    protocolVersion: string;
-    capabilities: ServerCapabilities;
-    serverInfo: {
-      name: string;
-      version: string;
-    };
-  };
-}
-
-/**
- * List tools request/response
- */
-export interface ListToolsRequest extends MCPRequest {
-  method: 'tools/list';
-  params?: {
-    cursor?: string;
-  };
-}
-
-export interface ListToolsResponse extends MCPResponse {
-  result: {
-    tools: Tool[];
-    nextCursor?: string;
-  };
-}
-
-/**
- * Call tool request/response
- */
-export interface CallToolRequest extends MCPRequest {
-  method: 'tools/call';
-  params: {
-    name: string;
-    arguments: Record<string, any>;
-  };
-}
-
-export interface CallToolResponse extends MCPResponse {
-  result: {
-    content: ContentItem[];
-    isError?: boolean;
-  };
-}
-
-/**
- * Helper functions
- */
-export function createRequest(
-  id: RequestId,
-  method: string,
-  params?: Record<string, any>,
-): MCPRequest {
-  return {
-    jsonrpc: '2.0',
-    id,
-    method,
-    params,
-  };
-}
 
 export function createResponse(id: RequestId, result: any): MCPResponse {
   return {

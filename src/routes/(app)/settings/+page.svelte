@@ -25,7 +25,6 @@
   import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
-  import PanelOpenModeSettings from '$lib/components/settings/PanelOpenModeSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import HardwareConsoleSettings from '$lib/components/settings/HardwareConsoleSettings.svelte';
   import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
@@ -612,18 +611,6 @@
                 class="px-6 py-5"
               >
                 <ColorThemeSettings bind:this={colorThemeSettingsRef} />
-              </section>
-            </div>
-          </div>
-
-          <!-- Panels -->
-          <div id="panels" class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_panels()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
-                <PanelOpenModeSettings />
               </section>
             </div>
           </div>

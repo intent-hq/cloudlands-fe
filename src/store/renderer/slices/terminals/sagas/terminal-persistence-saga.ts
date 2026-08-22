@@ -134,25 +134,25 @@ function* persistWorkspaceState(workspaceId: string): SagaGenerator<void> {
   yield* call(setLocalStorageJSON, WORKSPACE_STATE_STORAGE_KEY, states);
 }
 
-export function* hydrateTerminalHeightWorker(): SagaGenerator<void> {
+function* hydrateTerminalHeightWorker(): SagaGenerator<void> {
   const stored = yield* call(getLocalStorageItem, STORAGE_KEY);
   const parsed = stored ? Number.parseInt(stored, 10) : Number.NaN;
   yield* put(hydrateHeight(Number.isNaN(parsed) ? 50 : parsed));
 }
 
-export function* persistTerminalHeightWorker(): SagaGenerator<void> {
+function* persistTerminalHeightWorker(): SagaGenerator<void> {
   const height = yield* selectTerminalOverlayHeight.effect();
   yield* call(setLocalStorageItem, STORAGE_KEY, String(height));
 }
 
-export function* persistTerminalNameWorker(
+function* persistTerminalNameWorker(
   action: ReturnType<typeof renameTerminal>,
 ): SagaGenerator<void> {
   const [workspaceId, terminalId, name] = action.payload;
   yield* call(persistCustomName, workspaceId, terminalId, name.trim() || undefined);
 }
 
-export function* persistTerminalMetadataWorker(
+function* persistTerminalMetadataWorker(
   action: ReturnType<typeof saveTerminalMetadata>,
 ): SagaGenerator<void> {
   const [workspaceId, terminalId, title, createdAt] = action.payload;
@@ -176,7 +176,7 @@ export function* persistTerminalMetadataWorker(
   );
 }
 
-export function* removeTerminalPersistenceWorker(
+function* removeTerminalPersistenceWorker(
   action: ReturnType<typeof removeTerminal>,
 ): SagaGenerator<void> {
   const [workspaceId, terminalId] = action.payload;
@@ -194,13 +194,11 @@ export function* removeTerminalPersistenceWorker(
   yield* call(persistWorkspaceState, workspaceId);
 }
 
-export function* persistTerminalWorkspaceStateWorker(
-  action: WorkspaceStateAction,
-): SagaGenerator<void> {
+function* persistTerminalWorkspaceStateWorker(action: WorkspaceStateAction): SagaGenerator<void> {
   yield* call(persistWorkspaceState, action.payload[0]);
 }
 
-export function* hydrateAndPersistLoadedTerminalsWorker(
+function* hydrateAndPersistLoadedTerminalsWorker(
   action: ReturnType<typeof loadWorkspaceTerminals>,
 ): SagaGenerator<void> {
   if (internallyHydratedLoads.has(action)) {

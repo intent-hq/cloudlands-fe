@@ -269,7 +269,7 @@ describe('editorial conversation presentation contract', () => {
     expect(status).toContain(
       "import StreamingTypingIndicator from './StreamingTypingIndicator.svelte'",
     );
-    expect(indicator).toContain('--duration: 800ms');
+    expect(indicator).toContain('--duration: 960ms');
     expect(indicator).toContain('animation: legacy-spinner-wave');
   });
 

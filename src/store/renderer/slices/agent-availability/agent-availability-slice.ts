@@ -6,10 +6,7 @@
 
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import type {
-  AgentAvailabilityState,
-  ProviderStatus,
-} from './agent-availability-types';
+import type { AgentAvailabilityState, ProviderStatus } from './agent-availability-types';
 import type { NpxStatus } from '$shared/types/provider-availability';
 
 // ---------------------------------------------------------------------------
@@ -64,32 +61,30 @@ export const setAllProvidersLoading = createAction<[loadingMap: Record<string, b
 );
 
 /** Fetch user info for a provider (saga trigger). */
-export const fetchProviderUserInfoRequested = createAction<[providerId: string]>(
+const fetchProviderUserInfoRequested = createAction<[providerId: string]>(
   'agentAvailability/fetchProviderUserInfoRequested',
 );
 
-export const fetchProviderUserInfoSuccess = createAction<[providerId: string, status: ProviderStatus]>(
+const fetchProviderUserInfoSuccess = createAction<[providerId: string, status: ProviderStatus]>(
   'agentAvailability/fetchProviderUserInfoSuccess',
 );
 
-export const fetchProviderUserInfoComplete = createAction<[providerId: string]>(
+const fetchProviderUserInfoComplete = createAction<[providerId: string]>(
   'agentAvailability/fetchProviderUserInfoComplete',
 );
 
 /** Track a terminal that's installing a provider. */
-export const trackInstallTerminal = createAction<[terminalId: string]>(
+const trackInstallTerminal = createAction<[terminalId: string]>(
   'agentAvailability/trackInstallTerminal',
 );
 
 /** Remove a watched terminal (e.g. on exit). */
-export const removeWatchedTerminal = createAction<[terminalId: string]>(
+const removeWatchedTerminal = createAction<[terminalId: string]>(
   'agentAvailability/removeWatchedTerminal',
 );
 
 /** Ensure providers have been checked at least once (saga trigger). */
-export const ensureProvidersChecked = createAction(
-  'agentAvailability/ensureProvidersChecked',
-);
+export const ensureProvidersChecked = createAction('agentAvailability/ensureProvidersChecked');
 
 /** Set npx availability status from host.providerDiscovery response. */
 export const setNpxStatus = createAction<[npxStatus: NpxStatus | null]>(

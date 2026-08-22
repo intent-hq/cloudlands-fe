@@ -5,11 +5,8 @@
  * to prevent security issues and ensure data integrity.
  */
 
-import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
-import { isValidWorkspaceIdFormat, sanitizePath } from '../../main/utils/workspace-validation';
-
-const logger = new Logger('IPCValidation');
+import { sanitizePath } from '../../main/utils/workspace-validation';
 
 /**
  * Validate IPC parameters
@@ -21,41 +18,10 @@ export interface IPCValidationResult {
 }
 
 /**
- * Validate workspace ID parameter
- */
-export function validateIPCWorkspaceId(workspaceId: any): IPCValidationResult {
-  if (!workspaceId) {
-    return {
-      valid: false,
-      error: m.ipcValidation_workspaceIdRequired_error(),
-    };
-  }
-
-  if (typeof workspaceId !== 'string') {
-    return {
-      valid: false,
-      error: m.ipcValidation_workspaceIdMustBeString_error(),
-    };
-  }
-
-  if (!isValidWorkspaceIdFormat(workspaceId)) {
-    return {
-      valid: false,
-      error: m.ipcValidation_workspaceIdInvalidFormat_error(),
-    };
-  }
-
-  return {
-    valid: true,
-    sanitized: workspaceId,
-  };
-}
-
-/**
  * Validate file path parameter
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function validateIPCPath(path: any, basePath: string): IPCValidationResult {
+function validateIPCPath(path: any, basePath: string): IPCValidationResult {
   if (!path) {
     return {
       valid: false,
@@ -76,32 +42,6 @@ export function validateIPCPath(path: any, basePath: string): IPCValidationResul
       valid: false,
       error: m.ipcValidation_pathInvalid_error(),
     };
-  }
-
-  return {
-    valid: true,
-    sanitized,
-  };
-}
-
-/**
- * Validate array of paths
- */
-export function validateIPCPaths(paths: any, basePath: string): IPCValidationResult {
-  if (!Array.isArray(paths)) {
-    return {
-      valid: false,
-      error: m.ipcValidation_pathsMustBeArray_error(),
-    };
-  }
-
-  const sanitized = [];
-  for (const path of paths) {
-    const result = validateIPCPath(path, basePath);
-    if (!result.valid) {
-      return result;
-    }
-    sanitized.push(result.sanitized);
   }
 
   return {
@@ -143,137 +83,4 @@ export function validateIPCString(
     valid: true,
     sanitized: value,
   };
-}
-
-/**
- * Validate number parameter
- */
-export function validateIPCNumber(
-  value: any,
-  name: string,
-  min?: number,
-  max?: number,
-): IPCValidationResult {
-  if (value === undefined || value === null) {
-    return {
-      valid: false,
-      error: m.ipcValidation_paramRequired_error({ name }),
-    };
-  }
-
-  const num = Number(value);
-  if (isNaN(num)) {
-    return {
-      valid: false,
-      error: m.ipcValidation_paramMustBeNumber_error({ name }),
-    };
-  }
-
-  if (min !== undefined && num < min) {
-    return {
-      valid: false,
-      error: m.ipcValidation_paramTooSmall_error({ name, min }),
-    };
-  }
-
-  if (max !== undefined && num > max) {
-    return {
-      valid: false,
-      error: m.ipcValidation_paramTooLarge_error({ name, max }),
-    };
-  }
-
-  return {
-    valid: true,
-    sanitized: num,
-  };
-}
-
-/**
- * Validate boolean parameter
- */
-export function validateIPCBoolean(value: any, name: string): IPCValidationResult {
-  if (value === undefined || value === null) {
-    return {
-      valid: false,
-      error: m.ipcValidation_paramRequired_error({ name }),
-    };
-  }
-
-  if (typeof value !== 'boolean') {
-    return {
-      valid: false,
-      error: m.ipcValidation_paramMustBeBoolean_error({ name }),
-    };
-  }
-
-  return {
-    valid: true,
-    sanitized: value,
-  };
-}
-
-/**
- * Rate limiter for IPC calls
- */
-export class IPCRateLimiter {
-  private callCounts: Map<string, { count: number; resetTime: number }> = new Map();
-  private readonly maxCallsPerMinute: number;
-  private cleanupInterval: NodeJS.Timeout | null = null;
-
-  constructor(maxCallsPerMinute: number = 100) {
-    this.maxCallsPerMinute = maxCallsPerMinute;
-    // Start automatic cleanup every 5 minutes
-    this.startAutoCleanup();
-  }
-
-  private startAutoCleanup(): void {
-    this.cleanupInterval = setInterval(
-      () => {
-        this.cleanup();
-      },
-      5 * 60 * 1000,
-    ); // 5 minutes
-  }
-
-  dispose(): void {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = null;
-    }
-    this.callCounts.clear();
-  }
-
-  canCall(channel: string, senderId: string): boolean {
-    const key = `${channel}:${senderId}`;
-    const now = Date.now();
-    const entry = this.callCounts.get(key);
-
-    if (!entry || now > entry.resetTime) {
-      // Reset counter
-      this.callCounts.set(key, {
-        count: 1,
-        resetTime: now + 60000, // 1 minute
-      });
-      return true;
-    }
-
-    if (entry.count >= this.maxCallsPerMinute) {
-      logger.warn('IPC rate limit exceeded', { channel, senderId, count: entry.count });
-      return false;
-    }
-
-    entry.count++;
-    return true;
-  }
-
-  // Clean up old entries periodically
-  cleanup() {
-    const now = Date.now();
-    for (const [key, entry] of this.callCounts) {
-      if (now > entry.resetTime) {
-        this.callCounts.delete(key);
-      }
-    }
-  }
 }

@@ -16,7 +16,7 @@
 import { getConnectionMode, getDaemonVersionInfo, getOrphanedSidecarInfo } from './connection-mode';
 
 /** Renderer-facing transport mode union. */
-export type TransportMode = 'sidecar-uds' | 'external-uds' | 'external-ws';
+type TransportMode = 'sidecar-uds' | 'external-uds' | 'external-ws';
 
 /** Renderer-safe transport payload. */
 export interface TransportInfo {

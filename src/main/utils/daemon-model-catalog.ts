@@ -20,7 +20,7 @@ import { getBackendClient } from '../../features/backend/main/backend.ipc';
 
 const logger = new Logger('DaemonModelCatalog');
 
-export interface ProviderModelCatalog {
+interface ProviderModelCatalog {
   models: ProviderModelInfo[];
   /** The provider id, or `"static"` on tier-table fallback. */
   source?: string;
@@ -36,7 +36,7 @@ export interface ProviderModelCatalog {
  * state; probe/CLI failures never reject — the daemon degrades them to
  * last-good + `stale: true` or a static fallback with a `warning` (§6.7).
  */
-export async function listProviderModels(
+async function listProviderModels(
   providerId: string,
   options: { forceRefresh?: boolean } = {},
 ): Promise<ProviderModelCatalog> {

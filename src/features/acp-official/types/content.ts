@@ -14,7 +14,7 @@ export type ContentBlock = TextContent | ImageContent | AudioContent | ResourceC
 /**
  * Text content block.
  */
-export interface TextContent {
+interface TextContent {
   type: 'text';
   text: string;
 }
@@ -22,7 +22,7 @@ export interface TextContent {
 /**
  * Image content block.
  */
-export interface ImageContent {
+interface ImageContent {
   type: 'image';
   data: string; // Base64-encoded image data
   mimeType: string;
@@ -31,7 +31,7 @@ export interface ImageContent {
 /**
  * Audio content block.
  */
-export interface AudioContent {
+interface AudioContent {
   type: 'audio';
   data: string; // Base64-encoded audio data
   mimeType: string;
@@ -42,7 +42,7 @@ export interface AudioContent {
  * Resource content block for embedded context.
  * Used to include pieces of context that are referenced in the message.
  */
-export interface ResourceContent {
+interface ResourceContent {
   type: 'resource';
   resource: TextResourceContents | BlobResourceContents;
 }
@@ -50,7 +50,7 @@ export interface ResourceContent {
 /**
  * Text-based resource contents.
  */
-export interface TextResourceContents {
+interface TextResourceContents {
   _meta?: Meta;
   uri: string;
   mimeType?: string | null;
@@ -60,7 +60,7 @@ export interface TextResourceContents {
 /**
  * Binary resource contents.
  */
-export interface BlobResourceContents {
+interface BlobResourceContents {
   _meta?: Meta;
   uri: string;
   mimeType?: string | null;
@@ -71,7 +71,7 @@ export interface BlobResourceContents {
  * A message in a conversation (ACP-specific).
  * Named AcpMessage to avoid conflicts with the general Message type.
  */
-export interface AcpMessage {
+interface AcpMessage {
   _meta?: Meta;
   role: Role;
   content: ContentBlock[];

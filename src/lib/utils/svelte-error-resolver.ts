@@ -107,7 +107,7 @@ export function isSvelteErrorUrl(message: string): boolean {
 /**
  * Extract the error code from a Svelte error URL
  */
-export function extractSvelteErrorCode(message: string): string | null {
+function extractSvelteErrorCode(message: string): string | null {
   const match = message.match(SVELTE_ERROR_URL_REGEX);
   return match ? match[1] : null;
 }
@@ -161,72 +161,4 @@ export function formatSvelteError(message: string): string {
   ];
 
   return lines.join('\n');
-}
-
-/**
- * Search patterns to help find the source of specific error types.
- * Returns grep/search patterns that can help locate the issue.
- */
-export function getSearchPatternsForError(code: string): string[] {
-  switch (code) {
-    case 'each_key_duplicate':
-      return [
-        '{#each.*\\(.*\\)', // Each blocks with keyed expressions
-        'as.*,.*\\(', // Destructured each with key
-      ];
-    case 'effect_update_depth_exceeded':
-      return ['\\$effect', '\\$derived'];
-    case 'state_unsafe_mutation':
-      return ['\\.push\\(', '\\.pop\\(', '\\.splice\\(', '\\$state'];
-    default:
-      return [];
-  }
-}
-
-/**
- * Extract any useful context from the error's stack trace or context object.
- * Tries to find component names, file paths, or other identifying information.
- */
-export function extractErrorContext(
-  stack?: string,
-  context?: Record<string, unknown>,
-): { likelyComponents: string[]; route: string | null; hints: string[] } {
-  const likelyComponents: string[] = [];
-  const hints: string[] = [];
-  let route: string | null = null;
-
-  // Extract route from URL context
-  if (context?.url && typeof context.url === 'string') {
-    const urlMatch = context.url.match(/\/workspace\/([^/]+)/);
-    if (urlMatch) {
-      route = `/workspace/${urlMatch[1]}`;
-      hints.push(`Error occurred on route: ${route}`);
-    }
-  }
-
-  // Look for .svelte files in stack trace (even if marked as dependency, might have source map info)
-  if (stack) {
-    const svelteMatches = stack.match(/([A-Z][a-zA-Z]+)\.svelte/g);
-    if (svelteMatches) {
-      const unique = [...new Set(svelteMatches)];
-      likelyComponents.push(...unique);
-    }
-
-    // Look for src/ paths that might indicate app code
-    const srcMatches = stack.match(/src\/[^\s:]+\.svelte/g);
-    if (srcMatches) {
-      const unique = [...new Set(srcMatches)];
-      hints.push(`Possible source files: ${unique.join(', ')}`);
-    }
-  }
-
-  // For each_key_duplicate, suggest checking components that commonly use {#each}
-  // These are heuristics based on common patterns
-  if (likelyComponents.length === 0) {
-    hints.push(
-      'Stack trace shows only Svelte internals. Try adding console.log in suspected components to identify the source.',
-    );
-  }
-
-  return { likelyComponents, route, hints };
 }

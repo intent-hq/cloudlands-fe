@@ -13,7 +13,7 @@ import { store as appStore } from '$store/renderer/store';
  * @param workspaceId - The workspace ID to check
  * @returns Array of agent names that are currently streaming
  */
-export function getRunningAgentNames(workspaceId: string): string[] {
+function getRunningAgentNames(workspaceId: string): string[] {
   const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
 
   // Get all agents for this workspace from Redux
@@ -35,30 +35,23 @@ export function getRunningAgentNames(workspaceId: string): string[] {
   return agentNames;
 }
 
-/**
- * Check if a workspace has any running agents
- * @param workspaceId - The workspace ID to check
- * @returns true if the workspace has running agents, false otherwise
- */
-export function hasRunningAgents(workspaceId: string): boolean {
-  const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
-  return streamingAgentIds.length > 0;
-}
-
 /** Hook wire states that count as active work (PROTOCOL §5.40). */
 const ACTIVE_HOOK_STATES: ReadonlySet<BackgroundHook['state']> = new Set(['scheduled', 'running']);
 
 /**
  * Get the names of active (scheduled/running) background hooks in a workspace.
- * Reads the background-hooks slice when a live subscription is open for the
- * workspace, otherwise falls back to an on-demand `hook.list`. Fetch failures
- * fail open (no hooks reported) so archive/delete is never blocked by a read.
+ * Reads the background-hooks slice when a live subscription backs the
+ * workspace's entry (present and not `stale` — entries are retained
+ * stale-marked across workspace switches), otherwise falls back to an
+ * on-demand `hook.list`. Fetch failures fail open (no hooks reported) so
+ * archive/delete is never blocked by a read.
  * @param workspaceId - The workspace ID to check
  * @returns Array of active hook names
  */
 export async function getActiveHookNames(workspaceId: string): Promise<string[]> {
   let hooks: BackgroundHook[];
-  if (appStore.state.backgroundHooks.byWorkspaceId[workspaceId]) {
+  const entry = appStore.state.backgroundHooks.byWorkspaceId[workspaceId];
+  if (entry && !entry.stale) {
     hooks = selectBackgroundHooks.select(appStore.state, workspaceId);
   } else {
     try {

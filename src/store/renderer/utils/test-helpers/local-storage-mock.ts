@@ -10,7 +10,7 @@ export interface LocalStorageMock extends Storage {
  * All methods are `vi.fn()` wrappers with real implementations,
  * so tests can both spy on calls AND get real storage behavior.
  */
-export function createLocalStorageMock(): LocalStorageMock {
+function createLocalStorageMock(): LocalStorageMock {
   const store = new Map<string, string>();
 
   const getItem = vi.fn((key: string): string | null => {
@@ -73,4 +73,3 @@ export function installLocalStorageMock(): LocalStorageMock {
 
   return mock;
 }
-

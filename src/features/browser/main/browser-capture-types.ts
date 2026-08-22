@@ -104,7 +104,7 @@ export interface CaptureSession {
 /**
  * State for an active performance trace
  */
-export interface TraceState {
+interface TraceState {
   /** Trace name/ID */
   name: string;
   /** Start timestamp */

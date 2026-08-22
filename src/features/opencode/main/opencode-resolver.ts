@@ -7,11 +7,7 @@
 
 import * as os from 'os';
 import * as path from 'path';
-import {
-  findBinary,
-  findBinaryStrict,
-  getCommonNpmPaths,
-} from '../../../shared/main/find-binary';
+import { findBinary, findBinaryStrict, getCommonNpmPaths } from '../../../shared/main/find-binary';
 
 // Common paths to look for opencode
 const OPENCODE_PATHS = [
@@ -122,14 +118,6 @@ async function findOpenCodePath(strict = false): Promise<string | null> {
 export async function isOpenCodeInstalled(): Promise<boolean> {
   const opencodePath = await findOpenCodePath(true);
   return opencodePath !== null;
-}
-
-/**
- * Get the resolved path to the opencode executable.
- * Returns null if not found.
- */
-export async function getOpenCodePath(): Promise<string | null> {
-  return findOpenCodePath();
 }
 
 export type OpenCodeResolvedCommand = {

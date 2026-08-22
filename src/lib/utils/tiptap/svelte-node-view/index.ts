@@ -48,14 +48,7 @@
 
 // Main renderer
 export { SvelteNodeViewRenderer } from './SvelteNodeViewRenderer.svelte';
-export type { SvelteNodeViewRendererOptions } from './SvelteNodeViewRenderer.svelte';
 
 // Components
 export { default as NodeViewWrapper } from './NodeViewWrapper.svelte';
 export { default as NodeViewContent } from './NodeViewContent.svelte';
-
-// Hooks
-export { useNodeViewContext } from './useNodeView';
-
-// Types and context
-export { NODE_VIEW_CONTEXT_KEY, type NodeViewContext } from './context';
