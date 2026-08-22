@@ -76,11 +76,21 @@
       },
       componentProps: {
         onDismiss: () => {
-          // Used by UpdateToast's auto-dismiss $effect for not-available/error states
+          // UpdateToast's close button — an explicit user dismissal. The raw
+          // toast.dismiss routes through the sonner-level onDismiss above,
+          // which arms the 24h cooldown when the status is 'downloaded'.
           if (currentToastId !== undefined) {
             toast.dismiss(currentToastId);
             currentToastId = undefined;
           }
+          appStore.dispatch(hideToast());
+        },
+        onAutoDismiss: () => {
+          // UpdateToast's auto-dismiss $effect for not-available/error —
+          // programmatic, so it must never arm the cooldown, even if the
+          // status flips to 'downloaded' before sonner's deferred onDismiss
+          // delivery runs.
+          dismissToast();
           appStore.dispatch(hideToast());
         },
       },

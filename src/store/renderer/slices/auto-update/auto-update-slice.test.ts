@@ -4,8 +4,14 @@ import {
   autoUpdateReducer,
   dismissDownloadedToast,
   hideToast,
+  setCheckTimedOut,
+  setProgress,
+  setUpdateError,
+  setUpdateState,
+  setUpToDate,
   showToast,
   showToastChecking,
+  simulateSetState,
 } from './auto-update-slice';
 
 const baseState: AutoUpdateState = {
@@ -31,6 +37,44 @@ describe('auto-update-slice reducer', () => {
       toastVisible: false,
       downloadedToastDismissedAt: null,
     });
+  });
+
+  it('setUpdateState replaces the wire-owned fields and preserves toast state', () => {
+    const state = autoUpdateReducer(
+      { ...baseState, toastVisible: true, downloadedToastDismissedAt: 5_000 },
+      setUpdateState({
+        status: 'downloading',
+        currentVersion: '1.0.0',
+        updateInfo: { version: '2.0.0', releaseDate: '2026-08-01' },
+        progress: { percent: 50, bytesPerSecond: 1024, transferred: 512, total: 1024 },
+        error: null,
+        channel: 'beta',
+      }),
+    );
+    expect(state.status).toBe('downloading');
+    expect(state.updateInfo).toEqual({ version: '2.0.0', releaseDate: '2026-08-01' });
+    expect(state.progress).toEqual({
+      percent: 50,
+      bytesPerSecond: 1024,
+      transferred: 512,
+      total: 1024,
+    });
+    expect(state.channel).toBe('beta');
+    // Toast visibility and the dismiss cooldown are renderer-owned
+    expect(state.toastVisible).toBe(true);
+    expect(state.downloadedToastDismissedAt).toBe(5_000);
+  });
+
+  it('setProgress updates only the progress field', () => {
+    const progress = { percent: 10, bytesPerSecond: 2048, transferred: 100, total: 1000 };
+    const state = autoUpdateReducer(baseState, setProgress(progress));
+    expect(state).toEqual({ ...baseState, progress });
+  });
+
+  it('setUpdateError sets error status and message', () => {
+    const state = autoUpdateReducer(baseState, setUpdateError('download failed'));
+    expect(state.status).toBe('error');
+    expect(state.error).toBe('download failed');
   });
 
   it('showToast sets toastVisible', () => {
@@ -72,5 +116,42 @@ describe('auto-update-slice reducer', () => {
       showToastChecking(),
     );
     expect(state.downloadedToastDismissedAt).toBeNull();
+  });
+
+  it('setUpToDate sets not-available and updates the version', () => {
+    const state = autoUpdateReducer(baseState, setUpToDate('1.2.3'));
+    expect(state.status).toBe('not-available');
+    expect(state.currentVersion).toBe('1.2.3');
+  });
+
+  it('setUpToDate keeps the current version when the payload is empty', () => {
+    const state = autoUpdateReducer(baseState, setUpToDate(''));
+    expect(state.status).toBe('not-available');
+    expect(state.currentVersion).toBe(baseState.currentVersion);
+  });
+
+  it('setCheckTimedOut sets error status while checking', () => {
+    const state = autoUpdateReducer({ ...baseState, status: 'checking' }, setCheckTimedOut());
+    expect(state.status).toBe('error');
+    expect(state.error).toEqual(expect.any(String));
+    expect(state.error).not.toBe('');
+  });
+
+  it('setCheckTimedOut is a no-op when not checking', () => {
+    const before = { ...baseState, status: 'downloaded' as const };
+    const state = autoUpdateReducer(before, setCheckTimedOut());
+    expect(state).toBe(before);
+  });
+
+  it('simulateSetState shallow-merges the partial payload', () => {
+    const state = autoUpdateReducer(
+      baseState,
+      simulateSetState({ status: 'downloaded', downloadedToastDismissedAt: 42 }),
+    );
+    expect(state).toEqual({
+      ...baseState,
+      status: 'downloaded',
+      downloadedToastDismissedAt: 42,
+    });
   });
 });

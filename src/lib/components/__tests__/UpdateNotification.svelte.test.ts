@@ -17,11 +17,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const sonner = vi.hoisted(() => {
   let nextId = 0;
   const toasts = new Map<number, any>();
+  const pendingDismissals: Array<() => void> = [];
   return {
     toasts,
+    // When true, toast.dismiss(id) queues the onDismiss delivery instead of
+    // firing it synchronously — mirroring real svelte-sonner, which defers it
+    // (dismiss flag -> Toaster $effect sets delete -> Toast $effect invokes
+    // onDismiss), so in dismiss-then-recreate the new toast is created BEFORE
+    // the old toast's onDismiss arrives. Default (false) fires synchronously.
+    deferDismiss: false,
+    flushDismissals() {
+      while (pendingDismissals.length > 0) {
+        pendingDismissals.shift()!();
+      }
+    },
     reset() {
       nextId = 0;
       toasts.clear();
+      pendingDismissals.length = 0;
+      this.deferDismiss = false;
       this.custom.mockClear();
       this.dismiss.mockClear();
     },
@@ -31,11 +45,17 @@ const sonner = vi.hoisted(() => {
       return id;
     }),
     // Mirror svelte-sonner: toast.dismiss(id) triggers that toast's
-    // sonner-level onDismiss with the toast object.
+    // sonner-level onDismiss with the toast object (deferred when
+    // deferDismiss is set — see above).
     dismiss: vi.fn((id: number) => {
       const options = toasts.get(id);
       toasts.delete(id);
-      options?.onDismiss?.({ id });
+      const deliver = () => options?.onDismiss?.({ id });
+      if (sonner.deferDismiss) {
+        pendingDismissals.push(deliver);
+      } else {
+        deliver();
+      }
     }),
   };
 });
@@ -159,6 +179,40 @@ describe('UpdateNotification downloaded-toast persistence', () => {
     expect(autoUpdateState.toastVisible).toBe(true);
   });
 
+  // Same dismiss-then-recreate path, but with real svelte-sonner ordering:
+  // the new toast is created first and the OLD toast's onDismiss is delivered
+  // afterwards. Without the currentToastId === dismissed.id guard the deferred
+  // delivery would clear the NEW toast's currentToastId.
+  it('deferred onDismiss delivery (real sonner ordering) neither arms the cooldown nor clears the new toast id', () => {
+    mount(downloadedState());
+    expect(sonner.custom).toHaveBeenCalledTimes(1);
+    sonner.deferDismiss = true;
+
+    (appStore as any).dispatch(
+      simulateSetState({
+        downloadedToastDismissedAt: Date.now() - DISMISS_COOLDOWN_MS + 1000,
+      }),
+    );
+    flushSync();
+    dispatched = [];
+
+    vi.advanceTimersByTime(1000);
+    flushSync();
+    // New toast (id 2) exists before the old toast's onDismiss arrives.
+    expect(sonner.custom).toHaveBeenCalledTimes(2);
+    sonner.flushDismissals();
+    flushSync();
+
+    expect(dispatchedTypes()).not.toContain(dismissDownloadedToast.type);
+    expect(dispatchedTypes()).not.toContain(hideToast.type);
+    expect(autoUpdateState.toastVisible).toBe(true);
+    // currentToastId still points at the new toast: a toastVisible-driven
+    // re-show is NOT triggered (which would call toast.custom a third time).
+    (appStore as any).dispatch(simulateSetState({ toastVisible: true }));
+    flushSync();
+    expect(sonner.custom).toHaveBeenCalledTimes(2);
+  });
+
   it('unmount cleanup does not arm the cooldown while status is downloaded', () => {
     const { unmount } = mount(downloadedState());
     expect(sonner.custom).toHaveBeenCalledTimes(1);
@@ -194,5 +248,28 @@ describe('UpdateNotification downloaded-toast persistence', () => {
     expect(dispatchedTypes()).toContain(dismissDownloadedToast.type);
     expect(autoUpdateState.downloadedToastDismissedAt).toEqual(expect.any(Number));
     expect(autoUpdateState.toastVisible).toBe(false);
+  });
+
+  // UpdateToast's not-available/error auto-dismiss $effect is programmatic:
+  // even if the status flips to 'downloaded' before sonner's deferred
+  // onDismiss delivery runs, it must never arm the cooldown.
+  it('programmatic auto-dismiss (componentProps onAutoDismiss) never arms the cooldown', () => {
+    mount(downloadedState());
+    const options = sonner.toasts.get(1);
+    (appStore as any).dispatch(simulateSetState({ status: 'error', error: 'boom' }));
+    flushSync();
+    dispatched = [];
+    sonner.deferDismiss = true;
+
+    options.componentProps.onAutoDismiss();
+    // Status flips to 'downloaded' between the dismiss and the deferred
+    // onDismiss delivery — the race the internal-dismiss routing closes.
+    autoUpdateState = { ...autoUpdateState, status: 'downloaded' };
+    sonner.flushDismissals();
+    flushSync();
+
+    expect(sonner.dismiss).toHaveBeenCalledTimes(1);
+    expect(dispatchedTypes()).not.toContain(dismissDownloadedToast.type);
+    expect(autoUpdateState.downloadedToastDismissedAt).toBeNull();
   });
 });
