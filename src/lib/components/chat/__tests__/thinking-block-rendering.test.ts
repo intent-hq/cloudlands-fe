@@ -110,38 +110,69 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(screen.queryByTestId('markdown-viewer')).toBeNull();
   });
 
-  it('only streams the last visible thinking child in a live response group', async () => {
+  it('shows one current live-group child until the user expands the full history', async () => {
     const content = [
       { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
-      thinking('msg_1:1', 'First headingless thought'),
-      thinking('msg_1:2', 'Second headingless thought'),
+      { type: 'text', id: 'msg_1:1', text: 'Earlier answer' },
+      thinking('msg_1:2', 'Current thought'),
     ];
     const view = await renderStreaming(content, true);
-    let disclosures = screen.getAllByTestId('reasoning-disclosure');
+    const groupDisclosure = screen.getByTestId('response-group-disclosure');
+    const visibleChildTypes = () =>
+      [...document.querySelectorAll('[data-response-group-child]')].map((child) =>
+        child.getAttribute('data-message-content-block'),
+      );
 
-    expect(disclosures.map((button) => button.getAttribute('aria-expanded'))).toEqual([
-      'false',
-      'true',
-    ]);
-    expect(disclosures.map((button) => button.textContent?.trim())).toEqual([
-      'Reasoning',
-      'Thinking...',
-    ]);
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(visibleChildTypes()).toEqual(['thinking']);
+    expect(screen.getByTestId('reasoning-disclosure').textContent?.trim()).toBe('Thinking...');
 
     await view.rerender({
-      content: [...content, { type: 'text', id: 'msg_1:3', text: 'Visible answer' }],
+      content: [
+        ...content,
+        { type: 'tool_result', id: 'msg_1:3', tool_use_id: 'missing', output: 'hidden' },
+      ],
       isStreaming: true,
     });
-    disclosures = screen.getAllByTestId('reasoning-disclosure');
+    expect(visibleChildTypes()).toEqual(['thinking']);
 
-    expect(disclosures.map((button) => button.getAttribute('aria-expanded'))).toEqual([
-      'false',
-      'false',
-    ]);
-    expect(disclosures.map((button) => button.textContent?.trim())).toEqual([
-      'Reasoning',
-      'Reasoning',
-    ]);
+    const tool = {
+      type: 'tool_use',
+      id: 'msg_1:4',
+      name: 'view',
+      input: { path: 'src/example.ts' },
+      toolCallId: 'tool-1',
+    } as ContentBlock;
+    await view.rerender({ content: [...content, tool], isStreaming: true });
+    expect(visibleChildTypes()).toEqual(['tool_use']);
+
+    const withAnswer = [
+      ...content,
+      tool,
+      { type: 'tool_result', id: 'msg_1:5', tool_use_id: 'tool-1', output: 'done' },
+      { type: 'text', id: 'msg_1:6', text: 'Current answer' },
+    ] as ContentBlock[];
+    await view.rerender({ content: withAnswer, isStreaming: true });
+    expect(visibleChildTypes()).toEqual(['text']);
+    expect(document.body.textContent).toContain('Current answer');
+    expect(document.body.textContent).not.toContain('Earlier answer');
+
+    await fireEvent.click(groupDisclosure);
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text']);
+
+    const latestThought = thinking('msg_1:7', 'Latest thought');
+    await view.rerender({ content: [...withAnswer, latestThought], isStreaming: true });
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text', 'thinking']);
+
+    await fireEvent.click(groupDisclosure);
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(visibleChildTypes()).toEqual(['thinking']);
+
+    await view.rerender({ content: [...withAnswer, latestThought], isStreaming: false });
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(visibleChildTypes()).toEqual([]);
   });
 
   it('uses the reasoning title in the static message path', async () => {

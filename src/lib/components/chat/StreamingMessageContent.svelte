@@ -73,7 +73,11 @@
     OPERATIONAL_GROUP_CHILD_CONTENT_CLASS,
     OPERATIONAL_GROUP_CHILD_ROW_CLASS,
   } from './operational-disclosure-row';
-  import { dedupeKeys, getResponseGroupBlockKeys } from './response-group-blocks';
+  import {
+    dedupeKeys,
+    getResponseGroupBlockKeys,
+    getResponseGroupCurrentBlockIndex,
+  } from './response-group-blocks';
   import { chatSearchBlockPath } from './chat-search';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
@@ -892,6 +896,43 @@
   {/if}
 {/snippet}
 
+{#snippet renderResponseGroupChild(
+  group: ContentBlockGroup,
+  groupIndex: number,
+  childBlock: ContentBlock,
+  childIndex: number,
+)}
+  <div
+    class="content-block content-block--{childBlock.type} {getOperationalClusterSpacingClass(
+      group.children,
+      childIndex,
+      (candidate) => candidate.type !== 'tool_result',
+    )} {isOperationalClusterBlock(childBlock)
+      ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
+      : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS}"
+    style:padding-left={isOperationalClusterBlock(childBlock)
+      ? undefined
+      : 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'}
+    data-message-content-block={childBlock.type}
+    data-chat-search-block-path={chatSearchBlockPath(groupIndex, childIndex)}
+    data-response-group-child
+  >
+    {@render renderContentBlock(
+      childBlock,
+      `${groupIndex}-${childIndex}`,
+      group.isStreaming &&
+        groupIndex === groupedBlocks.length - 1 &&
+        childIndex === lastRenderableChildIndex(group.children),
+      true,
+      isAdjacentOperationalClusterRow(
+        group.children,
+        childIndex,
+        (candidate) => candidate.type !== 'tool_result',
+      ),
+    )}
+  </div>
+{/snippet}
+
 <div
   class="relative flex flex-col gap-0"
   class:streaming={isStreaming}
@@ -902,6 +943,15 @@
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
     {#if block.type === 'content_group'}
       {@const group = block as ContentBlockGroup}
+      {@const currentChildIndex = getResponseGroupCurrentBlockIndex(group.children)}
+      {#snippet currentChild()}
+        {@render renderResponseGroupChild(
+          group,
+          blockIndex,
+          group.children[currentChildIndex],
+          currentChildIndex,
+        )}
+      {/snippet}
       <div
         class="content-block content-block--group {getOperationalClusterSpacingClass(
           groupedBlocks,
@@ -916,6 +966,7 @@
           isStreaming={group.isStreaming}
           blocks={group.children}
           searchPath={chatSearchBlockPath(blockIndex)}
+          currentChild={currentChildIndex >= 0 ? currentChild : undefined}
           adjacentOperationalRow={isAdjacentOperationalClusterRow(
             groupedBlocks,
             blockIndex,
@@ -924,38 +975,9 @@
         >
           {#snippet children()}
             {@const childKeys = getResponseGroupBlockKeys(group.children)}
-            {@const lastRenderableIndex = lastRenderableChildIndex(group.children)}
             {#each group.children as childBlock, childIndex (childKeys[childIndex])}
               {#if childBlock.type !== 'tool_result'}
-                <div
-                  class="content-block content-block--{childBlock.type} {getOperationalClusterSpacingClass(
-                    group.children,
-                    childIndex,
-                    (candidate) => candidate.type !== 'tool_result',
-                  )} {isOperationalClusterBlock(childBlock)
-                    ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
-                    : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS}"
-                  style:padding-left={isOperationalClusterBlock(childBlock)
-                    ? undefined
-                    : 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'}
-                  data-message-content-block={childBlock.type}
-                  data-chat-search-block-path={chatSearchBlockPath(blockIndex, childIndex)}
-                  data-response-group-child
-                >
-                  {@render renderContentBlock(
-                    childBlock,
-                    `${blockIndex}-${childIndex}`,
-                    group.isStreaming &&
-                    blockIndex === groupedBlocks.length - 1 &&
-                      childIndex === lastRenderableIndex,
-                    true,
-                    isAdjacentOperationalClusterRow(
-                      group.children,
-                      childIndex,
-                      (candidate) => candidate.type !== 'tool_result',
-                    ),
-                  )}
-                </div>
+                {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
               {/if}
             {/each}
           {/snippet}

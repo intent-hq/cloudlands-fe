@@ -30,6 +30,7 @@
     name: string;
     isStreaming?: boolean;
     children: Snippet;
+    currentChild?: Snippet;
     blocks?: ContentBlock[];
     adjacentOperationalRow?: boolean;
     searchPath?: string;
@@ -40,6 +41,7 @@
     name,
     isStreaming = false,
     children,
+    currentChild,
     blocks,
     adjacentOperationalRow = false,
     searchPath,
@@ -47,7 +49,7 @@
   }: Props = $props();
 
   // svelte-ignore state_referenced_locally -- intentional initial seed; the streaming-edge effect below manages transitions.
-  let isExpanded = $state(isStreaming);
+  let isExpanded = $state(isStreaming && !currentChild);
   let isClosing = $state(false);
   let isInitialized = false;
   let desiredExpanded = false;
@@ -70,6 +72,11 @@
 
     if (!isExpanded) return;
     if (contentEl?.contains(document.activeElement)) triggerEl?.focus({ preventScroll: true });
+    if (isStreaming && currentChild) {
+      isClosing = false;
+      isExpanded = false;
+      return;
+    }
     isClosing = true;
     isExpanded = false;
   }
@@ -85,7 +92,7 @@
 
     if (currentlyStreaming && !prevStreaming) {
       searchOwnsExpansion = false;
-      if (!userCollapsed) setExpanded(true);
+      if (!userCollapsed) setExpanded(!currentChild);
       if (collapseTimer) {
         clearTimeout(collapseTimer);
         collapseTimer = null;
@@ -159,7 +166,7 @@
 {#snippet summary()}
   <span class="font-normal {OPERATIONAL_PRIMARY_CLASS}" data-testid="response-group-name"
     >{name}</span
-  >{#if textSnippet && !isExpanded}<InlineMarkdownSnippet
+  >{#if textSnippet && !isExpanded && (!isStreaming || !currentChild)}<InlineMarkdownSnippet
       content={textSnippet}
       class="ml-2.5 font-normal {OPERATIONAL_SECONDARY_CLASS}"
       testId="response-group-snippet"
@@ -174,7 +181,11 @@
         data-operational-expanded-guide
         aria-hidden="true"
       ></span>
-      {@render children()}
+      {#if isExpanded}
+        {@render children()}
+      {:else}
+        {@render currentChild?.()}
+      {/if}
     </div>
   </CylinderScroller>
 {/snippet}
@@ -182,7 +193,7 @@
 <ChatOperationalRow
   {leading}
   {summary}
-  details={isExpanded ? details : undefined}
+  details={isExpanded || (isStreaming && currentChild) ? details : undefined}
   interactive
   showChevron={false}
   expanded={isExpanded}

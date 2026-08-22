@@ -47,6 +47,22 @@ export function getResponseGroupBlockKeys(blocks: readonly ContentBlock[]): stri
   return dedupeKeys(blocks.map((block, index) => getResponseGroupBlockKey(block, index)));
 }
 
+export function getResponseGroupCurrentBlockIndex(blocks: readonly ContentBlock[]): number {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    if (blocks[index].type !== 'tool_result') return index;
+  }
+
+  return -1;
+}
+
+export function getResponseGroupCurrentBlock(
+  blocks: readonly ContentBlock[] | undefined,
+): ContentBlock | undefined {
+  if (!blocks) return undefined;
+  const index = getResponseGroupCurrentBlockIndex(blocks);
+  return index >= 0 ? blocks[index] : undefined;
+}
+
 export function getResponseGroupPreviewBlock(
   blocks: readonly ContentBlock[] | undefined,
 ): ContentBlock | undefined {

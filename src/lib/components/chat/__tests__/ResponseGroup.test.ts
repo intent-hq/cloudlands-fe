@@ -13,6 +13,8 @@ import {
   dedupeKeys,
   getResponseGroupBlockKey,
   getResponseGroupBlockKeys,
+  getResponseGroupCurrentBlock,
+  getResponseGroupCurrentBlockIndex,
   getResponseGroupPreviewBlock,
 } from '../response-group-blocks';
 import { warmImport } from '../../../../test/warm-import';
@@ -379,6 +381,18 @@ describe('ResponseGroup - collapse state model', () => {
 });
 
 describe('ResponseGroup - block identity', () => {
+  it('selects the last visible child and skips trailing tool results', () => {
+    const blocks = [
+      { type: 'thinking', id: 'thought-1', text: 'Earlier reasoning' },
+      { type: 'tool_use', id: 'tool-1', name: 'view', input: {} },
+      { type: 'tool_result', tool_use_id: 'tool-1', output: 'done' },
+    ] as ContentBlock[];
+
+    expect(getResponseGroupCurrentBlockIndex(blocks)).toBe(1);
+    expect(getResponseGroupCurrentBlock(blocks)).toBe(blocks[1]);
+    expect(getResponseGroupCurrentBlock([{ type: 'tool_result' } as ContentBlock])).toBeUndefined();
+  });
+
   it('uses protocol-backed tool identities instead of positions', () => {
     const toolUse = { type: 'tool_use', id: 'tool-42', name: 'search' } as ContentBlock;
     const toolResult = { type: 'tool_result', tool_use_id: 'tool-42' } as ContentBlock;
