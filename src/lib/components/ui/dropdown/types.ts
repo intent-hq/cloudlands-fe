@@ -44,7 +44,7 @@ export interface DropdownGroup {
   label: string;
   /** Parent group key for nested groups. */
   parentKey?: string;
-  /** Group text used for search instead of the rendered label. */
+  /** Additional group text included in search with the rendered label. */
   searchLabel?: string;
   /** Optional icon for the group */
   icon?: IconDefinition;
