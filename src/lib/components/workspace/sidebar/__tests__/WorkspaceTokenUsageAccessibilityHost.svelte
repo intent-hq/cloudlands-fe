@@ -37,7 +37,7 @@
         cacheCreationTokens: 100,
       },
       byModel: {
-        'model-alpha': {
+        'provider/this-is-an-extraordinarily-long-model-name-for-truncation': {
           inputTokens: 50,
           outputTokens: 150,
           cacheReadTokens: 500,
