@@ -7,22 +7,49 @@
 
   interface Props {
     theme?: 'light' | 'dark';
+    width?: number;
   }
 
-  let { theme = 'light' }: Props = $props();
+  let { theme = 'light', width = 248 }: Props = $props();
   const workspaceId = 'token-usage-accessibility-ct';
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
 
   store.dispatch(
     tokenUsageReceived(workspaceId, {
-      byAgentId: {},
+      byAgentId: {
+        'agent-alpha': {
+          inputTokens: 50,
+          outputTokens: 150,
+          cacheReadTokens: 500,
+          cacheCreationTokens: 50,
+        },
+        'agent-beta': {
+          inputTokens: 50,
+          outputTokens: 50,
+          cacheReadTokens: 100,
+          cacheCreationTokens: 50,
+        },
+      },
       totals: {
         inputTokens: 100,
         outputTokens: 200,
         cacheReadTokens: 600,
         cacheCreationTokens: 100,
       },
-      byModel: {},
+      byModel: {
+        'model-alpha': {
+          inputTokens: 50,
+          outputTokens: 150,
+          cacheReadTokens: 500,
+          cacheCreationTokens: 50,
+        },
+        'model-beta': {
+          inputTokens: 50,
+          outputTokens: 50,
+          cacheReadTokens: 100,
+          cacheCreationTokens: 50,
+        },
+      },
       lastScanAt: '2026-08-22T00:00:00Z',
     }),
   );
@@ -40,7 +67,7 @@
 </script>
 
 <section class="min-h-32 bg-background p-4 text-foreground" data-theme={theme}>
-  <div class="w-[248px]">
+  <div data-testid="token-usage-test-width" style:width={`${width}px`}>
     <WorkspaceTokenUsage {workspaceId} />
   </div>
 </section>
