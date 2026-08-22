@@ -7,7 +7,7 @@
    */
 
   import type { TabTypeComponentProps } from './registry';
-  import { openTabWithPanelModeRequested } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { openTabInRightmostColumnRequested } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
@@ -211,7 +211,7 @@
       workspaceId,
     };
     const store = appStore;
-    store.dispatch(openTabWithPanelModeRequested(workspaceId, tabData));
+    store.dispatch(openTabInRightmostColumnRequested(workspaceId, tabData));
   }
 
   // Register header actions

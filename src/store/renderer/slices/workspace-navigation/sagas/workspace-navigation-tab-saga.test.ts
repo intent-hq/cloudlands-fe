@@ -4,7 +4,10 @@ import { createCollection } from '@augmentcode/themis/utils/collections/collecti
 
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
 import { m } from '$shared/paraglide/messages.js';
-import { panelLayoutReducer } from '../../panel-layout/panel-layout-slice';
+import {
+  openTabInRightmostColumn,
+  panelLayoutReducer,
+} from '../../panel-layout/panel-layout-slice';
 import type { PanelLayoutSliceState } from '../../panel-layout/panel-layout-types';
 import {
   openWorkspaceActivityChanges,
@@ -40,6 +43,17 @@ const settle = async () => {
   await Promise.resolve();
 };
 
+function reducePanelAction(state: PanelLayoutSliceState, action: any): PanelLayoutSliceState {
+  if (action.type !== 'panelLayout/openTabInRightmostColumnRequested') {
+    return panelLayoutReducer(state, action);
+  }
+  const { wsId, tab, force, allowDuplicate, newTabId, timestamp } = action.payload;
+  return panelLayoutReducer(
+    state,
+    openTabInRightmostColumn(wsId, tab, { force, allowDuplicate, newTabId }, timestamp),
+  );
+}
+
 // The attachment worker awaits a backend lookup and a dynamic toast import;
 // flush macrotasks so those async chains settle before asserting.
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -55,7 +69,7 @@ describe('workspaceNavigationTabSaga', () => {
 
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'panelLayout/openTabInNewRootColumn',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: expect.objectContaining({
           wsId: 'ws-1',
           force: true,
@@ -91,10 +105,10 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
-      'panelLayout/openTabInNewRootColumn',
-      'panelLayout/openTabInNewRootColumn',
-      'panelLayout/openTabInNewRootColumn',
-      'panelLayout/openTabInNewRootColumn',
+      'panelLayout/openTabInRightmostColumnRequested',
+      'panelLayout/openTabInRightmostColumnRequested',
+      'panelLayout/openTabInRightmostColumnRequested',
+      'panelLayout/openTabInRightmostColumnRequested',
     ]);
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
       payload: {
@@ -103,7 +117,6 @@ describe('workspaceNavigationTabSaga', () => {
     });
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
       payload: {
-        sourcePanelId: 'panel-agent',
         tab: {
           type: 'chat-changes',
           data: {
@@ -127,7 +140,7 @@ describe('workspaceNavigationTabSaga', () => {
     await task.toPromise();
   });
 
-  it('requests a fresh adjacent split for note links', async () => {
+  it('requests fixed-column-safe adjacent routing for note links', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
     const state = {
@@ -147,9 +160,10 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInNewRootColumn',
+      type: 'panelLayout/openTabInAdjacentOrSplit',
       payload: {
         sourcePanelId: 'panel-note',
+        force: true,
         tab: { type: 'note', noteId: 'note-1' },
       },
     });
@@ -157,7 +171,7 @@ describe('workspaceNavigationTabSaga', () => {
     await task.toPromise();
   });
 
-  it('forces note adjacency beside an agent and preserves file jump metadata', async () => {
+  it('keeps an unmodified agent note open rightmost and preserves adjacent file metadata', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(42);
     const channel = stdChannel();
     const dispatch = vi.fn();
@@ -203,10 +217,9 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInNewRootColumn',
+      type: 'panelLayout/openTabInRightmostColumnRequested',
       payload: {
         wsId: 'ws-1',
-        sourcePanelId: 'panel-1',
         force: true,
         tab: {
           type: 'note',
@@ -218,7 +231,7 @@ describe('workspaceNavigationTabSaga', () => {
       },
     });
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInNewRootColumn',
+      type: 'panelLayout/openTabInAdjacentOrSplit',
       payload: {
         wsId: 'ws-1',
         sourcePanelId: 'panel-1',
@@ -238,7 +251,7 @@ describe('workspaceNavigationTabSaga', () => {
     vi.restoreAllMocks();
   });
 
-  it('opens exact commit and tracked-diff tabs with forced source routing', async () => {
+  it('uses source context only for explicit adjacent commit and diff routing', async () => {
     const change = {
       id: 'change-1',
       file: 'src/foo.ts',
@@ -268,7 +281,7 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInNewRootColumn',
+      type: 'panelLayout/openTabInAdjacentOrSplit',
       payload: {
         wsId: 'ws-1',
         sourcePanelId: 'panel-a',
@@ -283,10 +296,9 @@ describe('workspaceNavigationTabSaga', () => {
       },
     });
     expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInNewRootColumn',
+      type: 'panelLayout/openTabInRightmostColumnRequested',
       payload: {
         wsId: 'ws-1',
-        sourcePanelId: 'panel-b',
         force: true,
         tab: {
           type: 'diff',
@@ -317,7 +329,7 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInNewRootColumn',
+      type: 'panelLayout/openTabInRightmostColumnRequested',
       payload: {
         wsId: 'ws-1',
         force: true,
@@ -354,7 +366,7 @@ describe('workspaceNavigationTabSaga', () => {
     );
     await settle();
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInNewRootColumn',
+      type: 'panelLayout/openTabInAdjacentOrSplit',
       payload: {
         wsId: 'ws-1',
         sourcePanelId: 'panel-runtime',
@@ -391,7 +403,7 @@ describe('workspaceNavigationTabSaga', () => {
     );
     await settle();
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInNewRootColumn',
+      type: 'panelLayout/openTabInRightmostColumnRequested',
       payload: {
         wsId: 'ws-1',
         force: true,
@@ -512,7 +524,7 @@ describe('workspaceNavigationTabSaga', () => {
     let layoutState: PanelLayoutSliceState = { byWorkspaceId: {} };
     const channel = stdChannel();
     const dispatch = vi.fn((action: { type: string; payload: unknown }) => {
-      layoutState = panelLayoutReducer(layoutState, action as never);
+      layoutState = reducePanelAction(layoutState, action);
       return action;
     });
     const task = runSaga(
@@ -567,7 +579,7 @@ describe('workspaceNavigationTabSaga', () => {
     let layoutState: PanelLayoutSliceState = { byWorkspaceId: {} };
     const channel = stdChannel();
     const dispatch = vi.fn((action: { type: string; payload: unknown }) => {
-      layoutState = panelLayoutReducer(layoutState, action as never);
+      layoutState = reducePanelAction(layoutState, action);
       return action;
     });
     const task = runSaga(
@@ -629,7 +641,7 @@ describe('workspaceNavigationTabSaga', () => {
     let layoutState: PanelLayoutSliceState = { byWorkspaceId: {} };
     const channel = stdChannel();
     const dispatch = vi.fn((action: { type: string; payload: unknown }) => {
-      layoutState = panelLayoutReducer(layoutState, action as never);
+      layoutState = reducePanelAction(layoutState, action);
       return action;
     });
     const task = runSaga(
@@ -674,7 +686,7 @@ describe('workspaceNavigationTabSaga', () => {
     channel.put(openWorkspaceLocalChanges('ws-1'));
     await settle();
     expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      type: 'panelLayout/openTabInNewRootColumn',
+      type: 'panelLayout/openTabInRightmostColumnRequested',
       payload: {
         wsId: 'ws-1',
         force: true,

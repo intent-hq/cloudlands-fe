@@ -20,7 +20,7 @@
   data-testid="chat-scroll-to-bottom-button"
   {onclick}
   {disabled}
-  class="rounded-md text-muted-foreground shadow-none focus-visible:border-border focus-visible:bg-muted focus-visible:ring-0 disabled:opacity-40"
+  class="rounded-md text-muted-foreground shadow-none"
   data-icon-size={CHAT_ICON_SIZE.compact}
   aria-label={label}
   tooltip={label}

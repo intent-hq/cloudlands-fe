@@ -22,8 +22,6 @@ import {
   selectAllTabs,
   selectHiddenTabs,
   selectPanelLayoutWorkspaces,
-  selectPanels,
-  selectPendingPanelReveal,
 } from '../../panel-layout/panel-layout-selectors';
 import {
   hydrateWorkspaceLayout,
@@ -32,22 +30,16 @@ import {
 import { dropRevealIfWorkspaceNotDisplayed } from '../../panel-layout/sagas/reveal-suppression';
 import {
   closeTab,
-  focusPanel,
   openHiddenTab,
   openTab,
-  openTabInNewRootColumn,
+  openTabInRightmostColumnRequested,
   restoreHiddenTab,
   setActiveTab,
-  setPanelPinned,
   setTabOwnerAgent,
   updateTabBrowserUrl,
 } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectWorkspaceTabOrder } from '../../tab-state/tab-state-selectors';
-import {
-  selectPanelOpenMode,
-  selectPanelStackDirection,
-} from '../../user-preferences/user-preferences-selectors';
 import { focusBrowserTabRequested } from '../app-layout-slice';
 
 let running = false;
@@ -75,12 +67,6 @@ function browserTab(
     // rehydrates at its actual size after restart (monorepo#2857).
     ...(emulatedSize === undefined ? {} : { emulatedSize }),
   };
-}
-
-function* pinRevealedPanel(workspaceId: string, requestId: string): SagaGenerator<void> {
-  const reveal = yield* selectPendingPanelReveal.effect(workspaceId);
-  if (reveal?.requestId !== requestId) return;
-  yield* put(setPanelPinned(workspaceId, reveal.panelId, true));
 }
 
 type LayoutReadiness =
@@ -156,7 +142,6 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
   // of dedupe so the panel layout's equivalent-tab reuse doesn't override it.
   const newTabId = typeof data.tabId === 'string' && data.tabId.length > 0 ? data.tabId : undefined;
   const allowDuplicate = data.allowDuplicate === true ? true : undefined;
-  const pin = data.pin === true;
   // Pre-rewrite URL for rewritten opens; persisted with the tab so a restart
   // can re-run the rewrite (monorepo#2789).
   const requestedUrl = typeof data.requestedUrl === 'string' ? data.requestedUrl : undefined;
@@ -233,21 +218,6 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       // (monorepo#3045). Adoption never hides a visible tab.
       if (hiddenOpen) return;
       yield* put(setActiveTab(workspaceId, existing.id));
-      if (pin) {
-        const panels = yield* selectPanels.effect(workspaceId);
-        const target = Object.entries(panels).find(([, panel]) =>
-          panel.tabs.some((tab) => tab.id === existing.id),
-        );
-        if (target) {
-          yield* put(setActiveTab(workspaceId, existing.id, target[0]));
-          const focusAction = focusPanel(workspaceId, target[0]);
-          yield* put(focusAction);
-          yield* pinRevealedPanel(workspaceId, focusAction.payload.requestId);
-          if (ownerAgentId !== undefined) {
-            yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, focusAction.payload.requestId);
-          }
-        }
-      }
       return;
     }
     if (hiddenOpen) {
@@ -260,20 +230,16 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       );
       return;
     }
-    const openAction = openTab(
+    const openAction = openTabInRightmostColumnRequested(
       workspaceId,
       browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
-      undefined,
-      newTabId,
-      undefined,
-      undefined,
-      allowDuplicate,
+      {
+        newTabId,
+        allowDuplicate,
+        agentDriven: ownerAgentId !== undefined ? true : undefined,
+      },
     );
     yield* put(openAction);
-    if (pin) yield* pinRevealedPanel(workspaceId, openAction.payload.newTabId);
-    if (ownerAgentId !== undefined) {
-      yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, openAction.payload.newTabId);
-    }
     return;
   }
   // A hidden (default) agent open creates the tab straight into hiddenTabs:
@@ -292,22 +258,16 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     return;
   }
   if (position === 'adjacent') {
-    const panelOpenMode = yield* selectPanelOpenMode.effect();
-    const openAction = openTabInNewRootColumn(
+    const openAction = openTabInRightmostColumnRequested(
       workspaceId,
       browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize),
       {
         newTabId,
         allowDuplicate,
-        panelOpenMode,
-        panelStackDirection: yield* selectPanelStackDirection.effect(),
+        agentDriven: ownerAgentId !== undefined ? true : undefined,
       },
     );
     yield* put(openAction);
-    if (pin) yield* pinRevealedPanel(workspaceId, openAction.payload.newTabId);
-    if (ownerAgentId !== undefined) {
-      yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, openAction.payload.newTabId);
-    }
     return;
   }
   const openAction = openTab(
@@ -320,7 +280,6 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     allowDuplicate,
   );
   yield* put(openAction);
-  if (pin) yield* pinRevealedPanel(workspaceId, openAction.payload.newTabId);
   if (ownerAgentId !== undefined) {
     yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, openAction.payload.newTabId);
   }
@@ -405,12 +364,9 @@ function* showBrowser(data: BrowserShowTabPayload | null): SagaGenerator<void> {
 
   const hiddenTabs = yield* selectHiddenTabs.effect(workspaceId);
   if (hiddenTabs.some((tab) => tab.id === data.tabId && tab.type === 'browser')) {
-    // Reveal: activate into a visible panel. focus: false reveals without
-    // moving panel focus or displacing the focused panel's active tab
-    // (monorepo#3045, #3112); the panel-open mode rides along so the
-    // pin-mode reveal targets the reusable panel instead of splitting.
-    const panelOpenMode = yield* selectPanelOpenMode.effect();
-    yield* put(restoreHiddenTab(workspaceId, data.tabId, undefined, focus, panelOpenMode));
+    // Reveal: activate into a visible fixed column. focus: false keeps panel
+    // focus stable (monorepo#3045, #3112).
+    yield* put(restoreHiddenTab(workspaceId, data.tabId, undefined, focus));
     // A reveal on a workspace this window is not displaying keeps its
     // layout-state effects but skips the actual UI reveal/scroll (its
     // requestId is the restored tab's id).
@@ -484,7 +440,11 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
         error: `layout hydration failed: ${readiness.message}`,
       });
     } catch (error) {
-      logger.warn('browser:list-tabs-response error reply failed', { workspaceId, requestId, error });
+      logger.warn('browser:list-tabs-response error reply failed', {
+        workspaceId,
+        requestId,
+        error,
+      });
     }
     return;
   }
@@ -634,8 +594,7 @@ export function* browserIpcSaga(): SagaGenerator<void> {
         {
           bufferPolicy: {
             kind: 'lossless',
-            rationale:
-              'Every ownership change must be persisted with the tab in arrival order.',
+            rationale: 'Every ownership change must be persisted with the tab in arrival order.',
           },
         },
       ),

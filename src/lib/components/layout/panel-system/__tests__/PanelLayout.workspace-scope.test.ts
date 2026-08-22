@@ -27,7 +27,6 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectFocusedPanel: readableSelector(null),
   selectActiveTab: readableSelector(null),
   selectAllTabs: readableSelector([]),
-  selectPanelColumnCount: readableSelector(0),
   selectPanelColumnDefaultWidthTiers: readableSelector([]),
   selectPanelCanvasWidth: readableSelector(null),
   selectPanelCanvasWidthSource: readableSelector(null),

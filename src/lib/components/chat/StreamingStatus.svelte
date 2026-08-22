@@ -18,7 +18,7 @@
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-  import { deriveErrorDisplay } from './streaming-status-utils';
+  import { deriveErrorDisplay, latestMeaningfulStatusMessage } from './streaming-status-utils';
   import { m } from '$shared/paraglide/messages.js';
   import StreamingTypingIndicator from './StreamingTypingIndicator.svelte';
 
@@ -83,7 +83,6 @@
     sessionCorrupted = false,
     failedAt = null,
     modelUnavailable = null,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     statusEvents = [],
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     streamingStartTime = null,
@@ -119,6 +118,8 @@
     return m.chat_streamingStatus_thinking_label();
   });
 
+  let lifecycleMessage = $derived(latestMeaningfulStatusMessage(statusEvents));
+
   // Error surface copy: recreate-aware when the daemon flagged the session
   // corrupted (monorepo#940), otherwise identical to the raw-error rendering.
   let errorDisplay = $derived(deriveErrorDisplay(error, sessionCorrupted));
@@ -138,7 +139,13 @@
 
 {#if visible}
   {#if status === 'normal'}
-    <StreamingTypingIndicator visible message={statusMessage} {seed} class="mt-2 {className}" />
+    <StreamingTypingIndicator
+      visible
+      message={statusMessage}
+      detailMessage={lifecycleMessage}
+      {seed}
+      class="mt-2 {className}"
+    />
   {:else}
     <div
       role={status === 'error' ? 'alert' : undefined}

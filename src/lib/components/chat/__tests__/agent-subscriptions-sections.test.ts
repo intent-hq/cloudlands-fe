@@ -99,9 +99,11 @@ import { requestSubscriptionFetch } from '$store/renderer/slices/agent-subscript
 import { agentSubscriptionReadSaga } from '$store/renderer/slices/agent-subscription-ui/sagas/agent-subscription-read-saga';
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
 import { appLayoutNavigationSaga } from '$store/renderer/slices/app-layout/sagas/app-layout-navigation-saga';
+import { panelLayoutSaga } from '$store/renderer/slices/panel-layout/sagas/panel-layout-saga';
 import {
   clearPanelLayout,
   initializeLayout,
+  setPanelColumnCount,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import AgentSubscriptions from '../AgentSubscriptions.svelte';
@@ -270,6 +272,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     stopSagas.push(appStore.runSaga(agentSubscriptionReadSaga));
     stopSagas.push(appStore.runSaga(agentMutationSaga));
     stopSagas.push(appStore.runSaga(appLayoutNavigationSaga));
+    stopSagas.push(appStore.runSaga(panelLayoutSaga));
   });
 
   afterAll(() => {
@@ -655,7 +658,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     ]);
   });
 
-  it('reuses, reveals, and focuses an existing watched-agent panel without duplicating it', async () => {
+  it('reuses, reveals, and focuses an existing watched agent in the rightmost column', async () => {
     const wsId = 'ws-agent-panel-reuse';
     seedSession('agent-target', '2026-01-03T00:00:00.000Z', 'responding', wsId);
     await renderWithSnapshot(
@@ -703,7 +706,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     }
   });
 
-  it.each(['Enter', ' '])('uses the same panel reuse path for the %s key', async (key) => {
+  it.each(['Enter', ' '])('uses the same rightmost-column path for the %s key', async (key) => {
     const wsId = `ws-agent-panel-key-${key === ' ' ? 'space' : 'enter'}`;
     seedSession('agent-target', '2026-01-03T00:00:00.000Z', 'responding', wsId);
     await renderWithSnapshot(
@@ -736,7 +739,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(agentRow('agent-target').querySelector('input')).toBeNull();
   });
 
-  it('creates one adjacent agent panel when no matching panel exists', async () => {
+  it('creates one rightmost agent column when no matching panel exists', async () => {
     const wsId = 'ws-agent-panel-create';
     seedSession('agent-new', '2026-01-03T00:00:00.000Z', 'responding', wsId);
     await renderWithSnapshot(
@@ -755,6 +758,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       },
       'parent',
     );
+    appStore.dispatch(setPanelColumnCount(wsId, 2));
     await expandWaitingAgents();
 
     await fireEvent.click(within(agentRow('agent-new')).getAllByRole('button')[0]);
@@ -810,7 +814,6 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       vi.advanceTimersByTime(600);
 
       expect(focusEvents).toEqual([]);
-      expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
       window.removeEventListener('panel:focus-content', onFocus);

@@ -4,9 +4,9 @@
  * Derived state selectors for the panel layout slice.
  */
 
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { store } from '../../store';
-import { emptyWorkspaceState } from './panel-layout-slice';
+import { emptyWorkspaceState, isRecentlyClosedPanelColumnRestorable } from './panel-layout-slice';
 import {
   countHorizontalPanelColumns,
   getAutomaticPanelLayoutCanvasWidth,
@@ -23,6 +23,8 @@ import type {
   PanelTab,
   PanelTabType,
   RecentlyClosedTab,
+  RecentlyClosedPanelColumn,
+  PanelColumnCount,
 } from './panel-layout-types';
 
 const emptyFileContentPrunePaths: string[] = [];
@@ -52,10 +54,6 @@ export const selectPanelRevealRequestsByWorkspaceId = store.createSelector((stat
       layout.pendingPanelReveal ? [[workspaceId, layout.pendingPanelReveal]] : [],
     ),
   ),
-);
-
-export const selectPanelLayoutWorkspaceIds = store.createSelector((state) =>
-  Object.keys(state.panelLayout.byWorkspaceId),
 );
 
 export type PanelTabIdentityRequest = Pick<PanelTab, 'type'> &
@@ -267,10 +265,10 @@ export const selectPanelCanvasWidthSource = store.createSelector<
 );
 
 /** Select the horizontal column count for one mounted layout scope. */
-export const selectPanelColumnCount = store.createSelector<[wsId: string], number>(
+export const selectPanelColumnCount = store.createSelector<[wsId: string], PanelColumnCount>(
   (state, wsId) => {
     const layout = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
-    return countHorizontalPanelColumns(layout.root);
+    return layout.columnCount;
   },
 );
 
@@ -369,6 +367,20 @@ export const selectPanelNavigatorItemsByWorkspaceId = store.createSelector((stat
 export const selectRecentlyClosed = store.createSelector<[wsId: string], RecentlyClosedTab[]>(
   (state, wsId) => (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).recentlyClosed,
 );
+
+/** Select the newest column close that can be applied to the current layout. */
+export const selectLastClosedPanelColumn = store.createSelector<
+  [wsId: string],
+  RecentlyClosedPanelColumn | null
+>((state, wsId) => {
+  const workspace = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
+  return (
+    getItems(
+      workspace.recentlyClosedColumns ??
+        createCollection<RecentlyClosedPanelColumn, 'historyId'>('historyId'),
+    ).find((closed) => isRecentlyClosedPanelColumnRestorable(workspace, closed)) ?? null
+  );
+});
 
 /** Select whether we can go back in layout history */
 export const selectCanGoBack = store.createSelector<[wsId: string], boolean>((state, wsId) => {

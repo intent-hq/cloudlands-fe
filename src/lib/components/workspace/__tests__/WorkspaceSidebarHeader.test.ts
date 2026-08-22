@@ -67,6 +67,17 @@ vi.mock('$store/renderer/slices/ui-layout/ui-layout-slice', () => ({
   toggleSidebarSide: vi.fn(() => ({ type: 'uiLayout/toggleSidebarSide' })),
 }));
 
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectPanelColumnCount: mocks.selector(2),
+}));
+
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
+  setPanelColumnCount: vi.fn((workspaceId: string, count: number) => ({
+    type: 'panelLayout/setPanelColumnCount',
+    payload: [workspaceId, count],
+  })),
+}));
+
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   beginWorkspaceTitleMutation: vi.fn(
     (id: string, token: number, optimisticTitle: string, previousTitle: string) => ({
@@ -172,6 +183,15 @@ describe('WorkspaceSidebarHeader status message', () => {
       value: { writeText: mocks.clipboardWrite },
       configurable: true,
     });
+  });
+
+  it('does not render the panel column control in the workspace title header', async () => {
+    const { container } = await renderHeader();
+    const controls = container.querySelector('[data-sidebar-header-controls]')!;
+    const actionsTrigger = controls.querySelector('[data-workspace-actions-trigger]')!;
+
+    expect(controls.querySelector('[data-panel-column-count-trigger]')).toBeNull();
+    expect(actionsTrigger).toBeTruthy();
   });
 
   it('renders the workspace status message under the title', async () => {

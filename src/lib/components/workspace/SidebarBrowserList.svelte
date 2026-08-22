@@ -9,7 +9,6 @@
     selectPanels,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { revealHiddenTabAvoidingPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import { selectPanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import type { PanelState } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { selectWorkspaceScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
@@ -69,13 +68,7 @@
         ? focusedPanel
         : Object.values(panels).find(showsConversation);
     appStore.dispatch(
-      revealHiddenTabAvoidingPanel(
-        panelLayoutId,
-        tabId,
-        conversationPanel?.id ?? null,
-        undefined,
-        selectPanelOpenMode.select(appStore.state),
-      ),
+      revealHiddenTabAvoidingPanel(panelLayoutId, tabId, conversationPanel?.id ?? null),
     );
   }
 

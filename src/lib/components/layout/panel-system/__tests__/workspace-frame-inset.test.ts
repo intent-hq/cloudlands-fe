@@ -18,6 +18,11 @@ describe('workspace frame outer inset', () => {
     expect(appLayout).toContain(": 'rounded-xl bg-sidebar border border-border shadow-sm'");
   });
 
+  it('keeps the workspace frame from becoming an outer vertical scroll owner', () => {
+    expect(appLayout).toContain('class="flex-1 min-h-0 overflow-hidden"');
+    expect(appLayout).not.toContain('class:overflow-auto={!showWorkspaceColumns}');
+  });
+
   it('uses titlebar geometry and semantic overlap state without changing frame dimensions', () => {
     expect(appLayout).toContain('class="workspace-sidebar-frame relative z-40');
     expect(appLayout).toContain(

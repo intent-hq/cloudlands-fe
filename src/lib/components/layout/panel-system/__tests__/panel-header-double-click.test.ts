@@ -37,6 +37,7 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectRecentlyClosed: () => readable([]),
+  selectPanelColumnCount: () => readable(1),
   selectPanelLayoutWorkspace: {
     select: (state: any) => state.panelLayout.byWorkspaceId['workspace-1'],
   },
@@ -67,10 +68,6 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: () => readable([]),
-}));
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
-  selectPanelOpenMode: () => readable('pin'),
-  selectPanelStackDirection: () => readable('right'),
 }));
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -106,11 +103,20 @@ function renderTabBar(showTabStrip = false) {
 }
 
 beforeEach(() => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   mocks.dispatch.mockClear();
   setDraggedPanelId(null);
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   setDraggedPanelId(null);
   cleanup();
 });

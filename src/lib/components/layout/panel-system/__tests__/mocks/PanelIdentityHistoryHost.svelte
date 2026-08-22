@@ -23,7 +23,8 @@
     historyCount = 8,
     closedHistoryCount = 0,
     initialActiveTabId = 'note-history',
-    pinned = true,
+    closeAvailable = true,
+    isRightmostPanel = true,
   }: {
     theme?: 'light' | 'dark';
     width?: number;
@@ -32,7 +33,8 @@
     historyCount?: number;
     closedHistoryCount?: number;
     initialActiveTabId?: string;
-    pinned?: boolean;
+    closeAvailable?: boolean;
+    isRightmostPanel?: boolean;
   } = $props();
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
@@ -119,6 +121,13 @@
       filePath: 'AGENTS.md',
       closable: true,
     },
+    {
+      id: 'spec-history',
+      type: 'note',
+      title: 'Workspace specification',
+      noteId: 'spec',
+      closable: true,
+    },
   ];
   const tabs = $derived(allTabs.slice(0, historyCount));
   let activeTabId = $state(initialActiveTabId);
@@ -168,11 +177,11 @@
     {activeTabId}
     panelId="panel-history"
     {workspaceId}
-    {pinned}
+    {isRightmostPanel}
     isFocused
     onTabClick={(tabId) => (activeTabId = tabId)}
     onTabRename={() => {}}
-    onClosePanel={() => {}}
+    onClosePanel={closeAvailable ? () => {} : undefined}
   />
   <button type="button" data-testid="outside-control">Outside</button>
 </section>

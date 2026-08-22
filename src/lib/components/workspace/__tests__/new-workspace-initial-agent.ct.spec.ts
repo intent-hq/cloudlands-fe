@@ -7,7 +7,7 @@ for (const coordinator of [true, false]) {
     { name: 'delayed snapshot', delayed: true, restore: false },
     { name: 'restore', delayed: false, restore: true },
   ]) {
-    test(`renders one focused pinned initial agent for ${coordinator ? 'coordinator' : 'non-coordinator'} ${lifecycle.name}`, async ({
+    test(`renders one focused initial agent without a reusable neighbor for ${coordinator ? 'coordinator' : 'non-coordinator'} ${lifecycle.name}`, async ({
       mount,
     }) => {
       const component = await mount(NewWorkspaceInitialAgentHarness, {
@@ -21,16 +21,16 @@ for (const coordinator of [true, false]) {
       const state = component.locator('[data-initial-agent-state]');
 
       await expect(state).toHaveAttribute('data-agent-count', '1');
-      await expect(state).toHaveAttribute('data-agent-pinned', 'true');
-      const agentPanelId = await state.getAttribute('data-agent-panel-id');
-      await expect(state).toHaveAttribute('data-focused-panel-id', agentPanelId!);
+      await expect(state).toHaveAttribute('data-agent-panel-has-pin', 'false');
       await expect(state).toHaveAttribute('data-reusable-panel-id', '');
-      await expect(state).toHaveAttribute('data-panel-order', agentPanelId!);
+      const agentPanelId = (await state.getAttribute('data-agent-panel-id')) ?? '';
+      expect(agentPanelId).not.toBe('');
+      await expect(state).toHaveAttribute('data-focused-panel-id', agentPanelId);
+      await expect(state).toHaveAttribute('data-panel-order', agentPanelId);
+      const agentPanel = component.locator(`[data-panel-id="${agentPanelId}"]`);
       await expect(component.locator('[data-panel-id]')).toHaveCount(1);
-      await expect(component.locator(`[data-panel-id="${agentPanelId}"]`)).toHaveAttribute(
-        'data-focused',
-        'true',
-      );
+      await expect(agentPanel).toHaveAttribute('data-focused', 'true');
+      await expect(agentPanel).toHaveAttribute('data-pristine', 'false');
     });
   }
 }

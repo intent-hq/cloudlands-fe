@@ -422,7 +422,7 @@
             class="flex items-center pt-1 pl-8 w-full bg-muted/20 hover:bg-muted/50 rounded-b-md py-1"
             transition:slide={{ axis: 'y', duration: 200 }}
           >
-            <TaskAgentStatus agentId={effectiveAgentId} compact />
+            <TaskAgentStatus agentId={effectiveAgentId} {workspaceId} compact />
           </div>
         {/if}
       </div>
@@ -441,12 +441,10 @@
             <TaskNotePreview {workspaceId} noteId={linkedTaskNoteId} />
           {/if}
         {/snippet}
-        <button
-          type="button"
-          class="flex flex-col w-full min-w-0 bg-transparent border border-border rounded-xs shadow-xs text-left transition-colors cursor-pointer {selected
+        <div
+          class="flex flex-col w-full min-w-0 bg-transparent border border-border rounded-xs shadow-xs text-left transition-colors {selected
             ? 'border-primary'
             : ''}"
-          onclick={(e) => handleOpenLinkedNote(e)}
           contenteditable="false"
         >
           <div class="flex items-center gap-2 w-full pl-2.5 pr-2 pt-2 pb-1.5">
@@ -459,13 +457,16 @@
                 />
               {/key}
             </span>
-            <span
-              class="flex-1 min-w-0 font-medium overflow-hidden text-ellipsis whitespace-nowrap {linkedTaskNotFound
+            <button
+              type="button"
+              data-testid="linked-task-title"
+              class="flex-1 min-w-0 bg-transparent border-0 p-0 font-medium overflow-hidden text-ellipsis whitespace-nowrap text-left cursor-pointer {linkedTaskNotFound
                 ? 'text-muted-foreground italic'
                 : ''}"
+              onclick={(e) => handleOpenLinkedNote(e)}
             >
               {linkedTaskTitle}
-            </span>
+            </button>
             {#if unmetDependsOn.length > 0 && !effectiveChecked}
               <Tooltip
                 side="bottom"
@@ -556,10 +557,10 @@
               class="flex items-center pt-1 pl-9 w-full bg-muted/20 hover:bg-muted/50 rounded-b-md py-1"
               transition:slide={{ axis: 'y', duration: 200 }}
             >
-              <TaskAgentStatus agentId={effectiveAgentId} compact />
+              <TaskAgentStatus agentId={effectiveAgentId} {workspaceId} compact />
             </div>
           {/if}
-        </button>
+        </div>
       </Tooltip>
       <span class="sr-only"><NodeViewContent /></span>
     {/if}

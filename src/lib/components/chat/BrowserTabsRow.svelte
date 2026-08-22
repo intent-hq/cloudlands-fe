@@ -25,7 +25,6 @@
     selectPanels,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { revealHiddenTabAvoidingPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import { selectPanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { store as appStore } from '$store/renderer/store';
   import {
     safeSubscriptionRowTransition,
@@ -136,13 +135,7 @@
         panel.tabs.some((tab) => tab.type === 'agent' && tab.agentId === agentId),
       );
       appStore.dispatch(
-        revealHiddenTabAvoidingPanel(
-          workspaceId,
-          entry.tab.id,
-          conversationPanel?.id ?? null,
-          undefined,
-          selectPanelOpenMode.select(appStore.state),
-        ),
+        revealHiddenTabAvoidingPanel(workspaceId, entry.tab.id, conversationPanel?.id ?? null),
       );
     } else if (entry.panelId) {
       // Already-visible tab: activate and focus, same as the sidebar list.

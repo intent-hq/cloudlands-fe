@@ -118,7 +118,7 @@ describe('menuIpcSaga', () => {
       { type: 'noteReadTracking/createNoteRequested', payload: ['ws-1'] },
       { type: 'terminals/createTerminalRequested', payload: ['ws-1'] },
       {
-        type: 'panelLayout/openTab',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-1',
           tab: {
@@ -127,7 +127,6 @@ describe('menuIpcSaga', () => {
             browserUrl: 'about:blank',
             closable: true,
           },
-          panelId: undefined,
           newTabId: `tab-${NOW}-i`,
           force: false,
           timestamp: NOW,
@@ -152,6 +151,33 @@ describe('menuIpcSaga', () => {
       { type: 'browser/tabZoomRequested', payload: ['ws-1', 'browser-1', 'in'] },
       { type: 'browser/tabZoomRequested', payload: ['ws-1', 'browser-1', 'out'] },
       { type: 'browser/tabZoomRequested', payload: ['ws-1', 'browser-1', 'reset'] },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('routes New Browser through configured rightmost-column placement', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit('menu:new-browser', { workspaceId: 'ws-1' });
+
+    expect(actions).toEqual([
+      {
+        type: 'panelLayout/openTabInRightmostColumnRequested',
+        payload: {
+          wsId: 'ws-1',
+          tab: {
+            type: 'browser',
+            title: 'Browser',
+            browserUrl: 'about:blank',
+            closable: true,
+          },
+          newTabId: `tab-${NOW}-i`,
+          force: false,
+          timestamp: NOW,
+        },
+      },
     ]);
     task.cancel();
     await task.toPromise();

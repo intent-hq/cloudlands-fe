@@ -123,6 +123,15 @@ test('keeps waiting separate through a live same-node state transition', async (
   await expect(reactive).toHaveCSS('color', await systemColor(page, 'color', 'CanvasText'));
 });
 
+test('keeps a plain idle avatar glyph visible in dark mode', async ({ mount, page }) => {
+  const component = await mount(AgentAvatarWaitingHost, { props: { theme: 'dark' } });
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+
+  const avatar = component.getByTestId('plain-idle-avatar').locator('[data-agent-avatar]');
+  await expect(avatar).toHaveCSS('color', 'rgb(8, 8, 8)');
+  await expect(avatar).toHaveCSS('background-color', 'rgb(192, 206, 198)');
+});
+
 test('matches the light and dark waiting palette catalog at 20px and 200%', async ({
   mount,
   page,

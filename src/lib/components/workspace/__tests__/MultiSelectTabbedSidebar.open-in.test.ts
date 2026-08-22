@@ -56,7 +56,14 @@ const mocks = vi.hoisted(() => {
     notes: [] as Array<{ id: string; title: string; content: string }>,
     changes: [] as Array<{ id: string; file: string; relativePath: string }>,
     selectedTabs: ['overview'] as string[],
+    selectedTabsByWorkspace: new Map<string, string[]>(),
+    selectedTabListeners: new Set<() => void>(),
+    setSelectedTabs(workspaceId: string, tabIds: string[]) {
+      this.selectedTabsByWorkspace.set(workspaceId, tabIds);
+      this.selectedTabListeners.forEach((listener) => listener());
+    },
     runningAgentIds: new Set<string>(),
+    focusedPanelId: 'source-panel',
     activePrSummary: null as null | {
       number: number;
       url: string;
@@ -110,7 +117,7 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectActiveTab: mocks.selector(null),
   selectAllTabs: mocks.selector([]),
-  selectFocusedPanelId: mocks.selector(null),
+  selectFocusedPanelId: { select: () => mocks.focusedPanelId },
   getPanelTabOpenState: () => ({
     count: 0,
     isOpen: false,
@@ -159,7 +166,23 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   selectNotesLoading: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-selectors', () => ({
-  selectMultiSelectSidebarSelectedTabIds: mocks.selectorFrom(() => mocks.selectedTabs),
+  selectMultiSelectSidebarSelectedTabIds: (workspaceIdStore: {
+    subscribe: (run: (workspaceId: string) => void) => () => void;
+  }) => ({
+    subscribe(run: (tabIds: string[]) => void) {
+      let workspaceId = '';
+      const emit = () => run(mocks.selectedTabsByWorkspace.get(workspaceId) ?? mocks.selectedTabs);
+      const unsubscribeWorkspaceId = workspaceIdStore.subscribe((nextWorkspaceId) => {
+        workspaceId = nextWorkspaceId;
+        emit();
+      });
+      mocks.selectedTabListeners.add(emit);
+      return () => {
+        unsubscribeWorkspaceId();
+        mocks.selectedTabListeners.delete(emit);
+      };
+    },
+  }),
   selectMultiSelectSidebarTabOrder: mocks.selector([
     'overview',
     'agents',
@@ -219,7 +242,7 @@ vi.mock('../sidebar/AddContextSection.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 vi.mock('../sidebar/ContextPanel.svelte', async () => ({
-  default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
+  default: (await import('./mocks/ContextPanel.svelte')).default,
 }));
 vi.mock('../sidebar/WorkspaceProgressCard.svelte', async () => ({
   default: (await import('./mocks/WorkspaceProgressCard.svelte')).default,
@@ -248,6 +271,7 @@ warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
 warmImport(() => import('../../ui/__tests__/mocks/dropdown-menu.svelte'));
 warmImport(() => import('./mocks/FilesPanel.svelte'));
+warmImport(() => import('./mocks/ContextPanel.svelte'));
 warmImport(() => import('./mocks/WorkspaceAgentsList.svelte'));
 warmImport(() => import('../MultiSelectTabbedSidebar.svelte'));
 
@@ -304,12 +328,15 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     mocks.notes = [];
     mocks.changes = [];
     mocks.selectedTabs = ['overview'];
+    mocks.selectedTabsByWorkspace.clear();
     mocks.runningAgentIds.clear();
+    mocks.focusedPanelId = 'source-panel';
     mocks.activePrSummary = null;
   });
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -722,7 +749,9 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
   it('opens the exact collapsed-stack agent without expanding the Agents card', async () => {
     mocks.agents = [makeAgent('agent-a'), makeAgent('agent-b', { specialist: 'verifier' })];
     const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
-    const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const { container } = render(Sidebar, {
+      props: { workspaceId: 'ws-1', panelLayoutId: 'layout-1' },
+    });
     const target = container.querySelector<HTMLButtonElement>('[data-sidebar-agent="agent-b"]')!;
 
     mocks.dispatch.mockClear();
@@ -736,7 +765,14 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     ).toEqual([
       [
         expect.objectContaining({
-          payload: ['ws-1', expect.objectContaining({ agentId: 'agent-b', openInNewColumn: true })],
+          payload: [
+            'ws-1',
+            {
+              agentId: 'agent-b',
+              panelLayoutId: 'layout-1',
+              sourcePanelId: 'source-panel',
+            },
+          ],
         }),
       ],
     ]);
@@ -745,6 +781,45 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
         ([action]) => action.type === 'sidebarNav/setMultiSelectSidebarSelectedTabs',
       ),
     ).toBe(false);
+  });
+
+  it.each([
+    { selectedTab: 'agents', target: '[data-expanded-agent="agent-b"]' },
+    { selectedTab: 'context', target: '[data-context-agent-callback]' },
+    { selectedTab: 'files', target: '[data-files-agent-callback]' },
+  ])('routes the $selectedTab agent callback through ordinary rightmost intent', async (entry) => {
+    mocks.agents = [makeAgent('agent-b')];
+    mocks.selectedTabs = [entry.selectedTab];
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    const { container } = render(Sidebar, {
+      props: { workspaceId: 'ws-1', panelLayoutId: 'layout-1' },
+    });
+
+    mocks.dispatch.mockClear();
+    await fireEvent.click(container.querySelector(entry.target)!);
+
+    const requests = mocks.dispatch.mock.calls.filter(
+      ([action]) => action.type === 'appLayout/openAgentTabRequested',
+    );
+    expect(requests).toEqual([
+      [
+        expect.objectContaining({
+          payload: [
+            'ws-1',
+            {
+              agentId: 'agent-b',
+              panelLayoutId: 'layout-1',
+              sourcePanelId: 'source-panel',
+            },
+          ],
+        }),
+      ],
+    ]);
+    expect(requests[0]?.[0].payload[1]).not.toHaveProperty('openInNewColumn');
+    expect(requests[0]?.[0].payload[1]).not.toHaveProperty('openInAdjacentPanel');
+    expect(requests[0]?.[0].payload[1]).not.toHaveProperty('targetPanelId');
+    expect(requests[0]?.[0].payload[1]).not.toHaveProperty('adaptiveFirstChat');
+    expect(requests[0]?.[0].payload[1]).not.toHaveProperty('availablePanelCanvasWidth');
   });
 
   it('opens the Agents card and compact note exactly once', async () => {
@@ -822,6 +897,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'sidebarNav/setMultiSelectSidebarSelectedTabs' }),
     );
+    mocks.dispatch.mockClear();
 
     await fireEvent.click(strip!);
     expect(mocks.dispatch).not.toHaveBeenCalled();
@@ -928,6 +1004,114 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
         payload: ['ws-1', ['overview']],
       }),
     );
+  });
+
+  it('switches expanded workspaces without animating or flashing the outgoing card', async () => {
+    mocks.selectedTabsByWorkspace.set('ws-1', ['agents']);
+    mocks.selectedTabsByWorkspace.set('ws-2', ['files']);
+    mocks.agents = [makeAgent('old-workspace-agent')];
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    const animations: Array<{ node: Element; duration: number }> = [];
+    const originalAnimate = Element.prototype.animate;
+    const animate = vi
+      .spyOn(Element.prototype, 'animate')
+      .mockImplementation(function (keyframes, options) {
+        animations.push({
+          node: this,
+          duration: Number(typeof options === 'number' ? options : (options?.duration ?? 0)),
+        });
+        return originalAnimate.call(this, keyframes, options);
+      });
+    const view = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    animations.length = 0;
+
+    await view.rerender({ workspaceId: 'ws-2' });
+
+    expect(view.container.querySelector('[data-sidebar-card-workspace="ws-1"]')).toBeNull();
+    expect(view.container.querySelector('[data-expanded-agent="old-workspace-agent"]')).toBeNull();
+    expect(
+      view.container
+        .querySelector('[data-sidebar-card-workspace="ws-2"]')
+        ?.getAttribute('data-sidebar-card-tab'),
+    ).toBe('files');
+    expect(animations.filter(({ node }) => node.matches('.sidebar-expanded-card'))).toEqual([]);
+    animate.mockRestore();
+  });
+
+  it('preserves same-workspace launcher, collapse, and section transitions', async () => {
+    mocks.dispatch.mockImplementation((action) => {
+      if (action?.type === 'sidebarNav/setMultiSelectSidebarSelectedTabs') {
+        const [workspaceId, tabIds] = action.payload as [string, string[]];
+        mocks.setSelectedTabs(workspaceId, tabIds);
+      }
+      return action;
+    });
+    mocks.selectedTabsByWorkspace.set('ws-1', ['overview']);
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    const animations: Array<{ node: Element; duration: number }> = [];
+    const originalAnimate = Element.prototype.animate;
+    const animate = vi
+      .spyOn(Element.prototype, 'animate')
+      .mockImplementation(function (keyframes, options) {
+        animations.push({
+          node: this,
+          duration: Number(typeof options === 'number' ? options : (options?.duration ?? 0)),
+        });
+        return originalAnimate.call(this, keyframes, options);
+      });
+    const rect = {
+      x: 10,
+      y: 10,
+      top: 10,
+      right: 110,
+      bottom: 110,
+      left: 10,
+      width: 100,
+      height: 100,
+      toJSON: () => ({}),
+    } as DOMRect;
+    const geometry = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(rect);
+    const view = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    animations.length = 0;
+
+    await fireEvent.click(
+      view.container.querySelector('[data-sidebar-launcher="changes"] button')!,
+    );
+    await waitFor(() =>
+      expect(
+        animations.some(
+          ({ node, duration }) =>
+            node.matches('[data-sidebar-card-tab="changes"]') && duration === 300,
+        ),
+      ).toBe(true),
+    );
+
+    animations.length = 0;
+    await fireEvent.click(
+      view.container.querySelector('[data-sidebar-collapsed-tab="files"] button')!,
+    );
+    await waitFor(() =>
+      expect(
+        animations.filter(
+          ({ node, duration }) => node.matches('.sidebar-expanded-card') && duration === 180,
+        ),
+      ).toHaveLength(2),
+    );
+
+    animations.length = 0;
+    await fireEvent.click(
+      view.container.querySelector('[data-sidebar-collapsed-tab="files"] button')!,
+    );
+    await waitFor(() =>
+      expect(
+        animations.some(
+          ({ node, duration }) =>
+            node.matches('[data-sidebar-card-tab="files"]') && duration === 300,
+        ),
+      ).toBe(true),
+    );
+    geometry.mockRestore();
+    animate.mockRestore();
   });
 
   it('restores the selected tab across an unmount/remount cycle via the Redux round-trip', async () => {

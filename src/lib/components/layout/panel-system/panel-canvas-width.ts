@@ -1,4 +1,5 @@
 import {
+  allocateAutomaticPanelWidths,
   allocatePanelWidths,
   DEFAULT_PANEL_WIDTH,
   getAutomaticPanelCanvasWidth,
@@ -20,8 +21,8 @@ export function getPanelViewportContentWidth(
 /**
  * Compute default and minimum widths for the horizontal panel canvas.
  *
- * Viewport canvases equalize panels when their preferences fit and preserve
- * preferred widths when they overflow. Content canvases always hug preferences.
+ * Automatic viewport canvases use equal capped columns. Explicit canvases
+ * preserve saved ratios, while content canvases keep their intrinsic policy.
  */
 export function getPanelCanvasWidths(
   viewportWidth: number,
@@ -55,16 +56,23 @@ export function getPanelCanvasWidths(
     persistedWidth > 0
       ? persistedWidth
       : null;
-  let allocation = allocatePanelWidths(
-    preferredWidths,
-    sizing === 'viewport' ? (explicitCanvasWidth ?? viewportWidth) : 0,
-  );
-  if (intrinsicCanvasWidth !== null) {
-    const targetWidth =
-      sizing === 'viewport' && viewportWidth > 0
-        ? Math.min(viewportWidth, intrinsicCanvasWidth)
-        : intrinsicCanvasWidth;
-    const gapWidth = PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, preferredWidths.length - 1);
+  const gapWidth = PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, preferredWidths.length - 1);
+  let allocation =
+    sizing === 'viewport' && explicitCanvasWidth === null
+      ? allocateAutomaticPanelWidths(preferredWidths.length, viewportWidth)
+      : allocatePanelWidths(preferredWidths, 0);
+  if (explicitCanvasWidth !== null) {
+    const preferredTotal = preferredWidths.reduce((sum, width) => sum + width, 0);
+    const contentWidth = Math.max(0, explicitCanvasWidth - gapWidth);
+    const scale = preferredTotal > 0 ? contentWidth / preferredTotal : 0;
+    allocation = {
+      panelWidths: preferredWidths.map((width) => width * scale),
+      canvasWidth: explicitCanvasWidth,
+      availablePanelWidth: contentWidth,
+      overflows: false,
+    };
+  } else if (intrinsicCanvasWidth !== null && sizing === 'content') {
+    const targetWidth = intrinsicCanvasWidth;
     const preferredTotal = preferredWidths.reduce((sum, width) => sum + width, 0);
     const scale = preferredTotal > 0 ? Math.max(0, targetWidth - gapWidth) / preferredTotal : 0;
     allocation = {
@@ -80,7 +88,7 @@ export function getPanelCanvasWidths(
       : resetPanelColumns;
   return {
     defaultWidth: allocation.canvasWidth,
-    resetWidth: getAutomaticPanelCanvasWidth(resetPreferredWidths, 'content'),
+    resetWidth: getAutomaticPanelCanvasWidth(resetPreferredWidths, sizing, viewportWidth),
     minWidth: MIN_PANEL_CANVAS_WIDTH,
     panelWidths: allocation.panelWidths,
     overflows: allocation.overflows,

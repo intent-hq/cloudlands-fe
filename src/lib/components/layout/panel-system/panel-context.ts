@@ -43,9 +43,8 @@ export function getPanelIdFromEvent(event: Event): string | undefined {
 }
 
 /**
- * Helper to create navigation detail with panel context. Navigation originating
- * inside a panel always opens adjacent; modifier-click retains that behavior for
- * callers outside a panel.
+ * Helper to create agent navigation detail with panel context. The source panel
+ * is context only; Cmd/Ctrl-click explicitly requests adjacent routing.
  *
  * @param event - The mouse click event
  * @param panelContext - Optional Svelte panel context (from getPanelContext())
@@ -57,7 +56,7 @@ export function getNavigationContext(
 ): { sourcePanelId?: string; openInAdjacentPanel: boolean } {
   // Try Svelte context first (most reliable), then DOM traversal
   const sourcePanelId = panelContext?.panelId ?? getPanelIdFromEvent(event);
-  const openInAdjacentPanel = sourcePanelId !== undefined || event.metaKey || event.ctrlKey;
+  const openInAdjacentPanel = event.metaKey || event.ctrlKey;
 
   return { sourcePanelId, openInAdjacentPanel };
 }

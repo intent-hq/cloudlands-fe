@@ -7,9 +7,22 @@
     width?: number;
     zoom?: number;
     mode?: 'processing' | 'streaming';
+    phaseMessage?: string | null;
   }
 
-  let { theme = 'light', width = 720, zoom = 1, mode = 'processing' }: Props = $props();
+  let {
+    theme = 'light',
+    width = 720,
+    zoom = 1,
+    mode = 'processing',
+    phaseMessage = 'Sent prompt…',
+  }: Props = $props();
+
+  let statusEvents = $derived(
+    phaseMessage === null
+      ? []
+      : [{ phase: 'prompt', message: phaseMessage, level: 'info' as const, timestamp: 1000 }],
+  );
 </script>
 
 {#snippet leading()}
@@ -43,6 +56,7 @@
         isProcessing={mode === 'processing'}
         isStreaming={mode === 'streaming'}
         seed="geometry-agent"
+        {statusEvents}
       />
     </div>
     <ChatOperationalRow

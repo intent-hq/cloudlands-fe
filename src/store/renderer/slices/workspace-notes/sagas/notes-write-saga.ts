@@ -24,7 +24,7 @@ import {
   createNoteRequested,
   markNoteRead,
 } from '../../note-read-tracking/note-read-tracking-slice';
-import { openTab } from '../../panel-layout/panel-layout-slice';
+import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/panel-layout-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { withPreservedUnmetDependsOn } from '../workspace-notes-normalization';
 import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
@@ -437,18 +437,18 @@ function* createRequestedNote(
   const noteId = yield* call(createNewNote, workspaceId, { title, content: '', tags: [] });
   if (!noteId) return;
   yield* put(markNoteRead(workspaceId, noteId));
+  const panelLayoutId = options?.panelLayoutId ?? workspaceId;
+  const tab = {
+    type: 'note' as const,
+    title,
+    closable: true,
+    noteId,
+    workspaceId,
+  };
   yield* put(
-    openTab(
-      options?.panelLayoutId ?? workspaceId,
-      {
-        type: 'note',
-        title,
-        closable: true,
-        noteId,
-        workspaceId,
-      },
-      options?.panelId,
-    ),
+    options?.panelId
+      ? openTab(panelLayoutId, tab, options.panelId)
+      : openTabInRightmostColumnRequested(panelLayoutId, tab),
   );
 }
 

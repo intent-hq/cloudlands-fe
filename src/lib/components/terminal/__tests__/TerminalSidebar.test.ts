@@ -533,19 +533,23 @@ describe('TerminalSidebar context menu Escape handling', () => {
 });
 
 describe('TerminalSidebar agent navigation context', () => {
-  it('forwards the click navigation context when opening the detection agent', async () => {
+  it.each([
+    ['unmodified', {}, false],
+    ['Cmd', { metaKey: true }, true],
+    ['Ctrl', { ctrlKey: true }, true],
+  ])('forwards %s agent navigation intent', async (_name, modifier, openInAdjacentPanel) => {
     executorState.isRunning = true;
     executorState.agentId = 'agent-detect';
     activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
-    mockGetNavigationContext.mockReturnValue({
+    mockGetNavigationContext.mockImplementation((event: MouseEvent) => ({
       sourcePanelId: 'panel-1',
-      openInAdjacentPanel: true,
-    });
+      openInAdjacentPanel: event.metaKey || event.ctrlKey,
+    }));
 
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
     const detectionAgentButton = await screen.findByTitle('View detection agent');
-    await fireEvent.click(detectionAgentButton);
+    await fireEvent.click(detectionAgentButton, modifier);
 
     expect(mockGetNavigationContext).toHaveBeenCalledWith(expect.any(MouseEvent));
     expect(mockDispatch).toHaveBeenCalledWith({
@@ -555,7 +559,7 @@ describe('TerminalSidebar agent navigation context', () => {
         {
           agentId: 'agent-detect',
           sourcePanelId: 'panel-1',
-          openInAdjacentPanel: true,
+          openInAdjacentPanel,
         },
       ],
     });

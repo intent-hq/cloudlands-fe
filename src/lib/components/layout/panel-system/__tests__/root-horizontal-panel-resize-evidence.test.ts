@@ -9,12 +9,13 @@ import {
   initializeLayout,
   panelLayoutScopeMounted,
   panelLayoutScopeUnmounted,
-  resizePanelLayoutAtHorizontalPanel,
+  resizePanelLayoutAtRootDivider,
   setRestoreStatus,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { selectPanelCanvasWidth } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import { panelLayoutSaga } from '$store/renderer/slices/panel-layout/sagas/panel-layout-saga';
 import { PANEL_LAYOUT_STORAGE_KEY_PREFIX } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import { resizePanelWidthsAtDivider } from '$shared/panel-layout-sizing';
 import PanelLayout from '../PanelLayout.svelte';
 
 const STORE_CONTEXT = 'redux-store-context';
@@ -96,8 +97,12 @@ function expectWidths(expected: number[]) {
 }
 
 function widthsAfterDelta(index: number, delta: number): number[] {
+  return resizePanelWidthsAtDivider(panelWidths(), index, delta).panelWidths;
+}
+
+function widthsAfterOuterDelta(delta: number): number[] {
   const expected = panelWidths();
-  expected[index] = Math.max(96, expected[index] + delta);
+  expected[expected.length - 1] += delta;
   return expected;
 }
 
@@ -292,11 +297,11 @@ describe('root horizontal resize release evidence', () => {
     expect(inset.scrollLeft).toBe(173);
     await releaseAndSample(splitHandle(1), 200, [180, 160, 140], widthsAfterDelta(1, -60));
     expect(inset.scrollLeft).toBe(173);
-    await releaseAndSample(outerHandle(), 1000, [1030, 1060, 1090], widthsAfterDelta(2, 90));
+    await releaseAndSample(outerHandle(), 1000, [1030, 1060, 1090], widthsAfterOuterDelta(90));
     expect(inset.scrollLeft).toBe(173);
   });
 
-  it('preserves siblings through repeated expand, shrink, rapid input, and the minimum clamp', async () => {
+  it('keeps totals valid through repeated proportional resize and minimum clamps', async () => {
     await mount('columns');
     await releaseAndSample(splitHandle(0), 100, [140, 196], widthsAfterDelta(0, 96));
     await releaseAndSample(splitHandle(0), 100, [80, 20, -40], widthsAfterDelta(0, -140));
@@ -317,7 +322,7 @@ describe('root horizontal resize release evidence', () => {
     await settleSaga();
     const persistedWidths = widthsAfterDelta(0, 88);
     const trace = await releaseAndSample(splitHandle(0), 100, [188], persistedWidths);
-    sagaChannel!.put({ type: resizePanelLayoutAtHorizontalPanel.type, payload: [WORKSPACE_ID] });
+    sagaChannel!.put({ type: resizePanelLayoutAtRootDivider.type, payload: [WORKSPACE_ID] });
     await settleSaga();
 
     const serialized = JSON.parse(storage.get(STORAGE_KEY) ?? 'null');
@@ -381,7 +386,11 @@ describe('root horizontal resize release evidence', () => {
     });
     await waitFor(() => expect(canvasWidth()).toBe(500));
     expect(selectPanelCanvasWidth.select(appStore.state, WORKSPACE_ID)).toBeNull();
-    expect(appStore.state.panelLayout.byWorkspaceId[WORKSPACE_ID].canvasWidthSource).toBeNull();
+    expect(appStore.state.panelLayout.byWorkspaceId[WORKSPACE_ID]).toMatchObject({
+      root: { type: 'panel', panelId: 'legacy' },
+      columnCount: 1,
+      canvasWidthSource: null,
+    });
     expect(document.querySelector('[data-panel-id="legacy"]')).not.toBeNull();
     legacy.unmount();
   });

@@ -172,6 +172,7 @@
   const panelCanvasWidthSource$ = selectPanelCanvasWidthSource(workspaceIdStore);
   const pendingPanelReveal$ = selectPendingPanelReveal(workspaceIdStore);
   const restoreStatus$ = selectRestoreStatus(workspaceIdStore);
+  const panelIds$ = selectPanelIds(workspaceIdStore);
   const isDragging$ = selectIsDragging();
   // Keep the root renderer on the split branch when the first adjacent panel
   // opens. The existing panel then retains its keyed component instance while
@@ -248,20 +249,19 @@
   $effect(() => {
     panelDefaultWidthViewport.set(canvasSizing === 'viewport' ? panelViewportWidth : 0);
   });
+  const automaticPanelCanvasWidth = $derived(
+    getAutomaticPanelCanvasWidth($panelColumnDefaultWidths$, canvasSizing, panelViewportWidth),
+  );
   let panelRootReferenceSize = $state(0);
-  let panelCanvasResizeDelta = $state(0);
-  let panelCanvasResizeCommittedWidth = $state<number | null>(null);
   let panelOuterResizeDelta = $state(0);
   let panelOuterResizeCommittedDelta = $state(0);
   let panelOuterResizeCommittedWidth = $state<number | null>(null);
   let panelOuterResizeStartReferenceSize: number | null = null;
   const effectivePreferredCanvasWidth = $derived(
-    panelOuterResizeCommittedWidth ?? panelCanvasResizeCommittedWidth ?? $panelCanvasWidth$,
+    panelOuterResizeCommittedWidth ?? $panelCanvasWidth$,
   );
   const effectivePreferredCanvasWidthSource = $derived(
-    panelOuterResizeCommittedWidth !== null || panelCanvasResizeCommittedWidth !== null
-      ? 'explicit'
-      : $panelCanvasWidthSource$,
+    panelOuterResizeCommittedWidth !== null ? 'explicit' : $panelCanvasWidthSource$,
   );
   const rootHorizontalSizes = $derived(
     $root$?.type === 'split' &&
@@ -295,25 +295,17 @@
       : null,
   );
   const effectivePanelCanvasWidth = $derived(
-    panelOuterResizeCommittedWidth ??
-      panelCanvasResizeCommittedWidth ??
-      expandedAutomaticViewportWidth ??
-      $panelCanvasWidth$,
+    panelOuterResizeCommittedWidth ?? expandedAutomaticViewportWidth ?? $panelCanvasWidth$,
   );
   const effectivePanelCanvasWidthSource = $derived(
-    panelOuterResizeCommittedWidth !== null ||
-      panelCanvasResizeCommittedWidth !== null ||
-      expandedAutomaticViewportWidth !== null
+    panelOuterResizeCommittedWidth !== null || expandedAutomaticViewportWidth !== null
       ? 'explicit'
       : $panelCanvasWidthSource$,
   );
   const panelGeometryCanvasWidth = $derived(
     (panelOuterResizeCommittedWidth ??
-      panelCanvasResizeCommittedWidth ??
       expandedAutomaticViewportWidth ??
-      allocatedPanelCanvas.defaultWidth) +
-      panelCanvasResizeDelta +
-      panelOuterResizeDelta,
+      allocatedPanelCanvas.defaultWidth) + panelOuterResizeDelta,
   );
   let retainedRootPanel = $state<{ panelId: string; width: number } | null>(null);
 
@@ -321,22 +313,13 @@
     const rootIsReconciled =
       $root$ === selectPanelLayoutRoot.select(appStore.state, effectiveLayoutId);
     if (
-      panelCanvasResizeCommittedWidth !== null &&
-      rootIsReconciled &&
-      $panelCanvasWidthSource$ === 'explicit' &&
-      $panelCanvasWidth$ === panelCanvasResizeCommittedWidth
-    ) {
-      panelCanvasResizeCommittedWidth = null;
-    }
-    if (
       panelOuterResizeCommittedWidth !== null &&
       rootIsReconciled &&
       (($panelCanvasWidthSource$ === 'explicit' &&
         $panelCanvasWidth$ === panelOuterResizeCommittedWidth) ||
         ($panelCanvasWidthSource$ === null &&
           $panelCanvasWidth$ === null &&
-          panelOuterResizeCommittedWidth ===
-            getAutomaticPanelCanvasWidth($panelColumnDefaultWidths$, 'content')))
+          panelOuterResizeCommittedWidth === automaticPanelCanvasWidth))
     ) {
       panelOuterResizeCommittedWidth = null;
       panelOuterResizeCommittedDelta = 0;
@@ -381,7 +364,6 @@
     if (previousWidth === nextWidth) return;
     const gutterWidth =
       startReferenceSize !== null ? Math.max(0, previousWidth - startReferenceSize) : 0;
-    const automaticWidth = getAutomaticPanelCanvasWidth($panelColumnDefaultWidths$, 'content');
     panelOuterResizeCommittedWidth = nextWidth;
     panelOuterResizeCommittedDelta = nextWidth - previousWidth;
     appStore.dispatch(
@@ -390,7 +372,7 @@
         Math.max(1, previousWidth - gutterWidth),
         Math.max(1, nextWidth - gutterWidth),
         nextWidth,
-        nextWidth === automaticWidth,
+        nextWidth === automaticPanelCanvasWidth,
       ),
     );
     panelOuterResizeDelta = 0;
@@ -487,7 +469,7 @@
       event.clientY,
       panelLayoutMotionElement.getBoundingClientRect(),
     );
-    if (!position) return;
+    if (!position || position === 'above' || position === 'below') return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -503,7 +485,7 @@
       event.clientY,
       panelLayoutMotionElement.getBoundingClientRect(),
     );
-    if (!position) return;
+    if (!position || position === 'above' || position === 'below') return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -596,6 +578,7 @@
   const keyboardShortcuts = createPanelKeyboardShortcuts(
     () => layoutManager,
     (direction) => focusCycledPanel(direction),
+    () => panelViewportWidth,
   );
 
   // Register keyboard shortcuts in cache so they can be accessed from outside
@@ -825,30 +808,13 @@
     layoutManager.updateSizes(nodePath, sizes);
   }
 
-  function handleGrowCanvasAtHorizontalPanel(
-    previousWidth: number,
-    nextWidth: number,
+  function handleResizeRootDivider(
     panelIndex: number,
-    nextCanvasWidth: number,
+    requestedDelta: number,
     previousPanelWidths: readonly number[],
   ) {
     markPristinePanelsTouched();
-    // Pin the accepted outer pixels before removing the preview delta. Redux then
-    // replaces this handoff value with the same authoritative width after Svelte
-    // reconciles, so pointer-up cannot expose the old canvas for one frame.
-    panelCanvasResizeCommittedWidth = nextCanvasWidth;
-    handlePanelCanvasResizePreview(0);
-    layoutManager.growCanvasAtHorizontalPanel(
-      previousWidth,
-      nextWidth,
-      panelIndex,
-      nextCanvasWidth,
-      previousPanelWidths,
-    );
-  }
-
-  function handlePanelCanvasResizePreview(delta: number) {
-    panelCanvasResizeDelta = delta;
+    layoutManager.resizeRootDivider(panelIndex, requestedDelta, previousPanelWidths);
   }
 
   function handlePanelCanvasWidthChange(width: number) {
@@ -863,7 +829,7 @@
     targetPanelId: string,
     tabId: string,
     fromPanelId: string,
-    zone: 'top' | 'bottom' | 'left' | 'right' | 'center',
+    zone: 'left' | 'right' | 'center',
   ) {
     if (zone === 'center') {
       // Move to panel, not split
@@ -889,6 +855,7 @@
     position: 'before' | 'after',
     direction: 'horizontal' | 'vertical',
   ) {
+    if (direction !== 'horizontal') return;
     layoutManager.moveTabToSplitLevel(tabId, fromPanelId, nodePath, position, direction);
   }
 
@@ -1336,6 +1303,7 @@
         <PanelContainer
           node={stableContainerRoot}
           panels={$panels$}
+          panelOrder={$panelIds$}
           focusedPanelId={active ? $focusedPanelId$ : null}
           zoomedPanelId={keyboardShortcuts.zoomedPanelId}
           dominantPanelId={$expandedPanelId$}
@@ -1347,6 +1315,7 @@
           rootPanelReferenceSize={panelGeometryCanvasWidth > 0 ? panelGeometryCanvasWidth : null}
           rootHorizontalPanelWidths={allocatedPanelCanvas.panelWidths}
           rootCanvasResizeDelta={panelOuterResizeDelta + panelOuterResizeCommittedDelta}
+          availableCanvasWidth={panelViewportWidth}
           onFocusPanel={handleFocusPanel}
           onTabClick={handleTabClick}
           onTabClose={handleTabClose}
@@ -1360,8 +1329,7 @@
           onZoomToggle={handleZoomToggle}
           onUpdateSizes={handleUpdateSizes}
           onRootReferenceSizeChange={(width) => (panelRootReferenceSize = width)}
-          onCanvasResizePreview={handlePanelCanvasResizePreview}
-          onGrowCanvasAtHorizontalPanel={handleGrowCanvasAtHorizontalPanel}
+          onResizeRootDivider={handleResizeRootDivider}
           onTabDropToSplit={handleTabDropToSplit}
           onTabMoveToPanel={handleTabMoveToPanel}
           onPanelMove={handlePanelMove}
@@ -1404,39 +1372,40 @@
   class="panel-layout h-full w-full flex flex-col bg-sidebar"
   aria-label={m.layout_panelLayout_ariaLabel()}
 >
-  <!-- Main panel area -->
-  <div
-    bind:this={panelWorkspaceInset}
-    use:measurePanelViewportWidth
-    class={cn(
-      'flex-1 min-h-0 overflow-y-hidden scrollbar-none bg-sidebar',
-      contained ? 'overflow-hidden py-2 px-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3',
-    )}
-    data-testid="panel-workspace-inset"
-    use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24 }}
-  >
-    <!-- The flex track makes the fixed-width canvas participate in max-content
-         sizing, which keeps the container's right padding in the scroll range. -->
-    <div class={contained ? 'h-full w-full min-w-0' : 'flex h-full w-max min-w-full'}>
-      {#key effectiveLayoutId}
-        <PanelCanvasFrame
-          sizing={canvasSizing}
-          viewportWidth={panelViewportWidth}
-          panelColumnWidths={panelColumnPreferredWidths}
-          resetPanelColumnWidths={$panelColumnDefaultWidths$}
-          canvasWidth={effectivePanelCanvasWidth}
-          canvasWidthSource={effectivePanelCanvasWidthSource}
-          transientWidthDelta={panelCanvasResizeDelta}
-          scrollContainer={panelWorkspaceInset}
-          onWidthChange={handlePanelCanvasWidthChange}
-          onResizeStart={handlePanelCanvasResizeStart}
-          onResizePreview={handlePanelOuterResizePreview}
-          onResizeEnd={handlePanelCanvasResizeEnd}
-          onResizeCancel={handlePanelCanvasResizeCancel}
-        >
-          {@render panelCanvas()}
-        </PanelCanvasFrame>
-      {/key}
+  <div class="flex min-h-0 flex-1">
+    <!-- Main panel area -->
+    <div
+      bind:this={panelWorkspaceInset}
+      use:measurePanelViewportWidth
+      class={cn(
+        'min-h-0 min-w-0 flex-1 overflow-y-hidden scrollbar-none bg-sidebar',
+        contained ? 'overflow-hidden py-2 px-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3',
+      )}
+      data-testid="panel-workspace-inset"
+      use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24 }}
+    >
+      <!-- The flex track makes the fixed-width canvas participate in max-content
+           sizing, which keeps the container's right padding in the scroll range. -->
+      <div class={contained ? 'h-full w-full min-w-0' : 'flex h-full w-max min-w-full'}>
+        {#key effectiveLayoutId}
+          <PanelCanvasFrame
+            sizing={canvasSizing}
+            viewportWidth={panelViewportWidth}
+            panelColumnWidths={panelColumnPreferredWidths}
+            resetPanelColumnWidths={$panelColumnDefaultWidths$}
+            canvasWidth={effectivePanelCanvasWidth}
+            canvasWidthSource={effectivePanelCanvasWidthSource}
+            scrollContainer={panelWorkspaceInset}
+            onWidthChange={handlePanelCanvasWidthChange}
+            onResizeStart={handlePanelCanvasResizeStart}
+            onResizePreview={handlePanelOuterResizePreview}
+            onResizeEnd={handlePanelCanvasResizeEnd}
+            onResizeCancel={handlePanelCanvasResizeCancel}
+          >
+            {@render panelCanvas()}
+          </PanelCanvasFrame>
+        {/key}
+      </div>
     </div>
   </div>
 </div>

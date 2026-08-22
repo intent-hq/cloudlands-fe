@@ -5,12 +5,14 @@
   let {
     panel,
     isFocused = false,
+    isRightmostPanel = false,
     onFocus,
     onClosePanel,
     onTabClose,
   }: {
     panel: PanelState;
     isFocused?: boolean;
+    isRightmostPanel?: boolean;
     onFocus?: () => void;
     onClosePanel?: () => void;
     onTabClose?: (tabId: string) => void;
@@ -25,6 +27,7 @@
   data-mounted-panel={panel.id}
   data-active-tab={panel.activeTabId}
   data-focused={isFocused}
+  data-rightmost={isRightmostPanel}
 >
   {panel.tabs.find((tab) => tab.id === panel.activeTabId)?.title ?? ''}
   <Button variant="plain" data-panel-interaction onclick={onFocus}>Focus panel</Button>

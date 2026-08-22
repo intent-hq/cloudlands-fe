@@ -1,10 +1,15 @@
-import type { PanelLayoutNode, PanelState, WorkspacePanelLayout } from './panel-layout-types';
+import type {
+  PanelLayoutNode,
+  PanelState,
+  WorkspacePanelLayout,
+  WorkspacePanelLayoutState,
+} from './panel-layout-types';
 import {
   DEFAULT_PANEL_WIDTH,
-  getAcceptedIndependentPanelResizeWidth,
   getAutomaticPanelCanvasWidth,
   getPanelDefaultWidth,
   PANEL_SPLIT_GUTTER_WIDTH,
+  resizePanelWidthsAtDivider,
   type PanelCanvasSizing,
   type PanelDefaultWidthTier,
 } from '../../../../shared/panel-layout-sizing';
@@ -176,64 +181,37 @@ export function resizePanelTreeAtHorizontalIndex(
   return { ...node, children, sizes: nextSizes };
 }
 
-export function resizeRootHorizontalPanel(
+export function resizeRootHorizontalDivider(
   node: PanelLayoutNode,
-  previousWidth: number,
-  requestedNextWidth: number,
   panelIndex: number,
-  previousPanelWidths?: readonly number[],
-): { node: PanelLayoutNode; nextWidth: number } {
+  requestedDelta: number,
+  previousPanelWidths: readonly number[],
+): { node: PanelLayoutNode; panelWidths: number[]; acceptedDelta: number } {
   if (
     node.type !== 'split' ||
     node.direction !== 'horizontal' ||
-    previousWidth <= 0 ||
-    requestedNextWidth <= 0 ||
-    !Number.isFinite(previousWidth) ||
-    !Number.isFinite(requestedNextWidth) ||
-    !Number.isFinite(panelIndex)
+    previousPanelWidths.length !== node.children.length
   ) {
-    return { node, nextWidth: previousWidth };
+    return { node, panelWidths: [...previousPanelWidths], acceptedDelta: 0 };
   }
-
-  const sizes = normalizeSizes(node.sizes, node.children.length);
-  const lastIndex = node.children.length - 1;
-  if (lastIndex < 1) return { node, nextWidth: previousWidth };
-  const targetIndex =
-    panelIndex < 0 || panelIndex > lastIndex ? lastIndex : Math.max(0, panelIndex);
-  const hasRenderedWidths =
-    previousPanelWidths?.length === node.children.length &&
-    previousPanelWidths.every((width) => Number.isFinite(width) && width > 0);
-  const renderedWidths = hasRenderedWidths
-    ? [...previousPanelWidths!]
-    : sizes.map((size) => (previousWidth * size) / 100);
-  const previousTargetWidth = renderedWidths[targetIndex];
-  const nextWidth = getAcceptedIndependentPanelResizeWidth(
-    previousWidth,
-    previousTargetWidth,
-    requestedNextWidth,
+  const resized = resizePanelWidthsAtDivider(previousPanelWidths, panelIndex, requestedDelta);
+  const panelWidthsChanged = resized.panelWidths.some(
+    (width, index) => width !== previousPanelWidths[index],
   );
-  if (!hasRenderedWidths) {
-    return {
-      node: resizePanelTreeAtHorizontalIndex(node, previousWidth, nextWidth, targetIndex),
-      nextWidth,
-    };
-  }
-
-  const nextTargetWidth = previousTargetWidth + nextWidth - previousWidth;
-  renderedWidths[targetIndex] = nextTargetWidth;
-  const children = [...node.children];
-  children[targetIndex] = resizePanelTreeRightEdge(
-    children[targetIndex],
-    previousTargetWidth,
-    nextTargetWidth,
-  );
+  if (resized.acceptedDelta === 0 && !panelWidthsChanged) return { node, ...resized };
+  const totalWidth = resized.panelWidths.reduce((sum, width) => sum + width, 0);
+  if (totalWidth <= 0) return { node, ...resized };
   return {
     node: {
       ...node,
-      children,
-      sizes: renderedWidths.map((width) => (width / nextWidth) * 100),
+      children: node.children.map((child, index) =>
+        resized.panelWidths[index] === previousPanelWidths[index]
+          ? child
+          : resizePanelTreeRightEdge(child, previousPanelWidths[index], resized.panelWidths[index]),
+      ),
+      sizes: resized.panelWidths.map((width) => (width / totalWidth) * 100),
     },
-    nextWidth,
+    ...resized,
   };
 }
 
@@ -246,6 +224,81 @@ function createHorizontalRoot(panelIds: string[]): PanelLayoutNode {
     children: panelIds.map((panelId) => ({ type: 'panel' as const, panelId })),
     sizes: panelIds.map(() => size),
   };
+}
+
+function getDirectFixedColumnIds(root: PanelLayoutNode): string[] | null {
+  if (root.type === 'panel') return [root.panelId];
+  if (
+    root.direction !== 'horizontal' ||
+    root.children.length < 2 ||
+    root.children.length > 4 ||
+    root.sizes.length !== root.children.length ||
+    root.sizes.some((size) => !Number.isFinite(size) || size <= 0) ||
+    root.children.some((child) => child.type !== 'panel')
+  ) {
+    return null;
+  }
+  return root.children.map((child) => (child.type === 'panel' ? child.panelId : ''));
+}
+
+export function getFixedColumnPanelIds(
+  layout: Pick<WorkspacePanelLayoutState, 'root' | 'panels' | 'columnCount'>,
+): string[] | null {
+  const panelIds = getDirectFixedColumnIds(layout.root);
+  if (
+    !panelIds ||
+    panelIds.length !== layout.columnCount ||
+    new Set(panelIds).size !== panelIds.length
+  ) {
+    return null;
+  }
+  const panelMapIds = Object.keys(layout.panels);
+  if (
+    panelMapIds.length !== panelIds.length ||
+    panelIds.some((panelId) => layout.panels[panelId]?.id !== panelId)
+  ) {
+    return null;
+  }
+  return panelIds;
+}
+
+export function insertFixedColumnInLayout(
+  root: PanelLayoutNode,
+  panelId: string,
+  targetPanelId: string,
+  position: 'before' | 'after',
+  existingCanvasWidth: number | null | undefined,
+  requestedPanelWidth: number = DEFAULT_PANEL_WIDTH,
+): PanelLayoutNode | null {
+  const panelIds = getDirectFixedColumnIds(root);
+  if (!panelIds || panelIds.length >= 4 || panelIds.includes(panelId)) return null;
+  const targetIndex = panelIds.indexOf(targetPanelId);
+  if (targetIndex < 0) return null;
+
+  const safeCanvasWidth =
+    typeof existingCanvasWidth === 'number' &&
+    Number.isFinite(existingCanvasWidth) &&
+    existingCanvasWidth > 0
+      ? existingCanvasWidth
+      : getAutomaticPanelCanvasWidth(panelIds.length, 'content');
+  const panelWidth =
+    Number.isFinite(requestedPanelWidth) && requestedPanelWidth > 0
+      ? requestedPanelWidth
+      : DEFAULT_PANEL_WIDTH;
+  const existingGapWidth = PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, panelIds.length - 1);
+  const existingPanelWidth = Math.max(1, safeCanvasWidth - existingGapWidth);
+  const newColumnSize = (panelWidth / (existingPanelWidth + panelWidth)) * 100;
+  const insertIndex = targetIndex + (position === 'after' ? 1 : 0);
+  const children = panelIds.map((existingPanelId) => ({
+    type: 'panel' as const,
+    panelId: existingPanelId,
+  }));
+  children.splice(insertIndex, 0, { type: 'panel', panelId });
+  const previousSizes =
+    root.type === 'split' ? normalizeSizes(root.sizes, root.children.length) : [100];
+  const sizes = previousSizes.map((size) => size * (1 - newColumnSize / 100));
+  sizes.splice(insertIndex, 0, newColumnSize);
+  return { type: 'split', direction: 'horizontal', children, sizes };
 }
 
 export function insertHorizontalPanelInLayout(
@@ -682,7 +735,6 @@ export function normalizeTablessPanelLayout(layout: LayoutShape): LayoutShape {
         tabs: tab ? [tab] : [],
         activeTabId: tab?.id ?? null,
         ...(panel.pristine !== undefined ? { pristine: panel.pristine && !tab } : {}),
-        ...(panel.pinned !== undefined ? { pinned: panel.pinned } : {}),
       };
       panelIds.push(panelId);
       if (

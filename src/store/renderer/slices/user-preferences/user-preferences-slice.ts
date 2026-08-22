@@ -11,8 +11,6 @@ export const SYSTEM_DEFAULT_FONT =
 export type FontStyle = 'sans' | 'monospace';
 export type AgentFontStyle = FontStyle;
 export type NoteFontStyle = FontStyle | 'serif';
-export type PanelOpenMode = 'normal' | 'pin';
-export type PanelStackDirection = 'left' | 'right';
 
 export const FONT_STYLES: FontStyle[] = ['sans', 'monospace'];
 const NOTE_FONT_STYLES: NoteFontStyle[] = ['sans', 'serif', 'monospace'];
@@ -59,10 +57,6 @@ export type UserPreferencesState = {
   /** BCP-47 locale tag of an available catalog, or "system" to follow the OS. */
   languagePreference: string;
   githubLinkDefaultAction: GithubLinkDefaultAction;
-  /** Global content-open policy shared by every workspace. */
-  panelOpenMode: PanelOpenMode;
-  /** Edge where newly opened or reusable panels are placed. */
-  panelStackDirection: PanelStackDirection;
 };
 
 type FontSettingsState = Pick<
@@ -102,8 +96,6 @@ export const initialState: UserPreferencesState = {
   activityLogPresets: [],
   languagePreference: SYSTEM_LANGUAGE_PREFERENCE,
   githubLinkDefaultAction: 'show-choices',
-  panelOpenMode: 'normal',
-  panelStackDirection: 'right',
 };
 
 export const setUpdateChannel = createAction<[channel: UpdateChannel]>(
@@ -176,18 +168,6 @@ export const setLanguagePreference = createAction<[preference: string]>(
 export const setGithubLinkDefaultAction = createAction<[action: GithubLinkDefaultAction]>(
   'userPreferences/setGithubLinkDefaultAction',
 );
-
-export const setPanelOpenMode = createAction<[mode: PanelOpenMode]>(
-  'userPreferences/setPanelOpenMode',
-);
-
-export const togglePanelOpenMode = createAction('userPreferences/togglePanelOpenMode');
-
-export const setPanelStackDirection = createAction<[direction: PanelStackDirection]>(
-  'userPreferences/setPanelStackDirection',
-);
-
-export const togglePanelStackDirection = createAction('userPreferences/togglePanelStackDirection');
 
 const showArchivedPreference = createBooleanPreference<UserPreferencesState>({
   sliceName: 'userPreferences',
@@ -308,18 +288,4 @@ userPreferencesReducer.with(setLanguagePreference, (state, { payload: [preferenc
 userPreferencesReducer.with(setGithubLinkDefaultAction, (state, { payload: [action] }) => ({
   ...state,
   githubLinkDefaultAction: action,
-}));
-userPreferencesReducer.with(setPanelOpenMode, (state, { payload: [mode] }) =>
-  state.panelOpenMode === mode ? state : { ...state, panelOpenMode: mode },
-);
-userPreferencesReducer.with(togglePanelOpenMode, (state) => ({
-  ...state,
-  panelOpenMode: state.panelOpenMode === 'pin' ? 'normal' : 'pin',
-}));
-userPreferencesReducer.with(setPanelStackDirection, (state, { payload: [direction] }) =>
-  state.panelStackDirection === direction ? state : { ...state, panelStackDirection: direction },
-);
-userPreferencesReducer.with(togglePanelStackDirection, (state) => ({
-  ...state,
-  panelStackDirection: state.panelStackDirection === 'right' ? 'left' : 'right',
 }));

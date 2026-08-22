@@ -90,12 +90,9 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
   startDrag: () => ({ type: 'tabState/startDrag' }),
   endDrag: () => ({ type: 'tabState/endDrag' }),
 }));
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
-  selectPanelOpenMode: () => constantReadable('pin'),
-  selectPanelStackDirection: () => constantReadable('right'),
-}));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectRecentlyClosed: () => constantReadable([]),
+  selectPanelColumnCount: () => constantReadable(1),
   selectPanelLayoutWorkspace: { select: () => ({ panels: {} }) },
 }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -157,6 +154,14 @@ function stateAvatar(container: HTMLElement) {
 }
 
 beforeEach(() => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   Element.prototype.scrollIntoView = vi.fn();
   mocks.dispatch.mockClear();
   mocks.agents.set(tabs.map((tab) => session(tab.agentId)));
@@ -168,7 +173,10 @@ beforeEach(() => {
   document.documentElement.className = '';
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe('panel header agent avatar state', () => {
   it('uses the named emphasized surface and reacts without remounting', async () => {
@@ -298,7 +306,7 @@ describe('panel header agent avatar state', () => {
       expect(avatar.hasAttribute('data-agent-avatar-surface')).toBe(true);
       expect(avatar.style.width).toBe('24px');
       expect(avatar.style.height).toBe('24px');
-      expect(slot.parentElement?.className).toContain('self-center');
+      expect(slot.className).toContain('self-center');
     },
   );
 });

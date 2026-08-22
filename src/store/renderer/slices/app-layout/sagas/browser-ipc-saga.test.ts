@@ -158,22 +158,20 @@ describe('browserIpcSaga', () => {
 
     expect(actions).toMatchObject([
       {
-        type: 'panelLayout/openTabInNewRootColumn',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://one.test'),
-          sourcePanelId: undefined,
           force: false,
           newTabId: `tab-${NOW}-i`,
           timestamp: NOW,
         },
       },
       {
-        type: 'panelLayout/openTabInNewRootColumn',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://two.test'),
-          sourcePanelId: undefined,
           force: false,
           newTabId: `tab-${NOW}-i`,
           timestamp: NOW,
@@ -191,11 +189,10 @@ describe('browserIpcSaga', () => {
         },
       },
       {
-        type: 'panelLayout/openTabInNewRootColumn',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-2',
           tab: TAB('https://four.test'),
-          sourcePanelId: undefined,
           force: false,
           newTabId: `tab-${NOW}-i`,
           timestamp: NOW,
@@ -210,11 +207,10 @@ describe('browserIpcSaga', () => {
         payload: { wsId: 'ws-1', tabId: 'browser-1', panelId: undefined, timestamp: NOW },
       },
       {
-        type: 'panelLayout/openTab',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://new.test'),
-          panelId: undefined,
           newTabId: `tab-${NOW}-i`,
           force: false,
           timestamp: NOW,
@@ -343,7 +339,9 @@ describe('browserIpcSaga', () => {
       replaceTabId: 'browser-hidden',
     });
 
-    expect(actions.map((a: any) => a.type)).toEqual(['panelLayout/openTab']);
+    expect(actions.map((a: any) => a.type)).toEqual([
+      'panelLayout/openTabInRightmostColumnRequested',
+    ]);
     task.cancel();
     await task.toPromise();
   });
@@ -375,21 +373,25 @@ describe('browserIpcSaga', () => {
       ownerAgentId: 'agent-1',
     });
 
-    // Each visible agent open is followed by the workspace-not-displayed
-    // reveal drop (monorepo#3045): jsdom's route is `/`, not this workspace.
+    // The rightmost-column saga owns the fixed-column reconciliation and
+    // workspace-not-displayed reveal drop (monorepo#3045).
     expect(actions.map((a: any) => a.type)).toEqual([
-      'panelLayout/openTab',
-      'panelLayout/consumePanelReveal',
-      'panelLayout/consumePendingFocus',
-      'panelLayout/openTab',
-      'panelLayout/consumePanelReveal',
-      'panelLayout/consumePendingFocus',
+      'panelLayout/openTabInRightmostColumnRequested',
+      'panelLayout/openTabInRightmostColumnRequested',
     ]);
     expect(actions[0]).toMatchObject({
-      payload: { wsId: 'ws-1', tab: { ...TAB('https://gone.test'), ownerAgentId: 'agent-1' } },
+      payload: {
+        wsId: 'ws-1',
+        agentDriven: true,
+        tab: { ...TAB('https://gone.test'), ownerAgentId: 'agent-1' },
+      },
     });
-    expect(actions[3]).toMatchObject({
-      payload: { wsId: 'ws-1', tab: { ...TAB('https://legacy.test'), ownerAgentId: 'agent-1' } },
+    expect(actions[1]).toMatchObject({
+      payload: {
+        wsId: 'ws-1',
+        agentDriven: true,
+        tab: { ...TAB('https://legacy.test'), ownerAgentId: 'agent-1' },
+      },
     });
     task.cancel();
     await task.toPromise();
@@ -421,11 +423,10 @@ describe('browserIpcSaga', () => {
 
     expect(actions).toMatchObject([
       {
-        type: 'panelLayout/openTabInNewRootColumn',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://one.test'),
-          sourcePanelId: undefined,
           force: false,
           allowDuplicate: true,
           newTabId: 'tab-main-1',
@@ -445,11 +446,10 @@ describe('browserIpcSaga', () => {
         },
       },
       {
-        type: 'panelLayout/openTab',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-1',
           tab: TAB('https://three.test'),
-          panelId: undefined,
           newTabId: 'tab-main-3',
           force: false,
           timestamp: NOW,
@@ -460,11 +460,11 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
-  it('pins the panel correlated to an explicit browser open request', async () => {
+  it('opens an explicit browser request without creating legacy panel pin state', async () => {
     const actions: any[] = [];
     const task = start((action: any) => {
       actions.push(action);
-      if (action.type === 'panelLayout/openTabInNewRootColumn') {
+      if (action.type === 'panelLayout/openTabInRightmostColumnRequested') {
         state.panelLayout.byWorkspaceId['ws-1'] = {
           panels: {},
           pendingPanelReveal: {
@@ -479,12 +479,8 @@ describe('browserIpcSaga', () => {
     await emit({ url: 'https://pinned.test', workspaceId: 'ws-1', tabId: 'request-1', pin: true });
 
     expect(actions.map((action) => action.type)).toEqual([
-      'panelLayout/openTabInNewRootColumn',
-      'panelLayout/setPanelPinned',
+      'panelLayout/openTabInRightmostColumnRequested',
     ]);
-    expect(actions[1]).toMatchObject({
-      payload: { wsId: 'ws-1', panelId: 'panel-resolved', pinned: true },
-    });
     task.cancel();
     await task.toPromise();
   });
@@ -514,14 +510,13 @@ describe('browserIpcSaga', () => {
 
     expect(actions).toMatchObject([
       {
-        type: 'panelLayout/openTabInNewRootColumn',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-1',
           tab: {
             ...TAB('http://127.0.0.1:52345/'),
             browserRequestedUrl: 'http://daemon.localhost:3000/',
           },
-          sourcePanelId: undefined,
           force: false,
           newTabId: `tab-${NOW}-i`,
           timestamp: NOW,
@@ -544,7 +539,7 @@ describe('browserIpcSaga', () => {
     const actions: any[] = [];
     const task = start((action: any) => {
       actions.push(action);
-      if (action.type === 'panelLayout/openTabInNewRootColumn') {
+      if (action.type === 'panelLayout/openTabInRightmostColumnRequested') {
         state.panelLayout.byWorkspaceId['ws-1'] = {
           panels: {},
           pendingPanelReveal: {
@@ -558,7 +553,9 @@ describe('browserIpcSaga', () => {
 
     await emit({ url: 'https://stale.test', workspaceId: 'ws-1', tabId: 'request-1', pin: true });
 
-    expect(actions.map((action) => action.type)).toEqual(['panelLayout/openTabInNewRootColumn']);
+    expect(actions.map((action) => action.type)).toEqual([
+      'panelLayout/openTabInRightmostColumnRequested',
+    ]);
     task.cancel();
     await task.toPromise();
   });
@@ -789,16 +786,17 @@ describe('browserIpcSaga', () => {
       visible: true,
     });
 
-    // The visible open is followed by the workspace-not-displayed reveal
-    // drop (monorepo#3045): jsdom's route is `/`, not this workspace, so the
-    // layout state stands but the queued UI reveal is consumed.
+    // The rightmost-column saga drops the queued reveal after it resolves the
+    // fixed-column target (monorepo#3045).
     expect(actions).toMatchObject([
       {
-        type: 'panelLayout/openTabInNewRootColumn',
-        payload: { wsId: 'ws-1', tab: { ...TAB('https://visible.test'), ownerAgentId: 'agent-1' } },
+        type: 'panelLayout/openTabInRightmostColumnRequested',
+        payload: {
+          wsId: 'ws-1',
+          agentDriven: true,
+          tab: { ...TAB('https://visible.test'), ownerAgentId: 'agent-1' },
+        },
       },
-      { type: 'panelLayout/consumePanelReveal', payload: ['ws-1', expect.any(String)] },
-      { type: 'panelLayout/consumePendingFocus', payload: ['ws-1', expect.any(String)] },
     ]);
     task.cancel();
     await task.toPromise();
@@ -814,7 +812,7 @@ describe('browserIpcSaga', () => {
     await emit({ url: 'https://user.test', workspaceId: 'ws-1', visible: false });
 
     expect(actions).toMatchObject([
-      { type: 'panelLayout/openTabInNewRootColumn', payload: { wsId: 'ws-1' } },
+      { type: 'panelLayout/openTabInRightmostColumnRequested', payload: { wsId: 'ws-1' } },
     ]);
     task.cancel();
     await task.toPromise();
@@ -925,6 +923,7 @@ describe('browserIpcSaga', () => {
           panelId: undefined,
           timestamp: NOW,
           destroy: true,
+          preservePanel: false,
         },
       },
     ]);
@@ -1052,7 +1051,6 @@ describe('browserIpcSaga', () => {
           tabId: 'browser-hidden',
           timestamp: NOW,
           focus: false,
-          panelOpenMode: 'normal',
         },
       },
       { type: 'panelLayout/consumePanelReveal', payload: ['ws-1', 'browser-hidden'] },
@@ -1091,7 +1089,6 @@ describe('browserIpcSaga', () => {
           tabId: 'browser-hidden',
           timestamp: NOW,
           focus: true,
-          panelOpenMode: 'normal',
         },
       },
       { type: 'panelLayout/consumePanelReveal', payload: ['ws-1', 'browser-hidden'] },
@@ -1459,9 +1456,10 @@ describe('browserIpcSaga', () => {
 
     expect(actions).toMatchObject([
       {
-        type: 'panelLayout/openTabInNewRootColumn',
+        type: 'panelLayout/openTabInRightmostColumnRequested',
         payload: {
           wsId: 'ws-1',
+          agentDriven: true,
           tab: {
             ...TAB('https://sized.test'),
             ownerAgentId: 'agent-1',
@@ -1469,8 +1467,6 @@ describe('browserIpcSaga', () => {
           },
         },
       },
-      { type: 'panelLayout/consumePanelReveal' },
-      { type: 'panelLayout/consumePendingFocus' },
     ]);
     task.cancel();
     await task.toPromise();
@@ -1600,7 +1596,10 @@ describe('browserIpcSaga', () => {
       ]);
       window.history.pushState({}, '', '/workspace/ws-routed-1');
       try {
-        await emit({ workspaceId: 'ws-routed-1', requestId: 'req-r1' }, 'browser:list-tabs-request');
+        await emit(
+          { workspaceId: 'ws-routed-1', requestId: 'req-r1' },
+          'browser:list-tabs-request',
+        );
       } finally {
         window.history.pushState({}, '', '/');
       }
@@ -1634,7 +1633,10 @@ describe('browserIpcSaga', () => {
       state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
       window.history.pushState({}, '', '/workspace/ws-routed-other');
       try {
-        await emit({ workspaceId: 'ws-not-here', requestId: 'req-r3' }, 'browser:list-tabs-request');
+        await emit(
+          { workspaceId: 'ws-not-here', requestId: 'req-r3' },
+          'browser:list-tabs-request',
+        );
       } finally {
         window.history.pushState({}, '', '/');
       }

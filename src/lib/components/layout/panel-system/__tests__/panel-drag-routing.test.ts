@@ -5,7 +5,6 @@ import type { PanelState, PanelTab } from '$store/renderer/slices/panel-layout/p
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
-  panelOpenMode: 'pin' as 'normal' | 'pin',
   state: {
     panelLayout: {
       byWorkspaceId: {
@@ -48,6 +47,7 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectRecentlyClosed: () => readable([]),
+  selectPanelColumnCount: () => readable(1),
   selectPanelLayoutWorkspace: {
     select: () => mocks.state.panelLayout.byWorkspaceId['workspace-1'],
   },
@@ -83,10 +83,6 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: () => readable([]),
 }));
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
-  selectPanelOpenMode: () => readable(mocks.panelOpenMode),
-  selectPanelStackDirection: () => readable('right'),
-}));
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
@@ -115,6 +111,7 @@ import PanelTabBar from '../PanelTabBar.svelte';
 import {
   PANEL_DRAG_MIME,
   getDraggedPanelId,
+  getPanelColumnDragPlacement,
   getPanelDragPlacement,
   getPanelLayoutEdgePlacement,
   setDraggedPanelId,
@@ -173,8 +170,15 @@ function renderTabBar(props: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   mocks.dispatch.mockClear();
-  mocks.panelOpenMode = 'pin';
   setDraggedPanelId(null);
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     callback(0);
@@ -291,7 +295,15 @@ describe('panel and tab drag MIME routing', () => {
     expect(getPanelDragPlacement(200, 290, rect)).toBe('below');
   });
 
-  it('uses the centered top zone to preview the real stacked layout', async () => {
+  it('uses only horizontal halves when reordering fixed columns', () => {
+    const rect = { left: 0, width: 400 } as DOMRect;
+    expect(getPanelColumnDragPlacement(20, rect)).toBe('before');
+    expect(getPanelColumnDragPlacement(380, rect)).toBe('after');
+    expect(getPanelColumnDragPlacement(210, rect, 'before')).toBe('before');
+    expect(getPanelColumnDragPlacement(220, rect, 'before')).toBe('after');
+  });
+
+  it('keeps top and bottom panel drops in the horizontal column order', async () => {
     const onPanelMove = vi.fn();
     const onPanelMovePreview = vi.fn();
     const { container } = render(Panel, {
@@ -310,16 +322,16 @@ describe('panel and tab drag MIME routing', () => {
     setDraggedPanelId('source-panel');
 
     await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 200, 20));
-    expect(onPanelMovePreview).toHaveBeenLastCalledWith('source-panel', 'target-panel', 'above');
+    expect(onPanelMovePreview).toHaveBeenLastCalledWith('source-panel', 'target-panel', 'after');
     expect(onPanelMove).not.toHaveBeenCalled();
     expect(dataTransfer.dropEffect).toBe('move');
 
     await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 200, 380));
-    expect(onPanelMovePreview).toHaveBeenLastCalledWith('source-panel', 'target-panel', 'below');
+    expect(onPanelMovePreview).toHaveBeenLastCalledWith('source-panel', 'target-panel', 'after');
 
     await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 200, 380));
 
-    expect(onPanelMove).toHaveBeenCalledWith('source-panel', 'below');
+    expect(onPanelMove).toHaveBeenCalledWith('source-panel', 'after');
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'tabState/endDrag' });
   });
 
@@ -400,6 +412,41 @@ describe('panel and tab drag MIME routing', () => {
     expect(onTabMoveToPanel).toHaveBeenCalledWith('source-tab', 'source-panel', 0);
   });
 
+  it('offers only left, center, and right tab drop zones at every vertical position', async () => {
+    const onTabDrop = vi.fn();
+    const onTabMoveToPanel = vi.fn();
+    const { container } = render(Panel, {
+      props: {
+        panel: panel(),
+        workspaceId: 'workspace-1',
+        onTabDrop,
+        onTabMoveToPanel,
+      },
+    });
+    const targetPanel = container.querySelector<HTMLElement>('[data-panel-id="target-panel"]')!;
+    targetPanel.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 400, height: 400 }) as DOMRect;
+    const dataTransfer = new TestDataTransfer();
+    dataTransfer.setData(
+      TAB_DRAG_MIME,
+      JSON.stringify({ tabId: 'source-tab', panelId: 'source-panel' }),
+    );
+
+    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 10, 50));
+    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 10, 50));
+    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 200, 380));
+    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 200, 380));
+    await fireEvent(targetPanel, dragEvent('dragover', dataTransfer, 390, 50));
+    await fireEvent(targetPanel, dragEvent('drop', dataTransfer, 390, 50));
+
+    expect(onTabDrop.mock.calls).toEqual([
+      ['source-tab', 'source-panel', 'left'],
+      ['source-tab', 'source-panel', 'right'],
+    ]);
+    expect(onTabMoveToPanel).toHaveBeenCalledOnce();
+    expect(onTabMoveToPanel).toHaveBeenCalledWith('source-tab', 'source-panel');
+  });
+
   it('does not consume drops with unrelated MIME', async () => {
     const onTabReorder = vi.fn();
     const onTabMoveToPanel = vi.fn();
@@ -421,36 +468,20 @@ describe('panel and tab drag MIME routing', () => {
 });
 
 describe('panel context menu routing', () => {
-  it('hides the direct pin control while pin mode is off', () => {
-    mocks.panelOpenMode = 'normal';
+  it('does not render the removed panel pin control', () => {
     const { container } = renderTabBar({ onClosePanel: vi.fn() });
 
     expect(container.querySelector('[data-panel-pin]')).toBeNull();
   });
 
-  it('keeps pin, kebab, and Close visible while grouping other panel controls in the menu', async () => {
+  it('keeps kebab and Close visible while grouping other panel controls in the menu', async () => {
     const { container } = renderTabBar({ onClosePanel: vi.fn() });
     const directActions = container.querySelector<HTMLElement>('.panel-actions')!;
 
-    expect(directActions.querySelectorAll('button')).toHaveLength(3);
-    const pinButton = directActions.querySelector<HTMLButtonElement>('[data-panel-pin]')!;
-    expect(directActions.querySelector('button')).toBe(pinButton);
-    expect(pinButton.getAttribute('aria-label')).toBe('Pin panel');
-    expect(pinButton.getAttribute('aria-pressed')).toBe('false');
+    expect(directActions.querySelectorAll('button')).toHaveLength(2);
+    expect(directActions.querySelector('[data-panel-pin]')).toBeNull();
     expect(directActions.querySelector('[data-testid="panel-actions-trigger"]')).toBeTruthy();
     expect(directActions.querySelector('[data-testid="panel-close-button"]')).toBeTruthy();
-
-    await fireEvent.click(pinButton);
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'panelLayout/setPanelPinned',
-        payload: expect.objectContaining({
-          wsId: 'workspace-1',
-          panelId: 'target-panel',
-          pinned: true,
-        }),
-      }),
-    );
 
     await fireEvent.click(
       directActions.querySelector<HTMLElement>('[data-testid="panel-actions-trigger"]')!,
@@ -460,7 +491,7 @@ describe('panel context menu routing', () => {
     const actions = document.querySelector<HTMLElement>('[data-panel-actions-section="actions"]');
     expect(display?.textContent).toContain('Zoom Panel');
     expect(actions?.textContent).toContain('Split right');
-    expect(actions?.textContent).toContain('Split down');
+    expect(actions?.textContent).not.toContain('Split down');
     expect(document.querySelector('[role="menu"]')?.textContent).not.toContain('Close panel');
   });
 
@@ -474,7 +505,8 @@ describe('panel context menu routing', () => {
   });
 
   it('portals the tabless-header menu to viewport coordinates without tab actions', async () => {
-    const { container } = renderTabBar({ showTabStrip: false });
+    const onMoveRight = vi.fn();
+    const { container } = renderTabBar({ showTabStrip: false, onMoveRight });
     const header = container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
 
     await fireEvent.contextMenu(header, { clientX: 120, clientY: 80 });
@@ -488,9 +520,41 @@ describe('panel context menu routing', () => {
     expect(menu.style.top).toBe('84px');
     expect(labels).toContain('Close panel');
     expect(labels).toContain('Close all others');
+    expect(labels).toContain('Move left');
+    expect(labels).toContain('Move right');
+    const moveLeft = Array.from(menu.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Move left'),
+    );
+    const moveRight = Array.from(menu.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Move right'),
+    );
+    expect(moveLeft?.disabled).toBe(true);
+    expect(moveRight?.disabled).toBe(false);
     expect(labels).not.toContain('Close ⌘W');
     expect(labels).not.toContain('Close other tabs in panel');
     expect(labels).not.toContain('Close tabs to the right');
+    await fireEvent.click(moveRight!);
+    expect(onMoveRight).toHaveBeenCalledOnce();
+  });
+
+  it('disables Move right at the right boundary and keeps Move left enabled', async () => {
+    const onMoveLeft = vi.fn();
+    const { container } = renderTabBar({ showTabStrip: false, onMoveLeft });
+    const header = container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
+
+    await fireEvent.contextMenu(header, { clientX: 120, clientY: 80 });
+
+    const menu = document.querySelector<HTMLElement>('[data-panel-context-menu="panel"]')!;
+    const moveLeft = Array.from(menu.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Move left'),
+    );
+    const moveRight = Array.from(menu.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Move right'),
+    );
+    expect(moveLeft?.disabled).toBe(false);
+    expect(moveRight?.disabled).toBe(true);
+    await fireEvent.click(moveLeft!);
+    expect(onMoveLeft).toHaveBeenCalledOnce();
   });
 
   it('keeps tab actions on the explicit tab-strip menu', async () => {

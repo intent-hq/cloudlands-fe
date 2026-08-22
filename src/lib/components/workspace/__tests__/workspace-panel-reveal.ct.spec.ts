@@ -255,7 +255,7 @@ test('updates geometry for fit, overflow, scroll, resize, open, close, and reord
   expect(Math.abs(mixedWidths[0] - mixedWidths[1])).toBeGreaterThan(20);
   await expectNavigatorGeometryWithinHalfDevicePixel(component, page);
 
-  await component.locator('[data-open-file]').click();
+  await component.locator('[data-open-agent]').click();
   await expect(segments).toHaveCount(3);
   await expectNavigatorGeometryWithinHalfDevicePixel(component, page);
   await component.locator('[data-close-extra-panel]').click();
@@ -306,10 +306,10 @@ test('updates geometry for fit, overflow, scroll, resize, open, close, and reord
 });
 
 for (const route of [
-  { name: 'file', trigger: '[data-open-file]' },
-  { name: 'note', trigger: '[data-open-note]' },
-  { name: 'agent', trigger: '[data-open-agent]' },
-  { name: 'changes', trigger: '[data-open-changes]' },
+  { name: 'file', trigger: '[data-open-file]', expectedPanelCount: '2' },
+  { name: 'note', trigger: '[data-open-note]', expectedPanelCount: '2' },
+  { name: 'agent', trigger: '[data-open-agent]', expectedPanelCount: '3' },
+  { name: 'changes', trigger: '[data-open-changes]', expectedPanelCount: '2' },
 ]) {
   test(`production ${route.name} open reveals its final panel at 400px and 200% zoom`, async ({
     mount,
@@ -322,7 +322,7 @@ for (const route of [
     const state = component.locator('[data-reveal-state]');
     await component.locator(route.trigger).click();
     await expect(state).toHaveAttribute('data-saw-pending-reveal', 'true');
-    await expect(state).toHaveAttribute('data-panel-count', '3');
+    await expect(state).toHaveAttribute('data-panel-count', route.expectedPanelCount);
     await expectFocusedPanelVisible(component);
   });
 }
@@ -346,6 +346,71 @@ test('explicit existing-panel focus reveals with minimum horizontal movement', a
   await expect(
     component.locator(`[data-workspace-column="${workspaceId}"] [data-panel-id]`),
   ).toHaveCount(2);
+});
+
+test('keeps a long production Markdown file open vertically contained', async ({ mount, page }) => {
+  const component = await mount(WorkspaceColumnsRevealHarness, {
+    props: { viewportWidth: 400, zoom: 1, workspaceKey: 'long-markdown', standalone: true },
+  });
+  await requireReadyHarness(component, page);
+  const state = component.locator('[data-reveal-state]');
+
+  const measure = () =>
+    component.evaluate((root) => {
+      const panels = [...root.querySelectorAll<HTMLElement>('[data-panel-id]')];
+      const panel = panels.at(-1) ?? null;
+      const inset = panel?.closest('[data-testid="panel-workspace-inset"]') as HTMLElement | null;
+      const markdown = panel?.querySelector<HTMLElement>('.markdown-file-editor') ?? null;
+      const outerScrollHost = root.querySelector<HTMLElement>(
+        '[data-testid="production-workspace-scroll-host"]',
+      );
+      const panelRect = panel?.getBoundingClientRect();
+      return {
+        windowScrollY: window.scrollY,
+        documentScrollHeight: document.documentElement.scrollHeight,
+        documentClientHeight: document.documentElement.clientHeight,
+        outerScrollTop: outerScrollHost?.scrollTop ?? null,
+        outerScrollHeight: outerScrollHost?.scrollHeight ?? null,
+        outerClientHeight: outerScrollHost?.clientHeight ?? null,
+        outerOverflowY: outerScrollHost ? getComputedStyle(outerScrollHost).overflowY : null,
+        columnsScrollTop: (root.querySelector('[data-workspace-columns]') as HTMLElement | null)
+          ?.scrollTop,
+        insetScrollTop: inset?.scrollTop ?? null,
+        panelTop: panelRect?.top ?? null,
+        panelBottom: panelRect?.bottom ?? null,
+        panelHeight: panelRect?.height ?? null,
+        markdownScrollHeight: markdown?.scrollHeight ?? null,
+        markdownClientHeight: markdown?.clientHeight ?? null,
+      };
+    });
+
+  const before = await measure();
+  await component.locator('[data-open-readme]').click();
+  await expect(state).toHaveAttribute('data-panel-count', '3');
+  await expect(state).toHaveAttribute('data-pending-panel-reveal', '');
+  await expect(component.locator('[data-panel-id]').last()).toBeVisible();
+  const afterOpen = await measure();
+  await component.locator('[data-resolve-readme]').click();
+  await expect(component.locator('.markdown-file-editor')).toBeVisible();
+  await expect
+    .poll(() => component.locator('.markdown-file-editor').evaluate((node) => node.scrollHeight))
+    .toBeGreaterThan(2_000);
+  const afterLoad = await measure();
+
+  console.log(JSON.stringify({ before, afterOpen, afterLoad }, null, 2));
+  expect(afterOpen.windowScrollY).toBe(before.windowScrollY);
+  expect(afterLoad.windowScrollY).toBe(before.windowScrollY);
+  expect(afterOpen.outerScrollTop).toBe(before.outerScrollTop);
+  expect(afterLoad.outerScrollTop).toBe(before.outerScrollTop);
+  expect(afterLoad.outerOverflowY).toBe('hidden');
+  expect(afterOpen.outerScrollHeight).toBe(before.outerScrollHeight);
+  expect(afterLoad.outerScrollHeight).toBe(before.outerScrollHeight);
+  expect(afterLoad.outerClientHeight).toBe(before.outerClientHeight);
+  expect(afterOpen.columnsScrollTop).toBe(before.columnsScrollTop);
+  expect(afterLoad.columnsScrollTop).toBe(before.columnsScrollTop);
+  expect(afterOpen.documentScrollHeight).toBe(before.documentScrollHeight);
+  expect(afterLoad.documentScrollHeight).toBe(before.documentScrollHeight);
+  expect(afterLoad.markdownScrollHeight).toBeGreaterThan(afterLoad.markdownClientHeight!);
 });
 
 test('panel removal cancels a scheduled reveal without recreating the panel', async ({

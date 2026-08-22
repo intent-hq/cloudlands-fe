@@ -2,7 +2,7 @@ import { put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { m } from '$shared/paraglide/messages.js';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
-import { openTab } from '../../panel-layout/panel-layout-slice';
+import { openTabInRightmostColumnRequested } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import {
   hydrateWorkspaceNavigation,
@@ -30,7 +30,7 @@ function* applyHydratedLayout(
       workspaceId,
       closable: true,
     };
-    yield* put(openTab(workspaceId, tab));
+    yield* put(openTabInRightmostColumnRequested(workspaceId, tab));
   }
 
   const drawer = state.drawer;

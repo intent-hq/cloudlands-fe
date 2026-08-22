@@ -91,8 +91,12 @@ export interface PanelState {
   activeTabId: string | null;
   /** True for an untouched reusable blank panel that the next user item can consume. */
   pristine?: boolean;
-  /** Pinned panels are preserved when reusable-panel mode collapses the layout. */
-  pinned?: boolean;
+}
+
+export type PanelColumnCount = 1 | 2 | 3 | 4;
+
+export function isPanelColumnCount(value: unknown): value is PanelColumnCount {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 4;
 }
 
 /** Node in the panel layout tree - either a panel or a split container */
@@ -108,6 +112,8 @@ export type PanelLayoutNode =
 
 /** Complete layout state for a workspace */
 export interface WorkspacePanelLayout {
+  /** Version of the persisted fixed-column representation. */
+  version?: number;
   root: PanelLayoutNode;
   panels: Record<string, PanelState>;
   focusedPanelId: string | null;
@@ -119,6 +125,8 @@ export interface WorkspacePanelLayout {
    * restart; destroyed only on agent deletion or workspace archive/delete.
    */
   hiddenTabs?: PanelTab[];
+  /** Workspace-scoped selected column count. */
+  columnCount?: PanelColumnCount;
   /** User-resized intrinsic horizontal canvas width; null/absent uses automatic sizing. */
   canvasWidth?: number | null;
   /** Identifies a width that must survive restore; absent is a legacy automatic width. */
@@ -173,6 +181,27 @@ export interface RecentlyClosedTab {
   closedAt: number;
 }
 
+/** Exact serializable state needed to restore one explicit panel-column close. */
+export interface RecentlyClosedPanelColumn {
+  historyId: string;
+  panelId: string;
+  panel: PanelState;
+  root: PanelLayoutNode;
+  postCloseRoot: PanelLayoutNode;
+  focusedPanelId: string | null;
+  columnCount: PanelColumnCount;
+  canvasWidth: number | null;
+  canvasWidthSource: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
+  expandedPanelId: string | null;
+  savedSizesBeforeExpand: SavedExpandSizes[];
+  savedCanvasWidthBeforeExpand?: number | null;
+  savedCanvasWidthSourceBeforeExpand?:
+    import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
+  pendingFocusTabId: string | null;
+  closedTabIds: string[];
+  closedAt: number;
+}
+
 /** Layout snapshot for undo/redo navigation */
 export interface LayoutSnapshot {
   root: PanelLayoutNode;
@@ -181,6 +210,7 @@ export interface LayoutSnapshot {
   /** Optional for backward compatibility with existing persisted history. */
   canvasWidth?: number | null;
   canvasWidthSource?: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
+  columnCount?: PanelColumnCount;
   timestamp: number;
 }
 
@@ -215,10 +245,15 @@ export interface WorkspacePanelLayoutState {
   /** Current horizontal panel canvas width in pixels; null uses the default column width. */
   canvasWidth: number | null;
   canvasWidthSource: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
+  columnCount: PanelColumnCount;
+  /** Preserves an established count during same-backend restore and hydration. */
+  columnCountInitialized?: boolean;
   restoreStatus: PanelLayoutRestoreStatus;
   pendingFocusTabId: string | null;
   pendingPanelReveal?: PanelRevealRequest | null;
   recentlyClosed: RecentlyClosedTab[];
+  /** Optional for compatibility with transient states created before column-close history. */
+  recentlyClosedColumns?: Collection<RecentlyClosedPanelColumn, 'historyId'>;
   layoutHistory: LayoutSnapshot[];
   historyIndex: number;
   historyLoaded: boolean;
@@ -250,6 +285,7 @@ export type PanelLayoutSliceState = {
 // ============================================================================
 
 export const PANEL_LAYOUT_STORAGE_KEY_PREFIX = 'panel-layout-';
+export const PANEL_LAYOUT_PERSISTENCE_VERSION = 2;
 export const MAX_RECENTLY_CLOSED = 20;
 export const MAX_LAYOUT_HISTORY = 50;
 export const MAX_FOCUS_HISTORY = 100;

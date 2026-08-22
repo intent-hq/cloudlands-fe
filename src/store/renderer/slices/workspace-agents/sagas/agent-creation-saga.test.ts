@@ -107,7 +107,7 @@ describe('agentCreationSaga', () => {
       openAgentTabRequested(WS, {
         agentId: AGENT,
         panelLayoutId: 'layout-1',
-        sourcePanelId: 'working-panel',
+        targetPanelId: 'working-panel',
       }),
     );
     task.cancel();
@@ -129,7 +129,7 @@ describe('agentCreationSaga', () => {
       openAgentTabRequested(WS, {
         agentId: AGENT,
         panelLayoutId: 'layout-1',
-        sourcePanelId: 'working-panel',
+        targetPanelId: 'working-panel',
       }),
     );
     task.cancel();
@@ -157,6 +157,35 @@ describe('agentCreationSaga', () => {
         expect.objectContaining({ type: action.success(session()).type }),
         expect.objectContaining({ type: 'panelLayout/openTab' }),
       ]),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('routes adjacent created agents through the rightmost configured column', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const { channel, dispatched, task } = start();
+    const action = createAgentFromConfigRequested(
+      WS,
+      {
+        name: 'Configured',
+        workspaceId: WorkspaceId(WS),
+        agentType: createAgentTypeId('chat'),
+        source: 'test',
+      },
+      { openAgent: true, openInAdjacentPanel: true },
+    );
+    channel.put(action);
+
+    await expect(action.promise).resolves.toEqual(session());
+    expect(dispatched).toContainEqual(
+      expect.objectContaining({
+        type: 'panelLayout/openTabInRightmostColumnRequested',
+        payload: expect.objectContaining({
+          wsId: WS,
+          tab: expect.objectContaining({ type: 'agent', agentId: AGENT }),
+        }),
+      }),
     );
     task.cancel();
     await task.toPromise();

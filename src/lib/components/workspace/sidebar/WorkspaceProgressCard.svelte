@@ -941,6 +941,7 @@
                 variant="ghost-light"
                 size="icon-sm"
                 data-workspace-actions-kebab
+                data-workspace-actions-trigger
                 aria-label={m.workspace_progressCard_actions_ariaLabel()}
                 class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
                 disabled={isDeleting}

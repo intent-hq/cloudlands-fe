@@ -26,11 +26,15 @@ describe('empty panel chrome', () => {
     expect(emptyState).not.toContain('border-t border-border');
   });
 
-  it('closes tabless panels without making the panel itself focusable', () => {
+  it('closes tabless panels from their semantic header without making the panel focusable', () => {
     const panel = source('../Panel.svelte');
+    const tabBar = source('../PanelTabBar.svelte');
 
-    expect(panel).toContain('data-empty-panel-close');
+    expect(panel).not.toContain('data-empty-panel-close');
     expect(panel).not.toContain('tabindex="-1"');
+    expect(tabBar).toContain('data-empty-panel-header');
+    expect(tabBar).toContain('{@render panelColumnCountMenu()}');
+    expect(tabBar).toContain('{@render panelCloseButton()}');
   });
 
   it('keeps empty-state actions pristine until their content replaces the panel', () => {

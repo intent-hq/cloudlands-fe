@@ -18,6 +18,8 @@
   interface Props {
     visible?: boolean;
     message?: string;
+    /** Localized lifecycle detail. It is visual context, not a repeated live announcement. */
+    detailMessage?: string | null;
     class?: string;
     /** Compact mode - shows only spinner without message */
     compact?: boolean;
@@ -27,7 +29,8 @@
 
   let {
     visible = false,
-    message = 'Thinking',
+    message = m.chat_streamingStatus_thinking_label(),
+    detailMessage = null,
     class: className = '',
     compact = false,
     seed = 'default',
@@ -40,14 +43,17 @@
   <div
     class="{CHAT_OPERATIONAL_ROW_CLASS} font-family-child font-normal text-muted-foreground {className}"
     data-streaming-typing-row
+    role="status"
+    aria-live="polite"
+    aria-atomic="true"
+    aria-label={message || m.ui_spinner_loading_ariaLabel()}
     in:fade={{ duration: 200, easing: cubicOut }}
     out:fade={{ duration: 150, easing: cubicOut }}
   >
     <div
       class="legacy-streaming-spinner {CHAT_OPERATIONAL_LEADING_CLASS}"
       style="--size: 3.5px; --gap: 1px; --color1: {color1}; --color2: {color2};"
-      role="status"
-      aria-label={m.ui_spinner_loading_ariaLabel()}
+      aria-hidden="true"
       data-operational-leading
     >
       <span class="legacy-spinner-track" aria-hidden="true">
@@ -60,18 +66,29 @@
     <!-- Message text -->
     {#if !compact && message}
       <span
-        class={CHAT_OPERATIONAL_SUMMARY_CLASS}
+        class="{CHAT_OPERATIONAL_SUMMARY_CLASS} flex items-baseline gap-1.5"
         data-operational-summary
-        data-testid="streaming-status-thinking">{message}</span
+        aria-hidden="true"
       >
+        <span class="shrink-0 text-foreground" data-testid="streaming-status-thinking"
+          >{message}</span
+        >
+        {#if detailMessage}
+          <span
+            class="min-w-0 flex-1 truncate text-muted-foreground"
+            data-testid="streaming-status-lifecycle"
+            title={detailMessage}>{detailMessage}</span
+          >
+        {/if}
+      </span>
     {/if}
   </div>
 {/if}
 
 <style>
   .legacy-streaming-spinner {
-    --duration: 800ms;
-    --delay: 200ms;
+    --duration: 960ms;
+    --delay: 160ms;
   }
 
   .legacy-spinner-track {
@@ -82,7 +99,9 @@
   .legacy-spinner-square {
     width: var(--size);
     height: var(--size);
-    animation: legacy-spinner-wave var(--duration) step-start infinite;
+    transform-origin: center;
+    animation: legacy-spinner-wave var(--duration) ease-in-out infinite both;
+    will-change: transform, opacity;
   }
 
   .legacy-spinner-square-0 {
@@ -102,21 +121,26 @@
 
   @keyframes legacy-spinner-wave {
     0%,
-    50%,
     100% {
-      transform: translateY(0);
+      transform: translateY(1.5px) scale(0.72);
+      opacity: 0.45;
     }
-    25% {
-      transform: translateY(-90%);
-    }
-    75% {
-      transform: translateY(90%);
+    50% {
+      transform: translateY(-1.5px) scale(1);
+      opacity: 1;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .legacy-spinner-square {
       animation: none;
+      transform: none;
+      opacity: 1;
+      will-change: auto;
+    }
+
+    .legacy-spinner-square-2 {
+      opacity: 0.5;
     }
   }
 </style>
