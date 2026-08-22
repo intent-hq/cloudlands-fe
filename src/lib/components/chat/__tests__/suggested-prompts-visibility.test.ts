@@ -13,11 +13,7 @@
  * 3. The derived computation correctly extracts prompts from the last assistant message
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
 import { derivePendingQuestions } from '../questions/pending-questions';
 import { buildAnswerMessageMetadata } from '../questions/answer-message';
@@ -37,9 +33,11 @@ function computeSuggestedPrompts(
   isRunning: boolean,
   messages: AgentMessage[],
   showingPendingUserMessage = false,
+  pendingQuestionsMessageId?: string,
+  pendingQuestionRecoveryLoading = false,
 ): SuggestedPrompt[] {
   // Mirrors ChatPanel.svelte suggestedPrompts derived gate.
-  if (isRunning || messages.length === 0) {
+  if (isRunning || pendingQuestionRecoveryLoading || messages.length === 0) {
     return [];
   }
   // Hide as soon as the user submits a new prompt: either a trailing user
@@ -55,7 +53,14 @@ function computeSuggestedPrompts(
   // Suggested prompts stay hidden whenever the turn has pending Agent Q&A
   // questions — including while the wizard is Ignore-collapsed (collapse is
   // transient UI state that does not affect this derivation).
-  if (derivePendingQuestions(messages, isRunning, showingPendingUserMessage)) {
+  if (
+    derivePendingQuestions(
+      messages,
+      isRunning,
+      showingPendingUserMessage,
+      pendingQuestionsMessageId,
+    )
+  ) {
     return [];
   }
   return parseSuggestedPromptsFromContentBlocks(lastAssistantMessage.contentBlocks || []).prompts;
@@ -242,7 +247,7 @@ Review the result
       expect(prompts).toEqual(['Continue', 'Review the result']);
     });
 
-    it('keeps prompts hidden while a PLAIN user message leaves the questions pending', () => {
+    it('keeps prompts hidden while the authoritative marker remains set', () => {
       const userMsg: AgentMessage = {
         id: 'msg_user_plain',
         role: 'user',
@@ -256,11 +261,23 @@ Continue
 Review the result
 -->
 `);
-      const prompts = computeSuggestedPrompts(false, [
-        messageWithPromptsAndQuestions,
-        userMsg,
-        followUp,
-      ]);
+      const prompts = computeSuggestedPrompts(
+        false,
+        [messageWithPromptsAndQuestions, userMsg, followUp],
+        false,
+        messageWithPromptsAndQuestions.id,
+      );
+      expect(prompts).toEqual([]);
+    });
+
+    it('keeps prompts hidden while an off-page marked question is recovering', () => {
+      const prompts = computeSuggestedPrompts(
+        false,
+        [messageWithPrompts],
+        false,
+        'msg-question-outside-window',
+        true,
+      );
       expect(prompts).toEqual([]);
     });
   });
@@ -327,4 +344,3 @@ Review the result
     });
   });
 });
-

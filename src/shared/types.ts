@@ -1092,6 +1092,10 @@ export interface AgentMetadata {
   // by the daemon in session metadata so the dismissed question set never
   // re-surfaces (survives reload).
   dismissedQuestionsMessageId?: string;
+  // Authoritative pending-question marker (PROTOCOL §5.5): absent on legacy
+  // sessions, the question-bearing assistant message id while pending, and an
+  // empty string after the daemon has cleared the pending set.
+  pendingQuestionsMessageId?: string;
   // Per-conversation seen marker (PROTOCOL §5.5, `agent.markSeen`): id of the
   // newest message the user had seen. Persisted by the daemon in session
   // metadata, served on AgentLite / agent.getSession, converged via

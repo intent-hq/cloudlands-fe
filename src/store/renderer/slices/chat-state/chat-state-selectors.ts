@@ -154,6 +154,11 @@ export const selectHistoryExhausted = store.createSelector(
     state.agentSessions?.historySegmentsByAgentId?.[agentId]?.oldestReached === true,
 );
 
+/** Result of the bounded authoritative question-marker recovery, if attempted. */
+export const selectPendingQuestionRecovery = store.createSelector(
+  (state, agentId: string) => getAgentChatState(state, agentId).pendingQuestionRecovery,
+);
+
 /**
  * Switch-back transcript reveal gate: true while the viewed conversation is
  * awaiting a fresh seq-0 snapshot from its (re)opening standing subscription.

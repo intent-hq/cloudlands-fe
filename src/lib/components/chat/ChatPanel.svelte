@@ -102,6 +102,8 @@
     olderHistoryPageRequested,
     historyGapFillRequested,
     historySeekRequested,
+    pendingQuestionRecoveryRequested,
+    pendingQuestionRecoveryCleared,
   } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
     selectAwaitingSwitchBackSnapshot,
@@ -118,6 +120,7 @@
     selectFetchingOlderHistory,
     selectHistoryExhausted,
     selectHistorySeekUnsupported,
+    selectPendingQuestionRecovery,
     selectTranscriptHydratedOnce,
     selectTranscriptHydration,
     selectTranscriptSnapshotMeta,
@@ -159,7 +162,11 @@
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
-  import { deriveWizardPendingQuestions } from './questions/wizard-gate';
+  import {
+    deriveMarkedQuestionRecoveryState,
+    deriveWizardPendingQuestions,
+  } from './questions/wizard-gate';
+  import { classifyPendingQuestionMarker } from './questions/pending-questions';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
     classifyScrollbackGesture,
@@ -388,6 +395,7 @@
   const fetchingHistorySeek$ = selectFetchingHistorySeek(agentIdStore);
   const historySeekUnsupported$ = selectHistorySeekUnsupported(agentIdStore);
   const historyExhausted$ = selectHistoryExhausted(agentIdStore);
+  const pendingQuestionRecovery$ = selectPendingQuestionRecovery(agentIdStore);
   const agentTasks$ = selectTasksForAgent(workspaceIdStore, agentIdStore);
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
@@ -756,7 +764,7 @@
 
   // Hoist suggested prompts so keyboard handlers can reference them
   const suggestedPrompts = $derived.by((): SuggestedPrompt[] => {
-    if ($agentIsRunning$ || $agentMessages$.length === 0) {
+    if ($agentIsRunning$ || pendingQuestionRecoveryLoading || $agentMessages$.length === 0) {
       return [];
     }
     // Hide the moment the user submits a new prompt — before `agentIsRunning$`
@@ -782,16 +790,39 @@
     return parseSuggestedPromptsFromContentBlocks(lastAssistantMessage.contentBlocks ?? []).prompts;
   });
 
-  // Agent Q&A: question blocks on the newest question-bearing assistant
-  // message (not streaming) replace the composer with the sequential wizard,
-  // and stay pending across later plain user messages and agent replies until
-  // answered (answer-tagged user row), dismissed, or superseded by a newer
-  // question set. Derivation is purely transcript-based (wire contract), so
-  // restored sessions re-surface unanswered questions automatically.
+  // Agent Q&A: the daemon's pending marker is authoritative when present, so
+  // its selected question-bearing assistant message stays pending across later
+  // rows until cleared, dismissed, or superseded. Transcript parsing remains
+  // the content source; legacy sessions use the daemon's non-system tail rule.
   // The gate (own active turn, NOT the broad running gate — an agent paused
   // on delegated agents has ended its turn and its questions must surface)
   // lives in deriveWizardPendingQuestions so the regression suite exercises
   // the real production gate.
+  const markedQuestionRecovery = $derived.by(() => {
+    void $agentMessages$;
+    void $agentHistoryMessages$;
+    void $agentSession$?.metadata?.pendingQuestionsMessageId;
+    void $pendingQuestionRecovery$;
+    return deriveMarkedQuestionRecoveryState(appStore.state, agentId);
+  });
+  const pendingQuestionRecoveryLoading = $derived(
+    $transcriptHydration$ === 'settled' && markedQuestionRecovery?.loading === true,
+  );
+  $effect(() => {
+    if ($agentSession$?.id !== agentId) return;
+    const marker = classifyPendingQuestionMarker(
+      $agentSession$?.metadata?.pendingQuestionsMessageId,
+    );
+    const tracked = $pendingQuestionRecovery$;
+    if (marker.kind !== 'set') {
+      if (tracked) appStore.dispatch(pendingQuestionRecoveryCleared(agentId));
+      return;
+    }
+    if ($transcriptHydration$ === 'settled' && markedQuestionRecovery?.shouldRequest) {
+      appStore.dispatch(pendingQuestionRecoveryRequested(agentId, marker.messageId));
+    }
+  });
+
   const pendingQuestions = $derived.by(() => {
     const hasUserMessage = $agentMessages$.some((m) => m.role === 'user');
     const showingPendingUserMessage = !!pendingMessage && !hasUserMessage;
@@ -801,6 +832,8 @@
     // agent:updated); the shared helper re-reads both from store state.
     void $agentIsResponding$;
     void $agentSession$?.metadata?.dismissedQuestionsMessageId;
+    void $agentSession$?.metadata?.pendingQuestionsMessageId;
+    void $pendingQuestionRecovery$;
     return deriveWizardPendingQuestions(
       appStore.state,
       agentId,
@@ -5360,7 +5393,7 @@
             </div>
           {/key}
         {/if}
-        {#if !pendingQuestions || questionWizardCollapsed}
+        {#if (!pendingQuestions && !pendingQuestionRecoveryLoading) || questionWizardCollapsed}
           {#if draftManager.gateVisible}
             <ChatDraftLoadingGate />
           {/if}

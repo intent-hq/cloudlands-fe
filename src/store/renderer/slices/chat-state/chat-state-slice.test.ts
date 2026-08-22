@@ -35,6 +35,9 @@ import {
   scrollbackFetchStarted,
   scrollbackSeekSettled,
   scrollbackContinuationReset,
+  pendingQuestionRecoveryRequested,
+  pendingQuestionRecoverySettled,
+  pendingQuestionRecoveryCleared,
   chatSwitchBackRevealTimedOut,
   chatUtilityFooterReady,
   messageBlockHydrationRequested,
@@ -59,6 +62,7 @@ import {
   selectChatLiveStreamPhase,
   selectHydratedBlock,
   selectTranscriptHydratedOnce,
+  selectPendingQuestionRecovery,
   selectTranscriptHydration,
 } from './chat-state-selectors';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -1286,6 +1290,74 @@ describe('chatState selectors', () => {
       expect(agent.scrollbackOlderToken).toBeNull();
       expect(agent.scrollbackGapToken).toBeNull();
       expect(agent.historySeekUnsupported).toBe(true);
+    });
+  });
+
+  describe('marked question recovery state', () => {
+    it('dedupes one marker and ignores a stale settle after a marker switch', () => {
+      let state = chatStateReducer(
+        initialState,
+        pendingQuestionRecoveryRequested(AGENT, 'question-old'),
+      );
+      const duplicate = chatStateReducer(
+        state,
+        pendingQuestionRecoveryRequested(AGENT, 'question-old'),
+      );
+      expect(duplicate).toBe(state);
+      state = chatStateReducer(
+        state,
+        pendingQuestionRecoveryRequested(AGENT, 'question-new'),
+      );
+      state = chatStateReducer(
+        state,
+        pendingQuestionRecoverySettled(AGENT, 'question-old', 'found'),
+      );
+      expect(selectPendingQuestionRecovery.select(asStoreState(state), AGENT)).toEqual({
+        messageId: 'question-new',
+        status: 'loading',
+      });
+    });
+
+    it('latches not-found and clears when the authoritative marker clears', () => {
+      let state = chatStateReducer(
+        initialState,
+        pendingQuestionRecoveryRequested(AGENT, 'question-stale'),
+      );
+      state = chatStateReducer(
+        state,
+        pendingQuestionRecoverySettled(AGENT, 'question-stale', 'not-found'),
+      );
+      expect(selectPendingQuestionRecovery.select(asStoreState(state), AGENT)?.status).toBe(
+        'not-found',
+      );
+      state = chatStateReducer(state, pendingQuestionRecoveryCleared(AGENT));
+      expect(selectPendingQuestionRecovery.select(asStoreState(state), AGENT)).toBeUndefined();
+    });
+
+    it('retains a successful wizard projection until the marker clears', () => {
+      const questions = [
+        {
+          attachmentId: 'tar-abc123def456',
+          header: 'Question',
+          question: 'Which option?',
+          options: [{ label: 'A' }, { label: 'B' }],
+        },
+      ];
+      let state = chatStateReducer(
+        initialState,
+        pendingQuestionRecoveryRequested(AGENT, 'question-old'),
+      );
+      state = chatStateReducer(
+        state,
+        pendingQuestionRecoverySettled(AGENT, 'question-old', 'found', questions),
+      );
+      expect(selectPendingQuestionRecovery.select(asStoreState(state), AGENT)).toEqual({
+        messageId: 'question-old',
+        status: 'found',
+        questions,
+      });
+      state = chatStateReducer(state, pendingQuestionRecoveryCleared(AGENT));
+      expect(selectPendingQuestionRecovery.select(asStoreState(state), AGENT)).toBeUndefined();
     });
   });
 

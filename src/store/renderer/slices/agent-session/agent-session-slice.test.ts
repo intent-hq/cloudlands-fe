@@ -540,6 +540,31 @@ describe('agent-session-slice reducer', () => {
       expect(next.byAgentId['a1'].metadata?.dismissedQuestionsMessageId).toBe('msg-q1');
     });
 
+    it('applies marker-only pending-question updates, including an authoritative empty clear', () => {
+      const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
+
+      const cleared = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', { metadata: { pendingQuestionsMessageId: '' } }),
+        ),
+      );
+
+      const pendingAgain = agentSessionReducer(
+        cleared,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            metadata: { pendingQuestionsMessageId: 'msg-q2' },
+          }),
+        ),
+      );
+
+      expect(cleared).not.toBe(state);
+      expect(cleared.byAgentId['a1'].metadata?.pendingQuestionsMessageId).toBe('');
+      expect(pendingAgain).not.toBe(cleared);
+      expect(pendingAgain.byAgentId['a1'].metadata?.pendingQuestionsMessageId).toBe('msg-q2');
+    });
+
     it('applies an upsert when only metadata.lastSeenMessageId changes (agent:updated convergence)', () => {
       const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
 

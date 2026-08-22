@@ -206,7 +206,10 @@ import { restoreWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-
 import { markWorkspaceSeenIfViewing } from '$features/workspace/mark-workspace-seen';
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
-import { ensureAgentSession } from '$features/agent/agent-read-service';
+import {
+  ensureAgentSession,
+  refreshAgentSessionAfterEvent,
+} from '$features/agent/agent-read-service';
 import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
 import {
   getPendingAgentDeletion,
@@ -1474,16 +1477,16 @@ function handleAgentRenamedEvent(event: WorkspaceEvent): void {
  * mutations (`agent.setModel`, `agent.reportToParent`, …). Payload shapes vary
  * per mutation (`{ agentId, modelId }`, `{ agentId, completionReportLength }`,
  * …), so instead of decoding each variant the bridge re-fetches the
- * projection via `ensureAgentSession` — which preserves the local transcript
- * on a metadata-only refresh (see FE 69f8c74c) so re-hydration cannot clobber
- * messages the live stream already appended.
+ * projection via `refreshAgentSessionAfterEvent` — which preserves the local
+ * transcript and schedules one trailing read when another read is already in
+ * flight, so rapid marker updates converge to the newest AgentLite projection.
  */
 function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || agentId.length === 0) return;
-  void ensureAgentSession(agentId);
+  void refreshAgentSessionAfterEvent(agentId);
   // Cross-window InterruptedAgentsModal reconciliation (§5.35):
   // agent.resolveInterrupted emits agent:updated per resolved agent, so an
   // open modal listing this agent re-checks agent.listInterrupted (debounced;

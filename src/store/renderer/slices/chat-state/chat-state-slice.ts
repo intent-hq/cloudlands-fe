@@ -33,6 +33,7 @@ import {
   replaceAgentQueue,
 } from '../agent-queue/agent-queue-slice';
 import type { ContentBlock, QueuedMessage } from '$shared/types';
+import type { Question } from '$shared/types/question-resource';
 import { m } from '$shared/paraglide/messages.js';
 
 // ============================================================================
@@ -819,6 +820,24 @@ export const historySeekRequested = createAction<
   [wsId: string, agentId: string, targetOrdinal: number]
 >('chatState/historySeekRequested');
 
+/** Fetch the one authoritative marked question row with a bounded targeted seek. */
+export const pendingQuestionRecoveryRequested = createAction<[agentId: string, messageId: string]>(
+  'chatState/pendingQuestionRecoveryRequested',
+);
+
+export const pendingQuestionRecoverySettled = createAction<
+  [
+    agentId: string,
+    messageId: string,
+    outcome: 'found' | 'not-found' | 'error' | 'cancelled',
+    questions?: Question[],
+  ]
+>('chatState/pendingQuestionRecoverySettled');
+
+export const pendingQuestionRecoveryCleared = createAction<[agentId: string]>(
+  'chatState/pendingQuestionRecoveryCleared',
+);
+
 /** A scrollback page fetch entered flight for the given direction. */
 export const scrollbackFetchStarted = createAction<
   [agentId: string, direction: 'older' | 'gap' | 'seek']
@@ -1296,6 +1315,39 @@ chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] 
     scrollbackOlderToken: null,
     scrollbackGapToken: null,
   });
+});
+chatStateReducer.with(
+  pendingQuestionRecoveryRequested,
+  (state, { payload: [agentId, messageId] }) => {
+    const existing = getAgent(state, agentId).pendingQuestionRecovery;
+    if (existing?.messageId === messageId) return state;
+    return updateAgent(state, agentId, {
+      agentId,
+      pendingQuestionRecovery: { messageId, status: 'loading' },
+    });
+  },
+);
+chatStateReducer.with(
+  pendingQuestionRecoverySettled,
+  (state, { payload: [agentId, messageId, outcome, questions] }) => {
+    const existing = state.byAgentId[agentId]?.pendingQuestionRecovery;
+    if (existing?.messageId !== messageId) return state;
+    return updateAgent(state, agentId, {
+      pendingQuestionRecovery:
+        outcome === 'cancelled'
+          ? undefined
+          : {
+              messageId,
+              status: outcome,
+              ...(outcome === 'found' ? { questions: questions ?? [] } : {}),
+            },
+    });
+  },
+);
+chatStateReducer.with(pendingQuestionRecoveryCleared, (state, { payload: [agentId] }) => {
+  const agent = state.byAgentId[agentId];
+  if (!agent?.pendingQuestionRecovery) return state;
+  return updateAgent(state, agentId, { pendingQuestionRecovery: undefined });
 });
 chatStateReducer.with(workspaceDeleted, (state, { payload: [, agentIds] }) => {
   if (agentIds.length === 0) return state;

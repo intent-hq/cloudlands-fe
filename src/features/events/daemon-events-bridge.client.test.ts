@@ -74,11 +74,13 @@ vi.mock('$features/comments/comments-read-service', () => ({
 // read-service so the transcript-preserving merge is exercised in one place.
 // Fake it here so the tests can assert the bridge hits the correct seam and
 // simulate its store-hydration side effect without a real `agent.get` fetch.
-const { ensureAgentSessionSpy } = vi.hoisted(() => ({
+const { ensureAgentSessionSpy, refreshAgentSessionAfterEventSpy } = vi.hoisted(() => ({
   ensureAgentSessionSpy: vi.fn(() => Promise.resolve()),
+  refreshAgentSessionAfterEventSpy: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('$features/agent/agent-read-service', () => ({
   ensureAgentSession: ensureAgentSessionSpy,
+  refreshAgentSessionAfterEvent: refreshAgentSessionAfterEventSpy,
   createAgentReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) => next(a),
 }));
 
@@ -4411,10 +4413,10 @@ describe('daemonEventsBridge (agent:attention-requested → showAgentAttentionTo
     expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('re-reads through the ensureAgentSession seam so the sidebar/footer indicator converges', async () => {
+  it('re-reads through the trailing event seam so the sidebar/footer indicator converges', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
-    ensureAgentSessionSpy.mockClear();
+    refreshAgentSessionAfterEventSpy.mockClear();
 
     handler(
       notification('agent:attention-requested', {
@@ -4426,7 +4428,7 @@ describe('daemonEventsBridge (agent:attention-requested → showAgentAttentionTo
     );
     await flush();
 
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
     expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
   });
 });
@@ -4631,6 +4633,8 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     backendRequestSpy.mockClear();
     ensureAgentSessionSpy.mockReset();
     ensureAgentSessionSpy.mockImplementation(() => Promise.resolve());
+    refreshAgentSessionAfterEventSpy.mockReset();
+    refreshAgentSessionAfterEventSpy.mockImplementation(() => Promise.resolve());
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
     // Prime the direct router without seeding a session (agent:created runs
@@ -4771,7 +4775,8 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     });
     await flush();
 
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
     const state = appStore.state as {
       agentSessions: { byAgentId: Record<string, AgentSession> };
     };
@@ -4780,6 +4785,27 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     // transcript on metadata-only reads (see FE 69f8c74c).
     expect(state.agentSessions.byAgentId[AGENT]?.messages).toHaveLength(1);
     expect(state.agentSessions.byAgentId[AGENT]?.messages[0].id).toBe('asst-keep');
+  });
+
+  it('forwards an agent:updated event that arrives while the prior refresh is in flight', async () => {
+    let resolveFirst!: () => void;
+    refreshAgentSessionAfterEventSpy.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:updated', { agentId: AGENT }));
+    handler(notification('agent:updated', { agentId: AGENT }));
+
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledTimes(2);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenNthCalledWith(1, AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenNthCalledWith(2, AGENT);
+
+    resolveFirst();
+    await flush();
   });
 
   // monorepo#1728: #584 dropped the notifyInterruptedAgentUpdated call, so a
@@ -4826,6 +4852,7 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     await flush();
 
     expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
+    expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
     expect(notifyInterruptedAgentUpdatedSpy).not.toHaveBeenCalled();
   });
 });

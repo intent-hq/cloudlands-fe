@@ -11,7 +11,9 @@
  *
  * Loads are coalesced per agent via an in-flight map so the AgentCard mount
  * effect and the WorkspaceHoverCard per-agent loop collapse rapid re-dispatches
- * into a single `agent.get` fetch.
+ * into a single `agent.get` fetch. Event-driven refreshes use
+ * `refreshAgentSessionAfterEvent`, which adds one bounded trailing read when an
+ * event arrives during an in-flight fetch.
  *
  * Conversation note: the agent session's `messages` array IS the conversation.
  * On the mock seam this carries the sample transcript; on the live daemon
@@ -37,6 +39,32 @@ const logger = createLogger('AgentReadService');
 
 /** In-flight loads keyed by agent id; coalesces concurrent requests. */
 const inFlight = new Map<string, Promise<void>>();
+
+/** Event-driven trailing loads keyed by agent id; at most one per in-flight read. */
+const pendingEventRerun = new Map<string, Promise<void>>();
+
+/**
+ * Refresh after a daemon event without losing an update behind an older read.
+ * If a read is already in flight, one trailing read is scheduled after it;
+ * further events during that read share the same trailing promise.
+ */
+export async function refreshAgentSessionAfterEvent(agentId: string): Promise<void> {
+  const pending = inFlight.get(agentId);
+  if (!pending) return ensureAgentSession(agentId);
+
+  const scheduledRerun = pendingEventRerun.get(agentId);
+  if (scheduledRerun) return scheduledRerun;
+
+  // ensureAgentSession swallows read failures, so `pending` always fulfills.
+  // Delete before the trailing read so events during that read can coalesce
+  // into one further trailing refresh instead of getting lost.
+  const rerun = pending.then(() => {
+    pendingEventRerun.delete(agentId);
+    return ensureAgentSession(agentId);
+  });
+  pendingEventRerun.set(agentId, rerun);
+  return rerun;
+}
 
 /**
  * Fetch a single agent's session from the seam and hydrate the store with it.

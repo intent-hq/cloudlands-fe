@@ -13,12 +13,22 @@ vi.mock('$lib/client', () => ({
 
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
+import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import type { StoreState } from '$store/renderer/types';
+import { composeTranscript } from '$lib/components/chat/chat-scrollback-composition';
+import {
+  deriveMarkedQuestionRecoveryState,
+  deriveWizardPendingQuestions,
+} from '$lib/components/chat/questions/wizard-gate';
 import {
   HISTORY_SEGMENT_MAX,
   agentSessionReducer,
+  appendHistoryMessages,
   bulkUpsertSessions,
   initialState as agentSessionInitialState,
   prependHistoryMessages,
+  removeSession,
+  updateSession,
 } from '../../agent-session/agent-session-slice';
 import {
   chatStateReducer,
@@ -27,6 +37,7 @@ import {
   historySeekRequested,
   initialState as chatStateInitialState,
   olderHistoryPageRequested,
+  pendingQuestionRecoveryRequested,
 } from '../chat-state-slice';
 import { chatScrollbackSaga } from './chat-scrollback-saga';
 
@@ -67,6 +78,32 @@ function message(id: string, index: number): AgentMessage {
   };
 }
 
+function questionMessage(id: string, index: number): AgentMessage {
+  return {
+    ...message(id, index),
+    contentBlocks: [
+      {
+        type: 'resource',
+        resource: {
+          uri: 'intent-question://tar-abc123def456',
+          name: 'Marked question',
+          mimeType: QUESTION_RESOURCE_MIME_TYPE,
+          text: JSON.stringify({
+            attachmentId: 'tar-abc123def456',
+            header: 'Marked question',
+            question: 'Which option?',
+            options: [
+              { label: 'First', description: 'Use the first option' },
+              { label: 'Second', description: 'Use the second option' },
+            ],
+            multiSelect: false,
+          }),
+        },
+      },
+    ],
+  } as AgentMessage;
+}
+
 function page(
   messages: AgentMessage[],
   overrides: Partial<{
@@ -105,11 +142,15 @@ function harness() {
     task,
     history: () => agentSessions.historySegmentsByAgentId?.[AGENT],
     chat: () => chatState.byAgentId[AGENT],
+    state: () => ({ agentSessions, chatState }) as StoreState,
   };
 }
 
 describe('chatScrollbackSaga (on-demand history paging)', () => {
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
 
   it('seeks at the tail oldest on the first older request, then continues from the persisted token', async () => {
     const run = harness();
@@ -190,6 +231,255 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     await settle();
     expect(run.chat()?.fetchingOlderHistory).toBe(false);
     expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-09']);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('retains one recovered marker across existing history and both cap-pruning directions', async () => {
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([
+        session({
+          status: AgentStatus.Idle,
+          messages: [message('m-tail', 2000)],
+          metadata: { pendingQuestionsMessageId: 'm-question' },
+        }),
+      ]),
+    );
+    run.dispatch(
+      prependHistoryMessages(AGENT, [message('m-existing-1', 1100), message('m-existing-2', 1101)]),
+    );
+    const historyBeforeRecovery = run.history()?.messages;
+    mocks.getConversation.mockResolvedValueOnce(
+      page([questionMessage('m-question', 1000)], {
+        totalMessages: 2001,
+        nextToken: 'unused',
+      }),
+    );
+
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    await settle();
+
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+    expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 1, undefined, 'm-question');
+    expect(run.history()?.messages).toBe(historyBeforeRecovery);
+    expect(run.chat()?.pendingQuestionRecovery).toMatchObject({
+      messageId: 'm-question',
+      status: 'found',
+    });
+    expect(
+      deriveWizardPendingQuestions(run.state(), AGENT, [message('m-tail', 2000)]),
+    ).toMatchObject({ messageId: 'm-question' });
+
+    run.dispatch(prependHistoryMessages(AGENT, [questionMessage('m-question', 1000)]));
+    const composed = composeTranscript(
+      run.history()?.messages ?? [],
+      [message('m-tail', 2000)],
+      run.history()?.gapToTail === true,
+    );
+    expect(
+      composed.groups.flatMap((group) => group.messages).filter((item) => item.id === 'm-question'),
+    ).toHaveLength(1);
+
+    run.dispatch(
+      prependHistoryMessages(
+        AGENT,
+        Array.from({ length: HISTORY_SEGMENT_MAX }, (_, index) =>
+          message(`m-older-${index}`, index),
+        ),
+      ),
+    );
+    expect(run.history()?.messages.some((item) => item.id === 'm-question')).toBe(false);
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    expect(deriveWizardPendingQuestions(run.state(), AGENT, [])).toMatchObject({
+      messageId: 'm-question',
+    });
+
+    run.dispatch(
+      appendHistoryMessages(
+        AGENT,
+        Array.from({ length: HISTORY_SEGMENT_MAX }, (_, index) =>
+          message(`m-newer-${index}`, 1200 + index),
+        ),
+      ),
+    );
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    await settle();
+    expect(deriveWizardPendingQuestions(run.state(), AGENT, [])).toMatchObject({
+      messageId: 'm-question',
+    });
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not land a recovered row when the marker clears during the request', async () => {
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([
+        session({
+          messages: [message('m-tail', 100)],
+          metadata: { pendingQuestionsMessageId: 'm-question' },
+        }),
+      ]),
+    );
+    let resolvePage!: (value: ReturnType<typeof page>) => void;
+    mocks.getConversation.mockReturnValueOnce(
+      new Promise((done) => {
+        resolvePage = done;
+      }),
+    );
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    await settle();
+    run.dispatch(updateSession(AGENT, { metadata: { pendingQuestionsMessageId: '' } }));
+    resolvePage(page([message('m-question', 10)]));
+    await settle();
+
+    expect(run.history()).toBeUndefined();
+    expect(run.chat()?.pendingQuestionRecovery).toBeUndefined();
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('retries one transient recovery failure without allowing duplicate panel requests', async () => {
+    vi.useFakeTimers();
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([
+        session({
+          status: AgentStatus.Idle,
+          metadata: { pendingQuestionsMessageId: 'm-question' },
+        }),
+      ]),
+    );
+    mocks.getConversation
+      .mockRejectedValueOnce(new Error('temporary transport failure'))
+      .mockResolvedValueOnce(page([questionMessage('m-question', 10)]));
+
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    await settle();
+
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+    expect(run.chat()?.pendingQuestionRecovery?.status).toBe('loading');
+    await vi.advanceTimersByTimeAsync(250);
+    await settle();
+
+    expect(mocks.getConversation).toHaveBeenCalledTimes(2);
+    expect(run.chat()?.pendingQuestionRecovery?.status).toBe('found');
+    expect(deriveWizardPendingQuestions(run.state(), AGENT, [])).toMatchObject({
+      messageId: 'm-question',
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('exhausts bounded transport retries and does not restart for the same marker', async () => {
+    vi.useFakeTimers();
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([session({ metadata: { pendingQuestionsMessageId: 'm-question' } })]),
+    );
+    mocks.getConversation.mockRejectedValue(new Error('transport unavailable'));
+
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    await settle();
+    await vi.advanceTimersByTimeAsync(250);
+    await settle();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await settle();
+
+    expect(mocks.getConversation).toHaveBeenCalledTimes(3);
+    expect(run.chat()?.pendingQuestionRecovery).toEqual({
+      messageId: 'm-question',
+      status: 'error',
+    });
+    expect(deriveMarkedQuestionRecoveryState(run.state(), AGENT)).toEqual({
+      messageId: 'm-question',
+      shouldRequest: false,
+      loading: true,
+    });
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    await vi.advanceTimersByTimeAsync(10_000);
+    await settle();
+    expect(mocks.getConversation).toHaveBeenCalledTimes(3);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('cancels a stale in-flight completion when the marker changes', async () => {
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([session({ metadata: { pendingQuestionsMessageId: 'm-old' } })]),
+    );
+    let resolveOld!: (value: ReturnType<typeof page>) => void;
+    mocks.getConversation
+      .mockReturnValueOnce(new Promise((resolve) => (resolveOld = resolve)))
+      .mockResolvedValueOnce(page([questionMessage('m-new', 11)]));
+
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-old'));
+    await settle();
+    run.dispatch(updateSession(AGENT, { metadata: { pendingQuestionsMessageId: 'm-new' } }));
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-new'));
+    await settle();
+    resolveOld(page([questionMessage('m-old', 10)]));
+    await settle();
+
+    expect(mocks.getConversation).toHaveBeenCalledTimes(2);
+    expect(run.chat()?.pendingQuestionRecovery).toMatchObject({
+      messageId: 'm-new',
+      status: 'found',
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('stops a scheduled retry when the session is removed', async () => {
+    vi.useFakeTimers();
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([session({ metadata: { pendingQuestionsMessageId: 'm-question' } })]),
+    );
+    mocks.getConversation.mockRejectedValue(new Error('temporary transport failure'));
+
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
+    await settle();
+    run.dispatch(removeSession(AGENT));
+    await settle();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await settle();
+
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+    expect(run.chat()?.pendingQuestionRecovery).toBeUndefined();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('latches a stale marker after one failed seek and ignores repeated derivations', async () => {
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([
+        session({
+          messages: [message('m-tail', 100)],
+          metadata: { pendingQuestionsMessageId: 'm-stale' },
+        }),
+      ]),
+    );
+    mocks.getConversation.mockRejectedValueOnce({ code: 'INVALID_PARAMS' });
+
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-stale'));
+    await settle();
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-stale'));
+    run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-stale'));
+    await settle();
+
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+    expect(run.chat()?.pendingQuestionRecovery).toEqual({
+      messageId: 'm-stale',
+      status: 'not-found',
+    });
+    expect(run.history()).toBeUndefined();
     run.task.cancel();
     await run.task.toPromise();
   });

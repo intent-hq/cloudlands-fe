@@ -132,6 +132,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectFetchingOlderHistory: mocks.selector(false),
   selectHistoryExhausted: mocks.selector(false),
   selectHistorySeekUnsupported: mocks.selector(false),
+  selectPendingQuestionRecovery: mocks.selector(undefined),
   selectTranscriptHydration: Object.assign(() => mocks.transcriptHydration, {
     select: () => 'settled',
   }),
@@ -284,6 +285,7 @@ vi.mock('../ChatMessage.svelte', async () => ({
   default: (await import('./mocks/MockChatMessage.svelte')).default,
 }));
 vi.mock('../questions/wizard-gate', () => ({
+  deriveMarkedQuestionRecoveryState: () => null,
   deriveWizardPendingQuestions: () => mocks.pendingQuestions,
 }));
 vi.mock('svelte-fa', async () => ({

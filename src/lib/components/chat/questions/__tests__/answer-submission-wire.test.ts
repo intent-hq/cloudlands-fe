@@ -333,23 +333,25 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
   }, 30000);
 });
 
-describe('transcript-driven wizard transitions', () => {
+describe('marker-compatible wizard transitions', () => {
   const questionMsg = assistantMessage([questionBlock(SINGLE), questionBlock(MULTI)]);
   const answerText = flattenAnswersToMessage([
     answer(SINGLE, { selectedLabels: ['OS keychain'] }),
     answer(MULTI, { skipped: true }),
   ]);
 
-  it('pends before the answer message exists; resolved once the TAGGED one lands', () => {
+  it('uses the marker to persist across chatter and the written clear after an answer', () => {
     expect(derivePendingQuestions([questionMsg], false)).not.toBeNull();
-    // A plain (untagged) user message leaves the Q&A pending — the wizard
-    // stays up and the composer stays usable underneath.
     expect(
-      derivePendingQuestions([questionMsg, userMessage('unrelated', 'msg-u1')], false),
+      derivePendingQuestions(
+        [questionMsg, userMessage('unrelated', 'msg-u1')],
+        false,
+        false,
+        'msg-a1',
+      ),
     ).not.toBeNull();
-    // The wizard's tagged answer message closes it (composer restores).
     expect(
-      derivePendingQuestions([questionMsg, answerMessage(answerText, 'msg-a1')], false),
+      derivePendingQuestions([questionMsg, answerMessage(answerText, 'msg-a1')], false, false, ''),
     ).toBeNull();
   });
 
@@ -361,12 +363,14 @@ describe('transcript-driven wizard transitions', () => {
     expect(pending).not.toBeNull();
     expect(pending!.questions.map((q) => q.header)).toEqual(['Token storage', 'Scope']);
 
-    // Restored transcript WITH the tagged answer message: resolved.
+    // An old daemon omits the marker, so any later user row ends the legacy
+    // transcript-tail fallback. A new daemon also supplies the written clear.
     const answered: AgentMessage[] = [
       userMessage('kick off', 'msg-u0'),
       questionMsg,
       answerMessage(answerText, 'msg-a1', 'msg-u2'),
     ];
     expect(derivePendingQuestions(answered, false)).toBeNull();
+    expect(derivePendingQuestions(answered, false, false, '')).toBeNull();
   });
 });
