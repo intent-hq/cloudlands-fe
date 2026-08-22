@@ -134,6 +134,30 @@ describe("LiveGitClient reads (fake transport)", () => {
     expect(refreshed?.ahead).toBe(1);
   });
 
+  it("force-refreshes git.status without joining a pre-existing in-flight read", async () => {
+    let resolveStale!: (status: typeof GIT_STATUS_FIXTURE) => void;
+    mockedRequest
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveStale = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({ ...GIT_STATUS_FIXTURE, ahead: 1 });
+    const client = new LiveGitClient();
+
+    const staleRead = client.status("ws-1");
+    const freshStatus = await client.status("ws-1", { forceRefresh: true });
+
+    expect(mockedRequest.mock.calls).toEqual([
+      ["git.status", { workspaceId: "ws-1" }],
+      ["git.status", { workspaceId: "ws-1", forceRefresh: true }],
+    ]);
+    expect(freshStatus?.ahead).toBe(1);
+
+    resolveStale(GIT_STATUS_FIXTURE);
+    await expect(staleRead).resolves.toEqual(GIT_STATUS_FIXTURE);
+  });
+
   it("status carries gitlink mode/oldSha/newSha on submodule entries and omits them elsewhere (#1739)", async () => {
     mockedRequest.mockResolvedValueOnce({
       ...GIT_STATUS_FIXTURE,

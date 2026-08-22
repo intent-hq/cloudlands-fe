@@ -1116,7 +1116,8 @@ export interface GitDiffsOptions {
 }
 
 export interface GitClient {
-  status(workspaceId: string): Promise<GitStatus | null>;
+  /** `forceRefresh` bypasses client and daemon status caches for post-mutation reconciliation. */
+  status(workspaceId: string, options?: { forceRefresh?: boolean }): Promise<GitStatus | null>;
   changes(workspaceId: string): Promise<GitStatus | null>;
   /**
    * `git.diffs` — per-file hunks. Defaults to the index→workdir (unstaged)
