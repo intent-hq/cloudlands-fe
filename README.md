@@ -182,29 +182,28 @@ not on this repository.
 
 ## Network & privacy
 
-The desktop app is local-first and ships **no telemetry or analytics** —
-Segment, Sentry error reporting, and download-attribution have all been
-removed. The app itself makes only these network calls:
+The desktop app is local-first and ships **no telemetry or analytics**. The
+only network calls the app itself makes go to public GitHub Releases:
 
-- **Auto-updates** — the built app checks for and downloads updates from
-  GitHub Releases on
-  [intent-hq/cloudlands-releases](https://github.com/intent-hq/cloudlands-releases).
+- **Auto-updates & release notes** — the built app checks for and downloads
+  updates from GitHub Releases on
+  [intent-hq/cloudlands-releases](https://github.com/intent-hq/cloudlands-releases),
+  and fetches release notes for the installed version from the same repo's
+  GitHub Releases API
+  (`src/features/release-notes/main/release-notes.service.ts`).
   `AUTO_UPDATE_URL` in `src/shared/constants.ts` is the release-download base
   URL; the `publish` URL in `electron-builder.yml` appends the release channel
   (e.g. `/stable`).
-- **Auggie binary download (on demand)** — when you install the Auggie CLI from
-  the app, the pre-built binary is downloaded from the latest public release of
-  [augmentcode/auggie](https://github.com/augmentcode/auggie)
-  (`AUGGIE_BINARY_BASE_URL` in `src/shared/constants/auggie.ts`).
-- **Sentry integration (opt-in, user-configured)** — if you connect a Sentry
-  account with your own API token, the app calls the Sentry REST API
-  (`SENTRY_API_BASE_URL` in `src/features/sentry-auth/constants.ts`) to browse
-  your organization's issues and projects. Nothing is sent to Sentry unless you
-  configure this integration.
 
-Everything else goes through the local `intentd` daemon. Daemon-side network
-calls — provider OAuth sign-ins, user-configured integrations (GitHub, Linear,
-Sentry), and the sitter self-update — are documented in the
+Everything else goes through the `intentd` daemon the app is connected to —
+local by default; connecting to a remote daemon makes that daemon traffic go
+to the host you chose. If you connect the GitHub, Linear, or Sentry
+integrations, the daemon calls those services' APIs on your behalf — nothing
+is sent to them unless you configure the integration — and the daemon is
+likewise what probes an MCP server when you test its connection. Daemon-side
+network calls — provider OAuth sign-ins, the user-configured integrations
+(GitHub, Linear, Sentry), user-configured MCP servers, and the sitter
+self-update — are documented in the
 [monorepo README's Network & privacy section](https://github.com/intent-hq/monorepo#network--privacy).
 
 ## History
