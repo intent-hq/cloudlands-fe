@@ -21,11 +21,14 @@
  *    otherwise close the first panel's still-acquiring cold-open slot —
  *    cancelPending resolves its `chat.subscribe` straight into an
  *    unsubscribe, its seq-0 snapshot is token-dropped, and hydration
- *    strands a full wait window. A cold open whose slot is still acquiring
- *    before its hydration flag exists spares the same way (monorepo#3073):
- *    the chat-read saga defers the loading flag by at least one microtask,
- *    so a same-flush double mount sweeps before the flag is visible. The
- *    hosting check spans every workspace's
+ *    strands a full wait window. ANY hosted slot whose open is still
+ *    acquiring spares the same way, whatever its hydration flag reads: a
+ *    cold open before the flag exists (monorepo#3073 — the chat-read saga
+ *    defers the loading flag by at least one microtask, so a same-flush
+ *    double mount sweeps before the flag is visible) and a warm reopen on a
+ *    revisited workspace whose flag still reads the previous visit's
+ *    `settled` (monorepo#3185 — chat state survives workspace switches).
+ *    The hosting check spans every workspace's
  *    layout (the same predicate the settle-time revisit uses), so a panel
  *    in a visible sibling workspace column spares too — and so does a tab
  *    persisted in a backgrounded workspace's layout, a bounded keep (until
@@ -54,7 +57,11 @@
  *    ChatPanel remount the new instance re-initializes (deduped against the
  *    standing subscription) before the old instance's trailing clear lands,
  *    and closing the subscription then would drop the snapshot meta and
- *    strand that hydration (monorepo#2864). Each spared agent is revisited
+ *    strand that hydration (monorepo#2864). A hosted slot still ACQUIRING
+ *    its open spares too, whatever its hydration flag reads (monorepo#3185):
+ *    a departing panel's destroy can land after a remounting panel's init
+ *    reopened the agent, while the flag still reads a previous visit's
+ *    `settled`. Each spared agent is revisited
  *    when its hydration settles or fails: a live remounted panel keeps its
  *    agent tab open (or re-viewed the agent), so the subscription stays; a
  *    genuine panel close mid-load left no tab behind, so the deferred close
@@ -247,8 +254,10 @@ interface SubscriptionCoordinator {
   /**
    * Agents spared from a close-all sweep — an applied clear's
    * (monorepo#2864) or the viewed-agent swap's (monorepo#2917) — because
-   * their transcript hydration sat in `loading` (or their cold open was
-   * still acquiring before the read saga flipped the flag, monorepo#3073).
+   * their transcript hydration sat in `loading`, or their hosted slot's
+   * open was still acquiring regardless of the flag's value (a cold open
+   * before the read saga flipped it, monorepo#3073; a warm reopen under a
+   * stale settled flag from a previous visit, monorepo#3185).
    * Revisited when that hydration settles/fails: an agent with no open
    * panel tab and not re-viewed had its panel genuinely closed mid-load, so
    * the deferred close runs then instead of leaking the subscription.
@@ -1090,15 +1099,25 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
     // still reads undefined (never started) at sweep time. That sibling is
     // recognizable without the flag: its slot's open is still acquiring
     // (desiredToken set, no subscription installed yet) — treat it exactly
-    // like the loading case. Warm reopens (hydration already settled/error)
-    // keep closing as before: no read-saga settle/fail is guaranteed to
-    // drive their deferred-clear revisit, and their resume anchor makes the
-    // eventual re-view cheap.
-    const acquiringColdOpen =
-      hydration === undefined &&
-      slot.desiredToken !== undefined &&
-      !coordinator.subscriptions.has(slotAgentId);
-    if (hydration !== 'loading' && !acquiringColdOpen) continue;
+    // like the loading case. The spare deliberately ignores the hydration
+    // flag's VALUE while the slot is acquiring (monorepo#3185): chat state
+    // survives workspace switches, so on a revisited workspace's double
+    // mount the sibling's flag still reads the PREVIOUS visit's 'settled' —
+    // a warm reopen whose remounting panel is just as much waiting on the
+    // seq-0 snapshot as a cold open's. Only the acquisition state is
+    // trustworthy at sweep time. Installed warm subscriptions (not
+    // acquiring, hydration settled/error) keep closing as before, and their
+    // resume anchor makes the eventual re-view cheap. The settle/fail
+    // revisit is guaranteed only for init/refresh-driven acquires (the
+    // chat-read saga unconditionally starts and settles/fails those
+    // hydrations); a viewed-only acquire (tab reactivation) spared under a
+    // stale settled flag has no hydration cycle coming — its subscription
+    // falls back to the bounded keep above (retired by the next same-realm
+    // swap, the scoped clear on tab close, or session teardown), and its
+    // stale marker is deleted by any enqueueClose.
+    const acquiring =
+      slot.desiredToken !== undefined && !coordinator.subscriptions.has(slotAgentId);
+    if (hydration !== 'loading' && !acquiring) continue;
     if (yield* selectAgentHasOpenPanelTab.effect(slotAgentId)) spared.add(slotAgentId);
   }
   for (const slotAgentId of spared) coordinator.pendingClearWhileLoading.add(slotAgentId);
@@ -1118,7 +1137,9 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
 /**
  * Revisit an agent spared from a close-all sweep — an applied clear's
  * (monorepo#2864) or the viewed-agent swap's (monorepo#2917) — because its
- * hydration was `loading`, now that the hydration has settled or failed. The
+ * hydration was `loading` or its hosted slot's open was still acquiring
+ * (monorepo#3073 cold opens, monorepo#3185 warm reopens), now that the
+ * hydration has settled or failed. The
  * spare exists for a live panel actively waiting on the subscription (the
  * same-agent remount, or a sibling panel of a double mount), which keeps its
  * agent tab open (or re-views the agent) — so when neither holds, the panel
@@ -1318,10 +1339,25 @@ function* routeLifecycleAction(
       // defers the close, it never cancels it: each spared agent is recorded
       // and revisited when its hydration settles/fails
       // (runDeferredClearIfPanelGone), so a genuine close-mid-load still
-      // tears the subscription down instead of leaking it.
+      // tears the subscription down instead of leaking it. A hosted slot
+      // whose open is still ACQUIRING spares the same way regardless of the
+      // hydration flag's value (monorepo#3185): on a revisited workspace the
+      // departing panel's destroy can land after the remounting panel's init
+      // reopened the agent (Svelte defers teardown to the microtask flush),
+      // while that agent's per-agent chat state still reads the previous
+      // visit's 'settled' — sweeping the acquiring reopen would token-drop
+      // its seq-0 snapshot and strand the in-flight hydration a full wait
+      // window. The hosting requirement keeps the sweep closing acquiring
+      // slots nothing is waiting on.
       const hydrating = new Set<string>();
-      for (const slotAgentId of coordinator.slots.keys()) {
+      for (const [slotAgentId, slot] of coordinator.slots.entries()) {
         if ((yield* selectTranscriptHydration.effect(slotAgentId)) === 'loading') {
+          hydrating.add(slotAgentId);
+          continue;
+        }
+        const acquiring =
+          slot.desiredToken !== undefined && !coordinator.subscriptions.has(slotAgentId);
+        if (acquiring && (yield* selectAgentHasOpenPanelTab.effect(slotAgentId))) {
           hydrating.add(slotAgentId);
         }
       }

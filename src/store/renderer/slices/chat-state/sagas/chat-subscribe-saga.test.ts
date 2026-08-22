@@ -1821,6 +1821,207 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     },
   );
 
+  // Warm-reopen hole behind the monorepo#3073 fix (v2.79.0 recurrence,
+  // monorepo#3185): both acquiring-slot spares to date keyed on the
+  // hydration flag's VALUE — the swap sweep spares `loading` (monorepo#2917)
+  // and, for a cold open, `undefined` (never hydrated, monorepo#3073). But
+  // chat state is per-agent and survives workspace switches: on a REVISITED
+  // workspace the remounting panels' agents still carry transcriptHydration
+  // 'settled' from the previous visit, while their subscriptions were closed
+  // at switch-away (snapshot meta dropped by the phase-null teardown). A
+  // same-flush double mount reopens both agents (the read saga's loading
+  // flag lands at least one microtask later); the second panel's
+  // markAgentAsViewed sweep then reads the FIRST agent's STALE 'settled'
+  // flag — neither spare matches — and closes its still-acquiring reopen:
+  // desiredToken cleared + cancelPending, its chat.subscribe resolves
+  // straight into an unsubscribe, the seq-0 snapshot is token-dropped, and
+  // with both of that panel's opens already consumed (init + viewed) the
+  // chat-read saga strands a full SNAPSHOT_WAIT_MS window (the "No
+  // transcript snapshot recorded within wait window" warn in the v2.79.0
+  // trace). The hydration flag's value cannot be trusted at sweep time —
+  // only the slot's acquisition state can: the sweep must spare ANY hosted
+  // slot whose open is still acquiring (nothing installed yet).
+  it(
+    'spares a warm still-acquiring reopen from the viewed-agent swap on a revisited-workspace double mount (monorepo#3185)',
+    async () => {
+      const first = 'agent-3185-warm-first';
+      const second = 'agent-3185-warm-second';
+      const prev = 'agent-3185-warm-prev';
+      seedSession(first);
+      seedSession(second);
+      seedSession(prev);
+      // Both agent tabs persist in the revisited workspace's layout.
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'First', closable: true, agentId: first }),
+      );
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'Second', closable: true, agentId: second }),
+      );
+
+      // Previous visit: the first agent hydrated and settled…
+      const priorSub = openChat(first);
+      appStore.dispatch(markAgentAsViewed(first));
+      priorSub.handler({ ...transcript([]), fromSnapshot: true });
+      appStore.dispatch(transcriptHydrationStarted(first));
+      appStore.dispatch(transcriptHydrationSettled(first));
+
+      // …then the user switched workspaces: viewing an agent there sweeps
+      // the first agent's subscription (settled, same realm) — its snapshot
+      // meta drops with the phase-null teardown, but transcriptHydration
+      // stays 'settled' in the per-agent chat state.
+      openChat(prev);
+      appStore.dispatch(markAgentAsViewed(prev));
+      await vi.waitFor(() => expect(priorSub.unsubscribe).toHaveBeenCalledOnce());
+
+      // Switch-back double mount, one synchronous flush: both panels' init +
+      // viewed dispatches land back-to-back before the read saga can flip
+      // either hydration flag. Over WSS both reopens acquire asynchronously.
+      const c1 = delayNextSubscription(first);
+      appStore.dispatch(markAgentAsViewed(first));
+      const c2 = delayNextSubscription(second);
+      // The second panel's viewed sweep — today it closes the first agent's
+      // still-acquiring warm reopen (stale 'settled' defeats both spares).
+      appStore.dispatch(markAgentAsViewed(second));
+
+      // The read saga's hydration flags land only after the current task.
+      appStore.dispatch(transcriptHydrationStarted(first));
+      appStore.dispatch(transcriptHydrationStarted(second));
+
+      c1.acquisition.resolve(c1.subscription.unsubscribe);
+      c2.acquisition.resolve(c2.subscription.unsubscribe);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // The daemon emits both seq-0 snapshots.
+      c2.subscription.handler({
+        ...transcript([makeMessage('m-3185-second', 'second snapshot')]),
+        fromSnapshot: true,
+      });
+      c1.subscription.handler({
+        ...transcript([makeMessage('m-3185-first', 'first snapshot')]),
+        fromSnapshot: true,
+      });
+
+      // The last-viewed panel hydrates fine…
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, second)).toBeDefined();
+
+      // …and the first panel's warm reopen must survive the sweep: its
+      // snapshot applies instead of stranding the read saga a full window.
+      expect(c1.subscription.unsubscribe).not.toHaveBeenCalled();
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, first)).toBeDefined();
+      expect(selectAgentMessages.select(appStore.state, first).map((m) => m.id)).toContain(
+        'm-3185-first',
+      );
+
+      // The spare defers the close, it never cancels it: hydration settles
+      // with the panel tab still open — the revisit keeps the subscription.
+      appStore.dispatch(transcriptHydrationSettled(first));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(c1.subscription.unsubscribe).not.toHaveBeenCalled();
+    },
+  );
+
+  it(
+    "spares a warm still-acquiring reopen from an applied clear's close-all sweep when the departing panel's destroy lands after the remount's init (monorepo#3185)",
+    async () => {
+      // Same stale-'settled' hole in the OTHER sweep (the applied clear's,
+      // monorepo#2864 branch): the previous workspace's departing ChatPanel
+      // destroys AFTER the revisited workspace's panel already dispatched
+      // its init (Svelte defers teardown to the microtask flush). Its scoped
+      // clear applies (that agent is still the viewed one), and the
+      // close-all sweep spares only hydration === 'loading' — the remounting
+      // agent's stale 'settled' flag lets the sweep close its
+      // still-acquiring warm reopen, token-dropping the seq-0 snapshot.
+      const agentId = 'agent-3185-clear-warm';
+      const prev = 'agent-3185-clear-prev';
+      seedSession(agentId);
+      seedSession(prev);
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'Warm', closable: true, agentId }),
+      );
+
+      // Previous visit: hydrated + settled, then swept by viewing the
+      // previous workspace's agent.
+      const priorSub = openChat(agentId);
+      appStore.dispatch(markAgentAsViewed(agentId));
+      priorSub.handler({ ...transcript([]), fromSnapshot: true });
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      openChat(prev);
+      appStore.dispatch(markAgentAsViewed(prev));
+      await vi.waitFor(() => expect(priorSub.unsubscribe).toHaveBeenCalledOnce());
+
+      // Switch back: the remounting panel's init reopens (acquiring over
+      // WSS); the departing panel's destroy then dispatches its scoped
+      // clear, which APPLIES — the close-all sweep runs while the reopen is
+      // still acquiring under a stale 'settled' hydration flag.
+      const c = delayNextSubscription(agentId);
+      appStore.dispatch(clearCurrentlyViewedAgent(prev));
+
+      c.acquisition.resolve(c.subscription.unsubscribe);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      c.subscription.handler({
+        ...transcript([makeMessage('m-3185-clear', 'warm snapshot')]),
+        fromSnapshot: true,
+      });
+
+      // The hosted warm reopen survives; its snapshot applies.
+      expect(c.subscription.unsubscribe).not.toHaveBeenCalled();
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toBeDefined();
+
+      // Spare-then-revisit: the in-flight init flips hydration and settles
+      // with the tab still open — the subscription stays for the live panel.
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(c.subscription.unsubscribe).not.toHaveBeenCalled();
+    },
+  );
+
+  it(
+    'runs the deferred close once hydration settles when a warm swap-spared reopen panel closed mid-load (no leaked subscription, monorepo#3185)',
+    async () => {
+      // Leak guard for the warm-reopen spare: same spare-then-revisit
+      // contract as the loading/cold-open spares — if the panel genuinely
+      // closes while the spared reopen's hydration is in flight, the
+      // settle-time revisit tears the subscription down.
+      const warm = 'agent-3185-warm-leak';
+      const viewed = 'agent-3185-warm-leak-viewed';
+      const prev = 'agent-3185-warm-leak-prev';
+      seedSession(warm);
+      seedSession(viewed);
+      seedSession(prev);
+      appStore.dispatch(
+        openTab(WS, { type: 'agent', title: 'Warm', closable: true, agentId: warm }),
+      );
+
+      // Previous visit: settled, then swept.
+      const priorSub = openChat(warm);
+      appStore.dispatch(markAgentAsViewed(warm));
+      priorSub.handler({ ...transcript([]), fromSnapshot: true });
+      appStore.dispatch(transcriptHydrationStarted(warm));
+      appStore.dispatch(transcriptHydrationSettled(warm));
+      openChat(prev);
+      appStore.dispatch(markAgentAsViewed(prev));
+      await vi.waitFor(() => expect(priorSub.unsubscribe).toHaveBeenCalledOnce());
+
+      // Warm reopen still acquiring when another agent's viewed sweep runs:
+      // the spare holds (hosted tab).
+      const c = delayNextSubscription(warm);
+      openChat(viewed);
+      appStore.dispatch(markAgentAsViewed(viewed));
+      c.acquisition.resolve(c.subscription.unsubscribe);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(c.subscription.unsubscribe).not.toHaveBeenCalled();
+
+      // The panel closes mid-load; hydration then settles with no open tab
+      // and no re-view — the deferred close runs.
+      appStore.dispatch(clearPanelLayout(WS));
+      appStore.dispatch(transcriptHydrationStarted(warm));
+      appStore.dispatch(transcriptHydrationSettled(warm));
+      await vi.waitFor(() => expect(c.subscription.unsubscribe).toHaveBeenCalledOnce());
+    },
+  );
+
   it(
     'runs the deferred close once hydration settles when the swap-spared sibling panel closed mid-load (no leaked subscription, monorepo#2917)',
     async () => {
