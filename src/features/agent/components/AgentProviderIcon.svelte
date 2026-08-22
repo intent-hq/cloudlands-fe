@@ -20,7 +20,7 @@
 
 <script lang="ts">
   import GrokLogo from '$lib/components/ui/GrokLogo.svelte';
-  import Logo from '$lib/components/Logo.svelte';
+  import AuggieLogo from '$lib/components/AuggieLogo.svelte';
   import { cn } from '$lib/utils';
 
   interface Props {
@@ -34,7 +34,7 @@
 
 <span class={cn('inline-flex shrink-0', className)}>
   {#if providerId === 'auggie'}
-    <Logo width={size} class="-mt-0.5" />
+    <AuggieLogo width={size} class="-mt-0.5" />
   {:else if providerId === 'claude-code'}
     <svg
       class={className}
