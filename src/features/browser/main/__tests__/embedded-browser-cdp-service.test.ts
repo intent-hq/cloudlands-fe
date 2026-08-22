@@ -749,4 +749,49 @@ describe('embedded browser CDP workspace routing', () => {
       stale: true,
     });
   });
+
+  // listAgentOwnedTabs answers purely from main-process state (quit
+  // confirmation must never block on a renderer round-trip).
+  it('lists agent-owned tabs from the ownership registry without any renderer round-trip', async () => {
+    const ownedTab = {
+      tabId: 'tab-owned-quit',
+      url: 'https://owned-quit.test',
+      title: 'Owned quit tab',
+      ownerAgentId: 'agent-quit',
+    };
+    // Seed ownership + cache via a normal reply round-trip.
+    mocks.sendToWorkspaceWindows.mockImplementation(
+      (_ws: string, channel: string, payload: { requestId?: string }) => {
+        if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+        responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+          {},
+          { tabs: [ownedTab], requestId: payload.requestId },
+        );
+        return DELIVERED;
+      },
+    );
+    await embeddedBrowserCdp.requestPanelBrowserTabs('ws-quit');
+    // An owned tab the cache has never seen still appears, without enrichment.
+    embeddedBrowserCdp.setTabOwner('tab-bare-quit', 'agent-quit-2');
+
+    mocks.sendToWorkspaceWindows.mockClear();
+    const tabs = embeddedBrowserCdp.listAgentOwnedTabs();
+
+    expect(mocks.sendToWorkspaceWindows).not.toHaveBeenCalled();
+    expect(tabs).toEqual(
+      expect.arrayContaining([
+        {
+          tabId: 'tab-owned-quit',
+          ownerAgentId: 'agent-quit',
+          title: 'Owned quit tab',
+          url: 'https://owned-quit.test',
+          workspaceId: 'ws-quit',
+        },
+        { tabId: 'tab-bare-quit', ownerAgentId: 'agent-quit-2' },
+      ]),
+    );
+    // Cleanup so this suite's shared singleton does not leak into others.
+    embeddedBrowserCdp.clearAgentTabs('agent-quit');
+    embeddedBrowserCdp.clearAgentTabs('agent-quit-2');
+  });
 });
