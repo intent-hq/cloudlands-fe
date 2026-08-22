@@ -122,7 +122,10 @@ describe('IntentMarkLoader', () => {
     expect(container.querySelectorAll('[data-mark-arm]')).toHaveLength(5);
     expect(container.querySelectorAll('[data-bloom-arm]')).toHaveLength(5);
     expect(intentMarkVariants).toEqual(['bloom', 'pulse', 'twist']);
-    expect(spinnerMetadata.exports).toEqual(Object.keys(indicatorsApi));
+    expect(spinnerMetadata.exports).toContain('IntentMarkVariant');
+    expect(new Set(spinnerMetadata.exports.filter((name) => name !== 'IntentMarkVariant'))).toEqual(
+      new Set(Object.keys(indicatorsApi)),
+    );
   });
 
   it.each([
