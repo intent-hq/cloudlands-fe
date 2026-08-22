@@ -1,4 +1,4 @@
-import type { ToolCategory } from './tool-classifier';
+import type { ToolCategory } from '$lib/utils/tool-classifier';
 
 export type ToolLeadingIconKind = 'eye' | 'hand';
 

@@ -140,14 +140,11 @@ describe('prMonitorSaga', () => {
     },
   );
 
-  it('subscribes to the first explicitly selected workspace after 100 ms and forwards rows', async () => {
+  it('subscribes to the first explicitly selected workspace immediately and forwards rows', async () => {
     const harness = createHarness('ws-A');
     await settle();
 
-    await vi.advanceTimersByTimeAsync(99);
-    expect(mocks.subscribePrMonitors).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1);
-    await settle();
+    // Leading edge: no reconciliation delay before the first subscribe.
     expect(mocks.subscribePrMonitors).toHaveBeenCalledTimes(1);
     expect(mocks.subscribePrMonitors.mock.calls[0][0]).toBe('ws-A');
 
@@ -160,7 +157,7 @@ describe('prMonitorSaga', () => {
     await harness.task.toPromise();
   });
 
-  it('switches A to B exactly once after the trailing delay', async () => {
+  it('switches A to B immediately when the change lands outside the debounce window', async () => {
     const harness = createHarness('ws-A');
     await settle();
     await advanceReconciliation();
@@ -169,11 +166,6 @@ describe('prMonitorSaga', () => {
     >;
 
     harness.dispatch(openWorkspaceTab('ws-B'));
-    await settle();
-    await vi.advanceTimersByTimeAsync(99);
-    expect(disposeA).not.toHaveBeenCalled();
-    expect(mocks.subscribePrMonitors).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(1);
     await settle();
 
     expect(disposeA).toHaveBeenCalledOnce();
@@ -185,17 +177,19 @@ describe('prMonitorSaga', () => {
     await harness.task.toPromise();
   });
 
-  it('restarts the trailing delay when a final transition arrives near the window end', async () => {
+  it('coalesces a rapid flap into one trailing reconcile of the final workspace', async () => {
     const harness = createHarness('ws-A');
     await settle();
-    await advanceReconciliation();
     const disposeA = mocks.subscribePrMonitors.mock.results[0].value.dispose as ReturnType<
       typeof vi.fn
     >;
 
+    // ws-B lands inside the window of the ws-A change: debounced. ws-C lands
+    // inside ws-B's window: supersedes it and restarts the trailing delay.
+    await vi.advanceTimersByTimeAsync(50);
     harness.dispatch(openWorkspaceTab('ws-B'));
     await settle();
-    await vi.advanceTimersByTimeAsync(99);
+    await vi.advanceTimersByTimeAsync(50);
     harness.dispatch(openWorkspaceTab('ws-C'));
     await settle();
 
@@ -217,11 +211,11 @@ describe('prMonitorSaga', () => {
   it('avoids churn when an A to B to A burst restores the live workspace', async () => {
     const harness = createHarness('ws-A');
     await settle();
-    await advanceReconciliation();
     const disposeA = mocks.subscribePrMonitors.mock.results[0].value.dispose as ReturnType<
       typeof vi.fn
     >;
 
+    await vi.advanceTimersByTimeAsync(50);
     harness.dispatch(openWorkspaceTab('ws-B'));
     await settle();
     await vi.advanceTimersByTimeAsync(50);

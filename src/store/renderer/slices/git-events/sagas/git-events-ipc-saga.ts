@@ -23,7 +23,7 @@ type GitEvent =
   | { kind: 'git-auth'; data: GitAuthRequiredEvent }
   | { kind: 'github-auth'; data: GitHubAuthRequiredEvent };
 
-export function createGitEventsChannel(): EventChannel<GitEvent> {
+function createGitEventsChannel(): EventChannel<GitEvent> {
   return eventChannel<GitEvent>((emit) => {
     if (!isElectron() || typeof window === 'undefined' || !window.electronAPI?.on) return () => {};
     const listeners = [

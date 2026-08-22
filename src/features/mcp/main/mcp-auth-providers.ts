@@ -20,7 +20,7 @@ const logger = new Logger('McpAuthProviders');
 /**
  * Authentication provider for MCP servers
  */
-export interface McpAuthProvider {
+interface McpAuthProvider {
   /** Unique identifier for this provider */
   name: string;
 
@@ -144,27 +144,13 @@ const AUTH_PROVIDERS: McpAuthProvider[] = [sentryProvider, figmaProvider];
 /**
  * Find an auth provider that matches the given URL
  */
-export function findAuthProvider(url: string): McpAuthProvider | null {
+function findAuthProvider(url: string): McpAuthProvider | null {
   for (const provider of AUTH_PROVIDERS) {
     if (provider.matchesUrl(url)) {
       return provider;
     }
   }
   return null;
-}
-
-/**
- * Find an auth provider by name
- */
-export function getAuthProviderByName(name: string): McpAuthProvider | null {
-  return AUTH_PROVIDERS.find((p) => p.name === name) ?? null;
-}
-
-/**
- * Get all registered auth provider names
- */
-export function getAuthProviderNames(): string[] {
-  return AUTH_PROVIDERS.map((p) => p.name);
 }
 
 /**
@@ -207,100 +193,4 @@ export async function checkMcpAuthRequirement(
     hasAuth: authHeaders !== null,
     authHint: provider.getAuthHint?.(),
   };
-}
-
-// =============================================================================
-// Auth Injection
-// =============================================================================
-
-/**
- * Config type that may have URL and headers (HTTP/SSE servers)
- */
-interface ConfigWithUrl {
-  url: string;
-  headers?: Record<string, string>;
-  authProvider?: string;
-}
-
-/**
- * Check if a config has a URL (is HTTP/SSE type)
- */
-function hasUrl(config: unknown): config is ConfigWithUrl {
-  return (
-    typeof config === 'object' &&
-    config !== null &&
-    'url' in config &&
-    typeof (config as Record<string, unknown>).url === 'string'
-  );
-}
-
-/**
- * Inject authentication headers into an MCP server config
- *
- * This function:
- * 1. Checks if the config has an explicit authProvider specified
- * 2. Otherwise, auto-detects the provider from the URL
- * 3. If a provider is found, injects auth headers (if available)
- *
- * @param config - The MCP server configuration
- * @param serverName - Server name for logging
- * @returns Config with auth headers injected (or original if no auth needed/available)
- */
-export async function injectMcpAuth<T>(config: T, serverName: string): Promise<T> {
-  // Only handle configs with URLs (HTTP/SSE servers)
-  if (!hasUrl(config)) {
-    return config;
-  }
-
-  // Skip if Authorization header is already set
-  if (config.headers?.Authorization) {
-    logger.debug('MCP server already has Authorization header', { serverName });
-    return config;
-  }
-
-  // Find the auth provider (explicit or auto-detected)
-  let provider: McpAuthProvider | null = null;
-
-  if (config.authProvider) {
-    provider = getAuthProviderByName(config.authProvider);
-    if (!provider) {
-      logger.warn('Unknown auth provider specified', {
-        serverName,
-        authProvider: config.authProvider,
-        availableProviders: getAuthProviderNames(),
-      });
-    }
-  } else {
-    provider = findAuthProvider(config.url);
-  }
-
-  if (!provider) {
-    return config;
-  }
-
-  // Get auth headers from the provider (passing serverName for OAuth token lookup)
-  const authHeaders = await provider.getAuthHeaders(serverName);
-
-  if (authHeaders) {
-    logger.info('Injecting auth headers for MCP server', {
-      serverName,
-      provider: provider.name,
-    });
-
-    return {
-      ...config,
-      headers: {
-        ...config.headers,
-        ...authHeaders,
-      },
-    } as T;
-  } else {
-    logger.warn('MCP server requires auth but credentials not found', {
-      serverName,
-      provider: provider.name,
-      hint: provider.getAuthHint?.() ?? m.mcp_authProviders_genericHint_message(),
-    });
-  }
-
-  return config;
 }

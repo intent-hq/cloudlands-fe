@@ -68,6 +68,8 @@ vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/SlotOnly.sve
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectAllTabs: vi.fn(() => testState.readable([] as unknown[])),
+  selectPanels: testState.selector({}),
+  selectHiddenTabs: testState.selector([] as unknown[]),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: testState.selector(null),
@@ -88,6 +90,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectAwaitingSwitchBackSnapshot: testState.selector(false),
   selectAwaitingUtilityFooter: testState.selector(false),
   selectChatError: testState.selector(null),
+  selectChatFailureCorrelation: testState.selector(undefined),
   selectChatLastChunkTime: testState.selector(null),
   selectChatLiveStreamPhase: testState.selector(null),
   selectChatModelUnavailable: testState.selector(null),
@@ -257,9 +260,7 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
 
     await renderInitialWorkspaceChatPanel();
 
-    await waitFor(() =>
-      expect(screen.getByTestId('chat-transcript-skeleton')).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByTestId('chat-transcript-skeleton')).toBeTruthy());
     expect(screen.queryByTestId('mock-workspace-setup-card')).toBeNull();
   });
 
@@ -271,9 +272,7 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
 
     await renderInitialWorkspaceChatPanel();
 
-    await waitFor(() =>
-      expect(screen.getByTestId('mock-workspace-setup-card')).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByTestId('mock-workspace-setup-card')).toBeTruthy());
     expect(screen.queryByTestId('chat-transcript-skeleton')).toBeNull();
   });
 });

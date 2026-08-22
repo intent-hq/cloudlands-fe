@@ -110,6 +110,12 @@
   // on outside interaction/Escape/focus loss nor unmount the subtree that
   // renders the modal.
   let pickerOpen = $state(false);
+
+  // When the parent controls this menu without rendering the trigger
+  // (showTrigger=false), bits-ui's floating layer has no anchor element and
+  // positions the content off-screen. Render an invisible anchor in the
+  // trigger's place and hand it to Menu.Content as customAnchor.
+  let anchorEl = $state<HTMLElement | null>(null);
 </script>
 
 <Menu.Root
@@ -139,11 +145,14 @@
         </span>
       {/snippet}
     </Menu.Trigger>
+  {:else}
+    <span bind:this={anchorEl} aria-hidden="true"></span>
   {/if}
   <Menu.Content
     align="end"
     side="bottom"
     portal={true}
+    customAnchor={showTrigger ? null : anchorEl}
     interactOutsideBehavior={pickerOpen ? 'ignore' : 'close'}
     escapeKeydownBehavior={pickerOpen ? 'ignore' : 'close'}
     onFocusOutside={(event) => {

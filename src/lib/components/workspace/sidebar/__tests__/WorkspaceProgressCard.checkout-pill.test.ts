@@ -49,7 +49,13 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => ({
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': { columnCount: 1 },
+        },
+      },
+    }),
     dispatch: mocks.dispatch,
   });
 });
@@ -57,6 +63,7 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
+  selectWorkspaceActivePrSummary: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => []),
 }));
@@ -66,7 +73,7 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
 }));
 
 vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
-  selectWorkspaceTasksLoading: mocks.selector(() => false),
+  selectWorkspaceTasksInitialized: mocks.selector(() => true),
   selectWorkspaceTaskProgress: mocks.selector(() => ({
     total: 0,
     completed: 0,

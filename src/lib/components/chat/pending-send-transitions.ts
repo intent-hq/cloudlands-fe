@@ -7,7 +7,7 @@ import {
 
 export const MESSAGE_SEND_MATCH_RETRY_INTERVAL_MS = 50;
 
-export interface PendingSendEntry {
+interface PendingSendEntry {
   origin: MessageSendOrigin;
   launchBubble: HTMLElement | null;
   followBottom: boolean;

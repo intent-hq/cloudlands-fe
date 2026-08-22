@@ -433,9 +433,6 @@ export enum PlanStatus {
   Skipped = 'Skipped',
 }
 
-// Alias for backward compatibility
-export const PlanNodeStatus = PlanStatus;
-
 export enum WorkspaceStatus {
   Active = 'Active',
   Inactive = 'Inactive',

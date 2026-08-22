@@ -1,4 +1,3 @@
-import { isBinaryExtension } from '$shared/binary-file-extensions';
 
 /**
  * Get the language identifier for syntax highlighting based on file extension
@@ -150,20 +149,6 @@ export function getLanguageFromPath(path: string): string {
 }
 
 /**
- * Determine if a file should be treated as text based on its extension
- */
-export function shouldTreatAsText(filePath: string): boolean {
-  return !isBinaryExtension(filePath);
-}
-
-/**
- * Get a file's extension
- */
-export function getFileExtension(filePath: string): string {
-  return filePath.split('.').pop()?.toLowerCase() || '';
-}
-
-/**
  * Strip workspace path prefix from an absolute path to get a relative path.
  * Properly checks directory boundaries to avoid false prefix matches
  * (e.g., '/a/repo' should NOT match '/a/repos/src/file.ts').
@@ -200,62 +185,6 @@ export function getDirectoryPath(filePath: string): string {
 }
 
 /**
- * Get a file's name without extension
- */
-export function getFileNameWithoutExtension(filePath: string): string {
-  const fileName = getFileName(filePath);
-  const lastDotIndex = fileName.lastIndexOf('.');
-  return lastDotIndex > 0 ? fileName.substring(0, lastDotIndex) : fileName;
-}
-
-/**
- * Check if a file is likely a binary file based on its extension
- */
-export function isBinaryFile(filePath: string): boolean {
-  return !shouldTreatAsText(filePath);
-}
-
-/**
- * Get MIME type for a file based on its extension
- */
-export function getMimeType(filePath: string): string {
-  const ext = getFileExtension(filePath);
-  const mimeTypes: Record<string, string> = {
-    // Text
-    txt: 'text/plain',
-    html: 'text/html',
-    htm: 'text/html',
-    css: 'text/css',
-    js: 'text/javascript',
-    mjs: 'text/javascript',
-    json: 'application/json',
-    xml: 'application/xml',
-
-    // Images
-    png: 'image/png',
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    gif: 'image/gif',
-    svg: 'image/svg+xml',
-    ico: 'image/x-icon',
-    webp: 'image/webp',
-
-    // Documents
-    pdf: 'application/pdf',
-
-    // Archives
-    zip: 'application/zip',
-    tar: 'application/x-tar',
-    gz: 'application/gzip',
-
-    // Default
-    '': 'application/octet-stream',
-  };
-
-  return mimeTypes[ext] || 'application/octet-stream';
-}
-
-/**
  * Format file size in human-readable format
  */
 export function formatFileSize(bytes: number): string {
@@ -266,15 +195,6 @@ export function formatFileSize(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
 
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-}
-
-/**
- * Check if a path is likely a directory
- */
-export function isDirectory(path: string): boolean {
-  // Simple heuristic: directories typically don't have extensions
-  // or end with a slash
-  return path.endsWith('/') || !path.includes('.') || path.lastIndexOf('/') > path.lastIndexOf('.');
 }
 
 /**
@@ -296,7 +216,10 @@ function normalizePath(p: string): string {
  * pathsMatch('bar.js', 'foobar.js') // false
  * pathsMatch('src/bar.js', 'other/bar.js') // false
  */
-export function pathsMatch(pathA: string | undefined | null, pathB: string | undefined | null): boolean {
+export function pathsMatch(
+  pathA: string | undefined | null,
+  pathB: string | undefined | null,
+): boolean {
   if (!pathA || !pathB) return false;
 
   const a = normalizePath(pathA);

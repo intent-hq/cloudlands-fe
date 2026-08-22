@@ -20,7 +20,7 @@ const panelCanvasWidths = writable<Record<string, number>>({});
 const panelNavigatorItems = writable<Record<string, Array<{ id: string; title: string }>>>({});
 const resizablePanelSizes = writable<Record<string, number>>({});
 const hydratedResizablePanelSizes = writable<Record<string, true>>({});
-const panelTabCounts = writable<Record<string, number>>({});
+
 const panelRevealRequests = writable<
   Record<string, { panelId: string; tabId: string; requestId: string }>
 >({});
@@ -56,7 +56,6 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectPanelCanvasWidthsByWorkspaceId: () => panelCanvasWidths,
   selectPanelColumnCountsByWorkspaceId: () => panelCounts,
   selectPanelNavigatorItemsByWorkspaceId: () => panelNavigatorItems,
-  selectPanelTabCountsByWorkspaceId: () => panelTabCounts,
   selectPanelRevealRequestsByWorkspaceId: () => panelRevealRequests,
   selectPanelRestoreStatusesByWorkspaceId: () => panelRestoreStatuses,
   selectFocusedPanelTargetsByWorkspaceId: () => focusedPanelTargets,
@@ -143,7 +142,6 @@ describe('WorkspaceColumnsView', () => {
         ]),
       ),
     );
-    panelTabCounts.set({});
     panelRevealRequests.set({});
     panelRestoreStatuses.set({ 'ws-1': 'restored', 'ws-2': 'restored', 'ws-3': 'restored' });
     workspaceItems.set([]);

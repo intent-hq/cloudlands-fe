@@ -4,16 +4,13 @@
  * Template generators for each diagram grammar to help agents create diagrams
  */
 
-import type {
-  DiagramPrimitive,
-  DiagramGrammar,
-} from '$shared/types/notes-primitives';
+import type { DiagramPrimitive, DiagramGrammar } from '$shared/types/notes-primitives';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Create a base diagram with common fields
  */
-export function createBaseDiagram(
+function createBaseDiagram(
   grammar: DiagramGrammar,
   createdBy: 'user' | 'agent' = 'agent',
   createdByAgentId?: string,

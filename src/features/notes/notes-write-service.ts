@@ -31,7 +31,7 @@
  */
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { appClient } from '$lib/client';
-import type { MutationResult, NoteMetadataPatch } from '$lib/client';
+import type { MutationResult } from '$lib/client';
 import { toast } from 'svelte-sonner';
 import { m } from '$shared/paraglide/messages.js';
 import { ContentType, NoteVisibility } from '$shared/types';
@@ -342,15 +342,6 @@ async function flushContent(key: string, noteId: string): Promise<void> {
   }
 }
 
-/** Flush a pending debounced content save immediately (e.g. on editor teardown). */
-export function flushNoteContent(noteId: string): void {
-  // Flush every workspace's pending save for this note id (keys are
-  // `${workspaceId}:${noteId}`; note ids repeat across workspaces).
-  for (const key of [...pendingContent.keys()]) {
-    if (key.endsWith(`:${noteId}`)) void flushContent(key, noteId);
-  }
-}
-
 /** Update a note's title optimistically; rolls back to the prior title on failure. */
 export async function updateNoteTitle(
   workspaceId: string,
@@ -372,34 +363,6 @@ export async function updateNoteTitle(
       if (previous !== undefined) {
         appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { title: previous }));
       }
-      return;
-    }
-    if (rev !== undefined) advanceNoteRev(workspaceId, noteId, rev);
-  });
-}
-
-/** Update a note's title/tags metadata optimistically; rolls back the touched fields on failure. */
-export async function updateNoteMetadata(
-  workspaceId: string,
-  noteId: string,
-  metadata: NoteMetadataPatch,
-): Promise<void> {
-  const existing = readNoteById(workspaceId, noteId);
-  const rollback: NoteMetadataPatch = {};
-  if (metadata.title !== undefined) rollback.title = existing?.title ?? '';
-  if (metadata.tags !== undefined) rollback.tags = existing?.tags ?? [];
-  appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, metadata));
-
-  await enqueueNoteMutation(noteKey(workspaceId, noteId), async () => {
-    const rev = readNoteById(workspaceId, noteId)?.rev;
-    const result = await appClient.notes.updateMetadata(noteId, metadata, rev, workspaceId);
-    if (!result.success) {
-      if (reconcileNoteConflict(workspaceId, noteId, result)) return;
-      logger.error('Failed to update note metadata', result.error);
-      toast.error(m.notes_writeService_updateFailed_error(), {
-        description: result.error ?? m.notes_writeService_unknown_error(),
-      });
-      appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, rollback));
       return;
     }
     if (rev !== undefined) advanceNoteRev(workspaceId, noteId, rev);

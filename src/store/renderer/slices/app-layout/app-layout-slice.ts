@@ -1,5 +1,5 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   AppLayoutState,
   CreateWorkspaceForRepoDetail,
@@ -7,7 +7,7 @@ import type {
   OpenNewSpaceModalDetail,
   OpenTerminalTabDetail,
   SidebarLocateTarget,
-} from "./app-layout-types";
+} from './app-layout-types';
 
 export const initialState: AppLayoutState = {
   pendingCommandPaletteAction: null,
@@ -16,46 +16,47 @@ export const initialState: AppLayoutState = {
 
 export const createFileRequested = createAction<
   [wsId: string, folderPath: string, fileName: string]
->("appLayout/createFileRequested");
+>('appLayout/createFileRequested');
 
 export const openAgentTabRequested = createAction<[wsId: string, detail: OpenAgentTabDetail]>(
-  "appLayout/openAgentTabRequested"
+  'appLayout/openAgentTabRequested',
 );
 
 export const openTerminalTabRequested = createAction<[wsId: string, detail: OpenTerminalTabDetail]>(
-  "appLayout/openTerminalTabRequested"
+  'appLayout/openTerminalTabRequested',
 );
 
 export const createWorkspaceForRepoRequested = createAction<[detail: CreateWorkspaceForRepoDetail]>(
-  "appLayout/createWorkspaceForRepoRequested"
+  'appLayout/createWorkspaceForRepoRequested',
 );
 
 export const openNewSpaceModalRequested = createAction<[detail: OpenNewSpaceModalDetail]>(
-  "appLayout/openNewSpaceModalRequested"
+  'appLayout/openNewSpaceModalRequested',
 );
 
-export const requestPanelFocus = createAction<[wsId: string, panelId: string]>(
-  "appLayout/requestPanelFocus"
-);
-
-export const focusBrowserTabRequested = createAction<[wsId: string, tabId: string, pin?: boolean]>(
-  "appLayout/focusBrowserTabRequested"
-);
+// `agentDriven` marks focuses originating from agent browser ops
+// (browser:focus-tab / browser:show-tab IPC): when the workspace is not the
+// one this window displays, they apply their layout-state effects but skip
+// the actual UI reveal (monorepo#3045). User-initiated focuses omit it and
+// always reveal.
+export const focusBrowserTabRequested = createAction<
+  [wsId: string, tabId: string, pin?: boolean, agentDriven?: boolean]
+>('appLayout/focusBrowserTabRequested');
 
 export const commandPaletteNewFileRequested = createAction<[wsId: string]>(
-  "appLayout/commandPaletteNewFileRequested"
+  'appLayout/commandPaletteNewFileRequested',
 );
 
 export const commandPaletteActionConsumed = createAction<[wsId: string]>(
-  "appLayout/commandPaletteActionConsumed"
+  'appLayout/commandPaletteActionConsumed',
 );
 
-export const locateItemInSidebarRequested = createAction<[wsId: string, target: SidebarLocateTarget]>(
-  "appLayout/locateItemInSidebarRequested"
-);
+export const locateItemInSidebarRequested = createAction<
+  [wsId: string, target: SidebarLocateTarget]
+>('appLayout/locateItemInSidebarRequested');
 
 export const locateItemInSidebarConsumed = createAction<[wsId: string]>(
-  "appLayout/locateItemInSidebarConsumed"
+  'appLayout/locateItemInSidebarConsumed',
 );
 
 export const appLayoutReducer = createReducer<AppLayoutState>(initialState);

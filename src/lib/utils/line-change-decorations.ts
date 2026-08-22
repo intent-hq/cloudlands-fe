@@ -9,7 +9,7 @@
 import type { DiffHunk } from '$features/git-tracking/types';
 import { m } from '$shared/paraglide/messages.js';
 
-export type LineChangeType = 'added' | 'modified' | 'deleted';
+type LineChangeType = 'added' | 'modified' | 'deleted';
 
 export interface LineChange {
   line: number;
@@ -43,29 +43,6 @@ export function parseHunksToLineChanges(hunks: DiffHunk[]): LineChange[] {
   }
 
   return changes;
-}
-
-/**
- * Merge adjacent changes of the same type for cleaner visualization
- */
-export function mergeAdjacentChanges(changes: LineChange[]): LineChange[] {
-  if (changes.length === 0) return [];
-
-  // Sort by line number
-  const sorted = [...changes].sort((a, b) => a.line - b.line);
-
-  // Remove duplicates (keep the first occurrence)
-  const unique: LineChange[] = [];
-  const seen = new Set<number>();
-
-  for (const change of sorted) {
-    if (!seen.has(change.line)) {
-      seen.add(change.line);
-      unique.push(change);
-    }
-  }
-
-  return unique;
 }
 
 /**
@@ -120,30 +97,3 @@ function getChangeHoverMessage(type: LineChangeType): string {
       return m.editor_lineChanges_changed_tooltip();
   }
 }
-
-/**
- * CSS styles for line change indicators
- * These should be added to global styles
- */
-export const lineChangeDecorationStyles = `
-  /* Line change indicator container in the gutter */
-  .line-change-indicator {
-    width: 3px !important;
-    margin-left: 3px;
-  }
-
-  /* Added lines - green indicator */
-  .line-change-added {
-    background-color: #22c55e !important;
-  }
-
-  /* Modified lines - blue indicator */
-  .line-change-modified {
-    background-color: #3b82f6 !important;
-  }
-
-  /* Deleted lines - red triangle/indicator */
-  .line-change-deleted {
-    background-color: #ef4444 !important;
-  }
-`;

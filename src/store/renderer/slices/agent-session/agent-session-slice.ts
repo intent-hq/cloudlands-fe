@@ -1052,12 +1052,6 @@ export const updateSession = createAction<[agentId: string, updates: Partial<Age
   'agentSessions/updateSession',
 );
 
-/** Saga-owned core send side effect trigger. */
-export const agentSessionSendMessageRequested = createAsyncAction<
-  [agentId: string, wsId: string, text: string, options?: AgentSessionSendMessageOptions],
-  void
->('agentSessions/sendMessage', 'agentSessions/sendMessageRequested');
-
 /** Saga-owned core stop side effect trigger. */
 export const agentSessionStopChatRequested = createAsyncAction<[agentId: string], void>(
   'agentSessions/stopChat',
@@ -1138,6 +1132,19 @@ export const setProcessQueueHint = createAction<
 export const clearProcessQueueHint = createAction<[agentId: string]>(
   'agentSessions/clearProcessQueueHint',
 );
+
+/**
+ * Agent process evicted (agent:process:evicted, §6.5). The daemon parked the
+ * agent's OS process — dropped from the spawn queue, or reaped by the idle
+ * TTL sweep (reason "idle-ttl", intent-hq/intentd#1356). The session row
+ * survives and the next send transparently respawns the process, so this is
+ * NOT an "agent ended" transition. The daemon only evicts idle processes,
+ * so any FE busy indicator at that moment is provably stale (monorepo#3040):
+ * clear the queue hint and the optimistic busy flags, and demote a stale
+ * RUNNING status to 'idle' (waiting/error/terminal statuses stay untouched).
+ * Payload: [agentId]
+ */
+export const processEvicted = createAction<[agentId: string]>('agentSessions/processEvicted');
 
 /** Rename agent session */
 export const renameSession = createAction<[agentId: string, name: string]>(
@@ -1478,6 +1485,32 @@ agentSessionReducer.with(clearProcessQueueHint, (state, { payload: [agentId] }) 
     processQueueHint: undefined,
   }),
 );
+// Process parked (queue drop or idle-TTL reap): the daemon only evicts idle
+// processes, so besides the queue hint, clear any stale optimistic busy flags
+// (and the sticky liveTurnOpen) that would otherwise render a phantom
+// "Thinking" indicator until the next canonical event (monorepo#3040). A
+// stale RUNNING status ('active'/'processing'/'responding', e.g. a missed
+// agent:idle) would keep isAgentRunningState — and thus the Thinking
+// indicator — true on its own, and §6.5 guarantees an evicted process is
+// idle, so demote it to 'idle' (the same status the agent:idle branch
+// defaults to). Non-running statuses (waiting/error/terminal) are BE-owned
+// signals the eviction says nothing about and stay untouched.
+agentSessionReducer.with(processEvicted, (state, { payload: [agentId] }) => {
+  const existing = getSession(state, agentId);
+  if (!existing) return state;
+  const updates: Partial<Omit<StoredAgentSession, 'messages'>> = {
+    processQueueHint: undefined,
+    isStreaming: false,
+    isProcessing: false,
+    isResponding: false,
+    liveTurnOpen: false,
+    liveTurnOpenedAt: undefined,
+  };
+  if (RUNNING_STATUSES.has(existing.status as string)) {
+    updates.status = AgentStatus.RuntimeIdle;
+  }
+  return updateSessionFields(state, agentId, updates);
+});
 // -----------------------------------------------------------------------
 // Scrollback history segment (bounded, on-demand; tail semantics untouched)
 // -----------------------------------------------------------------------
@@ -1494,7 +1527,11 @@ agentSessionReducer.with(prependHistoryMessages, (state, { payload: [agentId, me
   // count (floor 0). An estimate only — oldestReached pins it to exactly 0.
   const startOrdinalEstimate = shiftStartOrdinalForPrepend(existing, merged);
   if (merged.length <= HISTORY_SEGMENT_MAX) {
-    return setHistorySegment(state, agentId, { ...existing, messages: merged, startOrdinalEstimate });
+    return setHistorySegment(state, agentId, {
+      ...existing,
+      messages: merged,
+      startOrdinalEstimate,
+    });
   }
   // Past the cap: prune from the NEWEST side (viewport is walking up), which
   // severs contiguity with the tail — a hole opens. Serial-walk segments
@@ -1576,10 +1613,7 @@ agentSessionReducer.with(
     const session = getSession(state, agentId);
     if (!session) return state;
     const incoming = normalizeSortHistoryMessages(messages);
-    const seeded = dropRowsPresentInTail(incoming, session.messages).slice(
-      0,
-      HISTORY_SEGMENT_MAX,
-    );
+    const seeded = dropRowsPresentInTail(incoming, session.messages).slice(0, HISTORY_SEGMENT_MAX);
     // Landing rows overlapping the tail mean the seek landed at/near the
     // newest end — the segment is contiguous with the tail (no hole), same
     // overlap rule as the gap-refill append.

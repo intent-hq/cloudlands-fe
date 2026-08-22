@@ -14,15 +14,35 @@ import {
 } from 'typed-redux-saga';
 
 import { selectGitHubAuthDeviceFlow } from '../github-auth-selectors';
-import { authCancelled, authCompleted, cancelGitHubAuth, checkGitHubAuthStatus, githubAuthChanged, initializeGitHubAuth, logoutCompleted, logoutGitHub, setAuthenticating, setDeviceFlowInfo, setGitHubAuthError, setGitHubAuthState, setOAuthInfo, startGitHubAuth } from '../github-auth-slice';
+import {
+  authCancelled,
+  authCompleted,
+  cancelGitHubAuth,
+  checkGitHubAuthStatus,
+  githubAuthChanged,
+  initializeGitHubAuth,
+  logoutCompleted,
+  logoutGitHub,
+  setAuthenticating,
+  setDeviceFlowInfo,
+  setGitHubAuthError,
+  setGitHubAuthState,
+  setOAuthInfo,
+  startGitHubAuth,
+} from '../github-auth-slice';
 
 const logger = createLogger('GitHubAuthSaga');
-export const AUTH_POLL_INTERVAL_MS = 5_000;
-export const AUTH_POLL_TIMEOUT_MS = 900_000;
+const AUTH_POLL_INTERVAL_MS = 5_000;
+const AUTH_POLL_TIMEOUT_MS = 900_000;
 
 function validPendingFlow(value: GitHubDeviceFlow | null | undefined): value is GitHubDeviceFlow {
-  return value?.status === 'pending' && Boolean(value.userCode) && Boolean(value.verificationUri)
-    && Number.isFinite(value.expiresIn) && Number.isFinite(value.interval);
+  return (
+    value?.status === 'pending' &&
+    Boolean(value.userCode) &&
+    Boolean(value.verificationUri) &&
+    Number.isFinite(value.expiresIn) &&
+    Number.isFinite(value.interval)
+  );
 }
 
 function mapUser(source: GitHubUser | null): GitHubUser | null {
@@ -37,9 +57,10 @@ function mapUser(source: GitHubUser | null): GitHubUser | null {
 
 function* checkAuthComplete(): SagaGenerator<boolean> {
   try {
-    const result: Awaited<ReturnType<typeof githubAuthClient.checkAuthComplete>> = yield* call(
-      [githubAuthClient, githubAuthClient.checkAuthComplete],
-    );
+    const result: Awaited<ReturnType<typeof githubAuthClient.checkAuthComplete>> = yield* call([
+      githubAuthClient,
+      githubAuthClient.checkAuthComplete,
+    ]);
     if (result.success && result.data?.isComplete) {
       yield* put(authCompleted(mapUser(result.data.user ?? null)));
       return true;
@@ -63,40 +84,40 @@ function* pollForCompletion(intervalMs: number): SagaGenerator<void> {
   }
 }
 
-function* pollDeviceFlowWorker(
-  action: ReturnType<typeof setDeviceFlowInfo>,
-): SagaGenerator<void> {
+function* pollDeviceFlowWorker(action: ReturnType<typeof setDeviceFlowInfo>): SagaGenerator<void> {
   const [flow] = action.payload;
   if (flow === null) return;
   yield* race({
-    completed: call(
-      pollForCompletion,
-      Math.max(flow.interval * 1_000, AUTH_POLL_INTERVAL_MS),
-    ),
+    completed: call(pollForCompletion, Math.max(flow.interval * 1_000, AUTH_POLL_INTERVAL_MS)),
     cancelled: take([cancelGitHubAuth, logoutGitHub, githubAuthChanged]),
   });
 }
 
 function* initialize(): SagaGenerator<void> {
   try {
-    const state: Awaited<ReturnType<typeof githubAuthClient.getAuthState>> = yield* call(
-      [githubAuthClient, githubAuthClient.getAuthState],
+    const state: Awaited<ReturnType<typeof githubAuthClient.getAuthState>> = yield* call([
+      githubAuthClient,
+      githubAuthClient.getAuthState,
+    ]);
+    yield* put(
+      setGitHubAuthState({
+        isAuthenticated: state.isAuthenticated,
+        requiresDaemonAuth: state.requiresDaemonAuth,
+        user: mapUser(state.user),
+        needsScopeUpdate: state.needsScopeUpdate ?? false,
+        oauthUrl: state.oauthUrl ?? null,
+      }),
     );
-    yield* put(setGitHubAuthState({
-      isAuthenticated: state.isAuthenticated,
-      requiresDaemonAuth: state.requiresDaemonAuth,
-      user: mapUser(state.user),
-      needsScopeUpdate: state.needsScopeUpdate ?? false,
-      oauthUrl: state.oauthUrl ?? null,
-    }));
     if (!state.isAuthenticated && validPendingFlow(state.deviceFlow)) {
       yield* put(setAuthenticating(true));
-      yield* put(setDeviceFlowInfo({
-        userCode: state.deviceFlow.userCode,
-        verificationUri: state.deviceFlow.verificationUri,
-        expiresIn: state.deviceFlow.expiresIn,
-        interval: state.deviceFlow.interval,
-      }));
+      yield* put(
+        setDeviceFlowInfo({
+          userCode: state.deviceFlow.userCode,
+          verificationUri: state.deviceFlow.verificationUri,
+          expiresIn: state.deviceFlow.expiresIn,
+          interval: state.deviceFlow.interval,
+        }),
+      );
       return;
     }
     const currentFlow = yield* selectGitHubAuthDeviceFlow.effect();
@@ -112,9 +133,10 @@ function* initialize(): SagaGenerator<void> {
 function* start(): SagaGenerator<void> {
   yield* put(setAuthenticating(true));
   try {
-    const result: Awaited<ReturnType<typeof githubAuthClient.startAuth>> = yield* call(
-      [githubAuthClient, githubAuthClient.startAuth],
-    );
+    const result: Awaited<ReturnType<typeof githubAuthClient.startAuth>> = yield* call([
+      githubAuthClient,
+      githubAuthClient.startAuth,
+    ]);
     if (!result.success) {
       yield* put(setGitHubAuthError(result.error || m.githubAuth_service_startFailed_error()));
       return;
@@ -125,7 +147,12 @@ function* start(): SagaGenerator<void> {
       return;
     }
     const { userCode, verificationUri, expiresIn, interval } = result;
-    if (!userCode || !verificationUri || typeof expiresIn !== 'number' || typeof interval !== 'number') {
+    if (
+      !userCode ||
+      !verificationUri ||
+      typeof expiresIn !== 'number' ||
+      typeof interval !== 'number'
+    ) {
       yield* put(setGitHubAuthError(m.githubAuth_service_deviceFlowFailed_error()));
       return;
     }
@@ -133,17 +160,22 @@ function* start(): SagaGenerator<void> {
     yield* put(setDeviceFlowInfo({ userCode, verificationUri, expiresIn, interval }));
   } catch (error) {
     const message = error instanceof Error ? error.message : m.githubAuth_service_unknown_error();
-    yield* put(setGitHubAuthError(message.includes('Unauthorized channel')
-      ? m.githubAuth_service_ipcBlocked_error()
-      : message));
+    yield* put(
+      setGitHubAuthError(
+        message.includes('Unauthorized channel')
+          ? m.githubAuth_service_ipcBlocked_error()
+          : message,
+      ),
+    );
   }
 }
 
 function* cancelAuth(): SagaGenerator<void> {
   try {
-    const result: Awaited<ReturnType<typeof githubAuthClient.cancelAuth>> = yield* call(
-      [githubAuthClient, githubAuthClient.cancelAuth],
-    );
+    const result: Awaited<ReturnType<typeof githubAuthClient.cancelAuth>> = yield* call([
+      githubAuthClient,
+      githubAuthClient.cancelAuth,
+    ]);
     if (result.success) yield* put(authCancelled());
     else yield* put(setGitHubAuthError(result.error || m.githubAuth_service_cancelFailed_error()));
   } catch (error) {
@@ -154,9 +186,10 @@ function* cancelAuth(): SagaGenerator<void> {
 
 function* logout(): SagaGenerator<void> {
   try {
-    const result: Awaited<ReturnType<typeof githubAuthClient.logout>> = yield* call(
-      [githubAuthClient, githubAuthClient.logout],
-    );
+    const result: Awaited<ReturnType<typeof githubAuthClient.logout>> = yield* call([
+      githubAuthClient,
+      githubAuthClient.logout,
+    ]);
     if (result.success) yield* put(logoutCompleted());
     else yield* put(setGitHubAuthError(result.error || m.githubAuth_service_logoutFailed_error()));
   } catch (error) {
@@ -181,7 +214,8 @@ function* authChanged(
     return;
   }
   if (status === 'revoked') yield* put(logoutCompleted());
-  else if (status === 'expired') yield* put(setGitHubAuthError(m.githubAuth_service_codeExpired_error()));
+  else if (status === 'expired')
+    yield* put(setGitHubAuthError(m.githubAuth_service_codeExpired_error()));
   else if (status === 'denied') yield* put(setGitHubAuthError(m.githubAuth_service_denied_error()));
   else yield* put(setGitHubAuthError(m.githubAuth_service_failed_error()));
 }
@@ -192,9 +226,7 @@ function* initializeGitHubAuthWorker(
   yield* call(initialize);
 }
 
-function* startGitHubAuthWorker(
-  _action: ReturnType<typeof startGitHubAuth>,
-): SagaGenerator<void> {
+function* startGitHubAuthWorker(_action: ReturnType<typeof startGitHubAuth>): SagaGenerator<void> {
   yield* call(start);
 }
 
@@ -210,9 +242,7 @@ function* cancelGitHubAuthWorker(
   yield* call(cancelAuth);
 }
 
-function* logoutGitHubWorker(
-  _action: ReturnType<typeof logoutGitHub>,
-): SagaGenerator<void> {
+function* logoutGitHubWorker(_action: ReturnType<typeof logoutGitHub>): SagaGenerator<void> {
   yield* call(logout);
 }
 

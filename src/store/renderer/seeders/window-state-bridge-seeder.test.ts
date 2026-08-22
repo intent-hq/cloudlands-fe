@@ -20,12 +20,19 @@
  * `syncWindowTheme` invokes it saga-style, it was never bridged, so the
  * main-process nativeTheme handler never ran and startup logged
  * `UnbridgedMockIpcChannelError: window:set-theme`.
+ *
+ * `window:set-title` / `window:set-browser-focused` / `app:get-version`
+ * regression (intent-hq/monorepo#2927): the same stale-allowlist defect class
+ * — live main-process handlers in system.ipc.ts silently suppressed by
+ * allowlisted absences, so the native window title never updated and main
+ * never learned browser-panel focus in the packaged app.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { addMockIpcListener, mockInvoke, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import {
+  registerAppVersionBridge,
   registerWindowFullScreenBridge,
   registerWindowFullScreenEventRelay,
   registerWindowStateBridge,
@@ -36,6 +43,8 @@ const INVOKE_CHANNELS = [
   IPC_CHANNELS.WINDOW.SET_IN_WORKSPACE,
   IPC_CHANNELS.WINDOW.SET_OPEN_WORKSPACE_TABS,
   IPC_CHANNELS.WINDOW.SET_THEME,
+  IPC_CHANNELS.WINDOW.SET_TITLE,
+  IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED,
 ];
 
 const originalElectronAPI = (window as any).electronAPI;
@@ -79,6 +88,11 @@ describe('window-state-bridge-seeder', () => {
       workspaceIds: ['ws-1', 'ws-2'],
     });
     await mockInvoke(IPC_CHANNELS.WINDOW.SET_THEME, { theme: 'dark' });
+    await mockInvoke(IPC_CHANNELS.WINDOW.SET_TITLE, { title: 'Workspace — Intent' });
+    await mockInvoke(IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED, {
+      browserFocused: true,
+      focusOwnerId: 'owner-1',
+    });
 
     expect(invokeSpy).toHaveBeenNthCalledWith(1, IPC_CHANNELS.WINDOW.SET_IN_WORKSPACE, {
       inWorkspace: true,
@@ -89,6 +103,13 @@ describe('window-state-bridge-seeder', () => {
     });
     expect(invokeSpy).toHaveBeenNthCalledWith(3, IPC_CHANNELS.WINDOW.SET_THEME, {
       theme: 'dark',
+    });
+    expect(invokeSpy).toHaveBeenNthCalledWith(4, IPC_CHANNELS.WINDOW.SET_TITLE, {
+      title: 'Workspace — Intent',
+    });
+    expect(invokeSpy).toHaveBeenNthCalledWith(5, IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED, {
+      browserFocused: true,
+      focusOwnerId: 'owner-1',
     });
   });
 
@@ -110,6 +131,36 @@ describe('window-state-bridge-seeder', () => {
 
     expect(invokeSpy).toHaveBeenCalledOnce();
     expect(invokeSpy).toHaveBeenCalledWith(IPC_CHANNELS.WINDOW.SET_THEME, { theme: 'dark' });
+  });
+});
+
+describe('app version bridge', () => {
+  beforeEach(() => {
+    resetMockIpcRouter();
+  });
+
+  afterEach(() => {
+    (window as any).electronAPI = originalElectronAPI;
+    resetMockIpcRouter();
+  });
+
+  it('forwards app:get-version to window.electronAPI.invoke when bridged', async () => {
+    const invokeSpy = vi.fn(async () => '1.2.3');
+    (window as any).electronAPI = { ...(originalElectronAPI || {}), invoke: invokeSpy };
+    registerAppVersionBridge();
+
+    const version = await mockInvoke<string>(IPC_CHANNELS.APP.GET_VERSION);
+
+    expect(version).toBe('1.2.3');
+    expect(invokeSpy).toHaveBeenCalledOnce();
+    expect(invokeSpy).toHaveBeenCalledWith(IPC_CHANNELS.APP.GET_VERSION, undefined);
+  });
+
+  it('resolves undefined when no preload bridge exists (browser dev build)', async () => {
+    (window as any).electronAPI = undefined;
+    registerAppVersionBridge();
+
+    await expect(mockInvoke(IPC_CHANNELS.APP.GET_VERSION)).resolves.toBeUndefined();
   });
 });
 

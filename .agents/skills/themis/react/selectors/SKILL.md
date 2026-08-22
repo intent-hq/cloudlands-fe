@@ -16,7 +16,7 @@ sources:
   - "@augmentcode/themis/react-store"
   - "@preact/signals-react"
   - "@preact/signals-react/runtime"
-  - augmentcode/themis:docs/SELECTORS.md
+  - "@augmentcode/themis/docs/SELECTORS.md"
   - ../signals/SKILL.md
 triggers:
   - React selector
@@ -101,10 +101,9 @@ hook, signal subscription, or throttled render path.
 
 Selector-channel helpers that consume `.select`/`.effect`-compatible selectors
 run in sagas and support `ReactStore` selectors through the same shared selector
-read shape used by Svelte `Store` and `StreamingStore` selectors. Pass plain
-stable selector arguments as the helper args tuple; selector-channel effects
-subscribe through the Redux store object's `getState()` / `subscribe()` context
-path, not through React signals, Svelte readables, or Kefir observables.
+  read shape used by ReactStore selectors. Pass plain stable selector arguments as
+  the helper args tuple; selector-channel effects subscribe through the Redux store
+  object's `getState()` / `subscribe()` context path, not through React signals.
 
 ## Selector caching
 
@@ -219,20 +218,20 @@ export function* persistTodo(todoId: string) {
 }
 ```
 
-`.effect(...args)` is saga-only. It does not create a React signal, does not call
-React hooks, and does not use Svelte readable lifecycle behavior.
+`.effect(...args)` is saga-only. It does not create a React signal or call React
+hooks.
 
-### 7. ❌ Bad: Svelte-style assumptions in React
+### 7. ❌ Bad: treating a signal as a plain value
 
 ```tsx
 export function TodoTitle({ id }: { id: string }) {
   const todo = selectTodo(id);
-  return <span>{$todo.title}</span>;
+  return <span>{todo.title}</span>;
 }
 ```
 
-React selector direct calls return Preact React signals, not Svelte readables.
-Use `todo.value`, pass/render the signal intentionally, or choose
+React selector direct calls return Preact React signals, not plain values. Use
+`todo.value`, pass/render the signal intentionally, or choose
 `.useValue(...args)` only at a real plain-value fallback boundary.
 
 ## Don't
@@ -243,8 +242,8 @@ Use `todo.value`, pass/render the signal intentionally, or choose
 - Do not treat a direct selector result as a plain array/object/string/boolean;
   read `.value` in a tracked component, pass/render the signal intentionally, or
   use `.useValue(...args)` at a documented fallback boundary.
-- Do not use Svelte `$selector` syntax, Svelte readable lifecycle rules, or Kefir
-  observable selector arguments in the same React app.
+- Do not use selector lifecycle rules outside the ReactStore call modes described
+  above.
 - Do not call another selector's direct signal form inside a selector callback; use
   `.select(state)` to keep composition pure and synchronous.
 - Do not add manual memoization or throttling wrappers around selector calls, direct signals, or `.useValue(...)`; configure selector coalescing through the owning `ReactStore` options instead.
@@ -268,5 +267,5 @@ Use `todo.value`, pass/render the signal intentionally, or choose
 ## See also
 
 - `react/store/SKILL.md` — Store class and import choice.
-- `docs/SELECTORS.md` — human reference and examples for all call forms.
+- `@augmentcode/themis/docs/SELECTORS.md` — human reference and examples for all call forms.
 - `core/state-integrity/SKILL.md` — canonical derived-value ownership.

@@ -6,12 +6,15 @@
 
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import appLayoutSource from '../../../../../routes/(app)/+layout.svelte?raw';
   import WorkspaceColumnsView from '../../WorkspaceColumnsView.svelte';
+  import WorkspaceSurface from '../../../../../routes/(app)/workspace/[id]/WorkspaceSurface.svelte';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { WorkspaceStatus } from '$shared/types';
   import { store as appStore } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { appLayoutNavigationSaga } from '$store/renderer/slices/app-layout/sagas/app-layout-navigation-saga';
+  import { watchRightmostColumnRequests } from '$store/renderer/slices/panel-layout/sagas/panel-layout-saga';
   import { workspaceNavigationTabSaga } from '$store/renderer/slices/workspace-navigation/sagas/workspace-navigation-tab-saga';
   import {
     closePanel,
@@ -19,6 +22,7 @@
     initializeLayout,
     movePanel,
     openTab,
+    openTabInNewRootColumn,
     setRestoreStatus,
     updateSplitSizes,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -36,8 +40,29 @@
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { hydrateResizablePanelSize } from '$store/renderer/slices/ui-layout/ui-layout-slice';
+  import { loadFileContentSucceeded } from '$store/renderer/slices/files/files-slice';
+  import { tabTypeRegistry } from '$features/layout/tab-types/registry';
+  import FileTabType from '$features/layout/tab-types/FileTabType.svelte';
+  import { faFile } from '@fortawesome/free-solid-svg-icons';
 
-  let { onReady, workspaceKey }: { onReady: () => void; workspaceKey: string } = $props();
+  let {
+    onReady,
+    workspaceKey,
+    standalone,
+  }: { onReady: () => void; workspaceKey: string; standalone: boolean } = $props();
+
+  if (!tabTypeRegistry.has('file')) {
+    tabTypeRegistry.register({
+      type: 'file',
+      component: FileTabType,
+      defaultWidthTier: 'wide',
+      icon: faFile,
+      defaultTitle: 'File',
+      categoryLabel: 'Files',
+      sidebarTabId: 'files',
+      renameable: true,
+    });
+  }
 
   const workspaceId = WorkspaceId(`workspace-panel-reveal-${workspaceKey}`);
   const sourcePanelId = `source-panel-${workspaceKey}`;
@@ -46,11 +71,17 @@
   const targetTabId = `target-tab-${workspaceKey}`;
   const targetFilePath = '/tmp/reveal-target.ts';
   const timestamp = '2026-08-16T12:00:00.000Z';
+  const workspaceFrameOverflowClass = appLayoutSource.includes(
+    'class="flex-1 min-h-0 overflow-hidden"',
+  )
+    ? 'overflow-hidden'
+    : 'overflow-auto';
   const disposeStore = startRootStoreLifecycle(
     appStore,
     {
       startSagas: (store) => [
         store.runSaga(appLayoutNavigationSaga),
+        store.runSaga(watchRightmostColumnRequests),
         store.runSaga(workspaceNavigationTabSaga),
       ],
     },
@@ -159,6 +190,34 @@
     );
   }
 
+  function openLongReadmeAdjacent() {
+    appStore.dispatch(
+      openTabInNewRootColumn(
+        workspaceId,
+        {
+          type: 'file',
+          title: 'README.md',
+          filePath: 'README.md',
+          workspaceId,
+          closable: true,
+        },
+        { force: true, newPanelId: `readme-panel-${workspaceKey}` },
+        Date.parse(timestamp),
+      ),
+    );
+  }
+
+  function resolveLongReadme() {
+    const content = Array.from(
+      { length: 240 },
+      (_, index) =>
+        `## Production section ${index + 1}\n\nLong README content for vertical containment.`,
+    ).join('\n\n');
+    appStore.dispatch(
+      loadFileContentSucceeded(workspaceId, 'README.md', '/tmp/README.md', content),
+    );
+  }
+
   function openNoteAdjacent() {
     appStore.dispatch(
       openWorkspaceNote(workspaceId, 'production-note', {
@@ -214,6 +273,8 @@
 
 <button type="button" onclick={revealEquivalentPanel} data-reveal-trigger>Reveal</button>
 <button type="button" onclick={openFileAdjacent} data-open-file>Open file</button>
+<button type="button" onclick={openLongReadmeAdjacent} data-open-readme>Open README</button>
+<button type="button" onclick={resolveLongReadme} data-resolve-readme>Resolve README</button>
 <button type="button" onclick={openNoteAdjacent} data-open-note>Open note</button>
 <button type="button" onclick={openAgentColumn} data-open-agent>Open agent</button>
 <button type="button" onclick={openLocalChanges} data-open-changes>Open changes</button>
@@ -223,7 +284,8 @@
 <button type="button" onclick={reorderPanels} data-reorder-panels>Reorder panels</button>
 <button type="button" onclick={closeExtraPanel} data-close-extra-panel>Close extra panel</button>
 <div
-  class="h-[480px] overflow-hidden"
+  class="h-[480px] {workspaceFrameOverflowClass}"
+  data-testid="production-workspace-scroll-host"
   data-reveal-state
   data-workspace-id={workspaceId}
   data-source-panel-id={sourcePanelId}
@@ -233,5 +295,9 @@
   data-focused-panel-id={$focusedPanelId$ ?? ''}
   data-panel-count={$panelIds$.length}
 >
-  <WorkspaceColumnsView />
+  {#if standalone}
+    <WorkspaceSurface {workspaceId} active manageTab={false} />
+  {:else}
+    <WorkspaceColumnsView />
+  {/if}
 </div>

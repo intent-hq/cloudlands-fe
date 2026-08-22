@@ -4,22 +4,19 @@
  * Tracks command history and output for terminals to display in hover cards
  */
 
-import {
-  writable,
-  type Writable,
-} from 'svelte/store';
+import { writable, type Writable } from 'svelte/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
 
 const logger = createLogger('TerminalHistoryTracker');
 
-export interface TerminalCommand {
+interface TerminalCommand {
   command: string;
   timestamp: number;
   output?: string;
 }
 
-export interface TerminalHistory {
+interface TerminalHistory {
   terminalId: string;
   workspaceId: string;
   commands: TerminalCommand[];
@@ -151,7 +148,9 @@ class TerminalHistoryTracker {
   }
 
   getHistoriesForWorkspace(workspaceId: string): TerminalHistory[] {
-    return Array.from(this.histories.values()).filter((history) => history.workspaceId === workspaceId);
+    return Array.from(this.histories.values()).filter(
+      (history) => history.workspaceId === workspaceId,
+    );
   }
 
   /**

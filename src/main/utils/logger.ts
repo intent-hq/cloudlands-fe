@@ -5,11 +5,7 @@
  * Re-exports the unified logger for consistency across the application.
  */
 
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-} from 'fs';
+import { appendFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { Logger as BaseLogger } from '../../shared/logger';
@@ -21,15 +17,14 @@ let app: any;
   try {
     const electron = await import('electron');
     app = electron.app;
-  } catch  {
+  } catch {
     // Running outside of Electron (e.g., in MCP server)
     app = null;
   }
 })();
 
 // Re-export for backward compatibility
-export { LogLevel } from '$shared/logger';
-export type { LogEntry, LoggerOptions } from '$shared/logger';
+export type { LoggerOptions } from '$shared/logger';
 
 /**
  * Extended Logger for main process with file persistence

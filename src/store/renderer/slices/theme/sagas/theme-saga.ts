@@ -115,7 +115,7 @@ function withSuppressedListener(operation: () => void): void {
   }
 }
 
-export function createThemeChangedChannel(): EventChannel<ThemeChangedEventDetail> {
+function createThemeChangedChannel(): EventChannel<ThemeChangedEventDetail> {
   return eventChannel<ThemeChangedEventDetail>((emit) => {
     const listener = (event: Event) => {
       if (suppressListenerDepth > 0) return;

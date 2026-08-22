@@ -54,6 +54,23 @@ export interface StatusEvent {
   timestamp: number;
 }
 
+/** Select the newest non-empty lifecycle message without trusting arrival order. */
+export function latestMeaningfulStatusMessage(statusEvents: readonly StatusEvent[]): string | null {
+  let latestMessage: string | null = null;
+  let latestTimestamp = Number.NEGATIVE_INFINITY;
+
+  for (const event of statusEvents) {
+    const message = event.message.trim();
+    if (!message || !Number.isFinite(event.timestamp)) continue;
+    if (event.timestamp < latestTimestamp) continue;
+
+    latestMessage = message;
+    latestTimestamp = event.timestamp;
+  }
+
+  return latestMessage;
+}
+
 export interface CompletedEvent {
   event: StatusEvent;
   duration: string;

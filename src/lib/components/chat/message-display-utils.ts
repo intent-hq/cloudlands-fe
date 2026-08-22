@@ -1,6 +1,6 @@
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { isQuestionResourceBlock } from '$shared/types/question-resource';
-import { parseSuggestedPrompts } from '$lib/utils/messageParser';
+import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
 
 const stoppedStopReasons = new Set([
   'cancelled',
@@ -113,15 +113,16 @@ export function resolveFinishReasonNotice(message?: AgentMessage): FinishReasonN
  */
 export function isQuestionOnlyContent(blocks: readonly ContentBlock[]): boolean {
   if (blocks.length === 0) return false;
+  const parsedBlocks = parseSuggestedPromptsFromContentBlocks(blocks).contentBlocks;
   let hasQuestion = false;
-  for (const block of blocks) {
+  for (const block of parsedBlocks) {
     if (isQuestionResourceBlock(block)) {
       hasQuestion = true;
       continue;
     }
     if (block.type === 'text') {
       const text = block.text || (block as { content?: string }).content || '';
-      if (!parseSuggestedPrompts(text).cleanedContent.trim()) continue;
+      if (!text.trim()) continue;
     }
     return false;
   }

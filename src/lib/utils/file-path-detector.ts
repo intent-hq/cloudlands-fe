@@ -16,25 +16,84 @@
  */
 const FILE_EXTENSIONS = new Set([
   // Code
-  'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs',
-  'py', 'rb', 'go', 'rs', 'java', 'kt', 'scala',
-  'c', 'cpp', 'cc', 'h', 'hpp', 'cs',
-  'php', 'swift', 'dart', 'lua', 'r', 'pl', 'pm',
+  'ts',
+  'tsx',
+  'js',
+  'jsx',
+  'mjs',
+  'cjs',
+  'py',
+  'rb',
+  'go',
+  'rs',
+  'java',
+  'kt',
+  'scala',
+  'c',
+  'cpp',
+  'cc',
+  'h',
+  'hpp',
+  'cs',
+  'php',
+  'swift',
+  'dart',
+  'lua',
+  'r',
+  'pl',
+  'pm',
   // Web
-  'html', 'htm', 'css', 'scss', 'sass', 'less', 'styl',
-  'vue', 'svelte', 'astro',
+  'html',
+  'htm',
+  'css',
+  'scss',
+  'sass',
+  'less',
+  'styl',
+  'vue',
+  'svelte',
+  'astro',
   // Config
-  'json', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf',
-  'xml', 'env', 'properties',
+  'json',
+  'yaml',
+  'yml',
+  'toml',
+  'ini',
+  'cfg',
+  'conf',
+  'xml',
+  'env',
+  'properties',
   // Docs
-  'md', 'mdx', 'txt', 'rst', 'adoc', 'org',
+  'md',
+  'mdx',
+  'txt',
+  'rst',
+  'adoc',
+  'org',
   // Data
-  'csv', 'tsv', 'sql', 'graphql', 'gql',
+  'csv',
+  'tsv',
+  'sql',
+  'graphql',
+  'gql',
   // Shell
-  'sh', 'bash', 'zsh', 'fish', 'ps1', 'bat', 'cmd',
+  'sh',
+  'bash',
+  'zsh',
+  'fish',
+  'ps1',
+  'bat',
+  'cmd',
   // Other
-  'dockerfile', 'makefile', 'gitignore', 'gitattributes',
-  'lock', 'log', 'patch', 'diff',
+  'dockerfile',
+  'makefile',
+  'gitignore',
+  'gitattributes',
+  'lock',
+  'log',
+  'patch',
+  'diff',
 ]);
 
 /**
@@ -118,28 +177,6 @@ export function extractFilePath(text: string): string | null {
 }
 
 /**
- * Get the text content of a clicked element, handling various cases
- * Returns the text that should be checked for file path matching
- */
-export function getClickedText(target: HTMLElement): string {
-  // Direct text content
-  let text = target.textContent?.trim() || '';
-
-  // If it's a code element, use its content
-  if (target.tagName === 'CODE') {
-    text = target.textContent?.trim() || '';
-  }
-
-  // Handle nested code elements
-  const codeEl = target.querySelector('code');
-  if (codeEl) {
-    text = codeEl.textContent?.trim() || '';
-  }
-
-  return text;
-}
-
-/**
  * Check if the target element should be treated as a file path link
  * Returns the file path if valid, null otherwise
  */
@@ -166,79 +203,4 @@ export function detectFilePathFromClick(target: HTMLElement): string | null {
 
   // Extract and validate file path
   return extractFilePath(text);
-}
-
-/**
- * Mark code elements that contain file paths with the 'is-file-path' class.
- * This enables CSS to show pointer cursor for clickable file paths.
- * Should be called after editor content updates.
- */
-export function markFilePathCodeElements(container: HTMLElement): void {
-  if (!container) return;
-
-  // Find all code elements that are not inside pre (code blocks) or already handled
-  const codeElements = container.querySelectorAll(
-    'code:not(pre code):not([data-mention]):not([data-primitive-type])',
-  );
-
-  for (const codeEl of codeElements) {
-    const text = codeEl.textContent?.trim() || '';
-    const isFilePathElement = extractFilePath(text) !== null;
-
-    if (isFilePathElement) {
-      codeEl.classList.add('is-file-path');
-    } else {
-      codeEl.classList.remove('is-file-path');
-    }
-  }
-}
-
-/**
- * Set up a MutationObserver to automatically mark file path code elements
- * whenever the DOM changes. Returns a cleanup function.
- */
-export function setupFilePathObserver(container: HTMLElement): () => void {
-  if (!container) return () => {};
-
-  // Initial marking
-  markFilePathCodeElements(container);
-
-  // Debounce to prevent rapid re-processing
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let isProcessing = false;
-
-  const debouncedMark = () => {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      if (!isProcessing) {
-        isProcessing = true;
-        markFilePathCodeElements(container);
-        isProcessing = false;
-      }
-    }, 50);
-  };
-
-  // Set up observer to re-mark when DOM changes
-  // Only watch childList (not attributes) to avoid infinite loop from class changes
-  const observer = new MutationObserver((mutations) => {
-    // Only process if there are actual node additions (not just attribute changes)
-    const hasRelevantMutations = mutations.some(
-      (m) => m.type === 'childList' && (m.addedNodes.length > 0 || m.removedNodes.length > 0),
-    );
-    if (hasRelevantMutations) {
-      debouncedMark();
-    }
-  });
-
-  observer.observe(container, {
-    childList: true,
-    subtree: true,
-    attributes: false, // Don't watch attributes to avoid infinite loop
-  });
-
-  // Return cleanup function
-  return () => {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    observer.disconnect();
-  };
 }

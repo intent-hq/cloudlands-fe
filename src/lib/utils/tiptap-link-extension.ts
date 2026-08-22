@@ -55,6 +55,15 @@ import type { LinkOptions } from '@tiptap/extension-link';
  * - Add console.logs in parseHTML, addAttributes, and renderHTML to trace the flow
  */
 const IntentLink = Link.extend({
+  // The stock Link mark is inclusive whenever autolink is enabled (its
+  // `inclusive()` returns `options.autolink`), so typing at the end of a link
+  // extends the mark — e.g. a space after an autolinked URL keeps the
+  // highlight growing and can swallow the rest of the paragraph. Making the
+  // mark non-inclusive stops it at the URL boundary; autolink still applies
+  // the mark once a typed URL is followed by whitespace, and parsed/pasted
+  // links are unaffected.
+  inclusive: false,
+
   parseHTML() {
     return [
       {
@@ -105,16 +114,16 @@ const IntentLink = Link.extend({
     return {
       setLink:
         (attributes: any) =>
-          ({ commands }: any) => {
+        ({ commands }: any) => {
           // If href is null or undefined, unset the link
-            if (attributes.href === null || attributes.href === undefined) {
-              return commands.unsetMark(this.name);
-            }
+          if (attributes.href === null || attributes.href === undefined) {
+            return commands.unsetMark(this.name);
+          }
 
-            // Set the link mark with the provided attributes
-            // We bypass validation by directly setting the mark
-            return commands.setMark(this.name, attributes);
-          },
+          // Set the link mark with the provided attributes
+          // We bypass validation by directly setting the mark
+          return commands.setMark(this.name, attributes);
+        },
     };
   },
 });
@@ -132,12 +141,6 @@ export function createIntentLink(options: Partial<LinkOptions> = {}) {
     ...options,
   });
 }
-
-/**
- * Pre-configured Link extension with intent:// protocol support
- * Use this directly if you don't need to customize options
- */
-export const CustomLink = createIntentLink();
 
 // Backward compatibility alias
 /** @deprecated Use createIntentLink instead */

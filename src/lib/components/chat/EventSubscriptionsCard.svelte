@@ -3,6 +3,7 @@
   import { tick } from 'svelte';
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import BackgroundHooksRow from './BackgroundHooksRow.svelte';
+  import BrowserTabsRow from './BrowserTabsRow.svelte';
   import MonitoredPrsRow from './MonitoredPrsRow.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -53,9 +54,11 @@
   let agentsVisible = $state(false);
   let hooksVisible = $state(false);
   let prsVisible = $state(false);
+  let browserTabsVisible = $state(false);
   let agentCount = $state(0);
   let hookCount = $state(0);
   let prCount = $state(0);
+  let browserTabCount = $state(0);
   let participantAgentIds = $state<string[]>([]);
   let participantAvatarItems = $state<AgentAvatarStackItem[]>([]);
   let isCollapsed = $state(false);
@@ -65,9 +68,10 @@
   let bodyElement: HTMLElement | undefined = $state();
   const componentId = $props.id();
   const bodyId = `event-subscriptions-body-${componentId}`;
-  const hasSubscriptions = $derived(
+  const hasEventSubscriptions = $derived(
     isolatedPreview ? isolatedPreview.count > 0 : agentsVisible || hooksVisible || prsVisible,
   );
+  const hasSubscriptions = $derived(hasEventSubscriptions || browserTabsVisible);
   const totalCount = $derived(
     isolatedPreview ? isolatedPreview.count : agentCount + hookCount + prCount,
   );
@@ -106,6 +110,14 @@
         ? m.chat_eventSubscriptions_heading_one({ count: formatInteger(totalCount) })
         : m.chat_eventSubscriptions_heading_many({ count: formatInteger(totalCount) });
   });
+
+  // A tabs-only card has no event subscriptions, so labelling it "Subscribed
+  // to events" would be wrong — use the browser-tabs heading instead.
+  const cardAriaLabel = $derived(
+    hasEventSubscriptions || !browserTabsVisible
+      ? heading
+      : m.chat_browserTabs_heading({ count: formatInteger(browserTabCount) }),
+  );
 
   $effect(() => {
     visible = hasSubscriptions;
@@ -151,9 +163,9 @@
     class="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border bg-card/80 shadow-sm font-family-child"
     data-conversation-layer="event-subscriptions"
     data-testid="event-subscriptions-card"
-    aria-label={heading}
+    aria-label={cardAriaLabel}
   >
-    {#if !isAgentOnly}
+    {#if !isAgentOnly && hasEventSubscriptions}
       <h2 data-testid="event-subscriptions-outer-header">
         <Button
           variant="plain"
@@ -287,6 +299,23 @@
             />
           </div>
         {/if}
+      </div>
+    {/if}
+    {#if !isolatedPreview}
+      <!-- Parallel "Browser tabs (N)" section: stays visible while the events
+           disclosure above is collapsed (it has its own expand state). -->
+      <div
+        class={hasEventSubscriptions ? 'border-t border-border' : ''}
+        class:hidden={!browserTabsVisible}
+        data-testid="event-subscriptions-browser-tabs"
+      >
+        <BrowserTabsRow
+          {workspaceId}
+          {agentId}
+          embedded
+          bind:visible={browserTabsVisible}
+          bind:count={browserTabCount}
+        />
       </div>
     {/if}
   </section>

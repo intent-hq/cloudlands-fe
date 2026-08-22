@@ -74,6 +74,7 @@
     height: var(--agent-avatar-surface-size, 20px);
     border-radius: var(--agent-avatar-corner-radius, 6px);
     background-color: var(--agent-avatar-background, hsl(var(--agent-avatar-surface-neutral)));
+    color: #080808;
     opacity: 1;
     forced-color-adjust: auto;
   }
@@ -84,6 +85,10 @@
 
   .agent-avatar--legacy {
     padding: 0;
+  }
+
+  :global([data-agent-avatar-with-state]) .agent-avatar {
+    color: inherit;
   }
 
   @media (forced-colors: active) {

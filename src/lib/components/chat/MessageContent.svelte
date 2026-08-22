@@ -46,6 +46,7 @@
   import {
     parseAgentMessage,
     parseSuggestedPrompts,
+    parseSuggestedPromptsFromContentBlocks,
     groupParsedBlocks,
     groupContentBlocks,
     filterWorkspaceCardsCoveredByIds,
@@ -134,8 +135,14 @@
     // Collapse duplicate §7.1 resource blocks (daemon-attached canonical +
     // FE-lifted fallback for the same logical resource) so exactly one card
     // renders per resource, preferring the daemon-canonical variant.
+    const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(hydratedContent, {
+      isStreaming,
+    });
     const filtered = dedupeAgentVideoContentBlocks(
-      normalizeAgentVideoContentBlocks(dedupeResourceBlocks(hydratedContent), role),
+      normalizeAgentVideoContentBlocks(
+        dedupeResourceBlocks(parsedPromptBlocks.contentBlocks),
+        role,
+      ),
     ).filter((block) => {
       // Agent Q&A questions are wizard-only: they never render in the
       // transcript (pending or resolved), so strip them here.

@@ -1,6 +1,23 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
+import os from 'os';
 import { readFileSync } from 'fs';
+
+// CI-only tuning for shared self-hosted runners (intent-hq/monorepo#3082; the
+// recurrence class #3032/#2586/#1406/#1171/#545). The CI unit job runs on the
+// 64-core tinybox, which hosts up to 8 concurrent jobs across repos (including
+// intentd cargo builds): 50% of cores there means 32 jsdom forks on an
+// already-loaded box, and under external load rotating test files blow the 30s
+// budget (observed ~34s for tests that take ~8s locally) while passing in
+// isolation. CI caps workers at min(50%, 16) — halving the fork count on the
+// big shared box while leaving the 8-core GH-hosted burst runner (4 workers)
+// unchanged. Local runs keep the plain 50% cap.
+// std-env semantics (what vitest itself uses): CI=false in a dev shell means
+// "not CI", so the local path keeps the plain 50% cap there too.
+const isCI = !!process.env.CI && process.env.CI !== 'false';
+// Math.round matches how vitest resolves '50%' (getWorkersCountByPercentage),
+// so on any core count the CI path differs from '50%' only via the 16 cap.
+const ciMaxWorkers = Math.max(1, Math.min(16, Math.round(os.availableParallelism() / 2)));
 
 export default defineConfig(async () => {
   const { svelte } = await import('@sveltejs/vite-plugin-svelte');
@@ -28,13 +45,16 @@ export default defineConfig(async () => {
       // core; ~20 jsdom workers oversubscribe the CPU and, when the machine is
       // under external load (builds, other agents), heavy component suites blow
       // past their timeouts in full-suite runs while passing in isolation.
-      // See intent-hq/monorepo#545.
-      maxWorkers: '50%',
+      // See intent-hq/monorepo#545. On CI the cap is further bounded at 16
+      // workers for shared self-hosted runners (see ciMaxWorkers above).
+      maxWorkers: isCI ? ciMaxWorkers : '50%',
       // 30s (up from 10s) gives slow-machine/loaded-machine headroom for the
       // heavy sidebar/component suites (intent-hq/monorepo#545). Genuine hangs
-      // still fail, just a bit later.
-      testTimeout: 30000,
-      hookTimeout: 30000,
+      // still fail, just a bit later. CI doubles the budget to 60s: external
+      // runner load can starve a worker ~4x (intent-hq/monorepo#3082), and the
+      // concurrency cap alone cannot absorb every load spike.
+      testTimeout: isCI ? 60_000 : 30_000,
+      hookTimeout: isCI ? 60_000 : 30_000,
       teardownTimeout: 10000,
       exclude: [
         '**/node_modules/**',
@@ -78,8 +98,6 @@ export default defineConfig(async () => {
         // Tests with file system checks for build artifacts
         '**/agent-providers/__tests__/acp-provider-mcp-config.test.ts',
         // Integration tests with various pre-existing issues
-        '**/tests/event-integration.test.ts',
-
         '**/features/file-tracking/__tests__/file-tracking-integration.test.ts',
         '**/features/workspace/__tests__/remote-change-detector.test.ts',
         '**/features/agent/main/__tests__/edge-cases.test.ts',
@@ -126,10 +144,7 @@ export default defineConfig(async () => {
           __dirname,
           './src/lib/icons/phosphor-icons.ts',
         ),
-        'svelte-fa': path.resolve(
-          __dirname,
-          './src/lib/components/shared/icons/fa-proxy.ts',
-        ),
+        'svelte-fa': path.resolve(__dirname, './src/lib/components/shared/icons/fa-proxy.ts'),
         // Test-only stub: avoid resolving the real monaco-editor (heavy and ESM-export sensitive)
         'monaco-editor': path.resolve(__dirname, './src/__mocks__/monaco-editor'),
         // Test-only stub: avoid resolving protocol-adapter's complex dependency chain

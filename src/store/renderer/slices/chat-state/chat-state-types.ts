@@ -46,7 +46,7 @@ export interface ModelUnavailableInfo {
   nextAvailableModel: string;
 }
 
-export interface SendMessageOptions {
+interface SendMessageOptions {
   contextItems?: SerializableContextItem[];
   noteIds?: string[];
   personality?: string;
@@ -82,7 +82,7 @@ export interface SendMessageOptions {
  * Serializable subset of the chat input ContextItem.
  * Excludes the `file` field (a non-serializable `File` object).
  */
-export type SerializableContextItem = Omit<ChatInputContextItem, 'file'>;
+type SerializableContextItem = Omit<ChatInputContextItem, 'file'>;
 
 /**
  * Transcript hydration status: 'loading' while the newest window is unresolved,
@@ -140,6 +140,11 @@ export type HydratedBlockEntry =
   | { status: 'loaded'; seq: number; block: ContentBlock }
   | { status: 'error'; seq: number; error: string };
 
+export interface StreamFailureCorrelation {
+  turnCorrelation?: string;
+  turnIdCorrelation?: string;
+}
+
 /**
  * Serializable per-agent chat state stored in Redux.
  * Serializable per-agent chat state without non-serializable fields
@@ -151,6 +156,7 @@ export interface ChatAgentState {
   // Read them from AgentSession via canonical agent-session selectors.
   isInterrupting: boolean;
   error: string | null;
+  failureCorrelation?: StreamFailureCorrelation;
   lastChunkTime: number | null;
   receivedFirstChunk: boolean;
   streamingStartTime: number | null;
@@ -336,15 +342,6 @@ import type { Question } from '$shared/types/question-resource';
 export interface ChatStateSlice {
   byAgentId: Record<string, ChatAgentState>;
 }
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-export const STATUS_EVENTS_STORAGE_KEY = 'chat-status-events';
-
-/** Minimum time between messages in ms (rate limiting) */
-export const MIN_MESSAGE_SEND_INTERVAL = 100;
 
 /**
  * Cap on parked `queuedRetryRecords` per agent (#973-family memory bound).

@@ -35,7 +35,7 @@ function stripProviderPrefix(message: string, providerId: string, providerName: 
   return trimmed;
 }
 
-export function getProviderErrorHint(providerId: string, message: string): string | undefined {
+function getProviderErrorHint(providerId: string, message: string): string | undefined {
   const state = appStore.state;
   const entry = selectProviderCatalogEntryOrDefault.select(state, providerId);
   const lowerMessage = message.toLowerCase();

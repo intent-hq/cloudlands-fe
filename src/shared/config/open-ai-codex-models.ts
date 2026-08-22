@@ -76,10 +76,8 @@ const EFFORT_CAPABLE_MODELS = new Set(['gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.
 
 /** Build the model map: one row per base model; effort-capable rows carry effortLevels */
 function buildCodexModels() {
-  const models: Record<
-    string,
-    { label: string; description: string; effortLevels?: string[] }
-  > = {};
+  const models: Record<string, { label: string; description: string; effortLevels?: string[] }> =
+    {};
   for (const [id, config] of Object.entries(CODEX_BASE_MODELS)) {
     models[id] = EFFORT_CAPABLE_MODELS.has(id)
       ? {
@@ -96,8 +94,6 @@ function buildCodexModels() {
 }
 
 export const CODEX_MODELS = buildCodexModels();
-
-export type CodexModelId = keyof typeof CODEX_MODELS;
 
 /** Get Codex models as an array for UI consumption */
 export function getCodexModelList(): Array<{

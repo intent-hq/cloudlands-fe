@@ -21,14 +21,7 @@
 
 /** Per-key LED state for one agent key (spec "Agent-key LED palette"). */
 export type AgentKeyLedState =
-  | 'unassigned'
-  | 'idle'
-  | 'running'
-  | 'unread'
-  | 'complete'
-  | 'attention'
-  | 'blocked'
-  | 'failed';
+  'unassigned' | 'idle' | 'running' | 'unread' | 'complete' | 'attention' | 'blocked' | 'failed';
 
 /**
  * Ambient/keys backlight state (spec "Ambient state mapping (v1)").
@@ -68,7 +61,7 @@ export interface ThStatusEntry {
 }
 
 /** One zone of a `v.oai.rgbcfg` call. */
-export interface RgbcfgZone {
+interface RgbcfgZone {
   e: number;
   b: number;
   s: number;

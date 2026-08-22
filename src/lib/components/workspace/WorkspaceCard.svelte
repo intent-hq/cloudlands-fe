@@ -60,10 +60,11 @@
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import {
     constructPrUrl,
-    countOtherMonitors,
+    countOtherPrs,
     getPRStatusTooltip,
     mapWorkspacePRs,
     mergeMonitoredPRs,
+    prRepoFromUrl,
     selectPrimaryPr,
     toPullRequestStatus,
   } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
@@ -193,30 +194,35 @@
     if (!workspace) return null;
     return selectWorkspaceActivePullRequest.select(appStore.state, workspace.id);
   });
-  // Primary PR for the pill: the shared oldest-unmerged / latest-merged rule
-  // (selectPrimaryPr) over the combined branch-linked + agent-monitored pool
-  // (PROTOCOL §6.9).
-  const primaryPr = $derived.by(() => {
-    if (!workspace) return undefined;
+  // Combined PR pool for the pill and "+N" indicator: the daemon-merged
+  // `pullRequests` (stored + git-root + monitor PRs, deduped by URL —
+  // intent-hq/intentd#1330; populated before the workspace is ever opened)
+  // with live monitor rows merged in by URL, so a PR arriving through both
+  // paths is one row and the badge never double-counts or flickers when
+  // opening the workspace starts the monitor stream.
+  const prPool = $derived.by(() => {
+    if (!workspace) return [];
     const ws = workspace;
     const workspaceRepo =
       ws.repositoryOwner && ws.repositoryName
         ? `${ws.repositoryOwner}/${ws.repositoryName}`
         : undefined;
-    return selectPrimaryPr(
-      mergeMonitoredPRs(
-        mapWorkspacePRs(
-          ws.pullRequests,
-          activePullRequest,
-          (prNum, fallbackUrl) =>
-            constructPrUrl(prNum, ws.repositoryOwner, ws.repositoryName, fallbackUrl),
-          (pr) => pr.title,
-        ),
-        $prMonitors$,
+    return mergeMonitoredPRs(
+      mapWorkspacePRs(
+        ws.pullRequests,
+        activePullRequest,
+        (prNum, fallbackUrl) =>
+          constructPrUrl(prNum, ws.repositoryOwner, ws.repositoryName, fallbackUrl),
+        (pr) => pr.title,
         workspaceRepo,
       ),
+      $prMonitors$,
+      workspaceRepo,
     );
   });
+  // Primary PR for the pill: the shared oldest-unmerged / latest-merged rule
+  // (selectPrimaryPr) over the combined pool (PROTOCOL §6.9).
+  const primaryPr = $derived(selectPrimaryPr(prPool));
   // The branch-linked active PR keeps its tooltip/mergeability treatment only
   // when it is the chosen primary.
   const primaryIsActivePr = $derived(
@@ -238,24 +244,48 @@
   const isPRMergeable = $derived(
     primaryIsActivePr && checkPRMergeable(activePullRequest ?? undefined),
   );
+  // Pill link target: the primary PR's own URL (authoritative for cross-repo
+  // and monitor-only rows), falling back to a constructed URL for the legacy
+  // `workspace.prNumber`-only case — gated on no primary PR at all, so the
+  // link target is always built from the same PR the pill displays.
+  // Undefined keeps the pill non-interactive.
+  const prPillUrl = $derived.by(() => {
+    if (!workspace) return undefined;
+    if (primaryPr) return primaryPr.url || undefined;
+    if (workspace.prNumber != null) {
+      return (
+        constructPrUrl(workspace.prNumber, workspace.repositoryOwner, workspace.repositoryName) ||
+        undefined
+      );
+    }
+    return undefined;
+  });
+  // `owner/repo` for the tooltip's first line: the PR URL is authoritative,
+  // then monitor-provided crossRepo, then the workspace's own repository.
+  const prPillRepo = $derived.by(() => {
+    if (!workspace) return undefined;
+    const fromUrl = prRepoFromUrl(primaryPr?.url);
+    if (fromUrl) return fromUrl;
+    if (primaryPr?.crossRepo) return primaryPr.crossRepo;
+    return workspace.repositoryOwner && workspace.repositoryName
+      ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
+      : undefined;
+  });
   const prTooltipContent = $derived.by(() => {
-    if (!primaryPr) return '';
-    return primaryIsActivePr
-      ? getPRTooltipContent(activePullRequest ?? undefined)
-      : getPRStatusTooltip(primaryPr);
+    const statusContent = !primaryPr
+      ? ''
+      : primaryIsActivePr
+        ? getPRTooltipContent(activePullRequest ?? undefined)
+        : getPRStatusTooltip(primaryPr);
+    const repoLine =
+      prPillRepo !== undefined && prNumber !== undefined
+        ? m.workspace_card_prBadge_repoLine_tooltip({ repo: prPillRepo, number: prNumber })
+        : '';
+    return [repoLine, statusContent].filter(Boolean).join('\n');
   });
 
-  // "+N" indicator: other monitored PRs in the pool beyond the primary badge.
-  const otherMonitoredPrCount = $derived.by(() => {
-    if (!workspace) return 0;
-    return countOtherMonitors(
-      $prMonitors$,
-      prNumber,
-      workspace.repositoryOwner,
-      workspace.repositoryName,
-      primaryPr?.crossRepo,
-    );
-  });
+  // "+N" indicator: other PRs in the deduped pool beyond the primary badge.
+  const otherMonitoredPrCount = $derived(countOtherPrs(prPool, primaryPr));
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') onClick?.(e);
   }
@@ -576,11 +606,38 @@
           sideOffset={4}
           disabled={!prTooltipContent}
         >
-          <span
-            class="wc-secondary type-caption shrink-0 rounded-sm px-1.5 font-normal tabular-nums {statusColor}"
-          >
-            {m.workspace_card_prBadge_label({ number: prNumber ? ` #${prNumber}` : '' })}
-          </span>
+          {#if prPillUrl}
+            <!-- Clicks route through the unified link handler (GitHub default
+                 action / choices menu) and must not bubble to the card row.
+                 The handler is imported lazily so this component doesn't pull
+                 in the link-handler's module-scope store selectors. The
+                 wrapper span carries wc-secondary because that scoped rule
+                 can't match the Button primitive's inner element. -->
+            <span class="wc-pr-pill-wrap wc-secondary inline-flex shrink-0">
+              <Button
+                variant="plain"
+                class="type-caption h-auto rounded-sm !px-1.5 font-normal tabular-nums {statusColor}"
+                data-workspace-card-pr-pill
+                onclick={(event) => {
+                  event.stopPropagation();
+                  const url = prPillUrl;
+                  const workspaceId = workspace.id;
+                  void import('$features/navigation/link-handler').then(({ handleLink }) =>
+                    handleLink(url, { workspaceId, event }),
+                  );
+                }}
+              >
+                {m.workspace_card_prBadge_label({ number: prNumber ? ` #${prNumber}` : '' })}
+              </Button>
+            </span>
+          {:else}
+            <span
+              class="wc-secondary type-caption shrink-0 rounded-sm px-1.5 font-normal tabular-nums {statusColor}"
+              data-workspace-card-pr-pill
+            >
+              {m.workspace_card_prBadge_label({ number: prNumber ? ` #${prNumber}` : '' })}
+            </span>
+          {/if}
         </Tooltip>
       {/if}
 
@@ -867,6 +924,18 @@
 {/if}
 
 <style>
+  /* The interactive PR pill is a Button primitive whose base carries
+     `type-body`; that unlayered role class is declared after `.type-caption`
+     in app.css and would win the cascade, so the caption role is re-applied
+     here with scoped (higher-specificity) selectors to keep the pill's
+     typography identical to its non-interactive sibling. */
+  .wc-pr-pill-wrap :global([data-slot='button']) {
+    font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+    font-weight: var(--text-caption-weight);
+    letter-spacing: var(--text-caption-tracking);
+  }
+
   @container (max-width: 220px) {
     .wc-secondary {
       display: none;

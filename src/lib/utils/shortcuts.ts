@@ -120,7 +120,13 @@ export const SHORTCUTS = {
   CLOSE_TAB: {
     key: 'mod+w',
     get label() {
-      return m.ui_shortcuts_closeTab_label();
+      return m.workspace_shortcuts_closePanelTab_description();
+    },
+  },
+  CLOSE_WORKSPACE_TAB: {
+    key: 'mod+shift+w',
+    get label() {
+      return m.workspace_shortcuts_closeSpaceTab_description();
     },
   },
   GO_BACK: {
@@ -491,13 +497,6 @@ export function isMacPlatform(): boolean {
 }
 
 /**
- * Get the modifier key name for the current platform
- */
-export function getModifierKey(): string {
-  return isMac ? '⌘' : 'Ctrl';
-}
-
-/**
  * Shortcut entry with display information
  */
 export interface ShortcutEntry {
@@ -624,9 +623,16 @@ export const SHORTCUT_CATEGORIES: Record<
         contexts: ['global'],
       },
       {
-        key: 'mod+w',
+        key: SHORTCUTS.CLOSE_TAB.key,
         get label() {
-          return m.ui_shortcuts_closeTab_label();
+          return SHORTCUTS.CLOSE_TAB.label;
+        },
+        contexts: ['global'],
+      },
+      {
+        key: SHORTCUTS.CLOSE_WORKSPACE_TAB.key,
+        get label() {
+          return SHORTCUTS.CLOSE_WORKSPACE_TAB.label;
         },
         contexts: ['global'],
       },

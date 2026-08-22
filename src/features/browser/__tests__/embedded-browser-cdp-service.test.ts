@@ -10,7 +10,7 @@
  * The panel layout is now the single source of truth for listing.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   sendToWorkspaceWindows: vi.fn(),
@@ -47,6 +47,7 @@ type PanelTab = {
   title: string;
   closable?: boolean;
   ownerAgentId?: string;
+  emulatedSize?: { width: number; height: number };
 };
 
 /** Fake live webview backing a mounted tab. */
@@ -58,6 +59,39 @@ function fakeWebview(id: number, url: string) {
     getURL: () => url,
     getTitle: () => `title-${id}`,
     once: vi.fn(),
+  };
+}
+
+/**
+ * Fake webview with a working debugger session and capturePage(), for the
+ * screenshot CDP-hang fallback tests (intent-hq/monorepo#3154).
+ * `sendCommand` routes each CDP method through `cdpResponses`; a method
+ * mapped to 'hang' returns a promise that never settles.
+ */
+function fakeCdpWebview(
+  id: number,
+  cdpResponses: Record<string, unknown | 'hang' | Error>,
+  capturePageImage = { width: 320, height: 240 },
+) {
+  const sendCommand = vi.fn((method: string) => {
+    const response = cdpResponses[method];
+    if (response === 'hang') return new Promise(() => {});
+    if (response instanceof Error) return Promise.reject(response);
+    return Promise.resolve(response);
+  });
+  const capturePage = vi.fn(async () => ({
+    getSize: () => capturePageImage,
+    toJPEG: () => Buffer.from('fallback-jpeg-bytes'),
+  }));
+  return {
+    ...fakeWebview(id, 'http://cdp/'),
+    debugger: {
+      isAttached: () => true,
+      attach: vi.fn(),
+      on: vi.fn(),
+      sendCommand,
+    },
+    capturePage,
   };
 }
 
@@ -439,8 +473,77 @@ describe('tab ownership registry (#2857)', () => {
     expect(service.getTabOwner('tab-owned')).toBeUndefined();
     await expect(service.resolveTabOwner('tab-owned', 'ws-1')).resolves.toBe('agent-1');
     await expect(service.resolveTabOwner('tab-user', 'ws-1')).resolves.toBeUndefined();
-    // Rehydrated ownership gets the default viewport until resized.
+    // No persisted size (pre-size layout): the default viewport applies.
     expect(service.getTabEmulatedSize('tab-owned')).toEqual({ width: 1280, height: 800 });
+  });
+
+  it('rehydrates the persisted emulated size instead of the default viewport (restart)', async () => {
+    const service = await loadService();
+    wireRenderer([
+      {
+        tabId: 'tab-sized',
+        url: 'http://a/',
+        title: 'A',
+        ownerAgentId: 'agent-1',
+        emulatedSize: { width: 390, height: 844 },
+      },
+    ]);
+
+    await expect(service.resolveTabOwner('tab-sized', 'ws-1')).resolves.toBe('agent-1');
+    expect(service.getTabEmulatedSize('tab-sized')).toEqual({ width: 390, height: 844 });
+  });
+
+  it('rehydration clamps an out-of-bounds persisted size into the schema bounds', async () => {
+    const service = await loadService();
+    wireRenderer([
+      {
+        tabId: 'tab-huge-size',
+        url: 'http://a/',
+        title: 'A',
+        ownerAgentId: 'agent-1',
+        // Passes the shape guard but exceeds the live action-schema bounds
+        // (e.g. a hand-edited layout file) — clamped to [320, 3840] and
+        // rounded, never replayed verbatim into CDP emulation.
+        emulatedSize: { width: 1e9, height: 0.5 },
+      },
+    ]);
+
+    await expect(service.resolveTabOwner('tab-huge-size', 'ws-1')).resolves.toBe('agent-1');
+    expect(service.getTabEmulatedSize('tab-huge-size')).toEqual({ width: 3840, height: 320 });
+  });
+
+  it('rehydration falls back to the default viewport on a malformed persisted size', async () => {
+    const service = await loadService();
+    wireRenderer([
+      {
+        tabId: 'tab-bad-size',
+        url: 'http://a/',
+        title: 'A',
+        ownerAgentId: 'agent-1',
+        emulatedSize: { width: -1, height: Number.NaN },
+      },
+    ]);
+
+    await expect(service.resolveTabOwner('tab-bad-size', 'ws-1')).resolves.toBe('agent-1');
+    expect(service.getTabEmulatedSize('tab-bad-size')).toEqual({ width: 1280, height: 800 });
+  });
+
+  it('notifyTabOwnerChanged carries the current emulated size so the renderer persists it', async () => {
+    const service = await loadService();
+    service.setTabOwner('tab-1', 'agent-1', undefined, { width: 1024, height: 768 });
+    service.resizeTab('tab-1', 390, 844);
+
+    service.notifyTabOwnerChanged('tab-1', 'ws-1', 'agent-1');
+    expect(mocks.sendToWorkspaceWindows).toHaveBeenCalledWith(
+      'ws-1',
+      IPC_CHANNELS.BROWSER.TAB_OWNER_CHANGED,
+      {
+        tabId: 'tab-1',
+        workspaceId: 'ws-1',
+        ownerAgentId: 'agent-1',
+        emulatedSize: { width: 390, height: 844 },
+      },
+    );
   });
 
   it('listAllTabs annotates tabs with their owner and emulated size', async () => {
@@ -459,3 +562,107 @@ describe('tab ownership registry (#2857)', () => {
     expect(tabs.find((t) => t.tabId === 'tab-user')?.ownerAgentId).toBeUndefined();
   });
 });
+
+describe('screenshot Page-domain hang fallback (#3154)', () => {
+  const LAYOUT_METRICS = {
+    layoutViewport: { clientWidth: 800, clientHeight: 600 },
+    cssVisualViewport: { clientWidth: 800, clientHeight: 600, pageX: 0, pageY: 0 },
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns the CDP screenshot when the Page domain answers', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(61, {
+      'Page.getLayoutMetrics': LAYOUT_METRICS,
+      'Page.captureScreenshot': { data: 'cdp-base64' },
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-cdp', 61);
+
+    await expect(service.screenshot('tab-cdp')).resolves.toEqual({
+      base64: 'cdp-base64',
+      width: 800,
+      height: 600,
+    });
+    expect(wc.capturePage).not.toHaveBeenCalled();
+    service.unregisterTab('tab-cdp');
+  });
+
+  it('falls back to capturePage() when Page.getLayoutMetrics never answers', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(62, { 'Page.getLayoutMetrics': 'hang' });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-hang-metrics', 62);
+
+    const pending = service.screenshot('tab-hang-metrics');
+    await vi.advanceTimersByTimeAsync(6_000);
+
+    await expect(pending).resolves.toEqual({
+      base64: Buffer.from('fallback-jpeg-bytes').toString('base64'),
+      width: 320,
+      height: 240,
+    });
+    expect(wc.capturePage).toHaveBeenCalledTimes(1);
+    service.unregisterTab('tab-hang-metrics');
+  });
+
+  it('falls back to capturePage() when Page.captureScreenshot never answers', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(63, {
+      'Page.getLayoutMetrics': LAYOUT_METRICS,
+      'Page.captureScreenshot': 'hang',
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-hang-capture', 63);
+
+    const pending = service.screenshot('tab-hang-capture');
+    await vi.advanceTimersByTimeAsync(6_000);
+
+    await expect(pending).resolves.toEqual({
+      base64: Buffer.from('fallback-jpeg-bytes').toString('base64'),
+      width: 320,
+      height: 240,
+    });
+    expect(wc.capturePage).toHaveBeenCalledTimes(1);
+    service.unregisterTab('tab-hang-capture');
+  });
+
+  it('falls back to capturePage() when a Page-domain command rejects', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(64, {
+      'Page.getLayoutMetrics': new Error('Page domain unavailable'),
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-reject', 64);
+
+    await expect(service.screenshot('tab-reject')).resolves.toEqual({
+      base64: Buffer.from('fallback-jpeg-bytes').toString('base64'),
+      width: 320,
+      height: 240,
+    });
+    expect(wc.capturePage).toHaveBeenCalledTimes(1);
+    service.unregisterTab('tab-reject');
+  });
+
+  it('propagates the error when the capturePage() fallback itself fails', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(65, {
+      'Page.getLayoutMetrics': new Error('Page domain unavailable'),
+    });
+    wc.capturePage.mockRejectedValue(new Error('capture failed'));
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-fallback-fail', 65);
+
+    await expect(service.screenshot('tab-fallback-fail')).rejects.toThrow('capture failed');
+    expect(wc.capturePage).toHaveBeenCalledTimes(1);
+    service.unregisterTab('tab-fallback-fail');
+  });
+});
+

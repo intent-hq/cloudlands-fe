@@ -2,6 +2,13 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentMessage, AgentSession } from '$shared/types';
 
+const { reportStreamLifecycleSpy } = vi.hoisted(() => ({ reportStreamLifecycleSpy: vi.fn() }));
+
+vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/stream-lifecycle-telemetry')>()),
+  reportStreamLifecycle: reportStreamLifecycleSpy,
+}));
+
 vi.mock('svelte', async (importOriginal) => ({
   ...(await importOriginal<typeof import('svelte')>()),
   getContext: () => undefined,
@@ -543,6 +550,50 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     });
   });
 
+  it('clears the queue hint and stale busy flags on agent:process:evicted (idle-ttl reap, monorepo#3040)', async () => {
+    // A stale optimistic "Thinking" state: the daemon only evicts idle
+    // processes (intent-hq/intentd#1356), so any busy indicator at eviction
+    // time is provably stale — the bridge must clear it, not leave a phantom
+    // spinner until the next canonical event.
+    seedSession({
+      status: AgentStatus.Active,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+      liveTurnOpen: true,
+      liveTurnOpenedAt: '2026-01-01T12:00:00.000Z',
+      processQueueHint: { waiting: true, used: 3, cap: 3, reason: 'slots' },
+    } as Partial<AgentSession>);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §6.5: AgentProcessEvictedEvent carries { agentId, used, cap,
+    // reason }; reason "idle-ttl" is the TTL sweep (intent-hq/intentd#1356).
+    handler(
+      notification('agent:process:evicted', {
+        agentId: AGENT,
+        used: 2,
+        cap: 3,
+        reason: 'idle-ttl',
+      }),
+    );
+
+    const session = readSession();
+    expect(session?.processQueueHint).toBeUndefined();
+    expect(session?.isStreaming).toBe(false);
+    expect(session?.isProcessing).toBe(false);
+    expect(session?.isResponding).toBe(false);
+    expect((session as { liveTurnOpen?: boolean })?.liveTurnOpen).toBe(false);
+    // §6.5 guarantees the evicted process was idle, so the stale RUNNING
+    // status is demoted to 'idle' — otherwise isAgentRunningState (and the
+    // Thinking indicator) would stay true on the status alone. Eviction is
+    // still NOT an "agent ended" transition (next send auto-restores).
+    expect(session?.status).toBe(AgentStatus.RuntimeIdle);
+    // The canonical Thinking driver is genuinely resolved.
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
   it('ignores non-events.event methods, and forwards non-lifecycle events.event notifications into workspaceEvents without changing agent-session flags', async () => {
     seedSession({ isStreaming: true, status: AgentStatus.Active });
     await primeBridge();
@@ -722,6 +773,22 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
 
     handler(notification('agent:stream:end', { agentId: AGENT, streamId: STREAM_ID }));
+    const terminalTelemetry = reportStreamLifecycleSpy.mock.calls
+      .map(([diagnostic]) => diagnostic)
+      .filter((diagnostic) =>
+        ['agent-stream-end-received', 'stream-complete-dispatched'].includes(diagnostic.event),
+      );
+    expect(terminalTelemetry).toEqual([
+      expect.objectContaining({
+        event: 'agent-stream-end-received',
+        callbackResult: 'received',
+      }),
+      expect.objectContaining({
+        event: 'stream-complete-dispatched',
+        callbackResult: 'dispatched',
+      }),
+    ]);
+    expect(terminalTelemetry[0]).not.toHaveProperty('storeStreamState');
 
     assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
@@ -2381,6 +2448,19 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     );
 
     expect(readAssistantMessages()).toHaveLength(0);
+    const terminalTelemetry = reportStreamLifecycleSpy.mock.calls
+      .map(([diagnostic]) => diagnostic)
+      .filter((diagnostic) => diagnostic.event.startsWith('agent-stream-end'));
+    expect(terminalTelemetry).toEqual([
+      expect.objectContaining({
+        event: 'agent-stream-end-received',
+        callbackResult: 'received',
+      }),
+      expect.objectContaining({
+        event: 'agent-stream-end-ignored',
+        callbackResult: 'ignored',
+      }),
+    ]);
   });
 
   it('persisted interrupted row reconciles in: blocks stay intact and the Stopped indicator shows', async () => {
@@ -3210,7 +3290,9 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
 
     const failedCalls = dispatchCalls.filter((a) => a.type === 'chatState/sendFailed');
     expect(failedCalls).toEqual([
-      expect.objectContaining({ payload: [AGENT, 'boom', 'turn-failed-1'] }),
+      expect.objectContaining({
+        payload: [AGENT, 'boom', 'turn-failed-1', { turnIdCorrelation: '12c09885d6571b4e' }],
+      }),
     ]);
   });
 
@@ -3222,7 +3304,9 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
     handler(notification('agent:failed', { agentId: AGENT, error: 'boom', status: 'error' }));
 
     const failedCalls = dispatchCalls.filter((a) => a.type === 'chatState/sendFailed');
-    expect(failedCalls).toEqual([expect.objectContaining({ payload: [AGENT, 'boom', undefined] })]);
+    expect(failedCalls).toEqual([
+      expect.objectContaining({ payload: [AGENT, 'boom', undefined, undefined] }),
+    ]);
   });
 });
 
@@ -5250,6 +5334,63 @@ describe('daemonEventsBridge (workspace:deleted → purge agent/chat state)', ()
     expect(after.chatState.byAgentId[OTHER_AGENT]).toBeDefined();
   });
 
+  it('drops the panel layout entry and clears main registrations for owned tabs (monorepo#2857)', async () => {
+    const { initializeLayout, closeTab } = await import(
+      '$store/renderer/slices/panel-layout/panel-layout-slice'
+    );
+    appStore.dispatch(
+      initializeLayout(WS, {
+        root: { type: 'panel', panelId: 'p1' },
+        panels: {
+          p1: {
+            id: 'p1',
+            tabs: [
+              {
+                id: 'owned-del',
+                type: 'browser',
+                title: 'O',
+                closable: true,
+                browserUrl: 'http://o/',
+                ownerAgentId: 'agent-del-owner',
+              },
+            ],
+            activeTabId: 'owned-del',
+          },
+        },
+        focusedPanelId: 'p1',
+      } as never),
+    );
+    // Hide it so the purge is proven to cover hiddenTabs too.
+    appStore.dispatch(closeTab(WS, 'owned-del', 'p1', 1000));
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    invokeSpy.mockClear();
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-workspace-deleted-owned-tabs',
+          workspaceId: WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:deleted',
+          actor: { type: 'user', id: 'u1' },
+          data: { workspaceId: WS },
+        },
+      },
+    });
+
+    const state = appStore.state as {
+      panelLayout: { byWorkspaceId: Record<string, unknown> };
+    };
+    expect(state.panelLayout.byWorkspaceId[WS]).toBeUndefined();
+    const clearCalls = invokeSpy.mock.calls.filter(
+      (call: unknown[]) => call[0] === 'browser:clear-agent-tabs',
+    );
+    expect(clearCalls.map((call: unknown[]) => call[1])).toEqual([{ agentId: 'agent-del-owner' }]);
+  });
+
   it('drops workspace:deleted events lacking a workspaceId envelope', async () => {
     appStore.dispatch(
       bulkUpsertSessions([
@@ -5862,6 +6003,140 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
 
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', { workspaceId: PENDING_WS });
   });
+
+  // Owned-tab lifecycle (monorepo#2857): the deletion COMMIT destroys the
+  // agent's owned browser tabs (visible + hidden) and clears main's
+  // registrations; the SCHEDULE (grace window — cancelDelete must restore
+  // tabs intact) does not.
+  it('agent:deleted destroys owned tabs (visible + hidden) and clears main registrations', async () => {
+    const { initializeLayout, closeTab } = await import(
+      '$store/renderer/slices/panel-layout/panel-layout-slice'
+    );
+    appStore.dispatch(
+      initializeLayout(PENDING_WS, {
+        root: { type: 'panel', panelId: 'p1' },
+        panels: {
+          p1: {
+            id: 'p1',
+            tabs: [
+              {
+                id: 'owned-vis',
+                type: 'browser',
+                title: 'V',
+                closable: true,
+                browserUrl: 'http://v/',
+                ownerAgentId: PENDING_AGENT,
+              },
+              {
+                id: 'owned-hid',
+                type: 'browser',
+                title: 'H',
+                closable: true,
+                browserUrl: 'http://h/',
+                ownerAgentId: PENDING_AGENT,
+              },
+              { id: 'keep', type: 'note', title: 'K', closable: true },
+            ],
+            activeTabId: 'owned-vis',
+          },
+        },
+        focusedPanelId: 'p1',
+      } as never),
+    );
+    appStore.dispatch(closeTab(PENDING_WS, 'owned-hid', 'p1', 1000));
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    invokeSpy.mockClear();
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-deleted-owned-tabs',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:deleted',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS },
+        },
+      },
+    });
+
+    const state = appStore.state as {
+      panelLayout: {
+        byWorkspaceId: Record<
+          string,
+          { panels: Record<string, { tabs: { id: string }[] }>; hiddenTabs: { ids: string[] } }
+        >;
+      };
+    };
+    const ws = state.panelLayout.byWorkspaceId[PENDING_WS];
+    expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['keep']);
+    expect(ws.hiddenTabs.ids).toHaveLength(0);
+    const clearCalls = invokeSpy.mock.calls.filter(
+      (call: unknown[]) => call[0] === 'browser:clear-agent-tabs',
+    );
+    expect(clearCalls.map((call: unknown[]) => call[1])).toEqual([{ agentId: PENDING_AGENT }]);
+  });
+
+  it('agent:delete-scheduled leaves owned tabs alive (grace window, cancel restores intact)', async () => {
+    const { initializeLayout } = await import(
+      '$store/renderer/slices/panel-layout/panel-layout-slice'
+    );
+    appStore.dispatch(
+      initializeLayout(PENDING_WS, {
+        root: { type: 'panel', panelId: 'p1' },
+        panels: {
+          p1: {
+            id: 'p1',
+            tabs: [
+              {
+                id: 'owned-grace',
+                type: 'browser',
+                title: 'G',
+                closable: true,
+                browserUrl: 'http://g/',
+                ownerAgentId: PENDING_AGENT,
+              },
+            ],
+            activeTabId: 'owned-grace',
+          },
+        },
+        focusedPanelId: 'p1',
+      } as never),
+    );
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    invokeSpy.mockClear();
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-del-scheduled-tabs',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:delete-scheduled',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS, deleteAt: DELETE_AT },
+        },
+      },
+    });
+
+    const state = appStore.state as {
+      panelLayout: {
+        byWorkspaceId: Record<string, { panels: Record<string, { tabs: { id: string }[] }> }>;
+      };
+    };
+    expect(state.panelLayout.byWorkspaceId[PENDING_WS].panels.p1.tabs.map((t) => t.id)).toEqual([
+      'owned-grace',
+    ]);
+    expect(
+      invokeSpy.mock.calls.filter((call: unknown[]) => call[0] === 'browser:clear-agent-tabs'),
+    ).toHaveLength(0);
+  });
 });
 
 describe('daemonEventsBridge (task:status-changed → applyTaskStatusChanged)', () => {
@@ -6027,6 +6302,12 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     backendRequestSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
+    // The union merge semantics on setWorkspaceEntity (monorepo#2951) mean PR
+    // pools survive re-seeding — reset the slice so tests stay independent.
+    const { resetWorkspaceState } = await import(
+      '$store/renderer/slices/workspace/workspace-slice'
+    );
+    appStore.dispatch(resetWorkspaceState());
   });
 
   afterEach(() => vi.clearAllMocks());
@@ -6153,8 +6434,69 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     expect(ws.prStatus).toBe('Merged');
     // prUrl was not in the pr:updated payload; the merge must retain it.
     expect(ws.prUrl).toBe('https://example.com/pr/42');
-    // pullRequests from the pr:updated payload replaces the previous list.
+    // The entity had no pullRequests pool yet, so the pr:updated payload's
+    // list is adopted as-is (the union with an empty pool is the incoming list).
     expect(ws.pullRequests).toEqual([{ number: 42, status: 'Merged' }]);
+  });
+
+  it('pr:updated preserves merged-pool entries absent from the stored list (monorepo#2951)', async () => {
+    // A background workspace whose entity holds the daemon-MERGED pool from a
+    // workspace.list emit: the stored PR plus a git-root PR and a monitored
+    // cross-repo PR that only workspace.list folds in.
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: PR_WS,
+        title: 'PR ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        pullRequests: [
+          { number: 42, url: 'https://github.com/acme/app/pull/42', status: 'Open' },
+          { number: 7, url: 'https://github.com/acme/submodule/pull/7', status: 'Open' },
+          { number: 9, url: 'https://github.com/other/repo/pull/9', status: 'Open' },
+        ],
+      } as never),
+    );
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // pr:updated carries the narrower STORED list (§6.9) — only the linked PR.
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-pr-updated-2951',
+          workspaceId: PR_WS,
+          timestamp: '2026-01-02T00:00:01.000Z',
+          type: 'pr:updated',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: PR_WS,
+            prNumber: 42,
+            prStatus: 'Merged',
+            activePullRequest: { number: 42, merged: true },
+            pullRequests: [
+              { number: 42, url: 'https://github.com/acme/app/pull/42', status: 'Merged' },
+            ],
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    // The stored entry is refreshed in place; the git-root and monitored
+    // entries survive — the "+N" badge count must not drop.
+    expect(ws.pullRequests).toEqual([
+      { number: 42, url: 'https://github.com/acme/app/pull/42', status: 'Merged' },
+      { number: 7, url: 'https://github.com/acme/submodule/pull/7', status: 'Open' },
+      { number: 9, url: 'https://github.com/other/repo/pull/9', status: 'Open' },
+    ]);
   });
 
   it('pr:unlinked clears the active-PR fields but retains the pullRequests list', async () => {
@@ -6405,6 +6747,80 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     expect(ws.archived).toBe(true);
     expect(ws.status).toBe('Archived');
     expect(ws.archivedAt).toBe('2026-07-25T12:00:00.000Z');
+  });
+
+  it('destroys agent-owned browser tabs (visible + hidden) and clears main registrations on archive (monorepo#2857)', async () => {
+    await seedWorkspace();
+    const { initializeLayout, closeTab } = await import(
+      '$store/renderer/slices/panel-layout/panel-layout-slice'
+    );
+    appStore.dispatch(
+      initializeLayout(WS_UPD, {
+        root: { type: 'panel', panelId: 'p1' },
+        panels: {
+          p1: {
+            id: 'p1',
+            tabs: [
+              {
+                id: 'owned-visible',
+                type: 'browser',
+                title: 'V',
+                closable: true,
+                browserUrl: 'http://v/',
+                ownerAgentId: 'agent-arch-1',
+              },
+              {
+                id: 'owned-hideme',
+                type: 'browser',
+                title: 'H',
+                closable: true,
+                browserUrl: 'http://h/',
+                ownerAgentId: 'agent-arch-2',
+              },
+              {
+                id: 'plain',
+                type: 'browser',
+                title: 'P',
+                closable: true,
+                browserUrl: 'http://p/',
+              },
+            ],
+            activeTabId: 'owned-visible',
+          },
+        },
+        focusedPanelId: 'p1',
+      } as never),
+    );
+    // User-hide one owned tab so both lifecycle states are covered.
+    appStore.dispatch(closeTab(WS_UPD, 'owned-hideme', 'p1', 1000));
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    invokeSpy.mockClear();
+
+    handler(updatedNotification({ archived: true, status: 'Archived' }));
+
+    const layout = (
+      appStore.state as {
+        panelLayout: {
+          byWorkspaceId: Record<
+            string,
+            {
+              panels: Record<string, { tabs: Array<{ id: string }> }>;
+              hiddenTabs: { ids: string[] };
+            }
+          >;
+        };
+      }
+    ).panelLayout.byWorkspaceId[WS_UPD];
+    expect(layout.hiddenTabs.ids).toHaveLength(0);
+    expect(layout.panels.p1.tabs.map((t) => t.id)).toEqual(['plain']);
+    const clearCalls = invokeSpy.mock.calls.filter(
+      (call: unknown[]) => call[0] === 'browser:clear-agent-tabs',
+    );
+    expect(clearCalls.map((call: unknown[]) => call[1])).toEqual(
+      expect.arrayContaining([{ agentId: 'agent-arch-1' }, { agentId: 'agent-arch-2' }]),
+    );
+    expect(clearCalls).toHaveLength(2);
   });
 
   it('clears archivedAt on an explicit null in the unarchive delta and restores Active', async () => {
@@ -8153,6 +8569,7 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       const agentId = 'agent-failed-1';
       const messageId = 'msg-failed-1';
       const streamId = 'stream-failed-1';
+      const turnId = 'turn-failed-1';
       const errorMsg = 'Agent spawn failed after 3 retries';
 
       appStore.dispatch(upsertSession({ id: agentId, name: 'Test Agent', workspaceId: WS }));
@@ -8175,14 +8592,77 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       handler!(
         notification('agent:failed', {
           agentId,
+          turnId,
           error: errorMsg,
           status: 'error',
         }),
       );
 
+      const failureTelemetry = reportStreamLifecycleSpy.mock.calls
+        .map(([diagnostic]) => diagnostic)
+        .filter((diagnostic) => diagnostic.event.startsWith('agent-failed'));
+      expect(failureTelemetry).toEqual([
+        expect.objectContaining({
+          event: 'agent-failed-received',
+          turnCorrelation: '66637f77eb5cec86',
+          turnIdCorrelation: '12c09885d6571b4e',
+          callbackResult: 'received',
+        }),
+        expect.objectContaining({
+          event: 'agent-failed-dispatched',
+          turnCorrelation: '66637f77eb5cec86',
+          turnIdCorrelation: '12c09885d6571b4e',
+          callbackResult: 'dispatched',
+        }),
+      ]);
+      expect(failureTelemetry[0]).not.toHaveProperty('storeStreamState');
+
       const chatState = appStore.state.chatState.byAgentId[agentId];
       expect(chatState).toBeDefined();
       expect(chatState.error).toBe(errorMsg);
+      expect(chatState.failureCorrelation).toEqual({
+        turnCorrelation: '66637f77eb5cec86',
+        turnIdCorrelation: '12c09885d6571b4e',
+      });
+    });
+
+    it('keeps turn-only correlation across receipt, dispatch, and store before output', async () => {
+      const agentId = 'agent-failed-preoutput';
+      const turnId = 'turn-failed-preoutput';
+      appStore.dispatch(upsertSession({ id: agentId, name: 'Test Agent', workspaceId: WS }));
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        notification('agent:failed', {
+          agentId,
+          turnId,
+          error: 'failed before output',
+          status: 'error',
+        }),
+      );
+
+      const failureTelemetry = reportStreamLifecycleSpy.mock.calls
+        .map(([diagnostic]) => diagnostic)
+        .filter((diagnostic) => diagnostic.event.startsWith('agent-failed'));
+      expect(failureTelemetry).toEqual([
+        expect.objectContaining({
+          event: 'agent-failed-received',
+          turnIdCorrelation: '1b48e6bf735176c9',
+          correlationBasis: 'turn',
+          callbackResult: 'received',
+        }),
+        expect.objectContaining({
+          event: 'agent-failed-dispatched',
+          turnIdCorrelation: '1b48e6bf735176c9',
+          correlationBasis: 'turn',
+          callbackResult: 'dispatched',
+        }),
+      ]);
+      expect(failureTelemetry[0]).not.toHaveProperty('turnCorrelation');
+      expect(appStore.state.chatState.byAgentId[agentId]?.failureCorrelation).toEqual({
+        turnIdCorrelation: '1b48e6bf735176c9',
+      });
     });
 
     it('sets default error message when agent:failed has no explicit error', async () => {

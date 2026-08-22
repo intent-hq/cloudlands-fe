@@ -15,7 +15,7 @@ import { app } from 'electron';
 import { LOCAL_CONNECTION_ID } from '../types/connections';
 
 /** Root folder name inside `app.getPath('userData')`. */
-export const WORKSPACE_STATE_FOLDER = 'workspace-state';
+const WORKSPACE_STATE_FOLDER = 'workspace-state';
 
 /**
  * Sanitize an id to a filesystem-safe token (host/port punctuation → `_`).

@@ -248,7 +248,6 @@ import { createTerminalRequested } from '$store/renderer/slices/terminals/termin
 import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
 import { commandPaletteNewFileRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { setStatsOverlayOpen } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-import { togglePanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 // Actions that dispatch Redux actions directly (no window event intermediary)
 const reduxActions = [
@@ -324,18 +323,6 @@ describe('CommandPalette new actions', () => {
     expect((await screen.findByRole('button', { name: /Attach files/i })).textContent).toContain(
       '⇧⌘A',
     );
-  });
-
-  it('toggles the global panel mode from a searched command', async () => {
-    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
-    const input = screen.getByRole('textbox');
-    await fireEvent.input(input, { target: { value: 'toggle panel open mode' } });
-
-    const button = await screen.findByRole('button', { name: /Toggle panel open mode/i });
-    expect(button.textContent).toContain('⌥⌘P');
-    await fireEvent.click(button);
-
-    expect(reduxDispatchMock).toHaveBeenCalledWith(togglePanelOpenMode());
   });
 
   it('opens HUD through the exact window IPC request and opens usage stats through Redux', async () => {

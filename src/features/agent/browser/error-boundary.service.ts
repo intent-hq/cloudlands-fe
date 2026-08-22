@@ -34,7 +34,7 @@ export interface ErrorBoundaryOptions {
 /**
  * Error boundary service for consistent error handling
  */
-export class ErrorBoundaryService {
+class ErrorBoundaryService {
   private static instance: ErrorBoundaryService;
 
   private constructor() {}

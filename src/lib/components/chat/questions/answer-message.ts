@@ -39,7 +39,7 @@ export function flattenAnswersToMessage(answers: readonly QuestionAnswer[]): str
 }
 
 /** `messageMetadata.type` marking a wizard answer message. */
-export const QUESTION_ANSWERS_METADATA_TYPE = 'question_answers';
+const QUESTION_ANSWERS_METADATA_TYPE = 'question_answers';
 
 /** The answer tag carried on the wizard's `agent.sendMessage` request. */
 export type QuestionAnswersMetadata = {

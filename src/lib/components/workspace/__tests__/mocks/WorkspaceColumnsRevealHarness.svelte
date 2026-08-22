@@ -5,9 +5,15 @@
     viewportWidth = 400,
     zoom = 2,
     workspaceKey = 'default',
-  }: { viewportWidth?: number; zoom?: number; workspaceKey?: string } = $props();
+    standalone = false,
+  }: {
+    viewportWidth?: number;
+    zoom?: number;
+    workspaceKey?: string;
+    standalone?: boolean;
+  } = $props();
 
-  type RuntimeProps = { onReady: () => void; workspaceKey: string };
+  type RuntimeProps = { onReady: () => void; workspaceKey: string; standalone: boolean };
   let Runtime = $state<Component<RuntimeProps> | null>(null);
   let ready = $state(false);
   let initializationError = $state('');
@@ -59,7 +65,7 @@
       {#snippet failed(error: unknown)}
         <output data-reveal-boundary-error>{formatInitializationError(error)}</output>
       {/snippet}
-      <Runtime onReady={handleReady} {workspaceKey} />
+      <Runtime onReady={handleReady} {workspaceKey} {standalone} />
     </svelte:boundary>
   {:else if !initializationError}
     <span data-reveal-initializing></span>

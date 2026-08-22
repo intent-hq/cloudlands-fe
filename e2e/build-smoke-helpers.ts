@@ -34,7 +34,7 @@ import { basename, join, resolve } from 'path';
  *
  * Throws if no binary is found.
  */
-export function findPackagedApp(): string {
+function findPackagedApp(): string {
   const envPath = process.env.PACKAGED_APP_PATH;
   if (envPath) {
     if (!existsSync(envPath)) {
@@ -252,7 +252,7 @@ export function createTempRepo(): { repoPath: string; cleanup: () => void } {
  *   - Deletes the remote branch
  *   - Removes the local directory
  */
-export function createTempRepoFromRemote(options?: {
+function createTempRepoFromRemote(options?: {
   /** GitHub repo in "owner/repo" format. Default: example-org/example-repo */
   repo?: string;
   /** PAT token for auth. Default: process.env.INTENT_SMOKE_TEST */
@@ -726,7 +726,7 @@ export async function sendFollowUpMessage(page: Page, message: string): Promise<
  * Some providers (e.g. opencode) may pause waiting for user approval.
  * The nudge tells the agent to proceed.
  */
-export async function waitForFileContentWithNudge(
+async function waitForFileContentWithNudge(
   page: Page,
   filePath: string,
   pattern: string | RegExp,
@@ -1236,7 +1236,7 @@ export async function switchProviderViaLocalStorage(page: Page, providerId: stri
  * @param page      Playwright Page with access to `window.electronAPI`
  * @param overrides Map of specialist ID → model ID (e.g. `{ 'spec-writer': 'codex:gpt-5.2-codex' }`)
  */
-export async function setSpecialistModelOverrides(
+async function setSpecialistModelOverrides(
   page: Page,
   overrides: Record<string, string>,
 ): Promise<void> {

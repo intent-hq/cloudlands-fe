@@ -620,20 +620,6 @@ export async function processMarkdownForDisplay(content: string): Promise<string
 }
 
 /**
- * Check if content appears to be HTML
- */
-export function isHTML(content: string): boolean {
-  return content.trim().startsWith('<');
-}
-
-/**
- * Check if content is effectively empty
- */
-export function isEmpty(content: string): boolean {
-  return !content || content.trim() === '' || content.trim() === '<p></p>';
-}
-
-/**
  * V3: Convert HTML comment anchors directly to span elements
  * This replaces the old meta tag approach which didn't work because marked strips meta tags.
  *

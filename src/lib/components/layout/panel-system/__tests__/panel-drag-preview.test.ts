@@ -64,14 +64,17 @@ describe('PanelDragPreview', () => {
     expect(snapshots.every((snapshot) => snapshot.inert)).toBe(true);
     expect(snapshots[0].querySelector('input')?.value).toBe('Source content state');
     expect(snapshots[0].style.animation).toBe('none');
-    expect(container.querySelector('[data-panel-layout-preview-dragged]')).toBe(
-      snapshots[0].parentElement?.parentElement,
+    const draggedPreview = container.querySelector<HTMLElement>(
+      '[data-panel-layout-preview-dragged]',
     );
-    const emphasis = container.querySelector('[data-panel-layout-preview-drag-emphasis]');
-    expect(emphasis).toBeTruthy();
-    expect(emphasis?.parentElement).toBe(
-      container.querySelector('[data-panel-layout-preview-dragged]'),
-    );
+    expect(draggedPreview).toBe(snapshots[0].parentElement?.parentElement);
+    expect(draggedPreview?.children).toHaveLength(1);
+    expect(container.querySelector('[data-panel-layout-preview-drag-emphasis]')).toBeNull();
+    expect(
+      [...(draggedPreview?.classList ?? [])].some(
+        (className) => className.startsWith('border') || className.startsWith('bg-'),
+      ),
+    ).toBe(false);
 
     source.remove();
     target.remove();

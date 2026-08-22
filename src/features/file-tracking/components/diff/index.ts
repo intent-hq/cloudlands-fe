@@ -24,11 +24,9 @@
  */
 
 export { default as DiffViewer } from './DiffViewer.svelte';
-export { default as DiffHeader } from './DiffHeader.svelte';
 export { default as PatchBlockContent } from './PatchBlockContent.svelte';
 export { default as TrackedChangeDiffViewer } from './TrackedChangeDiffViewer.svelte';
 
 // Legacy alias for backwards compatibility
-export { default as PureDiff } from './DiffViewer.svelte';
 
 export * from './types.js';

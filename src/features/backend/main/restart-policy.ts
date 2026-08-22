@@ -16,7 +16,7 @@ export interface RestartPolicyConfig {
   healthyUptimeMs: number;
 }
 
-export const DEFAULT_RESTART_POLICY_CONFIG: RestartPolicyConfig = {
+const DEFAULT_RESTART_POLICY_CONFIG: RestartPolicyConfig = {
   baseDelayMs: 1000,
   maxDelayMs: 30000,
   maxAttempts: 5,

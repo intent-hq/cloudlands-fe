@@ -13,21 +13,6 @@ import { m } from '$shared/paraglide/messages.js';
 
 const logger = new Logger({ category: 'change-converters' });
 
-// ============================================================================
-// Type Definitions
-// ============================================================================
-
-/**
- * Git status file information
- */
-export interface GitStatusFile {
-  path: string;
-  staged?: boolean;
-  additions?: number;
-  deletions?: number;
-  binary?: boolean;
-}
-
 /**
  * Extended event data structure for file changes
  */
@@ -251,96 +236,4 @@ export function eventToTrackedChange(event: WorkspaceEvent): TrackedChange[] {
     );
     return [];
   }
-}
-
-/**
- * Convert git status files to TrackedChange format
- * @param files - Array of git status files
- * @returns Array of tracked changes
- */
-export function gitStatusToTrackedChanges(files: GitStatusFile[]): TrackedChange[] {
-  if (!Array.isArray(files)) {
-    logger.warn('Invalid input to gitStatusToTrackedChanges', { files });
-    return [];
-  }
-
-  return files
-    .filter((file) => {
-      if (!file || !file.path) {
-        logger.warn('Skipping invalid git status file', { file });
-        return false;
-      }
-      return true;
-    })
-    .map((file, index) => ({
-      id: `git-${index}-${file.path}`,
-      file: file.path,
-      relativePath: file.path,
-      stage: file.staged ? ChangeStage.Staged : ChangeStage.Unstaged,
-      stats: {
-        additions: file.additions ?? 0,
-        deletions: file.deletions ?? 0,
-        binary: file.binary ?? false,
-      },
-      attribution: {
-        timestamp: Date.now(),
-        manual: true,
-      },
-    }));
-}
-
-/**
- * Convert staged/unstaged changes to TrackedChange format
- * @param staged - Array of staged file paths
- * @param unstaged - Array of unstaged file paths
- * @param getStats - Optional function to get file statistics
- * @returns Array of tracked changes with deduplication
- */
-export function stagedChangesToTrackedChanges(
-  staged: string[],
-  unstaged: string[],
-  getStats?: (path: string) => FileStats | undefined,
-): TrackedChange[] {
-  const changes: TrackedChange[] = [];
-  const processedPaths = new Set<string>();
-
-  /**
-   * Helper to create a change entry
-   */
-  const createChange = (path: string, stage: ChangeStage, index: number): TrackedChange => {
-    const stats = getStats?.(path) ?? { additions: 0, deletions: 0, binary: false };
-    return {
-      id: `${stage === ChangeStage.Staged ? 'staged' : 'unstaged'}-${index}-${path}`,
-      file: path,
-      relativePath: path,
-      stage,
-      stats,
-      attribution: {
-        timestamp: Date.now(),
-        manual: true,
-      },
-    };
-  };
-
-  // Add staged files
-  if (Array.isArray(staged)) {
-    staged.forEach((path, index) => {
-      if (path && !processedPaths.has(path)) {
-        changes.push(createChange(path, ChangeStage.Staged, index));
-        processedPaths.add(path);
-      }
-    });
-  }
-
-  // Add unstaged files (skip if already in staged)
-  if (Array.isArray(unstaged)) {
-    unstaged.forEach((path, index) => {
-      if (path && !processedPaths.has(path)) {
-        changes.push(createChange(path, ChangeStage.Unstaged, index));
-        processedPaths.add(path);
-      }
-    });
-  }
-
-  return changes;
 }

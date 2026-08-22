@@ -23,7 +23,7 @@
  * jitter burst that never commits a show can never flash the confirmation.
  */
 
-export const SCROLL_BUTTON_SHOW_HYSTERESIS_PX = 30;
+const SCROLL_BUTTON_SHOW_HYSTERESIS_PX = 30;
 export const SCROLL_BUTTON_SHOW_SETTLE_MS = 150;
 
 export interface ScrollBottomButtonVisibilityOptions {

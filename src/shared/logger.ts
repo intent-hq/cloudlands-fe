@@ -7,10 +7,45 @@
 
 import flatstr from 'flatstr';
 
-import {
-  getLogLevel,
-  LogLevel,
-} from './logging-config';
+import { getLogLevel, LogLevel } from './logging-config';
+
+type ConsoleStream = Pick<NodeJS.WriteStream, 'on'> & object;
+
+const CLOSED_CONSOLE_STREAM_CODES = new Set([
+  'EPIPE',
+  'ERR_STREAM_DESTROYED',
+  'ERR_STREAM_PREMATURE_CLOSE',
+  'ERR_STREAM_WRITE_AFTER_END',
+]);
+const protectedConsoleStreams = new WeakSet<object>();
+const unavailableConsoleStreams = new WeakSet<object>();
+
+export function isClosedConsoleStreamError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  return CLOSED_CONSOLE_STREAM_CODES.has(String((error as { code?: unknown }).code));
+}
+
+export function containConsoleStreamError(error: unknown, stream: ConsoleStream): boolean {
+  unavailableConsoleStreams.add(stream);
+  return isClosedConsoleStreamError(error);
+}
+
+export function isConsoleStreamAvailable(stream: ConsoleStream | undefined): boolean {
+  return !stream || !unavailableConsoleStreams.has(stream);
+}
+
+export function protectConsoleStream(stream: ConsoleStream | undefined): void {
+  if (!stream || protectedConsoleStreams.has(stream)) return;
+  protectedConsoleStreams.add(stream);
+  stream.on('error', (error: unknown) => {
+    if (!containConsoleStreamError(error, stream)) throw error;
+  });
+}
+
+if (typeof process !== 'undefined') {
+  protectConsoleStream(process.stdout);
+  protectConsoleStream(process.stderr);
+}
 
 // Re-export LogLevel for backward compatibility
 export { LogLevel };
@@ -161,6 +196,37 @@ export class Logger {
     }
   }
 
+  private writeToConsole(level: string, args: any[]): void {
+    const stream =
+      typeof process === 'undefined'
+        ? undefined
+        : level === 'WARN' || level === 'ERROR'
+          ? process.stderr
+          : process.stdout;
+    if (!isConsoleStreamAvailable(stream)) return;
+
+    try {
+      switch (level) {
+        case 'DEBUG':
+          console.debug(...args);
+          break;
+        case 'INFO':
+        case 'SUCCESS':
+          console.log(...args);
+          break;
+        case 'WARN':
+          console.warn(...args);
+          break;
+        case 'ERROR':
+          console.error(...args);
+          break;
+      }
+    } catch (error) {
+      if (!stream || !isClosedConsoleStreamError(error)) throw error;
+      containConsoleStreamError(error, stream);
+    }
+  }
+
   private consoleOutput(level: string, message: string, ...extra: any[]): void {
     if (!this.enableConsole) return;
 
@@ -191,18 +257,7 @@ export class Logger {
         return arg;
       });
       const args = [formatted, ...serializedExtras];
-      switch (level) {
-        case 'DEBUG':
-          console.debug(...args);
-          break;
-        case 'INFO':
-        case 'SUCCESS':
-          console.log(...args);
-          break;
-        case 'WARN':
-          console.warn(...args);
-          break;
-      }
+      this.writeToConsole(level, args);
       return;
     }
 
@@ -211,43 +266,28 @@ export class Logger {
     const processedExtras =
       level === 'ERROR'
         ? validExtras.map((arg) => {
-          if (arg instanceof Error) {
-            return arg;
-          }
-          if (typeof arg === 'object' && arg !== null) {
-            try {
-              return JSON.stringify(arg, null, 2);
-            } catch {
-              return this.serializeContext(arg);
+            if (arg instanceof Error) {
+              return arg;
             }
-          }
-          return arg;
-        })
+            if (typeof arg === 'object' && arg !== null) {
+              try {
+                return JSON.stringify(arg, null, 2);
+              } catch {
+                return this.serializeContext(arg);
+              }
+            }
+            return arg;
+          })
         : validExtras;
 
     const args: any[] = processedExtras.length > 0 ? [formatted, ...processedExtras] : [formatted];
 
-    switch (level) {
-      case 'DEBUG':
-        console.debug(...args);
-        break;
-      case 'INFO':
-        console.log(...args);
-        break;
-      case 'SUCCESS':
-        console.log(...args);
-        break;
-      case 'WARN':
-        console.warn(...args);
-        break;
-      case 'ERROR':
-        console.error(...args);
-        // If last arg looks like an Error, also print stack
-        const last = validExtras.length ? validExtras[validExtras.length - 1] : undefined;
-        if (last instanceof Error) {
-          console.error(last.stack || last.message);
-        }
-        break;
+    this.writeToConsole(level, args);
+    if (level === 'ERROR') {
+      const last = validExtras.length ? validExtras[validExtras.length - 1] : undefined;
+      if (last instanceof Error) {
+        this.writeToConsole(level, [last.stack || last.message]);
+      }
     }
   }
 

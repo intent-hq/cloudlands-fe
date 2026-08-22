@@ -71,7 +71,7 @@ import {
 const logger = createLogger('HardwareConsoleVoiceTranscription');
 
 /** Re-show cadence for the in-flight HUD label (< ACTION_HUD_HIDE_MS). */
-export const TRANSCRIBING_HUD_REFRESH_MS = 800;
+const TRANSCRIBING_HUD_REFRESH_MS = 800;
 
 /**
  * Insertion retry delays after a successful transcription: the composer
@@ -79,7 +79,7 @@ export const TRANSCRIBING_HUD_REFRESH_MS = 800;
  * insertion attempts trail each focus dispatch (immediate attempt first for
  * an already-focused composer).
  */
-export const TRANSCRIPT_INSERT_DELAYS_MS = [250, 800] as const;
+const TRANSCRIPT_INSERT_DELAYS_MS = [250, 800] as const;
 
 /** Shared id: transcription toasts replace one another instead of stacking. */
 const TRANSCRIPTION_TOAST_ID = 'hardware-console-voice-transcription';
@@ -302,7 +302,7 @@ function errorDetail(error: unknown): string | undefined {
  * insertion goes straight into the currently focused editable (the radial
  * prompt picker semantics). Resolves `true` when some attempt inserted.
  */
-export function insertTranscript(
+function insertTranscript(
   text: string,
   targetAgentId: string | null,
   deps: TranscriptionDeps = {},
@@ -335,7 +335,7 @@ export function insertTranscript(
  * land. Without a target agent the send goes to the currently focused
  * editable. Resolves `true` when some attempt reached a focused editable.
  */
-export function triggerComposerSend(
+function triggerComposerSend(
   targetAgentId: string | null,
   deps: TranscriptionDeps = {},
 ): Promise<boolean> {
@@ -368,7 +368,7 @@ export function triggerComposerSend(
  * immediate attempt would race the focus landing). Resolves `true` when
  * some attempt inserted.
  */
-export function insertTranscriptIntoPrompt(
+function insertTranscriptIntoPrompt(
   text: string,
   target: PromptDictationTarget,
   deps: TranscriptionDeps = {},

@@ -42,7 +42,7 @@ type AutoCommitAction = ReturnType<typeof setAutoCommitEnabled>;
  * main handler and the web-build daemon bridge), so a persistence failure
  * arrives as `{ success: false }` rather than a rejection — treat it the same.
  */
-export function* persistWorkspaceAutoCommitWorker(action: AutoCommitAction): SagaGenerator<void> {
+function* persistWorkspaceAutoCommitWorker(action: AutoCommitAction): SagaGenerator<void> {
   const [workspaceId] = action.payload;
   const autoCommitEnabled = yield* selectAutoCommitEnabled.effect(workspaceId);
 
@@ -113,7 +113,7 @@ const isAutoCommitToggleFor =
  * newer intent, so the stale read result is dropped; a wire failure keeps the
  * current display rather than fabricating a value.
  */
-export function* hydrateWorkspaceAutoCommitWorker(workspaceId: string): SagaGenerator<void> {
+function* hydrateWorkspaceAutoCommitWorker(workspaceId: string): SagaGenerator<void> {
   try {
     const { settings, toggled } = yield* race({
       settings: call([appClient.settings, appClient.settings.getWorkspaceSettings], workspaceId),

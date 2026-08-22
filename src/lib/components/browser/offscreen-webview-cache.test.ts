@@ -90,6 +90,59 @@ describe('updateOffscreenWebviewCache', () => {
     );
     expect(next.size).toBe(1);
   });
+
+  // Pinned (agent-owned) candidates stay mounted for the agent's lifetime
+  // (monorepo#2857): never evicted by the cap and not counted against it.
+  describe('pinned (agent-owned) candidates', () => {
+    const pinned = (tabId: string) => ({ ...candidate(tabId), pinned: true });
+
+    it('never evicts pinned candidates, even as the oldest entries', () => {
+      let cache = new Map<string, number>();
+      cache = updateOffscreenWebviewCache(cache, [pinned('owned')], 1_000, 2);
+      cache = updateOffscreenWebviewCache(
+        cache,
+        [pinned('owned'), candidate('b'), candidate('c')],
+        2_000,
+        2,
+      );
+      cache = updateOffscreenWebviewCache(
+        cache,
+        [pinned('owned'), candidate('b'), candidate('c'), candidate('d')],
+        3_000,
+        2,
+      );
+      expect(cache.has('owned')).toBe(true);
+    });
+
+    it('does not count pinned candidates against the unpinned cap', () => {
+      const next = updateOffscreenWebviewCache(
+        new Map(),
+        [pinned('o1'), pinned('o2'), candidate('a'), candidate('b')],
+        1_000,
+        2,
+      );
+      expect([...next.keys()].sort()).toEqual(['a', 'b', 'o1', 'o2']);
+    });
+
+    it('still evicts unpinned candidates beyond the cap alongside pinned ones', () => {
+      let cache = new Map<string, number>();
+      cache = updateOffscreenWebviewCache(cache, [candidate('old')], 1_000, 2);
+      cache = updateOffscreenWebviewCache(
+        cache,
+        [candidate('old'), pinned('owned'), candidate('mid')],
+        2_000,
+        2,
+      );
+      cache = updateOffscreenWebviewCache(
+        cache,
+        [candidate('old'), pinned('owned'), candidate('mid'), candidate('new')],
+        3_000,
+        2,
+      );
+      expect(cache.has('old')).toBe(false);
+      expect([...cache.keys()]).toEqual(['owned', 'mid', 'new']);
+    });
+  });
 });
 
 describe('areOffscreenWebviewCachesEqual', () => {

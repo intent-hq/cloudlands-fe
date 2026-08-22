@@ -42,12 +42,6 @@ let fallbackInvokeConfigured = false;
  * bug unless proven otherwise.
  */
 export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<string, unknown>([
-  // Fire-and-forget renderer log persistence sink. The renderer logger catches
-  // flush failures and RE-QUEUES the batch for retry, so rejecting here would
-  // grow the pending-log buffer unboundedly and spam console.error on every
-  // flush. There is no daemon-side log sink yet (P3-1.5 retirement candidate);
-  // resolving undefined keeps the logger's in-memory behavior harmless.
-  ['log:persist-renderer-logs', undefined],
   // Legacy notes-on-disk workspace root (formerly resolved from assumed local
   // roots, used to build `.workspace/notes/<id>.md` paths). The daemon owns notes in
   // SQLite (PROTOCOL §5.2) — this build has no on-disk notes mirror, so there
@@ -87,23 +81,17 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
     },
   ],
 
-  // Electron app version read for analytics common properties
-  // (buildStaticCommonProperties, fired on startup via hooks.client.ts). The
-  // browser build has no packaged app version and no daemon surface for one;
-  // the caller wraps the invoke in try/catch and folds absence to 'unknown'.
-  ['app:get-version', undefined],
-  // Electron native window-chrome state pushed by boot-path $effects: the
-  // native window title (WindowTitleBar SET_TITLE) and browser-panel focus
-  // tracking for menu shortcuts (PanelLayout SET_BROWSER_FOCUSED). There is
-  // no window chrome in this build and no daemon surface for it; every caller
-  // is fire-and-forget with `.catch(() => {})`, so resolving undefined keeps
-  // startup quiet.
-  // (window:open-new is bridged to window.open in misc-ui-events-seeder;
-  // window:set-in-workspace and window:set-open-workspace-tabs are forwarded
-  // to the real preload bridge in window-state-bridge-seeder so main-process
-  // window-workspace tracking works in the packaged app.)
-  ['window:set-browser-focused', undefined],
-  ['window:set-title', undefined],
+  // (app:get-version, window:set-title, and window:set-browser-focused are
+  // forwarded to the real preload bridge in window-state-bridge-seeder.ts —
+  // the packaged app HAS live main-process handlers for all three in
+  // features/system/main/system.ipc.ts, and allowlisted absences here
+  // silently suppressed them: the native window title never updated and main
+  // never learned browser-panel focus for menu-shortcut gating;
+  // intent-hq/monorepo#2927. window:open-new is bridged to window.open in
+  // misc-ui-events-seeder; window:set-in-workspace and
+  // window:set-open-workspace-tabs are likewise forwarded in
+  // window-state-bridge-seeder so main-process window-workspace tracking
+  // works in the packaged app.)
   // Per-agent auto-commit status badges (ChatPanel refreshAutoCommitStatuses).
   // The daemon auto-commits via git.agentCommit (PROTOCOL §5.6) but exposes no
   // per-agent commit-status-history read; the caller requires
@@ -147,14 +135,14 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
     'remote-fs:exists',
     { success: false, error: 'Remote SSH file access is not available in this build' },
   ],
-  // Electron-main CDP plumbing: EmbeddedBrowser's webContents registration
-  // (caller `.catch`es and logs) and the browser IPC saga's response arm for
-  // the browser:list-tabs-request event. The saga only subscribes in Electron
-  // (isElectron() gate) and the request never fires in this build, so the
-  // invoke is statically present but unreachable.
-  ['browser:register-tab', undefined],
-  ['browser:report-tab-bounds', undefined],
-  ['browser:list-tabs-response', undefined],
+  // (browser:list-tabs-response / browser:register-tab /
+  // browser:report-tab-bounds / browser:clear-agent-tabs are forwarded to the
+  // real preload bridge in browser-ipc-bridge-seeder.ts — the packaged app's
+  // main process DOES fire browser:list-tabs-request, and an allowlisted
+  // absence here swallowed the saga's reply so agent listTabs/closeTab/dedupe
+  // failed persistently; intent-hq/monorepo#2926. clear-agent-tabs (owned-tab
+  // destruction, monorepo#2857) rides the same routed-invoke path and would be
+  // swallowed the same way.)
   // Chat-input context enrichment (context-api getWorkspaceInfo). The caller
   // folds an absent info payload to the Workspace object it already holds.
   ['workspace:get-info', undefined],

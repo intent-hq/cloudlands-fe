@@ -62,7 +62,7 @@ export async function createTestWorkspace(
 /**
  * Create a test agent
  */
-export async function createTestAgent(
+async function createTestAgent(
   page: Page,
   name: string,
   model: string = 'sonnet4.5',
@@ -95,21 +95,21 @@ export async function sendMessage(
 /**
  * Wait for agent to start streaming
  */
-export async function waitForStreaming(page: Page, timeout: number = 5000): Promise<void> {
+async function waitForStreaming(page: Page, timeout: number = 5000): Promise<void> {
   await page.waitForSelector('[data-streaming="true"]', { timeout });
 }
 
 /**
  * Wait for agent to finish streaming
  */
-export async function waitForStreamingComplete(page: Page, timeout: number = 30000): Promise<void> {
+async function waitForStreamingComplete(page: Page, timeout: number = 30000): Promise<void> {
   await page.waitForSelector('[data-streaming="false"]', { timeout });
 }
 
 /**
  * Get all messages from the current agent
  */
-export async function getMessages(page: Page): Promise<string[]> {
+async function getMessages(page: Page): Promise<string[]> {
   const messages = await page.locator('[data-message-id]').allTextContents();
   return messages;
 }
@@ -117,7 +117,7 @@ export async function getMessages(page: Page): Promise<string[]> {
 /**
  * Switch to a specific agent by name
  */
-export async function switchToAgent(page: Page, agentName: string): Promise<void> {
+async function switchToAgent(page: Page, agentName: string): Promise<void> {
   const agentItem = page.locator('[data-testid="agent-list-item"]').filter({ hasText: agentName });
   await agentItem.click();
   await page.waitForTimeout(200); // Wait for UI to update
@@ -126,17 +126,18 @@ export async function switchToAgent(page: Page, agentName: string): Promise<void
 /**
  * Get performance metrics from the app
  */
-export async function getPerformanceMetrics(page: Page): Promise<any> {
-  return await page.evaluate(() =>
-    // @ts-expect-error - Electron API not typed in test context
-    window.electronAPI?.getPerformanceMetrics?.() || {},
+async function getPerformanceMetrics(page: Page): Promise<any> {
+  return await page.evaluate(
+    () =>
+      // @ts-expect-error - Electron API not typed in test context
+      window.electronAPI?.getPerformanceMetrics?.() || {},
   );
 }
 
 /**
  * Simulate network conditions
  */
-export async function simulateNetworkCondition(
+async function simulateNetworkCondition(
   page: Page,
   condition: 'offline' | 'slow' | 'fast',
 ): Promise<void> {
@@ -171,7 +172,7 @@ export async function simulateNetworkCondition(
 /**
  * Clean up test workspace
  */
-export async function cleanupTestWorkspace(workspacePath: string): Promise<void> {
+async function cleanupTestWorkspace(workspacePath: string): Promise<void> {
   try {
     await fs.rm(workspacePath, { recursive: true, force: true });
   } catch (e) {
@@ -182,7 +183,7 @@ export async function cleanupTestWorkspace(workspacePath: string): Promise<void>
 /**
  * Take a screenshot with metadata
  */
-export async function takeScreenshot(
+async function takeScreenshot(
   page: Page,
   name: string,
   metadata?: Record<string, any>,
@@ -206,7 +207,7 @@ export async function takeScreenshot(
 /**
  * Wait for a specific number of agents to be streaming
  */
-export async function waitForConcurrentStreaming(
+async function waitForConcurrentStreaming(
   page: Page,
   count: number,
   timeout: number = 10000,
@@ -224,7 +225,7 @@ export async function waitForConcurrentStreaming(
 /**
  * Get memory usage from the app
  */
-export async function getMemoryUsage(page: Page): Promise<number> {
+async function getMemoryUsage(page: Page): Promise<number> {
   return await page.evaluate(() => {
     // @ts-expect-error - Electron API not typed in test context
     if (window.performance && window.performance.memory) {
@@ -238,7 +239,7 @@ export async function getMemoryUsage(page: Page): Promise<number> {
 /**
  * Simulate agent crash
  */
-export async function simulateAgentCrash(page: Page, agentId?: string): Promise<void> {
+async function simulateAgentCrash(page: Page, agentId?: string): Promise<void> {
   await page.evaluate((id) => {
     // @ts-expect-error - Electron API not typed in test context
     window.electronAPI?.simulateAgentCrash?.(id);
@@ -248,14 +249,14 @@ export async function simulateAgentCrash(page: Page, agentId?: string): Promise<
 /**
  * Wait for error recovery
  */
-export async function waitForErrorRecovery(page: Page, timeout: number = 10000): Promise<void> {
+async function waitForErrorRecovery(page: Page, timeout: number = 10000): Promise<void> {
   await page.waitForSelector('[data-testid="agent-recovered"]', { timeout });
 }
 
 /**
  * Create test files in workspace
  */
-export async function createTestFiles(
+async function createTestFiles(
   page: Page,
   files: Array<{ name: string; content: string }>,
 ): Promise<void> {
@@ -271,7 +272,7 @@ export async function createTestFiles(
 /**
  * Measure operation time
  */
-export async function measureTime<T>(
+async function measureTime<T>(
   operation: () => Promise<T>,
 ): Promise<{ result: T; duration: number }> {
   const start = Date.now();
@@ -283,7 +284,7 @@ export async function measureTime<T>(
 /**
  * Assert performance threshold
  */
-export function assertPerformance(actualTime: number, maxTime: number, operation: string): void {
+function assertPerformance(actualTime: number, maxTime: number, operation: string): void {
   if (actualTime > maxTime) {
     throw new Error(
       `Performance threshold exceeded for ${operation}: ${actualTime}ms > ${maxTime}ms`,
@@ -302,7 +303,7 @@ export async function getAgentCount(page: Page): Promise<number> {
 /**
  * Check if agent is streaming
  */
-export async function isAgentStreaming(page: Page, agentName?: string): Promise<boolean> {
+async function isAgentStreaming(page: Page, agentName?: string): Promise<boolean> {
   if (agentName) {
     const agent = page.locator('[data-testid="agent-list-item"]').filter({ hasText: agentName });
     const streaming = await agent.getAttribute('data-agent-streaming');

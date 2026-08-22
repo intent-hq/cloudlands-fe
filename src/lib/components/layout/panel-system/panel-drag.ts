@@ -19,6 +19,20 @@ const PLACEMENT_HYSTERESIS = 0.04;
 const MIN_LAYOUT_EDGE_SIZE = 40;
 const MAX_LAYOUT_EDGE_SIZE = 80;
 
+export function getPanelColumnDragPlacement(
+  clientX: number,
+  rect: Pick<DOMRect, 'left' | 'width'>,
+  previous: PanelDragPlacement | null = null,
+): 'before' | 'after' {
+  const xRatio = Math.max(
+    0,
+    Math.min(1, rect.width > 0 ? (clientX - rect.left) / rect.width : 0.5),
+  );
+  if (previous === 'before' && xRatio <= 0.5 + PLACEMENT_HYSTERESIS) return 'before';
+  if (previous === 'after' && xRatio >= 0.5 - PLACEMENT_HYSTERESIS) return 'after';
+  return xRatio < 0.5 ? 'before' : 'after';
+}
+
 export function getPanelDragPlacement(
   clientX: number,
   clientY: number,

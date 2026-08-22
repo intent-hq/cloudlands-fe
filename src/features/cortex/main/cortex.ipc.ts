@@ -10,20 +10,20 @@ import { ipcMain } from 'electron';
 import { CORTEX_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { getProviderModelsEnvelope } from '../../../main/utils/daemon-model-catalog';
-import { resolveCortexCommand } from './cortex-resolver';
+import { getCortexPath } from './cortex-resolver';
 
 const logger = new Logger('CortexIPC');
 
 export function setupCortexIPC() {
-  // Check if cortex-acp is available
+  // Check if the cortex CLI is available
   ipcMain.handle(CORTEX_CHANNELS.CHECK_AVAILABILITY, async () => {
     try {
-      logger.debug('Checking cortex-acp availability');
-      const resolved = await resolveCortexCommand();
-      const isAvailable = !!resolved;
+      logger.debug('Checking cortex availability');
+      const cortexPath = await getCortexPath();
+      const isAvailable = !!cortexPath;
       logger.info('Cortex availability check', {
         isAvailable,
-        command: resolved?.command,
+        command: cortexPath ?? undefined,
       });
       return { success: true, available: isAvailable };
     } catch (error) {

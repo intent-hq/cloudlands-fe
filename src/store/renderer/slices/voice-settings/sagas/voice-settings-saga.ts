@@ -73,7 +73,7 @@ function* hydrateVoiceEngineWorker(): SagaGenerator<void> {
   yield* put(setVoiceEngineValue(yield* call(loadVoiceEnginePreference)));
 }
 
-export function* refreshVoiceInputDevicesWorker(): SagaGenerator<void> {
+function* refreshVoiceInputDevicesWorker(): SagaGenerator<void> {
   if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return;
   try {
     const devices = yield* call([navigator.mediaDevices, navigator.mediaDevices.enumerateDevices]);
@@ -94,7 +94,7 @@ function* hydrateVoiceInputDeviceWorker(): SagaGenerator<void> {
   yield* call(refreshVoiceInputDevicesWorker);
 }
 
-export function* initializeVoiceSettingsWorker(): SagaGenerator<void> {
+function* initializeVoiceSettingsWorker(): SagaGenerator<void> {
   yield* all([call(hydrateVoiceEngineWorker), call(hydrateVoiceInputDeviceWorker)]);
   try {
     const snapshot = yield* call(loadVoiceSettings);

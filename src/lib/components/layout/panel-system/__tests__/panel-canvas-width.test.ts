@@ -24,18 +24,17 @@ describe('panel canvas width', () => {
       columns: 2,
       expected: { defaultWidth: 1600, panelWidths: [796, 796], overflows: false },
     },
-    // Viewport narrower than preferred: canvas overflows to preferred width
-    // (horizontally scrollable in tab mode).
+    // Narrow viewports keep every selected column onscreen.
     {
       viewport: 800,
       columns: 2,
-      expected: { defaultWidth: 1008, panelWidths: [500, 500], overflows: true },
+      expected: { defaultWidth: 800, panelWidths: [396, 396], overflows: false },
     },
-    // Very narrow viewport still resolves to the preferred intrinsic width.
+    // Very narrow viewports still divide the gutter-exclusive width equally.
     {
       viewport: 360,
       columns: 2,
-      expected: { defaultWidth: 1008, panelWidths: [500, 500], overflows: true },
+      expected: { defaultWidth: 360, panelWidths: [176, 176], overflows: false },
     },
     // Zero-viewport (pre-measurement) falls back to preferred width.
     {
@@ -63,7 +62,7 @@ describe('panel canvas width', () => {
   it('preserves explicit widths in viewport and content sizing', () => {
     expect(getPanelCanvasWidths(1200, 2, 'viewport', 1080)).toEqual({
       defaultWidth: 1080,
-      resetWidth: 1008,
+      resetWidth: 1200,
       minWidth: 280,
       panelWidths: [536, 536],
       overflows: false,
@@ -83,26 +82,26 @@ describe('panel canvas width', () => {
     expect(getPanelCanvasWidths(480, [720], 'viewport', 500, 'explicit').defaultWidth).toBe(500);
   });
 
-  it('caps the intrinsic default on ultrawide viewports and shrinks it responsively', () => {
+  it('bypasses intrinsic tiers in automatic viewport mode', () => {
     expect(getPanelCanvasWidths(3440, [720, 700], 'viewport', 1428, 'intrinsic')).toMatchObject({
-      defaultWidth: 1428,
-      panelWidths: [720, 700],
+      defaultWidth: 3440,
+      panelWidths: [1716, 1716],
       overflows: false,
     });
     expect(getPanelCanvasWidths(1000, [720, 700], 'viewport', 1428, 'intrinsic')).toMatchObject({
       defaultWidth: 1000,
-      panelWidths: [expect.closeTo(502.99, 2), expect.closeTo(489.01, 2)],
+      panelWidths: [496, 496],
       overflows: false,
     });
   });
 
-  it('uses per-column intrinsic widths for browser and non-browser panels', () => {
+  it('ignores per-content tiers for automatic viewport columns', () => {
     expect(getPanelCanvasWidths(800, [500, 900], 'viewport', null)).toEqual({
-      defaultWidth: 1408,
-      resetWidth: 1408,
+      defaultWidth: 800,
+      resetWidth: 800,
       minWidth: 280,
-      panelWidths: [500, 900],
-      overflows: true,
+      panelWidths: [396, 396],
+      overflows: false,
     });
   });
 
@@ -118,9 +117,9 @@ describe('panel canvas width', () => {
     expect(getPanelPreferredWidths([500, 700], [25, 75], 1208, null)).toEqual([500, 700]);
   });
 
-  it('keeps panel-type defaults as the reset target after explicit resizing', () => {
+  it('resets explicit viewport sizing to the current automatic canvas', () => {
     expect(
       getPanelCanvasWidths(800, [300, 900], 'viewport', null, null, [500, 700]).resetWidth,
-    ).toBe(1208);
+    ).toBe(800);
   });
 });

@@ -54,14 +54,6 @@ export type BlobShape = {
   depth: number;
 };
 
-export interface EcosystemVisualizerProps {
-  data: FileNode;
-  width?: number;
-  height?: number;
-  filesChanged?: string[];
-  onFileClick?: (path: string) => void;
-}
-
 /**
  * Visualization settings that can be tweaked
  */

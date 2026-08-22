@@ -143,7 +143,7 @@ function isWorkspaceComplete(workspace: Workspace): boolean {
  * idle. `unread` is the backend-owned dismissible attention flag
  * (`workspace.attention === 'unread'`, PROTOCOL §5.1).
  */
-export function deriveAgentKeyLedState(
+function deriveAgentKeyLedState(
   workspace: Workspace,
   agents: readonly StoredAgentSession[],
 ): AgentKeyLedState {

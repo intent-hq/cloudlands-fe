@@ -7,16 +7,12 @@
    * Supports drag-and-drop for cross-panel tab movement.
    */
 
-  import Fa from 'svelte-fa';
-  import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
   import type {
     PanelState,
     PanelTab,
   } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { cn } from '$lib/utils';
-  import { Button } from '$lib/components/ui/button';
-  import { Tooltip } from '$lib/components/ui/tooltip';
   import PanelTabBar from './PanelTabBar.svelte';
   import PanelContentRenderer from './PanelContentRenderer.svelte';
   import PanelEmptyState from './PanelEmptyState.svelte';
@@ -39,20 +35,22 @@
     PANEL_DRAG_MIME,
     clearDraggedPanelState,
     getDraggedPanelId,
-    getPanelDragPlacement,
+    getPanelColumnDragPlacement,
     type PanelDragPlacement,
   } from './panel-drag';
   import { store as appStore } from '$store/renderer/store';
   import { endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { markPanelTouched } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
-  export type DropZone = 'top' | 'bottom' | 'left' | 'right' | 'center';
+  export type DropZone = 'left' | 'right' | 'center';
 
   interface Props {
     panel: PanelState;
     isFocused?: boolean;
     workspaceId: string;
     layoutId: string;
+    availableCanvasWidth?: number;
+    isRightmostPanel?: boolean;
     contained?: boolean;
     onFocus?: () => void;
     onTabClick?: (tabId: string) => void;
@@ -72,6 +70,8 @@
     onTabMoveToPanel?: (tabId: string, fromPanelId: string, insertIndex?: number) => void;
     /** Handler for dropping a whole panel onto this panel (reorder) */
     onPanelMove?: (draggedPanelId: string, position: PanelDragPlacement) => void;
+    onMoveLeft?: () => void;
+    onMoveRight?: () => void;
     onPanelMovePreview?: (
       draggedPanelId: string,
       targetPanelId: string,
@@ -88,8 +88,6 @@
     emptyState?: Snippet;
     /** Split panel horizontally (side by side) */
     onSplitHorizontal?: () => void;
-    /** Split panel vertically (top and bottom) */
-    onSplitVertical?: () => void;
   }
 
   let {
@@ -97,6 +95,8 @@
     isFocused = false,
     workspaceId,
     layoutId,
+    availableCanvasWidth,
+    isRightmostPanel = false,
     contained = false,
     onFocus,
     onTabClick,
@@ -112,6 +112,8 @@
     onTabDrop,
     onTabMoveToPanel,
     onPanelMove,
+    onMoveLeft,
+    onMoveRight,
     onPanelMovePreview,
     onTabRename,
     onCreateAgent,
@@ -121,7 +123,6 @@
     onOpenBrowser,
     emptyState,
     onSplitHorizontal,
-    onSplitVertical,
   }: Props = $props();
 
   // Create header context for content components to register their actions
@@ -320,9 +321,8 @@
 
   function getPanelPlacement(e: DragEvent): PanelDragPlacement {
     if (!panelRef) return 'after';
-    return getPanelDragPlacement(
+    return getPanelColumnDragPlacement(
       e.clientX,
-      e.clientY,
       panelRef.getBoundingClientRect(),
       panelDropPlacement,
     );
@@ -470,24 +470,6 @@
   >
     <!-- Drop zones overlay (positioned below tab bar) -->
     <PanelDropZones activeZone={activeDropZone} isActive={isDragOver} />
-    {#if !activeTab && onClosePanel}
-      <div class="absolute right-2 top-2 z-20" data-empty-panel-close>
-        <Tooltip content={m.layout_panel_closePanel_ariaLabel()} side="bottom" delayDuration={300}>
-          <Button
-            variant="ghost-light"
-            size="icon-xs"
-            class="cursor-pointer opacity-50 hover:opacity-100 focus-visible:opacity-100"
-            onclick={(event) => {
-              event.stopPropagation();
-              onClosePanel?.();
-            }}
-            aria-label={m.layout_panel_closePanel_ariaLabel()}
-          >
-            <Fa icon={faXmark} size="xs" />
-          </Button>
-        </Tooltip>
-      </div>
-    {/if}
     <!-- Tab Bar (shows group label and actions when focused) -->
     <div
       data-panel-header
@@ -503,15 +485,18 @@
         tabs={panel.tabs}
         activeTabId={panel.activeTabId}
         panelId={panel.id}
-        pinned={panel.pinned === true}
         {workspaceId}
         {layoutId}
+        {availableCanvasWidth}
+        {isRightmostPanel}
         {isFocused}
         contentActions={headerActions.current}
         {onTabClick}
         {onTabClose}
         {onTabReorder}
         {onTabMoveToPanel}
+        {onMoveLeft}
+        {onMoveRight}
         {onCloseOtherTabs}
         {onCloseTabsToRight}
         {onCloseAllTabs}
@@ -526,7 +511,6 @@
         {onCreateTerminal}
         {onOpenBrowser}
         {onSplitHorizontal}
-        {onSplitVertical}
       />
     </div>
 

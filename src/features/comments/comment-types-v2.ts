@@ -54,14 +54,14 @@ interface BaseComment {
 /**
  * Regular comment - no special fields
  */
-export interface RegularComment extends BaseComment {
+interface RegularComment extends BaseComment {
   type: 'comment';
 }
 
 /**
  * Suggestion comment - requires suggestionDiff
  */
-export interface SuggestionComment extends BaseComment {
+interface SuggestionComment extends BaseComment {
   type: 'suggestion';
   suggestionDiff: {
     original: string;
@@ -72,21 +72,21 @@ export interface SuggestionComment extends BaseComment {
 /**
  * Change request comment - no special fields currently
  */
-export interface ChangeRequestComment extends BaseComment {
+interface ChangeRequestComment extends BaseComment {
   type: 'change-request';
 }
 
 /**
  * Question comment - no special fields currently
  */
-export interface QuestionComment extends BaseComment {
+interface QuestionComment extends BaseComment {
   type: 'question';
 }
 
 /**
  * Session comment - requires agentId
  */
-export interface SessionComment extends BaseComment {
+interface SessionComment extends BaseComment {
   type: 'session';
   agentId: string; // Required for session comments
 }
@@ -96,33 +96,12 @@ export interface SessionComment extends BaseComment {
  * TypeScript will enforce that type-specific fields are present based on the 'type' field
  */
 export type CommentV2 =
-  | RegularComment
-  | SuggestionComment
-  | ChangeRequestComment
-  | QuestionComment
-  | SessionComment;
-
-/**
- * Type guard to check if a comment is a session comment
- */
-export function isSessionComment(comment: CommentV2): comment is SessionComment {
-  return comment.type === 'session';
-}
-
-/**
- * Type guard to check if a comment is a suggestion comment
- */
-export function isSuggestionComment(comment: CommentV2): comment is SuggestionComment {
-  return comment.type === 'suggestion';
-}
+  RegularComment | SuggestionComment | ChangeRequestComment | QuestionComment | SessionComment;
 
 /**
  * Helper to create a session comment with type safety
  */
-export function createSessionComment(
-  base: Omit<BaseComment, 'type'>,
-  agentId: string,
-): SessionComment {
+function createSessionComment(base: Omit<BaseComment, 'type'>, agentId: string): SessionComment {
   return {
     ...base,
     type: 'session',
@@ -133,7 +112,7 @@ export function createSessionComment(
 /**
  * Helper to create a suggestion comment with type safety
  */
-export function createSuggestionComment(
+function createSuggestionComment(
   base: Omit<BaseComment, 'type'>,
   suggestionDiff: { original: string; proposed: string },
 ): SuggestionComment {
@@ -161,11 +140,11 @@ export function convertBackendCommentToV2(
   // Normalize reactions format
   const reactions = backendComment.reactions
     ? Object.fromEntries(
-      Object.entries(backendComment.reactions).map(([k, v]) => [
-        k,
-        Array.isArray(v) ? (v as string[]) : [v as string],
-      ]),
-    )
+        Object.entries(backendComment.reactions).map(([k, v]) => [
+          k,
+          Array.isArray(v) ? (v as string[]) : [v as string],
+        ]),
+      )
     : undefined;
 
   const base = {

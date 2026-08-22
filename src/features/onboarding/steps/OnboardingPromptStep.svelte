@@ -218,6 +218,27 @@
     return onboardingRichTextarea;
   }
 
+  /**
+   * Snapshot of the picker's effective default selection for the submit-time
+   * default commit (monorepo#3044): the daemon resolvedModel preview when the
+   * user never overrode it (undefined ⇒ "Provider default"), plus the provider
+   * context it was resolved under so the caller can detect a mismatch with the
+   * create's resolved provider. Unlike the displayed `coordinatorDefaultModel`,
+   * this never uses the `$specialists$` fallback — that view was resolved in
+   * the daemon-default-provider context, so certifying it for
+   * `onboardingProvider` could persist another provider's model when the user
+   * submits before the provider-specific fetch lands.
+   */
+  export function getEffectiveDefaultModel(): {
+    model: string | undefined;
+    provider: string;
+  } {
+    return {
+      model: resolvedModelsByProvider[onboardingProvider]?.[COORDINATOR_SPECIALIST_ID],
+      provider: onboardingProvider,
+    };
+  }
+
   /** Open the file input dialog. */
   function handleFileSelect() {
     onboardingFileInput?.click();

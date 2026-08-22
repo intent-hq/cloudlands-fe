@@ -1,15 +1,8 @@
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import type {
-  DeepLinksState,
-} from "./deep-links-types";
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import type { DeepLinksState } from './deep-links-types';
 
 // Re-export types for backward compatibility
-export type {
-  DeepLinksState,
-  DeepLinkActionPayload,
-  HomePageInitializerRequest,
-  HomePageInitializerRequestPayload,
-} from "./deep-links-types";
+export type { DeepLinksState } from './deep-links-types';
 
 export const initialState: DeepLinksState = {
   homePageInitializerRequest: null,

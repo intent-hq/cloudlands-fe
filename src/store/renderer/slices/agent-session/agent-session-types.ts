@@ -1,7 +1,7 @@
-import type { AgentSession, AgentMessage } from "$shared/types";
-import type { UnifiedAgentConfig } from "$shared/types/agent.types";
+import type { AgentSession, AgentMessage } from '$shared/types';
+import type { UnifiedAgentConfig } from '$shared/types/agent.types';
 
-export interface AgentSessionSendContextItem {
+interface AgentSessionSendContextItem {
   id: string;
   type: string;
   label?: string;
@@ -15,7 +15,7 @@ export interface AgentSessionSendContextItem {
   fileMimeType?: string;
 }
 
-export interface AgentSessionContextReference {
+interface AgentSessionContextReference {
   type: string;
   filePath?: string;
   noteId?: string;
@@ -32,13 +32,13 @@ export interface AgentSessionSendMessageOptions {
   agentId?: string;
   contextReferences?: AgentSessionContextReference[];
   /** Image content blocks riding the message (PROTOCOL §5.5) — plain base64. */
-  imageBlocks?: Array<{ type: "image"; data: string; mimeType: string }>;
+  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
   /**
    * Attachment-reference file blocks riding the message (PROTOCOL §5.5) —
    * registry UUID + metadata only, never bytes.
    */
   fileBlocks?: Array<{
-    type: "file";
+    type: 'file';
     attachmentId: string;
     fileName: string;
     mimeType?: string;
@@ -62,8 +62,8 @@ export interface AgentSessionForkOptions {
   selectedText?: string;
 }
 
-export type AgentSessionLaunchConfig = Omit<UnifiedAgentConfig, "workspaceId"> & {
-  workspaceId?: UnifiedAgentConfig["workspaceId"];
+export type AgentSessionLaunchConfig = Omit<UnifiedAgentConfig, 'workspaceId'> & {
+  workspaceId?: UnifiedAgentConfig['workspaceId'];
 };
 
 export interface AgentSessionLaunchOptions {
@@ -83,7 +83,7 @@ export interface AgentSessionLaunchOptions {
  * ordered `AgentMessage[]` consumed by UI, sagas, persistence payloads, and
  * retry/regenerate flows.
  */
-export type StoredAgentSession = Omit<AgentSession, "messages"> & {
+export type StoredAgentSession = Omit<AgentSession, 'messages'> & {
   messages: AgentMessage[];
   /**
    * FE-owned sticky turn-liveness. Set by the event fold when a live running
@@ -172,4 +172,3 @@ export interface AgentSessionState {
    */
   historySegmentsByAgentId?: Record<string, AgentHistorySegment>;
 }
-

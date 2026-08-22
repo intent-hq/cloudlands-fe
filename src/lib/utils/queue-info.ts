@@ -15,22 +15,46 @@ export interface QueueInfo {
   queuedAt: string;
   /** Milliseconds the message waited before delivery (clamped to >= 0). */
   waitedMs: number;
+  /**
+   * Shared id stamped on every row drained in one multi-message batch flush;
+   * absent on single-message deliveries and on rows from older daemons.
+   */
+  batchId?: string;
 }
 
 /**
  * Extract queued-delivery info from an opaque message metadata object.
  * Returns `null` unless `metadata.queueInfo` carries a parseable `queuedAt`
- * string and a finite numeric `waitedMs`.
+ * string and a finite numeric `waitedMs`. `batchId` is additive: it is
+ * included only when it is a non-empty string, and a malformed value never
+ * invalidates the rest of the queueInfo.
  */
 export function getQueueInfo(metadata: unknown): QueueInfo | null {
   if (!metadata || typeof metadata !== 'object') return null;
   const queueInfo = (metadata as Record<string, unknown>).queueInfo;
   if (!queueInfo || typeof queueInfo !== 'object') return null;
-  const { queuedAt, waitedMs } = queueInfo as Record<string, unknown>;
+  const { queuedAt, waitedMs, batchId } = queueInfo as Record<string, unknown>;
   if (typeof queuedAt !== 'string' || !queuedAt.trim()) return null;
   if (typeof waitedMs !== 'number' || !Number.isFinite(waitedMs)) return null;
   if (Number.isNaN(new Date(queuedAt).getTime())) return null;
-  return { queuedAt, waitedMs: Math.max(0, waitedMs) };
+  const info: QueueInfo = { queuedAt, waitedMs: Math.max(0, waitedMs) };
+  if (typeof batchId === 'string' && batchId.trim()) info.batchId = batchId;
+  return info;
+}
+
+/**
+ * Extract just the batch id from an opaque message metadata object. Batch
+ * entries whose wait fell below the 5-second annotation threshold carry a
+ * `queueInfo` containing ONLY `batchId` (no `queuedAt`/`waitedMs`, PROTOCOL.md
+ * §5.5), so this deliberately skips the wait-field validation `getQueueInfo`
+ * performs. Returns the id only when it is a non-empty string, else `null`.
+ */
+export function getBatchId(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const queueInfo = (metadata as Record<string, unknown>).queueInfo;
+  if (!queueInfo || typeof queueInfo !== 'object') return null;
+  const { batchId } = queueInfo as Record<string, unknown>;
+  return typeof batchId === 'string' && batchId.trim() ? batchId : null;
 }
 
 /**
@@ -87,4 +111,29 @@ export function shouldSuppressQueueDivider(
   if (!currentTurn.userMessage || !getQueueInfo(currentTurn.userMessage.metadata)) return false;
   if (!nextTurn.userMessage || !getQueueInfo(nextTurn.userMessage.metadata)) return false;
   return true;
+}
+
+/**
+ * Whether the seam between `currentTurn` and `nextTurn` is a batched-delivery
+ * seam: both turns' user messages carry the same non-empty
+ * `queueInfo.batchId` (one multi-message batch flush) and the current turn
+ * produced no assistant output, so the rows are adjacent in the transcript.
+ * Applies to every user-role row kind (plain messages, agent-to-agent cards,
+ * wake/event-notification cards), including sub-threshold batch entries whose
+ * `queueInfo` carries only `batchId` (no wait fields) — hence `getBatchId`
+ * rather than `getQueueInfo`. Absent batchId (older daemons) never matches,
+ * so those transcripts render exactly as before.
+ */
+export function isBatchedDeliverySeam(
+  currentTurn: QueueDividerTurn,
+  nextTurn: QueueDividerTurn | null | undefined,
+): boolean {
+  if (!nextTurn) return false;
+  if (currentTurn.assistantMessages.length > 0) return false;
+  const currentBatchId = currentTurn.userMessage
+    ? getBatchId(currentTurn.userMessage.metadata)
+    : null;
+  if (!currentBatchId) return false;
+  const nextBatchId = nextTurn.userMessage ? getBatchId(nextTurn.userMessage.metadata) : null;
+  return currentBatchId === nextBatchId;
 }

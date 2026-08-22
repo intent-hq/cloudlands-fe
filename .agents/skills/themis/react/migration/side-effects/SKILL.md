@@ -2,8 +2,7 @@
 name: react/migration/side-effects
 description: >-
   Move shared React side effects to sagas. React sources include useEffect
-  subscriptions, fetches, timers, debounces, storage sync, and persistence flows;
-  Svelte $effect primitives are non-applicable contrasts only.
+  subscriptions, fetches, timers, debounces, storage sync, and persistence flows.
 type: sub-skill
 requires:
   - core/sagas
@@ -17,7 +16,8 @@ triggers:
 
 Shared, persistent, or async React side effects move to sagas. DOM-only effectsthat exist solely to manage one component's mounted DOM can remain local.
 
-React sources include `useEffect` fetches, subscriptions, timers, debounces,storage sync, IPC/websocket listeners, and custom hooks that hide async work.Svelte `$effect` is not a React source primitive.
+React sources include `useEffect` fetches, subscriptions, timers, debounces,
+storage sync, IPC/websocket listeners, and custom hooks that hide async work.
 
 ## Before: component-owned async effect
 

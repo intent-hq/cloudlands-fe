@@ -4,5 +4,3 @@ export const CHAT_ICON_SIZE = {
   default: 20,
   emphasized: 24,
 } as const;
-
-export type ChatIconSize = keyof typeof CHAT_ICON_SIZE;

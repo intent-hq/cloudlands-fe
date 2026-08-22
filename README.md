@@ -130,8 +130,7 @@ each pointing the auto-updater at the latest build for that channel:
 
 - **alpha** — every `vX.Y.Z` tag (cut by merging the release-please PR) builds
   the app and publishes both an immutable versioned release and the rolling
-  `alpha` release (`.github/workflows/release-beta.yml`; the file name is
-  historical).
+  `alpha` release (`.github/workflows/release-alpha.yml`).
 - **beta** — a manual promotion of an existing versioned release (no new
   build): dispatch `.github/workflows/promote-beta.yml` with the `version`
   input to copy that release's assets and updater feeds into the rolling

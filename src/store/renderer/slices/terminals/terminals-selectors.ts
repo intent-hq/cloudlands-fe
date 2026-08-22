@@ -93,14 +93,3 @@ export const selectTerminalDisplayName = store.createSelector(
     return terminalDisplayName(term ?? {});
   },
 );
-
-export const selectTerminalsLoaded = store.createSelector((state, wsId: string) => {
-  const ws = state.terminals.workspaces[wsId] || emptyWorkspaceState;
-  return ws.terminalsLoaded;
-});
-
-export const selectLoadedWorkspaceTerminals = store.createSelector((state, wsId: string) => {
-  const ws = state.terminals.workspaces[wsId] || emptyWorkspaceState;
-  if (!ws.terminalsLoaded) return [];
-  return getItems(ws.terminals);
-});

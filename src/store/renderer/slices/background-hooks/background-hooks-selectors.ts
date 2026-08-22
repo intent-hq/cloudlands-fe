@@ -19,7 +19,9 @@ export const selectBackgroundHooks = store.createSelector(
  * Utility-footer readiness: true once the workspace's initial `hook.list`
  * seed has been delivered (the saga writes an entry on success AND on a
  * failed seed — failure counts as ready-with-empty, so this never wedges
- * the transcript reveal).
+ * the transcript reveal). Entries are RETAINED (stale-marked, not cleared)
+ * when the workspace's last subscriber leaves, so a warm switch-back stays
+ * latched and reveals without waiting on a fresh `hook.list`.
  */
 export const selectBackgroundHooksSnapshotDelivered = store.createSelector(
   (state, workspaceId: string): boolean =>

@@ -23,7 +23,7 @@ export const CLEAR_LIGHTING_CHANNEL = 'hardware-console:clear-lighting';
 export const CLEAR_LIGHTING_DONE_CHANNEL = 'hardware-console:clear-lighting-done';
 
 /** Overall ack wait budget — shutdown proceeds regardless once it elapses. */
-export const CLEAR_LIGHTING_TIMEOUT_MS = 750;
+const CLEAR_LIGHTING_TIMEOUT_MS = 750;
 
 /** Structural subset of Electron's BrowserWindow used here. */
 export interface ClearLightingWindow {

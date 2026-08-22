@@ -55,8 +55,7 @@ test('keeps one larger identity geometry across panel types, themes, widths, and
                       actionsRect.height / 2 -
                       (headerRect.top + headerRect.height / 2),
                   ) / scale,
-                firstActionIsPin:
-                  actions.firstElementChild?.querySelector('[data-panel-pin]') !== null,
+                hasPanelPin: actions.querySelector('[data-panel-pin]') !== null,
               };
             });
 
@@ -71,11 +70,13 @@ test('keeps one larger identity geometry across panel types, themes, widths, and
           expect(geometry.titleActionsGap).toBeGreaterThanOrEqual(0);
           expect(geometry.actionsRightInset).toBeCloseTo(10, 1);
           expect(geometry.actionsCenterDelta).toBeLessThanOrEqual(0.6);
-          expect(geometry.firstActionIsPin).toBe(true);
+          expect(geometry.hasPanelPin).toBe(false);
 
-          const pin = component.locator('[data-panel-pin]:visible').first();
-          await pin.focus();
-          await expect(pin).toBeFocused();
+          const firstAction = component
+            .locator('[data-panel-header-actions] button:visible')
+            .first();
+          await firstAction.focus();
+          await expect(firstAction).toBeFocused();
           measuredStates += 1;
         }
       }
@@ -114,34 +115,4 @@ test('uses the same larger leading identity geometry in the empty panel actions'
     expect(item.leadingHeight).toBe('24px');
     expect(item.glyphWidth).toBe('16px');
   }
-});
-
-test('rotates the thumbtack only for the pressed pinned state', async ({ mount, page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  const component = await mount(PanelHeaderIdentityHost, {
-    props: { pinned: false, pinMode: true },
-  });
-  const pin = component.locator('[data-panel-pin]:visible').first();
-  const icon = pin.locator('[data-panel-pin-icon]');
-
-  await expect(pin).toHaveAttribute('aria-pressed', 'false');
-  expect(await icon.evaluate((node) => getComputedStyle(node).transform)).toBe('none');
-
-  await component.update({ props: { pinned: true } });
-  await expect(pin).toHaveAttribute('aria-pressed', 'true');
-  expect(await icon.evaluate((node) => getComputedStyle(node).transform)).toBe(
-    'matrix(0.707107, -0.707107, 0.707107, 0.707107, 0, 0)',
-  );
-  const reducedDuration = await icon.evaluate((node) =>
-    Number.parseFloat(getComputedStyle(node).transitionDuration),
-  );
-  expect(reducedDuration).toBeLessThanOrEqual(0.00001);
-});
-
-test('hides the panel header thumbtack while pin mode is off', async ({ mount }) => {
-  const component = await mount(PanelHeaderIdentityHost, {
-    props: { pinned: true, pinMode: false },
-  });
-
-  await expect(component.locator('[data-panel-pin]')).toHaveCount(0);
 });

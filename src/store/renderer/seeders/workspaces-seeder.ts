@@ -36,6 +36,7 @@ import {
   replaceWorkspaceList,
   setWorkspaceHasLoaded,
 } from '../slices/workspace/workspace-slice';
+import { getActiveBackendId } from '../utils/backend-storage-namespace';
 import { openWorkspaceTab } from '../slices/tab-state/tab-state-slice';
 
 /** Read the `id` (preferred) or `workspaceId` field off the route loader's open payload. */
@@ -258,12 +259,12 @@ registerMockSeeder('workspaces', async ({ store, client, workspaceId, getWorkspa
     console.error('Workspaces seeder: client.workspaces.list() failed:', error);
     // Clear any stale workspaces from a previous seeding attempt (dev/HMR/tests)
     store.dispatch(replaceWorkspaceList([]));
-    store.dispatch(setWorkspaceHasLoaded(true));
+    store.dispatch(setWorkspaceHasLoaded(true, getActiveBackendId(store.state)));
     return;
   }
 
   store.dispatch(replaceWorkspaceList(workspaces));
-  store.dispatch(setWorkspaceHasLoaded(true));
+  store.dispatch(setWorkspaceHasLoaded(true, getActiveBackendId(store.state)));
 
   try {
     recentViews = await client.workspaces.recentViews();

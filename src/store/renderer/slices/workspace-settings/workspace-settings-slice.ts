@@ -1,6 +1,6 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 
 // ============================================================================
 // Types
@@ -22,7 +22,7 @@ export const emptyWorkspaceSettings: SingleWorkspaceSettings = {
   autoCommitEnabled: true,
 };
 
-export const initialState: WorkspaceSettingsState = {
+const initialState: WorkspaceSettingsState = {
   byWorkspaceId: {},
 };
 
@@ -34,23 +34,23 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 // ============================================================================
 
 export const setAutoCommitEnabled = createAction<[workspaceId: string, enabled: boolean]>(
-  "workspaceSettings/setAutoCommitEnabled"
+  'workspaceSettings/setAutoCommitEnabled',
 );
 
 export const refreshAutoCommitSettings = createAction(
-  "workspaceSettings/refreshAutoCommitSettings"
+  'workspaceSettings/refreshAutoCommitSettings',
 );
 
 export const syncWorkspaceSettings = createAction<[workspaceId: string]>(
-  "workspaceSettings/syncWorkspaceSettings"
+  'workspaceSettings/syncWorkspaceSettings',
 );
 
 export const loadAutoCommitSettings = createAction<[workspaceId: string, enabled: boolean]>(
-  "workspaceSettings/loadAutoCommitSettings"
+  'workspaceSettings/loadAutoCommitSettings',
 );
 
 export const clearWorkspaceSettings = createAction<[workspaceId: string]>(
-  "workspaceSettings/clearWorkspaceSettings"
+  'workspaceSettings/clearWorkspaceSettings',
 );
 
 // ============================================================================
@@ -58,21 +58,26 @@ export const clearWorkspaceSettings = createAction<[workspaceId: string]>(
 // ============================================================================
 
 export const workspaceSettingsReducer = createReducer<WorkspaceSettingsState>(initialState);
-workspaceSettingsReducer.with(setAutoCommitEnabled, (state, { payload: [workspaceId, enabled] }) => {
+workspaceSettingsReducer.with(
+  setAutoCommitEnabled,
+  (state, { payload: [workspaceId, enabled] }) => {
     const wsState = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...wsState,
       autoCommitEnabled: enabled,
     });
-  });
-workspaceSettingsReducer.with(loadAutoCommitSettings, (state, { payload: [workspaceId, enabled] }) => {
+  },
+);
+workspaceSettingsReducer.with(
+  loadAutoCommitSettings,
+  (state, { payload: [workspaceId, enabled] }) => {
     const wsState = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...wsState,
       autoCommitEnabled: enabled,
     });
-  });
+  },
+);
 workspaceSettingsReducer.with(clearWorkspaceSettings, (state, { payload: [workspaceId] }) =>
-    clearWorkspaceState(state, workspaceId)
-  );
-
+  clearWorkspaceState(state, workspaceId),
+);

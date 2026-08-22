@@ -5,15 +5,15 @@
  * Tracks which agent is being followed and the current file/note context.
  */
 
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import type { AgentFollowState, PendingChange } from "./agent-follow-types";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import type { AgentFollowState, PendingChange } from './agent-follow-types';
 
 // ---------------------------------------------------------------------------
 // Initial state
 // ---------------------------------------------------------------------------
 
-export const initialState: AgentFollowState = {
+const initialState: AgentFollowState = {
   isFollowing: false,
   followedAgentId: null,
   agentColor: null,
@@ -30,14 +30,14 @@ export const initialState: AgentFollowState = {
 // ---------------------------------------------------------------------------
 
 /** Set the current file being tracked. */
-export const setCurrentFile = createAction<[file: string]>("agentFollow/setCurrentFile");
+const setCurrentFile = createAction<[file: string]>('agentFollow/setCurrentFile');
 
 /** Set animating flag. */
-export const setIsAnimating = createAction<[isAnimating: boolean]>("agentFollow/setIsAnimating");
+const setIsAnimating = createAction<[isAnimating: boolean]>('agentFollow/setIsAnimating');
 
 /** Queue a pending text animation change. */
-export const queueTextAnimation = createAction<[file: string, content: string, isAddition: boolean]>(
-  "agentFollow/queueTextAnimation",
+const queueTextAnimation = createAction<[file: string, content: string, isAddition: boolean]>(
+  'agentFollow/queueTextAnimation',
 );
 
 // ---------------------------------------------------------------------------

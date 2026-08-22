@@ -17,11 +17,11 @@ triggers:
 ---
 # waitFor — agent implementation rules
 
-Use this skill for one-shot saga waits on selector state. Keep conceptual/API prose and examples in `docs/WAITFOR.md`; this skill should stay concise and operational.
+Use this skill for one-shot saga waits on selector state. Keep conceptual/API prose and examples in `@augmentcode/themis/docs/WAITFOR.md`; this skill should stay concise and operational.
 
 ## Canonical references
 
-- Human guide: `docs/WAITFOR.md`
+- Human guide: `@augmentcode/themis/docs/WAITFOR.md`
 - Public API: `waitFor` from `@augmentcode/themis/saga`.
 - Channel helpers: `@augmentcode/themis/utils/sagas/selector-channel-effects` or aggregate `@augmentcode/themis/saga`.
 - Related skills: `core/sagas`, `core/selector-channels`, `core/testing`, plus the selected Store family selector skill for family-specific selector authoring.
@@ -172,7 +172,7 @@ function* publishAfterRealStatusChange(documentId: string) {
 
 ## See also
 
-- `docs/WAITFOR.md` — full signature, behavior walkthrough, and examples.
-- `docs/SAGAS.md` — selector-channel and saga orchestration context.
+- `@augmentcode/themis/docs/WAITFOR.md` — full signature, behavior walkthrough, and examples.
+- `@augmentcode/themis/docs/SAGAS.md` — selector-channel and saga orchestration context.
 - `core/selector-channels` — continuous selector watchers.
 - Selected Store family selector lifecycle skill — selector call modes.

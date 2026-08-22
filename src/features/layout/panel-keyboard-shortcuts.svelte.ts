@@ -13,7 +13,6 @@
  * - h/j/k/l: Navigate panels (vim-style)
  * - H/J/K/L: Resize panels
  * - %: Split right (tmux)
- * - ": Split down (tmux)
  * - z: Toggle zoom/maximize
  * - x: Close panel
  * - o: Cycle to next panel
@@ -48,7 +47,6 @@ export type LeaderAction =
   | 'navigate-next'
   | 'navigate-prev'
   | 'split-right'
-  | 'split-down'
   | 'resize-left'
   | 'resize-right'
   | 'resize-up'
@@ -74,6 +72,7 @@ interface KeyboardShortcutsState {
 export function createPanelKeyboardShortcuts(
   getLayoutManager: () => PanelLayoutManager,
   onCyclePanel?: (direction: PanelCycleDirection) => void,
+  getAvailableCanvasWidth: () => number | null = () => null,
 ) {
   const state = $state<KeyboardShortcutsState>({
     leaderActive: false,
@@ -146,14 +145,6 @@ export function createPanelKeyboardShortcuts(
         const focusedId = selectFocusedPanelId.select(appStore.state, layoutManager.workspaceId);
         if (focusedId) {
           layoutManager.splitPanel(focusedId, 'horizontal');
-        }
-        break;
-      }
-
-      case 'split-down': {
-        const focusedId = selectFocusedPanelId.select(appStore.state, layoutManager.workspaceId);
-        if (focusedId) {
-          layoutManager.splitPanel(focusedId, 'vertical');
         }
         break;
       }
@@ -399,11 +390,6 @@ export function createPanelKeyboardShortcuts(
       case '5': // Shift+5 = % on US keyboard
         if (isShift) return 'split-right';
         break;
-      case '"':
-      case "'":
-        if (isShift) return 'split-down';
-        break;
-
       // Zoom
       case 'z':
         return 'zoom-toggle';
@@ -433,6 +419,9 @@ export function createPanelKeyboardShortcuts(
   }
 
   return {
+    get availableCanvasWidth() {
+      return getAvailableCanvasWidth();
+    },
     get leaderActive() {
       return state.leaderActive;
     },
@@ -460,14 +449,6 @@ export type PanelKeyboardShortcuts = ReturnType<typeof createPanelKeyboardShortc
 const keyboardShortcutsCache = new Map<string, PanelKeyboardShortcuts>();
 
 /**
- * Get the keyboard shortcuts manager for a workspace.
- * Returns undefined if the manager hasn't been created yet (PanelLayout not mounted).
- */
-export function getPanelKeyboardShortcuts(workspaceId: string): PanelKeyboardShortcuts | undefined {
-  return keyboardShortcutsCache.get(workspaceId);
-}
-
-/**
  * Register a keyboard shortcuts manager for a workspace.
  * Called by PanelLayout when it creates the manager.
  */
@@ -484,4 +465,8 @@ export function registerPanelKeyboardShortcuts(
  */
 export function unregisterPanelKeyboardShortcuts(workspaceId: string): void {
   keyboardShortcutsCache.delete(workspaceId);
+}
+
+export function getPanelKeyboardShortcuts(workspaceId: string): PanelKeyboardShortcuts | undefined {
+  return keyboardShortcutsCache.get(workspaceId);
 }

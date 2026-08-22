@@ -1,6 +1,6 @@
 import type { BrowserWindowConstructorOptions } from 'electron';
 
-export const TRANSPARENT_WINDOW_BACKGROUND = '#00000000';
+const TRANSPARENT_WINDOW_BACKGROUND = '#00000000';
 const DARK_WINDOW_BACKGROUND = '#0a0a0a';
 const LIGHT_WINDOW_BACKGROUND = '#ffffff';
 

@@ -51,7 +51,7 @@ export interface HostExecStreamOptions {
   signal?: AbortSignal;
 }
 
-export interface HostExecStreamResult {
+interface HostExecStreamResult {
   ok: boolean;
   exitCode?: number;
   timedOut?: boolean;
@@ -267,16 +267,15 @@ export async function hostExecStream(
   notificationListener = (n: JsonRpcNotification): void => {
     if (n.method !== 'events.event') return;
     const params = n.params as { event?: unknown } | undefined;
-    const event = (params && typeof params === 'object' && 'event' in params
-      ? (params as { event?: unknown }).event
-      : params) as { type?: unknown; data?: unknown } | undefined;
+    const event = (
+      params && typeof params === 'object' && 'event' in params
+        ? (params as { event?: unknown }).event
+        : params
+    ) as { type?: unknown; data?: unknown } | undefined;
     if (!event || typeof event !== 'object') return;
     const type = event.type;
-    if (
-      type !== 'host:exec:stdout'
-      && type !== 'host:exec:stderr'
-      && type !== 'host:exec:exit'
-    ) return;
+    if (type !== 'host:exec:stdout' && type !== 'host:exec:stderr' && type !== 'host:exec:exit')
+      return;
     const data = event.data as
       | {
           requestId?: unknown;
@@ -342,10 +341,7 @@ export async function hostExecStream(
   }
 
   try {
-    const startResult = await client.request<{ requestId?: string }>(
-      'host.execStream',
-      params,
-    );
+    const startResult = await client.request<{ requestId?: string }>('host.execStream', params);
     if (typeof startResult?.requestId !== 'string' || startResult.requestId.length === 0) {
       throw new Error('host.execStream returned no requestId');
     }

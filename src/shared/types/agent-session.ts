@@ -91,7 +91,6 @@ export interface QueuedMessage {
  * Tracks the lifecycle of agent activation from pending to active
  */
 export enum AgentActivationState {
-  PENDING = 'pending',
   ACTIVATING = 'activating',
   ACTIVE = 'active',
   ERROR = 'error',

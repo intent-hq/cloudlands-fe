@@ -1,10 +1,10 @@
-import type { ActionKeyActionId } from "$features/hardware-console/actions/action-mapping";
+import type { ActionKeyActionId } from '$features/hardware-console/actions/action-mapping';
 import type {
   CycleScope,
   CycleScopeFamilyId,
-} from "$features/hardware-console/actions/cycle-scope";
-import type { HardwareDeviceModel } from "$features/hardware-console/input/types";
-import type { PromptUsageEntry } from "$features/hardware-console/prompt-picker/curation";
+} from '$features/hardware-console/actions/cycle-scope';
+import type { HardwareDeviceModel } from '$features/hardware-console/input/types';
+import type { PromptUsageEntry } from '$features/hardware-console/prompt-picker/curation';
 
 /** Transient UI state of the joystick radial prompt picker overlay. */
 export interface RadialPromptPickerState {
@@ -90,25 +90,3 @@ export interface HardwareConsoleState {
    */
   cycleScopeByFamily: Record<CycleScopeFamilyId, CycleScope>;
 }
-
-/** Shape of the `keyPins` field inside the `hardwareConsole.state` daemon bag. */
-export type PersistedKeyPins = (string | null)[];
-
-/** Shape of the `excludedWorkspaceIds` field inside the `hardwareConsole.state` daemon bag. */
-export type PersistedExcludedWorkspaceIds = string[];
-
-/**
- * Legacy shape of the `actionMapping` field inside the
- * `hardwareConsole.state` daemon bag (flat CM2 array, pre per-model).
- * Read as the CM2 fallback on hydration; new writes go to
- * `actionMappingByModel`.
- */
-export type PersistedActionMapping = ActionKeyActionId[];
-
-/** Shape of the `actionMappingByModel` field inside the `hardwareConsole.state` daemon bag. */
-export type PersistedActionMappingsByModel = Partial<
-  Record<HardwareDeviceModel, ActionKeyActionId[]>
->;
-
-/** Shape of the `cycleScopeByFamily` field inside the `hardwareConsole.state` daemon bag. */
-export type PersistedCycleScopeByFamily = Partial<Record<CycleScopeFamilyId, CycleScope>>;

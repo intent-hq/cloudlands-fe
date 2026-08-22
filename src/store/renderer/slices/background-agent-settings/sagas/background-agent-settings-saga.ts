@@ -16,7 +16,7 @@ import {
 
 const logger = createLogger('BackgroundAgentSettingsSaga');
 
-export function* persistBackgroundAgentSettingsWorker() {
+function* persistBackgroundAgentSettingsWorker() {
   const defaultModel = yield* selectBgDefaultModel.effect();
   const typeOverrides = yield* selectBgTypeOverrides.effect();
   try {

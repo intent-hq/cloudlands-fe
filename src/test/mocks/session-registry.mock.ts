@@ -130,6 +130,6 @@ export class MockSessionRegistry {
   }
 }
 
-export function createMockSessionRegistry(): MockSessionRegistry {
+function createMockSessionRegistry(): MockSessionRegistry {
   return new MockSessionRegistry();
 }

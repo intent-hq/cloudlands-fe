@@ -2,6 +2,15 @@ export type WorkspaceCommandPayload = {
   workspaceId: string;
 };
 
+/**
+ * Emulated viewport of an agent-owned browser tab (monorepo#2857); owned
+ * tabs are always emulated, unowned (user) tabs are always native.
+ */
+export type BrowserEmulatedSize = {
+  width: number;
+  height: number;
+};
+
 export type BrowserOpenTabPayload = WorkspaceCommandPayload & {
   url: string;
   position?: 'adjacent' | 'replace' | 'same';
@@ -24,12 +33,26 @@ export type BrowserOpenTabPayload = WorkspaceCommandPayload & {
    */
   ownerAgentId?: string;
   /**
+   * Emulated viewport for agent opens (monorepo#2857); persisted with the
+   * tab so the size survives restart alongside `ownerAgentId`. Absent for
+   * user-opened tabs (unowned, always native).
+   */
+  emulatedSize?: BrowserEmulatedSize;
+  /**
    * With position "replace": the exact tab main resolved (and, for agent
    * opens, ownership-checked) as the adoption target. The renderer replaces
    * only this tab; if it no longer exists a new tab is created instead of
    * replacing whichever tab is first now (monorepo#2857 TOCTOU).
    */
   replaceTabId?: string;
+  /**
+   * Agent opens only (monorepo#3045): `false` creates the tab directly in
+   * the workspace's hidden set — no panel mount, no focus or active-tab
+   * change — with its webview mounted offscreen so it stays CDP-addressable.
+   * `true` (or absent, e.g. user opens) mounts into the panel layout per
+   * `position` as before.
+   */
+  visible?: boolean;
 };
 
 export type BrowserCloseTabPayload = WorkspaceCommandPayload & {
@@ -54,6 +77,17 @@ export type BrowserFocusTabPayload = WorkspaceCommandPayload & {
   pin?: boolean;
 };
 
+export type BrowserShowTabPayload = WorkspaceCommandPayload & {
+  tabId: string;
+  /**
+   * Reveal-and-activate (monorepo#3045): `true` makes the revealed tab its
+   * panel's active tab and focuses the panel (and still activates when the
+   * tab is already visible). `false`/absent mounts the tab without any
+   * focus or active-tab change (a no-op when already visible).
+   */
+  focus?: boolean;
+};
+
 export type BrowserListTabsRequestPayload = WorkspaceCommandPayload & {
   /** Echoed back so main resolves the matching pending request (monorepo#2602). */
   requestId?: string;
@@ -63,6 +97,13 @@ export type BrowserTabOwnerChangedPayload = WorkspaceCommandPayload & {
   tabId: string;
   /** The agent that now owns the tab (claimTab / agent openTab, monorepo#2857). */
   ownerAgentId: string;
+  /**
+   * The tab's emulated viewport at the time of the change (claim size /
+   * resizeTab); persisted with the tab so the size survives restart
+   * (monorepo#2857). Also carried by resize notifications — the owner is
+   * unchanged there, only the size — so the renderer's record stays live.
+   */
+  emulatedSize?: BrowserEmulatedSize;
 };
 
 export function workspaceCommandPayload(workspaceId: unknown): WorkspaceCommandPayload | null {
@@ -76,5 +117,20 @@ export function isWorkspaceCommandPayload(value: unknown): value is WorkspaceCom
     'workspaceId' in value &&
     typeof value.workspaceId === 'string' &&
     value.workspaceId.length > 0
+  );
+}
+
+export function isBrowserEmulatedSize(value: unknown): value is BrowserEmulatedSize {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'width' in value &&
+    'height' in value &&
+    typeof value.width === 'number' &&
+    Number.isFinite(value.width) &&
+    value.width > 0 &&
+    typeof value.height === 'number' &&
+    Number.isFinite(value.height) &&
+    value.height > 0
   );
 }

@@ -40,19 +40,19 @@ export interface SerializedChunk {
   sequenceNumber: number;
 }
 
-export interface SerializedTextRange {
+interface SerializedTextRange {
   start: number;
   end: number;
 }
 
-export interface SerializedTextAccumulationItem {
+interface SerializedTextAccumulationItem {
   sequence: number;
   type: 'text';
   contentRange: SerializedTextRange;
   timestamp: number; // epoch ms
 }
 
-export interface SerializedBlockAccumulationItem {
+interface SerializedBlockAccumulationItem {
   sequence: number;
   type: 'block';
   content: ContentBlock;
@@ -61,8 +61,7 @@ export interface SerializedBlockAccumulationItem {
 
 /** An ordered item in the accumulation (text range or content block) */
 export type SerializedAccumulationItem =
-  | SerializedTextAccumulationItem
-  | SerializedBlockAccumulationItem;
+  SerializedTextAccumulationItem | SerializedBlockAccumulationItem;
 
 /** The complete accumulated message state (serializable) */
 export interface SerializedAccumulatedMessage {

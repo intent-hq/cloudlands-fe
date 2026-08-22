@@ -354,6 +354,34 @@ export function clearWindowSessionsSnapshot(): void {
  */
 export function _resetWindowSessionsCacheForTests(): void {
   clearWindowSessionsSnapshot();
+  backendSwitchWindowTeardownInProgress = false;
+}
+
+// True between captureAndCloseWindowsForBackendSwitch() destroying every
+// window and restoreWindowsForBackend() recreating the incoming backend's
+// layout. Destroying the last window mid-switch fires Electron's
+// `window-all-closed`, whose handler treats it as the user manually closing
+// everything — on macOS it deletes window-sessions.json (the file the switch
+// just wrote) and wipes the snapshot cache, so the restore half finds nothing;
+// on non-macOS it starts the quit flow. The handler consults this flag and
+// ignores the event while a switch teardown is in flight (same pattern as its
+// `isInstallingUpdate` guard).
+let backendSwitchWindowTeardownInProgress = false;
+
+export function isBackendSwitchWindowTeardownInProgress(): boolean {
+  return backendSwitchWindowTeardownInProgress;
+}
+
+/**
+ * Failure-path clear of the backend-switch teardown guard. The switch
+ * orchestration calls this from a finally so a throw between
+ * `captureAndCloseWindowsForBackendSwitch` (flag set) and
+ * `restoreWindowsForBackend` (flag cleared at its top) cannot leave
+ * `window-all-closed` handling suppressed for the rest of the session.
+ * Idempotent — on the success path the restore half has already cleared it.
+ */
+export function clearBackendSwitchWindowTeardownGuard(): void {
+  backendSwitchWindowTeardownInProgress = false;
 }
 
 export function isValidWindowSession(s: unknown): s is WindowSession {
@@ -471,6 +499,12 @@ export async function captureAndCloseWindowsForBackendSwitch(fromBackendId: stri
   // so a later save for the incoming backend can't resurrect it.
   clearWindowSessionsSnapshot();
 
+  // Destroying the last window below fires `window-all-closed`; flag the
+  // teardown first so that handler ignores it (it would otherwise delete the
+  // sessions file we just wrote — on macOS — or start the quit flow).
+  // restoreWindowsForBackend() clears the flag before recreating windows.
+  backendSwitchWindowTeardownInProgress = true;
+
   // Tear down every workspace/HUD window.
   for (const w of BrowserWindow.getAllWindows()) {
     if (!w.isDestroyed()) w.destroy();
@@ -488,6 +522,10 @@ export async function captureAndCloseWindowsForBackendSwitch(fromBackendId: stri
  * against the incoming daemon.
  */
 export function restoreWindowsForBackend(toBackendId: string): void {
+  // The switch's window teardown is over: windows are about to exist again, so
+  // window-all-closed handling must return to normal (a later genuine
+  // last-window close should clear sessions / quit as usual).
+  backendSwitchWindowTeardownInProgress = false;
   const savedSessions = loadWindowSessions(toBackendId);
   if (savedSessions && savedSessions.length > 0) {
     logger.info('Restoring window sessions for backend switch', {

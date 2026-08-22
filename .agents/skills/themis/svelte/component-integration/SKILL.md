@@ -25,10 +25,8 @@ triggers:
 
 > Wire the Store class into a Svelte 5 app. Bootstrap in the root layout with `store.init()` + `onDestroy`, bind selector readables in templates as `$selectorResult$`, and dispatch/read one-shot state through the initialized app `Store` instance.
 
-This is Svelte Store family guidance. For the same app/package/code path, do not
-apply `StreamingStore`, Kefir/observable selector, streaming setup, or streaming
-lifecycle patterns. If a mixed repository also has a Node/server/worker app, route
-that separate app to `../../streaming/SKILL.md` independently.
+This is Svelte Store family guidance for Svelte component initialization,
+readable selector binding, and Store dispatch.
 
 ## 1. `Store` class
 
@@ -69,8 +67,7 @@ export class Store<
 Key rules:
 
 - Pass app-owned reducers in the constructor map and start app-owned sagas with `store.runSaga(sagaFn)` after `store.init()`.
-- Use `Store` from `@augmentcode/themis/svelte-store` for this app; do not add
-  `StreamingStore` or Kefir selector wiring to the same app.
+- Use `Store` from `@augmentcode/themis/svelte-store` for this app.
 - For typed state, infer `StoreState<typeof store>` from the configured Store instance. Constructor reducer maps preserve reducer-state inference without an explicit `: Store` annotation.
 - Use `store.createSelector(...)` for app-local selectors that should infer that configured store's `StoreState<typeof store>`; generic/shared selector helpers should accept a configured Store instead of importing standalone selector creation utilities.
 - Register only app-owned reducers in constructor maps. `Store` manages package-owned internals under reserved `@internal_` names: reducers such as `@internal_storeUtility` are package-managed, and the internal saga manager starts during `Store` initialization. Internal reducer domains can appear in `StoreState<typeof store>`. Consumers should not add `@internal_` reducers/sagas or depend on internal state paths directly.
@@ -285,4 +282,4 @@ store.dispatch(addItem(i));
 
 - `svelte/selector-lifecycle` — the three selector call modes(`selectFoo()` / `.select(state)` / `.effect()`).
 - `core/file-structure` — slice layout and registration order.
-- `../setup/SKILL.md` — first-time greenfield setup.
+- `../../setup/SKILL.md` — first-time greenfield setup.

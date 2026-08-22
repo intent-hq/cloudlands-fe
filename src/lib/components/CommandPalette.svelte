@@ -38,7 +38,6 @@
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
-  import { togglePanelOpenMode } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     openWorkspaceBrowser,
     openWorkspaceNote,
@@ -805,9 +804,6 @@
         return true;
       case 'workspace-view-mode':
         void toggleWorkspaceViewModeWithTransition();
-        return true;
-      case 'toggle-panel-open-mode':
-        appStore.dispatch(togglePanelOpenMode());
         return true;
       default:
         return true;

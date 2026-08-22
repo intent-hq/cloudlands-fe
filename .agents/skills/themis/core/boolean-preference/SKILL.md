@@ -3,7 +3,7 @@ name: core/boolean-preference
 description: >-
   createBooleanPreference({ sliceName, field, setActionName, toggleActionName })
   emits a setAction (payload [value: boolean]) and a zero-argument toggleAction
-  plus a .register(builder) helper that adds both handlers to a createReducer
+  plus a .register(builder) helper that chains both handlers onto a createReducer
   builder. The field parameter is constrained to keys whose value type is
   boolean. Use it instead of hand-writing setX / toggleX pairs. Public API:
   @augmentcode/themis/utils/store/boolean-preference; related guidance: ../SKILL.md §11.
@@ -122,11 +122,13 @@ export const toggleSpellcheck = spellcheck.toggleAction;
 export const setDarkMode      = darkMode.setAction;
 export const toggleDarkMode   = darkMode.toggleAction;
 
-// Export the direct reducer, then register each group without using the return value.
-export const prefsReducer = createReducer<PrefsState>(initialState);
-// prefsReducer.with(savedAt, ...); // other cases use the same standalone shape
-spellcheck.register(prefsReducer);
-darkMode.register(prefsReducer);
+// Chain .register() on the reducer builder — both cases are added.
+export const prefsReducer = darkMode.register(
+  spellcheck.register(
+    createReducer<PrefsState>(initialState)
+      // ... other .with() cases, e.g. .with(savedAt, ...)
+  )
+);
 ```
 
 Dispatch like any other action:
@@ -150,21 +152,18 @@ const prefs = createBooleanPreference<PrefsState>({
   toggleActionName: "toggleSpellcheck",
 });
 export const { setAction: setSpellcheck, toggleAction: toggleSpellcheck } = prefs;
-export const prefsReducer = createReducer<PrefsState>(initialState);
-prefs.register(prefsReducer);
+export const prefsReducer = prefs.register(createReducer<PrefsState>(initialState));
 ```
 
-### 3.2 Registering multiple preferences
+### 3.2 Chaining multiple preferences
 
 Each `.register(builder)` returns the same builder with two cases added, so
-ignore that return value and register each preference separately:
+you can chain any number of preferences:
 
 ```typescript
-export const prefsReducer = createReducer<PrefsState>(initialState);
-prefsReducer.with(resetAll, () => initialState);
-c.register(prefsReducer);
-b.register(prefsReducer);
-a.register(prefsReducer);
+export const prefsReducer = a.register(b.register(c.register(
+  createReducer<PrefsState>(initialState).with(resetAll, () => initialState)
+)));
 ```
 
 `.register` preserves the `initialState` field on the returned builder so
@@ -206,26 +205,25 @@ const spellcheck = createBooleanPreference<PrefsState>({
   toggleActionName: "toggleSpellcheck",
 });
 export const { setAction: setSpellcheck, toggleAction: toggleSpellcheck } = spellcheck;
-export const prefsReducer = createReducer<PrefsState>(initialState);
-spellcheck.register(prefsReducer);
+export const prefsReducer = spellcheck.register(createReducer<PrefsState>(initialState));
 ```
 
 *Source: `../SKILL.md §11`.*
 
-### Forgetting to call `.register` on the reducer
+### Forgetting to chain `.register` on the reducer builder
 
 **Mechanism:** the action creators exist but no reducer case handles them;
 dispatch becomes a silent no-op and the preference never changes.
 
 ```typescript
 // ❌ WRONG — no .register call
-export const prefsReducer = createReducer<PrefsState>(initialState);
-prefsReducer.with(otherAction, ...);
+export const prefsReducer = createReducer<PrefsState>(initialState)
+  .with(otherAction, ...);
 
 // ✅ CORRECT
-export const prefsReducer = createReducer<PrefsState>(initialState);
-prefsReducer.with(otherAction, ...);
-spellcheck.register(prefsReducer);
+export const prefsReducer = spellcheck.register(
+  createReducer<PrefsState>(initialState).with(otherAction, ...)
+);
 ```
 
 *Source: `../SKILL.md §11`.*

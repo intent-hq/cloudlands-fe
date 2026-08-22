@@ -22,11 +22,14 @@ import {
   selectHudAttentionItems,
   selectHudAttnCount,
   selectHudFeedItems,
+  selectHudSystem,
   selectHudTakeoverView,
   selectHudWorkspaceCards,
   selectHudWorkspaceStateBars,
   selectWorkspaceTabStatuses,
 } from './hud-selectors';
+import type { DaemonHealthState } from '../daemon-health/daemon-health-types';
+import { initialState as daemonHealthInitialState } from '../daemon-health/daemon-health-slice';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { WorkspaceTask } from '$shared/types';
 import {
@@ -1374,6 +1377,37 @@ describe('selectHudWorkspaceCards', () => {
     expect(card.agents.find((agent) => agent.id === 'a2')?.line).toBe('Verifying panel focus fix');
   });
 
+  it('reduces multi-line preview text (report kind) to a single line for the swap line', () => {
+    const state = cardState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 1,
+            agentIds: ['a1'],
+            agents: [{ id: 'a1', name: 'Developer', status: 'active' }],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      {
+        agentSessions: {
+          byAgentId: {
+            // The report kind carries raw digest text, which can be
+            // multi-line — the HUD line must reduce it to one line.
+            a1: {
+              lastMessageRole: 'assistant',
+              digest: 'Reviewing the selector\nAll 12 tests pass\n```\n',
+            },
+          },
+          agentIdsByWorkspace: {},
+        },
+      },
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.find((agent) => agent.id === 'a1')?.line).toBe('All 12 tests pass');
+  });
+
   it('card agent line falls back to the wire lastToolUse preview (agent:last-message apply)', () => {
     const state = cardState(
       [
@@ -1404,7 +1438,9 @@ describe('selectHudWorkspaceCards', () => {
       },
     );
     const [card] = selectHudWorkspaceCards.select(state);
-    expect(card.agents.find((agent) => agent.id === 'a1')?.line).toBe('str-replace-editor');
+    // The canonical chain classifies the tool block into its display label
+    // (verb + subject + path), not the raw tool name.
+    expect(card.agents.find((agent) => agent.id === 'a1')?.line).toBe('Edit x.ts src');
   });
 
   it('a merely-waiting agent (no attention) buckets idle and drops off the card rows', () => {
@@ -2150,7 +2186,10 @@ describe('selectHudWorkspaceCards', () => {
   it('joins hydrated lastAgentResponse lines onto needs-attention and idle-summary agents too', () => {
     // Sessions carry ONLY the AgentLite hydration snapshot (agent.list §5.5
     // via bulkUpsertSessions) — no live status event ever fired in this
-    // window. The line must still surface on non-running rows.
+    // window. The line must still surface on non-running rows. Canonical
+    // precedence: a pending attention request's reason outranks the
+    // hydrated lastAgentResponse on a1; a2 has no attention and falls
+    // through to the persisted response.
     const state = cardState(
       [
         makeWorkspace('ws-1', {
@@ -2172,6 +2211,7 @@ describe('selectHudWorkspaceCards', () => {
             a1: {
               status: 'waiting',
               attentionRequestKind: 'discussion',
+              attentionRequestReason: 'Need a decision on the rollout order',
               lastAgentResponse: 'Waiting on the reviewer',
               messages: [],
             },
@@ -2183,9 +2223,42 @@ describe('selectHudWorkspaceCards', () => {
     );
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.agents.map((a) => [a.id, a.bucket, a.line])).toEqual([
-      ['a1', 'needs-attention', 'Waiting on the reviewer'],
+      ['a1', 'needs-attention', 'Need a decision on the rollout order'],
       ['a2', 'running', 'Porting the fetch loop'],
     ]);
+  });
+
+  it('a reasonless attention request yields a null line without falling back (canonical chain)', () => {
+    const state = cardState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 1,
+            agentIds: ['a1'],
+            agents: [{ id: 'a1', name: 'Coordinator', status: 'waiting' }],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      {
+        agentSessions: {
+          byAgentId: {
+            a1: {
+              status: 'waiting',
+              attentionRequestKind: 'blocker',
+              lastAgentResponse: 'Old response text',
+              messages: [],
+            },
+          },
+          agentIdsByWorkspace: {},
+        },
+      },
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    const row = card.agents.find((a) => a.id === 'a1');
+    expect(row?.bucket).toBe('needs-attention');
+    expect(row?.line).toBeNull();
   });
 
   it('orders agents depth-first from parentAgentId with connector prefixes', () => {
@@ -3248,3 +3321,75 @@ describe('selectHudTakeoverView task relation projection', () => {
     expect(legacy && 'specLinked' in legacy).toBe(false);
   });
 });
+
+describe('selectHudSystem remote hostname', () => {
+  function healthState(overrides: Partial<DaemonHealthState>): StoreState {
+    return {
+      daemonHealth: { ...daemonHealthInitialState, ...overrides },
+    } as unknown as StoreState;
+  }
+
+  function statsWith(hostname?: string): NonNullable<DaemonHealthState['stats']> {
+    return {
+      clients: 1,
+      agents: 0,
+      listenMode: 'tcp',
+      port: 5181,
+      os: 'linux',
+      arch: 'x86_64',
+      ...(hostname !== undefined ? { hostname } : {}),
+    };
+  }
+
+  it('exposes the short hostname when the daemon reports remote locality', () => {
+    const state = healthState({
+      health: 'healthy',
+      hostLocality: 'remote',
+      stats: statsWith('intent1'),
+    });
+    expect(selectHudSystem.select(state).remoteHostname).toBe('intent1');
+  });
+
+  it('strips everything from the first dot (intent1.local → intent1)', () => {
+    const state = healthState({
+      health: 'healthy',
+      hostLocality: 'remote',
+      stats: statsWith('intent1.local'),
+    });
+    expect(selectHudSystem.select(state).remoteHostname).toBe('intent1');
+  });
+
+  it('is null for a local daemon even when a hostname is known', () => {
+    const state = healthState({
+      health: 'healthy',
+      hostLocality: 'local',
+      stats: statsWith('studio.local'),
+    });
+    expect(selectHudSystem.select(state).remoteHostname).toBeNull();
+  });
+
+  it('is null when the poll carried no hostname (older daemon)', () => {
+    const state = healthState({
+      health: 'healthy',
+      hostLocality: 'remote',
+      stats: statsWith(),
+    });
+    expect(selectHudSystem.select(state).remoteHostname).toBeNull();
+  });
+
+  it('is null before the first poll (unknown locality, no stats)', () => {
+    expect(selectHudSystem.select(healthState({})).remoteHostname).toBeNull();
+  });
+
+  it('survives the ONLINE→OFFLINE flip (stats are kept on disconnect)', () => {
+    const state = healthState({
+      health: 'down',
+      hostLocality: 'remote',
+      stats: statsWith('intent1.local'),
+    });
+    const view = selectHudSystem.select(state);
+    expect(view.online).toBe(false);
+    expect(view.remoteHostname).toBe('intent1');
+  });
+});
+

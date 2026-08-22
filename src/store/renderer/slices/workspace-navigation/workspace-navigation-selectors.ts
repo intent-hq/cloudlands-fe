@@ -1,11 +1,10 @@
-import { store } from "../../store";
+import { store } from '../../store';
 import {
   createWorkspaceNavigationState,
-  type WorkspaceNavigationDrawerState,
   type WorkspaceNavigationMainPanelState,
   type WorkspaceNavigationNavigationState,
   type WorkspaceNavigationWorkspaceState,
-} from "./workspace-navigation-slice";
+} from './workspace-navigation-slice';
 
 export const selectWorkspaceNavigationState = store.createSelector<
   [wsId: string],
@@ -19,13 +18,6 @@ export const selectWorkspaceNavigationMainPanel = store.createSelector<
   WorkspaceNavigationMainPanelState
 >((state, wsId) => {
   return selectWorkspaceNavigationState.select(state, wsId).mainPanel;
-});
-
-export const selectWorkspaceNavigationDrawer = store.createSelector<
-  [wsId: string],
-  WorkspaceNavigationDrawerState
->((state, wsId) => {
-  return selectWorkspaceNavigationState.select(state, wsId).drawer;
 });
 
 export const selectWorkspaceNavigationHistory = store.createSelector<

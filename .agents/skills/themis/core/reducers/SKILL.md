@@ -2,9 +2,8 @@
 name: core/reducers
 description: >-
   createReducer<State>(initialState) returns a reducer whose .with(action, fn)
-  registers pure handlers by mutation. Export the createReducer return directly,
-  then call .with() as an unassigned expression (no chaining or .build()). The reducer
-  is a function (state = initialState, action)
+  chain-registers pure handlers and returns the same reducer (fluent builder —
+  no .build() needed). The reducer is a function (state = initialState, action)
   that dispatches to the registered handler by action.type. Reducers must be
   pure and immutable — no side effects, no mutation, no Date.now(). Reducers
   update canonical state only and never maintain selector-derived fields. Return
@@ -23,7 +22,7 @@ triggers:
 ---
 # Reducers — `createReducer`
 
-> Operational guidance for reducer implementation. Full API walkthrough and examples: `docs/REDUCERS.md` → Creating Reducers. Public API: `@augmentcode/themis/utils/store/create-reducer`; related guidance: `../SKILL.md` §3, §14.
+> Operational guidance for reducer implementation. Full API walkthrough and examples: `@augmentcode/themis/docs/REDUCERS.md` → Creating Reducers. Public API: `@augmentcode/themis/utils/store/create-reducer`; related guidance: `../SKILL.md` §3, §14.
 
 ## Use when
 
@@ -49,7 +48,7 @@ triggers:
 
 ## Examples
 
-### Export the reducer function before registering handlers
+### Chain handlers on the reducer function
 
 ```ts
 import { createAction } from "@augmentcode/themis/utils/store/create-action";
@@ -58,8 +57,7 @@ import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 type CounterState = { value: number };
 const increment = createAction<[amount: number]>("counter/increment");
 
-export const counterReducer = createReducer<CounterState>({ value: 0 });
-counterReducer.with(
+export const counterReducer = createReducer<CounterState>({ value: 0 }).with(
   increment,
   (state, { payload: [amount] }) => ({ value: state.value + amount })
 );
@@ -77,8 +75,7 @@ type TodosState = { todos: Collection<Todo, "id"> };
 const initialState: TodosState = { todos: createCollection<Todo, "id">("id") };
 const renameTodo = createAction("todos/rename", (id: string, title: string) => ({ id, title }));
 
-export const todosReducer = createReducer(initialState);
-todosReducer.with(renameTodo, (state, { payload }) => {
+export const todosReducer = createReducer(initialState).with(renameTodo, (state, { payload }) => {
   const todos = updateItem(state.todos, { id: payload.id, title: payload.title });
   return todos === state.todos ? state : { ...state, todos };
 });
@@ -92,8 +89,7 @@ import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 
 const setSearch = createAction<[query: string]>("todos/setSearch");
 
-export const reducer = createReducer({ filters: { query: "" } });
-reducer.with(
+export const reducer = createReducer({ filters: { query: "" } }).with(
   setSearch,
   (state, { payload: [query] }) =>
     state.filters.query === query ? state : { ...state, filters: { ...state.filters, query } }
@@ -109,10 +105,10 @@ import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 type Todo = { id: string; title: string };
 const loadTodo = createAsyncAction<[id: string], { id: string }, Todo>("todos/loadAsync", "todos/load", (id) => ({ id }));
 
-export const reducer = createReducer({ loading: false, todo: undefined as Todo | undefined, error: "" });
-reducer.with(loadTodo, (state) => ({ ...state, loading: true, error: "" }));
-reducer.with(loadTodo.success, (state, { payload }) => ({ ...state, loading: false, todo: payload.response }));
-reducer.with(loadTodo.failure, (state, { payload }) => ({ ...state, loading: false, error: payload.error.message }));
+export const reducer = createReducer({ loading: false, todo: undefined as Todo | undefined, error: "" })
+  .with(loadTodo, (state) => ({ ...state, loading: true, error: "" }))
+  .with(loadTodo.success, (state, { payload }) => ({ ...state, loading: false, todo: payload.response }))
+  .with(loadTodo.failure, (state, { payload }) => ({ ...state, loading: false, error: payload.error.message }));
 ```
 
 ### ❌ Bad: mutation and reducer-created nondeterminism
@@ -128,8 +124,7 @@ const initialState: TodosState = { todos: createCollection<Todo, "id">("id"), up
 const renameTodo = createAction("todos/rename", (id: string, title: string) => ({ id, title }));
 
 // BAD: mutation hides changes from reference checks and Date.now() makes replay nondeterministic.
-export const reducer = createReducer(initialState);
-reducer.with(renameTodo, (state, { payload }) => {
+export const reducer = createReducer(initialState).with(renameTodo, (state, { payload }) => {
   state.todos.map[payload.id].title = payload.title;
   state.updatedAtMs = Date.now();
   return state;
@@ -145,8 +140,7 @@ import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 const setSearch = createAction<[query: string]>("todos/setSearch");
 
 // BAD: createReducer only shallow-compares the top-level state object.
-export const reducer = createReducer({ filters: { query: "" } });
-reducer.with(setSearch, (state, { payload: [query] }) => ({
+export const reducer = createReducer({ filters: { query: "" } }).with(setSearch, (state, { payload: [query] }) => ({
   ...state,
   filters: { ...state.filters, query },
 }));
@@ -154,11 +148,10 @@ reducer.with(setSearch, (state, { payload: [query] }) => ({
 
 ## Implementation cues
 
-- `createReducer` returns the reducer function itself. Export that direct return before registrations.
-- `.with()` mutates the reducer registration. Invoke each call as a separate, unassigned expression; never chain, assign, return, or export its result.
+- `createReducer` returns the reducer function itself; `.with()` mutates the builder registration and returns the same reducer for chaining.
 - `reducer.initialState` is available for tests.
 - Collection helpers often already preserve reference equality on no-op; wrap parent state updates so the parent also preserves the same reference.
-- Helpers like `createBooleanPreference.register(reducer)` compose handlers into the direct reducer; call them as standalone expressions and ignore their returned builder.
+- Helpers like `createBooleanPreference.register(builder)` can compose handlers into an existing reducer builder.
 
 ## Verification cues
 
@@ -168,7 +161,7 @@ reducer.with(setSearch, (state, { payload: [query] }) => ({
 
 ## See also
 
-- `docs/REDUCERS.md` — human reference for reducer and action examples.
+- `@augmentcode/themis/docs/REDUCERS.md` — human reference for reducer and action examples.
 - `core/actions/SKILL.md` — action creator contracts consumed by `.with()`.
 - `core/collections/SKILL.md` — immutable entity updates.
 - Selected Store family selector skill — derived values belong in selectors.

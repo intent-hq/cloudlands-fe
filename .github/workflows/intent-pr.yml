@@ -298,6 +298,8 @@ jobs:
         run: pnpm exec tsc --noEmit -p tsconfig.preload.json
       - name: ESLint
         run: pnpm run lint
+      - name: Dead code (knip)
+        run: pnpm run lint:dead-code
       - name: Accessibility lint
         run: bash scripts/check-accessibility.sh
       - name: workspace:* dispatcher gate

@@ -6,12 +6,13 @@ import { invalidControlContrastCases } from '../../../../../tests/helpers/invali
 import ComboboxHarness from './combobox.test-harness.svelte';
 
 describe('Combobox inventory', () => {
-  it('owns the canonical pattern and resolves every legacy searchable family to it', () => {
+  it('owns the canonical pattern with every legacy searchable family barrel removed', () => {
     const inventory = buildUiComponentInventory();
     const canonical = inventory.components.find(
       (component) => component.publicImport === '$lib/components/ui/combobox',
     );
     expect(canonical).toMatchObject({ category: 'pattern', owner: '007-B6', replacement: null });
+    expect(canonical?.source).toBeTruthy();
 
     for (const publicImport of [
       '$lib/components/ui/grouped-combobox',
@@ -21,8 +22,7 @@ describe('Combobox inventory', () => {
       const legacy = inventory.components.find(
         (component) => component.publicImport === publicImport,
       );
-      expect(legacy?.replacement).toBe('$lib/components/ui/combobox');
-      expect(canonical?.source).toBeTruthy();
+      expect(legacy, publicImport).toBeUndefined();
     }
   });
 });

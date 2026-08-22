@@ -57,9 +57,7 @@ export const SETTINGS_TABS = [
   },
 ] as const;
 
-export type SettingsTabId = (typeof SETTINGS_TABS)[number]['id'];
-export type SettingsTheme = 'light' | 'dark';
-export type SettingsViewport = 'desktop' | 'compact';
+type SettingsTabId = (typeof SETTINGS_TABS)[number]['id'];
 
 const VIEWPORTS = {
   desktop: { width: 1440, height: 1000 },
@@ -128,7 +126,7 @@ export const SETTINGS_CAPTURE_FIXTURES = CAPTURE_CASES.map(
 
 export type SettingsCaptureFixture = (typeof SETTINGS_CAPTURE_FIXTURES)[number];
 export type SettingsFixtureState = SettingsCaptureFixture['state'];
-export type SettingsFixtureTransition = 'add' | 'retry' | 'confirm' | 'save';
+type SettingsFixtureTransition = 'add' | 'retry' | 'confirm' | 'save';
 export const SETTINGS_STATE_FIXTURE_CONTEXT = 'settings-state-fixture-context';
 
 export type SettingsOwnerSnapshot = {

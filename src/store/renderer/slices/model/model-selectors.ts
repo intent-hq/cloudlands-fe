@@ -82,10 +82,6 @@ export const selectIsLoadingModels = store.createSelector((state, providerId?: s
   return selectProviderLoadingState.select(state, providerId)?.status === 'loading';
 });
 
-export const selectModelsLoaded = store.createSelector((state, providerId?: string): boolean => {
-  return selectProviderLoadingState.select(state, providerId)?.status === 'success';
-});
-
 /** Select the load error message */
 export const selectLoadError = store.createSelector((state, providerId?: string): string | null => {
   const loadingState = selectProviderLoadingState.select(state, providerId);
@@ -125,14 +121,6 @@ export const selectAllProviderStaleFlags = store.createSelector(
     return stale;
   },
 );
-
-export const selectRetryAttempt = store.createSelector((state, providerId?: string): number => {
-  return selectProviderLoadingState.select(state, providerId)?.retryAttempt ?? 0;
-});
-
-export const selectIsLoadingModelsForProvider = selectIsLoadingModels;
-
-export const selectModelsLoadedForProvider = selectModelsLoaded;
 
 /** Select all provider models */
 export const selectProviderModels = store.createSelector((state): Record<string, string> => {

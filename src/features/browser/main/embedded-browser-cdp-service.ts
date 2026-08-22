@@ -11,6 +11,7 @@
 import { webContents, ipcMain } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
+import { isBrowserEmulatedSize } from '../../../shared/ipc/workspace-command-payloads';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 
 const logger = new Logger('EmbeddedBrowserCdp');
@@ -24,11 +25,34 @@ const logger = new Logger('EmbeddedBrowserCdp');
 export const DEFAULT_AGENT_VIEWPORT = { width: 1280, height: 800 } as const;
 
 /**
+ * Emulated viewport dimension bounds for agent-owned tabs (docs/protocol
+ * §5.9). Live openTab/claimTab/resizeTab requests are validated against
+ * these by the action schema; rehydration from a persisted layout clamps
+ * into the same range so a hand-edited/corrupt layout file cannot replay
+ * extreme sizes into CDP emulation (monorepo#2857).
+ */
+export const AGENT_VIEWPORT_MIN_PX = 320;
+export const AGENT_VIEWPORT_MAX_PX = 3840;
+
+function clampViewportDimension(px: number): number {
+  return Math.min(AGENT_VIEWPORT_MAX_PX, Math.max(AGENT_VIEWPORT_MIN_PX, Math.round(px)));
+}
+
+/**
  * How long (ms) to wait for a tab's webview to mount and register after an
  * openTab/focusTab request. Registration fires on the webview's dom-ready,
  * so slow page loads (e.g. dev servers over a tunnel) need a generous bound.
  */
 const TAB_REGISTRATION_TIMEOUT_MS = 15_000;
+
+/**
+ * How long (ms) to wait for the Page-domain screenshot CDP commands
+ * (Page.getLayoutMetrics / Page.captureScreenshot) before falling back to
+ * webContents.capturePage(). On some guests the debugger's Page domain never
+ * answers even while Runtime/Accessibility commands work, hanging screenshot
+ * until the caller's budget kills it (intent-hq/monorepo#3154).
+ */
+const SCREENSHOT_CDP_TIMEOUT_MS = 5_000;
 
 interface TabInfo {
   tabId: string;
@@ -46,6 +70,18 @@ interface PanelBrowserTab {
   closable?: boolean;
   /** Persisted owner when the tab is agent-owned (monorepo#2857); null/absent = unowned. */
   ownerAgentId?: string | null;
+  /**
+   * Persisted emulated viewport when the tab is agent-owned (monorepo#2857);
+   * absent on unowned tabs and on layouts persisted before sizes were
+   * recorded (those rehydrate at the default viewport).
+   */
+  emulatedSize?: { width: number; height: number };
+  /**
+   * The tab is in the workspace's hidden set (monorepo#3045): alive and
+   * CDP-addressable offscreen, but not mounted into any panel. Only
+   * agent-owned tabs can be hidden; absent = visible.
+   */
+  hidden?: boolean;
 }
 
 /**
@@ -68,7 +104,7 @@ interface TabOwnership {
 }
 
 /** Result of an atomic claim attempt (monorepo#2857). */
-export type ClaimTabResult =
+type ClaimTabResult =
   | { status: 'claimed'; alreadyOwned: boolean }
   | { status: 'already-claimed'; ownerAgentId: string };
 
@@ -117,6 +153,14 @@ class EmbeddedBrowserCdpService {
    */
   private tabOwnership = new Map<string, TabOwnership>();
 
+  /**
+   * Agents whose owned tabs were destroyed via {@link clearAgentTabs}
+   * (deletion committed, monorepo#2857). An in-flight LIST_TABS_RESPONSE
+   * produced before the renderer purge could otherwise re-hydrate their
+   * ownership records; hydration skips tombstoned owners.
+   */
+  private clearedAgentTombstones = new Set<string>();
+
   /** Pending resolvers waiting for a tabId to register, keyed by tabId. */
   private registrationWaiters = new Map<string, Set<(registered: boolean) => void>>();
 
@@ -159,7 +203,14 @@ class EmbeddedBrowserCdpService {
           return;
         }
         if (!Array.isArray(data.tabs)) return;
-        const tabs = data.tabs;
+        // Drop tabs owned by tombstoned (deletion-committed) agents: a
+        // reply produced before the renderer purge must not re-enter the
+        // cache or re-hydrate ownership (monorepo#2857).
+        const tabs = data.tabs.filter(
+          (tab) =>
+            typeof tab.ownerAgentId !== 'string' ||
+            !this.clearedAgentTombstones.has(tab.ownerAgentId),
+        );
         // Re-seed the ownership registry from the renderer's persisted
         // layout so ownership survives an app restart (monorepo#2857).
         this.hydrateOwnershipFromPanelTabs(tabs);
@@ -450,6 +501,7 @@ class EmbeddedBrowserCdpService {
       mounted: boolean;
       ownerAgentId?: string;
       emulatedSize?: { width: number; height: number };
+      hidden?: boolean;
     })[];
     stale: boolean;
   }> {
@@ -470,15 +522,17 @@ class EmbeddedBrowserCdpService {
     // Panel tabs only, marking whether each is backed by a live webview.
     // Each tab is annotated with its owner from the ownership registry
     // (rehydrated from the panel reply above) so agents can see which tabs
-    // they may manipulate (monorepo#2857).
+    // they may manipulate (monorepo#2857), and with `hidden` when the tab
+    // sits in the workspace's hidden set (monorepo#3045).
     const tabs = panelTabs.map((panelTab) => {
       const ownership = this.tabOwnership.get(panelTab.tabId);
       const owner = ownership
         ? { ownerAgentId: ownership.ownerAgentId, emulatedSize: ownership.emulatedSize }
         : {};
+      const hidden = panelTab.hidden === true ? { hidden: true } : {};
       const mounted = mountedTabs.find((t) => t.tabId === panelTab.tabId);
       if (mounted) {
-        return { ...mounted, mounted: true, ...owner };
+        return { ...mounted, mounted: true, ...owner, ...hidden };
       }
       return {
         tabId: panelTab.tabId,
@@ -487,6 +541,7 @@ class EmbeddedBrowserCdpService {
         title: panelTab.title,
         mounted: false,
         ...owner,
+        ...hidden,
       };
     });
     return { tabs, stale };
@@ -550,6 +605,58 @@ class EmbeddedBrowserCdpService {
     // resolve immediately, unmounted-but-listed tabs resolve when the
     // remounted webview registers, and nonexistent tabs time out to false.
     return this.waitForTabRegistration(tabId);
+  }
+
+  /**
+   * Reveal a hidden agent-owned tab into a panel (monorepo#3045). With
+   * `focus: false` (the default) the tab is mounted into a panel's tab list
+   * WITHOUT becoming active and without moving panel focus; `focus: true`
+   * reveals and activates. The renderer treats an already-visible tab as
+   * idempotent: a no-op for `focus: false`, activate-and-focus for
+   * `focus: true`.
+   *
+   * The reveal is confirmed against a fresh renderer tab list (the same
+   * confirm-by-list discipline closeTab uses): only a fresh reply that lists
+   * the tab as not hidden counts. Existence/ownership validation lives in
+   * the action executor — this method only delivers and confirms.
+   *
+   * @returns void on success; throws when no window received the request or
+   *          the reveal could not be confirmed
+   */
+  async showTab(tabId: string, workspaceId?: string, focus?: boolean): Promise<void> {
+    if (!tabId) {
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      throw new Error('showTab requires a tabId.');
+    }
+    if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      throw new Error('workspaceId is required to show a browser tab');
+    }
+
+    const delivery = sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.SHOW_TAB, {
+      tabId,
+      workspaceId,
+      ...(focus === undefined ? {} : { focus }),
+    });
+    if (!delivery.delivered) {
+      throw new Error(
+        `Cannot show tab ${tabId}: workspace ${workspaceId} is not open in any window.`, // i18n-ignore (agent-facing protocol error, not user-facing)
+      );
+    }
+    logger.info('Sent show request for browser tab', { tabId, workspaceId, focus });
+
+    // Confirm the renderer revealed the tab: only a fresh (non-stale) reply
+    // listing the tab without the hidden marker counts.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const after = await this.requestPanelBrowserTabs(workspaceId);
+      if (!after.stale) {
+        const tab = after.tabs.find((t) => t.tabId === tabId);
+        if (tab && tab.hidden !== true) return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    // i18n-ignore (agent-facing protocol error, not user-facing)
+    throw new Error(`Tab ${tabId} could not be shown (the UI did not confirm the reveal).`);
   }
 
   /**
@@ -826,8 +933,7 @@ class EmbeddedBrowserCdpService {
     size?: { width: number; height: number },
   ): void {
     const previous = this.tabOwnership.get(tabId);
-    const recorded =
-      requestedUrl === null ? undefined : (requestedUrl ?? previous?.requestedUrl);
+    const recorded = requestedUrl === null ? undefined : (requestedUrl ?? previous?.requestedUrl);
     this.tabOwnership.set(tabId, {
       ownerAgentId,
       ...(recorded !== undefined ? { requestedUrl: recorded } : {}),
@@ -950,6 +1056,37 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
+   * Destroy-side cleanup for ALL tabs owned by an agent whose deletion
+   * committed (monorepo#2857): detach debuggers, drop registry + ownership
+   * records, and purge the tabs from the per-workspace tab cache so a stale
+   * reply cannot resurrect them. The renderer removes the layout/hidden
+   * entries itself (destroyTabsByOwnerAgent) and calls this over IPC.
+   */
+  clearAgentTabs(agentId: string): string[] {
+    // Tombstone BEFORE clearing so an in-flight LIST_TABS_RESPONSE produced
+    // pre-purge can never re-hydrate this agent's ownership records.
+    this.clearedAgentTombstones.add(agentId);
+    const tabIds: string[] = [];
+    for (const [tabId, ownership] of this.tabOwnership) {
+      if (ownership.ownerAgentId === agentId) tabIds.push(tabId);
+    }
+    for (const tabId of tabIds) {
+      this.unregisterTab(tabId);
+      this.clearTabOwnership(tabId);
+      for (const [key, tabs] of this.panelBrowserTabsCache) {
+        this.panelBrowserTabsCache.set(
+          key,
+          tabs.filter((t) => t.tabId !== tabId),
+        );
+      }
+    }
+    if (tabIds.length > 0) {
+      logger.info('Cleared owned tabs for deleted agent', { agentId, tabIds });
+    }
+    return tabIds;
+  }
+
+  /**
    * Atomically claim an unowned tab for an agent (monorepo#2857).
    *
    * First claim wins: main's single-threaded event loop makes the
@@ -985,19 +1122,35 @@ class EmbeddedBrowserCdpService {
    * Re-seed the ownership registry from a renderer tab-list reply so
    * persisted ownership survives an app restart (monorepo#2857). Existing
    * in-memory records win (they may carry a requestedUrl / size the layout
-   * does not); rehydrated records get the default viewport until resized.
+   * does not); rehydrated records restore the layout's persisted emulated
+   * size, falling back to the default viewport when none was persisted
+   * (pre-size layouts).
    */
   private hydrateOwnershipFromPanelTabs(tabs: PanelBrowserTab[]): void {
     for (const tab of tabs) {
       if (typeof tab.ownerAgentId !== 'string' || tab.ownerAgentId.length === 0) continue;
+      // A stale renderer reply may still list tabs of an agent whose
+      // deletion already committed — never resurrect those (monorepo#2857).
+      if (this.clearedAgentTombstones.has(tab.ownerAgentId)) continue;
       if (this.tabOwnership.has(tab.tabId)) continue;
+      // The persisted layout file is user-editable on disk, so clamp the
+      // restored size into the same bounds the live action schema enforces —
+      // a corrupt/hand-edited value must not replay an extreme viewport
+      // into CDP emulation.
+      const emulatedSize = isBrowserEmulatedSize(tab.emulatedSize)
+        ? {
+            width: clampViewportDimension(tab.emulatedSize.width),
+            height: clampViewportDimension(tab.emulatedSize.height),
+          }
+        : { ...DEFAULT_AGENT_VIEWPORT };
       this.tabOwnership.set(tab.tabId, {
         ownerAgentId: tab.ownerAgentId,
-        emulatedSize: { ...DEFAULT_AGENT_VIEWPORT },
+        emulatedSize,
       });
       logger.info('Rehydrated tab ownership from panel layout', {
         tabId: tab.tabId,
         ownerAgentId: tab.ownerAgentId,
+        ...emulatedSize,
       });
       // The tab may have registered before its ownership was known (restart
       // races dom-ready against the first tab-list reply) — apply now.
@@ -1025,16 +1178,34 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Notify the renderer that a tab's owner changed (successful claim) so the
-   * panel layout persists `ownerAgentId` with the tab (monorepo#2857).
-   * Fire-and-forget, mirroring notifyTabNavigated.
+   * Notify the renderer that a tab's owner changed (successful claim) or its
+   * emulated viewport changed (resizeTab) so the panel layout persists
+   * `ownerAgentId` and `emulatedSize` with the tab (monorepo#2857).
+   * Fire-and-forget, mirroring notifyTabNavigated. The tab's current
+   * emulated size from the ownership registry rides along so the size
+   * survives restart.
    */
-  notifyTabOwnerChanged(tabId: string, workspaceId: string | undefined, ownerAgentId: string): void {
-    if (!tabId || typeof workspaceId !== 'string' || workspaceId.length === 0) return;
+  notifyTabOwnerChanged(
+    tabId: string,
+    workspaceId: string | undefined,
+    ownerAgentId: string,
+  ): void {
+    if (!tabId || typeof workspaceId !== 'string' || workspaceId.length === 0) {
+      // Without a workspaceId there is no target window to notify, so the
+      // owner/size change stays in-memory only and will not survive a
+      // restart — log it so the gap is diagnosable (the caller's action
+      // still reports success).
+      logger.debug('Skipping tab owner/size persistence notification (no workspaceId)', {
+        tabId,
+      });
+      return;
+    }
+    const emulatedSize = this.tabOwnership.get(tabId)?.emulatedSize;
     sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.TAB_OWNER_CHANGED, {
       tabId,
       workspaceId,
       ownerAgentId,
+      ...(emulatedSize === undefined ? {} : { emulatedSize: { ...emulatedSize } }),
     });
   }
 
@@ -1290,6 +1461,63 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
+   * Race a Page-domain screenshot command against a bounded timeout. The
+   * command promise is returned as-is when it settles first; on timeout the
+   * caller falls back to webContents.capturePage() (monorepo#3154).
+   * Rejections are prefixed with the command label so the fallback's warn
+   * log always identifies which CDP command failed.
+   */
+  private async withScreenshotCdpTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`${label} timed out after ${SCREENSHOT_CDP_TIMEOUT_MS}ms`)),
+            SCREENSHOT_CDP_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw message.startsWith(label) ? error : new Error(`${label} failed: ${message}`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Fallback capture via webContents.capturePage(): works without the
+   * debugger's Page domain (which on some guests never answers even while
+   * Runtime/Accessibility commands work, monorepo#3154) and honors
+   * offscreen painting. Captures the full visible view (no scroll clip).
+   *
+   * Fidelity caveats versus the CDP path: on viewport-emulated tabs whose
+   * displayed image is scaled to fit the hosting view (scale < 1), this
+   * captures the scaled-down composited view, so width/height can differ
+   * from the tab's emulated size; and getSize() reports DIP dimensions
+   * while toJPEG() encodes the physical-pixel bitmap, so on HiDPI displays
+   * the encoded image can exceed the reported width/height by the display
+   * scale factor. Acceptable degradation versus hanging the action.
+   */
+  private async capturePageFallback(
+    webContentsId: number,
+  ): Promise<{ base64: string; width: number; height: number }> {
+    const wc = webContents.fromId(webContentsId);
+    if (!wc || wc.isDestroyed()) {
+      throw new Error(`WebContents ${webContentsId} not found or destroyed`);
+    }
+    const image = await wc.capturePage();
+    const size = image.getSize();
+    return {
+      base64: image.toJPEG(80).toString('base64'),
+      width: size.width,
+      height: size.height,
+    };
+  }
+
+  /**
    * Take a screenshot of a tab
    */
   async screenshot(tabId?: string): Promise<{ base64: string; width: number; height: number }> {
@@ -1303,12 +1531,33 @@ class EmbeddedBrowserCdpService {
       );
     }
 
+    try {
+      return await this.screenshotViaCdp(webContentsId);
+    } catch (error) {
+      // The Page domain can hang (or fail) on some guests while the rest of
+      // the debugger session works; degrade to capturePage() instead of
+      // hanging the action until the caller's budget kills it (#3154).
+      logger.warn('CDP screenshot failed; falling back to webContents.capturePage()', {
+        webContentsId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return this.capturePageFallback(webContentsId);
+    }
+  }
+
+  /** Page-domain screenshot with per-command timeouts (see screenshot()). */
+  private async screenshotViaCdp(
+    webContentsId: number,
+  ): Promise<{ base64: string; width: number; height: number }> {
     // Get layout metrics to determine viewport size.
     // layoutViewport reflects the page's internal layout (may exceed visible area
     // if the page sets min-width larger than the panel).
     // cssVisualViewport reflects the actual visible area the user sees.
     // We cap to whichever is smaller so screenshots match the panel bounds.
-    const layoutMetrics = (await this.sendCommand(webContentsId, 'Page.getLayoutMetrics')) as {
+    const layoutMetrics = (await this.withScreenshotCdpTimeout(
+      this.sendCommand(webContentsId, 'Page.getLayoutMetrics'),
+      'Page.getLayoutMetrics',
+    )) as {
       layoutViewport: { clientWidth: number; clientHeight: number };
       cssVisualViewport?: {
         clientWidth: number;
@@ -1333,17 +1582,20 @@ class EmbeddedBrowserCdpService {
     const width = visualW && visualW > 0 ? Math.min(layoutW, visualW) : layoutW;
     const height = visualH && visualH > 0 ? Math.min(layoutH, visualH) : layoutH;
 
-    const result = (await this.sendCommand(webContentsId, 'Page.captureScreenshot', {
-      format: 'jpeg',
-      quality: 80,
-      clip: {
-        x: scrollX,
-        y: scrollY,
-        width,
-        height,
-        scale: 1,
-      },
-    })) as { data: string };
+    const result = (await this.withScreenshotCdpTimeout(
+      this.sendCommand(webContentsId, 'Page.captureScreenshot', {
+        format: 'jpeg',
+        quality: 80,
+        clip: {
+          x: scrollX,
+          y: scrollY,
+          width,
+          height,
+          scale: 1,
+        },
+      }),
+      'Page.captureScreenshot',
+    )) as { data: string };
 
     return {
       base64: result.data,

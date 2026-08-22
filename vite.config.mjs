@@ -70,6 +70,17 @@ const preventSvelteKitRegenHMR = () => ({
   // eslint-disable-next-line no-unused-vars
   handleHotUpdate({ file, server }) {
     const normalizedFile = file.replace(/\\/g, '/');
+    // Block ordinary HMR updates for anything inside nested .intent isolated worktrees
+    // (monorepo#3150). The primary fix is the '**/.intent/**' server.watch.ignored
+    // pattern; this backstops plain HMR events only — it cannot intercept Vite's
+    // tsconfig cache-clear/full-reload path, which fires from watcher events in core
+    // before any plugin's handleHotUpdate runs.
+    if (normalizedFile.includes('/.intent/')) {
+      console.log(
+        `[HMR-BLOCKED] Prevented reload for nested .intent worktree file: ${normalizedFile}`,
+      );
+      return [];
+    }
     // Block HMR for .svelte-kit/generated and .svelte-kit/types files
     if (
       normalizedFile.includes('.svelte-kit/generated') ||
@@ -419,6 +430,10 @@ export default defineConfig(({ mode }) => {
           '**/dist-electron/**',
           '**/.git/**',
           '**/.worktrees/**',
+          // Ignore nested isolated worktrees under .intent/ — their SvelteKit processes
+          // rewrite .svelte-kit/tsconfig.json, which triggers tsconfig cache clears and
+          // full reloads of the root dev server, stalling the app (monorepo#3150)
+          '**/.intent/**',
           // Ignore iOS/Xcode project files to prevent Electron app reloads during Xcode builds
           '**/ios/**',
           '**/.augment/**',

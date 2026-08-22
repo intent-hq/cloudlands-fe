@@ -8,16 +8,10 @@ import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import {
   CommentAnchor,
-  findCommentAnchors,
-  getAllAnchoredCommentIds,
 } from '$lib/components/tiptap/CommentAnchor';
 import type { CommentV2 } from '../comment-types-v2';
-import {
-  store as appStore,
-} from '$store/renderer/store';
+import { store as appStore } from '$store/renderer/store';
 import { loadCommentsAction } from '$store/renderer/slices/comments/comments-slice';
-import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
-import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Logger } from '../../../shared/logger';
 
 const logger = new Logger('TestUtils');
@@ -131,21 +125,6 @@ export function createTestComment(overrides: Partial<CommentV2> = {}): CommentV2
 }
 
 /**
- * Create an orphaned comment (no anchors in document)
- */
-export function createOrphanedComment(overrides: Partial<CommentV2> = {}): CommentV2 {
-  return createTestComment({
-    ...overrides,
-    isOrphaned: true,
-    anchorText: overrides.anchorText || 'Missing text',
-    anchorContext: overrides.anchorContext || {
-      before: 'Context before ',
-      after: ' context after',
-    },
-  });
-}
-
-/**
  * Insert text with anchors and create a comment
  * Returns the comment ID and positions
  */
@@ -245,215 +224,8 @@ export function insertAnchorsAtPosition(
 }
 
 /**
- * Get text content between two positions
- */
-export function getTextBetween(editor: Editor, from: number, to: number): string {
-  return editor.state.doc.textBetween(from, to);
-}
-
-/**
- * Find text in document and return position
- */
-export function findTextInDocument(
-  doc: ProseMirrorNode,
-  searchText: string,
-): { from: number; to: number } | null {
-  const docText = doc.textContent;
-  const index = docText.indexOf(searchText);
-
-  if (index === -1) {
-    return null;
-  }
-
-  return {
-    from: index + 1, // +1 because ProseMirror positions are 1-based
-    to: index + 1 + searchText.length,
-  };
-}
-
-/**
- * Wait for a debounced operation to complete
- */
-export function waitForDebounce(ms: number = 1500): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Wait for orphan check to complete (debounced at 1000ms)
- */
-export function waitForOrphanCheck(): Promise<void> {
-  return waitForDebounce(1500); // Wait longer than the debounce timeout
-}
-
-/**
  * Clear all comments from the store
  */
 export function clearCommentsStore(): void {
   appStore.dispatch(loadCommentsAction([]));
-}
-
-/**
- * Assert that anchors exist for a comment
- */
-export function assertAnchorsExist(
-  editor: Editor,
-  commentId: string,
-  expectedType: 'range' | 'point' = 'range',
-): void {
-  const anchors = findCommentAnchors(editor.state.doc, commentId);
-
-  if (expectedType === 'range') {
-    if (anchors.start === undefined || anchors.end === undefined) {
-      throw new Error(
-        `Expected range anchors for comment ${commentId}, but got: ${JSON.stringify(anchors)}`,
-      );
-    }
-  } else {
-    if (anchors.point === undefined) {
-      throw new Error(
-        `Expected point anchor for comment ${commentId}, but got: ${JSON.stringify(anchors)}`,
-      );
-    }
-  }
-}
-
-/**
- * Assert that no anchors exist for a comment
- */
-export function assertNoAnchors(editor: Editor, commentId: string): void {
-  const anchors = findCommentAnchors(editor.state.doc, commentId);
-
-  if (anchors.start !== undefined || anchors.end !== undefined || anchors.point !== undefined) {
-    throw new Error(
-      `Expected no anchors for comment ${commentId}, but found: ${JSON.stringify(anchors)}`,
-    );
-  }
-}
-
-/**
- * Assert that a comment is marked as orphaned
- */
-export function assertCommentOrphaned(commentId: string, expected: boolean = true): void {
-  const comment = selectCommentById.select(appStore.state, commentId);
-
-  if (!comment) {
-    throw new Error(`Comment ${commentId} not found in store`);
-  }
-
-  if (comment.isOrphaned !== expected) {
-    throw new Error(
-      `Expected comment ${commentId} to be ${expected ? 'orphaned' : 'not orphaned'}, but it was ${comment.isOrphaned ? 'orphaned' : 'not orphaned'}`,
-    );
-  }
-}
-
-/**
- * Get all anchored comment IDs from document
- */
-export function getAnchoredCommentIds(editor: Editor): Set<string> {
-  return getAllAnchoredCommentIds(editor.state.doc);
-}
-
-/**
- * Set editor content with HTML
- */
-export function setEditorContent(editor: Editor, html: string): void {
-  editor.commands.setContent(html);
-}
-
-/**
- * Get editor HTML content
- */
-export function getEditorHTML(editor: Editor): string {
-  try {
-    return editor.getHTML();
-  } catch  {
-    // If getHTML fails due to invalid state (e.g., with anchors), serialize manually
-    const doc = editor.state.doc;
-    const parts: string[] = [];
-
-    doc.descendants((node) => {
-      if (node.type.name === 'paragraph') {
-        let text = '';
-        node.forEach((child) => {
-          if (child.type.name === 'text') {
-            text += htmlEncode(child.text || '');
-          } else if (child.type.name === 'commentAnchor') {
-            const id = child.attrs.id;
-            text += `<span data-anchor-id="${id}" data-anchor-type="${child.attrs.type}" data-comment-id="${child.attrs.commentId}"></span>`;
-          }
-        });
-        if (text) {
-          parts.push(`<p>${text}</p>`);
-        }
-      }
-    });
-
-    return parts.length > 0 ? parts.join('') : `<p>${htmlEncode(editor.state.doc.textContent)}</p>`;
-  }
-}
-
-/**
- * HTML encode special characters
- */
-function htmlEncode(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-/**
- * Select text in editor
- */
-export function selectText(editor: Editor, from: number, to: number): void {
-  editor.commands.setTextSelection({ from, to });
-}
-
-/**
- * Delete range in editor
- */
-export function deleteRange(editor: Editor, from: number, to: number): void {
-  editor.commands.deleteRange({ from, to });
-}
-
-/**
- * Insert text at position
- */
-export function insertText(editor: Editor, text: string, position?: number): void {
-  if (position !== undefined) {
-    editor.commands.insertContentAt(position, text);
-  } else {
-    editor.commands.insertContent(text);
-  }
-}
-
-/**
- * Mock console methods for testing
- */
-export function mockConsole() {
-  const originalWarn = console.warn;
-  const originalError = console.error;
-  const originalLog = console.log;
-
-  const warnings: any[] = [];
-  const errors: any[] = [];
-  const logs: any[] = [];
-
-  console.warn = (...args: any[]) => warnings.push(args);
-  console.error = (...args: any[]) => errors.push(args);
-  console.log = (...args: any[]) => logs.push(args);
-
-  return {
-    warnings,
-    errors,
-    logs,
-    restore: () => {
-      console.warn = originalWarn;
-      console.error = originalError;
-      console.log = originalLog;
-    },
-  };
 }

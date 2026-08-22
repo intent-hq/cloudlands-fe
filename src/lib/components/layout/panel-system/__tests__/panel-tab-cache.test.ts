@@ -132,4 +132,83 @@ describe('panel tab cache', () => {
     expect(arePanelTabCachesEqual(new Map([['a', 1]]), new Map([['a', 1]]))).toBe(true);
     expect(arePanelTabCachesEqual(new Map([['a', 1]]), new Map([['a', 2]]))).toBe(false);
   });
+
+  // Agent-owned browser tabs stay mounted for the agent's lifetime
+  // (monorepo#2857): seeded immediately, exempt from TTL and the cap.
+  describe('agent-owned browser tabs', () => {
+    const owned: PanelTabCacheTab = { id: 'owned', type: 'browser', ownerAgentId: 'agent-1' };
+
+    it('mounts an owned browser tab immediately, without activation', () => {
+      const next = updatePanelTabCache(new Map(), [{ id: 'active' }, owned], 'active', 100);
+      expect(next.has('owned')).toBe(true);
+    });
+
+    it('exempts owned browser tabs from ttl eviction', () => {
+      const cache = new Map([
+        ['active', 0],
+        ['owned', 0],
+      ]);
+      const next = updatePanelTabCache(
+        cache,
+        [{ id: 'active' }, owned],
+        'active',
+        BROWSER_TAB_CACHE_TTL_MS + 1,
+        { ttlMs: 100 },
+      );
+      expect(next.has('owned')).toBe(true);
+    });
+
+    it('exempts owned browser tabs from the inactive cap and does not count them against it', () => {
+      const cache = new Map([
+        ['active', 100],
+        ['owned', 10],
+        ['b', 20],
+        ['c', 30],
+      ]);
+      const next = updatePanelTabCache(
+        cache,
+        [{ id: 'active' }, owned, { id: 'b' }, { id: 'c' }],
+        'active',
+        200,
+        { ttlMs: 10_000, maxInactiveTabs: 2 },
+      );
+      expect(next.has('owned')).toBe(true);
+      expect(next.has('b')).toBe(true);
+      expect(next.has('c')).toBe(true);
+    });
+
+    it('unowned tabs still evict normally alongside an owned tab', () => {
+      const cache = new Map([
+        ['active', 100],
+        ['owned', 10],
+        ['old', 20],
+        ['newer', 30],
+        ['newest', 40],
+      ]);
+      const next = updatePanelTabCache(
+        cache,
+        [{ id: 'active' }, owned, { id: 'old' }, { id: 'newer' }, { id: 'newest' }],
+        'active',
+        200,
+        { ttlMs: 10_000, maxInactiveTabs: 2 },
+      );
+      expect(next.has('owned')).toBe(true);
+      expect(next.has('old')).toBe(false);
+      expect(next.has('newer')).toBe(true);
+      expect(next.has('newest')).toBe(true);
+    });
+
+    it('excludes owned browser tabs from expiry scheduling', () => {
+      const cache = new Map([
+        ['active', 100],
+        ['owned', 100],
+      ]);
+      expect(
+        getNextPanelTabCacheExpiryDelay(cache, 'active', 200, 30_000, [
+          { id: 'active', type: 'note' },
+          owned,
+        ]),
+      ).toBeNull();
+    });
+  });
 });

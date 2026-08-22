@@ -15,7 +15,7 @@ export function isGithubLinkDefaultAction(value: unknown): value is GithubLinkDe
 }
 
 /** Modifier key flags extracted from a MouseEvent */
-export interface ModifierFlags {
+interface ModifierFlags {
   metaKey?: boolean;
   ctrlKey?: boolean;
 }
@@ -69,7 +69,7 @@ export function isGitHubUrl(url: string): boolean {
 }
 
 /** Kind of a parsed GitHub issue/PR reference. */
-export type GitHubIssueOrPrKind = 'issue' | 'pr';
+type GitHubIssueOrPrKind = 'issue' | 'pr';
 
 /** A GitHub issue or pull-request reference parsed from a github.com URL. */
 export interface GitHubIssueOrPrRef {

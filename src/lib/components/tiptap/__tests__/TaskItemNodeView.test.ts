@@ -449,7 +449,7 @@ describe('TaskItemNodeView - Reactivity', () => {
     container.parentElement?.insertBefore(panel, container);
     panel.appendChild(container);
 
-    await fireEvent.click(container.querySelector('button')!);
+    await fireEvent.click(container.querySelector('[data-testid="linked-task-title"]')!);
 
     expect(navigateToNoteMock).toHaveBeenCalledWith(noteId, {
       workspaceId: 'workspace-1',

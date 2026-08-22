@@ -5,12 +5,7 @@
  */
 
 export type OnboardingStep =
-  | 'requirements'
-  | 'welcome'
-  | 'github'
-  | 'project'
-  | 'configuring'
-  | 'ready';
+  'requirements' | 'welcome' | 'github' | 'project' | 'configuring' | 'ready';
 
 export type ProjectConfig = {
   repoUrl: string | null;
@@ -19,7 +14,7 @@ export type ProjectConfig = {
   branch: string | null;
 };
 
-export type AgentStatus = {
+type AgentStatus = {
   state: 'idle' | 'thinking' | 'working' | 'done' | 'error';
   message: string | null;
 };

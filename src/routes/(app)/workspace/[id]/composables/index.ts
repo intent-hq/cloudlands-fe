@@ -8,8 +8,7 @@
  * and $effect inside functions that return reactive objects.
  */
 
-export { useTabManagement, type UseTabManagementOptions } from './use-tab-management.svelte';
-export { useWorkspaceLoader, type UseWorkspaceLoaderOptions } from './use-workspace-loader.svelte';
-export { usePanelActions, type UsePanelActionsOptions } from './use-panel-actions.svelte';
-export { useCloseHandlers, type UseCloseHandlersOptions } from './use-close-handlers.svelte';
-export { usePanelShortcuts, type UsePanelShortcutsOptions } from './use-panel-shortcuts.svelte';
+export { useTabManagement } from './use-tab-management.svelte';
+export { useWorkspaceLoader } from './use-workspace-loader.svelte';
+export { useCloseHandlers } from './use-close-handlers.svelte';
+export { usePanelShortcuts } from './use-panel-shortcuts.svelte';

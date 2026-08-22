@@ -28,6 +28,7 @@ import { chatReadSaga } from './slices/chat-state/sagas/chat-read-saga';
 import { chatScrollbackSaga } from './slices/chat-state/sagas/chat-scrollback-saga';
 import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
 import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga';
+import { switchTimingSaga } from './slices/chat-state/sagas/switch-timing-saga';
 import { bootFallbackToastSaga } from './slices/connections/sagas/boot-fallback-toast-saga';
 import { connectionsSaga } from './slices/connections/sagas/connections-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
@@ -72,6 +73,7 @@ import { sidebarNavSaga } from './slices/sidebar-nav/sagas/sidebar-nav-saga';
 import { specialistsSaga } from './slices/specialists/sagas/specialists-saga';
 import { statsReadSaga } from './slices/stats/sagas/stats-read-saga';
 import { tabStateSaga } from './slices/tab-state/sagas/tab-state-saga';
+import { workspaceTabReconciliationSaga } from './slices/tab-state/sagas/workspace-tab-reconciliation-saga';
 import { workspaceTabCleanupSaga } from './slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga';
 import { taskAgentAssociationsSaga } from './slices/task-agent-associations/sagas/task-agent-associations-saga';
 import { terminalPersistenceSaga } from './slices/terminals/sagas/terminal-persistence-saga';
@@ -126,6 +128,7 @@ export const sagas = [
   chatSubscribeSaga,
   chatSendSaga,
   chatScrollbackSaga,
+  switchTimingSaga,
   permissionResponseSaga,
   agentStreamSaga,
   agentCreationSaga,
@@ -175,6 +178,7 @@ export const sagas = [
   gitRootsSaga,
   uiLayoutPersistenceSaga,
   tabStateSaga,
+  workspaceTabReconciliationSaga,
   workspaceTabCleanupSaga,
   sidebarNavSaga,
   panelLayoutSaga,

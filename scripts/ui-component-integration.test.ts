@@ -127,6 +127,9 @@ describe('Gate C generated migration ledger', () => {
       '$lib/components/ui/content-header',
       '$lib/components/ui/diff',
       '$lib/components/ui/tab',
+      '$lib/components/ui/grouped-combobox',
+      '$lib/components/ui/searchable-combobox',
+      '$lib/components/ui/searchable-select',
     ];
     expect(publicImports).not.toEqual(expect.arrayContaining(reconciledImports));
     expect(existsSync(path.join(root, 'src/lib/components/icons/ProviderIcon.svelte'))).toBe(false);
@@ -136,9 +139,6 @@ describe('Gate C generated migration ledger', () => {
     );
     expect(retained.get('$lib/components/ui/dropdown-menu.svelte')).toBe(17);
     expect(retained.get('$lib/components/ui/dropdown')).toBe(7);
-    expect(retained.get('$lib/components/ui/grouped-combobox')).toBe(1);
-    expect(retained.get('$lib/components/ui/searchable-combobox')).toBe(1);
-    expect(retained.get('$lib/components/ui/searchable-select')).toBe(1);
   });
 });
 

@@ -12,7 +12,7 @@ export type ImportStep = 'importing' | 'result';
 export type ImportRunStatus = 'idle' | 'running' | 'succeeded' | 'failed';
 
 /** Import phase mirroring the main-process `ImportRelayPhase`. */
-export type ImportRunPhase = 'reading' | 'uploading' | 'committing';
+type ImportRunPhase = 'reading' | 'uploading' | 'committing';
 
 /** Renderer copy of the `transfer:import-progress` counters (never bytes). */
 export interface ImportProgress {

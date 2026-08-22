@@ -1,4 +1,4 @@
-import type { CreateWorkspaceRequest, Workspace } from '$shared/types';
+import type { PullRequestInfo, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { shallowEqual } from 'fast-equals';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -14,52 +14,17 @@ import {
   upsertItem,
 } from '@augmentcode/themis/utils/collections/collection-utils';
 
-export type WorkspaceUpdatedEvent = {
-  workspaceId: string;
-  changes: Partial<Workspace>;
-};
-
-export type WorkspaceCreatedEvent = {
-  workspaceId: string;
-  workspace?: Workspace;
-};
-
-export type WorkspaceDeletedEvent = {
-  workspaceId: string;
-};
-
-export type WorkspaceArchivedEvent = {
-  workspaceId: string;
-};
-
-export type WorkspaceBackgroundEnrichmentEvent = {
-  workspaceId: string;
-  updates?: Partial<
-    Pick<
-      Workspace,
-      | 'repositoryOwner'
-      | 'repositoryName'
-      | 'activePullRequest'
-      | 'prStatus'
-      | 'prNumber'
-      | 'prUrl'
-      | 'pullRequests'
-      | 'agentSummary'
-    >
-  >;
-};
-
 export interface WorkspaceRecencyState {
   lastViewedAt: Record<string, number>;
 }
 
-export type PendingWorkspaceTitleMutation = {
+type PendingWorkspaceTitleMutation = {
   token: number;
   optimisticTitle: string;
   previousTitle: string;
 };
 
-export const defaultWorkspaceRecencyState: WorkspaceRecencyState = {
+const defaultWorkspaceRecencyState: WorkspaceRecencyState = {
   lastViewedAt: {},
 };
 
@@ -72,6 +37,14 @@ export type WorkspaceState = {
   loading: boolean;
   error: string | null;
   hasLoaded: boolean;
+  /**
+   * The backend id the loaded workspace list was fetched for (stamped by the
+   * loaders alongside `setWorkspaceHasLoaded(true)`), or null when unknown.
+   * `hasLoaded` alone is global and survives a backend switch, so consumers
+   * doing destructive work (e.g. tab reconciliation) must also require this
+   * stamp to match the active backend.
+   */
+  loadedBackendId: string | null;
   isCreating: boolean;
   pendingDeletions: Record<string, boolean>;
   pendingArchives: Record<string, boolean>;
@@ -85,6 +58,7 @@ export const initialState: WorkspaceState = {
   loading: false,
   error: null,
   hasLoaded: false,
+  loadedBackendId: null,
   isCreating: false,
   pendingDeletions: {},
   pendingArchives: {},
@@ -105,7 +79,12 @@ export const setWorkspaceError = createAction<[error: string | null]>(
   'workspace/setWorkspaceError',
 );
 
-export const setWorkspaceHasLoaded = createAction<[hasLoaded: boolean]>(
+/**
+ * Mark the workspace list as loaded. Pass the backend id the list was fetched
+ * for so backend-scoped consumers can detect a stale (pre-switch) load; when
+ * omitted the previous stamp is kept (legacy/test call sites).
+ */
+export const setWorkspaceHasLoaded = createAction<[hasLoaded: boolean, backendId?: string]>(
   'workspace/setWorkspaceHasLoaded',
 );
 
@@ -186,26 +165,6 @@ export const loadWorkspacesRequested = createAction<[retryCount?: number]>(
   'workspace/loadWorkspacesRequested',
 );
 
-export const createWorkspaceRequested = createAction<[request: CreateWorkspaceRequest]>(
-  'workspace/createWorkspaceRequested',
-);
-
-export const openWorkspaceRequested = createAction<[wsId: string]>(
-  'workspace/openWorkspaceRequested',
-);
-
-export const updateWorkspaceRequested = createAction<[wsId: string, changes: Partial<Workspace>]>(
-  'workspace/updateWorkspaceRequested',
-);
-
-export const duplicateWorkspaceRequested = createAction<[wsId: string, newTitle?: string]>(
-  'workspace/duplicateWorkspaceRequested',
-);
-
-export const deleteWorkspaceRequested = createAction<[wsId: string]>(
-  'workspace/deleteWorkspaceRequested',
-);
-
 // ---------------------------------------------------------------------------
 // Reducer helpers
 // ---------------------------------------------------------------------------
@@ -219,7 +178,53 @@ function normalizeWorkspacePaths(workspace: Workspace): Workspace {
   };
 }
 
-function mergeWorkspaceEnrichment(existing: Workspace | undefined, incoming: Workspace): Workspace {
+/**
+ * Union key for a `pullRequests` entry: the case-insensitive URL when present
+ * (the protocol's canonical dedup key for the daemon-merged pool), else the PR
+ * number (URL-less entries belong to the workspace repo by construction).
+ */
+function prUnionKey(pr: PullRequestInfo): string {
+  return pr.url ? pr.url.toLowerCase() : `#${pr.number}`;
+}
+
+/**
+ * URL-union of the existing (possibly daemon-merged) `pullRequests` pool with
+ * an incoming list. Non-authoritative emit paths — `workspace.get` projections,
+ * `workspace.subscribe` delta upserts, and `pr:*` event payloads — carry the
+ * *unmerged* stored list (PROTOCOL 06-events §6.9), so replacing would drop
+ * git-root / PR-monitor entries the daemon only folds into `workspace.list`.
+ * Incoming entries win for matching keys (fresher status); existing-only
+ * entries are preserved by appending. Stale-entry removal is deferred to the
+ * authoritative `workspace.list` replace (see `buildVisibleWorkspaceState`).
+ */
+function unionPullRequests(
+  existing: PullRequestInfo[] | undefined,
+  incoming: PullRequestInfo[] | undefined,
+): PullRequestInfo[] | undefined {
+  if (!incoming || incoming.length === 0) {
+    return existing;
+  }
+  if (!existing || existing.length === 0) {
+    return incoming;
+  }
+  const incomingKeys = new Set(incoming.map(prUnionKey));
+  const preserved = existing.filter((pr) => !incomingKeys.has(prUnionKey(pr)));
+  return preserved.length === 0 ? incoming : [...incoming, ...preserved];
+}
+
+/**
+ * `pullRequestsMode` picks the merge semantics for the BE-owned `pullRequests`
+ * pool: `"replace"` for the authoritative `workspace.list` emit path (the
+ * daemon serves the merged pool there, so a non-empty incoming list also
+ * reconciles stale entries away), `"union"` for non-authoritative upserts
+ * (`workspace.get` projections / delta upserts carry the unmerged stored
+ * list — see {@link unionPullRequests}).
+ */
+function mergeWorkspaceEnrichment(
+  existing: Workspace | undefined,
+  incoming: Workspace,
+  pullRequestsMode: 'replace' | 'union' = 'replace',
+): Workspace {
   const normalized = normalizeWorkspacePaths(incoming);
   if (!existing) {
     return normalized;
@@ -232,7 +237,12 @@ function mergeWorkspaceEnrichment(existing: Workspace | undefined, incoming: Wor
     ...normalized,
     agentSummary: normalized.agentSummary ?? existing.agentSummary,
     activePullRequest: normalized.activePullRequest ?? existing.activePullRequest,
-    pullRequests: hasIncomingPullRequests ? normalized.pullRequests : existing.pullRequests,
+    pullRequests:
+      pullRequestsMode === 'union'
+        ? unionPullRequests(existing.pullRequests, normalized.pullRequests)
+        : hasIncomingPullRequests
+          ? normalized.pullRequests
+          : existing.pullRequests,
     prNumber: normalized.prNumber ?? existing.prNumber,
     prStatus: normalized.prStatus ?? existing.prStatus,
     prUrl: normalized.prUrl ?? existing.prUrl,
@@ -240,13 +250,20 @@ function mergeWorkspaceEnrichment(existing: Workspace | undefined, incoming: Wor
 }
 
 function mergeLocalWorkspaceUpdate(existing: Workspace, changes: Partial<Workspace>): Workspace {
-  return normalizeWorkspacePaths({
+  const merged: Workspace = {
     ...existing,
     ...changes,
     id: existing.id,
     updatedAt: existing.updatedAt,
     createdAt: existing.createdAt,
-  });
+  };
+  // `pr:linked` / `pr:updated` payloads carry the unmerged stored list —
+  // union it with the current (possibly daemon-merged) pool instead of
+  // replacing, so background cards keep git-root / monitor PRs (§6.9).
+  if (changes.pullRequests !== undefined) {
+    merged.pullRequests = unionPullRequests(existing.pullRequests, changes.pullRequests);
+  }
+  return normalizeWorkspacePaths(merged);
 }
 
 function applyPendingWorkspaceTitle(state: WorkspaceState, workspace: Workspace): Workspace {
@@ -364,9 +381,10 @@ workspaceReducer.with(setWorkspaceError, (state, { payload: [error] }) => {
   if (state.error === error) return state;
   return { ...state, error };
 });
-workspaceReducer.with(setWorkspaceHasLoaded, (state, { payload: [hasLoaded] }) => {
-  if (state.hasLoaded === hasLoaded) return state;
-  return { ...state, hasLoaded };
+workspaceReducer.with(setWorkspaceHasLoaded, (state, { payload: [hasLoaded, backendId] }) => {
+  const loadedBackendId = backendId === undefined ? state.loadedBackendId : backendId;
+  if (state.hasLoaded === hasLoaded && state.loadedBackendId === loadedBackendId) return state;
+  return { ...state, hasLoaded, loadedBackendId };
 });
 workspaceReducer.with(setWorkspaceCreating, (state, { payload: [isCreating] }) => {
   if (state.isCreating === isCreating) return state;
@@ -417,7 +435,13 @@ workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace] }) => {
     return { ...state, workspaces: removeItem(state.workspaces, workspace.id) };
   }
   const existing = getWorkspaceById(state.workspaces, workspace.id);
-  const merged = applyPendingWorkspaceTitle(state, mergeWorkspaceEnrichment(existing, workspace));
+  // Entity upserts carry per-workspace `workspace.get`/`workspace.update`
+  // projections whose `pullRequests` is the unmerged stored list (§6.9) —
+  // union it with the current pool instead of replacing.
+  const merged = applyPendingWorkspaceTitle(
+    state,
+    mergeWorkspaceEnrichment(existing, workspace, 'union'),
+  );
   return {
     ...state,
     workspaces: existing ? upsertItem(state.workspaces, merged) : addItem(state.workspaces, merged),
@@ -482,7 +506,7 @@ workspaceReducer.with(
     const pendingTitleMutations = clearPendingTitleMutation(state.pendingTitleMutations, wsId);
     if (state.pendingDeletions[wsId]) return { ...state, pendingTitleMutations };
     const existing = getWorkspaceById(state.workspaces, wsId);
-    const merged = mergeWorkspaceEnrichment(existing, workspace);
+    const merged = mergeWorkspaceEnrichment(existing, workspace, 'union');
     return {
       ...state,
       workspaces: existing
@@ -590,6 +614,7 @@ workspaceReducer.with(resetWorkspaceState, (state) => ({
   loading: false,
   error: null,
   hasLoaded: false,
+  loadedBackendId: null,
   isCreating: false,
   pendingDeletions: {},
   pendingArchives: {},

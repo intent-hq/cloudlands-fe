@@ -392,6 +392,96 @@ describe('switchBackend serialization', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Teardown-guard hardening: captureAndClose sets the window-all-closed
+// suppression guard and restore clears it at its top. A throw from any step in
+// between must not leak the guard (which would suppress window-all-closed
+// handling for the rest of the session) — performSwitchBackend re-clears it in
+// a finally via the idempotent clearTeardownGuard hook.
+// ---------------------------------------------------------------------------
+
+describe('switch teardown-guard hardening', () => {
+  it('clears the teardown guard when a step between capture and restore throws', async () => {
+    const mod = await loadModule();
+    const captureAndClose = vi.fn(async () => {});
+    const restore = vi.fn(() => {});
+    const clearTeardownGuard = vi.fn(() => {});
+    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, clearTeardownGuard });
+    // Fail after the guard is set (captureAndClose ran) but before restore.
+    store.setActiveId.mockRejectedValueOnce(new Error('disk gone'));
+
+    await expect(mod.switchBackend('remote-1')).rejects.toThrow('disk gone');
+
+    expect(captureAndClose).toHaveBeenCalledTimes(1);
+    expect(restore).not.toHaveBeenCalled();
+    expect(clearTeardownGuard).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the teardown guard when captureAndClose itself throws after setting it', async () => {
+    // The flag is set partway through captureAndClose (before the destroy
+    // loop), so a throw from the destroy loop leaks it unless captureAndClose
+    // runs INSIDE the try/finally.
+    const mod = await loadModule();
+    const captureAndClose = vi.fn(async () => {
+      throw new Error('destroy failed');
+    });
+    const restore = vi.fn(() => {});
+    const clearTeardownGuard = vi.fn(() => {});
+    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, clearTeardownGuard });
+
+    await expect(mod.switchBackend('remote-1')).rejects.toThrow('destroy failed');
+
+    expect(restore).not.toHaveBeenCalled();
+    expect(clearTeardownGuard).toHaveBeenCalledTimes(1);
+  });
+
+  it('a rejecting guard clear never masks the original switch error', async () => {
+    const mod = await loadModule();
+    const captureAndClose = vi.fn(async () => {});
+    const restore = vi.fn(() => {});
+    const clearTeardownGuard = vi.fn(async () => {
+      throw new Error('import failed');
+    });
+    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, clearTeardownGuard });
+    store.setActiveId.mockRejectedValueOnce(new Error('disk gone'));
+
+    // The try block's error surfaces, not the finally's.
+    await expect(mod.switchBackend('remote-1')).rejects.toThrow('disk gone');
+    expect(clearTeardownGuard).toHaveBeenCalledTimes(1);
+  });
+
+  it('a rejecting guard clear does not fail an otherwise-successful switch', async () => {
+    const mod = await loadModule();
+    const captureAndClose = vi.fn(async () => {});
+    const restore = vi.fn(() => {});
+    const clearTeardownGuard = vi.fn(async () => {
+      throw new Error('import failed');
+    });
+    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, clearTeardownGuard });
+
+    await expect(mod.switchBackend('remote-1')).resolves.toEqual({ activeId: 'remote-1' });
+  });
+
+  it('runs the (idempotent) guard clear after restore on a successful switch', async () => {
+    const mod = await loadModule();
+    const order: string[] = [];
+    const captureAndClose = vi.fn(async () => {});
+    const restore = vi.fn(() => {
+      order.push('restore');
+    });
+    const clearTeardownGuard = vi.fn(() => {
+      order.push('clearTeardownGuard');
+    });
+    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore, clearTeardownGuard });
+
+    await expect(mod.switchBackend('remote-1')).resolves.toEqual({ activeId: 'remote-1' });
+
+    // restore clears the guard itself; the finally's clear runs after it and
+    // must be a harmless no-op on the success path.
+    expect(order).toEqual(['restore', 'clearTeardownGuard']);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T22 review — "Start local intentd" recovery is atomic in main: switching to
 // local tears down every window (captureAndClose) before the switch resolves, so
 // the spawn MUST NOT depend on the initiating renderer surviving. switchToLocalAndSpawn

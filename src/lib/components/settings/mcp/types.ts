@@ -11,10 +11,8 @@ export type McpTransportType = 'stdio' | 'http' | 'sse';
 export type McpAuthType = 'oauth' | 'header' | 'none';
 
 /** Server connection status */
-export type McpServerStatus = 'connected' | 'configured' | 'disconnected' | 'error' | 'auth_required' | 'disabled' | 'stopped';
-
-/** Card mode for add/edit/view states */
-export type McpCardMode = 'view' | 'edit' | 'add' | 'addRemote' | 'addJson';
+export type McpServerStatus =
+  'connected' | 'configured' | 'disconnected' | 'error' | 'auth_required' | 'disabled' | 'stopped';
 
 /** Tool definition from an MCP server */
 export interface McpTool {
@@ -54,7 +52,7 @@ export interface McpServerWithStatus extends McpServerConfig {
 }
 
 /** Key-value entry for env vars and headers */
-export interface KeyValueEntry {
+interface KeyValueEntry {
   id: string;
   key: string;
   value: string;

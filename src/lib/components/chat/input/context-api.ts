@@ -6,8 +6,6 @@
 import { invoke } from '$lib/electron-bridge';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
-import { m } from '$shared/paraglide/messages.js';
-import type { Workspace } from '../../../../shared/types';
 
 const logger = createLogger('ContextAPI');
 
@@ -21,8 +19,6 @@ export interface FileSearchResult {
 }
 
 // Import and re-export Note type from shared types to avoid duplication
-import type { Note } from '$shared/types';
-export type { Note };
 
 /**
  * Context item used in rich input for attaching files, notes, selections, etc.
@@ -291,73 +287,6 @@ export async function downloadAttachment(
   });
 }
 
-/** Maximum file size for context (1MB) - prevents crashes with large files */
-const MAX_CONTEXT_FILE_SIZE = 1 * 1024 * 1024;
-
-interface ReadFileOptions {
-  /** Maximum file size in bytes (default: 1MB) */
-  maxSize?: number;
-  /** If true, truncate content to maxSize instead of throwing (default: true) */
-  truncateIfLarge?: boolean;
-  /** Workspace ID for remote workspace file routing */
-  workspaceId?: string;
-}
-
-interface FileReadResult {
-  success: boolean;
-  data?: {
-    content: string;
-    stats?: { size: number; modified: string };
-    isBinary?: boolean;
-    truncated?: boolean;
-  };
-  error?: { code: string; message: string };
-}
-
-/**
- * Read file content with size limits to prevent crashes
- */
-export async function readFile(path: string, options?: ReadFileOptions): Promise<string> {
-  try {
-    const maxSize = options?.maxSize ?? MAX_CONTEXT_FILE_SIZE;
-    const truncateIfLarge = options?.truncateIfLarge ?? true;
-
-    logger.debug('Reading file', { path, maxSize, truncateIfLarge });
-    const result = await invoke<string | { content: string } | FileReadResult>('file:read', {
-      path,
-      maxSize,
-      truncateIfLarge,
-      workspaceId: options?.workspaceId,
-    });
-
-    // Handle new response format with success/error
-    if (result && typeof result === 'object' && 'success' in result) {
-      const fileResult = result as FileReadResult;
-      if (!fileResult.success) {
-        const errorMsg = fileResult.error?.message || m.chat_contextApi_readFileFailed_error();
-        logger.warn('File read failed', { path, error: errorMsg });
-        throw new Error(errorMsg);
-      }
-      if (fileResult.data?.truncated) {
-        logger.debug('File content was truncated', { path, size: fileResult.data.stats?.size });
-      }
-      return fileResult.data?.content || '';
-    }
-
-    // Legacy response handling
-    if (typeof result === 'string') {
-      return result;
-    } else if (result && typeof result === 'object' && 'content' in result) {
-      return String((result as { content: string }).content);
-    } else {
-      return String(result);
-    }
-  } catch (error) {
-    logger.error('Failed to read file', { path, error });
-    throw error;
-  }
-}
-
 /**
  * Search for symbols in the workspace via the daemon (`search.codebase`, PROTOCOL §5.15).
  * Errors surface as empty results — never fabricated data.
@@ -385,44 +314,5 @@ export async function searchSymbols(
   } catch (error) {
     logger.error('Failed to search symbols', error);
     return [];
-  }
-}
-
-/**
- * Get workspace information
- */
-export async function getWorkspaceInfo(workspace: Workspace): Promise<any> {
-  try {
-    logger.debug('Getting workspace info', { workspaceId: workspace.id });
-    const info = await invoke('workspace:get-info', { workspaceId: workspace.id });
-    return info || workspace;
-  } catch (error) {
-    logger.error('Failed to get workspace info', error);
-    return workspace;
-  }
-}
-
-/**
- * Create a context item from a file path
- */
-export async function createFileContext(path: string): Promise<any> {
-  try {
-    const content = await readFile(path);
-    const name = path.split('/').pop() || path;
-
-    return {
-      id: `file-${Date.now()}-${name}`,
-      type: 'file',
-      label: name,
-      path,
-      content,
-      metadata: {
-        size: content.length,
-        lines: content.split('\n').length,
-      },
-    };
-  } catch (error) {
-    logger.error('Failed to create file context', { path, error });
-    throw error;
   }
 }

@@ -43,12 +43,12 @@ jobs:
           # action creates the vX.Y.Z tag + GitHub Release via the API with
           # this token, and GitHub's recursion guard suppresses workflow
           # triggers for events created with the default GITHUB_TOKEN — the
-          # tag-triggered release-beta workflow would silently never fire.
+          # tag-triggered release-alpha workflow would silently never fire.
           token: ${{ secrets.RELEASE_PAT }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      # Anchor releases are betas: they carry the Pre-release badge until
+      # Anchor releases are alphas: they carry the Pre-release badge until
       # release-stable.yml promotes the version (which clears the flag and
       # marks the version Latest). This cannot be done with the
       # `"prerelease": true` config option — release-please only honours it

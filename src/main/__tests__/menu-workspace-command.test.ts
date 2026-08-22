@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { sendWorkspaceCommand, type WorkspaceCommandWindow } from '../menu-workspace-command';
@@ -26,6 +28,13 @@ function createWindow(destroyed = false) {
 }
 
 describe('sendWorkspaceCommand', () => {
+  it('leaves Mod+Shift+W available to the renderer instead of closing the window', () => {
+    const mainSource = readFileSync(resolve(process.cwd(), 'src/main/index.ts'), 'utf8');
+
+    expect(mainSource).not.toContain("accelerator: 'CmdOrCtrl+Shift+W'");
+    expect(mainSource).toContain('label: m.menu_close_window()');
+  });
+
   it('emits every workspace menu channel with the exact workspace payload', () => {
     const { window, send } = createWindow();
 

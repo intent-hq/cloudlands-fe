@@ -52,12 +52,12 @@
   import { selectPendingLocateInSidebar } from '$store/renderer/slices/app-layout/app-layout-selectors';
   import {
     faArrowUpRightFromSquare,
-    faCodePullRequest,
     faCompressAlt,
     faExpandAlt,
     faPencil,
     faPlus,
   } from '@fortawesome/free-solid-svg-icons';
+  import { getActivePrStatusPresentation } from '$lib/components/workspace/utils/active-pr-status-presentation';
 
   import { onMount, tick } from 'svelte';
   import { cubicIn, cubicOut } from 'svelte/easing';
@@ -122,7 +122,6 @@
   interface Props {
     workspaceId: string;
     panelLayoutId?: string;
-    availablePanelCanvasWidth?: number;
     onCreateNote?: () => void;
     onCreateFile?: (folderPath: string, fileName?: string) => void | Promise<void>;
     onFileRenamed?: (oldPath: string, newPath: string) => void;
@@ -138,7 +137,6 @@
   let {
     workspaceId,
     panelLayoutId = workspaceId,
-    availablePanelCanvasWidth = 0,
     onCreateNote,
     onCreateFile,
     onFileRenamed,
@@ -153,7 +151,7 @@
 
   // Reactive writable store that mirrors workspaceId so Redux selectors
   // re-evaluate whenever the prop changes (called at component init time).
-  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect.pre below syncs later changes
   const workspaceIdStore = writable(workspaceId);
   const LAUNCHER_ICON_LIMIT = 6;
   const LAUNCHER_TARGET_SIZE = 36;
@@ -170,7 +168,7 @@
     'launcher-overflow-button pointer-events-auto relative z-10 flex h-5 w-auto shrink-0 cursor-pointer items-center justify-center border-0! bg-transparent! px-0! text-xs font-medium leading-3 whitespace-nowrap text-muted-foreground shadow-none! outline-none transition-colors hover:z-20 hover:text-foreground focus-visible:z-30 focus-visible:text-foreground';
   const LAUNCHER_OVERFLOW_STYLE =
     'line-height: 12px; font-weight: 500; border-radius: 0; padding: 0; background: transparent; box-shadow: none;';
-  $effect(() => {
+  $effect.pre(() => {
     workspaceIdStore.set(workspaceId);
   });
   const fileExplorerWorkspacePath = selectEffectiveFileExplorerWorkspacePath(workspaceIdStore);
@@ -290,6 +288,16 @@
   let openLauncherHoverKey = $state<string | null>(null);
   const launcherRects = new Map<LauncherTabId, DOMRect>();
   const expandedCardRects = new Map<LauncherTabId, DOMRect>();
+  // svelte-ignore state_referenced_locally - intentional initial capture for change detection
+  let motionWorkspaceId = workspaceId;
+
+  $effect.pre(() => {
+    if (motionWorkspaceId === workspaceId) return;
+    motionWorkspaceId = workspaceId;
+    sidebarTabSwitchDirection = 'none';
+    launcherRects.clear();
+    expandedCardRects.clear();
+  });
 
   function handleLauncherHoverOpenChange(key: string, open: boolean) {
     if (open) {
@@ -301,8 +309,17 @@
 
   function cardMorph(
     node: HTMLElement,
-    { tabId, direction }: { tabId: LauncherTabId; direction: 'expand' | 'collapse' },
+    {
+      tabId,
+      direction,
+      cardWorkspaceId,
+    }: {
+      tabId: LauncherTabId;
+      direction: 'expand' | 'collapse';
+      cardWorkspaceId: string;
+    },
   ): TransitionConfig {
+    if (cardWorkspaceId !== workspaceId) return { duration: 0 };
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return { duration: 0 };
 
     if (sidebarTabSwitchDirection !== 'none') {
@@ -499,9 +516,6 @@
         agentId,
         sourcePanelId,
         panelLayoutId,
-        openInNewColumn: true,
-        adaptiveFirstChat: true,
-        availablePanelCanvasWidth,
       }),
     );
   }
@@ -771,6 +785,9 @@
       (id) => id !== 'overview' && selectedTabs.has(id),
     ),
   );
+  const orderedSelectedCards = $derived(
+    orderedSelectedTabs.map((tabId) => ({ tabId, workspaceId })),
+  );
   const isLauncherOverview = $derived(isTabSelected('overview'));
 
   $effect(() => {
@@ -873,18 +890,23 @@
             data-sidebar-switch-direction={sidebarTabSwitchDirection}
             onclick={handleExpandedOverlayClick}
           >
-            {#each orderedSelectedTabs as tabId (tabId)}
+            {#each orderedSelectedCards as selectedCard (`${selectedCard.workspaceId}:${selectedCard.tabId}`)}
+              {@const { tabId, workspaceId: cardWorkspaceId } = selectedCard}
               {@const tab = TAB_DEFINITIONS.find((t) => t.id === tabId)}
               <div
                 class="sidebar-expanded-card relative z-10 flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-sidebar"
                 data-sidebar-card-surface
+                data-sidebar-card-workspace={cardWorkspaceId}
+                data-sidebar-card-tab={tabId}
                 in:cardMorph|global={{
                   tabId: tabId as LauncherTabId,
                   direction: 'expand',
+                  cardWorkspaceId,
                 }}
                 out:cardMorph|global={{
                   tabId: tabId as LauncherTabId,
                   direction: 'collapse',
+                  cardWorkspaceId,
                 }}
               >
                 <div
@@ -1282,6 +1304,7 @@
                     >
                     {#if tab.id === 'changes' && $activePrSummary$}
                       {@const pr = $activePrSummary$}
+                      {@const prStatus = getActivePrStatusPresentation(pr.status)}
                       <Button
                         variant="plain"
                         size="icon"
@@ -1296,7 +1319,7 @@
                           handleLink(pr.url, { workspaceId: WorkspaceId(workspaceId) });
                         }}
                       >
-                        <Fa icon={faCodePullRequest} class="size-4!" />
+                        <Fa icon={prStatus.icon} class="size-4! {prStatus.className}" />
                       </Button>
                     {/if}
                     {#if tab.id === 'agents'}

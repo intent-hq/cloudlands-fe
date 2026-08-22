@@ -10,16 +10,12 @@
  */
 
 import { Logger } from '../../../shared/logger';
-import {
-  buildRgbcfgParams,
-  buildThStatusParams,
-  type HardwareLedSnapshot,
-} from './frames';
+import { buildRgbcfgParams, buildThStatusParams, type HardwareLedSnapshot } from './frames';
 
 const logger = new Logger('HardwareLedEngine');
 
 /** Minimum interval between frame sends (≤ ~10 fps). */
-export const DEFAULT_MIN_SEND_INTERVAL_MS = 100;
+const DEFAULT_MIN_SEND_INTERVAL_MS = 100;
 
 /** First retry delay after a send failure (before jitter). */
 export const BACKOFF_BASE_MS = 1000;

@@ -69,7 +69,7 @@ export class AppError extends Error {
 /**
  * Error codes for consistent error handling
  */
-export const ErrorCodes = {
+const ErrorCodes = {
   // Network errors
   NETWORK_ERROR: 'NETWORK_ERROR',
   TIMEOUT: 'TIMEOUT',
@@ -97,42 +97,6 @@ export const ErrorCodes = {
 } as const;
 
 /**
- * Wrap an async function with automatic error handling and logging.
- * Catches errors, logs them with context, and re-throws as AppError.
- *
- * @param fn - Async function to wrap
- * @param context - Error context for debugging
- * @returns Wrapped function with error handling
- * @example
- * ```typescript
- * const safeFunction = withErrorHandling(
- *   async (id: string) => {
- *     return await fetchData(id);
- *   },
- *   { component: 'DataService', action: 'fetch' }
- * );
- * ```
- */
-export function withErrorHandling<T extends (...args: any[]) => Promise<any>>(
-  fn: T,
-  context?: ErrorContext,
-): T {
-  return (async (...args: Parameters<T>) => {
-    try {
-      // Simulate errors if debug flag is set
-      if (debugConfig.get('simulateErrors') && Math.random() < 0.3) {
-        throw new Error('Simulated error for testing');
-      }
-
-      return await fn(...args);
-    } catch (error) {
-      handleError(error, context);
-      throw error;
-    }
-  }) as T;
-}
-
-/**
  * Handle an error with logging and optional recovery
  */
 export function handleError(error: unknown, context?: ErrorContext): AppError {
@@ -157,7 +121,7 @@ export function handleError(error: unknown, context?: ErrorContext): AppError {
 /**
  * Convert any error to AppError
  */
-export function toAppError(error: unknown, context?: ErrorContext): AppError {
+function toAppError(error: unknown, context?: ErrorContext): AppError {
   if (error instanceof AppError) {
     return error;
   }

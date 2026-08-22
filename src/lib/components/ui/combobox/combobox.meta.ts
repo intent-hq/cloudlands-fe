@@ -6,7 +6,7 @@ export const comboboxMetadata = parseUiComponentMetadata({
   source: 'src/lib/components/ui/combobox/combobox.svelte',
   publicImport: '$lib/components/ui/combobox',
   legacyImports: [],
-  exports: ['Combobox', 'ComboboxGroup', 'ComboboxOption', 'comboboxMetadata', 'default'],
+  exports: ['Combobox', 'ComboboxGroup', 'ComboboxOption', 'default'],
   category: 'pattern',
   owner: '007-B6',
   callers: [],

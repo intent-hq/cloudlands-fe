@@ -7,20 +7,6 @@
 
 import type { SentryIssueLevelType, SentryIssueStatusType } from './constants';
 
-// =============================================================================
-// Authentication Types
-// =============================================================================
-
-/**
- * Sentry authentication configuration stored locally
- */
-export interface SentryConfig {
-  /** Sentry organization slug */
-  organization: string;
-  /** Sentry API auth token */
-  apiToken: string;
-}
-
 /**
  * Full Sentry authentication state for the UI
  */
@@ -58,46 +44,6 @@ export interface SentryProject {
   platform?: string;
   /** Whether this project is a member project */
   isMember?: boolean;
-}
-
-/**
- * Sentry issue/event group information
- */
-export interface SentryIssue {
-  id: string;
-  /** Short ID like "PROJECT-123" */
-  shortId: string;
-  /** Issue title (error message or event title) */
-  title: string;
-  /** Culprit (file/function where error occurred) */
-  culprit?: string;
-  /** Issue status */
-  status: SentryIssueStatusType;
-  /** Issue level/severity */
-  level: SentryIssueLevelType;
-  /** Total event count */
-  count: string;
-  /** Number of affected users */
-  userCount: number;
-  /** First seen timestamp */
-  firstSeen: string;
-  /** Last seen timestamp */
-  lastSeen: string;
-  /** Project info */
-  project: {
-    id: string;
-    name: string;
-    slug: string;
-  };
-  /** Additional metadata */
-  metadata?: {
-    type?: string;
-    value?: string;
-    filename?: string;
-    function?: string;
-  };
-  /** Permalink to the issue in Sentry */
-  permalink?: string;
 }
 
 /**
@@ -142,18 +88,6 @@ export interface FetchIssuesRequest {
   /** Search query */
   query?: string;
   /** Maximum number of results */
-  limit?: number;
-  /** Opaque cursor from a previous page's `nextToken` */
-  nextToken?: string;
-}
-
-/**
- * Request to search Sentry issues
- */
-export interface SearchIssuesRequest {
-  query: string;
-  /** Project slug to filter by (optional) */
-  project?: string;
   limit?: number;
   /** Opaque cursor from a previous page's `nextToken` */
   nextToken?: string;

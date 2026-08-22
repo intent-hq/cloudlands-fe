@@ -36,7 +36,8 @@ export function getNodeStatus(
   // Completed/Error/Deleted, trust that over any stale streaming/processing
   // flags that may not have been cleared properly.
   if (session.status === AgentStatus.Completed) return 'completed';
-  if (session.status === AgentStatus.Error || session.status === AgentStatus.Deleted) return 'failed';
+  if (session.status === AgentStatus.Error || session.status === AgentStatus.Deleted)
+    return 'failed';
 
   // Check processing flags for responding state
   // These flags indicate the agent is actively working
@@ -57,7 +58,10 @@ export function getNodeStatus(
   // Use explicit === false for streamingComplete (undefined means never set, not actively streaming)
   if (session.messages && session.messages.length > 0) {
     const lastAssistantMsg = [...session.messages].reverse().find((m) => m.role === 'assistant');
-    if (lastAssistantMsg && (lastAssistantMsg.isStreaming || lastAssistantMsg.streamingComplete === false)) {
+    if (
+      lastAssistantMsg &&
+      (lastAssistantMsg.isStreaming || lastAssistantMsg.streamingComplete === false)
+    ) {
       return 'responding';
     }
   }
@@ -192,7 +196,7 @@ interface MessageLike {
  * Extract the tool name from a tool call object.
  * Handles different property names used across the codebase.
  */
-export function getToolName(toolCall: ToolCallLike | ContentBlockLike): string {
+function getToolName(toolCall: ToolCallLike | ContentBlockLike): string {
   return (toolCall.name || toolCall.toolName || '').toLowerCase();
 }
 
@@ -200,7 +204,7 @@ export function getToolName(toolCall: ToolCallLike | ContentBlockLike): string {
  * Extract arguments from a tool call object.
  * Handles different property names used across the codebase.
  */
-export function getToolArgs(toolCall: ToolCallLike | ContentBlockLike): Record<string, unknown> {
+function getToolArgs(toolCall: ToolCallLike | ContentBlockLike): Record<string, unknown> {
   if ('input' in toolCall && toolCall.input) {
     return toolCall.input;
   }
@@ -220,7 +224,7 @@ export function getToolArgs(toolCall: ToolCallLike | ContentBlockLike): Record<s
  * - Tool names with suffixes like 'str-replace-editor_workspace-mcp'
  * - Display names like 'Edit `path/to/file.ts`'
  */
-export function isFileEditTool(toolName: string): boolean {
+function isFileEditTool(toolName: string): boolean {
   const lowerName = toolName.toLowerCase();
   // First check exact match
   if (FILE_EDIT_TOOLS.has(toolName)) return true;
@@ -243,7 +247,7 @@ export function isFileEditTool(toolName: string): boolean {
  * Check if a tool name is a file read tool.
  * Handles display names like 'Read `path/to/file.ts`'
  */
-export function isFileReadTool(toolName: string): boolean {
+function isFileReadTool(toolName: string): boolean {
   const lowerName = toolName.toLowerCase();
   // Check for display name pattern "Read `path`" but not "Read `.`" (directory)
   if (lowerName.startsWith('read `') && !lowerName.includes('read `.`')) {
@@ -260,7 +264,7 @@ export function isFileReadTool(toolName: string): boolean {
  * Check if a tool name is a note tool.
  * Handles tool name suffixes like '_workspace-mcp' by checking if the name starts with any known tool.
  */
-export function isNoteTool(toolName: string): boolean {
+function isNoteTool(toolName: string): boolean {
   // First check exact match
   if (NOTE_TOOLS.has(toolName)) return true;
   // Then check if it starts with any known note tool name
@@ -273,7 +277,7 @@ export function isNoteTool(toolName: string): boolean {
 /**
  * Determine file action type from tool name.
  */
-export function getFileActionType(toolName: string): 'create' | 'modify' | 'delete' {
+function getFileActionType(toolName: string): 'create' | 'modify' | 'delete' {
   if (toolName === 'save-file') return 'create';
   if (toolName === 'remove-files') return 'delete';
   return 'modify';
@@ -282,7 +286,7 @@ export function getFileActionType(toolName: string): 'create' | 'modify' | 'dele
 /**
  * Determine note action type from tool name.
  */
-export function getNoteActionType(toolName: string): 'create' | 'write' | 'read' {
+function getNoteActionType(toolName: string): 'create' | 'write' | 'read' {
   if (toolName === 'create_note') return 'create';
   if (NOTE_READ_TOOLS.has(toolName)) return 'read';
   return 'write';
@@ -291,7 +295,7 @@ export function getNoteActionType(toolName: string): 'create' | 'write' | 'read'
 /**
  * Check if a tool name is a task tool.
  */
-export function isTaskTool(toolName: string): boolean {
+function isTaskTool(toolName: string): boolean {
   if (TASK_TOOLS.has(toolName)) return true;
   for (const tool of TASK_TOOLS) {
     if (toolName.startsWith(tool)) return true;
@@ -302,7 +306,7 @@ export function isTaskTool(toolName: string): boolean {
 /**
  * Determine task action type from tool name.
  */
-export function getTaskActionType(toolName: string): 'create' | 'update' | 'read' {
+function getTaskActionType(toolName: string): 'create' | 'update' | 'read' {
   if (toolName === 'add_tasks') return 'create';
   if (TASK_READ_TOOLS.has(toolName)) return 'read';
   return 'update';
@@ -331,7 +335,7 @@ function looksLikeDirectory(path: string): boolean {
 /**
  * Extract file path from a display name like 'Read `path/to/file.ts`' or 'Edit `path`'.
  */
-export function extractFilePathFromDisplayName(displayName: string): string | null {
+function extractFilePathFromDisplayName(displayName: string): string | null {
   // Match backtick-enclosed path: Read `path` or Edit `path`
   // i18n-ignore (scanner false positive: backticks in regex literal confuse the string tracker)
   const match = displayName.match(/`([^`]+)`/);
@@ -349,7 +353,7 @@ export function extractFilePathFromDisplayName(displayName: string): string | nu
  * @param args - Tool arguments object
  * @param toolName - Optional tool name (may be a display name with embedded path)
  */
-export function extractFilePath(args: Record<string, unknown>, toolName?: string): string | null {
+function extractFilePath(args: Record<string, unknown>, toolName?: string): string | null {
   // First try to extract from args
   const path = args.path || args.file_path || args.filePath;
   if (typeof path === 'string') {
@@ -370,7 +374,7 @@ export function extractFilePath(args: Record<string, unknown>, toolName?: string
 /**
  * Extract note ID from tool arguments.
  */
-export function extractNoteId(args: Record<string, unknown>): string | null {
+function extractNoteId(args: Record<string, unknown>): string | null {
   const noteId = args.noteId || args.note_id || args.title;
   return typeof noteId === 'string' ? noteId : null;
 }
@@ -659,7 +663,6 @@ export function extractTaskChangesFromMessages(
   return changes;
 }
 
-
 // ============================================================================
 // Delegation Batch Extraction
 // ============================================================================
@@ -668,7 +671,7 @@ export function extractTaskChangesFromMessages(
  * Check if a tool name is a delegation tool.
  * Handles tool name suffixes like '_workspace-mcp'.
  */
-export function isDelegationTool(toolName: string): boolean {
+function isDelegationTool(toolName: string): boolean {
   if (DELEGATION_TOOLS.has(toolName)) return true;
   for (const tool of DELEGATION_TOOLS) {
     if (toolName.startsWith(tool)) return true;
@@ -780,9 +783,10 @@ export function extractDelegationBatchMap(
           const batchId = toolUseToBatch.get(toolUseId);
           if (batchId) {
             // Extract agent ID from the result — handle string, array, and object formats
-            const resultText = getResultText((block as any).text)
-              || getResultText((block as any).content)
-              || getResultText((block as any).output);
+            const resultText =
+              getResultText((block as any).text) ||
+              getResultText((block as any).content) ||
+              getResultText((block as any).output);
             const agentId = extractAgentIdFromResultText(resultText);
             if (agentId) {
               result.set(agentId, batchId);
@@ -816,7 +820,6 @@ export function extractDelegationBatchMap(
   return result;
 }
 
-
 // ============================================================================
 // Event Conversion
 // ============================================================================
@@ -842,7 +845,8 @@ export function convertToInteractionEvent(event: {
   if (event.type === 'agent:created') {
     const data = event.data as any;
     return {
-      ...base, type: 'agent-created',
+      ...base,
+      type: 'agent-created',
       agentId: data?.agentId || base.agentId,
       agentName: data?.agentName || base.agentName,
       parentAgentId: data?.createdByAgentId,
@@ -852,7 +856,8 @@ export function convertToInteractionEvent(event: {
   if (event.type === 'agent:idle') {
     const data = event.data as any;
     return {
-      ...base, type: 'agent-idle',
+      ...base,
+      type: 'agent-idle',
       agentId: data?.agentId || base.agentId,
       parentAgentId: data?.parentAgentId,
     };
@@ -887,14 +892,16 @@ export function convertToInteractionEvent(event: {
     const toolName = data?.toolName?.toLowerCase() || '';
     if (toolName.includes('read') && data?.filesModified?.[0]) {
       return {
-        ...base, type: 'file-read',
+        ...base,
+        type: 'file-read',
         targetId: data.filesModified[0],
         targetName: data.filesModified[0].split('/').pop(),
       };
     }
     if ((toolName.includes('write') || toolName.includes('edit')) && data?.filesModified?.[0]) {
       return {
-        ...base, type: 'file-write',
+        ...base,
+        type: 'file-write',
         targetId: data.filesModified[0],
         targetName: data.filesModified[0].split('/').pop(),
       };

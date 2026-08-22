@@ -68,6 +68,9 @@
         <PanelContainer
           node={root}
           panels={{}}
+          panelOrder={scenario === 'nested'
+            ? ['target', 'sibling-1', 'sibling-2']
+            : ['target', ...Array.from({ length: scenario === 'wide' ? 4 : 1 }, (_, i) => `s${i}`)]}
           focusedPanelId={null}
           workspaceId="browser-geometry"
           layoutId="browser-geometry"

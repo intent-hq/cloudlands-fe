@@ -15,12 +15,15 @@ import { BROWSER_PROTOCOLS } from '../../../shared/constants';
 // Mock the CDP service before importing the executor
 vi.mock('../main/embedded-browser-cdp-service', () => ({
   DEFAULT_AGENT_VIEWPORT: { width: 1280, height: 800 },
+  AGENT_VIEWPORT_MIN_PX: 320,
+  AGENT_VIEWPORT_MAX_PX: 3840,
   embeddedBrowserCdp: {
     findModelTabByExactUrl: vi.fn().mockResolvedValue(undefined),
     findModelTabByRequestedUrl: vi.fn().mockResolvedValue(undefined),
     getFirstTab: vi.fn().mockReturnValue(null),
     evaluate: vi.fn().mockResolvedValue(undefined),
     focusTab: vi.fn().mockResolvedValue(true),
+    showTab: vi.fn().mockResolvedValue(undefined),
     waitForTabRegistration: vi.fn().mockResolvedValue(true),
     closeTab: vi.fn().mockResolvedValue({ tabId: 'tab-1' }),
     notifyTabNavigated: vi.fn(),
@@ -51,6 +54,20 @@ vi.mock('../main/browser-capture-service', () => ({
     stopTrace: vi.fn(),
     getSummary: vi.fn(),
   },
+}));
+
+// Mock the daemon client used by the owner display-name lookup (agent.list).
+const mockBackendRequest = vi.fn();
+vi.mock('../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mockBackendRequest }),
+}));
+
+// Workspace-visibility probe for the workspace-inactive warning
+// (monorepo#3045). Defaults to "visible" so focus-bearing actions carry no
+// warning unless a test opts into an inactive workspace.
+const mockGetWindowIdForWorkspace = vi.fn<(workspaceId: string) => number | undefined>(() => 1);
+vi.mock('../../system/main/system.ipc', () => ({
+  getWindowIdForWorkspace: (workspaceId: string) => mockGetWindowIdForWorkspace(workspaceId),
 }));
 
 import { executeActions } from '../main/browser-action-executor';
@@ -280,7 +297,18 @@ describe('browser-action-executor', () => {
       expect(result.results[0]).toEqual({
         action: 'listTabs',
         success: true,
-        result: cachedTabs,
+        result: [
+          {
+            tabId: 'tab-1',
+            webContentsId: -1,
+            url: 'http://a/',
+            title: 'A',
+            mounted: false,
+            ownerAgentId: null,
+            mode: 'native',
+            visibility: 'visible',
+          },
+        ],
         warning:
           'The renderer did not answer the tab list request for workspace ws-slow; this list is from a cached snapshot and may be outdated.',
       });
@@ -307,6 +335,219 @@ describe('browser-action-executor', () => {
         success: false,
         error:
           'Tab list for workspace ws-silent is unavailable: the renderer did not respond and no cached tab list exists.',
+      });
+    });
+
+    // listTabs scoping + owner display info + sizing (monorepo#2857, §5.9).
+    describe('listTabs scope, owner info, and sizing', () => {
+      const threeTabs = [
+        {
+          tabId: 'tab-mine',
+          webContentsId: 1,
+          url: 'http://mine/',
+          title: 'Mine',
+          mounted: true,
+          ownerAgentId: 'agent-1',
+          emulatedSize: { width: 1024, height: 768 },
+        },
+        {
+          tabId: 'tab-other',
+          webContentsId: 2,
+          url: 'http://other/',
+          title: 'Other',
+          mounted: true,
+          ownerAgentId: 'agent-2',
+          emulatedSize: { width: 1280, height: 800 },
+        },
+        {
+          tabId: 'tab-user',
+          webContentsId: 3,
+          url: 'http://user/',
+          title: 'User',
+          mounted: true,
+        },
+      ];
+
+      async function mockThreeTabs() {
+        const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+        vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+          tabs: structuredClone(threeTabs),
+          stale: false,
+        });
+      }
+
+      it("scope defaults to 'all' and every tab carries owner + sizing info", async () => {
+        await mockThreeTabs();
+        mockBackendRequest.mockResolvedValueOnce({
+          agents: [
+            { id: 'agent-1', name: 'Alice' },
+            { id: 'agent-2', name: 'Bob' },
+          ],
+        });
+
+        const result = await executeActions(
+          { actions: [{ action: 'listTabs' }] },
+          undefined,
+          'agent-1',
+          'ws-1',
+        );
+
+        expect(result.success).toBe(true);
+        expect(mockBackendRequest).toHaveBeenCalledWith('agent.list', { workspaceId: 'ws-1' });
+        expect(result.results[0]?.result).toEqual([
+          {
+            tabId: 'tab-mine',
+            webContentsId: 1,
+            url: 'http://mine/',
+            title: 'Mine',
+            mounted: true,
+            ownerAgentId: 'agent-1',
+            ownerAgentName: 'Alice',
+            mode: 'emulated',
+            width: 1024,
+            height: 768,
+            visibility: 'visible',
+          },
+          {
+            tabId: 'tab-other',
+            webContentsId: 2,
+            url: 'http://other/',
+            title: 'Other',
+            mounted: true,
+            ownerAgentId: 'agent-2',
+            ownerAgentName: 'Bob',
+            mode: 'emulated',
+            width: 1280,
+            height: 800,
+            visibility: 'visible',
+          },
+          {
+            tabId: 'tab-user',
+            webContentsId: 3,
+            url: 'http://user/',
+            title: 'User',
+            mounted: true,
+            ownerAgentId: null,
+            mode: 'native',
+            visibility: 'visible',
+          },
+        ]);
+      });
+
+      // Hidden-by-default agent tabs (monorepo#3045): the renderer's hidden
+      // marker projects as visibility: 'hidden'; unowned tabs are always
+      // visible, and the raw `hidden` field never leaks into the result.
+      it("projects the hidden marker as visibility: 'hidden' for owned tabs only", async () => {
+        const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+        vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+          tabs: [
+            {
+              tabId: 'tab-hidden',
+              webContentsId: 1,
+              url: 'http://hidden/',
+              title: 'Hidden',
+              mounted: true,
+              ownerAgentId: 'agent-1',
+              emulatedSize: { width: 1280, height: 800 },
+              hidden: true,
+            },
+            {
+              tabId: 'tab-user',
+              webContentsId: 2,
+              url: 'http://user/',
+              title: 'User',
+              mounted: true,
+            },
+          ],
+          stale: false,
+        });
+        mockBackendRequest.mockResolvedValueOnce({ agents: [{ id: 'agent-1', name: 'Alice' }] });
+
+        const result = await executeActions(
+          { actions: [{ action: 'listTabs' }] },
+          undefined,
+          'agent-1',
+          'ws-1',
+        );
+
+        expect(result.success).toBe(true);
+        const tabs = result.results[0]?.result as Array<Record<string, unknown>>;
+        expect(tabs[0]).toMatchObject({ tabId: 'tab-hidden', visibility: 'hidden' });
+        expect(tabs[0]).not.toHaveProperty('hidden');
+        expect(tabs[1]).toMatchObject({ tabId: 'tab-user', visibility: 'visible' });
+      });
+
+      it("scope 'mine' returns only the caller's tabs", async () => {
+        await mockThreeTabs();
+        mockBackendRequest.mockResolvedValueOnce({ agents: [{ id: 'agent-1', name: 'Alice' }] });
+
+        const result = await executeActions(
+          { actions: [{ action: 'listTabs', scope: 'mine' }] },
+          undefined,
+          'agent-1',
+          'ws-1',
+        );
+
+        expect(result.success).toBe(true);
+        const tabs = result.results[0]?.result as Array<{ tabId: string }>;
+        expect(tabs.map((t) => t.tabId)).toEqual(['tab-mine']);
+      });
+
+      it("scope 'unclaimed' returns only unowned tabs and skips the agent.list lookup", async () => {
+        await mockThreeTabs();
+
+        const result = await executeActions(
+          { actions: [{ action: 'listTabs', scope: 'unclaimed' }] },
+          undefined,
+          'agent-1',
+          'ws-1',
+        );
+
+        expect(result.success).toBe(true);
+        expect(mockBackendRequest).not.toHaveBeenCalled();
+        const tabs = result.results[0]?.result as Array<{ tabId: string }>;
+        expect(tabs.map((t) => t.tabId)).toEqual(['tab-user']);
+      });
+
+      it("scope 'mine' without an agentId (user call) fails with a descriptive error", async () => {
+        const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+
+        const result = await executeActions(
+          { actions: [{ action: 'listTabs', scope: 'mine' }] },
+          undefined,
+          undefined,
+          'ws-1',
+        );
+
+        expect(result.success).toBe(false);
+        expect(result.results[0]).toMatchObject({ action: 'listTabs', success: false });
+        expect(result.results[0]?.error).toContain('requires an agent caller');
+        expect(embeddedBrowserCdp.listAllTabs).not.toHaveBeenCalled();
+      });
+
+      it('rejects an invalid scope value at validation', async () => {
+        const result = await executeActions({
+          actions: [{ action: 'listTabs', scope: 'everything' }],
+        });
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Invalid action sequence');
+      });
+
+      it('owner display names are best-effort: a failing agent.list keeps the owner ids', async () => {
+        await mockThreeTabs();
+        mockBackendRequest.mockRejectedValueOnce(new Error('daemon offline'));
+
+        const result = await executeActions(
+          { actions: [{ action: 'listTabs' }] },
+          undefined,
+          'agent-1',
+          'ws-1',
+        );
+
+        expect(result.success).toBe(true);
+        const tabs = result.results[0]?.result as Array<Record<string, unknown>>;
+        expect(tabs[0]).toMatchObject({ ownerAgentId: 'agent-1', mode: 'emulated' });
+        expect(tabs[0]).not.toHaveProperty('ownerAgentName');
       });
     });
 
@@ -383,6 +624,371 @@ describe('browser-action-executor', () => {
       expect(result.error).toBe(
         "Action 'openTab' failed: Cannot open browser tab: workspace ws-closed is not open in any window.",
       );
+    });
+  });
+
+  // ===========================================================================
+  // showTab + focusTab hidden guard (monorepo#3045)
+  // ===========================================================================
+  describe('showTab and the focusTab hidden guard', () => {
+    const hiddenOwnedTab = {
+      tabId: 'tab-hidden',
+      webContentsId: 1,
+      url: 'http://hidden/',
+      title: 'Hidden',
+      mounted: true,
+      ownerAgentId: 'agent-1',
+      emulatedSize: { width: 1280, height: 800 },
+      hidden: true,
+    };
+    const visibleOwnedTab = {
+      tabId: 'tab-visible',
+      webContentsId: 2,
+      url: 'http://visible/',
+      title: 'Visible',
+      mounted: true,
+      ownerAgentId: 'agent-1',
+      emulatedSize: { width: 1280, height: 800 },
+    };
+
+    async function mockTabs(tabs: unknown[], stale = false) {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+        tabs: structuredClone(tabs) as never,
+        stale,
+      });
+    }
+
+    it('reveals a hidden owned tab without focus by default', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      await mockTabs([hiddenOwnedTab]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'showTab', tabId: 'tab-hidden' }] },
+        undefined,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.showTab).toHaveBeenCalledWith('tab-hidden', 'ws-1', false);
+      expect(result.results[0]?.result).toEqual({
+        tabId: 'tab-hidden',
+        visibility: 'visible',
+        focused: false,
+      });
+    });
+
+    it('focus: true reveals and activates', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      await mockTabs([hiddenOwnedTab]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'showTab', tabId: 'tab-hidden', focus: true }] },
+        undefined,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.showTab).toHaveBeenCalledWith('tab-hidden', 'ws-1', true);
+      expect(result.results[0]?.result).toEqual({
+        tabId: 'tab-hidden',
+        visibility: 'visible',
+        focused: true,
+      });
+    });
+
+    it('is an idempotent no-op on an already-visible tab without focus', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      await mockTabs([visibleOwnedTab]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'showTab', tabId: 'tab-visible' }] },
+        undefined,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.showTab).not.toHaveBeenCalled();
+      expect(result.results[0]?.result).toEqual({
+        tabId: 'tab-visible',
+        visibility: 'visible',
+        focused: false,
+      });
+    });
+
+    it('focus: true on an already-visible tab still activates it', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      await mockTabs([visibleOwnedTab]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'showTab', tabId: 'tab-visible', focus: true }] },
+        undefined,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.showTab).toHaveBeenCalledWith('tab-visible', 'ws-1', true);
+    });
+
+    it('an unknown tabId fails as an action-result error naming the id (never not-owner)', async () => {
+      await mockTabs([hiddenOwnedTab]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'showTab', tabId: 'tab-gone' }] },
+        undefined,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.results[0]).toMatchObject({ action: 'showTab', success: false });
+      expect(result.results[0]?.error).toContain('Tab tab-gone not found in workspace ws-1');
+      expect(result.results[0]?.errorCode).toBeUndefined();
+    });
+
+    it("is owner-only: another agent's tab returns the structured not-owner error", async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      await mockTabs([hiddenOwnedTab]);
+      mockBackendRequest.mockResolvedValueOnce({ agents: [{ id: 'agent-1', name: 'Alice' }] });
+
+      const result = await executeActions(
+        { actions: [{ action: 'showTab', tabId: 'tab-hidden' }] },
+        undefined,
+        'agent-2',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.results[0]).toMatchObject({
+        action: 'showTab',
+        success: false,
+        errorCode: 'not-owner',
+        ownerAgentId: 'agent-1',
+      });
+      expect(embeddedBrowserCdp.showTab).not.toHaveBeenCalled();
+    });
+
+    it('a stale tab list fails the showTab instead of acting on unverified existence', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      await mockTabs([hiddenOwnedTab], true);
+
+      const result = await executeActions(
+        { actions: [{ action: 'showTab', tabId: 'tab-hidden' }] },
+        undefined,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('could not be refreshed');
+      expect(embeddedBrowserCdp.showTab).not.toHaveBeenCalled();
+    });
+
+    it('rejects showTab without a tabId at validation', async () => {
+      const result = await executeActions({ actions: [{ action: 'showTab' }] });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid action sequence');
+    });
+
+    it('focusTab on a hidden tab fails with a directive to showTab', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      await mockTabs([hiddenOwnedTab]);
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
+
+      const result = await executeActions(
+        { actions: [{ action: 'focusTab', tabId: 'tab-hidden' }] },
+        undefined,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.results[0]).toMatchObject({ action: 'focusTab', success: false });
+      expect(result.results[0]?.error).toContain('is hidden');
+      expect(result.results[0]?.error).toContain('showTab');
+      expect(embeddedBrowserCdp.focusTab).not.toHaveBeenCalled();
+    });
+
+    it('focusTab on a visible tab is unchanged', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      await mockTabs([visibleOwnedTab]);
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
+      vi.mocked(embeddedBrowserCdp.focusTab).mockResolvedValueOnce(true);
+
+      const result = await executeActions(
+        { actions: [{ action: 'focusTab', tabId: 'tab-visible' }] },
+        undefined,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-visible', 'ws-1');
+    });
+
+    it('focusTab proceeds when the tab list is unavailable (best-effort guard)', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockRejectedValueOnce(
+        new Error('tab list unavailable'),
+      );
+      vi.mocked(embeddedBrowserCdp.focusTab).mockResolvedValueOnce(true);
+
+      const result = await executeActions(
+        { actions: [{ action: 'focusTab', tabId: 'tab-1' }] },
+        undefined,
+        undefined,
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-1', 'ws-1');
+    });
+  });
+
+  // ===========================================================================
+  // Workspace-inactive semantics (monorepo#3045): focus-bearing actions on a
+  // not-visible workspace still succeed and apply their layout-state effects,
+  // but the result carries a warning that no UI focus was attempted.
+  // ===========================================================================
+  describe('workspace-inactive warning on focus-bearing actions', () => {
+    const hiddenOwnedTab = {
+      tabId: 'tab-hidden',
+      webContentsId: 1,
+      url: 'http://hidden/',
+      title: 'Hidden',
+      mounted: true,
+      ownerAgentId: 'agent-1',
+      emulatedSize: { width: 1280, height: 800 },
+      hidden: true,
+    };
+
+    async function mockTabs(tabs: unknown[]) {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+        tabs: structuredClone(tabs) as never,
+        stale: false,
+      });
+    }
+
+    beforeEach(() => {
+      mockGetWindowIdForWorkspace.mockReturnValue(undefined);
+    });
+
+    afterEach(() => {
+      mockGetWindowIdForWorkspace.mockReturnValue(1);
+    });
+
+    it('showTab focus: true succeeds with the no-UI-focus warning', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      await mockTabs([hiddenOwnedTab]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'showTab', tabId: 'tab-hidden', focus: true }] },
+        undefined,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.showTab).toHaveBeenCalledWith('tab-hidden', 'ws-1', true);
+      expect(result.results[0]?.result).toEqual({
+        tabId: 'tab-hidden',
+        visibility: 'visible',
+        focused: true,
+      });
+      expect(result.results[0]?.warning).toContain('not currently visible');
+      expect(result.results[0]?.warning).toContain('no UI focus was attempted');
+      expect(mockGetWindowIdForWorkspace).toHaveBeenCalledWith('ws-1');
+    });
+
+    it('showTab without focus reveals with no warning (no focus was requested)', async () => {
+      await mockTabs([hiddenOwnedTab]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'showTab', tabId: 'tab-hidden' }] },
+        undefined,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.warning).toBeUndefined();
+    });
+
+    it('focusTab succeeds with the no-UI-focus warning', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+        tabs: [],
+        stale: false,
+      });
+      vi.mocked(embeddedBrowserCdp.focusTab).mockResolvedValueOnce(true);
+
+      const result = await executeActions(
+        { actions: [{ action: 'focusTab', tabId: 'tab-1' }] },
+        undefined,
+        undefined,
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-1', 'ws-1');
+      expect(result.results[0]?.warning).toContain('no UI focus was attempted');
+    });
+
+    it('agent openTab visible: true succeeds with the no-UI-focus warning', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'https://example.com', visible: true }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'https://example.com',
+        undefined,
+        true,
+        undefined,
+        undefined,
+        'agent-1',
+        undefined,
+        { width: 1280, height: 800 },
+        true,
+      );
+      expect(result.results[0]?.warning).toContain('no UI focus was attempted');
+    });
+
+    it('agent openTab hidden (default) carries no warning', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'https://example.com' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.warning).toBeUndefined();
+    });
+
+    it('carries no warning when a window displays the workspace', async () => {
+      mockGetWindowIdForWorkspace.mockReturnValue(7);
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      await mockTabs([hiddenOwnedTab]);
+      vi.mocked(embeddedBrowserCdp.focusTab).mockResolvedValueOnce(true);
+
+      const result = await executeActions(
+        { actions: [{ action: 'showTab', tabId: 'tab-hidden', focus: true }] },
+        undefined,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.warning).toBeUndefined();
     });
   });
 
@@ -485,6 +1091,8 @@ describe('browser-action-executor', () => {
         undefined,
         'agent-1',
         'tab-existing',
+        { width: 1280, height: 800 },
+        false,
       );
       expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledExactlyOnceWith(
         'tab-existing',
@@ -781,6 +1389,9 @@ describe('browser-action-executor', () => {
         'http://localhost:3000/',
         undefined,
         'agent-1',
+        undefined,
+        { width: 1280, height: 800 },
+        false,
       );
     });
 
@@ -1466,7 +2077,7 @@ describe('browser-action-executor', () => {
       vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue(undefined);
     });
 
-    it('reuses and focuses an existing model-opened tab with the same URL', async () => {
+    it('reuses an existing model-opened tab with the same URL without revealing it (monorepo#3045)', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-dup');
 
@@ -1483,31 +2094,51 @@ describe('browser-action-executor', () => {
         'agent-1',
         'ws-1',
       );
-      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-dup', 'ws-1');
+      // A dedupe reuse never focuses — it has no visibility side effect
+      // (a focus would reveal a hidden reused tab; reveal is showTab-only).
+      expect(embeddedBrowserCdp.focusTab).not.toHaveBeenCalled();
       expect(mockOpenTabFn).not.toHaveBeenCalled();
       // No navigation needed — the tab is already on the exact URL
       expect(embeddedBrowserCdp.evaluate).not.toHaveBeenCalled();
       expect(result.results[0]?.result).toMatchObject({
         reused: true,
+        focused: false,
         tabId: 'tab-dup',
         url: 'http://localhost:3000/board',
       });
     });
 
-    it('forwards pin intent when it reuses an exact-URL model tab', async () => {
+    // Contract (monorepo#3045): a dedupe hit NEVER changes the reused tab's
+    // visibility — a hidden tab stays hidden even when the openTab carried
+    // visible: true. Revealing an existing tab is showTab-only.
+    it('visible: true on an exact-URL dedupe hit does NOT reveal (focus) the reused tab', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-dup');
 
       const result = await executeActions(
-        { actions: [{ action: 'openTab', url: 'http://localhost:3000/board', pin: true }] },
+        {
+          actions: [
+            {
+              action: 'openTab',
+              url: 'http://localhost:3000/board',
+              visible: true,
+              pin: true,
+            },
+          ],
+        },
         mockOpenTabFn,
         'agent-1',
         'ws-1',
       );
 
       expect(result.success).toBe(true);
-      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-dup', 'ws-1', true);
+      expect(embeddedBrowserCdp.focusTab).not.toHaveBeenCalled();
       expect(mockOpenTabFn).not.toHaveBeenCalled();
+      expect(result.results[0]?.result).toMatchObject({
+        reused: true,
+        focused: false,
+        tabId: 'tab-dup',
+      });
     });
 
     it('allowDuplicate: true bypasses reuse entirely and opens a new tab', async () => {
@@ -1534,6 +2165,9 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'agent-1',
+        undefined,
+        { width: 1280, height: 800 },
+        false,
       );
     });
 
@@ -1605,7 +2239,8 @@ describe('browser-action-executor', () => {
 
       expect(first.success).toBe(true);
       // Agent opens force a genuinely new tab in the renderer — the executor
-      // is the dedupe authority.
+      // is the dedupe authority. Hidden by default: visible rides along as
+      // false when the action carries no visible: true (monorepo#3045).
       expect(mockOpenTabFn).toHaveBeenCalledWith(
         'http://localhost:3000/board',
         undefined,
@@ -1613,6 +2248,9 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
         'agent-1',
+        undefined,
+        { width: 1280, height: 800 },
+        false,
       );
       // The new tab is owned at open time so it counts as the agent's own; a
       // non-tunneled open clears any stale requested-URL identity, and the
@@ -1634,6 +2272,32 @@ describe('browser-action-executor', () => {
 
       expect(second.results[0]?.result).toMatchObject({ reused: true, tabId: 'tab-new' });
       expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+
+    it('passes visible: true through to the renderer open (monorepo#3045)', async () => {
+      mockOpenTabFn.mockReturnValueOnce({ success: true, message: 'opened', tabId: 'tab-new' });
+
+      const result = await executeActions(
+        {
+          actions: [{ action: 'openTab', url: 'http://localhost:3000/board', visible: true }],
+        },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://localhost:3000/board',
+        undefined,
+        true,
+        undefined,
+        undefined,
+        'agent-1',
+        undefined,
+        { width: 1280, height: 800 },
+        true,
+      );
     });
 
     it('does not record ownership when openTabFn reports failure or returns no tabId', async () => {
@@ -1786,19 +2450,46 @@ describe('browser-action-executor', () => {
         'agent-1',
         'ws-1',
       );
-      // The reused tab is re-pointed at the fresh tunnel URL and focused.
+      // The reused tab is re-pointed at the fresh tunnel URL — but never
+      // focused: a dedupe reuse has no visibility side effect (monorepo#3045).
       expect(embeddedBrowserCdp.evaluate).toHaveBeenCalledWith(
         'tab-old',
         `window.location.href = ${JSON.stringify('http://127.0.0.1:55002/')}`,
       );
-      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-old', 'ws-1');
+      expect(embeddedBrowserCdp.focusTab).not.toHaveBeenCalled();
       expect(result.results[0]?.result).toMatchObject({
         reused: true,
+        focused: false,
         tabId: 'tab-old',
         url: 'http://127.0.0.1:55002/',
         tunneled: true,
       });
       expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+
+    // Contract (monorepo#3045): a dedupe hit never changes visibility —
+    // visible: true does not reveal the requestedUrl-matched reused tab.
+    it('visible: true on a requestedUrl-matched reuse does NOT focus the tab', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      const provider = { forwardPort: vi.fn().mockResolvedValue(55002), activeForwards: () => [] };
+      vi.mocked(embeddedBrowserCdp.findModelTabByRequestedUrl).mockResolvedValue('tab-old');
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: REQUESTED, visible: true }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+        remoteContext,
+        () => provider,
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.focusTab).not.toHaveBeenCalled();
+      expect(result.results[0]?.result).toMatchObject({
+        reused: true,
+        focused: false,
+        tabId: 'tab-old',
+      });
     });
 
     it('opens a new tab when re-pointing the requestedUrl-matched tab fails', async () => {
@@ -2373,6 +3064,42 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(true);
       expect(embeddedBrowserCdp.resizeTab).toHaveBeenCalledWith('tab-1', 390, 844);
       expect(result.results[0]?.result).toEqual({ tabId: 'tab-1', width: 390, height: 844 });
+    });
+
+    it('persists the new size on the layout tab after a successful resize (monorepo#2857)', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
+      vi.mocked(embeddedBrowserCdp.resizeTab).mockReturnValueOnce({ width: 390, height: 844 });
+      vi.mocked(embeddedBrowserCdp.getTabOwner).mockReturnValueOnce('agent-1');
+
+      await executeActions(
+        { actions: [{ action: 'resizeTab', tabId: 'tab-1', width: 390, height: 844 }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      // notifyTabOwnerChanged re-broadcasts the owner with the tab's current
+      // emulated size so the renderer persists it across restarts.
+      expect(embeddedBrowserCdp.notifyTabOwnerChanged).toHaveBeenCalledWith(
+        'tab-1',
+        'ws-1',
+        'agent-1',
+      );
+    });
+
+    it('does not send a persistence notification when the resize fails (unowned tab)', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resizeTab).mockReturnValueOnce(undefined);
+
+      await executeActions(
+        { actions: [{ action: 'resizeTab', tabId: 'tab-1', width: 390 }] },
+        mockOpenTabFn,
+        undefined,
+        'ws-1',
+      );
+
+      expect(embeddedBrowserCdp.notifyTabOwnerChanged).not.toHaveBeenCalled();
     });
 
     it('omitted height keeps the current emulated height', async () => {
