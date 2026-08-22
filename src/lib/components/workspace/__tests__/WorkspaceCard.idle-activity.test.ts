@@ -215,7 +215,7 @@ describe('WorkspaceCard compact agent metadata', () => {
       prStatus: PullRequestStatus.Open,
       prNumber: 42,
     });
-    const { container, getByRole, getByText } = render(WorkspaceCard, {
+    const { container, getByRole } = render(WorkspaceCard, {
       props: {
         workspace,
         isPinned: true,
@@ -233,6 +233,7 @@ describe('WorkspaceCard compact agent metadata', () => {
     const actions = container.querySelector('.wc-actions')!;
     const trigger = getByRole('button', { name: workspace.title });
     const unpin = getByRole('button', { name: 'Unpin' });
+    const prItem = container.querySelector('[data-workspace-card-pr-item]');
 
     expect(row.className).toContain('w-auto');
     expect(titleGroup.className).toContain('min-w-0');
@@ -242,7 +243,8 @@ describe('WorkspaceCard compact agent metadata', () => {
     expect(marker.className).toContain('group-hover:opacity-0');
     expect(actions.className).toContain('group-hover:opacity-100');
     expect(actions.className).toContain('group-focus-within:opacity-100');
-    expect(getByText('PR #42')).toBeTruthy();
+    expect(prItem).toBeTruthy();
+    expect(prItem?.querySelector('[data-workspace-card-pr-number]')?.textContent).toBe('#42');
     expect(container.querySelector('[data-workspace-card-time]')).toBeTruthy();
     expect(container.querySelector('[data-workspace-status]')?.contains(marker)).toBe(false);
     expect(trigger.className).not.toMatch(/focus-visible:ring-(?:1|2|4|8)|ring-inset|ring-offset/);

@@ -352,8 +352,8 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     const stack = screen.getByTestId('one-shot-header').querySelector('[data-agent-avatar-stack]');
     expect(stack).toBeTruthy();
     expect(stack?.querySelectorAll('[data-icon]')).toHaveLength(0);
-    expect(stack?.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(7);
-    expect(stack?.querySelector('[data-agent-avatar-overflow]')).toBeNull();
+    expect(stack?.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(3);
+    expect(stack?.querySelector('[data-agent-avatar-overflow]')?.textContent?.trim()).toBe('+4');
     await fireEvent.click(summary);
     expect(summary.getAttribute('aria-expanded')).toBe('true');
     expect(
