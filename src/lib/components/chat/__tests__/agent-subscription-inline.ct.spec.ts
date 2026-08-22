@@ -790,7 +790,7 @@ test('keeps the bell at the compact gap and on the outer-header text tone', asyn
   }
 });
 
-test('fits one through eight participants and computes overflow from remaining agents', async ({
+test('caps one through eight participants at three and computes overflow from remaining agents', async ({
   mount,
 }) => {
   const component = await mount(AgentSubscriptionInlineHost, {
@@ -804,22 +804,29 @@ test('fits one through eight participants and computes overflow from remaining a
     });
     if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
     const stack = component.getByTestId('one-shot-header').locator('[data-agent-avatar-stack]');
+    const visibleCount = Math.min(agentCount, 3);
     await expect
       .poll(() => stack.locator('[data-agent-avatar-with-state]').count())
-      .toBe(agentCount);
-    await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveCount(0);
+      .toBe(visibleCount);
+    if (agentCount === visibleCount) {
+      await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveCount(0);
+    } else {
+      await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveText(
+        `+${agentCount - visibleCount}`,
+      );
+    }
     await expect(stack.locator('[data-icon]')).toHaveCount(0);
   }
 
   for (const [agentCount, remaining] of [
-    [9, 1],
-    [12, 4],
+    [9, 6],
+    [12, 9],
   ] as const) {
     await component.update({
       props: { mode: 'agents', agentCount, width: 600, initiallyExpanded: false },
     });
     const stack = component.getByTestId('one-shot-header').locator('[data-agent-avatar-stack]');
-    await expect.poll(() => stack.locator('[data-agent-avatar-with-state]').count()).toBe(8);
+    await expect.poll(() => stack.locator('[data-agent-avatar-with-state]').count()).toBe(3);
     await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveText(`+${remaining}`);
   }
 
@@ -839,7 +846,7 @@ test('fits one through eight participants and computes overflow from remaining a
   const measuredStack = component
     .getByTestId('one-shot-header')
     .locator('[data-agent-avatar-stack]');
-  await expect.poll(() => measuredStack.locator('[data-agent-avatar-stack-item]').count()).toBe(8);
+  await expect.poll(() => measuredStack.locator('[data-agent-avatar-stack-item]').count()).toBe(3);
   const style = await measuredStack.evaluate((stack) => {
     const items = Array.from(stack.querySelectorAll<HTMLElement>('[data-agent-avatar-stack-item]'));
     const overflow = stack.querySelector('[data-agent-avatar-overflow]') as HTMLElement;
@@ -862,13 +869,13 @@ test('fits one through eight participants and computes overflow from remaining a
       devicePixelRatio: window.devicePixelRatio,
     };
   });
-  expect(style.zIndexes).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  expect(style.zIndexes).toEqual([1, 2, 3]);
   expect(style.masks.at(-1)).toBe('none');
   for (const mask of style.masks.slice(0, -1)) {
     expect(mask).toContain('url(');
     expect(mask).not.toContain('radial-gradient');
   }
-  expect(style.avatarPseudos).toEqual(Array(8).fill({ content: 'none', width: '0px' }));
+  expect(style.avatarPseudos).toEqual(Array(3).fill({ content: 'none', width: '0px' }));
   expect(style.overflowFontSize).toBe('12px');
   expect(style.overflowBackground).toBe('rgba(0, 0, 0, 0)');
   expect(
@@ -929,7 +936,8 @@ test('toggles exactly once from every full-row disclosure region and not from ag
   const summary = component.getByTestId('one-shot-summary-toggle');
   const stack = summary.locator('[data-agent-avatar-stack]');
   await expect(summary).toHaveAttribute('aria-expanded', 'false');
-  await expect.poll(() => stack.locator('[data-agent-avatar-stack-item]').count()).toBe(8);
+  await expect.poll(() => stack.locator('[data-agent-avatar-stack-item]').count()).toBe(3);
+  await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveText('+9');
 
   const regions = [
     component.getByTestId('one-shot-leading-column'),
@@ -1268,8 +1276,10 @@ test('screenshots participant cutouts over varied parent backgrounds', async ({ 
           },
         });
         const summary = component.getByTestId('one-shot-summary-toggle');
+        const stack = component.getByTestId('one-shot-header').locator('[data-agent-avatar-stack]');
         if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
-        await expect.poll(() => summary.locator('[data-agent-avatar-with-state]').count()).toBe(6);
+        await expect.poll(() => stack.locator('[data-agent-avatar-with-state]').count()).toBe(3);
+        await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveText('+3');
         await expect(component).toHaveScreenshot(
           `participant-stack-${theme}-${parentBackground}-${zoom === 1 ? '100' : '200'}.png`,
         );
