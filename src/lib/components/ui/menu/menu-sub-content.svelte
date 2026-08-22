@@ -17,6 +17,11 @@
     portalProps?: MenuPrimitive.PortalProps;
   } = $props();
 
+  // bits-ui 2.18.1: SubContent is the shared menu primitive, so its available-height
+  // var uses the 'menu' prefix — unlike DropdownMenu.Content's 'dropdown-menu' prefix
+  // in menu-content.svelte. The differing var names are intentional.
+  const maxHeight = 'var(--bits-menu-content-available-height, calc(100dvh - 1rem))';
+
   const contentClass = $derived(
     cn(
       'type-body z-(--layer-popover) min-w-40 overflow-y-auto overscroll-contain rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none focus-visible:border-input focus-visible:ring-3 focus-visible:ring-ring/50',
@@ -39,7 +44,7 @@
       data-slot="menu-sub-content"
       class={contentClass}
       {sideOffset}
-      style="max-height: var(--bits-menu-content-available-height, calc(100dvh - 1rem))"
+      style="max-height: {maxHeight}"
       {...restProps}
     />
   </MenuPrimitive.Portal>
@@ -50,7 +55,7 @@
     data-slot="menu-sub-content"
     class={contentClass}
     {sideOffset}
-    style="max-height: var(--bits-menu-content-available-height, calc(100dvh - 1rem))"
+    style="max-height: {maxHeight}"
     {...restProps}
   />
 {/if}

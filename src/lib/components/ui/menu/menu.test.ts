@@ -272,4 +272,20 @@ describe('Menu metadata and compatibility', () => {
     );
     expect(menu.getAttribute('style')).not.toContain('24rem');
   });
+
+  it('bounds submenu content height by the menu-prefixed bits-ui var', async () => {
+    // SubContent uses --bits-menu-content-available-height (the shared 'menu'
+    // prefix), not the 'dropdown-menu' prefix the root content uses.
+    render(MenuTestHarness);
+    await openMenu();
+    const more = screen.getByRole('menuitem', { name: 'More' });
+    more.focus();
+    await fireEvent.keyDown(more, { key: 'ArrowRight' });
+    await screen.findByRole('menuitem', { name: 'Archive' });
+    const subContent = document.querySelector('[data-slot="menu-sub-content"]');
+    expect(subContent).toBeTruthy();
+    expect(subContent?.getAttribute('style')).toMatch(
+      /max-height: var\(--bits-menu-content-available-height, ?calc\(100dvh - 1rem\)\)/,
+    );
+  });
 });
