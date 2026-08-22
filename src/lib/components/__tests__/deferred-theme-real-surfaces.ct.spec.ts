@@ -120,7 +120,7 @@ for (const mode of preferences) {
         expect(evidence.chiefComposer?.backgroundColor).toBe('rgba(0, 0, 0, 0)');
         expect(evidence.sidebar?.backgroundColor).toBe(expectedSidebar);
         expect(evidence.note?.backgroundColor).toBe(expectedCanvas);
-        expect(evidence.emptyState?.backgroundColor).toBe(expectedCanvas);
+        expect(evidence.emptyState?.backgroundColor).toBe(expectedSidebar);
         expect(evidence.avatar?.color).not.toBe(evidence.avatar?.backgroundColor);
         fs.writeFileSync(
           path.join(artifactDirectory, `${id}.json`),
