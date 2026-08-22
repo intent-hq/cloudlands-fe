@@ -4418,7 +4418,7 @@
   "browser_panel_unclaimedGroup_label": "소유되지 않음",
   "browser_panel_toggleGroup_ariaLabel": "{name} 탭 그룹 전환",
   "browser_panel_restoreTab_tooltip": "탭 복원",
-  "browser_panel_restoreTab_ariaLabel": "숨겨진 탭 복원",
+  "browser_panel_restoreTab_ariaLabel": "숨겨진 탭 {title} 복원",
   "browser_embedded_goBack_tooltip": "뒤로 가기",
   "browser_embedded_goBack_ariaLabel": "뒤로 가기",
   "browser_embedded_goForward_tooltip": "앞으로 가기",

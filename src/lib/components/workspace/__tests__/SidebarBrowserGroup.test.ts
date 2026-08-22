@@ -47,7 +47,8 @@ describe('SidebarBrowserGroup hidden rows', () => {
     const row = document.querySelector('[data-sidebar-browser-hidden-tab="hidden-1"]');
     expect(row).not.toBeNull();
     expect((row as HTMLElement).tagName).toBe('BUTTON');
-    expect(row).toBe(screen.getByRole('button', { name: 'Restore hidden tab' }));
+    // Parameterized label keeps the tab title in the accessible name.
+    expect(row).toBe(screen.getByRole('button', { name: 'Restore hidden tab Preview' }));
   });
 
   it('calls onRestoreTab when clicking anywhere on the hidden row', async () => {

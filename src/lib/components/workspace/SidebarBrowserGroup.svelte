@@ -43,14 +43,14 @@
         {#if entry.hidden}
           <!-- Whole-row clickable like the visible rows (monorepo#3169); the same
                plain-variant Button box as the visible row keeps identical
-               dot/text x-offsets (monorepo#3140). The restore icon is a
-               decorative hover hint — the row itself is the button. -->
+               dot/text x-offsets (fe#1554). The restore icon is a decorative
+               hover hint — the row itself is the button. -->
           <Button
             variant="plain"
             class="group/hidden flex h-auto w-full cursor-pointer items-start justify-start gap-2 rounded-md px-2 py-2 text-left hover:bg-muted focus-visible:bg-muted"
             onclick={() => onRestoreTab(entry.tab.id)}
             tooltip={m.browser_panel_restoreTab_tooltip()}
-            aria-label={m.browser_panel_restoreTab_ariaLabel()}
+            aria-label={m.browser_panel_restoreTab_ariaLabel({ title: entry.tab.title })}
             data-sidebar-browser-hidden-tab={entry.tab.id}
           >
             <span

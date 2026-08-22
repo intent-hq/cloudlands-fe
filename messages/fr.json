@@ -4418,7 +4418,7 @@
   "browser_panel_unclaimedGroup_label": "Non réclamé",
   "browser_panel_toggleGroup_ariaLabel": "Basculer le groupe d'onglets {name}",
   "browser_panel_restoreTab_tooltip": "Restaurer l'onglet",
-  "browser_panel_restoreTab_ariaLabel": "Restaurer l'onglet masqué",
+  "browser_panel_restoreTab_ariaLabel": "Restaurer l'onglet masqué {title}",
   "browser_embedded_goBack_tooltip": "Précédent",
   "browser_embedded_goBack_ariaLabel": "Précédent",
   "browser_embedded_goForward_tooltip": "Suivant",
