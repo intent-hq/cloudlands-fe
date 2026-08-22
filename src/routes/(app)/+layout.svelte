@@ -127,6 +127,12 @@
     resolveInterruptedAgents,
   } from '$features/agent/interrupted-agents-service';
   import InterruptedAgentsModal from '$lib/components/modals/InterruptedAgentsModal.svelte';
+  import {
+    installQuitConfirmationService,
+    respondToQuitConfirmation,
+  } from '$features/quit-confirmation/quit-confirmation-service';
+  import QuitConfirmationModal from '$lib/components/modals/QuitConfirmationModal.svelte';
+  import type { QuitConfirmationShowPayload } from '$shared/ipc/quit-confirmation';
   import type { InterruptedAgent } from '$lib/client/app-client';
   import { LiveAppClient } from '$lib/client/live/live-app-client';
   import { workspaceIdFromRoute } from '$lib/utils/workspace-route-context';
@@ -206,6 +212,10 @@
   // Interrupted agents modal state
   let showInterruptedAgentsModal = $state(false);
   let interruptedAgents = $state<InterruptedAgent[]>([]);
+
+  // Quit confirmation modal state (main-process quit/restart interception)
+  let showQuitConfirmationModal = $state(false);
+  let quitConfirmationPayload = $state<QuitConfirmationShowPayload | null>(null);
 
   // The root route is a minimal empty state and fresh windows boot at
   // /workspace/new, which renders onboarding. Gate boot (and legacy `/`)
@@ -316,6 +326,18 @@
     const disposeInterruptedAgents = installInterruptedAgentsService(appClient, (agents) => {
       interruptedAgents = agents;
       showInterruptedAgentsModal = true;
+    });
+
+    // Initialize quit-confirmation service (in-app modal for quit/restart)
+    const disposeQuitConfirmation = installQuitConfirmationService({
+      onShow: (payload) => {
+        quitConfirmationPayload = payload;
+        showQuitConfirmationModal = true;
+      },
+      onDismiss: () => {
+        showQuitConfirmationModal = false;
+        quitConfirmationPayload = null;
+      },
     });
 
     // Initialize release notes store to detect version changes and show release notes
@@ -796,6 +818,7 @@
       cleanupLinkTooltip();
       window.removeEventListener('keydown', handleBrowserNavigation);
       disposeInterruptedAgents();
+      disposeQuitConfirmation();
     };
   });
 
@@ -1084,6 +1107,16 @@
     onClose={() => {
       showInterruptedAgentsModal = false;
       notifyInterruptedAgentsModalClosed();
+    }}
+  />
+
+  <!-- Quit Confirmation Modal (shown when main intercepts quit/restart) -->
+  <QuitConfirmationModal
+    bind:open={showQuitConfirmationModal}
+    payload={quitConfirmationPayload}
+    onRespond={(proceed) => {
+      quitConfirmationPayload = null;
+      respondToQuitConfirmation(proceed);
     }}
   />
 
