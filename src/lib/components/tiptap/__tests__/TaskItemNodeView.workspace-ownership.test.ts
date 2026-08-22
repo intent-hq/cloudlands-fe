@@ -127,10 +127,6 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => 
   delegateExistingTaskRequested: (...payload: unknown[]) => ({ type: 'delegate', payload }),
 }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToNote: mocks.navigate }));
-vi.mock('$lib/components/tiptap/TaskNotePreview.svelte', async () => ({
-  default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
-    .default,
-}));
 
 import TestTaskItemNodeView from './TestTaskItemNodeView.test.svelte';
 
@@ -216,7 +212,13 @@ describe('TaskItemNodeView workspace ownership', () => {
     const agentButton = await waitFor(() =>
       view.container.querySelector<HTMLButtonElement>('.task-agent-status'),
     );
+    const row = view.container.querySelector<HTMLElement>('[data-task-item-row]');
     expect(agentButton).not.toBeNull();
+    expect(row).not.toBeNull();
+    expect(row?.querySelector('[data-task-row-title]')?.textContent).toContain('Task from B');
+    expect(row?.querySelector('[data-task-agent-indicator]')).toBe(agentButton);
+    expect(row?.querySelector('.status-content')).toBeNull();
+    expect(view.container.querySelector('[data-task-note-preview]')).toBeNull();
     expect(agentButton!.parentElement?.closest('button')).toBeNull();
 
     await fireEvent.click(agentButton!);
