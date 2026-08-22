@@ -81,6 +81,10 @@
     releaseChatInterestLease,
   } from '$features/agent/utils/chat-interest-leases';
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import {
+    selectWorkspaceTasks,
+    selectWorkspaceTasksInitialized,
+  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectAllTabs as selectPanelLayoutAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
@@ -255,6 +259,8 @@
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
   import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
+  import WorkspaceTaskFallbackCard from './WorkspaceTaskFallbackCard.svelte';
+  import { deriveWorkspaceTaskFallback } from './workspace-task-fallback';
   import Button from '../ui/button/button.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
@@ -467,6 +473,8 @@
   // statuses across all pending proposals at once.
   const proposalLifecycleMap$ = selectProposalLifecycleMap();
   const agentTasks$ = selectTasksForAgent(workspaceIdStore, agentIdStore);
+  const workspaceTasks$ = selectWorkspaceTasks(workspaceIdStore);
+  const workspaceTasksInitialized$ = selectWorkspaceTasksInitialized(workspaceIdStore);
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
   const chatError$ = selectChatError(agentIdStore);
@@ -888,12 +896,23 @@
   // The pinned-prompt overlay host subtracts it so the overlay lane occupies
   // the same horizontal box as the conversation column.
   let scrollbarGutterWidth = $state(0);
-  let hasVisibleTranscriptUtility = $state(false);
+  let hasVisibleEventUtility = $state(false);
+  const workspaceTaskFallback = $derived(
+    deriveWorkspaceTaskFallback({
+      initialized: $workspaceTasksInitialized$,
+      tasks: $workspaceTasks$,
+      session: $agentSession$ ?? null,
+      messages: [...$agentHistoryMessages$, ...$agentMessages$],
+    }),
+  );
+  const hasVisibleTranscriptUtility = $derived(
+    hasVisibleEventUtility || workspaceTaskFallback.length > 0,
+  );
 
   $effect(() => {
     workspace?.id;
     agentId;
-    hasVisibleTranscriptUtility = false;
+    hasVisibleEventUtility = false;
   });
 
   $effect(() => {
@@ -6230,16 +6249,17 @@
              It collapses naturally when transcript or expanded disclosure content overflows. -->
         <div class="mt-auto" data-testid="transcript-utility-stack">
           <!-- {#key} forces a full remount when workspace or agent changes,
-             preventing stale subscription UI from leaking across switches.
-             Hidden until the transcript hydration settles so the card never
-             pops in ahead of (or during) the transcript skeleton. -->
+             preventing stale utility UI from leaking across switches.
+             Hidden until transcript hydration settles; the workspace-task
+             fallback also waits for canonical task hydration. -->
           {#if workspace?.id && showTranscriptUtilityCard}
             {#key `${workspace.id}::${agentId}`}
+              <WorkspaceTaskFallbackCard tasks={workspaceTaskFallback} compact={isCompactMode} />
               <EventSubscriptionsCard
                 workspaceId={workspace.id}
                 {agentId}
                 compact={isCompactMode}
-                bind:visible={hasVisibleTranscriptUtility}
+                bind:visible={hasVisibleEventUtility}
               />
             {/key}
           {/if}

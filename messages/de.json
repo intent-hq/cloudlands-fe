@@ -5910,5 +5910,7 @@
   "chat_executionPlan_step_label": "Schritt {current} / {total}",
   "chat_executionPlan_completed_label": "Abgeschlossen",
   "chat_executionPlan_current_label": "Aktuell",
-  "chat_executionPlan_pending_label": "Ausstehend"
+  "chat_executionPlan_pending_label": "Ausstehend",
+  "chat_workspaceTasks_title": "Arbeitsbereichsaufgaben",
+  "chat_workspaceTasks_progress_label": "{completed} / {total} abgeschlossen"
 }

@@ -127,6 +127,10 @@ vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: testState.selector(null),
 }));
+vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
+  selectWorkspaceTasks: testState.selector([]),
+  selectWorkspaceTasksInitialized: testState.selector(false),
+}));
 vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
   selectCheckedPanels: testState.selector([]),
   selectPanels: testState.selector([]),

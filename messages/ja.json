@@ -5910,5 +5910,7 @@
   "chat_executionPlan_step_label": "ステップ {current} / {total}",
   "chat_executionPlan_completed_label": "完了",
   "chat_executionPlan_current_label": "実行中",
-  "chat_executionPlan_pending_label": "保留中"
+  "chat_executionPlan_pending_label": "保留中",
+  "chat_workspaceTasks_title": "ワークスペースのタスク",
+  "chat_workspaceTasks_progress_label": "{completed} / {total} 完了"
 }

@@ -121,6 +121,10 @@ vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
 vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors', () => ({
   selectTasksForAgent: mocks.selector([]),
 }));
+vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
+  selectWorkspaceTasks: mocks.selector([]),
+  selectWorkspaceTasksInitialized: mocks.selector(false),
+}));
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectAwaitingSwitchBackSnapshot: Object.assign(() => mocks.awaitingSwitchBackSnapshot, {
     select: () => false,
