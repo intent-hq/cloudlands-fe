@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.79.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.78.2...v2.79.0) (2026-08-22)
+
+
+### 🚀 Features
+
+* add fixed workspace panel columns ([#1529](https://github.com/intent-hq/cloudlands-fe/issues/1529)) ([ba53c57](https://github.com/intent-hq/cloudlands-fe/commit/ba53c57507f9c005b832f4b3ce870447505a5b9b))
+* use unstable development icon ([#1488](https://github.com/intent-hq/cloudlands-fe/issues/1488)) ([5da886e](https://github.com/intent-hq/cloudlands-fe/commit/5da886e637f70c3a59ed281b595c61dae6f0e61f))
+
+
+### 🐛 Bug Fixes
+
+* prevent suggested prompt stream flashes ([#1390](https://github.com/intent-hq/cloudlands-fe/issues/1390)) ([a20ca4b](https://github.com/intent-hq/cloudlands-fe/commit/a20ca4b7f6d7d1b89386f999b51c781b5087ed0c))
+
 ## [2.78.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.78.1...v2.78.2) (2026-08-22)
 
 
