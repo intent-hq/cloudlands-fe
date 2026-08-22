@@ -37,7 +37,13 @@
   data-workspace-status-icon={presentation.icon?.iconName}
 >
   {#if presentation.visual === 'dot'}
-    <span class="workspace-status-dot" data-workspace-status-dot></span>
+    <span
+      class={cn(
+        'workspace-status-dot',
+        presentation.state === 'in_progress' && 'workspace-status-dot-ring',
+      )}
+      data-workspace-status-dot
+    ></span>
   {:else if presentation.icon}
     <Fa icon={presentation.icon} class="size-full!" />
   {/if}
@@ -65,9 +71,18 @@
     box-shadow: none;
   }
 
+  .workspace-status-dot-ring {
+    box-shadow: inset 0 0 0 1px hsl(var(--background));
+  }
+
+  :global(.dark) .workspace-status-dot-ring {
+    box-shadow: none;
+  }
+
   @media (forced-colors: active) {
     .workspace-status-dot {
       background-color: CanvasText;
+      box-shadow: none;
     }
   }
 </style>
