@@ -137,7 +137,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
     });
   });
 
-  it('renders taskGraph off when settings.list omits it and sends the exact toggle-on payload', async () => {
+  it('renders taskGraph on when settings.list omits it and sends the exact toggle-off payload', async () => {
     mocks.mockBackendRequest.mockImplementation(async (method: string) => {
       if (method === 'settings.list') {
         // Older daemon: agentFeatures.taskGraph is not registered
@@ -147,7 +147,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
         };
       }
       if (method === 'settings.update') {
-        return { applied: [{ path: 'agentFeatures.taskGraph', value: true }] };
+        return { applied: [{ path: 'agentFeatures.taskGraph', value: false }] };
       }
       throw new Error(`Unexpected method: ${method}`);
     });
@@ -156,7 +156,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
 
     const toggle = await screen.findByRole('switch', { name: 'Task graph coordination' });
     await waitFor(() => {
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
     });
     await fireEvent.click(toggle);
 
@@ -166,10 +166,10 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
         .mock.calls.find((call) => call[0] === 'settings.update');
       expect(updateCall).toBeDefined();
       expect(updateCall![1]).toEqual({
-        changes: [{ path: 'agentFeatures.taskGraph', value: true }],
+        changes: [{ path: 'agentFeatures.taskGraph', value: false }],
       });
     });
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
   });
 
   it('reverts taskGraph to off when the daemon rolls back a toggle-on', async () => {
@@ -183,7 +183,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
         };
       }
       if (method === 'settings.update') {
-        // Daemon rejected the change and rolled back to the default-off value
+        // Daemon rejected the change and rolled back to the explicit off value
         return { applied: [{ path: 'agentFeatures.taskGraph', value: false }] };
       }
       throw new Error(`Unexpected method: ${method}`);

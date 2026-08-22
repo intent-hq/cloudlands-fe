@@ -5900,7 +5900,7 @@
   "settings_agentFeatures_prMonitorDebounce_saving": "Saving…",
   "settings_agentFeatures_prMonitorDebounce_invalid": "Enter a whole number between 10 and 86,400 seconds.",
   "settings_agentFeatures_taskGraph_label": "Task graph coordination",
-  "settings_agentFeatures_taskGraph_description": "Teach new agent sessions the task-graph coordination workflow (batch delegation, task relations, unblocked-task wakes); off by default",
+  "settings_agentFeatures_taskGraph_description": "Enable the task-graph coordination workflow (batch delegation, task relations, unblocked-task wakes)",
   "chat_monitoredPrs_row_ariaLabel": "Monitored pull requests",
   "chat_monitoredPrs_monitoring_label": "Monitoring PR {repo} #{number}: {title}",
   "chat_monitoredPrs_status_ready": "Open and ready to merge.",
