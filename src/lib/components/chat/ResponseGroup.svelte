@@ -59,8 +59,9 @@
   let triggerEl: HTMLButtonElement | undefined = $state();
   const instanceId = $props.id();
   const detailsId = `response-group-details-${instanceId}`;
-  let userCollapsed = false;
   let searchOwnsExpansion = false;
+  let disclosureOverride: 'automatic' | 'expanded-live' | 'expanded-completed' | 'collapsed' =
+    'automatic';
 
   function setExpanded(nextExpanded: boolean) {
     desiredExpanded = nextExpanded;
@@ -83,27 +84,38 @@
 
   $effect(() => {
     const currentlyStreaming = isStreaming;
+    const hasCurrentChild = Boolean(currentChild);
     if (!isInitialized) {
       isInitialized = true;
       desiredExpanded = isExpanded;
       prevStreaming = currentlyStreaming;
+      if (currentlyStreaming && hasCurrentChild && disclosureOverride === 'automatic') {
+        setExpanded(false);
+      } else if (!currentlyStreaming && disclosureOverride !== 'expanded-completed') {
+        setExpanded(false);
+      }
       return;
     }
 
-    if (currentlyStreaming && !prevStreaming) {
-      searchOwnsExpansion = false;
-      if (!userCollapsed) setExpanded(!currentChild);
+    if (currentlyStreaming) {
+      if (!prevStreaming) searchOwnsExpansion = false;
+      if (!prevStreaming && disclosureOverride === 'expanded-completed') {
+        disclosureOverride = 'automatic';
+      }
+      if (disclosureOverride === 'automatic') setExpanded(!hasCurrentChild);
       if (collapseTimer) {
         clearTimeout(collapseTimer);
         collapseTimer = null;
       }
     } else if (prevStreaming && !currentlyStreaming) {
-      if (!userCollapsed) {
+      if (disclosureOverride !== 'collapsed') {
         collapseTimer = setTimeout(() => {
           setExpanded(false);
           collapseTimer = null;
         }, 800);
       }
+    } else if (disclosureOverride !== 'expanded-completed') {
+      setExpanded(false);
     }
     prevStreaming = currentlyStreaming;
   });
@@ -123,7 +135,11 @@
 
     searchOwnsExpansion = false;
     const nextExpanded = !desiredExpanded;
-    userCollapsed = !nextExpanded;
+    disclosureOverride = nextExpanded
+      ? isStreaming
+        ? 'expanded-live'
+        : 'expanded-completed'
+      : 'collapsed';
     setExpanded(nextExpanded);
   }
 
@@ -140,7 +156,10 @@
   function restoreSearchExpansion() {
     if (!searchOwnsExpansion) return;
     searchOwnsExpansion = false;
-    if (isStreaming && !userCollapsed) return;
+    if (isStreaming && disclosureOverride === 'automatic') {
+      setExpanded(!currentChild);
+      return;
+    }
     setExpanded(false);
   }
 

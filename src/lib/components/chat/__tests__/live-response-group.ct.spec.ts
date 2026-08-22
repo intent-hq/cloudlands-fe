@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import LiveResponseGroupHost from './LiveResponseGroupHost.svelte';
+import StreamingResponseGroupLifecycleHost from './StreamingResponseGroupLifecycleHost.svelte';
 
 test('keeps one current row until manual expansion and collapses to the completed summary', async ({
   mount,
@@ -32,4 +33,35 @@ test('keeps one current row until manual expansion and collapses to the complete
   await component.update({ props: { chunk: 'latest chunk', isStreaming: false } });
   await expect(component.getByTestId('live-current-child')).toHaveCount(0);
   await expect(component.getByTestId('response-group-snippet')).toContainText('earlier chunk');
+});
+
+test('reconciles a tag-first streaming group through explicit close and completion', async ({
+  mount,
+}) => {
+  const component = await mount(StreamingResponseGroupLifecycleHost);
+  const trigger = component.getByTestId('response-group-disclosure');
+  const visibleChildren = component.locator('[data-response-group-child]');
+
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+  await component.update({ props: { phase: 'live', isStreaming: true } });
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(visibleChildren).toHaveCount(1);
+  await expect(visibleChildren).toHaveAttribute('data-message-content-block', 'thinking');
+
+  await component.update({ props: { phase: 'closed', isStreaming: true } });
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(visibleChildren).toHaveCount(0);
+  await expect(component.getByText('Final prose.')).toBeVisible();
+
+  await component.update({ props: { phase: 'closed', isStreaming: false } });
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+  await trigger.click();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(visibleChildren).toHaveCount(4);
+
+  await component.update({ props: { phase: 'closed', isStreaming: false } });
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(visibleChildren).toHaveCount(4);
 });

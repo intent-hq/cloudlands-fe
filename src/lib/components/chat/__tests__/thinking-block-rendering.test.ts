@@ -175,6 +175,57 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(visibleChildTypes()).toEqual([]);
   });
 
+  it('reconciles a tag-first response group through explicit close and message completion', async () => {
+    const opening = [{ type: 'text', id: 'msg_1:0', text: '<group:Prepping>' }] as ContentBlock[];
+    const view = await renderStreaming(opening, true);
+    const groupDisclosure = screen.getByTestId('response-group-disclosure');
+    const visibleChildTypes = () =>
+      [...document.querySelectorAll('[data-response-group-child]')].map((child) =>
+        child.getAttribute('data-message-content-block'),
+      );
+
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+
+    const groupContent = [
+      { type: 'text', id: 'msg_1:0', text: '<group:Prepping>Review current code.' },
+      thinking('msg_1:1', 'Inspect the response-group state'),
+      {
+        type: 'tool_use',
+        id: 'msg_1:2',
+        toolCallId: 'call-1',
+        name: 'workspace_api',
+        input: { summary: 'Read the current state' },
+      },
+      { type: 'tool_result', id: 'msg_1:3', tool_use_id: 'call-1', output: 'done' },
+      thinking('msg_1:4', 'Confirm the completed state'),
+    ] as ContentBlock[];
+    await view.rerender({ content: groupContent, isStreaming: true });
+
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(visibleChildTypes()).toEqual(['thinking']);
+
+    const completedContent = [
+      ...groupContent,
+      { type: 'text', id: 'msg_1:5', text: '</group:Prepping>Final prose.' },
+    ] as ContentBlock[];
+    await view.rerender({ content: completedContent, isStreaming: true });
+
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(visibleChildTypes()).toEqual([]);
+    expect(document.body.textContent).toContain('Final prose.');
+
+    await view.rerender({ content: completedContent, isStreaming: false });
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
+
+    await fireEvent.click(groupDisclosure);
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking']);
+
+    await view.rerender({ content: [...completedContent], isStreaming: false });
+    expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking']);
+  });
+
   it('uses the reasoning title in the static message path', async () => {
     await renderStatic([
       thinking('msg_1:0', '# Considering task restoration\n\nInspect saved state.'),
