@@ -39,6 +39,13 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
   let current = entry;
   let domReady = false;
 
+  // The guest webContentsId last registered for CDP. dom-ready fires on
+  // every top-level navigation AND when a reparented <webview> recreates
+  // its guest (monorepo#3170); gating on the id keeps registration
+  // once-per-guest — same-guest navigations skip, a new guest re-registers
+  // (registerTab re-applies viewport emulation).
+  let lastRegisteredWebContentsId: number | undefined;
+
   const syncDesiredUrl = () => {
     const desired = current.desiredUrl;
     if (!domReady || !desired) return;
@@ -66,19 +73,28 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
     }
     try {
       const webContentsId = webview.getWebContentsId();
-      logger.info('Registering offscreen browser tab for CDP', {
-        tabId: entry.tabId,
-        workspaceId: entry.workspaceId,
-        webContentsId,
-      });
-      window.electronAPI
-        ?.invoke('browser:register-tab', { tabId: entry.tabId, webContentsId })
-        .catch((err) => {
-          logger.error('Failed to register offscreen browser tab for CDP', {
-            tabId: entry.tabId,
-            error: err,
-          });
+      if (webContentsId !== lastRegisteredWebContentsId) {
+        lastRegisteredWebContentsId = webContentsId;
+        logger.info('Registering offscreen browser tab for CDP', {
+          tabId: entry.tabId,
+          workspaceId: entry.workspaceId,
+          webContentsId,
         });
+        window.electronAPI
+          ?.invoke('browser:register-tab', { tabId: entry.tabId, webContentsId })
+          .catch((err) => {
+            logger.error('Failed to register offscreen browser tab for CDP', {
+              tabId: entry.tabId,
+              error: err,
+            });
+            // Allow a later dom-ready from this guest to retry the
+            // registration instead of leaving the tab unregistered until
+            // the guest is recreated.
+            if (lastRegisteredWebContentsId === webContentsId) {
+              lastRegisteredWebContentsId = undefined;
+            }
+          });
+      }
     } catch {
       logger.debug('Failed to get webContentsId for offscreen CDP registration', {
         tabId: entry.tabId,
@@ -93,11 +109,13 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
     if (url) appStore.dispatch(updateTabBrowserUrl(current.workspaceId, current.tabId, url));
   };
 
-  // dom-ready fires on every top-level navigation; register once per guest
-  // (EmbeddedBrowser precedent) so repeated navigations don't stack
-  // redundant registerTab calls and destroyed-hooks in the main process.
-  // The muted state set on first dom-ready persists on the webContents.
-  webview.addEventListener('dom-ready', handleDomReady, { once: true });
+  // NOT { once: true }: reparenting the <webview> makes Electron destroy
+  // and re-create the guest webContents, and the new guest fires dom-ready
+  // again — registration (gated on webContentsId above) and muting must
+  // follow the live guest (monorepo#3170). Same-guest navigations re-run
+  // the handler harmlessly: the id gate skips registerTab and muting is
+  // idempotent on the webContents.
+  webview.addEventListener('dom-ready', handleDomReady);
   webview.addEventListener('did-navigate', handleDidNavigate);
   // Hash/history navigation does not fire did-navigate; the visible
   // EmbeddedBrowser syncs it too, so mirror it here.
