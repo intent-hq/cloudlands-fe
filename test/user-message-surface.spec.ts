@@ -64,6 +64,14 @@ async function readSurface(page: Page) {
     const textStyle = getComputedStyle(text);
     const rect = surface.getBoundingClientRect();
     const transcriptRect = transcript.getBoundingClientRect();
+    const resolveBackgroundToken = (token: string) => {
+      const probe = document.createElement('span');
+      probe.style.backgroundColor = `hsl(${getComputedStyle(host).getPropertyValue(token)})`;
+      host.append(probe);
+      const value = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return value;
+    };
     const channels = (color: string) =>
       (color.match(/[0-9.]+/g) ?? [])
         .slice(0, 3)
@@ -79,6 +87,8 @@ async function readSurface(page: Page) {
     const darker = Math.min(luminance(textStyle.color), luminance(style.backgroundColor));
     return {
       background: style.backgroundColor,
+      mutedBackground: resolveBackgroundToken('--muted'),
+      secondaryBackground: resolveBackgroundToken('--secondary'),
       hostBackground: getComputedStyle(host).backgroundColor,
       assistantBackground: getComputedStyle(assistant).backgroundColor,
       contrast: (lighter + 0.05) / (darker + 0.05),
@@ -94,26 +104,34 @@ async function readSurface(page: Page) {
 
 test('keeps the accepted distinct surface in light and dark themes', async ({ page }) => {
   const backgrounds: string[] = [];
-  for (const theme of ['light', 'dark'] as const) {
+  const cases = [
+    { theme: 'light' as const, zoom: 1, transcriptWidth: 640 },
+    { theme: 'dark' as const, zoom: 1, transcriptWidth: 640 },
+    { theme: 'light' as const, zoom: 2, transcriptWidth: 440 },
+    { theme: 'dark' as const, zoom: 2, transcriptWidth: 440 },
+  ];
+  for (const scenario of cases) {
     await mountSurface(page, {
       message: 'A short user prompt.\nA second line stays inside the same surface.',
-      theme,
-      transcriptWidth: 640,
-      viewport: { width: 960, height: 720 },
+      ...scenario,
+      viewport: { width: 960, height: scenario.zoom === 1 ? 720 : 1200 },
     });
     const state = await readSurface(page);
     backgrounds.push(state.background);
+    expect(state.background).toBe(
+      scenario.theme === 'light' ? state.mutedBackground : state.secondaryBackground,
+    );
     expect(state.background).not.toBe(state.hostBackground);
     expect(state.assistantBackground).toBe('rgba(0, 0, 0, 0)');
     expect(state.contrast).toBeGreaterThanOrEqual(4.5);
     expect(state.borderRadius).toBe('9px');
-    expect(state.borderWidth).toBe('1px');
+    expect(state.borderWidth).toBe('0px');
     expect(state.padding).toEqual(['8px', '12px', '8px', '12px']);
     expect(state.userSelect).toBe('text');
     expect(state.widthDelta).toBeLessThanOrEqual(1);
     expect(state.clipped).toBe(false);
   }
-  expect(backgrounds[0]).not.toBe(backgrounds[1]);
+  expect(new Set(backgrounds).size).toBe(2);
 });
 
 test('contains narrow, wide, multiline, and 200% zoom states', async ({ page }) => {

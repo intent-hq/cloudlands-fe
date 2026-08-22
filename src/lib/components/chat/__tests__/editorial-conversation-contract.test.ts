@@ -79,8 +79,12 @@ describe('editorial conversation presentation contract', () => {
     expect(pinned).toContain('USER_MESSAGE_TEXT_CLASS');
     expect(pinned).toContain('truncate whitespace-nowrap');
     expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
-    expect(surface).toContain('bg-secondary');
+    expect(surface).toContain('bg-muted');
+    expect(surface).toContain('dark:bg-secondary');
     expect(surface).toContain('text-secondary-foreground');
+    expect(hasUnqualifiedClassToken(surface, 'bg-secondary')).toBe(false);
+    expect(hasUnqualifiedClassToken(surface, 'border')).toBe(false);
+    expect(hasUnqualifiedClassToken(surface, 'border-border')).toBe(false);
     expect(hasUnqualifiedClassToken(surface, 'bg-primary')).toBe(false);
     expect(hasUnqualifiedClassToken(surface, 'text-primary-foreground')).toBe(false);
   });
