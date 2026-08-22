@@ -34,8 +34,7 @@ test('exposes compact values and keeps summary text readable on hover', async ({
     const textColors = await disclosure
       .locator(
         [
-          '#workspace-token-usage-title-token-usage-accessibility-ct',
-          '#workspace-token-usage-processed-token-usage-accessibility-ct > span',
+          '#workspace-token-usage-processed-token-usage-accessibility-ct > span:not(.sr-only)',
           '#workspace-token-usage-cache-token-usage-accessibility-ct > span',
         ].join(', '),
       )
