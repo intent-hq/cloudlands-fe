@@ -11,7 +11,7 @@
     portal = true,
     portalProps,
     sideOffset = 4,
-    maxHeight = 'min(24rem, calc(100dvh - 1rem))',
+    maxHeight = 'var(--bits-dropdown-menu-content-available-height, calc(100dvh - 1rem))',
     ...restProps
   }: MenuPrimitive.ContentProps & {
     portal?: boolean;

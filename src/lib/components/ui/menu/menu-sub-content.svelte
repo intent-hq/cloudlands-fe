@@ -39,7 +39,7 @@
       data-slot="menu-sub-content"
       class={contentClass}
       {sideOffset}
-      style="max-height: min(24rem, calc(100dvh - 1rem))"
+      style="max-height: var(--bits-menu-content-available-height, calc(100dvh - 1rem))"
       {...restProps}
     />
   </MenuPrimitive.Portal>
@@ -50,7 +50,7 @@
     data-slot="menu-sub-content"
     class={contentClass}
     {sideOffset}
-    style="max-height: min(24rem, calc(100dvh - 1rem))"
+    style="max-height: var(--bits-menu-content-available-height, calc(100dvh - 1rem))"
     {...restProps}
   />
 {/if}
