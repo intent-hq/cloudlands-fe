@@ -232,6 +232,29 @@ describe('Dropdown compatibility modes', () => {
     expect(onopenchange).toHaveBeenNthCalledWith(2, false);
   });
 
+  it('searches grouped options by both the display label and search label', async () => {
+    const { container } = render(Dropdown, {
+      props: {
+        groups: [
+          {
+            key: 'legacy',
+            label: 'Legacy models',
+            searchLabel: 'Auggie',
+            options: [{ value: 'opus', label: 'Opus 4.1' }],
+          },
+        ],
+      },
+    });
+    await fireEvent.click(container.querySelector('button')!);
+    const search = await screen.findByRole('searchbox', { name: 'Search options' });
+
+    await fireEvent.input(search, { target: { value: 'Legacy' } });
+    expect(screen.getByRole('option', { name: 'Opus 4.1' })).toBeTruthy();
+
+    await fireEvent.input(search, { target: { value: 'Auggie' } });
+    expect(screen.getByRole('option', { name: 'Opus 4.1' })).toBeTruthy();
+  });
+
   it('preserves multi-select, toggle, action, separator, and submenu modes', async () => {
     const onchange = vi.fn();
     const action = vi.fn();

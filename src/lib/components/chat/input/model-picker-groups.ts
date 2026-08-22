@@ -7,13 +7,12 @@ import {
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 
-import {
-  formatProviderLoadError,
-  type ProviderLoadError,
-} from './model-picker-provider-errors';
+import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
 import { toDropdownOptions } from './model-picker-utils';
 
 type ModelPickerOptions = Parameters<typeof toDropdownOptions>[0];
+
+export const AUGGIE_LEGACY_GROUP_KEY = 'auggie:legacy-models';
 
 interface BuildGroupedModelOptionsParams {
   showDefaultOption: boolean;
@@ -83,11 +82,25 @@ export function buildGroupedModelOptions({
         ? toDropdownOptions(availableModels)
         : undefined);
     if (models && models.length > 0) {
-      groups.push({
-        key: pid,
-        label: selectProviderDisplayName.select(state, pid),
-        options: models,
-      });
+      const displayName = selectProviderDisplayName.select(state, pid);
+      if (pid === 'auggie') {
+        const currentModels = models.filter((model) => model.data?.isLegacyModel !== true);
+        const legacyModels = models.filter((model) => model.data?.isLegacyModel === true);
+        if (currentModels.length > 0) {
+          groups.push({ key: pid, label: displayName, options: currentModels });
+        }
+        if (legacyModels.length > 0) {
+          groups.push({
+            key: AUGGIE_LEGACY_GROUP_KEY,
+            parentKey: pid,
+            label: m.chat_modelPicker_legacyModels_label(),
+            searchLabel: displayName,
+            options: legacyModels,
+          });
+        }
+      } else {
+        groups.push({ key: pid, label: displayName, options: models });
+      }
     } else if (allProviderLoading[pid]) {
       const displayName = selectProviderDisplayName.select(state, pid);
       groups.push({

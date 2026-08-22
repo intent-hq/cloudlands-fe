@@ -21,7 +21,7 @@ const mockedRequest = vi.mocked(backendRequest);
 
 type Envelope = {
   success: boolean;
-  data?: Array<{ value: string; label: string; isDefault?: boolean }>;
+  data?: Array<{ value: string; label: string; isDefault?: boolean; isLegacyModel?: boolean }>;
   warning?: string;
   stale?: boolean;
   error?: string;
@@ -83,6 +83,25 @@ describe("model-catalog-bridge-seeder", () => {
       providerId: "auggie",
       forceRefresh: true,
     });
+  });
+
+  it("preserves Auggie legacy metadata from models.list through the IPC result", async () => {
+    mockedRequest.mockResolvedValue({
+      providerId: "auggie",
+      models: [
+        { id: "current", name: "Current" },
+        { id: "legacy", name: "Legacy", isLegacyModel: true },
+      ],
+      source: "auggie",
+    });
+
+    const response = await mockInvoke<Envelope>("auggie:get-models");
+
+    expect(mockedRequest).toHaveBeenCalledWith("models.list", { providerId: "auggie" });
+    expect(response.data).toEqual([
+      { value: "current", label: "Current" },
+      { value: "legacy", label: "Legacy", isLegacyModel: true },
+    ]);
   });
 
   it("omits forceRefresh from the wire params unless explicitly true", async () => {

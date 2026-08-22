@@ -18,7 +18,7 @@ const mockProviderModelsState = vi.hoisted(() => ({
   byProviderId: {} as Record<
     string,
     {
-      models: { value: string; label: string; description?: string }[];
+      models: { value: string; label: string; description?: string; isLegacyModel?: boolean }[];
       fetchedAt: string;
       warning?: string;
       stale?: boolean;
@@ -334,6 +334,118 @@ describe('ModelPicker locked state', () => {
   });
 });
 
+describe('ModelPicker legacy Auggie models', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'current';
+    mockModelState.availableModels = [{ value: 'current', label: 'Current model' }];
+    mockModelState.availableModelsProviderId = 'auggie';
+    mockModelState.loadError = null;
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [
+        { value: 'current', label: 'Current model' },
+        { value: 'legacy-opus', label: 'Opus 4.1', isLegacyModel: true },
+      ],
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  it('keeps current models visible and toggles the collapsed legacy subgroup', async () => {
+    const onModelChange = vi.fn();
+    render(ModelPicker, {
+      props: { selectedModel: 'current', onModelChange, portal: false },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByRole('option', { name: /Current model/ })).toBeTruthy();
+    const legacyToggle = await screen.findByRole('button', { name: 'Toggle legacy models' });
+    expect(legacyToggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('option', { name: /Opus 4.1/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Refresh Legacy models/ })).toBeNull();
+
+    await fireEvent.click(legacyToggle);
+    expect(legacyToggle.getAttribute('aria-expanded')).toBe('true');
+    const legacyOption = await screen.findByRole('option', { name: /Opus 4.1/ });
+    await fireEvent.click(legacyOption);
+    expect(onModelChange).toHaveBeenCalledWith('legacy-opus');
+  });
+
+  it('supports keyboard expand and collapse on the legacy subgroup header', async () => {
+    render(ModelPicker, { props: { selectedModel: 'current', portal: false } });
+
+    await fireEvent.click(screen.getByRole('button'));
+    const legacyToggle = await screen.findByRole('button', { name: 'Toggle legacy models' });
+    await fireEvent.keyDown(legacyToggle, { key: 'Enter' });
+    await waitFor(() => expect(legacyToggle.getAttribute('aria-expanded')).toBe('true'));
+    expect(await screen.findByRole('option', { name: /Opus 4.1/ })).toBeTruthy();
+
+    await fireEvent.keyDown(legacyToggle, { key: ' ' });
+    await waitFor(() => expect(legacyToggle.getAttribute('aria-expanded')).toBe('false'));
+    expect(screen.queryByRole('option', { name: /Opus 4.1/ })).toBeNull();
+  });
+
+  it('reveals matching legacy models during search and restores collapse when cleared', async () => {
+    render(ModelPicker, { props: { selectedModel: 'current', portal: false } });
+
+    await fireEvent.click(screen.getByRole('button'));
+    const legacyToggle = await screen.findByRole('button', { name: 'Toggle legacy models' });
+    const search = screen.getByRole('searchbox', { name: 'Search options' });
+    expect(screen.queryByRole('option', { name: /Opus 4.1/ })).toBeNull();
+
+    await fireEvent.input(search, { target: { value: 'Legacy' } });
+    expect(await screen.findByRole('option', { name: /Opus 4.1/ })).toBeTruthy();
+    expect(legacyToggle.getAttribute('aria-expanded')).toBe('true');
+    expect(legacyToggle.getAttribute('aria-disabled')).toBe('true');
+    expect(legacyToggle.hasAttribute('disabled')).toBe(false);
+    await fireEvent.click(legacyToggle);
+
+    await fireEvent.input(search, { target: { value: '' } });
+    await waitFor(() => expect(screen.queryByRole('option', { name: /Opus 4.1/ })).toBeNull());
+    expect(legacyToggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByRole('option', { name: /Current model/ })).toBeTruthy();
+  });
+
+  it('shows the legacy subgroup when every Auggie model is legacy', async () => {
+    mockModelState.selectedModel = 'legacy-opus';
+    mockModelState.availableModels = [];
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'legacy-opus', label: 'Opus 4.1', isLegacyModel: true }],
+    });
+    render(ModelPicker, { props: { selectedModel: 'legacy-opus', portal: false } });
+
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByRole('option', { name: /Opus 4.1/ })).toBeTruthy();
+    const legacyToggle = screen.getByRole('button', { name: 'Toggle legacy models' });
+    expect(legacyToggle.getAttribute('aria-expanded')).toBe('true');
+    expect(legacyToggle.getAttribute('aria-disabled')).toBe('true');
+    expect(legacyToggle.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('restores an expanded subgroup after search clears', async () => {
+    render(ModelPicker, { props: { selectedModel: 'current', portal: false } });
+
+    await fireEvent.click(screen.getByRole('button'));
+    const legacyToggle = await screen.findByRole('button', { name: 'Toggle legacy models' });
+    const search = screen.getByRole('searchbox', { name: 'Search options' });
+    await fireEvent.click(legacyToggle);
+    expect(legacyToggle.getAttribute('aria-expanded')).toBe('true');
+
+    await fireEvent.input(search, { target: { value: 'Opus' } });
+    expect(legacyToggle.getAttribute('aria-disabled')).toBe('true');
+    expect(legacyToggle.hasAttribute('disabled')).toBe(false);
+    await fireEvent.input(search, { target: { value: '' } });
+
+    expect(legacyToggle.getAttribute('aria-expanded')).toBe('true');
+    expect(await screen.findByRole('option', { name: /Opus 4.1/ })).toBeTruthy();
+  });
+});
+
 describe('ModelPicker combined reasoning mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -397,7 +509,7 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(modelOption.textContent).not.toContain('Effort:');
     expect(modelOption.textContent).not.toContain('low · medium · high · max');
     expect(screen.getByTestId('model-reasoning-section')).toBeTruthy();
-    const toggle = screen.getByTestId('model-reasoning-toggle');
+    const toggle = await screen.findByTestId('model-reasoning-toggle');
     expect(toggle.hasAttribute('disabled')).toBe(false);
     expect(toggle.textContent?.trim()).toBe('Reasoning effort · Medium');
     expect(toggle.className).toContain('text-xs');
@@ -479,7 +591,7 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     await fireEvent.click(screen.getByRole('button'));
-    const toggle = screen.getByTestId('model-reasoning-toggle');
+    const toggle = await screen.findByTestId('model-reasoning-toggle');
     await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
     await fireEvent.click(toggle);
     await fireEvent.change(screen.getByRole('slider'), { target: { value: '3' } });
@@ -508,7 +620,7 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(triggerGauge.dataset.gaugeValue).toBe('2');
 
     await fireEvent.click(trigger);
-    const toggle = screen.getByTestId('model-reasoning-toggle');
+    const toggle = await screen.findByTestId('model-reasoning-toggle');
     expect(toggle.hasAttribute('disabled')).toBe(false);
     await fireEvent.click(toggle);
     await fireEvent.change(screen.getByRole('slider'), { target: { value: '4' } });
@@ -532,7 +644,7 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(screen.getByLabelText('GPT-5.6-Sol')).toBeTruthy();
 
     await fireEvent.click(trigger);
-    const toggle = screen.getByTestId('model-reasoning-toggle');
+    const toggle = await screen.findByTestId('model-reasoning-toggle');
     await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
     expect(toggle.textContent?.trim()).toBe('Reasoning effort · Default');
@@ -552,7 +664,7 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     await fireEvent.click(screen.getByRole('button'));
-    const toggle = screen.getByTestId('model-reasoning-toggle');
+    const toggle = await screen.findByTestId('model-reasoning-toggle');
     await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
     await fireEvent.keyDown(toggle, { key: 'Enter' });
     expect(screen.getByRole('slider')).toBeTruthy();
@@ -854,7 +966,7 @@ describe('ModelPicker combined reasoning mode', () => {
 
     await fireEvent.click(trigger);
     expect(screen.getByTestId('model-reasoning-section')).toBeTruthy();
-    const toggle = screen.getByTestId('model-reasoning-toggle');
+    const toggle = await screen.findByTestId('model-reasoning-toggle');
     expect(toggle.hasAttribute('disabled')).toBe(false);
     expect(toggle.getAttribute('aria-disabled')).toBe('false');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
@@ -883,7 +995,7 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
 
     await fireEvent.click(trigger);
-    const toggle = screen.getByTestId('model-reasoning-toggle');
+    const toggle = await screen.findByTestId('model-reasoning-toggle');
     await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
     expect(toggle.textContent?.trim()).toBe('Reasoning effort · Default');
     expect(toggle.className).toContain('text-xs');

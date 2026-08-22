@@ -2006,6 +2006,8 @@
   "chat_modelPicker_installAuggieHint_label": "Installez via \"npm install -g @augmentcode/auggie\" ou utilisez le flux de configuration d'Auggie.",
   "chat_modelPicker_installCliHint_label": "Installez la CLI {provider} et assurez-vous que \"{command}\" est dans le PATH.",
   "chat_modelPicker_installCodex_description": "Installez la CLI Codex pour voir tous vos modèles disponibles.",
+  "chat_modelPicker_legacyModels_ariaLabel": "Afficher ou masquer les modèles hérités",
+  "chat_modelPicker_legacyModels_label": "Modèles hérités",
   "chat_modelPicker_loadFailed_label": "Impossible de charger les modèles",
   "chat_modelPicker_loadingMore_label": "Chargement de plus de modèles…",
   "chat_modelPicker_loadingProviderModels_label": "Chargement des modèles {provider}…",

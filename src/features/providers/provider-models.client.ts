@@ -37,6 +37,7 @@ export interface ProviderModelEntry {
   badges?: Array<{ color: string; label: string; variant?: string }>;
   effortLevels?: string[];
   isDefault?: boolean;
+  isLegacyModel?: boolean;
   priority?: number;
 }
 

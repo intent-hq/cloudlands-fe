@@ -28,6 +28,7 @@
   import EffortGauge from './EffortGauge.svelte';
   import EffortPicker from './EffortPicker.svelte';
   import ModelPickerGroupHeader from './ModelPickerGroupHeader.svelte';
+  import ModelPickerLegacyGroupHeader from './ModelPickerLegacyGroupHeader.svelte';
   import ModelPickerProviderNotice, {
     createProviderWarningNotice,
     type ProviderWarningNotice,
@@ -82,7 +83,7 @@
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
-  import { buildGroupedModelOptions } from './model-picker-groups';
+  import { AUGGIE_LEGACY_GROUP_KEY, buildGroupedModelOptions } from './model-picker-groups';
   import {
     findModelFallbackOption,
     isProviderEnabled,
@@ -1082,6 +1083,16 @@
       allProviderWarnings: $allProviderWarnings$,
     }),
   );
+  let legacyModelsExpanded = $state(false);
+  let modelSearchValue = $state('');
+  const onlyLegacyAuggieModels = $derived(
+    groupedModelOptions.some((group) => group.key === AUGGIE_LEGACY_GROUP_KEY) &&
+      !groupedModelOptions.some((group) => group.key === 'auggie'),
+  );
+  const legacyToggleDisabled = $derived(
+    modelSearchValue.trim().length > 0 || onlyLegacyAuggieModels,
+  );
+  const legacyModelsVisible = $derived(legacyModelsExpanded || legacyToggleDisabled);
 
   // The value bound to the dropdown (convert undefined to USE_DEFAULT_VALUE).
   // Bound state rather than derived so a rejected confirmModelChange can
@@ -1103,7 +1114,9 @@
   const providerTabIds = $derived.by(() => [
     ...new Set([
       ...$availableEnabledProviderIds$.map((id) => normalizeProviderId(id)),
-      ...groupedModelOptions.map((group) => group.key).filter((key) => key !== 'default'),
+      ...groupedModelOptions
+        .filter((group) => group.key !== 'default')
+        .map((group) => group.parentKey ?? group.key),
     ]),
   ]);
   const providerTabsEnabled = $derived(showReasoning && providerTabIds.length > 1);
@@ -1129,15 +1142,24 @@
   });
 
   // Display groups — provider tabs replace the tall group stack in the chat picker.
-  const displayGroups = $derived(
+  const displayGroups = $derived.by(() =>
     groupedModelOptions
-      .filter(
-        (group) =>
-          !providerTabsEnabled || group.key === 'default' || group.key === activeBrowseProviderId,
-      )
+      .filter((group) => {
+        const providerKey = group.parentKey ?? group.key;
+        return (
+          !providerTabsEnabled || group.key === 'default' || providerKey === activeBrowseProviderId
+        );
+      })
       .map((group) => ({
         ...group,
-        options: providerTabsEnabled || !collapsedGroups.has(group.key) ? group.options : [],
+        options:
+          group.key === AUGGIE_LEGACY_GROUP_KEY
+            ? legacyModelsVisible
+              ? group.options
+              : []
+            : providerTabsEnabled || !collapsedGroups.has(group.key)
+              ? group.options
+              : [],
       })),
   );
 
@@ -1695,7 +1717,17 @@
   </Button>
 {:else}
   {#snippet groupHeader({ group, groupIndex }: DropdownGroupProps)}
-    {#if !providerTabsEnabled}
+    {#if group.key === AUGGIE_LEGACY_GROUP_KEY}
+      <ModelPickerLegacyGroupHeader
+        {group}
+        {groupIndex}
+        expanded={legacyModelsVisible}
+        disabled={legacyToggleDisabled}
+        onToggle={() => {
+          if (!legacyToggleDisabled) legacyModelsExpanded = !legacyModelsExpanded;
+        }}
+      />
+    {:else if !providerTabsEnabled}
       <ModelPickerGroupHeader
         {group}
         {groupIndex}
@@ -1710,6 +1742,7 @@
   <Dropdown
     bind:this={dropdownRef}
     bind:value={dropdownValue}
+    bind:searchValue={modelSearchValue}
     defaultHighlightValue={defaultModelId ?? catalogDefaultFallbackOption?.value}
     bind:open={dropdownOpen}
     groups={displayGroups}
