@@ -249,6 +249,13 @@
   // Store listener references for cleanup
   let webviewListeners: Array<{ event: string; handler: (e: any) => void }> = [];
 
+  // The guest webContentsId last registered for CDP. dom-ready fires on
+  // every top-level navigation AND when a reparented <webview> recreates
+  // its guest (a panel drag does this, monorepo#3170); gating on the id
+  // keeps registration once-per-guest — same-guest navigations skip, a new
+  // guest re-registers (registerTab re-applies viewport emulation).
+  let lastRegisteredWebContentsId: number | undefined;
+
   // Keyboard interceptor script to inject into webview
   // Since webview runs in a separate process, keyboard events don't bubble up.
   // We inject a script that captures keyboard shortcuts and logs special messages
@@ -341,27 +348,38 @@
         // Inject keyboard interceptor on initial load
         injectKeyboardInterceptor();
 
-        // Register this webview for CDP access (browser:exec)
+        // Register this webview for CDP access (browser:exec). Runs on
+        // every dom-ready so a recreated guest re-registers, but skips
+        // same-guest navigations to avoid stacking redundant registerTab
+        // calls and destroyed-hooks in the main process.
         if (tabId && webviewRef) {
           try {
             const webContentsId = webviewRef.getWebContentsId();
-            logger.info('Registering browser tab for CDP', { tabId, webContentsId });
-            window.electronAPI
-              ?.invoke('browser:register-tab', { tabId, webContentsId })
-              .catch((err) => {
-                logger.error('Failed to register browser tab for CDP', {
-                  tabId,
-                  webContentsId,
-                  error: err,
+            if (webContentsId !== lastRegisteredWebContentsId) {
+              lastRegisteredWebContentsId = webContentsId;
+              logger.info('Registering browser tab for CDP', { tabId, webContentsId });
+              window.electronAPI
+                ?.invoke('browser:register-tab', { tabId, webContentsId })
+                .catch((err) => {
+                  logger.error('Failed to register browser tab for CDP', {
+                    tabId,
+                    webContentsId,
+                    error: err,
+                  });
                 });
-              });
+            }
           } catch {
             // WebView may have been destroyed between dom-ready and callback execution
             logger.debug('Failed to get webContentsId for CDP registration', { tabId });
           }
         }
       };
-      currentWebview.addEventListener('dom-ready', handleDomReady, { once: true });
+      // NOT { once: true }: reparenting the <webview> (panel drag) makes
+      // Electron destroy and re-create the guest webContents, and the new
+      // guest fires dom-ready again — registration must follow the live
+      // guest or the tab loses CDP access and viewport emulation
+      // (monorepo#3170).
+      currentWebview.addEventListener('dom-ready', handleDomReady);
       webviewListeners.push({ event: 'dom-ready', handler: handleDomReady });
 
       // Re-inject keyboard interceptor after every navigation (page changes clear the injected script)

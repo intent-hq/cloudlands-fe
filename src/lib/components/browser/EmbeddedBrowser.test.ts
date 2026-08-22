@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$store/renderer/slices/browser/browser-selectors', () => ({
@@ -31,6 +31,74 @@ describe('EmbeddedBrowser', () => {
     });
 
     expect(container.querySelector('webview')?.getAttribute('src')).toBe('about:blank');
+  });
+
+  // Regression (monorepo#3170): dragging a tab to another panel reparents
+  // the <webview>, Electron recreates the guest webContents, and the new
+  // guest fires dom-ready again — registration must follow the live guest
+  // (once-per-guest, not once-per-component), or the tab loses CDP access
+  // and viewport emulation.
+  describe('CDP registration lifecycle', () => {
+    const invokeMock = vi.fn().mockResolvedValue(undefined);
+
+    const registerCalls = () =>
+      invokeMock.mock.calls.filter(([channel]) => channel === 'browser:register-tab');
+
+    const renderWithTab = () => {
+      invokeMock.mockClear();
+      (window as unknown as { electronAPI: { invoke: typeof invokeMock } }).electronAPI = {
+        invoke: invokeMock,
+      };
+      const { container } = render(EmbeddedBrowser, {
+        props: { url: 'https://example.test/', workspaceId: 'workspace-1', tabId: 'tab-1' },
+      });
+      const webview = container.querySelector('webview') as HTMLElement & {
+        getWebContentsId?: () => number;
+        executeJavaScript?: (script: string) => Promise<unknown>;
+      };
+      expect(webview).not.toBeNull();
+      // dom-ready also injects the keyboard interceptor; jsdom's element
+      // has no executeJavaScript.
+      webview.executeJavaScript = vi.fn().mockResolvedValue(undefined);
+      return webview;
+    };
+
+    afterEach(() => {
+      delete (window as { electronAPI?: unknown }).electronAPI;
+    });
+
+    it('re-registers when a new guest webContents fires dom-ready (panel drag)', async () => {
+      const webview = renderWithTab();
+      webview.getWebContentsId = () => 10;
+      webview.dispatchEvent(new Event('dom-ready'));
+      await waitFor(() =>
+        expect(registerCalls()).toEqual([
+          ['browser:register-tab', { tabId: 'tab-1', webContentsId: 10 }],
+        ]),
+      );
+
+      // Reparenting destroyed and recreated the guest: new webContentsId.
+      webview.getWebContentsId = () => 11;
+      webview.dispatchEvent(new Event('dom-ready'));
+      await waitFor(() =>
+        expect(registerCalls()).toEqual([
+          ['browser:register-tab', { tabId: 'tab-1', webContentsId: 10 }],
+          ['browser:register-tab', { tabId: 'tab-1', webContentsId: 11 }],
+        ]),
+      );
+    });
+
+    it('does not re-register the same guest on later dom-ready (navigation)', async () => {
+      const webview = renderWithTab();
+      webview.getWebContentsId = () => 10;
+      webview.dispatchEvent(new Event('dom-ready'));
+      await waitFor(() => expect(registerCalls()).toHaveLength(1));
+
+      // dom-ready fires again on a top-level navigation — same guest.
+      webview.dispatchEvent(new Event('dom-ready'));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(registerCalls()).toHaveLength(1);
+    });
   });
 
   describe('owner chip', () => {
