@@ -35,13 +35,12 @@
  * §5.5), so the daemon's per-agent `isResponding` flag is the source of truth
  * for "still running" (see running-agents.ts).
  *
- * Two daemons can be in play at once: when the live client is pinned to a
- * remote backend, the app may still supervise a spawned local sidecar that quit
- * shuts down. Both are queried and their agents grouped by whether quitting
- * stops their daemon — remote agents and agents on an adopted external local
- * daemon keep running, agents on our spawned sidecar are interrupted (see
- * quit-dialog.ts). The second query is best effort: any failure yields no
- * agents from it, so a dead/absent daemon never blocks quit.
+ * Multiple daemons can be in play at once. Every live pooled backend with an
+ * open window is queried, plus the local sidecar when it is still running.
+ * Agents are grouped by whether quitting stops their daemon — remote agents and
+ * agents on an adopted external local daemon keep running, while agents on our
+ * spawned sidecar are interrupted (see quit-dialog.ts). The throwaway local
+ * query is best effort, so a dead/absent daemon never blocks quit.
  *
  * Kept out of `src/main/index.ts` (heavy top-level side effects) so it is
  * unit-testable and importable from the auto-update service without a
@@ -63,6 +62,7 @@ import type {
   QuitConfirmationShowPayload,
 } from '../shared/ipc/quit-confirmation';
 import { Logger } from '../shared/logger';
+import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { QuitConfirmationAckSchema, QuitConfirmationResponseSchema } from './ipc-schemas';
 import { createValidatedHandler } from './ipc-validation-middleware';
 import {
@@ -97,11 +97,15 @@ const LOCAL_PROBE_TIMEOUT_MS = 2_000;
 const RENDERER_ACK_TIMEOUT_MS = 3_000;
 
 /** Injectable collaborators (defaults wire up the real main-process ones). */
+export interface QuitBackendTarget {
+  id: string;
+  client: RunningAgentsRpc;
+}
+
 export interface QuitConfirmationDeps {
-  getBackendClient(): RunningAgentsRpc;
+  /** Live pooled backends that still own at least one window. */
+  getBackendTargets(): QuitBackendTarget[];
   getConnectionMode(): ConnectionMode;
-  /** True when the focused window uses a remote backend (not the local daemon). */
-  isRemoteBackendActive(): boolean;
   listRespondingAgents(client: RunningAgentsRpc): Promise<RespondingAgent[]>;
   /** Best-effort responding agents on the startup/default backend, via a throwaway client. */
   listLocalRespondingAgents(): Promise<RespondingAgent[]>;
@@ -132,8 +136,8 @@ export interface QuitConfirmationDeps {
  * Query the startup/default backend — the target `resolveBackendConfig` derives
  * from the environment, normally the local daemon — through a short-lived
  * JSON-RPC client, raced against {@link LOCAL_PROBE_TIMEOUT_MS} and disposed on
- * every exit path. Only used while the live client is pinned to a remote, where
- * that backend is a second, separate source of running agents.
+ * every exit path. Used when no pooled local client owns a window but a remote
+ * window or managed sidecar means the local daemon remains relevant to quit.
  */
 async function defaultListLocalRespondingAgents(): Promise<RespondingAgent[]> {
   const [{ app }, { JsonRpcClient }, { resolveBackendConfig }] = await Promise.all([
@@ -467,14 +471,27 @@ export async function confirmQuitWithRunningAgents(
 async function confirmQuitInner(overrides: Partial<QuitConfirmationDeps>): Promise<boolean> {
   // Lazy so importing this module never pulls in the backend IPC chain
   // (JsonRpcClient, sidecar manager) — only invoking it does, and only when
-  // the caller has not injected both backend seams.
-  const backendIpc =
-    overrides.getBackendClient && overrides.isRemoteBackendActive
-      ? null
-      : await import('../features/backend/main/backend.ipc');
+  // the caller has not injected the backend-target seam.
+  const backendIpc = overrides.getBackendTargets
+    ? null
+    : await import('../features/backend/main/backend.ipc');
   const deps: QuitConfirmationDeps = {
-    getBackendClient: overrides.getBackendClient ?? backendIpc!.getFocusedBackendClient,
-    isRemoteBackendActive: overrides.isRemoteBackendActive ?? backendIpc!.isRemoteBackendActive,
+    getBackendTargets:
+      overrides.getBackendTargets ??
+      (() => {
+        if (!backendIpc) return [];
+        const seen = new Set<string>();
+        const targets: QuitBackendTarget[] = [];
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (window.isDestroyed()) continue;
+          const id = backendIpc.getBackendIdForIpcSender(window.webContents);
+          if (seen.has(id)) continue;
+          seen.add(id);
+          const pooledClient = backendIpc.getBackendClientForConnection(id);
+          if (pooledClient) targets.push({ id, client: pooledClient });
+        }
+        return targets;
+      }),
     getConnectionMode,
     listRespondingAgents,
     listLocalRespondingAgents: defaultListLocalRespondingAgents,
@@ -487,35 +504,42 @@ async function confirmQuitInner(overrides: Partial<QuitConfirmationDeps>): Promi
     ...overrides,
   };
 
-  // The focused window's client is the current source for the prompt. When that
-  // window is remote, the local sidecar is a SECOND source that quit still
-  // shuts down, so query it too before the zero-agent fast path. The sources
-  // are independent, and the fail-open browser tab enumeration rides the same
-  // concurrent batch.
-  const remoteActive = deps.isRemoteBackendActive();
-  const [activeAgents, localAgents, disruptedBrowserTabs] = await Promise.all([
-    deps.listRespondingAgents(deps.getBackendClient()),
-    remoteActive ? listLocalAgentsFailOpen(deps) : Promise.resolve<RespondingAgent[]>([]),
+  const targets = deps.getBackendTargets();
+  const hasLocalTarget = targets.some((target) => target.id === LOCAL_CONNECTION_ID);
+  const hasRemoteTarget = targets.some((target) => target.id !== LOCAL_CONNECTION_ID);
+  const localProbeNeeded =
+    !hasLocalTarget && (hasRemoteTarget || deps.getConnectionMode() === 'sidecar');
+  const [targetAgents, probedLocalAgents, disruptedBrowserTabs] = await Promise.all([
+    Promise.all(
+      targets.map(async (target) => ({
+        id: target.id,
+        agents: await deps.listRespondingAgents(target.client),
+      })),
+    ),
+    localProbeNeeded ? listLocalAgentsFailOpen(deps) : Promise.resolve<RespondingAgent[]>([]),
     listDisruptedTabsFailOpen(deps),
   ]);
+  const remoteAgents = targetAgents
+    .filter((target) => target.id !== LOCAL_CONNECTION_ID)
+    .flatMap((target) => target.agents);
+  const localAgents = [
+    ...targetAgents
+      .filter((target) => target.id === LOCAL_CONNECTION_ID)
+      .flatMap((target) => target.agents),
+    ...probedLocalAgents,
+  ];
 
   // Framing depends only on whether quitting stops an agent's daemon: a remote
   // backend and an adopted external local daemon both outlive the app, our
   // spawned sidecar does not.
   const localKeepsRunning = deps.getConnectionMode() === 'external';
   const keepRunning = dedupeByAgentId(
-    remoteActive
-      ? localKeepsRunning
-        ? [...activeAgents, ...localAgents]
-        : activeAgents
-      : localKeepsRunning
-        ? activeAgents
-        : [],
+    localKeepsRunning ? [...remoteAgents, ...localAgents] : remoteAgents,
   );
   const keepRunningIds = new Set(keepRunning.map((agent) => agent.agentId));
-  const interrupted = dedupeByAgentId(
-    remoteActive ? (localKeepsRunning ? [] : localAgents) : localKeepsRunning ? [] : activeAgents,
-  ).filter((agent) => !keepRunningIds.has(agent.agentId));
+  const interrupted = dedupeByAgentId(localKeepsRunning ? [] : localAgents).filter(
+    (agent) => !keepRunningIds.has(agent.agentId),
+  );
   const groups: QuitAgentGroups = { keepRunning, interrupted };
 
   // Prompt when quitting disrupts anything: running agent work OR agent-owned
