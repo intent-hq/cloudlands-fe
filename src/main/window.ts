@@ -627,6 +627,18 @@ export function openOrFocusWindowsForBackend(backendId: string): void {
   restoreWindowsForBackend(backendId);
 }
 
+/** Ensure closing one backend cannot destroy the app's final live window. */
+export function ensureLocalWindowBeforeClosingBackend(backendId: string): void {
+  const liveWindows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
+  const closesAnyWindow = liveWindows.some((window) => getBackendIdForWindow(window) === backendId);
+  const hasSurvivingWindow = liveWindows.some(
+    (window) => getBackendIdForWindow(window) !== backendId,
+  );
+  if (closesAnyWindow && !hasSurvivingWindow) {
+    openOrFocusWindowsForBackend(LOCAL_CONNECTION_ID);
+  }
+}
+
 /** Destroy only windows bound to one backend, preserving every other backend. */
 export function closeWindowsForBackend(backendId: string): void {
   const windows = BrowserWindow.getAllWindows();

@@ -297,6 +297,7 @@ interface BackendWindowHooks {
   captureAndClose(fromBackendId: string): Promise<void>;
   restore(toBackendId: string): void | Promise<void>;
   openOrFocus?(backendId: string): void | Promise<void>;
+  ensureLocalWindowBeforeClose?(backendId: string): void | Promise<void>;
   closeForBackend?(backendId: string): void | Promise<void>;
   /**
    * Idempotent failure-path clear of the window-all-closed teardown guard set
@@ -325,6 +326,12 @@ const defaultWindowHooks: BackendWindowHooks = {
       openOrFocusWindowsForBackend: (id: string) => void;
     };
     mod.openOrFocusWindowsForBackend(backendId);
+  },
+  async ensureLocalWindowBeforeClose(backendId) {
+    const mod = (await import('../../../main/window')) as unknown as {
+      ensureLocalWindowBeforeClosingBackend: (id: string) => void;
+    };
+    mod.ensureLocalWindowBeforeClosingBackend(backendId);
   },
   async closeForBackend(backendId) {
     const mod = (await import('../../../main/window')) as unknown as {
@@ -1872,18 +1879,23 @@ function registerConnectionsHandlers(): void {
         enqueueSwitchOperation(async () => {
           const wasActive = (await connectionsStore.getActiveId()) === id;
           await connectionsStore.forget(id); // rejects the reserved local id
-          await windowHooks.closeForBackend?.(id);
           const targetClient = backendClients.get(id);
-          if (wasActive && (targetClient === client || activeConnectionMeta?.id === id)) {
+          const retargetedPrimary =
+            wasActive && (targetClient === client || activeConnectionMeta?.id === id);
+          if (retargetedPrimary) {
             disposeBackendClient();
             currentConfig = null;
             activeConnectionMeta = null;
             getBackendClient();
             backendReconnectForwarder.emit('reconnected', LOCAL_CONNECTION_ID);
             app.emit('backend-connection-changed');
-          } else {
-            disconnectBackendClient(id);
           }
+          // If the forgotten backend owns every live window, create/focus local
+          // before destroying any of them. This prevents window-all-closed from
+          // entering the quit/session-clear path between teardown and fallback.
+          await windowHooks.ensureLocalWindowBeforeClose?.(id);
+          await windowHooks.closeForBackend?.(id);
+          if (!retargetedPrimary) disconnectBackendClient(id);
           await broadcastConnectionsChanged();
           return { id } satisfies ForgetConnectionResult;
         }),

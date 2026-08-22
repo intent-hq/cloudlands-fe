@@ -128,6 +128,7 @@ import {
   clearBackendSwitchWindowTeardownGuard,
   clearWindowSessionsSnapshot,
   createWindow,
+  ensureLocalWindowBeforeClosingBackend,
   getWindowSessionsPath,
   getBackendIdForWebContents,
   getFocusedWindowBackendId,
@@ -413,6 +414,32 @@ describe('multi-backend window sessions', () => {
       expect(local.isDestroyed()).toBe(false);
       expect(remote.isDestroyed()).toBe(true);
       expect(FakeBrowserWindow.getAllWindows()).toEqual([local]);
+    });
+
+    it('opens local before closing the last backend windows', () => {
+      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+
+      ensureLocalWindowBeforeClosingBackend('remote-1');
+
+      const beforeClose = FakeBrowserWindow.getAllWindows();
+      expect(beforeClose).toHaveLength(2);
+      expect(getBackendIdForWebContents(beforeClose[1].webContents as never)).toBe('local');
+
+      closeWindowsForBackend('remote-1');
+      expect(remote.isDestroyed()).toBe(true);
+      expect(FakeBrowserWindow.getAllWindows()).toEqual([beforeClose[1]]);
+    });
+
+    it('does not open local when another backend window will survive', () => {
+      const forgotten = seedLiveWindow('app://workspaces/work/a', undefined, 'remote-1');
+      const surviving = seedLiveWindow('app://workspaces/work/b', undefined, 'remote-2');
+
+      ensureLocalWindowBeforeClosingBackend('remote-1');
+      closeWindowsForBackend('remote-1');
+
+      expect(forgotten.isDestroyed()).toBe(true);
+      expect(surviving.isDestroyed()).toBe(false);
+      expect(FakeBrowserWindow.getAllWindows()).toEqual([surviving]);
     });
   });
 

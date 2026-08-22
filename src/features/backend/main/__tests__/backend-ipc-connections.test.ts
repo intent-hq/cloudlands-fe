@@ -161,14 +161,23 @@ async function loadModule() {
     lifecycle.events.push({ type: 'restore', seq: 0 });
   });
   const openOrFocus = vi.fn();
+  const ensureLocalWindowBeforeClose = vi.fn();
   const closeForBackend = vi.fn();
   mod.__setBackendWindowHooksForTesting({
     captureAndClose,
     restore,
     openOrFocus,
+    ensureLocalWindowBeforeClose,
     closeForBackend,
   });
-  return { mod, captureAndClose, restore, openOrFocus, closeForBackend };
+  return {
+    mod,
+    captureAndClose,
+    restore,
+    openOrFocus,
+    ensureLocalWindowBeforeClose,
+    closeForBackend,
+  };
 }
 
 /** Install a single fake renderer window and return its `send` spy. */
@@ -656,7 +665,8 @@ describe('connections:* IPC handlers', () => {
     store.getActiveId.mockResolvedValue('local');
     store.forget.mockResolvedValue(undefined);
     const send = installWindow();
-    const { mod, captureAndClose, restore, closeForBackend } = await loadModule();
+    const { mod, captureAndClose, restore, ensureLocalWindowBeforeClose, closeForBackend } =
+      await loadModule();
     const local = mod.getBackendClient();
     const remote = await mod.connectBackendClient('remote-1');
     mod.registerBackendHandlers();
@@ -667,7 +677,11 @@ describe('connections:* IPC handlers', () => {
     // Was not the live backend → no full switch/window teardown.
     expect(captureAndClose).not.toHaveBeenCalled();
     expect(restore).not.toHaveBeenCalled();
+    expect(ensureLocalWindowBeforeClose).toHaveBeenCalledWith('remote-1');
     expect(closeForBackend).toHaveBeenCalledWith('remote-1');
+    expect(ensureLocalWindowBeforeClose.mock.invocationCallOrder[0]).toBeLessThan(
+      closeForBackend.mock.invocationCallOrder[0],
+    );
     expect(mod.getBackendClient()).toBe(local);
     expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
     expect(lifecycle.events.filter((event) => event.type === 'dispose')).toEqual([
@@ -681,7 +695,8 @@ describe('connections:* IPC handlers', () => {
     store.getActiveId.mockResolvedValue('remote-1');
     store.forget.mockResolvedValue(undefined);
     installWindow();
-    const { mod, captureAndClose, restore, closeForBackend } = await loadModule();
+    const { mod, captureAndClose, restore, ensureLocalWindowBeforeClose, closeForBackend } =
+      await loadModule();
     await mod.switchBackend('remote-1');
     lifecycle.events = [];
     captureAndClose.mockClear();
@@ -691,7 +706,11 @@ describe('connections:* IPC handlers', () => {
 
     await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({ id: 'remote-1' });
     expect(store.forget).toHaveBeenCalledWith('remote-1');
+    expect(ensureLocalWindowBeforeClose).toHaveBeenCalledWith('remote-1');
     expect(closeForBackend).toHaveBeenCalledWith('remote-1');
+    expect(ensureLocalWindowBeforeClose.mock.invocationCallOrder[0]).toBeLessThan(
+      closeForBackend.mock.invocationCallOrder[0],
+    );
     expect(captureAndClose).not.toHaveBeenCalled();
     expect(restore).not.toHaveBeenCalled();
     expect(mod.getBackendClientForConnection('remote-1')).toBeUndefined();
