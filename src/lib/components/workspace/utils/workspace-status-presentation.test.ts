@@ -20,7 +20,7 @@ const expected: Array<
   ['complete', 'icon', 'circle-check', 'text-success', 'Complete'],
   ['pr_ready', 'icon', 'code-pull-request', 'text-success', 'PR Mergeable'],
   ['pr_open', 'icon', 'code-pull-request', 'text-info', 'PR open'],
-  ['pr_merged', 'icon', 'code-merge', 'text-success', 'PR merged'],
+  ['pr_merged', 'icon', 'code-merge', 'text-purple-500', 'PR merged'],
 ];
 
 describe('workspace status presentation', () => {
