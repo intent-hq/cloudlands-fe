@@ -1,3 +1,10 @@
+# Promotes an existing versioned release into the rolling *stable* channel —
+# the stable counterpart of promote-beta.yml. Channel model: every tag build
+# publishes to the rolling 'alpha' release (release-alpha.yml); beta and
+# stable are manual promotions of an existing versioned release (no new
+# build). A beta-first guard fails fast when the promoted version has not
+# been promoted to the beta channel yet (beta feed version >= promoted
+# version); the skip_beta_check input bypasses it for emergencies.
 name: Release Stable
 
 on:
@@ -11,6 +18,11 @@ on:
         description: 'Optional override of the aggregated-notes range base (e.g., 2.0.5) - rebuilds the stable notes from (notes_base, version] for manual repair'
         required: false
         type: string
+      skip_beta_check:
+        description: 'Skip the beta-first guard (promote to stable even if the version never reached beta) - emergency use only'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -74,6 +86,45 @@ jobs:
             exit 1
           fi
           echo "Versioned release v${VERSION} exists"
+
+      # Beta-first guard: a version must have been promoted to the beta
+      # channel before it can be promoted to stable. Runs before any asset
+      # is downloaded or uploaded so a beta-skipping dispatch aborts while
+      # the live stable channel is still untouched. The beta channel rolls
+      # forward, so "promoted to beta" is verified as: the current beta feed
+      # version is >= the promoted version.
+      - name: Verify version was promoted to beta
+        env:
+          VERSION: ${{ inputs.version }}
+          SKIP_BETA_CHECK: ${{ inputs.skip_beta_check }}
+        run: |
+          if [ "$SKIP_BETA_CHECK" = "true" ]; then
+            echo "::warning::skip_beta_check is set - bypassing the beta-first guard for v${VERSION}"
+            exit 0
+          fi
+
+          BETA_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml"
+          HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$RUNNER_TEMP/beta-latest-mac.yml" "$BETA_YML_URL")
+          if [ "$HTTP_CODE" = "200" ]; then
+            BETA_VERSION=$(awk '/^version:/{print $2; exit}' "$RUNNER_TEMP/beta-latest-mac.yml" | tr -d '\r')
+            if [ -z "$BETA_VERSION" ]; then
+              echo "::error::Fetched beta latest-mac.yml but could not parse version - version $VERSION was never promoted to beta? Promote it to beta first (Promote Beta workflow), or re-run with skip_beta_check to bypass."
+              exit 1
+            fi
+          elif [ "$HTTP_CODE" = "404" ]; then
+            echo "::error::No beta channel feed found - version $VERSION was never promoted to beta. Promote it to beta first (Promote Beta workflow), or re-run with skip_beta_check to bypass."
+            exit 1
+          else
+            echo "::error::Unexpected HTTP code $HTTP_CODE fetching beta latest-mac.yml"
+            exit 1
+          fi
+
+          # Fail when beta version < promoted version (semver)
+          if [ "$BETA_VERSION" != "$VERSION" ] && [ "$(printf '%s\n%s\n' "$BETA_VERSION" "$VERSION" | sort -V | head -n1)" = "$BETA_VERSION" ]; then
+            echo "::error::Current beta version $BETA_VERSION is older than $VERSION - version $VERSION was never promoted to beta. Promote it to beta first (Promote Beta workflow), or re-run with skip_beta_check to bypass."
+            exit 1
+          fi
+          echo "Beta-first guard passed: beta channel is at $BETA_VERSION (>= $VERSION)"
 
       - name: Read current stable version
         id: stable_version
