@@ -42,7 +42,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
 }));
 
 import { goto } from '$app/navigation';
-import { openMessage } from './open-message';
+import { openMessage, seekConversationToMessage } from './open-message';
 
 function stateWith({
   messages = [] as Array<{ id: string }>,
@@ -199,5 +199,59 @@ describe('openMessage', () => {
     expect(eventListener).toHaveBeenCalled();
 
     window.removeEventListener('chat:open-message', eventListener);
+  });
+});
+
+// The navigator's jump-to-unloaded path (ChatPanel.navigateToUserMessage)
+// reuses this seek + replace directly, without the tab-opening choreography.
+describe('seekConversationToMessage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockState.value = stateWith({ messages: [] });
+  });
+
+  it('replaces the session with the page containing the message and returns true', async () => {
+    const seekPage = {
+      messages: [{ id: 'msg-old-1' }, { id: 'msg-target' }, { id: 'msg-old-2' }],
+      truncated: true,
+      totalMessages: 900,
+      nextToken: 'older',
+      prevToken: 'newer',
+    };
+    mockGetConversation.mockImplementation(async () => {
+      // The replaceMessages upsert lands the seek page in the store.
+      mockState.value = stateWith({ messages: seekPage.messages });
+      return seekPage;
+    });
+
+    await expect(seekConversationToMessage('agent-1', 'msg-target')).resolves.toBe(true);
+
+    expect(mockGetConversation).toHaveBeenCalledWith('agent-1', 50, undefined, 'msg-target');
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'agentSessions/replaceMessages',
+      payload: ['agent-1', seekPage.messages],
+    });
+  });
+
+  it('returns false without replacing when the returned page lacks the message', async () => {
+    mockGetConversation.mockResolvedValue({
+      messages: [{ id: 'msg-other' }],
+      truncated: false,
+      totalMessages: 1,
+      nextToken: null,
+      prevToken: null,
+    });
+
+    await expect(seekConversationToMessage('agent-1', 'msg-target')).resolves.toBe(false);
+
+    expect(mockDispatch).not.toHaveBeenCalled();
+  });
+
+  it('returns false gracefully when the seek is rejected (message deleted)', async () => {
+    mockGetConversation.mockRejectedValue(new Error('unknown message id: msg-target'));
+
+    await expect(seekConversationToMessage('agent-1', 'msg-target')).resolves.toBe(false);
+
+    expect(mockDispatch).not.toHaveBeenCalled();
   });
 });

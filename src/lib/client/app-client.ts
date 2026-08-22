@@ -220,6 +220,31 @@ export interface ResolveInterruptedResult {
   failed: Array<{ agentId: string; error: string }>;
 }
 
+/**
+ * One lightweight user-message index item (`agent.listUserMessages`, §5.5,
+ * v7.3). `preview` is the daemon-extracted plain text of the message,
+ * server-truncated (default 300 chars); `metadata` is the persisted
+ * `messageMetadata` passed through verbatim when present (omitted when
+ * absent, never null) so callers can keep filtering automated rows.
+ */
+export interface UserMessageIndexItem {
+  id: string;
+  preview: string;
+  createdAt: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Result of `agents.listUserMessages`. Failures are typed instead of thrown
+ * so the navigator can silently degrade to its tail-derived items:
+ * `unsupported: true` marks a daemon that predates the method (-32601
+ * Method not found); any other transport/daemon failure keeps
+ * `unsupported: false`.
+ */
+export type UserMessageIndexResult =
+  | { ok: true; items: UserMessageIndexItem[]; total: number }
+  | { ok: false; unsupported: boolean; error: string };
+
 /** Pull-request summary surfaced by the git domain. */
 export interface PrStatusSummary {
   prNumber?: number;
@@ -517,6 +542,18 @@ export interface AgentsClient {
    * reject with `-32602`; errors propagate as rejections.
    */
   getMessageBlock(agentId: string, messageId: string, blockId: string): Promise<ContentBlock>;
+  /**
+   * The full user-message index of one agent (`agent.listUserMessages`,
+   * §5.5, v7.3): every **user-role** message as a lightweight
+   * `{ id, preview, createdAt, metadata? }` item, oldest→newest, deliberately
+   * unpaged (the navigator filter needs the whole set client-side).
+   * `previewChars` bounds the preview length (daemon default 300,
+   * server-clamped into [1, 2000]). Never rejects: an old daemon lacking the
+   * method surfaces as `{ ok: false, unsupported: true }` and any other
+   * transport/daemon failure as `{ ok: false, unsupported: false, error }`,
+   * so callers can ignore the failure and fall back to tail-derived items.
+   */
+  listUserMessages(agentId: string, previewChars?: number): Promise<UserMessageIndexResult>;
   /**
    * Create an agent session (`agent.create`, §5.5). The daemon returns the
    * full `AgentLite` projection of the newly persisted session (widened in

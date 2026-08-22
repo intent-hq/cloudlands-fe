@@ -3,6 +3,7 @@ import type { AgentMessage } from '$shared/types';
 import {
   getPresentedUserMessageText,
   stripInternalDeliveryNotes,
+  stripTruncatedTrailingDeliveryNote,
 } from '../user-message-presentation';
 
 const WAIT_NOTE =
@@ -70,5 +71,33 @@ describe('user-message presentation sanitization', () => {
 
     expect(getPresentedUserMessageText(message)).toBe('Review the attachment');
     expect(message.contentBlocks).toHaveLength(4);
+  });
+});
+
+describe('stripTruncatedTrailingDeliveryNote', () => {
+  const queued = { queueInfo: { queuedAt: '2026-08-17T05:00:00Z', waitedMs: 8_000 } };
+
+  it('drops a trailing note chopped mid-note by preview truncation', () => {
+    expect(
+      stripTruncatedTrailingDeliveryNote(
+        'Keep this prompt\n\n[SYSTEM NOTE] This message was queued at 2026-08-17T0',
+        queued,
+      ),
+    ).toBe('Keep this prompt');
+    expect(
+      stripTruncatedTrailingDeliveryNote('Keep this prompt\n\n[SYSTEM NOTE] This mess', queued),
+    ).toBe('Keep this prompt');
+  });
+
+  it('keeps text without queueInfo metadata, authored brackets, and non-trailing notes', () => {
+    const chopped = 'Keep this prompt\n\n[SYSTEM NOTE] This message was queued at 2026-08-17T0';
+    expect(stripTruncatedTrailingDeliveryNote(chopped)).toBe(chopped);
+    expect(stripTruncatedTrailingDeliveryNote(chopped, { queueInfo: {} })).toBe(chopped);
+    expect(stripTruncatedTrailingDeliveryNote('Keep\n\n[SYSTEM NOTE] authored prose', queued)).toBe(
+      'Keep\n\n[SYSTEM NOTE] authored prose',
+    );
+    expect(
+      stripTruncatedTrailingDeliveryNote(`${WAIT_NOTE}\n\nKeep this trailing paragraph.`, queued),
+    ).toBe(`${WAIT_NOTE}\n\nKeep this trailing paragraph.`);
   });
 });

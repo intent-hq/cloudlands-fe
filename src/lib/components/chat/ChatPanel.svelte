@@ -197,6 +197,7 @@
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
+  import { seekConversationToMessage } from '$lib/utils/open-message';
   import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
@@ -211,7 +212,10 @@
   import {
     getMessageNavigationStartScrollTop,
     getUserMessageNavigationItems,
+    getUserMessageNavigationItemsFromIndex,
+    mergeUserMessageNavigationItems,
     type ChatNavigationState,
+    type UserMessageNavigationItem,
   } from './chat-message-navigation';
   import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
   import { getQueueInfo, isBatchedDeliverySeam, stripDequeueWaitNote } from '$lib/utils/queue-info';
@@ -567,7 +571,20 @@
     cachedScroll && !cachedScroll.shouldFollowBottom ? cachedScroll.scrollTop : null;
   let shouldFollowBottom = $state(cachedScroll?.shouldFollowBottom ?? true);
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
-  const userMessageNavigationItems = $derived(getUserMessageNavigationItems($agentMessages$));
+  // Full-history user-message index (agent.listUserMessages), fetched when the
+  // navigator popover opens and cached for this agent (the panel is keyed per
+  // agent). Merged with the tail-derived items — tail wins by id (freshest,
+  // incl. streaming) and provides instant content before the fetch resolves;
+  // any fetch failure silently leaves the tail-only fallback in place.
+  let userMessageIndexItems = $state<UserMessageNavigationItem[] | null>(null);
+  let userMessageIndexUnsupported = false;
+  let userMessageIndexFetchInFlight = false;
+  const userMessageNavigationItems = $derived(
+    mergeUserMessageNavigationItems(
+      userMessageIndexItems ?? [],
+      getUserMessageNavigationItems($agentMessages$),
+    ),
+  );
 
   $effect(() => {
     onNavigationStateChange?.({
@@ -4207,6 +4224,15 @@
 
   export async function navigateToUserMessage(messageId: string): Promise<boolean> {
     if (!userMessageNavigationItems.some((message) => message.id === messageId)) return false;
+    // Index-only row: the message is outside the loaded transcript (neither
+    // the loaded scrollback nor the live tail — messageIdToTurnKey spans
+    // both). Seek the page containing it (§5.5 aroundMessageId) and replace
+    // the session, same as the deep-open helper; on failure (message deleted
+    // / seek rejected) the helper logs and we bail, leaving the conversation
+    // where it is. Resident rows scroll directly, keeping the tail intact.
+    if (agentId && !messageIdToTurnKey.has(messageId)) {
+      if (!(await seekConversationToMessage(agentId, messageId))) return false;
+    }
     const targetElement = await forceRenderAndFindMessage(messageId);
     if (!targetElement) return false;
     currentMessageIndex = getMessageIndex(messageId);
@@ -4215,6 +4241,31 @@
     setTimeout(() => targetElement.classList.remove('message-highlight-flash'), 600);
     scheduleDeepOpenRelease();
     return true;
+  }
+
+  /**
+   * Refresh the full-history user-message index (called when the navigator
+   * popover opens). Single-flight; a daemon that predates the method
+   * (unsupported) is remembered so reopen stays tail-only without refetching.
+   * Other failures keep the cached index (or tail-only) silently.
+   */
+  export function refreshUserMessageIndex(): void {
+    if (userMessageIndexUnsupported || userMessageIndexFetchInFlight || !agentId) return;
+    userMessageIndexFetchInFlight = true;
+    void appClient.agents
+      .listUserMessages(agentId)
+      .then((result) => {
+        if (result.ok) {
+          userMessageIndexItems = getUserMessageNavigationItemsFromIndex(result.items);
+        } else if (result.unsupported) {
+          userMessageIndexUnsupported = true;
+        } else {
+          logger.debug('Failed to refresh user-message index', { error: result.error });
+        }
+      })
+      .finally(() => {
+        userMessageIndexFetchInFlight = false;
+      });
   }
 
   export function getMessages() {

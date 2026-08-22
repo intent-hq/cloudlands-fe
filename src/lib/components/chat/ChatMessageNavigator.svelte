@@ -15,9 +15,11 @@
     isAtBottom: boolean;
     onSelectMessage: (messageId: string) => Promise<boolean> | boolean;
     onScrollToBottom: () => void;
+    /** Called each time the popover opens (used to refresh the full-history index). */
+    onOpen?: () => void;
   }
 
-  let { messages, isAtBottom, onSelectMessage, onScrollToBottom }: Props = $props();
+  let { messages, isAtBottom, onSelectMessage, onScrollToBottom, onOpen }: Props = $props();
   let open = $state(false);
   let query = $state('');
   let activeIndex = $state(0);
@@ -52,6 +54,7 @@
     reopenOnNextPointerIntent = false;
     query = '';
     activeIndex = 0;
+    onOpen?.();
   }
 
   function handleInput(event: Event) {
