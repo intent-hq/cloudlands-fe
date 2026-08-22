@@ -35,9 +35,12 @@
 
   // Move focus into the dialog on open (ARIA alertdialog pattern) so Escape
   // reaches the keydown handler immediately — without this, focus stays on
-  // the previously focused page element outside the portal.
+  // the previously focused page element outside the portal. `agents` is read
+  // untracked: the dialog mounting (bind:this assigning dialogEl) already
+  // re-runs the effect, and tracking `agents` would re-steal focus from a
+  // checkbox/button when a cross-window prune replaces the array mid-open.
   $effect(() => {
-    if (open && agents.length > 0 && dialogEl) {
+    if (open && dialogEl && untrack(() => agents.length > 0)) {
       dialogEl.focus();
     }
   });

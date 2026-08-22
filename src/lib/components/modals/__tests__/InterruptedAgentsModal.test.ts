@@ -70,6 +70,26 @@ describe('InterruptedAgentsModal', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
+  it('does not re-steal focus when agents change while the modal is open', async () => {
+    const InterruptedAgentsModal = (await import('../InterruptedAgentsModal.svelte')).default;
+
+    const { rerender } = render(InterruptedAgentsModal, { props: { open: true, agents: AGENTS } });
+
+    const dialogEl = await screen.findByRole('alertdialog', { name: 'Agents were interrupted' });
+    expect(document.activeElement).toBe(dialogEl);
+
+    // A keyboard user moves focus onto a checkbox…
+    const checkbox = screen.getAllByRole('checkbox')[0];
+    checkbox.focus();
+    expect(document.activeElement).toBe(checkbox);
+
+    // …then a cross-window prune replaces the agents array mid-open. The
+    // focus effect must not re-run and yank focus back to the container.
+    await rerender({ open: true, agents: [AGENTS[0]] });
+
+    expect(document.activeElement).not.toBe(dialogEl);
+  });
+
   it('closes on Escape dispatched at the dialog', async () => {
     const onClose = vi.fn();
     const InterruptedAgentsModal = (await import('../InterruptedAgentsModal.svelte')).default;
