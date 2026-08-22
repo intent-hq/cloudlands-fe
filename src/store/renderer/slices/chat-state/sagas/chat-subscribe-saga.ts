@@ -1107,7 +1107,14 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
     // seq-0 snapshot as a cold open's. Only the acquisition state is
     // trustworthy at sweep time. Installed warm subscriptions (not
     // acquiring, hydration settled/error) keep closing as before, and their
-    // resume anchor makes the eventual re-view cheap.
+    // resume anchor makes the eventual re-view cheap. The settle/fail
+    // revisit is guaranteed only for init/refresh-driven acquires (the
+    // chat-read saga unconditionally starts and settles/fails those
+    // hydrations); a viewed-only acquire (tab reactivation) spared under a
+    // stale settled flag has no hydration cycle coming — its subscription
+    // falls back to the bounded keep above (retired by the next same-realm
+    // swap, the scoped clear on tab close, or session teardown), and its
+    // stale marker is deleted by any enqueueClose.
     const acquiring =
       slot.desiredToken !== undefined && !coordinator.subscriptions.has(slotAgentId);
     if (hydration !== 'loading' && !acquiring) continue;
@@ -1130,7 +1137,9 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
 /**
  * Revisit an agent spared from a close-all sweep — an applied clear's
  * (monorepo#2864) or the viewed-agent swap's (monorepo#2917) — because its
- * hydration was `loading`, now that the hydration has settled or failed. The
+ * hydration was `loading` or its hosted slot's open was still acquiring
+ * (monorepo#3073 cold opens, monorepo#3185 warm reopens), now that the
+ * hydration has settled or failed. The
  * spare exists for a live panel actively waiting on the subscription (the
  * same-agent remount, or a sibling panel of a double mount), which keeps its
  * agent tab open (or re-views the agent) — so when neither holds, the panel
