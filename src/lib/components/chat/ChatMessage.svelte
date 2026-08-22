@@ -870,6 +870,7 @@
     const block = merged && isImageBlock(merged) ? merged : pending.thumbnailBlock;
     if (block === pending.thumbnailBlock || block.dataTruncated === true) {
       logger.warn(
+        // i18n-ignore (diagnostic log line, not user-facing)
         'Attachment lightbox falling back to thumbnail: hydration did not yield a full image block',
         { agentId, messageId: hydrationMessageId, blockId: pending.blockId },
       );
