@@ -97,7 +97,7 @@ const LOCAL_PROBE_TIMEOUT_MS = 2_000;
 const RENDERER_ACK_TIMEOUT_MS = 3_000;
 
 /** Injectable collaborators (defaults wire up the real main-process ones). */
-export interface QuitBackendTarget {
+interface QuitBackendTarget {
   id: string;
   client: RunningAgentsRpc;
 }
