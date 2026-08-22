@@ -327,9 +327,13 @@ describe('theme color contract', () => {
     }
   });
 
-  it('keeps panel leaves on the primary canvas while the Chief chat host stays transparent', () => {
+  it('keeps populated panels on the primary canvas and pristine empty panels on the sidebar surface', () => {
     const panel = fs.readFileSync(
       path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/Panel.svelte'),
+      'utf8',
+    );
+    const panelTabBar = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelTabBar.svelte'),
       'utf8',
     );
     const panelContainer = fs.readFileSync(
@@ -345,9 +349,18 @@ describe('theme color contract', () => {
       'utf8',
     );
 
-    expect(panel).toContain('border border-border bg-background text-foreground');
+    expect(panel).toContain('rounded-lg text-foreground');
+    expect(panel).not.toContain('rounded-lg border border-border');
+    expect(panel).toContain(
+      'class:bg-sidebar={panel.pristine === true && panel.tabs.length === 0}',
+    );
+    expect(panel).toContain(
+      'class:bg-background={panel.pristine !== true || panel.tabs.length > 0}',
+    );
+    expect(panelTabBar).not.toContain('border-b border-border');
     expect(panelContainer).toContain('bg-background text-foreground');
-    expect(panelEmpty).toContain('bg-background px-6 py-10 text-foreground');
+    expect(panelEmpty).toContain('bg-sidebar px-6 py-10 text-foreground');
+    expect(panelEmpty).not.toContain('bg-background px-6 py-10 text-foreground');
     for (const source of [panel, panelContainer, panelEmpty]) {
       expect(source).not.toContain('bg-sidebar text-sidebar-foreground');
       expect(source).not.toContain('bg-card text-card-foreground');
