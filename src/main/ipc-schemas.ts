@@ -1076,3 +1076,20 @@ export const ConnectionsForgetSchema = z.object({
 export const ConnectionsSwitchSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
 });
+
+// ============================================================================
+// Quit Confirmation Schemas
+//
+// Renderer → main payloads for the renderer-rendered quit prompt. The payload
+// contract (all four channels) is documented in
+// `src/shared/ipc/quit-confirmation.ts`.
+// ============================================================================
+
+export const QuitConfirmationAckSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+});
+
+export const QuitConfirmationResponseSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+  proceed: z.boolean(),
+});

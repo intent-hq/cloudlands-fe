@@ -124,3 +124,25 @@ export function buildQuitDialogOptions({
     cancelId: 1,
   };
 }
+
+/**
+ * Native fallback copy for the tabs-only case: zero responding agents, but
+ * agent-owned embedded browser tabs would be disconnected by quitting. Used
+ * when the renderer prompt is unavailable. Callers must only invoke this with
+ * `tabCount >= 1` (both-empty quits silently, agents present use
+ * `buildQuitDialogOptions`).
+ */
+export function buildTabsOnlyQuitDialogOptions(tabCount: number): MessageBoxOptions {
+  return {
+    type: 'info',
+    title: m.quit_dialog_tabs_only_title(),
+    message:
+      tabCount > 1
+        ? m.quit_dialog_tabs_only_message_many({ count: tabCount })
+        : m.quit_dialog_tabs_only_message_one(),
+    detail: m.quit_dialog_tabs_only_detail(),
+    buttons: [m.quit_dialog_quit_button(), m.quit_dialog_cancel_button()],
+    defaultId: 0,
+    cancelId: 1,
+  };
+}

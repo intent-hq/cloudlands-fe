@@ -548,6 +548,59 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
+   * Agent-owned tabs across ALL workspaces, answered purely from main-process
+   * state (ownership registry + mounted webviews + per-workspace tab cache) —
+   * no renderer round-trip, so it never blocks and never throws. Used by the
+   * quit-confirmation flow to tell the user which agent browser sessions
+   * quitting would destroy; title/url/workspaceId are best-effort enrichment
+   * and may be absent for tabs the caches have not seen.
+   */
+  listAgentOwnedTabs(): {
+    tabId: string;
+    ownerAgentId: string;
+    title?: string;
+    url?: string;
+    workspaceId?: string;
+  }[] {
+    const mountedById = new Map(this.listTabs().map((tab) => [tab.tabId, tab]));
+    const result: {
+      tabId: string;
+      ownerAgentId: string;
+      title?: string;
+      url?: string;
+      workspaceId?: string;
+    }[] = [];
+    for (const [tabId, ownership] of this.tabOwnership) {
+      let title: string | undefined;
+      let url: string | undefined;
+      let workspaceId: string | undefined;
+      for (const [cacheWorkspaceId, tabs] of this.panelBrowserTabsCache) {
+        const cached = tabs.find((t) => t.tabId === tabId);
+        if (cached) {
+          title = cached.title;
+          url = cached.url;
+          if (cacheWorkspaceId.length > 0) workspaceId = cacheWorkspaceId;
+          break;
+        }
+      }
+      // A live webview beats the cache for title/url freshness.
+      const mounted = mountedById.get(tabId);
+      if (mounted) {
+        title = mounted.title ?? title;
+        url = mounted.url ?? url;
+      }
+      result.push({
+        tabId,
+        ownerAgentId: ownership.ownerAgentId,
+        ...(title !== undefined ? { title } : {}),
+        ...(url !== undefined ? { url } : {}),
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
+      });
+    }
+    return result;
+  }
+
+  /**
    * Get the first available tab
    */
   getFirstTab(): TabInfo | null {

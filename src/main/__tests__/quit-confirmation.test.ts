@@ -17,7 +17,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 
 import type { ConnectionMode } from '../../features/backend/main/connection-mode';
-import { confirmQuitWithRunningAgents } from '../quit-confirmation';
+import type {
+  QuitBrowserTabSummary,
+  QuitConfirmationShowPayload,
+} from '../../shared/ipc/quit-confirmation';
+import {
+  confirmQuitWithRunningAgents,
+  resetQuitConfirmationStateForTests,
+} from '../quit-confirmation';
 import type { RespondingAgent, RunningAgentsRpc } from '../running-agents';
 
 /**
@@ -101,24 +108,35 @@ function makeDeps(options: {
   response?: number;
   mode?: ConnectionMode;
   remoteActive?: boolean;
+  browserTabs?: QuitBrowserTabSummary[];
+  /** Renderer decision; defaults to null = renderer unavailable (native path). */
+  rendererDecision?: boolean | null;
 }) {
   const client = { getStatus: () => 'connected', request: vi.fn() } as unknown as RunningAgentsRpc;
   const parentWindow = { id: 42 } as unknown as BrowserWindow;
   const dialogOptions = { message: 'agents working' } as MessageBoxOptions;
+  const tabsOnlyDialogOptions = { message: 'tabs connected' } as MessageBoxOptions;
   const deps = {
     getBackendClient: vi.fn(() => client),
     getConnectionMode: vi.fn(() => options.mode ?? ('sidecar' as ConnectionMode)),
     isRemoteBackendActive: vi.fn(() => options.remoteActive ?? false),
     listRespondingAgents: vi.fn(async () => options.agents),
     listLocalRespondingAgents: vi.fn(async () => options.localAgents ?? []),
+    listDisruptedBrowserTabs: vi.fn(async () => options.browserTabs ?? []),
+    confirmViaRenderer: vi.fn(async () => options.rendererDecision ?? null),
     buildQuitDialogOptions: vi.fn(() => dialogOptions),
+    buildTabsOnlyQuitDialogOptions: vi.fn(() => tabsOnlyDialogOptions),
     getParentWindow: vi.fn(() => parentWindow),
     showMessageBox: vi.fn(
       async () => ({ response: options.response ?? 0 }) as MessageBoxReturnValue,
     ),
   };
-  return { deps, client, parentWindow, dialogOptions };
+  return { deps, client, parentWindow, dialogOptions, tabsOnlyDialogOptions };
 }
+
+beforeEach(() => {
+  resetQuitConfirmationStateForTests();
+});
 
 describe('confirmQuitWithRunningAgents', () => {
   it('returns true without showing a dialog when no agents are responding', async () => {
@@ -415,5 +433,346 @@ describe('confirmQuitWithRunningAgents — default startup-backend probe', () =>
     await expect(pending).resolves.toBe(true);
     expect(deps.showMessageBox).not.toHaveBeenCalled();
     expect(fake.state.instances[0].disposed).toBe(1);
+  });
+});
+
+const BROWSER_TABS: QuitBrowserTabSummary[] = [
+  { tabId: 'tab-1', ownerAgentId: 'agent-1', title: 'Docs', url: 'https://example.com' },
+  { tabId: 'tab-2', ownerAgentId: 'agent-x', workspaceId: 'ws-7' },
+];
+
+describe('confirmQuitWithRunningAgents — renderer round-trip', () => {
+  it('resolves with the renderer decision and never opens the native dialog', async () => {
+    const { deps, parentWindow } = makeDeps({
+      agents: AGENTS,
+      mode: 'external',
+      rendererDecision: true,
+    });
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
+
+    expect(deps.confirmViaRenderer).toHaveBeenCalledWith(
+      parentWindow,
+      expect.objectContaining({
+        requestId: expect.any(String),
+        keepRunning: [
+          { agentId: 'agent-1', agentName: 'Implementor', workspaceId: 'ws-1' },
+          { agentId: 'agent-2', agentName: 'Verifier', workspaceId: 'ws-2' },
+        ],
+        interrupted: [],
+        disruptedBrowserTabs: [],
+      }),
+    );
+    expect(deps.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('returns false when the renderer reports a cancel', async () => {
+    const { deps } = makeDeps({ agents: AGENTS, rendererDecision: false });
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(false);
+
+    expect(deps.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('includes disrupted browser tabs, annotated with known owner names', async () => {
+    const { deps } = makeDeps({
+      agents: AGENTS,
+      browserTabs: BROWSER_TABS,
+      rendererDecision: true,
+    });
+
+    await confirmQuitWithRunningAgents(deps);
+
+    const payload = deps.confirmViaRenderer.mock.calls[0][1] as QuitConfirmationShowPayload;
+    expect(payload.disruptedBrowserTabs).toEqual([
+      // agent-1 is a responding agent, so its name rides along…
+      { ...BROWSER_TABS[0], ownerAgentName: 'Implementor' },
+      // …agent-x is unknown (tab owner not among responding agents): no name.
+      BROWSER_TABS[1],
+    ]);
+  });
+
+  it('falls back to the native dialog when the renderer path resolves null', async () => {
+    const { deps, parentWindow, dialogOptions } = makeDeps({
+      agents: AGENTS,
+      rendererDecision: null,
+      response: 1,
+    });
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(false);
+
+    expect(deps.confirmViaRenderer).toHaveBeenCalledTimes(1);
+    expect(deps.showMessageBox).toHaveBeenCalledWith(parentWindow, dialogOptions);
+  });
+
+  it('fails open on tab enumeration errors: prompt still shows, without tab data', async () => {
+    const { deps } = makeDeps({ agents: AGENTS, rendererDecision: true });
+    deps.listDisruptedBrowserTabs.mockRejectedValue(new Error('cdp gone'));
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
+
+    const payload = deps.confirmViaRenderer.mock.calls[0][1] as QuitConfirmationShowPayload;
+    expect(payload.disruptedBrowserTabs).toEqual([]);
+  });
+
+  it('prompts when no agents respond but disrupted tabs exist (tabs alone trigger it)', async () => {
+    const { deps } = makeDeps({ agents: [], browserTabs: BROWSER_TABS, rendererDecision: false });
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(false);
+
+    expect(deps.confirmViaRenderer).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        keepRunning: [],
+        interrupted: [],
+        disruptedBrowserTabs: BROWSER_TABS,
+      }),
+    );
+    expect(deps.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('shows the native tabs-only dialog when the renderer is unavailable, honoring quit', async () => {
+    const { deps, parentWindow, tabsOnlyDialogOptions } = makeDeps({
+      agents: [],
+      browserTabs: BROWSER_TABS,
+      rendererDecision: null,
+      response: 0,
+    });
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
+
+    expect(deps.confirmViaRenderer).toHaveBeenCalledTimes(1);
+    expect(deps.buildTabsOnlyQuitDialogOptions).toHaveBeenCalledWith(BROWSER_TABS.length);
+    expect(deps.buildQuitDialogOptions).not.toHaveBeenCalled();
+    expect(deps.showMessageBox).toHaveBeenCalledWith(parentWindow, tabsOnlyDialogOptions);
+  });
+
+  it('honors cancel from the native tabs-only dialog', async () => {
+    const { deps } = makeDeps({
+      agents: [],
+      browserTabs: BROWSER_TABS,
+      rendererDecision: null,
+      response: 1,
+    });
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(false);
+
+    expect(deps.buildTabsOnlyQuitDialogOptions).toHaveBeenCalledWith(BROWSER_TABS.length);
+  });
+
+  it('shares one in-flight confirmation between concurrent callers', async () => {
+    const { deps } = makeDeps({ agents: AGENTS });
+    let settle!: (value: boolean | null) => void;
+    deps.confirmViaRenderer.mockImplementation(
+      () => new Promise<boolean | null>((resolve) => (settle = resolve)),
+    );
+
+    const first = confirmQuitWithRunningAgents(deps);
+    const second = confirmQuitWithRunningAgents(deps);
+    await vi.waitFor(() => expect(deps.confirmViaRenderer).toHaveBeenCalledTimes(1));
+    settle(true);
+
+    await expect(first).resolves.toBe(true);
+    await expect(second).resolves.toBe(true);
+    expect(deps.listRespondingAgents).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The default renderer round-trip is exercised through the public entry
+ * point: every dep is injected EXCEPT `confirmViaRenderer`, so the real
+ * `defaultConfirmViaRenderer` runs against the globally mocked ipcMain and a
+ * fake window.
+ */
+describe('confirmQuitWithRunningAgents — default renderer round-trip', () => {
+  function makeRendererDeps(options: { agents?: RespondingAgent[]; response?: number } = {}) {
+    const { deps } = makeDeps({ agents: options.agents ?? AGENTS, response: options.response });
+    const { confirmViaRenderer: _omitted, ...rest } = deps;
+    const send = vi.fn();
+    const goneListeners = new Map<string, (() => void)[]>();
+    const webContents = {
+      isDestroyed: () => false,
+      send,
+      once: vi.fn((event: string, listener: () => void) => {
+        const existing = goneListeners.get(event) ?? [];
+        existing.push(listener);
+        goneListeners.set(event, existing);
+      }),
+      removeListener: vi.fn(),
+    };
+    const window = {
+      isDestroyed: () => false,
+      webContents,
+    } as unknown as BrowserWindow;
+    rest.getParentWindow.mockReturnValue(window);
+    const emitRendererGone = (event: string) => {
+      for (const listener of goneListeners.get(event) ?? []) listener();
+    };
+    return { deps: rest, send, webContents, emitRendererGone };
+  }
+
+  async function getHandlers() {
+    const { ipcMain } = await import('electron');
+    const handle = vi.mocked(ipcMain.handle);
+    const find = (channel: string) =>
+      handle.mock.calls.filter(([c]) => c === channel).at(-1)?.[1] as (
+        event: unknown,
+        data: unknown,
+      ) => Promise<unknown>;
+    return {
+      ack: find('quit-confirmation:ack'),
+      response: find('quit-confirmation:response'),
+    };
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('resolves the renderer decision after ack + response, skipping the native dialog', async () => {
+    const { deps, send } = makeRendererDeps();
+
+    const pending = confirmQuitWithRunningAgents(deps);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+
+    const [channel, payload] = send.mock.calls[0] as [string, QuitConfirmationShowPayload];
+    expect(channel).toBe('quit-confirmation:show');
+    expect(payload.keepRunning.length + payload.interrupted.length).toBe(AGENTS.length);
+
+    const handlers = await getHandlers();
+    await handlers.ack({}, { requestId: payload.requestId });
+    await handlers.response({}, { requestId: payload.requestId, proceed: false });
+
+    await expect(pending).resolves.toBe(false);
+    expect(deps.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('ignores ack/response for a stale requestId and keeps waiting', async () => {
+    const { deps, send } = makeRendererDeps();
+
+    const pending = confirmQuitWithRunningAgents(deps);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const payload = send.mock.calls[0][1] as QuitConfirmationShowPayload;
+
+    const handlers = await getHandlers();
+    await handlers.ack({}, { requestId: 'stale-id' });
+    await handlers.response({}, { requestId: 'stale-id', proceed: false });
+    // The genuine request is still pending — settle it now.
+    await handlers.ack({}, { requestId: payload.requestId });
+    await handlers.response({}, { requestId: payload.requestId, proceed: true });
+
+    await expect(pending).resolves.toBe(true);
+  });
+
+  it('treats a valid response as an implicit ack when the ack invoke was lost', async () => {
+    vi.useFakeTimers();
+    const { deps, send } = makeRendererDeps({ response: 0 });
+
+    const pending = confirmQuitWithRunningAgents(deps);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const payload = send.mock.calls[0][1] as QuitConfirmationShowPayload;
+
+    // The ack invoke never arrives, but the user answers within the 3s window.
+    const handlers = await getHandlers();
+    await handlers.response({}, { requestId: payload.requestId, proceed: false });
+    // The ack timeout must have been defused: advancing past it changes nothing.
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    await expect(pending).resolves.toBe(false);
+    expect(deps.showMessageBox).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalledWith('quit-confirmation:dismiss', expect.anything());
+  });
+
+  it('falls back to the native dialog when the renderer dies after acking, and clears the in-flight memo', async () => {
+    const { deps, send, emitRendererGone } = makeRendererDeps({ response: 0 });
+
+    const pending = confirmQuitWithRunningAgents(deps);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const payload = send.mock.calls[0][1] as QuitConfirmationShowPayload;
+
+    const handlers = await getHandlers();
+    await handlers.ack({}, { requestId: payload.requestId });
+    // Renderer crashes after acking — the decision will never arrive.
+    emitRendererGone('render-process-gone');
+
+    await expect(pending).resolves.toBe(true);
+    expect(deps.showMessageBox).toHaveBeenCalledTimes(1);
+
+    // A fresh quit attempt must not reuse the settled confirmation.
+    const second = makeRendererDeps({ response: 1 });
+    const secondPending = confirmQuitWithRunningAgents(second.deps);
+    await vi.waitFor(() => expect(second.send).toHaveBeenCalledTimes(1));
+    const secondPayload = second.send.mock.calls[0][1] as QuitConfirmationShowPayload;
+    expect(secondPayload.requestId).not.toBe(payload.requestId);
+    const secondHandlers = await getHandlers();
+    await secondHandlers.ack({}, { requestId: secondPayload.requestId });
+    await secondHandlers.response({}, { requestId: secondPayload.requestId, proceed: true });
+    await expect(secondPending).resolves.toBe(true);
+  });
+
+  it('falls back to the native dialog when the webContents is destroyed before acking', async () => {
+    const { deps, send, emitRendererGone } = makeRendererDeps({ response: 1 });
+
+    const pending = confirmQuitWithRunningAgents(deps);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+
+    emitRendererGone('destroyed');
+
+    await expect(pending).resolves.toBe(false);
+    expect(deps.showMessageBox).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the native dialog when the renderer navigates away mid-decision', async () => {
+    const { deps, send, emitRendererGone } = makeRendererDeps({ response: 0 });
+
+    const pending = confirmQuitWithRunningAgents(deps);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const payload = send.mock.calls[0][1] as QuitConfirmationShowPayload;
+
+    const handlers = await getHandlers();
+    await handlers.ack({}, { requestId: payload.requestId });
+    // A reload/navigation wipes the modal and its renderer-side state.
+    emitRendererGone('did-navigate');
+
+    await expect(pending).resolves.toBe(true);
+    expect(deps.showMessageBox).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the native dialog and dismisses when the renderer never acks', async () => {
+    vi.useFakeTimers();
+    const { deps, send } = makeRendererDeps({ response: 0 });
+
+    const pending = confirmQuitWithRunningAgents(deps);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const payload = send.mock.calls[0][1] as QuitConfirmationShowPayload;
+
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    await expect(pending).resolves.toBe(true);
+    expect(send).toHaveBeenCalledWith('quit-confirmation:dismiss', {
+      requestId: payload.requestId,
+    });
+    expect(deps.showMessageBox).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the native dialog without sending when no window exists', async () => {
+    const { deps, send } = makeRendererDeps({ response: 1 });
+    deps.getParentWindow.mockReturnValue(null as unknown as BrowserWindow);
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(false);
+
+    expect(send).not.toHaveBeenCalled();
+    expect(deps.showMessageBox).toHaveBeenCalledWith(null, expect.anything());
+  });
+
+  it('falls back to the native dialog when webContents.send throws', async () => {
+    const { deps, send } = makeRendererDeps({ response: 0 });
+    send.mockImplementation(() => {
+      throw new Error('render frame disposed');
+    });
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
+
+    expect(deps.showMessageBox).toHaveBeenCalledTimes(1);
   });
 });

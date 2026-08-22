@@ -311,6 +311,19 @@ export const IPC_CHANNELS = {
     HISTORY_NAVIGATE: 'app:history-navigate',
   },
 
+  // Quit confirmation (renderer-rendered "agents still working" prompt).
+  // Payload contracts live in src/shared/ipc/quit-confirmation.ts.
+  QUIT_CONFIRMATION: {
+    /** Main → renderer: show the quit-confirmation modal for a request. */
+    SHOW: 'quit-confirmation:show',
+    /** Renderer → main (invoke): modal mounted — acknowledges receipt of SHOW. */
+    ACK: 'quit-confirmation:ack',
+    /** Renderer → main (invoke): the user's proceed/cancel decision. */
+    RESPONSE: 'quit-confirmation:response',
+    /** Main → renderer: close the modal for a settled/superseded request. */
+    DISMISS: 'quit-confirmation:dismiss',
+  },
+
   // Window Management
   WINDOW: {
     RELOAD: 'window:reload',
