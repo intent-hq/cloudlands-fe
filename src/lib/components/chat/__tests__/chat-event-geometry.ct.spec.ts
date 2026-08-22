@@ -168,7 +168,6 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             const agentActor = element('agent-message-attribution');
             const agentAction = element('agent-message-disclosure-toggle');
             const eventIcon = eventRow.querySelector('svg')!;
-            const eventBell = element('event-wakeup-bell');
             const eventSummary = element('event-wakeup-summary');
             const eventName = element('event-wakeup-agent-name');
             const eventStatus = element('event-wakeup-status');
@@ -194,7 +193,6 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
               agentActorRect: rect(agentActor),
               agentActionRect: rect(agentAction),
               eventIconRect: rect(eventIcon),
-              eventBellRect: rect(eventBell),
               eventSummaryRect: rect(eventSummary),
               eventNameRect: rect(eventName),
               eventStatusRect: rect(eventStatus),
@@ -225,7 +223,7 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             4 * zoom,
             1,
           );
-          expect(collapsed.eventSummaryRect.left - collapsed.eventBellRect.right).toBeCloseTo(
+          expect(collapsed.eventSummaryRect.left - collapsed.eventIconRect.right).toBeCloseTo(
             8 * zoom,
             1,
           );
