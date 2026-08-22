@@ -18,17 +18,22 @@ function contrastRatio(first: Rgba, second: Rgba): number {
 
 test('exposes compact values and keeps summary text readable on hover', async ({ mount }) => {
   const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
-    props: { theme: 'light', width: 248 },
+    props: { theme: 'light', width: 280 },
   });
   const disclosure = component.locator('button[aria-controls^="workspace-token-usage-details-"]');
 
   await expect(disclosure).toHaveAccessibleDescription('1K processed 70% Cached');
-  await disclosure.click();
+  await disclosure.focus();
+  await disclosure.press('Space');
   await expect(disclosure).toHaveAccessibleName('Collapse token usage details');
   await expect(disclosure).toHaveAccessibleDescription('1K processed 70% Cached');
+  await disclosure.press('Enter');
+  await expect(disclosure).toHaveAccessibleName('Expand token usage details');
+  await disclosure.click();
+  await expect(disclosure).toHaveAccessibleName('Collapse token usage details');
 
   for (const theme of ['light', 'dark'] as const) {
-    await component.update({ props: { theme, width: 248 } });
+    await component.update({ props: { theme, width: 280 } });
     await expect(component).toHaveAttribute('data-theme', theme);
     await disclosure.hover();
     const textColors = await disclosure
@@ -72,45 +77,109 @@ test('exposes compact values and keeps summary text readable on hover', async ({
   }
 });
 
-test('keeps compact row density and stacks rankings at narrow widths', async ({ mount }) => {
+test('fits real workspace widths without becoming an oversized vertical card', async ({
+  mount,
+}) => {
   const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
-    props: { width: 248 },
+    props: { width: 280 },
   });
   const shell = component.getByTestId('workspace-token-usage');
   const disclosure = component.getByTestId('token-usage-disclosure');
 
-  const closedBox = await shell.boundingBox();
+  const [closedBox, disclosureBox] = await Promise.all([
+    shell.boundingBox(),
+    disclosure.boundingBox(),
+  ]);
   expect(closedBox).not.toBeNull();
-  expect(closedBox!.height).toBeLessThanOrEqual(50);
+  expect(disclosureBox).not.toBeNull();
+  expect(closedBox!.height).toBeLessThanOrEqual(44);
+  expect(disclosureBox!.width).toBeCloseTo(280, 0);
 
   await disclosure.click();
   const agentSection = component.getByTestId('token-usage-by-agent');
   const modelSection = component.getByTestId('token-usage-by-model');
-  const [agentBox, modelBox, rowBoxes, dimensions] = await Promise.all([
-    agentSection.boundingBox(),
-    modelSection.boundingBox(),
-    agentSection
-      .locator('li')
-      .evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height)),
-    shell.evaluate((element) => ({
-      clientWidth: element.clientWidth,
-      scrollWidth: element.scrollWidth,
-    })),
-  ]);
+  const details = component.getByTestId('token-usage-details');
+  const compositionRows = details.locator('.composition-row');
+  await expect(compositionRows).toHaveCount(4);
+  const [agentBox, modelBox, rowBoxes, dimensions, narrowComposition, longModel] =
+    await Promise.all([
+      agentSection.boundingBox(),
+      modelSection.boundingBox(),
+      agentSection
+        .locator('li')
+        .evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height)),
+      shell.evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+      })),
+      compositionRows.first().evaluate((row) => {
+        const box = (selector: string) =>
+          row.querySelector(selector)!.getBoundingClientRect().toJSON();
+        return {
+          metric: box('.composition-metric'),
+          description: box('.composition-description'),
+          value: box('.composition-value'),
+          context: box('.composition-context'),
+        };
+      }),
+      modelSection
+        .locator('[title="provider/this-is-an-extraordinarily-long-model-name-for-truncation"]')
+        .evaluate((label) => ({
+          clientWidth: label.clientWidth,
+          scrollWidth: label.scrollWidth,
+          overflow: getComputedStyle(label).overflow,
+          textOverflow: getComputedStyle(label).textOverflow,
+          whiteSpace: getComputedStyle(label).whiteSpace,
+        })),
+    ]);
 
   expect(agentBox).not.toBeNull();
   expect(modelBox).not.toBeNull();
   expect(modelBox!.y).toBeGreaterThanOrEqual(agentBox!.y + agentBox!.height - 1);
   expect(Math.max(...rowBoxes)).toBeLessThanOrEqual(32);
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+  expect(narrowComposition.description.y).toBeGreaterThan(narrowComposition.metric.y);
+  expect(narrowComposition.metric.y).toBeCloseTo(narrowComposition.value.y, 0);
+  expect(narrowComposition.value.y).toBeCloseTo(narrowComposition.context.y, 0);
+  expect(longModel.scrollWidth).toBeGreaterThan(longModel.clientWidth);
+  expect(longModel).toMatchObject({
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  });
 
-  await component.update({ props: { width: 520 } });
-  const [wideAgentBox, wideModelBox] = await Promise.all([
-    agentSection.boundingBox(),
-    modelSection.boundingBox(),
-  ]);
+  await component.update({ props: { width: 452 } });
+  const [wideShellBox, detailsBox, wideAgentBox, wideModelBox, wideComposition] = await Promise.all(
+    [
+      shell.boundingBox(),
+      details.boundingBox(),
+      agentSection.boundingBox(),
+      modelSection.boundingBox(),
+      compositionRows.first().evaluate((row) => {
+        const box = (selector: string) =>
+          row.querySelector(selector)!.getBoundingClientRect().toJSON();
+        return {
+          metric: box('.composition-metric'),
+          description: box('.composition-description'),
+          value: box('.composition-value'),
+          context: box('.composition-context'),
+        };
+      }),
+    ],
+  );
+  expect(wideShellBox).not.toBeNull();
+  expect(detailsBox).not.toBeNull();
   expect(wideAgentBox).not.toBeNull();
   expect(wideModelBox).not.toBeNull();
+  expect(wideShellBox!.height).toBeLessThan(wideShellBox!.width);
+  expect(detailsBox!.width).toBeCloseTo(452, 0);
   expect(Math.abs(wideAgentBox!.y - wideModelBox!.y)).toBeLessThanOrEqual(1);
   expect(wideModelBox!.x).toBeGreaterThan(wideAgentBox!.x);
+  expect(wideAgentBox!.width).toBeCloseTo(wideModelBox!.width, 0);
+  expect(wideComposition.metric.y).toBeCloseTo(wideComposition.description.y, 0);
+  expect(wideComposition.description.y).toBeCloseTo(wideComposition.value.y, 0);
+  expect(wideComposition.value.y).toBeCloseTo(wideComposition.context.y, 0);
+  expect(wideComposition.metric.x).toBeLessThan(wideComposition.description.x);
+  expect(wideComposition.description.x).toBeLessThan(wideComposition.value.x);
+  expect(wideComposition.value.x).toBeLessThan(wideComposition.context.x);
 });
