@@ -26,7 +26,8 @@ describe('renderer HMR watcher', () => {
     // Watcher exclusion: nested worktree SvelteKit output (.svelte-kit/tsconfig.json)
     // must never reach Vite's tsconfig cache-clear / full-reload path (monorepo#3150).
     expect(source).toContain("'**/.intent/**'");
-    // HMR safety net for events the watcher patterns miss.
+    // Backstop for plain HMR events only — the tsconfig full-reload path fires in
+    // Vite core before plugins run, so the watcher ignore above is the real fix.
     expect(source).toContain("normalizedFile.includes('/.intent/')");
   });
 });

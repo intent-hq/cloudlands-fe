@@ -70,12 +70,15 @@ const preventSvelteKitRegenHMR = () => ({
   // eslint-disable-next-line no-unused-vars
   handleHotUpdate({ file, server }) {
     const normalizedFile = file.replace(/\\/g, '/');
-    // Block HMR for anything inside nested .intent isolated worktrees. Their SvelteKit
-    // processes rewrite .svelte-kit/tsconfig.json and other files, which would otherwise
-    // force full reloads of the root dev server (monorepo#3150).
-    // This is a safety net in case the server.watch.ignored patterns don't catch everything.
+    // Block ordinary HMR updates for anything inside nested .intent isolated worktrees
+    // (monorepo#3150). The primary fix is the '**/.intent/**' server.watch.ignored
+    // pattern; this backstops plain HMR events only — it cannot intercept Vite's
+    // tsconfig cache-clear/full-reload path, which fires from watcher events in core
+    // before any plugin's handleHotUpdate runs.
     if (normalizedFile.includes('/.intent/')) {
-      console.log(`[HMR-BLOCKED] Prevented reload for nested .intent worktree file`);
+      console.log(
+        `[HMR-BLOCKED] Prevented reload for nested .intent worktree file: ${normalizedFile}`,
+      );
       return [];
     }
     // Block HMR for .svelte-kit/generated and .svelte-kit/types files
