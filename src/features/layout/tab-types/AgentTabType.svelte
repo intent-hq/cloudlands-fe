@@ -122,6 +122,7 @@
   let chatPanelRef = $state<{
     scrollToBottom: () => void;
     navigateToUserMessage: (messageId: string) => Promise<boolean>;
+    refreshUserMessageIndex: () => void;
   } | null>(null);
   let chatNavigationState = $state<ChatNavigationState>({
     isAtBottom: true,
@@ -201,6 +202,7 @@
     isAtBottom={chatNavigationState.isAtBottom}
     onSelectMessage={(messageId) => chatPanelRef?.navigateToUserMessage(messageId) ?? false}
     onScrollToBottom={() => chatPanelRef?.scrollToBottom()}
+    onOpen={() => chatPanelRef?.refreshUserMessageIndex()}
   />
 {/snippet}
 

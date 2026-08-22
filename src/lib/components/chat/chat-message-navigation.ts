@@ -1,7 +1,11 @@
 import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 import { stripMarkdownFormatting } from '$shared/utils-client';
-import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
+import {
+  getPresentedUserMessageText,
+  stripInternalDeliveryNotes,
+} from '$lib/utils/user-message-presentation';
+import type { UserMessageIndexItem } from '$lib/client';
 
 export interface UserMessageNavigationItem {
   id: string;
@@ -30,14 +34,18 @@ export function getMessageNavigationStartScrollTop({
   return currentScrollTop + targetTop - visibleStart;
 }
 
-function isAutomatedUserMessage(message: AgentMessage, text: string): boolean {
-  if (message.metadata?.type) return true;
+function hasAutomatedPrefix(text: string): boolean {
   const trimmed = text.trimStart();
   return (
     trimmed.startsWith('[WORKSPACE EVENTS]') ||
     trimmed.startsWith('[TASK WAKE]') ||
     trimmed.startsWith('[AGENT MESSAGE]')
   );
+}
+
+function isAutomatedUserMessage(message: AgentMessage, text: string): boolean {
+  if (message.metadata?.type) return true;
+  return hasAutomatedPrefix(text);
 }
 
 export function getPlainTextMessagePreview(message: AgentMessage): string {
@@ -59,4 +67,47 @@ export function getUserMessageNavigationItems(
     items.push({ id: message.id, text });
   }
   return items;
+}
+
+/**
+ * Convert full-history index items (`agent.listUserMessages`) into navigation
+ * items, applying the same automated-row exclusion and plain-text
+ * normalization as the tail-derived path above. The daemon serves user-role
+ * rows only, so no role filter is needed.
+ */
+export function getUserMessageNavigationItemsFromIndex(
+  indexItems: readonly UserMessageIndexItem[],
+): UserMessageNavigationItem[] {
+  const seenIds = new Set<string>();
+  const items: UserMessageNavigationItem[] = [];
+  for (const item of indexItems) {
+    if (seenIds.has(item.id)) continue;
+    if (item.metadata?.type || hasAutomatedPrefix(item.preview)) continue;
+    const text = stripMarkdownFormatting(stripInternalDeliveryNotes(item.preview, item.metadata))
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!text) continue;
+    seenIds.add(item.id);
+    items.push({ id: item.id, text });
+  }
+  return items;
+}
+
+/**
+ * Merge the full-history index items (oldest→newest) with the tail-derived
+ * items. Tail items win by id — they are freshest (including still-streaming
+ * rows) — while index-only rows keep their index position; tail-only rows
+ * (newer than the index snapshot) are appended in tail order.
+ */
+export function mergeUserMessageNavigationItems(
+  indexItems: readonly UserMessageNavigationItem[],
+  tailItems: readonly UserMessageNavigationItem[],
+): UserMessageNavigationItem[] {
+  const tailById = new Map(tailItems.map((item) => [item.id, item]));
+  const merged = indexItems.map((item) => tailById.get(item.id) ?? item);
+  const indexIds = new Set(indexItems.map((item) => item.id));
+  for (const item of tailItems) {
+    if (!indexIds.has(item.id)) merged.push(item);
+  }
+  return merged;
 }

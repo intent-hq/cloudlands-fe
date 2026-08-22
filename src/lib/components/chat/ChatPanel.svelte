@@ -211,7 +211,10 @@
   import {
     getMessageNavigationStartScrollTop,
     getUserMessageNavigationItems,
+    getUserMessageNavigationItemsFromIndex,
+    mergeUserMessageNavigationItems,
     type ChatNavigationState,
+    type UserMessageNavigationItem,
   } from './chat-message-navigation';
   import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
   import { getQueueInfo, isBatchedDeliverySeam, stripDequeueWaitNote } from '$lib/utils/queue-info';
@@ -567,7 +570,20 @@
     cachedScroll && !cachedScroll.shouldFollowBottom ? cachedScroll.scrollTop : null;
   let shouldFollowBottom = $state(cachedScroll?.shouldFollowBottom ?? true);
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
-  const userMessageNavigationItems = $derived(getUserMessageNavigationItems($agentMessages$));
+  // Full-history user-message index (agent.listUserMessages), fetched when the
+  // navigator popover opens and cached for this agent (the panel is keyed per
+  // agent). Merged with the tail-derived items — tail wins by id (freshest,
+  // incl. streaming) and provides instant content before the fetch resolves;
+  // any fetch failure silently leaves the tail-only fallback in place.
+  let userMessageIndexItems = $state<UserMessageNavigationItem[] | null>(null);
+  let userMessageIndexUnsupported = false;
+  let userMessageIndexFetchInFlight = false;
+  const userMessageNavigationItems = $derived(
+    mergeUserMessageNavigationItems(
+      userMessageIndexItems ?? [],
+      getUserMessageNavigationItems($agentMessages$),
+    ),
+  );
 
   $effect(() => {
     onNavigationStateChange?.({
@@ -4215,6 +4231,31 @@
     setTimeout(() => targetElement.classList.remove('message-highlight-flash'), 600);
     scheduleDeepOpenRelease();
     return true;
+  }
+
+  /**
+   * Refresh the full-history user-message index (called when the navigator
+   * popover opens). Single-flight; a daemon that predates the method
+   * (unsupported) is remembered so reopen stays tail-only without refetching.
+   * Other failures keep the cached index (or tail-only) silently.
+   */
+  export function refreshUserMessageIndex(): void {
+    if (userMessageIndexUnsupported || userMessageIndexFetchInFlight || !agentId) return;
+    userMessageIndexFetchInFlight = true;
+    void appClient.agents
+      .listUserMessages(agentId)
+      .then((result) => {
+        if (result.ok) {
+          userMessageIndexItems = getUserMessageNavigationItemsFromIndex(result.items);
+        } else if (result.unsupported) {
+          userMessageIndexUnsupported = true;
+        } else {
+          logger.debug('Failed to refresh user-message index', { error: result.error });
+        }
+      })
+      .finally(() => {
+        userMessageIndexFetchInFlight = false;
+      });
   }
 
   export function getMessages() {
