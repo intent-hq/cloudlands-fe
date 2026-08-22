@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.81.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.80.1...v2.81.0) (2026-08-22)
+
+
+### 🚀 Features
+
+* default agentFeatures.taskGraph on and drop off-by-default wording ([#1591](https://github.com/intent-hq/cloudlands-fe/issues/1591)) ([da06f85](https://github.com/intent-hq/cloudlands-fe/commit/da06f857056262baa0320d0305f44185c2a28cdd))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.38 ([#1597](https://github.com/intent-hq/cloudlands-fe/issues/1597)) ([7ac27f1](https://github.com/intent-hq/cloudlands-fe/commit/7ac27f18670e16ff62fec654ac8778edc3d1c75b))
+* **i18n:** use Taiwan-conventional 新增 for zh-TW "New X" action labels ([#1590](https://github.com/intent-hq/cloudlands-fe/issues/1590)) ([64867b9](https://github.com/intent-hq/cloudlands-fe/commit/64867b9531dfab538073836c36a5c530a0cd81b4))
+
 ## [2.80.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.80.0...v2.80.1) (2026-08-22)
 
 
