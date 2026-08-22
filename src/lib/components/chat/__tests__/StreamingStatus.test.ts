@@ -35,12 +35,13 @@ import {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.clearAllMocks();
   overwriteGetLocale(() => 'en');
 });
 
 describe('StreamingStatus rendered UI', () => {
-  it('renders an animated Thinking row with muted localized lifecycle text while processing', () => {
+  it('renders one active 16px phase mark and the localized Thinking row', () => {
     const { container } = render(StreamingStatus, {
       props: {
         isProcessing: true,
@@ -52,63 +53,77 @@ describe('StreamingStatus rendered UI', () => {
     });
 
     const row = container.firstElementChild as HTMLElement;
-    const status = screen.getByRole('status', { name: 'Thinking' });
-    const spinner = container.querySelector('.legacy-streaming-spinner') as HTMLElement;
-    const label = screen.getByTestId('streaming-status-thinking');
-    const lifecycle = screen.getByTestId('streaming-status-lifecycle');
+    const mark = screen.getByRole('status', { name: 'Loading' });
+    const label = screen.getByTestId('streaming-status-thinking-label');
+    const lifecycle = screen.getByTestId('streaming-status-phase');
 
-    expect(status.getAttribute('aria-live')).toBe('polite');
-    expect(status.getAttribute('aria-atomic')).toBe('true');
     expect(row.className).toContain('h-7');
     expect(row.className).toContain('px-[var(--operational-row-inline-padding)]');
     expect(row.className).toContain(
       'grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto]',
     );
     expect(row.className).toContain('mt-2');
-    expect(spinner.className).toContain('legacy-streaming-spinner');
-    expect(spinner.className).toContain('size-[var(--operational-leading-slot-size)]');
-    expect(spinner.getAttribute('style')).toContain('--size: 3.5px');
+    expect(mark.getAttribute('data-variant')).toBe('pulse');
+    expect(mark.getAttribute('data-playing')).toBe('true');
+    expect(mark.getAttribute('width')).toBe('16');
+    expect(mark.parentElement?.className).toContain('size-[var(--operational-leading-slot-size)]');
+    expect(screen.getAllByRole('status')).toHaveLength(1);
     expect(label.textContent).toBe('Thinking');
     expect(label.className).toContain('text-foreground');
     expect(lifecycle.textContent).toBe('Sent prompt…');
     expect(lifecycle.className).toContain('text-muted-foreground');
     expect(lifecycle.className).toContain('truncate');
     expect(row.textContent).not.toContain('·');
-    expect(lifecycle.parentElement?.className).toContain('gap-1.5');
+    expect(lifecycle.closest('[role="status"]')).toBeNull();
+    expect(lifecycle.closest('[aria-live]')).toBeNull();
   });
 
-  it('shows the current lifecycle phase while streaming and updates it without a separator', async () => {
-    const { rerender } = render(StreamingStatus, {
+  it('shows the newest daemon message and maps all lifecycle phases to mark variants', async () => {
+    const { container, rerender } = render(StreamingStatus, {
       props: {
         isStreaming: true,
         statusEvents: [
-          { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1000 },
+          { phase: 'prompt', message: 'Exact daemon prompt', level: 'info', timestamp: 2000 },
+          { phase: 'launch', message: 'Older event', level: 'info', timestamp: 1000 },
         ],
       },
     });
 
-    expect(screen.getByTestId('streaming-status-lifecycle').textContent).toBe('Sent prompt…');
+    expect(screen.getByTestId('streaming-status-phase').textContent).toBe('Exact daemon prompt');
+    expect(
+      container.querySelector('[data-slot="intent-mark-loader"]')?.getAttribute('data-variant'),
+    ).toBe('pulse');
 
-    await rerender({
-      isStreaming: true,
-      statusEvents: [
-        { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1000 },
-        { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 2000 },
-      ],
-    });
-
-    expect(screen.getByTestId('streaming-status-lifecycle').textContent).toBe(
-      'Streaming response…',
-    );
-    expect(screen.getByRole('status').textContent).not.toContain('·');
+    for (const [phase, variant] of [
+      ['session-create', 'pulse'],
+      ['session-load', 'pulse'],
+      ['init', 'pulse'],
+      ['tool-call', 'twist'],
+      ['tool-waiting', 'twist'],
+      ['streaming', 'bloom'],
+      ['future-phase', 'bloom'],
+    ] as const) {
+      await rerender({
+        isStreaming: true,
+        statusEvents: [
+          { phase, message: `Daemon message for ${phase}`, level: 'info', timestamp: 3000 },
+        ],
+      });
+      expect(screen.getByTestId('streaming-status-phase').textContent).toBe(
+        `Daemon message for ${phase}`,
+      );
+      expect(
+        container.querySelector('[data-slot="intent-mark-loader"]')?.getAttribute('data-variant'),
+      ).toBe(variant);
+    }
   });
 
   it('keeps the Thinking label when lifecycle phase text is missing', () => {
     render(StreamingStatus, { props: { isProcessing: true, statusEvents: [] } });
 
     expect(screen.getByTestId('streaming-status-thinking').textContent).toBe('Thinking');
-    expect(screen.queryByTestId('streaming-status-lifecycle')).toBeNull();
-    expect(screen.getByRole('status').getAttribute('aria-label')).toBe('Thinking');
+    expect(screen.queryByTestId('streaming-status-phase')).toBeNull();
+    expect(screen.getByRole('status').getAttribute('aria-label')).toBe('Loading');
   });
 
   it('uses the active locale for Thinking and preserves an already-localized lifecycle phrase', () => {
@@ -122,9 +137,41 @@ describe('StreamingStatus rendered UI', () => {
       },
     });
 
-    expect(screen.getByTestId('streaming-status-thinking').textContent).toBe('Pensando');
-    expect(screen.getByTestId('streaming-status-lifecycle').textContent).toBe('Solicitud enviada…');
-    expect(screen.getByRole('status').getAttribute('aria-label')).toBe('Pensando');
+    expect(screen.getByTestId('streaming-status-thinking-label').textContent).toBe('Pensando');
+    expect(screen.getByTestId('streaming-status-phase').textContent).toBe('Solicitud enviada…');
+    expect(screen.getByRole('status').getAttribute('aria-label')).toBe('Cargando');
+  });
+
+  it('shows live elapsed detail only on row hover and keeps it non-live and non-focusable', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    render(StreamingStatus, {
+      props: {
+        isProcessing: true,
+        statusEvents: [
+          {
+            phase: 'streaming',
+            message: 'Streaming the response',
+            level: 'info',
+            timestamp: 7_800,
+          },
+        ],
+      },
+    });
+
+    const row = screen
+      .getByTestId('streaming-status-thinking')
+      .closest('[data-streaming-typing-row]')!;
+    const elapsed = screen.getByTestId('streaming-status-elapsed');
+    expect(row.className).toContain('group');
+    expect(elapsed.textContent).toBe('2s ago');
+    expect(elapsed.className).toContain('opacity-0');
+    expect(elapsed.className).toContain('group-hover:opacity-100');
+    expect(elapsed.getAttribute('aria-live')).toBe('off');
+    expect(elapsed.getAttribute('tabindex')).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(screen.getByTestId('streaming-status-elapsed').textContent).toBe('3s ago');
   });
 
   it('renders explicit failed response copy, alert semantics, and retry action for inactive errors', async () => {

@@ -6,6 +6,7 @@
   - Error/Timeout: clear failed state with Try Again button
 -->
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { fade } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
@@ -18,7 +19,12 @@
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-  import { deriveErrorDisplay, latestMeaningfulStatusMessage } from './streaming-status-utils';
+  import {
+    deriveErrorDisplay,
+    formatElapsed,
+    getLatestStatusEvent,
+    getStatusMarkVariant,
+  } from './streaming-status-utils';
   import { m } from '$shared/paraglide/messages.js';
   import StreamingTypingIndicator from './StreamingTypingIndicator.svelte';
 
@@ -109,6 +115,41 @@
   let visible = $derived(
     error || modelUnavailable || ((isStreaming || isProcessing) && !hasPendingPermission),
   );
+  let thinkingVisible = $derived(
+    status === 'normal' && (isStreaming || isProcessing) && !hasPendingPermission,
+  );
+  let latestStatusEvent = $derived(getLatestStatusEvent(statusEvents));
+  let markVariant = $derived(getStatusMarkVariant(latestStatusEvent?.phase));
+
+  let nowMs = $state(Date.now());
+  let elapsedInterval: ReturnType<typeof setInterval> | undefined;
+
+  function clearElapsedInterval() {
+    if (elapsedInterval === undefined) return;
+    clearInterval(elapsedInterval);
+    elapsedInterval = undefined;
+  }
+
+  $effect(() => {
+    if (!thinkingVisible || !latestStatusEvent) {
+      clearElapsedInterval();
+      return;
+    }
+    nowMs = Date.now();
+    clearElapsedInterval();
+    elapsedInterval = setInterval(() => (nowMs = Date.now()), 1_000);
+    return clearElapsedInterval;
+  });
+
+  onDestroy(clearElapsedInterval);
+
+  let elapsedTime = $derived(
+    latestStatusEvent
+      ? m.chat_streamingStatus_elapsedAgo_label({
+          duration: formatElapsed(nowMs - latestStatusEvent.timestamp),
+        })
+      : null,
+  );
 
   // Status message: the raw error when one is set, otherwise "Thinking"
   let statusMessage = $derived.by(() => {
@@ -117,8 +158,6 @@
     }
     return m.chat_streamingStatus_thinking_label();
   });
-
-  let lifecycleMessage = $derived(latestMeaningfulStatusMessage(statusEvents));
 
   // Error surface copy: recreate-aware when the daemon flagged the session
   // corrupted (monorepo#940), otherwise identical to the raw-error rendering.
@@ -137,16 +176,18 @@
   }
 </script>
 
+<StreamingTypingIndicator
+  visible={thinkingVisible}
+  message={statusMessage}
+  lifecycleMessage={latestStatusEvent?.message}
+  elapsed={elapsedTime}
+  variant={markVariant}
+  {seed}
+  class="mt-2 {className}"
+/>
+
 {#if visible}
-  {#if status === 'normal'}
-    <StreamingTypingIndicator
-      visible
-      message={statusMessage}
-      detailMessage={lifecycleMessage}
-      {seed}
-      class="mt-2 {className}"
-    />
-  {:else}
+  {#if status !== 'normal'}
     <div
       role={status === 'error' ? 'alert' : undefined}
       aria-live={status === 'error' ? 'assertive' : undefined}

@@ -6,7 +6,7 @@
     theme?: 'light' | 'dark';
     width?: number;
     zoom?: number;
-    mode?: 'processing' | 'streaming';
+    mode?: 'processing' | 'streaming' | 'idle' | 'permission' | 'error';
     phaseMessage?: string | null;
   }
 
@@ -55,6 +55,8 @@
       <StreamingStatus
         isProcessing={mode === 'processing'}
         isStreaming={mode === 'streaming'}
+        hasPendingPermission={mode === 'permission'}
+        error={mode === 'error' ? 'Provider stopped the response' : null}
         seed="geometry-agent"
         {statusEvents}
       />

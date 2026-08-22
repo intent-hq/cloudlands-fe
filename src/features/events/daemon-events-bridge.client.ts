@@ -39,8 +39,8 @@
  *      `'complete'` / `'error'` paths clear `statusEvents` on
  *      `agent:stream:end` / `agent:failed`. The `agent:stream:status` wire
  *      event (STAT-1 / PROTOCOL §7) — the pre-first-token turn-startup family
- *      (`launch` / `init` / `session-create` / `session-load` / `prompt` →
- *      "Sent prompt…") — flows through the same dispatch with
+ *      (`launch` / `init` / `session-create` / `session-load` / `prompt`) —
+ *      flows through the same dispatch with its exact daemon message and
  *      `resetFirstChunk: false` so the spinner shows the startup phase until
  *      the first chunk / stream:end / failed clears it.
  *   4. `note:*` (workspace-scoped, §7) → `applyNoteFromEvent` in the
@@ -1095,21 +1095,6 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
 }
 
 /**
- * Localized messages for the daemon's turn-startup phases (PROTOCOL §6.5:
- * `launch` / `init` / `session-create` / `session-load` / `prompt`). The wire
- * `message` is English prose authored daemon-side; the FE renders a catalog
- * string keyed off the machine-readable `phase` instead so the thinking
- * indicator localizes. Unknown phases fall back to the wire `message`.
- */
-const STREAM_STATUS_PHASE_MESSAGES: Record<string, () => string> = {
-  launch: () => m.events_bridge_phaseLaunch_status(),
-  init: () => m.events_bridge_phaseInit_status(),
-  'session-create': () => m.events_bridge_phaseSessionCreate_status(),
-  'session-load': () => m.events_bridge_phaseSessionLoad_status(),
-  prompt: () => m.events_bridge_phasePrompt_status(),
-};
-
-/**
  * `agent:stream:status` (PROTOCOL §6.5 / §7 pre-first-token hints) carries the
  * self-sufficient `{ agentId, workspaceId, phase, message, level, timestamp }`
  * payload the daemon emits while a turn is starting (`launch` / `init` /
@@ -1117,13 +1102,9 @@ const STREAM_STATUS_PHASE_MESSAGES: Record<string, () => string> = {
  * `streamStatusReceived` so the chat spinner surfaces the current phase —
  * "Sent prompt…" and friends — before the first `agent:stream:chunk` arrives.
  *
- * The rendered message is a localized catalog string keyed off `phase`; the
- * daemon's English `message` is only used as a fallback for unknown phases,
- * and for non-info `launch` events, which carry daemon-authored dynamic text
- * (the model-switch restart warning, §6.5 / intentd#647) that a static
- * localized label would drop. Known limitation: the repeated info-level
- * `launch`-phase Unsloth server-progress updates (§6.5) collapse to the
- * static localized launch message. Level/phase/timestamp round-trip verbatim.
+ * Phase, message, level, and timestamp round-trip verbatim. The renderer uses
+ * the machine-readable phase only to select motion and never infers or rewrites
+ * the daemon-authored message.
  *
  * `resetFirstChunk` is `false`: startup hints are cleared by the chunk /
  * stream:end / failed reducer paths (see file header §3), not by the status
@@ -1138,21 +1119,12 @@ function handleStreamStatusEvent(event: WorkspaceEvent): void {
     return;
   }
   const message = typeof data.message === 'string' ? data.message : '';
+  if (message.length === 0) return;
   const levelRaw = data.level;
   const level: 'info' | 'warn' | 'error' =
     levelRaw === 'warn' || levelRaw === 'error' ? levelRaw : 'info';
   const timestamp = typeof data.timestamp === 'number' ? data.timestamp : Date.now();
-  // Own-key lookup: a hostile/unknown wire phase like "constructor" must not
-  // resolve inherited Object.prototype members.
-  const phaseMessage = Object.hasOwn(STREAM_STATUS_PHASE_MESSAGES, phase)
-    ? STREAM_STATUS_PHASE_MESSAGES[phase]
-    : undefined;
-  const keepWireMessage = phase === 'launch' && level !== 'info' && message.length > 0;
-  const localizedMessage = !keepWireMessage && phaseMessage ? phaseMessage() : message;
-  if (localizedMessage.length === 0) return;
-  appStore.dispatch(
-    streamStatusReceived(agentId, { phase, message: localizedMessage, level, timestamp }, false),
-  );
+  appStore.dispatch(streamStatusReceived(agentId, { phase, message, level, timestamp }, false));
 }
 
 /**
