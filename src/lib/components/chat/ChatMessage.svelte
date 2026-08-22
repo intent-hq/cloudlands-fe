@@ -37,6 +37,7 @@
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { isHydrationPending, mergeHydratedContent } from './block-hydration';
+  import { createLogger } from '$lib/utils/client-logger';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
   import { splitTextByUrls } from './message-link-utils';
   import { findInlineMentions } from './mention-match-utils';
@@ -77,6 +78,8 @@
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+
+  const logger = createLogger('ChatMessage');
 
   function getOwningWorkspaceId(): string | undefined {
     return workspace?.id ? String(workspace.id) : routeWorkspaceId;
@@ -848,9 +851,30 @@
   $effect(() => {
     const pending = pendingLightboxHydration;
     if (!pending) return;
-    if (isAttachmentHydrationLoading(pending.blockId)) return;
-    const merged = imageBlocks.find((b: any) => b.id === pending.blockId);
+    // Reactive trigger only: the throttled selector readable re-runs this
+    // effect on each store cadence tick.
+    const hydratedFromReadable = $hydratedBlocks$;
+    // Decide on a FRESH store read, not the readable: its emit lags the
+    // request dispatch by up to one cadence tick (throttledSelectorFrequency),
+    // so on the click's own flush it still shows the pre-request map — no
+    // `loading` entry — and this effect would open the thumbnail immediately.
+    const hydrated = agentId
+      ? selectHydratedBlocks.select(appStore.state, agentId)
+      : hydratedFromReadable;
+    const hydrationMessageId = message?.id ?? messageId;
+    if (isHydrationPending(hydrated, hydrationMessageId, [pending.blockId])) return;
+    const mergedContent = Array.isArray(message?.contentBlocks)
+      ? mergeHydratedContent(message.contentBlocks, hydrationMessageId, hydrated)
+      : [];
+    const merged = mergedContent.find((b: any) => b.id === pending.blockId);
     const block = merged && isImageBlock(merged) ? merged : pending.thumbnailBlock;
+    if (block === pending.thumbnailBlock || block.dataTruncated === true) {
+      logger.warn(
+        // i18n-ignore (diagnostic log line, not user-facing)
+        'Attachment lightbox falling back to thumbnail: hydration did not yield a full image block',
+        { agentId, messageId: hydrationMessageId, blockId: pending.blockId },
+      );
+    }
     pendingLightboxHydration = null;
     lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
     lightboxImageName =
