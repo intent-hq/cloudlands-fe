@@ -37,18 +37,35 @@
   let currentToastId: string | number | undefined;
   let previousStatus: string | undefined;
 
+  // Toast ids dismissed programmatically by this component (dismiss-then-recreate
+  // in showUpdateToast, dismissToast, unmount cleanup). Their sonner-level
+  // onDismiss must not count as a user dismissal: it must neither arm the 24h
+  // cooldown nor hide a re-shown toast.
+  const internallyDismissedIds = new Set<string | number>();
+
+  function dismissToastInternally(toastId: string | number) {
+    internallyDismissedIds.add(toastId);
+    toast.dismiss(toastId);
+  }
+
   function showUpdateToast() {
     // Dismiss any existing update toast first
     if (currentToastId !== undefined) {
-      toast.dismiss(currentToastId);
+      dismissToastInternally(currentToastId);
     }
 
     // Show the update toast with custom component
     currentToastId = toast.custom(UpdateToast, {
       duration: Infinity, // Don't auto-dismiss for progress states
-      onDismiss: () => {
-        // Sonner's built-in dismiss (swipe, programmatic)
-        currentToastId = undefined;
+      onDismiss: (dismissed) => {
+        // Sonner's built-in dismiss (swipe, close button, programmatic)
+        if (internallyDismissedIds.delete(dismissed.id)) {
+          // Internal programmatic dismiss — not a user action
+          return;
+        }
+        if (currentToastId === dismissed.id) {
+          currentToastId = undefined;
+        }
         const currentStatus = selectAutoUpdateStatus.select(appStore.state);
         if (currentStatus === 'downloaded') {
           // Allow dismissal but track the time so we can re-prompt after 24h
@@ -59,11 +76,21 @@
       },
       componentProps: {
         onDismiss: () => {
-          // Used by UpdateToast's auto-dismiss $effect for not-available/error states
+          // UpdateToast's close button — an explicit user dismissal. The raw
+          // toast.dismiss routes through the sonner-level onDismiss above,
+          // which arms the 24h cooldown when the status is 'downloaded'.
           if (currentToastId !== undefined) {
             toast.dismiss(currentToastId);
             currentToastId = undefined;
           }
+          appStore.dispatch(hideToast());
+        },
+        onAutoDismiss: () => {
+          // UpdateToast's auto-dismiss $effect for not-available/error —
+          // programmatic, so it must never arm the cooldown, even if the
+          // status flips to 'downloaded' before sonner's deferred onDismiss
+          // delivery runs.
+          dismissToast();
           appStore.dispatch(hideToast());
         },
       },
@@ -72,7 +99,7 @@
 
   function dismissToast() {
     if (currentToastId !== undefined) {
-      toast.dismiss(currentToastId);
+      dismissToastInternally(currentToastId);
       currentToastId = undefined;
     }
   }
