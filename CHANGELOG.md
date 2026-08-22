@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.83.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.82.0...v2.83.0) (2026-08-22)
+
+
+### 🚀 Features
+
+* chat user-message navigator full-history coverage ([#1602](https://github.com/intent-hq/cloudlands-fe/issues/1602)) ([d78177d](https://github.com/intent-hq/cloudlands-fe/commit/d78177d6c136b0d68de9c82a5527830eba82b1bf))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.40 ([#1606](https://github.com/intent-hq/cloudlands-fe/issues/1606)) ([579306d](https://github.com/intent-hq/cloudlands-fe/commit/579306ddb503852eec0578cd69a7d2b721706a48))
+
 ## [2.82.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.81.0...v2.82.0) (2026-08-22)
 
 
