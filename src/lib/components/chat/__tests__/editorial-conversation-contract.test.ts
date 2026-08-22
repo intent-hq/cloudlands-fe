@@ -212,7 +212,10 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
     expect(streamingContent).toContain(
-      "getOperationalClusterSpacingClass(\n                    group.children,\n                    childIndex,\n                    (candidate) => candidate.type !== 'tool_result',",
+      "getOperationalClusterSpacingClass(\n      group.children,\n      childIndex,\n      (candidate) => candidate.type !== 'tool_result',",
+    );
+    expect(streamingContent).toContain(
+      '{@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}',
     );
     expect(streamingContent).toContain('isAdjacentOperationalClusterRow(');
     expect(streamingContent).toContain('isVisibleTopLevelBlock,');
