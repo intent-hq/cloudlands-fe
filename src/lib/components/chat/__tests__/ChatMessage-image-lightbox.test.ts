@@ -488,6 +488,75 @@ describe('ChatMessage image lightbox', () => {
       expect(screen.queryByRole('dialog', { name: /image preview/i })).toBeNull();
     });
 
+    it('does not open the thumbnail when the selector readable lags the request dispatch (throttled cadence race)', async () => {
+      // Regression (thumbnail-instead-of-full-res lightbox): the store's
+      // selector readables emit on a throttled cadence tick, so right after
+      // the click's dispatch the readable still shows the PRE-request map
+      // (no `loading` entry). The settle effect must decide on a fresh
+      // store read, not the lagging readable — otherwise it opens the
+      // thumbnail immediately and never upgrades. Simulated here by having
+      // dispatch update the state WITHOUT notifying the readable.
+      const message = createTruncatedMessage();
+      mockStoreMessage.value = message;
+      dispatchMock.mockImplementation((action) => {
+        if (action?.type === 'chatState/messageBlockHydrationRequested') {
+          mockStoreState.value = {
+            chatState: {
+              byAgentId: {
+                'agent-1': {
+                  hydratedBlocks: {
+                    'msg-slim|msg-slim:1': { status: 'loading', seq: 1 },
+                  },
+                },
+              },
+            },
+          };
+          // No emitState(): the throttled readable has not ticked yet.
+        }
+      });
+      render(ChatMessage, {
+        props: { message, agentId: 'agent-1', messageId: 'msg-slim' },
+      });
+
+      await fireEvent.click(
+        screen.getByRole('button', { name: /view attached image 1 of 1 full size/i }),
+      );
+
+      // The lightbox must NOT open with the stale (thumbnail) data.
+      expect(screen.queryByRole('dialog', { name: /image preview/i })).toBeNull();
+
+      // The fetch settles and the readable finally ticks: the lightbox opens
+      // with the full-resolution block.
+      mockStoreState.value = {
+        chatState: {
+          byAgentId: {
+            'agent-1': {
+              hydratedBlocks: {
+                'msg-slim|msg-slim:1': {
+                  status: 'loaded',
+                  seq: 1,
+                  block: {
+                    type: 'image',
+                    id: 'msg-slim:1',
+                    data: fullImageData,
+                    mimeType: mockImageMimeType,
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+      (mockStore as unknown as { emitState: () => void }).emitState();
+
+      await waitFor(() => {
+        const dialog = screen.getByRole('dialog', { name: /image preview/i });
+        expect(within(dialog).getByRole('img').getAttribute('src')).toBe(
+          `data:${mockImageMimeType};base64,${fullImageData}`,
+        );
+      });
+    });
+
     it('opens the lightbox with the hydrated full-resolution image once loaded', async () => {
       const message = createTruncatedMessage();
       mockStoreMessage.value = message;
