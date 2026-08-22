@@ -221,6 +221,26 @@ describe('WorkspaceTokenUsage', () => {
     expect(visibleText(composition)).toContain('Out 98K 1%');
     expect(visibleText(composition)).toContain('Cached 9.3M 98.9%');
     expect(visibleText(composition)).toContain('Reasoning 0 0%');
+    const compositionRows = Array.from(composition.querySelectorAll('.composition-row'));
+    expect(compositionRows).toHaveLength(4);
+    expect(
+      compositionRows.map((compositionRow) => ({
+        metric: compositionRow.querySelector('.composition-metric')?.textContent?.trim(),
+        description: compositionRow.querySelector('.composition-description')?.textContent?.trim(),
+        value: compositionRow.querySelector('.composition-value')?.textContent?.trim(),
+        context: compositionRow.querySelector('.composition-context')?.textContent?.trim(),
+      })),
+    ).toEqual([
+      { metric: 'In', description: 'Prompt context', value: '1.2K', context: '0%' },
+      { metric: 'Out', description: 'Model responses', value: '98K', context: '1%' },
+      {
+        metric: 'Cached',
+        description: 'Read and written context',
+        value: '9.3M',
+        context: '98.9%',
+      },
+      { metric: 'Reasoning', description: 'Internal tokens', value: '0', context: '0%' },
+    ]);
 
     const modelRows = within(modelSection).getAllByRole('listitem');
     expect(modelRows).toHaveLength(2);
