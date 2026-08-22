@@ -37,18 +37,35 @@
   let currentToastId: string | number | undefined;
   let previousStatus: string | undefined;
 
+  // Toast ids dismissed programmatically by this component (dismiss-then-recreate
+  // in showUpdateToast, dismissToast, unmount cleanup). Their sonner-level
+  // onDismiss must not count as a user dismissal: it must neither arm the 24h
+  // cooldown nor hide a re-shown toast.
+  const internallyDismissedIds = new Set<string | number>();
+
+  function dismissToastInternally(toastId: string | number) {
+    internallyDismissedIds.add(toastId);
+    toast.dismiss(toastId);
+  }
+
   function showUpdateToast() {
     // Dismiss any existing update toast first
     if (currentToastId !== undefined) {
-      toast.dismiss(currentToastId);
+      dismissToastInternally(currentToastId);
     }
 
     // Show the update toast with custom component
     currentToastId = toast.custom(UpdateToast, {
       duration: Infinity, // Don't auto-dismiss for progress states
-      onDismiss: () => {
-        // Sonner's built-in dismiss (swipe, programmatic)
-        currentToastId = undefined;
+      onDismiss: (dismissed) => {
+        // Sonner's built-in dismiss (swipe, close button, programmatic)
+        if (internallyDismissedIds.delete(dismissed.id)) {
+          // Internal programmatic dismiss — not a user action
+          return;
+        }
+        if (currentToastId === dismissed.id) {
+          currentToastId = undefined;
+        }
         const currentStatus = selectAutoUpdateStatus.select(appStore.state);
         if (currentStatus === 'downloaded') {
           // Allow dismissal but track the time so we can re-prompt after 24h
@@ -72,7 +89,7 @@
 
   function dismissToast() {
     if (currentToastId !== undefined) {
-      toast.dismiss(currentToastId);
+      dismissToastInternally(currentToastId);
       currentToastId = undefined;
     }
   }
