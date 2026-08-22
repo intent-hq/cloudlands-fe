@@ -21,7 +21,9 @@ import { Logger } from '$shared/logger';
 import { electronAPI } from '$lib/client/live/backend-transport';
 import { QUIT_CONFIRMATION_CHANNELS } from '$shared/ipc/channels';
 import type {
+  QuitConfirmationAckPayload,
   QuitConfirmationDismissPayload,
+  QuitConfirmationResponsePayload,
   QuitConfirmationShowPayload,
 } from '$shared/ipc/quit-confirmation';
 
@@ -61,7 +63,8 @@ export function installQuitConfirmationService(newHandlers: QuitConfirmationHand
     activeRequestId = show.requestId;
     // Ack immediately: main only waits a short window for it before falling
     // back to the native dialog. Never gate it on the modal rendering.
-    void api.invoke(QUIT_CONFIRMATION_CHANNELS.ACK, { requestId: show.requestId }).catch((error) => {
+    const ack: QuitConfirmationAckPayload = { requestId: show.requestId };
+    void api.invoke(QUIT_CONFIRMATION_CHANNELS.ACK, ack).catch((error) => {
       logger.warn('Failed to ack quit-confirmation request', { error });
     });
     logger.info('Quit-confirmation request received', { requestId: show.requestId });
@@ -98,7 +101,8 @@ export function respondToQuitConfirmation(proceed: boolean): void {
   const requestId = activeRequestId;
   activeRequestId = null;
   logger.info('Sending quit-confirmation response', { requestId, proceed });
-  void api.invoke(QUIT_CONFIRMATION_CHANNELS.RESPONSE, { requestId, proceed }).catch((error) => {
+  const response: QuitConfirmationResponsePayload = { requestId, proceed };
+  void api.invoke(QUIT_CONFIRMATION_CHANNELS.RESPONSE, response).catch((error) => {
     logger.error('Failed to send quit-confirmation response', { error });
   });
 }
