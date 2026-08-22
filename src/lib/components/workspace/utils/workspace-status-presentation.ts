@@ -62,7 +62,7 @@ const VISUALS: Record<
   complete: { visual: 'icon', icon: faCircleCheck, className: 'text-success' },
   pr_ready: { visual: 'icon', icon: faCodePullRequest, className: 'text-success' },
   pr_open: { visual: 'icon', icon: faCodePullRequest, className: 'text-info' },
-  pr_merged: { visual: 'icon', icon: faCodeMerge, className: 'text-success' },
+  pr_merged: { visual: 'icon', icon: faCodeMerge, className: 'text-purple-500' },
 };
 
 function labelFor(state: WorkspaceStatusPresentationState): string {
