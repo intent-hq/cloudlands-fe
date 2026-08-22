@@ -10,7 +10,7 @@
  * The panel layout is now the single source of truth for listing.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   sendToWorkspaceWindows: vi.fn(),
@@ -59,6 +59,39 @@ function fakeWebview(id: number, url: string) {
     getURL: () => url,
     getTitle: () => `title-${id}`,
     once: vi.fn(),
+  };
+}
+
+/**
+ * Fake webview with a working debugger session and capturePage(), for the
+ * screenshot CDP-hang fallback tests (intent-hq/monorepo#3154).
+ * `sendCommand` routes each CDP method through `cdpResponses`; a method
+ * mapped to 'hang' returns a promise that never settles.
+ */
+function fakeCdpWebview(
+  id: number,
+  cdpResponses: Record<string, unknown | 'hang' | Error>,
+  capturePageImage = { width: 320, height: 240 },
+) {
+  const sendCommand = vi.fn((method: string) => {
+    const response = cdpResponses[method];
+    if (response === 'hang') return new Promise(() => {});
+    if (response instanceof Error) return Promise.reject(response);
+    return Promise.resolve(response);
+  });
+  const capturePage = vi.fn(async () => ({
+    getSize: () => capturePageImage,
+    toJPEG: () => Buffer.from('fallback-jpeg-bytes'),
+  }));
+  return {
+    ...fakeWebview(id, 'http://cdp/'),
+    debugger: {
+      isAttached: () => true,
+      attach: vi.fn(),
+      on: vi.fn(),
+      sendCommand,
+    },
+    capturePage,
   };
 }
 
@@ -529,3 +562,93 @@ describe('tab ownership registry (#2857)', () => {
     expect(tabs.find((t) => t.tabId === 'tab-user')?.ownerAgentId).toBeUndefined();
   });
 });
+
+describe('screenshot Page-domain hang fallback (#3154)', () => {
+  const LAYOUT_METRICS = {
+    layoutViewport: { clientWidth: 800, clientHeight: 600 },
+    cssVisualViewport: { clientWidth: 800, clientHeight: 600, pageX: 0, pageY: 0 },
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns the CDP screenshot when the Page domain answers', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(61, {
+      'Page.getLayoutMetrics': LAYOUT_METRICS,
+      'Page.captureScreenshot': { data: 'cdp-base64' },
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-cdp', 61);
+
+    await expect(service.screenshot('tab-cdp')).resolves.toEqual({
+      base64: 'cdp-base64',
+      width: 800,
+      height: 600,
+    });
+    expect(wc.capturePage).not.toHaveBeenCalled();
+    service.unregisterTab('tab-cdp');
+  });
+
+  it('falls back to capturePage() when Page.getLayoutMetrics never answers', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(62, { 'Page.getLayoutMetrics': 'hang' });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-hang-metrics', 62);
+
+    const pending = service.screenshot('tab-hang-metrics');
+    await vi.advanceTimersByTimeAsync(6_000);
+
+    await expect(pending).resolves.toEqual({
+      base64: Buffer.from('fallback-jpeg-bytes').toString('base64'),
+      width: 320,
+      height: 240,
+    });
+    expect(wc.capturePage).toHaveBeenCalledTimes(1);
+    service.unregisterTab('tab-hang-metrics');
+  });
+
+  it('falls back to capturePage() when Page.captureScreenshot never answers', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(63, {
+      'Page.getLayoutMetrics': LAYOUT_METRICS,
+      'Page.captureScreenshot': 'hang',
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-hang-capture', 63);
+
+    const pending = service.screenshot('tab-hang-capture');
+    await vi.advanceTimersByTimeAsync(6_000);
+
+    await expect(pending).resolves.toEqual({
+      base64: Buffer.from('fallback-jpeg-bytes').toString('base64'),
+      width: 320,
+      height: 240,
+    });
+    expect(wc.capturePage).toHaveBeenCalledTimes(1);
+    service.unregisterTab('tab-hang-capture');
+  });
+
+  it('falls back to capturePage() when a Page-domain command rejects', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(64, {
+      'Page.getLayoutMetrics': new Error('Page domain unavailable'),
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-reject', 64);
+
+    await expect(service.screenshot('tab-reject')).resolves.toEqual({
+      base64: Buffer.from('fallback-jpeg-bytes').toString('base64'),
+      width: 320,
+      height: 240,
+    });
+    expect(wc.capturePage).toHaveBeenCalledTimes(1);
+    service.unregisterTab('tab-reject');
+  });
+});
+
