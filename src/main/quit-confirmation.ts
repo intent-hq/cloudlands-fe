@@ -20,7 +20,10 @@
  * show request within {@link RENDERER_ACK_TIMEOUT_MS}, or sending fails, the
  * flow falls back to the native message box (quit-dialog.ts) so quit is never
  * blocked by a broken renderer. Once acknowledged, main waits indefinitely for
- * the user's decision — there is no timeout on a human. The tabs-only case
+ * the user's decision — there is no timeout on a human — but renderer death
+ * (webContents destroyed, render process gone, or a main-frame navigation
+ * that wipes the modal) settles the wait and falls back to the native dialog,
+ * so a crashed/reloaded renderer can never wedge quit. The tabs-only case
  * falls back to a dedicated native dialog (buildTabsOnlyQuitDialogOptions);
  * agent cases keep the existing agent copy.
  *
@@ -48,7 +51,7 @@
  */
 
 import { BrowserWindow, dialog, ipcMain } from 'electron';
-import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron';
+import type { MessageBoxOptions, MessageBoxReturnValue, WebContents } from 'electron';
 import { randomUUID } from 'node:crypto';
 
 import type { ConnectionMode } from '../features/backend/main/connection-mode';
@@ -238,6 +241,11 @@ function registerRendererHandlers(): void {
       QuitConfirmationResponseSchema,
       async (_event, payload) => {
         if (pendingRendererRequest?.requestId === payload.requestId) {
+          // A valid response proves the modal mounted — treat it as an
+          // implicit ack so a lost/rejected ack invoke cannot let the ack
+          // timeout fire and show the native dialog over an answered modal.
+          pendingRendererRequest.acked = true;
+          pendingRendererRequest.ack();
           pendingRendererRequest.settle(payload.proceed);
         }
         return { success: true };
@@ -257,9 +265,13 @@ export function resetQuitConfirmationStateForTests(): void {
  * Default renderer round-trip. Sends `quit-confirmation:show` to the parent
  * window and waits for the modal to ack, then for the decision. Every
  * unavailable-renderer path resolves null (fail open to the native dialog):
- * no live window, `send` throwing, or no ack within
+ * no live window, `send` throwing, no ack within
  * {@link RENDERER_ACK_TIMEOUT_MS} — in which case a dismiss is sent so a
- * late-mounting modal does not linger.
+ * late-mounting modal does not linger — or the renderer dying at any point
+ * (webContents destroyed, render process gone, or a main-frame navigation
+ * that wipes the modal). Without the death watch, a post-ack crash/reload
+ * would leave the decision promise unsettled forever and the memoized
+ * in-flight confirmation would wedge every subsequent quit attempt.
  */
 async function defaultConfirmViaRenderer(
   parent: BrowserWindow | null,
@@ -286,13 +298,26 @@ async function defaultConfirmViaRenderer(
   };
   pendingRendererRequest = request;
 
+  const contents = parent.webContents;
+  // The modal lives in this webContents: destruction, a renderer crash, or a
+  // main-frame navigation (reload included) all destroy it, so any of them
+  // settles the wait and falls back to the native dialog.
+  let rendererGone!: () => void;
+  const gone = new Promise<'gone'>((resolve) => {
+    rendererGone = () => resolve('gone');
+  });
+  contents.once('destroyed', rendererGone);
+  contents.once('render-process-gone', rendererGone);
+  contents.once('did-navigate', rendererGone);
+
   try {
-    parent.webContents.send(QUIT_CONFIRMATION_CHANNELS.SHOW, payload);
+    contents.send(QUIT_CONFIRMATION_CHANNELS.SHOW, payload);
   } catch (error) {
     logger.warn('Failed to send quit confirmation to renderer; using native dialog', {
       error: error instanceof Error ? error.message : String(error),
     });
     pendingRendererRequest = null;
+    removeRendererGoneListeners(contents, rendererGone);
     return null;
   }
 
@@ -301,7 +326,17 @@ async function defaultConfirmViaRenderer(
     ackTimer = setTimeout(() => resolve('timeout'), RENDERER_ACK_TIMEOUT_MS);
   });
   try {
-    const ackOutcome = await Promise.race([acked.then(() => 'acked' as const), ackTimeout]);
+    const ackOutcome = await Promise.race([
+      acked.then(() => 'acked' as const),
+      ackTimeout,
+      gone,
+    ]);
+    if (ackOutcome === 'gone') {
+      logger.warn('Renderer went away before acknowledging quit confirmation; using native dialog', {
+        requestId: payload.requestId,
+      });
+      return null;
+    }
     if (ackOutcome === 'timeout') {
       logger.warn('Renderer did not acknowledge quit confirmation; using native dialog', {
         requestId: payload.requestId,
@@ -309,8 +344,8 @@ async function defaultConfirmViaRenderer(
       });
       // Close a modal that mounts late for this now-abandoned request.
       try {
-        if (!parent.isDestroyed() && !parent.webContents.isDestroyed()) {
-          parent.webContents.send(QUIT_CONFIRMATION_CHANNELS.DISMISS, {
+        if (!parent.isDestroyed() && !contents.isDestroyed()) {
+          contents.send(QUIT_CONFIRMATION_CHANNELS.DISMISS, {
             requestId: payload.requestId,
           });
         }
@@ -319,11 +354,32 @@ async function defaultConfirmViaRenderer(
       }
       return null;
     }
-    // Acked: the modal is up — wait for the user, however long they take.
-    return await decision;
+    // Acked: the modal is up — wait for the user, however long they take,
+    // but settle if the renderer dies (crash/reload destroys the modal and
+    // its state, so the decision would otherwise never arrive).
+    const outcome = await Promise.race([decision.then((proceed) => ({ proceed })), gone]);
+    if (outcome === 'gone') {
+      logger.warn('Renderer went away while quit confirmation was open; using native dialog', {
+        requestId: payload.requestId,
+      });
+      return null;
+    }
+    return outcome.proceed;
   } finally {
     clearTimeout(ackTimer);
+    removeRendererGoneListeners(contents, rendererGone);
     if (pendingRendererRequest === request) pendingRendererRequest = null;
+  }
+}
+
+/** Detach the renderer-death listeners; tolerate an already-destroyed target. */
+function removeRendererGoneListeners(contents: WebContents, listener: () => void): void {
+  try {
+    contents.removeListener('destroyed', listener);
+    contents.removeListener('render-process-gone', listener);
+    contents.removeListener('did-navigate', listener);
+  } catch {
+    // Destroyed emitters can throw on removeListener; nothing left to detach.
   }
 }
 

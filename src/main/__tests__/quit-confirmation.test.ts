@@ -589,12 +589,26 @@ describe('confirmQuitWithRunningAgents — default renderer round-trip', () => {
     const { deps } = makeDeps({ agents: options.agents ?? AGENTS, response: options.response });
     const { confirmViaRenderer: _omitted, ...rest } = deps;
     const send = vi.fn();
+    const goneListeners = new Map<string, (() => void)[]>();
+    const webContents = {
+      isDestroyed: () => false,
+      send,
+      once: vi.fn((event: string, listener: () => void) => {
+        const existing = goneListeners.get(event) ?? [];
+        existing.push(listener);
+        goneListeners.set(event, existing);
+      }),
+      removeListener: vi.fn(),
+    };
     const window = {
       isDestroyed: () => false,
-      webContents: { isDestroyed: () => false, send },
+      webContents,
     } as unknown as BrowserWindow;
     rest.getParentWindow.mockReturnValue(window);
-    return { deps: rest, send };
+    const emitRendererGone = (event: string) => {
+      for (const listener of goneListeners.get(event) ?? []) listener();
+    };
+    return { deps: rest, send, webContents, emitRendererGone };
   }
 
   async function getHandlers() {
@@ -648,6 +662,80 @@ describe('confirmQuitWithRunningAgents — default renderer round-trip', () => {
     await handlers.response({}, { requestId: payload.requestId, proceed: true });
 
     await expect(pending).resolves.toBe(true);
+  });
+
+  it('treats a valid response as an implicit ack when the ack invoke was lost', async () => {
+    vi.useFakeTimers();
+    const { deps, send } = makeRendererDeps({ response: 0 });
+
+    const pending = confirmQuitWithRunningAgents(deps);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const payload = send.mock.calls[0][1] as QuitConfirmationShowPayload;
+
+    // The ack invoke never arrives, but the user answers within the 3s window.
+    const handlers = await getHandlers();
+    await handlers.response({}, { requestId: payload.requestId, proceed: false });
+    // The ack timeout must have been defused: advancing past it changes nothing.
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    await expect(pending).resolves.toBe(false);
+    expect(deps.showMessageBox).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalledWith('quit-confirmation:dismiss', expect.anything());
+  });
+
+  it('falls back to the native dialog when the renderer dies after acking, and clears the in-flight memo', async () => {
+    const { deps, send, emitRendererGone } = makeRendererDeps({ response: 0 });
+
+    const pending = confirmQuitWithRunningAgents(deps);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const payload = send.mock.calls[0][1] as QuitConfirmationShowPayload;
+
+    const handlers = await getHandlers();
+    await handlers.ack({}, { requestId: payload.requestId });
+    // Renderer crashes after acking — the decision will never arrive.
+    emitRendererGone('render-process-gone');
+
+    await expect(pending).resolves.toBe(true);
+    expect(deps.showMessageBox).toHaveBeenCalledTimes(1);
+
+    // A fresh quit attempt must not reuse the settled confirmation.
+    const second = makeRendererDeps({ response: 1 });
+    const secondPending = confirmQuitWithRunningAgents(second.deps);
+    await vi.waitFor(() => expect(second.send).toHaveBeenCalledTimes(1));
+    const secondPayload = second.send.mock.calls[0][1] as QuitConfirmationShowPayload;
+    expect(secondPayload.requestId).not.toBe(payload.requestId);
+    const secondHandlers = await getHandlers();
+    await secondHandlers.ack({}, { requestId: secondPayload.requestId });
+    await secondHandlers.response({}, { requestId: secondPayload.requestId, proceed: true });
+    await expect(secondPending).resolves.toBe(true);
+  });
+
+  it('falls back to the native dialog when the webContents is destroyed before acking', async () => {
+    const { deps, send, emitRendererGone } = makeRendererDeps({ response: 1 });
+
+    const pending = confirmQuitWithRunningAgents(deps);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+
+    emitRendererGone('destroyed');
+
+    await expect(pending).resolves.toBe(false);
+    expect(deps.showMessageBox).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the native dialog when the renderer navigates away mid-decision', async () => {
+    const { deps, send, emitRendererGone } = makeRendererDeps({ response: 0 });
+
+    const pending = confirmQuitWithRunningAgents(deps);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const payload = send.mock.calls[0][1] as QuitConfirmationShowPayload;
+
+    const handlers = await getHandlers();
+    await handlers.ack({}, { requestId: payload.requestId });
+    // A reload/navigation wipes the modal and its renderer-side state.
+    emitRendererGone('did-navigate');
+
+    await expect(pending).resolves.toBe(true);
+    expect(deps.showMessageBox).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to the native dialog and dismisses when the renderer never acks', async () => {
