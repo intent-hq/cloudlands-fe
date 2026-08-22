@@ -51,9 +51,13 @@ function dispatchCallbacks(
 function ensureStoreSubscription() {
   if (storeUnsubscribe) return;
   let didEmitInitialValue = false;
-  // T3b: Themis removed getReadableState(); a whole-state selector readable
+  // T3b: Themis removed getReadableState(); a slice selector readable
   // preserves its synchronous initial emission and teardown semantics here.
-  const stateReadable = appStore.createSelector((state) => state)();
+  // The selector must access the slice (not return the whole state): Themis's
+  // cached selectors invalidate by tracked accessed paths, so an identity
+  // selector records no paths and never re-emits after its initial value
+  // (which left subscribers permanently stale).
+  const stateReadable = appStore.createSelector((state) => state.agentSessions)();
   storeUnsubscribe = stateReadable.subscribe(() => {
     if (!didEmitInitialValue) {
       didEmitInitialValue = true;
