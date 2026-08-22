@@ -529,7 +529,7 @@
 
       {#if workspacePrRows.length > 0}
         <span
-          class="wc-pr-list flex min-w-0 max-w-[55%] shrink items-center gap-0.5 overflow-x-auto"
+          class="wc-pr-list flex min-w-0 max-w-11/20 shrink items-center gap-0.5 overflow-x-auto"
           aria-label={m.workspace_hoverCard_pullRequest_label()}
           data-workspace-card-pr-list
         >
