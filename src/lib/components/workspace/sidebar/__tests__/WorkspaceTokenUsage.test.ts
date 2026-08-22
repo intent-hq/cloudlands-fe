@@ -92,6 +92,15 @@ describe('WorkspaceTokenUsage', () => {
     expect(disclosure.getAttribute('type')).toBe('button');
     expect(disclosure.getAttribute('aria-expanded')).toBe('false');
     expect(detailsId).toBe('workspace-token-usage-details-ws-1');
+    expect(disclosure.getAttribute('aria-describedby')).toBe(
+      'workspace-token-usage-processed-ws-1 workspace-token-usage-cache-ws-1',
+    );
+    expect(document.getElementById('workspace-token-usage-processed-ws-1')?.textContent).toContain(
+      '1K processed',
+    );
+    expect(document.getElementById('workspace-token-usage-cache-ws-1')?.textContent).toContain(
+      '70% Cached',
+    );
     expect(document.getElementById(detailsId!)).toBeNull();
     expect(visibleText(disclosure)).toContain('Token usage');
     expect(visibleText(disclosure)).toContain('1K processed');

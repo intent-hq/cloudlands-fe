@@ -51,6 +51,8 @@
   const cacheShare = $derived(share(cachedTokens, processedTokens));
   const detailsId = $derived(`workspace-token-usage-details-${workspaceId}`);
   const titleId = $derived(`workspace-token-usage-title-${workspaceId}`);
+  const processedId = $derived(`workspace-token-usage-processed-${workspaceId}`);
+  const cacheId = $derived(`workspace-token-usage-cache-${workspaceId}`);
 
   function tokenCount(entry: TokenUsageTotals): number {
     return (
@@ -159,6 +161,7 @@
         : m.workspace_tokenUsage_expand_ariaLabel()}
       aria-expanded={expanded}
       aria-controls={detailsId}
+      aria-describedby={`${processedId} ${cacheId}`}
       onclick={() => (expanded = !expanded)}
     >
       <span
@@ -175,16 +178,17 @@
         <span id={titleId} class="truncate font-medium text-foreground">
           {m.workspace_tokenUsage_title()}
         </span>
-        <span class="truncate text-[10px] text-subtle">
+        <span id={processedId} class="truncate text-[10px] text-subtle">
           <span class="tabular-nums">{formatCompactNumber(processedTokens)}</span>
           {m.workspace_tokenUsage_processed_label()}
         </span>
       </span>
       <span
+        id={cacheId}
         class="flex shrink-0 flex-col items-end"
         title={m.workspace_tokenUsage_cacheEfficiency_label()}
       >
-        <span class="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">
+        <span class="font-medium tabular-nums text-success">
           {shareLabel(cacheShare)}
         </span>
         <span class="text-[10px] text-subtle">{m.workspace_tokenUsage_cached_label()}</span>
