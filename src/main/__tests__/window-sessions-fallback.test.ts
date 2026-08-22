@@ -115,8 +115,9 @@ describe('saveWindowSessions — empty getAllWindows() fallback', () => {
 
   it('captureWindowSessionsSnapshot() primes the cache so a later empty-windows save still persists', async () => {
     const bounds = { x: 100, y: 200, width: 1000, height: 700 };
-    mockGetAllWindows.mockReturnValue([makeWindow('app://workspaces/work/snap', bounds)]);
-    captureWindowSessionsSnapshot();
+    const window = makeWindow('app://workspaces/work/snap', bounds);
+    mockGetAllWindows.mockReturnValue([window]);
+    captureWindowSessionsSnapshot.call(window as never);
 
     // All windows are gone by the time saveWindowSessions() runs (non-macOS
     // window-all-closed); the pre-close snapshot must still be written.

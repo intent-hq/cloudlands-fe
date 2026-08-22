@@ -123,6 +123,7 @@ vi.mock('../utils/resolve-app-title', () => ({
 
 import {
   _resetWindowSessionsCacheForTests,
+  captureWindowSessionsSnapshot,
   captureAndCloseWindowsForBackendSwitch,
   closeWindowsForBackend,
   clearBackendSwitchWindowTeardownGuard,
@@ -231,6 +232,28 @@ describe('multi-backend window sessions', () => {
         local: [{ route: '/work/local', bounds: localBounds }],
         'remote-1': [{ route: '/work/remote', bounds: remoteBounds }],
       });
+    });
+
+    it('does not restore a remote layout after its last window is explicitly closed', async () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
+      await saveAllWindowSessions();
+
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+
+      expect(loadWindowSessions('remote-1')).toBeNull();
+      await saveAllWindowSessions();
+      expect(readMap()).toEqual({
+        local: [{ route: '/work/local', bounds: local.bounds }],
+      });
+
+      openOrFocusWindowsForBackend('remote-1');
+      const remoteWindows = FakeBrowserWindow.getAllWindows().filter(
+        (window) => window.backendId === 'remote-1',
+      );
+      expect(remoteWindows).toHaveLength(1);
+      expect(remoteWindows[0].webContents.getURL()).not.toContain('/work/closed');
     });
   });
 
