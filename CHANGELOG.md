@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.82.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.81.0...v2.82.0) (2026-08-22)
+
+
+### 🚀 Features
+
+* delegate MCP connection test to daemon mcp.testConnection RPC ([#1599](https://github.com/intent-hq/cloudlands-fe/issues/1599)) ([24f5b49](https://github.com/intent-hq/cloudlands-fe/commit/24f5b492a7450069f1ece85d74e76196d6f8f982))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.39 ([#1603](https://github.com/intent-hq/cloudlands-fe/issues/1603)) ([d1e8836](https://github.com/intent-hq/cloudlands-fe/commit/d1e88365bb816ef0e30e19d8826194ada4367374))
+* focus InterruptedAgentsModal on open so Escape dismisses immediately ([#1596](https://github.com/intent-hq/cloudlands-fe/issues/1596)) ([e3762ce](https://github.com/intent-hq/cloudlands-fe/commit/e3762ceca3a73d823bab1e31dfa8e5114bc27815))
+* keep Update Ready toast persistent (manual check resets dismiss cooldown; only explicit dismissals arm it) ([#1600](https://github.com/intent-hq/cloudlands-fe/issues/1600)) ([60e85b3](https://github.com/intent-hq/cloudlands-fe/commit/60e85b3b08f326ea9119ac0038346e3f7eb4c61b))
+* panel actions menu cropped and Copy conversation stuck disabled ([#1598](https://github.com/intent-hq/cloudlands-fe/issues/1598)) ([a356d29](https://github.com/intent-hq/cloudlands-fe/commit/a356d29321fbeac7b9e524d782921dd39bbd8d94))
+
 ## [2.81.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.80.1...v2.81.0) (2026-08-22)
 
 
