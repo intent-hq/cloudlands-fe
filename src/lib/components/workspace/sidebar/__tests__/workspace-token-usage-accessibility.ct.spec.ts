@@ -57,3 +57,46 @@ test('exposes compact values and keeps cache text readable in both themes', asyn
     expect(contrastRatio(colors.foreground, colors.background), theme).toBeGreaterThanOrEqual(4.5);
   }
 });
+
+test('keeps compact row density and stacks rankings at narrow widths', async ({ mount }) => {
+  const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+    props: { width: 248 },
+  });
+  const shell = component.getByTestId('workspace-token-usage');
+  const disclosure = component.getByTestId('token-usage-disclosure');
+
+  const closedBox = await shell.boundingBox();
+  expect(closedBox).not.toBeNull();
+  expect(closedBox!.height).toBeLessThanOrEqual(50);
+
+  await disclosure.click();
+  const agentSection = component.getByTestId('token-usage-by-agent');
+  const modelSection = component.getByTestId('token-usage-by-model');
+  const [agentBox, modelBox, rowBoxes, dimensions] = await Promise.all([
+    agentSection.boundingBox(),
+    modelSection.boundingBox(),
+    agentSection
+      .locator('li')
+      .evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height)),
+    shell.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    })),
+  ]);
+
+  expect(agentBox).not.toBeNull();
+  expect(modelBox).not.toBeNull();
+  expect(modelBox!.y).toBeGreaterThanOrEqual(agentBox!.y + agentBox!.height - 1);
+  expect(Math.max(...rowBoxes)).toBeLessThanOrEqual(32);
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+
+  await component.update({ props: { width: 520 } });
+  const [wideAgentBox, wideModelBox] = await Promise.all([
+    agentSection.boundingBox(),
+    modelSection.boundingBox(),
+  ]);
+  expect(wideAgentBox).not.toBeNull();
+  expect(wideModelBox).not.toBeNull();
+  expect(Math.abs(wideAgentBox!.y - wideModelBox!.y)).toBeLessThanOrEqual(1);
+  expect(wideModelBox!.x).toBeGreaterThan(wideAgentBox!.x);
+});
