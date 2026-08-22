@@ -424,21 +424,43 @@ describe('gracefulShutdown call ordering (AST)', () => {
   });
 });
 
+// The prompt body was extracted into confirmQuitInner() so that
+// confirmQuitWithRunningAgents() can memoize the in-flight confirmation (the
+// re-entrancy guard: concurrent quit paths share one prompt). Body-level
+// assertions run against the extracted function; findConfirmQuit() first
+// proves the exported wrapper still delegates there, so the checks cover code
+// that is actually reachable from confirmQuitWithRunningAgents(). Same
+// pattern as findShutdownCleanupBody() above.
 function findConfirmQuit(sf: ts.SourceFile): ts.FunctionLikeDeclaration {
-  let found: ts.FunctionLikeDeclaration | undefined;
-  const visit = (n: ts.Node) => {
-    if (found) return;
-    if (ts.isFunctionDeclaration(n) && n.name?.text === 'confirmQuitWithRunningAgents' && n.body) {
-      found = n;
-      return;
-    }
-    ts.forEachChild(n, visit);
+  const findFn = (name: string): ts.FunctionLikeDeclaration | undefined => {
+    let found: ts.FunctionLikeDeclaration | undefined;
+    const visit = (n: ts.Node) => {
+      if (found) return;
+      if (ts.isFunctionDeclaration(n) && n.name?.text === name && n.body) {
+        found = n;
+        return;
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+    return found;
   };
-  visit(sf);
-  if (!found) {
+
+  const wrapper = findFn('confirmQuitWithRunningAgents');
+  if (!wrapper) {
     throw new Error('confirmQuitWithRunningAgents not found in src/main/quit-confirmation.ts');
   }
-  return found;
+  const wrapperCalls = callsitesIn(wrapper.body!);
+  if (!wrapperCalls.some((c) => c.text === 'confirmQuitInner')) {
+    throw new Error(
+      'confirmQuitWithRunningAgents must delegate to confirmQuitInner so the prompt body stays reachable',
+    );
+  }
+  const inner = findFn('confirmQuitInner');
+  if (!inner) {
+    throw new Error('confirmQuitInner not found in src/main/quit-confirmation.ts');
+  }
+  return inner;
 }
 
 describe('external-daemon-aware quit flow (AST)', () => {
