@@ -216,7 +216,7 @@
 </script>
 
 <div
-  class="empty-state flex h-full items-center justify-center overflow-y-auto bg-background px-6 py-10 text-foreground"
+  class="empty-state flex h-full items-center justify-center overflow-y-auto bg-sidebar px-6 py-10 text-foreground"
   data-panel-empty-state
 >
   <section

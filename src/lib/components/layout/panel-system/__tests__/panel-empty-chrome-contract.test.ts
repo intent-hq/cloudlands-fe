@@ -22,7 +22,7 @@ describe('empty panel chrome', () => {
     expect(emptyState).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
     expect(emptyState).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))');
     expect(emptyState).toContain('min-h-16 cursor-pointer');
-    expect(emptyState).toContain('bg-background px-6 py-10 text-foreground');
+    expect(emptyState).toContain('bg-sidebar px-6 py-10 text-foreground');
     expect(emptyState).not.toContain('border-t border-border');
   });
 

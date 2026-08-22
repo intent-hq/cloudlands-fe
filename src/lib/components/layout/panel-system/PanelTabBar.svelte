@@ -1665,7 +1665,7 @@
   <div
     bind:this={tabBarRef}
     class={cn(
-      'panel-tab-bar group/tabbar relative flex items-center h-[var(--panel-header-height)] border-b border-border bg-card',
+      'panel-tab-bar group/tabbar relative flex items-center h-[var(--panel-header-height)] bg-card',
       !showTabStrip && 'hidden',
     )}
     data-panel-tab-bar
@@ -1976,7 +1976,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class={cn(
-        'panel-header group/header relative flex h-[var(--panel-header-height)] cursor-grab items-center border-b border-border bg-card pr-2.5 active:cursor-grabbing',
+        'panel-header group/header relative flex h-[var(--panel-header-height)] cursor-grab items-center bg-card pr-2.5 active:cursor-grabbing',
         isFocused && 'focused',
       )}
       oncontextmenu={(event) => handlePanelContextMenu(event, activeTab.id)}
@@ -2108,7 +2108,7 @@
     </div>
   {:else if isRightmostPanel || onClosePanel}
     <div
-      class="panel-header group/header relative flex items-center border-b border-border bg-sidebar pr-2.5"
+      class="panel-header group/header relative flex items-center bg-sidebar pr-2.5"
       style:height="var(--panel-header-height)"
       data-panel-tabless-header
       data-empty-panel-header

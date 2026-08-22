@@ -26,12 +26,15 @@ for (const [index, panelType] of panelTypes.entries()) {
       const close = node.querySelector<HTMLElement>('[data-testid="panel-close-button"]')!;
       const closeGlyph = close.querySelector<SVGElement>('svg')!;
       return {
+        borderBottomWidth: getComputedStyle(node.closest('[data-panel-tabless-header]')!)
+          .borderBottomWidth,
         gap: getComputedStyle(node).columnGap,
         trigger: [getComputedStyle(trigger).width, getComputedStyle(trigger).height],
         close: [getComputedStyle(close).width, getComputedStyle(close).height],
         closeGlyph: [getComputedStyle(closeGlyph).width, getComputedStyle(closeGlyph).height],
       };
     });
+    expect(actionGeometry.borderBottomWidth).toBe('0px');
     expect(actionGeometry.gap).toBe('0px');
     expect(actionGeometry.trigger).toEqual(['28px', '28px']);
     expect(actionGeometry.close).toEqual(['28px', '28px']);

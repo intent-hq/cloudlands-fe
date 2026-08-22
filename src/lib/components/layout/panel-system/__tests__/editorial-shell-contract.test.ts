@@ -29,12 +29,18 @@ describe('editorial workspace shell presentation contract', () => {
     expect(workspace).toContain('position: absolute');
   });
 
-  it('uses one clipped semantic shell for the panel background, radius, and border', () => {
+  it('uses one clipped borderless shell with state-specific panel surfaces', () => {
     const panel = source('../Panel.svelte');
     const container = source('../PanelContainer.svelte');
 
-    expect(panel).toContain('overflow-hidden rounded-lg border border-border');
-    expect(panel).toContain('border border-border bg-background text-foreground');
+    expect(panel).toContain('overflow-hidden rounded-lg text-foreground');
+    expect(panel).not.toContain('rounded-lg border border-border');
+    expect(panel).toContain(
+      'class:bg-sidebar={panel.pristine === true && panel.tabs.length === 0}',
+    );
+    expect(panel).toContain(
+      'class:bg-background={panel.pristine !== true || panel.tabs.length > 0}',
+    );
     expect(panel).toContain('data-empty-panel-surface={');
     expect(container).toContain('class="h-full w-full min-h-0 min-w-0"');
     expect(container).toContain(
@@ -75,7 +81,9 @@ describe('editorial workspace shell presentation contract', () => {
   it('renders one content-aware header per panel without the legacy tab strip', () => {
     const tabBar = source('../PanelTabBar.svelte');
 
-    expect(tabBar).toContain('border-b border-border bg-card');
+    expect(tabBar).not.toContain('border-b border-border');
+    expect(tabBar).toContain('h-[var(--panel-header-height)] bg-card');
+    expect(tabBar).toContain('items-center bg-sidebar pr-2.5');
     expect(tabBar).toContain('showTabStrip = false');
     expect(tabBar).toContain("!showTabStrip && 'hidden'");
     expect(tabBar).toContain('data-panel-tab-bar');

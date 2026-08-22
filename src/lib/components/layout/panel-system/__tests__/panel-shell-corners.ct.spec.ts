@@ -2,33 +2,29 @@ import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { Locator, Page } from '@playwright/test';
 import PanelWorkspaceColumnClipHarness from './mocks/PanelWorkspaceColumnClipHarness.svelte';
 
-async function shellStyles(panel: Locator, page: Page) {
-  const expectedBackground = await page.evaluate(() => {
+async function shellStyles(panel: Locator, page: Page, expectedBackgroundClass = 'bg-sidebar') {
+  const expectedBackground = await page.evaluate((backgroundClass) => {
     const probe = document.createElement('div');
-    probe.className = 'bg-background';
+    probe.className = backgroundClass;
     document.body.append(probe);
     const color = getComputedStyle(probe).backgroundColor;
     probe.remove();
     return color;
-  });
+  }, expectedBackgroundClass);
   return panel.evaluate((element, background) => {
     const style = getComputedStyle(element);
     const parentStyle = getComputedStyle(element.parentElement!);
     const contentStyle = getComputedStyle(element.querySelector('.panel-content')!);
+    const emptyState = element.querySelector('[data-panel-empty-state]');
     return {
       background: style.backgroundColor,
       expectedBackground: background,
+      emptyStateBackground: emptyState ? getComputedStyle(emptyState).backgroundColor : null,
       borders: [
         style.borderTopWidth,
         style.borderRightWidth,
         style.borderBottomWidth,
         style.borderLeftWidth,
-      ],
-      borderColors: [
-        style.borderTopColor,
-        style.borderRightColor,
-        style.borderBottomColor,
-        style.borderLeftColor,
       ],
       radii: [
         style.borderTopLeftRadius,
@@ -70,8 +66,8 @@ for (const theme of ['light', 'dark'] as const) {
         for (const panel of await panels.all()) {
           const styles = await shellStyles(panel, page);
           expect(styles.background).toBe(styles.expectedBackground);
-          expect(styles.borders).toEqual(['1px', '1px', '1px', '1px']);
-          expect(new Set(styles.borderColors).size).toBe(1);
+          expect(styles.emptyStateBackground).toBe(styles.expectedBackground);
+          expect(styles.borders).toEqual(['0px', '0px', '0px', '0px']);
           expect(new Set(styles.radii).size).toBe(1);
           expect(Number.parseFloat(styles.radii[0])).toBeGreaterThan(0);
           expect(styles.overflow).toEqual(['hidden', 'hidden']);
@@ -89,6 +85,34 @@ for (const theme of ['light', 'dark'] as const) {
       });
     }
   }
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`keeps populated panels on the approved surface in ${theme} at 200% zoom`, async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(PanelWorkspaceColumnClipHarness, {
+      props: {
+        sidebarWidth: 280,
+        canvasWidth: 760,
+        zoomFactor: 2,
+        panelTypes: ['note', 'note'],
+      },
+    });
+    await component.evaluate((node, mode) => {
+      document.documentElement.classList.toggle('dark', mode === 'dark');
+      node.setAttribute('data-test-theme', mode);
+    }, theme);
+
+    for (const panel of await component.locator('.panel').all()) {
+      const styles = await shellStyles(panel, page, 'bg-background');
+      expect(styles.background).toBe(styles.expectedBackground);
+      expect(styles.emptyStateBackground).toBeNull();
+      expect(styles.borders).toEqual(['0px', '0px', '0px', '0px']);
+      expect(styles.ownsEmptySurface).toBeNull();
+    }
+  });
 }
 
 test('keeps all four shell corners portable with an adjacent panel at 200% zoom', async ({
