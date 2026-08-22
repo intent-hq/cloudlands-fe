@@ -109,8 +109,15 @@ async function waitForMessage(agentId: string, messageId: string): Promise<boole
  * Fetch the page containing the message (§5.5 `aroundMessageId` seek) and
  * replace the session's messages with it. Returns false when the message no
  * longer exists (-32602) or the session is not in the store.
+ *
+ * Also exported for ChatPanel's message navigator: selecting an index-only
+ * row (outside the loaded window) reuses this seek + replace before the
+ * panel force-renders and scrolls to the message.
  */
-async function seekToMessage(agentId: string, messageId: string): Promise<boolean> {
+export async function seekConversationToMessage(
+  agentId: string,
+  messageId: string,
+): Promise<boolean> {
   try {
     const page = await appClient.agents.getConversation(
       agentId,
@@ -122,7 +129,7 @@ async function seekToMessage(agentId: string, messageId: string): Promise<boolea
     appStore.dispatch(replaceMessages(agentId, page.messages));
     return isMessageInStore(agentId, messageId);
   } catch (error) {
-    logger.warn('[openMessage] Seek fetch failed (message may no longer exist)', {
+    logger.warn('[seekConversationToMessage] Seek fetch failed (message may no longer exist)', {
       agentId,
       messageId,
       error,
@@ -157,7 +164,7 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
 
   const present = (await waitForMessage(agentId, messageId))
     ? true
-    : await seekToMessage(agentId, messageId);
+    : await seekConversationToMessage(agentId, messageId);
   if (!present) {
     logger.warn('[openMessage] Message not found; conversation opened at tail', {
       agentId,

@@ -197,6 +197,7 @@
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
+  import { seekConversationToMessage } from '$lib/utils/open-message';
   import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
@@ -4223,6 +4224,13 @@
 
   export async function navigateToUserMessage(messageId: string): Promise<boolean> {
     if (!userMessageNavigationItems.some((message) => message.id === messageId)) return false;
+    // Index-only row: the message is outside the loaded window. Seek the page
+    // containing it (§5.5 aroundMessageId) and replace the session, same as
+    // the deep-open helper; on failure (message deleted / seek rejected) the
+    // helper logs and we bail, leaving the conversation where it is.
+    if (agentId && !$agentMessages$.some((message) => message.id === messageId)) {
+      if (!(await seekConversationToMessage(agentId, messageId))) return false;
+    }
     const targetElement = await forceRenderAndFindMessage(messageId);
     if (!targetElement) return false;
     currentMessageIndex = getMessageIndex(messageId);
