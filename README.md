@@ -182,9 +182,8 @@ not on this repository.
 
 ## Network & privacy
 
-The desktop app is local-first and ships **no telemetry or analytics** —
-Segment, Sentry error reporting, and download-attribution have all been
-removed. The app itself makes only these network calls:
+The desktop app is local-first and ships **no telemetry or analytics**. The
+app itself makes only one network call:
 
 - **Auto-updates** — the built app checks for and downloads updates from
   GitHub Releases on
@@ -192,19 +191,13 @@ removed. The app itself makes only these network calls:
   `AUTO_UPDATE_URL` in `src/shared/constants.ts` is the release-download base
   URL; the `publish` URL in `electron-builder.yml` appends the release channel
   (e.g. `/stable`).
-- **Auggie binary download (on demand)** — when you install the Auggie CLI from
-  the app, the pre-built binary is downloaded from the latest public release of
-  [augmentcode/auggie](https://github.com/augmentcode/auggie)
-  (`AUGGIE_BINARY_BASE_URL` in `src/shared/constants/auggie.ts`).
-- **Sentry integration (opt-in, user-configured)** — if you connect a Sentry
-  account with your own API token, the app calls the Sentry REST API
-  (`SENTRY_API_BASE_URL` in `src/features/sentry-auth/constants.ts`) to browse
-  your organization's issues and projects. Nothing is sent to Sentry unless you
-  configure this integration.
 
-Everything else goes through the local `intentd` daemon. Daemon-side network
-calls — provider OAuth sign-ins, user-configured integrations (GitHub, Linear,
-Sentry), and the sitter self-update — are documented in the
+Everything else goes through the local `intentd` daemon. If you connect the
+GitHub, Linear, or Sentry integrations, the daemon calls those services' APIs
+on your behalf — nothing is sent to them unless you configure the
+integration. Daemon-side network calls — provider OAuth sign-ins, the
+user-configured integrations (GitHub, Linear, Sentry), and the sitter
+self-update — are documented in the
 [monorepo README's Network & privacy section](https://github.com/intent-hq/monorepo#network--privacy).
 
 ## History
