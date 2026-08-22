@@ -4224,11 +4224,13 @@
 
   export async function navigateToUserMessage(messageId: string): Promise<boolean> {
     if (!userMessageNavigationItems.some((message) => message.id === messageId)) return false;
-    // Index-only row: the message is outside the loaded window. Seek the page
-    // containing it (§5.5 aroundMessageId) and replace the session, same as
-    // the deep-open helper; on failure (message deleted / seek rejected) the
-    // helper logs and we bail, leaving the conversation where it is.
-    if (agentId && !$agentMessages$.some((message) => message.id === messageId)) {
+    // Index-only row: the message is outside the loaded transcript (neither
+    // the loaded scrollback nor the live tail — messageIdToTurnKey spans
+    // both). Seek the page containing it (§5.5 aroundMessageId) and replace
+    // the session, same as the deep-open helper; on failure (message deleted
+    // / seek rejected) the helper logs and we bail, leaving the conversation
+    // where it is. Resident rows scroll directly, keeping the tail intact.
+    if (agentId && !messageIdToTurnKey.has(messageId)) {
       if (!(await seekConversationToMessage(agentId, messageId))) return false;
     }
     const targetElement = await forceRenderAndFindMessage(messageId);

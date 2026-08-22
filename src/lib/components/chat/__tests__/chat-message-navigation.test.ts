@@ -176,6 +176,26 @@ describe('full-history index navigation items', () => {
       ]),
     ).toEqual([{ id: 'authored', text: '[SYSTEM NOTE] Internal suffix only' }]);
   });
+
+  it('strips a delivery note chopped mid-note by server-side preview truncation', () => {
+    const queued = { queueInfo: { queuedAt: '2026-01-01T00:00:00Z', waitedMs: 8_000 } };
+    expect(
+      getUserMessageNavigationItemsFromIndex([
+        indexItem(
+          'chopped',
+          'Keep this prompt\n\n[SYSTEM NOTE] This message was queued at 2026-01-0',
+          queued,
+        ),
+      ]),
+    ).toEqual([{ id: 'chopped', text: 'Keep this prompt' }]);
+    expect(
+      getUserMessageNavigationItemsFromIndex([
+        indexItem('no-metadata', 'Keep this prompt\n\n[SYSTEM NOTE] This message was queued at 2'),
+      ]),
+    ).toEqual([
+      { id: 'no-metadata', text: 'Keep this prompt [SYSTEM NOTE] This message was queued at 2' },
+    ]);
+  });
 });
 
 describe('mergeUserMessageNavigationItems', () => {

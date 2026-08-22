@@ -4,6 +4,7 @@ import { stripMarkdownFormatting } from '$shared/utils-client';
 import {
   getPresentedUserMessageText,
   stripInternalDeliveryNotes,
+  stripTruncatedTrailingDeliveryNote,
 } from '$lib/utils/user-message-presentation';
 import type { UserMessageIndexItem } from '$lib/client';
 
@@ -83,7 +84,12 @@ export function getUserMessageNavigationItemsFromIndex(
   for (const item of indexItems) {
     if (seenIds.has(item.id)) continue;
     if (item.metadata?.type || hasAutomatedPrefix(item.preview)) continue;
-    const text = stripMarkdownFormatting(stripInternalDeliveryNotes(item.preview, item.metadata))
+    const text = stripMarkdownFormatting(
+      stripTruncatedTrailingDeliveryNote(
+        stripInternalDeliveryNotes(item.preview, item.metadata),
+        item.metadata,
+      ),
+    )
       .replace(/\s+/g, ' ')
       .trim();
     if (!text) continue;

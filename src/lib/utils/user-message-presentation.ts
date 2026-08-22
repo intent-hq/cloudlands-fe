@@ -35,6 +35,24 @@ export function stripInternalDeliveryNotes(text: string, metadata?: unknown): st
   return presented;
 }
 
+const QUEUE_NOTE_STEM = '[SYSTEM NOTE] This message was queued';
+
+/**
+ * Best-effort removal of a trailing delivery note chopped mid-note by
+ * server-side preview truncation (`agent.listUserMessages` previews, §5.5).
+ * Applies only when `metadata.queueInfo` proves the daemon appended a note;
+ * the trailing paragraph is dropped when it is a prefix of — or extends —
+ * the shared queue-note stem. Full texts use `stripInternalDeliveryNotes`.
+ */
+export function stripTruncatedTrailingDeliveryNote(text: string, metadata?: unknown): string {
+  if (!getQueueInfo(metadata)) return text;
+  const match = /(?:\r?\n){2,}(\[[^\n]*)$/u.exec(text);
+  if (!match) return text;
+  const fragment = match[1];
+  if (!fragment.startsWith(QUEUE_NOTE_STEM) && !QUEUE_NOTE_STEM.startsWith(fragment)) return text;
+  return text.slice(0, match.index);
+}
+
 /** Return immutable user-authored text for rendering and other UI surfaces. */
 export function getPresentedUserMessageText(message: AgentMessage): string {
   const textParts = message.contentBlocks
